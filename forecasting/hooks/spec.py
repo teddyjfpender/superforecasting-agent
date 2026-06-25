@@ -107,6 +107,9 @@ class HookContext:
 
     # decomposition / decision / calibration
     reference_class_count: int = 0
+    # how many reference classes THIS snapshot links (snapshot-honest outside-view anchor);
+    # on non-commit lint it defaults to reference_class_count to avoid spurious re-read warns
+    linked_reference_class_count: int = 0
     watched_source_count: int = 0
     decision_gaps: tuple[str, ...] = ()
     active_lessons_unapplied: int = 0

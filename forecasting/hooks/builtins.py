@@ -412,10 +412,19 @@ def _rem_run_aggregate(_ctx: HookContext) -> RemediationDescriptor:
 
 # ── outside-view anchor (reference class) ─────────────────────────────────────
 def _check_outside_view_anchor(ctx: HookContext):
-    if ctx.reference_class_count >= 1:
+    # Snapshot-honest: a serious forecast must LINK its outside-view anchor to THIS
+    # snapshot, not merely have one somewhere on the question (linked_reference_class_count
+    # falls back to the question count on non-commit lint, so re-reads don't over-fire).
+    if ctx.linked_reference_class_count >= 1:
         return _OK
     claims_outside = any(method in {"outside_view", "base_rate"} for method in ctx.reasoning_methods)
-    if claims_outside:
+    if ctx.reference_class_count >= 1:
+        msg = (
+            f"this forecast links NO reference class though the question has {ctx.reference_class_count} — "
+            "link your outside-view anchor to THIS snapshot (reference_class_refs, or the inline "
+            "reference_class on update_forecast)."
+        )
+    elif claims_outside:
         msg = (
             "reasoning_methods claims outside_view/base_rate but NO reference class is attached — "
             "anchor the base rate you're claiming to reason from: call the 'add_reference_class' action."
@@ -425,7 +434,10 @@ def _check_outside_view_anchor(ctx: HookContext):
             "serious live forecast has no outside-view anchor: attach at least one reference class / base rate "
             "(call 'add_reference_class') so the forecast isn't pure inside-view prose."
         )
-    return False, msg, {"reference_class_count": ctx.reference_class_count}
+    return False, msg, {
+        "reference_class_count": ctx.reference_class_count,
+        "linked_reference_class_count": ctx.linked_reference_class_count,
+    }
 
 
 def _rem_reference_class(_ctx: HookContext) -> RemediationDescriptor:

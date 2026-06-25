@@ -180,6 +180,9 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         stale_evidence_acknowledged=bool(meta.get("acknowledge_stale_evidence")) and not bool(meta.get("stale_evidence_reason")),
         has_fresh_evidence=True,  # not a commit; re-run freshness is not assessed here
         reference_class_count=reference_class_count,
+        # lint/re-read path: default the snapshot-link count to the question-level count so
+        # re-reading old snapshots never spuriously fires the snapshot-honest anchor warn
+        linked_reference_class_count=reference_class_count,
         watched_source_count=watched_source_count,
         decision_gaps=decision_gaps,
         tail_audit_passes=(td.get("passes") if td else None),
@@ -257,6 +260,7 @@ def build_commit_context(
     panel_run_count: int = 0,
     calibration_under_confident: bool = False,
     reference_class_count: int = 0,
+    linked_reference_class_count: int = 0,
     is_thesis_or_factor: bool = False,
     committed_winner_prob: float | None = None,
     derived_child_present: bool = False,
@@ -308,6 +312,7 @@ def build_commit_context(
         panel_run_count=panel_run_count,
         calibration_under_confident=calibration_under_confident,
         reference_class_count=reference_class_count,
+        linked_reference_class_count=linked_reference_class_count,
         is_thesis_or_factor=is_thesis_or_factor,
         committed_winner_prob=committed_winner_prob,
         derived_child_present=derived_child_present,

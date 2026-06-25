@@ -529,6 +529,7 @@ FORECAST_LEDGER_SCHEMA = {
             "exclusion_criteria": {"type": "string"},
             "base_rate": {"type": "number"},
             "uncertainty": {"type": "number"},
+            "sample_size": {"type": "integer", "description": "n observations behind the base rate (how strong the outside view is)."},
             "source_refs": {"type": "array", "items": {"type": "string"}},
             "model_type": {"type": "string"},
             "model_status": {"type": "string", "enum": ["success", "failure"]},
@@ -719,6 +720,20 @@ FORECAST_LEDGER_SCHEMA = {
             "key_assumptions": {"type": "array", "items": {"type": "string"}},
             "assumption_refs": {"type": "array", "items": {"type": "string"}},
             "reference_class_refs": {"type": "array", "items": {"type": "string"}},
+            "reference_class": {
+                "type": "object",
+                "description": "Inline outside-view anchor: create + link a reference class to THIS forecast in one call (alternative to a separate add_reference_class). Reuses an existing same-name class on the question if present.",
+                "required": ["name", "inclusion_criteria"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "inclusion_criteria": {"type": "string"},
+                    "exclusion_criteria": {"type": "string"},
+                    "base_rate": {"type": "number"},
+                    "uncertainty": {"type": "number"},
+                    "sample_size": {"type": "integer"},
+                    "source_refs": {"type": "array", "items": {"type": "string"}},
+                },
+            },
             "source_snapshot_refs": {"type": "array", "items": {"type": "string"}},
             "calibration_lesson_refs": {"type": "array", "items": {"type": "string"}},
             "calibration_adjustment": {"type": "object"},
@@ -1260,6 +1275,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 source_refs=args.get("source_refs") or [],
                 check_cadence=args.get("check_cadence"),
                 notes=args.get("notes"),
+                sample_size=args.get("sample_size"),
             )
             model_run = ledger.record_model_run(
                 question_id=_required(args, "question_id"),
@@ -1397,6 +1413,46 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     return bool(args[arg_name])
                 return _hook_sev.get(rule_id) == _HookSeverity.ERROR
 
+            # Inline reference-class attach: declare a reference class in the SAME call as
+            # the forecast (create + link it to this snapshot), so the outside-view anchor
+            # is satisfied without a separate add_reference_class round-trip. Existing ids
+            # can still be linked via reference_class_refs.
+            _rc_refs = list(args.get("reference_class_refs") or [])
+            _inline_rc = args.get("reference_class")
+            if isinstance(_inline_rc, dict) and (_inline_rc.get("name") or "").strip():
+                _rc_name = _inline_rc["name"].strip()
+                # Validate BEFORE creating so an incomplete inline class returns a precise
+                # field error instead of aborting the whole forecast with a vague one.
+                if not (_inline_rc.get("inclusion_criteria") or "").strip():
+                    return tool_error(
+                        "inline reference_class needs both name and inclusion_criteria — "
+                        "complete it, or omit reference_class and call add_reference_class separately.",
+                        success=False,
+                    )
+                # Reuse an existing ACTIVE same-name reference class on this question rather
+                # than creating a duplicate. If a prior commit was refused by another gate
+                # (saturation/stale/etc.) the inline class it created is unlinked; reusing it
+                # here links that same anchor on retry instead of piling up orphans.
+                _existing = next(
+                    (rc for rc in ledger.list_reference_classes(question_id)
+                     if (rc.get("name") or "").strip() == _rc_name and (rc.get("status") or "active") == "active"),
+                    None,
+                )
+                if _existing is not None:
+                    _rc_refs.append(_existing["id"])
+                else:
+                    _created_rc = ledger.add_reference_class(
+                        question_id=question_id,
+                        name=_rc_name,
+                        inclusion_criteria=_inline_rc["inclusion_criteria"],
+                        exclusion_criteria=_inline_rc.get("exclusion_criteria") or "",
+                        base_rate=_inline_rc.get("base_rate"),
+                        base_rate_uncertainty=_inline_rc.get("uncertainty"),
+                        source_refs=_inline_rc.get("source_refs") or [],
+                        sample_size=_inline_rc.get("sample_size"),
+                    )
+                    _rc_refs.append(_created_rc["id"])
+
             snapshot = ledger.create_snapshot(
                 question_id=question_id,
                 probability_or_distribution=probability,
@@ -1407,7 +1463,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 ensemble_components=components,
                 key_assumptions=args.get("key_assumptions") or [],
                 assumption_refs=args.get("assumption_refs") or [],
-                reference_class_refs=args.get("reference_class_refs") or [],
+                reference_class_refs=_rc_refs,
                 evidence_refs=args.get("evidence_refs") or [],
                 model_run_refs=args.get("model_run_refs") or [],
                 forecast_origin=args.get("forecast_origin") or "live",

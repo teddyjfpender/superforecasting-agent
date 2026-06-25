@@ -750,7 +750,8 @@ class ForecastLedger:
                     last_checked_at TEXT,
                     invalidated_at TEXT,
                     check_cadence TEXT,
-                    notes TEXT
+                    notes TEXT,
+                    sample_size INTEGER
                 );
 
                 CREATE TABLE IF NOT EXISTS question_cruxes (
@@ -1329,6 +1330,7 @@ class ForecastLedger:
             self._ensure_column(conn, "calibration_lessons", "invalidated_by_correction_id", "TEXT")
             self._ensure_column(conn, "resolutions", "trusted_policy_id", "TEXT")
             self._ensure_column(conn, "reference_classes", "check_cadence", "TEXT")
+            self._ensure_column(conn, "reference_classes", "sample_size", "INTEGER")
             self._ensure_column(conn, "scheduled_reviews", "auto_score", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "auto_postmortem", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "stale_days", "INTEGER NOT NULL DEFAULT 7")
@@ -2319,6 +2321,7 @@ class ForecastLedger:
                     _ctx = _dc.replace(
                         _ctx,
                         reference_class_count=len(self.list_reference_classes(question_id)),
+                        linked_reference_class_count=len(reference_class_refs or []),
                         is_thesis_or_factor=self.is_thesis(question),
                         watched_source_count=len(self.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")),
                         panel_run_count=len(self.list_panel_runs(question_id)),
@@ -2405,6 +2408,7 @@ class ForecastLedger:
                 reasoning_methods=snapshot_metadata.get("reasoning_methods") or [],
                 required_reasoning_methods=tuple(_orq), min_reasoning_methods=_omin,
                 reference_class_count=len(self.list_reference_classes(question_id)),
+                linked_reference_class_count=len(reference_class_refs or []),
                 is_thesis_or_factor=self.is_thesis(question),
                 is_distribution=bool(_oda and _oda.is_distribution),
                 distribution_renderable=(_oda.renderable if _oda else True),
@@ -3010,6 +3014,7 @@ class ForecastLedger:
         source_refs: list[str] | None = None,
         check_cadence: str | None = None,
         notes: str | None = None,
+        sample_size: int | None = None,
     ) -> dict[str, Any]:
         self.get_question(question_id)
         if not name.strip():
@@ -3020,6 +3025,8 @@ class ForecastLedger:
             raise ValidationError("base_rate must be between 0 and 1")
         if base_rate_uncertainty is not None and base_rate_uncertainty < 0:
             raise ValidationError("base_rate_uncertainty must be non-negative")
+        if sample_size is not None and int(sample_size) < 0:
+            raise ValidationError("sample_size (n observations behind the base rate) must be non-negative")
         reference_class_id = f"rc_{uuid.uuid4().hex[:12]}"
         with self._connect() as conn:
             conn.execute(
@@ -3027,9 +3034,9 @@ class ForecastLedger:
                 INSERT INTO reference_classes (
                     id, question_id, name, inclusion_criteria, exclusion_criteria,
                     base_rate, base_rate_uncertainty, source_refs, created_at,
-                    check_cadence, notes
+                    check_cadence, notes, sample_size
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     reference_class_id,
@@ -3043,9 +3050,17 @@ class ForecastLedger:
                     utc_now_iso(),
                     check_cadence,
                     notes,
+                    int(sample_size) if sample_size is not None else None,
                 ),
             )
         return self.get_reference_class(reference_class_id)
+
+    def delete_reference_class(self, reference_class_id: str) -> None:
+        """Hard-delete a reference class. Intended for compensating rollback of an inline
+        reference class created during a forecast commit that was then rejected — so a
+        refused snapshot never orphans an unlinked anchor."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM reference_classes WHERE id = ?", (reference_class_id,))
 
     def update_reference_class(
         self,

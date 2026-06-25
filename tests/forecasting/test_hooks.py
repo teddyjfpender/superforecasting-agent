@@ -48,8 +48,10 @@ def _saturated_live(**overrides) -> HookContext:
         sharpness=1.0,
         reasoning_methods=("outside_view", "base_rate", "bayesian"),
         # A genuinely-saturated forecast that claims outside_view/base_rate is
-        # backed by a real reference class (the require_outside_view_anchor rule).
+        # backed by a real reference class LINKED to this snapshot (snapshot-honest
+        # require_outside_view_anchor rule — a saturated forecast links its anchor).
         reference_class_count=1,
+        linked_reference_class_count=1,
     )
     base.update(overrides)
     return HookContext(**base)
@@ -181,3 +183,18 @@ def test_build_commit_context_detects_em_dash_style():
     )
     assert ctx.style_clean is False
     assert "rationale" in ctx.style_offending_fields
+
+
+def test_outside_view_anchor_is_snapshot_honest():
+    """A serious forecast with a reference class on the QUESTION but NOT linked to this
+    snapshot now WARNs (snapshot-honest), pointing at the link path. WARN, so it costs
+    saturation but does not block (guide + make-visible)."""
+    report = run_hooks(_saturated_live(linked_reference_class_count=0), ALL_ERROR)
+    anchor = [w for w in report.warnings() if w.rule_id == "require_outside_view_anchor"]
+    assert anchor and "links NO reference class" in anchor[0].message
+    assert report.score < 100.0
+
+
+def test_outside_view_anchor_satisfied_by_snapshot_link():
+    report = run_hooks(_saturated_live(linked_reference_class_count=1), ALL_ERROR)
+    assert not [w for w in report.warnings() if w.rule_id == "require_outside_view_anchor"]

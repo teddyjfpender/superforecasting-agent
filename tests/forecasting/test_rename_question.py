@@ -60,3 +60,32 @@ def test_rename_noop_when_unchanged(tmp_path):
     r = lg.rename_question(q.id, q.title)
     assert r.title == q.title
     assert "title_history" not in (r.metadata or {})  # no audit churn for a no-op
+
+
+def test_add_reference_class_records_sample_size(tmp_path):
+    lg = _ledger(tmp_path)
+    q = _question(lg)
+    rc = lg.add_reference_class(
+        question_id=q.id,
+        name="US Senate incumbents holding in midterms",
+        inclusion_criteria="elected US Senate incumbents seeking re-election in midterm cycles 1980-2024",
+        base_rate=0.82,
+        sample_size=140,
+    )
+    assert rc["sample_size"] == 140
+    assert lg.get_reference_class(rc["id"])["sample_size"] == 140  # round-trips via dict(row)
+
+
+def test_add_reference_class_rejects_negative_sample_size(tmp_path):
+    lg = _ledger(tmp_path)
+    q = _question(lg)
+    with pytest.raises(Exception):
+        lg.add_reference_class(question_id=q.id, name="X", inclusion_criteria="a sufficiently long inclusion", sample_size=-3)
+
+
+def test_delete_reference_class_removes_it(tmp_path):
+    lg = _ledger(tmp_path)
+    q = _question(lg)
+    rc = lg.add_reference_class(question_id=q.id, name="Anchor", inclusion_criteria="a sufficiently long inclusion criteria")
+    lg.delete_reference_class(rc["id"])
+    assert all(r["id"] != rc["id"] for r in lg.list_reference_classes(q.id))
