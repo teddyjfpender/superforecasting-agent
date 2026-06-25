@@ -1526,6 +1526,42 @@ class ForecastLedger:
             )
         return self.get_question(question_id)
 
+    def rename_question(self, question_id: str, new_title: str, *, actor: str | None = None) -> ForecastQuestion:
+        """Rename a question's display title — the only identity field safe to edit in place
+        (id/snapshots/scores/lessons/cross-refs all key off the id, never the title).
+
+        Re-runs the generic-title scoreability check on the NEW title (only the title, so a
+        pre-existing criteria gap can't block a clarifying rename), and records the prior
+        title in metadata['title_history'] for an audit trail. Scoreability-defining fields
+        (resolution_criteria, outcome_space) are intentionally NOT editable here — changing
+        them after snapshots exist would retroactively invalidate committed forecasts.
+        """
+        existing = self.get_question(question_id)
+        title = (new_title or "").strip()
+        if not title:
+            raise ValidationError("new title must not be empty")
+        if title == existing.title:
+            return existing
+        issues = self._scoreability_issues(title, existing.resolution_criteria, existing.outcome_space)
+        title_issues = [i for i in issues if "title" in i.lower()]
+        if title_issues:
+            raise ValidationError("; ".join(title_issues))
+        meta = dict(existing.metadata) if isinstance(existing.metadata, dict) else {}
+        history = list(meta.get("title_history") or [])
+        history.append({
+            "old": existing.title,
+            "new": title,
+            "at": utc_now_iso(),
+            "actor": (actor or "").strip() or None,
+        })
+        meta["title_history"] = history
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE forecast_questions SET title = ?, metadata = ? WHERE id = ?",
+                (title, json_dumps(meta), question_id),
+            )
+        return self.get_question(question_id)
+
     def decision_readiness_issues(self, question: ForecastQuestion | str) -> list[str]:
         """Return decision-card gaps for ``question`` (id or object)."""
 

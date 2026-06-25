@@ -111,6 +111,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "propose_spec",
                     "commit_spec",
                     "set_decision",
+                    "rename_question",
                     "list_questions",
                     "search_questions",
                     "show_question",
@@ -202,6 +203,7 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": "related (symmetric sibling) or component_of (from=child, to=parent).",
             },
             "title": {"type": "string"},
+            "actor": {"type": "string", "description": "Who is making the change (recorded in audit trails, e.g. rename_question)."},
             "resolution_criteria": {"type": "string"},
             "resolution_source": {"type": "string"},
             "description": {"type": "string"},
@@ -969,6 +971,16 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 success=True,
                 question=_question_dict(question),
                 decision_readiness_issues=ledger.decision_readiness_issues(question),
+            )
+
+        if action == "rename_question":
+            question_id = _required(args, "question_id")
+            new_title = _required(args, "title")
+            question = ledger.rename_question(question_id, new_title, actor=args.get("actor"))
+            return tool_result(
+                success=True,
+                question=_question_dict(question),
+                renamed_to=question.title,
             )
 
         if action == "list_questions":
