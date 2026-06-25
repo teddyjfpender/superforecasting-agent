@@ -1205,6 +1205,74 @@ def _wrap_pcm_as_wav(
     return riff_header + fmt_chunk + data_chunk_header + pcm_bytes
 
 
+def _resolve_gemini_persona_prompt_path(gemini_config: Dict[str, Any]) -> Optional[Path]:
+    """Return the configured Gemini persona-prompt file path, if any.
+
+    Ported from upstream hermes-agent: an optional local markdown file of performance
+    direction (AUDIO PROFILE / SCENE / DIRECTOR'S NOTES) that shapes how Gemini speaks.
+    """
+    raw = gemini_config.get("persona_prompt_file")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    expanded = os.path.expandvars(raw.strip())
+    path = Path(expanded).expanduser()
+    if not path.is_absolute():
+        try:
+            from hermes_constants import get_hermes_home
+
+            path = get_hermes_home() / path
+        except Exception:
+            path = Path.cwd() / path
+    return path
+
+
+def _read_gemini_persona_prompt(gemini_config: Dict[str, Any]) -> str:
+    """Read the Gemini persona-prompt file, failing soft on config mistakes."""
+    path = _resolve_gemini_persona_prompt_path(gemini_config)
+    if path is None:
+        return ""
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        logger.warning("Gemini TTS persona prompt file unavailable at %s: %s", path, exc)
+        return ""
+
+
+def _compose_gemini_tts_prompt(
+    text: str,
+    gemini_config: Dict[str, Any],
+    persona_prompt: Optional[str] = None,
+) -> str:
+    """Build the Gemini prompt from persona direction plus the live transcript.
+
+    With no persona file configured this returns the transcript unchanged (so default
+    behaviour is byte-identical). A `{transcript}` / `{{transcript}}` placeholder in the
+    persona file is substituted; otherwise the transcript is appended under a heading.
+    """
+    transcript = text.strip()
+    if persona_prompt is None:
+        persona_prompt = _read_gemini_persona_prompt(gemini_config)
+    if not persona_prompt:
+        return transcript
+
+    preamble = (
+        "Synthesize speech from the TRANSCRIPT only. Treat AUDIO PROFILE, "
+        "SCENE, DIRECTOR'S NOTES, and SAMPLE CONTEXT as performance direction; "
+        "do not speak those sections aloud."
+    )
+    placeholder_patterns = (
+        re.compile(r"\{\{\s*transcript\s*\}\}", flags=re.IGNORECASE),
+        re.compile(r"\{\s*transcript\s*\}", flags=re.IGNORECASE),
+    )
+    prompt = persona_prompt
+    for pattern in placeholder_patterns:
+        if pattern.search(prompt):
+            prompt = pattern.sub(transcript, prompt)
+            return f"{preamble}\n\n{prompt}".strip()
+
+    return f"{preamble}\n\n{persona_prompt}\n\n#### TRANSCRIPT\n{transcript}".strip()
+
+
 def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]) -> str:
     """Generate audio using Google Gemini TTS.
 
@@ -1230,7 +1298,8 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
             "GEMINI_API_KEY not set. Get one at https://aistudio.google.com/app/apikey"
         )
 
-    gemini_config = tts_config.get("gemini", {})
+    _raw_gemini = tts_config.get("gemini", {})
+    gemini_config = _raw_gemini if isinstance(_raw_gemini, dict) else {}
     model = str(gemini_config.get("model", DEFAULT_GEMINI_TTS_MODEL)).strip() or DEFAULT_GEMINI_TTS_MODEL
     voice = str(gemini_config.get("voice", DEFAULT_GEMINI_TTS_VOICE)).strip() or DEFAULT_GEMINI_TTS_VOICE
     base_url = str(
@@ -1239,8 +1308,10 @@ def _generate_gemini_tts(text: str, output_path: str, tts_config: Dict[str, Any]
         or DEFAULT_GEMINI_TTS_BASE_URL
     ).strip().rstrip("/")
 
+    # Persona-prompt direction (no-op unless tts.gemini.persona_prompt_file is set).
+    prompt_text = _compose_gemini_tts_prompt(text, gemini_config)
     payload: Dict[str, Any] = {
-        "contents": [{"parts": [{"text": text}]}],
+        "contents": [{"parts": [{"text": prompt_text}]}],
         "generationConfig": {
             "responseModalities": ["AUDIO"],
             "speechConfig": {

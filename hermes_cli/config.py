@@ -1353,8 +1353,17 @@ DEFAULT_CONFIG = {
             # "volume": 1.0,
             # "normalize_audio": True,
         },
+        "gemini": {
+            "model": "gemini-2.5-flash-preview-tts",
+            "voice": "Kore",  # 30 prebuilt voices; e.g. Kore, Puck, Charon, Aoede
+            # Optional local markdown file of performance direction (AUDIO PROFILE /
+            # SCENE / DIRECTOR'S NOTES) that shapes how the voice performs. A
+            # {transcript} placeholder is substituted; otherwise it's appended under a
+            # heading. Empty = plain transcript (default, no-op). Needs GEMINI_API_KEY.
+            "persona_prompt_file": "",
+        },
     },
-    
+
     "stt": {
         "enabled": True,
         "provider": "local",  # "local" (free, faster-whisper) | "groq" | "openai" (Whisper API) | "mistral" (Voxtral Transcribe)
