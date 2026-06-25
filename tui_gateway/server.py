@@ -7278,6 +7278,26 @@ def _voice_emit(event: str, payload: dict | None = None) -> None:
     _emit(event, sid, payload)
 
 
+def _voice_session_key(params: dict | None) -> str | None:
+    """session_key for the session this voice RPC belongs to — params.session_id, else
+    the active voice-event sid — or None when not resolvable (then VOICE/VOICE_TTS fall
+    back to the process-global os.environ flag, i.e. today's behaviour)."""
+    with _voice_sid_lock:
+        sid = (params or {}).get("session_id") or _voice_event_sid
+    return (_sessions.get(sid) or {}).get("session_key") if sid else None
+
+
+def _voice_flag(session_key: str | None, name: str) -> bool:
+    """Read a per-session voice flag (VOICE / VOICE_TTS): the session store wins, else
+    the process-global os.environ alias. Reads _session_toggles directly so it is fresh
+    even outside a seeded run-thread context (the voice RPC handler)."""
+    if session_key:
+        stored = _session_toggles.get(session_key, {}).get(name)
+        if stored is not None:
+            return stored.strip() == "1"
+    return _runtime_env(name).strip() == "1"
+
+
 def _voice_mode_enabled() -> bool:
     """Current voice-mode flag (runtime-only, CLI parity).
 
@@ -7334,6 +7354,10 @@ def _(rid, params: dict) -> dict:
       (mirrors CLI's _toggle_voice_tts guard).
     """
     action = params.get("action", "status")
+    # Per-session: the voice mode/TTS flags belong to the session that owns the mic
+    # (params.session_id, else the active voice-event sid), not the whole process — so a
+    # second TUI session doesn't see this one's voice state.
+    _vkey = _voice_session_key(params)
 
     if action == "status":
         # Mirror CLI's _show_voice_status: include STT/TTS provider
@@ -7344,9 +7368,9 @@ def _(rid, params: dict) -> dict:
         # it in /voice status — previously the TUI hardcoded Ctrl+B and
         # ignored the config (#18994).
         payload: dict = {
-            "enabled": _voice_mode_enabled(),
+            "enabled": _voice_flag(_vkey, "VOICE"),
             "record_key": _voice_record_key(),
-            "tts": _voice_tts_enabled(),
+            "tts": _voice_flag(_vkey, "VOICE_TTS"),
         }
         try:
             from tools.voice_mode import check_voice_requirements
@@ -7367,8 +7391,8 @@ def _(rid, params: dict) -> dict:
         enabled = action == "on"
         # Runtime-only flag (CLI parity) — no _write_config_key, so the
         # next TUI launch starts with voice OFF instead of auto-REC from a
-        # persisted stale toggle.
-        _set_runtime_env("VOICE", "1" if enabled else "0")
+        # persisted stale toggle. Per-session store + os.environ fallback.
+        _store_session_toggle(_vkey, "VOICE", "1" if enabled else "0")
 
         if not enabled:
             # Disabling the mode must tear the continuous loop down; the
@@ -7387,16 +7411,16 @@ def _(rid, params: dict) -> dict:
             {
                 "enabled": enabled,
                 "record_key": _voice_record_key(),
-                "tts": _voice_tts_enabled(),
+                "tts": _voice_flag(_vkey, "VOICE_TTS"),
             },
         )
 
     if action == "tts":
-        if not _voice_mode_enabled():
+        if not _voice_flag(_vkey, "VOICE"):
             return _err(rid, 4014, "enable voice mode first: /voice on")
-        new_value = not _voice_tts_enabled()
+        new_value = not _voice_flag(_vkey, "VOICE_TTS")
         # Runtime-only flag (CLI parity) — see voice.toggle on/off above.
-        _set_runtime_env("VOICE_TTS", "1" if new_value else "0")
+        _store_session_toggle(_vkey, "VOICE_TTS", "1" if new_value else "0")
         # Include ``record_key`` on every branch so a /voice tts toggle
         # doesn't reset the TUI's cached shortcut to the default when a
         # user has a custom binding configured (Copilot review, round 2

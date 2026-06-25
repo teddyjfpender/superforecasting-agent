@@ -15,6 +15,8 @@ import tui_gateway.server as srv
 _KEYS = [
     "SUPERFORECASTING_AGENT_MODEL", "FORECAST_MODEL", "HERMES_MODEL",
     "SUPERFORECASTING_AGENT_TUI_PROVIDER", "FORECAST_TUI_PROVIDER", "HERMES_TUI_PROVIDER",
+    "SUPERFORECASTING_AGENT_VOICE", "FORECAST_VOICE", "HERMES_VOICE",
+    "SUPERFORECASTING_AGENT_VOICE_TTS", "FORECAST_VOICE_TTS", "HERMES_VOICE_TTS",
 ]
 
 
@@ -73,3 +75,30 @@ def test_tui_provider_isolated_per_session():
         srv._clear_session_context(tok)
     # cleared -> back to whatever os.environ holds (the alias _store wrote)
     assert srv._tui_env("PROVIDER") == "prov-A"  # os.environ fallback
+
+
+# ── Voice flags (one-mic feature; per-session when each session sets its own) ──
+
+def test_voice_session_key_resolves_from_params_then_event_sid():
+    srv._sessions["sidA"] = {"session_key": "keyA"}
+    try:
+        assert srv._voice_session_key({"session_id": "sidA"}) == "keyA"
+        assert srv._voice_session_key({}) is None  # no session_id, no active voice sid
+    finally:
+        srv._sessions.pop("sidA", None)
+
+
+def test_two_sessions_each_keep_their_own_voice_state():
+    # The real win: when each session sets its own voice flags they don't clobber.
+    srv._store_session_toggle("A", "VOICE", "1")
+    srv._store_session_toggle("A", "VOICE_TTS", "1")
+    srv._store_session_toggle("B", "VOICE", "0")
+    srv._store_session_toggle("B", "VOICE_TTS", "0")
+    assert srv._voice_flag("A", "VOICE") is True and srv._voice_flag("A", "VOICE_TTS") is True
+    assert srv._voice_flag("B", "VOICE") is False and srv._voice_flag("B", "VOICE_TTS") is False
+
+
+def test_voice_flag_falls_back_to_env_without_session():
+    # No session key (the continuous recording loop / CLI --voice flag) -> os.environ.
+    os.environ["SUPERFORECASTING_AGENT_VOICE"] = "1"
+    assert srv._voice_flag(None, "VOICE") is True
