@@ -330,17 +330,17 @@ def _run_agent(
     )
     from forecasting.protocol import build_forecast_chat_system_prompt
 
-    agent = AIAgent(
-        api_key=runtime.get("api_key"),
-        base_url=runtime.get("base_url"),
-        provider=runtime.get("provider"),
-        api_mode=runtime.get("api_mode"),
+    from agent.agent_factory import build_agent
+
+    # Pre-resolved bundle: build_agent maps the runtime dict onto AIAgent (no re-resolve)
+    # — the single resolve->construct path, behaviour-identical to the hand-written spread.
+    agent = build_agent(
+        runtime=runtime,
         model=effective_model,
         enabled_toolsets=toolsets_list,
         quiet_mode=True,
         platform="cli",
         session_db=session_db,
-        credential_pool=runtime.get("credential_pool"),
         fallback_model=_fb or None,
         ephemeral_system_prompt=build_forecast_chat_system_prompt(
             extra_system_prompt
