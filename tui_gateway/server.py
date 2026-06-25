@@ -51,8 +51,12 @@ os.environ.setdefault("TERMINAL_CWD", str(_hermes_home))
 
 
 def _tui_env(name: str, default: str = "") -> str:
-    """Read a TUI env var, preferring fork-native aliases over legacy names."""
+    """Read a TUI value: the per-session toggle (TUI_<name>) wins, else the
+    fork-native/legacy os.environ aliases."""
 
+    toggle = _session_toggle_value(f"TUI_{name}")
+    if toggle is not None:
+        return toggle
     for key in (
         f"SUPERFORECASTING_AGENT_TUI_{name}",
         f"FORECAST_TUI_{name}",
@@ -65,8 +69,12 @@ def _tui_env(name: str, default: str = "") -> str:
 
 
 def _runtime_env(name: str, default: str = "") -> str:
-    """Read a runtime env var, preferring fork-native aliases over legacy names."""
+    """Read a runtime value: the per-session toggle (seeded into the contextvar on this
+    run thread) wins; else the fork-native/legacy os.environ aliases."""
 
+    toggle = _session_toggle_value(name)
+    if toggle is not None:
+        return toggle
     for key in (
         f"SUPERFORECASTING_AGENT_{name}",
         f"FORECAST_{name}",
@@ -79,6 +87,9 @@ def _runtime_env(name: str, default: str = "") -> str:
 
 
 def _runtime_env_value(name: str, default: str = "") -> str:
+    toggle = _session_toggle_value(name)
+    if toggle and toggle.strip():
+        return toggle.strip()
     for key in (
         f"SUPERFORECASTING_AGENT_{name}",
         f"FORECAST_{name}",
@@ -104,6 +115,34 @@ def _set_runtime_env(name: str, value: str) -> None:
     os.environ[f"SUPERFORECASTING_AGENT_{name}"] = value
     os.environ[f"FORECAST_{name}"] = value
     os.environ[f"HERMES_{name}"] = value
+
+
+# Per-session runtime toggles (the model a session switched to), keyed by session_key.
+# The process-global os.environ writes above stay as the FALLBACK (cross-process child
+# inheritance + threads with no session context); this dict is the per-session truth
+# that _set_session_context seeds into the tenant_runtime contextvar on each run thread,
+# so concurrent TUI/Slack sessions in one gateway don't read each other's model.
+_session_toggles: dict[str, dict[str, str]] = {}
+
+
+def _store_session_toggle(session_key: str, name: str, value: str) -> None:
+    """Set a session-scoped runtime toggle: into the per-session store (seeded into the
+    contextvar on each run thread) AND os.environ (the fallback). Use this instead of a
+    bare _set_runtime_env wherever the write belongs to ONE session."""
+    if session_key:
+        _session_toggles.setdefault(session_key, {})[name] = value
+    _set_runtime_env(name, value)
+
+
+def _session_toggle_value(name: str) -> str | None:
+    """This run thread's per-session toggle value (seeded from _session_toggles), or
+    None when unset — then the reader falls back to the os.environ aliases."""
+    try:
+        from agent.tenant_runtime import get_toggle
+
+        return get_toggle(name)
+    except Exception:
+        return None
 
 
 # ── Panic logger ─────────────────────────────────────────────────────
@@ -866,24 +905,48 @@ def _save_cfg(cfg: dict):
             _cfg_mtime = None
 
 
-def _set_session_context(session_key: str) -> list:
+def _set_session_context(session_key: str):
+    """Establish this run thread's session context: the gateway session vars AND the
+    per-session runtime toggles (seeded into the tenant_runtime contextvar from
+    _session_toggles), so a toggle read during this thread's work returns THIS session's
+    value. Returns an opaque token bundle for _clear_session_context."""
+    session_tokens: list = []
     try:
         from gateway.session_context import set_session_vars
 
-        return set_session_vars(session_key=session_key)
+        session_tokens = set_session_vars(session_key=session_key)
     except Exception:
-        return []
+        session_tokens = []
+    tenant_token = None
+    try:
+        toggles = _session_toggles.get(session_key)
+        if toggles:
+            from agent.tenant_runtime import set_tenant_runtime
+
+            tenant_token = set_tenant_runtime(toggles=dict(toggles))
+    except Exception:
+        tenant_token = None
+    return (session_tokens, tenant_token)
 
 
-def _clear_session_context(tokens: list) -> None:
+def _clear_session_context(tokens) -> None:
     if not tokens:
         return
-    try:
-        from gateway.session_context import clear_session_vars
+    session_tokens, tenant_token = tokens if isinstance(tokens, tuple) else (tokens, None)
+    if tenant_token is not None:
+        try:
+            from agent.tenant_runtime import clear_tenant_runtime
 
-        clear_session_vars(tokens)
-    except Exception:
-        pass
+            clear_tenant_runtime(tenant_token)
+        except Exception:
+            pass
+    if session_tokens:
+        try:
+            from gateway.session_context import clear_session_vars
+
+            clear_session_vars(session_tokens)
+        except Exception:
+            pass
 
 
 def _enable_gateway_prompts() -> None:
@@ -1309,8 +1372,12 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
         _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
 
-    _set_runtime_env("MODEL", result.new_model)
-    _set_runtime_env("INFERENCE_MODEL", result.new_model)
+    # Per-session: the switched model is THIS session's (seeded into the contextvar on
+    # each run thread); the os.environ writes inside _store_session_toggle stay as the
+    # cross-process / unseeded-thread fallback. Fixes concurrent sessions clobbering it.
+    _sess_key = (session or {}).get("session_key")
+    _store_session_toggle(_sess_key, "MODEL", result.new_model)
+    _store_session_toggle(_sess_key, "INFERENCE_MODEL", result.new_model)
     # Keep the process-level provider env vars in sync with the user's
     # explicit choice so any ambient re-resolution (credential pool refresh,
     # compressor rebuild, aux clients) and startup re-resolution on /new
@@ -1323,10 +1390,12 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
     # static-catalog detection and pick a coincidentally-matching native
     # provider (fixes #16857).
     if result.target_provider:
-        os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] = result.target_provider
-        os.environ["FORECAST_TUI_PROVIDER"] = result.target_provider
-        _set_runtime_env("INFERENCE_PROVIDER", result.target_provider)
-        os.environ["HERMES_TUI_PROVIDER"] = result.target_provider
+        # Both provider read-paths per-session: TUI_PROVIDER (via _tui_env in
+        # _resolve_startup_runtime) + INFERENCE_PROVIDER (via _runtime_env).
+        # _store_session_toggle also writes the SUPERFORECASTING_AGENT_/FORECAST_/HERMES_
+        # aliases (the fallback), so cross-process readers are unchanged.
+        _store_session_toggle(_sess_key, "TUI_PROVIDER", result.target_provider)
+        _store_session_toggle(_sess_key, "INFERENCE_PROVIDER", result.target_provider)
     if persist_global:
         _persist_model_switch(result)
     return {"value": result.new_model, "warning": result.warning_message or ""}
