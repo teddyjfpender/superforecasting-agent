@@ -4,6 +4,7 @@ text chunking, the synth->WAV path, and the model-file resolution/fallback."""
 
 from __future__ import annotations
 
+import json
 import wave
 
 import numpy as np
@@ -73,3 +74,21 @@ def test_generate_writes_24k_mono_wav(monkeypatch, tmp_path):
         assert wf.getsampwidth() == 2
         # the two short sentences merge into one chunk (< max_chars) -> one synth call
         assert wf.getnframes() == 4800
+
+
+def test_kokoro_unavailable_falls_back_to_edge_not_error(monkeypatch, tmp_path):
+    # Default is now 'kokoro'; without kokoro-onnx it must transparently use Edge, not error.
+    monkeypatch.setattr(tts, "_get_provider", lambda cfg: "kokoro")
+    monkeypatch.setattr(tts, "_check_kokoro_available", lambda: False)
+    monkeypatch.setattr(tts, "_import_edge_tts", lambda: None)  # Edge "available"
+
+    async def _fake_edge(text, output_path, cfg):
+        with open(output_path, "wb") as f:
+            f.write(b"\x00" * 256)
+
+    monkeypatch.setattr(tts, "_generate_edge_tts", _fake_edge)
+    tts._KOKORO_FALLBACK_WARNED = False
+
+    out = json.loads(tts.text_to_speech_tool("hello there", str(tmp_path / "out.mp3")))
+    assert out.get("success") is True
+    assert "kokoro-onnx is not installed" not in json.dumps(out)  # did NOT hit the error path

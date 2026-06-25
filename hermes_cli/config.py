@@ -1321,7 +1321,7 @@ DEFAULT_CONFIG = {
     # limit (OpenAI 4096, xAI 15000, MiniMax 10000, ElevenLabs 5k-40k model-aware,
     # Gemini 5000, Edge 5000, Mistral 4000, NeuTTS/KittenTTS 2000).
     "tts": {
-        "provider": "edge",  # "edge" (free) | "elevenlabs" (premium) | "openai" | "xai" | "minimax" | "mistral" | "gemini" | "kokoro" (local, recommended) | "neutts" (local) | "kittentts" (local) | "piper" (local)
+        "provider": "kokoro",  # local-first default; falls back to Edge until kokoro-onnx is installed. Options: "edge" (free cloud) | "elevenlabs" | "openai" | "xai" | "minimax" | "mistral" | "gemini" | "kokoro" (local, recommended) | "neutts" (local) | "kittentts" (local) | "piper" (local)
         "edge": {
             "voice": "en-US-AriaNeural",
             # Popular: AriaNeural, JennyNeural, AndrewNeural, BrianNeural, SoniaNeural

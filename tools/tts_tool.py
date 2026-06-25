@@ -1865,6 +1865,7 @@ _KOKORO_VOICES_FILE = "voices-v1.0.bin"
 # Known model filenames (bare name -> the release asset). An absolute path overrides this.
 _KOKORO_MODEL_ASSETS = {"kokoro-v1.0.onnx", "kokoro-v1.0.fp16.onnx", "kokoro-v1.0.int8.onnx"}
 _kokoro_model_cache: Dict[str, Any] = {}
+_KOKORO_FALLBACK_WARNED = False  # one-time "install kokoro-onnx" hint when falling back to edge
 
 
 def _import_kokoro():
@@ -2059,6 +2060,22 @@ def text_to_speech_tool(
 
     tts_config = _load_tts_config()
     provider = _get_provider(tts_config)
+
+    # Kokoro is the recommended local default but needs kokoro-onnx installed. When it is
+    # selected yet unavailable, transparently fall back to Edge (zero-setup) with a
+    # one-time hint — so a local-first default never breaks TTS on a fresh machine; it
+    # upgrades to the better local voice the moment the user installs the package.
+    if provider == "kokoro" and not _check_kokoro_available():
+        global _KOKORO_FALLBACK_WARNED
+        if not _KOKORO_FALLBACK_WARNED:
+            logger.warning(
+                "tts.provider=kokoro but kokoro-onnx is not installed — using Edge TTS for now. "
+                "Install the better local voice: pip install kokoro-onnx "
+                "(or run '%s setup tts').",
+                "superforecasting-agent",
+            )
+            _KOKORO_FALLBACK_WARNED = True
+        provider = "edge"
 
     # User-declared command provider (type: command under tts.providers.<name>)
     # resolves BEFORE the built-in dispatch. Built-in names short-circuit here
