@@ -16,6 +16,7 @@ import type {
 } from '../gatewayTypes.js'
 import { useGitBranch } from '../hooks/useGitBranch.js'
 import { useVirtualHistory } from '../hooks/useVirtualHistory.js'
+import { speakingLabel } from '../lib/audiogram.js'
 import { composerPromptWidth } from '../lib/inputMetrics.js'
 import { appendTranscriptMessage } from '../lib/messages.js'
 import { saveModelCatalog } from '../lib/modelStore.js'
@@ -109,8 +110,21 @@ export function useMainApp(gw: GatewayClient) {
   const [voiceEnabled, setVoiceEnabled] = useState(false)
   const [voiceRecording, setVoiceRecording] = useState(false)
   const [voiceProcessing, setVoiceProcessing] = useState(false)
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false)
+  const [voiceFrame, setVoiceFrame] = useState(0)
   const [voiceRecordKey, setVoiceRecordKey] = useState<ParsedVoiceRecordKey>(DEFAULT_VOICE_RECORD_KEY)
   const [sessionStartedAt, setSessionStartedAt] = useState(() => Date.now())
+
+  // Drive the speaking audiogram: tick a frame (~11fps) while the agent is speaking, and
+  // reset when it stops, so the status bar shows live dancing bars only during playback.
+  useEffect(() => {
+    if (!voiceSpeaking) {
+      setVoiceFrame(0)
+      return
+    }
+    const id = setInterval(() => setVoiceFrame((f) => (f + 1) % 100000), 90)
+    return () => clearInterval(id)
+  }, [voiceSpeaking])
   const [turnStartedAt, setTurnStartedAt] = useState<null | number>(null)
   const [forecastPulseTick, setForecastPulseTick] = useState(0)
   const [bellOnComplete, setBellOnComplete] = useState(false)
@@ -590,6 +604,7 @@ export function useMainApp(gw: GatewayClient) {
       enabled: voiceEnabled,
       recordKey: voiceRecordKey,
       recording: voiceRecording,
+      speaking: voiceSpeaking,
       setProcessing: setVoiceProcessing,
       setRecording: setVoiceRecording,
       setVoiceEnabled
@@ -616,6 +631,7 @@ export function useMainApp(gw: GatewayClient) {
         voice: {
           setProcessing: setVoiceProcessing,
           setRecording: setVoiceRecording,
+          setSpeaking: setVoiceSpeaking,
           setVoiceEnabled
         }
       }),
@@ -941,7 +957,13 @@ export function useMainApp(gw: GatewayClient) {
       turnStartedAt: ui.sid ? turnStartedAt : null,
       // CLI parity: the classic prompt_toolkit status bar shows a red dot
       // on REC (cli.py:_get_voice_status_fragments line 2344).
-      voiceLabel: voiceRecording ? '● REC' : voiceProcessing ? '◉ STT' : `voice ${voiceEnabled ? 'on' : 'off'}`
+      voiceLabel: voiceSpeaking
+        ? speakingLabel(voiceFrame)
+        : voiceRecording
+          ? '● REC'
+          : voiceProcessing
+            ? '◉ STT'
+            : `voice ${voiceEnabled ? 'on' : 'off'}`
     }),
     [
       cwd,
@@ -952,8 +974,10 @@ export function useMainApp(gw: GatewayClient) {
       turnStartedAt,
       ui,
       voiceEnabled,
+      voiceFrame,
       voiceProcessing,
-      voiceRecording
+      voiceRecording,
+      voiceSpeaking
     ]
   )
 

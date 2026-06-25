@@ -92,7 +92,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   const { appendMessage, panel, setHistoryItems } = ctx.transcript
   const { setInput } = ctx.composer
   const { submitRef } = ctx.submission
-  const { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording, setVoiceEnabled } = ctx.voice
+  const { setProcessing: setVoiceProcessing, setRecording: setVoiceRecording, setSpeaking: setVoiceSpeaking, setVoiceEnabled } = ctx.voice
 
   let pendingThinkingStatus = ''
   let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
@@ -445,12 +445,21 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         if (state === 'listening') {
           setVoiceRecording(true)
           setVoiceProcessing(false)
+          setVoiceSpeaking?.(false)
         } else if (state === 'transcribing') {
           setVoiceRecording(false)
           setVoiceProcessing(true)
+          setVoiceSpeaking?.(false)
+        } else if (state === 'speaking') {
+          // The gateway brackets TTS playback with speaking/idle so the status bar can
+          // show a live audiogram for the real duration the agent is talking.
+          setVoiceRecording(false)
+          setVoiceProcessing(false)
+          setVoiceSpeaking?.(true)
         } else {
           setVoiceRecording(false)
           setVoiceProcessing(false)
+          setVoiceSpeaking?.(false)
         }
 
         return

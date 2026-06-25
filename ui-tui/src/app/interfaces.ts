@@ -239,6 +239,7 @@ export interface InputHandlerContext {
     enabled: boolean
     recordKey: ParsedVoiceRecordKey
     recording: boolean
+    speaking: boolean
     setProcessing: StateSetter<boolean>
     setRecording: StateSetter<boolean>
     setVoiceEnabled: StateSetter<boolean>
@@ -279,6 +280,7 @@ export interface GatewayEventHandlerContext {
   voice: {
     setProcessing: StateSetter<boolean>
     setRecording: StateSetter<boolean>
+    setSpeaking: StateSetter<boolean>
     setVoiceEnabled: StateSetter<boolean>
   }
 }

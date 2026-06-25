@@ -4774,11 +4774,11 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 and _voice_tts_enabled()
             ):
                 try:
-                    from hermes_cli.voice import speak_text
+                    from hermes_cli.voice import speak_text  # noqa: F401 — availability check
 
                     spoken = raw
                     threading.Thread(
-                        target=speak_text, args=(spoken,), daemon=True
+                        target=_speak_with_status, args=(spoken, sid), daemon=True
                     ).start()
                 except ImportError:
                     logger.warning("voice TTS skipped: hermes_cli.voice unavailable")
@@ -7278,6 +7278,31 @@ def _voice_emit(event: str, payload: dict | None = None) -> None:
     _emit(event, sid, payload)
 
 
+def _speak_with_status(text: str, sid: str) -> None:
+    """Run TTS on this (daemon) thread, bracketed with voice.status speaking/idle so the
+    TUI can show a 'speaking' indicator + audiogram for the REAL playback duration (the
+    start/stop are tied to speak_text actually opening/closing the speakers)."""
+    try:
+        from hermes_cli.voice import speak_text
+    except Exception:
+        return
+    if sid:
+        try:
+            _emit("voice.status", sid, {"state": "speaking"})
+        except Exception:
+            pass
+    try:
+        speak_text(text)
+    except Exception as e:
+        logger.warning("voice TTS playback error: %s", e)
+    finally:
+        if sid:
+            try:
+                _emit("voice.status", sid, {"state": "idle"})
+            except Exception:
+                pass
+
+
 def _voice_session_key(params: dict | None) -> str | None:
     """session_key for the session this voice RPC belongs to — params.session_id, else
     the active voice-event sid — or None when not resolvable (then VOICE/VOICE_TTS fall
@@ -7529,14 +7554,36 @@ def _(rid, params: dict) -> dict:
     if not text:
         return _err(rid, 4020, "text required")
     try:
-        from hermes_cli.voice import speak_text
+        from hermes_cli.voice import speak_text  # noqa: F401 — availability check
 
-        threading.Thread(target=speak_text, args=(text,), daemon=True).start()
+        sid = _voice_session_key(params) or params.get("session_id") or _voice_event_sid
+        threading.Thread(target=_speak_with_status, args=(text, sid or ""), daemon=True).start()
         return _ok(rid, {"status": "speaking"})
     except ImportError:
         return _err(rid, 5026, "voice module not available")
     except Exception as e:
         return _err(rid, 5026, str(e))
+
+
+@method("voice.stop")
+def _(rid, params: dict) -> dict:
+    """Stop any in-flight TTS playback immediately (the stop/skip hotkey). Terminates the
+    audio player and clears the speaking indicator; safe to call when nothing is playing."""
+    stopped = False
+    try:
+        from tools.voice_mode import stop_playback
+
+        stop_playback()
+        stopped = True
+    except Exception as e:
+        logger.debug("voice.stop: %s", e)
+    sid = params.get("session_id") or _voice_event_sid
+    if sid:
+        try:
+            _emit("voice.status", sid, {"state": "idle"})
+        except Exception:
+            pass
+    return _ok(rid, {"stopped": stopped})
 
 
 # ── Methods: insights ────────────────────────────────────────────────
