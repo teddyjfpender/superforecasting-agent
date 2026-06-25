@@ -30,7 +30,10 @@ from tui_gateway.transport import (
 
 logger = logging.getLogger(__name__)
 
-_hermes_home = get_hermes_home()
+# Path() because get_hermes_home() returns a str when HERMES_HOME is set (e.g. the
+# per-test tempdir) — the workspace-dir mkdir below does Path / subdir, which would
+# TypeError on a str. Fix at the callsite, per tests/conftest.py.
+_hermes_home = Path(get_hermes_home())
 load_forecast_dotenv(
     hermes_home=_hermes_home, project_env=Path(__file__).parent.parent / ".env"
 )
