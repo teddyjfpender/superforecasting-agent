@@ -1186,6 +1186,25 @@ def resolve_runtime_provider(
     persisted default. Other callers can leave it None to preserve existing
     behavior (api_mode derived from config).
     """
+    # Per-tenant context: a multi-tenant host sets agent.tenant_runtime with the current
+    # tenant's {provider, api_key, base_url}. Honour it ONLY where the caller did not pass
+    # an explicit value (explicit args always win). This makes EVERY resolve caller — not
+    # just build_agent — tenant-aware. An unset contextvar is byte-identical to before.
+    if requested is None or explicit_api_key is None or explicit_base_url is None:
+        try:
+            from agent.tenant_runtime import get_credential_context  # lazy: avoid import cycle
+
+            _ctx = get_credential_context() or {}
+        except Exception:
+            _ctx = {}
+        if _ctx:
+            if requested is None:
+                requested = _ctx.get("provider")
+            if explicit_api_key is None:
+                explicit_api_key = _ctx.get("api_key")
+            if explicit_base_url is None:
+                explicit_base_url = _ctx.get("base_url")
+
     requested_provider = resolve_requested_provider(requested)
 
     # Azure Anthropic short-circuit: when explicitly targeting an Azure endpoint
