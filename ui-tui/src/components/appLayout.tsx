@@ -30,8 +30,8 @@ import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
 import { ConversationsRail } from './conversationsRail.js'
 import { DemoVizView } from './demoVizView.js'
+import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
-import { ForecastsWorkspace } from './forecastsWorkspace.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { HelpView } from './helpView.js'
@@ -392,7 +392,7 @@ const ForecastsWorkspacePane = memo(function ForecastsWorkspacePane() {
   const overlay = useStore($overlayState)
 
   return (
-    <ForecastsWorkspace
+    <DeskView
       gw={gw}
       initialId={overlay.forecastsInitialId}
       onClose={() => patchOverlayState({ forecasts: false, forecastsInitialId: null })}

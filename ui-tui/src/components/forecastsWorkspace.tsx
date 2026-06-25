@@ -92,14 +92,14 @@ type LeftRow =
   | { factor: ForecastFactor; kind: 'factor' }
   | { item: ForecastWorkspaceItem; kind: 'forecast' }
 
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+export const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 
 // Distribution values (μ, σ, median, CI bounds, Δμ) are abbreviated with
 // k/M/B/T so a Bitcoin mean reads "73k", not "73000", and the master-list and
 // detail values stay short. Percentages and small values pass through unchanged.
-const trimNum = (value: number): string => compactNumber(value)
+export const trimNum = (value: number): string => compactNumber(value)
 
-const unitSuffix = (units: null | string | undefined): string => {
+export const unitSuffix = (units: null | string | undefined): string => {
   const u = (units ?? '').toLowerCase()
 
   if (u.includes('percent') || u.includes('%')) {
@@ -143,7 +143,7 @@ export const headlineLabel = (item: ForecastWorkspaceItem): string => {
 }
 
 /** Compact one-token headline for the master list (e.g. "59%" or "μ4.23%"). */
-const headlineCompact = (item: ForecastWorkspaceItem): string => {
+export const headlineCompact = (item: ForecastWorkspaceItem): string => {
   if (item.headline_kind === 'distribution' && item.distribution && finite(item.distribution.mean)) {
     return `μ${trimNum(item.distribution.mean)}${unitSuffix(item.units)}`
   }
@@ -158,7 +158,7 @@ const headlineCompact = (item: ForecastWorkspaceItem): string => {
 }
 
 /** Delta in headline units: percent-points for probabilities, outcome units (Δμ) for distributions. */
-const deltaLabel = (item: ForecastWorkspaceItem): string => {
+export const deltaLabel = (item: ForecastWorkspaceItem): string => {
   const d = item.delta
 
   if (!finite(d) || Math.abs(d) < (item.headline_kind === 'distribution' ? 1e-6 : 0.005)) {
@@ -172,7 +172,7 @@ const deltaLabel = (item: ForecastWorkspaceItem): string => {
   return pctDelta(d)
 }
 
-const truncate = (value: string, max: number): string =>
+export const truncate = (value: string, max: number): string =>
   value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`
 
 // Field weights for the desk `/` filter: title dominates, then domain/topics,
@@ -1310,7 +1310,7 @@ const countForLens = (rows: LeftRow[], _lens: null): number =>
   rows.filter(row => row.kind === 'forecast').length
 
 // Health color: green ≥60%, amber ≥45%, red below; withheld (null) → muted.
-const healthColor = (t: Theme, health?: null | number): string =>
+export const healthColor = (t: Theme, health?: null | number): string =>
   !finite(health) ? t.color.muted : health >= 0.6 ? t.color.ok : health >= 0.45 ? t.color.warn : t.color.error
 
 // The ALL FORECASTS lens-clear row.
@@ -1391,7 +1391,7 @@ function ThesisListRow({
 // Sign color for a factor return / contribution: green ≥0, red <0; withheld
 // (null) → muted. A return basket's mean is the headline, so a positive
 // expected return reads green and a negative one red.
-const signColor = (t: Theme, value?: null | number): string =>
+export const signColor = (t: Theme, value?: null | number): string =>
   !finite(value) ? t.color.muted : value >= 0 ? t.color.ok : t.color.error
 
 // One factor row in the lens: "μ<mean> · title · (constituents)". The mean is

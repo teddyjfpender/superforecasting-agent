@@ -209,6 +209,9 @@ const inflationThesis = (): ForecastThesis => ({
   id: 'th_inflation',
   member_count: 2,
   n_eff: 1.3,
+  // The desk lens tab resolves its members from question_ids (server-side
+  // membership); fq_cpi is the present member (fq_unmatched isn't in the book).
+  question_ids: ['fq_cpi', 'fq_unmatched'],
   rho: 0.42,
   score_band: { q05: 41, q50: 54, q95: 67 },
   status: 'active',
@@ -282,6 +285,9 @@ const powerFactor = (): ForecastFactor => ({
   n_eff: 1.4,
   q05: -1.2,
   q50: 4.7,
+  // The desk lens tab resolves its members from question_ids; fq_texas is the
+  // present member in the book (the constituent ids aren't standalone forecasts).
+  question_ids: ['fq_texas'],
   q95: 8.6,
   sd: 2.7,
   title: 'Power-bottleneck basket',
@@ -334,25 +340,34 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 
 const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+// The live Desk is now DeskView (the redesigned, Markets-style lens-tab surface).
+// These render-contract assertions target it; the heavy detail building blocks
+// (ForecastDetail, ThesisDeskRead, FactorDeskRead, AnalystNote, ForecastPacketTail)
+// are still exported from forecastsWorkspace.js and covered directly below.
 const renderWorkspace = async (columns: number, response: ForecastWorkspaceResponse) => {
   process.env.FORECAST_TUI_INLINE = '1'
 
-  const [{ render }, { ForecastsWorkspace }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+  const [{ render }, { DeskView }, { DARK_THEME }, { stripAnsi }, { clearOverlayCache }] = await Promise.all([
     import('@hermes/ink'),
-    import('../components/forecastsWorkspace.js'),
+    import('../components/deskView.js'),
     import('../theme.js'),
-    import('../lib/text.js')
+    import('../lib/text.js'),
+    import('../lib/overlayCache.js')
   ])
 
+  clearOverlayCache()
   const stdout = writeStream(columns, 40)
   const stdin = writeStream(columns, 40, true)
 
   const fakeGw = {
-    request: (_method: string, _params: Record<string, unknown>) => Promise.resolve(response)
-  } as unknown as Parameters<typeof ForecastsWorkspace>[0]['gw']
+    request: (method: string, params: Record<string, unknown>) =>
+      method === 'forecast.question'
+        ? Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+        : Promise.resolve(response)
+  } as unknown as Parameters<typeof DeskView>[0]['gw']
 
   const instance = render(
-    React.createElement(ForecastsWorkspace, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }),
+    React.createElement(DeskView, { gw: fakeGw, onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
@@ -650,16 +665,21 @@ describe('ForecastsWorkspace render', () => {
     delete process.env.FORECAST_TUI_INLINE
   })
 
-  it('renders the master list with counts and forecast rows', async () => {
+  it('renders the desk header counts, lens tabs, an active-tab forecast row, and footer chips', async () => {
     const text = await renderWorkspace(120, fixture())
     expect(text).toContain('FORECASTS')
     expect(text).toContain('2 active')
     expect(text).toContain('13 open alert')
-    // master list shows both forecasts
+    // With no thesis/factor, the forecasts bucket into tag tabs (by topic) plus
+    // the catch-all "All" tab.
+    expect(text).toContain('#elections')
+    expect(text).toContain('All')
+    // The active tab's forecast renders as a list row with the '> ' cursor.
     expect(text).toContain('Texas Senate')
-    expect(text).toContain('CPI-U YoY')
-    // footer hints are present
-    expect(text).toContain('focus detail')
+    // Footer chip shortcuts bar (Markets-style).
+    expect(text).toContain('Lens')
+    expect(text).toContain('Open')
+    expect(text).toContain('Filter')
   })
 
   it('renders the detail pane with charts, panel, causal paths, and decision card', async () => {
@@ -785,8 +805,10 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('missing decision_owner')
   })
 
-  it('master list shows a compact μ label for distribution forecasts', async () => {
-    const text = await renderWorkspace(120, fixture())
+  it('the per-tab list shows a compact μ label for distribution forecasts', async () => {
+    // The CPI distribution forecast is the inflation thesis's member, so the
+    // default (first) lens tab lists it and its μ label renders in the row.
+    const text = await renderWorkspace(120, thesisFixture())
     expect(text).toContain('μ4.23%')
   })
 
@@ -938,17 +960,15 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('possibly non-independent')
   })
 
-  it('renders the thesis lens rows at the top of the left column when theses are present', async () => {
+  it('renders the thesis as the leading lens tab with its member forecasts listed', async () => {
     const text = await renderWorkspace(120, thesisFixture())
-    // The lens section + the ALL clear row + the thesis row are above the book.
-    expect(text).toContain('LENS')
-    expect(text).toContain('ALL FORECASTS')
-    expect(text).toContain('54%') // thesis health
-    expect(text).toContain('Inflation stays sticky through 2026')
-    expect(text).toContain('(2)') // member count badge
-    expect(text).toContain('BOOK')
-    // The forecast book still renders below the lens.
-    expect(text).toContain('Texas Senate')
+    // The thesis is the first (active) lens tab (label truncated by the strip),
+    // ahead of the tag tabs and the catch-all All tab.
+    expect(text).toContain('Inflation stays stick')
+    expect(text).toContain('All')
+    // Its member forecast (CPI) renders in the active-tab list with its μ label.
+    expect(text).toContain('CPI-U YoY')
+    expect(text).toContain('μ4.23%')
   })
 
   it('renders the thesis read with health trend, aggregate stats, members, and caveats', async () => {
@@ -1043,18 +1063,13 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('withheld')
   })
 
-  it('renders the factor lens rows under a FACTORS divider, below the thesis rows and above the book', async () => {
+  it('renders the factor as a lens tab with its member forecasts listed', async () => {
     const text = await renderWorkspace(120, factorFixture())
-    // The lens section + the ALL clear row are present, then a FACTORS divider.
-    expect(text).toContain('LENS')
-    expect(text).toContain('ALL FORECASTS')
-    expect(text).toContain('FACTORS')
-    // The factor row: signed μ mean, title, and the constituent-count badge.
-    expect(text).toContain('μ4.7')
-    expect(text).toContain('Power-bottleneck basket')
-    expect(text).toContain('(2)')
-    // The forecast book still renders below the lens.
-    expect(text).toContain('BOOK')
+    // The factor is a lens tab (label truncated by the strip) alongside the
+    // catch-all All tab.
+    expect(text).toContain('Power-bottleneck bask')
+    expect(text).toContain('All')
+    // Its member forecast (Texas) renders in the active-tab list.
     expect(text).toContain('Texas Senate')
   })
 
