@@ -17,6 +17,7 @@ import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { INLINE_RE, Md, stripInlineMarkup, wikiLinkLabel } from './markdown.js'
+import { ModalOverlay } from './modalOverlay.js'
 
 export const openObsidianView = () => patchOverlayState({ obsidian: true })
 export const closeObsidianView = () => patchOverlayState({ obsidian: false })
@@ -418,6 +419,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const saveTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
   const listScrollRef = useRef<null | ScrollBoxHandle>(null)
   const docScrollRef = useRef<null | ScrollBoxHandle>(null)
+  const chatScrollRef = useRef<null | ScrollBoxHandle>(null)
    
   const blockRefs = useRef<any[]>([])
 
@@ -1730,7 +1732,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                   <Box
                     key={`f:${row.path}`}
                     onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                      if (event.cellIsBlank || editing) {
+                      if (event.cellIsBlank || editing || chat) {
                         return
                       }
 
@@ -1754,7 +1756,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                 <Box
                   key={`n:${row.path}`}
                   onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                    if (event.cellIsBlank || editing) {
+                    if (event.cellIsBlank || editing || chat) {
                       return
                     }
 
@@ -1792,7 +1794,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                     <Box
                       key={h.i}
                       onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                        if (event.cellIsBlank) {
+                        if (event.cellIsBlank || chat) {
                           return
                         }
 
@@ -1871,7 +1873,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                         flexDirection="row"
                         key={i}
                         onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                          if (event.cellIsBlank) {
+                          if (event.cellIsBlank || chat) {
                             return
                           }
 
@@ -1900,7 +1902,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                                 : undefined
                             }
                             cols={Math.max(10, docWidth - 2)}
-                            onWikiLink={(target: string) => jumpTo(resolveTarget(target))}
+                            onWikiLink={(target: string) => { if (!chat) jumpTo(resolveTarget(target)) }}
                             t={t}
                             text={b.text}
                           />
@@ -1926,7 +1928,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                       <Box
                         key={note.rel_path ?? i}
                         onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                          if (event.cellIsBlank) {
+                          if (event.cellIsBlank || chat) {
                             return
                           }
 
@@ -1975,7 +1977,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                       key={i}
                       marginBottom={1}
                       onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                        if (event.cellIsBlank) {
+                        if (event.cellIsBlank || chat) {
                           return
                         }
 
@@ -2059,7 +2061,9 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
   const onActionClick =
     (run: () => void) => (event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-      if (event.cellIsBlank) {
+      // Body mouse handlers no-op while the chat overlay is open (the keyboard is
+      // already trapped by the `if (chat)` branch in useInput).
+      if (event.cellIsBlank || chat) {
         return
       }
 
@@ -2083,13 +2087,13 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       {onSelectKind ? (
         <Box marginBottom={1}>
           <Text color={t.color.muted}>DOCS </Text>
-          <Box onClick={() => onSelectKind('markdown')}>
+          <Box onClick={() => { if (!chat) onSelectKind('markdown') }}>
             <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
               {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
             </Text>
           </Box>
           <Text color={t.color.border}>{'   ·   '}</Text>
-          <Box onClick={() => onSelectKind('latex')}>
+          <Box onClick={() => { if (!chat) onSelectKind('latex') }}>
             <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
               {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
             </Text>
@@ -2155,16 +2159,17 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     </Box>
   )
 
-  // Chat modal — a focused chat window that replaces the content region while
-  // open (so nothing renders behind it: opaque, theme-matched, no bleed). The
-  // OBSIDIAN header + footer stay, so it's clearly still inside the vault.
+  // Chat modal — a focused chat window painted through the shared ModalOverlay
+  // primitive (opaque centred card; the vault body stays visible around it, its
+  // keyboard is trapped by the `if (chat)` branch in useInput and its mouse
+  // handlers are gated `|| chat`). The OBSIDIAN header + footer stay, so it's
+  // clearly still inside the vault.
   let chatOverlay = null
 
   if (chat) {
+    // Width inside the overlay box (ModalOverlay caps at maxWidth=96 and adds a
+    // border + paddingX=2, so usable content is the box minus 6).
     const modalW = Math.max(40, Math.min(cols - 6, 96))
-    // Fixed height so a long reply scrolls inside the card instead of growing
-    // the box unbounded.
-    const modalH = Math.max(8, Math.min(termRows - 6, 32))
     const spinner = SPINNER[spin % SPINNER.length]
     const word = THINKING_WORDS[Math.floor(spin / 8) % THINKING_WORDS.length]
 
@@ -2177,25 +2182,17 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
           : word
 
     chatOverlay = (
-      <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-        <Box
-          borderColor={t.color.accent}
-          borderStyle="round"
-          flexDirection="column"
-          height={modalH}
-          minHeight={0}
-          paddingX={2}
-          paddingY={1}
-          width={modalW}
-        >
-          <Text wrap="truncate-end">
-            <Text bold color={t.color.primary}>
-              Ask the desk
-            </Text>
-            <Text color={t.color.muted}>{currentRel ? `  ·  ${docTitle}` : ''}</Text>
-          </Text>
-
-          <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+      <ModalOverlay
+        cols={cols}
+        maxHeight={32}
+        maxWidth={96}
+        rows={termRows}
+        t={t}
+        tick={now}
+        title={`Ask the desk${currentRel ? `  ·  ${docTitle}` : ''}`}
+      >
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+          <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} ref={chatScrollRef}>
             {chat.turns.length === 0 && !chat.busy ? (
               <Text color={t.color.muted} wrap="wrap">
                 Chat with the desk about this note without leaving Obsidian. It shares your main
@@ -2262,15 +2259,16 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
             </>
           )}
         </Box>
-      </Box>
+      </ModalOverlay>
     )
   }
 
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
-      {chat ? chatOverlay : body}
+      {body}
       {footer}
+      {chat ? chatOverlay : null}
     </Box>
   )
 }

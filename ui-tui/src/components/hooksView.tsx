@@ -235,25 +235,23 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
     }
   })
 
-  if (wizard && data) {
-    return (
-      <HooksWizard
-        cols={cols}
-        editId={wizard.editId}
-        glossary={data.glossary}
-        gw={gw}
-        initial={wizard.initial}
-        onCancel={() => setWizard(null)}
-        onSaved={id => {
-          setWizard(null)
-          setFlash(`saved ${id}`)
-          load()
-        }}
-        rows={termRows}
-        t={t}
-      />
-    )
-  }
+  const wizardOverlay = wizard && data ? (
+    <HooksWizard
+      cols={cols}
+      editId={wizard.editId}
+      glossary={data.glossary}
+      gw={gw}
+      initial={wizard.initial}
+      onCancel={() => setWizard(null)}
+      onSaved={id => {
+        setWizard(null)
+        setFlash(`saved ${id}`)
+        load()
+      }}
+      rows={termRows}
+      t={t}
+    />
+  ) : null
 
   const list = (
     <Box flexDirection="column" flexShrink={0} width={listW}>
@@ -445,7 +443,11 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
         )}
       </Box>
 
-      <FooterChips chips={footerChips} t={t} />
+      <FooterChips chips={footerChips} disabled={!!wizard} t={t} />
+      {/* The body stays mounted; the wizard paints ABOVE it as an absolute overlay.
+          The keyboard is trapped by the `if (wizard) return` in useInput, and the
+          master list is keyboard-driven (no mouse handlers to gate). */}
+      {wizardOverlay}
     </Box>
   )
 }

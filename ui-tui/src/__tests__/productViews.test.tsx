@@ -173,7 +173,7 @@ describe('AddProviderModal', () => {
   const renderModal = async (initial: { categories: string[]; custom: never[]; providers: string[]; watchlist: never[] }) => {
     process.env.FORECAST_TUI_INLINE = '1'
 
-    const [{ render }, { AddProviderModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+    const [{ Box, render }, { AddProviderModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
       import('@hermes/ink'),
       import('../components/addProviderModal.js'),
       import('../theme.js'),
@@ -183,15 +183,21 @@ describe('AddProviderModal', () => {
     const stdout = writeStream(120, 32)
     const stdin = writeStream(120, 32, true)
 
+    // The modal renders through ModalOverlay (an absolute box), so it needs a
+    // sized ancestor to anchor to — exactly how the real view mounts it.
     const instance = render(
-      React.createElement(AddProviderModal, {
-        cols: 120,
-        initial,
-        onCancel: () => undefined,
-        onSaved: () => undefined,
-        rows: 32,
-        t: DARK_THEME
-      }),
+      React.createElement(
+        Box as never,
+        { flexDirection: 'column', height: 32, width: 120 } as never,
+        React.createElement(AddProviderModal, {
+          cols: 120,
+          initial,
+          onCancel: () => undefined,
+          onSaved: () => undefined,
+          rows: 32,
+          t: DARK_THEME
+        })
+      ),
       { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
     )
 
@@ -225,7 +231,7 @@ describe('MarketSearchModal', () => {
   it('Enter adds to the item category; Tab adds to the watchlist', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
-    const [{ render }, { MarketSearchModal }, { DARK_THEME }] = await Promise.all([
+    const [{ Box, render }, { MarketSearchModal }, { DARK_THEME }] = await Promise.all([
       import('@hermes/ink'),
       import('../components/marketSearchModal.js'),
       import('../theme.js')
@@ -236,17 +242,23 @@ describe('MarketSearchModal', () => {
     const toCategory: string[] = []
     const toWatch: string[] = []
 
+    // The modal renders through ModalOverlay (an absolute box), so it needs a
+    // sized ancestor to anchor to — exactly how the real view mounts it.
     const instance = render(
-      React.createElement(MarketSearchModal, {
-        cols: 120,
-        isAdded: () => false,
-        isWatched: () => false,
-        onClose: () => undefined,
-        onToggleCategory: (s: { symbol: string }) => toCategory.push(s.symbol),
-        onToggleWatch: (s: { symbol: string }) => toWatch.push(s.symbol),
-        rows: 28,
-        t: DARK_THEME
-      }),
+      React.createElement(
+        Box as never,
+        { flexDirection: 'column', height: 28, width: 120 } as never,
+        React.createElement(MarketSearchModal, {
+          cols: 120,
+          isAdded: () => false,
+          isWatched: () => false,
+          onClose: () => undefined,
+          onToggleCategory: (s: { symbol: string }) => toCategory.push(s.symbol),
+          onToggleWatch: (s: { symbol: string }) => toWatch.push(s.symbol),
+          rows: 28,
+          t: DARK_THEME
+        })
+      ),
       { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
     )
 

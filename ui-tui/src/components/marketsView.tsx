@@ -1073,123 +1073,93 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     </Box>
   )
 
-  // Empty (Data mode only): no providers and no watchlist.
-  if (mode === 'data' && !hasContent && !modal) {
-    return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <Box alignItems="center" flexGrow={1} justifyContent="center">
-          <Box flexDirection="column" width={Math.min(74, width)}>
-            <Text bold color={t.color.text}>
-              Build your market tape.
-            </Text>
-            <Box marginTop={1}>
-              <Text color={t.color.muted} wrap="wrap">
-                Enable data providers (Yahoo, Frankfurter, CoinGecko and FRED need no key; BLS optional; BEA uses a
-                free key) and pick categories — or search for any ticker and add it to your watchlist.
-              </Text>
-            </Box>
-            <Box marginTop={1}>
-              <Text bold color={t.color.accent}>
-                Press d
-              </Text>
-              <Text color={t.color.text}> to add providers · </Text>
-              <Text bold color={t.color.accent}>
-                /
-              </Text>
-              <Text color={t.color.text}> to search for a ticker.</Text>
-            </Box>
-          </Box>
-        </Box>
-        <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 'd', label: 'Add data', run: () => setModal('providers') }, { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
-          <Text color={t.color.muted} wrap="truncate-end">
-            d add providers · / search · Esc/q close
+  // Empty (Data mode only): no providers and no watchlist. The modal (when set)
+  // paints ABOVE this body as an absolute overlay, so the guard intentionally no
+  // longer hides the empty body.
+  const isEmpty = mode === 'data' && !hasContent
+
+  const emptyBody = isEmpty ? (
+    <Box alignItems="center" flexGrow={1} justifyContent="center">
+      <Box flexDirection="column" width={Math.min(74, width)}>
+        <Text bold color={t.color.text}>
+          Build your market tape.
+        </Text>
+        <Box marginTop={1}>
+          <Text color={t.color.muted} wrap="wrap">
+            Enable data providers (Yahoo, Frankfurter, CoinGecko and FRED need no key; BLS optional; BEA uses a
+            free key) and pick categories — or search for any ticker and add it to your watchlist.
           </Text>
         </Box>
+        <Box marginTop={1}>
+          <Text bold color={t.color.accent}>
+            Press d
+          </Text>
+          <Text color={t.color.text}> to add providers · </Text>
+          <Text bold color={t.color.accent}>
+            /
+          </Text>
+          <Text color={t.color.text}> to search for a ticker.</Text>
+        </Box>
       </Box>
-    )
-  }
+    </Box>
+  ) : null
 
-  if (modal === 'providers') {
-    return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <AddProviderModal
-          cols={cols}
-          initial={config}
-          onCancel={() => setModal('')}
-          onSaved={onProvidersSaved}
-          onSearchSymbols={() => setModal('search')}
-          rows={termRows}
-          t={t}
-        />
-      </Box>
-    )
-  }
+  // The four modals paint THROUGH the shared overlay, stacked as the LAST child of
+  // the view root so the body stays mounted beneath them (deskView pattern).
+  const helpItems: InfoItem[] = [
+    { detail: 'Two modes: Data (live quotes by category) and Models (agentic quant-research). Press m to switch.', label: 'Markets', tone: 'info' },
+    { detail: 'Define a quant question (n). The desk researches data + the web, computes a real model, and presents findings. Open one to read it; c to chat/refine; w to rewrite the writeup on fresh data; e to export the data as JSON; ←/→ for versions; F to spin off a Desk forecast.', label: 'Market Models', tone: 'info' },
+    ...infoItems,
+  ]
 
-  if (modal === 'help') {
-    const helpItems: InfoItem[] = [
-      { detail: 'Two modes: Data (live quotes by category) and Models (agentic quant-research). Press m to switch.', label: 'Markets', tone: 'info' },
-      { detail: 'Define a quant question (n). The desk researches data + the web, computes a real model, and presents findings. Open one to read it; c to chat/refine; w to rewrite the writeup on fresh data; e to export the data as JSON; ←/→ for versions; F to spin off a Desk forecast.', label: 'Market Models', tone: 'info' },
-      ...infoItems,
-    ]
-
-    return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <InfoModal
-          cols={cols}
-          items={helpItems}
-          onClose={() => setModal('')}
-          rows={termRows}
-          subtitle="What this view does, the keys, and how to fix anything that's blank."
-          t={t}
-          title="Markets · Help"
-        />
-      </Box>
-    )
-  }
-
-  if (modal === 'newModel') {
-    return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <NewModelModal
-          cols={cols}
-          initialAsset={mode === 'data' ? selectedRow?.series.symbol ?? '' : ''}
-          onCancel={() => setModal('')}
-          onSubmit={submitNewModel}
-          rows={termRows}
-          t={t}
-        />
-      </Box>
-    )
-  }
-
-  if (modal === 'search') {
-    return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <MarketSearchModal
-          cols={cols}
-          isAdded={isAdded}
-          isWatched={isWatched}
-          onClose={() => setModal('providers')}
-          onToggleCategory={toggleCategory}
-          onToggleWatch={toggleWatch}
-          rows={termRows}
-          t={t}
-        />
-      </Box>
-    )
-  }
+  const modalOverlay =
+    modal === 'providers' ? (
+      <AddProviderModal
+        cols={cols}
+        initial={config}
+        onCancel={() => setModal('')}
+        onSaved={onProvidersSaved}
+        onSearchSymbols={() => setModal('search')}
+        rows={termRows}
+        t={t}
+      />
+    ) : modal === 'help' ? (
+      <InfoModal
+        cols={cols}
+        items={helpItems}
+        onClose={() => setModal('')}
+        rows={termRows}
+        subtitle="What this view does, the keys, and how to fix anything that's blank."
+        t={t}
+        title="Markets · Help"
+      />
+    ) : modal === 'newModel' ? (
+      <NewModelModal
+        cols={cols}
+        initialAsset={mode === 'data' ? selectedRow?.series.symbol ?? '' : ''}
+        onCancel={() => setModal('')}
+        onSubmit={submitNewModel}
+        rows={termRows}
+        t={t}
+      />
+    ) : modal === 'search' ? (
+      <MarketSearchModal
+        cols={cols}
+        isAdded={isAdded}
+        isWatched={isWatched}
+        onClose={() => setModal('providers')}
+        onToggleCategory={toggleCategory}
+        onToggleWatch={toggleWatch}
+        rows={termRows}
+        t={t}
+      />
+    ) : null
 
   const tabs = (
     <NoSelect flexShrink={0} marginBottom={1}>
       <Box>
         {categories.map((cat, i) => (
-          <Box key={cat} onClick={() => { setActive(i); setSel(0) }}>
+          <Box key={cat} onClick={() => { if (!modal) { setActive(i); setSel(0) } }}>
             {i > 0 ? <Text color={t.color.border}>{'  ·  '}</Text> : null}
             <Text bold={i === active} color={i === active ? t.color.accent : t.color.muted}>
               {cat}
@@ -1307,7 +1277,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             const trend = showTrend && quote?.history ? sparkline(quote.history, trendW) : ''
 
             return (
-              <Box key={`${series.provider}:${series.symbol}`} onClick={() => setSel(idx)} width="100%">
+              <Box key={`${series.provider}:${series.symbol}`} onClick={() => { if (!modal) { setSel(idx) } }} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   {keptCols.map(c => {
@@ -1472,10 +1442,17 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'Esc', label: 'Back' }
   ]
 
-  const chips = mode === 'data' ? dataChips : openModelId ? modelOpenChips : modelsListChips
+  const emptyChips: FooterChip[] = [
+    { k: 'd', label: 'Add data', run: () => setModal('providers') },
+    { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } },
+    { k: 'q', label: 'Close', run: onClose }
+  ]
 
-  const footerHint =
-    mode === 'data'
+  const chips = isEmpty ? emptyChips : mode === 'data' ? dataChips : openModelId ? modelOpenChips : modelsListChips
+
+  const footerHint = isEmpty
+    ? 'd add providers · / search · Esc/q close'
+    : mode === 'data'
       ? '↑↓/jk select · Tab/←→ category · a ask agent · m models · / filter · d add data · h help · q close'
       : openModelId
         ? chatOpen
@@ -1487,7 +1464,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} t={t} />
+      <FooterChips chips={chips} disabled={!!modal} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {footerHint}
@@ -1537,7 +1514,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
-      {mode === 'data' ? (
+      {isEmpty ? (
+        emptyBody
+      ) : mode === 'data' ? (
         <>
           {tabs}
           <Box flexDirection="row" flexShrink={0} height={contentHeight}>
@@ -1549,6 +1528,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         modelsBody
       )}
       {footer}
+      {/* The body stays mounted; the modal paints ABOVE it as an absolute overlay.
+          Body clicks are gated while the modal is open (tab/row onClick early-
+          return) so the still-visible tabs/rows can't leak interaction — the
+          keyboard is already trapped by the `if (modal) return` in useInput. */}
+      {modalOverlay}
     </Box>
   )
 }

@@ -7,6 +7,8 @@ import { searchCatalog, searchYahoo } from '../lib/marketSearch.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
+import { ModalOverlay } from './modalOverlay.js'
+
 // Search the market catalog + Yahoo's symbol lookup to find any ticker / line
 // item, then add it to the watchlist. Press `/` in Markets. Mirrors the News /
 // add-provider modal key scheme: ↑↓ move · Enter add · Esc close.
@@ -103,10 +105,13 @@ export function MarketSearchModal({
     return () => clearTimeout(id)
   }, [query])
 
-  const modalW = Math.max(54, Math.min(cols - 4, 100))
-  const modalH = Math.max(14, Math.min(rows - 4, 32))
+  // Mirror ModalOverlay's box sizing so inner widths + the explicit list height
+  // line up with the overlay this renders through.
+  const narrow = cols < 100
+  const modalW = narrow ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 100))
+  const modalH = Math.max(8, Math.min(rows - 6, 32))
   const inner = modalW - 6
-  const listRows = Math.max(4, modalH - 8)
+  const listRows = Math.max(4, modalH - 10)
 
   useInput((ch, key) => {
     if (key.escape) {
@@ -158,16 +163,7 @@ export function MarketSearchModal({
   const windowed = results.slice(Math.max(0, start), Math.max(0, start) + listRows)
 
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-      <Box
-        borderColor={t.color.accent}
-        borderStyle="round"
-        flexDirection="column"
-        height={modalH}
-        paddingX={2}
-        paddingY={1}
-        width={modalW}
-      >
+    <ModalOverlay cols={cols} maxHeight={32} maxWidth={100} rows={rows} t={t}>
         <Box flexShrink={0} justifyContent="space-between">
           <Text bold color={t.color.primary}>
             Search markets
@@ -190,7 +186,7 @@ export function MarketSearchModal({
           <Text color={sem.rule}>{'─'.repeat(inner)}</Text>
         </Box>
 
-        <Box flexDirection="column" flexGrow={1} minHeight={0} overflow="hidden">
+        <Box flexDirection="column" flexShrink={0} height={listRows} overflow="hidden">
           {results.length === 0 ? (
             <Text color={t.color.muted} wrap="truncate-end">
               {query ? (loading ? 'Searching…' : 'No matches — try a ticker or company name.') : 'Type to search the catalog and every Yahoo Finance ticker.'}
@@ -225,7 +221,6 @@ export function MarketSearchModal({
             type to search · ↑↓ move · ⏎ add to category · Tab ★ watchlist · Esc close
           </Text>
         </Box>
-      </Box>
-    </Box>
+    </ModalOverlay>
   )
 }

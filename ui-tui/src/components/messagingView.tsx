@@ -38,6 +38,7 @@ import { resolveSignalConfig } from '../lib/signalStore.js'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ModalOverlay } from './modalOverlay.js'
 import { SignalSetupModal } from './signalSetupModal.js'
 
 export const openMessagingView = () => patchOverlayState({ messaging: true })
@@ -848,24 +849,20 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     </Box>
   )
 
-  // ---- Setup modal (press s) — paints over everything ---------------------
-  if (setup) {
-    return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <SignalSetupModal
-          cols={cols}
-          onCancel={() => setSetup(false)}
-          onConnected={onConnected}
-          rows={termRows}
-          t={t}
-        />
-      </Box>
-    )
-  }
+  // ---- Setup modal (press s) — overlays the body --------------------------
+  // SignalSetupModal renders THROUGH ModalOverlay itself + owns its own keyboard.
+  const setupOverlay = setup ? (
+    <SignalSetupModal cols={cols} onCancel={() => setSetup(false)} onConnected={onConnected} rows={termRows} t={t} />
+  ) : null
 
   // ---- New-message composer (press n): Direct message or new Group -------
-  if (newChat) {
+  // Built as ModalOverlay children (a form — no scrollRef); the view's useInput
+  // owns its keys (Tab/↑↓/⏎/Esc) while `newChat` is open.
+  const newChatOverlay = (() => {
+    if (!newChat) {
+      return null
+    }
+
     const modalW = Math.max(44, Math.min(cols - 4, 72))
     const isGroup = newMode === 'group'
     const numValid = isValidNumber(newNumber)
@@ -897,128 +894,104 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     )
 
     return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-          <Box borderColor={t.color.accent} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1} width={modalW}>
-            <Box justifyContent="space-between">
-              <Text bold color={t.color.primary}>
-                {isGroup ? 'New group' : 'New message'}
-              </Text>
-              <Box>
-                {tab('Direct', !isGroup)}
-                <Text color={t.color.border}>{'   '}</Text>
-                {tab('Group', isGroup)}
-              </Box>
-            </Box>
-            <Box marginTop={1}>
-              <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
-            </Box>
-
-            {isGroup ? (
-              <Box flexDirection="column" marginTop={1}>
-                {field('Name', newName, newField === 'name', 'group name')}
-                {field('Member', newNumber, newField === 'number', '+1… then ⏎ to add')}
-                <Box flexDirection="column" marginTop={1}>
-                  <Text color={t.color.label}>{`Members (${groupMembers.length})`}</Text>
-                  {groupMembers.length === 0 ? (
-                    <Text color={t.color.muted}> none yet — type a number, ⏎ to add</Text>
-                  ) : (
-                    groupMembers.slice(0, 8).map(m => (
-                      <Text color={t.color.text} key={m} wrap="truncate-end">
-                        {`  • ${contactBook[m]?.name || m}`}
-                        {contactBook[m]?.name ? <Text color={t.color.muted}>{`  ${m}`}</Text> : null}
-                      </Text>
-                    ))
-                  )}
-                  {groupMembers.length > 8 ? (
-                    <Text color={t.color.muted}>{`  +${groupMembers.length - 8} more`}</Text>
-                  ) : null}
-                </Box>
-              </Box>
-            ) : (
-              <Box flexDirection="column" marginTop={1}>
-                {field('Number', newNumber, newField === 'number', '+12674553945')}
-                {field('Name', newName, newField === 'name', 'optional')}
-                <Box marginTop={1}>
-                  <Text color={newNumber ? (numValid ? t.color.ok : t.color.error) : t.color.muted} wrap="truncate-end">
-                    {newNumber
-                      ? numValid
-                        ? `${ICON.ok} valid Signal number`
-                        : 'needs E.164 format, e.g. +12674553945'
-                      : 'Enter a phone number in E.164 format (with country code).'}
-                  </Text>
-                </Box>
-              </Box>
-            )}
-
-            <Box marginTop={1}>
-              <Text color={t.color.muted} wrap="truncate-end">
-                {isGroup
-                  ? '⏎ add member · ⏎ (empty) create · ⌫ remove last · ↑↓ field · Tab direct · Esc cancel'
-                  : '⏎ start chat · ↑↓ field · Tab group · Esc cancel'}
-              </Text>
+      <ModalOverlay cols={cols} maxHeight={isGroup ? 22 : 16} maxWidth={modalW} rows={termRows} t={t}>
+        <Box flexDirection="column" flexGrow={1} minHeight={0}>
+          <Box justifyContent="space-between">
+            <Text bold color={t.color.primary}>
+              {isGroup ? 'New group' : 'New message'}
+            </Text>
+            <Box>
+              {tab('Direct', !isGroup)}
+              <Text color={t.color.border}>{'   '}</Text>
+              {tab('Group', isGroup)}
             </Box>
           </Box>
+          <Box marginTop={1}>
+            <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
+          </Box>
+
+          {isGroup ? (
+            <Box flexDirection="column" marginTop={1}>
+              {field('Name', newName, newField === 'name', 'group name')}
+              {field('Member', newNumber, newField === 'number', '+1… then ⏎ to add')}
+              <Box flexDirection="column" marginTop={1}>
+                <Text color={t.color.label}>{`Members (${groupMembers.length})`}</Text>
+                {groupMembers.length === 0 ? (
+                  <Text color={t.color.muted}> none yet — type a number, ⏎ to add</Text>
+                ) : (
+                  groupMembers.slice(0, 8).map(m => (
+                    <Text color={t.color.text} key={m} wrap="truncate-end">
+                      {`  • ${contactBook[m]?.name || m}`}
+                      {contactBook[m]?.name ? <Text color={t.color.muted}>{`  ${m}`}</Text> : null}
+                    </Text>
+                  ))
+                )}
+                {groupMembers.length > 8 ? (
+                  <Text color={t.color.muted}>{`  +${groupMembers.length - 8} more`}</Text>
+                ) : null}
+              </Box>
+            </Box>
+          ) : (
+            <Box flexDirection="column" marginTop={1}>
+              {field('Number', newNumber, newField === 'number', '+12674553945')}
+              {field('Name', newName, newField === 'name', 'optional')}
+              <Box marginTop={1}>
+                <Text color={newNumber ? (numValid ? t.color.ok : t.color.error) : t.color.muted} wrap="truncate-end">
+                  {newNumber
+                    ? numValid
+                      ? `${ICON.ok} valid Signal number`
+                      : 'needs E.164 format, e.g. +12674553945'
+                    : 'Enter a phone number in E.164 format (with country code).'}
+                </Text>
+              </Box>
+            </Box>
+          )}
+
+          <Box marginTop={1}>
+            <Text color={t.color.muted} wrap="truncate-end">
+              {isGroup
+                ? '⏎ add member · ⏎ (empty) create · ⌫ remove last · ↑↓ field · Tab direct · Esc cancel'
+                : '⏎ start chat · ↑↓ field · Tab group · Esc cancel'}
+            </Text>
+          </Box>
         </Box>
-      </Box>
+      </ModalOverlay>
     )
-  }
+  })()
 
   // ---- Contact card (press c) ---------------------------------------------
-  if (contactView && activeConv) {
-    const modalW = Math.max(40, Math.min(cols - 4, 70))
-    const saved = contactBook[activeConv.chatId]
-
-    const row = (label: string, value: string, color = t.color.text) => (
-      <Text wrap="truncate-end">
-        <Text color={t.color.label}>{label.padEnd(9)}</Text>
-        <Text color={value ? color : t.color.muted}>{value || '—'}</Text>
-      </Text>
-    )
-
-    return (
-      <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
-        {header}
-        <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-          <Box borderColor={t.color.accent} borderStyle="round" flexDirection="column" paddingX={2} paddingY={1} width={modalW}>
-            <Text bold color={t.color.primary}>
-              Contact
+  // Contact card — an overlay (NOT a body replacement) so the conversation stays
+  // visible behind it, consistent with the rest of the views.
+  const contactOverlay =
+    contactView && activeConv
+      ? (() => {
+          const saved = contactBook[activeConv.chatId]
+          const row = (label: string, value: string, color = t.color.text) => (
+            <Text wrap="truncate-end">
+              <Text color={t.color.label}>{label.padEnd(9)}</Text>
+              <Text color={value ? color : t.color.muted}>{value || '—'}</Text>
             </Text>
-            <Box marginTop={1}>
-              <Text color={t.color.border}>{'─'.repeat(modalW - 6)}</Text>
-            </Box>
-            <Box flexDirection="column" marginTop={1}>
-              {/* Editable name (the only mutable field). */}
-              <Box>
-                <Text bold color={t.color.accent}>
-                  {'Name'.padEnd(9)}
-                </Text>
-                <Text color={t.color.muted}>{'› '}</Text>
-                <Text color={t.color.text}>{editName}</Text>
-                {live ? (
-                  <Text color={t.color.text} inverse>
-                    {' '}
+          )
+          return (
+            <ModalOverlay cols={cols} footerHint="⏎ save name · Esc cancel" maxHeight={12} maxWidth={70} rows={termRows} t={t} title="Contact">
+              <Box flexDirection="column">
+                <Box>
+                  <Text bold color={t.color.accent}>
+                    {'Name'.padEnd(9)}
                   </Text>
-                ) : (
-                  <Text>{' '}</Text>
-                )}
-                {!editName ? <Text color={t.color.muted}> (no name set)</Text> : null}
+                  <Text color={t.color.muted}>{'› '}</Text>
+                  <Text color={t.color.text}>{editName}</Text>
+                  {live ? <Text color={t.color.text} inverse>{' '}</Text> : <Text>{' '}</Text>}
+                  {!editName ? <Text color={t.color.muted}> (no name set)</Text> : null}
+                </Box>
+                {row('Number', activeConv.chatId.startsWith('group:') ? '' : saved?.number || activeConv.chatId)}
+                {row(activeConv.chatId.startsWith('group:') ? 'Group' : 'Chat id', activeConv.chatId, t.color.muted)}
+                {row('Added', saved?.addedAt ? new Date(saved.addedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '', t.color.muted)}
               </Box>
-              {row('Number', activeConv.chatId.startsWith('group:') ? '' : saved?.number || activeConv.chatId)}
-              {row(activeConv.chatId.startsWith('group:') ? 'Group' : 'Chat id', activeConv.chatId, t.color.muted)}
-              {row('Added', saved?.addedAt ? new Date(saved.addedAt).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '', t.color.muted)}
-            </Box>
-            <Box marginTop={1}>
-              <Text color={t.color.muted} wrap="truncate-end">
-                ⏎ save name · Esc cancel
-              </Text>
-            </Box>
-          </Box>
-        </Box>
-      </Box>
-    )
-  }
+            </ModalOverlay>
+          )
+        })()
+      : null
 
   // ---- Not configured: prompt the in-TUI setup ----------------------------
   if (!cfg) {
@@ -1045,12 +1018,14 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'q', label: 'Close', run: onClose }]} t={t} />
+          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'q', label: 'Close', run: onClose }]} disabled={setup} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
             s set up Signal · Esc/q close
           </Text>
         </Box>
+        {/* Modals overlay even the not-configured prompt (setup opens from here). */}
+        {setup ? setupOverlay : newChat ? newChatOverlay : null}
       </Box>
     )
   }
@@ -1089,7 +1064,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             const prefix = on ? '▸ ' : isUnread ? '● ' : '  '
 
             return (
-              <Box key={conv.chatId} onClick={() => { setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
+              <Box key={conv.chatId} onClick={() => { if (setup || newChat || contactView) return; setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
                 <Text wrap="truncate-end">
                   <Text bold={isUnread} color={on ? t.color.accent : isUnread ? t.color.ok : t.color.border}>
                     {prefix}
@@ -1172,7 +1147,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                     </Text>
                   ) : null}
                   {m.attachments > 0 ? (
-                    <Box onClick={() => openMessageAttachment(m)}>
+                    <Box onClick={() => { if (!setup && !newChat && !contactView) openMessageAttachment(m) }}>
                       <Text color={t.color.accent} wrap="truncate-end">
                         {attachmentLabel(m)}
                         {(m.files ?? []).some(f => f.id) ? <Text color={t.color.muted}> · open</Text> : null}
@@ -1221,7 +1196,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} t={t} />
+      <FooterChips chips={chips} disabled={setup || newChat || contactView} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {composing
@@ -1239,6 +1214,10 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         {thread}
       </Box>
       {footer}
+      {/* Modals overlay the body (stacked LAST + absolutely positioned by
+          ModalOverlay). The keyboard is trapped by the `if (setup)`/`if (newChat)`/
+          `if (contactView)` early-returns in useInput; body mouse handlers gated above. */}
+      {setup ? setupOverlay : newChat ? newChatOverlay : contactView ? contactOverlay : null}
     </Box>
   )
 }

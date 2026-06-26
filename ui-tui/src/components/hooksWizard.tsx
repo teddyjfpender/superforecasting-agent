@@ -6,6 +6,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ModalOverlay } from './modalOverlay.js'
 
 // Guided author/edit flow for a user-defined forecast hook rule. Builds a flat
 // all-of rule (id -> description -> [signal op value] AND-loop -> severity ->
@@ -108,8 +109,22 @@ export function HooksWizard({
     return () => clearInterval(tid)
   }, [])
 
-  const modalW = Math.max(56, Math.min(cols - 4, 104))
-  const modalH = Math.max(18, Math.min(rows - 4, 32))
+  // Mirror ModalOverlay's box width so inner field/wrap widths stay in bounds
+  // (overlay caps width at maxWidth on wide terminals, full-bleed when narrow).
+  const overlayW = cols < 100 ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 104))
+  const contentW = Math.max(20, overlayW - 6)
+  // Per-step height so the box hugs the current step (long choice lists get more).
+  const stepRows =
+    step === 'signal'
+      ? glossary.length + 1
+      : step === 'remediation'
+        ? REMEDIATIONS.length + 1
+        : step === 'preview'
+          ? 6
+          : step === 'severity' || step === 'op'
+            ? 5
+            : 3
+  const maxHeight = Math.min(rows - 4, 9 + stepRows + (conditions.length ? 1 : 0) + (error ? 2 : 0))
 
   const sigKind = (name: string): string => glossary.find(g => g.name === name)?.kind ?? 'number'
   const opsForDraft = draft.signal && sigKind(draft.signal) === 'bool' ? BOOL_OPS : NUM_OPS
@@ -374,7 +389,7 @@ export function HooksWizard({
   })
 
   const field = (placeholder: string) => (
-    <Box marginTop={1} width={Math.max(20, modalW - 6)}>
+    <Box marginTop={1} width={contentW}>
       <Text wrap="wrap">
         <Text color={t.color.muted}>{'› '}</Text>
         <Text color={t.color.text}>{text}</Text>
@@ -425,11 +440,15 @@ export function HooksWizard({
         : [{ k: '⏎', label: 'Next' }, { k: 'Esc', label: 'Cancel' }]
 
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-      <Box borderColor={t.color.accent} borderStyle="round" flexDirection="column" height={modalH} paddingX={2} paddingY={1} width={modalW}>
-        <Text bold color={t.color.primary}>
-          {editId ? `EDIT HOOK RULE · ${editId}` : 'NEW HOOK RULE'}
-        </Text>
+    <ModalOverlay
+      cols={cols}
+      maxHeight={maxHeight}
+      maxWidth={104}
+      rows={rows}
+      t={t}
+      title={editId ? `EDIT HOOK RULE · ${editId}` : 'NEW HOOK RULE'}
+    >
+      <Box flexDirection="column" flexGrow={1} minHeight={0}>
         {condSummary ? (
           <Text color={t.color.muted} wrap="truncate-end">
             {condSummary}
@@ -494,6 +513,6 @@ export function HooksWizard({
 
         <FooterChips chips={chips} t={t} />
       </Box>
-    </Box>
+    </ModalOverlay>
   )
 }

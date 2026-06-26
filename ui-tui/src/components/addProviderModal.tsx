@@ -7,6 +7,8 @@ import { type MarketConfig, saveMarketConfig } from '../lib/marketStore.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
+import { ModalOverlay } from './modalOverlay.js'
+
 // Markets onboarding (press `a`): enable data providers (entering + securely
 // saving an API key where the provider needs one) and pick which categories to
 // watch — the full breadth, not just Indices/FX/Crypto/Commodities.
@@ -48,8 +50,11 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
   const [keyInput, setKeyInput] = useState('')
   const [flash, setFlash] = useState('')
 
-  const modalW = Math.max(54, Math.min(cols - 4, 104))
-  const modalH = Math.max(16, Math.min(rows - 4, 34))
+  // Mirror ModalOverlay's box sizing so the inner widths/heights line up with the
+  // overlay it renders through.
+  const narrow = cols < 100
+  const modalW = narrow ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 104))
+  const modalH = Math.max(8, Math.min(rows - 6, 34))
 
   const hasKey = (key: string): boolean => {
     const env = providerByKey(key)?.keyEnv
@@ -254,16 +259,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
       : `Tab/←→ switch · ↑↓ move · ⏎ toggle${keyAction}${onSearchSymbols ? ' · / search symbols' : ''} · Esc save & close`
 
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-      <Box
-        borderColor={t.color.accent}
-        borderStyle="round"
-        flexDirection="column"
-        height={modalH}
-        paddingX={2}
-        paddingY={1}
-        width={modalW}
-      >
+    <ModalOverlay cols={cols} maxHeight={34} maxWidth={104} rows={rows} t={t}>
         <Box flexShrink={0} justifyContent="space-between">
           <Text bold color={t.color.primary}>
             Add market data
@@ -342,7 +338,6 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
             {footer}
           </Text>
         </Box>
-      </Box>
-    </Box>
+    </ModalOverlay>
   )
 }

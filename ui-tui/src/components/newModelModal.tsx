@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ModalOverlay } from './modalOverlay.js'
 
 // New-model wizard (clone of questionOnboardModal's step machine): capture a
 // quant question + key params, then hand them to the gateway via onSubmit.
@@ -64,8 +65,9 @@ export function NewModelModal({
     return () => clearInterval(id)
   }, [])
 
-  const modalW = Math.max(54, Math.min(cols - 4, 100))
-  const modalH = Math.max(16, Math.min(rows - 4, 30))
+  // Mirror ModalOverlay's box width so the field widths line up with the overlay.
+  const narrow = cols < 100
+  const modalW = narrow ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 100))
 
   const isChoice = step === 'analysis' || step === 'depth'
   const choices = step === 'analysis' ? ANALYSIS_CHOICES : step === 'depth' ? DEPTH_CHOICES : []
@@ -216,12 +218,8 @@ export function NewModelModal({
       : [{ k: '⏎', label: 'Next' }, { k: 'Esc', label: 'Cancel' }]
 
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-      <Box borderColor={t.color.accent} borderStyle="round" flexDirection="column" height={modalH} paddingX={2} paddingY={1} width={modalW}>
-        <Text bold color={t.color.primary}>
-          NEW MARKET MODEL
-        </Text>
-        <Box flexDirection="column" flexGrow={1} marginTop={1}>
+    <ModalOverlay cols={cols} maxHeight={24} maxWidth={100} rows={rows} t={t} title="NEW MARKET MODEL">
+        <Box flexDirection="column" flexGrow={1}>
           <Text color={t.color.label}>{STEP_PROMPT[step]}</Text>
 
           {step === 'question' ? field('how has GPU compute-per-chip growth driven NVIDIA revenue…') : null}
@@ -261,7 +259,6 @@ export function NewModelModal({
         </Box>
 
         <FooterChips chips={chips} t={t} />
-      </Box>
-    </Box>
+    </ModalOverlay>
   )
 }

@@ -23,11 +23,13 @@ const onChipClick =
     run()
   }
 
-export function FooterChips({ chips, t }: { chips: FooterChip[]; t: Theme }) {
+// `disabled` gates EVERY chip's mouse `run` (used while a modal overlay is open so
+// the still-visible footer can't leak clicks past the keyboard trap).
+export function FooterChips({ chips, disabled = false, t }: { chips: FooterChip[]; disabled?: boolean; t: Theme }) {
   return (
     <Box>
       {chips.map(chip => (
-        <Box key={`${chip.k}:${chip.label}`} marginRight={2} onClick={chip.run ? onChipClick(chip.run) : undefined}>
+        <Box key={`${chip.k}:${chip.label}`} marginRight={2} onClick={!disabled && chip.run ? onChipClick(chip.run) : undefined}>
           <Text color={t.color.muted}>[</Text>
           <Text bold color={t.color.accent}>
             {chip.k}

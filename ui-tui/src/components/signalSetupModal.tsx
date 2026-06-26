@@ -22,6 +22,8 @@ import {
 import { qrColors } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
+import { ModalOverlay } from './modalOverlay.js'
+
 // In-TUI Signal onboarding wizard, painted over the Messaging view (press `s`).
 // Detects/installs signal-cli, then either links this device to an existing
 // account (renders the scan QR) or registers a new number (captcha + code), and
@@ -73,7 +75,9 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
   }, [])
 
   const modalW = Math.max(54, Math.min(cols - 4, 100))
-  const modalH = Math.max(16, Math.min(rows - 4, 36))
+  // Mirror ModalOverlay's box height (rows-6) so the internal log windowing matches
+  // the actual content region and the bottom rows aren't clipped.
+  const modalH = Math.max(16, Math.min(rows - 6, 36))
 
   const javaOk = java.found && parseMajorVersion(java.version) >= 17
   const ready = cli.found && javaOk
@@ -453,16 +457,8 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
   }
 
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-      <Box
-        borderColor={t.color.accent}
-        borderStyle="round"
-        flexDirection="column"
-        height={modalH}
-        paddingX={2}
-        paddingY={1}
-        width={modalW}
-      >
+    <ModalOverlay cols={cols} maxHeight={modalH} maxWidth={modalW} rows={rows} t={t}>
+      <Box flexDirection="column" flexGrow={1} minHeight={0}>
         <Box flexShrink={0} justifyContent="space-between">
           <Text bold color={t.color.primary}>
             Connect Signal
@@ -485,6 +481,6 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
           </Text>
         </Box>
       </Box>
-    </Box>
+    </ModalOverlay>
   )
 }

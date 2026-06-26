@@ -5,6 +5,8 @@ import { ICON } from '../lib/icons.js'
 import { ensureFeedUrlScheme, feedHost } from '../lib/newsFeedStore.js'
 import type { Theme } from '../theme.js'
 
+import { ModalOverlay } from './modalOverlay.js'
+
 // Presentational "Add a feed" modal. State + key handling live in NewsView
 // (single useInput); this just paints the current view-model: a search line, a
 // scrollable CATEGORIES rail to filter, a windowed RESULTS list with
@@ -69,15 +71,20 @@ export function AddFeedModal({
   subscribedCount,
   t
 }: AddFeedModalProps) {
-  const modalW = Math.max(54, Math.min(cols - 4, 112))
-  const modalH = Math.max(14, Math.min(rows - 4, 38))
+  // Mirror ModalOverlay's own box sizing so the windowed body math is exact.
+  // ModalOverlay: modalW = narrow ? max(40, cols−2) : max(48, min(cols−6, maxWidth));
+  //               modalH = max(8, min(rows−6, maxHeight)). We pass maxWidth/maxHeight
+  // below, so recompute the same numbers here for the inner content layout.
+  const maxWidth = 112
+  const maxHeight = 38
+  const modalW = cols < 100 ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, maxWidth))
+  const modalH = Math.max(8, Math.min(rows - 6, maxHeight))
   const inner = modalW - 6 // border (2) + paddingX (4)
 
-  // Exact body height so windowed rows never overflow into the hidden region
-  // (which would clip the active row and make its ▸ cursor vanish):
-  //   modalH − border(2) − paddingY(2) − title(1) − search(2) − rule(2)
-  //          − url/rule(1) − footer(2) = modalH − 12.
-  const bodyRows = Math.max(3, modalH - 12)
+  // ModalOverlay's content region (no title/footer passed to it) = modalH − 4
+  // (border 2 + paddingY 2). Inside it we paint title(1) + search(2) + rule(2)
+  // + url/rule(1) + footer(2) = 8 chrome rows, leaving the body its rows.
+  const bodyRows = Math.max(3, modalH - 4 - 8)
   // The CATEGORIES rail spends its top row on the label, so it shows one fewer.
   const catRows = Math.max(2, bodyRows - 1)
 
@@ -98,16 +105,8 @@ export function AddFeedModal({
   }
 
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-      <Box
-        borderColor={t.color.accent}
-        borderStyle="round"
-        flexDirection="column"
-        height={modalH}
-        paddingX={2}
-        paddingY={1}
-        width={modalW}
-      >
+    <ModalOverlay cols={cols} maxHeight={maxHeight} maxWidth={maxWidth} rows={rows} t={t}>
+      <Box flexDirection="column" flexGrow={1} minHeight={0}>
         {/* Title + counters */}
         <Box flexShrink={0} justifyContent="space-between">
           <Text bold color={t.color.primary}>
@@ -219,6 +218,6 @@ export function AddFeedModal({
           </Text>
         </Box>
       </Box>
-    </Box>
+    </ModalOverlay>
   )
 }

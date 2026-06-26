@@ -1,7 +1,10 @@
-import { Box, Text, useInput } from '@hermes/ink'
+import { Box, type ScrollBoxHandle, Text, useInput } from '@hermes/ink'
+import { useRef } from 'react'
 
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
+
+import { ModalOverlay } from './modalOverlay.js'
 
 // A small, reusable "Information" modal (open with `i`) so a view can surface
 // warnings and tips WITHOUT a persistent header line that steals footer rows.
@@ -27,6 +30,7 @@ interface InfoModalProps {
 
 export function InfoModal({ cols, items, onClose, rows, subtitle, t, title }: InfoModalProps) {
   const sem = semantics(t)
+  const scrollRef = useRef<null | ScrollBoxHandle>(null)
 
   useInput((ch, key) => {
     if (key.escape || key.return || ch === 'h' || ch === 'i' || ch === 'q') {
@@ -34,54 +38,36 @@ export function InfoModal({ cols, items, onClose, rows, subtitle, t, title }: In
     }
   })
 
-  const modalW = Math.max(48, Math.min(cols - 4, 96))
-  const modalH = Math.max(10, Math.min(rows - 4, 28))
-
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
-      <Box
-        borderColor={t.color.accent}
-        borderStyle="round"
-        flexDirection="column"
-        height={modalH}
-        paddingX={2}
-        paddingY={1}
-        width={modalW}
-      >
-        <Text bold color={t.color.primary}>
-          {title}
+    <ModalOverlay cols={cols} footerHint="Esc close" maxHeight={28} maxWidth={96} rows={rows} scrollRef={scrollRef} t={t} title={title}>
+      {subtitle ? (
+        <Text color={t.color.muted} wrap="wrap">
+          {subtitle}
         </Text>
-        {subtitle ? (
-          <Text color={t.color.muted} wrap="wrap">
-            {subtitle}
-          </Text>
-        ) : null}
+      ) : null}
 
-        <Box flexDirection="column" flexGrow={1} marginTop={1} overflow="hidden">
-          {items.length === 0 ? (
-            <Text color={sem.up}>✓ Everything's configured — no warnings for this view.</Text>
-          ) : (
-            items.map((it, i) => (
-              <Box flexDirection="column" key={i} marginBottom={1}>
-                <Text wrap="truncate-end">
-                  <Text color={it.tone === 'warn' ? sem.star : t.color.accent}>{it.tone === 'warn' ? '[!] ' : '[i] '}</Text>
-                  <Text bold color={t.color.text}>
-                    {it.label}
-                  </Text>
+      <Box flexDirection="column" marginTop={subtitle ? 1 : 0}>
+        {items.length === 0 ? (
+          <Text color={sem.up}>✓ Everything's configured — no warnings for this view.</Text>
+        ) : (
+          items.map((it, i) => (
+            <Box flexDirection="column" key={i} marginBottom={1}>
+              <Text wrap="truncate-end">
+                <Text color={it.tone === 'warn' ? sem.star : t.color.accent}>{it.tone === 'warn' ? '[!] ' : '[i] '}</Text>
+                <Text bold color={t.color.text}>
+                  {it.label}
                 </Text>
-                {it.detail ? (
-                  <Text color={t.color.muted} wrap="wrap">
-                    {'   '}
-                    {it.detail}
-                  </Text>
-                ) : null}
-              </Box>
-            ))
-          )}
-        </Box>
-
-        <Text color={t.color.muted}>Esc close</Text>
+              </Text>
+              {it.detail ? (
+                <Text color={t.color.muted} wrap="wrap">
+                  {'   '}
+                  {it.detail}
+                </Text>
+              ) : null}
+            </Box>
+          ))
+        )}
       </Box>
-    </Box>
+    </ModalOverlay>
   )
 }

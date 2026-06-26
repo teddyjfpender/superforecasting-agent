@@ -639,6 +639,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               justifyContent="space-between"
               key={src}
               onClick={() => {
+                if (adding) return
                 setSource(i)
                 setSel(0)
               }}
@@ -689,7 +690,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             const provider = providerName(article.feedTitle)
 
             return (
-              <Box key={`${article.feedUrl}:${idx}`} onClick={() => setSel(idx)} width="100%">
+              <Box key={`${article.feedUrl}:${idx}`} onClick={() => { if (!adding) setSel(idx) }} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   <Text color={sem.subtle}>{when} </Text>
@@ -805,7 +806,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} t={t} />
+      <FooterChips chips={chips} disabled={adding} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         ↑↓/jk browse · / search · Tab/←→ source · Enter open · a add feed · r refresh · Esc/q close
@@ -816,6 +817,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
+      <Box flexDirection="row" flexShrink={0} height={contentHeight}>
+        {rail}
+        {list}
+        {reader}
+      </Box>
+      {footer}
+      {/* Body stays mounted; the overlay paints over it (its own absolute box).
+          Body mouse handlers are gated while `adding` (rail/list onClick → no-op),
+          and the keyboard is trapped by the `if (adding)` branch in useInput. */}
       {adding ? (
         <AddFeedModal
           categories={modalCategories}
@@ -838,14 +848,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
           subscribedCount={subscribed.length}
           t={t}
         />
-      ) : (
-        <Box flexDirection="row" flexShrink={0} height={contentHeight}>
-          {rail}
-          {list}
-          {reader}
-        </Box>
-      )}
-      {footer}
+      ) : null}
     </Box>
   )
 }
