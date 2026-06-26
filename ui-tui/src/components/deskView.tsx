@@ -191,8 +191,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const tabItems = useMemo(() => forecastsForTab(activeTab, items), [activeTab, items])
   const visible = useMemo(() => filterRanked(tabItems, query, FORECAST_SEARCH_FIELDS), [tabItems, query])
 
-  const clampedSel = Math.min(sel, Math.max(0, visible.length - 1))
-  const selected = visible[clampedSel] ?? null
+  // On a thesis/factor tab, a "lens row" leads the section (row 0) — a click/Enter
+  // into the lens's own aggregate read. The cursor space is [lens?, ...forecasts].
+  const hasLens = !!(refThesis || refFactor)
+  const lensOffset = hasLens ? 1 : 0
+  const rowCount = lensOffset + visible.length
+  const clampedSel = Math.min(sel, Math.max(0, rowCount - 1))
+  const lensActive = hasLens && clampedSel === 0
+  const selected = lensActive ? null : visible[clampedSel - lensOffset] ?? null
   const selectedId = selected?.id ?? null
 
   useEffect(() => {
@@ -208,9 +214,18 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       const idx = tabs[ti].forecastIds.indexOf(pending)
 
       if (idx >= 0) {
+        // Match the render-time lensOffset exactly: only offset when the tab's ref
+        // actually resolves to a thesis/factor (not just by kind), else the cursor
+        // could overshoot by one on a malformed payload.
+        const tk = tabs[ti]
+        const off =
+          (tk.kind === 'thesis' && theses.some(h => h.id === tk.refId)) ||
+          (tk.kind === 'factor' && factors.some(f => f.id === tk.refId))
+            ? 1
+            : 0
         initialIdRef.current = null
         setTab(ti)
-        setSel(idx)
+        setSel(idx + off)
         setModalOpen(true)
 
         return
@@ -405,7 +420,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     if (key.return) {
-      if (selected) {
+      if (lensActive || selected) {
         return setModalOpen(true)
       }
 
@@ -417,7 +432,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, visible.length - 1), i + 1))
+      return setSel(i => Math.min(Math.max(0, rowCount - 1), i + 1))
     }
 
     if (ch === 'g') {
@@ -425,7 +440,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     if (ch === 'G') {
-      return setSel(Math.max(0, visible.length - 1))
+      return setSel(Math.max(0, rowCount - 1))
     }
   })
 
@@ -512,16 +527,32 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const listWidth = Math.max(28, width - panelWidth - 2)
   const visibleRows = Math.max(3, termRows - 12)
 
+  const listW = wide ? listWidth : cols - 2
   const list = (
-    <DeskForecastList
-      cursor={clampedSel}
-      empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
-      items={visible}
-      onSelect={i => setSel(i)}
-      t={t}
-      visibleRows={visibleRows}
-      width={wide ? listWidth : cols - 2}
-    />
+    <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+      {hasLens ? (
+        <DeskLensRow
+          active={lensActive}
+          onOpen={() => {
+            setSel(0)
+            setModalOpen(true)
+          }}
+          refFactor={refFactor}
+          refThesis={refThesis}
+          t={t}
+          width={listW}
+        />
+      ) : null}
+      <DeskForecastList
+        cursor={lensActive ? -1 : clampedSel - lensOffset}
+        empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
+        items={visible}
+        onSelect={i => setSel(i + lensOffset)}
+        t={t}
+        visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
+        width={listW}
+      />
+    </Box>
   )
 
   const panel = (
@@ -591,7 +622,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       scrollRef={modalScrollRef}
       t={t}
       tick={now}
-      title={selected?.title ?? selected?.id ?? 'Forecast'}
+      title={lensActive ? (refThesis?.title ?? refFactor?.title ?? 'Lens') : (selected?.title ?? selected?.id ?? 'Forecast')}
       width={cols}
     >
       {refRead ? (
@@ -615,7 +646,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     : [
         { k: '↑↓', label: 'Select' },
         { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
-        { k: '⏎', label: 'Open', run: () => selected && setModalOpen(true) },
+        { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
         { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
         { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · / filter · q close') },
         { k: 'q', label: 'Close', run: onClose }
@@ -793,6 +824,55 @@ export function DeskSummary({
           ⏎ open full detail
         </Text>
       </Box>
+    </Box>
+  )
+}
+
+// The section-leading row on a thesis/factor lens tab: the lens itself, as a
+// clickable row at the top of the list. Click or Enter opens the lens's full
+// aggregate read (ThesisDeskRead/FactorDeskRead) in the modal.
+function DeskLensRow({
+  active,
+  onOpen,
+  refFactor,
+  refThesis,
+  t,
+  width
+}: {
+  active: boolean
+  onOpen: () => void
+  refFactor: ForecastFactor | undefined
+  refThesis: ForecastThesis | undefined
+  t: Theme
+  width: number
+}) {
+  const sem = semantics(t)
+  const isThesis = !!refThesis
+  const glyph = isThesis ? '◆' : '▣'
+  const title = (isThesis ? refThesis?.title : refFactor?.title) ?? 'Lens'
+
+  let agg = ''
+  if (refThesis) {
+    const health = refThesis.health_probability
+    const score = refThesis.thesis_score
+    agg = `health ${refThesis.health_display ?? (finite(health) ? pct(health) : '—')} · score ${finite(score) ? score.toFixed(0) : '—'}`
+  } else if (refFactor) {
+    const unit = unitSuffix(refFactor.units)
+    agg = `μ ${finite(refFactor.mean) ? `${trimNum(refFactor.mean)}${unit}` : '—'} · vol ${finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}`
+  }
+
+  const titleW = Math.max(8, width - agg.length - 18)
+  return (
+    <Box marginBottom={1} onClick={onOpen}>
+      <Text backgroundColor={active ? t.color.selectionBg : undefined} bold wrap="truncate-end">
+        <Text color={active ? sem.cursor : t.color.accent}>
+          {active ? '▸ ' : '  '}
+          {glyph}{' '}
+        </Text>
+        <Text color={active ? sem.selectionFg : t.color.label}>{truncate(title, titleW)}</Text>
+        <Text color={sem.subtle}>{`  ${agg}`}</Text>
+        <Text color={t.color.accent}>{'   ⏎ lens'}</Text>
+      </Text>
     </Box>
   )
 }
@@ -1028,7 +1108,9 @@ function DeskForecastList({
 
   const keptCols = DESK_COLS.filter(c => keep.has(c.key))
 
-  const { items: windowed, offset } = windowItems(items, cursor, visibleRows)
+  // cursor may be -1 (the lead lens row is selected, no forecast highlighted);
+  // clamp for windowing so the list still shows from the top.
+  const { items: windowed, offset } = windowItems(items, Math.max(0, cursor), visibleRows)
 
   return (
     <Box flexDirection="column" flexGrow={0} flexShrink={0} minHeight={0} overflow="hidden">

@@ -245,6 +245,22 @@ describe('DeskView (redesigned forecast desk)', () => {
     desk.cleanup()
   })
 
+  it('leads a thesis tab with a clickable lens row that opens the aggregate read', async () => {
+    const desk = await mountDesk(120, fixture())
+    // The thesis tab is active by default → a lens row leads the section with the
+    // thesis glyph + its aggregate (health/score) + the open affordance.
+    let text = desk.text()
+    expect(text).toContain('◆')
+    expect(text).toContain('health 54%')
+    expect(text).toContain('⏎ lens')
+    // The cursor starts on the lens row → Enter opens the thesis aggregate modal
+    // (the footer flips to the modal-specific Scroll/Close chips).
+    await desk.press('\r')
+    text = desk.text()
+    expect(text).toContain('Scroll')
+    desk.cleanup()
+  })
+
   it('Tab switches the lens and resets the selection (All tab shows the whole book)', async () => {
     const desk = await mountDesk(120, fixture())
     // Tabs: [thesis, factor, #elections, All]. Three Tabs from the first → All.
