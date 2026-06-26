@@ -12,7 +12,8 @@ import {
   levelSparkline,
   pct,
   pctDelta,
-  shortDate
+  shortDate,
+  windowDelta
 } from '../lib/forecastCharts.js'
 
 describe('format helpers', () => {
@@ -48,6 +49,67 @@ describe('format helpers', () => {
     expect(clamp01(-1)).toBe(0)
     expect(clamp01(2)).toBe(1)
     expect(clamp01(0.4)).toBe(0.4)
+  })
+})
+
+describe('windowDelta', () => {
+  const NOW = Date.parse('2026-06-01T00:00:00Z')
+  const day = (n: number) => new Date(NOW - n * 86_400_000).toISOString()
+
+  it('returns current minus the last point at or before the cutoff (1W)', () => {
+    const history = [
+      { as_of: day(30), headline_probability: 0.4 },
+      { as_of: day(10), headline_probability: 0.5 }, // ≤ now−7d → the 1W anchor
+      { as_of: day(2), headline_probability: 0.58 } // current
+    ]
+    // 0.58 − 0.5 = +0.08
+    expect(windowDelta(history, NOW, 7)).toBeCloseTo(0.08, 6)
+  })
+
+  it('returns null when no point falls inside the window', () => {
+    const history = [
+      { as_of: day(3), headline_probability: 0.5 },
+      { as_of: day(1), headline_probability: 0.55 }
+    ]
+    // No point is ≤ now−7d, so the 1W window has no anchor.
+    expect(windowDelta(history, NOW, 7)).toBeNull()
+  })
+
+  it('returns null for a one-point (or empty) series', () => {
+    expect(windowDelta([{ as_of: day(1), headline_probability: 0.5 }], NOW, 1)).toBeNull()
+    expect(windowDelta([], NOW, 1)).toBeNull()
+    expect(windowDelta(null, NOW, 1)).toBeNull()
+  })
+
+  it('uses as_of (economic date), not array order, to place the anchor', () => {
+    // A back-dated re-forecast: created last but speaks to an OLD as_of. The 1D
+    // window must anchor on the true 1-day-ago value (0.5), not the latest row.
+    const history = [
+      { as_of: day(5), headline_probability: 0.5 },
+      { as_of: day(0.5), headline_probability: 0.6 } // inside today, NOT ≤ now−1d
+    ]
+    // current 0.6; the only point ≤ now−1d is the day-5 one → +0.1
+    expect(windowDelta(history, NOW, 1)).toBeCloseTo(0.1, 6)
+  })
+
+  it('skips non-finite anchors and falls back to the next valid in-window point', () => {
+    const history = [
+      { as_of: day(20), headline_probability: 0.42 },
+      { as_of: day(10), headline_probability: null }, // in-window but non-finite → skip
+      { as_of: day(1), headline_probability: 0.55 }
+    ]
+    // 0.55 − 0.42 = +0.13 (the null day-10 point is skipped)
+    expect(windowDelta(history, NOW, 7)).toBeCloseTo(0.13, 6)
+  })
+
+  it('works for distribution-unit headlines (Δμ in outcome units, not a percent)', () => {
+    const history = [
+      { as_of: day(40), headline_probability: 4.1 },
+      { as_of: day(10), headline_probability: 4.3 },
+      { as_of: day(1), headline_probability: 4.232 }
+    ]
+    // 4.232 − 4.3 = −0.068 (raw outcome units; caller renders as Δμ)
+    expect(windowDelta(history, NOW, 7)).toBeCloseTo(-0.068, 6)
   })
 })
 

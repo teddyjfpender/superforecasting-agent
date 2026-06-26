@@ -21,6 +21,18 @@ export interface Semantics {
   up: string // positive / gain
 }
 
+// ── Column packing ─────────────────────────────────────────────────────────
+// The shared primitive behind every dense table (Markets, Desk): clip-or-pad a
+// cell value to an exact width on the chosen side, with an ellipsis when it
+// overflows. Null-safe — a malformed series (missing field) must never crash a
+// render, so nullish becomes an empty cell.
+export const pad = (value: null | string | undefined, width: number, align: 'left' | 'right'): string => {
+  const s = value == null ? '' : String(value)
+  const v = s.length > width ? `${s.slice(0, Math.max(0, width - 1))}…` : s
+
+  return align === 'right' ? v.padStart(width) : v.padEnd(width)
+}
+
 export const semantics = (t: Theme): Semantics => ({
   badge: t.color.info,
   cursor: t.color.accent,

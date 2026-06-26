@@ -222,6 +222,29 @@ describe('DeskView (redesigned forecast desk)', () => {
     desk.cleanup()
   })
 
+  it('renders the dense column-table header and per-row numeric columns', async () => {
+    const desk = await mountDesk(120, fixture())
+    // Move to the All tab so both forecasts are listed.
+    await desk.press('\t')
+    await desk.press('\t')
+    await desk.press('\t')
+    const text = desk.text()
+    // The bold header row names the dense columns (mirrors the Markets table).
+    expect(text).toContain('QUESTION')
+    expect(text).toContain('PROB')
+    expect(text).toContain('1W')
+    expect(text).toContain('1MO')
+    expect(text).toContain('EV')
+    expect(text).toContain('AGE')
+    // The '─' rule under the header.
+    expect(text).toContain('───')
+    // A binary row carries its compact probability + an evidence count; a
+    // distribution row shows its μ headline and never a fake percent in CHG.
+    expect(text).toContain('52%')
+    expect(text).toContain('μ4.23%')
+    desk.cleanup()
+  })
+
   it('Tab switches the lens and resets the selection (All tab shows the whole book)', async () => {
     const desk = await mountDesk(120, fixture())
     // Tabs: [thesis, factor, #elections, All]. Three Tabs from the first → All.
@@ -229,8 +252,9 @@ describe('DeskView (redesigned forecast desk)', () => {
     await desk.press('\t')
     await desk.press('\t')
     const text = desk.text()
-    // The All lens shows every forecast.
-    expect(text).toContain('Texas Senate')
+    // The All lens shows every forecast. The dense QUESTION column truncates a
+    // long title to fit, so assert the visible prefix (the CPI title fits whole).
+    expect(text).toContain('Will the Republican win')
     expect(text).toContain('CPI-U YoY')
     desk.cleanup()
   })
@@ -258,9 +282,10 @@ describe('DeskView (redesigned forecast desk)', () => {
     await desk.press('/')
     await desk.press('texas')
     const text = desk.text()
-    // Filter bar reflects the query; the matching forecast survives.
+    // Filter bar reflects the query; the matching forecast survives (the dense
+    // QUESTION column truncates the long title, so assert the visible prefix).
     expect(text).toContain('⌕')
-    expect(text).toContain('Texas Senate')
+    expect(text).toContain('Will the Republican win')
     // The header match count proves the list narrowed to just the one match
     // (the cumulative stdout buffer keeps earlier frames, so we assert the
     // live match indicator rather than the absence of the filtered-out row).

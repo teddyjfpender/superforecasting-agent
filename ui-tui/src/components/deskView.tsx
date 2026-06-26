@@ -19,11 +19,12 @@ import {
   tabRefFactor,
   tabRefThesis
 } from '../lib/deskGroups.js'
-import { deltaGlyph, levelSparkline, pct, shortDate } from '../lib/forecastCharts.js'
+import { bandChart, deltaGlyph, levelSparkline, pct, shortDate, windowDelta } from '../lib/forecastCharts.js'
 import { packetTailAudit } from '../lib/forecastTail.js'
 import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { dirColor, pad, type Semantics, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
@@ -31,6 +32,7 @@ import { DeskTabs as DeskTabsStrip } from './deskTabs.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import {
   AnalystNote,
+  chartScale,
   deltaLabel,
   type EnsembleComponentRow,
   ensembleComponentRows,
@@ -40,6 +42,7 @@ import {
   ForecastPacketTail,
   headlineCompact,
   healthColor,
+  historyToBandPoints,
   panelFromPacket,
   signColor,
   ThesisDeskRead,
@@ -526,6 +529,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       latestNote={latestNote}
       refFactor={refFactor}
       refThesis={refThesis}
+      rows={termRows}
       selected={selected}
       t={t}
       width={panelWidth}
@@ -674,6 +678,7 @@ export function DeskSummary({
   latestNote,
   refFactor,
   refThesis,
+  rows,
   selected,
   t,
   width
@@ -681,6 +686,7 @@ export function DeskSummary({
   latestNote: ForecastAnalystNote | null
   refFactor: ForecastFactor | undefined
   refThesis: ForecastThesis | undefined
+  rows?: number
   selected: ForecastWorkspaceItem | null
   t: Theme
   width: number
@@ -699,18 +705,21 @@ export function DeskSummary({
   const delta = selected.delta
   const glyph = deltaGlyph(delta)
   const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
-  const sparkValues = (selected.history ?? []).slice(-16).map(point => point.headline_probability ?? null)
 
-  const sparkOpts =
-    selected.headline_kind === 'distribution'
-      ? (() => {
-          const fv = sparkValues.filter((v): v is number => finite(v))
-
-          return fv.length ? { yMax: Math.max(...fv), yMin: Math.min(...fv) } : {}
-        })()
-      : {}
-
-  const spark = levelSparkline(sparkValues, sparkOpts)
+  // Multi-row mini-graph of the headline series. bandChart is level-scaled (NOT
+  // max-normalized like blockChart), so a flat 52% reads mid-height; the band
+  // fills only for distributions (their snapshots carry a real 90% interval) —
+  // binaries draw just the marker line, which is correct. Auto-zoom the y-axis to
+  // the data + band range so small probability moves are actually visible.
+  const bandPoints = historyToBandPoints(selected)
+  const hasSeries = bandPoints.some(point => finite(point.y))
+  const { yMax, yMin } = chartScale(bandPoints)
+  // Adapt the graph height to the terminal so the rest of the skinny panel (counts,
+  // freshness, close, teaser) never gets pushed past the bottom on a short screen.
+  const chartHeight = Math.max(4, Math.min(7, (rows ?? 28) - 16))
+  const chart = hasSeries
+    ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin })
+    : null
 
   const teaser = latestNote?.headline || (latestNote?.body ?? '').slice(0, 120) || ''
   const sources = new Set((selected.evidence ?? []).map(e => e.source).filter(Boolean)).size
@@ -746,10 +755,17 @@ export function DeskSummary({
           </Text>
         </Text>
       </Box>
-      {spark ? (
-        <Text color={t.color.border} wrap="truncate-end">
-          {spark}
-        </Text>
+      {chart ? (
+        <Box flexDirection="column" marginTop={1}>
+          {chart.rows.map((row, i) => (
+            <Text color={t.color.accent} key={`band:${i}`} wrap="truncate-end">
+              {row}
+            </Text>
+          ))}
+          <Text color={t.color.muted} wrap="truncate-end">
+            {selected.headline_kind === 'distribution' ? 'μ over time' : 'probability over time'}
+          </Text>
+        </Box>
       ) : null}
 
       <Box marginTop={1}>
@@ -839,7 +855,117 @@ function LensHeader({
   return null
 }
 
-// ── Per-tab forecast list (windowed, '> ' cursor, click-to-select) ───────────
+// ── Dense column table (mirrors the Markets quote table) ─────────────────────
+// QUESTION is the flexible left column (takes the slack); the rest are fixed,
+// right-aligned numeric columns packed by PRIORITY when the pane is tight; a
+// trailing 1-month trend sparkline fills whatever width is left over.
+
+interface DeskCol {
+  align: 'left' | 'right'
+  key: string
+  label: string
+  // Fixed columns carry a width; QUESTION is flexible (w computed from slack).
+  w: number
+}
+
+// Display order, left→right. QUESTION's `w` is a placeholder — it is recomputed
+// from the leftover width after the kept fixed columns are reserved.
+const DESK_COLS: DeskCol[] = [
+  { align: 'left', key: 'q', label: 'QUESTION', w: 24 },
+  { align: 'right', key: 'prob', label: 'PROB', w: 8 },
+  { align: 'right', key: '1d', label: '1D', w: 7 },
+  { align: 'right', key: '1w', label: '1W', w: 7 },
+  { align: 'right', key: '1mo', label: '1MO', w: 8 },
+  { align: 'right', key: 'ev', label: 'EV', w: 4 },
+  { align: 'right', key: 'age', label: 'AGE', w: 7 }
+]
+
+// Keep by priority when narrow (render still follows display order). QUESTION is
+// always kept; PROB matters most, then the wider 1W/1MO windows, then EV, then
+// the noisier 1D, then AGE.
+const DESK_PRIORITY = ['prob', '1w', '1mo', 'ev', '1d', 'age']
+
+// Short freshness for the AGE column: "3d old" → "3d", "fresh today" → "now".
+const shortAge = (freshness: string | undefined): string => {
+  if (!freshness) {
+    return '—'
+  }
+  if (/fresh|today|now/i.test(freshness)) {
+    return 'now'
+  }
+  const m = /(\d+)\s*([a-z]+)/i.exec(freshness)
+  // Keep the full unit (up to 2 chars) so months read "2mo", not "2m" (minutes).
+  return m ? `${m[1]}${m[2].toLowerCase().slice(0, 2)}` : truncate(freshness, 6)
+}
+
+// Window change → display text only (colour is applied by the caller from the
+// raw signed value so direction reads via colour AND glyph). For distributions
+// the magnitude is outcome-unit Δμ; for probabilities it is percent-points.
+const windowChgText = (item: ForecastWorkspaceItem, value: number | null): string => {
+  if (value === null) {
+    return '—'
+  }
+  const glyph = deltaGlyph(value)
+  if (item.headline_kind === 'distribution') {
+    if (!finite(value) || Math.abs(value) < 1e-6) {
+      return '·'
+    }
+    return `${glyph}${value > 0 ? '+' : ''}${trimNum(value)}`
+  }
+  if (!finite(value) || Math.abs(value) < 0.005) {
+    return '·'
+  }
+  const points = Math.round(value * 100)
+  return `${glyph}${points > 0 ? '+' : ''}${points}`
+}
+
+// CHG cell colour + text together, so a flat ('·') or absent ('—') change is
+// painted neutral rather than a misleading coloured up/down move.
+const windowChgCell = (
+  item: ForecastWorkspaceItem,
+  value: number | null,
+  sem: Semantics
+): { color: string; text: string } => {
+  const text = windowChgText(item, value)
+  const color = text === '·' || text === '—' ? sem.subtle : dirColor(sem, value)
+  return { color, text }
+}
+
+// One cell's colour + text. `windows` are the precomputed 1D/1W/1MO deltas so the
+// switch stays a pure formatter.
+const deskCellText = (
+  key: string,
+  item: ForecastWorkspaceItem,
+  sem: Semantics,
+  t: Theme,
+  windows: { '1d': number | null; '1mo': number | null; '1w': number | null }
+): { color: string; text: string } => {
+  switch (key) {
+    case '1d':
+      return windowChgCell(item, windows['1d'], sem)
+
+    case '1mo':
+      return windowChgCell(item, windows['1mo'], sem)
+
+    case '1w':
+      return windowChgCell(item, windows['1w'], sem)
+
+    case 'age':
+      return { color: sem.subtle, text: shortAge(item.freshness) }
+
+    case 'ev':
+      return { color: sem.subtle, text: String(item.evidence_count ?? 0) }
+
+    case 'prob':
+      return { color: t.color.text, text: headlineCompact(item) }
+
+    case 'q':
+      return { color: t.color.label, text: item.title ?? item.id ?? 'untitled' }
+
+    default:
+      return { color: t.color.text, text: '' }
+  }
+}
 
 function DeskForecastList({
   cursor,
@@ -858,6 +984,8 @@ function DeskForecastList({
   visibleRows: number
   width: number
 }) {
+  const sem = semantics(t)
+
   if (!items.length) {
     return (
       <Box flexDirection="column" flexGrow={1}>
@@ -868,16 +996,63 @@ function DeskForecastList({
     )
   }
 
+  // Usable inner width (leave a column for the cursor marker + a trailing space).
+  const avail = Math.max(20, width - 2)
+
+  // Pack the FIXED numeric columns by priority, but ALWAYS reserve QMIN for the
+  // QUESTION column so a column is dropped (priority-drop) rather than QUESTION
+  // overflowing + clipping the rightmost numerics on a tight terminal.
+  const QMIN = 14
+  const keep = new Set<string>(['q'])
+  let usedW = 2 // cursor marker
+  for (const key of DESK_PRIORITY) {
+    const c = DESK_COLS.find(col => col.key === key)
+    if (c && usedW + c.w + 1 <= avail - QMIN) {
+      keep.add(key)
+      usedW += c.w + 1
+    }
+  }
+
+  // Split the leftover: a capped slice feeds the trailing 1MO trend sparkline
+  // (so it actually renders — QUESTION no longer eats 100% of the slack), and
+  // QUESTION takes the rest with at least QMIN.
+  const leftover = Math.max(QMIN, avail - usedW)
+  // The QUESTION column wins the slack — titles matter more than the trend — so the
+  // trailing trend sparkline only claims width once QUESTION is comfortable; short
+  // titles never truncate to make room for it.
+  const QCOMFORT = 30
+  const trendW = leftover >= QCOMFORT + 8 ? Math.min(14, leftover - QCOMFORT) : 0
+  const questionW = leftover - trendW
+  const showTrend = trendW >= 8
+  const colWidth = (c: DeskCol): number => (c.key === 'q' ? questionW : c.w)
+
+  const keptCols = DESK_COLS.filter(c => keep.has(c.key))
+
   const { items: windowed, offset } = windowItems(items, cursor, visibleRows)
 
   return (
     <Box flexDirection="column" flexGrow={0} flexShrink={0} minHeight={0} overflow="hidden">
+      <Text bold color={sem.heading} wrap="truncate-end">
+        {'  '}
+        {keptCols.map(c => `${pad(c.label, colWidth(c), c.align)} `).join('')}
+        {showTrend ? pad('1MO', trendW, 'left') : ''}
+      </Text>
+      <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       {windowed.map((item, i) => {
         const index = offset + i
 
         return (
           <Box key={item.id ?? `fc:${index}`} onClick={() => onSelect(index)} width={width}>
-            <DeskListRow active={index === cursor} item={item} t={t} width={width} />
+            <DeskListRow
+              active={index === cursor}
+              colWidth={colWidth}
+              cols={keptCols}
+              item={item}
+              sem={sem}
+              showTrend={showTrend}
+              t={t}
+              trendW={trendW}
+            />
           </Box>
         )
       })}
@@ -893,46 +1068,61 @@ function DeskForecastList({
 
 function DeskListRow({
   active,
+  colWidth,
+  cols,
   item,
+  sem,
+  showTrend,
   t,
-  width
+  trendW
 }: {
   active: boolean
+  colWidth: (c: DeskCol) => number
+  cols: DeskCol[]
   item: ForecastWorkspaceItem
+  sem: Semantics
+  showTrend: boolean
   t: Theme
-  width: number
+  trendW: number
 }) {
-  const delta = item.delta
-  const glyph = deltaGlyph(delta)
-  const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
-  const sparkValues = (item.history ?? []).slice(-8).map(point => point.headline_probability ?? null)
+  const nowMs = Date.now()
+  const windows = {
+    '1d': windowDelta(item.history, nowMs, 1),
+    '1mo': windowDelta(item.history, nowMs, 30),
+    '1w': windowDelta(item.history, nowMs, 7)
+  }
 
+  // 1-month level trend: the headline series on a fixed 0..1 scale for binaries,
+  // auto-zoomed to the data range for distributions (μ is not a 0..1 quantity).
+  const sparkValues = (item.history ?? []).slice(-trendW).map(point => point.headline_probability ?? null)
   const sparkOpts =
     item.headline_kind === 'distribution'
       ? (() => {
           const fv = sparkValues.filter((v): v is number => finite(v))
-
           return fv.length ? { yMax: Math.max(...fv), yMin: Math.min(...fv) } : {}
         })()
       : {}
+  const trend = showTrend ? levelSparkline(sparkValues, sparkOpts) : ''
+  const trendColor = dirColor(sem, item.delta ?? windows['1mo'])
 
-  const spark = levelSparkline(sparkValues, sparkOpts)
-  const probText = headlineCompact(item)
-  const titleW = Math.max(10, width - 21)
-  const title = truncate(item.title ?? item.id ?? 'untitled', titleW).padEnd(titleW)
   const alertBadge = (item.open_alert_count ?? 0) > 0 ? `!${item.open_alert_count}` : ''
 
   return (
     <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
-      <Text bold={active} color={active ? t.color.primary : t.color.muted}>
-        {active ? '> ' : '  '}
+      <Text bold={active} color={active ? sem.cursor : sem.faint}>
+        {active ? '▸ ' : '  '}
       </Text>
-      <Text bold={active} color={active ? t.color.text : t.color.label}>
-        {title}
-      </Text>
-      <Text color={t.color.text}> {probText.padStart(6)}</Text>
-      <Text color={deltaColor}> {glyph}</Text>
-      <Text color={t.color.border}> {spark}</Text>
+      {cols.map(c => {
+        const cell = deskCellText(c.key, item, sem, t, windows)
+        const highlight = active && c.key === 'q'
+
+        return (
+          <Text bold={active && c.key === 'q'} color={highlight ? sem.selectionFg : cell.color} key={c.key}>
+            {`${pad(cell.text, colWidth(c), c.align)} `}
+          </Text>
+        )
+      })}
+      {showTrend ? <Text color={trendColor}>{trend}</Text> : null}
       {alertBadge ? <Text color={t.color.statusBad}> {alertBadge}</Text> : null}
     </Text>
   )

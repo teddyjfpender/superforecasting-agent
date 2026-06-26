@@ -24,7 +24,7 @@ import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { type MarketModelListItem, normalizeModelList, normalizePresentation, type Presentation } from '../lib/presentation.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
-import { dirColor, dirGlyph, semantics } from '../lib/visualSemantics.js'
+import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { AddProviderModal } from './addProviderModal.js'
@@ -116,15 +116,6 @@ const relTime = (ms: number): string => {
 
   return new Date(ms).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })
 }
-
-const pad = (value: null | string | undefined, width: number, align: 'left' | 'right'): string => {
-  // Null-safe: a malformed series (missing field) must never crash the render.
-  const s = value == null ? '' : String(value)
-  const v = s.length > width ? `${s.slice(0, Math.max(0, width - 1))}…` : s
-
-  return align === 'right' ? v.padStart(width) : v.padEnd(width)
-}
-
 
 const sameSeries = (a: MarketSeries, b: MarketSeries): boolean =>
   a.provider === b.provider && a.symbol.toLowerCase() === b.symbol.toLowerCase()

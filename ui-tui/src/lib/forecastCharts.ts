@@ -112,6 +112,68 @@ export const axisLabels = (values: ReadonlyArray<number | null | undefined>): st
 export const shortDate = (value: string | null | undefined): string =>
   value ? value.slice(0, 10) : '—'
 
+// ── Windowed change (1D / 1W / 1MO list columns) ─────────────────────────────
+
+/** Minimal shape windowDelta needs from a history point. */
+export interface WindowPoint {
+  as_of?: string
+  headline_probability?: number | null
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * Change in the headline value over the trailing `days` window.
+ *
+ * Returns `current − headline(last point whose as_of ≤ nowMs − days·86_400_000)`.
+ * Compares against `as_of` (the economic effective date the snapshot speaks to),
+ * NOT `created_at`, so a back-dated re-forecast lands in the right window. The
+ * "current" value is the newest finite headline in the series.
+ *
+ * Returns `null` when there is no in-window anchor (the series is too short, or
+ * every prior point is non-finite) — callers render that as "—", never a 0.
+ * This is a POINT delta; for distribution forecasts the headline is μ in outcome
+ * units, so the caller interprets the number as Δμ, never a fake percent.
+ */
+export const windowDelta = (
+  history: ReadonlyArray<WindowPoint> | null | undefined,
+  nowMs: number,
+  days: number
+): number | null => {
+  const points = history ?? []
+  if (points.length < 2) {
+    return null
+  }
+
+  // Current = the newest point carrying a finite headline.
+  let current: number | null = null
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    const y = points[i]!.headline_probability
+    if (finite(y)) {
+      current = y
+      break
+    }
+  }
+  if (current === null) {
+    return null
+  }
+
+  const cutoff = nowMs - days * DAY_MS
+
+  // The LAST (newest) point at or before the cutoff — i.e. the value as it stood
+  // a window ago. Points are oldest→newest, so scan backward and take the first
+  // in-window, finite point.
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    const point = points[i]!
+    const ms = point.as_of ? Date.parse(point.as_of) : Number.NaN
+    if (Number.isFinite(ms) && ms <= cutoff && finite(point.headline_probability)) {
+      return current - point.headline_probability
+    }
+  }
+
+  return null
+}
+
 // ── Level sparkline (fixed 0..1 scale) ───────────────────────────────────────
 
 /**

@@ -674,8 +674,9 @@ describe('ForecastsWorkspace render', () => {
     // the catch-all "All" tab.
     expect(text).toContain('#elections')
     expect(text).toContain('All')
-    // The active tab's forecast renders as a list row with the '> ' cursor.
-    expect(text).toContain('Texas Senate')
+    // The active tab's forecast renders as a dense table row (cursor + QUESTION
+    // column); the long title truncates, so assert the visible prefix.
+    expect(text).toContain('Will the Republican win')
     // Footer chip shortcuts bar (Markets-style).
     expect(text).toContain('Lens')
     expect(text).toContain('Open')
@@ -1069,8 +1070,9 @@ describe('ForecastsWorkspace render', () => {
     // catch-all All tab.
     expect(text).toContain('Power-bottleneck bask')
     expect(text).toContain('All')
-    // Its member forecast (Texas) renders in the active-tab list.
-    expect(text).toContain('Texas Senate')
+    // Its member forecast (Texas) renders in the active-tab list; the dense
+    // QUESTION column truncates the long title, so assert the visible prefix.
+    expect(text).toContain('Will the Republican win')
   })
 
   it('renders the factor read with return trend, factor-return stats, constituents, and caveats', async () => {
