@@ -29,6 +29,7 @@ import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { DeskTabs as DeskTabsStrip } from './deskTabs.js'
+import { ModalOverlay } from './modalOverlay.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import {
   AnalystNote,
@@ -629,15 +630,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   ) : null
 
   const modal = modalOpen ? (
-    <DeskModal
-      narrow={!wide}
-      onClose={() => setModalOpen(false)}
+    <ModalOverlay
+      cols={cols}
+      footerHint="↑↓ scroll · PgUp/PgDn page · Esc/q close"
       rows={termRows}
       scrollRef={modalScrollRef}
       t={t}
       tick={now}
       title={lensActive ? (refThesis?.title ?? refFactor?.title ?? 'Lens') : (selected?.title ?? selected?.id ?? 'Forecast')}
-      width={cols}
     >
       {refRead ? (
         <Box flexDirection="column" marginBottom={1}>
@@ -645,7 +645,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         </Box>
       ) : null}
       {modalBody}
-    </DeskModal>
+    </ModalOverlay>
   ) : null
 
   // ── Footer ────────────────────────────────────────────────────────────────
@@ -1340,69 +1340,6 @@ function DeskListRow({
 // ── Detail modal shell (InfoModal pattern + a scrollable body) ────────────────
 // Reuses the InfoModal round-bordered centered-overlay shell, but renders the
 // heavy ForecastDetail inside a ScrollBox with a scrollbar (Up/Down/PgUp/PgDn).
-// Esc/q close — handled by the parent keymap while the modal is open.
-
-function DeskModal({
-  children,
-  narrow,
-  onClose: _onClose,
-  rows,
-  scrollRef,
-  t,
-  tick,
-  title,
-  width
-}: {
-  children: ReactNode
-  narrow: boolean
-  onClose: () => void
-  rows: number
-  scrollRef: RefObject<null | ScrollBoxHandle>
-  t: Theme
-  tick: number
-  title: string
-  width: number
-}) {
-  const modalW = narrow ? Math.max(40, width - 2) : Math.max(48, Math.min(width - 6, 100))
-  const modalH = Math.max(10, Math.min(rows - 6, 36))
-
-  // Painted as an ABSOLUTE overlay over the desk body (not replacing it): the box
-  // IS the absolute element (NOT wrapped in a full-width centering Box — that
-  // clears its whole cols×modalH band of the list and reflows the body). Its
-  // bounding region is exactly modalW×modalH, so the list stays visible around it;
-  // the solid black backgroundColor keeps the interior opaque. left/top are
-  // computed to centre it (alignItems on an absolute box doesn't reliably centre).
-  const modalTop = Math.max(0, Math.floor((rows - modalH) / 2) - 1)
-  const modalLeft = Math.max(0, Math.floor((width - modalW) / 2))
-  return (
-    <Box
-      backgroundColor="black"
-      borderColor={t.color.accent}
-      borderStyle="round"
-      flexDirection="column"
-      height={modalH}
-      left={modalLeft}
-      paddingX={2}
-      paddingY={1}
-      position="absolute"
-      top={modalTop}
-      width={modalW}
-    >
-      <Text bold color={t.color.primary} wrap="truncate-end">
-        {truncate(title, Math.max(10, modalW - 6))}
-      </Text>
-        <Box flexDirection="row" flexShrink={0} height={Math.max(3, modalH - 5)} marginTop={1} minHeight={0}>
-          <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={scrollRef}>
-            {children}
-          </ScrollBox>
-          <NoSelect flexShrink={0} marginLeft={1}>
-            <OverlayScrollbar scrollRef={scrollRef} t={t} tick={tick} />
-          </NoSelect>
-        </Box>
-      <Text color={t.color.muted}>↑↓ scroll · PgUp/PgDn page · Esc/q close</Text>
-    </Box>
-  )
-}
 
 // The reviewable time series of prior write-ups inside the modal (newest-first).
 function DeskAnalystLog({ notes, t }: { notes: ForecastAnalystNote[]; t: Theme }) {
