@@ -297,6 +297,14 @@ describe('DeskView (redesigned forecast desk)', () => {
     desk.cleanup()
   })
 
+  it('u queues the selected lens/forecast for update (flash + reforecast RPC)', async () => {
+    const desk = await mountDesk(120, fixture())
+    // Default thesis tab → the lens row is selected; u queues the thesis for update.
+    await desk.press('u')
+    expect(desk.text()).toContain('queued for update')
+    desk.cleanup()
+  })
+
   it('/ opens the inline filter and narrows the visible list', async () => {
     const desk = await mountDesk(120, fixture())
     await desk.press('\t')

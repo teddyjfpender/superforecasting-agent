@@ -94,3 +94,17 @@ def test_dedupe_collapses_preexisting_duplicates(tmp_path):
     assert lg.dedupe_scheduled_reviews()["disabled_count"] == 0
     # The kept row's run history is preserved (disable, not delete).
     assert any(r["id"] == keep["id"] for r in lg.list_scheduled_reviews())
+
+
+def test_mark_question_review_due_creates_then_rearms(tmp_path):
+    # The desk "run update" shortcut. With no schedule row it creates one due-now;
+    # with an existing row it re-arms next_run_at to now (no duplicate).
+    lg = _ledger(tmp_path)
+    qid = _question(lg)
+    r1 = lg.mark_question_review_due(qid)
+    assert r1["queued"] and r1["scheduled"] == "created"
+    assert lg.next_review_by_question()[qid]["next_run_at"] == r1["next_run_at"]
+    before = len(_enabled(lg))
+    r2 = lg.mark_question_review_due(qid)
+    assert r2["scheduled"] == "rearmed"
+    assert len(_enabled(lg)) == before  # re-arm, not a duplicate

@@ -3756,6 +3756,23 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.reforecast")
+def _(rid, params: dict) -> dict:
+    # The desk's "run update" shortcut: re-arm the question's review to fire on the
+    # next cron tick (the in-process autonomous cycle then reforecasts it). Returns
+    # immediately — non-blocking — and the desk's NEXT column flips to "now".
+    question_id = params.get("id", "")
+    if not isinstance(question_id, str) or not question_id.strip():
+        return _err(rid, 4003, "id must be a non-empty string")
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        return _ok(rid, ledger.mark_question_review_due(question_id.strip()))
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("forecast.question")
 def _(rid, params: dict) -> dict:
     question_id = params.get("id", "")

@@ -331,6 +331,19 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     setModalOpen(false)
   }
 
+  // Run update: queue the selected forecast (or, on a lens row, the thesis/factor)
+  // for the next reforecast cycle — re-arms its schedule to due-now, so NEXT flips
+  // to "now" on the refresh and the autonomous cycle reforecasts it on its next tick.
+  const runUpdate = () => {
+    const targetId = lensActive ? (refThesis?.id ?? refFactor?.id) : selectedId
+    const targetTitle = lensActive ? (refThesis?.title ?? refFactor?.title) : selected?.title
+    if (!targetId) return
+    setFlash(`↻ queued for update: ${truncate(targetTitle ?? targetId, 32)}`)
+    gw.request('forecast.reforecast', { id: targetId })
+      .then(() => load()) // silent refresh (no 'refreshed' flash) so NEXT flips to "now" but the queued message stays
+      .catch(() => setFlash('update failed'))
+  }
+
   const modalPageSize = Math.max(4, termRows - 12)
 
   useInput((ch, key) => {
@@ -420,6 +433,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
     if (ch === 'r') {
       return load(true)
+    }
+
+    if (ch === 'u') {
+      return runUpdate()
     }
 
     if (ch === 'h') {
@@ -662,8 +679,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         { k: '↑↓', label: 'Select' },
         { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
         { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
+        { k: 'u', label: 'Update', run: () => runUpdate() },
         { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
-        { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · / filter · q close') },
+        { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · u update · / filter · q close') },
         { k: 'q', label: 'Close', run: onClose }
       ]
 
@@ -671,7 +689,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     ? `filter: ${truncate(query, Math.max(8, cols - 30))}▌  · ⏎ apply · Esc clear`
     : modalOpen
       ? '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close'
-      : '↑↓/jk select · Tab/←→ lens · ⏎ open · / filter · r refresh · h help · q close'
+      : '↑↓/jk select · Tab/←→ lens · ⏎ open · u update · / filter · r refresh · h help · q close'
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>

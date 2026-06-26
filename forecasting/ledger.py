@@ -6310,6 +6310,33 @@ class ForecastLedger:
                 out[ref] = {"cadence": row["cadence"], "next_run_at": row["next_run_at"]}
         return out
 
+    def mark_question_review_due(self, question_id: str, *, now: str | None = None) -> dict[str, Any]:
+        """Re-arm a question's review to fire on the next cron tick — the desk's
+        "run update" shortcut. Sets the enabled per-question schedule's next_run_at
+        to now; if no schedule row exists, creates one at the question's cadence
+        (default weekly). The autonomous cycle then reforecasts it on its next tick."""
+        when = now or utc_now_iso()
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE scheduled_reviews SET next_run_at = ? "
+                "WHERE scope_type = 'question' AND scope_ref = ? AND enabled = 1",
+                (when, question_id),
+            )
+            rearmed = cur.rowcount
+        if rearmed:
+            return {"next_run_at": when, "queued": True, "scheduled": "rearmed"}
+        cadence = "weekly"
+        try:
+            question = self.get_question(question_id)
+            cadence = question.review_cadence or "weekly"
+        except Exception:
+            pass
+        self.schedule_review(
+            scope_type="question", scope_ref=question_id, cadence=cadence,
+            next_run_at=when, trigger_reason="manual",
+        )
+        return {"next_run_at": when, "queued": True, "scheduled": "created"}
+
     def dedupe_scheduled_reviews(self) -> dict[str, Any]:
         """Collapse pre-existing duplicate ENABLED schedules that share
         (scope_type, scope_ref, cadence, trigger_reason). Keeps the most-established
