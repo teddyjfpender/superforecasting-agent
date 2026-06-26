@@ -1367,20 +1367,16 @@ function DeskModal({
   const modalH = Math.max(10, Math.min(rows - 6, 36))
 
   // Painted as an ABSOLUTE overlay over the desk body (not replacing it): the
-  // background list stays visible AROUND the box, while the box's backgroundColor
-  // makes its interior opaque so nothing leaks through it.
+  // background list stays visible AROUND the box, while the box's solid black
+  // backgroundColor makes its interior opaque so nothing leaks through it.
+  // The wrapper is CONTENT-sized (height = the box) + positioned with a computed
+  // top — a full-height (height={rows}) wrapper overflows the desk pane and the
+  // body reflows away on the next re-render.
+  const modalTop = Math.max(0, Math.floor((rows - modalH) / 2) - 1)
   return (
-    <Box
-      alignItems="center"
-      height={rows}
-      justifyContent="center"
-      left={0}
-      position="absolute"
-      top={0}
-      width={width}
-    >
+    <Box alignItems="center" left={0} position="absolute" top={modalTop} width={width}>
       <Box
-        backgroundColor={t.color.completionBg}
+        backgroundColor="black"
         borderColor={t.color.accent}
         borderStyle="round"
         flexDirection="column"
