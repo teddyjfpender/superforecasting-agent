@@ -308,6 +308,19 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const latestNote = analystNotes.length ? analystNotes[analystNotes.length - 1] : null
   const priorNotes = analystNotes.slice(0, -1).reverse()
 
+  // Cross-pollination + lessons are gated out of the workspace list for speed and
+  // carried by forecast.question instead — merge them onto the item for the modal.
+  // (Must live with the other hooks, ABOVE the loading/error early-returns.)
+  const detailItem = useMemo(() => {
+    if (!selected) return null
+    if (!packet || packetId !== selectedId) return selected
+    return {
+      ...selected,
+      related: packet.related ?? selected.related,
+      relevant_lessons: packet.relevant_lessons ?? selected.relevant_lessons
+    }
+  }, [selected, packet, packetId, selectedId])
+
   // Switch tabs reset the selection to row 0 (locked decision).
   const switchTab = (next: number) => {
     const n = Math.max(1, tabs.length)
@@ -587,7 +600,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
                 ) : null
               }
               ensembleRows={ensembleRows}
-              item={selected}
+              item={detailItem ?? selected}
               packetPanel={packetPanel}
               t={t}
               tailAudit={tailAudit}

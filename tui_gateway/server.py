@@ -3061,7 +3061,17 @@ def _(rid, params: dict) -> dict:
         # Default high so the desk loads the full active book (the client filters
         # locally; a small cap silently hides the oldest forecasts).
         limit = int(params.get("limit") or 1000)
-        payload = build_workspace_payload(limit=limit)
+        # The navigable LIST + skinny panel never render `related` or
+        # `relevant_lessons` (only the detail modal does, and it re-fetches
+        # forecast.question per selection), so skip those per-question N^2/N+1
+        # walks here — the bulk of the desk's load time. History only needs to
+        # cover the sparkline + the 1MO window delta, so 40 points is plenty.
+        payload = build_workspace_payload(
+            limit=limit,
+            include_related=False,
+            include_lessons=False,
+            history_limit=40,
+        )
         return _ok(rid, payload)
     except Exception as e:
         return _err(rid, 5008, str(e))
@@ -3756,8 +3766,36 @@ def _(rid, params: dict) -> dict:
         from forecasting.ledger import ForecastLedger
 
         ledger = ForecastLedger()
-        packet = json.loads(ledger.export_question(question_id.strip(), fmt="json"))
-        return _ok(rid, {"packet": packet})
+        qid = question_id.strip()
+        packet = json.loads(ledger.export_question(qid, fmt="json"))
+
+        # Cross-pollination + scope-matched lessons for the detail modal. These are
+        # gated OUT of forecast.workspace (the list) for speed, so the per-selection
+        # detail RPC carries them — computed for this ONE question only (cheap).
+        related = None
+        relevant_lessons: list = []
+        try:
+            from forecasting.dashboard import _workspace_related
+
+            question = ledger.get_question(qid)
+            current = ledger.get_current_snapshot(qid)
+            related = _workspace_related(ledger, question, current)
+            from forecasting.learning import active_lessons_for_question
+
+            relevant_lessons = [
+                {
+                    "id": lesson["id"],
+                    "lesson": (lesson.get("lesson") or "")[:200],
+                    "scope_type": lesson.get("scope_type"),
+                    "scope_ref": lesson.get("scope_ref"),
+                    "confidence": lesson.get("confidence"),
+                }
+                for lesson in active_lessons_for_question(ledger, question)
+            ]
+        except Exception:
+            related, relevant_lessons = None, []
+
+        return _ok(rid, {"packet": packet, "related": related, "relevant_lessons": relevant_lessons})
     except Exception as e:
         return _err(rid, 5008, str(e))
 

@@ -435,6 +435,8 @@ def build_workspace_payload(
     history_limit: int = 80,
     evidence_limit: int = 12,
     now: str | None = None,
+    include_related: bool = True,
+    include_lessons: bool = True,
 ) -> dict[str, Any]:
     """Assemble the navigable forecasts-workspace payload in one round trip.
 
@@ -499,22 +501,26 @@ def build_workspace_payload(
         # domain_topic / question_type) — the same retrieval the agent reads + that
         # compiles to commit rules. This is "what shaped / should shape this forecast",
         # distinct from the source-derived lessons this question's own miss produced.
+        # Gated: active_lessons_for_question fires ~8 scope queries per question and
+        # is only read by the detail modal (forecast.question carries it instead).
+        # Skipping it for the navigable LIST is the bulk of the desk's load speedup.
         relevant_lessons: list[dict[str, Any]] = []
-        try:
-            from forecasting.learning import active_lessons_for_question
+        if include_lessons:
+            try:
+                from forecasting.learning import active_lessons_for_question
 
-            relevant_lessons = [
-                {
-                    "id": lesson["id"],
-                    "lesson": (lesson.get("lesson") or "")[:200],
-                    "scope_type": lesson.get("scope_type"),
-                    "scope_ref": lesson.get("scope_ref"),
-                    "confidence": lesson.get("confidence"),
-                }
-                for lesson in active_lessons_for_question(ledger, question)
-            ]
-        except Exception:
-            relevant_lessons = []
+                relevant_lessons = [
+                    {
+                        "id": lesson["id"],
+                        "lesson": (lesson.get("lesson") or "")[:200],
+                        "scope_type": lesson.get("scope_type"),
+                        "scope_ref": lesson.get("scope_ref"),
+                        "confidence": lesson.get("confidence"),
+                    }
+                    for lesson in active_lessons_for_question(ledger, question)
+                ]
+            except Exception:
+                relevant_lessons = []
 
         forecasts.append(
             {
@@ -582,7 +588,10 @@ def build_workspace_payload(
                 ),
                 # Cross-pollination: related forecasts' world-views, the "informed
                 # by" provenance of the current snapshot, and shared-source flags.
-                "related": _workspace_related(ledger, question, current),
+                # Gated: related_forecast_views is an N^2 same-domain rescan per
+                # question (~59% of build time) and only the detail modal reads it,
+                # so the LIST skips it and forecast.question carries it instead.
+                "related": _workspace_related(ledger, question, current) if include_related else None,
                 # The theses this question is a weighted member of (the "member
                 # of: AI infra thesis" badge).
                 "thesis_ids": ledger.list_theses_for_member(question.id),

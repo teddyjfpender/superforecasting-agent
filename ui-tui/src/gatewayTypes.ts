@@ -600,6 +600,10 @@ export interface ForecastCommandResponse {
 
 export interface ForecastQuestionPacketResponse {
   packet?: ForecastQuestionPacket
+  // Cross-pollination + scope-matched lessons for the detail modal — carried here
+  // (per selected question) because forecast.workspace gates them out for speed.
+  related?: ForecastRelated | null
+  relevant_lessons?: ForecastDashboardLesson[]
 }
 
 // A time-indexed analyst write-up ("desk note"): the model's prose read on a

@@ -223,8 +223,11 @@ def test_forecast_question_returns_exported_packet(monkeypatch):
 def test_forecast_workspace_returns_payload(monkeypatch):
     import forecasting.dashboard as dashboard_module
 
-    def fake_build_workspace_payload(*, limit: int = 50):
+    def fake_build_workspace_payload(*, limit: int = 50, **kwargs):
         assert limit == 25
+        # The desk gates these for speed; the detail RPC carries them instead.
+        assert kwargs.get("include_related") is False
+        assert kwargs.get("include_lessons") is False
         return {
             "product": "Superforecasting Agent",
             "active_count": 1,

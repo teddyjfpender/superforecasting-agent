@@ -167,6 +167,23 @@ def test_workspace_payload_exposes_related(tmp_path):
     assert rel["id"] == a.id and rel["probability_display"] == "61%"
 
 
+def test_workspace_payload_gates_related_and_lessons_for_speed(tmp_path):
+    # The navigable LIST gates the expensive per-question related/lessons walks
+    # (the detail RPC carries them instead); default keeps them for other callers.
+    ledger = ForecastLedger(tmp_path / "f.db")
+    a = _q(ledger, "CPI YoY?", ["inflation", "cpi"])
+    b = _q(ledger, "CPI MoM?", ["inflation", "cpi"])
+    ledger.create_snapshot(question_id=a.id, probability_or_distribution=0.61, rationale="r")
+    ledger.create_snapshot(
+        question_id=b.id, probability_or_distribution=0.36, rationale="r2",
+        metadata={"cross_refs": ledger.build_cross_refs(b.id)},
+    )
+    gated = build_workspace_payload(ledger=ledger, include_related=False, include_lessons=False)
+    bp = next(f for f in gated["forecasts"] if f["id"] == b.id)
+    assert bp["related"] is None
+    assert bp["relevant_lessons"] == [] and bp["lessons_count"] == 0
+
+
 def test_cli_link_commands(tmp_path, capsys):
     db = str(tmp_path / "f.db")
     ledger = ForecastLedger(db)
