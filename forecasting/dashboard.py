@@ -468,6 +468,10 @@ def build_workspace_payload(
     for score in ledger.list_scores():
         scores_by_question.setdefault(score.question_id, []).append(score)
 
+    # The live next-update schedule per question (self-advancing) for the desk's
+    # NEXT column — one batched query, not the stale question.next_review_at column.
+    next_reviews = ledger.next_review_by_question()
+
     closing_ids = {
         row["question"].id
         for row in ledger.review_questions(stale=False, now=now)
@@ -569,6 +573,9 @@ def build_workspace_payload(
                 "lessons_count": len(relevant_lessons),
                 "snapshot_count": len(snapshots),
                 "freshness": format_freshness(current.as_of if current else None, now=now),
+                # The live next auto-reforecast time + cadence (the desk's NEXT column).
+                "next_review_at": (next_reviews.get(question.id) or {}).get("next_run_at"),
+                "review_cadence": (next_reviews.get(question.id) or {}).get("cadence"),
                 "closing_soon": closing,
                 "history": [
                     _workspace_history_point(item, is_distribution=headline_kind == "distribution")

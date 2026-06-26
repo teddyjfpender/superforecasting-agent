@@ -275,7 +275,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     const text = desk.text()
     // The All lens shows every forecast. The dense QUESTION column truncates a
     // long title to fit, so assert the visible prefix (the CPI title fits whole).
-    expect(text).toContain('Will the Republican win')
+    expect(text).toContain('Will the Repub')
     expect(text).toContain('CPI-U YoY')
     desk.cleanup()
   })
@@ -308,7 +308,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     // Filter bar reflects the query; the matching forecast survives (the dense
     // QUESTION column truncates the long title, so assert the visible prefix).
     expect(text).toContain('⌕')
-    expect(text).toContain('Will the Republican win')
+    expect(text).toContain('Will the Repub')
     // The header match count proves the list narrowed to just the one match
     // (the cumulative stdout buffer keeps earlier frames, so we assert the
     // live match indicator rather than the absence of the filtered-out row).

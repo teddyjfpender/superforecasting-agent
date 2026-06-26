@@ -1101,13 +1101,14 @@ const DESK_COLS: DeskCol[] = [
   { align: 'right', key: '1w', label: '1W', w: 7 },
   { align: 'right', key: '1mo', label: '1MO', w: 8 },
   { align: 'right', key: 'ev', label: 'EV', w: 4 },
-  { align: 'right', key: 'age', label: 'AGE', w: 7 }
+  { align: 'right', key: 'age', label: 'AGE', w: 7 },
+  { align: 'right', key: 'next', label: 'NEXT', w: 7 }
 ]
 
 // Keep by priority when narrow (render still follows display order). QUESTION is
-// always kept; PROB matters most, then the wider 1W/1MO windows, then EV, then
-// the noisier 1D, then AGE.
-const DESK_PRIORITY = ['prob', '1w', '1mo', 'ev', '1d', 'age']
+// always kept; PROB matters most, then the wider 1W/1MO windows, then NEXT (when
+// the forecast next auto-updates), then EV, then the noisier 1D, then AGE.
+const DESK_PRIORITY = ['prob', '1w', '1mo', 'next', 'ev', '1d', 'age']
 
 // Short freshness for the AGE column: "3d old" → "3d", "fresh today" → "now".
 const shortAge = (freshness: string | undefined): string => {
@@ -1120,6 +1121,20 @@ const shortAge = (freshness: string | undefined): string => {
   const m = /(\d+)\s*([a-z]+)/i.exec(freshness)
   // Keep the full unit (up to 2 chars) so months read "2mo", not "2m" (minutes).
   return m ? `${m[1]}${m[2].toLowerCase().slice(0, 2)}` : truncate(freshness, 6)
+}
+
+// Forward "time to NEXT auto-reforecast" for the NEXT column (the live schedule).
+// "now" (due/overdue), "5h", "3d"; status drives colour. Null cadence → "—".
+const dueText = (nextReviewAt: null | string | undefined, nowMs: number): { status: 'none' | 'now' | 'ok' | 'soon'; text: string } => {
+  if (!nextReviewAt) return { status: 'none', text: '—' }
+  const at = Date.parse(nextReviewAt)
+  if (!Number.isFinite(at)) return { status: 'none', text: '—' }
+  const ms = at - nowMs
+  if (ms <= 0) return { status: 'now', text: 'now' }
+  const days = ms / 86400000
+  if (days < 1) return { status: 'soon', text: `${Math.max(1, Math.round(ms / 3600000))}h` }
+  const d = Math.round(days)
+  return { status: d <= 2 ? 'soon' : 'ok', text: `${d}d` }
 }
 
 // Window change → display text only (colour is applied by the caller from the
@@ -1162,7 +1177,8 @@ const deskCellText = (
   item: ForecastWorkspaceItem,
   sem: Semantics,
   t: Theme,
-  windows: { '1d': number | null; '1mo': number | null; '1w': number | null }
+  windows: { '1d': number | null; '1mo': number | null; '1w': number | null },
+  nowMs: number
 ): { color: string; text: string } => {
   switch (key) {
     case '1d':
@@ -1176,6 +1192,12 @@ const deskCellText = (
 
     case 'age':
       return { color: sem.subtle, text: shortAge(item.freshness) }
+
+    case 'next': {
+      const due = dueText(item.next_review_at, nowMs)
+      const color = due.status === 'now' ? t.color.error : due.status === 'soon' ? t.color.warn : sem.subtle
+      return { color, text: due.text }
+    }
 
     case 'ev':
       return { color: sem.subtle, text: String(item.evidence_count ?? 0) }
@@ -1339,7 +1361,7 @@ function DeskListRow({
         {active ? '▸ ' : '  '}
       </Text>
       {cols.map(c => {
-        const cell = deskCellText(c.key, item, sem, t, windows)
+        const cell = deskCellText(c.key, item, sem, t, windows, nowMs)
         const highlight = active && c.key === 'q'
 
         return (

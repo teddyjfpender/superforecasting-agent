@@ -6292,6 +6292,24 @@ class ForecastLedger:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def next_review_by_question(self) -> dict[str, dict[str, Any]]:
+        """question_id -> {next_run_at, cadence} from the SOONEST enabled per-question
+        scheduled review (the live, self-advancing schedule, not the stale question
+        column). One batched query for the desk's "next update" column."""
+        out: dict[str, dict[str, Any]] = {}
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT scope_ref, next_run_at, cadence FROM scheduled_reviews "
+                "WHERE scope_type = 'question' AND enabled = 1 AND next_run_at IS NOT NULL "
+                "ORDER BY next_run_at ASC",
+            ).fetchall()
+        for row in rows:
+            ref = row["scope_ref"]
+            # ORDER BY next_run_at ASC → the first row per question is the soonest.
+            if ref and ref not in out:
+                out[ref] = {"cadence": row["cadence"], "next_run_at": row["next_run_at"]}
+        return out
+
     def dedupe_scheduled_reviews(self) -> dict[str, Any]:
         """Collapse pre-existing duplicate ENABLED schedules that share
         (scope_type, scope_ref, cadence, trigger_reason). Keeps the most-established

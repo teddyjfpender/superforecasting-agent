@@ -1000,6 +1000,9 @@ export interface ForecastWorkspaceItem {
   evidence?: ForecastWorkspaceEvidence[]
   evidence_count?: number
   freshness?: string
+  // The live next auto-reforecast time + cadence (desk NEXT column).
+  next_review_at?: null | string
+  review_cadence?: null | string
   headline_kind?: 'distribution' | 'probability'
   headline_probability?: null | number
   history?: ForecastWorkspaceHistoryPoint[]
