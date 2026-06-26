@@ -385,4 +385,46 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('4.7')
     expect(text).toContain('vol σ')
   })
+
+  it('skinny summary gives the LENS ROW its own aggregate + graph, not a blank panel', async () => {
+    const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const thesis = {
+      ...inflationThesis(),
+      analyst_note: { headline: 'Sticky services inflation keeps it elevated', kind: 'brief' },
+      coverage: 0.8,
+      delta: 0.03,
+      history: [
+        { as_of: '2026-05-01T00:00:00Z', headline_probability: 0.48 },
+        { as_of: '2026-05-15T00:00:00Z', headline_probability: 0.51 },
+        { as_of: '2026-05-29T00:00:00Z', headline_probability: 0.54 }
+      ],
+      n_eff: 3
+    } as ForecastThesis
+
+    const stdout = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: null,
+        refFactor: undefined,
+        refThesis: thesis,
+        selected: null, // the lens row is what's selected
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).not.toContain('Select a forecast')
+    expect(text).toContain('54%') // health aggregate
+    expect(text).toContain('health over time') // the history graph
+    expect(text).toContain('members 1')
+    expect(text).toContain('Sticky services inflation') // analyst teaser
+    expect(text).toContain('open full lens read')
+  })
 })

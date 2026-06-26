@@ -725,6 +725,12 @@ export function DeskSummary({
   const inner = Math.max(16, width - 2)
 
   if (!selected) {
+    // The lens row is selected → give the panel the same rich treatment as a
+    // forecast: the lens's own aggregate + history graph + counts + teaser.
+    if (refThesis || refFactor) {
+      return <LensSummary refFactor={refFactor} refThesis={refThesis} rows={rows} t={t} width={width} />
+    }
+
     return (
       <Box flexDirection="column" flexShrink={0} width={width}>
         <LensHeader refFactor={refFactor} refThesis={refThesis} t={t} width={inner} />
@@ -822,6 +828,116 @@ export function DeskSummary({
       <Box marginTop={1}>
         <Text color={t.color.accent} wrap="truncate-end">
           ⏎ open full detail
+        </Text>
+      </Box>
+    </Box>
+  )
+}
+
+// The skinny-panel summary when the LENS ROW is selected — the lens's own
+// aggregate + history graph + counts + analyst teaser, mirroring the forecast
+// summary so the panel is never blank on a lens row.
+function LensSummary({
+  refFactor,
+  refThesis,
+  rows,
+  t,
+  width
+}: {
+  refFactor: ForecastFactor | undefined
+  refThesis: ForecastThesis | undefined
+  rows?: number
+  t: Theme
+  width: number
+}) {
+  const inner = Math.max(16, width - 2)
+  const title = (refThesis?.title ?? refFactor?.title) ?? 'Lens'
+  const delta = refThesis?.delta ?? refFactor?.delta ?? null
+  const glyph = deltaGlyph(delta)
+  const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
+  const unit = unitSuffix(refFactor?.units)
+
+  // The health series (thesis) / return series (factor) over time. Factors carry
+  // a real q05–q95 band; theses plot the health line (the score band is a
+  // different 0–100 scale, so it isn't drawn here).
+  const bandPoints = refFactor
+    ? (refFactor.history ?? []).map(p => ({ hi: p.band_high ?? null, lo: p.band_low ?? null, y: p.headline_probability ?? null }))
+    : (refThesis?.history ?? []).map(p => ({ y: p.headline_probability ?? null }))
+  const hasSeries = bandPoints.some(p => finite(p.y))
+  const { yMax, yMin } = chartScale(bandPoints)
+  const chartHeight = Math.max(4, Math.min(7, (rows ?? 28) - 14))
+  const chart = hasSeries ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin }) : null
+
+  const members = (refThesis?.member_count ?? refFactor?.member_count) ?? 0
+  const coverage = refThesis?.coverage ?? refFactor?.coverage
+  const nEff = refThesis?.n_eff ?? refFactor?.n_eff
+  const asOf = refThesis?.as_of ?? refFactor?.as_of
+  const freshness = refThesis?.freshness ?? refFactor?.freshness
+  const note = refThesis?.analyst_note ?? refFactor?.analyst_note
+  const teaser = note?.headline || (note?.body ?? '').slice(0, 120) || ''
+
+  return (
+    <Box flexDirection="column" flexShrink={0} width={width}>
+      <Text bold color={t.color.accent} wrap="truncate-end">
+        {`${refThesis ? '◆' : '▣'} ${truncate(title, inner - 2)}`}
+      </Text>
+      <Text color={t.color.muted} wrap="truncate-end">{refThesis ? 'thesis lens' : 'factor lens'}</Text>
+
+      <Box marginTop={1}>
+        {refThesis ? (
+          <Text wrap="truncate-end">
+            <Text color={t.color.muted}>health </Text>
+            <Text bold color={healthColor(t, refThesis.health_probability)}>
+              {refThesis.health_display ?? (finite(refThesis.health_probability) ? pct(refThesis.health_probability) : '—')}
+            </Text>
+            <Text color={t.color.muted}>{'  score '}</Text>
+            <Text bold color={t.color.primary}>{finite(refThesis.thesis_score) ? refThesis.thesis_score.toFixed(0) : '—'}</Text>
+            <Text color={t.color.muted}>{'  '}</Text>
+            <Text bold color={deltaColor}>{glyph}</Text>
+          </Text>
+        ) : refFactor ? (
+          <Text wrap="truncate-end">
+            <Text color={t.color.muted}>μ </Text>
+            <Text bold color={signColor(t, refFactor.mean)}>{finite(refFactor.mean) ? `${trimNum(refFactor.mean)}${unit}` : '—'}</Text>
+            <Text color={t.color.muted}>{'  vol '}</Text>
+            <Text color={t.color.text}>{finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}</Text>
+            <Text color={t.color.muted}>{'  '}</Text>
+            <Text bold color={deltaColor}>{glyph}</Text>
+          </Text>
+        ) : null}
+      </Box>
+
+      {chart ? (
+        <Box flexDirection="column" marginTop={1}>
+          {chart.rows.map((row, i) => (
+            <Text color={t.color.accent} key={`lband:${i}`} wrap="truncate-end">
+              {row}
+            </Text>
+          ))}
+          <Text color={t.color.muted} wrap="truncate-end">{refThesis ? 'health over time' : 'return over time'}</Text>
+        </Box>
+      ) : null}
+
+      <Box marginTop={1}>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {`members ${members}${finite(coverage) ? ` · coverage ${pct(coverage)}` : ''}${finite(nEff) ? ` · nEff ${trimNum(nEff)}` : ''}`}
+        </Text>
+      </Box>
+      <Text color={t.color.muted} wrap="truncate-end">
+        {`updated ${shortDate(asOf)}${freshness ? ` (${freshness})` : ''}`}
+      </Text>
+
+      {teaser ? (
+        <Box marginTop={1}>
+          <Text color={t.color.text} wrap="wrap">
+            {truncate(teaser, inner * 2)}
+          </Text>
+        </Box>
+      ) : null}
+
+      <Box marginTop={1}>
+        <Text color={t.color.accent} wrap="truncate-end">
+          ⏎ open full lens read
         </Text>
       </Box>
     </Box>
