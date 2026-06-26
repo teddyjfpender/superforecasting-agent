@@ -253,11 +253,13 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('◆')
     expect(text).toContain('health 54%')
     expect(text).toContain('⏎ lens')
-    // The cursor starts on the lens row → Enter opens the thesis aggregate modal
-    // (the footer flips to the modal-specific Scroll/Close chips).
+    // The cursor starts on the lens row → Enter opens the thesis aggregate modal,
+    // which paints ABOVE the body (overlay): the full thesis title appears in the
+    // modal (the lens row truncates it) while the desk header stays visible behind.
     await desk.press('\r')
     text = desk.text()
-    expect(text).toContain('Scroll')
+    expect(text).toContain('FORECASTS') // body still rendered behind the overlay
+    expect(text).toContain('Inflation stays sticky through 2026')
     desk.cleanup()
   })
 
@@ -283,10 +285,12 @@ describe('DeskView (redesigned forecast desk)', () => {
     await desk.press('\t')
     await desk.press('\r')
     const text = desk.text()
-    // The modal renders the heavy ForecastDetail content.
+    // The modal paints ABOVE the body (overlay, not a replacement): the desk header
+    // stays present AND the modal shows the FULL forecast title (the list row
+    // truncates it, so the full string is modal-unique) + its detail.
+    expect(text).toContain('FORECASTS') // body still rendered behind the overlay
     expect(text).toContain('Will the Republican win the Texas Senate seat?')
-    expect(text).toContain('probability over time')
-    expect(text).toContain('Esc/q close')
+    expect(text).toContain('P 52%')
     desk.cleanup()
   })
 

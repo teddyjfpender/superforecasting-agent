@@ -547,6 +547,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         <DeskLensRow
           active={lensActive}
           onOpen={() => {
+            if (modalOpen) return
             setSel(0)
             setModalOpen(true)
           }}
@@ -560,7 +561,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         cursor={lensActive ? -1 : clampedSel - lensOffset}
         empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
         items={visible}
-        onSelect={i => setSel(i + lensOffset)}
+        onSelect={i => { if (!modalOpen) setSel(i + lensOffset) }}
         t={t}
         visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
         width={listW}
@@ -684,30 +685,27 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
-      {modalOpen ? (
-        // The modal REPLACES the body (both widths) — like the Markets modals — so the
-        // tabs + list beneath are unmounted and can't leak mouse clicks while it's open.
-        modal
+      {/* The body stays mounted; the modal paints ABOVE it as an absolute overlay.
+          Body clicks are gated while the modal is open (switchTab/onSelect early-
+          return) so the still-visible tabs/rows can't leak interaction — the
+          keyboard is already trapped by the `if (modalOpen) return` in useInput. */}
+      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen) switchTab(i) }} t={t} tabs={tabs} width={width} />
+      {wide ? (
+        <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
+          <Box flexDirection="column" flexShrink={0} width={listWidth}>
+            {list}
+          </Box>
+          <Box flexDirection="column" flexShrink={0} marginLeft={1}>
+            {panel}
+          </Box>
+        </Box>
       ) : (
-        <>
-          <DeskTabsStrip active={tab} onSelect={i => switchTab(i)} t={t} tabs={tabs} width={width} />
-          {wide ? (
-            <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
-              <Box flexDirection="column" flexShrink={0} width={listWidth}>
-                {list}
-              </Box>
-              <Box flexDirection="column" flexShrink={0} marginLeft={1}>
-                {panel}
-              </Box>
-            </Box>
-          ) : (
-            <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-              {list}
-            </Box>
-          )}
-        </>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+          {list}
+        </Box>
       )}
       {footer}
+      {modalOpen ? modal : null}
     </Box>
   )
 }
@@ -1368,9 +1366,21 @@ function DeskModal({
   const modalW = narrow ? Math.max(40, width - 2) : Math.max(48, Math.min(width - 6, 100))
   const modalH = Math.max(10, Math.min(rows - 6, 36))
 
+  // Painted as an ABSOLUTE overlay over the desk body (not replacing it): the
+  // background list stays visible AROUND the box, while the box's backgroundColor
+  // makes its interior opaque so nothing leaks through it.
   return (
-    <Box alignItems="center" flexGrow={1} justifyContent="center" minHeight={0}>
+    <Box
+      alignItems="center"
+      height={rows}
+      justifyContent="center"
+      left={0}
+      position="absolute"
+      top={0}
+      width={width}
+    >
       <Box
+        backgroundColor={t.color.completionBg}
         borderColor={t.color.accent}
         borderStyle="round"
         flexDirection="column"
@@ -1382,7 +1392,7 @@ function DeskModal({
         <Text bold color={t.color.primary} wrap="truncate-end">
           {truncate(title, Math.max(10, modalW - 6))}
         </Text>
-        <Box flexDirection="row" flexGrow={1} flexShrink={1} marginTop={1} minHeight={0}>
+        <Box flexDirection="row" flexShrink={0} height={Math.max(3, modalH - 5)} marginTop={1} minHeight={0}>
           <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={scrollRef}>
             {children}
           </ScrollBox>
