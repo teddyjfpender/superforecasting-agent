@@ -1,7 +1,7 @@
 {
   "id": "superforecasting-agent",
   "name": "Superforecasting Agent",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "description": "Command-line forecasting desk with ACP editor integration, forecast ledger workflows, calibration, and rich tool support.",
   "repository": "https://github.com/teddyjfpender/superforecasting-agent",
   "website": "https://teddyjfpender.github.io/superforecasting-agent/docs/user-guide/features/acp",
@@ -9,7 +9,7 @@
   "license": "MIT",
   "distribution": {
     "uvx": {
-      "package": "superforecasting-agent[acp]==0.15.0",
+      "package": "superforecasting-agent[acp]==0.16.0",
       "args": ["superforecasting-agent", "acp"]
     }
   }
