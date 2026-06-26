@@ -1366,28 +1366,31 @@ function DeskModal({
   const modalW = narrow ? Math.max(40, width - 2) : Math.max(48, Math.min(width - 6, 100))
   const modalH = Math.max(10, Math.min(rows - 6, 36))
 
-  // Painted as an ABSOLUTE overlay over the desk body (not replacing it): the
-  // background list stays visible AROUND the box, while the box's solid black
-  // backgroundColor makes its interior opaque so nothing leaks through it.
-  // The wrapper is CONTENT-sized (height = the box) + positioned with a computed
-  // top — a full-height (height={rows}) wrapper overflows the desk pane and the
-  // body reflows away on the next re-render.
+  // Painted as an ABSOLUTE overlay over the desk body (not replacing it): the box
+  // IS the absolute element (NOT wrapped in a full-width centering Box — that
+  // clears its whole cols×modalH band of the list and reflows the body). Its
+  // bounding region is exactly modalW×modalH, so the list stays visible around it;
+  // the solid black backgroundColor keeps the interior opaque. left/top are
+  // computed to centre it (alignItems on an absolute box doesn't reliably centre).
   const modalTop = Math.max(0, Math.floor((rows - modalH) / 2) - 1)
+  const modalLeft = Math.max(0, Math.floor((width - modalW) / 2))
   return (
-    <Box alignItems="center" left={0} position="absolute" top={modalTop} width={width}>
-      <Box
-        backgroundColor="black"
-        borderColor={t.color.accent}
-        borderStyle="round"
-        flexDirection="column"
-        height={modalH}
-        paddingX={2}
-        paddingY={1}
-        width={modalW}
-      >
-        <Text bold color={t.color.primary} wrap="truncate-end">
-          {truncate(title, Math.max(10, modalW - 6))}
-        </Text>
+    <Box
+      backgroundColor="black"
+      borderColor={t.color.accent}
+      borderStyle="round"
+      flexDirection="column"
+      height={modalH}
+      left={modalLeft}
+      paddingX={2}
+      paddingY={1}
+      position="absolute"
+      top={modalTop}
+      width={modalW}
+    >
+      <Text bold color={t.color.primary} wrap="truncate-end">
+        {truncate(title, Math.max(10, modalW - 6))}
+      </Text>
         <Box flexDirection="row" flexShrink={0} height={Math.max(3, modalH - 5)} marginTop={1} minHeight={0}>
           <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={scrollRef}>
             {children}
@@ -1396,8 +1399,7 @@ function DeskModal({
             <OverlayScrollbar scrollRef={scrollRef} t={t} tick={tick} />
           </NoSelect>
         </Box>
-        <Text color={t.color.muted}>↑↓ scroll · PgUp/PgDn page · Esc/q close</Text>
-      </Box>
+      <Text color={t.color.muted}>↑↓ scroll · PgUp/PgDn page · Esc/q close</Text>
     </Box>
   )
 }
