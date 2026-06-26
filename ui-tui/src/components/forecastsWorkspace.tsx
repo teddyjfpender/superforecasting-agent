@@ -2500,6 +2500,24 @@ const pctOf = (value?: null | number): string => (finite(value) ? `${(value * 10
 const fixedOr = (value: null | number | undefined, digits: number): string =>
   finite(value) ? value.toFixed(digits) : '—'
 
+// The THESIS SCORE is a 0–100 strength INDEX (after weighting/coverage/effective-
+// breadth), NOT a probability — so it always carries its "/100" unit so a glance
+// can never confuse it with the 0–100% health probability. A withheld score is
+// "—" (never faked). Optionally appends the score band as "54/100 (41–100)".
+export const scoreText = (
+  score: null | number | undefined,
+  band?: { q05?: null | number; q95?: null | number } | null
+): string => {
+  if (!finite(score)) {
+    return '—'
+  }
+  const head = `${score.toFixed(0)}/100`
+  if (band && finite(band.q05) && finite(band.q95)) {
+    return `${head} (${band.q05.toFixed(0)}–${band.q95.toFixed(0)})`
+  }
+  return head
+}
+
 // The thesis health time-series as a band chart (health probability with the
 // score band shown as the y-zoom). Distinct from the forecast band chart only in
 // that its series is the thesis's rolling health.
@@ -2534,15 +2552,16 @@ function ThesisTrendBlock({ thesis, t, width }: { thesis: ForecastThesis; t: The
         <Text bold color={healthColor(t, health)}>
           {thesis.health_display ?? (finite(health) ? pct(health) : 'withheld')}
         </Text>
+        <Text color={t.color.label}> alive</Text>
         <Text color={t.color.muted}>{'   '}</Text>
         <Text bold color={deltaColor}>
           {deltaText}
         </Text>
         <Text color={t.color.muted}>{'   score '}</Text>
-        <Text color={t.color.text}>
-          {fixedOr(thesis.thesis_score, 0)}
-          {band && finite(band.q05) && finite(band.q95) ? ` (${band.q05.toFixed(0)}–${band.q95.toFixed(0)})` : ''}
+        <Text bold color={t.color.text}>
+          {scoreText(thesis.thesis_score, band)}
         </Text>
+        <Text color={t.color.label}> strength</Text>
         <Text color={t.color.muted}>{`   ${thesis.freshness ?? shortDate(thesis.as_of)}`}</Text>
       </Text>
       {chart ? (
@@ -2737,12 +2756,15 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
       </Box>
 
       <SectionTitle t={t}>aggregate</SectionTitle>
-      <KV k="health" t={t} v={thesis.health_display ?? (finite(thesis.health_probability) ? pct(thesis.health_probability) : 'withheld')} />
-      <KV k="score" t={t} v={fixedOr(thesis.thesis_score, 0)} />
+      <Text color={t.color.muted} wrap="truncate-end">
+        {'health = probability it is still alive · score = 0–100 strength index'}
+      </Text>
+      <KV k="health %" t={t} v={`${thesis.health_display ?? (finite(thesis.health_probability) ? pct(thesis.health_probability) : 'withheld')} alive`} />
+      <KV k="score /100" t={t} v={`${scoreText(thesis.thesis_score)} strength`} />
       <KV
-        k="90% band"
+        k="score band"
         t={t}
-        v={band && finite(band.q05) && finite(band.q95) ? `${band.q05.toFixed(0)} – ${band.q95.toFixed(0)}` : '—'}
+        v={band && finite(band.q05) && finite(band.q95) ? `${band.q05.toFixed(0)} – ${band.q95.toFixed(0)} /100` : '—'}
       />
       <KV k="coverage" t={t} v={pctOf(thesis.coverage)} />
       <KV k="n_eff" t={t} v={fixedOr(thesis.n_eff, 1)} />
@@ -2938,7 +2960,10 @@ export function FactorDeskRead({ factor, t, width }: { factor: ForecastFactor; t
       </Box>
 
       <SectionTitle t={t}>Factor Return</SectionTitle>
-      <KV k="mean" t={t} v={finite(factor.mean) ? `${trimNum(factor.mean)}${unit}` : 'withheld'} />
+      <Text color={t.color.muted} wrap="truncate-end">
+        {'mean μ = expected return · vol σ = its volatility'}
+      </Text>
+      <KV k="mean μ" t={t} v={finite(factor.mean) ? `${trimNum(factor.mean)}${unit}` : 'withheld'} />
       <KV k="vol σ" t={t} v={finite(factor.volatility) ? `${trimNum(factor.volatility)}${unit}` : '—'} />
       <KV
         k="90% band"

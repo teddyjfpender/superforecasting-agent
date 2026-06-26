@@ -991,10 +991,14 @@ describe('ForecastsWorkspace render', () => {
     // health trend + delta in pp
     expect(text).toContain('health over time')
     expect(text).toContain('▼ 4pp')
-    // aggregate stats
+    // aggregate stats — health is the alive PROBABILITY, score is the 0–100
+    // STRENGTH index; the "/100" unit + the legend keep the two close 54-ish
+    // numbers from reading as the same kind of value.
     expect(text).toContain('aggregate')
-    expect(text).toContain('54') // score
-    expect(text).toContain('41 – 67') // 90% band
+    expect(text).toContain('54%') // health (probability)
+    expect(text).toContain('54/100') // score (strength index, distinct unit)
+    expect(text).toContain('strength index') // the disambiguating legend
+    expect(text).toContain('41 – 67') // score band
     expect(text).toContain('coverage')
     expect(text).toContain('n_eff')
     // analyst note

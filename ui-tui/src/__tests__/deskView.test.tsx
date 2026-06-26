@@ -251,7 +251,10 @@ describe('DeskView (redesigned forecast desk)', () => {
     // thesis glyph + its aggregate (health/score) + the open affordance.
     let text = desk.text()
     expect(text).toContain('◆')
+    // Health and score must read as DIFFERENT KINDS of number even though their
+    // values are close: health carries "%", score carries "/100".
     expect(text).toContain('health 54%')
+    expect(text).toContain('score 54/100')
     expect(text).toContain('⏎ lens')
     // The cursor starts on the lens row → Enter opens the thesis aggregate modal,
     // which paints ABOVE the body (overlay): the full thesis title appears in the
@@ -350,9 +353,12 @@ describe('DeskView (redesigned forecast desk)', () => {
       { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
     )
     const text = normalize(stdout.text(), stripAnsi)
-    // Lens-aggregate header (thesis health/score) heads the panel.
+    // Lens-aggregate header (thesis health/score) heads the panel. Health is the
+    // ALIVE probability ("54%") and score is the STRENGTH index ("54/100") — they
+    // must read as visibly different kinds of number despite close values.
     expect(text).toContain('health')
     expect(text).toContain('54%')
+    expect(text).toContain('54/100')
     // The selected forecast's compact headline + counts.
     expect(text).toContain('52%')
     expect(text).toContain('panel')
@@ -425,7 +431,8 @@ describe('DeskView (redesigned forecast desk)', () => {
     )
     const text = normalize(stdout.text(), stripAnsi)
     expect(text).not.toContain('Select a forecast')
-    expect(text).toContain('54%') // health aggregate
+    expect(text).toContain('54%') // health aggregate (alive probability)
+    expect(text).toContain('54/100') // score aggregate (strength index, distinct unit)
     expect(text).toContain('health over time') // the history graph
     expect(text).toContain('members 1')
     expect(text).toContain('Sticky services inflation') // analyst teaser

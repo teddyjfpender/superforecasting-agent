@@ -45,6 +45,7 @@ import {
   healthColor,
   historyToBandPoints,
   panelFromPacket,
+  scoreText,
   signColor,
   ThesisDeskRead,
   trimNum,
@@ -901,8 +902,10 @@ function LensSummary({
             <Text bold color={healthColor(t, refThesis.health_probability)}>
               {refThesis.health_display ?? (finite(refThesis.health_probability) ? pct(refThesis.health_probability) : '—')}
             </Text>
-            <Text color={t.color.muted}>{'  score '}</Text>
-            <Text bold color={t.color.primary}>{finite(refThesis.thesis_score) ? refThesis.thesis_score.toFixed(0) : '—'}</Text>
+            <Text color={t.color.label}> alive</Text>
+            <Text color={t.color.muted}>{'  ·  score '}</Text>
+            <Text bold color={t.color.primary}>{scoreText(refThesis.thesis_score)}</Text>
+            <Text color={t.color.label}> strength</Text>
             <Text color={t.color.muted}>{'  '}</Text>
             <Text bold color={deltaColor}>{glyph}</Text>
           </Text>
@@ -910,7 +913,8 @@ function LensSummary({
           <Text wrap="truncate-end">
             <Text color={t.color.muted}>μ </Text>
             <Text bold color={signColor(t, refFactor.mean)}>{finite(refFactor.mean) ? `${trimNum(refFactor.mean)}${unit}` : '—'}</Text>
-            <Text color={t.color.muted}>{'  vol '}</Text>
+            <Text color={t.color.label}> return</Text>
+            <Text color={t.color.muted}>{'  ·  vol σ '}</Text>
             <Text color={t.color.text}>{finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}</Text>
             <Text color={t.color.muted}>{'  '}</Text>
             <Text bold color={deltaColor}>{glyph}</Text>
@@ -978,14 +982,16 @@ function DeskLensRow({
   const glyph = isThesis ? '◆' : '▣'
   const title = (isThesis ? refThesis?.title : refFactor?.title) ?? 'Lens'
 
+  // Space-constrained list row: keep the pair unambiguous via UNITS, not words —
+  // health carries "%", score carries "/100" so they can't be read as the same
+  // kind of number even when their values are close ("health 54% · score 54/100").
   let agg = ''
   if (refThesis) {
     const health = refThesis.health_probability
-    const score = refThesis.thesis_score
-    agg = `health ${refThesis.health_display ?? (finite(health) ? pct(health) : '—')} · score ${finite(score) ? score.toFixed(0) : '—'}`
+    agg = `health ${refThesis.health_display ?? (finite(health) ? pct(health) : '—')} · score ${scoreText(refThesis.thesis_score)}`
   } else if (refFactor) {
     const unit = unitSuffix(refFactor.units)
-    agg = `μ ${finite(refFactor.mean) ? `${trimNum(refFactor.mean)}${unit}` : '—'} · vol ${finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}`
+    agg = `μ ${finite(refFactor.mean) ? `${trimNum(refFactor.mean)}${unit}` : '—'} · vol σ ${finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}`
   }
 
   const titleW = Math.max(8, width - agg.length - 18)
@@ -1026,13 +1032,20 @@ function LensHeader({
         <Text bold color={t.color.accent} wrap="truncate-end">
           {truncate(refThesis.title ?? 'thesis', width)}
         </Text>
+        {/* Two-line read: health is the headline ALIVE-probability (% + health ramp),
+            score is the secondary STRENGTH index (/100, neutral) — the unit + word +
+            colour together keep two close values from reading as the same thing. */}
         <Text wrap="truncate-end">
           <Text color={t.color.muted}>health </Text>
           <Text bold color={healthColor(t, health)}>
             {refThesis.health_display ?? (finite(health) ? pct(health) : '—')}
           </Text>
-          <Text color={t.color.muted}>{'  score '}</Text>
-          <Text color={t.color.text}>{finite(score) ? score.toFixed(0) : '—'}</Text>
+          <Text color={t.color.label}> alive</Text>
+        </Text>
+        <Text wrap="truncate-end">
+          <Text color={t.color.muted}>score  </Text>
+          <Text color={t.color.text}>{scoreText(score)}</Text>
+          <Text color={t.color.label}> strength</Text>
         </Text>
       </Box>
     )
@@ -1052,8 +1065,12 @@ function LensHeader({
           <Text bold color={signColor(t, mean)}>
             {finite(mean) ? `${trimNum(mean)}${unit}` : '—'}
           </Text>
-          <Text color={t.color.muted}>{'  vol σ '}</Text>
+          <Text color={t.color.label}> return</Text>
+        </Text>
+        <Text wrap="truncate-end">
+          <Text color={t.color.muted}>vol σ </Text>
           <Text color={t.color.text}>{finite(refFactor.volatility) ? `${trimNum(refFactor.volatility)}${unit}` : '—'}</Text>
+          <Text color={t.color.label}> volatility</Text>
         </Text>
       </Box>
     )
