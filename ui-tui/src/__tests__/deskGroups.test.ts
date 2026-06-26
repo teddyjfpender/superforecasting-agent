@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDeskTabs, forecastsForTab, forecastTheme, tabWindow } from '../lib/deskGroups.js'
+import { buildDeskTabs, cleanTagLabel, forecastsForTab, forecastTheme, shortLensLabel, tabWindow } from '../lib/deskGroups.js'
 
 const item = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, ...extra })
 
@@ -21,7 +21,8 @@ describe('deskGroups', () => {
 
   it('orders theses -> factors -> tag-groups -> All', () => {
     expect(tabs.map((t) => t.kind)).toEqual(['thesis', 'factor', 'tag', 'tag', 'all'])
-    expect(tabs.map((t) => t.label)).toEqual(['Fed Path', 'Econ Factor', '#tech', '#untagged', 'All'])
+    // Labels are SHORT (kind-noise stripped: "Econ Factor" -> "Econ").
+    expect(tabs.map((t) => t.label)).toEqual(['Fed Path', 'Econ', '#tech', '#untagged', 'All'])
   })
 
   it('thesis tab keeps only present members (drops missing ids)', () => {
@@ -55,6 +56,21 @@ describe('deskGroups', () => {
     const t = buildDeskTabs({ forecasts: [] } as never)
     expect(t).toHaveLength(1)
     expect(t[0].kind).toBe('all')
+  })
+})
+
+describe('short labels', () => {
+  it('shortLensLabel strips kind-noise + stopwords and shortens long titles', () => {
+    expect(shortLensLabel('Democrats take the Senate back tracker thesis')).not.toContain('thesis')
+    expect(shortLensLabel('Democrats take the Senate back tracker thesis').length).toBeLessThanOrEqual(18)
+    expect(shortLensLabel('AI infrastructure scarcity thesis')).toBe('AI infrastructure')
+    expect(shortLensLabel('Fed Path')).toBe('Fed Path')
+  })
+
+  it('cleanTagLabel drops years/short tokens and keeps the significant word', () => {
+    expect(cleanTagLabel('2026 u.s. primary election')).toBe('primary')
+    expect(cleanTagLabel('nbis')).toBe('nbis')
+    expect(cleanTagLabel('tech').length).toBeLessThanOrEqual(14)
   })
 })
 

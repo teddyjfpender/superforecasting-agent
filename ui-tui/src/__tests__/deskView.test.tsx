@@ -201,11 +201,11 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('FORECASTS')
     expect(text).toContain('2 active')
     expect(text).toContain('13 open alert')
-    // Lens tab strip: the thesis, the factor, and the catch-all All tab. The
-    // strip truncates long labels (DeskTabs caps at ~22 chars), so assert the
-    // visible prefix rather than the full title.
-    expect(text).toContain('Inflation stays stick')
-    expect(text).toContain('Power-bottleneck bask')
+    // Lens tab strip: short labels (kind-noise stripped, stopwords dropped) so the
+    // strip stays on one line — "Inflation stays sticky through 2026" -> "Inflation
+    // stays", "Power-bottleneck basket" -> "Power-bottleneck".
+    expect(text).toContain('Inflation stays')
+    expect(text).toContain('Power-bottleneck')
     expect(text).toContain('All')
     desk.cleanup()
   })

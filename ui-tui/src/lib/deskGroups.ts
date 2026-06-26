@@ -37,6 +37,29 @@ export function forecastTheme(item: ForecastWorkspaceItem): string {
   return domain ? domain.toLowerCase() : 'untagged'
 }
 
+// Thesis/factor titles are long sentences ("Democrats take the Senate back tracker
+// thesis"); tabs need a SHORT label. Strip the trailing kind-noise words + stopwords
+// and keep the first significant words, so the strip stays on one line.
+const LABEL_NOISE = /\b(thesis|tracker|basket|factor|index|forecast|outlook|tracker)\b/gi
+const LABEL_STOP = new Set(['a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'in', 'is', 'of', 'on', 'or', 'the', 'to', 'vs', 'with'])
+
+export function shortLensLabel(title: string, max = 18): string {
+  const cleaned = (title || '').replace(LABEL_NOISE, ' ').replace(/\s+/g, ' ').trim()
+  const words = cleaned.split(' ').filter((w) => w && !LABEL_STOP.has(w.toLowerCase()))
+  let out = words.slice(0, 3).join(' ')
+  if (out.length > max) out = words.slice(0, 2).join(' ')
+  if (out.length > max) out = `${out.slice(0, max - 1)}…`
+  return out || (title || 'Lens').slice(0, max)
+}
+
+/** A clean #tag label from a raw topic/theme: drop 4-digit years + 1-char tokens,
+ *  keep the first significant word, cap short. "2026 u.s. primary election" → "primary". */
+export function cleanTagLabel(theme: string, max = 14): string {
+  const words = (theme || '').split(/[\s_./-]+/).filter((w) => w && !/^\d{4}$/.test(w) && w.length > 1)
+  const sig = words.find((w) => w.length > 2) ?? words[0] ?? theme
+  return sig.slice(0, max).toLowerCase()
+}
+
 export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
   const forecasts = payload.forecasts || []
   const present = new Set(forecasts.map((f) => f.id || '').filter(Boolean))
@@ -48,12 +71,12 @@ export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
   for (const th of payload.theses || []) {
     const ids = keep(th.question_ids)
     ids.forEach((id) => grouped.add(id))
-    tabs.push({ key: `thesis:${th.id ?? th.title}`, label: th.title || 'Thesis', kind: 'thesis', refId: th.id, forecastIds: ids })
+    tabs.push({ key: `thesis:${th.id ?? th.title}`, label: shortLensLabel(th.title || 'Thesis'), kind: 'thesis', refId: th.id, forecastIds: ids })
   }
   for (const fa of payload.factors || []) {
     const ids = keep(fa.question_ids)
     ids.forEach((id) => grouped.add(id))
-    tabs.push({ key: `factor:${fa.id ?? fa.title}`, label: fa.title || 'Factor', kind: 'factor', refId: fa.id, forecastIds: ids })
+    tabs.push({ key: `factor:${fa.id ?? fa.title}`, label: shortLensLabel(fa.title || 'Factor'), kind: 'factor', refId: fa.id, forecastIds: ids })
   }
 
   // Tag/theme groups for the forecasts that belong to no thesis/factor.
@@ -67,7 +90,7 @@ export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
     else buckets.set(theme, [id])
   }
   const tagTabs: DeskTab[] = [...buckets.entries()]
-    .map(([theme, ids]) => ({ key: `tag:${theme}`, label: `#${theme}`, kind: 'tag' as const, forecastIds: ids }))
+    .map(([theme, ids]) => ({ key: `tag:${theme}`, label: `#${cleanTagLabel(theme)}`, kind: 'tag' as const, forecastIds: ids }))
     .sort((a, b) => b.forecastIds.length - a.forecastIds.length || a.label.localeCompare(b.label))
   tabs.push(...tagTabs)
 
@@ -90,7 +113,7 @@ export function tabWindow(labelWidths: number[], active: number, maxWidth: numbe
   const n = labelWidths.length
   if (n === 0) return { start: 0, end: 0 }
   const a = Math.max(0, Math.min(active, n - 1))
-  const budget = Math.max(labelWidths[a], maxWidth - 4) // leave room for ‹ › overflow markers
+  const budget = Math.max(labelWidths[a], maxWidth - 6) // leave room for the ‹ › overflow markers + their spaces
   let start = a
   let end = a + 1
   let used = labelWidths[a]

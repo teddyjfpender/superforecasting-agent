@@ -35,13 +35,13 @@ export function DeskTabs({
   const shown = tabs.slice(start, end)
   return (
     <NoSelect flexShrink={0} marginBottom={1}>
-      <Box>
+      <Box flexWrap="nowrap" overflow="hidden" width={Math.max(20, width)}>
         {start > 0 ? <Text color={t.color.muted}>{'‹ '}</Text> : null}
         {shown.map((tab, idx) => {
           const i = start + idx
           return (
-            <Box key={tab.key} onClick={() => onSelect(i)}>
-              {idx > 0 ? <Text color={t.color.border}>{'  ·  '}</Text> : null}
+            <Box key={tab.key} flexShrink={0} onClick={() => onSelect(i)}>
+              {idx > 0 ? <Text color={t.color.border}>{' · '}</Text> : null}
               <Text bold={i === active} color={i === active ? t.color.accent : t.color.muted}>
                 {labels[i]}
               </Text>
