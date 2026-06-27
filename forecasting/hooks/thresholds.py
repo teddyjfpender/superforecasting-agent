@@ -28,6 +28,12 @@ DEFAULT_MIN_PERSPECTIVES = 3
 DEFAULT_MAX_WIDTH_RATIO = 1.0
 DEFAULT_MIN_SHARPNESS = 0.05
 DEFAULT_NULL_EXCESS_TOLERANCE = 0.05
+# Terminal Platt-calibration slope applied to the panel pool AFTER aggregation.
+# 1.0 is the IDENTITY (an un-configured question is byte-identical to the bare
+# pool); >1 sharpens away from 0.5, <1 flattens toward it. Composed
+# multiplicatively with any learned logit_scale (both are alpha-style log-odds
+# slopes): combined_alpha = alpha_extremize * learned_scale.
+DEFAULT_ALPHA_EXTREMIZE = 1.0
 
 
 @dataclass(frozen=True)
@@ -115,6 +121,21 @@ THRESHOLD_SPECS: tuple[ThresholdSpec, ...] = (
         integer=False,
         help="Allowed mass above the null-model tail before the no-path-tails gate fires.",
     ),
+    ThresholdSpec(
+        key="alpha_extremize",
+        label="Terminal Platt slope (alpha)",
+        default=DEFAULT_ALPHA_EXTREMIZE,
+        minimum=0.25,
+        maximum=4.0,
+        # Consumed by panel.aggregate_panel_estimates (terminal calibration),
+        # not a builtin gate — no rule_ids.
+        rule_ids=(),
+        # >1 sharpens (a "stricter"/bolder commitment); treat a value BELOW the
+        # identity as the looser (more hedged) direction.
+        direction="lower_looser",
+        integer=False,
+        help="Platt slope applied to the panel pool after aggregation (1.0 = no-op identity).",
+    ),
 )
 
 THRESHOLD_BY_KEY: dict[str, ThresholdSpec] = {s.key: s for s in THRESHOLD_SPECS}
@@ -153,3 +174,26 @@ def threshold_value(thresholds: dict[str, float] | None, key: str, default: floa
             except (TypeError, ValueError):
                 return default
     return default
+
+
+def resolve_alpha_extremize(question_metadata: dict | None) -> float:
+    """Resolve the per-question terminal Platt slope from question metadata.
+
+    Reads ``metadata['forecast_hooks']['thresholds']['alpha_extremize']`` and
+    falls back to :data:`DEFAULT_ALPHA_EXTREMIZE` (1.0 = identity). DEFAULTING
+    to 1.0 is the hard byte-identical invariant: an un-configured question's
+    panel pool is unchanged. Any stored value has already been clamped to the
+    spec's sane range by :func:`normalize_thresholds` on write; we re-clamp on
+    read so a hand-edited DB can never inject a degenerate slope.
+    """
+    spec = THRESHOLD_BY_KEY["alpha_extremize"]
+    if not isinstance(question_metadata, dict):
+        return float(spec.default)
+    fh = question_metadata.get("forecast_hooks")
+    thresholds = fh.get("thresholds") if isinstance(fh, dict) else None
+    if not isinstance(thresholds, dict) or "alpha_extremize" not in thresholds:
+        return float(spec.default)
+    try:
+        return spec.clamp(float(thresholds["alpha_extremize"]))
+    except (TypeError, ValueError):
+        return float(spec.default)

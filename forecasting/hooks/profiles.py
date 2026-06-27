@@ -32,6 +32,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_outcome_paths": _O,
         "style_clean": _W,
         "lessons_applied": _O,
+        "terminal_calibration_applied": _O,
         # v2
         "output_renderable": _W,
         "uncertainty_well_formed": _W,
@@ -60,6 +61,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_outcome_paths": _W,
         "style_clean": _E,
         "lessons_applied": _W,
+        "terminal_calibration_applied": _W,
         # v2 — structural OUTPUT rules block (bug-catchers; programmatic auto-fix);
         # reasoning + soft-confidence + quorum-participation are advisory by default.
         "output_renderable": _E,
@@ -88,6 +90,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_outcome_paths": _E,
         "style_clean": _E,
         "lessons_applied": _E,
+        "terminal_calibration_applied": _W,  # advisory even in strict (default 1.0 is a no-op stage)
         # v2
         "output_renderable": _E,
         "uncertainty_well_formed": _E,

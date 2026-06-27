@@ -94,6 +94,11 @@ class HookContext:
     panel_linked: bool = False       # panel_run_ref set on this commit
     panel_skipped: bool = False      # panel_skipped_reason set
     panel_run_count: int = 0
+    # AIA P0.1: did the linked panel run pass through the terminal Platt-calibration
+    # stage (aggregate_panel_estimates records `applied_alpha` in its spread)? True
+    # by default so a non-panel / non-aggregated commit never false-fires; flips
+    # False only for a linked panel run that skipped the stage (a legacy/bypassed run).
+    terminal_calibration_present: bool = True
 
     # evidence / freshness
     evidence_count: int = 0

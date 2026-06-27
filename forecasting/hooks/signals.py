@@ -275,6 +275,7 @@ def build_commit_context(
     committed_winner_prob: float | None = None,
     derived_child_present: bool = False,
     machine_scoreable: bool = True,
+    terminal_calibration_present: bool = True,
     thresholds: dict[str, float] | None = None,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
@@ -328,5 +329,6 @@ def build_commit_context(
         committed_winner_prob=committed_winner_prob,
         derived_child_present=derived_child_present,
         machine_scoreable=machine_scoreable,
+        terminal_calibration_present=terminal_calibration_present,
         thresholds=dict(thresholds or {}),
     )

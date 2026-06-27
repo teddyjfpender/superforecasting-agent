@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any, Iterable, Mapping, Sequence
 
-from forecasting.bayes_toolkit import log_odds_pool, prob_to_odds
+from forecasting.bayes_toolkit import log_odds_pool, platt_scale, prob_to_odds
 from forecasting.models import ValidationError
 
 
@@ -127,7 +127,16 @@ PANEL_AGGREGATION_METHODS = frozenset(
 
 @dataclass
 class PanelAggregation:
-    """Result of aggregating a panel of estimates for a binary question."""
+    """Result of aggregating a panel of estimates for a binary question.
+
+    ``aggregate_probability`` is the FINAL (terminally-calibrated) panel scalar.
+    ``pre_extremize_probability`` mirrors :class:`bayes_toolkit.PoolResult`: it
+    is the bare pooled scalar BEFORE the terminal Platt calibration, and is
+    ``None`` when no calibration was applied (the identity alpha=1.0 path), so an
+    un-configured question is byte-identical to the historical bare pool.
+    ``applied_alpha`` is the per-question Platt slope actually applied
+    (``alpha_extremize``); 1.0 means no-op.
+    """
 
     method: str
     aggregate_probability: float
@@ -135,6 +144,8 @@ class PanelAggregation:
     trim: int
     estimates: list[dict[str, Any]]
     notes: list[str] = field(default_factory=list)
+    pre_extremize_probability: float | None = None
+    applied_alpha: float = 1.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -147,6 +158,11 @@ class PanelAggregation:
             "trim": self.trim,
             "estimates": self.estimates,
             "notes": self.notes,
+            "pre_extremize_probability": (
+                None if self.pre_extremize_probability is None
+                else round(self.pre_extremize_probability, 6)
+            ),
+            "applied_alpha": round(self.applied_alpha, 6),
         }
 
 
@@ -155,6 +171,7 @@ def aggregate_panel_estimates(
     *,
     method: str = "trimmed_geomean_odds",
     trim: int = 1,
+    alpha_extremize: float = 1.0,
 ) -> PanelAggregation:
     """Aggregate per-perspective probability estimates into a panel decision.
 
@@ -170,6 +187,18 @@ def aggregate_panel_estimates(
 
     The spread artifact captures the panel disagreement so it can be shown
     next to the aggregate ("the spread is the most valuable part").
+
+    Terminal calibration (AIA P0.1): after the pool, the scalar is passed
+    through the desk's single recalibration kernel
+    :func:`forecasting.bayes_toolkit.platt_scale` with a per-question
+    ``alpha_extremize`` slope, defaulting to ``1.0`` (the identity) so an
+    un-configured question is BYTE-IDENTICAL to the historical bare pool — the
+    hard invariant. At the identity, ``pre_extremize_probability`` stays ``None``
+    (mirroring :class:`bayes_toolkit.PoolResult`). The MEASURED per-scope
+    confidence rescale is applied separately downstream in
+    :func:`forecasting.learning.apply_active_lesson_adjustments` (the fixed
+    de-hedge and the learned correction compose along the pipeline, NOT at this
+    one call site — never multiply them here or the learned slope double-applies).
     """
 
     cleaned = _clean_estimates(estimates)
@@ -197,7 +226,30 @@ def aggregate_panel_estimates(
     else:  # median
         aggregate = float(median(probs))
 
+    # ── terminal Platt calibration ────────────────────────────────────────────
+    # Apply the per-question extremization slope. At the identity (1.0) this is a
+    # strict no-op: the pre_extremize field stays None and the aggregate is
+    # byte-identical to the bare pool.
+    alpha = float(alpha_extremize)
+    pre_extremize: float | None = None
+    if alpha != 1.0:
+        pre_extremize = float(aggregate)
+        aggregate = platt_scale(aggregate, alpha=alpha, d=1.0)
+        notes.append(
+            f"terminal Platt calibration alpha={alpha:g}:"
+            f" {pre_extremize:.4f} -> {float(aggregate):.4f}"
+        )
+
     spread = _spread_summary([row["probability"] for row in cleaned])
+    # Fold the terminal-calibration markers into the persisted spread so the
+    # stage is observable downstream (the desk + the skipped-terminal-calibration
+    # hook) without a schema migration — mirrors how disagreement_signal rides
+    # along here. ``applied_alpha`` is always present (1.0 = no-op);
+    # ``pre_extremize_probability`` is present only when calibration ran.
+    spread["applied_alpha"] = round(alpha, 6)
+    spread["terminal_calibration_applied"] = alpha != 1.0
+    if pre_extremize is not None:
+        spread["pre_extremize_probability"] = round(pre_extremize, 6)
     return PanelAggregation(
         method=method,
         aggregate_probability=float(aggregate),
@@ -205,6 +257,8 @@ def aggregate_panel_estimates(
         trim=trim,
         estimates=annotated,
         notes=notes,
+        pre_extremize_probability=pre_extremize,
+        applied_alpha=alpha,
     )
 
 

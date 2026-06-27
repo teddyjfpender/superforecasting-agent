@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from forecasting.bayes_toolkit import inv_logit, logit as _bayes_logit, platt_scale
 from forecasting.ledger import ForecastLedger
 
 LEARNING_REVIEW_REASONS = frozenset(
@@ -98,11 +99,19 @@ def apply_active_lesson_adjustments(
         adjustment["applied_probability_delta"] = probability_delta
         changed = True
     if logit_shift:
-        adjusted = _sigmoid(_logit(adjusted) + logit_shift)
+        # Additive log-odds shift: inv_logit(logit(p) + shift). This is
+        # platt_scale with alpha=1 and d=exp(shift); we keep it as an explicit
+        # shift for readability (and to avoid an exp round-trip).
+        adjusted = inv_logit(_bayes_logit(adjusted) + logit_shift)
         adjustment["applied_logit_shift"] = logit_shift
         changed = True
     if logit_scale != 1.0:
-        adjusted = _sigmoid(_logit(adjusted) * logit_scale)
+        # Base-rate-neutral confidence rescale around 0.5 == the desk's single
+        # recalibration kernel platt_scale(p, alpha=logit_scale, d=1.0). The legacy
+        # private operator was _sigmoid(_logit(p)*scale) where _logit clamped p to
+        # 1e-6; platt_scale's logit clamps to 1e-9, so we PRE-CLAMP to 1e-6 here to
+        # stay byte-identical to the legacy operator even at exact-0/1 boundary inputs.
+        adjusted = platt_scale(min(max(adjusted, 1e-6), 1.0 - 1e-6), alpha=logit_scale, d=1.0)
         adjustment["applied_logit_scale"] = logit_scale
         changed = True
     if changed:
@@ -225,12 +234,3 @@ def _optional_float(value: Any) -> float | None:
     else:
         return None
     return number if math.isfinite(number) else None
-
-
-def _logit(probability: float) -> float:
-    probability = min(max(probability, 1e-6), 1 - 1e-6)
-    return math.log(probability / (1 - probability))
-
-
-def _sigmoid(value: float) -> float:
-    return 1 / (1 + math.exp(-value))

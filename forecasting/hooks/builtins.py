@@ -216,6 +216,34 @@ def _check_lessons_applied(ctx: HookContext):
     return False, msg, {"unapplied": ctx.active_lessons_unapplied}
 
 
+# ── terminal Platt calibration applied (NEW — advisory by default) ────────────
+def _applies_terminal_calibration(ctx: HookContext) -> bool:
+    # Only meaningful for a live, modeled commit that LINKED a panel run: the
+    # terminal calibration stage lives inside panel aggregation, so a forecast
+    # with no panel has nothing to skip. (Exploratory origin is exempt via
+    # _modeled's is_live requirement.)
+    return ctx.is_live and not ctx.is_thesis_or_factor and ctx.panel_linked
+
+
+def _check_terminal_calibration_applied(ctx: HookContext):
+    if ctx.terminal_calibration_present:
+        return _OK
+    msg = (
+        "this live forecast linked a panel run that SKIPPED the terminal Platt "
+        "calibration stage (no applied_alpha recorded on the pool). Re-run the panel "
+        "through aggregate_panel_estimates so the pooled scalar is recalibrated "
+        "(alpha_extremize, default 1.0 = identity), or record it as "
+        "forecast_origin='exploratory'."
+    )
+    return False, msg, {}
+
+
+def _rem_recalibrate(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor("mechanical", "recalibrate_pool",
+                                 "Re-aggregate the panel so the terminal Platt calibration stage records applied_alpha.",
+                                 target_stage="update")
+
+
 def _rem_collect(_ctx: HookContext) -> RemediationDescriptor:
     return RemediationDescriptor("agentic", "collect_evidence",
                                  "Collect fresh evidence for each driver before re-estimating.",
@@ -500,6 +528,8 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_style, _live, _rem_style),
     SimpleRule("lessons_applied", Category.CALIBRATION, Severity.WARN, 6.0,
                _check_lessons_applied, _live, _rem_lessons),
+    SimpleRule("terminal_calibration_applied", Category.CALIBRATION, Severity.WARN, 6.0,
+               _check_terminal_calibration_applied, _applies_terminal_calibration, _rem_recalibrate),
     # v2 — output / uncertainty structure
     SimpleRule("output_renderable", Category.OUTPUT, Severity.ERROR, 12.0,
                _check_output_renderable, _dist, _rem_fix_distribution),
@@ -545,6 +575,7 @@ RULE_DOCS: dict[str, str] = {
     "require_outcome_paths": "Every material categorical outcome needs a named path (no unearned tails).",
     "style_clean": "Prose must be house-clean (no em-dashes / formatting issues).",
     "lessons_applied": "Active calibration lessons should be applied to the commit.",
+    "terminal_calibration_applied": "A linked panel run must pass through the terminal Platt calibration stage.",
     "output_renderable": "A distribution needs a central tendency + an ordered interval the charts can draw.",
     "uncertainty_well_formed": "Intervals must be ordered, nested, finite, non-degenerate, in-bounds.",
     "uncertainty_width_sane": "Intervals must not be implausibly wide vs the question range.",

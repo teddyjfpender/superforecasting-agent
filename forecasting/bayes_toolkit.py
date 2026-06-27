@@ -302,17 +302,55 @@ def geometric_pool_odds(probabilities: Sequence[float], weights: Sequence[float]
     return log_odds_pool(probabilities, weights)
 
 
+# The classic logistic-vs-normal variance-matching extremization slope
+# (Neyman-Roughgarden's n>50 limit). The theory-grounded value to ACTIVATE the
+# terminal calibration with — but never the kernel default (see below).
+PLATT_ALPHA_VARIANCE_MATCH = math.sqrt(3.0)
+
+
+def platt_scale(p: float, alpha: float = 1.0, d: float = 1.0) -> float:
+    """Platt-style affine recalibration in log-odds space.
+
+    ``platt_scale(p) = inv_logit(alpha * logit(p) + log(d))`` — the single
+    recalibration operator the desk uses everywhere (extremization, the learned
+    confidence rescale, and the panel's terminal calibration stage). ``alpha``
+    is the log-odds slope (``>1`` sharpens away from 0.5, ``<1`` flattens
+    toward it, ``==1`` leaves the slope unchanged); ``d`` is a multiplicative
+    odds bias (``d>1`` shifts toward YES, ``d<1`` toward NO, ``d==1`` is
+    unbiased). The default ``alpha=1.0`` is the exact IDENTITY (modulo the
+    interior clamp) — the kernel never silently extremizes; callers that want the
+    variance-matching slope pass :data:`PLATT_ALPHA_VARIANCE_MATCH` explicitly.
+
+    This is the Baron-2014 extremizing aggregator's recalibration kernel: a
+    log-odds pool followed by ``platt_scale`` is precisely "Platt-of-the-
+    geometric-mean-of-odds" (see :func:`combine_forecasts`).
+    """
+
+    alpha = _finite(alpha, "alpha")
+    if alpha <= 0:
+        raise ValidationError("platt_scale alpha must be positive")
+    d = _finite(d, "d")
+    if d <= 0:
+        raise ValidationError("platt_scale d must be positive")
+    return inv_logit(alpha * logit(p) + math.log(d))
+
+
 def extremize(p: float, factor: float = 1.0) -> float:
     """Sharpen a probability away from 0.5 by scaling its log-odds.
 
     ``factor > 1`` extremizes; ``factor == 1`` is a no-op. Justified when
     pooling several *independent* sources that agree.
+
+    A THIN ALIAS of :func:`platt_scale` with ``alpha=factor`` (and ``d=1.0``)
+    so there is exactly ONE recalibration operator on the desk. Behaviour is
+    identical to the historical ``inv_logit(factor * logit(p))`` for every
+    caller (``platt_scale`` adds ``log(d)=log(1.0)=0``).
     """
 
     factor = _finite(factor, "factor")
     if factor <= 0:
         raise ValidationError("extremize factor must be positive")
-    return inv_logit(factor * logit(p))
+    return platt_scale(p, alpha=factor, d=1.0)
 
 
 def de_extremize(p: float, factor: float = 1.0) -> float:
@@ -436,6 +474,13 @@ def combine_forecasts(
     factor = _finite(extremize, "extremize")
     if factor <= 0:
         raise ValidationError("extremize factor must be positive")
+    # Baron-2014 == Platt-of-geometric-mean identity: for ``method='log_odds_pool'``
+    # the pool is the (weighted) geometric mean of odds, so extremizing it is
+    # exactly ``platt_scale(geometric_mean_of_odds(p_i), alpha=factor)`` — one and
+    # the same recalibration kernel. ``extremize`` is a thin alias of
+    # :func:`platt_scale` (alpha=factor, d=1.0), so this equals
+    # ``platt_scale(pooled, alpha=factor)`` by construction. The regression test
+    # ``test_log_odds_pool_extremize_is_platt_of_geomean`` pins the identity.
     final = globals()["extremize"](pooled, factor) if factor != 1.0 else pooled
     if factor != 1.0 and correlation_applied and n_eff is not None and n_eff < len(rows):
         notes.append(
@@ -1721,7 +1766,7 @@ __all__ = [
     "apply_lr", "apply_lrs", "log_odds_update", "decompose_update",
     "normal_cdf", "normal_ppf",
     "linear_pool", "log_pool", "log_odds_pool", "geometric_pool_odds",
-    "extremize", "de_extremize", "combine_forecasts", "correlation_adjusted_pool",
+    "platt_scale", "extremize", "de_extremize", "combine_forecasts", "correlation_adjusted_pool",
     "PoolResult",
     "evidence_weight", "EvidenceWeight",
     "evidence_cluster", "EvidenceCluster",

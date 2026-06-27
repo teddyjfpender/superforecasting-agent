@@ -2575,6 +2575,18 @@ class ForecastLedger:
             _has_child = False
         _scoreable = self._machine_scoreable_payload(probability_or_distribution, question.outcome_space)
 
+        # Terminal Platt-calibration signal (AIA P0.1): when this commit LINKS a
+        # panel run, did that run pass through aggregate_panel_estimates' terminal
+        # calibration stage (which records `applied_alpha` on the persisted spread)?
+        # True when no panel is linked (nothing to skip). Best-effort / fail-open.
+        _terminal_calibration_present = True
+        if panel_run_ref:
+            try:
+                _pr = self.get_panel_run(panel_run_ref)
+                _terminal_calibration_present = "applied_alpha" in (_pr.get("spread_summary") or {})
+            except Exception:
+                _terminal_calibration_present = True
+
         # Per-question minimum-requirement THRESHOLD overrides (from the settings
         # modal / forecast.config.set). Fed into both the user-rule context and the
         # observe-mode score so a gate's floor is per-forecast, not a global constant.
@@ -2679,6 +2691,7 @@ class ForecastLedger:
                         committed_winner_prob=_winner_prob,
                         derived_child_present=_has_child,
                         machine_scoreable=_scoreable,
+                        terminal_calibration_present=_terminal_calibration_present,
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
                     _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
@@ -2761,6 +2774,7 @@ class ForecastLedger:
                 committed_winner_prob=_winner_prob,
                 derived_child_present=_has_child,
                 machine_scoreable=_scoreable,
+                terminal_calibration_present=_terminal_calibration_present,
                 thresholds=_qthresholds,
             )
             _hook_policy = policy_from_require_flags(
@@ -4270,15 +4284,23 @@ class ForecastLedger:
         ``ensemble_components`` or ``metadata``.
         """
 
+        from forecasting.hooks.thresholds import resolve_alpha_extremize
         from forecasting.panel import aggregate_panel_estimates  # local import to avoid cycle
 
-        self.get_question(question_id)
+        question = self.get_question(question_id)
         if snapshot_id is not None:
             self.get_snapshot(snapshot_id)
+        # Terminal Platt calibration (AIA P0.1): resolve the per-question slope
+        # from the question's forecast-hooks config (default 1.0 = byte-identical
+        # no-op for an un-configured question).
+        alpha_extremize = resolve_alpha_extremize(
+            question.metadata if isinstance(question.metadata, dict) else None
+        )
         aggregation = aggregate_panel_estimates(
             estimates,
             method=aggregation_method,
             trim=trim,
+            alpha_extremize=alpha_extremize,
         )
         now = utc_now_iso()
         run_id = f"pr_{uuid.uuid4().hex[:12]}"
