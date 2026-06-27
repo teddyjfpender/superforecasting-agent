@@ -251,10 +251,21 @@ def _rem_lessons(_ctx: HookContext) -> RemediationDescriptor:
 
 
 # ── v2 rules ──────────────────────────────────────────────────────────────────
-MIN_PERSPECTIVES = 3
-MAX_WIDTH_RATIO = 1.0       # an interval wider than the whole question range is absurd
-MIN_SHARPNESS = 0.05        # binary: |p-0.5| >= 0.025; below = effectively a coin flip
-NULL_EXCESS_TOLERANCE = 0.05
+# These constants are the DEFAULT minimum-requirement floors/ceilings. They are
+# tunable per-forecast: each gate reads ``ctx.threshold(<key>)`` first and only
+# falls back to the constant when the question carries no override (see
+# forecasting/hooks/thresholds.py for the registry the ledger + TUI share).
+from forecasting.hooks.thresholds import (  # noqa: E402
+    DEFAULT_MAX_WIDTH_RATIO,
+    DEFAULT_MIN_PERSPECTIVES,
+    DEFAULT_MIN_SHARPNESS,
+    DEFAULT_NULL_EXCESS_TOLERANCE,
+)
+
+MIN_PERSPECTIVES = DEFAULT_MIN_PERSPECTIVES
+MAX_WIDTH_RATIO = DEFAULT_MAX_WIDTH_RATIO       # an interval wider than the whole question range is absurd
+MIN_SHARPNESS = DEFAULT_MIN_SHARPNESS           # binary: |p-0.5| >= 0.025; below = effectively a coin flip
+NULL_EXCESS_TOLERANCE = DEFAULT_NULL_EXCESS_TOLERANCE
 
 _dist = lambda c: c.is_live and c.is_distribution and not c.is_thesis_or_factor  # noqa: E731
 
@@ -281,26 +292,31 @@ def _check_uncertainty_well_formed(ctx: HookContext):
 
 
 def _check_uncertainty_width(ctx: HookContext):
-    if ctx.interval_width_ratio is None or ctx.interval_width_ratio <= MAX_WIDTH_RATIO:
+    limit = ctx.threshold("max_width_ratio")
+    if limit is None:
+        limit = MAX_WIDTH_RATIO
+    if ctx.interval_width_ratio is None or ctx.interval_width_ratio <= limit:
         return _OK
     return False, (
         f"forecast interval is implausibly wide ({ctx.interval_width_ratio:.1f}x the question "
         "range). Tighten it to a defensible spread, or justify the fat tail."
-    ), {"width_ratio": ctx.interval_width_ratio}
+    ), {"width_ratio": ctx.interval_width_ratio, "limit": limit}
 
 
 def _check_quorum_participation(ctx: HookContext):
     # Only meaningful when a panel/quorum actually ran; quorum_required handles "must run".
     if ctx.panel_run_count == 0:
         return _OK
-    if ctx.panel_perspective_count >= MIN_PERSPECTIVES or ctx.quorum_model_count >= MIN_PERSPECTIVES:
+    need = ctx.threshold("min_perspectives")
+    need = MIN_PERSPECTIVES if need is None else int(need)
+    if ctx.panel_perspective_count >= need or ctx.quorum_model_count >= need:
         return _OK
     return False, (
         f"the deliberation had too few distinct viewpoints "
         f"(perspectives={ctx.panel_perspective_count}, models={ctx.quorum_model_count}; "
-        f"need >= {MIN_PERSPECTIVES} of EITHER — a fuller perspective panel OR a wider model quorum). "
+        f"need >= {need} of EITHER — a fuller perspective panel OR a wider model quorum). "
         "record_panel reports the distinct counts up front so this isn't a surprise."
-    ), {"perspectives": ctx.panel_perspective_count, "models": ctx.quorum_model_count}
+    ), {"perspectives": ctx.panel_perspective_count, "models": ctx.quorum_model_count, "need": need}
 
 
 def _check_quorum_required(ctx: HookContext):
@@ -328,7 +344,9 @@ def _check_quorum_judged(ctx: HookContext):
 
 
 def _check_tails_justified(ctx: HookContext):
-    bad = (ctx.tail_audit_passes is False) or (ctx.tail_null_excess > NULL_EXCESS_TOLERANCE)
+    tol = ctx.threshold("null_excess_tolerance")
+    tol = NULL_EXCESS_TOLERANCE if tol is None else tol
+    bad = (ctx.tail_audit_passes is False) or (ctx.tail_null_excess > tol)
     if not bad:
         return _OK
     return False, (
@@ -353,7 +371,9 @@ def _check_calibration_bias_applied(ctx: HookContext):
 
 def _check_confidence_committed(ctx: HookContext):
     # Soft nudge: flag near-maximum hedging unless explicitly justified. Never a hard block.
-    if ctx.sharpness is None or ctx.sharpness >= MIN_SHARPNESS or ctx.uncertainty_justified:
+    floor = ctx.threshold("min_sharpness")
+    floor = MIN_SHARPNESS if floor is None else floor
+    if ctx.sharpness is None or ctx.sharpness >= floor or ctx.uncertainty_justified:
         return _OK
     return False, (
         "the forecast sits at near-maximum hedging (effectively a coin flip) with no recorded "
@@ -366,14 +386,17 @@ def _check_reasoning_composition(ctx: HookContext):
     have = set(ctx.reasoning_methods)
     required = set(ctx.required_reasoning_methods)
     missing = sorted(required - have)
-    short = len(have) < ctx.min_reasoning_methods
+    # An explicit per-question override wins over the profile-resolved floor.
+    over = ctx.threshold("min_reasoning_methods")
+    need = ctx.min_reasoning_methods if over is None else int(over)
+    short = len(have) < need
     if not missing and not short:
         return _OK
     parts = []
     if missing:
         parts.append("missing required methods: " + ", ".join(missing))
     if short:
-        parts.append(f"only {len(have)} distinct methods, need >= {ctx.min_reasoning_methods}")
+        parts.append(f"only {len(have)} distinct methods, need >= {need}")
     return False, (
         "reasoning composition is insufficient (" + "; ".join(parts) + "). Declare the reasoning "
         "methods you used in `reasoning_methods` (e.g. outside_view, base_rate, bayesian, pre_mortem)."

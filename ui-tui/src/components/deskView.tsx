@@ -29,6 +29,7 @@ import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { DeskTabs as DeskTabsStrip } from './deskTabs.js'
+import { ForecastSettingsModal } from './forecastSettingsModal.js'
 import { ModalOverlay } from './modalOverlay.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import {
@@ -108,6 +109,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const [tab, setTab] = useState(0)
   const [sel, setSel] = useState(0)
   const [modalOpen, setModalOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [query, setQuery] = useState('')
   const [filtering, setFiltering] = useState(false)
   const [flash, setFlash] = useState('')
@@ -344,9 +346,27 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       .catch(() => setFlash('update failed'))
   }
 
+  // The id + title the settings modal targets: the selected forecast, or (on a
+  // lens row) the lens thesis/factor itself.
+  const settingsTargetId = lensActive ? (refThesis?.id ?? refFactor?.id ?? null) : selectedId
+  const settingsTargetTitle = lensActive
+    ? (refThesis?.title ?? refFactor?.title ?? null)
+    : (selected?.title ?? null)
+
+  const openSettings = () => {
+    if (!settingsTargetId) return
+    setModalOpen(false)
+    setSettingsOpen(true)
+  }
+
   const modalPageSize = Math.max(4, termRows - 12)
 
   useInput((ch, key) => {
+    // The settings modal owns the keyboard while open (it has its own useInput);
+    // trap everything here so the desk can't double-handle a key.
+    if (settingsOpen) {
+      return
+    }
     // Filter text-entry mode swallows printable keys.
     if (filtering) {
       if (key.return) {
@@ -437,6 +457,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
     if (ch === 'u') {
       return runUpdate()
+    }
+
+    if (ch === 's') {
+      if (settingsTargetId) {
+        return openSettings()
+      }
+
+      return
     }
 
     if (ch === 'h') {
@@ -566,7 +594,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         <DeskLensRow
           active={lensActive}
           onOpen={() => {
-            if (modalOpen) return
+            if (modalOpen || settingsOpen) return
             setSel(0)
             setModalOpen(true)
           }}
@@ -580,7 +608,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         cursor={lensActive ? -1 : clampedSel - lensOffset}
         empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
         items={visible}
-        onSelect={i => { if (!modalOpen) setSel(i + lensOffset) }}
+        onSelect={i => { if (!modalOpen && !settingsOpen) setSel(i + lensOffset) }}
         t={t}
         visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
         width={listW}
@@ -647,6 +675,22 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     <FactorDeskRead factor={refFactor} t={t} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
   ) : null
 
+  const settingsModal = settingsOpen && settingsTargetId ? (
+    <ForecastSettingsModal
+      cols={cols}
+      gw={gw}
+      onClose={() => setSettingsOpen(false)}
+      onSaved={() => {
+        setFlash('settings saved')
+        load() // silent refresh so the NEXT column reflects a cadence change
+      }}
+      questionId={settingsTargetId}
+      rows={termRows}
+      t={t}
+      title={settingsTargetTitle ?? settingsTargetId}
+    />
+  ) : null
+
   const modal = modalOpen ? (
     <ModalOverlay
       cols={cols}
@@ -680,8 +724,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
         { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
         { k: 'u', label: 'Update', run: () => runUpdate() },
+        { k: 's', label: 'Settings', run: () => openSettings() },
         { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
-        { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · u update · / filter · q close') },
+        { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · u update · s settings · / filter · q close') },
         { k: 'q', label: 'Close', run: onClose }
       ]
 
@@ -689,7 +734,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     ? `filter: ${truncate(query, Math.max(8, cols - 30))}▌  · ⏎ apply · Esc clear`
     : modalOpen
       ? '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close'
-      : '↑↓/jk select · Tab/←→ lens · ⏎ open · u update · / filter · r refresh · h help · q close'
+      : '↑↓/jk select · Tab/←→ lens · ⏎ open · u update · s settings · / filter · r refresh · h help · q close'
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -708,7 +753,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           Body clicks are gated while the modal is open (switchTab/onSelect early-
           return) so the still-visible tabs/rows can't leak interaction — the
           keyboard is already trapped by the `if (modalOpen) return` in useInput. */}
-      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen) switchTab(i) }} t={t} tabs={tabs} width={width} />
+      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen) switchTab(i) }} t={t} tabs={tabs} width={width} />
       {wide ? (
         <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
           <Box flexDirection="column" flexShrink={0} width={listWidth}>
@@ -725,6 +770,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       )}
       {footer}
       {modalOpen ? modal : null}
+      {settingsModal}
     </Box>
   )
 }

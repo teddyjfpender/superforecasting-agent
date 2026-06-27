@@ -117,6 +117,35 @@ ANALYST_NOTE_VERDICTS = {"right", "wrong", "close", "far"}
 FORECAST_LINK_TYPES = {"related", "component_of"}
 SCHEDULE_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio", "horizon"}
 
+# Friendly labels for the built-in hook gates, surfaced in the per-forecast
+# settings modal (resolve_question_config). A missing id falls back to a
+# title-cased rule id, so this never has to enumerate every future gate.
+_GATE_LABELS: dict[str, str] = {
+    "require_structured_reasoning": "Structured reasoning (up/down/change-my-mind)",
+    "require_components": "Ensemble decomposition",
+    "require_fresh_evidence": "Fresh evidence on re-run",
+    "stale_evidence_justified": "Stale-evidence reason recorded",
+    "require_decision_readiness": "Decision card complete",
+    "require_panel": "Deliberative panel",
+    "require_citations": "Citations attached",
+    "require_evidence": "At least one evidence record",
+    "require_outside_view_anchor": "Outside-view anchor (reference class)",
+    "require_outcome_paths": "Named path for each outcome",
+    "style_clean": "House style (no em-dashes)",
+    "lessons_applied": "Active calibration lessons applied",
+    "output_renderable": "Distribution renderable",
+    "uncertainty_well_formed": "Interval bounds well-formed",
+    "uncertainty_width_sane": "Interval width sane",
+    "quorum_participation": "Enough panel/quorum perspectives",
+    "quorum_required": "Panel/quorum actually ran",
+    "quorum_judged": "Quorum judge synthesis",
+    "tails_justified": "No-path tails justified",
+    "calibration_bias_applied": "Calibration bias correction",
+    "confidence_committed": "Committed (not a coin flip)",
+    "reasoning_composition": "Reasoning method breadth",
+    "thesis_aggregate_fresh": "Thesis aggregate fresh",
+}
+
 # Typed roles for a watched source — lets the desk distinguish resolution-critical
 # sources from background context so it can stop treating broad RSS the same as the
 # source that actually resolves/anchors the question.
@@ -1531,6 +1560,303 @@ class ForecastLedger:
             )
         return self.get_question(question_id)
 
+    # ── per-forecast settings (cadence + decision card + hooks gates/thresholds) ──
+    def update_question_config(
+        self,
+        question_id: str,
+        *,
+        review_cadence: str | None = None,
+        decision: dict[str, Any] | None = None,
+        hooks: dict[str, Any] | None = None,
+    ) -> ForecastQuestion:
+        """Patch the per-forecast settings the desk's settings modal owns, ATOMICALLY:
+
+        * ``review_cadence`` — validated against the cadence grammar (``_cadence_delta``)
+          and, when changed, the live per-question scheduled review is re-armed at the
+          new cadence (reusing :meth:`schedule_review`), so the desk's NEXT column reflects
+          it. Pass ``""`` to clear the cadence (and disable any per-question schedule).
+        * ``decision`` — optional ``{decision_owner, decision_deadline, action_threshold,
+          update_triggers}`` delegated to :meth:`update_question_decision` (same None=leave
+          / ""=clear semantics).
+        * ``hooks`` — optional ``{profile, overrides, thresholds}`` merged into
+          ``question.metadata['forecast_hooks']``. ``overrides`` is a gate->severity map
+          (validated to the allowed severities; ``lesson:*`` ids are NOT writable here so
+          the engine's non-demotable floor can't be re-opened at the config layer);
+          ``thresholds`` is a key->number map validated + clamped to the registry's sane
+          ranges. Pass an empty dict for a sub-key to clear it.
+        """
+        existing = self.get_question(question_id)
+
+        # ── VALIDATE everything up front, BEFORE any write, so a bad value in one
+        #    field can never leave another field half-committed (true to the
+        #    "ATOMICALLY" contract: all three inputs are vetted, then applied). ──
+        if decision:
+            allowed = {"decision_owner", "decision_deadline", "action_threshold", "update_triggers"}
+            unknown = set(decision) - allowed
+            if unknown:
+                raise ValidationError(f"unknown decision field(s): {', '.join(sorted(unknown))}")
+
+        hooks_meta: dict[str, Any] | None = None
+        if hooks is not None:
+            if not isinstance(hooks, dict):
+                raise ValidationError("hooks config must be an object")
+            unknown = set(hooks) - {"profile", "overrides", "thresholds", "auto_aggregate"}
+            if unknown:
+                raise ValidationError(f"unknown hooks field(s): {', '.join(sorted(unknown))}")
+            meta = dict(existing.metadata) if isinstance(existing.metadata, dict) else {}
+            fh = dict(meta.get("forecast_hooks") or {})
+            if "profile" in hooks:
+                fh.update(self._validate_hook_profile_patch(hooks["profile"]))
+            if "auto_aggregate" in hooks:
+                fh["auto_aggregate"] = bool(hooks["auto_aggregate"])
+            if "overrides" in hooks:
+                fh["overrides"] = self._validate_hook_overrides(hooks["overrides"])
+            if "thresholds" in hooks:
+                from forecasting.hooks.thresholds import normalize_thresholds
+
+                fh["thresholds"] = normalize_thresholds(hooks["thresholds"])
+            # prune empty sub-maps so a cleared config doesn't linger
+            for key in ("overrides", "thresholds"):
+                if key in fh and not fh[key]:
+                    fh.pop(key)
+            if fh:
+                meta["forecast_hooks"] = fh
+            else:
+                meta.pop("forecast_hooks", None)
+            hooks_meta = meta
+
+        cadence_set = review_cadence is not None
+        cadence_clean = review_cadence.strip() if cadence_set else None
+        if cadence_clean and not self._cadence_is_valid(cadence_clean):
+            # a bad string would silently fall back to daily — reject it up front.
+            raise ValidationError(
+                f"unrecognized review cadence '{cadence_clean}' — use daily/weekly, "
+                "'every 2 weeks', '3d', '12h', etc."
+            )
+
+        # ── APPLY (every input above is now validated) ──
+        if decision:
+            self.update_question_decision(question_id, **{k: decision[k] for k in decision})
+        if hooks_meta is not None:
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE forecast_questions SET metadata = ? WHERE id = ?",
+                    (json_dumps(hooks_meta), question_id),
+                )
+        if cadence_set:
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE forecast_questions SET review_cadence = ? WHERE id = ?",
+                    (cadence_clean or None, question_id),
+                )
+            self._rearm_question_cadence(question_id, cadence_clean or None)
+
+        return self.get_question(question_id)
+
+    def _cadence_is_valid(self, cadence: str) -> bool:
+        """True when ``cadence`` is in the vocabulary :meth:`_cadence_delta` knows
+        (so we reject typos instead of silently defaulting to daily)."""
+        raw = re.sub(r"\s+", " ", cadence.strip().lower())
+        if raw.startswith("every "):
+            raw = raw[len("every "):].strip()
+        if raw in {"daily", "1d", "weekly", "1w", "hourly", "minutely"}:
+            return True
+        return bool(re.fullmatch(
+            r"(?P<count>\d*)\s*(?P<unit>w|week|weeks|d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes)",
+            raw,
+        ))
+
+    def _rearm_question_cadence(self, question_id: str, cadence: str | None) -> None:
+        """Re-arm (or disable) the live per-question scheduled review so the NEXT
+        column tracks a cadence change. Reuses :meth:`schedule_review`'s re-arm path:
+        an existing per-question schedule is advanced to ``now + cadence``; if none
+        exists, one is created. Clearing the cadence disables existing schedules."""
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM scheduled_reviews WHERE scope_type = 'question' AND scope_ref = ?",
+                (question_id,),
+            ).fetchall()
+        if not cadence:
+            if existing:
+                with self._connect() as conn:
+                    conn.execute(
+                        "UPDATE scheduled_reviews SET enabled = 0 "
+                        "WHERE scope_type = 'question' AND scope_ref = ?",
+                        (question_id,),
+                    )
+            return
+        next_run_at = self._advance_cadence(utc_now_iso(), cadence)
+        if existing:
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE scheduled_reviews SET cadence = ?, next_run_at = ?, enabled = 1 "
+                    "WHERE scope_type = 'question' AND scope_ref = ?",
+                    (cadence, next_run_at, question_id),
+                )
+            return
+        self.schedule_review(
+            scope_type="question",
+            scope_ref=question_id,
+            cadence=cadence,
+            next_run_at=next_run_at,
+            trigger_reason="question_review_cadence",
+        )
+
+    def _validate_hook_profile_patch(self, profile: Any) -> dict[str, Any]:
+        from forecasting.hooks.profiles import HOOK_PROFILES
+
+        if profile in (None, ""):
+            return {"profile": None}
+        name = str(profile).strip()
+        if name not in HOOK_PROFILES:
+            raise ValidationError(
+                f"unknown hook profile '{name}' — choose one of {', '.join(sorted(HOOK_PROFILES))}"
+            )
+        return {"profile": name}
+
+    def _validate_hook_overrides(self, overrides: Any) -> dict[str, str]:
+        """Coerce a gate->severity map to the allowed vocabulary. Unknown rule ids
+        and ``lesson:*`` ids are rejected (the latter must stay non-demotable)."""
+        from forecasting.hooks.builtins import BUILTIN_RULE_IDS
+        from forecasting.hooks.spec import Severity
+
+        if not isinstance(overrides, dict):
+            raise ValidationError("hook overrides must be an object of gate -> severity")
+        allowed_ids = set(BUILTIN_RULE_IDS)
+        out: dict[str, str] = {}
+        for rule_id, sev in overrides.items():
+            rid = str(rule_id)
+            if rid.startswith("lesson:"):
+                raise ValidationError(
+                    f"calibration-lesson rule '{rid}' cannot be re-severitied per-forecast "
+                    "(it enforces a paid-for miss and must stay non-demotable)"
+                )
+            if rid not in allowed_ids:
+                raise ValidationError(f"unknown hook gate '{rid}'")
+            try:
+                value = Severity(str(sev).strip().lower())
+            except Exception:
+                raise ValidationError(
+                    f"severity for '{rid}' must be one of off/warn/error (got {sev!r})"
+                )
+            out[rid] = value.value
+        return out
+
+    def resolve_question_config(self, question_id: str) -> dict[str, Any]:
+        """Resolve the full per-forecast settings for the desk's settings modal:
+        ``{question_id, title, cadence, next_run_at, decision, gates[], thresholds[]}``.
+
+        ``gates`` lists EVERY built-in gate with its resolved severity + source
+        ('profile' when it comes from the active profile, 'override' when a
+        per-question override set it). ``thresholds`` lists every tunable
+        minimum-requirement with its current value, the standard default, and a
+        ``looser`` flag (+ source) so an override that RELAXES a requirement is
+        visible, never silent. ``lesson:*`` gates are excluded (not user-editable)."""
+        from forecasting.hooks.builtins import BUILTIN_RULES, RULE_DOCS
+        from forecasting.hooks.engine import load_hook_config
+        from forecasting.hooks.profiles import (
+            DEFAULT_PROFILE,
+            profile_severities,
+            resolve_reasoning_requirement,
+        )
+        from forecasting.hooks.spec import Severity
+        from forecasting.hooks.thresholds import THRESHOLD_SPECS, normalize_thresholds
+
+        question = self.get_question(question_id)
+        meta = question.metadata if isinstance(question.metadata, dict) else {}
+        fh = meta.get("forecast_hooks") or {}
+        hooks_config = load_hook_config()
+
+        active_profile = fh.get("profile") or hooks_config.get("profile") or DEFAULT_PROFILE
+        profile_sev = profile_severities(active_profile)
+        standard_sev = profile_severities("standard")
+        overrides = fh.get("overrides") or {}
+
+        # severity strictness ladder for the looser-than-standard flag.
+        _rank = {Severity.OFF: 0, Severity.WARN: 1, Severity.ERROR: 2}
+
+        gates: list[dict[str, Any]] = []
+        for rule in BUILTIN_RULES:
+            base = profile_sev.get(rule.id, rule.default_severity)
+            ov = overrides.get(rule.id)
+            if ov is not None:
+                try:
+                    sev = Severity(str(ov).strip().lower())
+                    source = "override"
+                except Exception:
+                    sev, source = base, "profile"
+            else:
+                sev, source = base, "profile"
+            std = standard_sev.get(rule.id, rule.default_severity)
+            looser = _rank[sev] < _rank[std]
+            gates.append({
+                "id": rule.id,
+                "label": _GATE_LABELS.get(rule.id, rule.id.replace("_", " ")),
+                "doc": RULE_DOCS.get(rule.id, ""),
+                "category": rule.category.value,
+                "severity": sev.value,
+                "default": std.value,
+                "source": source,
+                "looser": looser,
+            })
+
+        # thresholds: resolved value + the TRUE baseline + looser flag. Most
+        # thresholds baseline at their static spec default, but min_reasoning_methods'
+        # real floor is the active profile's reasoning requirement (3 standard / 5
+        # strict), NOT the spec's placeholder 0 — otherwise a genuine loosening of a
+        # potentially-blocking gate would read as "stricter" and hide.
+        _, profile_min_methods = resolve_reasoning_requirement(active_profile)
+        thr_over = normalize_thresholds(fh.get("thresholds"))
+        thresholds: list[dict[str, Any]] = []
+        for spec in THRESHOLD_SPECS:
+            has_override = spec.key in thr_over
+            baseline = (
+                float(profile_min_methods)
+                if spec.key == "min_reasoning_methods"
+                else float(spec.default)
+            )
+            value = thr_over.get(spec.key, baseline)
+            looser = bool(
+                has_override
+                and (
+                    float(value) < baseline
+                    if spec.direction == "lower_looser"
+                    else float(value) > baseline
+                )
+            )
+            thresholds.append({
+                "key": spec.key,
+                "label": spec.label,
+                "help": spec.help,
+                "value": value,
+                "default": baseline,
+                "minimum": spec.minimum,
+                "maximum": spec.maximum,
+                "integer": spec.integer,
+                "direction": spec.direction,
+                "rule_ids": list(spec.rule_ids),
+                "source": "override" if has_override else "default",
+                "looser": looser,
+            })
+
+        live = self.next_review_by_question().get(question_id) or {}
+        return {
+            "question_id": question_id,
+            "title": question.title,
+            "impact": question.impact,
+            "profile": active_profile,
+            "cadence": question.review_cadence,
+            "next_run_at": live.get("next_run_at"),
+            "decision": {
+                "decision_owner": question.decision_owner,
+                "decision_deadline": question.decision_deadline,
+                "action_threshold": question.action_threshold,
+                "update_triggers": list(question.update_triggers or []),
+            },
+            "gates": gates,
+            "thresholds": thresholds,
+        }
+
     def rename_question(self, question_id: str, new_title: str, *, actor: str | None = None) -> ForecastQuestion:
         """Rename a question's display title — the only identity field safe to edit in place
         (id/snapshots/scores/lessons/cross-refs all key off the id, never the title).
@@ -2249,6 +2575,16 @@ class ForecastLedger:
             _has_child = False
         _scoreable = self._machine_scoreable_payload(probability_or_distribution, question.outcome_space)
 
+        # Per-question minimum-requirement THRESHOLD overrides (from the settings
+        # modal / forecast.config.set). Fed into both the user-rule context and the
+        # observe-mode score so a gate's floor is per-forecast, not a global constant.
+        try:
+            from forecasting.hooks.thresholds import normalize_thresholds as _norm_thr
+
+            _qthresholds = _norm_thr(((question.metadata or {}).get("forecast_hooks") or {}).get("thresholds"))
+        except Exception:
+            _qthresholds = {}
+
         # User-defined rule enforcement (Phase 5). Only runs when the desk has
         # authored custom rules (zero overhead otherwise). A buggy rule engine must
         # never brick a commit (fail-OPEN on evaluation errors), but a legitimately
@@ -2297,6 +2633,7 @@ class ForecastLedger:
                         tail_unearned_mass=float((snapshot_metadata.get("tail_audit") or {}).get("unearned_mass") or 0.0),
                         tail_offenders=[], rationale=rationale,
                         domain=getattr(question, "domain", None), outcome_type=question.outcome_space.type,
+                        thresholds=_qthresholds,
                     )
                     # Augment with the signals user rules may test that the candidate
                     # context does not carry (only fetched when user rules exist) —
@@ -2424,6 +2761,7 @@ class ForecastLedger:
                 committed_winner_prob=_winner_prob,
                 derived_child_present=_has_child,
                 machine_scoreable=_scoreable,
+                thresholds=_qthresholds,
             )
             _hook_policy = policy_from_require_flags(
                 forecast_origin=forecast_origin,

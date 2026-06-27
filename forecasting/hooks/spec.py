@@ -171,6 +171,25 @@ class HookContext:
     domain: str | None = None
     outcome_type: str | None = None
 
+    # per-question minimum-requirement THRESHOLDS (key -> value), resolved from
+    # question.metadata['forecast_hooks']['thresholds']. Empty by default, so the
+    # gates fall back to their legacy constants. Read via ``threshold(key)``.
+    thresholds: dict[str, float] = field(default_factory=dict)
+
+    def threshold(self, key: str) -> float | None:
+        """Resolve a per-question threshold override, or None if not set (the gate
+        then uses its built-in constant). The single read path the gates use so a
+        per-forecast override is honored without re-plumbing every signal."""
+        if not self.thresholds:
+            return None
+        value = self.thresholds.get(key)
+        if value is None:
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     @property
     def reasoning_method_count(self) -> int:
         return len(self.reasoning_methods)

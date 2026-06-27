@@ -19,6 +19,13 @@ from forecasting.hooks.engine import (
     run_hooks,
 )
 from forecasting.hooks.profiles import DEFAULT_PROFILE, HOOK_PROFILES
+from forecasting.hooks.thresholds import (
+    THRESHOLD_BY_KEY,
+    THRESHOLD_KEYS,
+    THRESHOLD_SPECS,
+    ThresholdSpec,
+    normalize_thresholds,
+)
 from forecasting.hooks import store
 from forecasting.hooks.store import HookWriteError
 from forecasting.hooks.signals import (
@@ -54,6 +61,11 @@ __all__ = [
     "Verdict",
     "DEFAULT_PROFILE",
     "HOOK_PROFILES",
+    "THRESHOLD_BY_KEY",
+    "THRESHOLD_KEYS",
+    "THRESHOLD_SPECS",
+    "ThresholdSpec",
+    "normalize_thresholds",
     "build_commit_context",
     "build_context_from_ledger",
     "detect_style_offenders",

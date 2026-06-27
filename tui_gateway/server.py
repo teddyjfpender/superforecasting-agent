@@ -3773,6 +3773,50 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.config")
+def _(rid, params: dict) -> dict:
+    """Resolve the full per-forecast settings for the Desk settings modal: review
+    cadence + the live next-run, the decision card, every hook gate (severity +
+    source), and every tunable minimum-requirement threshold (value + default +
+    looser flag). Read-only."""
+    question_id = params.get("id") or params.get("question_id") or ""
+    if not isinstance(question_id, str) or not question_id.strip():
+        return _err(rid, 4003, "id must be a non-empty string")
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        return _ok(rid, ledger.resolve_question_config(question_id.strip()))
+    except Exception as e:
+        return _err(rid, 5009, str(e))
+
+
+@method("forecast.config.set")
+def _(rid, params: dict) -> dict:
+    """Write the per-forecast settings the modal owns, atomically: review_cadence
+    (re-arms the live schedule), decision card fields, and hook gates/thresholds.
+    Returns the freshly-resolved config so the modal + the Desk NEXT column refresh."""
+    question_id = params.get("id") or params.get("question_id") or ""
+    if not isinstance(question_id, str) or not question_id.strip():
+        return _err(rid, 4003, "id must be a non-empty string")
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        qid = question_id.strip()
+        kwargs: dict = {}
+        if "review_cadence" in params and params["review_cadence"] is not None:
+            kwargs["review_cadence"] = str(params["review_cadence"])
+        if isinstance(params.get("decision"), dict):
+            kwargs["decision"] = params["decision"]
+        if isinstance(params.get("hooks"), dict):
+            kwargs["hooks"] = params["hooks"]
+        ledger.update_question_config(qid, **kwargs)
+        return _ok(rid, ledger.resolve_question_config(qid))
+    except Exception as e:
+        return _err(rid, 5009, str(e))
+
+
 @method("forecast.question")
 def _(rid, params: dict) -> dict:
     question_id = params.get("id", "")

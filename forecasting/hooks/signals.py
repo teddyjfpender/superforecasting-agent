@@ -112,6 +112,14 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     except Exception:
         req_methods, min_methods = (), 0
 
+    # per-question minimum-requirement threshold overrides
+    try:
+        from forecasting.hooks.thresholds import normalize_thresholds
+
+        _qthr = normalize_thresholds(((getattr(question, "metadata", None) or {}).get("forecast_hooks") or {}).get("thresholds"))
+    except Exception:
+        _qthr = {}
+
     # measured chronic under-confidence for this scope (drives calibration_bias_applied)
     under_confident = False
     try:
@@ -215,6 +223,7 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         min_reasoning_methods=min_methods,
         domain=getattr(question, "domain", None),
         outcome_type=question.outcome_space.type,
+        thresholds=_qthr,
     )
 
 
@@ -266,6 +275,7 @@ def build_commit_context(
     committed_winner_prob: float | None = None,
     derived_child_present: bool = False,
     machine_scoreable: bool = True,
+    thresholds: dict[str, float] | None = None,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
     scope. Cheap: no ledger IO (the caller passes precomputed signals)."""
@@ -318,4 +328,5 @@ def build_commit_context(
         committed_winner_prob=committed_winner_prob,
         derived_child_present=derived_child_present,
         machine_scoreable=machine_scoreable,
+        thresholds=dict(thresholds or {}),
     )

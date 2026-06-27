@@ -92,6 +92,74 @@ def test_appearance_config_set_persists_and_validates(tmp_path, monkeypatch):
     assert "error" in bad, bad
 
 
+def test_forecast_config_read_and_write_roundtrip(tmp_path, monkeypatch):
+    """forecast.config resolves the per-forecast settings; forecast.config.set
+    writes cadence + decision + hook gate/threshold overrides and returns the
+    freshly-resolved config (so the desk + modal refresh)."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    from forecasting.ledger import ForecastLedger
+
+    ledger = ForecastLedger()  # default home DB (under the patched HERMES_HOME)
+    question = ledger.create_question(
+        title="Will CPI YoY exceed 3.0% in 2027?",
+        resolution_criteria="Resolved by the official BLS CPI-U release for 2027.",
+    )
+
+    read = server.handle_request(
+        {"id": "1", "method": "forecast.config", "params": {"id": question.id}}
+    )
+    assert "result" in read, read
+    assert read["result"]["question_id"] == question.id
+    assert read["result"]["gates"], read
+    assert read["result"]["thresholds"], read
+
+    written = server.handle_request(
+        {
+            "id": "2",
+            "method": "forecast.config.set",
+            "params": {
+                "id": question.id,
+                "review_cadence": "weekly",
+                "decision": {"decision_owner": "desk lead"},
+                "hooks": {
+                    "overrides": {"quorum_participation": "off"},
+                    "thresholds": {"min_perspectives": 2},
+                },
+            },
+        }
+    )
+    assert "result" in written, written
+    res = written["result"]
+    assert res["cadence"] == "weekly"
+    assert res["decision"]["decision_owner"] == "desk lead"
+    gates = {g["id"]: g for g in res["gates"]}
+    assert gates["quorum_participation"]["severity"] == "off"
+    assert gates["quorum_participation"]["looser"] is True
+    thr = {t["key"]: t for t in res["thresholds"]}
+    assert thr["min_perspectives"]["value"] == 2
+    assert thr["min_perspectives"]["looser"] is True
+
+
+def test_forecast_config_set_rejects_lesson_demotion(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    from forecasting.ledger import ForecastLedger
+
+    ledger = ForecastLedger()
+    question = ledger.create_question(
+        title="Will the index close above 5000 by 2027-06-30?",
+        resolution_criteria="Resolved by the official close on 2027-06-30.",
+    )
+    resp = server.handle_request(
+        {
+            "id": "1",
+            "method": "forecast.config.set",
+            "params": {"id": question.id, "hooks": {"overrides": {"lesson:foo": "off"}}},
+        }
+    )
+    # The lesson:* guardrail surfaces as an RPC error, not a silent demotion.
+    assert "error" in resp, resp
+
+
 def test_forecast_command_runs_forecast_cli_with_raw_args(tmp_path):
     db_path = tmp_path / "forecast.sqlite"
     resp = server.handle_request(

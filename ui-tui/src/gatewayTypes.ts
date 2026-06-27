@@ -1515,3 +1515,49 @@ export interface ObsidianSearchResponse {
   query?: string
   results?: ObsidianSearchResult[]
 }
+
+// ── Per-forecast settings (forecast.config / forecast.config.set) ─────────────
+export interface ForecastConfigGate {
+  category?: string
+  default?: string
+  doc?: string
+  id: string
+  label: string
+  looser?: boolean
+  severity: string
+  source: string
+}
+
+export interface ForecastConfigThreshold {
+  default: number
+  direction?: string
+  help?: string
+  integer?: boolean
+  key: string
+  label: string
+  looser?: boolean
+  maximum: number
+  minimum: number
+  rule_ids?: string[]
+  source: string
+  value: number
+}
+
+export interface ForecastConfigDecision {
+  action_threshold?: null | string
+  decision_deadline?: null | string
+  decision_owner?: null | string
+  update_triggers?: unknown[]
+}
+
+export interface ForecastConfigResponse {
+  cadence?: null | string
+  decision?: ForecastConfigDecision
+  gates?: ForecastConfigGate[]
+  impact?: null | string
+  next_run_at?: null | string
+  profile?: string
+  question_id?: string
+  thresholds?: ForecastConfigThreshold[]
+  title?: string
+}

@@ -111,6 +111,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "propose_spec",
                     "commit_spec",
                     "set_decision",
+                    "configure",
                     "rename_question",
                     "list_questions",
                     "search_questions",
@@ -303,6 +304,24 @@ FORECAST_LEDGER_SCHEMA = {
                             "required": ["mechanism"],
                         },
                     ]
+                },
+            },
+            "hooks": {
+                "type": "object",
+                "description": (
+                    "For action='configure': per-forecast saturation-hook settings. "
+                    "{profile?: standard|strict|exploratory-lenient, "
+                    "overrides?: {<gate_id>: off|warn|error}, "
+                    "thresholds?: {min_perspectives|min_reasoning_methods|max_width_ratio|"
+                    "min_sharpness|null_excess_tolerance: <number>}}. lesson:* gates are NOT "
+                    "settable here (they stay non-demotable). A LOOSER override is allowed but "
+                    "flagged in resolve_question_config."
+                ),
+                "properties": {
+                    "profile": {"type": "string"},
+                    "overrides": {"type": "object"},
+                    "thresholds": {"type": "object"},
+                    "auto_aggregate": {"type": "boolean"},
                 },
             },
             "reasons_up": {
@@ -987,6 +1006,25 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 question=_question_dict(question),
                 decision_readiness_issues=ledger.decision_readiness_issues(question),
             )
+
+        if action == "configure":
+            question_id = _required(args, "question_id")
+            kwargs: dict = {}
+            if args.get("review_cadence") is not None:
+                kwargs["review_cadence"] = args.get("review_cadence")
+            # Decision-card fields (only the ones actually passed, so None=leave).
+            decision = {
+                k: args[k]
+                for k in ("decision_owner", "decision_deadline", "action_threshold", "update_triggers")
+                if args.get(k) is not None
+            }
+            if decision:
+                kwargs["decision"] = decision
+            if isinstance(args.get("hooks"), dict):
+                kwargs["hooks"] = args["hooks"]
+            ledger.update_question_config(question_id, **kwargs)
+            config = ledger.resolve_question_config(question_id)
+            return tool_result(success=True, config=config)
 
         if action == "rename_question":
             question_id = _required(args, "question_id")
