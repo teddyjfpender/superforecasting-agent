@@ -8,9 +8,11 @@ import json
 import logging
 import math
 import os
+import random
 import re
 import shutil
 import sqlite3
+import statistics
 import threading
 import uuid
 from collections import Counter, defaultdict
@@ -73,6 +75,20 @@ logger = logging.getLogger(__name__)
 _CASCADE_TLS = threading.local()
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
+
+# AIA P0.2 — paired bootstrap significance.
+#
+# The paired Brier edge (per resolved question: baseline_brier - agent_brier,
+# POSITIVE = agent better) is tested for significance with a SEEDED, deterministic
+# paired bootstrap so the p-value and CI reproduce byte-for-byte across runs.
+# PAIRED_BOOTSTRAP_SEED fixes the random.Random stream; PAIRED_BOOTSTRAP_DRAWS
+# is the number of resample-means drawn for both the recenter-at-zero p-value and
+# the uncentered percentile CI.
+PAIRED_BOOTSTRAP_SEED = 0xA1A02
+PAIRED_BOOTSTRAP_DRAWS = 10000
+# Reference anchor: an uninformative p=0.5-everywhere forecaster scores Brier 0.25.
+# Surfaced next to mean Brier so a reader can place the score on the legible scale.
+BRIER_COIN_FLIP_FLOOR = 0.25
 
 
 def _normalize_reason_list(raw: Any, *, field: str) -> list[str]:
@@ -6284,6 +6300,11 @@ class ForecastLedger:
         agent_scores: list[ScoreRecord] = []
         baseline_scores: dict[tuple[str, str], list[ScoreRecord]] = defaultdict(list)
         paired_scores: dict[tuple[str, str], list[tuple[ScoreRecord, ScoreRecord]]] = defaultdict(list)
+        # Agent-vs-baseline Brier pairs across the FULL baseline set, keyed by the
+        # agent SCORE id (NOT question_id) so a question that recurs across rolling
+        # cutoffs keeps each agent forecast paired only with ITS OWN baselines —
+        # win-rate-vs-best is then "agent <= every baseline" per resolved forecast.
+        score_pairs: dict[str, list[tuple[float | None, float | None]]] = defaultdict(list)
         for case in cases:
             agent_score = self.get_score(case["score_record_id"]) if case.get("score_record_id") else None
             if agent_score is not None:
@@ -6297,6 +6318,9 @@ class ForecastLedger:
                 baseline_scores[key].append(baseline_score)
                 if agent_score is not None:
                     paired_scores[key].append((agent_score, baseline_score))
+                    score_pairs[agent_score.id].append(
+                        (agent_score.brier_score, baseline_score.brier_score)
+                    )
 
         baselines = []
         for key in sorted(baseline_scores):
@@ -6333,6 +6357,7 @@ class ForecastLedger:
             "leakage_checks_passed": run["leakage_checks_passed"],
             "agent": self._score_summary(agent_scores),
             "baselines": baselines,
+            "win_rate_vs_best": self._win_rate_vs_best(score_pairs),
             "agent_by_domain": self._score_breakdown(agent_scores, lambda score: score.domain or "unknown"),
             "agent_by_horizon": self._score_breakdown(agent_scores, self._score_horizon_bucket),
         }
@@ -6347,6 +6372,9 @@ class ForecastLedger:
         )
         baseline_scores: dict[tuple[str, str], list[ScoreRecord]] = defaultdict(list)
         paired_scores: dict[tuple[str, str], list[tuple[ScoreRecord, ScoreRecord]]] = defaultdict(list)
+        # Keyed by the agent SCORE id (not question_id) so multiple resolved live
+        # scores of the same question stay paired with their own baselines.
+        score_pairs: dict[str, list[tuple[float | None, float | None]]] = defaultdict(list)
         for live_score in live_scores:
             for baseline in self.list_baseline_comparisons(live_score.question_id):
                 if not baseline.get("score_record_id"):
@@ -6355,6 +6383,9 @@ class ForecastLedger:
                 key = (baseline["baseline_type"], baseline["source"])
                 baseline_scores[key].append(baseline_score)
                 paired_scores[key].append((live_score, baseline_score))
+                score_pairs[live_score.id].append(
+                    (live_score.brier_score, baseline_score.brier_score)
+                )
 
         baselines = []
         for key in sorted(baseline_scores):
@@ -6387,6 +6418,7 @@ class ForecastLedger:
             "score_count": len(live_scores),
             "agent": self._score_summary(live_scores),
             "baselines": baselines,
+            "win_rate_vs_best": self._win_rate_vs_best(score_pairs),
             "agent_by_domain": self._score_breakdown(live_scores, lambda score: score.domain or "unknown"),
             "agent_by_horizon": self._score_breakdown(live_scores, self._score_horizon_bucket),
             "claim_status": {
@@ -11791,23 +11823,129 @@ class ForecastLedger:
                 ties += 1
 
         count = len(deltas)
+        # Point estimate is UNCHANGED from the prior parametric implementation:
+        # the mean paired Brier edge. Only the significance statistics around it
+        # (CI + p-value) move from the normal approximation to a seeded bootstrap.
         mean_delta = self._mean(deltas)
-        ci_low = ci_high = None
-        if count > 1 and mean_delta is not None:
-            variance = sum((delta - mean_delta) ** 2 for delta in deltas) / (count - 1)
-            margin = 1.96 * math.sqrt(variance / count)
-            ci_low = mean_delta - margin
-            ci_high = mean_delta + margin
+        bootstrap = self._paired_bootstrap(deltas, mean_delta)
         return {
             "paired_brier_count": count,
             "paired_agent_mean_brier": self._mean(agent_scores),
             "paired_baseline_mean_brier": self._mean(baseline_scores),
             "paired_agent_edge_mean_brier": mean_delta,
-            "paired_agent_edge_ci95_low": ci_low,
-            "paired_agent_edge_ci95_high": ci_high,
+            "paired_agent_edge_ci95_low": bootstrap["ci_low"],
+            "paired_agent_edge_ci95_high": bootstrap["ci_high"],
+            "paired_p_value": bootstrap["p_value"],
+            "paired_bootstrap_draws": PAIRED_BOOTSTRAP_DRAWS,
+            "paired_brier_coin_flip_floor": BRIER_COIN_FLIP_FLOOR,
             "paired_agent_wins": agent_wins,
             "paired_baseline_wins": baseline_wins,
             "paired_ties": ties,
+        }
+
+    def _paired_bootstrap(
+        self,
+        deltas: list[float],
+        mean_delta: float | None,
+    ) -> dict[str, float | None]:
+        """Seeded paired bootstrap over per-question Brier deltas.
+
+        deltas[i] = baseline_brier_i - agent_brier_i (POSITIVE = agent better).
+
+        - Two-sided p-value tests H0: no paired difference. We recenter the deltas
+          at zero (d0 = x - mean_delta), draw PAIRED_BOOTSTRAP_DRAWS resample-means
+          of d0, and report the fraction whose magnitude is >= |mean_delta|.
+        - The 95% CI is the 2.5/97.5 percentiles of the UNCENTERED resample-means.
+        - n < 2, no mean, or a degenerate all-equal-deltas spread -> p=None, ci=None.
+
+        Deterministic: a single seeded random.Random(PAIRED_BOOTSTRAP_SEED) drives
+        every draw, so identical inputs always yield identical p-value and CI.
+        """
+
+        none_result: dict[str, float | None] = {"p_value": None, "ci_low": None, "ci_high": None}
+        count = len(deltas)
+        if count < 2 or mean_delta is None:
+            return none_result
+        # Degenerate: every paired delta identical. The recentered series is all
+        # zeros, so every bootstrap mean is exactly 0. If the edge itself is 0 the
+        # data carry no signal at all (p undefined); if the edge is non-zero but
+        # variance-free, the bootstrap cannot characterize it either.
+        spread = max(deltas) - min(deltas)
+        if spread == 0.0:
+            return none_result
+
+        observed = abs(mean_delta)
+        d0 = [x - mean_delta for x in deltas]
+        rng = random.Random(PAIRED_BOOTSTRAP_SEED)
+        ge_count = 0
+        uncentered_means: list[float] = []
+        for _ in range(PAIRED_BOOTSTRAP_DRAWS):
+            # One shared index draw per iteration keeps the recentered (p-value)
+            # and uncentered (CI) resamples on the same deterministic stream.
+            idx = [rng.randrange(count) for _ in range(count)]
+            boot_centered = statistics.fmean(d0[i] for i in idx)
+            if abs(boot_centered) >= observed:
+                ge_count += 1
+            uncentered_means.append(statistics.fmean(deltas[i] for i in idx))
+
+        # Add-one (plus-one) correction so a Monte-Carlo p-value is never exactly
+        # 0.0 — the true tail is bounded below by ~1/B, not 0.
+        p_value = (ge_count + 1) / (PAIRED_BOOTSTRAP_DRAWS + 1)
+        uncentered_means.sort()
+        return {
+            "p_value": p_value,
+            "ci_low": self._percentile(uncentered_means, 2.5),
+            "ci_high": self._percentile(uncentered_means, 97.5),
+        }
+
+    @staticmethod
+    def _percentile(sorted_values: list[float], pct: float) -> float:
+        """Linear-interpolated percentile over an ascending list (pct in 0..100)."""
+
+        if not sorted_values:
+            raise ValueError("percentile of empty sequence")
+        if len(sorted_values) == 1:
+            return sorted_values[0]
+        rank = (pct / 100.0) * (len(sorted_values) - 1)
+        low = math.floor(rank)
+        high = math.ceil(rank)
+        if low == high:
+            return sorted_values[low]
+        frac = rank - low
+        return sorted_values[low] + (sorted_values[high] - sorted_values[low]) * frac
+
+    def _win_rate_vs_best(
+        self,
+        score_pairs: dict[str, list[tuple[float | None, float | None]]],
+    ) -> dict[str, Any]:
+        """Fraction of resolved agent FORECASTS that beat EVERY baseline.
+
+        score_pairs maps an agent SCORE id to the list of (agent_brier,
+        baseline_brier) pairs for that forecast across the FULL baseline set (keyed
+        by score id, not question id, so a question that recurs across cutoffs keeps
+        each forecast paired with its own baselines). A forecast counts as a win
+        when its Brier is <= EVERY baseline's Brier; forecasts with no comparable
+        pair (any missing Brier) are excluded from the denominator.
+        """
+
+        wins = 0
+        n = 0
+        for pairs in score_pairs.values():
+            comparable = [
+                (agent_brier, baseline_brier)
+                for agent_brier, baseline_brier in pairs
+                if agent_brier is not None and baseline_brier is not None
+            ]
+            if not comparable:
+                continue
+            n += 1
+            agent_brier = comparable[0][0]
+            if all(agent_brier <= baseline_brier for _, baseline_brier in comparable):
+                wins += 1
+        return {
+            "win_rate_vs_best": (wins / n) if n else None,
+            "win_rate_vs_best_wins": wins,
+            "win_rate_vs_best_n": n,
         }
 
     def _mean(self, values: list[float | None]) -> float | None:

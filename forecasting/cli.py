@@ -11063,9 +11063,17 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
                     f"baseline={_format_metric(baseline.get('paired_baseline_mean_brier'))} "
                     f"edge={_format_delta(baseline.get('paired_agent_edge_mean_brier'))} "
                     f"ci95={_format_ci95(baseline.get('paired_agent_edge_ci95_low'), baseline.get('paired_agent_edge_ci95_high'))} "
+                    f"p={_format_pvalue(baseline.get('paired_p_value'))} "
+                    f"floor={_format_metric(baseline.get('paired_brier_coin_flip_floor'))} "
                     f"wins={baseline.get('paired_agent_wins', 0)}/"
                     f"{baseline.get('paired_baseline_wins', 0)}/"
                     f"{baseline.get('paired_ties', 0)}"
+                )
+            win_rate = report.get("win_rate_vs_best") or {}
+            if win_rate.get("win_rate_vs_best") is not None:
+                print(
+                    "  win_rate_vs_best="
+                    f"{_format_win_rate(win_rate.get('win_rate_vs_best'), win_rate.get('win_rate_vs_best_n'))}"
                 )
         else:
             print("baselines: none")
@@ -11189,7 +11197,14 @@ def _cmd_performance(args: argparse.Namespace) -> None:
                 f"ci95={_format_ci95(baseline.get('paired_agent_edge_ci95_low'), baseline.get('paired_agent_edge_ci95_high'))} "
                 f"wins={baseline.get('paired_agent_wins', 0)}/"
                 f"{baseline.get('paired_baseline_wins', 0)}/"
-                f"{baseline.get('paired_ties', 0)}"
+                f"{baseline.get('paired_ties', 0)} "
+                f"p={_format_pvalue(baseline.get('paired_p_value'))} "
+                f"floor={_format_metric(baseline.get('paired_brier_coin_flip_floor'))}"
+            )
+        if best is not None and best.get("win_rate_vs_best") is not None:
+            print(
+                "  win_rate_vs_best="
+                f"{_format_win_rate(best.get('win_rate_vs_best'), best.get('win_rate_vs_best_n'))}"
             )
         if report["agent_by_domain"]:
             print(f"  domains {_format_score_breakdown(report['agent_by_domain'])}")
@@ -11221,7 +11236,15 @@ def _print_live_performance_report(report: dict[str, Any]) -> None:
             f"ci95={_format_ci95(baseline.get('paired_agent_edge_ci95_low'), baseline.get('paired_agent_edge_ci95_high'))} "
             f"wins={baseline.get('paired_agent_wins', 0)}/"
             f"{baseline.get('paired_baseline_wins', 0)}/"
-            f"{baseline.get('paired_ties', 0)}"
+            f"{baseline.get('paired_ties', 0)} "
+            f"p={_format_pvalue(baseline.get('paired_p_value'))} "
+            f"floor={_format_metric(baseline.get('paired_brier_coin_flip_floor'))}"
+        )
+    live_win_rate = report.get("win_rate_vs_best") or {}
+    if live_win_rate.get("win_rate_vs_best") is not None:
+        print(
+            "  live win_rate_vs_best="
+            f"{_format_win_rate(live_win_rate.get('win_rate_vs_best'), live_win_rate.get('win_rate_vs_best_n'))}"
         )
     if report["agent_by_domain"]:
         print(f"  live domains {_format_score_breakdown(report['agent_by_domain'])}")
@@ -12341,6 +12364,16 @@ def _format_ci95(low: float | None, high: float | None) -> str:
     if low is None or high is None:
         return "-"
     return f"[{low:+.3f},{high:+.3f}]"
+
+
+def _format_pvalue(value: float | None) -> str:
+    return "-" if value is None else f"{value:.4f}"
+
+
+def _format_win_rate(value: float | None, n: int | None) -> str:
+    if value is None:
+        return "-"
+    return f"{value:.3f}(n={n or 0})"
 
 
 def _format_score_breakdown(items: dict[str, dict[str, Any]]) -> str:

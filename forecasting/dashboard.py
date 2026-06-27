@@ -195,15 +195,20 @@ def build_dashboard_summary(
             best_brier = best["mean_brier"]
             if agent_brier is not None and best_brier is not None:
                 agent_edge = best_brier - agent_brier
+        win_rate_vs_best = report.get("win_rate_vs_best") or {}
         paired_wins = (
             {
                 "paired_count": best.get("paired_brier_count"),
                 "paired_agent_edge": best.get("paired_agent_edge_mean_brier"),
                 "paired_agent_edge_ci95_low": best.get("paired_agent_edge_ci95_low"),
                 "paired_agent_edge_ci95_high": best.get("paired_agent_edge_ci95_high"),
+                "paired_p_value": best.get("paired_p_value"),
+                "paired_brier_coin_flip_floor": best.get("paired_brier_coin_flip_floor"),
                 "paired_agent_wins": best.get("paired_agent_wins"),
                 "paired_baseline_wins": best.get("paired_baseline_wins"),
                 "paired_ties": best.get("paired_ties"),
+                "win_rate_vs_best": win_rate_vs_best.get("win_rate_vs_best"),
+                "win_rate_vs_best_n": win_rate_vs_best.get("win_rate_vs_best_n", 0),
             }
             if best is not None
             else {
@@ -211,9 +216,13 @@ def build_dashboard_summary(
                 "paired_agent_edge": None,
                 "paired_agent_edge_ci95_low": None,
                 "paired_agent_edge_ci95_high": None,
+                "paired_p_value": None,
+                "paired_brier_coin_flip_floor": None,
                 "paired_agent_wins": 0,
                 "paired_baseline_wins": 0,
                 "paired_ties": 0,
+                "win_rate_vs_best": win_rate_vs_best.get("win_rate_vs_best"),
+                "win_rate_vs_best_n": win_rate_vs_best.get("win_rate_vs_best_n", 0),
             }
         )
         claim_status = benchmark_claim_status(run, report)

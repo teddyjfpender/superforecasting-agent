@@ -10807,7 +10807,10 @@ def test_forecast_cli_base_rate_model_postmortem_and_backtest(tmp_path, capsys):
     assert "agent_mean_brier: 0.160000 n=1" in show_output
     assert "crowd:crowd" in show_output
     assert "brier_improvement=0.042500" in show_output
-    assert "paired_brier agent=0.160000 baseline=0.202500 edge=+0.042 ci95=- wins=1/0/0" in show_output
+    assert (
+        "paired_brier agent=0.160000 baseline=0.202500 edge=+0.042 "
+        "ci95=- p=- floor=0.250000 wins=1/0/0"
+    ) in show_output
     assert "agent_by_domain:" in show_output
     assert "unknown mean_brier=0.160000 n=1" in show_output
     assert "agent_by_horizon:" in show_output
@@ -11218,9 +11221,11 @@ def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
     assert (
         "baseline market:fixture-market brier=0.160000 paired=2 agent_edge=+0.095 "
         "paired_brier_agent=0.065000 paired_brier_baseline=0.160000 "
-        "paired_edge=+0.095 ci95=[+0.046,+0.144] wins=2/0/0"
+        "paired_edge=+0.095 ci95=[+0.070,+0.120] wins=2/0/0 "
+        "p=0.0001 floor=0.250000"
     ) in output
     assert "wins=2/0/0" in output
+    assert "win_rate_vs_best=1.000(n=2)" in output
     assert "domains macro=0.065000 n=2" in output
     assert "horizons 8-30d=0.065000 n=2" in output
     assert "claim benchmark_replay_only: Benchmark replay evidence only" in output
@@ -11237,8 +11242,14 @@ def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
     assert best_baseline["baseline_type"] == "market"
     assert best_baseline["source"] == "fixture-market"
     assert best_baseline["agent_edge_mean_brier"] == pytest.approx(0.095)
-    assert best_baseline["paired_agent_edge_ci95_low"] == pytest.approx(0.046)
-    assert best_baseline["paired_agent_edge_ci95_high"] == pytest.approx(0.144)
+    assert best_baseline["paired_agent_edge_ci95_low"] == pytest.approx(0.070)
+    assert best_baseline["paired_agent_edge_ci95_high"] == pytest.approx(0.120)
+    # add-one correction: a Monte-Carlo p-value floors at 1/(B+1), never exactly 0.
+    assert best_baseline["paired_p_value"] == pytest.approx(1.0 / 10001.0)
+    assert best_baseline["paired_bootstrap_draws"] == 10000
+    assert best_baseline["paired_brier_coin_flip_floor"] == pytest.approx(0.25)
+    assert best_baseline["win_rate_vs_best"] == pytest.approx(1.0)
+    assert best_baseline["win_rate_vs_best_n"] == 2
     assert baseline_summary["paired_agent_wins"] == 2
     assert run_summary["agent_by_domain"]["macro"]["mean_brier"] == pytest.approx(0.065)
     assert run_summary["agent_by_horizon"]["8-30d"]["count"] == 2
@@ -11310,7 +11321,11 @@ def test_forecast_cli_performance_summarizes_backtest_edges(tmp_path, capsys):
 
     _run(parser, ["forecast", "--db", db, "backtest", "--show", run_id])
     show_output = capsys.readouterr().out
-    assert "paired_brier agent=0.065000 baseline=0.160000 edge=+0.095 ci95=[+0.046,+0.144] wins=2/0/0" in show_output
+    assert (
+        "paired_brier agent=0.065000 baseline=0.160000 edge=+0.095 "
+        "ci95=[+0.070,+0.120] p=0.0001 floor=0.250000 wins=2/0/0"
+    ) in show_output
+    assert "win_rate_vs_best=1.000(n=2)" in show_output
 
 
 def test_forecast_cli_readiness_require_evidence_passes_when_evidence_gate_is_met(tmp_path, capsys):

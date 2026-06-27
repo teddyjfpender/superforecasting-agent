@@ -75,6 +75,7 @@ def build_backtest_performance_summaries(
         if best is not None:
             if agent_brier is not None and best["mean_brier"] is not None:
                 edge = best["mean_brier"] - agent_brier
+            win_rate_vs_best = report.get("win_rate_vs_best") or {}
             best_summary = {
                 "baseline_type": best["baseline_type"],
                 "source": best["source"],
@@ -83,10 +84,18 @@ def build_backtest_performance_summaries(
                 "paired_agent_edge_mean_brier": best.get("paired_agent_edge_mean_brier"),
                 "paired_agent_edge_ci95_low": best.get("paired_agent_edge_ci95_low"),
                 "paired_agent_edge_ci95_high": best.get("paired_agent_edge_ci95_high"),
+                "paired_p_value": best.get("paired_p_value"),
+                "paired_bootstrap_draws": best.get("paired_bootstrap_draws"),
+                "paired_brier_coin_flip_floor": best.get(
+                    "paired_brier_coin_flip_floor"
+                ),
                 "paired_brier_count": best.get("paired_brier_count", best.get("paired_count", 0)),
                 "paired_agent_wins": best.get("paired_agent_wins", 0),
                 "paired_baseline_wins": best.get("paired_baseline_wins", 0),
                 "paired_ties": best.get("paired_ties", 0),
+                "win_rate_vs_best": win_rate_vs_best.get("win_rate_vs_best"),
+                "win_rate_vs_best_wins": win_rate_vs_best.get("win_rate_vs_best_wins", 0),
+                "win_rate_vs_best_n": win_rate_vs_best.get("win_rate_vs_best_n", 0),
             }
         summaries.append(
             {
@@ -132,6 +141,12 @@ def build_forecasting_evidence_status(
         if _uses_generated_probability_source(summary)
         and (summary.get("best_baseline") or {}).get("agent_edge_mean_brier") is not None
         and (summary["best_baseline"]["agent_edge_mean_brier"] > 0)
+    )
+    significant_best_edge_runs = sum(
+        1
+        for summary in backtest_summaries
+        if _uses_generated_probability_source(summary)
+        and _is_significant_positive_edge(summary.get("best_baseline") or {})
     )
     dataset_count = len({summary.get("dataset") for summary in backtest_summaries if summary.get("dataset")})
     external_dataset_count = sum(
@@ -299,6 +314,33 @@ def build_forecasting_evidence_status(
             "source_families": source_families,
             "leakage_free_run_count": leakage_free_runs,
             "positive_best_baseline_edge_run_count": positive_best_edge_runs,
+            "significant_best_baseline_edge_run_count": significant_best_edge_runs,
+            "paired_significance": [
+                {
+                    "dataset": summary.get("dataset"),
+                    "paired_p_value": (summary.get("best_baseline") or {}).get("paired_p_value"),
+                    "paired_agent_edge_mean_brier": (summary.get("best_baseline") or {}).get(
+                        "paired_agent_edge_mean_brier"
+                    ),
+                    "paired_agent_edge_ci95_low": (summary.get("best_baseline") or {}).get(
+                        "paired_agent_edge_ci95_low"
+                    ),
+                    "paired_agent_edge_ci95_high": (summary.get("best_baseline") or {}).get(
+                        "paired_agent_edge_ci95_high"
+                    ),
+                    "paired_brier_coin_flip_floor": (summary.get("best_baseline") or {}).get(
+                        "paired_brier_coin_flip_floor"
+                    ),
+                    "paired_agent_wins": (summary.get("best_baseline") or {}).get("paired_agent_wins", 0),
+                    "paired_baseline_wins": (summary.get("best_baseline") or {}).get(
+                        "paired_baseline_wins", 0
+                    ),
+                    "paired_ties": (summary.get("best_baseline") or {}).get("paired_ties", 0),
+                    "win_rate_vs_best": (summary.get("best_baseline") or {}).get("win_rate_vs_best"),
+                    "win_rate_vs_best_n": (summary.get("best_baseline") or {}).get("win_rate_vs_best_n", 0),
+                }
+                for summary in backtest_summaries
+            ],
             "agent_protocol_scored_count": agent_protocol_scored,
         },
     }
@@ -345,3 +387,19 @@ def _uses_generated_probability_source(summary: dict[str, Any]) -> bool:
     sources = claim_status.get("probability_sources") or []
     generated_sources = {"agent-protocol", "forecast-engine", "baseline-ensemble", "naive"}
     return any(source in generated_sources for source in sources)
+
+
+def _is_significant_positive_edge(best_baseline: dict[str, Any]) -> bool:
+    """A positive paired edge that clears the bootstrap significance bar.
+
+    Requires a positive point estimate, a paired p-value strictly below 0.05, and
+    a 95% percentile CI whose lower bound is above 0 (excludes the no-difference
+    point). Any missing statistic fails closed.
+    """
+
+    edge = best_baseline.get("paired_agent_edge_mean_brier")
+    p_value = best_baseline.get("paired_p_value")
+    ci_low = best_baseline.get("paired_agent_edge_ci95_low")
+    if edge is None or p_value is None or ci_low is None:
+        return False
+    return edge > 0 and p_value < 0.05 and ci_low > 0
