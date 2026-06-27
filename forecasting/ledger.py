@@ -1168,7 +1168,8 @@ class ForecastLedger:
                     spread_summary TEXT NOT NULL DEFAULT '{}',
                     notes TEXT NOT NULL DEFAULT '[]',
                     triggered_by TEXT,
-                    judge TEXT
+                    judge TEXT,
+                    final_source TEXT NOT NULL DEFAULT 'pool'
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_panel_runs_question
@@ -1379,6 +1380,12 @@ class ForecastLedger:
             self._ensure_column(conn, "reference_classes", "check_cadence", "TEXT")
             self._ensure_column(conn, "reference_classes", "sample_size", "INTEGER")
             self._ensure_column(conn, "panel_runs", "judge", "TEXT")
+            # AIA P0.3: which branch produced the committed aggregate
+            # ('pool' | 'judge_high'). Defaults to 'pool' so pre-P0.3 runs read
+            # back as non-overridden (no regression).
+            self._ensure_column(
+                conn, "panel_runs", "final_source", "TEXT NOT NULL DEFAULT 'pool'"
+            )
             self._ensure_column(conn, "scheduled_reviews", "auto_score", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "auto_postmortem", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "stale_days", "INTEGER NOT NULL DEFAULT 7")
@@ -4286,12 +4293,27 @@ class ForecastLedger:
         triggered_by: str | None = None,
         perspectives: list[str] | None = None,
         judge: Any = None,
+        final_probability: float | None = None,
+        final_source: str | None = None,
     ) -> dict[str, Any]:
         """Aggregate a panel of perspective estimates and persist the artifact.
 
         ``judge`` (a JudgeSynthesis dict: consensus / contradictions / blind_spots /
-        judge_model) is stored so a quorum's judge synthesis has a durable home and the
-        quorum-judged gate can see it — instead of being dropped on the floor.
+        judge_model / directional_confidence) is stored so a quorum's judge synthesis
+        has a durable home and the quorum-judged gate can see it — instead of being
+        dropped on the floor.
+
+        ``final_probability`` / ``final_source`` (AIA P0.3): the ALREADY-resolved
+        committed number and the branch that produced it (``'pool'`` or
+        ``'judge_high'``). When supplied, the persisted ``aggregate_probability`` is
+        this exact number — NOT a freshly re-pooled one — so the in-memory
+        :class:`~forecasting.quorum.QuorumResult` and the durable panel_run can never
+        diverge (the P0.1 divergence: this method used to silently re-pool the
+        estimates WITH the per-question alpha while the QuorumResult showed the bare
+        pool). The terminal Platt calibration has therefore already been applied
+        upstream exactly once; we must NOT re-apply it here. When ``final_probability``
+        is ``None`` (the perspective-panel path), we fall back to pooling-with-alpha as
+        before so non-quorum callers are unchanged.
 
         Returns the panel-run record dict (including aggregate_probability,
         spread_summary, trimmed flags, and per-estimate ids). The caller
@@ -4312,17 +4334,45 @@ class ForecastLedger:
         alpha_extremize = resolve_alpha_extremize(
             question.metadata if isinstance(question.metadata, dict) else None
         )
+        # Always aggregate WITH the real per-question slope so the persisted
+        # calibration markers (applied_alpha, pre_extremize, terminal_calibration_
+        # applied) and pool_probability are accurate on the quorum path too. Platt
+        # is still applied EXACTLY ONCE to the committed number: when the caller
+        # supplies an already-resolved value (the quorum path — run_quorum has
+        # already applied alpha + the P0.3 override), we overwrite the committed
+        # scalar with it below and never re-derive it from the aggregation, so the
+        # aggregation's calibrated scalar is used only for the audit markers / the
+        # pool the override beat — never double-Platt'd.
+        resolved = final_probability is not None
         aggregation = aggregate_panel_estimates(
             estimates,
             method=aggregation_method,
             trim=trim,
             alpha_extremize=alpha_extremize,
         )
+        committed_probability = (
+            float(final_probability)
+            if resolved
+            else float(aggregation.aggregate_probability)
+        )
+        # Constrain to the known source domain (defensive against a future caller).
+        committed_source = final_source if final_source in {"pool", "judge_high"} else "pool"
         now = utc_now_iso()
         run_id = f"pr_{uuid.uuid4().hex[:12]}"
         requested = perspectives if perspectives is not None else [
             row["perspective"] for row in aggregation.estimates
         ]
+        # Fold the P0.3 override outcome into the persisted spread so it is
+        # observable alongside the P0.1 calibration markers without a second
+        # schema migration. ``final_source`` is also a first-class column.
+        spread = dict(aggregation.spread)
+        spread["final_source"] = committed_source
+        if resolved:
+            # The committed number is the resolved one; surface the CALIBRATED pool
+            # (the value a high-confidence judge actually overrode) for audit.
+            spread["pool_probability"] = round(
+                float(aggregation.aggregate_probability), 6
+            )
         estimate_records: list[dict[str, Any]] = []
         with self._connect() as conn:
             conn.execute(
@@ -4330,9 +4380,10 @@ class ForecastLedger:
                 INSERT INTO panel_runs (
                     id, question_id, created_at, snapshot_id,
                     aggregation_method, trim, aggregate_probability,
-                    perspectives, spread_summary, notes, triggered_by, judge
+                    perspectives, spread_summary, notes, triggered_by, judge,
+                    final_source
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -4341,12 +4392,13 @@ class ForecastLedger:
                     snapshot_id,
                     aggregation.method,
                     aggregation.trim,
-                    float(aggregation.aggregate_probability),
+                    committed_probability,
                     json_dumps(list(requested)),
-                    json_dumps(aggregation.spread),
+                    json_dumps(spread),
                     json_dumps(aggregation.notes),
                     triggered_by,
                     json_dumps(judge) if judge is not None else None,
+                    committed_source,
                 ),
             )
             for row in aggregation.estimates:

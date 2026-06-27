@@ -135,6 +135,7 @@ def _append_progress(job: dict[str, Any], stage: str, detail: str) -> None:
 def execute_job(run_id: str) -> dict[str, Any]:
     """Run the quorum for ``run_id`` to completion, persisting state as it goes."""
 
+    from forecasting.hooks.thresholds import resolve_alpha_extremize
     from forecasting.ledger import ForecastLedger
     from forecasting.protocol import build_context_packet
     from forecasting.quorum import (
@@ -182,6 +183,15 @@ def execute_job(run_id: str) -> dict[str, Any]:
             with progress_lock:
                 _append_progress(job, stage, detail)
 
+        # Terminal Platt calibration (AIA P0.1): resolve the per-question slope
+        # ONCE here and thread it through run_quorum so the in-memory
+        # QuorumResult is already calibrated. record_panel_run then persists the
+        # SAME resolved number (it does NOT re-pool), so the in-memory result and
+        # the durable panel_run can never diverge.
+        alpha_extremize = resolve_alpha_extremize(
+            question.metadata if isinstance(question.metadata, dict) else None
+        )
+
         result = run_quorum(
             question_title=question.title,
             resolution_criteria=question.resolution_criteria,
@@ -193,12 +203,16 @@ def execute_job(run_id: str) -> dict[str, Any]:
             judge_model=judge_model,
             pool_method=spec.get("pool_method", "trimmed_geomean_odds"),
             trim=int(spec.get("trim", 1)),
+            alpha_extremize=alpha_extremize,
             self_fusion=self_fusion,
             on_progress=on_progress,
         )
 
         # Persist the quorum as a sibling panel run. The spread_summary already
         # carries the disagreement scalar (see panel.aggregate_panel_estimates).
+        # We pass the ALREADY-resolved committed number + its source so the
+        # persisted aggregate is the P0.3-resolved, terminally-calibrated value
+        # — not a divergent re-pool.
         _append_progress(job, "record", "recording quorum panel run")
         panel_run = ledger.record_panel_run(
             question_id=question.id,
@@ -208,6 +222,8 @@ def execute_job(run_id: str) -> dict[str, Any]:
             snapshot_id=spec.get("attach_snapshot"),
             triggered_by=spec.get("triggered_by") or "quorum",
             judge=result.judge.to_dict() if result.judge else None,
+            final_probability=result.committed_probability,
+            final_source=result.final_source,
         )
         job["panel_run_id"] = panel_run["id"]
         job["result"] = result.to_dict()

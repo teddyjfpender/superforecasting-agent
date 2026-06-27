@@ -1242,6 +1242,9 @@ def _workspace_panel(run: dict[str, Any]) -> dict[str, Any]:
         "aggregation_method": run.get("aggregation_method"),
         "trim": run.get("trim"),
         "aggregate_probability": run.get("aggregate_probability"),
+        # AIA P0.3: which branch produced the committed aggregate
+        # ('pool' | 'judge_high'), defaulting to 'pool' for pre-P0.3 runs.
+        "final_source": run.get("final_source") or "pool",
         "spread": run.get("spread_summary") or {},
         "estimates": estimates,
     }

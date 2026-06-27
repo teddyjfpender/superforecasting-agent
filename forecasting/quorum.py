@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import Any, Callable, Mapping, Sequence
+from typing import Any, Callable, Literal, Mapping, Sequence
 
 from forecasting.agent_protocol import parse_agent_protocol_response
 from forecasting.models import ValidationError
@@ -44,6 +44,13 @@ from forecasting.panel import (
     aggregate_panel_estimates,
     disagreement_signal,
 )
+
+
+# The judge's self-reported confidence in its REVISED probability. Only a
+# ``'high'`` reading lets the judge override the pool (AIA P0.3); anything else
+# (and the back-compat default) keeps the committed number on the sound pool.
+DirectionalConfidence = Literal["high", "medium", "low"]
+_VALID_DIRECTIONAL_CONFIDENCE = frozenset({"high", "medium", "low"})
 
 
 # ── Runner seam ──────────────────────────────────────────────────────────────
@@ -126,7 +133,15 @@ class ModelForecast:
 
 @dataclass
 class JudgeSynthesis:
-    """The judge model's structured synthesis over the panel."""
+    """The judge model's structured synthesis over the panel.
+
+    ``directional_confidence`` (AIA P0.3) is the judge's self-report of how
+    confident it is in its REVISED probability. It defaults to ``'medium'`` so
+    every historical/back-compat construction is non-overriding: only a
+    self-declared ``'high'`` reading lets the judge's number replace the pool as
+    the committed value (see :func:`resolve_final_probability`). This bounds the
+    downside — a hedging judge can never drag a sound pool off-target.
+    """
 
     probability: float | None
     rationale: str
@@ -137,6 +152,7 @@ class JudgeSynthesis:
     consensus: list[str] = field(default_factory=list)
     contradictions: list[str] = field(default_factory=list)
     judge_model: str | None = None
+    directional_confidence: DirectionalConfidence = "medium"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -149,12 +165,21 @@ class JudgeSynthesis:
             "consensus": self.consensus,
             "contradictions": self.contradictions,
             "judge_model": self.judge_model,
+            "directional_confidence": self.directional_confidence,
         }
 
 
 @dataclass
 class QuorumResult:
-    """Everything a ``forecast update`` needs to commit a quorum-backed snapshot."""
+    """Everything a ``forecast update`` needs to commit a quorum-backed snapshot.
+
+    ``final_probability`` is the number that gets COMMITTED (post terminal-Platt,
+    post confidence-gated judge override) — the single source of truth for the
+    whole pipeline. ``final_source`` records which branch won (``'pool'`` or
+    ``'judge_high'``). ``aggregate_probability`` remains the (calibrated) pool
+    scalar; before P0.3 the desk silently committed the pool, so when
+    ``final_source == 'pool'`` the two agree exactly.
+    """
 
     question_id: str | None
     forecasts: list[ModelForecast]
@@ -164,10 +189,23 @@ class QuorumResult:
     pool_method: str
     trim: int
     judge_model: str | None = None
+    final_probability: float | None = None
+    final_source: str = "pool"
 
     @property
     def aggregate_probability(self) -> float:
         return self.aggregation.aggregate_probability
+
+    @property
+    def committed_probability(self) -> float:
+        """The number to persist/commit: the resolved final, or the pool if
+        a pre-P0.3 result never resolved one (back-compat)."""
+
+        return (
+            self.final_probability
+            if self.final_probability is not None
+            else self.aggregation.aggregate_probability
+        )
 
     @property
     def ok_forecasts(self) -> list[ModelForecast]:
@@ -184,6 +222,8 @@ class QuorumResult:
             "pool_method": self.pool_method,
             "trim": self.trim,
             "aggregate_probability": round(self.aggregate_probability, 6),
+            "final_probability": round(self.committed_probability, 6),
+            "final_source": self.final_source,
             "disagreement": self.disagreement,
             "judge_model": self.judge_model,
             "judge": self.judge.to_dict() if self.judge else None,
@@ -319,6 +359,13 @@ def build_judge_prompt(
         "Return ONLY a JSON object with keys:\n"
         "- probability: your final number in [0, 1] (may differ from the pool "
         "if the panel shares a blind spot — justify any divergence)\n"
+        "- directional_confidence: one of \"high\", \"medium\", \"low\" — how "
+        "confident you are in YOUR REVISED probability above. Answer \"high\" "
+        "ONLY when you have a specific, well-supported reason your number beats "
+        "the pool (a named blind spot the panel shares, a decisive piece of "
+        "evidence). A \"high\" reading lets your number OVERRIDE the pool as the "
+        "committed forecast; \"medium\"/\"low\" defers to the pool. When in "
+        "doubt, answer \"medium\".\n"
         "- rationale: one paragraph senior-desk synthesis\n"
         "- consensus: array of points the panel agrees on\n"
         "- contradictions: array of genuine disagreements and which side is "
@@ -376,7 +423,25 @@ def parse_judge_response(response: Any, judge_model: str | None) -> JudgeSynthes
         consensus=_str_list(payload.get("consensus")),
         contradictions=_str_list(payload.get("contradictions")),
         judge_model=judge_model,
+        directional_confidence=_normalize_confidence(
+            payload.get("directional_confidence")
+        ),
     )
+
+
+def _normalize_confidence(value: Any) -> DirectionalConfidence:
+    """Coerce a judge's self-reported confidence to a valid label.
+
+    Tolerant by design: any missing/unknown/garbage value collapses to
+    ``'medium'`` — the non-overriding default — so a malformed judge response
+    can never accidentally trip the override gate.
+    """
+
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in _VALID_DIRECTIONAL_CONFIDENCE:
+            return token  # type: ignore[return-value]
+    return "medium"
 
 
 def _reparse_full(response: Any) -> dict[str, Any]:
@@ -483,6 +548,36 @@ def quorum_auto_indicated(
     return bool(panel_indicated)  # high_impact
 
 
+def resolve_final_probability(
+    pool_probability: float,
+    judge: JudgeSynthesis | None,
+) -> tuple[float, str]:
+    """The whole AIA P0.3 decision rule — confidence-gated supervisor override.
+
+    Returns ``(judge.probability, 'judge_high')`` IFF the judge exists, reported
+    a usable probability, AND self-declared ``directional_confidence == 'high'``;
+    otherwise ``(pool_probability, 'pool')``.
+
+    This is a PURE function (no I/O, no calibration) and is the entire override
+    logic: a low/medium-confidence judge can NEVER drag the committed number off
+    a sound pool. Bounded downside, gated upside.
+
+    Composition note (terminal Platt, AIA P0.1): the caller is responsible for
+    feeding the ALREADY-CALIBRATED pool here (so the ``'pool'`` branch is Platt'd
+    exactly once, inside aggregation) and for Platt-scaling the RAW judge number
+    on the ``'judge_high'`` branch (so the winning override is also calibrated
+    exactly once). This function neither knows nor applies alpha.
+    """
+
+    if (
+        judge is not None
+        and judge.probability is not None
+        and judge.directional_confidence == "high"
+    ):
+        return float(judge.probability), "judge_high"
+    return float(pool_probability), "pool"
+
+
 def run_quorum(
     *,
     question_title: str,
@@ -496,6 +591,7 @@ def run_quorum(
     judge_runner: QuorumRunner | None = None,
     pool_method: str = "trimmed_geomean_odds",
     trim: int = 1,
+    alpha_extremize: float = 1.0,
     self_fusion: bool = False,
     max_concurrency: int = 4,
     on_progress: Callable[[str, str], None] | None = None,
@@ -512,6 +608,13 @@ def run_quorum(
     A panelist that errors (bad JSON, runtime failure, timeout) is recorded
     with its ``error`` set and excluded from pooling; the quorum still completes
     as long as at least one panelist succeeds. Results keep input order.
+
+    ``alpha_extremize`` (AIA P0.1) is the per-question terminal Platt slope. It
+    is applied EXACTLY ONCE to whichever number wins the P0.3 override gate:
+    the pool is calibrated inside :func:`aggregate_panel_estimates`, and if a
+    high-confidence judge overrides, its raw number is Platt'd here with the
+    same alpha. Defaulting to ``1.0`` (identity) keeps an un-configured quorum's
+    committed number byte-identical to the historical bare pool.
     """
 
     if not models:
@@ -574,6 +677,7 @@ def run_quorum(
         [f.to_estimate() for f in ok],
         method=pool_method,
         trim=trim,
+        alpha_extremize=alpha_extremize,
     )
     disagreement = disagreement_signal(
         [f.probability for f in ok],
@@ -603,6 +707,22 @@ def run_quorum(
         if on_progress:
             on_progress("judge_done", judge_model)
 
+    # ── confidence-gated supervisor override (AIA P0.3) ────────────────────────
+    # The pool is already terminally-Platt'd inside aggregate_panel_estimates.
+    # resolve_final_probability picks the winning branch on the RAW numbers; we
+    # then Platt the judge's raw override here so terminal calibration lands on
+    # whichever number wins EXACTLY ONCE (pool: Platt'd in aggregation; judge:
+    # Platt'd just below). Never both, never zero times.
+    final_probability, final_source = resolve_final_probability(
+        aggregation.aggregate_probability, judge
+    )
+    if final_source == "judge_high":
+        alpha = float(alpha_extremize)
+        if alpha != 1.0:
+            from forecasting.bayes_toolkit import platt_scale
+
+            final_probability = float(platt_scale(final_probability, alpha=alpha, d=1.0))
+
     return QuorumResult(
         question_id=question_id,
         forecasts=forecasts,
@@ -612,6 +732,8 @@ def run_quorum(
         pool_method=aggregation.method,
         trim=aggregation.trim,
         judge_model=judge_model,
+        final_probability=final_probability,
+        final_source=final_source,
     )
 
 
@@ -693,6 +815,7 @@ __all__ = [
     "parse_panelist_response",
     "parse_judge_response",
     "resolve_models",
+    "resolve_final_probability",
     "run_quorum",
     "quorum_auto_indicated",
     "make_aiagent_runner",

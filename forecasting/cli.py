@@ -8817,8 +8817,14 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
     result = job.get("result")
     if not result:
         return
-    print(f"  aggregate: {result['aggregate_probability']:.3f}  "
+    print(f"  pool: {result['aggregate_probability']:.3f}  "
           f"({result['pool_method']}, trim={result['trim']})")
+    final_source = result.get("final_source", "pool")
+    final_prob = result.get("final_probability", result["aggregate_probability"])
+    committed_label = (
+        "committed (judge override)" if final_source == "judge_high" else "committed (pool)"
+    )
+    print(f"  {committed_label}: {final_prob:.3f}")
     dis = result.get("disagreement") or {}
     print(f"  disagreement: {dis.get('disagreement_band', '?')} "
           f"(index={dis.get('disagreement_index')}, sd_logit={dis.get('sd_logit')})")
@@ -8830,7 +8836,11 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
     judge = result.get("judge")
     if judge:
         if judge.get("probability") is not None:
-            print(f"  judge verdict: {judge['probability']:.3f} — {judge.get('rationale', '')}")
+            conf = judge.get("directional_confidence", "medium")
+            print(
+                f"  judge verdict: {judge['probability']:.3f} "
+                f"[{conf} confidence] — {judge.get('rationale', '')}"
+            )
         for spot in judge.get("blind_spots") or []:
             print(f"    blind spot: {spot}")
 
