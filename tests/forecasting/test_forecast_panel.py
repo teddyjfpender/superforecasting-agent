@@ -221,8 +221,10 @@ def test_panel_aggregation_to_dict_is_serializable():
 
 
 def test_panel_aggregation_methods_set_is_stable():
+    # 'mean' (AIA P1.4 convexity baseline) is SELECTABLE, but the live default
+    # must stay trimmed_geomean_odds — see test_ensemble_baseline for the guard.
     assert PANEL_AGGREGATION_METHODS == frozenset(
-        {"trimmed_geomean_odds", "log_odds_pool", "median"}
+        {"trimmed_geomean_odds", "log_odds_pool", "median", "mean"}
     )
 
 

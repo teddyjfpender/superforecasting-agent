@@ -482,8 +482,8 @@ FORECAST_LEDGER_SCHEMA = {
             },
             "method": {
                 "type": "string",
-                "enum": sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
-                "description": "Panel aggregation method.",
+                "enum": sorted(["trimmed_geomean_odds", "log_odds_pool", "median", "mean"]),
+                "description": "Panel aggregation method ('mean' is the convexity baseline; default trimmed_geomean_odds).",
             },
             "triggered_by": {"type": "string"},
             "question_title": {"type": "string"},

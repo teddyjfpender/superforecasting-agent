@@ -90,6 +90,30 @@ QUORUM_PRESETS: dict[str, dict[str, Any]] = {
         "description": "Self-fusion — one model sampled N times; the lift "
         "comes from the judge synthesis, so it needs only one provider key.",
     },
+    "wide": {
+        # AIA P1.4 OPT-IN variance-reduction preset: ~10 mixed-model draws.
+        # The ensemble-size curve (quorum_analysis.bootstrap_ensemble_curve)
+        # shows Brier variance falls sharply to roughly k~=5 then plateaus, so
+        # ~10 draws sits comfortably past the knee. NOT a default — the live
+        # default preset stays 'frontier' and the 'self' default sample count
+        # stays 3. Choose this explicitly (--preset wide) when you want the
+        # variance floor and can pay for ~10 calls.
+        "models": (
+            "anthropic/claude-opus-4-8",
+            "openai/gpt-5.5",
+            "google/gemini-3-flash",
+            "moonshotai/kimi-k2.6",
+            "deepseek/deepseek-v4-pro",
+            "anthropic/claude-opus-4-8",
+            "openai/gpt-5.5",
+            "google/gemini-3-flash",
+            "moonshotai/kimi-k2.6",
+            "deepseek/deepseek-v4-pro",
+        ),
+        "judge": "anthropic/claude-opus-4-8",
+        "description": "Wide panel (AIA P1.4) — ~10 mixed-model draws past the "
+        "variance-reduction knee. Opt-in only; highest cost.",
+    },
 }
 
 

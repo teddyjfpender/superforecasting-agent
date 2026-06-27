@@ -21,7 +21,12 @@ from dataclasses import dataclass, field
 from statistics import median
 from typing import Any, Iterable, Mapping, Sequence
 
-from forecasting.bayes_toolkit import log_odds_pool, platt_scale, prob_to_odds
+from forecasting.bayes_toolkit import (
+    log_odds_pool,
+    mean_probability,
+    platt_scale,
+    prob_to_odds,
+)
 from forecasting.models import ValidationError
 
 
@@ -118,8 +123,14 @@ DEFAULT_PANEL_PERSPECTIVES: tuple[str, ...] = (
 
 
 PANEL_AGGREGATION_METHODS = frozenset(
-    {"trimmed_geomean_odds", "log_odds_pool", "median"}
+    {"trimmed_geomean_odds", "log_odds_pool", "median", "mean"}
 )
+
+# The DEFAULT aggregation method. SELECTABLE alternatives live in
+# PANEL_AGGREGATION_METHODS, but the live default is pinned here and asserted by
+# tests: an un-configured panel/quorum must stay byte-identical to history. Never
+# change this constant to make the convexity baseline ('mean') the silent default.
+DEFAULT_PANEL_AGGREGATION_METHOD = "trimmed_geomean_odds"
 
 
 # ── Aggregation ─────────────────────────────────────────────────────────────
@@ -169,7 +180,7 @@ class PanelAggregation:
 def aggregate_panel_estimates(
     estimates: Sequence[Mapping[str, Any]],
     *,
-    method: str = "trimmed_geomean_odds",
+    method: str = DEFAULT_PANEL_AGGREGATION_METHOD,
     trim: int = 1,
     alpha_extremize: float = 1.0,
 ) -> PanelAggregation:
@@ -184,6 +195,10 @@ def aggregate_panel_estimates(
       - ``log_odds_pool``: full geometric mean of odds with weights (no trim).
       - ``median``: weighted median of probabilities. Robust but ignores
         confidence — use when forecasters disagree on the order of magnitude.
+      - ``mean``: weighted arithmetic mean of probabilities (AIA P1.4). The
+        convexity-backed BASELINE — ``Brier(mean) <= mean(Brier)`` by Jensen — so
+        it is the floor any pool/judge must beat. SELECTABLE only; never the
+        default.
 
     The spread artifact captures the panel disagreement so it can be shown
     next to the aggregate ("the spread is the most valuable part").
@@ -223,6 +238,13 @@ def aggregate_panel_estimates(
     weights = [row["weight"] for row in kept]
     if method in {"trimmed_geomean_odds", "log_odds_pool"}:
         aggregate = log_odds_pool(probs, weights)
+    elif method == "mean":
+        # The convexity-backed simple-mean BASELINE (AIA P1.4): weighted
+        # arithmetic mean in probability space. Brier(mean) <= mean(Brier) by
+        # Jensen, so this is the formal floor any pool/judge must beat. Selectable
+        # only — the desk default stays trimmed_geomean_odds. The terminal Platt
+        # alpha below still applies identically after it.
+        aggregate = mean_probability(probs, weights)
     else:  # median
         aggregate = float(median(probs))
 
@@ -557,6 +579,7 @@ __all__ = [
     "PANEL_PERSPECTIVES",
     "DEFAULT_PANEL_PERSPECTIVES",
     "PANEL_AGGREGATION_METHODS",
+    "DEFAULT_PANEL_AGGREGATION_METHOD",
     "PanelAggregation",
     "aggregate_panel_estimates",
     "build_perspective_prompts",

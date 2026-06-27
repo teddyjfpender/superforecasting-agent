@@ -268,6 +268,21 @@ def linear_pool(probabilities: Sequence[float], weights: Sequence[float] | None 
     return sum(p * w for p, w in zip(probs, ws)) / sum(ws)
 
 
+def mean_probability(probabilities: Sequence[float], weights: Sequence[float] | None = None) -> float:
+    """Weighted arithmetic mean of probabilities — the convexity-backed baseline.
+
+    Alias of :func:`linear_pool`, named for its role as the AIA P1.4 simple-mean
+    BASELINE. Brier is convex in the forecast, so by Jensen's inequality the Brier
+    of the mean is no worse than the mean of the components' Briers
+    (``Brier(mean(p)) <= mean(Brier(p))``) for a fixed outcome. That makes the
+    naive average the formal floor any odds pool or judge synthesis must beat to
+    justify its extra machinery. Selectable as the ``'mean'`` panel-aggregation
+    method; the desk DEFAULT stays ``trimmed_geomean_odds``.
+    """
+
+    return linear_pool(probabilities, weights)
+
+
 def log_pool(probabilities: Sequence[float], weights: Sequence[float] | None = None) -> float:
     """Normalised weighted geometric mean of probabilities (log-linear pool).
 
@@ -1765,7 +1780,7 @@ __all__ = [
     "prob_to_odds", "odds_to_prob", "logit", "inv_logit",
     "apply_lr", "apply_lrs", "log_odds_update", "decompose_update",
     "normal_cdf", "normal_ppf",
-    "linear_pool", "log_pool", "log_odds_pool", "geometric_pool_odds",
+    "linear_pool", "mean_probability", "log_pool", "log_odds_pool", "geometric_pool_odds",
     "platt_scale", "extremize", "de_extremize", "combine_forecasts", "correlation_adjusted_pool",
     "PoolResult",
     "evidence_weight", "EvidenceWeight",

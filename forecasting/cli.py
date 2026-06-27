@@ -854,7 +854,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     update_parser.add_argument(
         "--panel-method",
         dest="panel_method",
-        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
+        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median", "mean"]),
         default="trimmed_geomean_odds",
     )
     update_parser.add_argument(
@@ -1668,7 +1668,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     panel_aggregate_parser.add_argument(
         "--method",
-        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
+        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median", "mean"]),
         default="trimmed_geomean_odds",
     )
     panel_aggregate_parser.add_argument(
@@ -1692,7 +1692,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     panel_record_parser.add_argument("--input-file", dest="panel_input_file", default=None)
     panel_record_parser.add_argument(
         "--method",
-        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median"]),
+        choices=sorted(["trimmed_geomean_odds", "log_odds_pool", "median", "mean"]),
         default="trimmed_geomean_odds",
     )
     panel_record_parser.add_argument("--trim", type=int, default=1)
@@ -1749,8 +1749,9 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     quorum_parser.add_argument(
         "--preset",
-        choices=sorted(("frontier", "budget", "self")),
-        help="Panel preset (overrides the configured default).",
+        choices=sorted(("frontier", "budget", "self", "wide")),
+        help="Panel preset (overrides the configured default). 'wide' is the "
+        "opt-in ~10-draw variance-reduction panel (AIA P1.4).",
     )
     quorum_parser.add_argument(
         "--models",
@@ -1760,8 +1761,9 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     quorum_parser.add_argument(
         "--pool",
         dest="pool_method",
-        choices=sorted({"trimmed_geomean_odds", "log_odds_pool", "median"}),
-        help="Pooling method for the panel.",
+        choices=sorted({"trimmed_geomean_odds", "log_odds_pool", "median", "mean"}),
+        help="Pooling method for the panel ('mean' is the convexity baseline; "
+        "the default stays trimmed_geomean_odds).",
     )
     quorum_parser.add_argument("--trim", type=int, help="Drop this many extremes before pooling.")
     quorum_parser.add_argument("--samples", type=int, help="Self-fusion sample count (self preset).")
@@ -1780,6 +1782,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--wait",
         action="store_true",
         help="Run synchronously and print the result (default: background job + run-id).",
+    )
+    quorum_parser.add_argument(
+        "--seed", type=int, default=0,
+        help="Bootstrap seed for `quorum bench` (deterministic).",
+    )
+    quorum_parser.add_argument(
+        "--draws", type=int,
+        help="Bootstrap resamples per ensemble size for `quorum bench` (default 500).",
     )
     quorum_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     quorum_parser.set_defaults(_forecast_handler=_cmd_quorum)
@@ -8689,6 +8699,9 @@ def _cmd_quorum(args: argparse.Namespace) -> None:
     if target == "calibration":
         _quorum_calibration(args)
         return
+    if target == "bench":
+        _quorum_bench(args)
+        return
     if not target:
         _quorum_overview()
         return
@@ -8710,6 +8723,7 @@ def _quorum_overview() -> None:
     print("  forecast quorum config [set <key> <value>]")
     print("  forecast quorum default on|off [--scope high_impact|always|first_only]")
     print("  forecast quorum calibration   (how disagreement relates to realised error)")
+    print("  forecast quorum bench         (ensemble-size variance-reduction curve, read-only)")
 
 
 def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
@@ -8901,6 +8915,47 @@ def _quorum_calibration(args: argparse.Namespace) -> None:
         if bucket:
             print(f"    {band:<9} n={bucket['count']:<3} mean_brier={bucket['mean_brier']:.4f}")
     print(f"  → {report['interpretation']}")
+
+
+def _quorum_bench(args: argparse.Namespace) -> None:
+    """Read-only ensemble-size variance-reduction readout over resolved quorums.
+
+    This NEVER changes any committed forecast or the live default ensemble size —
+    it benchmarks how Brier variance falls as you add mean-pooled draws (AIA P1.4).
+    """
+
+    from forecasting.quorum_analysis import ensemble_bench
+
+    seed = int(getattr(args, "seed", 0) or 0)
+    draws_arg = getattr(args, "draws", None)
+    draws = 500 if draws_arg is None else max(1, int(draws_arg))
+    report = ensemble_bench(_ledger(args), seed=seed, draws=draws)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+    print(
+        f"quorum ensemble-size bench  (n_runs={report['n_runs']} resolved quorum forecasts)"
+    )
+    if not report["n_runs"]:
+        print("  no resolved quorum forecasts yet — resolve some and run again.")
+        return
+    curve = report["curve"]["curve"]
+    print(f"  bootstrap: draws={report['draws']} seed={report['seed']}")
+    print("  k   mean_brier   95% CI width")
+    for point in curve:
+        print(
+            f"  {point['k']:<3} {point['mean_brier']:<11.4f} {point['ci95_width']:.4f}"
+        )
+    var = report["variance"]
+    print(
+        f"  variance: sampling(LLM)={var['sampling_variance']:.5f}  "
+        f"question={var['question_variance']:.5f}"
+    )
+    print(
+        f"  Brier-of-mean={var['mean_brier_of_mean']:.5f}  "
+        f"mean-of-Brier={var['mean_mean_of_brier']:.5f}  "
+        f"Jensen gap={var['jensen_gap']:+.5f}  (>= 0 — the accuracy the simple mean buys)"
+    )
 
 
 def _cmd_postmortem(args: argparse.Namespace) -> None:
