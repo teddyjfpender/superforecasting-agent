@@ -147,6 +147,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "doctor_report",
                     "pilot_report",
                     "detect_templated_batches",
+                    "forecast_complementarity",
                     "thesis_dashboard",
                     "add_watched_source",
                     "list_watched_sources",
@@ -1772,6 +1773,20 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     min_cluster=int(args.get("min_cluster", 3) or 3),
                 ),
             )
+
+        if action == "forecast_complementarity":
+            # AIA P1.3 — READ-ONLY: fit the convex market+LLM Brier-minimizing
+            # blend over resolved questions and report the LOO additive value +
+            # bootstrap weight CI. Reports whether a fitted advisory weight WOULD
+            # ship (it never ships from here — no live number changes).
+            from forecasting.market_ensemble import complementarity_report
+
+            report = complementarity_report(
+                ledger,
+                forecast_origin=args.get("forecast_origin") or "live",
+                min_sample=int(args.get("min_sample", 30) or 30),
+            )
+            return tool_result(success=True, forecast_complementarity=report)
 
         if action == "thesis_dashboard":
             from forecasting.dashboard import build_factor_summary, build_thesis_summary

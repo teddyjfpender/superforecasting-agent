@@ -2153,6 +2153,27 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     calibration_parser.set_defaults(_forecast_handler=_cmd_calibration)
 
+    complementarity_parser = forecast_sub.add_parser(
+        "complementarity",
+        help="AIA P1.3 — fitted convex market+LLM Brier-minimizing blend + LOO additive value (read-only)",
+    )
+    complementarity_parser.add_argument(
+        "--origin",
+        dest="forecast_origin",
+        default="live",
+        choices=["live", "backtest", "imported_baseline"],
+        help="Which resolved score_records to fit the LLM/agent side from (default: live)",
+    )
+    complementarity_parser.add_argument(
+        "--min-sample",
+        type=int,
+        default=30,
+        dest="min_sample",
+        help="Minimum resolved market+LLM pairs before a weight is fitted (default: 30)",
+    )
+    complementarity_parser.add_argument("--json", action="store_true", help="Emit the raw report as JSON")
+    complementarity_parser.set_defaults(_forecast_handler=_cmd_complementarity)
+
     tail_audit_parser = forecast_sub.add_parser(
         "tail-audit",
         help=(
@@ -9398,6 +9419,48 @@ def _cmd_calibration(args: argparse.Namespace) -> None:
         calibration_eligible=None if args.all else True,
     )
     _print_calibration_summary(summary)
+
+
+def _cmd_complementarity(args: argparse.Namespace) -> None:
+    """AIA P1.3 — fit the convex market+LLM Brier-minimizing blend over resolved
+    questions and report the LOO additive value + bootstrap weight CI. READ-ONLY:
+    it never edits a forecast or the live advisory weight; it only reports whether
+    a fitted weight WOULD ship under the strict sample+LOO+CI gate."""
+    from forecasting.market_ensemble import complementarity_report
+
+    report = complementarity_report(
+        _ledger(args),
+        forecast_origin=args.forecast_origin,
+        min_sample=max(int(args.min_sample), 2),
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    def _fmt(value: Any) -> str:
+        return f"{value:.4f}" if isinstance(value, (int, float)) else "-"
+
+    print(f"resolved market+LLM pairs: {report['n']} (skipped: {report['skipped']})")
+    weights = report.get("weights")
+    if not weights:
+        print("weights: not fitted (insufficient sample)")
+    else:
+        ci = report.get("bootstrap_ci_95") or {}
+        for source in sorted(weights):
+            lo, hi = (ci.get(source) or [None, None])[:2]
+            band = f" [95% CI {lo:.3f}-{hi:.3f}]" if isinstance(lo, (int, float)) else ""
+            print(f"  w[{source}] = {weights[source]:.4f}{band}")
+    per = report.get("per_source_brier") or {}
+    for source in sorted(per):
+        print(f"  brier[{source}] = {_fmt(per[source])}")
+    print(f"  ensemble_brier (in-sample) = {_fmt(report.get('ensemble_brier'))}")
+    print(f"  loo_ensemble_brier (honest) = {_fmt(report.get('loo_ensemble_brier'))}")
+    print(f"  blend beats BOTH inputs (LOO): {bool(report.get('beats_both'))}")
+    decision = report.get("advisory_weight_decision") or {}
+    ships = "WOULD SHIP" if decision.get("fitted") else "static weight kept"
+    print(f"  advisory weight: {ships} — {decision.get('reason', '')}")
+    for note in report.get("notes", []):
+        print(f"  note: {note}")
 
 
 def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = None) -> None:

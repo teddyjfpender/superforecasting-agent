@@ -122,8 +122,14 @@ def build_forecasting_evidence_status(
     min_live_scores: int = DEFAULT_MIN_LIVE_SCORES_FOR_CLAIM,
     min_agent_protocol_cases: int = DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
     min_external_source_families: int = DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
+    include_complementarity: bool = False,
 ) -> dict[str, Any]:
-    """Summarize whether stored evidence can support live superiority claims."""
+    """Summarize whether stored evidence can support live superiority claims.
+
+    ``include_complementarity`` is OPT-IN (default off): the market+LLM complementarity
+    report iterates every live score with per-score DB round-trips + a bootstrap + an
+    O(n^2) LOO, which is too heavy for the hot alerts/dashboard/tool/CLI callers — they
+    leave it off (None) and use the dedicated ``forecast complementarity`` surface."""
 
     live_scores = ledger.list_scores(forecast_origin="live", calibration_eligible=None)
     backtest_scores = ledger.list_scores(forecast_origin="backtest", calibration_eligible=None)
@@ -285,9 +291,23 @@ def build_forecasting_evidence_status(
         for requirement in requirements
         if not requirement["passed"]
     ]
+    # AIA P1.3 — a READ-ONLY complementarity row alongside best_baseline: the
+    # fitted convex market+LLM blend + its honest LOO additive value. Never edits
+    # a forecast or the advisory weight, and must never take down readiness. OPT-IN
+    # only (it is expensive — see the docstring); the hot callers leave it None.
+    market_llm_complementarity = None
+    if include_complementarity:
+        try:
+            from forecasting.market_ensemble import complementarity_report
+
+            market_llm_complementarity = complementarity_report(ledger, forecast_origin="live")
+        except Exception:
+            market_llm_complementarity = None
+
     return {
         "verdict": "insufficient_live_evidence" if gaps else "benchmark_evidence_ready_live_claim_unproven",
         "can_claim_live_superforecasting": False,
+        "market_llm_complementarity": market_llm_complementarity,
         "message": (
             "Stored evidence is not enough for a live superforecasting claim."
             if gaps
