@@ -2757,6 +2757,16 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     backtest_parser.add_argument("--agent-model", help="Model used for agent-protocol backtests")
     backtest_parser.add_argument("--agent-provider", help="Provider used for agent-protocol backtests")
     backtest_parser.add_argument("--agent-max-iterations", type=int, default=12)
+    backtest_parser.add_argument(
+        "--closed-book",
+        action="store_true",
+        help=(
+            "Closed-book agent-protocol replay: disable the live web/search "
+            "toolset so the agent forecasts from the question text and reasoning "
+            "only. Use for historical questions whose outcome is googleable. "
+            "Used only with --probability-source agent-protocol."
+        ),
+    )
     backtest_parser.add_argument("--allow-calibration-memory", action="store_true")
     backtest_parser.add_argument("--benchmarks", action="store_true", help="List built-in benchmark datasets")
     backtest_parser.add_argument(
@@ -11216,6 +11226,8 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         raise SystemExit("--agent-output-jsonl requires --probability-source agent-protocol")
     if args.agent_prompt_jsonl and args.probability_source != "agent-protocol":
         raise SystemExit("--agent-prompt-jsonl requires --probability-source agent-protocol")
+    if getattr(args, "closed_book", False) and args.probability_source != "agent-protocol":
+        raise SystemExit("--closed-book requires --probability-source agent-protocol")
     if args.agent_prompt_jsonl and not args.prepare_agent_prompts:
         raise SystemExit("--agent-prompt-jsonl requires --prepare-agent-prompts")
     if args.prepare_agent_prompts and args.probability_source != "agent-protocol":
@@ -11293,6 +11305,7 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
             if args.probability_source == "agent-protocol"
             else None
         )
+        recorded_agent_model = _resolved_recorded_agent_model(args, agent_runner)
         print(f"benchmark_suite: builtin ({len(rows)} datasets)")
         print(f"probability_source: {args.probability_source}")
         suite_runs = 0
@@ -11304,7 +11317,7 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
                 _load_backtest_cases(dataset, ledger=ledger),
                 args.probability_source,
                 agent_runner=agent_runner,
-                agent_model=args.agent_model,
+                agent_model=recorded_agent_model,
                 agent_provider=args.agent_provider,
             )
             run = ledger.run_backtest_dataset(
@@ -11429,7 +11442,7 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         _load_backtest_cases(args.dataset, ledger=ledger),
         args.probability_source,
         agent_runner=agent_runner,
-        agent_model=args.agent_model,
+        agent_model=_resolved_recorded_agent_model(args, agent_runner),
         agent_provider=args.agent_provider,
     )
     run = ledger.run_backtest_dataset(
@@ -12896,7 +12909,10 @@ def _format_watch_scope(row: dict[str, Any]) -> str:
 
 
 def _is_importable_benchmark_source(source: str) -> bool:
-    return source.startswith(("builtin:", "http://", "https://")) or Path(source).expanduser().is_file()
+    return (
+        source.startswith(("builtin:", "forecastbench:", "http://", "https://"))
+        or Path(source).expanduser().is_file()
+    )
 
 
 def _should_use_metaculus_adapter(args: argparse.Namespace) -> bool:
@@ -12917,6 +12933,29 @@ def _load_backtest_cases(dataset: str, *, ledger: ForecastLedger | None = None) 
             return load_builtin_benchmark(dataset)
         except KeyError as exc:
             raise SystemExit(f"unknown built-in benchmark: {dataset}") from exc
+    if dataset.startswith("forecastbench:"):
+        from forecasting.forecastbench import ForecastBenchError, load_forecastbench_cases
+
+        spec = dataset[len("forecastbench:") :]
+        date_part, _, limit_part = spec.partition(":")
+        date_part = date_part.strip()
+        if not date_part:
+            raise SystemExit(
+                "forecastbench dataset needs a date, e.g. forecastbench:2026-06-07"
+            )
+        limit: int | None = None
+        if limit_part.strip():
+            try:
+                limit = int(limit_part.strip())
+            except ValueError as exc:
+                raise SystemExit(
+                    f"forecastbench limit must be an integer: {dataset}"
+                ) from exc
+        try:
+            report = load_forecastbench_cases(date_part, limit=limit)
+        except ForecastBenchError as exc:
+            raise SystemExit(str(exc)) from exc
+        return report["cases"]
     if dataset.startswith(("http://", "https://")):
         text = _read_url_text(dataset, "backtest dataset")
         if dataset.lower().split("?", 1)[0].endswith(".csv"):
@@ -12931,6 +12970,21 @@ def _load_backtest_cases(dataset: str, *, ledger: ForecastLedger | None = None) 
         return _load_backtest_cases_json_text(path.read_text(encoding="utf-8"), str(path))
     except UnicodeDecodeError as exc:
         raise SystemExit(f"backtest dataset is not readable text: {path}") from exc
+
+
+def _resolved_recorded_agent_model(args: argparse.Namespace, agent_runner) -> str | None:
+    """Model recorded on agent-protocol cases (drives the P2.4 cutoff gate).
+
+    Prefer the explicit ``--agent-model``; otherwise fall back to the live
+    agent's RESOLVED default model (exposed by ``_backtest_agent_protocol_runner``
+    as ``resolved_agent_model``) so the model-cutoff gate still fires when
+    ``--agent-model`` is omitted instead of recording an empty string.
+    """
+
+    explicit = getattr(args, "agent_model", None)
+    if explicit:
+        return explicit
+    return getattr(agent_runner, "resolved_agent_model", None)
 
 
 def _backtest_agent_protocol_runner(args: argparse.Namespace):
@@ -12954,15 +13008,30 @@ def _backtest_agent_protocol_runner(args: argparse.Namespace):
                 f"{case.get('id') or f'index:{index}'}"
             )
 
+        # Replaying captured responses: no live agent, so the recorded model is
+        # whatever the operator passed (the responses themselves carry agent_model).
+        captured_runner.resolved_agent_model = args.agent_model or None
         return captured_runner
 
     from run_agent import AIAgent
+
+    # Closed-book replay: the agent must have NO tool that can reach the now-known
+    # outcome, so a historical question cannot be answered by fetching/reading it.
+    # Dropping "web" is NOT enough, and neither is keeping "file": (a) the
+    # "forecasting" toolset's forecast_ledger.import_source_evidence fetches the LIVE
+    # current state of manifold/metaculus/polymarket/url sources (the answer), and
+    # (b) the "file" toolset's read_file/search_files can read the on-disk
+    # ForecastBench resolution-set cache (which holds resolved_to for every id). The
+    # agent-protocol replay scores the agent's parsed JSON OUTPUT and needs NO tools
+    # to emit a forecast, so closed-book runs with an EMPTY toolset — reason only.
+    closed_book = bool(getattr(args, "closed_book", False))
+    enabled_toolsets = [] if closed_book else ["forecasting", "file", "web"]
 
     agent = AIAgent(
         model=args.agent_model or "",
         provider=args.agent_provider,
         max_iterations=args.agent_max_iterations,
-        enabled_toolsets=["forecasting", "file", "web"],
+        enabled_toolsets=enabled_toolsets,
         platform="cli",
     )
 
@@ -12978,6 +13047,12 @@ def _backtest_agent_protocol_runner(args: argparse.Namespace):
         _write_agent_protocol_response_jsonl(output_path, case, index, response)
         return response
 
+    # P2.4 model-cutoff gate fires on the recorded agent_model; default it to the
+    # agent's RESOLVED/default model so the gate works even when --agent-model is
+    # omitted (agent.model is the resolved default, not the empty placeholder).
+    live_runner.resolved_agent_model = (
+        getattr(agent, "model", None) or args.agent_model or None
+    )
     return live_runner
 
 

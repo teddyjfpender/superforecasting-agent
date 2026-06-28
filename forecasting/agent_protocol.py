@@ -29,6 +29,12 @@ _ANSWER_SIDE_FIELDS = {
     "result",
     "resolution_status",
     "resolution_time",
+    # The live resolution-source URL is an answer leak for historical replay: a
+    # market/question slug (manifold.markets/q/<slug>, metaculus.com/questions/…)
+    # often reveals the now-known outcome and is_leak_domain() does not flag those
+    # hosts. Withhold it from the agent. The ledger still records it on the
+    # backing question for scoring/audit; only the agent-visible blob drops it.
+    "resolution_source",
     "score",
     "metadata",
     "notes",
