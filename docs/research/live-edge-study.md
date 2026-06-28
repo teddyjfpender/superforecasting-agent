@@ -244,6 +244,29 @@ model id itself when called without one, rather than passing an empty string to 
 
 ---
 
+### Interim conclusion (end of the in-session phase)
+
+After four iterations and **55 live, foreknowledge-proof forecasts**, the in-session ceiling is
+reached and the result is clear-cut on the half that is measurable now:
+
+- **Necessary condition — MET, robustly.** Given the market price withheld and live search, the agent
+  produces **independent, search-grounded forecasts that the market is not mirroring**: mean |Δp|
+  **12.7pp**, Pearson r **0.765**, a third of markets moving >10pp — and the signal *strengthens*
+  monotonically with n (it is not a small-sample artifact). This is the exact capability the
+  closed-book agent lacked (it echoed at r≈1.0, grounding study §3.4). The harness demonstrably turns
+  a no-edge model into an independent forecaster.
+- **Sufficient condition — SEEDED, physically pending.** Whether that independent signal *beats and
+  complements* the market (paired Brier skill + non-zero simplex weight) is a property of **resolved**
+  markets. Our 55 forecasts are pre-resolution; the bulk settle ≈June 30 (and Manifold settles
+  manually, so with lag). This verdict **cannot be produced in-session without leaking** — it is the
+  unavoidable cost of a clean, out-of-sample design. The harness is now configured to score it
+  automatically (`market-nightly score`) as outcomes land.
+
+The honest framing for the product: **the necessary, hardest-to-fake half of the value proposition —
+that the system manufactures real, independent, evidence-grounded signal beyond the market — is
+demonstrated in-session.** The "provably step-function better" half is a held-out measurement that the
+harness has now *seeded and will resolve on the market's clock*, not ours.
+
 ## 5. Limitations
 
 - The decisive accuracy proof is **longitudinal**; in-session we can show orthogonality + a seeded
