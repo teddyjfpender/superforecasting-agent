@@ -337,8 +337,16 @@ def build_forecastbench_case(
         "domain": "forecastbench",
         # Explicit tags so the desk can carve out a separate "bench" view: every
         # ForecastBench replay question carries "bench" + "forecastbench" (+ its
-        # source), distinct from organic live desk forecasts.
-        "tags": [t for t in ("bench", "forecastbench", source) if t],
+        # source), distinct from organic live desk forecasts. The market-hidden arm
+        # additionally carries "market_hidden" so it is trivially separable from the
+        # market-visible arm (same titles/sources/dataset label otherwise).
+        "tags": [
+            t for t in (
+                "bench", "forecastbench",
+                "market_hidden" if hide_market_baseline else None,
+                source,
+            ) if t
+        ],
         "topics": [source] if source else ["forecastbench"],
         "as_of": as_of,
         "simulated_forecast_time": as_of,
