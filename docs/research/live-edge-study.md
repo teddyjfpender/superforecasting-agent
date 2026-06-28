@@ -217,6 +217,31 @@ move *rises* (7.8 → 11.1pp) — the signal strengthens, not regresses. **Score
 (all pending; bulk resolve ≈ June 29–30). Sample 3 (`--seed 3`) is firing to push toward n≈58 for a
 solid orthogonality base while resolutions accrue.
 
+### Iteration 4 — 2026-06-28 · n=55, orthogonality established; pivot to scoring
+
+Sample 3 brings the pooled set to **n=55**. The orthogonality result is now established across three
+independent samples and **monotonically strengthens** with n — it is not a small-sample artifact:
+
+| n | mean \|Δp\| | Pearson r | diverge >10pp |
+|---|---|---|---|
+| 20 | 0.078 | 0.92 | 25% |
+| 39 | 0.111 | 0.79 | 28% |
+| **55** | **0.127** | **0.765** | **36%** |
+
+**This is the in-session headline: the harness reliably manufactures independent, search-grounded
+signal that the market is not mirroring** — precisely the capability the closed-book agent lacked
+(grounding study: it *echoed*, r≈1.0). The necessary condition for a market edge is met.
+
+**Scored: still 0 / 55** — every market is pre-resolution. A probe for an in-session scored read (a
+targeted batch closing within ~14 h) found only **3** such markets in the liquid pool, confirming that
+the scored verdict is **fundamentally longitudinal**: the bulk of the 55 forecasts are month-end
+markets resolving ≈June 30 (~1.5 days out), and Manifold resolves *manually*, so settlement lags close
+time. The loop therefore shifts to **resolution-watch** — `market-nightly score` each cycle to fold in
+outcomes as they settle, rather than burning further agent samples (orthogonality is already
+saturated). The scored paired-Brier / simplex-complementarity verdict accrues at the markets' pace.
+*(A minor robustness note for the harness: `build_informed_market_forecaster` should resolve the active
+model id itself when called without one, rather than passing an empty string to the provider.)*
+
 ---
 
 ## 5. Limitations

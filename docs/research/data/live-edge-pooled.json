@@ -272,18 +272,130 @@
       "agent_p": 0.018,
       "market_p": 0.010000000000000024,
       "outcome": null
+    },
+    {
+      "qid": "fq_fb901e6ba964",
+      "title": "Did Niki Minaj get a gold card?",
+      "agent_p": 0.38,
+      "market_p": 0.06859959862147666,
+      "outcome": null
+    },
+    {
+      "qid": "fq_a36fe76b8527",
+      "title": "Will there be a new war by the 1 of July 2026?",
+      "agent_p": 0.06,
+      "market_p": 0.2655407230284135,
+      "outcome": null
+    },
+    {
+      "qid": "fq_39f73ab7cbbe",
+      "title": "Perfect score achieved by an AI model in the International Math Olympiad (IMO) 2026?",
+      "agent_p": 0.35,
+      "market_p": 0.82,
+      "outcome": null
+    },
+    {
+      "qid": "fq_89e149e7dbc3",
+      "title": "Chaturbate remains in the top 8 most visited adult websites in June 2026",
+      "agent_p": 0.78,
+      "market_p": 0.9105418206210731,
+      "outcome": null
+    },
+    {
+      "qid": "fq_3e418f02748d",
+      "title": "Will there be medical consensus that GLP-1 drugs have cardiovascular benefits beyond those provided via weight loss?",
+      "agent_p": 0.66,
+      "market_p": 0.7479920056188848,
+      "outcome": null
+    },
+    {
+      "qid": "fq_31f2e045e78c",
+      "title": "Will England win the 2026 FIFA World Cup?",
+      "agent_p": 0.135,
+      "market_p": 0.09929056542917221,
+      "outcome": null
+    },
+    {
+      "qid": "fq_b8e2c5baa55a",
+      "title": "Will additional countries announce they are leaving the anti-landmine Ottawa Treaty by mid-2026?",
+      "agent_p": 0.08,
+      "market_p": 0.04541318491498541,
+      "outcome": null
+    },
+    {
+      "qid": "fq_290e8cce0844",
+      "title": "Will Brent crude oil settle at or above $100/barrel on any trading day before July 1, 2026?",
+      "agent_p": 0.022,
+      "market_p": 0.034891053041101745,
+      "outcome": null
+    },
+    {
+      "qid": "fq_1aaea5165403",
+      "title": "Will somebody mammogram/managram me 1500 times",
+      "agent_p": 0.12,
+      "market_p": 0.009999999999999995,
+      "outcome": null
+    },
+    {
+      "qid": "fq_452d88fdf0d0",
+      "title": "Will the ROAD to Housing Act be presented to President Trump by the end of June?",
+      "agent_p": 0.93,
+      "market_p": 0.2899999999999999,
+      "outcome": null
+    },
+    {
+      "qid": "fq_af3b538aaad8",
+      "title": "Will Donald Trump be convicted on one or more counts in the classified documents case?",
+      "agent_p": 0.002,
+      "market_p": 0.049837290999383645,
+      "outcome": null
+    },
+    {
+      "qid": "fq_ddf71630bc1d",
+      "title": "Will China HS 2805.30 exports for January\u2013April 2026 exceed 12000 kg?",
+      "agent_p": 0.72,
+      "market_p": 0.40355508628384434,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6d4b8e332580",
+      "title": "Will \"Jackass: Best and Last\" earn more than $25M in domestic gross earnings (in US dollars) during their opening weeken",
+      "agent_p": 0.003,
+      "market_p": 0.10782116733567293,
+      "outcome": null
+    },
+    {
+      "qid": "fq_0812df74b97c",
+      "title": "When Fable access returns, will it be available as part of the monthly paid plan?",
+      "agent_p": 0.68,
+      "market_p": 0.7872781201275802,
+      "outcome": null
+    },
+    {
+      "qid": "fq_aed105ff8d65",
+      "title": "Will SpaceX's Starship cross the International Date Line by the end of Q2 2026?",
+      "agent_p": 0.045,
+      "market_p": 0.009999999999999997,
+      "outcome": null
+    },
+    {
+      "qid": "fq_7c249f17a705",
+      "title": "Will Americans' confidence in large technology companies decline in 2026, according to Gallup?",
+      "agent_p": 0.53,
+      "market_p": 0.5304191937237309,
+      "outcome": null
     }
   ],
   "report": {
-    "n_total": 39,
+    "n_total": 55,
     "orthogonality": {
-      "n": 39,
-      "mean_abs_logit_gap": 1.1863888700428042,
-      "median_abs_logit_gap": 0.8055522851314292,
-      "mean_abs_prob_gap": 0.11118089308520787,
-      "pearson_r_agent_vs_market": 0.7884647616886797,
-      "frac_diverge_gt_0.05": 0.4358974358974359,
-      "frac_diverge_gt_0.10": 0.28205128205128205
+      "n": 55,
+      "mean_abs_logit_gap": 1.302477046009731,
+      "median_abs_logit_gap": 0.9966258203412215,
+      "mean_abs_prob_gap": 0.12702759581035397,
+      "pearson_r_agent_vs_market": 0.764763009607612,
+      "frac_diverge_gt_0.05": 0.4909090909090909,
+      "frac_diverge_gt_0.10": 0.36363636363636365
     },
     "scored": {
       "n_resolved": 0

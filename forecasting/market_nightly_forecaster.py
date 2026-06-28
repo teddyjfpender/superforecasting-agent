@@ -200,6 +200,19 @@ def build_informed_market_forecaster(
     seam for tests so no live agent is constructed; it defaults to ``build_agent``.
     """
 
+    if not model:
+        # Robustness: resolve the active model id ourselves when not given one, rather
+        # than passing "" to the provider (codex rejects an empty model). The CLI path
+        # already resolves it; this covers programmatic callers.
+        try:
+            from hermes_cli.config import load_config
+
+            from forecasting.cli import _resolve_active_model_id
+
+            model = _resolve_active_model_id(load_config().get("model"))
+        except Exception:  # noqa: BLE001 — leave model unset; the factory may still default it
+            model = model or None
+
     if discover:
         _ensure_plugins_discovered()
 
