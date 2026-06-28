@@ -223,7 +223,7 @@ _TOOL_STUBS = {
     "search_files": (
         "search_files",
         'pattern: str, target: str = "content", path: str = ".", file_glob: str = None, limit: int = 50, offset: int = 0, output_mode: str = "content", context: int = 0',
-        '"""Search file contents (target="content") or find files by name (target="files"). Returns dict with "matches"."""',
+        '"""Search file contents (target="content") or find files by name (target="files"). Returns dict with densified "matches_text" (str) and "matches_format" describing its shape."""',
         '{"pattern": pattern, "target": target, "path": path, "file_glob": file_glob, "limit": limit, "offset": offset, "output_mode": output_mode, "context": context}',
     ),
     "patch": (

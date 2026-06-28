@@ -487,6 +487,38 @@ def clear_file_ops_cache(task_id: str = None):
             _file_ops_cache.clear()
 
 
+def _is_local_file_backend(task_id: str = "default") -> bool:
+    """Return True when the task's file backend is the LOCAL host filesystem.
+
+    Structured document extraction (read_extract) uses host-local python IO
+    (open()/zipfile/os.path.getsize) and must only run when the task's backend
+    is the gateway host itself. On any non-local backend (docker/ssh/modal/
+    daytona/...) the resolved path names a file inside the remote environment,
+    not on the host, so host-local IO would read the WRONG filesystem.
+
+    Detection mirrors ``_get_env_config`` (terminal_tool.py), whose env_type is
+    ``os.getenv("TERMINAL_ENV", "local")``. Prefer the live cached environment
+    class when available so it tracks the actually-created backend.
+    """
+    try:
+        from tools.terminal_tool import _resolve_container_task_id
+        container_key = _resolve_container_task_id(task_id)
+    except Exception:
+        container_key = task_id
+    try:
+        from tools.environments.local import LocalEnvironment
+        from tools.terminal_tool import _active_environments, _env_lock
+
+        with _env_lock:
+            env = _active_environments.get(container_key) or _active_environments.get(task_id)
+        if env is not None:
+            return isinstance(env, LocalEnvironment)
+    except Exception:
+        pass
+    # No live env yet — fall back to the configured env_type.
+    return os.getenv("TERMINAL_ENV", "local") == "local"
+
+
 def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = "default") -> str:
     """Read a file with pagination and line numbers."""
     try:
@@ -504,6 +536,66 @@ def read_file_tool(path: str, offset: int = 1, limit: int = 500, task_id: str = 
             })
 
         _resolved = _resolve_path_for_task(path, task_id)
+
+        # ── Structured-document extraction ────────────────────────────
+        # Try before the binary-extension guard so .docx/.xlsx can render as
+        # text. Malformed documents fall through to the normal path/binary
+        # guard below (stdlib-only, lazy import — no new hard deps).
+        #
+        # LIMITATION: extract_document_text() uses HOST-LOCAL python IO
+        # (open()/zipfile/os.path.getsize), so it only reads the correct file
+        # when the task's backend is the gateway host. On any non-local backend
+        # (docker/ssh/modal/daytona/...) the resolved path names a file inside
+        # the remote environment, so we SKIP extraction and fall through to the
+        # normal read path (binary-extension guard → env.execute), which is
+        # backend-correct. Proper fix (follow-up): read the bytes via the env,
+        # then extract in-memory.
+        from tools.read_extract import (
+            ExtractionError,
+            extract_document_text,
+            is_extractable_document,
+        )
+
+        if is_extractable_document(str(_resolved)) and _is_local_file_backend(task_id):
+            try:
+                extracted_text = extract_document_text(str(_resolved))
+            except ExtractionError:
+                logger.debug("document extraction failed for %s", path, exc_info=True)
+            else:
+                file_ops = _get_file_ops(task_id)
+                doc_lines = extracted_text.splitlines()
+                total_lines = len(doc_lines)
+                end_line = offset + limit - 1
+                page_text = "\n".join(doc_lines[offset - 1:end_line])
+                doc_result = {
+                    "content": file_ops._add_line_numbers(page_text, offset) if page_text else "",
+                    "total_lines": total_lines,
+                    "file_size": os.path.getsize(_resolved),
+                    "truncated": total_lines > end_line,
+                    "extracted_document": True,
+                }
+                if doc_result["truncated"]:
+                    doc_result["hint"] = (
+                        f"Use offset={end_line + 1} to continue reading "
+                        f"(showing {offset}-{min(end_line, total_lines)} of {total_lines} lines)"
+                    )
+                content_len = len(doc_result["content"])
+                max_chars = _get_max_read_chars()
+                if content_len > max_chars:
+                    return json.dumps({
+                        "error": (
+                            f"Read produced {content_len:,} characters which exceeds "
+                            f"the safety limit ({max_chars:,} chars). "
+                            "Use offset and limit to read a smaller range. "
+                            f"The document has {total_lines} lines of extracted text."
+                        ),
+                        "path": path,
+                        "total_lines": total_lines,
+                        "file_size": doc_result["file_size"],
+                    }, ensure_ascii=False)
+                if doc_result["content"]:
+                    doc_result["content"] = redact_sensitive_text(doc_result["content"], code_file=True)
+                return json.dumps(doc_result, ensure_ascii=False)
 
         # ── Binary file guard ─────────────────────────────────────────
         # Block binary files by extension (no I/O).
@@ -1072,7 +1164,7 @@ def search_tool(pattern: str, target: str = "content", path: str = ".",
             for m in result.matches:
                 if hasattr(m, 'content') and m.content:
                     m.content = redact_sensitive_text(m.content, code_file=True)
-        result_dict = result.to_dict()
+        result_dict = result.to_dict(densify=True)
 
         if count >= 3:
             result_dict["_warning"] = (
@@ -1106,7 +1198,7 @@ def _check_file_reqs():
 
 READ_FILE_SCHEMA = {
     "name": "read_file",
-    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. NOTE: Cannot read images or binary files — use vision_analyze for images.",
+    "description": "Read a text file with line numbers and pagination. Use this instead of cat/head/tail in terminal. Output format: 'LINE_NUM|CONTENT'. Suggests similar filenames if not found. Use offset and limit for large files. Reads exceeding ~100K characters are rejected; use offset and limit to read specific sections of large files. Jupyter notebooks (.ipynb), Word documents (.docx), and Excel workbooks (.xlsx) are auto-extracted to readable text. NOTE: Cannot read images or other binary files — use vision_analyze for images.",
     "parameters": {
         "type": "object",
         "properties": {
