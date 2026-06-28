@@ -16,7 +16,13 @@ def render_message(text: str, cols: int = 80) -> str | None:
     try:
         return format_response(text, cols=cols)
     except TypeError:
-        return format_response(text)
+        # Signature drift on the keyword form — retry positionally, but guard
+        # the retry too: a further drift must degrade to plain text, not crash
+        # the gateway.
+        try:
+            return format_response(text)
+        except Exception:
+            return text
     except Exception:
         return None
 
@@ -30,7 +36,12 @@ def render_diff(text: str, cols: int = 80) -> str | None:
     try:
         return _rd(text, cols=cols)
     except TypeError:
-        return _rd(text)
+        # Guard the positional retry too — a further signature drift degrades
+        # to plain text rather than crashing the gateway.
+        try:
+            return _rd(text)
+        except Exception:
+            return text
     except Exception:
         return None
 
@@ -44,6 +55,11 @@ def make_stream_renderer(cols: int = 80):
     try:
         return StreamingRenderer(cols=cols)
     except TypeError:
-        return StreamingRenderer()
+        # Guard the no-arg retry too — a further signature drift must yield
+        # None (TUI falls back to its own renderer), not crash the gateway.
+        try:
+            return StreamingRenderer()
+        except Exception:
+            return None
     except Exception:
         return None

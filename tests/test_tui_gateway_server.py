@@ -1261,6 +1261,147 @@ def _session(agent=None, **extra):
     }
 
 
+def test_compress_session_history_folds_concurrent_tail_on_cas_miss():
+    """A concurrent append during compaction must not lose either side.
+
+    The compression call runs WITHOUT the history_lock held; if another
+    handler appends to history while it runs (bumping history_version), the
+    old behaviour silently discarded the compressed result. We now OR-merge:
+    the compacted prefix AND the concurrent tail both survive.
+    """
+    # Original history: 6 messages. The compressor will collapse the first 5
+    # into a single summary, yielding a 2-message compacted baseline.
+    original = [
+        {"role": "user", "content": "m0"},
+        {"role": "assistant", "content": "m1"},
+        {"role": "user", "content": "m2"},
+        {"role": "assistant", "content": "m3"},
+        {"role": "user", "content": "m4"},
+        {"role": "assistant", "content": "m5"},
+    ]
+    compacted = [
+        {"role": "system", "content": "summary"},
+        {"role": "assistant", "content": "m5"},
+    ]
+    # The concurrent message that lands DURING compaction.
+    concurrent = {"role": "user", "content": "concurrent-while-compacting"}
+
+    session = _session(history=list(original), history_version=0)
+
+    def _fake_compress(history, system_message, **kwargs):
+        # Simulate another handler appending under the lock mid-compaction:
+        # this is what prompt.submit does (append + version bump).
+        with session["history_lock"]:
+            session["history"].append(concurrent)
+            session["history_version"] += 1
+        return list(compacted), {}
+
+    agent = types.SimpleNamespace(model="m")
+    agent._compress_context = _fake_compress
+    agent._cached_system_prompt = "sys"
+    agent.tools = None
+    session["agent"] = agent
+
+    removed, _usage = server._compress_session_history(session)
+
+    final = session["history"]
+    # Both survive: the compacted baseline (the compaction work) PLUS the
+    # concurrent tail folded onto the end (the concurrent addition).
+    assert final[: len(compacted)] == compacted
+    assert final[len(compacted):] == [concurrent]
+    assert concurrent in final
+    # `removed` is the TRUE net removal relative to the snapshot: the snapshot
+    # held len(original) messages and the session now holds len(final). The
+    # folded concurrent tail is NOT something compaction removed, so removed
+    # must reconcile with the surfaced before/after counts (before_count -
+    # after_count), not over-report by len(tail).
+    assert removed == len(original) - len(final)
+    assert removed == len(original) - len(compacted) - 1  # 1 = folded tail
+    # Version advanced past the concurrent writer's bump, staying monotonic.
+    assert session["history_version"] >= 2
+
+
+def test_compress_session_history_discards_when_concurrent_rewrite_on_cas_miss():
+    """A concurrent TRUNCATE/REWRITE (retry/rewind, /new) must DISCARD, not fold.
+
+    The fold path assumes the concurrent mutation is APPEND-ONLY — that the
+    snapshot `before_messages` is a strict prefix of `current`. Mutators that
+    truncate or rewrite history in place (session retry/rewind, /new) ALSO
+    bump history_version, but there `before_messages` is NOT a prefix of
+    `current`; folding the compacted prefix back on would corrupt history.
+    For those we must fall back to the original safe behaviour: drop the
+    stale compaction result, leave the concurrent `current` intact, report 0.
+    """
+    original = [
+        {"role": "user", "content": "m0"},
+        {"role": "assistant", "content": "m1"},
+        {"role": "user", "content": "m2"},
+        {"role": "assistant", "content": "m3"},
+        {"role": "user", "content": "m4"},
+        {"role": "assistant", "content": "m5"},
+    ]
+    compacted = [
+        {"role": "system", "content": "summary"},
+        {"role": "assistant", "content": "m5"},
+    ]
+    # The concurrent REWRITE: a totally different history (e.g. a rewind that
+    # truncated to a single earlier message). NOT a prefix of `original`.
+    rewritten = [{"role": "user", "content": "rewound-to-here"}]
+
+    session = _session(history=list(original), history_version=0)
+
+    def _fake_compress(history, system_message, **kwargs):
+        # Simulate a retry/rewind replacing history wholesale under the lock.
+        with session["history_lock"]:
+            session["history"] = list(rewritten)
+            session["history_version"] += 1
+        return list(compacted), {}
+
+    agent = types.SimpleNamespace(model="m")
+    agent._compress_context = _fake_compress
+    agent._cached_system_prompt = "sys"
+    agent.tools = None
+    session["agent"] = agent
+
+    removed, _usage = server._compress_session_history(session)
+
+    # The concurrent rewrite is preserved verbatim — the compaction work and
+    # the would-be-folded tail are BOTH dropped (no prefix → no fold).
+    assert session["history"] == rewritten
+    # We did not adopt the compacted baseline anywhere in history.
+    assert compacted[0] not in session["history"]
+    # Discard reports no removal.
+    assert removed == 0
+    # Version is the one the concurrent rewriter set — we did NOT bump again.
+    assert session["history_version"] == 1
+
+
+def test_compress_session_history_normal_path_replaces_history():
+    """No concurrent mutation: compaction replaces history and bumps version."""
+    original = [
+        {"role": "user", "content": "a"},
+        {"role": "assistant", "content": "b"},
+        {"role": "user", "content": "c"},
+        {"role": "assistant", "content": "d"},
+    ]
+    compacted = [{"role": "system", "content": "summary"}]
+    session = _session(history=list(original), history_version=3)
+
+    agent = types.SimpleNamespace(model="m")
+    agent._compress_context = lambda history, system_message, **kw: (
+        list(compacted),
+        {},
+    )
+    agent._cached_system_prompt = "sys"
+    agent.tools = None
+    session["agent"] = agent
+
+    server._compress_session_history(session)
+
+    assert session["history"] == compacted
+    assert session["history_version"] == 4
+
+
 def test_session_close_commits_memory_and_fires_finalize_hook(monkeypatch):
     calls = {"hooks": []}
 
@@ -5424,3 +5565,58 @@ def test_notification_poller_requeues_when_busy(monkeypatch):
         server._sessions.pop("sid_busy", None)
         while not process_registry.completion_queue.empty():
             process_registry.completion_queue.get_nowait()
+
+
+# ── runtime RPC registration (register_method) ────────────────────────
+
+
+def test_register_method_populates_dispatch_and_is_callable():
+    name = "test.runtime.registered"
+
+    def handler(rid, params):
+        return {"jsonrpc": "2.0", "id": rid, "result": {"echo": params.get("x")}}
+
+    try:
+        assert name not in server._methods
+        ret = server.register_method(name, handler)
+
+        # Returns fn (usable as a decorator) and populates the same dict the
+        # @method decorator writes to.
+        assert ret is handler
+        assert server._methods[name] is handler
+
+        # Dispatches through the normal request path.
+        resp = server.handle_request(
+            {"jsonrpc": "2.0", "id": 7, "method": name, "params": {"x": 42}}
+        )
+        assert resp == {"jsonrpc": "2.0", "id": 7, "result": {"echo": 42}}
+    finally:
+        server._methods.pop(name, None)
+
+
+def test_method_decorator_routes_through_register_method():
+    name = "test.runtime.decorated"
+
+    try:
+        @server.method(name)
+        def handler(rid, params):
+            return {"jsonrpc": "2.0", "id": rid, "result": "ok"}
+
+        # Decorator returns the original fn (byte-identical behavior) and
+        # registers into the shared dict.
+        assert handler.__name__ == "handler"
+        assert server._methods[name] is handler
+    finally:
+        server._methods.pop(name, None)
+
+
+def test_register_method_rejects_bad_args():
+    import pytest
+
+    def handler(rid, params):
+        return None
+
+    with pytest.raises(ValueError):
+        server.register_method("", handler)
+    with pytest.raises(TypeError):
+        server.register_method("test.runtime.notcallable", object())

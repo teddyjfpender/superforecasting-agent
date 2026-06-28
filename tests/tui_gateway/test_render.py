@@ -65,3 +65,33 @@ def test_stream_renderer_returns_instance():
 
     with _stub_rich(mod):
         assert make_stream_renderer(120) is renderer
+
+
+# ── defensive fallback: drifted-signature retry must not crash ─────────
+
+
+def test_render_message_double_type_error_degrades_to_plain_text():
+    # Both the kw form and the positional retry raise TypeError (signature
+    # drifted past both call shapes) — must degrade to the input text, not
+    # propagate and crash the gateway.
+    mod = MagicMock()
+    mod.format_response.side_effect = TypeError
+
+    with _stub_rich(mod):
+        assert render_message("plain payload", 100) == "plain payload"
+
+
+def test_render_diff_double_type_error_degrades_to_plain_text():
+    mod = MagicMock()
+    mod.render_diff.side_effect = TypeError
+
+    with _stub_rich(mod):
+        assert render_diff("+added", 100) == "+added"
+
+
+def test_stream_renderer_double_type_error_returns_none():
+    mod = MagicMock()
+    mod.StreamingRenderer.side_effect = TypeError
+
+    with _stub_rich(mod):
+        assert make_stream_renderer(120) is None

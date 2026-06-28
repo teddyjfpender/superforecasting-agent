@@ -644,10 +644,26 @@ def _err(rid, code: int, msg: str) -> dict:
     return {"jsonrpc": "2.0", "id": rid, "error": {"code": code, "message": msg}}
 
 
+def register_method(name: str, fn: "callable") -> "callable":
+    """Register an RPC handler at runtime into the same dispatch dict the
+    ``@method`` decorator populates.
+
+    Lets a plugin / extension add (or override) a JSON-RPC handler after import
+    time without the static decorator. Returns *fn* so it can be used as a
+    decorator too. The decorator below now routes through here, so both paths
+    stay byte-identical in behavior.
+    """
+    if not isinstance(name, str) or not name:
+        raise ValueError("register_method: name must be a non-empty string")
+    if not callable(fn):
+        raise TypeError("register_method: fn must be callable")
+    _methods[name] = fn
+    return fn
+
+
 def method(name: str):
     def dec(fn):
-        _methods[name] = fn
-        return fn
+        return register_method(name, fn)
 
     return dec
 
@@ -1448,11 +1464,53 @@ def _compress_session_history(
         focus_topic=focus_topic or None,
     )
     with session["history_lock"]:
+        current = session.get("history", []) or []
         if int(session.get("history_version", 0)) != history_version:
-            # External mutation during compaction — drop the compressed
-            # result so we don't clobber concurrent edits.
+            # External mutation during compaction (CAS miss). We can only
+            # safely OR-merge — fold the concurrent tail onto the new
+            # compressed baseline — when the concurrent mutation was
+            # APPEND-ONLY, i.e. our snapshot `before_messages` is a genuine
+            # prefix of `current`. That holds for prompt.submit / tool
+            # results (they only append, never rewrite in place), and there
+            # the messages in `current` past the snapshot length are the
+            # tail to preserve. But TRUNCATE/REWRITE mutators (session
+            # retry/rewind, /new) ALSO bump history_version; for those
+            # `before_messages` is NOT a prefix of `current`, and folding
+            # the compressed prefix back on would corrupt history. So guard
+            # the fold with an explicit prefix check and otherwise fall back
+            # to the original safe behaviour: DISCARD the compaction result,
+            # leave the concurrent `current` intact, and report no removal.
+            # Done under the lock so no new tail can slip in between the read
+            # and the write (no race).
+            snap_len = len(before_messages)
+            is_prefix = (
+                len(current) >= snap_len
+                and current[:snap_len] == before_messages
+            )
+            if not is_prefix:
+                # Concurrent mutation truncated/rewrote history. Keep the
+                # concurrent state and drop our now-stale compaction work.
+                usage = _get_usage(agent)
+                return 0, usage
+            tail = list(current[snap_len:])
+            merged = list(compressed) + tail
+            session["history"] = merged
+            # Adopt the concurrent writer's version + 1 so this compaction is
+            # recorded as the latest mutation (the writer bumped to
+            # >= history_version + 1; advancing past current keeps the
+            # counter monotonic and lets later CAS checks see our write).
+            session["history_version"] = (
+                int(session.get("history_version", 0)) + 1
+            )
             usage = _get_usage(agent)
-            return 0, usage
+            # True net removal relative to the snapshot: the snapshot held
+            # len(before_messages) messages; the session now holds len(merged)
+            # (compressed prefix + folded tail). `len(history) - len(compressed)`
+            # would OVER-report by len(tail) because it ignores the tail we
+            # re-appended (the caller's after_count = len(merged), so removed
+            # must be before_count - after_count for the surfaced numbers to
+            # reconcile). Clamp at 0 in case the tail outgrew the compaction.
+            return max(0, len(before_messages) - len(merged)), usage
         session["history"] = compressed
         session["history_version"] = history_version + 1
     usage = _get_usage(agent)
