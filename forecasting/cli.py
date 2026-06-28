@@ -2233,6 +2233,25 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     mn_sample.add_argument("--json", action="store_true", help="Emit the run record as JSON")
     mn_sample.set_defaults(_forecast_handler=_cmd_market_nightly_sample)
 
+    mn_run = mn_sub.add_parser(
+        "run",
+        help=(
+            "LIVE proof: fetch currently-OPEN markets from a source adapter, forecast "
+            "each NOW with the SEARCH-ENABLED informed agent (web search ON — the "
+            "legitimate live path, NOT closed-book), and record agent-vs-market. The "
+            "market-hidden ForecastBench result proved the closed-book LLM has NO "
+            "intrinsic edge; the only way to beat the market is fresh information, "
+            "provable ONLY forward (searching a resolved question leaks the answer)."
+        ),
+    )
+    mn_run.add_argument("-n", "--count", type=int, default=10, dest="count", help="Max open markets to sample + forecast (default: 10).")
+    mn_run.add_argument("--source", default="manifold", help="Open-market source adapter (manifold|metaculus|...). Default: manifold.")
+    mn_run.add_argument("--model", default=None, help="Agent model id (overrides the resolved active model).")
+    mn_run.add_argument("--seed", type=int, default=0, dest="rng_seed", help="Deterministic sampling seed (default: 0).")
+    mn_run.add_argument("--max-iterations", type=int, default=None, dest="max_iterations", help="Agent tool-calling budget per market.")
+    mn_run.add_argument("--json", action="store_true", help="Emit the run record as JSON.")
+    mn_run.set_defaults(_forecast_handler=_cmd_market_nightly_run)
+
     mn_score = mn_sub.add_parser("score", help="Score any pending entry whose market has since resolved (reuses the ledger scoring machinery)")
     mn_score.add_argument("--now", default=None, help="Scoring instant (default: now)")
     mn_score.add_argument("--json", action="store_true", help="Emit the result as JSON")
@@ -9669,6 +9688,90 @@ def _cmd_ablation(args: argparse.Namespace) -> None:
     if any(uncovered.values()):
         parts = ", ".join(f"{k}={v}" for k, v in sorted(uncovered.items()) if v)
         print(f"  uncovered (excluded, not guessed): {parts}")
+
+
+def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
+    """AIA P2.1 — the LIVE, SEARCH-ENABLED proof: forecast OPEN markets NOW.
+
+    The inverse of the closed-book backtest runner. ``sample`` (above) pilots the
+    loop OFFLINE from a JSON file; ``run`` is the real forward proof:
+
+      1. Fetch currently-OPEN markets from a SOURCE ADAPTER (manifold|metaculus|…).
+      2. Keep only strictly-future-close markets (the foreknowledge filter) and
+         take up to ``--count`` with a seeded deterministic pick.
+      3. Forecast each with the SEARCH-ENABLED informed agent (web search ON — this
+         is the legitimate live path, NOT closed-book) via
+         :func:`build_informed_market_forecaster`.
+      4. ``record_pending`` stamps everything at NOW (live availability) and records
+         the agent forecast alongside the de-vigged market price as the baseline.
+
+    The market-hidden ForecastBench result proved the closed-book LLM has NO
+    intrinsic edge over the market; the only path to beating it is fresh
+    information — provable ONLY forward, because searching a RESOLVED question
+    leaks the answer. This command accrues that out-of-sample, overfit-proof
+    record. No live LLM/market call is made under test (both seams are injected).
+    """
+    from forecasting.market_nightly import (
+        default_market_devig,
+        record_pending,
+        sample_open_markets,
+    )
+    from forecasting.market_nightly_forecaster import (
+        build_informed_market_forecaster,
+        load_open_markets,
+    )
+    from hermes_cli.config import load_config
+
+    # available_at / evidence stamping is NOW (live): the whole point is the agent
+    # uses fresh search on an OPEN market whose outcome does not exist yet. There is
+    # NO closed-book restriction here (the inverse of _backtest_agent_protocol_runner).
+    as_of = utc_now_iso()
+    n = max(0, int(getattr(args, "count", 10) or 0))
+    source = getattr(args, "source", "manifold") or "manifold"
+    seed = int(getattr(args, "rng_seed", 0) or 0)
+
+    # Resolve the agent model with the SAME logic the quorum uses (config["model"]
+    # is a structured dict since the codex auth overhaul).
+    model = getattr(args, "model", None) or _resolve_active_model_id(load_config().get("model"))
+
+    try:
+        candidates = load_open_markets(source, limit=max(n * 4, n, 1))
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(f"forecast market-nightly run: could not load open markets: {exc}") from exc
+
+    picked = sample_open_markets(candidates, as_of, n, rng_seed=seed)
+
+    forecaster_kwargs: dict[str, Any] = {"model": model}
+    if getattr(args, "max_iterations", None) is not None:
+        forecaster_kwargs["max_iterations"] = int(args.max_iterations)
+    forecaster = build_informed_market_forecaster(**forecaster_kwargs)
+
+    run = record_pending(_ledger(args), picked["sampled"], as_of, forecaster, default_market_devig)
+
+    if getattr(args, "json", False):
+        out = {
+            "as_of": as_of,
+            "source": source,
+            "model": model,
+            "candidates": len(candidates),
+            "admissible": picked["admissible"],
+            "sampled": len(picked["sampled"]),
+            "rejected_sampling": picked["rejected"],
+            "run": run.to_dict(),
+        }
+        print(json.dumps(out, indent=2, sort_keys=True))
+        return
+
+    print(f"market-nightly run @ {as_of}  (source={source}, model={model or 'active default'})")
+    print(f"  candidates fetched: {len(candidates)}  admissible (future close): {picked['admissible']}")
+    print(f"  sampled: {len(picked['sampled'])}  recorded: {run.n_recorded}  "
+          f"rejected: {run.n_rejected}  skipped: {len(run.skipped_ids)}")
+    for row in run.recorded:
+        print(f"  - {row['question_id']} market={row['market_id']} "
+              f"agent={row['agent_forecast']:.3f} market={row['market_devig_probability']:.3f} "
+              f"close={row['close_time']}")
+    for note in run.notes:
+        print(f"  note: {note}")
 
 
 def _cmd_market_nightly_sample(args: argparse.Namespace) -> None:
