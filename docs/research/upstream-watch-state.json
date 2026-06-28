@@ -1,0 +1,14 @@
+{
+  "NousResearch/hermes-agent": {
+    "branch": "main",
+    "sha": "9a0010fd469f0de6c7e2146f955ed9980d02b397"
+  },
+  "anomalyco/opencode": {
+    "branch": "dev",
+    "sha": "bda0ddc207db7d413355a295f8e88043edf8dfea"
+  },
+  "superagent-ai/grok-cli": {
+    "branch": "main",
+    "sha": "fb97af83f06dca873281d60168430f06c8de6324"
+  }
+}
