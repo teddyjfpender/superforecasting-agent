@@ -2174,6 +2174,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     complementarity_parser.add_argument("--json", action="store_true", help="Emit the raw report as JSON")
     complementarity_parser.set_defaults(_forecast_handler=_cmd_complementarity)
 
+    ablation_parser = forecast_sub.add_parser(
+        "ablation",
+        help="AIA P2.2 — 2x2 search/judge Brier ablation over resolved binary backtest cases (read-only)",
+    )
+    ablation_parser.add_argument("--json", action="store_true", help="Emit the raw report as JSON")
+    ablation_parser.set_defaults(_forecast_handler=_cmd_ablation)
+
     tail_audit_parser = forecast_sub.add_parser(
         "tail-audit",
         help=(
@@ -9462,6 +9469,45 @@ def _cmd_complementarity(args: argparse.Namespace) -> None:
     print(f"  advisory weight: {ships} — {decision.get('reason', '')}")
     for note in report.get("notes", []):
         print(f"  note: {note}")
+
+
+def _cmd_ablation(args: argparse.Namespace) -> None:
+    """AIA P2.2 — 2x2 search/judge ablation over resolved binary backtest cases.
+
+    Reports per-cell mean Brier (search ON/OFF x judge ON/OFF) plus the marginal
+    Brier *reduction* attributable to agentic-search and to the judge, and the
+    non-additive interaction term. READ-ONLY: it groups cases by the arm that was
+    ACTUALLY recorded (never a guessed arm), and never edits a forecast or the
+    live default search/judge configuration."""
+    from forecasting.search_ablation import ablation_report
+
+    report = ablation_report(_ledger(args))
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    def _fmt(value: Any) -> str:
+        return f"{value:+.6f}" if isinstance(value, (int, float)) else "-"
+
+    print(f"binary backtest cases scanned: {report['n_cases']} (binned: {report['n_binned']})")
+    coverage = report.get("coverage") or {}
+    print(f"cells present: {coverage.get('present_count', 0)}/4 (complete: {bool(coverage.get('complete'))})")
+    labels = {"00": "search OFF, judge OFF", "01": "search OFF, judge ON",
+              "10": "search ON,  judge OFF", "11": "search ON,  judge ON"}
+    cell_brier = report.get("cell_brier") or {}
+    n_by_cell = coverage.get("n_by_cell") or {}
+    for key in ("00", "01", "10", "11"):
+        if key in cell_brier:
+            print(f"  [{labels[key]}] mean_brier = {cell_brier[key]:.6f} (n={n_by_cell.get(key, 0)})")
+        else:
+            print(f"  [{labels[key]}] (no recorded cases)")
+    print(f"  search_contribution (Brier reduction) = {_fmt(report.get('search_contribution'))}")
+    print(f"  judge_contribution  (Brier reduction) = {_fmt(report.get('judge_contribution'))}")
+    print(f"  interaction (non-additive) = {_fmt(report.get('interaction'))}")
+    uncovered = report.get("uncovered") or {}
+    if any(uncovered.values()):
+        parts = ", ".join(f"{k}={v}" for k, v in sorted(uncovered.items()) if v)
+        print(f"  uncovered (excluded, not guessed): {parts}")
 
 
 def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = None) -> None:

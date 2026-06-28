@@ -310,6 +310,7 @@ def build_forecasting_evidence_status(
     include_complementarity: bool = False,
     include_leak_robustness: bool = False,
     include_alpha_sweep: bool = False,
+    include_search_ablation: bool = False,
 ) -> dict[str, Any]:
     """Summarize whether stored evidence can support live superiority claims.
 
@@ -512,12 +513,27 @@ def build_forecasting_evidence_status(
         except Exception:
             platt_alpha_sweep = None
 
+    # AIA P2.2 — a READ-ONLY 2x2 search/judge ablation over resolved binary
+    # backtest cases: per-cell mean Brier + the marginal Brier reduction
+    # attributable to agentic-search and to the judge, plus the interaction term.
+    # It NEVER edits a forecast, the live default search/judge config, or
+    # readiness; OPT-IN so the hot callers leave it None.
+    search_ablation = None
+    if include_search_ablation:
+        try:
+            from forecasting.search_ablation import ablation_report
+
+            search_ablation = ablation_report(ledger)
+        except Exception:
+            search_ablation = None
+
     return {
         "verdict": "insufficient_live_evidence" if gaps else "benchmark_evidence_ready_live_claim_unproven",
         "can_claim_live_superforecasting": False,
         "market_llm_complementarity": market_llm_complementarity,
         "leak_robustness": leak_robustness,
         "platt_alpha_sweep": platt_alpha_sweep,
+        "search_ablation": search_ablation,
         "message": (
             "Stored evidence is not enough for a live superforecasting claim."
             if gaps
