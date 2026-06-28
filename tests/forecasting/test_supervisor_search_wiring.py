@@ -330,3 +330,20 @@ def test_gate_on_but_historical_cutoff_disables_search(home, tmp_path, monkeypat
     assert job["result"]["research_rounds"] == 0  # disabled by the cutoff guard
     stages = {p["stage"]: p["detail"] for p in job["progress"]}
     assert "supervisor_search" in stages and "DISABLED" in stages["supervisor_search"]
+
+
+def test_resolve_active_model_id_handles_codex_dict_config():
+    # Regression: config["model"] is a structured dict since the codex auth overhaul.
+    # _quorum_run must extract the id STRING — passing the raw dict downstream made the
+    # quorum's self/judge model a dict and crashed every panelist with
+    # `'dict' object has no attribute 'lower'` (a silent, total quorum failure).
+    from forecasting.cli import _resolve_active_model_id
+
+    assert _resolve_active_model_id(
+        {"base_url": "https://x/codex", "default": "gpt-5.5", "provider": "openai-codex"}
+    ) == "gpt-5.5"
+    assert _resolve_active_model_id({"model": "legacy-id"}) == "legacy-id"  # legacy key
+    assert _resolve_active_model_id("bare-string-id") == "bare-string-id"  # legacy bare string
+    assert _resolve_active_model_id(None) is None
+    assert _resolve_active_model_id({}) is None
+    assert _resolve_active_model_id({"default": ""}) is None

@@ -911,13 +911,17 @@ def make_aiagent_runner(
     toolsets: Sequence[str] = ("forecasting", "web"),
     quiet: bool = True,
     timeout: float | None = None,
+    requested_provider: str | None = None,
 ) -> QuorumRunner:
     """Default production runner: one :class:`run_agent.AIAgent` per call.
 
-    Routes every model through the OpenRouter provider (one key, many models)
-    with web search enabled, so each panelist researches independently — the
-    Fusion design. Built lazily so importing this module never pulls in the
-    full agent runtime.
+    Each panelist is constructed via the single :func:`agent.agent_factory.build_agent`
+    resolve->construct path, with web search enabled so it researches independently
+    (the Fusion design). ``requested_provider=None`` (the default) AUTO-RESOLVES the
+    provider from the model + active credentials — so a codex-only host runs gpt-5.5
+    via codex, an OpenRouter host runs OpenRouter model ids via OpenRouter, etc. (The
+    old hardcoded ``provider="openrouter"`` broke every non-OpenRouter deployment.)
+    Built lazily so importing this module never pulls in the full agent runtime.
 
     ``timeout`` (seconds) bounds a single model call: a model that hangs past
     it raises ``RuntimeError`` so :func:`run_quorum` records that panelist as
@@ -927,11 +931,11 @@ def make_aiagent_runner(
     """
 
     def _call(model: str, system: str, user: str) -> str:
-        from run_agent import AIAgent
+        from agent.agent_factory import build_agent
 
-        agent = AIAgent(
+        agent = build_agent(
             model=model,
-            provider="openrouter",
+            requested_provider=requested_provider,
             enabled_toolsets=list(toolsets),
             max_iterations=max_iterations,
             quiet_mode=quiet,

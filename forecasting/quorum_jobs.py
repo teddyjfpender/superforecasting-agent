@@ -350,4 +350,14 @@ if __name__ == "__main__":  # detached worker entrypoint
     if len(sys.argv) != 2:
         print("usage: python -m forecasting.quorum_jobs <run_id>", file=sys.stderr)
         raise SystemExit(2)
+    # A detached worker is a fresh process: discover plugins so the panelists'
+    # web search AND the supervisor fresh-search runner have their providers
+    # (ddgs/brave-free/tavily/…) registered — exactly as gateway.py / oneshot.py
+    # do at boot. Without this the live supervisor search silently finds nothing.
+    try:
+        from hermes_cli.plugins import discover_plugins
+
+        discover_plugins()
+    except Exception:  # noqa: BLE001 — search/extract degrade gracefully if discovery fails
+        pass
     execute_job(sys.argv[1])

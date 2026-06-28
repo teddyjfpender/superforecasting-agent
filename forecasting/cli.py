@@ -8889,12 +8889,30 @@ def _quorum_overview() -> None:
     print("  forecast quorum bench         (ensemble-size variance-reduction curve, read-only)")
 
 
+def _resolve_active_model_id(model_cfg: Any) -> str | None:
+    """Extract the active model-id STRING from the config ``model`` value.
+
+    Since the codex auth overhaul ``config["model"]`` is a structured dict
+    ({base_url, default, provider}); the canonical id is ``default`` (or legacy
+    ``model``), as fallback_cmd/dump/doctor resolve it. A legacy bare string is
+    tolerated. Returns None when unset. (Passing the raw dict downstream made the
+    quorum's `self`/judge model a dict and blew up the panelist with
+    ``'dict' object has no attribute 'lower'`` — a silent, total quorum failure.)
+    """
+
+    if isinstance(model_cfg, dict):
+        return (model_cfg.get("default") or model_cfg.get("model") or "").strip() or None
+    if model_cfg:
+        return str(model_cfg).strip() or None
+    return None
+
+
 def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
     from hermes_cli.config import load_config
     from forecasting.quorum_jobs import read_job, start_job
 
     cfg = load_config().get("quorum", {})
-    active_model = load_config().get("model") or None
+    active_model = _resolve_active_model_id(load_config().get("model"))
 
     # Fail fast if the question does not exist (immediate feedback before we
     # spawn a multi-minute background job).

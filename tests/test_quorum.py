@@ -249,11 +249,9 @@ def test_disagreement_band_agrees_with_index():
 
 
 def _install_fake_run_agent(monkeypatch, sleep_s, response="ok-response"):
-    import sys
+    # make_aiagent_runner constructs panelists via agent.agent_factory.build_agent
+    # (the single resolve->construct path), so patch that seam.
     import time
-    import types
-
-    fake = types.ModuleType("run_agent")
 
     class FakeAIAgent:
         def __init__(self, **kwargs):
@@ -263,8 +261,9 @@ def _install_fake_run_agent(monkeypatch, sleep_s, response="ok-response"):
             time.sleep(sleep_s)
             return {"final_response": response}
 
-    fake.AIAgent = FakeAIAgent
-    monkeypatch.setitem(sys.modules, "run_agent", fake)
+    import agent.agent_factory as _af
+
+    monkeypatch.setattr(_af, "build_agent", lambda **kwargs: FakeAIAgent())
 
 
 def test_make_aiagent_runner_times_out_a_hung_model(monkeypatch):
