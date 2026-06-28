@@ -1594,6 +1594,37 @@ PROCESS_SCHEMA = {
 }
 
 
+def _redact_process_result(result: dict, session_id: str) -> dict:
+    """Redact secrets in background-process output fields (issue #43025).
+
+    process(action=poll/log/wait) returned ``output``/``output_preview``
+    verbatim — a background ``printenv``/server/test emitting a key leaked raw
+    to the model and session.db. Redact every output-bearing field with the
+    ``redact_terminal_output`` policy, keyed off the session's command so
+    env-dump commands get the ENV-assignment pass. Fail SAFE: if redaction
+    raises, withhold the raw (possibly secret-bearing) output rather than
+    emitting it unredacted.
+    """
+    if not isinstance(result, dict):
+        return result
+    try:
+        from agent.redact import redact_terminal_output
+        sess = process_registry.get(session_id)
+        command = getattr(sess, "command", "") if sess is not None else ""
+        for field in ("output", "output_preview"):
+            value = result.get(field)
+            if isinstance(value, str) and value:
+                result[field] = redact_terminal_output(value, command or "")
+    except Exception:
+        # Redaction failed — never return the raw text. Replace any
+        # output-bearing field that still holds a string with a placeholder.
+        for field in ("output", "output_preview"):
+            value = result.get(field)
+            if isinstance(value, str) and value:
+                result[field] = "[output withheld: redaction error]"
+    return result
+
+
 def _handle_process(args, **kw):
     task_id = kw.get("task_id")
     action = args.get("action", "")
@@ -1606,12 +1637,18 @@ def _handle_process(args, **kw):
         if not session_id:
             return tool_error(f"session_id is required for {action}")
         if action == "poll":
-            return json.dumps(process_registry.poll(session_id), ensure_ascii=False)
+            return json.dumps(
+                _redact_process_result(process_registry.poll(session_id), session_id),
+                ensure_ascii=False)
         elif action == "log":
-            return json.dumps(process_registry.read_log(
-                session_id, offset=args.get("offset", 0), limit=args.get("limit", 200)), ensure_ascii=False)
+            return json.dumps(
+                _redact_process_result(process_registry.read_log(
+                    session_id, offset=args.get("offset", 0), limit=args.get("limit", 200)), session_id),
+                ensure_ascii=False)
         elif action == "wait":
-            return json.dumps(process_registry.wait(session_id, timeout=args.get("timeout")), ensure_ascii=False)
+            return json.dumps(
+                _redact_process_result(process_registry.wait(session_id, timeout=args.get("timeout")), session_id),
+                ensure_ascii=False)
         elif action == "kill":
             return json.dumps(process_registry.kill_process(session_id), ensure_ascii=False)
         elif action == "write":

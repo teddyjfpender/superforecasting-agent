@@ -7456,6 +7456,35 @@ class GatewayRunner:
         if canonical == "bundles":
             return await self._handle_bundles_command(event)
 
+        if canonical == "learn":
+            # Open-ended: rewrite the turn to a standards-guided prompt and fall
+            # through to normal agent processing. The live agent gathers the
+            # sources the user described (dirs via read_file, URLs via
+            # web_extract, this conversation, pasted text) and authors the skill
+            # via skill_manage. Mirrors the /steer fall-through so role
+            # alternation is preserved. No engine, works on any backend.
+            from agent.learn_prompt import build_learn_prompt
+
+            _learn_req = event.get_command_args().strip()
+            _ack = (
+                "Learning a skill from what you described…"
+                if _learn_req
+                else "Learning a skill from this conversation…"
+            )
+            try:
+                adapter = self.adapters.get(source.platform)
+                if adapter:
+                    _ack_meta = self._thread_metadata_for_source(source)
+                    await adapter.send(str(source.chat_id), _ack, metadata=_ack_meta)
+            except Exception:
+                logger.debug("learn ack send failed", exc_info=True)
+            try:
+                event.text = build_learn_prompt(_learn_req)
+                # Do NOT return — fall through to _handle_message_with_agent so
+                # the rewritten turn is processed as a normal agent message.
+            except Exception:
+                return "Could not start /learn — please try again."
+
         if canonical == "approve":
             return await self._handle_approve_command(event)
 
@@ -14725,6 +14754,11 @@ class GatewayRunner:
                         _out = f"[… output truncated — showing last {len(_tail)} chars]\n{_tail}"
                     else:
                         _out = _raw
+                    if _out:
+                        from agent.redact import redact_terminal_output
+                        _out = redact_terminal_output(
+                            _out, getattr(session, "command", "") or ""
+                        )
                     synth_text = (
                         f"[IMPORTANT: Background process {session_id} completed "
                         f"(exit code {session.exit_code}).\n"
@@ -14781,6 +14815,11 @@ class GatewayRunner:
                 )
                 if should_notify:
                     new_output = session.output_buffer[-1000:] if session.output_buffer else ""
+                    if new_output:
+                        from agent.redact import redact_terminal_output
+                        new_output = redact_terminal_output(
+                            new_output, getattr(session, "command", "") or ""
+                        )
                     message_text = (
                         f"[Background process {session_id} finished with exit code {session.exit_code}~ "
                         f"Here's the final output:\n{new_output}]"
@@ -14802,6 +14841,11 @@ class GatewayRunner:
                 # New output available -- deliver status update (only in "all" mode)
                 # Skip periodic updates for agent_notify watchers (they only care about completion)
                 new_output = session.output_buffer[-500:] if session.output_buffer else ""
+                if new_output:
+                    from agent.redact import redact_terminal_output
+                    new_output = redact_terminal_output(
+                        new_output, getattr(session, "command", "") or ""
+                    )
                 message_text = (
                     f"[Background process {session_id} is still running~ "
                     f"New output:\n{new_output}]"
