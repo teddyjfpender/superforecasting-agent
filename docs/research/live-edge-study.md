@@ -57,15 +57,35 @@ extremization: a divergence that is just noise, or a lift that is just leakage, 
 
 ---
 
-## 2. The harness under test  *(architecture — finalized when the proof harness lands)*
+## 2. The harness under test
 
-*To be completed from the committed MarketNightly proof harness:* the open-market sampler
-(`sample_open_markets`, strictly-future-close only), the informed search-enabled forecaster
-(`build_informed_market_forecaster` → `build_agent` with the `web` toolset, agent-protocol prompt),
-the de-vig (`default_market_devig`), the pending→matured ledger lifecycle (`record_pending` /
-`score_matured`), and the `forecast market-nightly run|score|report` CLI. The supervisor fresh-search
-loop (Gate-2) and the codex provider/plugin fixes (commit `585e73639`) that made the live quorum run
-at all are documented in the strategy report and the roadmap memory.
+The pipeline (all on `superforecasting-agent-snapshot`; commits `54dbc9391`, `eda28cf7d`):
+
+1. **Source + quality gates** (`market_nightly_forecaster.load_open_markets`). Open binary markets are
+   pulled from Manifold (Metaculus is HTTP-403-blocked from this runtime — a documented limitation).
+   Manifold is open-creation play-money, so two gates keep the sample objective: **≥ 8 distinct
+   bettors** (`uniqueBettorCount`) and **not self-referential** (`_looks_personal` drops
+   "Will I…/Will my…/this market…"). `n_traders` + `volume` are carried for sample-quality reporting.
+2. **Foreknowledge filter** (`sample_open_markets`, re-asserted in `record_pending`). Only
+   **strictly-future-close** markets survive (`_is_strictly_future_close` on `min(close, resolution)`),
+   so the resolving event is in the future and live search cannot return the outcome. A violator is
+   rejected and counted, never stored.
+3. **Informed forecaster** (`build_informed_market_forecaster`). One search-enabled agent
+   (`build_agent`, toolsets `["forecasting","file","web"]`, codex/gpt-5.5, built once and reused) per
+   market. It is prompted with a **forward/live** prompt (`build_live_market_messages`) that frames the
+   question as OPEN and *instructs it to use web search for current evidence* — explicitly **not** the
+   backtest prompt (which would tell it "use only supplied data, do not infer from later information",
+   suppressing the search that is the whole point). The agent is **market-hidden** — never shown the
+   price — so any agreement is independent, not anchoring. Failure → `None` → the market is skipped.
+4. **Ledger lifecycle.** `record_pending` commits the agent snapshot (`forecast_origin=
+   "market_nightly"`, not calibration-eligible) at forecast time and attaches the **de-vigged market
+   price** (`default_market_devig`) as a `market_price` baseline; `score_matured` scores both against
+   the realized outcome once the market resolves. CLI: `forecast market-nightly run|score|report`.
+
+The live quorum + supervisor fresh-search loop (Gate-2) it builds on required three codex-only-deployment
+fixes the Gate-2 smoke surfaced (commit `585e73639`: detached-worker plugin discovery; `build_agent`
+provider auto-resolution instead of hardcoded OpenRouter; `config["model"]`-dict id extraction). Those
+are documented in the strategy report and roadmap memory.
 
 ---
 
@@ -117,7 +137,25 @@ an underpowered sample.
 
 ## 4. Results  **[LIVE — appended each iteration]**
 
-*(pending the first open-market sample)*
+### Iteration 1 — 2026-06-28 · harness up, first sample firing
+
+- **Harness built + committed** (`54dbc9391`, `eda28cf7d`); full forecasting suite green (1548).
+  The Gate-2 smoke that preceded this caught and fixed three bugs that had silently broken the *entire*
+  live quorum in this codex-only deployment (`585e73639`) — itself a demonstration of the testable
+  environment surfacing real defects.
+- **Candidate pool (Manifold, post-quality-gate):** **174** objective, liquid (≥8-trader),
+  non-self-referential open binary markets. Many close **today/tomorrow** (e.g. *Will Canada qualify
+  for the round of 16?* p≈0.73 close 18:59; *Will WTI crude be above \$76 on Jun 30?* p≈0.20; *Will
+  X.com be accessible in the UK on 30 Jun?* p≈0.97; *Will Serena Williams play singles at Wimbledon
+  2026?* p≈0.98) — so a meaningful fraction will **resolve within the study window**, giving an
+  in-session scored read alongside the longitudinal record. Metaculus: HTTP 403 from this runtime
+  (limitation).
+- **First sample fired:** `market-nightly run -n 20 --source manifold --seed 1` into the live ledger —
+  the search-informed, market-hidden agent forecasting 20 markets, recording `agent_p` +
+  de-vigged `market_p` at forecast time. Results (orthogonality + any in-session resolutions) appended
+  next iteration.
+
+*(orthogonality + scored metrics pending the sample's completion)*
 
 ---
 
