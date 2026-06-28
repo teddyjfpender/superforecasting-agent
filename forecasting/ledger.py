@@ -36,6 +36,7 @@ from forecasting.branding import (
     PRODUCT_SLUG,
 )
 from forecasting.benchmark_evidence import build_benchmark_evidence_profile
+from forecasting.leak_domains import leak_reason
 from forecasting.models import (
     ASSUMPTION_STATUSES,
     CALIBRATION_LESSON_STATUSES,
@@ -58,6 +59,7 @@ from forecasting.models import (
     evaluate_update_triggers,
     json_dumps,
     json_loads,
+    lookup_model_pretraining_cutoff,
     normalize_update_triggers,
     parse_timestamp,
     question_decision_readiness_issues,
@@ -3013,6 +3015,7 @@ class ForecastLedger:
         admissible_for_backtests: bool = True,
         metadata: dict[str, Any] | None = None,
         archive_url_snapshot: bool = True,
+        extra_leak_denylist: object = None,
     ) -> EvidenceItem:
         self.get_question(question_id)
         source_or_note = source_or_note.strip()
@@ -3087,6 +3090,25 @@ class ForecastLedger:
                     evidence_metadata.setdefault(
                         "block_signal", archived_url_snapshot.get("block_signal")
                     )
+        # AIA P2.4 — leak-domain choke point. A live-widget / live-quote / live-
+        # ranking source serves TODAY's value regardless of any historical query,
+        # so it silently time-travels. We TAG such items and mark them
+        # inadmissible for backtest scoring (a HARD exclusion only on the
+        # admissibility path) but NEVER drop them from the live ledger. For non-
+        # leak URLs `is_leak_domain` returns False and this block is a no-op,
+        # keeping the default add path byte-identical.
+        if inferred_url:
+            reason = leak_reason(inferred_url, extra_denylist=extra_leak_denylist)
+            if reason is not None:
+                evidence_metadata["leak_domain"] = True
+                evidence_metadata["leak_reason"] = reason
+                if admissible_for_backtests:
+                    admissible_for_backtests = False
+                logger.warning(
+                    "evidence source flagged as leak domain (inadmissible for backtests): %s — %s",
+                    inferred_url,
+                    reason,
+                )
         with self._connect() as conn:
             conn.execute(
                 """
@@ -11095,6 +11117,7 @@ class ForecastLedger:
 
         excluded = 0
         ambiguous = 0
+        leak_flagged = 0
         evidence_refs: list[str] = []
         cutoff_dt = timestamp_to_datetime(evidence_cutoff)
         for item in case.get("evidence") or []:
@@ -11131,7 +11154,23 @@ class ForecastLedger:
                 claim_type=item.get("claim_type") or "fact",
                 metadata={"backtest_run_id": run_id},
             )
+            if (evidence.metadata or {}).get("leak_domain"):
+                leak_flagged += 1
             evidence_refs.append(evidence.id)
+
+        # AIA P2.4 — model-cutoff gate. If the case's base model has a pretraining
+        # cutoff at-or-after the event being predicted (resolution/close time),
+        # the model may already "know" the answer; force calibration OFF for this
+        # case and raise a readiness flag (mirrors the AIA paper rejecting a too-
+        # fresh base model for the liquid-market benchmark). Unknown models and
+        # cutoffs strictly before the event are a no-op.
+        model_cutoff = lookup_model_pretraining_cutoff(case.get("agent_model"))
+        event_time = case.get("resolution_time") or case.get("close_time")
+        event_dt = timestamp_to_datetime(event_time) if event_time else None
+        cutoff_model_dt = timestamp_to_datetime(model_cutoff) if model_cutoff else None
+        model_cutoff_too_fresh = bool(
+            cutoff_model_dt is not None and event_dt is not None and cutoff_model_dt >= event_dt
+        )
 
         generated_forecast_id = None
         score_record_id = None
@@ -11147,7 +11186,14 @@ class ForecastLedger:
         probability = case.get("probability", case.get("forecast_probability"))
         distribution = case.get("distribution")
         if probability is not None or distribution is not None:
-            calibration_eligible = allow_calibration_memory and ambiguous == 0
+            calibration_eligible = (
+                allow_calibration_memory and ambiguous == 0 and not model_cutoff_too_fresh
+            )
+            snapshot_metadata = self._backtest_snapshot_metadata(case)
+            if model_cutoff_too_fresh:
+                snapshot_metadata["model_cutoff_too_fresh"] = True
+                snapshot_metadata["model_pretraining_cutoff"] = model_cutoff
+                snapshot_metadata["readiness_flag"] = "model_cutoff_after_event"
             snapshot = self.create_snapshot(
                 question_id=question.id,
                 probability_or_distribution=distribution if distribution is not None else probability,
@@ -11165,7 +11211,7 @@ class ForecastLedger:
                 backtest_run_id=run_id,
                 calibration_eligible=calibration_eligible,
                 calibration_weight=1.0 if calibration_eligible else 0.0,
-                metadata=self._backtest_snapshot_metadata(case),
+                metadata=snapshot_metadata,
             )
             generated_forecast_id = snapshot.forecast_id
             if "outcome" in case:
@@ -11260,6 +11306,10 @@ class ForecastLedger:
         row = self.get_backtest_case(case_id)
         if score_record_id:
             row["score_brier"] = self.get_score(score_record_id).brier_score
+        # AIA P2.4 — surface the per-case leak-domain flag count + model-cutoff
+        # readiness flag alongside the case row for evidence summaries.
+        row["leak_flagged_evidence_count"] = leak_flagged
+        row["model_cutoff_too_fresh"] = model_cutoff_too_fresh
         return row
 
     def _run_leak_judge(

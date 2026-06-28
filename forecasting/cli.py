@@ -7346,6 +7346,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             args.source,
             limit=args.limit,
             since=args.since,
+            as_of=getattr(args, "as_of", None),
             api_base_url=args.api_base_url,
         )
         evidence_items = []

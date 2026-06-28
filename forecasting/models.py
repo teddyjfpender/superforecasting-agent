@@ -33,6 +33,64 @@ FAILURE_CLASSES = {
 }
 
 
+# AIA P2.4 — best-effort pretraining-cutoff registry for known base models.
+#
+# UNCERTAIN / BEST-EFFORT: these dates are the providers' publicly stated (or
+# widely reported) knowledge cutoffs, normalized to an ISO date. They are NOT
+# authoritative and a model may have absorbed later data via RLHF / tool use.
+# The registry exists for ONE narrow purpose: a backtest must reject a base
+# model whose cutoff lands at-or-after the event being predicted (the model may
+# already "know" the answer), mirroring the AIA paper rejecting a too-fresh base
+# model for a liquid-market benchmark. Keys are matched as case-insensitive
+# substrings of the case ``agent_model`` so version suffixes still resolve.
+MODEL_PRETRAINING_CUTOFF: dict[str, str] = {
+    "gpt-4o": "2023-10-01",
+    "gpt-4-turbo": "2023-12-01",
+    "gpt-4": "2023-04-01",
+    "gpt-4.1": "2024-06-01",
+    "gpt-3.5": "2021-09-01",
+    "o1": "2023-10-01",
+    "o3": "2024-06-01",
+    "claude-3-opus": "2023-08-01",
+    "claude-3-5-sonnet": "2024-04-01",
+    "claude-3.5-sonnet": "2024-04-01",
+    "claude-3-7-sonnet": "2024-10-01",
+    "claude-3.7-sonnet": "2024-10-01",
+    "claude-opus-4": "2025-03-01",
+    "claude-sonnet-4": "2025-03-01",
+    "gemini-1.5-pro": "2023-11-01",
+    "gemini-2.0": "2024-08-01",
+    "gemini-2.5": "2025-01-01",
+    "llama-3": "2023-12-01",
+    "llama-3.1": "2023-12-01",
+    "mistral-large": "2023-12-01",
+    "deepseek-v3": "2024-07-01",
+    "deepseek-r1": "2024-07-01",
+    "grok-2": "2024-07-01",
+    "grok-3": "2024-11-01",
+}
+
+
+def lookup_model_pretraining_cutoff(agent_model: str | None) -> str | None:
+    """Best-effort pretraining cutoff (ISO date) for ``agent_model`` or ``None``.
+
+    Matches the longest known registry key that is a case-insensitive substring
+    of ``agent_model`` so that e.g. ``"openai/gpt-4o-2024-08-06"`` resolves to
+    the ``gpt-4o`` entry. Returns ``None`` for unknown / empty models so the
+    cutoff gate is a strict no-op when we cannot make a confident claim.
+    """
+    if not agent_model:
+        return None
+    needle = str(agent_model).strip().lower()
+    if not needle:
+        return None
+    best_key: str | None = None
+    for key in MODEL_PRETRAINING_CUTOFF:
+        if key in needle and (best_key is None or len(key) > len(best_key)):
+            best_key = key
+    return MODEL_PRETRAINING_CUTOFF[best_key] if best_key is not None else None
+
+
 class ForecastingError(Exception):
     """Base exception for forecasting package errors."""
 

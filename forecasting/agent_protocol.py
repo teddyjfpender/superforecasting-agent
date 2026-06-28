@@ -9,6 +9,7 @@ from collections.abc import Callable
 from copy import deepcopy
 from typing import Any
 
+from forecasting.leak_domains import is_leak_domain
 from forecasting.models import parse_timestamp, timestamp_to_datetime
 
 
@@ -203,10 +204,30 @@ def _case_cutoff(case: dict[str, Any]):
     return timestamp_to_datetime(cutoff) if cutoff else None
 
 
+def _evidence_url(item: dict[str, Any]) -> str | None:
+    for key in ("source_url", "url", "source", "link", "source_or_note"):
+        value = item.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
 def _pre_cutoff_evidence(case: dict[str, Any], cutoff) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
+    question_config = case.get("question_config")
+    extra_deny = (
+        question_config.get("leak_denylist") if isinstance(question_config, dict) else None
+    )
     for item in case.get("evidence") or []:
         if not isinstance(item, dict):
+            continue
+        # AIA P2.4 — never show backtest-inadmissible / leak-domain evidence to the
+        # agent: a live-widget source re-introduces exactly the foreknowledge the
+        # denylist exists to block. Honour an explicit flag, else compute from the URL.
+        if item.get("admissible_for_backtests") is False or item.get("leak_domain"):
+            continue
+        url = _evidence_url(item)
+        if url and is_leak_domain(url, extra_denylist=extra_deny):
             continue
         available_raw = item.get("available_at") or item.get("published_at")
         if not available_raw:
