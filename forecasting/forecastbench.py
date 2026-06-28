@@ -284,6 +284,7 @@ def build_forecastbench_case(
     resolution: dict[str, Any],
     *,
     question_set_date: str,
+    hide_market_baseline: bool = False,
 ) -> dict[str, Any]:
     """Map a joined (question, resolution) pair to OUR backtest case dict.
 
@@ -386,14 +387,21 @@ def build_forecastbench_case(
 
     baselines: list[dict[str, Any]] = []
     if market_probability is not None and as_of:
-        baselines.append(
-            {
-                "source": source or "forecastbench",
-                "baseline_type": "market",
-                "probability": market_probability,
-                "as_of": as_of,
-            }
-        )
+        market_baseline: dict[str, Any] = {
+            "source": source or "forecastbench",
+            "baseline_type": "market",
+            "probability": market_probability,
+            "as_of": as_of,
+        }
+        # MARKET-HIDDEN ARM: when requested, mark the freeze market price hidden
+        # from the agent. It is STILL carried (and so still scored as a
+        # baseline_comparison for the head-to-head + P1.3 complementarity), but
+        # agent_protocol._pre_cutoff_baselines drops it from the agent prompt so no
+        # market price is shown to the agent (pair with --closed-book for a true
+        # intrinsic-only forecast). Default (False) leaves the baseline byte-identical.
+        if hide_market_baseline:
+            market_baseline["hidden_from_agent"] = True
+        baselines.append(market_baseline)
         baselines.append(
             {
                 "source": "auto",
@@ -415,6 +423,7 @@ def load_forecastbench_cases(
     binary_only: bool = True,
     resolved_only: bool = True,
     cache_dir: str | Path | None = None,
+    hide_market_baseline: bool = False,
 ) -> dict[str, Any]:
     """Load + map ForecastBench cases for ``question_set_date``.
 
@@ -450,6 +459,12 @@ def load_forecastbench_cases(
     off, source-gating and the fractional-outcome drop still apply so the
     produced set stays honestly binary-scorable. ``resolved_only`` toggles the
     ``resolved`` flag requirement.
+
+    ``hide_market_baseline`` (default False) marks the freeze ``market`` baseline
+    ``hidden_from_agent`` so the agent forecasts INTRINSICALLY from the question
+    text only (no market price to anchor on), while the market baseline is STILL
+    carried and scored for the agent-vs-market head-to-head + P1.3
+    complementarity. Default False keeps produced cases byte-identical.
     """
 
     root = _cache_root(cache_dir)
@@ -552,7 +567,10 @@ def load_forecastbench_cases(
             continue
 
         case = build_forecastbench_case(
-            question, resolution, question_set_date=question_set_date
+            question,
+            resolution,
+            question_set_date=question_set_date,
+            hide_market_baseline=hide_market_baseline,
         )
         cases.append(case)
         src = _normalized_source(question) or "forecastbench"

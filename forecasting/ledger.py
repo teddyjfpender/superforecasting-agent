@@ -11614,6 +11614,13 @@ class ForecastLedger:
         outcome_space: OutcomeSpace,
     ) -> list[dict[str, Any]]:
         baselines = [dict(row) for row in case.get("baselines") or [] if isinstance(row, dict)]
+        # MARKET-HIDDEN ARM: ``hidden_from_agent`` is an agent-VISIBILITY marker
+        # consumed only by agent_protocol._pre_cutoff_baselines. It must NOT alter
+        # scoring — a hidden baseline is still recorded + scored as a
+        # baseline_comparison — so strip the marker here before persistence rather
+        # than carrying an unknown key into create_snapshot / add_baseline_comparison.
+        for row in baselines:
+            row.pop("hidden_from_agent", None)
         has_explicit_baselines = bool(baselines)
         if not has_explicit_baselines and outcome_space.type == "binary" and not self._has_baseline(baselines, "naive_0_5", "auto"):
             baselines.append(

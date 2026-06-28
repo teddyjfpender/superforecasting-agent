@@ -505,6 +505,144 @@ def test_closed_book_toolset_has_no_reachable_tool():
         assert leaky not in closed_book_tools
 
 
+# --------------------------------------------------------------------------- #
+# MARKET-HIDDEN ARM: a hidden_from_agent baseline is WITHHELD from the agent
+# prompt but STILL scored as a baseline_comparison. Default (off) is unchanged.
+# --------------------------------------------------------------------------- #
+def test_hidden_baseline_absent_from_agent_but_scored():
+    # GENERAL marker, exercised directly on a hand-built case so the test is
+    # independent of the forecastbench fixture: a baseline carrying
+    # hidden_from_agent=True must be ABSENT from the agent-visible sanitized case
+    # yet PRESENT + scored as a baseline_comparison after a real backtest run.
+    from forecasting.agent_protocol import sanitize_backtest_case_for_agent
+    from forecasting.ledger import ForecastLedger
+
+    case = {
+        "id": "hidden-arm-1",
+        "title": "Will event X happen?",
+        "description": "Background about X.",
+        "resolution_criteria": "Resolves YES if X occurs.",
+        "domain": "test",
+        "as_of": "2099-01-01T00:00:00Z",
+        "simulated_forecast_time": "2099-01-01T00:00:00Z",
+        "evidence_cutoff": "2099-01-01T00:00:00Z",
+        "resolution_time": "2099-02-01T00:00:00Z",
+        "outcome": "yes",
+        "baselines": [
+            {
+                "source": "manifold",
+                "baseline_type": "market",
+                "probability": 0.62,
+                "as_of": "2099-01-01T00:00:00Z",
+                "hidden_from_agent": True,
+            },
+            {
+                "source": "auto",
+                "baseline_type": "naive_0_5",
+                "probability": 0.5,
+                "as_of": "2099-01-01T00:00:00Z",
+            },
+        ],
+    }
+
+    # 1) Agent visibility: the hidden market baseline is dropped; the normal
+    #    naive baseline is unchanged (still visible).
+    public = sanitize_backtest_case_for_agent(case)
+    visible_types = {b["baseline_type"] for b in public.get("baselines") or []}
+    assert "market" not in visible_types
+    assert "naive_0_5" in visible_types
+    # no market probability leaks anywhere in the agent-visible blob
+    import json as _json
+
+    assert "0.62" not in _json.dumps(public.get("baselines") or [])
+
+    # 2) Scoring: the hidden baseline is STILL recorded + scored. Run end-to-end.
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        ledger = ForecastLedger(db_path=f"{td}/ledger.db")
+        scored = dict(case)
+        scored["probability"] = 0.7
+        scored["probability_source"] = "stub"
+        run = ledger.run_backtest_dataset(dataset="test:hidden-arm", cases=[scored])
+        assert run["result_summary"]["case_count"] == 1
+
+        # the market baseline_comparison exists, with a computed brier score.
+        bench_case = ledger.list_backtest_cases(run["id"])[0]
+        comparisons = [
+            ledger.get_baseline_comparison(ref)
+            for ref in bench_case["baseline_comparison_refs"]
+        ]
+        market = [c for c in comparisons if c["baseline_type"] == "market"]
+        assert market, "hidden market baseline must STILL be recorded + scored"
+        assert market[0]["score_record_id"]
+        score = ledger.get_score(market[0]["score_record_id"])
+        assert score is not None and score.brier_score is not None
+        # the persisted comparison never carries the visibility marker.
+        assert "hidden_from_agent" not in (market[0].get("metadata") or {})
+
+
+def test_load_forecastbench_hide_market_baseline(patched_fetch, tmp_path):
+    # The forecastbench loader marks the market baseline hidden; the
+    # agent-visible sanitized case carries NO market price and the source URL
+    # is still withheld.
+    from forecasting.agent_protocol import sanitize_backtest_case_for_agent
+
+    report = load_forecastbench_cases(
+        QUESTION_SET_DATE, cache_dir=tmp_path, hide_market_baseline=True
+    )
+    case = {c["metadata"]["forecastbench_id"]: c for c in report["cases"]}["mf-1"]
+
+    # the case STILL carries the market baseline (so it is still scored), but it
+    # is marked hidden_from_agent.
+    market = [b for b in case["baselines"] if b["baseline_type"] == "market"]
+    assert market and market[0]["hidden_from_agent"] is True
+    assert market[0]["probability"] == pytest.approx(0.62)
+
+    # the agent-visible case carries NO market price and NO market baseline.
+    public = sanitize_backtest_case_for_agent(case)
+    visible_types = {b["baseline_type"] for b in public.get("baselines") or []}
+    assert "market" not in visible_types
+    import json as _json
+
+    blob = _json.dumps(public)
+    assert "0.62" not in blob
+    # the source URL is STILL withheld (closed-book seal intact).
+    assert "manifold.markets" not in blob
+
+
+def test_hide_market_baseline_default_is_byte_identical(patched_fetch, tmp_path):
+    # Default (hide_market_baseline=False) produces cases byte-identical to the
+    # plain loader: the marker is purely additive and off by default.
+    import json as _json
+
+    base = load_forecastbench_cases(QUESTION_SET_DATE, cache_dir=tmp_path)
+    explicit_off = load_forecastbench_cases(
+        QUESTION_SET_DATE, cache_dir=tmp_path, hide_market_baseline=False
+    )
+    assert _json.dumps(base["cases"], sort_keys=True) == _json.dumps(
+        explicit_off["cases"], sort_keys=True
+    )
+    # no produced case carries the marker when default.
+    for case in base["cases"]:
+        for baseline in case.get("baselines") or []:
+            assert "hidden_from_agent" not in baseline
+
+
+def test_market_hidden_rejected_for_non_forecastbench_datasets():
+    # The review MAJOR: --market-hidden must be REJECTED up front (before the
+    # imported:/builtin: early-returns) for any non-forecastbench dataset, so it
+    # can never silently no-op and leave the market visible while the experimenter
+    # believes it was withheld.
+    import pytest as _pytest
+
+    from forecasting.cli import _load_backtest_cases
+
+    for ds in ("builtin:mini-binary", "imported:foo", "https://x/y.json"):
+        with _pytest.raises(SystemExit, match="only applies to forecastbench"):
+            _load_backtest_cases(ds, hide_market_baseline=True)
+
+
 def test_recorded_agent_model_defaults_to_resolved_model():
     # P2.4 model-cutoff gate fires on the recorded agent_model. When
     # --agent-model is omitted, the recorded model defaults to the runner's

@@ -251,13 +251,26 @@ def _pre_cutoff_baselines(case: dict[str, Any], cutoff) -> list[dict[str, Any]]:
     for baseline in case.get("baselines") or []:
         if not isinstance(baseline, dict):
             continue
+        # MARKET-HIDDEN ARM: a baseline may carry ``hidden_from_agent: True`` to
+        # be SCORED as a baseline_comparison (the head-to-head + P1.3
+        # complementarity still need it) while being WITHHELD from the agent
+        # PROMPT — so no market price is shown to the agent in its visible case.
+        # The flag affects in-prompt VISIBILITY here, NEVER scoring (see
+        # ledger._run_backtest_case). Default (no flag) is byte-identical: this
+        # drop never fires. (Withholding the in-prompt baseline does not by itself
+        # stop a tool-enabled run from looking the value up elsewhere — pair with
+        # --closed-book for a true intrinsic-only forecast.)
+        if baseline.get("hidden_from_agent"):
+            continue
         as_of_raw = baseline.get("as_of")
         if as_of_raw and cutoff:
             as_of = parse_timestamp(as_of_raw, field_name="baseline_as_of")
             as_of_dt = timestamp_to_datetime(as_of)
             if as_of_dt and as_of_dt > cutoff:
                 continue
-        rows.append(deepcopy(baseline))
+        visible = deepcopy(baseline)
+        visible.pop("hidden_from_agent", None)  # never expose the internal marker
+        rows.append(visible)
     return rows
 
 

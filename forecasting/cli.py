@@ -2775,6 +2775,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "Used only with --probability-source agent-protocol."
         ),
     )
+    backtest_parser.add_argument(
+        "--market-hidden",
+        action="store_true",
+        help=(
+            "MARKET-HIDDEN ARM (agent-protocol only): withhold the freeze market "
+            "baseline from the agent's PROMPT so no market price is shown to it, "
+            "while the market baseline is STILL scored for the head-to-head + "
+            "complementarity. Pair with --closed-book for a true intrinsic-only "
+            "forecast (no tooling to look the price up). ForecastBench datasets only."
+        ),
+    )
     backtest_parser.add_argument("--allow-calibration-memory", action="store_true")
     backtest_parser.add_argument("--benchmarks", action="store_true", help="List built-in benchmark datasets")
     backtest_parser.add_argument(
@@ -11288,6 +11299,8 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         raise SystemExit("--agent-prompt-jsonl requires --probability-source agent-protocol")
     if getattr(args, "closed_book", False) and args.probability_source != "agent-protocol":
         raise SystemExit("--closed-book requires --probability-source agent-protocol")
+    if getattr(args, "market_hidden", False) and args.probability_source != "agent-protocol":
+        raise SystemExit("--market-hidden requires --probability-source agent-protocol")
     if args.agent_prompt_jsonl and not args.prepare_agent_prompts:
         raise SystemExit("--agent-prompt-jsonl requires --prepare-agent-prompts")
     if args.prepare_agent_prompts and args.probability_source != "agent-protocol":
@@ -11480,7 +11493,11 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
     if args.prepare_agent_prompts:
         if not args.dataset:
             raise SystemExit("forecast backtest --prepare-agent-prompts requires a dataset")
-        cases = _load_backtest_cases(args.dataset, ledger=ledger)
+        cases = _load_backtest_cases(
+            args.dataset,
+            ledger=ledger,
+            hide_market_baseline=getattr(args, "market_hidden", False),
+        )
         path = _write_agent_protocol_prompt_jsonl(args.agent_prompt_jsonl, cases, dataset=args.dataset)
         print(f"agent_protocol_prompts: {path}")
         print(f"cases: {len(cases)}")
@@ -11499,7 +11516,11 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         else None
     )
     cases = _apply_backtest_probability_source(
-        _load_backtest_cases(args.dataset, ledger=ledger),
+        _load_backtest_cases(
+            args.dataset,
+            ledger=ledger,
+            hide_market_baseline=getattr(args, "market_hidden", False),
+        ),
         args.probability_source,
         agent_runner=agent_runner,
         agent_model=_resolved_recorded_agent_model(args, agent_runner),
@@ -12983,7 +13004,18 @@ def _should_use_metaculus_adapter(args: argparse.Namespace) -> bool:
     return source.isdigit() or not manual_context
 
 
-def _load_backtest_cases(dataset: str, *, ledger: ForecastLedger | None = None) -> list[dict[str, Any]]:
+def _load_backtest_cases(
+    dataset: str,
+    *,
+    ledger: ForecastLedger | None = None,
+    hide_market_baseline: bool = False,
+) -> list[dict[str, Any]]:
+    # Reject --market-hidden up front for any non-forecastbench dataset, BEFORE the
+    # imported:/builtin: early-returns — otherwise the flag would silently no-op
+    # there (the market baseline stays visible while the experimenter believes it
+    # was withheld — a perceived foreknowledge leak).
+    if hide_market_baseline and not dataset.startswith("forecastbench:"):
+        raise SystemExit("--market-hidden only applies to forecastbench:<date> datasets")
     if dataset.startswith("imported:"):
         if ledger is None:
             raise SystemExit("imported benchmark datasets require a forecast ledger")
@@ -13012,7 +13044,9 @@ def _load_backtest_cases(dataset: str, *, ledger: ForecastLedger | None = None) 
                     f"forecastbench limit must be an integer: {dataset}"
                 ) from exc
         try:
-            report = load_forecastbench_cases(date_part, limit=limit)
+            report = load_forecastbench_cases(
+                date_part, limit=limit, hide_market_baseline=hide_market_baseline
+            )
         except ForecastBenchError as exc:
             raise SystemExit(str(exc)) from exc
         return report["cases"]
