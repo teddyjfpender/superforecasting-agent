@@ -132,6 +132,74 @@ def _append_progress(job: dict[str, Any], stage: str, detail: str) -> None:
     write_job(job)
 
 
+def _truthy(value: Any) -> bool:
+    """Tolerant on/off parse for the supervisor-search gate.
+
+    Accepts a real bool, the common string tokens, or a number; anything
+    missing/garbage collapses to ``False`` — the DEFAULT-OFF state, so the live
+    default stays byte-identical (no search_runner, research_rounds 0).
+    """
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == value and value != 0  # NaN-safe
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "y", "1", "on"}
+    return False
+
+
+def _supervisor_search_enabled(spec: dict[str, Any]) -> bool:
+    """Whether to wire the live fresh-search supervisor loop for this run.
+
+    OPT-IN, DEFAULT OFF. Turned on by the per-run spec ``supervisor_search`` (set by
+    ``forecast quorum --supervisor-search``), which the CLI already resolves from the
+    fleet-wide config flag ``quorum.supervisor_search`` at enqueue time. This
+    config fallback is the safety net for a spec that omits the key entirely (e.g. a
+    programmatic enqueue). It governs ONLY the run_quorum/execute_job path; the
+    market-nightly path uses an injected agent_forecaster seam and is unaffected.
+    """
+
+    if "supervisor_search" in spec:
+        return _truthy(spec.get("supervisor_search"))
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config().get("quorum", {})
+    except Exception:  # noqa: BLE001 — config is optional; default OFF without it
+        return False
+    return _truthy(cfg.get("supervisor_search")) if isinstance(cfg, dict) else False
+
+
+def _cutoff_is_live(evidence_cutoff: Any, *, tolerance_hours: float = 48.0) -> bool:
+    """True when fresh web search is admissible — i.e. the forecast is LIVE.
+
+    Fresh search returns present-day content, so it is only safe when there is no
+    historical cutoff to pin to. ``None`` (no cutoff) or a cutoff within
+    ``tolerance_hours`` of now is treated as live; an older cutoff (a backtest /
+    replay snapshot) disables the supervisor search so now-known information cannot
+    be folded into a past-pinned forecast. An unparseable cutoff fails SAFE (no search).
+    """
+
+    if not evidence_cutoff:
+        return True
+    try:
+        from datetime import datetime, timedelta, timezone
+
+        from forecasting.models import parse_timestamp, timestamp_to_datetime
+
+        cutoff_dt = timestamp_to_datetime(
+            parse_timestamp(str(evidence_cutoff), field_name="evidence_cutoff")
+        )
+        if cutoff_dt is None:
+            return False
+        if cutoff_dt.tzinfo is None:
+            cutoff_dt = cutoff_dt.replace(tzinfo=timezone.utc)
+        return cutoff_dt >= datetime.now(timezone.utc) - timedelta(hours=tolerance_hours)
+    except Exception:  # noqa: BLE001 — any parse/clock failure fails safe (no search)
+        return False
+
+
 def execute_job(run_id: str) -> dict[str, Any]:
     """Run the quorum for ``run_id`` to completion, persisting state as it goes."""
 
@@ -192,6 +260,44 @@ def execute_job(run_id: str) -> dict[str, Any]:
             question.metadata if isinstance(question.metadata, dict) else None
         )
 
+        # GATE 2 (AIA P1.1, live) — wire the agentic-supervisor fresh-search loop.
+        # The judge can flag an unresolved crux (information_gap +
+        # clarifying_queries) and the supervisor runs FRESH web/news search to fold
+        # in information the market has not yet priced — the only path to BEATING
+        # the market (the closed-book LLM has no intrinsic edge). This is OPT-IN and
+        # DEFAULT OFF: only when the spec (or the quorum config) turns it on do we
+        # construct a search_runner and allow one research round. With it off,
+        # search_runner stays None so run_quorum is byte-identical to before
+        # (research_rounds 0, supervisor_evidence empty).
+        search_runner = None
+        max_research_rounds = 0
+        if _supervisor_search_enabled(spec):
+            # LEAKAGE GUARD (enforced in code, not convention): a fresh web search
+            # returns PRESENT-DAY content, which cannot be pinned to a historical
+            # evidence_cutoff. So the supervisor search only runs when the forecast
+            # is effectively LIVE (no cutoff, or a cutoff within tolerance of now).
+            # A historical cutoff — e.g. a backtest/replay snapshot — disables it,
+            # so now-known information can never be folded into a past-pinned forecast.
+            if _cutoff_is_live(evidence_cutoff):
+                from forecasting.supervisor_search import build_supervisor_search_runner
+
+                # Clamp the per-run bounds: each round re-runs the FULL panel+judge,
+                # so cap rounds at 3 regardless of an arbitrary spec value.
+                max_research_rounds = max(1, min(3, int(spec.get("max_research_rounds", 1))))
+                search_runner = build_supervisor_search_runner(
+                    max_queries=int(spec.get("supervisor_max_queries", 3)),
+                    max_results_per_query=int(spec.get("supervisor_results_per_query", 5)),
+                )
+                _append_progress(
+                    job, "supervisor_search", f"enabled (max {max_research_rounds} round)"
+                )
+            else:
+                _append_progress(
+                    job, "supervisor_search",
+                    f"DISABLED — historical evidence_cutoff ({evidence_cutoff}); "
+                    "fresh search would leak post-cutoff information",
+                )
+
         result = run_quorum(
             question_title=question.title,
             resolution_criteria=question.resolution_criteria,
@@ -206,6 +312,8 @@ def execute_job(run_id: str) -> dict[str, Any]:
             alpha_extremize=alpha_extremize,
             self_fusion=self_fusion,
             on_progress=on_progress,
+            search_runner=search_runner,
+            max_research_rounds=max_research_rounds or 1,
         )
 
         # Persist the quorum as a sibling panel run. The spread_summary already

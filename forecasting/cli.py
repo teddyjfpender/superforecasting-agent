@@ -1782,6 +1782,16 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     quorum_parser.add_argument("--triggered-by", dest="triggered_by", default="quorum")
     quorum_parser.add_argument(
+        "--supervisor-search",
+        dest="supervisor_search",
+        action="store_true",
+        default=None,
+        help="Activate the live agentic-supervisor fresh-search loop (AIA P1.1): "
+        "when the judge flags an unresolved crux it runs a real bounded web/news "
+        "search and re-synthesises once on the fresh evidence. Default OFF "
+        "(byte-identical baseline); also settable via quorum.supervisor_search.",
+    )
+    quorum_parser.add_argument(
         "--scope",
         choices=sorted(("high_impact", "always", "first_only")),
         help="For `quorum default`: which indicated panels get a quorum.",
@@ -8899,6 +8909,14 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
 
     preset = args.preset or cfg.get("preset") or "frontier"
     judge = args.judge or (cfg.get("judge") or None)
+    # GATE 2 (AIA P1.1, live): the --supervisor-search flag wins when passed;
+    # otherwise inherit the quorum.supervisor_search config (default OFF). Only a
+    # truthy value goes into the spec, so the live default stays byte-identical.
+    supervisor_search = (
+        bool(args.supervisor_search)
+        if getattr(args, "supervisor_search", None) is not None
+        else bool(cfg.get("supervisor_search"))
+    )
     pool_method = args.pool_method or cfg.get("pool_method") or "trimmed_geomean_odds"
     trim = args.trim if args.trim is not None else int(cfg.get("trim", 1))
 
@@ -8929,6 +8947,7 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         "active_model": active_model,
         "max_iterations": int(cfg.get("max_iterations", 30)),
         "model_timeout": int(cfg.get("model_timeout", 300)),
+        "supervisor_search": supervisor_search,
     }
 
     run_id = start_job(spec, wait=bool(args.wait))

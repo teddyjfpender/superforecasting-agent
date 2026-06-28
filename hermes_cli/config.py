@@ -684,6 +684,16 @@ DEFAULT_CONFIG = {
         # Per-panelist runtime ceiling (seconds) and tool-iteration cap.
         "model_timeout": 300,
         "max_iterations": 30,
+        # GATE 2 (AIA P1.1, live) — agentic-supervisor fresh-search loop. When ON
+        # and the judge flags an unresolved crux (information_gap +
+        # clarifying_queries), the supervisor runs a bounded real web/news search
+        # and re-synthesises once on the fresh evidence — the only path to BEATING
+        # the market (the closed-book LLM has no intrinsic edge). DEFAULT OFF so the
+        # live default is byte-identical. Flip on here as a fleet-wide default for
+        # every quorum run, or per-run with `forecast quorum --supervisor-search`.
+        # (Governs the run_quorum/quorum-jobs path only; it is gated off automatically
+        # for a historical evidence_cutoff so fresh search can never leak.)
+        "supervisor_search": False,
     },
     "forecasting": {
         # Forecast saturation + style HOOKS: commit-time checks that block or warn
