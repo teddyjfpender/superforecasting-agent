@@ -27,6 +27,7 @@ def run_due_reviews(
     obsidian_sync: bool = False,
     reconcile_alerts: bool = True,
     propose_resolutions: bool = True,
+    score_market_nightly: bool = True,
     reforecast_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
@@ -243,6 +244,28 @@ def run_due_reviews(
                 sections.append(
                     "Resolution proposals\n"
                     f"proposed {len(raised)} resolution(s) for confirmation\n"
+                )
+
+    # Trailing market-nightly scoring phase (AIA P2.1): score any pending
+    # foreknowledge-proof benchmark entry whose market has since RESOLVED. ONLY
+    # scoring runs on the cycle — SAMPLING (which would hit a market source) stays
+    # explicit/opt-in via the CLI, never the unattended sweep. Best-effort: a hiccup
+    # must never break the cycle, and score_matured is idempotent.
+    if score_market_nightly:
+        try:
+            from forecasting.market_nightly import score_matured
+
+            matured = score_matured(ledger, now=now)
+        except Exception as exc:  # never break the sweep on benchmark scoring
+            sections.append(f"Market-nightly scoring\nERROR: {exc}\n")
+        else:
+            # Only announce what was NEWLY scored this sweep, so a fully-scored set
+            # does not re-emit the same alert on every cron run.
+            if matured.get("n_newly_scored"):
+                sections.append(
+                    "Market-nightly scoring\n"
+                    f"scored {matured['n_newly_scored']} newly-matured benchmark entr(ies); "
+                    f"{matured['n_still_pending']} still pending\n"
                 )
 
     return "\n".join(sections)

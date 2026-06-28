@@ -311,6 +311,7 @@ def build_forecasting_evidence_status(
     include_leak_robustness: bool = False,
     include_alpha_sweep: bool = False,
     include_search_ablation: bool = False,
+    include_market_nightly: bool = False,
 ) -> dict[str, Any]:
     """Summarize whether stored evidence can support live superiority claims.
 
@@ -527,6 +528,19 @@ def build_forecasting_evidence_status(
         except Exception:
             search_ablation = None
 
+    # AIA P2.1 — a READ-ONLY market-nightly row: the foreknowledge-proof live
+    # benchmark's pending/scored counts + the paired agent-vs-market edge. It
+    # NEVER samples (sampling would hit a market source), NEVER scores, and NEVER
+    # takes down readiness; OPT-IN so the hot callers leave it None.
+    market_nightly = None
+    if include_market_nightly:
+        try:
+            from forecasting.market_nightly import market_nightly_report
+
+            market_nightly = market_nightly_report(ledger)
+        except Exception:
+            market_nightly = None
+
     return {
         "verdict": "insufficient_live_evidence" if gaps else "benchmark_evidence_ready_live_claim_unproven",
         "can_claim_live_superforecasting": False,
@@ -534,6 +548,7 @@ def build_forecasting_evidence_status(
         "leak_robustness": leak_robustness,
         "platt_alpha_sweep": platt_alpha_sweep,
         "search_ablation": search_ablation,
+        "market_nightly": market_nightly,
         "message": (
             "Stored evidence is not enough for a live superforecasting claim."
             if gaps

@@ -14,7 +14,13 @@ QUESTION_STATUSES = {"active", "closed", "resolved", "archived"}
 # out loud with, NOT committing. It is exempt from the commit-time formalities
 # (structured reasoning, citations, decision readiness) and is never
 # calibration-scored. Commit a "live" forecast to put it on the record.
-FORECAST_ORIGINS = {"live", "exploratory", "backtest", "imported_baseline"}
+# "market_nightly" is the AIA P2.1 foreknowledge-proof live benchmark origin: a
+# forecast committed NOW against a currently-OPEN market that resolves in the
+# FUTURE, scored only when the market closes. It is segregated from the agent's
+# curated "live" book (it never updates the live calibration profile and is
+# exempt from the live commit-time formalities) so the benchmark cannot pollute,
+# or be polluted by, the live desk.
+FORECAST_ORIGINS = {"live", "exploratory", "backtest", "imported_baseline", "market_nightly"}
 RESOLUTION_STATUSES = {"proposed", "confirmed", "disputed", "corrected"}
 ASSUMPTION_STATUSES = {"active", "stale", "invalidated", "resolved"}
 REFERENCE_CLASS_STATUSES = {"active", "stale", "invalidated", "superseded"}

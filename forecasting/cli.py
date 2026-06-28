@@ -2181,6 +2181,49 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     ablation_parser.add_argument("--json", action="store_true", help="Emit the raw report as JSON")
     ablation_parser.set_defaults(_forecast_handler=_cmd_ablation)
 
+    market_nightly_parser = forecast_sub.add_parser(
+        "market-nightly",
+        help="AIA P2.1 — foreknowledge-proof live benchmark: sample OPEN markets, forecast NOW, score on close",
+    )
+    mn_sub = market_nightly_parser.add_subparsers(dest="market_nightly_command")
+    mn_sample = mn_sub.add_parser(
+        "sample",
+        help="Sample currently-OPEN markets (close STRICTLY in the future) from a markets JSON file and record pending entries (explicit/opt-in; never hits a live API)",
+    )
+    mn_sample.add_argument(
+        "--markets-json",
+        required=True,
+        dest="markets_json",
+        help="Path to a JSON array of market dicts (id, probability/yes_price, close_time/resolution_time, ...). No network is contacted.",
+    )
+    mn_sample.add_argument("--as-of", dest="as_of", default=None, help="Forecast instant (default: now). The invariant is close STRICTLY > as_of.")
+    mn_sample.add_argument("-n", "--count", type=int, default=10, dest="count", help="Max markets to sample (default: 10)")
+    mn_sample.add_argument("--seed", type=int, default=0, dest="rng_seed", help="Seed for the deterministic pick (default: 0)")
+    mn_sample.add_argument(
+        "--agent-prob",
+        type=float,
+        default=None,
+        dest="agent_prob",
+        help="Constant agent P(yes) for every sampled market (offline; for piloting the loop without an LLM call).",
+    )
+    mn_sample.add_argument(
+        "--agent-prob-field",
+        default=None,
+        dest="agent_prob_field",
+        help="Read each market's agent P(yes) from this field in the market dict (offline; no LLM call).",
+    )
+    mn_sample.add_argument("--json", action="store_true", help="Emit the run record as JSON")
+    mn_sample.set_defaults(_forecast_handler=_cmd_market_nightly_sample)
+
+    mn_score = mn_sub.add_parser("score", help="Score any pending entry whose market has since resolved (reuses the ledger scoring machinery)")
+    mn_score.add_argument("--now", default=None, help="Scoring instant (default: now)")
+    mn_score.add_argument("--json", action="store_true", help="Emit the result as JSON")
+    mn_score.set_defaults(_forecast_handler=_cmd_market_nightly_score)
+
+    mn_report = mn_sub.add_parser("report", help="Read-only roll-up: pending/scored counts + paired agent-vs-market edge")
+    mn_report.add_argument("--json", action="store_true", help="Emit the report as JSON")
+    mn_report.set_defaults(_forecast_handler=_cmd_market_nightly_report)
+
     tail_audit_parser = forecast_sub.add_parser(
         "tail-audit",
         help=(
@@ -9508,6 +9551,99 @@ def _cmd_ablation(args: argparse.Namespace) -> None:
     if any(uncovered.values()):
         parts = ", ".join(f"{k}={v}" for k, v in sorted(uncovered.items()) if v)
         print(f"  uncovered (excluded, not guessed): {parts}")
+
+
+def _cmd_market_nightly_sample(args: argparse.Namespace) -> None:
+    """AIA P2.1 — sample currently-OPEN markets and record pending benchmark entries.
+
+    Markets are read from a LOCAL JSON file (``--markets-json``); this command
+    NEVER contacts a live market API. The agent forecast for each market is an
+    OFFLINE seam: a constant ``--agent-prob`` or a per-market ``--agent-prob-field``
+    (so the loop can be piloted without an LLM call). The foreknowledge-proof
+    filter keeps ONLY markets whose close is STRICTLY after ``as_of``; rejected
+    candidates are counted, never stored."""
+    from forecasting.market_nightly import record_pending, sample_open_markets
+
+    path = Path(args.markets_json).expanduser()
+    try:
+        markets = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"could not read markets JSON {path}: {exc}")
+    if not isinstance(markets, list):
+        raise SystemExit("markets JSON must be a JSON array of market dicts")
+
+    as_of = args.as_of or utc_now_iso()
+    picked = sample_open_markets(markets, as_of, args.count, rng_seed=args.rng_seed)
+
+    if args.agent_prob is not None:
+        const = float(args.agent_prob)
+        forecaster = lambda _market: const  # noqa: E731 - explicit offline seam
+    elif args.agent_prob_field:
+        field = args.agent_prob_field
+        forecaster = lambda market: market.get(field)  # noqa: E731 - explicit offline seam
+    else:
+        raise SystemExit(
+            "provide --agent-prob <p> or --agent-prob-field <name> (the agent forecaster "
+            "is an explicit offline seam; no LLM/market call is made by default)"
+        )
+
+    run = record_pending(_ledger(args), picked["sampled"], picked["as_of"], forecaster)
+    if getattr(args, "json", False):
+        out = {"sample": {k: v for k, v in picked.items() if k != "sampled"}, "run": run.to_dict()}
+        print(json.dumps(out, indent=2, sort_keys=True))
+        return
+    print(f"as_of: {picked['as_of']}")
+    print(f"candidates: {len(markets)}  admissible (future close): {picked['admissible']}  rejected: {picked['rejected']}")
+    print(f"recorded pending: {run.n_recorded}  rejected at store: {run.n_rejected}  skipped: {len(run.skipped_ids)}")
+    for row in run.recorded:
+        print(f"  - {row['question_id']} market={row['market_id']} agent={row['agent_forecast']:.3f} market={row['market_devig_probability']:.3f} close={row['close_time']}")
+    for note in run.notes:
+        print(f"  note: {note}")
+
+
+def _cmd_market_nightly_score(args: argparse.Namespace) -> None:
+    """AIA P2.1 — score pending benchmark entries whose market has since resolved."""
+    from forecasting.market_nightly import score_matured
+
+    result = score_matured(_ledger(args), now=args.now)
+    if getattr(args, "json", False):
+        print(json.dumps(result, indent=2, sort_keys=True, default=str))
+        return
+    print(f"now: {result['now']}")
+    print(f"scored: {result['n_scored']}  still pending: {result['n_still_pending']}")
+    for row in result["scored"]:
+        ab = row.get("agent_brier")
+        mb = row.get("market_brier")
+        ab_s = f"{ab:.4f}" if isinstance(ab, (int, float)) else "-"
+        mb_s = f"{mb:.4f}" if isinstance(mb, (int, float)) else "-"
+        print(f"  - {row['question_id']} outcome={row['outcome']} agent_brier={ab_s} market_brier={mb_s}")
+    for note in result["notes"]:
+        print(f"  note: {note}")
+
+
+def _cmd_market_nightly_report(args: argparse.Namespace) -> None:
+    """AIA P2.1 — read-only roll-up of the foreknowledge-proof live benchmark."""
+    from forecasting.market_nightly import market_nightly_report
+
+    report = market_nightly_report(_ledger(args))
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    def _fmt(value: Any) -> str:
+        return f"{value:.4f}" if isinstance(value, (int, float)) else "-"
+
+    print(f"pending: {report['n_pending']}  scored: {report['n_scored']}")
+    print(f"  mean agent Brier  = {_fmt(report.get('mean_agent_brier'))}")
+    print(f"  mean market Brier = {_fmt(report.get('mean_market_brier'))}")
+    edge = report.get("paired_agent_edge_mean_brier")
+    lo = report.get("paired_agent_edge_ci95_low")
+    hi = report.get("paired_agent_edge_ci95_high")
+    band = f" [95% CI {lo:.4f}..{hi:.4f}]" if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) else ""
+    print(f"  paired agent edge (market_brier - agent_brier) = {edge:+.4f}{band}" if isinstance(edge, (int, float)) else "  paired agent edge = -")
+    p = report.get("paired_p_value")
+    print(f"  paired p-value = {p:.4f}" if isinstance(p, (int, float)) else "  paired p-value = -")
+    print(f"  wins agent/market/ties = {report.get('paired_agent_wins', 0)}/{report.get('paired_baseline_wins', 0)}/{report.get('paired_ties', 0)}")
 
 
 def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = None) -> None:
