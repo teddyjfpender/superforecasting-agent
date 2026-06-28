@@ -350,6 +350,36 @@ def platt_scale(p: float, alpha: float = 1.0, d: float = 1.0) -> float:
     return inv_logit(alpha * logit(p) + math.log(d))
 
 
+def platt_scale_anchored(p: float, base_rate: float, alpha: float = 1.0) -> float:
+    """Platt recalibration that extremizes the deviation from a BASE RATE.
+
+    ``platt_scale_anchored(p, base_rate, alpha) =
+        inv_logit(logit(base_rate) + alpha * (logit(p) - logit(base_rate)))``
+
+    Unlike :func:`platt_scale` (which sharpens away from the implicit 0.5
+    reference), this sharpens ``p``'s deviation from the *reference-class base
+    rate*. AIA P2.3: on the 899-question Metaculus panel this base-rate-anchored
+    form significantly outperformed every 0.5-anchored method — extremizing
+    "how far is this question's forecast from its reference class" is the right
+    quantity to amplify, not "how far from a coin flip".
+
+    Invariants (pinned in tests):
+
+    * ``alpha == 1`` is the EXACT identity (returns ``p``) for any base rate.
+    * ``base_rate == 0.5`` reduces EXACTLY to :func:`platt_scale` (``d == 1``),
+      because ``logit(0.5) == 0``.
+
+    ``base_rate`` and ``p`` are guarded into the open interval ``(0, 1)`` so the
+    log-odds stay finite; ``alpha`` must be positive.
+    """
+
+    alpha = _finite(alpha, "alpha")
+    if alpha <= 0:
+        raise ValidationError("platt_scale_anchored alpha must be positive")
+    anchor = logit(base_rate)  # _clamp_prob via prob_to_odds keeps it interior
+    return inv_logit(anchor + alpha * (logit(p) - anchor))
+
+
 def extremize(p: float, factor: float = 1.0) -> float:
     """Sharpen a probability away from 0.5 by scaling its log-odds.
 
@@ -1781,7 +1811,8 @@ __all__ = [
     "apply_lr", "apply_lrs", "log_odds_update", "decompose_update",
     "normal_cdf", "normal_ppf",
     "linear_pool", "mean_probability", "log_pool", "log_odds_pool", "geometric_pool_odds",
-    "platt_scale", "extremize", "de_extremize", "combine_forecasts", "correlation_adjusted_pool",
+    "platt_scale", "platt_scale_anchored", "extremize", "de_extremize", "combine_forecasts",
+    "correlation_adjusted_pool",
     "PoolResult",
     "evidence_weight", "EvidenceWeight",
     "evidence_cluster", "EvidenceCluster",

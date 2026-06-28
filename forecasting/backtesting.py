@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Sequence
 
 from forecasting.benchmark_evidence import build_benchmark_evidence_profile
+from forecasting.bayes_toolkit import PLATT_ALPHA_VARIANCE_MATCH, platt_scale
 from forecasting.ledger import ForecastLedger
 from forecasting.models import ScoreRecord
 
@@ -21,6 +22,190 @@ def best_baseline(baselines: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not scored:
         return None
     return min(scored, key=lambda baseline: baseline["mean_brier"])
+
+
+# ── AIA P2.3: OPT-IN read-only Platt-alpha sweep (never moves a default) ─────
+
+DEFAULT_ALPHA_SWEEP_MAX = 2.5
+DEFAULT_ALPHA_SWEEP_STEPS = 16
+
+
+def _linspace(start: float, stop: float, num: int) -> list[float]:
+    if num <= 1:
+        return [float(start)]
+    step = (stop - start) / (num - 1)
+    return [float(start + step * i) for i in range(num)]
+
+
+def _mean_brier_at_alpha(pairs: Sequence[tuple[float, float]], alpha: float) -> float:
+    """Mean Brier after Platt-scaling each raw p by ``alpha`` (outcome in {0,1})."""
+
+    total = 0.0
+    n = 0
+    for raw_p, outcome in pairs:
+        scaled = platt_scale(raw_p, alpha=alpha, d=1.0)
+        total += (scaled - outcome) ** 2
+        n += 1
+    return total / n if n else float("nan")
+
+
+def sweep_platt_alpha(
+    observations: Sequence[tuple[float, float]] | Sequence[Any],
+    alphas: Sequence[float] | None = None,
+    *,
+    max_alpha: float = DEFAULT_ALPHA_SWEEP_MAX,
+    steps: int = DEFAULT_ALPHA_SWEEP_STEPS,
+) -> dict[str, Any]:
+    """READ-ONLY sweep of the terminal Platt slope over the resolved set.
+
+    For each ``alpha`` in ``linspace(1.0, max_alpha)`` (default, or the caller's
+    explicit list) recompute the mean Brier after applying :func:`platt_scale`
+    to every raw forecast ``p``, and report:
+
+    * ``best_alpha`` / ``best_brier`` — the Brier-minimizing slope on this set;
+    * ``brier_at_sqrt3`` — the value at the theory-grounded variance-matching
+      slope :data:`PLATT_ALPHA_VARIANCE_MATCH` (``sqrt(3)``), the value one would
+      ACTIVATE with absent a sweep;
+    * ``loo_brier`` — the honest leave-one-out OUT-OF-SAMPLE mean Brier: for each
+      held-out point pick the alpha minimizing Brier on the *rest*, score the
+      held-out point with it, and average. This is the non-overfit number to trust
+      when justifying activation;
+    * ``loo_modal_alpha`` — the most-common per-fold alpha pick (an in-sample
+      stability estimate, NOT an out-of-sample CV error);
+    * the full ``curve``.
+
+    ``observations`` may be ``(raw_p, outcome)`` pairs OR objects exposing
+    ``p_yes``/``outcome`` (e.g. calibration :class:`Observation`s). This NEVER
+    mutates a forecast or a default — it is a diagnostic the caller reads.
+    """
+
+    pairs: list[tuple[float, float]] = []
+    for obs in observations:
+        if isinstance(obs, (tuple, list)) and len(obs) >= 2:
+            raw_p, outcome = obs[0], obs[1]
+        else:
+            raw_p = getattr(obs, "p_yes", None)
+            outcome = getattr(obs, "outcome", None)
+        if raw_p is None or outcome is None:
+            continue
+        try:
+            rp = float(raw_p)
+            oc = float(outcome)
+        except (TypeError, ValueError):
+            continue
+        if not (0.0 <= rp <= 1.0):
+            continue
+        pairs.append((rp, oc))
+
+    grid = list(alphas) if alphas is not None else _linspace(1.0, max_alpha, steps)
+    grid = [float(a) for a in grid if float(a) > 0.0]
+    if not grid:
+        grid = [1.0]
+
+    if not pairs:
+        return {
+            "n": 0,
+            "alphas": grid,
+            "curve": [],
+            "best_alpha": None,
+            "best_brier": None,
+            "brier_at_sqrt3": None,
+            "alpha_sqrt3": PLATT_ALPHA_VARIANCE_MATCH,
+            "loo_modal_alpha": None,
+            "loo_brier": None,
+            "identity_brier": None,
+        }
+
+    curve = [
+        {"alpha": round(a, 5), "mean_brier": _mean_brier_at_alpha(pairs, a)}
+        for a in grid
+    ]
+    best = min(curve, key=lambda row: row["mean_brier"])
+
+    # Value at the variance-matching slope sqrt(3) (computed exactly, not snapped
+    # to the grid) — the slope one would activate with absent this sweep.
+    brier_at_sqrt3 = _mean_brier_at_alpha(pairs, PLATT_ALPHA_VARIANCE_MATCH)
+
+    # Identity reference (alpha==1.0) so a caller can see the realized gain.
+    identity_brier = _mean_brier_at_alpha(pairs, 1.0)
+
+    # Leave-one-out: for each held-out point, pick the best grid alpha on the REST
+    # and score the held-out point with it OUT-OF-SAMPLE. ``loo_brier`` is the honest
+    # (non-overfit) mean Brier at a data-chosen alpha — the number to trust when
+    # justifying activation. ``loo_modal_alpha`` is the most common per-fold pick (an
+    # in-sample-stability estimate, NOT an out-of-sample CV error).
+    loo_modal_alpha: float | None = None
+    loo_brier: float | None = None
+    if len(pairs) >= 3:
+        from collections import Counter
+
+        picks: list[float] = []
+        held_out_briers: list[float] = []
+        for i in range(len(pairs)):
+            rest = pairs[:i] + pairs[i + 1 :]
+            best_a = min(grid, key=lambda a: _mean_brier_at_alpha(rest, a))
+            picks.append(round(best_a, 5))
+            held_out_briers.append(_mean_brier_at_alpha([pairs[i]], best_a))
+        loo_modal_alpha = Counter(picks).most_common(1)[0][0]
+        loo_brier = sum(held_out_briers) / len(held_out_briers)
+
+    return {
+        "n": len(pairs),
+        "alphas": [round(a, 5) for a in grid],
+        "curve": curve,
+        "best_alpha": best["alpha"],
+        "best_brier": best["mean_brier"],
+        "brier_at_sqrt3": brier_at_sqrt3,
+        "alpha_sqrt3": PLATT_ALPHA_VARIANCE_MATCH,
+        "loo_modal_alpha": loo_modal_alpha,
+        "loo_brier": loo_brier,
+        "identity_brier": identity_brier,
+    }
+
+
+def expected_brier_delta_by_bin(
+    curve_shape: Sequence[dict[str, Any]],
+    alpha: float,
+) -> list[dict[str, Any]]:
+    """Where on the P(yes) axis a Platt slope ``alpha`` is expected to help/hurt.
+
+    Consumes the ``curve_shape`` bins from
+    :func:`forecasting.calibration_bias._curve_shape` (each carries
+    ``mean_predicted``, ``observed_frequency``, ``ess``). For each bin it
+    compares the squared error of the bin's mean prediction against its observed
+    frequency BEFORE and AFTER Platt-scaling that mean by ``alpha``, returning the
+    per-bin ``brier_delta`` (``before - after``; >0 means the slope helps there).
+
+    Confirms the AIA P2.3 claim that the gain from extremization concentrates in
+    the 0.2-0.4 / 0.6-0.8 bins (where a confident-but-hedged forecast sits) and is
+    ~identity for bins straddling 0.5 (``platt_scale`` fixes 0.5).
+    """
+
+    out: list[dict[str, Any]] = []
+    for b in curve_shape:
+        mean_pred = b.get("mean_predicted")
+        obs_freq = b.get("observed_frequency")
+        if mean_pred is None or obs_freq is None:
+            continue
+        mp = float(mean_pred)
+        of = float(obs_freq)
+        before = (mp - of) ** 2
+        scaled = platt_scale(mp, alpha=alpha, d=1.0)
+        after = (scaled - of) ** 2
+        out.append(
+            {
+                "lo": b.get("lo"),
+                "hi": b.get("hi"),
+                "ess": b.get("ess"),
+                "mean_predicted": round(mp, 5),
+                "scaled_predicted": round(scaled, 5),
+                "observed_frequency": round(of, 5),
+                "brier_before": round(before, 6),
+                "brier_after": round(after, 6),
+                "brier_delta": round(before - after, 6),
+            }
+        )
+    return out
 
 
 def benchmark_claim_status(row: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
@@ -124,6 +309,7 @@ def build_forecasting_evidence_status(
     min_external_source_families: int = DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
     include_complementarity: bool = False,
     include_leak_robustness: bool = False,
+    include_alpha_sweep: bool = False,
 ) -> dict[str, Any]:
     """Summarize whether stored evidence can support live superiority claims.
 
@@ -313,11 +499,25 @@ def build_forecasting_evidence_status(
     if include_leak_robustness:
         leak_robustness = _aggregate_leak_robustness(backtest_summaries)
 
+    # AIA P2.3 — a READ-ONLY terminal-Platt-alpha sweep over the live resolved set:
+    # the Brier-minimizing slope, the value at sqrt(3) (the slope one would activate
+    # with absent a sweep), and a leave-one-out generalization estimate. It NEVER
+    # edits a forecast, the per-question alpha_extremize default, or readiness; OPT-IN
+    # so the hot callers leave it None.
+    platt_alpha_sweep = None
+    if include_alpha_sweep:
+        try:
+            live_obs = ledger._bias_observations(domain=None, forecast_origin="live")
+            platt_alpha_sweep = sweep_platt_alpha(live_obs)
+        except Exception:
+            platt_alpha_sweep = None
+
     return {
         "verdict": "insufficient_live_evidence" if gaps else "benchmark_evidence_ready_live_claim_unproven",
         "can_claim_live_superforecasting": False,
         "market_llm_complementarity": market_llm_complementarity,
         "leak_robustness": leak_robustness,
+        "platt_alpha_sweep": platt_alpha_sweep,
         "message": (
             "Stored evidence is not enough for a live superforecasting claim."
             if gaps

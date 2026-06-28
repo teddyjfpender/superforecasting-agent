@@ -69,6 +69,10 @@ __all__ = [
     "benjamini_hochberg",
     "effective_sample_size",
     "signed_calibration_error",
+    "leaned_side_hit_rate",
+    "extremization_alpha_gate",
+    "HedgingDiagnosis",
+    "diagnose_hedging",
 ]
 
 # ── Tunable constants (every one is a safeguard knob) ────────────────────────
@@ -291,6 +295,243 @@ def benjamini_hochberg(pvalues: Sequence[float | None], q: float = _FDR_Q) -> li
         if rank <= threshold_rank:
             survived[idx] = True
     return survived
+
+
+# ── AIA P2.3: extremization safety guards (pure analysis, no defaults moved) ─
+
+# A scope is only allowed alpha>1 when its leaned-side hit rate clears 0.5 by
+# this margin — a regime we are RELIABLY correct-sided on. Extremizing a
+# wrong-sided (<=0.5) scope amplifies Brier, so the gate clamps alpha back to
+# the identity there. (This is a SAFETY clamp on top of the per-question
+# alpha_extremize, whose default stays 1.0 — nothing here turns extremization on.)
+_HIT_RATE_MARGIN = 0.02
+# Hedging diagnosis: the P(yes) mass inside this central band counts as "hedged"
+# (deviating little from a coin flip). center_ward_hedge requires BOTH a high
+# central-mass fraction AND SCE<0 (genuinely under-confident), so a sharp /
+# over-confident scope is never told to extremize.
+_HEDGE_CENTER_LO = 0.35
+_HEDGE_CENTER_HI = 0.65
+_HEDGE_CENTER_FRACTION = 0.5
+
+
+def leaned_side_hit_rate(
+    observations: Sequence[Observation],
+) -> tuple[float | None, float | None, float]:
+    """Weighted leaned-side hit rate AND the mean committed forecast on that side.
+
+    For each non-neutral observation (``_included`` already drops the neutral band)
+    the "leaned side" is YES when ``p_yes>0.5`` else NO; a hit is ``outcome==1`` on a
+    YES lean (or ``outcome==0`` on a NO lean), and the committed forecast on the
+    leaned side is ``max(p_yes, 1-p_yes)``. Returns ``(hit_rate, mean_forecast,
+    ess)``. Extremizing only LOWERS Brier when the empirical hit rate EXCEEDS the
+    mean committed forecast (the scope is UNDER-confident on its leaned side) — that
+    is the condition :func:`extremization_alpha_gate` checks, not merely hit_rate>0.5.
+    ``hit_rate``/``mean_forecast`` are ``None`` when there is no usable sample.
+    """
+
+    num = 0.0
+    fcst = 0.0
+    den = 0.0
+    weights: list[float] = []
+    for obs in _included(observations):
+        leaned_yes = obs.p_yes > 0.5
+        hit = (obs.outcome >= 0.5) if leaned_yes else (obs.outcome < 0.5)
+        commit = obs.p_yes if leaned_yes else (1.0 - obs.p_yes)
+        w = float(obs.weight)
+        num += w * (1.0 if hit else 0.0)
+        fcst += w * commit
+        den += w
+        weights.append(w)
+    if den <= 0.0:
+        return None, None, 0.0
+    return num / den, fcst / den, effective_sample_size(weights)
+
+
+def extremization_alpha_gate(
+    proposed_alpha: float,
+    observations: Sequence[Observation],
+    *,
+    margin: float = _HIT_RATE_MARGIN,
+    min_ess: float = _ESS_MIN_DOMAIN,
+) -> dict[str, Any]:
+    """Permit ``alpha>1`` ONLY on a scope that is UNDER-confident on its leaned side.
+
+    Pure help/hurt gate: extremizing sharpens the forecast away from 0.5 on its
+    leaned side, which only LOWERS Brier when the empirical leaned-side hit rate
+    EXCEEDS the mean committed forecast there (the scope is right MORE often than it
+    claims). Gating on ``hit_rate > 0.5`` is insufficient — a scope leaning 0.7 that
+    is right 0.59 of the time is correct-sided yet OVER-confident, and extremizing it
+    raises Brier. So the threshold is the leaned-side mean forecast ``+ margin``. A
+    scope that does not clear it (or lacks the effective sample) has its alpha forced
+    to ``1.0``. ``alpha <= 1`` always passes through unchanged (this gate only ever
+    *removes* extremization). ``allowed_alpha`` is what the caller should use.
+    """
+
+    alpha = float(proposed_alpha)
+    hit_rate, mean_forecast, ess = leaned_side_hit_rate(observations)
+    threshold = (mean_forecast + float(margin)) if mean_forecast is not None else None
+    if alpha <= 1.0:
+        return {
+            "proposed_alpha": alpha,
+            "allowed_alpha": alpha,
+            "hit_rate": hit_rate,
+            "mean_forecast": mean_forecast,
+            "ess": ess,
+            "threshold": threshold,
+            "permitted": True,
+            "reason": "alpha<=1 is never extremization — passed through",
+        }
+    if hit_rate is None or mean_forecast is None or ess < float(min_ess):
+        return {
+            "proposed_alpha": alpha,
+            "allowed_alpha": 1.0,
+            "hit_rate": hit_rate,
+            "mean_forecast": mean_forecast,
+            "ess": ess,
+            "threshold": threshold,
+            "permitted": False,
+            "reason": f"effective sample {ess:.1f} < floor {float(min_ess):.0f} — alpha forced to 1.0",
+        }
+    if hit_rate > threshold:
+        return {
+            "proposed_alpha": alpha,
+            "allowed_alpha": alpha,
+            "hit_rate": hit_rate,
+            "mean_forecast": mean_forecast,
+            "ess": ess,
+            "threshold": threshold,
+            "permitted": True,
+            "reason": (
+                f"under-confident: leaned-side hit rate {hit_rate:.3f} > mean forecast "
+                f"{mean_forecast:.3f} + margin {float(margin):.3f} — extremization permitted"
+            ),
+        }
+    return {
+        "proposed_alpha": alpha,
+        "allowed_alpha": 1.0,
+        "hit_rate": hit_rate,
+        "mean_forecast": mean_forecast,
+        "ess": ess,
+        "threshold": threshold,
+        "permitted": False,
+        "reason": (
+            f"not under-confident: hit rate {hit_rate:.3f} <= mean forecast "
+            f"{mean_forecast:.3f} + margin — extremization would not help, alpha forced to 1.0"
+        ),
+    }
+
+
+@dataclass(frozen=True)
+class HedgingDiagnosis:
+    """Whether a scope's RAW forecasts cluster toward the center while the scope
+    is under-confident — the ONLY signature under which ``alpha>1`` is advised."""
+
+    center_ward_hedge: bool
+    center_mass_fraction: float
+    sce: float | None
+    n: int
+    ess: float
+    histogram: list[dict[str, Any]]
+    reason: str
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "center_ward_hedge": self.center_ward_hedge,
+            "center_mass_fraction": round(self.center_mass_fraction, 5),
+            "sce": None if self.sce is None else round(self.sce, 5),
+            "n": self.n,
+            "ess": round(self.ess, 3),
+            "histogram": self.histogram,
+            "reason": self.reason,
+        }
+
+
+def diagnose_hedging(
+    observations: Sequence[Observation],
+    *,
+    center_lo: float = _HEDGE_CENTER_LO,
+    center_hi: float = _HEDGE_CENTER_HI,
+    center_fraction: float = _HEDGE_CENTER_FRACTION,
+) -> HedgingDiagnosis:
+    """Histogram the RAW pre-adjustment P(yes) and decide whether to recommend alpha>1.
+
+    Reads ``obs.p_yes`` (which on the calibration path carries the *raw*
+    pre-adjustment probability — see :class:`Observation` and the ledger glue
+    that threads ``calibration_adjustment['raw_probability']`` into it). Returns
+    ``center_ward_hedge=True`` ONLY when BOTH:
+
+    * the central-mass fraction (weighted share of forecasts in
+      ``[center_lo, center_hi]``) is high (``>= center_fraction``), AND
+    * the signed calibration error is negative (genuinely under-confident).
+
+    A sharp scope (little central mass) or an over-confident one (SCE>=0) returns
+    ``center_ward_hedge=False`` — do NOT extremize. The histogram bins are fixed
+    decile-style buckets over [0,1] for an auditable shape (NOT the equal-freq
+    SCE binning).
+    """
+
+    rows = [
+        obs
+        for obs in observations
+        if (
+            (p := _coerce_float(obs.p_yes)) is not None
+            and 0.0 <= p <= 1.0
+            and (w := _coerce_float(obs.weight)) is not None
+            and w > 0.0
+        )
+    ]
+    n = len(rows)
+    edges = [i / 10.0 for i in range(11)]
+    histogram: list[dict[str, Any]] = []
+    center_w = 0.0
+    total_w = 0.0
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        bw = 0.0
+        for obs in rows:
+            p = float(obs.p_yes)
+            # right-closed final bin so p==1.0 lands somewhere.
+            if (lo <= p < hi) or (hi == 1.0 and p == 1.0):
+                bw += float(obs.weight)
+        histogram.append({"lo": round(lo, 2), "hi": round(hi, 2), "weight": round(bw, 4)})
+        total_w += bw
+    for obs in rows:
+        p = float(obs.p_yes)
+        if center_lo <= p <= center_hi:
+            center_w += float(obs.weight)
+    center_mass_fraction = (center_w / total_w) if total_w > 0 else 0.0
+    ess = effective_sample_size([obs.weight for obs in rows])
+    sce = signed_calibration_error(observations)
+
+    center_heavy = center_mass_fraction >= float(center_fraction)
+    under_confident = sce is not None and sce < 0.0
+    center_ward_hedge = bool(center_heavy and under_confident)
+
+    if center_ward_hedge:
+        reason = (
+            f"center-mass {center_mass_fraction:.2f} >= {center_fraction:.2f} AND SCE {sce:.3f} < 0 "
+            "(under-confident hedging) — anchored extremization (alpha>1) may help"
+        )
+    elif not center_heavy:
+        reason = (
+            f"center-mass {center_mass_fraction:.2f} < {center_fraction:.2f} — already sharp, "
+            "do not extremize"
+        )
+    elif sce is None:
+        reason = "no usable signed-calibration signal — do not extremize"
+    else:
+        reason = (
+            f"SCE {sce:.3f} >= 0 (calibrated or over-confident) — do not extremize"
+        )
+
+    return HedgingDiagnosis(
+        center_ward_hedge=center_ward_hedge,
+        center_mass_fraction=center_mass_fraction,
+        sce=sce,
+        n=n,
+        ess=ess,
+        histogram=histogram,
+        reason=reason,
+    )
 
 
 # ── Reliability-curve shape (for human-readable advisory text only) ──────────
