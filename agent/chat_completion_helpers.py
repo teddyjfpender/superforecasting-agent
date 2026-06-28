@@ -195,6 +195,156 @@ def _is_openai_codex_backend(agent) -> bool:
     )
 
 
+# ── Reasoning-budget-aware idle floors ──────────────────────────────────────
+# Reasoning models (gpt-5.x on the openai-codex/ChatGPT-OAuth backend) emit an
+# opening SSE frame, then think *silently* server-side (no SSE events — the
+# ``_on_event`` marker in codex_runtime only advances on real events) before
+# streaming tokens. That silent gap scales with the REASONING BUDGET, which is
+# uncorrelated with context size, so the legacy context-size idle floor (12s at
+# small context) kills small-context reasoning calls mid-think. These floors
+# reflect the reasoning budget instead. Values were picked to comfortably cover
+# the silent-think window per effort tier (low ~45s → xhigh/max ~360s) while
+# staying well under the wall-clock stale backstop; they only ever *raise* the
+# context-size default (never lower it).
+_CODEX_REASONING_IDLE_FLOOR_BY_EFFORT = {
+    "minimal": 45.0,
+    "low": 45.0,
+    "medium": 120.0,
+    "high": 240.0,
+    "xhigh": 360.0,
+    "max": 360.0,
+}
+# Reasoning request whose effort we can't determine — a single safe default.
+_CODEX_REASONING_IDLE_FLOOR_DEFAULT = 180.0
+
+
+def _resolve_codex_reasoning_effort(agent, api_kwargs: Any) -> Optional[str]:
+    """Best-effort canonical reasoning effort (low/medium/high/xhigh/...) or None.
+
+    Prefers the effort actually sent on the wire (``api_kwargs['reasoning']
+    ['effort']``, set by the codex transport ``build_kwargs``) and falls back to
+    the agent's configured ``reasoning_config``. ``minimal`` is normalized to
+    ``low`` to match the Codex transport clamp. Returns None when reasoning is
+    explicitly disabled or no effort can be determined.
+    """
+    def _norm(value: Any) -> Optional[str]:
+        if not value:
+            return None
+        effort = str(value).strip().lower()
+        if not effort:
+            return None
+        return "low" if effort == "minimal" else effort
+
+    # 1) The payload is authoritative for what was actually requested.
+    if isinstance(api_kwargs, dict):
+        reasoning = api_kwargs.get("reasoning")
+        if isinstance(reasoning, dict):
+            effort = _norm(reasoning.get("effort"))
+            if effort is not None:
+                return effort
+
+    # 2) Fall back to the agent's configured reasoning dial.
+    cfg = getattr(agent, "reasoning_config", None)
+    if isinstance(cfg, dict):
+        if cfg.get("enabled") is False:
+            return None
+        return _norm(cfg.get("effort"))
+
+    return None
+
+
+def _is_codex_reasoning_request(agent, api_kwargs: Any) -> bool:
+    """True when this Codex request will trigger silent server-side reasoning.
+
+    The openai-codex / ChatGPT-OAuth backend ONLY serves reasoning models, so
+    targeting it is sufficient. For other Responses-API backends we treat the
+    request as reasoning when reasoning is enabled (effort resolvable, or a
+    ``reasoning`` block present in the payload that isn't explicitly disabled).
+    """
+    if _is_openai_codex_backend(agent):
+        return True
+    if _resolve_codex_reasoning_effort(agent, api_kwargs) is not None:
+        return True
+    if isinstance(api_kwargs, dict):
+        reasoning = api_kwargs.get("reasoning")
+        if isinstance(reasoning, dict) and reasoning.get("enabled") is not False:
+            return True
+    # The codex_responses (Responses-API) transport is used EXCLUSIVELY for
+    # reasoning-capable backends — openai-codex serves gpt-5.x, xAI serves grok —
+    # all of which reason SILENTLY server-side. So unless reasoning is explicitly
+    # disabled, treat any codex_responses request as reasoning-aware. Without this a
+    # native reasoner with no dialed effort (e.g. grok, reasoning_config=None) would
+    # be left at the 12s context-size floor and killed mid-think.
+    if getattr(agent, "api_mode", None) == "codex_responses":
+        cfg = getattr(agent, "reasoning_config", None)
+        if not (isinstance(cfg, dict) and cfg.get("enabled") is False):
+            return True
+    return False
+
+
+def _codex_context_idle_floor(est_tokens: int) -> float:
+    """Legacy context-size idle floor (unchanged tiers)."""
+    if est_tokens > 100_000:
+        return 180.0
+    if est_tokens > 50_000:
+        return 120.0
+    if est_tokens > 10_000:
+        return 60.0
+    return 12.0
+
+
+def _compute_codex_idle_floor(
+    est_tokens: int,
+    *,
+    is_reasoning: bool,
+    effort: Optional[str],
+) -> float:
+    """Resolve the default Codex stream-idle floor (seconds).
+
+    Pure + unit-testable. Non-reasoning requests get the legacy context-size
+    floor verbatim (byte-identical to the old inline computation). Reasoning
+    requests get ``max(context-size floor, reasoning-budget floor)`` so a
+    small-context reasoning call is never killed mid-think.
+    """
+    context_floor = _codex_context_idle_floor(est_tokens)
+    if not is_reasoning:
+        return context_floor
+    if effort is not None:
+        reasoning_floor = _CODEX_REASONING_IDLE_FLOOR_BY_EFFORT.get(
+            effort, _CODEX_REASONING_IDLE_FLOOR_DEFAULT
+        )
+    else:
+        reasoning_floor = _CODEX_REASONING_IDLE_FLOOR_DEFAULT
+    return max(context_floor, reasoning_floor)
+
+
+def _compute_codex_stale_floor(
+    stale_timeout: float,
+    est_tokens: int,
+    *,
+    is_reasoning: bool,
+    idle_floor: float,
+) -> float:
+    """Raise the wall-clock stale backstop so a legitimate think isn't cut short.
+
+    Applies the existing large-context stale tiers, then — for reasoning
+    requests — guarantees the stale backstop is at least as large as the idle
+    floor (plus a small grace) so the overall timeout never fires before the
+    idle one on a small-context long-think.
+    """
+    out = stale_timeout
+    if est_tokens > 100_000:
+        out = max(out, 1200.0)
+    elif est_tokens > 50_000:
+        out = max(out, 900.0)
+    elif est_tokens > 25_000:
+        out = max(out, 600.0)
+    if is_reasoning:
+        # +30s grace: the idle watchdog should win the race on a true stall.
+        out = max(out, idle_floor + 30.0)
+    return out
+
+
 def interruptible_api_call(agent, api_kwargs: dict):
     """
     Run the API call in a background thread so the main conversation loop
@@ -284,21 +434,35 @@ def interruptible_api_call(agent, api_kwargs: dict):
     _codex_watchdog_enabled = agent.api_mode == "codex_responses"
     _openai_codex_backend = _is_openai_codex_backend(agent)
     _est_tokens_for_codex_watchdog = estimate_request_context_tokens(api_kwargs)
-    if _codex_watchdog_enabled and _openai_codex_backend:
-        if _est_tokens_for_codex_watchdog > 100_000:
-            _stale_timeout = max(_stale_timeout, 1200.0)
-        elif _est_tokens_for_codex_watchdog > 50_000:
-            _stale_timeout = max(_stale_timeout, 900.0)
-        elif _est_tokens_for_codex_watchdog > 25_000:
-            _stale_timeout = max(_stale_timeout, 600.0)
-    if _est_tokens_for_codex_watchdog > 100_000:
-        _codex_idle_timeout_default = 180.0
-    elif _est_tokens_for_codex_watchdog > 50_000:
-        _codex_idle_timeout_default = 120.0
-    elif _est_tokens_for_codex_watchdog > 10_000:
-        _codex_idle_timeout_default = 60.0
-    else:
-        _codex_idle_timeout_default = 12.0
+    # Reasoning models think SILENTLY server-side after the opening SSE frame;
+    # that gap scales with the reasoning BUDGET, not context size. Raise the
+    # idle floor (and, downstream, the stale backstop) accordingly so a small-
+    # context long-think is not killed mid-reason. Only the codex_responses path
+    # is reasoning-aware; non-reasoning requests keep the legacy context tiers.
+    _codex_is_reasoning = _codex_watchdog_enabled and _is_codex_reasoning_request(
+        agent, api_kwargs
+    )
+    _codex_reasoning_effort = (
+        _resolve_codex_reasoning_effort(agent, api_kwargs)
+        if _codex_is_reasoning
+        else None
+    )
+    _codex_idle_timeout_default = _compute_codex_idle_floor(
+        _est_tokens_for_codex_watchdog,
+        is_reasoning=_codex_is_reasoning,
+        effort=_codex_reasoning_effort,
+    )
+    # Wall-clock stale backstop: the existing large-context tiers stay gated on
+    # the openai-codex backend; the reasoning-request raise extends that idea to
+    # small-context reasoning calls so the overall timeout never beats the idle
+    # watchdog to a legitimate long-think.
+    if _codex_watchdog_enabled and (_openai_codex_backend or _codex_is_reasoning):
+        _stale_timeout = _compute_codex_stale_floor(
+            _stale_timeout,
+            _est_tokens_for_codex_watchdog,
+            is_reasoning=_codex_is_reasoning,
+            idle_floor=_codex_idle_timeout_default,
+        )
     _ttfb_enabled = _codex_watchdog_enabled
     _ttfb_timeout = env_var_alias_float(CODEX_TTFB_TIMEOUT_ENV_NAMES, 12.0)
     if _ttfb_timeout <= 0:
