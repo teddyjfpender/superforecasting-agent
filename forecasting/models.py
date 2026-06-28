@@ -54,6 +54,10 @@ MODEL_PRETRAINING_CUTOFF: dict[str, str] = {
     "gpt-4-turbo": "2023-12-01",
     "gpt-4": "2023-04-01",
     "gpt-4.1": "2024-06-01",
+    # gpt-5.5 cutoff confirmed by the operator (2025-12-01); gpt-5 family takes the
+    # same conservative date as a longest-substring fallback for other gpt-5.x.
+    "gpt-5.5": "2025-12-01",
+    "gpt-5": "2025-12-01",
     "gpt-3.5": "2021-09-01",
     "o1": "2023-10-01",
     "o3": "2024-06-01",

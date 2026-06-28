@@ -334,6 +334,10 @@ def build_forecastbench_case(
         # URL here would be handed to the agent verbatim).
         "resolution_source": None,
         "domain": "forecastbench",
+        # Explicit tags so the desk can carve out a separate "bench" view: every
+        # ForecastBench replay question carries "bench" + "forecastbench" (+ its
+        # source), distinct from organic live desk forecasts.
+        "tags": [t for t in ("bench", "forecastbench", source) if t],
         "topics": [source] if source else ["forecastbench"],
         "as_of": as_of,
         "simulated_forecast_time": as_of,
