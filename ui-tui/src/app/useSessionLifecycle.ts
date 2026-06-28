@@ -19,7 +19,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import type { Msg, PanelSection, SessionInfo, Usage } from '../types.js'
 
 import type { ComposerActions, GatewayRpc, StateSetter } from './interfaces.js'
-import { patchOverlayState } from './overlayStore.js'
+import { clearPendingPrompts, patchOverlayState } from './overlayStore.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
 import { getUiState, patchUiState } from './uiStore.js'
@@ -101,6 +101,11 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
 
   const resetSession = useCallback(() => {
     turnController.fullReset()
+    // A session switch / `/new` abandons any prompts buffered behind the
+    // (now-defunct) active prompt of the OLD session.  fullReset() does not
+    // touch the module-global prompt buffer, so without this the leftovers
+    // would leak into and pop up in the NEXT session.
+    clearPendingPrompts()
     setVoiceRecording(false)
     setVoiceProcessing(false)
     patchUiState({ bgTasks: new Set(), info: null, sid: null, usage: ZERO })

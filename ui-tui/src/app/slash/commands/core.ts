@@ -30,7 +30,7 @@ import {
   rankForecastQuestionMatches
 } from '../../forecastPanel.js'
 import type { StatusBarMode } from '../../interfaces.js'
-import { patchOverlayState } from '../../overlayStore.js'
+import { patchOverlayState, raisePrompt } from '../../overlayStore.js'
 import { patchUiState } from '../../uiStore.js'
 import type { SlashCommand, SlashRunCtx } from '../types.js'
 
@@ -584,7 +584,7 @@ export const coreCommands: SlashCommand[] = [
         return commit()
       }
 
-      patchOverlayState({
+      raisePrompt({
         confirm: {
           cancelLabel: 'No, keep going',
           confirmLabel: isNew ? 'Yes, start a new forecast session' : 'Yes, clear the forecast session',

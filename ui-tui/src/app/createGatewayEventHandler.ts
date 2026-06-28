@@ -21,7 +21,7 @@ import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
-import { patchOverlayState } from './overlayStore.js'
+import { raisePrompt } from './overlayStore.js'
 import { turnController } from './turnController.js'
 import { getUiState, patchUiState } from './uiStore.js'
 
@@ -603,7 +603,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       }
 
       case 'clarify.request':
-        patchOverlayState({
+        raisePrompt({
           clarify: { choices: ev.payload.choices, question: ev.payload.question, requestId: ev.payload.request_id }
         })
         setStatus('waiting for input…')
@@ -612,20 +612,20 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case 'approval.request': {
         const description = String(ev.payload.description ?? 'dangerous command')
 
-        patchOverlayState({ approval: { command: String(ev.payload.command ?? ''), description } })
+        raisePrompt({ approval: { command: String(ev.payload.command ?? ''), description } })
         setStatus('approval needed')
 
         return
       }
 
       case 'sudo.request':
-        patchOverlayState({ sudo: { requestId: ev.payload.request_id } })
+        raisePrompt({ sudo: { requestId: ev.payload.request_id } })
         setStatus('sudo password needed')
 
         return
 
       case 'secret.request':
-        patchOverlayState({
+        raisePrompt({
           secret: { envVar: ev.payload.env_var, prompt: ev.payload.prompt, requestId: ev.payload.request_id }
         })
         setStatus('secret input needed')
