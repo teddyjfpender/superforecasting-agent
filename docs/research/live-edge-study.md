@@ -155,7 +155,45 @@ an underpowered sample.
   de-vigged `market_p` at forecast time. Results (orthogonality + any in-session resolutions) appended
   next iteration.
 
-*(orthogonality + scored metrics pending the sample's completion)*
+### Iteration 2 — 2026-06-28 · first sample in, orthogonality confirmed
+
+**Sample 1** (`--seed 1`, n=20, 503 admissible candidates): 20/20 recorded, 0 rejected/skipped.
+
+**Orthogonality (n=20) — the premise holds.** The search-informed, market-hidden agent does **not**
+echo the market:
+
+| metric | value | reading |
+|---|---|---|
+| mean \|Δp\| (agent − market) | **0.078** | ~8pp average independent move off the price |
+| 45% of markets | \|Δp\| > 0.05 | nearly half move materially |
+| 25% of markets | \|Δp\| > 0.10 | a quarter move a lot |
+| Pearson r(agent, market) | **0.92** | correlated but clearly **not** identical |
+| mean \|Δ logit\| | 1.08 | large on the (many) low-probability questions |
+
+Contrast with the [grounding study](forecastbench-grounding-study.md): the market-*visible* agent had
+r≈1.0 and ~zero divergence (it **echoed**). Withholding the price and giving it live search turns it
+into an **independent** forecaster. **The orthogonality premise (strategy Lever A→C) is confirmed.**
+
+**The divergences are substantive and researched, not noise** (largest \|Δ\|):
+
+| Δ (agent−mkt) | agent | market | question |
+|---|---|---|---|
+| **−0.276** | 0.020 | 0.296 | S&P 500 closes ≥ 7650 in June 2026 (agent searched the actual level → confident NO) |
+| **+0.264** | 0.420 | 0.156 | Anthropic restores Fable 5 access for US customers |
+| **+0.240** | 0.530 | 0.290 | US–Iran ceasefire formally declared ended |
+| **+0.225** | 0.360 | 0.135 | DOJ wins its antitrust suit |
+| −0.120 | 0.580 | 0.700 | Ashwin returns to US by Aug 19 |
+
+These are testable disagreements — when they resolve we learn whether the divergence is **skill**.
+
+**Scored: 0 / 20 resolved** (all pending; the month-end markets resolve ≈ June 29–30). The longitudinal
+record is now **seeded**; scored agent-vs-market (paired Brier + simplex complementarity) is reported as
+resolutions arrive.
+
+*Interpretation.* In-session we have shown the **necessary** condition — the harness manufactures
+independent, substantive signal the market is not simply mirroring. The **sufficient** condition
+(that signal *beats/complements* the market) is the resolved-set analysis, which is longitudinal by
+construction. We continue to accrue samples and score on resolution.
 
 ---
 
