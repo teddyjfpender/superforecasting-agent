@@ -16,6 +16,7 @@ import statistics
 import threading
 import uuid
 from collections import Counter, defaultdict
+from collections.abc import Callable
 from datetime import timedelta
 from html.parser import HTMLParser
 from pathlib import Path
@@ -89,6 +90,28 @@ PAIRED_BOOTSTRAP_DRAWS = 10000
 # Reference anchor: an uninformative p=0.5-everywhere forecaster scores Brier 0.25.
 # Surfaced next to mean Brier so a reader can place the score on the legible scale.
 BRIER_COIN_FLIP_FLOOR = 0.25
+
+# AIA P1.2 — content-aware foreknowledge judge + robustness bounds.
+#
+# The cheap DATE pre-filter remains the FIRST leakage channel. The judge is a
+# SECOND, content-aware channel that reads the cited evidence text + rationale.
+# It is OPT-IN: with the channel OFF (the default), a backtest is byte-identical
+# to before — no judge call, no verdict rows, no new status.
+#
+# WORST_CASE_FLAG_THRESHOLD: a QUESTION is forced to the uninformative p=0.5
+# (Brier 0.25) in the worst-case rescore only once it accumulates at least this
+# many content flags across its cases. A single high-recall flag is too noisy to
+# nuke a question; >=2 corroborating flags is the conservative bar.
+WORST_CASE_FLAG_THRESHOLD = 2
+# The worst-case rescore is "non-material" (the headline survives leakage) iff its
+# mean Brier stays within this RELATIVE fraction of the baseline mean Brier. This
+# replaces the old binary leakage kill-switch with a graded, defensible verdict.
+LEAK_ROBUSTNESS_REL_TOLERANCE = 0.006
+
+# A leak-judge runner takes the (already-built) judge prompt + the case dict and
+# returns the raw model response (str or dict) for tolerant parsing. Supplying one
+# is what OPTS the second channel IN; leaving it None keeps backtests unchanged.
+LeakJudgeRunner = Callable[[str, dict[str, Any]], Any]
 
 
 def _normalize_reason_list(raw: Any, *, field: str) -> list[str]:
@@ -1015,6 +1038,8 @@ class ForecastLedger:
                     leakage_check_status TEXT NOT NULL DEFAULT 'pending',
                     excluded_evidence_count INTEGER NOT NULL DEFAULT 0,
                     ambiguous_evidence_count INTEGER NOT NULL DEFAULT 0,
+                    leakage_verdicts TEXT NOT NULL DEFAULT '{}',
+                    content_flag_count INTEGER NOT NULL DEFAULT 0,
                     notes TEXT
                 );
 
@@ -1404,6 +1429,13 @@ class ForecastLedger:
             # Typed watched-source roles: distinguish resolution-critical sources
             # (resolver/consensus/official_primary) from background context (RSS).
             self._ensure_column(conn, "watched_sources", "role", "TEXT")
+            # AIA P1.2 — content-aware foreknowledge judge (SECOND leakage channel).
+            # leakage_verdicts holds the persisted judge JSON (or '{}' when the
+            # opt-in channel was OFF); content_flag_count is the cheap integer the
+            # worst-case rescore aggregates per question. Both default to the
+            # not-flagged state so an existing backtest is unchanged.
+            self._ensure_column(conn, "backtest_cases", "leakage_verdicts", "TEXT NOT NULL DEFAULT '{}'")
+            self._ensure_column(conn, "backtest_cases", "content_flag_count", "INTEGER NOT NULL DEFAULT 0")
 
     def _ensure_column(
         self,
@@ -6231,6 +6263,7 @@ class ForecastLedger:
         evidence_cutoff_policy: str = "available_at_lte_cutoff",
         calibration_policy: dict[str, Any] | None = None,
         allow_calibration_memory: bool = False,
+        leak_judge_runner: "LeakJudgeRunner | None" = None,
     ) -> dict[str, Any]:
         run_id = f"bt_{uuid.uuid4().hex[:12]}"
         default_cutoff = parse_timestamp(
@@ -6269,6 +6302,7 @@ class ForecastLedger:
                 case=case,
                 default_cutoff=default_cutoff,
                 allow_calibration_memory=allow_calibration_memory,
+                leak_judge_runner=leak_judge_runner,
             )
             case_rows.append(case_row)
             if case_row["leakage_check_status"] != "passed":
@@ -6280,6 +6314,17 @@ class ForecastLedger:
             "leakage_checks_passed": leakage_passed,
             "scored_cases": sum(1 for row in case_rows if row.get("score_record_id")),
         }
+        # AIA P1.2 — surface the content-channel bookkeeping + read-only robustness
+        # bounds ONLY when the judge channel ran (a runner was supplied). With the
+        # channel OFF these keys are absent, keeping the summary byte-identical.
+        if leak_judge_runner is not None:
+            content_flagged = sum(
+                1 for row in case_rows if int(row.get("content_flag_count") or 0) > 0
+            )
+            result_summary["leak_judge"] = self._build_leak_robustness_summary(
+                run_id,
+                content_flagged_cases=content_flagged,
+            )
         agent_brier_scores = [
             row["score_brier"]
             for row in case_rows
@@ -11018,6 +11063,7 @@ class ForecastLedger:
         case: dict[str, Any],
         default_cutoff: str | None,
         allow_calibration_memory: bool,
+        leak_judge_runner: "LeakJudgeRunner | None" = None,
     ) -> dict[str, Any]:
         simulated_time = parse_timestamp(
             case.get("simulated_forecast_time") or case.get("as_of") or default_cutoff,
@@ -11160,6 +11206,28 @@ class ForecastLedger:
             baseline_refs.append(comparison["id"])
 
         leakage_status = "passed" if ambiguous == 0 else "ambiguous_evidence"
+
+        # AIA P1.2 — SECOND, content-aware leakage channel. The cheap date
+        # pre-filter above already dropped post-cutoff *timestamped* evidence; the
+        # judge reads the cited evidence TEXT + rationale for foreknowledge that
+        # rides inside admissible text. OPT-IN: with no runner (the default) this
+        # block is skipped entirely and the persisted columns keep their unflagged
+        # defaults — making the run byte-identical to a pre-P1.2 backtest.
+        leakage_verdict: dict[str, Any] = {}
+        content_flag_count = 0
+        if leak_judge_runner is not None:
+            leakage_verdict = self._run_leak_judge(
+                runner=leak_judge_runner,
+                case=case,
+                question=question,
+                evidence_cutoff=evidence_cutoff,
+            )
+            if leakage_verdict.get("has_foreknowledge"):
+                content_flag_count = 1
+                # Never weaken a pre-existing non-passing status (e.g. ambiguous).
+                if leakage_status == "passed":
+                    leakage_status = "content_flagged"
+
         case_id = f"btc_{uuid.uuid4().hex[:12]}"
         with self._connect() as conn:
             conn.execute(
@@ -11168,9 +11236,9 @@ class ForecastLedger:
                     id, backtest_run_id, question_id, simulated_forecast_time,
                     evidence_cutoff, generated_forecast_id, baseline_comparison_refs,
                     score_record_id, leakage_check_status, excluded_evidence_count,
-                    ambiguous_evidence_count, notes
+                    ambiguous_evidence_count, leakage_verdicts, content_flag_count, notes
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     case_id,
@@ -11184,6 +11252,8 @@ class ForecastLedger:
                     leakage_status,
                     excluded,
                     ambiguous,
+                    json_dumps(leakage_verdict),
+                    content_flag_count,
                     case.get("notes"),
                 ),
             )
@@ -11191,6 +11261,226 @@ class ForecastLedger:
         if score_record_id:
             row["score_brier"] = self.get_score(score_record_id).brier_score
         return row
+
+    def _run_leak_judge(
+        self,
+        *,
+        runner: "LeakJudgeRunner",
+        case: dict[str, Any],
+        question: ForecastQuestion,
+        evidence_cutoff: str | None,
+    ) -> dict[str, Any]:
+        """Run the content-aware foreknowledge judge over one case.
+
+        Builds the (pure) prompt, calls the supplied ``runner`` (the only
+        network touch in this whole feature), and returns the tolerant-parsed
+        verdict. Any runner exception fails CLOSED to the safe default so a flaky
+        judge call can never manufacture a leak flag or take down the backtest.
+        """
+
+        from forecasting.leak_judge import (
+            build_leak_judge_prompt,
+            parse_leak_verdict,
+        )
+
+        # Assemble the cited evidence text + rationale the judge must read. We use
+        # the case's own evidence/rationale (the model output under audit).
+        evidence_lines: list[str] = []
+        for item in case.get("evidence") or []:
+            if not isinstance(item, dict):
+                continue
+            parts = [
+                str(item.get(field) or "")
+                for field in ("claim", "summary", "note", "source", "url")
+            ]
+            text = " | ".join(part for part in parts if part)
+            if text:
+                evidence_lines.append(f"- {text}")
+        rationale = str(case.get("rationale") or "")
+        model_output = "\n".join(
+            block
+            for block in (
+                ("Rationale:\n" + rationale) if rationale else "",
+                ("Cited evidence:\n" + "\n".join(evidence_lines)) if evidence_lines else "",
+            )
+            if block
+        )
+        resolution = case.get("outcome")
+        prompt = build_leak_judge_prompt(
+            question=question.title,
+            cutoff=evidence_cutoff,
+            resolution=str(resolution) if resolution is not None else None,
+            model_output=model_output,
+        )
+        try:
+            raw = runner(prompt, case)
+        except Exception:  # noqa: BLE001 — fail closed, never break the backtest.
+            return parse_leak_verdict(None)
+        return parse_leak_verdict(raw)
+
+    # AIA P1.2 — read-only leakage robustness re-scores.
+    _RESCORE_MODES = ("baseline", "filtered", "worst_case")
+
+    def rescore_backtest_run(self, run_id: str, mode: str) -> dict[str, Any]:
+        """Recompute the agent mean Brier under a leakage-robustness *mode*.
+
+        PURE recompute over STORED cases — it never edits a stored score, never
+        touches calibration, never re-runs the judge, and WRITES NOTHING (a
+        robustness what-if must be freely repeatable with no side effects).
+
+        Modes:
+          * ``baseline``    — every scored case as-scored (the headline).
+          * ``filtered``    — DROP every content-flagged case (drop-all-flagged).
+          * ``worst_case``  — raise the Brier to AT LEAST 0.25 (the coin-flip floor;
+            it NEVER improves an already-worse case, so worst_case is a genuine
+            upper bound on our Brier under leakage) on every case belonging to a
+            QUESTION that accumulated >= :data:`WORST_CASE_FLAG_THRESHOLD` content
+            flags across its cases; all other cases keep their Brier.
+
+        Returns ``{baseline, filtered, worst_case, abs_delta, rel_delta}`` where
+        ``baseline``/``filtered``/``worst_case`` are mean-Brier dicts and the
+        deltas compare the REQUESTED mode against baseline. Always computes all
+        three means so deltas are available regardless of ``mode``.
+        """
+
+        if mode not in self._RESCORE_MODES:
+            raise ValidationError(
+                f"rescore mode must be one of {sorted(self._RESCORE_MODES)}, got {mode!r}"
+            )
+        cases = self.list_backtest_cases(run_id)
+        # Per-question flag tally. A dataset question recurs across rolling cutoffs
+        # as MULTIPLE backtest cases, each with its own internal question_id, so we
+        # group on the stable LOGICAL key (the dataset external_id stored in the
+        # question metadata) and fall back to the internal id when absent.
+        case_keys: dict[str, str] = {}
+        flags_by_question: dict[str, int] = defaultdict(int)
+        for case in cases:
+            key = self._backtest_case_question_key(case)
+            case_keys[case["id"]] = key
+            flags_by_question[key] += int(case.get("content_flag_count") or 0)
+        worst_case_questions = {
+            key
+            for key, count in flags_by_question.items()
+            if count >= WORST_CASE_FLAG_THRESHOLD
+        }
+
+        baseline_briers: list[float] = []
+        filtered_briers: list[float] = []
+        worst_briers: list[float] = []
+        for case in cases:
+            brier = case.get("score_brier")
+            if brier is None and case.get("score_record_id"):
+                brier = self.get_score(case["score_record_id"]).brier_score
+            if brier is None:
+                continue  # unscored case (e.g. no resolution) — not in any mean.
+            brier = float(brier)
+            baseline_briers.append(brier)
+            # filtered: drop the case entirely if it carries any content flag.
+            if int(case.get("content_flag_count") or 0) == 0:
+                filtered_briers.append(brier)
+            # worst_case: raise the Brier to AT LEAST the coin-flip floor for cases
+            # of a heavily-flagged question — never improving an already-worse case,
+            # so worst_case is a genuine UPPER bound on our Brier under leakage.
+            if case_keys.get(case["id"]) in worst_case_questions:
+                worst_briers.append(max(brier, BRIER_COIN_FLIP_FLOOR))
+            else:
+                worst_briers.append(brier)
+
+        baseline = self._rescore_brier_summary(baseline_briers)
+        filtered = self._rescore_brier_summary(filtered_briers)
+        worst_case = self._rescore_brier_summary(worst_briers)
+
+        chosen = {"baseline": baseline, "filtered": filtered, "worst_case": worst_case}[mode]
+        base_mean = baseline.get("mean_brier")
+        chosen_mean = chosen.get("mean_brier")
+        if base_mean is None or chosen_mean is None:
+            abs_delta = None
+            rel_delta = None
+        else:
+            abs_delta = chosen_mean - base_mean
+            rel_delta = (abs_delta / base_mean) if base_mean else None
+
+        return {
+            "run_id": run_id,
+            "mode": mode,
+            "worst_case_flag_threshold": WORST_CASE_FLAG_THRESHOLD,
+            "worst_case_question_count": len(worst_case_questions),
+            "baseline": baseline,
+            "filtered": filtered,
+            "worst_case": worst_case,
+            "abs_delta": abs_delta,
+            "rel_delta": rel_delta,
+        }
+
+    @staticmethod
+    def _rescore_brier_summary(briers: list[float]) -> dict[str, Any]:
+        return {
+            "count": len(briers),
+            "mean_brier": (sum(briers) / len(briers)) if briers else None,
+        }
+
+    def _backtest_case_question_key(self, case: dict[str, Any]) -> str:
+        """Stable LOGICAL-question key for per-question flag aggregation.
+
+        A dataset question that recurs across rolling cutoffs produces multiple
+        backtest cases, each with its own internal ``question_id``. Group them on
+        the dataset ``external_id`` carried in the question metadata so a question
+        with cases at several cutoffs accumulates ONE flag tally; fall back to the
+        internal id when no external id was supplied.
+        """
+
+        question_id = case.get("question_id")
+        if question_id:
+            try:
+                metadata = self.get_question(question_id).metadata or {}
+            except LedgerNotFoundError:
+                metadata = {}
+            external_id = metadata.get("external_id")
+            if external_id:
+                return f"ext:{external_id}"
+            return f"qid:{question_id}"
+        return f"case:{case['id']}"
+
+    def _build_leak_robustness_summary(
+        self,
+        run_id: str,
+        *,
+        content_flagged_cases: int,
+    ) -> dict[str, Any]:
+        """Assemble the read-only leak-judge summary for ``result_summary``.
+
+        Carries the three robustness re-scores, the honest true-leak-rate
+        back-out, and a graded ``leakage_material`` verdict that REPLACES the old
+        binary kill-switch: leakage is non-material iff the worst-case mean Brier
+        stays within :data:`LEAK_ROBUSTNESS_REL_TOLERANCE` (relative) of baseline.
+        """
+
+        from forecasting.leak_prevalence import (
+            LEAK_JUDGE_CALIBRATION,
+            estimate_true_leak_rate,
+        )
+
+        rescore = self.rescore_backtest_run(run_id, "worst_case")
+        case_count = int(rescore["baseline"].get("count") or 0)
+        prevalence = estimate_true_leak_rate(case_count, content_flagged_cases)
+
+        worst_rel = rescore.get("rel_delta")
+        # Non-material iff the worst-case mean Brier did not rise by more than the
+        # relative tolerance. A missing delta (no scored cases) fails OPEN to
+        # non-material rather than asserting harm we cannot measure.
+        leakage_material = bool(worst_rel is not None and worst_rel > LEAK_ROBUSTNESS_REL_TOLERANCE)
+
+        return {
+            "channel": "content_aware_judge",
+            "prompt_version": "leak-judge-v0",
+            "content_flagged_cases": content_flagged_cases,
+            "rescore": rescore,
+            "true_leak_rate": prevalence,
+            "calibration": LEAK_JUDGE_CALIBRATION,
+            "rel_tolerance": LEAK_ROBUSTNESS_REL_TOLERANCE,
+            "leakage_material": leakage_material,
+            "leakage_non_material": not leakage_material,
+        }
 
     def get_backtest_case(self, case_id: str) -> dict[str, Any]:
         with self._connect() as conn:
@@ -12737,6 +13027,9 @@ class ForecastLedger:
     def _row_to_backtest_case(self, row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)
         data["baseline_comparison_refs"] = json_loads(data["baseline_comparison_refs"], [])
+        # AIA P1.2 columns are optional on rows read from pre-migration DBs.
+        data["leakage_verdicts"] = json_loads(data.get("leakage_verdicts"), {})
+        data["content_flag_count"] = int(data.get("content_flag_count") or 0)
         return data
 
     def _row_to_benchmark_dataset(self, row: sqlite3.Row) -> dict[str, Any]:

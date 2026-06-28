@@ -123,6 +123,7 @@ def build_forecasting_evidence_status(
     min_agent_protocol_cases: int = DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
     min_external_source_families: int = DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
     include_complementarity: bool = False,
+    include_leak_robustness: bool = False,
 ) -> dict[str, Any]:
     """Summarize whether stored evidence can support live superiority claims.
 
@@ -304,10 +305,19 @@ def build_forecasting_evidence_status(
         except Exception:
             market_llm_complementarity = None
 
+    # AIA P1.2 — a READ-ONLY content-aware-leakage row aggregated from the
+    # per-run leak_judge summaries (present only on runs where the judge channel
+    # was opted in). It NEVER edits a forecast and NEVER takes down readiness;
+    # OPT-IN so the hot callers leave it None.
+    leak_robustness = None
+    if include_leak_robustness:
+        leak_robustness = _aggregate_leak_robustness(backtest_summaries)
+
     return {
         "verdict": "insufficient_live_evidence" if gaps else "benchmark_evidence_ready_live_claim_unproven",
         "can_claim_live_superforecasting": False,
         "market_llm_complementarity": market_llm_complementarity,
+        "leak_robustness": leak_robustness,
         "message": (
             "Stored evidence is not enough for a live superforecasting claim."
             if gaps
@@ -363,6 +373,41 @@ def build_forecasting_evidence_status(
             ],
             "agent_protocol_scored_count": agent_protocol_scored,
         },
+    }
+
+
+def _aggregate_leak_robustness(backtest_summaries: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate per-run content-aware leakage robustness (AIA P1.2).
+
+    Reads the ``leak_judge`` block that ``run_backtest_dataset`` writes into a
+    run's ``result_summary`` only when the judge channel was opted in. The
+    per-run ``leakage_material`` flag already encodes the
+    non-material-iff-worst-case-within-tolerance verdict that REPLACES the old
+    binary leakage kill-switch; here we just roll it up read-only.
+    """
+
+    leak_runs = [
+        summary["leak_judge"]
+        for summary in backtest_summaries
+        if isinstance(summary.get("leak_judge"), dict)
+    ]
+    if not leak_runs:
+        return {
+            "runs_with_judge": 0,
+            "any_material_leakage": False,
+            "all_non_material": True,
+            "total_content_flagged_cases": 0,
+        }
+    material_runs = [run for run in leak_runs if run.get("leakage_material")]
+    return {
+        "runs_with_judge": len(leak_runs),
+        "material_run_count": len(material_runs),
+        "any_material_leakage": bool(material_runs),
+        "all_non_material": not material_runs,
+        "total_content_flagged_cases": sum(
+            int(run.get("content_flagged_cases") or 0) for run in leak_runs
+        ),
+        "runs": leak_runs,
     }
 
 
