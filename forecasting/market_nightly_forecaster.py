@@ -48,6 +48,10 @@ from forecasting.market_nightly import (
 # the benchmark's value is BREADTH (many markets over time), not depth per market.
 DEFAULT_MAX_ITERATIONS = 20
 DEFAULT_TIMEOUT_SECONDS = 300
+# Minimum distinct bettors for a Manifold market to be an admissible study target:
+# below this the market is a thin/personal question, not an objective skill test or a
+# meaningful price baseline.
+MIN_MARKET_TRADERS = 8
 
 # This is the LIVE / future-resolving path, so search is LEGITIMATE (see module
 # docstring). "web" MUST be present so the agent researches the open question;
@@ -252,14 +256,36 @@ def build_informed_market_forecaster(
 # ── live open-market source (used by the CLI; NOT imported by the pure module) ──
 
 
-def _manifold_open_markets(*, limit: int) -> list[dict[str, Any]]:
+def _looks_personal(question: str) -> bool:
+    """Heuristic quality gate: a self-referential / personal / meta market that the
+    agent cannot research and whose price is just the creator's whim — e.g. "Will I
+    go to the gym this week?", "Will my novel be published?", "Will this market get
+    20 traders?". Excluded from the study so the sample is objective, researchable
+    real-world questions. Imperfect by design (documented as a sample limitation)."""
+
+    q = str(question or "").strip().lower()
+    if q.startswith(("will i ", "will my ", "will we ", "i'll ", "i will ", "am i ", "do i ")):
+        return True
+    if "this market" in q or "this question" in q:  # meta markets about themselves
+        return True
+    return " i'll " in q or " will i " in q
+
+
+def _manifold_open_markets(*, limit: int, min_traders: int = MIN_MARKET_TRADERS) -> list[dict[str, Any]]:
     """Fetch a batch of currently-OPEN Manifold binary markets as market dicts.
 
     Read-only. Reuses the existing Manifold adapter payload mapping; keeps only
     UNRESOLVED binary markets and maps each into the market-dict shape the pure
     sampler/record_pending consume (id, question, probability, close_time,
     resolution_criteria). The strictly-future-close foreknowledge filter is
-    applied later by :func:`forecasting.market_nightly.sample_open_markets`."""
+    applied later by :func:`forecasting.market_nightly.sample_open_markets`.
+
+    QUALITY GATE: Manifold is open-creation play-money, so its tail is dominated by
+    subjective *personal* markets ("Will I go to the gym this week?") that are neither
+    researchable skill tests nor meaningful price baselines. We keep only markets with
+    at least ``min_traders`` distinct bettors (``uniqueBettorCount``) — an objective,
+    liquid question — and carry the liquidity metadata (n_traders, volume) for the
+    study's sample-quality reporting."""
 
     from urllib.parse import urlencode
 
@@ -269,12 +295,14 @@ def _manifold_open_markets(*, limit: int) -> list[dict[str, Any]]:
     )
 
     api_base_url = "https://api.manifold.markets/v0"
+    # Fetch a wide batch (we filter hard on liquidity below) sorted soonest-close-first,
+    # so the survivors are both objective AND likely to resolve within the study window.
     query = urlencode(
         {
             "term": "",
             "filter": "open",
             "contractType": "BINARY",
-            "limit": min(max(int(limit), 1) * 4, 1000),
+            "limit": min(max(int(limit), 1) * 12, 1000),
             "sort": "close-date",
         }
     )
@@ -295,6 +323,18 @@ def _manifold_open_markets(*, limit: int) -> list[dict[str, Any]]:
             continue
         if market.probability is None or market.close_time is None:
             continue
+        try:
+            n_traders = int(row.get("uniqueBettorCount") or 0)
+        except (TypeError, ValueError):
+            n_traders = 0
+        if n_traders < int(min_traders):
+            continue  # quality gate: too thin to be an objective question / price baseline
+        if _looks_personal(market.question):
+            continue  # quality gate: self-referential / personal / meta market
+        try:
+            volume = float(row.get("volume") or 0.0)
+        except (TypeError, ValueError):
+            volume = 0.0
         out.append(
             {
                 "id": f"manifold:{market.market_id or market.slug or market.question}",
@@ -306,6 +346,8 @@ def _manifold_open_markets(*, limit: int) -> list[dict[str, Any]]:
                 "close_time": market.close_time,
                 "resolution_time": market.resolution_time,
                 "url": market.url,
+                "n_traders": n_traders,
+                "volume": volume,
             }
         )
     return out

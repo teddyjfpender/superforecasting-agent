@@ -279,3 +279,23 @@ def test_live_prompt_is_forward_and_encourages_search_not_backtest():
     assert "do not infer from later" not in blob
     assert "probability" in blob  # keeps the JSON schema parse_agent_protocol_response needs
     assert msgs[0]["role"] == "system" and msgs[1]["role"] == "user"
+
+
+def test_looks_personal_heuristic_excludes_self_referential_markets():
+    # Quality gate: Manifold's tail is personal/meta markets that are not researchable
+    # skill tests; the study samples only objective real-world questions.
+    from forecasting.market_nightly_forecaster import _looks_personal
+
+    for q in [
+        "Will I go to the gym this week?",
+        "Will my novel be published by mid-2027?",
+        "Will this market get 20 unique traders by June 29?",
+        "Will we hit our team OKR?",
+    ]:
+        assert _looks_personal(q), q
+    for q in [
+        "Will Canada qualify for the round of 16?",
+        "Will WTI crude be above $76 on June 30?",
+        "Will Serena Williams play singles at Wimbledon 2026?",
+    ]:
+        assert not _looks_personal(q), q
