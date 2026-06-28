@@ -25,7 +25,11 @@ proof. We forecast **open** prediction markets with a **search-enabled** agent, 
 probability and the de-vigged market price *at forecast time*, and score on resolution. The design is
 foreknowledge-proof by construction (we cannot fit to outcomes that do not yet exist) and the central
 question is whether informed, independent forecasts **(a)** diverge from the market (manufacture
-orthogonal signal) and **(b)** beat and complement it once resolved.
+orthogonal signal) and **(b)** beat and complement it once resolved. **Early result (n=39 live
+forecasts):** the agent diverges from the market by a **mean 11pp** (Pearson r **0.79** vs r≈1.0 for
+the market-visible agent that merely echoed), with substantive, search-grounded disagreements —
+**confirming (a)**, the necessary condition. Part **(b)** is the longitudinal resolved-set question,
+seeded and accruing as markets settle (≈ June 29–30 onward).
 
 ---
 
@@ -194,6 +198,24 @@ resolutions arrive.
 independent, substantive signal the market is not simply mirroring. The **sufficient** condition
 (that signal *beats/complements* the market) is the resolved-set analysis, which is longitudinal by
 construction. We continue to accrue samples and score on resolution.
+
+### Iteration 3 — 2026-06-28 · sample 2 folded in (n=39), orthogonality robust
+
+**Sample 2** (`--seed 2`, 19 recorded + 1 idempotent skip) brings the pooled live set to **n=39**.
+The orthogonality estimate is **stable under more data** — the independence is not a small-sample
+artifact:
+
+| metric | n=20 (sample 1) | **n=39 (pooled)** |
+|---|---|---|
+| mean \|Δp\| | 0.078 | **0.111** |
+| Pearson r(agent, market) | 0.92 | **0.79** |
+| diverge >5pp | 45% | 44% |
+| diverge >10pp | 25% | 28% |
+
+With more markets the agent's correlation to the price *falls* (0.92 → 0.79) and its mean independent
+move *rises* (7.8 → 11.1pp) — the signal strengthens, not regresses. **Scored: 0 / 39 resolved**
+(all pending; bulk resolve ≈ June 29–30). Sample 3 (`--seed 3`) is firing to push toward n≈58 for a
+solid orthogonality base while resolutions accrue.
 
 ---
 
