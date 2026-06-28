@@ -262,6 +262,7 @@ _LONG_HANDLERS = frozenset(
         "auth.start",
         "browser.manage",
         "cli.exec",
+        "forecast.bench",
         "forecast.calibration",
         "forecast.command",
         "forecast.onboard_commit",
@@ -3087,6 +3088,21 @@ def _(rid, params: dict) -> dict:
 
         ledger = ForecastLedger()  # one ledger for both scans (avoid a double schema-init)
         return _ok(rid, {"theses": build_thesis_summary(ledger=ledger), "factors": build_factor_summary(ledger=ledger)})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.bench")
+def _(rid, params: dict) -> dict:
+    # READ-ONLY ForecastBench backtest scoreboard: per-question agent vs de-vigged
+    # market-freeze Brier + the paired aggregate. Never mutates the ledger; backs
+    # the desk's separate "Bench" lens (it is NOT the live organic-forecast desk).
+    try:
+        from forecasting.dashboard import build_bench_scoreboard
+
+        limit = params.get("limit")
+        payload = build_bench_scoreboard(limit=int(limit) if limit is not None else None)
+        return _ok(rid, payload)
     except Exception as e:
         return _err(rid, 5008, str(e))
 

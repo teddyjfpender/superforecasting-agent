@@ -14,7 +14,16 @@ import type {
   ForecastWorkspaceResponse,
 } from '../gatewayTypes.js'
 
-export type DeskTabKind = 'thesis' | 'factor' | 'tag' | 'all'
+export type DeskTabKind = 'thesis' | 'factor' | 'tag' | 'bench' | 'all'
+
+/** True when a forecast is a ForecastBench backtest replay (domain isolation, with a
+ *  tag fallback) — these belong in the separate read-only "Bench" lens, NOT the live
+ *  organic-forecast list. Mirrors the gateway's `build_bench_scoreboard` selector. */
+export function isBenchForecast(item: ForecastWorkspaceItem): boolean {
+  if ((item.domain || '').trim().toLowerCase() === 'forecastbench') return true
+  const tags = (item.topics || []).map((t) => (t || '').trim().toLowerCase())
+  return tags.includes('bench') || tags.includes('forecastbench')
+}
 
 export interface DeskTab {
   /** stable key for selection/keying */
@@ -79,7 +88,18 @@ export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
     tabs.push({ key: `factor:${fa.id ?? fa.title}`, label: shortLensLabel(fa.title || 'Factor'), kind: 'factor', refId: fa.id, forecastIds: ids })
   }
 
-  // Tag/theme groups for the forecasts that belong to no thesis/factor.
+  // ForecastBench backtest replays are carved out FIRST so they never reach the
+  // tag/All buckets — the live desk shows only organic forecasts, and the bench
+  // questions surface ONLY under the read-only "Bench" lens (which renders the
+  // scoreboard from the `forecast.bench` RPC, not this id list). Membership ids
+  // are still carried so a `/forecast <id>` jump can find a bench question's tab.
+  const benchIds = forecasts
+    .map((f) => (grouped.has(f.id || '') ? '' : isBenchForecast(f) ? f.id || '' : ''))
+    .filter(Boolean)
+  benchIds.forEach((id) => grouped.add(id))
+
+  // Tag/theme groups for the forecasts that belong to no thesis/factor (and are
+  // not bench replays — those are already grouped out above).
   const buckets = new Map<string, string[]>()
   for (const f of forecasts) {
     const id = f.id || ''
@@ -94,7 +114,19 @@ export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
     .sort((a, b) => b.forecastIds.length - a.forecastIds.length || a.label.localeCompare(b.label))
   tabs.push(...tagTabs)
 
-  tabs.push({ key: 'all', label: 'All', kind: 'all', forecastIds: forecasts.map((f) => f.id || '').filter(Boolean) })
+  // The Bench lens sits just before the All catch-all. ForecastBench replays
+  // RESOLVE immediately, so they are NOT in the active workspace forecast list
+  // (benchIds is typically empty) — visibility keys off payload.benchCount, the
+  // count of domain=forecastbench questions of any status. The scoreboard loads
+  // from the forecast.bench RPC, not this id list, so empty forecastIds is fine.
+  if (benchIds.length || (payload.bench_count ?? 0) > 0) {
+    tabs.push({ key: 'bench', label: '◇ Bench', kind: 'bench', forecastIds: benchIds })
+  }
+
+  // The All catch-all excludes the carved-out bench replays (they are not organic
+  // live forecasts) but keeps every thesis/factor/tag member.
+  const allIds = forecasts.map((f) => f.id || '').filter((id) => id && !benchIds.includes(id))
+  tabs.push({ key: 'all', label: 'All', kind: 'all', forecastIds: allIds })
   return tabs
 }
 

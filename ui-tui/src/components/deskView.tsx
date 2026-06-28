@@ -5,6 +5,8 @@ import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastAnalystNote,
+  ForecastBenchResponse,
+  ForecastBenchRow,
   ForecastFactor,
   ForecastQuestionPacketResponse,
   ForecastThesis,
@@ -185,11 +187,42 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
   }, [initialId])
 
-  // The ordered lens tabs (theses → factors → #tag-groups → All).
+  // The ordered lens tabs (theses → factors → #tag-groups → Bench → All).
   const tabs = useMemo<DeskTab[]>(() => (payload ? buildDeskTabs(payload) : []), [payload])
   const activeTab = tabs[Math.min(tab, Math.max(0, tabs.length - 1))]
   const refThesis = tabRefThesis(activeTab, theses)
   const refFactor = tabRefFactor(activeTab, factors)
+
+  // The Bench lens is a separate, read-only scoreboard surface — NOT the live
+  // organic-forecast list. It loads its own `forecast.bench` payload (cached so
+  // re-entry is instant) and renders a distinct agent-vs-market Brier table.
+  const onBench = activeTab?.kind === 'bench'
+  const cachedBench = getOverlayCache<ForecastBenchResponse>('forecast.bench')
+  const [bench, setBench] = useState<ForecastBenchResponse | null>(() => cachedBench ?? null)
+  const [benchLoading, setBenchLoading] = useState(false)
+
+  useEffect(() => {
+    if (!onBench) return
+    if (!cachedBench) setBenchLoading(true)
+    let cancelled = false
+    gw.request<unknown>('forecast.bench', {})
+      .then(raw => {
+        if (cancelled) return
+        const result = asRpcResult<ForecastBenchResponse>(raw)
+        if (result) {
+          setOverlayCache('forecast.bench', result)
+          setBench(result)
+        }
+        setBenchLoading(false)
+      })
+      .catch(() => {
+        if (!cancelled) setBenchLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onBench, gw])
 
   // The forecasts under the active tab, ranked by the `/` filter.
   const tabItems = useMemo(() => forecastsForTab(activeTab, items), [activeTab, items])
@@ -445,7 +478,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       return onClose()
     }
 
-    if (ch === '/') {
+    if (ch === '/' && !onBench) {
       setQuery('')
 
       return setFiltering(true)
@@ -453,6 +486,24 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
     if (ch === 'r') {
       return load(true)
+    }
+
+    if (key.tab || key.rightArrow) {
+      return switchTab(tab + 1)
+    }
+
+    if (key.leftArrow) {
+      return switchTab(tab - 1)
+    }
+
+    // The Bench lens is a read-only scoreboard: no per-row selection, modal, update,
+    // settings, or filter — only tab-switching + refresh apply. Trap the rest here.
+    if (onBench) {
+      if (ch === 'h') {
+        return setFlash('◇ Bench: read-only ForecastBench scoreboard · Tab/←→ lens · r refresh · q close')
+      }
+
+      return
     }
 
     if (ch === 'u') {
@@ -469,14 +520,6 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
     if (ch === 'h') {
       return setFlash('↑↓ select · Tab/←→ lens · Enter open · / filter · q close')
-    }
-
-    if (key.tab || key.rightArrow) {
-      return switchTab(tab + 1)
-    }
-
-    if (key.leftArrow) {
-      return switchTab(tab - 1)
     }
 
     if (key.return) {
@@ -719,22 +762,30 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         { k: 'g/G', label: 'Top/Bot' },
         { k: 'Esc', label: 'Close', run: () => setModalOpen(false) }
       ]
-    : [
-        { k: '↑↓', label: 'Select' },
-        { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
-        { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
-        { k: 'u', label: 'Update', run: () => runUpdate() },
-        { k: 's', label: 'Settings', run: () => openSettings() },
-        { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
-        { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · u update · s settings · / filter · q close') },
-        { k: 'q', label: 'Close', run: onClose }
-      ]
+    : onBench
+      ? [
+          { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
+          { k: 'r', label: 'Refresh', run: () => { setBenchLoading(true); gw.request<unknown>('forecast.bench', {}).then(raw => { const r = asRpcResult<ForecastBenchResponse>(raw); if (r) { setOverlayCache('forecast.bench', r); setBench(r) } setBenchLoading(false) }).catch(() => setBenchLoading(false)) } },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
+      : [
+          { k: '↑↓', label: 'Select' },
+          { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
+          { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
+          { k: 'u', label: 'Update', run: () => runUpdate() },
+          { k: 's', label: 'Settings', run: () => openSettings() },
+          { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
+          { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · u update · s settings · / filter · q close') },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
 
   const footerHint = filtering
     ? `filter: ${truncate(query, Math.max(8, cols - 30))}▌  · ⏎ apply · Esc clear`
     : modalOpen
       ? '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close'
-      : '↑↓/jk select · Tab/←→ lens · ⏎ open · u update · s settings · / filter · r refresh · h help · q close'
+      : onBench
+        ? '◇ Bench — read-only ForecastBench scoreboard · Tab/←→ lens · r refresh · q close'
+        : '↑↓/jk select · Tab/←→ lens · ⏎ open · u update · s settings · / filter · r refresh · h help · q close'
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -754,7 +805,13 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           return) so the still-visible tabs/rows can't leak interaction — the
           keyboard is already trapped by the `if (modalOpen) return` in useInput. */}
       <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen) switchTab(i) }} t={t} tabs={tabs} width={width} />
-      {wide ? (
+      {onBench ? (
+        // The Bench lens replaces the list+panel with its own read-only scoreboard
+        // — bench questions never mix into the live organic-forecast list.
+        <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
+          <BenchScoreboard bench={bench} loading={benchLoading} rows={visibleRows} t={t} width={width} />
+        </Box>
+      ) : wide ? (
         <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={0}>
           <Box flexDirection="column" flexShrink={0} width={listWidth}>
             {list}
@@ -1472,6 +1529,126 @@ function DeskAnalystLog({ notes, t }: { notes: ForecastAnalystNote[]; t: Theme }
           </Box>
         </Fragment>
       ))}
+    </Box>
+  )
+}
+
+// ── Bench lens: read-only ForecastBench scoreboard ───────────────────────────
+// A visually-distinct (◇ diamond marker, dedicated aggregate banner) backtest
+// scoreboard pairing the agent's closed-book forecast against the de-vigged
+// market freeze price per resolved ForecastBench question. NOT the live desk —
+// it renders the `forecast.bench` RPC payload, never the organic question list.
+
+const benchBrierText = (value: null | number | undefined): string =>
+  value === null || value === undefined || !finite(value) ? '—' : value.toFixed(3)
+
+// EDGE = market Brier − agent Brier; positive (green) = the agent beat the
+// honest market freeze on Brier. Neutral when either leg is missing.
+const benchEdgeCell = (edge: null | number | undefined, t: Theme): { color: string; text: string } => {
+  if (edge === null || edge === undefined || !finite(edge)) return { color: t.color.muted, text: '—' }
+  const sign = edge > 0 ? '+' : ''
+  return { color: Math.abs(edge) < 0.0005 ? t.color.muted : edge > 0 ? t.color.ok : t.color.error, text: `${sign}${edge.toFixed(3)}` }
+}
+
+function BenchScoreboard({
+  bench,
+  loading,
+  rows: termRows,
+  t,
+  width
+}: {
+  bench: ForecastBenchResponse | null
+  loading: boolean
+  rows: number
+  t: Theme
+  width: number
+}) {
+  const rows = bench?.rows ?? []
+  const agg = bench?.aggregate ?? {}
+  const avail = Math.max(40, width - 2)
+
+  if (loading && !rows.length) {
+    return <Text color={t.color.muted}>Loading ForecastBench scoreboard…</Text>
+  }
+
+  if (!rows.length) {
+    return (
+      <Box flexDirection="column" flexGrow={1}>
+        <Text color={t.color.accent} wrap="truncate-end">
+          ◇ ForecastBench scoreboard
+        </Text>
+        <Box marginTop={1}>
+          <Text color={t.color.muted} wrap="wrap">
+            No ForecastBench backtests yet. Ingest a dataset (forecast ingest forecastbench …) to
+            populate the agent-vs-market Brier board.
+          </Text>
+        </Box>
+      </Box>
+    )
+  }
+
+  // Fixed numeric columns; SOURCE + QUESTION take the slack. Widths mirror the
+  // dense desk table style (right-aligned numerics, left title).
+  const cAgent = 6
+  const cMarket = 7
+  const cOut = 4
+  const cBrier = 8
+  const cEdge = 7
+  const cSrc = 9
+  const numericW = cAgent + 1 + cMarket + 1 + cOut + 1 + cBrier + 1 + cBrier + 1 + cEdge + 1 + cSrc + 1
+  const qW = Math.max(16, avail - numericW - 2)
+
+  const edge = benchEdgeCell(agg.mean_brier_edge, t)
+  const visibleRows = Math.max(4, termRows - 6)
+  const shown = rows.slice(0, visibleRows)
+
+  return (
+    <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0} overflow="hidden">
+      {/* Aggregate banner — the glanceable verdict for the whole board. */}
+      <Box flexDirection="column" marginBottom={1}>
+        <Text wrap="truncate-end">
+          <Text bold color={t.color.accent}>
+            ◇ ForecastBench
+          </Text>
+          <Text color={t.color.muted}>{`   ${bench?.count ?? rows.length} questions · ${bench?.resolved_count ?? 0} resolved · ${agg.n ?? 0} scored`}</Text>
+        </Text>
+        <Text wrap="truncate-end">
+          <Text color={t.color.muted}>agent Brier </Text>
+          <Text bold color={t.color.primary}>{benchBrierText(agg.mean_agent_brier)}</Text>
+          <Text color={t.color.muted}>{'  vs  market '}</Text>
+          <Text bold color={t.color.text}>{benchBrierText(agg.mean_market_brier)}</Text>
+          <Text color={t.color.muted}>{'   edge '}</Text>
+          <Text bold color={edge.color}>{edge.text}</Text>
+          <Text color={t.color.muted}>{edge.text === '—' ? '' : edge.color === t.color.ok ? ' (agent ahead)' : edge.color === t.color.error ? ' (market ahead)' : ''}</Text>
+        </Text>
+      </Box>
+
+      {/* Column header + rule. */}
+      <Text bold color={semantics(t).heading} wrap="truncate-end">
+        {`${pad('QUESTION', qW, 'left')} ${pad('SRC', cSrc, 'left')} ${pad('AGENT', cAgent, 'right')} ${pad('MARKET', cMarket, 'right')} ${pad('OUT', cOut, 'right')} ${pad('A.BRIER', cBrier, 'right')} ${pad('M.BRIER', cBrier, 'right')} ${pad('EDGE', cEdge, 'right')}`}
+      </Text>
+      <Text color={semantics(t).rule}>{'─'.repeat(avail)}</Text>
+
+      {shown.map((row: ForecastBenchRow) => {
+        const e = benchEdgeCell(row.brier_edge, t)
+        const outText = !row.resolved || row.outcome === null || row.outcome === undefined ? '—' : row.outcome >= 0.5 ? '1' : '0'
+        const outColor = outText === '1' ? t.color.ok : outText === '0' ? t.color.error : t.color.muted
+        return (
+          <Text key={row.id} wrap="truncate-end">
+            <Text color={t.color.label}>{pad(truncate(row.title ?? row.id, qW), qW, 'left')}</Text>
+            <Text color={t.color.muted}>{` ${pad(truncate(row.source ?? '—', cSrc), cSrc, 'left')}`}</Text>
+            <Text color={t.color.text}>{` ${pad(row.agent_probability_display ?? '—', cAgent, 'right')}`}</Text>
+            <Text color={t.color.muted}>{` ${pad(row.market_probability_display ?? '—', cMarket, 'right')}`}</Text>
+            <Text color={outColor}>{` ${pad(outText, cOut, 'right')}`}</Text>
+            <Text color={t.color.text}>{` ${pad(benchBrierText(row.agent_brier), cBrier, 'right')}`}</Text>
+            <Text color={t.color.muted}>{` ${pad(benchBrierText(row.market_brier), cBrier, 'right')}`}</Text>
+            <Text bold color={e.color}>{` ${pad(e.text, cEdge, 'right')}`}</Text>
+          </Text>
+        )
+      })}
+      {rows.length > shown.length ? (
+        <Text color={t.color.muted}>{`  ${shown.length}/${rows.length}`}</Text>
+      ) : null}
     </Box>
   )
 }

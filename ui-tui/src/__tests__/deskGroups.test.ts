@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDeskTabs, cleanTagLabel, forecastsForTab, forecastTheme, shortLensLabel, tabWindow } from '../lib/deskGroups.js'
+import { buildDeskTabs, cleanTagLabel, forecastsForTab, forecastTheme, isBenchForecast, shortLensLabel, tabWindow } from '../lib/deskGroups.js'
 
 const item = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, ...extra })
 
@@ -56,6 +56,49 @@ describe('deskGroups', () => {
     const t = buildDeskTabs({ forecasts: [] } as never)
     expect(t).toHaveLength(1)
     expect(t[0].kind).toBe('all')
+  })
+})
+
+describe('bench lens', () => {
+  it('isBenchForecast matches domain forecastbench OR bench/forecastbench tags', () => {
+    expect(isBenchForecast({ domain: 'forecastbench' } as never)).toBe(true)
+    expect(isBenchForecast({ domain: 'markets', topics: ['bench'] } as never)).toBe(true)
+    expect(isBenchForecast({ domain: 'markets', topics: ['forecastbench'] } as never)).toBe(true)
+    expect(isBenchForecast({ domain: 'politics', topics: ['elections'] } as never)).toBe(false)
+  })
+
+  it('carves bench forecasts into a separate Bench tab, before All, and OUT of All/tag groups', () => {
+    const benchPayload = {
+      forecasts: [
+        item('q1', { topics: ['Politics'] }),
+        item('b1', { domain: 'forecastbench', topics: ['manifold'] }),
+        item('b2', { domain: 'markets', topics: ['bench'] }), // tag fallback
+        item('q5', { topics: ['Tech'] }),
+      ],
+    } as never
+    const t = buildDeskTabs(benchPayload)
+    const kinds = t.map((x) => x.kind)
+    // Bench sits just before the final All catch-all.
+    expect(kinds[kinds.length - 2]).toBe('bench')
+    expect(kinds[kinds.length - 1]).toBe('all')
+
+    const bench = t.find((x) => x.kind === 'bench')!
+    expect(bench.forecastIds.sort()).toEqual(['b1', 'b2'])
+    expect(bench.label).toContain('Bench')
+
+    // Bench questions never appear in the tag groups…
+    const tagged = t.filter((x) => x.kind === 'tag').flatMap((x) => x.forecastIds)
+    expect(tagged).not.toContain('b1')
+    expect(tagged).not.toContain('b2')
+
+    // …nor in the All catch-all (live desk = organic forecasts only).
+    const all = t[t.length - 1]
+    expect(all.forecastIds).toEqual(['q1', 'q5'])
+  })
+
+  it('no Bench tab when no bench forecasts exist', () => {
+    const t = buildDeskTabs({ forecasts: [item('q1', { topics: ['Tech'] })] } as never)
+    expect(t.some((x) => x.kind === 'bench')).toBe(false)
   })
 })
 

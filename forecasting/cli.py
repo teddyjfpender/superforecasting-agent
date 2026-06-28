@@ -484,6 +484,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     status_parser.add_argument("--json", action="store_true", help="Emit machine-readable status JSON")
     status_parser.set_defaults(_forecast_handler=_cmd_status)
 
+    bench_parser = forecast_sub.add_parser(
+        "bench",
+        help="Show the read-only ForecastBench backtest scoreboard (agent vs market Brier)",
+    )
+    bench_parser.add_argument("--limit", type=int, default=None, help="Cap the number of rows shown")
+    bench_parser.add_argument("--json", action="store_true", help="Emit the machine-readable scoreboard JSON")
+    bench_parser.set_defaults(_forecast_handler=_cmd_bench)
+
     doctor_parser = forecast_sub.add_parser(
         "doctor",
         help="Run operational, pilot, and readiness checks",
@@ -3171,6 +3179,58 @@ def _cmd_status(args: argparse.Namespace) -> None:
         f"imported={payload['imported_benchmark_count']}"
     )
     print(f"extensions: {payload['extension_count']}")
+
+
+def _cmd_bench(args: argparse.Namespace) -> None:
+    """Print the read-only ForecastBench backtest scoreboard (agent vs market Brier)."""
+
+    from forecasting.dashboard import build_bench_scoreboard
+
+    ledger = _ledger(args)
+    payload = build_bench_scoreboard(ledger=ledger, limit=args.limit)
+    if args.json:
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+
+    rows = payload["rows"]
+    aggregate = payload["aggregate"]
+    print(PRODUCT_NAME)
+    print(
+        f"bench: questions={payload['count']}  resolved={payload['resolved_count']}  "
+        f"scored_pairs={aggregate['n']}"
+    )
+    if not rows:
+        print("no ForecastBench questions found (ingest a forecastbench dataset first)")
+        return
+
+    header = (
+        f"{'QUESTION':<40} {'SRC':<10} {'AGENT':>7} {'MARKET':>7} "
+        f"{'OUT':>4} {'A.BRIER':>8} {'M.BRIER':>8} {'EDGE':>7}"
+    )
+    print(header)
+    print("-" * len(header))
+    for row in rows:
+        title = (row.get("title") or row.get("id") or "")[:39]
+        source = (row.get("source") or "-")[:10]
+        outcome = row.get("outcome")
+        out_text = "-" if outcome is None else ("1" if outcome >= 0.5 else "0")
+        print(
+            f"{title:<40} {source:<10} "
+            f"{row.get('agent_probability_display') or '-':>7} "
+            f"{row.get('market_probability_display') or '-':>7} "
+            f"{out_text:>4} "
+            f"{_format_metric(row.get('agent_brier')):>8} "
+            f"{_format_metric(row.get('market_brier')):>8} "
+            f"{_format_delta(row.get('brier_edge')):>7}"
+        )
+    print("-" * len(header))
+    print(
+        f"aggregate: n={aggregate['n']}  "
+        f"mean_agent_brier={_format_metric(aggregate['mean_agent_brier'])}  "
+        f"mean_market_brier={_format_metric(aggregate['mean_market_brier'])}  "
+        f"edge={_format_delta(aggregate['mean_brier_edge'])} "
+        f"(positive = agent beat the market freeze)"
+    )
 
 
 def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
@@ -13141,6 +13201,7 @@ def _apply_backtest_probability_source(
         raise SystemExit("agent-protocol probability source requires an agent runner")
 
     transformed: list[dict[str, Any]] = []
+    agent_skipped = 0
     for index, case in enumerate(cases):
         next_case = dict(case)
         if source == "naive":
@@ -13169,9 +13230,14 @@ def _apply_backtest_probability_source(
                     runner=agent_runner,
                     case_index=index,
                 )
-            except ValueError as exc:
+            except Exception as exc:  # noqa: BLE001 — a single bad/timed-out response
+                # must NOT abort the whole backtest. Over a long run a flaky endpoint
+                # would otherwise lose every case (the run never reaches persistence).
+                # Skip this case + continue; the run still persists what succeeded.
                 case_id = case.get("id") or f"index:{index}"
-                raise SystemExit(f"agent-protocol response invalid for {case_id}: {exc}") from exc
+                agent_skipped += 1
+                print(f"⚠️  skipped {case_id}: agent response invalid/failed ({type(exc).__name__}: {exc})")
+                continue
             next_case["probability"] = result["probability"]
             next_case["confidence"] = result.get("confidence")
             next_case["method"] = AGENT_PROTOCOL_METHOD
@@ -13197,6 +13263,11 @@ def _apply_backtest_probability_source(
                 "baselines with deterministic weights."
             )
         transformed.append(next_case)
+    if agent_skipped:
+        print(
+            f"⚠️  {agent_skipped} case(s) skipped on invalid/failed agent responses; "
+            f"persisting {len(transformed)} scored case(s)."
+        )
     return transformed
 
 

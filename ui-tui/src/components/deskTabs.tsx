@@ -11,7 +11,7 @@ import type { Theme } from '../theme.js'
 function labelFor(tab: DeskTab, max = 22): string {
   let name = tab.label
   if (name.length > max) name = `${name.slice(0, max - 1)}…`
-  const count = tab.kind === 'tag' || tab.kind === 'all' ? ` ${tab.forecastIds.length}` : ''
+  const count = tab.kind === 'tag' || tab.kind === 'all' || tab.kind === 'bench' ? ` ${tab.forecastIds.length}` : ''
   return `${name}${count}`
 }
 

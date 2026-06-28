@@ -802,8 +802,52 @@ export interface ForecastQuestionPacketAssumption {
   text?: string
 }
 
+// ── ForecastBench scoreboard (read-only backtest results) ────────────────────
+// Backs the desk's separate "Bench" lens via the `forecast.bench` RPC. Each row
+// pairs the agent's closed-book forecast against the de-vigged market freeze price
+// for a resolved ForecastBench question, with agent + market Brier; the aggregate
+// is the mean agent Brier vs mean market Brier over the rows where both compute.
+// This is NOT the live organic-forecast desk — it never mixes into the question list.
+export interface ForecastBenchRow {
+  id: string
+  title?: string
+  source?: null | string
+  domain?: null | string
+  topics?: string[]
+  as_of?: null | string
+  resolved_at?: null | string
+  agent_probability?: null | number
+  agent_probability_display?: string
+  market_probability?: null | number
+  market_probability_display?: string
+  outcome?: null | number // 0.0 / 1.0 once resolved
+  outcome_label?: null | string
+  resolved?: boolean
+  agent_brier?: null | number
+  market_brier?: null | number
+  brier_edge?: null | number // positive = agent beat the market freeze
+}
+
+export interface ForecastBenchAggregate {
+  n?: number
+  mean_agent_brier?: null | number
+  mean_market_brier?: null | number
+  mean_brier_edge?: null | number
+}
+
+export interface ForecastBenchResponse {
+  product?: string
+  generated_at?: string
+  count?: number
+  resolved_count?: number
+  rows?: ForecastBenchRow[]
+  aggregate?: ForecastBenchAggregate
+  output?: string
+}
+
 export interface ForecastWorkspaceResponse {
   active_count?: number
+  bench_count?: number
   closing_soon_count?: number
   factor_count?: number
   factors?: ForecastFactor[]
