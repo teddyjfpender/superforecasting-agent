@@ -1,0 +1,159 @@
+{
+  "records": [
+    {
+      "qid": "fq_8318c4955fc8",
+      "title": "Top car company licenses Tesla autopilot by mid 2026 for US markets",
+      "agent_p": 0.008,
+      "market_p": 0.07196074169093519,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6785b61e87c1",
+      "title": "Bitcoin $170K by mid 2026?",
+      "agent_p": 0.0004,
+      "market_p": 0.010000000000000009,
+      "outcome": null
+    },
+    {
+      "qid": "fq_1222051dd25b",
+      "title": "Will a Chinese AI model rank in the top 10 on the LMArena Text leaderboard on August 1?",
+      "agent_p": 0.82,
+      "market_p": 0.7436793012175716,
+      "outcome": null
+    },
+    {
+      "qid": "fq_1a8b5e2423b7",
+      "title": "CR7 VS Messi in the 2026 FIFA World Cup?",
+      "agent_p": 0.03,
+      "market_p": 0.11024954603712477,
+      "outcome": null
+    },
+    {
+      "qid": "fq_93543a525d6b",
+      "title": "Gold price above 4,750.00 in June 2026",
+      "agent_p": 0.0024,
+      "market_p": 0.004796566964053212,
+      "outcome": null
+    },
+    {
+      "qid": "fq_e15906e588ef",
+      "title": "Will Anthropic restore access to Fable 5 for US customers by the end of June?",
+      "agent_p": 0.42,
+      "market_p": 0.1555921837245685,
+      "outcome": null
+    },
+    {
+      "qid": "fq_f8bc5d8fb06f",
+      "title": "Will the S&P500 close at 7650.00 or higher in June 2026?",
+      "agent_p": 0.02,
+      "market_p": 0.2958535918416789,
+      "outcome": null
+    },
+    {
+      "qid": "fq_bc784112e3e7",
+      "title": "Will OpenAI release a \"Search\" feature that replaces ChatGPT's default interface before July 1, 2026?",
+      "agent_p": 0.031,
+      "market_p": 0.02225318552148741,
+      "outcome": null
+    },
+    {
+      "qid": "fq_930b9212c28f",
+      "title": "Xi JinPing visits USA before July 31?",
+      "agent_p": 0.019,
+      "market_p": 0.041543576121016855,
+      "outcome": null
+    },
+    {
+      "qid": "fq_b7a42a42e9e1",
+      "title": "Will the Justice Department win its antitrust suit against Google?",
+      "agent_p": 0.36,
+      "market_p": 0.1347280154793335,
+      "outcome": null
+    },
+    {
+      "qid": "fq_121d4b5f7591",
+      "title": "Will a European Union member boycott the United States portion of the 2026 World Cup?",
+      "agent_p": 0.018,
+      "market_p": 0.06137934075024288,
+      "outcome": null
+    },
+    {
+      "qid": "fq_99094966fc9a",
+      "title": "Will the US-Iran ceasefire be formally declared ended by US or Iran before July 31, 2026?",
+      "agent_p": 0.53,
+      "market_p": 0.28999999999999954,
+      "outcome": null
+    },
+    {
+      "qid": "fq_df7f27e2c578",
+      "title": "Silver price above 90.000 in June 2026",
+      "agent_p": 0.009,
+      "market_p": 0.010053025240130482,
+      "outcome": null
+    },
+    {
+      "qid": "fq_664c8d1cc438",
+      "title": "Will the Tesla \"Redwood\" be available for purchase and delivery by June 30, 2026?",
+      "agent_p": 0.03,
+      "market_p": 0.009999999999999997,
+      "outcome": null
+    },
+    {
+      "qid": "fq_9c850b91ef6f",
+      "title": "Will Fed (Kevin Warsh) cut interest rates by July 2026?",
+      "agent_p": 0.006,
+      "market_p": 0.016089755432727233,
+      "outcome": null
+    },
+    {
+      "qid": "fq_1732db1e4cb9",
+      "title": "Will Iran officially announce a blockade/closure of the Strait of Hormuz for more than 48 consecutive hours by July 2026",
+      "agent_p": 0.93,
+      "market_p": 0.8591707041241032,
+      "outcome": null
+    },
+    {
+      "qid": "fq_d33fd78a6f0e",
+      "title": "Ashwin returns to US by Aug 19th 2026?",
+      "agent_p": 0.58,
+      "market_p": 0.7,
+      "outcome": null
+    },
+    {
+      "qid": "fq_c73e2c81dfa0",
+      "title": "Will Thomas Tuchel survive the 2026 World Cup?",
+      "agent_p": 0.73,
+      "market_p": 0.7328631996214999,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6ca4aa77eb32",
+      "title": "Will Curacao make it to the next round in the 2026 FIFA World Cup?",
+      "agent_p": 0.005,
+      "market_p": 0.010000000000000054,
+      "outcome": null
+    },
+    {
+      "qid": "fq_feccdd77926b",
+      "title": "Will clued-in people be talking about ASI-Arch as a significant inflection point in July 2026?",
+      "agent_p": 0.13,
+      "market_p": 0.10390544057018,
+      "outcome": null
+    }
+  ],
+  "report": {
+    "n_total": 20,
+    "orthogonality": {
+      "n": 20,
+      "mean_abs_logit_gap": 1.0816738549761906,
+      "median_abs_logit_gap": 0.9010890527363253,
+      "mean_abs_prob_gap": 0.0784330256531083,
+      "pearson_r_agent_vs_market": 0.9215334853532346,
+      "frac_diverge_gt_0.05": 0.45,
+      "frac_diverge_gt_0.10": 0.25
+    },
+    "scored": {
+      "n_resolved": 0
+    }
+  }
+}

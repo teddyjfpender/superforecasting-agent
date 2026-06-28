@@ -1,0 +1,292 @@
+{
+  "records": [
+    {
+      "qid": "fq_8318c4955fc8",
+      "title": "Top car company licenses Tesla autopilot by mid 2026 for US markets",
+      "agent_p": 0.008,
+      "market_p": 0.07196074169093519,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6785b61e87c1",
+      "title": "Bitcoin $170K by mid 2026?",
+      "agent_p": 0.0004,
+      "market_p": 0.010000000000000009,
+      "outcome": null
+    },
+    {
+      "qid": "fq_1222051dd25b",
+      "title": "Will a Chinese AI model rank in the top 10 on the LMArena Text leaderboard on August 1?",
+      "agent_p": 0.82,
+      "market_p": 0.7436793012175716,
+      "outcome": null
+    },
+    {
+      "qid": "fq_1a8b5e2423b7",
+      "title": "CR7 VS Messi in the 2026 FIFA World Cup?",
+      "agent_p": 0.03,
+      "market_p": 0.11024954603712477,
+      "outcome": null
+    },
+    {
+      "qid": "fq_93543a525d6b",
+      "title": "Gold price above 4,750.00 in June 2026",
+      "agent_p": 0.0024,
+      "market_p": 0.004796566964053212,
+      "outcome": null
+    },
+    {
+      "qid": "fq_e15906e588ef",
+      "title": "Will Anthropic restore access to Fable 5 for US customers by the end of June?",
+      "agent_p": 0.42,
+      "market_p": 0.1555921837245685,
+      "outcome": null
+    },
+    {
+      "qid": "fq_f8bc5d8fb06f",
+      "title": "Will the S&P500 close at 7650.00 or higher in June 2026?",
+      "agent_p": 0.02,
+      "market_p": 0.2958535918416789,
+      "outcome": null
+    },
+    {
+      "qid": "fq_bc784112e3e7",
+      "title": "Will OpenAI release a \"Search\" feature that replaces ChatGPT's default interface before July 1, 2026?",
+      "agent_p": 0.031,
+      "market_p": 0.02225318552148741,
+      "outcome": null
+    },
+    {
+      "qid": "fq_930b9212c28f",
+      "title": "Xi JinPing visits USA before July 31?",
+      "agent_p": 0.019,
+      "market_p": 0.041543576121016855,
+      "outcome": null
+    },
+    {
+      "qid": "fq_b7a42a42e9e1",
+      "title": "Will the Justice Department win its antitrust suit against Google?",
+      "agent_p": 0.36,
+      "market_p": 0.1347280154793335,
+      "outcome": null
+    },
+    {
+      "qid": "fq_121d4b5f7591",
+      "title": "Will a European Union member boycott the United States portion of the 2026 World Cup?",
+      "agent_p": 0.018,
+      "market_p": 0.06137934075024288,
+      "outcome": null
+    },
+    {
+      "qid": "fq_99094966fc9a",
+      "title": "Will the US-Iran ceasefire be formally declared ended by US or Iran before July 31, 2026?",
+      "agent_p": 0.53,
+      "market_p": 0.28999999999999954,
+      "outcome": null
+    },
+    {
+      "qid": "fq_df7f27e2c578",
+      "title": "Silver price above 90.000 in June 2026",
+      "agent_p": 0.009,
+      "market_p": 0.010053025240130482,
+      "outcome": null
+    },
+    {
+      "qid": "fq_664c8d1cc438",
+      "title": "Will the Tesla \"Redwood\" be available for purchase and delivery by June 30, 2026?",
+      "agent_p": 0.03,
+      "market_p": 0.009999999999999997,
+      "outcome": null
+    },
+    {
+      "qid": "fq_9c850b91ef6f",
+      "title": "Will Fed (Kevin Warsh) cut interest rates by July 2026?",
+      "agent_p": 0.006,
+      "market_p": 0.016089755432727233,
+      "outcome": null
+    },
+    {
+      "qid": "fq_1732db1e4cb9",
+      "title": "Will Iran officially announce a blockade/closure of the Strait of Hormuz for more than 48 consecutive hours by July 2026",
+      "agent_p": 0.93,
+      "market_p": 0.8591707041241032,
+      "outcome": null
+    },
+    {
+      "qid": "fq_d33fd78a6f0e",
+      "title": "Ashwin returns to US by Aug 19th 2026?",
+      "agent_p": 0.58,
+      "market_p": 0.7,
+      "outcome": null
+    },
+    {
+      "qid": "fq_c73e2c81dfa0",
+      "title": "Will Thomas Tuchel survive the 2026 World Cup?",
+      "agent_p": 0.73,
+      "market_p": 0.7328631996214999,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6ca4aa77eb32",
+      "title": "Will Curacao make it to the next round in the 2026 FIFA World Cup?",
+      "agent_p": 0.005,
+      "market_p": 0.010000000000000054,
+      "outcome": null
+    },
+    {
+      "qid": "fq_feccdd77926b",
+      "title": "Will clued-in people be talking about ASI-Arch as a significant inflection point in July 2026?",
+      "agent_p": 0.13,
+      "market_p": 0.10390544057018,
+      "outcome": null
+    },
+    {
+      "qid": "fq_0f499ef3ab74",
+      "title": "5 currently elected top level Republican politicians will make race and IQ talking points before July 2026",
+      "agent_p": 0.07,
+      "market_p": 0.17809311729375604,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6b88622434fd",
+      "title": "Will monsoon reach  Bihar by June 30, 2026?",
+      "agent_p": 0.97,
+      "market_p": 0.96,
+      "outcome": null
+    },
+    {
+      "qid": "fq_44b76b6a3ab9",
+      "title": "Will a stage at the 2026 Tour de France be cut short due to pro-Palestine protests?",
+      "agent_p": 0.22,
+      "market_p": 0.2243908644561768,
+      "outcome": null
+    },
+    {
+      "qid": "fq_dae01cedc742",
+      "title": "Will the US and Iran jointly announce a nuclear framework agreement by June 30, 2026?",
+      "agent_p": 0.97,
+      "market_p": 0.047298387098305215,
+      "outcome": null
+    },
+    {
+      "qid": "fq_e5b8a68801a5",
+      "title": "Masters become a closed league before July?",
+      "agent_p": 0.04,
+      "market_p": 0.032482879193426295,
+      "outcome": null
+    },
+    {
+      "qid": "fq_e126cadde2b5",
+      "title": "A U.S. ground invasion of Iran is expected before July 1st, 2026, along with the fall of the Iranian regime.",
+      "agent_p": 0.006,
+      "market_p": 0.01913304353150064,
+      "outcome": null
+    },
+    {
+      "qid": "fq_a238c1ccb402",
+      "title": "Will Apple release a new iMac before July 1, 2026?",
+      "agent_p": 0.016,
+      "market_p": 0.035782953176420614,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6740a25acccc",
+      "title": "Will artificial intelligence change everyday life more than the internet did",
+      "agent_p": 0.56,
+      "market_p": 0.3728669417720186,
+      "outcome": null
+    },
+    {
+      "qid": "fq_bceb2d3706a1",
+      "title": "Will the 2026 NBA Finals MVP be a player drafted in 2018 or earlier?",
+      "agent_p": 0.76,
+      "market_p": 0.99,
+      "outcome": null
+    },
+    {
+      "qid": "fq_17dcafa66f8d",
+      "title": "Will Manifold agree that Dwarkesh's upcoming guest is \"by far [his] biggest yet\"? (Resolves to poll)",
+      "agent_p": 0.23,
+      "market_p": 0.2504231320292051,
+      "outcome": null
+    },
+    {
+      "qid": "fq_ae2db6b52aec",
+      "title": "Will Bitcoin (BTC-USD) close above $65,000 on July 31, 2026?",
+      "agent_p": 0.32,
+      "market_p": 0.38999999999999996,
+      "outcome": null
+    },
+    {
+      "qid": "fq_bee6e2d89d95",
+      "title": "Will an AI be able to beat me in Pokemon?",
+      "agent_p": 0.71,
+      "market_p": 0.236916311848264,
+      "outcome": null
+    },
+    {
+      "qid": "fq_b829a9bff521",
+      "title": "Will any rider in the 2026 Tour de France use an airbag safety system during the race?",
+      "agent_p": 0.15,
+      "market_p": 0.054201192721914974,
+      "outcome": null
+    },
+    {
+      "qid": "fq_6ecb74896135",
+      "title": "Hegseth, Patel, or RFK is out within the next 90 days",
+      "agent_p": 0.08,
+      "market_p": 0.06596790733116363,
+      "outcome": null
+    },
+    {
+      "qid": "fq_824143f2f867",
+      "title": "Will the avg BMI 99.9% Sc2O3 (EXW China) price for May 2026 exceed 800 USD/kg?",
+      "agent_p": 0.94,
+      "market_p": 0.37756687001369954,
+      "outcome": null
+    },
+    {
+      "qid": "fq_ecffc0aff4eb",
+      "title": "Will Tesla be dropped from the S&P 500 index by mid-2026?",
+      "agent_p": 0.001,
+      "market_p": 0.010000000000000018,
+      "outcome": null
+    },
+    {
+      "qid": "fq_03eb414cfaf0",
+      "title": "Will Manifest 2026 clash with an Effective Altruism Global event?",
+      "agent_p": 0.02,
+      "market_p": 0.025126766162868956,
+      "outcome": null
+    },
+    {
+      "qid": "fq_894b00dfee8d",
+      "title": "Will there be another earthquake rating 7.0 or above in Japan within the next 7 days?",
+      "agent_p": 0.044,
+      "market_p": 0.050744930589805295,
+      "outcome": null
+    },
+    {
+      "qid": "fq_f487b95e2283",
+      "title": "Will Tesla announce the \u201cModel 2\u201d (sub-$30k EV) before July 1, 2026?",
+      "agent_p": 0.018,
+      "market_p": 0.010000000000000024,
+      "outcome": null
+    }
+  ],
+  "report": {
+    "n_total": 39,
+    "orthogonality": {
+      "n": 39,
+      "mean_abs_logit_gap": 1.1863888700428042,
+      "median_abs_logit_gap": 0.8055522851314292,
+      "mean_abs_prob_gap": 0.11118089308520787,
+      "pearson_r_agent_vs_market": 0.7884647616886797,
+      "frac_diverge_gt_0.05": 0.4358974358974359,
+      "frac_diverge_gt_0.10": 0.28205128205128205
+    },
+    "scored": {
+      "n_resolved": 0
+    }
+  }
+}
