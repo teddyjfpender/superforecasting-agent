@@ -674,6 +674,19 @@ backtest edge that does not replicate live is treated as a leakage or overfittin
 We hold ourselves to the same skepticism the grounding study applied to extremization. The literature
 both **supports** our mechanism and **warns** where it is fragile; we record both per lever.
 
+> **EMPIRICAL UPDATE (2026-06-28) — the market-hidden arm ran (grounding study §3.4).** Lever A in
+> isolation, *closed-book*, was measured on 245 resolved cases: the intrinsic agent scores Brier
+> **0.279** (vs market 0.164 — it **loses head-to-head by 0.115**) and is **over-confident** (SCE +0.20,
+> worse than a base rate). Its simplex weight moved 0.000 → **0.031** but the 95% CI still includes 0 and
+> `beats_both=False`. By the falsification test stated below, *closed-book* A1 fails on both counts. The
+> crucial qualifier: this is the **no-search floor** — the weakest possible agent (no fresh evidence, no
+> panel, no tools). It does **not** falsify the *informed*-A1 thesis; it **proves the precondition**: the
+> model's parametric knowledge carries no edge, so the entire bet now rests on **Lever B (search, #181)
+> manufacturing the orthogonal signal** that closed-book A1 lacks. If informed A1 (B wired) *still* shows
+> zero ensemble weight, *then* the thesis is dead. Until then, B is not the largest lever — it is the
+> *only* lever. (A second finding: the intrinsic over-confidence argues for a **de-extremize-when-
+> uninformed** calibration move toward the base rate — the opposite of √3 — see Lever D.)
+
 **Where the literature SUPPORTS our thesis:** (i) the convex agent+market pool beating the market-alone
 is the AIA Forecaster's central positive result (0.106 < 0.111), and "silicon crowd" shows mechanical
 pooling beats the model's self-update — Levers A→C are the right architecture. (ii) Pooling in log-odds

@@ -16,7 +16,12 @@ backtest grounding; extremizing at the theory-grounded √3 *increases* Brier (0
 The hedging diagnostic reports **no center-ward hedging**. A simplex agent+market ensemble puts
 **all weight on the market** (agent weight 0.0, 95% CI [0.0, 0.325]). **Decision: do not activate
 √3 extremization.** All three results share one cause — the agent was shown the market price and
-anchored on it — which makes the **market-hidden arm** the decisive follow-up experiment.
+anchored on it. The follow-up **market-hidden arm** (§3.4) confirms it starkly: with the price
+withheld, the agent's *own* Brier collapses to **0.279** (worse than a base rate) and it becomes
+**over-confident** (SCE +0.20). The agent has **no intrinsic edge over the market**; its market-visible
+skill was borrowed. The strategic consequence: the edge must be *manufactured* by the harness from
+fresh information the market has not priced (Gate-2 / #181), and proven out-of-sample on
+future-resolving markets — never from the model's parametric knowledge alone.
 
 ## 1. Background and objective
 
@@ -101,6 +106,33 @@ materially **worse**. `diagnose_hedging` returns `center_ward_hedge = False` on 
 statistically distinguishable orthogonal signal** beyond the market (its weight CI includes 0). This
 does **not** replicate the AIA paper's LLM+market-beats-both finding — for our configuration.
 
+### 3.4 The market-hidden arm — the agent has no intrinsic edge
+
+We re-ran all four sets **closed-book and market-hidden** (the freeze price withheld from the agent's
+prompt via the `hidden_from_agent` baseline marker, but still scored): 245 clean cases (~98% yield, 0
+skips), the agent reasoning independently (~25–60 s/forecast vs ~15–20 s when it could echo the price).
+The head-to-head against the market-visible arm:
+
+| | Market-VISIBLE (n=240) | Market-HIDDEN (n=245) |
+|---|---|---|
+| **Agent Brier** | 0.1668 | **0.2790** |
+| Market Brier | 0.1629 | 0.1642 |
+| Edge (market − agent) | −0.0039 | **−0.1148** |
+| Sweep best α | 1.0 | 1.0 |
+| Brier @ √3 | 0.1824 | 0.3096 |
+| Hedging (center_ward_hedge / SCE) | False / +0.049 | False / **+0.204** |
+| Ensemble weight (market / agent) | 1.000 / 0.000 | 0.969 / **0.031** |
+| `beats_both` (agent weight CI) | False ([0, 0.325]) | False ([0, 0.177]) |
+
+**Stripped of the market, the agent's independent forecasts are far worse — Brier 0.279, worse even
+than a constant base-rate forecaster (~0.247) — and the hedging diagnostic shows the *opposite* of
+hedging: SCE +0.20 means the agent is OVER-confident**, confidently wrong on questions it has no real
+information about. So the visible arm's market-matching was **entirely market-anchoring**; the agent's
+own knowledge-only judgment carries little signal here. The simplex ensemble nudges the agent weight
+from 0.000 → 0.031 (a *sliver* of orthogonal signal) but the CI still includes 0 and `beats_both`
+stays False. Gate-1 holds on this arm too (best α = 1.0; √3 hurts *more*, 0.31) — an over-confident
+forecaster must not be extremized further.
+
 ## 4. Interpretation: one cause behind all three results
 
 The agent ≈ market, shows no hedging, and adds no orthogonal signal — and all three follow from a
@@ -109,6 +141,18 @@ agent 0.986 vs market 0.989). Anchoring makes the agent (a) inherit the market's
 hedging to correct → extremization hurts, and (b) a noisy copy of the market → no independent signal
 to contribute. The results are therefore **conditional on the market-visible configuration**, and are
 internally consistent with it.
+
+The market-hidden arm (§3.4) **confirms this diagnosis and sharpens it into a strategic fact**: the
+agent's good market-visible numbers were borrowed from the market, and its *own* closed-book judgment
+is worse than a base rate and over-confident. This is the AIA paper's "without-search" regime made
+stark — gpt-5.5's parametric knowledge on these niche / recent market questions is near-zero, so **the
+edge cannot come from the model's knowledge; it must come from fresh information the market has not yet
+priced.** That is not a failure of the harness — it is the harness's reason to exist: the LLM alone is
+a poor, over-confident forecaster; a *system* around it (fresh agentic search, a multi-perspective
+panel, calibration measured on resolved data) is what can manufacture and *prove* real skill above the
+market. The path to that skill runs through the supervisor fresh-search loop (Gate-2 / #181), and the
+proof must be out-of-sample on future-resolving markets (MarketNightly), where search cannot leak the
+answer.
 
 ## 5. Decision
 
@@ -119,13 +163,16 @@ resolved; recorded in agent memory and task #180.)
 
 ## 6. Limitations and next steps
 
-1. **Market-visible confound (the decisive follow-up).** The market-hidden arm — agent forecasts
-   from question text alone, market still scored — is the test that would reveal the agent's
-   *intrinsic* calibration (does its own judgment hedge?) and *true* complementarity (does an
-   independent agent forecast beat/augment the market?). Capability built behind a
-   `hidden_from_agent` baseline marker (task #186).
+1. **Market-visible confound — now resolved (§3.4).** The market-hidden arm was run (245 cases): the
+   agent has no intrinsic edge (Brier 0.279, over-confident), so the visible-arm skill was anchoring.
+   The next step is therefore **Gate-2 (#181): the supervisor fresh-search loop** — does an *informed*
+   independent forecast (fresh evidence the market hasn't priced) beat and complement the market? — and
+   the proof must run out-of-sample on **future-resolving markets (MarketNightly, P2.1)**, where search
+   cannot leak the answer (the historical-ForecastBench-with-search arm is foreknowledge-unsafe).
 2. **Single model / single config.** gpt-5.5 only; no reasoning-effort sweep; no panel/quorum
    pipeline (this is a single closed-book pass, a proxy for — not identical to — the live pool).
+   The intrinsic over-confidence (SCE +0.20) on no-information questions argues for a
+   **de-extremize-when-uninformed** calibration mechanism (toward the base rate), the opposite of √3.
 3. **n and provider attrition.** 240 clean cases; 5 dropped to provider stream timeouts (since
    mitigated by the reasoning-budget-aware idle-watchdog fix).
 4. **Question classes.** Aggregate only; we have not yet broken out where the agent might beat the
