@@ -165,6 +165,13 @@ class JudgeSynthesis:
     self-declared ``'high'`` reading lets the judge's number replace the pool as
     the committed value (see :func:`resolve_final_probability`). This bounds the
     downside — a hedging judge can never drag a sound pool off-target.
+
+    ``information_gap`` + ``clarifying_queries`` (AIA P1.1) are the
+    agentic-supervisor signal: the judge can flag an UNRESOLVED CRUX it could not
+    settle from the panel's evidence and request fresh searches. They drive
+    :func:`should_research` / the optional :func:`run_quorum` research loop. Both
+    default to the non-triggering values (``False`` / ``[]``) so every historical
+    construction and the default (no ``search_runner``) path is unaffected.
     """
 
     probability: float | None
@@ -177,6 +184,8 @@ class JudgeSynthesis:
     contradictions: list[str] = field(default_factory=list)
     judge_model: str | None = None
     directional_confidence: DirectionalConfidence = "medium"
+    information_gap: bool = False
+    clarifying_queries: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -190,6 +199,8 @@ class JudgeSynthesis:
             "contradictions": self.contradictions,
             "judge_model": self.judge_model,
             "directional_confidence": self.directional_confidence,
+            "information_gap": self.information_gap,
+            "clarifying_queries": self.clarifying_queries,
         }
 
 
@@ -215,6 +226,13 @@ class QuorumResult:
     judge_model: str | None = None
     final_probability: float | None = None
     final_source: str = "pool"
+    # AIA P1.1 — agentic supervisor fresh-search loop. ``research_rounds`` counts
+    # how many fresh-search re-syntheses ran (0 on the default / no-search_runner
+    # path); ``supervisor_evidence`` holds the fresh evidence items the search
+    # runner returned across those rounds. Both default to the no-loop state so
+    # the in-memory result and the persisted panel_run match a baseline run.
+    research_rounds: int = 0
+    supervisor_evidence: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def aggregate_probability(self) -> float:
@@ -250,6 +268,8 @@ class QuorumResult:
             "final_source": self.final_source,
             "disagreement": self.disagreement,
             "judge_model": self.judge_model,
+            "research_rounds": self.research_rounds,
+            "supervisor_evidence": self.supervisor_evidence,
             "judge": self.judge.to_dict() if self.judge else None,
             "forecasts": [
                 {
@@ -450,7 +470,28 @@ def parse_judge_response(response: Any, judge_model: str | None) -> JudgeSynthes
         directional_confidence=_normalize_confidence(
             payload.get("directional_confidence")
         ),
+        information_gap=_coerce_bool(payload.get("information_gap")),
+        clarifying_queries=_str_list(payload.get("clarifying_queries")),
     )
+
+
+def _coerce_bool(value: Any) -> bool:
+    """Tolerant truthy parse for the judge's information_gap flag.
+
+    Accepts a real bool, common string tokens (``true``/``yes``/``1``), or a
+    number; anything missing/garbage collapses to ``False`` (the non-triggering
+    default) so a malformed judge response can never spuriously start a research
+    round.
+    """
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        # NaN != 0 is True; guard it so garbage collapses to False as intended.
+        return value == value and value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "yes", "y", "1"}
+    return False
 
 
 def _normalize_confidence(value: Any) -> DirectionalConfidence:
@@ -602,6 +643,30 @@ def resolve_final_probability(
     return float(pool_probability), "pool"
 
 
+def should_research(
+    judge: JudgeSynthesis | None,
+    *,
+    rounds_done: int,
+    max_rounds: int = 1,
+) -> bool:
+    """The whole AIA P1.1 supervisor research-gate — PURE, no I/O.
+
+    Returns ``True`` IFF the judge exists, flagged an unresolved crux
+    (``information_gap``), supplied at least one ``clarifying_queries`` entry, AND
+    the loop is still under its budget (``rounds_done < max_rounds``). Any other
+    state (no judge, no gap, empty queries, at/over cap) is ``False`` — so the
+    research loop is opt-in, evidence-driven, and strictly bounded.
+    """
+
+    if judge is None:
+        return False
+    return (
+        judge.information_gap
+        and bool(judge.clarifying_queries)
+        and rounds_done < max_rounds
+    )
+
+
 def run_quorum(
     *,
     question_title: str,
@@ -619,6 +684,8 @@ def run_quorum(
     self_fusion: bool = False,
     max_concurrency: int = 4,
     on_progress: Callable[[str, str], None] | None = None,
+    search_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
+    max_research_rounds: int = 1,
 ) -> QuorumResult:
     """Run the full quorum: dispatch panelists, aggregate, judge-synthesise.
 
@@ -639,97 +706,146 @@ def run_quorum(
     high-confidence judge overrides, its raw number is Platt'd here with the
     same alpha. Defaulting to ``1.0`` (identity) keeps an un-configured quorum's
     committed number byte-identical to the historical bare pool.
+
+    ``search_runner`` (AIA P1.1 — the agentic-supervisor fresh-search loop) is
+    the OPTIONAL seam that turns "matches the mean" into "beats the mean". When
+    supplied AND the judge flags an unresolved crux (:func:`should_research`),
+    its ``clarifying_queries`` are handed to ``search_runner`` which runs FRESH
+    search and returns evidence dicts; those are appended to the working context
+    and the panel+judge are RE-RUN once (bounded by ``max_research_rounds``,
+    default 1). The committed number STILL flows through the P0.3 override gate +
+    the terminal Platt EXACTLY ONCE, on the final pass only. When
+    ``search_runner`` is ``None`` (the default) NOTHING changes: no gap check, no
+    extra calls, and the committed probability / ``final_source`` are
+    byte-identical to before — ``research_rounds`` stays 0 and
+    ``supervisor_evidence`` empty.
     """
 
     if not models:
         raise ValidationError("quorum requires at least one model")
     judge_runner = judge_runner or runner
 
-    def _dispatch(index: int, model: str) -> ModelForecast:
-        prompt = build_panelist_prompt(
-            question_title=question_title,
-            resolution_criteria=resolution_criteria,
-            context_packet=context_packet,
-            evidence_cutoff=evidence_cutoff,
-            sample_hint=index + 1 if self_fusion else None,
-        )
-        try:
-            raw = runner(model, prompt["system"], prompt["user"])
-            forecast = parse_panelist_response(raw, model)
-        except Exception as exc:  # noqa: BLE001 — isolate one panelist's failure
-            # Any single model failing (bad JSON, timeout, provider/SDK error)
-            # is recorded as an errored panelist; the quorum completes on the
-            # survivors rather than aborting the whole run.
-            forecast = ModelForecast(
-                model=model, probability=0.5, error=f"{type(exc).__name__}: {exc}"
+    def _run_pass(working_context: str) -> tuple[
+        list[ModelForecast], PanelAggregation, dict[str, Any], JudgeSynthesis | None
+    ]:
+        """One full panel-dispatch → aggregate → judge-synthesise pass over the
+        given (possibly fresh-evidence-augmented) context. Pure of the override
+        gate / terminal Platt, which are applied once on the final pass below."""
+
+        def _dispatch(index: int, model: str) -> ModelForecast:
+            prompt = build_panelist_prompt(
+                question_title=question_title,
+                resolution_criteria=resolution_criteria,
+                context_packet=working_context,
+                evidence_cutoff=evidence_cutoff,
+                sample_hint=index + 1 if self_fusion else None,
             )
+            try:
+                raw = runner(model, prompt["system"], prompt["user"])
+                forecast = parse_panelist_response(raw, model)
+            except Exception as exc:  # noqa: BLE001 — isolate one panelist's failure
+                # Any single model failing (bad JSON, timeout, provider/SDK error)
+                # is recorded as an errored panelist; the quorum completes on the
+                # survivors rather than aborting the whole run.
+                forecast = ModelForecast(
+                    model=model, probability=0.5, error=f"{type(exc).__name__}: {exc}"
+                )
+            if on_progress:
+                on_progress(
+                    "panelist_done",
+                    f"{model}: {'error' if forecast.error else f'{forecast.probability:.3f}'}",
+                )
+            return forecast
+
+        slots: list[ModelForecast | None] = [None] * len(models)
         if on_progress:
-            on_progress(
-                "panelist_done",
-                f"{model}: {'error' if forecast.error else f'{forecast.probability:.3f}'}",
+            on_progress("panelists_start", f"{len(models)} models")
+        workers = max(1, min(int(max_concurrency), len(models)))
+        if workers == 1:
+            for index, model in enumerate(models):
+                slots[index] = _dispatch(index, model)
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(_dispatch, index, model): index
+                    for index, model in enumerate(models)
+                }
+                for future in futures:
+                    index = futures[future]
+                    slots[index] = future.result()
+        pass_forecasts = [f for f in slots if f is not None]
+
+        ok = [f for f in pass_forecasts if f.error is None]
+        if not ok:
+            raise ValidationError(
+                "every quorum panelist failed; first error: "
+                + (pass_forecasts[0].error or "unknown")
             )
-        return forecast
 
-    forecasts: list[ModelForecast | None] = [None] * len(models)
-    if on_progress:
-        on_progress("panelists_start", f"{len(models)} models")
-    workers = max(1, min(int(max_concurrency), len(models)))
-    if workers == 1:
-        for index, model in enumerate(models):
-            forecasts[index] = _dispatch(index, model)
-    else:
-        from concurrent.futures import ThreadPoolExecutor
-
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = {
-                pool.submit(_dispatch, index, model): index
-                for index, model in enumerate(models)
-            }
-            for future in futures:
-                index = futures[future]
-                forecasts[index] = future.result()
-    forecasts = [f for f in forecasts if f is not None]
-
-    ok = [f for f in forecasts if f.error is None]
-    if not ok:
-        raise ValidationError(
-            "every quorum panelist failed; first error: "
-            + (forecasts[0].error or "unknown")
+        pass_aggregation = aggregate_panel_estimates(
+            [f.to_estimate() for f in ok],
+            method=pool_method,
+            trim=trim,
+            alpha_extremize=alpha_extremize,
+        )
+        pass_disagreement = disagreement_signal(
+            [f.probability for f in ok],
+            [f.weight for f in ok],
         )
 
-    aggregation = aggregate_panel_estimates(
-        [f.to_estimate() for f in ok],
-        method=pool_method,
-        trim=trim,
-        alpha_extremize=alpha_extremize,
-    )
-    disagreement = disagreement_signal(
-        [f.probability for f in ok],
-        [f.weight for f in ok],
-    )
-
-    judge: JudgeSynthesis | None = None
-    if judge_model:
-        if on_progress:
-            on_progress("judge_start", judge_model)
-        jp = build_judge_prompt(
-            question_title=question_title,
-            resolution_criteria=resolution_criteria,
-            forecasts=forecasts,
-            aggregation=aggregation,
-            disagreement=disagreement,
-        )
-        try:
-            jraw = judge_runner(judge_model, jp["system"], jp["user"])
-            judge = parse_judge_response(jraw, judge_model)
-        except Exception as exc:  # noqa: BLE001 — a judge failure must not lose the panel
-            judge = JudgeSynthesis(
-                probability=None,
-                rationale=f"(judge synthesis failed: {type(exc).__name__}: {exc})",
-                judge_model=judge_model,
+        pass_judge: JudgeSynthesis | None = None
+        if judge_model:
+            if on_progress:
+                on_progress("judge_start", judge_model)
+            jp = build_judge_prompt(
+                question_title=question_title,
+                resolution_criteria=resolution_criteria,
+                forecasts=pass_forecasts,
+                aggregation=pass_aggregation,
+                disagreement=pass_disagreement,
             )
+            try:
+                jraw = judge_runner(judge_model, jp["system"], jp["user"])
+                pass_judge = parse_judge_response(jraw, judge_model)
+            except Exception as exc:  # noqa: BLE001 — a judge failure must not lose the panel
+                pass_judge = JudgeSynthesis(
+                    probability=None,
+                    rationale=f"(judge synthesis failed: {type(exc).__name__}: {exc})",
+                    judge_model=judge_model,
+                )
+            if on_progress:
+                on_progress("judge_done", judge_model)
+        return pass_forecasts, pass_aggregation, pass_disagreement, pass_judge
+
+    # ── agentic-supervisor fresh-search loop (AIA P1.1) ────────────────────────
+    # First pass over the original context is ALWAYS run. When a search_runner is
+    # wired AND the judge flags an unresolved crux, we run fresh search, append
+    # the returned evidence to the working context, and re-synthesise — bounded
+    # by max_research_rounds. With NO search_runner the while-guard is never even
+    # evaluated for cost (search_runner is None), so the default path is exactly
+    # one pass and byte-identical to before.
+    working_context = context_packet
+    research_rounds = 0
+    supervisor_evidence: list[dict[str, Any]] = []
+    forecasts, aggregation, disagreement, judge = _run_pass(working_context)
+    while (
+        search_runner is not None
+        and should_research(
+            judge, rounds_done=research_rounds, max_rounds=max_research_rounds
+        )
+    ):
+        assert judge is not None  # should_research guarantees this
         if on_progress:
-            on_progress("judge_done", judge_model)
+            on_progress("research_start", f"round {research_rounds + 1}")
+        fresh = list(search_runner(list(judge.clarifying_queries)) or [])
+        supervisor_evidence.extend(fresh)
+        research_rounds += 1
+        working_context = _augment_context(working_context, fresh)
+        if on_progress:
+            on_progress("research_done", f"{len(fresh)} item(s)")
+        forecasts, aggregation, disagreement, judge = _run_pass(working_context)
 
     # ── confidence-gated supervisor override (AIA P0.3) ────────────────────────
     # The pool is already terminally-Platt'd inside aggregate_panel_estimates.
@@ -758,7 +874,35 @@ def run_quorum(
         judge_model=judge_model,
         final_probability=final_probability,
         final_source=final_source,
+        research_rounds=research_rounds,
+        supervisor_evidence=supervisor_evidence,
     )
+
+
+def _augment_context(base: str, fresh_evidence: Sequence[Mapping[str, Any]]) -> str:
+    """Fold fresh supervisor-search evidence into the working context packet.
+
+    The panelist/judge prompts consume a single context string, so the fresh
+    evidence dicts are rendered into a clearly-fenced block appended to the
+    existing context. Mirrors the tolerant ``{title, summary, source}`` shape
+    used by :mod:`forecasting.news_search`; any of those keys may be absent.
+    """
+
+    if not fresh_evidence:
+        return base
+    lines = ["", "## Fresh Supervisor Search (AIA P1.1)"]
+    for i, item in enumerate(fresh_evidence, start=1):
+        title = str(item.get("title") or item.get("claim") or "").strip()
+        summary = str(item.get("summary") or item.get("text") or "").strip()
+        src = str(item.get("source") or item.get("url") or "").strip()
+        head = f"[{i}] {title}" if title else f"[{i}]"
+        if src:
+            head += f" ({src})"
+        lines.append(head)
+        if summary:
+            lines.append(f"    {summary}")
+    block = "\n".join(lines)
+    return f"{base}\n{block}" if base else block.lstrip("\n")
 
 
 def make_aiagent_runner(
@@ -840,6 +984,7 @@ __all__ = [
     "parse_judge_response",
     "resolve_models",
     "resolve_final_probability",
+    "should_research",
     "run_quorum",
     "quorum_auto_indicated",
     "make_aiagent_runner",

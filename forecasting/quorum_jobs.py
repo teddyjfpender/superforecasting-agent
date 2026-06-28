@@ -224,6 +224,8 @@ def execute_job(run_id: str) -> dict[str, Any]:
             judge=result.judge.to_dict() if result.judge else None,
             final_probability=result.committed_probability,
             final_source=result.final_source,
+            research_rounds=result.research_rounds,
+            supervisor_evidence=result.supervisor_evidence,
         )
         job["panel_run_id"] = panel_run["id"]
         job["result"] = result.to_dict()

@@ -386,6 +386,7 @@ _PACKET_JSON_FIELDS = {
         "spread_summary",
         "notes",
         "judge",
+        "supervisor_evidence",
     },
     "panel_estimates": {
         "reasons_up",
@@ -1196,7 +1197,9 @@ class ForecastLedger:
                     notes TEXT NOT NULL DEFAULT '[]',
                     triggered_by TEXT,
                     judge TEXT,
-                    final_source TEXT NOT NULL DEFAULT 'pool'
+                    final_source TEXT NOT NULL DEFAULT 'pool',
+                    research_rounds INTEGER NOT NULL DEFAULT 0,
+                    supervisor_evidence TEXT NOT NULL DEFAULT '[]'
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_panel_runs_question
@@ -1412,6 +1415,16 @@ class ForecastLedger:
             # back as non-overridden (no regression).
             self._ensure_column(
                 conn, "panel_runs", "final_source", "TEXT NOT NULL DEFAULT 'pool'"
+            )
+            # AIA P1.1 — agentic-supervisor fresh-search loop. research_rounds
+            # counts the fresh-search re-syntheses (0 = no loop / no search_runner);
+            # supervisor_evidence holds the fresh evidence items. Both default to
+            # the no-loop state so existing rows + the no-loop path read unchanged.
+            self._ensure_column(
+                conn, "panel_runs", "research_rounds", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn, "panel_runs", "supervisor_evidence", "TEXT NOT NULL DEFAULT '[]'"
             )
             self._ensure_column(conn, "scheduled_reviews", "auto_score", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "auto_postmortem", "INTEGER NOT NULL DEFAULT 0")
@@ -4349,6 +4362,8 @@ class ForecastLedger:
         judge: Any = None,
         final_probability: float | None = None,
         final_source: str | None = None,
+        research_rounds: int = 0,
+        supervisor_evidence: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         """Aggregate a panel of perspective estimates and persist the artifact.
 
@@ -4411,6 +4426,11 @@ class ForecastLedger:
         )
         # Constrain to the known source domain (defensive against a future caller).
         committed_source = final_source if final_source in {"pool", "judge_high"} else "pool"
+        # AIA P1.1 — agentic-supervisor fresh-search loop. Default to the no-loop
+        # state so the perspective-panel path and any pre-P1.1 quorum caller
+        # persist unchanged (0 rounds, no fresh evidence).
+        research_rounds = max(0, int(research_rounds or 0))
+        supervisor_evidence = list(supervisor_evidence or [])
         now = utc_now_iso()
         run_id = f"pr_{uuid.uuid4().hex[:12]}"
         requested = perspectives if perspectives is not None else [
@@ -4435,9 +4455,9 @@ class ForecastLedger:
                     id, question_id, created_at, snapshot_id,
                     aggregation_method, trim, aggregate_probability,
                     perspectives, spread_summary, notes, triggered_by, judge,
-                    final_source
+                    final_source, research_rounds, supervisor_evidence
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -4453,6 +4473,8 @@ class ForecastLedger:
                     triggered_by,
                     json_dumps(judge) if judge is not None else None,
                     committed_source,
+                    research_rounds,
+                    json_dumps(supervisor_evidence),
                 ),
             )
             for row in aggregation.estimates:
@@ -4558,6 +4580,8 @@ class ForecastLedger:
         data["perspectives"] = json_loads(data["perspectives"], [])
         data["spread_summary"] = json_loads(data["spread_summary"], {})
         data["notes"] = json_loads(data["notes"], [])
+        if "supervisor_evidence" in data:
+            data["supervisor_evidence"] = json_loads(data["supervisor_evidence"], [])
         data["estimates"] = [self._panel_estimate_dict(e) for e in estimates_rows]
         return data
 
