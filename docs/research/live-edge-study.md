@@ -267,6 +267,13 @@ that the system manufactures real, independent, evidence-grounded signal beyond 
 demonstrated in-session.** The "provably step-function better" half is a held-out measurement that the
 harness has now *seeded and will resolve on the market's clock*, not ours.
 
+**Scored verdict — scheduled.** A daily job (`948b7e4b`, 11:23 local, 7-day expiry) runs
+`market-nightly score` + `scripts/live_edge_analysis.py` and, when markets newly resolve, appends a
+**Scored** entry here — agent Brier vs market Brier, the paired bootstrap CI (positive ⇒ agent beats
+market), the simplex agent weight + `beats_both`, and ECE — committing the result. The pre-registered
+decision rule (§3.3) and the null-result honesty pledge bind that future entry. Manual fallback at any
+time: `forecast --db <ledger> market-nightly score && python scripts/live_edge_analysis.py --db <ledger>`.
+
 ## 5. Limitations
 
 - The decisive accuracy proof is **longitudinal**; in-session we can show orthogonality + a seeded
