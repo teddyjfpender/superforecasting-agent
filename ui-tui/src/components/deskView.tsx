@@ -1,5 +1,5 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
-import { Fragment, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -274,8 +274,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   }, [tabs])
 
   // ── Per-selection detail packet (modal-only) ──────────────────────────────
+  // The packet (tail audit, ensemble, packet-tail sections, cross-refs/lessons)
+  // is consumed ONLY inside the modal — the skinny summary panel reads `selected`
+  // directly. So gate the fetch on `modalOpen`: it no longer fires a gateway
+  // round-trip on desk MOUNT or on every cursor move (which it did before — one
+  // forecast.question RPC per arrow-key press), only when the modal is actually
+  // opened on a selection. The modal's existing `loading detail…` state covers the
+  // brief async fill.
   useEffect(() => {
-    if (!selectedId) {
+    if (!modalOpen || !selectedId) {
       setPacket(null)
       setPacketId(null)
 
@@ -305,7 +312,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     return () => {
       cancelled = true
     }
-  }, [selectedId, gw])
+  }, [selectedId, gw, modalOpen])
 
   // Reset the modal scroll to the top whenever the selected entity changes.
   useEffect(() => {
@@ -651,6 +658,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         cursor={lensActive ? -1 : clampedSel - lensOffset}
         empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
         items={visible}
+        nowMs={Math.floor(Date.now() / 60_000) * 60_000}
         onSelect={i => { if (!modalOpen && !settingsOpen) setSel(i + lensOffset) }}
         t={t}
         visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
@@ -672,7 +680,12 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   )
 
   // ── Detail modal content (reused heavy components) ────────────────────────
-  const modalBody = selected
+  // Built LAZILY — only when the modal is actually open. Before, this whole
+  // ForecastDetail/packet-tail/analyst-log element tree was allocated on every
+  // desk render (every cursor move) and then thrown away because `modal` is gated
+  // on `modalOpen`. Gating the construction here keeps steady-state scrolling
+  // O(viewport) and skips the heavy detail subtree entirely while the modal is shut.
+  const modalBody = modalOpen && selected
     ? (() => {
         const detailW = Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)
 
@@ -715,7 +728,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // MEMBER question (a `forecast` row under the lens) the modal must lead with
   // that question's own detail — never prepend the parent thesis/factor read just
   // because a lens is ACTIVE in the tab strip.
-  const refRead = !lensActive ? null : refThesis ? (
+  const refRead = !modalOpen || !lensActive ? null : refThesis ? (
     <ThesisDeskRead t={t} thesis={refThesis} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
   ) : refFactor ? (
     <FactorDeskRead factor={refFactor} t={t} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
@@ -1370,6 +1383,7 @@ function DeskForecastList({
   cursor,
   empty,
   items,
+  nowMs,
   onSelect,
   t,
   visibleRows,
@@ -1378,12 +1392,56 @@ function DeskForecastList({
   cursor: number
   empty: string
   items: ForecastWorkspaceItem[]
+  nowMs: number
   onSelect: (i: number) => void
   t: Theme
   visibleRows: number
   width: number
 }) {
-  const sem = semantics(t)
+  // Column packing + every other CURSOR-INDEPENDENT derived value, memoised on
+  // [t, width]. A cursor move re-renders this list (its onSelect prop is a fresh
+  // closure each parent render), but this memo keeps `sem`, `keptCols`, `colWidth`,
+  // `trendW`, `showTrend` REFERENTIALLY STABLE — which is what lets the memoised
+  // DeskListRow below bail out for every row whose `active` flag did not flip. So a
+  // move re-renders 2 rows (the one that lost and the one that gained the cursor),
+  // not all ~38 in the viewport, and never recomputes windowDelta×3 + the sparkline
+  // for the untouched rows.
+  const layout = useMemo(() => {
+    const sem = semantics(t)
+    // Usable inner width (leave a column for the cursor marker + a trailing space).
+    const avail = Math.max(20, width - 2)
+
+    // Pack the FIXED numeric columns by priority, but ALWAYS reserve QMIN for the
+    // QUESTION column so a column is dropped (priority-drop) rather than QUESTION
+    // overflowing + clipping the rightmost numerics on a tight terminal.
+    const QMIN = 14
+    const keep = new Set<string>(['q'])
+    let usedW = 2 // cursor marker
+    for (const key of DESK_PRIORITY) {
+      const c = DESK_COLS.find(col => col.key === key)
+      if (c && usedW + c.w + 1 <= avail - QMIN) {
+        keep.add(key)
+        usedW += c.w + 1
+      }
+    }
+
+    // Split the leftover: a capped slice feeds the trailing 1MO trend sparkline
+    // (so it actually renders — QUESTION no longer eats 100% of the slack), and
+    // QUESTION takes the rest with at least QMIN.
+    const leftover = Math.max(QMIN, avail - usedW)
+    // The QUESTION column wins the slack — titles matter more than the trend — so the
+    // trailing trend sparkline only claims width once QUESTION is comfortable; short
+    // titles never truncate to make room for it.
+    const QCOMFORT = 30
+    const trendW = leftover >= QCOMFORT + 8 ? Math.min(14, leftover - QCOMFORT) : 0
+    const questionW = leftover - trendW
+    const showTrend = trendW >= 8
+    const colWidth = (c: DeskCol): number => (c.key === 'q' ? questionW : c.w)
+    const keptCols = DESK_COLS.filter(c => keep.has(c.key))
+
+    return { avail, colWidth, keptCols, sem, showTrend, trendW }
+  }, [t, width])
+  const { avail, colWidth, keptCols, sem, showTrend, trendW } = layout
 
   if (!items.length) {
     return (
@@ -1394,38 +1452,6 @@ function DeskForecastList({
       </Box>
     )
   }
-
-  // Usable inner width (leave a column for the cursor marker + a trailing space).
-  const avail = Math.max(20, width - 2)
-
-  // Pack the FIXED numeric columns by priority, but ALWAYS reserve QMIN for the
-  // QUESTION column so a column is dropped (priority-drop) rather than QUESTION
-  // overflowing + clipping the rightmost numerics on a tight terminal.
-  const QMIN = 14
-  const keep = new Set<string>(['q'])
-  let usedW = 2 // cursor marker
-  for (const key of DESK_PRIORITY) {
-    const c = DESK_COLS.find(col => col.key === key)
-    if (c && usedW + c.w + 1 <= avail - QMIN) {
-      keep.add(key)
-      usedW += c.w + 1
-    }
-  }
-
-  // Split the leftover: a capped slice feeds the trailing 1MO trend sparkline
-  // (so it actually renders — QUESTION no longer eats 100% of the slack), and
-  // QUESTION takes the rest with at least QMIN.
-  const leftover = Math.max(QMIN, avail - usedW)
-  // The QUESTION column wins the slack — titles matter more than the trend — so the
-  // trailing trend sparkline only claims width once QUESTION is comfortable; short
-  // titles never truncate to make room for it.
-  const QCOMFORT = 30
-  const trendW = leftover >= QCOMFORT + 8 ? Math.min(14, leftover - QCOMFORT) : 0
-  const questionW = leftover - trendW
-  const showTrend = trendW >= 8
-  const colWidth = (c: DeskCol): number => (c.key === 'q' ? questionW : c.w)
-
-  const keptCols = DESK_COLS.filter(c => keep.has(c.key))
 
   // cursor may be -1 (the lead lens row is selected, no forecast highlighted);
   // clamp for windowing so the list still shows from the top.
@@ -1449,6 +1475,7 @@ function DeskForecastList({
               colWidth={colWidth}
               cols={keptCols}
               item={item}
+              nowMs={nowMs}
               sem={sem}
               showTrend={showTrend}
               t={t}
@@ -1467,11 +1494,16 @@ function DeskForecastList({
   )
 }
 
-function DeskListRow({
+// Memoised: with the layout props (colWidth/cols/sem/showTrend/trendW) held stable
+// by DeskForecastList's [t, width] memo, a cursor move only flips `active` on 2
+// rows — so only those 2 re-render (recomputing windowDelta×3 + the sparkline);
+// the rest of the viewport bails out. Row work is O(1) per move, not O(viewport).
+const DeskListRow = memo(function DeskListRow({
   active,
   colWidth,
   cols,
   item,
+  nowMs,
   sem,
   showTrend,
   t,
@@ -1481,12 +1513,16 @@ function DeskListRow({
   colWidth: (c: DeskCol) => number
   cols: DeskCol[]
   item: ForecastWorkspaceItem
+  nowMs: number
   sem: Semantics
   showTrend: boolean
   t: Theme
   trendW: number
 }) {
-  const nowMs = Date.now()
+  // nowMs is a 60s-bucketed clock (deskView passes Math.floor(now/60_000)*60_000):
+  // it keeps the live NEXT/age columns ticking ~once a minute WITHOUT defeating the
+  // memo on every cursor move (the prior Date.now() here re-rendered nothing because
+  // memo bailed on the parent's 500ms timer, freezing the column).
   const windows = {
     '1d': windowDelta(item.history, nowMs, 1),
     '1mo': windowDelta(item.history, nowMs, 30),
@@ -1527,7 +1563,7 @@ function DeskListRow({
       {alertBadge ? <Text color={t.color.statusBad}> {alertBadge}</Text> : null}
     </Text>
   )
-}
+})
 
 // ── Detail modal shell (InfoModal pattern + a scrollable body) ────────────────
 // Reuses the InfoModal round-bordered centered-overlay shell, but renders the
