@@ -68,6 +68,62 @@ const cpiItem = (): ForecastWorkspaceItem => ({
   units: 'percent year-over-year'
 })
 
+// A question with a LIVE scheduled review → the NEXT column must read its
+// relative due-time exactly as before (no resolution-fallback marker).
+const reviewedItem = (): ForecastWorkspaceItem => ({
+  as_of: '2026-06-29T00:00:00Z',
+  close_time: '2026-12-31T00:00:00Z',
+  freshness: 'fresh today',
+  headline_kind: 'probability',
+  headline_probability: 0.4,
+  history: [{ as_of: '2026-06-29T00:00:00Z', headline_probability: 0.4 }],
+  id: 'fq_reviewed',
+  next_review_at: '2026-07-01T00:00:00Z',
+  probability: 0.4,
+  probability_display: '0.400',
+  review_cadence: 'every 2 days',
+  snapshot_count: 1,
+  status: 'active',
+  title: 'A scheduled-review question',
+  topics: ['misc']
+})
+
+// A market_nightly live-edge market: deliberately NO re-forecast cadence (no
+// next_review_at), but it DOES have a near resolution_time → NEXT must fall back
+// to that date with the distinguishing "⤓" marker.
+const nightlyItem = (): ForecastWorkspaceItem => ({
+  as_of: '2026-06-29T00:00:00Z',
+  close_time: '2026-07-05T00:00:00Z',
+  freshness: 'fresh today',
+  headline_kind: 'probability',
+  headline_probability: 0.6,
+  history: [{ as_of: '2026-06-29T00:00:00Z', headline_probability: 0.6 }],
+  id: 'fq_nightly',
+  probability: 0.6,
+  probability_display: '0.600',
+  resolution_time: '2026-07-05T00:00:00Z',
+  snapshot_count: 1,
+  status: 'active',
+  title: 'A market_nightly live-edge market',
+  topics: ['market_nightly']
+})
+
+// Neither a scheduled review nor a resolution/close date → NEXT stays "—".
+const orphanItem = (): ForecastWorkspaceItem => ({
+  as_of: '2026-06-29T00:00:00Z',
+  freshness: 'fresh today',
+  headline_kind: 'probability',
+  headline_probability: 0.3,
+  history: [{ as_of: '2026-06-29T00:00:00Z', headline_probability: 0.3 }],
+  id: 'fq_orphan',
+  probability: 0.3,
+  probability_display: '0.300',
+  snapshot_count: 1,
+  status: 'active',
+  title: 'A question with no review and no dates',
+  topics: ['misc']
+})
+
 const inflationThesis = (): ForecastThesis => ({
   as_of: '2026-05-29T00:00:00Z',
   domain: 'macro',
@@ -471,5 +527,32 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('members 1')
     expect(text).toContain('Sticky services inflation') // analyst teaser
     expect(text).toContain('open full lens read')
+  })
+
+  it('NEXT column: scheduled review reads its due-time; no-review falls back to the marked resolution date; neither stays "—"', async () => {
+    const desk = await mountDesk(120, {
+      active_count: 3,
+      closing_soon_count: 0,
+      forecasts: [reviewedItem(), nightlyItem(), orphanItem()],
+      generated_at: '2026-06-29T14:00:00Z',
+      open_alert_count: 0,
+      product: 'Superforecasting Agent'
+    })
+    // Tabs are [#misc, #market, All]. Switch to All so all three rows render in
+    // one frame and every NEXT cell is visible.
+    await desk.press('\t')
+    await desk.press('\t')
+    const text = desk.text()
+    // The dense NEXT column is present.
+    expect(text).toContain('NEXT')
+    // 1) A scheduled review renders its relative due-time WITHOUT the "⤓" marker
+    //    (unchanged behaviour). next_review_at is in the future → a plain "Nd"/"Nh".
+    expect(text).toMatch(/(?<!⤓)\b\d+[dh]\b/)
+    // 2) The market_nightly market has NO review but a resolution_time → the NEXT
+    //    cell falls back to that date, marked with the distinguishing "⤓" glyph.
+    expect(text).toContain('⤓')
+    // 3) The orphan (no review, no dates) keeps the blank "—".
+    expect(text).toContain('—')
+    desk.cleanup()
   })
 })

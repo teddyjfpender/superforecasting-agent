@@ -1247,18 +1247,45 @@ const shortAge = (freshness: string | undefined): string => {
   return m ? `${m[1]}${m[2].toLowerCase().slice(0, 2)}` : truncate(freshness, 6)
 }
 
-// Forward "time to NEXT auto-reforecast" for the NEXT column (the live schedule).
-// "now" (due/overdue), "5h", "3d"; status drives colour. Null cadence → "—".
-const dueText = (nextReviewAt: null | string | undefined, nowMs: number): { status: 'none' | 'now' | 'ok' | 'soon'; text: string } => {
-  if (!nextReviewAt) return { status: 'none', text: '—' }
-  const at = Date.parse(nextReviewAt)
-  if (!Number.isFinite(at)) return { status: 'none', text: '—' }
-  const ms = at - nowMs
-  if (ms <= 0) return { status: 'now', text: 'now' }
+// Compact relative-time forward for the NEXT column: "5h", "3d", "2mo". Sub-day
+// rounds to hours; up to ~7wk reads in days; further out collapses to months so a
+// far-off resolution still fits the narrow column.
+const relTime = (ms: number): string => {
   const days = ms / 86400000
-  if (days < 1) return { status: 'soon', text: `${Math.max(1, Math.round(ms / 3600000))}h` }
-  const d = Math.round(days)
-  return { status: d <= 2 ? 'soon' : 'ok', text: `${d}d` }
+  if (days < 1) return `${Math.max(1, Math.round(ms / 3600000))}h`
+  if (days < 52) return `${Math.round(days)}d`
+  return `${Math.max(2, Math.round(days / 30))}mo`
+}
+
+// Forward "time to NEXT auto-reforecast" for the NEXT column (the live schedule).
+// "now" (due/overdue), "5h", "3d"; status drives colour. When there is NO live
+// review (market_nightly markets deliberately have no re-forecast cadence; a
+// primary-election cron the desk can't see), FALL BACK to the question's next
+// real event — resolution_time ?? close_time — rendered with a leading "⤓" marker
+// and a distinct 'res' status so it reads visibly as a resolution date, NOT a
+// scheduled review. A real review (next_review_at present) renders EXACTLY as
+// before — the fallback never alters it. Neither → "—".
+const dueText = (
+  item: ForecastWorkspaceItem,
+  nowMs: number
+): { status: 'none' | 'now' | 'ok' | 'res' | 'soon'; text: string } => {
+  const at = item.next_review_at ? Date.parse(item.next_review_at) : NaN
+  if (Number.isFinite(at)) {
+    const ms = at - nowMs
+    if (ms <= 0) return { status: 'now', text: 'now' }
+    const days = ms / 86400000
+    if (days < 1) return { status: 'soon', text: `${Math.max(1, Math.round(ms / 3600000))}h` }
+    const d = Math.round(days)
+    return { status: d <= 2 ? 'soon' : 'ok', text: `${d}d` }
+  }
+
+  // No scheduled review → show the next meaningful event (resolution), marked.
+  const eventAt = Date.parse(item.resolution_time ?? item.close_time ?? '')
+  if (!Number.isFinite(eventAt)) return { status: 'none', text: '—' }
+  const ms = eventAt - nowMs
+  // Already resolved/closed but still on the desk → just flag it as due.
+  if (ms <= 0) return { status: 'res', text: '⤓now' }
+  return { status: 'res', text: `⤓${relTime(ms)}` }
 }
 
 // Window change → display text only (colour is applied by the caller from the
@@ -1318,7 +1345,9 @@ const deskCellText = (
       return { color: sem.subtle, text: shortAge(item.freshness) }
 
     case 'next': {
-      const due = dueText(item.next_review_at, nowMs)
+      const due = dueText(item, nowMs)
+      // A resolution-date fallback is informational (not an urgent review) → paint
+      // it subtle so the "⤓" marker, not colour, signals the distinction.
       const color = due.status === 'now' ? t.color.error : due.status === 'soon' ? t.color.warn : sem.subtle
       return { color, text: due.text }
     }
