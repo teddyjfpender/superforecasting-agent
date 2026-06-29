@@ -749,6 +749,14 @@ DEFAULT_CONFIG = {
         # provider hiccups on a single provider.
         "api_max_retries": 3,
         "service_tier": "",
+        # Codex/OpenAI reasoning summary verbosity for the visible reasoning
+        # display (Responses API ``reasoning.summary``). "detailed" (default)
+        # returns the FULLER, readable prose summary; "concise" is shorter;
+        # "auto" returns the compressed, note-form ("caveman") summary OpenAI
+        # picks on its own. Tradeoff: "detailed" summaries are longer, so they
+        # consume more reasoning tokens. Only affects codex_responses models
+        # (gpt-5.x / ChatGPT-OAuth); grok and other backends ignore it.
+        "reasoning_summary": "detailed",
         # Tool-use enforcement: injects system prompt guidance that tells the
         # model to actually call tools instead of describing intended actions.
         # Values: "auto" (default — applies to gpt/codex models), true/false

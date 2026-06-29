@@ -113,6 +113,7 @@ def init_agent(
     status_callback: callable = None,
     max_tokens: int = None,
     reasoning_config: Dict[str, Any] = None,
+    reasoning_summary: str = "detailed",
     service_tier: str = None,
     request_overrides: Dict[str, Any] = None,
     prefill_messages: List[Dict[str, Any]] = None,
@@ -392,6 +393,11 @@ def init_agent(
     # Model response configuration
     agent.max_tokens = max_tokens  # None = use model default
     agent.reasoning_config = reasoning_config  # None = use default (medium for OpenRouter)
+    # Codex reasoning.summary mode ("auto" | "concise" | "detailed"). Defaults
+    # to "detailed" — the fuller, readable reasoning-summary prose — and is
+    # consumed ONLY by the codex_responses transport (other backends ignore it).
+    # The transport clamps unknown values back to "detailed".
+    agent.reasoning_summary = reasoning_summary
     agent.service_tier = service_tier
     agent.request_overrides = dict(request_overrides or {})
     agent.prefill_messages = prefill_messages or []  # Prefilled conversation turns

@@ -75,6 +75,66 @@ class TestCodexBuildKwargs:
         )
         assert kw.get("reasoning", {}).get("effort") == "high"
 
+    def test_reasoning_summary_defaults_to_detailed(self, transport):
+        """By default the codex reasoning request asks for the FULLER,
+        readable summary ("detailed") — not the compressed note-form
+        ("auto") summary that reads as terse 'caveman' notes."""
+        messages = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="gpt-5.4", messages=messages, tools=[],
+        )
+        assert kw.get("reasoning", {}).get("summary") == "detailed"
+
+    def test_reasoning_summary_default_with_effort(self, transport):
+        """Setting effort alone still yields the default detailed summary."""
+        messages = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="gpt-5.4", messages=messages, tools=[],
+            reasoning_config={"effort": "high"},
+        )
+        assert kw.get("reasoning") == {"effort": "high", "summary": "detailed"}
+
+    def test_reasoning_summary_override_via_reasoning_config(self, transport):
+        """An explicit reasoning_config['summary'] override is honored."""
+        messages = [{"role": "user", "content": "Hi"}]
+        for mode in ("concise", "auto", "detailed"):
+            kw = transport.build_kwargs(
+                model="gpt-5.4", messages=messages, tools=[],
+                reasoning_config={"effort": "medium", "summary": mode},
+            )
+            assert kw.get("reasoning", {}).get("summary") == mode
+
+    def test_reasoning_summary_override_via_param(self, transport):
+        """A direct reasoning_summary param wins over reasoning_config."""
+        messages = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="gpt-5.4", messages=messages, tools=[],
+            reasoning_config={"effort": "medium", "summary": "detailed"},
+            reasoning_summary="concise",
+        )
+        assert kw.get("reasoning", {}).get("summary") == "concise"
+
+    def test_reasoning_summary_unknown_clamped_to_detailed(self, transport):
+        """Unknown summary values clamp back to the readable 'detailed' default."""
+        messages = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="gpt-5.4", messages=messages, tools=[],
+            reasoning_config={"summary": "verbose-nonsense"},
+        )
+        assert kw.get("reasoning", {}).get("summary") == "detailed"
+
+    def test_grok_branch_sends_no_summary(self, transport):
+        """The xAI/grok reasoning request must stay summary-less — only
+        effort is sent, never a reasoning.summary field."""
+        messages = [{"role": "user", "content": "Hi"}]
+        kw = transport.build_kwargs(
+            model="grok-4.3", messages=messages, tools=[],
+            is_xai_responses=True,
+            reasoning_config={"effort": "high", "summary": "detailed"},
+        )
+        assert kw.get("reasoning") == {"effort": "high"}
+        assert "summary" not in kw.get("reasoning", {})
+
     def test_reasoning_disabled(self, transport):
         messages = [{"role": "user", "content": "Hi"}]
         kw = transport.build_kwargs(

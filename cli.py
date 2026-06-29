@@ -353,6 +353,22 @@ def _parse_reasoning_config(effort: str) -> dict | None:
     return result
 
 
+def _parse_reasoning_summary_config(raw: str) -> str:
+    """Parse the persisted reasoning-summary verbosity into a codex summary mode.
+
+    Accepts the OpenAI Responses ``reasoning.summary`` values
+    "auto" | "concise" | "detailed". Empty or unknown values fall back to
+    "detailed" (the fuller, readable summary). Only the codex_responses
+    transport consumes this; other backends ignore it.
+    """
+    value = str(raw or "").strip().lower()
+    if value in {"auto", "concise", "detailed"}:
+        return value
+    if value:
+        logger.warning("Unknown reasoning_summary '%s', using default (detailed)", raw)
+    return "detailed"
+
+
 def _parse_service_tier_config(raw: str) -> str | None:
     """Parse a persisted service-tier preference into a Responses API value."""
     value = str(raw or "").strip().lower()
@@ -2949,6 +2965,15 @@ class HermesCLI:
         self.reasoning_config = _parse_reasoning_config(
             CLI_CONFIG["agent"].get("reasoning_effort", "")
         )
+        # Codex reasoning.summary verbosity ("detailed" default → readable
+        # prose; "auto" is the compressed note-form ("caveman") summary).
+        # Threaded as a DEDICATED param to the codex transport (NOT folded into
+        # reasoning_config) so it never perturbs the chat_completions /
+        # Gemini / Anthropic paths that treat a None reasoning_config as
+        # "send no reasoning param". Only the codex_responses transport reads it.
+        self.reasoning_summary = _parse_reasoning_summary_config(
+            CLI_CONFIG["agent"].get("reasoning_summary", "")
+        )
         self.service_tier = _parse_service_tier_config(
             CLI_CONFIG["agent"].get("service_tier", "")
         )
@@ -4728,6 +4753,7 @@ class HermesCLI:
                 ephemeral_system_prompt=forecast_system_prompt,
                 prefill_messages=self.prefill_messages or None,
                 reasoning_config=self.reasoning_config,
+                reasoning_summary=self.reasoning_summary,
                 service_tier=self.service_tier,
                 request_overrides=request_overrides,
                 providers_allowed=self._providers_only,
@@ -8911,6 +8937,7 @@ class HermesCLI:
                     platform="cli",
                     session_db=self._session_db,
                     reasoning_config=self.reasoning_config,
+                    reasoning_summary=self.reasoning_summary,
                     service_tier=self.service_tier,
                     request_overrides=turn_route.get("request_overrides"),
                     providers_allowed=self._providers_only,

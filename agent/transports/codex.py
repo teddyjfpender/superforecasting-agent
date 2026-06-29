@@ -47,7 +47,11 @@ class ResponsesApiTransport(ProviderTransport):
 
         params:
             instructions: str — system prompt (extracted from messages[0] if not given)
-            reasoning_config: dict | None — {effort, enabled}
+            reasoning_config: dict | None — {effort, enabled, summary}
+                ``summary`` is the codex reasoning.summary mode
+                ("auto" | "concise" | "detailed"); defaults to "detailed".
+            reasoning_summary: str | None — direct override of the summary mode
+                (wins over reasoning_config["summary"]); same accepted values.
             session_id: str | None — used for prompt_cache_key + xAI conv header
             max_tokens: int | None — max_output_tokens
             timeout: float | None — per-request timeout forwarded to the SDK
@@ -83,15 +87,35 @@ class ResponsesApiTransport(ProviderTransport):
         # Resolve reasoning effort
         reasoning_effort = "medium"
         reasoning_enabled = True
+        # Codex/OpenAI reasoning.summary mode. "detailed" returns the FULLER,
+        # readable reasoning summary; "auto" returns a compressed, note-form
+        # ("caveman") summary; "concise" sits in between. We default to
+        # "detailed" so the reasoning display reads as prose, and let the
+        # user tune it via reasoning_config["summary"] (config key
+        # agent.reasoning_summary). The grok branch below stays summary-less.
+        reasoning_summary = "detailed"
         reasoning_config = params.get("reasoning_config")
         if reasoning_config and isinstance(reasoning_config, dict):
             if reasoning_config.get("enabled") is False:
                 reasoning_enabled = False
             elif reasoning_config.get("effort"):
                 reasoning_effort = reasoning_config["effort"]
+            summary_override = reasoning_config.get("summary")
+            if summary_override is not None:
+                reasoning_summary = summary_override
+        # A direct params override (e.g. request_overrides plumbing) wins.
+        if params.get("reasoning_summary") is not None:
+            reasoning_summary = params.get("reasoning_summary")
 
         _effort_clamp = {"minimal": "low"}
         reasoning_effort = _effort_clamp.get(reasoning_effort, reasoning_effort)
+
+        # Clamp the summary mode to the OpenAI-accepted set; unknown values
+        # fall back to the readable "detailed" default.
+        _VALID_SUMMARY = {"auto", "concise", "detailed"}
+        reasoning_summary = str(reasoning_summary or "").strip().lower()
+        if reasoning_summary not in _VALID_SUMMARY:
+            reasoning_summary = "detailed"
 
         # ``tools`` MUST be omitted entirely when there are no functions to
         # expose: the openai SDK's ``responses.stream()`` / ``responses.parse()``
@@ -146,7 +170,7 @@ class ResponsesApiTransport(ProviderTransport):
                 if github_reasoning is not None:
                     kwargs["reasoning"] = github_reasoning
             else:
-                kwargs["reasoning"] = {"effort": reasoning_effort, "summary": "auto"}
+                kwargs["reasoning"] = {"effort": reasoning_effort, "summary": reasoning_summary}
                 kwargs["include"] = ["reasoning.encrypted_content"]
         elif not is_github_responses and not is_xai_responses:
             kwargs["include"] = []

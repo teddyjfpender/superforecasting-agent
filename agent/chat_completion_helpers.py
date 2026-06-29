@@ -749,6 +749,7 @@ def build_api_kwargs(agent, api_messages: list) -> dict:
             messages=_msgs_for_codex,
             tools=tools_for_api,
             reasoning_config=agent.reasoning_config,
+            reasoning_summary=getattr(agent, "reasoning_summary", "detailed"),
             session_id=getattr(agent, "session_id", None),
             max_tokens=agent.max_tokens,
             timeout=agent._resolved_api_call_timeout(),
