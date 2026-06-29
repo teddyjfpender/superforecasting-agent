@@ -612,7 +612,22 @@ def _delete_skill(name: str, absorbed_into: Optional[str] = None) -> Dict[str, A
 
 
 def _write_file(name: str, file_path: str, file_content: str) -> Dict[str, Any]:
-    """Add or overwrite a supporting file within any skill directory."""
+    """Add or overwrite a supporting file within any skill directory.
+
+    Harness-wall note (intentional + consistent): skills are CONFIG-LIKE
+    procedural knowledge, not harness CODE, so the skill-manager deliberately
+    does NOT route through ``agent.harness_wall`` — the agent is meant to author
+    and evolve its own skills. On a normal install skills live under
+    ``<agent home>/skills`` (an allowed write zone anyway); on a source install
+    the bundled ``skills/`` may sit under the repo root, and we still allow
+    writes there ON PURPOSE because skill authoring is a sanctioned capability.
+    Writes are kept safe by the dedicated guards in this module instead:
+    ``_validate_file_path`` (allowlisted subdirs, no ``..`` traversal),
+    ``_resolve_skill_target`` (stay within the skill dir), the size caps, and
+    the post-write security scan with rollback. The HARNESS CODE wall
+    (tools/hermes_cli/agent/gateway) is enforced separately in
+    ``tools/file_tools.py``.
+    """
     err = _validate_file_path(file_path)
     if err:
         return {"success": False, "error": err}

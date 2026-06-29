@@ -27,6 +27,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from forecasting import ForecastLedger
+from forecasting.ledger import allow_ledger_writes
 from forecasting.models import OutcomeSpace
 
 # ── 1. Authored question specs (from the AI-infra doc) ───────────────────────
@@ -318,83 +319,89 @@ def main(argv: list[str] | None = None) -> int:
     key_to_id: dict[str, str] = {}
     created = skipped = baselined = 0
 
-    for q in questions:
-        existing = by_title.get(q["title"])
-        if existing is not None:
-            key_to_id[q["key"]] = existing.id
-            skipped += 1
-            continue
-        question = ledger.create_question(
-            title=q["title"],
-            description=q.get("description", ""),
-            resolution_criteria=q["resolution_criteria"],
-            resolution_source=q.get("resolution_source"),
-            outcome_space=_outcome_space(q),
-            domain=q.get("domain"),
-            topics=q.get("topics") or [],
-            impact=q.get("impact"),
-            close_time=q.get("close_time"),
-            resolution_time=q.get("resolution_time"),
-        )
-        key_to_id[q["key"]] = question.id
-        created += 1
+    # Sanctioned operator seed tool: open the ledger-write context so the
+    # create_question / create_snapshot calls below pass the default-ON
+    # direct-write gate (which guards against the AGENT scripting fabricated
+    # forecasts, not against operator seeding). See
+    # forecasting.ledger.allow_ledger_writes.
+    with allow_ledger_writes(reason="operator seed script"):
+        for q in questions:
+            existing = by_title.get(q["title"])
+            if existing is not None:
+                key_to_id[q["key"]] = existing.id
+                skipped += 1
+                continue
+            question = ledger.create_question(
+                title=q["title"],
+                description=q.get("description", ""),
+                resolution_criteria=q["resolution_criteria"],
+                resolution_source=q.get("resolution_source"),
+                outcome_space=_outcome_space(q),
+                domain=q.get("domain"),
+                topics=q.get("topics") or [],
+                impact=q.get("impact"),
+                close_time=q.get("close_time"),
+                resolution_time=q.get("resolution_time"),
+            )
+            key_to_id[q["key"]] = question.id
+            created += 1
+            if not args.no_baselines:
+                payload = _baseline_payload(q)
+                if payload is not None:
+                    ledger.create_snapshot(
+                        question_id=question.id,
+                        probability_or_distribution=payload,
+                        rationale="Seeded exploratory prior from the AI-infra thesis doc; replace via a live agent run.",
+                        forecast_origin="exploratory",
+                    )
+                    baselined += 1
+
+        # thesis + members
+        thesis_q = by_title.get(THESIS["title"])
+        if thesis_q is None:
+            thesis_q = ledger.create_question(
+                title=THESIS["title"], description=THESIS["description"],
+                resolution_criteria=THESIS["criteria"],
+                outcome_space=OutcomeSpace(type="thesis", units="index"),
+                domain=THESIS["domain"], topics=THESIS["topics"],
+            )
+        for member in THESIS["members"]:
+            key, weight, direction, role = member[0], member[1], member[2], member[3]
+            target = member[4] if len(member) > 4 else None
+            hi_is_good = member[5] if len(member) > 5 else True
+            ledger.add_thesis_member(
+                thesis_q.id, key_to_id[key], direction=direction, weight=weight,
+                role=role, target=target, hi_is_good=hi_is_good,
+            )
+
+        # entities
+        for entity in ENTITIES:
+            ledger.add_thesis_entity(
+                thesis_q.id, entity["name"], kind=entity["kind"], label=entity.get("label"),
+                weights=[{"member_id": key_to_id[k], "weight": w, "direction": d} for (k, w, d) in entity["weights"]],
+            )
+
+        # factor + constituents
+        factor_q = by_title.get(FACTOR["title"])
+        if factor_q is None:
+            factor_q = ledger.create_question(
+                title=FACTOR["title"], description=FACTOR["description"],
+                resolution_criteria=FACTOR["criteria"],
+                outcome_space=OutcomeSpace(type="thesis", units=FACTOR["units"]),
+                domain=FACTOR["domain"], topics=FACTOR["topics"],
+                metadata={"aggregation": "factor"},
+            )
+        for (key, weight, direction) in FACTOR["constituents"]:
+            ledger.add_thesis_member(
+                factor_q.id, key_to_id[key], direction=("inverted" if direction == "short" else "support"), weight=weight,
+            )
+
+        # aggregate now so the desk shows output immediately
         if not args.no_baselines:
-            payload = _baseline_payload(q)
-            if payload is not None:
-                ledger.create_snapshot(
-                    question_id=question.id,
-                    probability_or_distribution=payload,
-                    rationale="Seeded exploratory prior from the AI-infra thesis doc; replace via a live agent run.",
-                    forecast_origin="exploratory",
-                )
-                baselined += 1
-
-    # thesis + members
-    thesis_q = by_title.get(THESIS["title"])
-    if thesis_q is None:
-        thesis_q = ledger.create_question(
-            title=THESIS["title"], description=THESIS["description"],
-            resolution_criteria=THESIS["criteria"],
-            outcome_space=OutcomeSpace(type="thesis", units="index"),
-            domain=THESIS["domain"], topics=THESIS["topics"],
-        )
-    for member in THESIS["members"]:
-        key, weight, direction, role = member[0], member[1], member[2], member[3]
-        target = member[4] if len(member) > 4 else None
-        hi_is_good = member[5] if len(member) > 5 else True
-        ledger.add_thesis_member(
-            thesis_q.id, key_to_id[key], direction=direction, weight=weight,
-            role=role, target=target, hi_is_good=hi_is_good,
-        )
-
-    # entities
-    for entity in ENTITIES:
-        ledger.add_thesis_entity(
-            thesis_q.id, entity["name"], kind=entity["kind"], label=entity.get("label"),
-            weights=[{"member_id": key_to_id[k], "weight": w, "direction": d} for (k, w, d) in entity["weights"]],
-        )
-
-    # factor + constituents
-    factor_q = by_title.get(FACTOR["title"])
-    if factor_q is None:
-        factor_q = ledger.create_question(
-            title=FACTOR["title"], description=FACTOR["description"],
-            resolution_criteria=FACTOR["criteria"],
-            outcome_space=OutcomeSpace(type="thesis", units=FACTOR["units"]),
-            domain=FACTOR["domain"], topics=FACTOR["topics"],
-            metadata={"aggregation": "factor"},
-        )
-    for (key, weight, direction) in FACTOR["constituents"]:
-        ledger.add_thesis_member(
-            factor_q.id, key_to_id[key], direction=("inverted" if direction == "short" else "support"), weight=weight,
-        )
-
-    # aggregate now so the desk shows output immediately
-    if not args.no_baselines:
-        thesis_res = ledger.aggregate_thesis(thesis_q.id, rho=args.rho)
-        factor_res = ledger.aggregate_thesis(factor_q.id, rho=args.rho)
-    else:
-        thesis_res = factor_res = None
+            thesis_res = ledger.aggregate_thesis(thesis_q.id, rho=args.rho)
+            factor_res = ledger.aggregate_thesis(factor_q.id, rho=args.rho)
+        else:
+            thesis_res = factor_res = None
 
     print(f"questions: created {created}, skipped {skipped} (existing), baselined {baselined}")
     print(f"thesis:    {thesis_q.id}  '{THESIS['title']}'  members={len(THESIS['members'])}  entities={len(ENTITIES)}")

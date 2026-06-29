@@ -296,6 +296,8 @@ class QuestionSpec:
         an underspecified question never reaches the ledger. Returns a structured
         result describing everything created.
         """
+        from forecasting.ledger import allow_ledger_writes
+
         errs = self.errors()
         if errs:
             raise ValidationError(
@@ -315,27 +317,30 @@ class QuestionSpec:
         if gaps:
             onboarding_meta["waived_readiness"] = [g.field for g in gaps]
 
-        question = ledger.create_question(
-            title=self.title.strip(),
-            resolution_criteria=self.resolution_criteria.strip(),
-            outcome_space=self.outcome_space(),
-            description=self.description,
-            resolution_source=self.resolution_source,
-            close_time=self.close_time,
-            resolution_time=self.resolution_time,
-            tags=list(self.tags),
-            domain=self.domain,
-            topics=list(self.topics),
-            owner=self.owner,
-            impact=self.impact,
-            review_cadence=self.review_cadence,
-            next_review_at=self.next_review_at,
-            metadata={"onboarding": onboarding_meta},
-            decision_owner=self.decision_owner,
-            decision_deadline=self.decision_deadline,
-            action_threshold=self.action_threshold,
-            update_triggers=normalize_update_triggers([t.to_trigger() for t in self.update_triggers]) if self.update_triggers else None,
-        )
+        # The spec IS a recognised commit path (it is driven by the gated forecast
+        # tool / the CLI `onboard --commit`), so its create_question is allowed.
+        with allow_ledger_writes(reason="question_spec.commit"):
+            question = ledger.create_question(
+                title=self.title.strip(),
+                resolution_criteria=self.resolution_criteria.strip(),
+                outcome_space=self.outcome_space(),
+                description=self.description,
+                resolution_source=self.resolution_source,
+                close_time=self.close_time,
+                resolution_time=self.resolution_time,
+                tags=list(self.tags),
+                domain=self.domain,
+                topics=list(self.topics),
+                owner=self.owner,
+                impact=self.impact,
+                review_cadence=self.review_cadence,
+                next_review_at=self.next_review_at,
+                metadata={"onboarding": onboarding_meta},
+                decision_owner=self.decision_owner,
+                decision_deadline=self.decision_deadline,
+                action_threshold=self.action_threshold,
+                update_triggers=normalize_update_triggers([t.to_trigger() for t in self.update_triggers]) if self.update_triggers else None,
+            )
         question_id = question.id if hasattr(question, "id") else question["id"]
 
         watched: list[dict[str, Any]] = []

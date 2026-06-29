@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import hashlib
 import csv
 import json
@@ -76,6 +78,168 @@ logger = logging.getLogger(__name__)
 # synchronous recursion within one commit still shares it. Avoids the race a plain
 # instance attribute would have if a ledger were ever shared across threads.
 _CASCADE_TLS = threading.local()
+
+# ---------------------------------------------------------------------------
+# Direct-write gate.
+#
+# The desk agent has, in the past, fabricated forecasts by scripting the
+# ForecastLedger directly — importing it from an ad-hoc script and calling
+# create_snapshot / create_question / record_panel_run (or raw INSERT/UPDATE
+# via _connect()) — thereby bypassing the calibration / panel / evidence gates
+# that the gated forecast TOOL enforces on the commit path.
+#
+# This guard refuses a *forecast-producing* WRITE attempted OUTSIDE a recognised
+# commit context. A legitimate writer (the forecast tool's commit flow, the
+# market-nightly + cron jobs, the autonomous cycle, schema migrations, and the
+# CLI's own forecast commands) opens that context with `allow_ledger_writes()`
+# (or, for whole-database setup, `allow_ledger_writes(reason="...")`). Reads are
+# NEVER gated — scripts may freely audit / migrate-read the ledger; only the
+# three forecast-producing write methods are guarded.
+#
+# Mode is a config flag (FORECAST_GATE_DIRECT_WRITES), default the strongest
+# verified-safe mode ("on"):
+#   on    -> refuse the write with a clear ForecastingError (DEFAULT)
+#   warn  -> allow the write but log a warning (doctor/audit signal)
+#   off   -> no-op (the legacy behaviour)
+# The contextvar carries the active-commit flag (process- AND task-local, so a
+# gateway thread-pool / asyncio worker each see their own state).
+_FORECAST_COMMIT_ACTIVE: "contextvars.ContextVar[bool]" = contextvars.ContextVar(
+    "forecasting_tool_commit_active", default=False
+)
+
+# The three forecast-producing write methods the gate protects by name.
+GATED_LEDGER_WRITES = ("create_question", "create_snapshot", "record_panel_run")
+
+# The forecast-PRODUCING tables the connection-level authorizer protects. A
+# script that grabs a raw connection via `_connect()` and INSERTs a new row into
+# any of these is denied at QUERY time unless a recognised commit context is
+# active — this is the real bypass vector (method-name gating alone is trivially
+# side-stepped by `led._connect()`).
+#
+# We gate INSERT (row CREATION) specifically, because the three forecast-
+# producing methods this mirrors — create_question / create_snapshot /
+# record_panel_run — are precisely the row-creators (each is a single
+# `INSERT INTO <table>`), and fabricating a forecast means creating a question /
+# snapshot / panel-run row. We deliberately do NOT gate UPDATE/DELETE on these
+# tables: many legitimate, non-fabrication operations UPDATE them outside any
+# commit context (resolving a question -> status, editing config/metadata/title,
+# setting current_forecast_id, attaching a panel-run snapshot, thesis
+# re-aggregation), and those must keep working with the gate ON. Reads are never
+# touched (audits/migrations script the ledger freely).
+GATED_LEDGER_TABLES = frozenset(
+    {"forecast_questions", "forecast_snapshots", "panel_runs"}
+)
+
+
+def _ledger_write_authorizer(action, arg1, arg2, db_name, trigger_or_view):
+    """SQLite authorizer: deny forecast-producing row CREATION outside a commit context.
+
+    Installed by ``ForecastLedger._connect`` so the gate fires at the CONNECTION
+    level — a raw ``led._connect().execute("INSERT INTO forecast_snapshots …")``
+    from an ad-hoc script is refused the same as a gated method call, because the
+    authorizer checks the live contextvar at query time (so it fires even for
+    scripts the agent runs via the terminal tool, in-process).
+
+    Returns ``SQLITE_DENY`` only for an ``INSERT`` into a forecast-producing
+    table (``GATED_LEDGER_TABLES``) when (a) no commit context is active AND
+    (b) the gate mode is ``on``. Everything else — reads, DDL (CREATE/ALTER
+    TABLE, so schema init + migrations run in ``__init__`` outside any
+    allow-context keep working), transactions, PRAGMA, every UPDATE/DELETE on
+    these tables (resolve/config/aggregation), writes to non-forecast tables,
+    inserts inside a commit context, and every action under ``warn``/``off``
+    mode — is allowed. SQLite passes the target table name in ``arg1`` for
+    INSERT actions.
+    """
+    if action != sqlite3.SQLITE_INSERT:
+        return sqlite3.SQLITE_OK
+    if arg1 not in GATED_LEDGER_TABLES:
+        return sqlite3.SQLITE_OK
+    if _FORECAST_COMMIT_ACTIVE.get():
+        return sqlite3.SQLITE_OK
+    # warn/off never block at the connection level (the method-level
+    # _enforce_write_gate already logs the warn signal); only "on" denies.
+    if ledger_write_gate_mode() != "on":
+        return sqlite3.SQLITE_OK
+    return sqlite3.SQLITE_DENY
+
+
+def ledger_write_gate_mode() -> str:
+    """Return the active direct-write gate mode: 'on' | 'warn' | 'off'.
+
+    Read live from the environment each call so the flag is tunable at runtime
+    (tests / doctor / an operator override) without re-importing the module.
+    """
+    raw = os.getenv("FORECAST_GATE_DIRECT_WRITES", "on").strip().lower()
+    if raw in ("", "1", "true", "on", "enforce", "refuse"):
+        return "on"
+    if raw in ("warn", "warning", "audit", "log"):
+        return "warn"
+    if raw in ("0", "false", "off", "disable", "disabled"):
+        return "off"
+    # Unknown value -> fail safe to the strongest mode.
+    return "on"
+
+
+def forecast_commit_active() -> bool:
+    """True iff a recognised forecast-commit context is currently open."""
+    return bool(_FORECAST_COMMIT_ACTIVE.get())
+
+
+@contextlib.contextmanager
+def allow_ledger_writes(reason: str | None = None):
+    """Open a recognised forecast-commit context.
+
+    Forecast-producing writes (create_question / create_snapshot /
+    record_panel_run) executed *inside* this block are permitted; outside it
+    they are refused (or warned, per the gate mode). Re-entrant and
+    task/thread-local. ``reason`` is advisory (surfaced in logs).
+    """
+    token = _FORECAST_COMMIT_ACTIVE.set(True)
+    try:
+        if reason:
+            logger.debug("ledger writes allowed: %s", reason)
+        yield
+    finally:
+        _FORECAST_COMMIT_ACTIVE.reset(token)
+
+
+def allow_ledger_writes_decorator(reason: str | None = None):
+    """Decorate a recognised legitimate writer so its body runs inside the gate.
+
+    Sugar over :func:`allow_ledger_writes` for whole-function entry points (the
+    forecast tool, cron jobs, CLI commands). Preserves the wrapped signature.
+    """
+
+    def _wrap(func):
+        import functools
+
+        @functools.wraps(func)
+        def _inner(*args, **kwargs):
+            with allow_ledger_writes(reason=reason or getattr(func, "__name__", None)):
+                return func(*args, **kwargs)
+
+        return _inner
+
+    return _wrap
+
+
+def _enforce_write_gate(method_name: str) -> None:
+    """Refuse / warn on a forecast-producing write outside a commit context."""
+    if _FORECAST_COMMIT_ACTIVE.get():
+        return
+    mode = ledger_write_gate_mode()
+    if mode == "off":
+        return
+    message = (
+        f"Direct ledger writes are gated ({method_name}). "
+        "Use the forecast tool's commit flow. Scripts may READ the ledger "
+        "(audits/migrations) but not write forecasts."
+    )
+    if mode == "warn":
+        logger.warning("%s (warn-only mode)", message)
+        return
+    raise ForecastingError(message)
+
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
 
@@ -707,6 +871,22 @@ class ForecastLedger:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        # Connection-level write gate. This is the REAL chokepoint: the
+        # method-level _enforce_write_gate only sees create_question /
+        # create_snapshot / record_panel_run, but a script can grab THIS raw
+        # connection and run an INSERT directly. The authorizer checks the live
+        # commit-context contextvar at query time, so a raw forecast-producing
+        # write outside a recognised commit context is denied — even when the
+        # script is run by the agent via the terminal tool. Reads + DDL +
+        # transactions are always allowed (so initialize_schema / migrations,
+        # which run in __init__ outside any allow-context, keep working), and the
+        # whole thing is inert under warn/off mode. The set_authorizer call is
+        # cheap and defensive: if a stripped-down sqlite build lacked it, fall
+        # back to the method-level gate rather than break ledger connectivity.
+        try:
+            conn.set_authorizer(_ledger_write_authorizer)
+        except Exception:  # pragma: no cover - defensive only
+            logger.debug("could not install ledger write authorizer", exc_info=True)
         return conn
 
     def initialize_schema(self) -> None:
@@ -1521,6 +1701,7 @@ class ForecastLedger:
         action_threshold: str | None = None,
         update_triggers: Any = None,
     ) -> ForecastQuestion:
+        _enforce_write_gate("create_question")
         title = title.strip()
         resolution_criteria = resolution_criteria.strip()
         if not title:
@@ -2337,6 +2518,7 @@ class ForecastLedger:
         require_output_structure: bool = True,
         distribution_autofix: bool = False,
     ) -> ForecastSnapshot:
+        _enforce_write_gate("create_snapshot")
         question = self.get_question(question_id)
         # Forecast hooks: saturation/style gates raise SaturationBlocked (a
         # ValidationError subclass with a byte-identical message) so the report —
@@ -4438,6 +4620,8 @@ class ForecastLedger:
         :meth:`create_snapshot` and the panel run id into the snapshot's
         ``ensemble_components`` or ``metadata``.
         """
+
+        _enforce_write_gate("record_panel_run")
 
         from forecasting.hooks.thresholds import resolve_alpha_extremize
         from forecasting.panel import aggregate_panel_estimates  # local import to avoid cycle

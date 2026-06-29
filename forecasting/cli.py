@@ -3009,12 +3009,18 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
 
 
 def cmd_forecast(args: argparse.Namespace) -> None:
+    from forecasting.ledger import allow_ledger_writes
+
     handler = getattr(args, "_forecast_handler", None)
     try:
         if handler is None:
             _cmd_dashboard(args)
             return
-        handler(args)
+        # The forecast CLI is a recognised legitimate writer (the operator's own
+        # commit/onboard/score commands). Opening the write context here lets the
+        # CLI commit through the same gated methods an ad-hoc script is refused.
+        with allow_ledger_writes(reason="forecast_cli"):
+            handler(args)
     except ForecastingError as exc:
         print(f"forecast: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

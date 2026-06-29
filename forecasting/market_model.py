@@ -842,16 +842,19 @@ def model_to_forecast(model_id: str, *, ledger) -> dict[str, Any]:
     # spawned question id back on the model's spec. Best-effort, never raises.
     question_id = None
     try:
-        q = ledger.create_question(
-            title=seed["title"][:200],
-            resolution_criteria=(
-                f"Resolves by comparing the realized outcome against this market model's projection"
-                + (f" ({proj})" if proj else "") + ". Re-run the model on fresh data to score."
-            ),
-            description=seed["description"],
-            tags=["market-model"],
-            metadata={"source_market_model": model_id},
-        )
+        from forecasting.ledger import allow_ledger_writes
+
+        with allow_ledger_writes(reason="market_model.model_to_forecast"):
+            q = ledger.create_question(
+                title=seed["title"][:200],
+                resolution_criteria=(
+                    f"Resolves by comparing the realized outcome against this market model's projection"
+                    + (f" ({proj})" if proj else "") + ". Re-run the model on fresh data to score."
+                ),
+                description=seed["description"],
+                tags=["market-model"],
+                metadata={"source_market_model": model_id},
+            )
         question_id = getattr(q, "id", None) or (q.get("id") if isinstance(q, dict) else None)
         if question_id:
             spec = dict(model.get("spec") or {})

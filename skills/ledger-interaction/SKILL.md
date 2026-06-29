@@ -82,6 +82,50 @@ The gates have audited exits — use them honestly, never to fake compliance:
 - **Genuinely exploratory**: record `forecast_origin=exploratory` — unscored, not
   gated, the right home for scratch work and side models.
 
+## Your workspace, and the harness wall
+
+There is a clean separation between WHERE you may write code and WHAT that code
+may do to the ledger.
+
+- **Write code in your workspace.** `~/.superforecasting-agent/workspace`
+  (and the sibling `~/.superforecasting-agent/scripts`) is your sanctioned
+  write zone for forecasting models, backtests, research, and scratch
+  calculations. Your terminal / code-execution tools default into it. Anything
+  under the agent home or the system temp dir is allowed too. Write and run
+  data-science code there as freely as the problem needs.
+- **You cannot edit the harness.** The code that implements this desk — the
+  installed package and its repo (`tools/`, `hermes_cli/`, `agent/`, the
+  gateway) — is immutable from inside the agent. `write_file` and `patch` will
+  **hard-reject** any write whose resolved target lands in the harness source
+  tree, returning an error that points you back to the workspace. This is a
+  deliberate guardrail: a self-modifying forecasting desk is a footgun. If you
+  believe the harness should change, write the proposed patch plus your
+  rationale into the workspace and flag it for human review — do not apply it
+  yourself. (The wall is a config flag, `harness_wall.enabled`, default on.)
+
+What's airtight and what isn't — be honest with yourself:
+
+- The forecast **ledger** is *fully* gated. Every forecast-producing write
+  (new question, snapshot, panel run) is enforced at the database-connection
+  level by a SQLite authorizer in `forecasting.ledger`. Even a script you write
+  and run in the terminal that imports `ForecastLedger` or opens a raw
+  connection **cannot** fabricate a forecast outside the tool's commit flow — it
+  is denied at query time. There is no terminal back door to the ledger.
+- The **file-write tools** (`write_file` / `patch`) are *enforced*: a harness
+  target is hard-rejected, full stop.
+- The **terminal tool** is *best-effort only*, and you should know it: it is not
+  a sandbox. Its default working directory is moved out of the harness into your
+  workspace, and it refuses the obvious shell write patterns (`echo … >
+  tools/x.py`, `tee` into the tree). But it cannot stop every way of writing a
+  file (Python `open()`, `cp`, `dd`, an env trick). Do not treat the absence of
+  a block as permission: the rule is "don't edit the harness," not "edit it if
+  you can find a hole." If you need a harness change, propose it for review.
+
+Note the rules compose: scripting forecasts is wrong (use the tool — and the
+ledger now enforces it), and editing the harness is off-limits — but building a
+backtest or a side model in the workspace and running it is exactly what the
+workspace is for.
+
 ## Bottom line
 
 Reads can be scripts; writes are the tool's. Bulk means many real forecasts, not one

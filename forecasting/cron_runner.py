@@ -9,13 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from forecasting.learning import is_learning_review_reason
-from forecasting.ledger import ForecastLedger
+from forecasting.ledger import ForecastLedger, allow_ledger_writes_decorator
 
 
 def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+@allow_ledger_writes_decorator("cron_runner.run_due_reviews")
 def run_due_reviews(
     *,
     db_path: str | None = None,

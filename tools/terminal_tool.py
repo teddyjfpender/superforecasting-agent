@@ -926,6 +926,11 @@ _creation_locks_lock = threading.Lock()  # Protects _creation_locks dict itself
 _cleanup_thread = None
 _cleanup_running = False
 
+# Whether we've already told the agent (once per process) that its default
+# terminal cwd was relocated out of the harness into the workspace. Shown once
+# so the agent learns its cwd without spamming the notice on every command.
+_cwd_relocation_notice_shown = False
+
 # Per-task environment overrides registry.
 # Allows environments (e.g., TerminalBench2Env) to specify a custom Docker/Modal
 # image for a specific task_id BEFORE the agent loop starts. When the terminal or
@@ -1018,8 +1023,43 @@ def _get_env_config() -> Dict[str, Any]:
     # Default cwd: local uses the host's current directory, ssh uses the
     # remote home, Vercel uses its documented workspace root, and everything
     # else starts in the backend's default root-like cwd.
+    # When we relocate the default cwd out of the harness, surface a one-line
+    # notice in the config so terminal_tool can tell the AGENT (don't relocate
+    # silently — the agent should know its cwd is the workspace, not the repo).
+    cwd_relocated_notice: str | None = None
     if env_type == "local":
         default_cwd = os.getcwd()
+        # Point the desk agent's code-execution / terminal default cwd at its
+        # sanctioned workspace when the process cwd would otherwise land inside
+        # the harness source tree. Scripts/backtests then run in the allowed
+        # write zone instead of the immutable harness. Only applies when no
+        # explicit TERMINAL_CWD is set (env override always wins) and the
+        # workspace is resolvable; failures fall back to os.getcwd().
+        if not os.getenv("TERMINAL_CWD"):
+            try:
+                from agent.harness_wall import (
+                    get_harness_source_roots,
+                    is_harness_wall_enabled,
+                )
+                from hermes_constants import ensure_workspace_dir
+
+                if is_harness_wall_enabled():
+                    cwd_real = os.path.realpath(default_cwd)
+                    in_harness = any(
+                        cwd_real == str(r) or cwd_real.startswith(str(r) + os.sep)
+                        for r in get_harness_source_roots()
+                    )
+                    if in_harness:
+                        ws = str(ensure_workspace_dir())
+                        cwd_relocated_notice = (
+                            f"[harness wall] Working directory set to your workspace "
+                            f"({ws}) instead of the immutable harness source tree. "
+                            f"Write models/backtests/scratch here; pass an explicit "
+                            f"`workdir` if you need a different (non-harness) directory."
+                        )
+                        default_cwd = ws
+            except Exception:
+                pass
     elif env_type == "ssh":
         default_cwd = "~"
     elif env_type == "vercel_sandbox":
@@ -1066,6 +1106,7 @@ def _get_env_config() -> Dict[str, Any]:
         "vercel_runtime": os.getenv("TERMINAL_VERCEL_RUNTIME", "").strip(),
         "cwd": cwd,
         "host_cwd": host_cwd,
+        "cwd_relocated_notice": cwd_relocated_notice,
         "docker_mount_cwd_to_workspace": mount_docker_cwd,
         "timeout": _parse_env_var("TERMINAL_TIMEOUT", "180"),
         "lifetime_seconds": _parse_env_var("TERMINAL_LIFETIME_SECONDS", "300"),
@@ -1738,6 +1779,18 @@ def terminal_tool(
             image = ""
 
         cwd = overrides.get("cwd") or config["cwd"]
+
+        # If the default cwd was relocated out of the harness into the
+        # workspace, tell the AGENT once (not silently). Only when the command
+        # actually uses the default cwd (no explicit per-command workdir).
+        global _cwd_relocation_notice_shown
+        cwd_relocated_notice = None
+        relocate_msg = config.get("cwd_relocated_notice")
+        if relocate_msg and not workdir and not _cwd_relocation_notice_shown:
+            cwd_relocated_notice = relocate_msg
+            _cwd_relocation_notice_shown = True
+            logger.info("%s", relocate_msg)
+
         default_timeout = config["timeout"]
         effective_timeout = timeout or default_timeout
 
@@ -1762,6 +1815,32 @@ def terminal_tool(
                     "exit_code": -1,
                     "error": guidance,
                     "status": "error",
+                }, ensure_ascii=False)
+
+        # Best-effort harness-source wall for the LOCAL backend: refuse the
+        # OBVIOUS shell write patterns (`echo … > tools/x.py`, `tee`) that target
+        # the immutable harness source tree. This is NOT airtight — the terminal
+        # is not a sandbox, and a determined script can still mutate the harness
+        # via Python open(), cp/dd, etc. It is layered behind the cwd redirect,
+        # the (enforced) file-tool gate, and soul guidance; the forecast ledger
+        # is separately FULLY gated at the SQLite-connection level. See
+        # agent.harness_wall for the honest residual-gap writeup.
+        if env_type == "local":
+            try:
+                from agent.harness_wall import check_harness_command_write
+
+                # Resolve relative redirect targets against the command's
+                # effective cwd (per-command workdir wins, else the session cwd).
+                redirect_base = workdir or cwd
+                harness_cmd_err = check_harness_command_write(command, cwd=redirect_base)
+            except Exception:
+                harness_cmd_err = None
+            if harness_cmd_err:
+                return json.dumps({
+                    "output": "",
+                    "exit_code": -1,
+                    "error": harness_cmd_err,
+                    "status": "blocked",
                 }, ensure_ascii=False)
 
         # Start cleanup thread
@@ -2135,6 +2214,8 @@ def terminal_tool(
                 result_dict["approval"] = approval_note
             if exit_note:
                 result_dict["exit_code_meaning"] = exit_note
+            if cwd_relocated_notice:
+                result_dict["notice"] = cwd_relocated_notice
 
             return json.dumps(result_dict, ensure_ascii=False)
 

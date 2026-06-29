@@ -25,6 +25,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from forecasting import ForecastLedger
+from forecasting.ledger import allow_ledger_writes
 from forecasting.models import OutcomeSpace
 
 NOW = datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc)
@@ -290,34 +291,39 @@ def main() -> None:
     print(f"ledger db: {ledger.db_path}")
     existing = {q.title for q in ledger.list_questions(status=None)}
     created = 0
-    for spec in QUESTIONS:
-        if spec["title"] in existing:
-            print(f"skip (exists): {spec['title'][:70]}")
-            continue
-        outcome = OutcomeSpace(type="distribution", units=spec["units"], bounds=spec["bounds"])
-        question = ledger.create_question(
-            title=spec["title"],
-            resolution_criteria=spec["resolution_criteria"],
-            outcome_space=outcome,
-            resolution_source=spec["resolution_source"],
-            close_time=spec["close"],
-            resolution_time=spec["resolve"],
-            domain=spec["domain"],
-            topics=spec["topics"],
-            review_cadence="daily",
-            next_review_at=NEXT_REVIEW,
-            update_triggers=spec["triggers"] or None,
-        )
-        for source in spec["watched"]:
-            ledger.add_watched_source(
-                scope_type="question",
-                scope_ref=question.id,
-                source=source["source"],
-                source_type=source["source_type"],
-                metadata={"auto_watch": True, "from_action": "seed_eval_questions"},
+    # This is a SANCTIONED operator seed tool — open the ledger-write context so
+    # its create_question calls pass the default-ON direct-write gate (which
+    # exists to stop the AGENT scripting fabricated forecasts; operator seeding
+    # is explicitly allowed). See forecasting.ledger.allow_ledger_writes.
+    with allow_ledger_writes(reason="operator seed script"):
+        for spec in QUESTIONS:
+            if spec["title"] in existing:
+                print(f"skip (exists): {spec['title'][:70]}")
+                continue
+            outcome = OutcomeSpace(type="distribution", units=spec["units"], bounds=spec["bounds"])
+            question = ledger.create_question(
+                title=spec["title"],
+                resolution_criteria=spec["resolution_criteria"],
+                outcome_space=outcome,
+                resolution_source=spec["resolution_source"],
+                close_time=spec["close"],
+                resolution_time=spec["resolve"],
+                domain=spec["domain"],
+                topics=spec["topics"],
+                review_cadence="daily",
+                next_review_at=NEXT_REVIEW,
+                update_triggers=spec["triggers"] or None,
             )
-        created += 1
-        print(f"created {question.id}  [{spec['units']}]  {spec['title'][:64]}")
+            for source in spec["watched"]:
+                ledger.add_watched_source(
+                    scope_type="question",
+                    scope_ref=question.id,
+                    source=source["source"],
+                    source_type=source["source_type"],
+                    metadata={"auto_watch": True, "from_action": "seed_eval_questions"},
+                )
+            created += 1
+            print(f"created {question.id}  [{spec['units']}]  {spec['title'][:64]}")
     print(f"\n{created} created, {len(QUESTIONS) - created} skipped. Daily review at {NEXT_REVIEW}.")
 
 

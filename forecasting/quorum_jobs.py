@@ -330,19 +330,22 @@ def execute_job(run_id: str) -> dict[str, Any]:
         # persisted aggregate is the P0.3-resolved, terminally-calibrated value
         # — not a divergent re-pool.
         _append_progress(job, "record", "recording quorum panel run")
-        panel_run = ledger.record_panel_run(
-            question_id=question.id,
-            estimates=result.panel_estimates(),
-            aggregation_method=result.pool_method,
-            trim=result.trim,
-            snapshot_id=spec.get("attach_snapshot"),
-            triggered_by=spec.get("triggered_by") or "quorum",
-            judge=result.judge.to_dict() if result.judge else None,
-            final_probability=result.committed_probability,
-            final_source=result.final_source,
-            research_rounds=result.research_rounds,
-            supervisor_evidence=result.supervisor_evidence,
-        )
+        from forecasting.ledger import allow_ledger_writes
+
+        with allow_ledger_writes(reason="quorum_jobs.execute_job"):
+            panel_run = ledger.record_panel_run(
+                question_id=question.id,
+                estimates=result.panel_estimates(),
+                aggregation_method=result.pool_method,
+                trim=result.trim,
+                snapshot_id=spec.get("attach_snapshot"),
+                triggered_by=spec.get("triggered_by") or "quorum",
+                judge=result.judge.to_dict() if result.judge else None,
+                final_probability=result.committed_probability,
+                final_source=result.final_source,
+                research_rounds=result.research_rounds,
+                supervisor_evidence=result.supervisor_evidence,
+            )
         job["panel_run_id"] = panel_run["id"]
         job["result"] = result.to_dict()
         job["status"] = "done"

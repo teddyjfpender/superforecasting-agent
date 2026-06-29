@@ -526,6 +526,17 @@ def _hermetic_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("AWS_METADATA_SERVICE_TIMEOUT", "1")
     monkeypatch.setenv("AWS_METADATA_SERVICE_NUM_ATTEMPTS", "1")
 
+    # 4c. Direct-ledger-write gate (forecasting/ledger.py) defaults ON in
+    #     PRODUCTION, refusing forecast-producing writes (create_snapshot /
+    #     create_question / record_panel_run) attempted outside a recognised
+    #     commit context. The bulk of the forecasting suite constructs a
+    #     ForecastLedger and writes to it DIRECTLY (the in-process library API),
+    #     which is legitimate test usage, so default the gate OFF for tests. The
+    #     dedicated enforcement test (test_ledger_write_gate.py) re-enables it
+    #     explicitly via monkeypatch.setenv to exercise both the refusal and the
+    #     allowlisted writers.
+    monkeypatch.setenv("FORECAST_GATE_DIRECT_WRITES", "off")
+
     # 5. Reset plugin singleton so tests don't leak plugins from
     #    ~/.hermes/plugins/ (which, per step 3, is now empty — but the
     #    singleton might still be cached from a previous test).

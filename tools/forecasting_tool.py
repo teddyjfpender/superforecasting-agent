@@ -8,7 +8,10 @@ import os
 from typing import Any
 
 from forecasting import ForecastLedger, PRODUCT_NAME, PRODUCT_SLUG
-from forecasting.ledger import FORECAST_LINK_TYPES
+from forecasting.ledger import (
+    FORECAST_LINK_TYPES,
+    allow_ledger_writes_decorator,
+)
 from forecasting.backtesting import (
     DEFAULT_MIN_AGENT_PROTOCOL_CASES_FOR_CLAIM,
     DEFAULT_MIN_EXTERNAL_SOURCE_FAMILIES_FOR_CLAIM,
@@ -916,7 +919,13 @@ def check_forecasting_requirements() -> bool:
     return True
 
 
+@allow_ledger_writes_decorator("forecast_ledger_tool")
 def forecast_ledger_tool(args: dict[str, Any]) -> str:
+    # This IS the gated commit flow: every forecast-producing action here runs
+    # through create_snapshot / create_question / record_panel_run, which apply
+    # the calibration / panel / evidence gates. Opening the write context for the
+    # whole dispatch is what lets those gated writes through; an ad-hoc script
+    # that imports ForecastLedger and calls them directly stays refused.
     ledger = ForecastLedger(args.get("db"))
     action = args.get("action")
     try:

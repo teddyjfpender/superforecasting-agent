@@ -53,6 +53,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Sequence
 
+from forecasting.ledger import allow_ledger_writes_decorator
 from forecasting.models import (
     OutcomeSpace,
     parse_timestamp,
@@ -314,6 +315,7 @@ def _binary_outcome_space(market: Mapping[str, Any]) -> OutcomeSpace:
     return OutcomeSpace(type="binary", choices=["yes", "no"])
 
 
+@allow_ledger_writes_decorator("market_nightly.record_pending")
 def record_pending(
     ledger: Any,
     sampled: Sequence[Mapping[str, Any]],
@@ -584,6 +586,7 @@ def _market_nightly_questions(ledger: Any) -> list[Any]:
 # ── 3. score the matured entries ───────────────────────────────────────────────
 
 
+@allow_ledger_writes_decorator("market_nightly.score_matured")
 def score_matured(ledger: Any, *, now: str | None = None) -> dict[str, Any]:
     """Score every pending market-nightly entry whose market has RESOLVED.
 

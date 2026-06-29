@@ -438,6 +438,27 @@ def get_skills_dir() -> Path:
     return get_hermes_home() / "skills"
 
 
+def get_workspace_dir() -> Path:
+    """Return the sanctioned desk-agent WORKSPACE under HERMES_HOME.
+
+    ``<HERMES_HOME>/workspace`` is the allowed write zone where the desk
+    agent builds forecasting models, runs backtests, and keeps scratch
+    calculations — as opposed to the harness source tree, which the agent's
+    file-write tools refuse to touch (see ``agent.harness_wall``).
+    """
+    return get_hermes_home() / "workspace"
+
+
+def ensure_workspace_dir() -> Path:
+    """Create (on demand) and return the desk-agent workspace directory."""
+    ws = get_workspace_dir()
+    try:
+        ws.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    return ws
+
+
 
 def get_env_path() -> Path:
     """Return the path to the ``.env`` file under HERMES_HOME."""

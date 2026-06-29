@@ -929,11 +929,38 @@ def _check_file_staleness(filepath: str, task_id: str) -> str | None:
     return None
 
 
+def _check_harness_wall(path: str, task_id: str = "default") -> str | None:
+    """Return an error if the resolved write target is inside the harness source.
+
+    The desk agent may freely write to its workspace / scripts / agent home /
+    temp, but MUST NOT edit the harness source tree it runs inside. Resolve the
+    path against the task's live cwd first (mirrors _check_sensitive_path) so a
+    relative path under TERMINAL_CWD is judged correctly, then defer the
+    in/out decision to agent.harness_wall.
+    """
+    try:
+        resolved = str(_resolve_path_for_task(path, task_id))
+    except Exception:
+        resolved = None
+    try:
+        from agent.harness_wall import check_harness_write
+        return check_harness_write(path, resolved=resolved)
+    except Exception:
+        # The wall must never break a write by crashing — if its own import or
+        # logic fails, fall through to allow (the wall is a guardrail, not a
+        # security boundary; the terminal tool can write source anyway).
+        logger.debug("harness wall check failed open", exc_info=True)
+        return None
+
+
 def write_file_tool(path: str, content: str, task_id: str = "default") -> str:
     """Write content to a file."""
     sensitive_err = _check_sensitive_path(path, task_id)
     if sensitive_err:
         return tool_error(sensitive_err)
+    harness_err = _check_harness_wall(path, task_id)
+    if harness_err:
+        return tool_error(harness_err)
     if _is_internal_file_status_text(content):
         return tool_error(
             "Refusing to write internal read_file status text as file content. "
@@ -1002,6 +1029,9 @@ def patch_tool(mode: str = "replace", path: str = None, old_string: str = None,
         sensitive_err = _check_sensitive_path(_p, task_id)
         if sensitive_err:
             return tool_error(sensitive_err)
+        harness_err = _check_harness_wall(_p, task_id)
+        if harness_err:
+            return tool_error(harness_err)
     try:
         # Resolve paths for locking.  Ordered + deduplicated so concurrent
         # callers lock in the same order — prevents deadlock on overlapping

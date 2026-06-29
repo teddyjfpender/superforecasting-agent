@@ -284,7 +284,12 @@ class TestPatchHints:
         mock_get.return_value = mock_ops
 
         from tools.file_tools import patch_tool
-        raw = patch_tool(mode="replace", path="foo.py", old_string="x", new_string="y")
+        import tempfile, os
+        # Absolute path in the temp zone so the harness wall (which rejects
+        # writes resolving into the harness source tree) doesn't intercept a
+        # repo-relative path before the mocked backend runs.
+        foo = os.path.join(tempfile.gettempdir(), "foo.py")
+        raw = patch_tool(mode="replace", path=foo, old_string="x", new_string="y")
         # patch_tool surfaces the hint as a structured "_hint" field on the
         # JSON error payload (not an inline "[Hint: ..." tail).
         assert "_hint" in raw
@@ -299,7 +304,11 @@ class TestPatchHints:
         mock_get.return_value = mock_ops
 
         from tools.file_tools import patch_tool
-        raw = patch_tool(mode="replace", path="foo.py", old_string="x", new_string="y")
+        import tempfile, os
+        # Absolute temp path: outside the harness source tree so the wall
+        # allows the (mocked) write through. See test_no_match_includes_hint.
+        foo = os.path.join(tempfile.gettempdir(), "foo.py")
+        raw = patch_tool(mode="replace", path=foo, old_string="x", new_string="y")
         assert "_hint" not in raw
 
 
