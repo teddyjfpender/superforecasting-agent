@@ -105,12 +105,22 @@ export function ForecastSettingsModal({
   useEffect(() => {
     aliveRef.current = true
     setLoading(true)
+    setError('')
+    // Never hang indefinitely on "Loading settings…": if the gateway is slow
+    // (it builds a fresh ledger per forecast.config call) or busy, surface a
+    // clear, actionable state instead of an endless spinner.
+    const timer = setTimeout(() => {
+      if (!aliveRef.current) return
+      setError('Settings are taking a while to load — the desk gateway may be busy. Press Esc to close and try again.')
+      setLoading(false)
+    }, 8000)
     gw.request<unknown>('forecast.config', { id: questionId })
       .then(raw => {
         if (!aliveRef.current) return
+        clearTimeout(timer)
         const cfg = asRpcResult<ForecastConfigResponse>(raw)
         if (!cfg) {
-          setError('forecast.config returned no data')
+          setError('No settings are available for this forecast — it may be a benchmark or market question without a configurable profile. Press Esc to close.')
           setLoading(false)
           return
         }
@@ -127,12 +137,14 @@ export function ForecastSettingsModal({
       })
       .catch((err: unknown) => {
         if (!aliveRef.current) return
+        clearTimeout(timer)
         setError(err instanceof Error ? err.message : String(err))
         setLoading(false)
       })
 
     return () => {
       aliveRef.current = false
+      clearTimeout(timer)
     }
   }, [gw, questionId])
 
@@ -152,6 +164,14 @@ export function ForecastSettingsModal({
 
   const clampedSel = Math.min(sel, Math.max(0, fields.length - 1))
   const current = fields[clampedSel]
+
+  // Keep the stored index in range whenever the field list grows/shrinks (gates
+  // and thresholds populate after the async load). Without this the raw `sel`
+  // can sit past the visible cursor, so an arrow press just pulls it back into
+  // range without moving — the "sometimes one press, sometimes two" bug.
+  useEffect(() => {
+    setSel(s => Math.min(Math.max(0, s), Math.max(0, fields.length - 1)))
+  }, [fields.length])
 
   const save = () => {
     if (busy) return
@@ -218,6 +238,16 @@ export function ForecastSettingsModal({
     }
   }
 
+  // Move the cursor relative to the VISIBLE position: clamp the stored index to
+  // range first, THEN apply the delta, so a press always advances one row even
+  // if `sel` had drifted past the field count.
+  const move = (delta: 1 | -1) =>
+    setSel(i => {
+      const max = Math.max(0, fields.length - 1)
+      const cur = Math.min(Math.max(0, i), max)
+      return Math.min(max, Math.max(0, cur + delta))
+    })
+
   useInput((ch, key) => {
     if (busy) {
       if (key.escape) onClose()
@@ -226,13 +256,17 @@ export function ForecastSettingsModal({
     if (key.escape) return onClose()
 
     if (key.upArrow || (ch === 'k' && current.kind !== 'cadence' && current.kind !== 'text')) {
-      return setSel(i => Math.max(0, i - 1))
+      return move(-1)
     }
-    if (key.downArrow) {
-      return setSel(i => Math.min(fields.length - 1, i + 1))
+    if (key.downArrow || (ch === 'j' && current.kind !== 'cadence' && current.kind !== 'text')) {
+      return move(1)
     }
     if (key.tab) {
-      return setSel(i => (i + 1) % fields.length)
+      return setSel(i => {
+        const max = Math.max(0, fields.length - 1)
+        const cur = Math.min(Math.max(0, i), max)
+        return cur >= max ? 0 : cur + 1
+      })
     }
 
     if (current.kind === 'save') {
@@ -243,13 +277,13 @@ export function ForecastSettingsModal({
     if (current.kind === 'gate' || current.kind === 'threshold') {
       if (key.leftArrow || ch === 'h' || ch === '-') return adjust(-1)
       if (key.rightArrow || ch === 'l' || ch === '+' || ch === ' ') return adjust(1)
-      if (key.return) return setSel(i => Math.min(fields.length - 1, i + 1))
+      if (key.return) return move(1)
       return
     }
 
     // text / cadence fields capture typing
     if (key.return) {
-      return setSel(i => Math.min(fields.length - 1, i + 1))
+      return move(1)
     }
     if (key.backspace || key.delete) {
       return editText(s => s.slice(0, -1))
