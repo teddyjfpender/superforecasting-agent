@@ -703,6 +703,33 @@ def _reset_module_state():
     except Exception:
         pass
 
+    # --- hermes_state — DEFAULT_DB_PATH (the session/state SQLite DB) is
+    #     cached at import time. If hermes_state was imported during suite
+    #     collection (134 test modules import it at top level) the constant
+    #     froze to the *real* ~/.superforecasting-agent/state.db. Any test
+    #     that builds SessionDB() / an AIAgent then wrote real chat sessions
+    #     — surfacing as "(untitled)" rows in the user's live TUI. Re-point
+    #     it (and the read-only session_search callsite) at the per-test
+    #     HERMES_HOME. SessionDB also resolves this lazily now, but tools
+    #     that read DEFAULT_DB_PATH.parent directly still need the refresh.
+    try:
+        import hermes_state as _hstate_mod
+        _hstate_home = Path(os.environ["HERMES_HOME"]).resolve()
+        _hstate_mod.DEFAULT_DB_PATH = _hstate_home / "state.db"
+    except Exception:
+        pass
+
+    # --- gateway.mirror — _SESSIONS_DIR / _SESSIONS_INDEX are likewise
+    #     frozen from get_hermes_home() at import. Repoint at the per-test
+    #     home so transcript-mirror writes never touch the real sessions dir.
+    try:
+        from gateway import mirror as _mirror_mod
+        _mirror_home = Path(os.environ["HERMES_HOME"]).resolve()
+        _mirror_mod._SESSIONS_DIR = _mirror_home / "sessions"
+        _mirror_mod._SESSIONS_INDEX = _mirror_mod._SESSIONS_DIR / "sessions.json"
+    except Exception:
+        pass
+
     yield
 
 

@@ -33,6 +33,29 @@ T = TypeVar("T")
 
 DEFAULT_DB_PATH = get_hermes_home() / "state.db"
 
+
+def _default_db_path() -> Path:
+    """Resolve the default state.db path at *call* time, not import time.
+
+    ``DEFAULT_DB_PATH`` is a module-level constant frozen the moment this
+    module is first imported.  During a test-suite collection that import
+    happens before any per-test fixture runs, so the constant captures the
+    *real* ``~/.superforecasting-agent`` rather than the per-test
+    ``HERMES_HOME`` tempdir.  Any ``SessionDB()`` constructed afterwards
+    would then write sessions (and ``(untitled)`` rows) into the user's live
+    ``state.db``.  Resolving via ``get_hermes_home()`` here re-reads the
+    current ``HERMES_HOME`` so isolated test runs land in their tempdir.
+
+    Tests that ``monkeypatch.setattr(hermes_state, "DEFAULT_DB_PATH", ...)``
+    keep working: an explicitly patched module constant takes precedence.
+    """
+    patched = DEFAULT_DB_PATH
+    if str(patched) != str(get_hermes_home() / "state.db"):
+        # The constant has been deliberately overridden (e.g. by a test
+        # monkeypatch). Honour it rather than re-resolving from env.
+        return patched
+    return get_hermes_home() / "state.db"
+
 SCHEMA_VERSION = 11
 
 # ---------------------------------------------------------------------------
@@ -330,7 +353,7 @@ class SessionDB:
     _CHECKPOINT_EVERY_N_WRITES = 50
 
     def __init__(self, db_path: Path = None):
-        self.db_path = db_path or DEFAULT_DB_PATH
+        self.db_path = db_path or _default_db_path()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._lock = threading.Lock()
