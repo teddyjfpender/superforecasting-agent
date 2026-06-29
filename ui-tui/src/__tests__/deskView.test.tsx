@@ -263,6 +263,32 @@ describe('DeskView (redesigned forecast desk)', () => {
     text = desk.text()
     expect(text).toContain('FORECASTS') // body still rendered behind the overlay
     expect(text).toContain('Inflation stays sticky through 2026')
+    // The INSPECTED item IS the thesis → the modal leads with the full thesis read.
+    // Its domain·status·members header line is emitted ONLY by ThesisDeskRead (the
+    // list/panel/tab-strip never print it), so it proves the thesis read is present
+    // and ABOVE the modal fold.
+    expect(text).toContain('macro · active · 1 member · inflation, macro')
+    desk.cleanup()
+  })
+
+  it('a MEMBER question modal leads with the question detail — NOT the parent thesis read', async () => {
+    const desk = await mountDesk(120, fixture())
+    // Default thesis tab. Row 0 is the thesis lens; the cursor starts there. Move
+    // DOWN onto row 1 — the member question (CPI-U) — then Enter to open it. A lens
+    // is ACTIVE in the tab strip, but the INSPECTED item is a `forecast` member, so
+    // the modal must NOT prepend the parent thesis read.
+    await desk.press('j')
+    await desk.press('\r')
+    const text = desk.text()
+    // The modal leads with the QUESTION's own detail (its full title heads the
+    // overlay + the detail body).
+    expect(text).toContain('May 2026 CPI-U YoY')
+    // The thesis visual-summary block must be ABSENT. ThesisDeskRead's
+    // domain·status·members header line is the read's first body row (above the
+    // fold) and is emitted ONLY by that block — so its absence proves the parent
+    // thesis read is NOT wrongly prepended above the member question's detail.
+    expect(text).not.toContain('macro · active · 1 member · inflation, macro')
+    expect(text).not.toContain('member contributions')
     desk.cleanup()
   })
 

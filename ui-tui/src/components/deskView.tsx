@@ -710,9 +710,12 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       })()
     : null
 
-  // The lens tab can lead with the thesis/factor aggregate read — shown ABOVE
-  // the forecast detail in the modal so the lens context heads it.
-  const refRead = refThesis ? (
+  // The thesis/factor aggregate read leads the modal ONLY when the INSPECTED row
+  // IS the lens row (Enter on the thesis/factor itself → `lensActive`). For a
+  // MEMBER question (a `forecast` row under the lens) the modal must lead with
+  // that question's own detail — never prepend the parent thesis/factor read just
+  // because a lens is ACTIVE in the tab strip.
+  const refRead = !lensActive ? null : refThesis ? (
     <ThesisDeskRead t={t} thesis={refThesis} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
   ) : refFactor ? (
     <FactorDeskRead factor={refFactor} t={t} width={Math.max(20, (wide ? Math.min(cols - 10, 92) : cols - 6) - 4)} />
