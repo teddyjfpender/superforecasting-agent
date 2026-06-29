@@ -238,34 +238,34 @@ def test_main_top_level_tui_accepts_toolsets(monkeypatch, main_mod):
     import hermes_cli.config as config_mod
 
     monkeypatch.setattr(sys, "argv", ["hermes", "--tui", "--toolsets", "web,terminal"])
-    monkeypatch.setitem(
-        sys.modules,
-        "hermes_cli.plugins",
-        types.SimpleNamespace(discover_plugins=lambda: None),
-    )
-    monkeypatch.setitem(
-        sys.modules,
-        "tools.mcp_tool",
-        types.SimpleNamespace(discover_mcp_tools=lambda: None),
-    )
-    monkeypatch.setattr(config_mod, "load_config", lambda: {})
     monkeypatch.setattr(config_mod, "get_container_exec_info", lambda: None)
     monkeypatch.setitem(
         sys.modules,
-        "agent.shell_hooks",
+        "hermes_cli._parser",
         types.SimpleNamespace(
-            register_from_config=lambda _cfg, accept_hooks=False: None
+            build_top_level_parser=lambda: (_ for _ in ()).throw(
+                AssertionError("top-level --tui should bypass full parser setup")
+            )
         ),
     )
     monkeypatch.setattr(
         main_mod,
         "cmd_chat",
-        lambda args: captured.update({"toolsets": args.toolsets, "tui": args.tui}),
+        lambda _args: (_ for _ in ()).throw(AssertionError("cmd_chat should not run")),
+    )
+    monkeypatch.setattr(
+        main_mod,
+        "_launch_tui",
+        lambda resume_session_id=None, **kwargs: captured.update(
+            {"resume": resume_session_id, **kwargs}
+        ),
     )
 
     main_mod.main()
 
-    assert captured == {"toolsets": "web,terminal", "tui": True}
+    assert captured["resume"] is None
+    assert captured["toolsets"] == "web,terminal"
+    assert captured["tui_dev"] is False
 
 
 def test_main_top_level_oneshot_accepts_toolsets(monkeypatch, main_mod):

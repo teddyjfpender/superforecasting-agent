@@ -220,7 +220,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // into the transcript on startup. That panel both clobbered the clean
     // landing and was the visible repaint on the setting-up → ready transition.
     // The full dashboard stays one command away (`/forecast desk`).
-    rpc<ForecastDashboardResponse>('forecast.dashboard', { limit: 8 })
+    rpc<ForecastDashboardResponse>('forecast.dashboard', { fast: true, limit: 8 })
       .then(r => {
         if (!r?.summary && !String(r?.output || '').trim()) {
           return
@@ -232,6 +232,17 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         })
       })
       .catch(() => {})
+  }
+
+  const startNewSession = () => {
+    void Promise.resolve(newSession()).finally(showStartupForecastDashboard)
+    scheduleStartupPrompt()
+  }
+
+  const startResume = (id: string) => {
+    resumeById(id)
+    setTimeout(showStartupForecastDashboard, 250)
+    scheduleStartupPrompt()
   }
 
   // Terminal statuses are never overwritten by late-arriving live events —
@@ -246,8 +257,6 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     if (skin) {
       applySkin(skin)
     }
-
-    showStartupForecastDashboard()
 
     rpc<CommandsCatalogResponse>('commands.catalog', {})
       .then(r => {
@@ -271,8 +280,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
     if (STARTUP_RESUME_ID) {
       patchUiState({ status: 'resuming…' })
-      resumeById(STARTUP_RESUME_ID)
-      scheduleStartupPrompt()
+      startResume(STARTUP_RESUME_ID)
 
       return
     }
@@ -288,8 +296,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       .then(cfg => {
         if (!cfg?.config?.display?.tui_auto_resume_recent) {
           patchUiState({ status: 'starting forecast session…' })
-          newSession()
-          scheduleStartupPrompt()
+          startNewSession()
 
           return
         }
@@ -299,21 +306,18 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
           if (target) {
             patchUiState({ status: 'resuming most recent…' })
-            resumeById(target)
-            scheduleStartupPrompt()
+            startResume(target)
 
             return
           }
 
           patchUiState({ status: 'starting forecast session…' })
-          newSession()
-          scheduleStartupPrompt()
+          startNewSession()
         })
       })
       .catch(() => {
         patchUiState({ status: 'starting forecast session…' })
-        newSession()
-        scheduleStartupPrompt()
+        startNewSession()
       })
   }
 

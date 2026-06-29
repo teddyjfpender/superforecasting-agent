@@ -9876,6 +9876,89 @@ def _coalesce_session_name_args(argv: list) -> list:
     return result
 
 
+def _try_launch_top_level_tui_fast_path(argv: list[str]) -> bool:
+    """Launch explicit top-level ``--tui`` without building the full CLI parser."""
+    if "--tui" not in argv:
+        return False
+    if any(arg in {"-h", "--help", "-V", "--version"} for arg in argv):
+        return False
+    if any(arg in {"chat", "desk"} for arg in argv):
+        return False
+
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--tui", action="store_true", default=False)
+    parser.add_argument("--dev", dest="tui_dev", action="store_true", default=False)
+    parser.add_argument("-m", "--model", default=None)
+    parser.add_argument("--provider", default=None)
+    parser.add_argument("-t", "--toolsets", default=None)
+    parser.add_argument("-s", "--skills", action="append", default=None)
+    parser.add_argument("--resume", "-r", default=None)
+    parser.add_argument(
+        "--continue", "-c", dest="continue_last", nargs="?", const=True, default=None
+    )
+    parser.add_argument("--worktree", "-w", action="store_true", default=False)
+    parser.add_argument("--accept-hooks", action="store_true", default=False)
+    parser.add_argument("--yolo", action="store_true", default=False)
+    parser.add_argument("--pass-session-id", action="store_true", default=False)
+    parser.add_argument("--ignore-user-config", action="store_true", default=False)
+    parser.add_argument("--ignore-rules", action="store_true", default=False)
+    parser.add_argument("--checkpoints", action="store_true", default=False)
+    parser.add_argument("--max-turns", type=int, default=None)
+
+    try:
+        args, unknown = parser.parse_known_args(_coalesce_session_name_args(argv))
+    except SystemExit:
+        return False
+    if unknown or not args.tui:
+        return False
+
+    from hermes_cli.config import get_container_exec_info
+
+    container_info = get_container_exec_info()
+    if container_info:
+        _exec_in_container(container_info, argv)
+        sys.exit(1)
+
+    if args.ignore_user_config:
+        _set_runtime_env_aliases(os.environ, "IGNORE_USER_CONFIG", "1")
+    if args.ignore_rules:
+        _set_runtime_env_aliases(os.environ, "IGNORE_RULES", "1")
+    if args.yolo:
+        _set_runtime_env_aliases(os.environ, "YOLO_MODE", "1")
+
+    if args.continue_last and not args.resume:
+        if isinstance(args.continue_last, str):
+            args.resume = _resolve_session_by_name_or_id(args.continue_last)
+            if not args.resume:
+                print(f"No session found matching '{args.continue_last}'.")
+                print("Use 'superforecasting-agent sessions list' to see available sessions.")
+                sys.exit(1)
+        else:
+            args.resume = _resolve_last_session(source="tui") or _resolve_last_session(
+                source="cli"
+            )
+            if not args.resume:
+                print("No previous TUI session found to continue.")
+                sys.exit(1)
+    elif args.resume:
+        args.resume = _resolve_session_by_name_or_id(args.resume) or args.resume
+
+    _launch_tui(
+        args.resume,
+        tui_dev=args.tui_dev,
+        model=args.model,
+        provider=args.provider,
+        toolsets=args.toolsets,
+        skills=args.skills,
+        worktree=args.worktree,
+        checkpoints=args.checkpoints,
+        pass_session_id=args.pass_session_id,
+        max_turns=args.max_turns,
+        accept_hooks=args.accept_hooks,
+    )
+    return True
+
+
 def cmd_profile(args):
     """Profile management — create, delete, list, switch, alias."""
     from hermes_cli.profiles import (
@@ -10786,6 +10869,9 @@ def main():
         _cleanup_quarantined_exes()
     except Exception:
         pass
+
+    if _try_launch_top_level_tui_fast_path(sys.argv[1:]):
+        return
 
     from hermes_cli._parser import build_top_level_parser
 

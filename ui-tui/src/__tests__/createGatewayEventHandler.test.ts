@@ -882,7 +882,7 @@ describe('createGatewayEventHandler', () => {
 
     await vi.waitFor(() => expect(resumeById).toHaveBeenCalledWith('explicit-session'))
     await vi.waitFor(() => expect(getUiState().forecastDeskStatus).toBe('3 forecasts  ·  1 to review  ·  2 alerts'))
-    expect(ctx.gateway.rpc).toHaveBeenCalledWith('forecast.dashboard', { limit: 8 })
+    expect(ctx.gateway.rpc).toHaveBeenCalledWith('forecast.dashboard', { fast: true, limit: 8 })
     expect(appended).toEqual([])
   })
 

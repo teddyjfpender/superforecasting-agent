@@ -2866,7 +2866,8 @@ def _(rid, params: dict) -> dict:
         from forecasting.dashboard import build_dashboard_summary, render_dashboard_text
 
         limit = int(params.get("limit") or 20)
-        summary = build_dashboard_summary(limit=limit)
+        fast = bool(params.get("fast") or params.get("summary_only"))
+        summary = build_dashboard_summary(limit=limit, fast=fast)
         return _ok(rid, {"summary": summary, "output": render_dashboard_text(summary)})
     except Exception as e:
         return _err(rid, 5008, str(e))

@@ -396,7 +396,7 @@ export function useMainApp(gw: GatewayClient) {
         return
       }
 
-      rpc('forecast.dashboard', { limit: 8 })
+      rpc('forecast.dashboard', { fast: true, limit: 8 })
         .then((r: any) => {
           if (!r || (!r.summary && !String(r.output || '').trim())) {
             return

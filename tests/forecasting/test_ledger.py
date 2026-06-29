@@ -487,6 +487,52 @@ def test_dashboard_summary_counts_forecasts_near_close(tmp_path):
     assert "closing_soon: 1" in text
 
 
+def test_fast_dashboard_summary_skips_heavy_readiness_paths(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will fast dashboard startup stay light?",
+        resolution_criteria="Resolved yes if startup avoids full readiness scans.",
+        close_time="2026-01-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.64,
+        rationale="Fast dashboard fixture.",
+        as_of="2026-01-01T00:00:00Z",
+    )
+    ledger.create_alert(
+        severity="warning",
+        scope_type="question",
+        scope_ref=question.id,
+        reason="domain_error_profile_applies:test",
+        recommended_action="Review learned error pattern.",
+    )
+
+    def fail(*_args, **_kwargs):
+        raise AssertionError("fast dashboard called a heavy path")
+
+    monkeypatch.setattr(ledger, "review_questions", fail)
+    monkeypatch.setattr(ledger, "backtest_performance_report", fail)
+    monkeypatch.setattr(ledger, "live_performance_report", fail)
+    monkeypatch.setattr(ledger, "pilot_report", fail)
+
+    summary = build_dashboard_summary(
+        ledger=ledger,
+        limit=8,
+        now="2026-01-01T00:00:00Z",
+        fast=True,
+    )
+
+    assert summary["active_count"] == 1
+    assert summary["closing_soon_count"] == 1
+    assert summary["review_queue_count"] == 1
+    assert summary["review_queue"][0]["id"] == question.id
+    assert summary["recent_backtests"] == []
+    assert summary["evidence_status"] is None
+    assert summary["live_performance"] is None
+    assert summary["doctor"] is None
+
+
 def test_evidence_tracks_available_at_for_backtests(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(

@@ -31,7 +31,11 @@ def _snapshot_tail_audit(snapshot: Any) -> dict[str, Any] | None:
 
 
 def build_dashboard_summary(
-    *, ledger: ForecastLedger | None = None, limit: int = 50, now: str | None = None
+    *,
+    ledger: ForecastLedger | None = None,
+    limit: int = 50,
+    now: str | None = None,
+    fast: bool = False,
 ) -> dict[str, Any]:
     ledger = ledger or ForecastLedger()
     # The detailed question ROWS are capped at `limit` for display, but the
@@ -103,14 +107,99 @@ def build_dashboard_summary(
         )
 
     review_queue = []
-    for row in ledger.review_questions(stale=True, last_days=7, now=now)[: min(limit, 12)]:
-        question = row["question"]
-        snapshot = row["current_snapshot"]
-        reasons = list(row.get("reasons") or [])
-        evidence_items = ledger.list_evidence(question.id)
-        latest_evidence = evidence_items[-1] if evidence_items else None
-        review_queue.append(
-            {
+    review_question_ids: set[str] = set()
+    if fast:
+        review_limit = min(limit, 12)
+        for alert in alerts:
+            if not alert_promotes_to_review(alert.reason):
+                continue
+            question_id = alert.scope_ref if alert.scope_type == "question" else None
+            if not question_id:
+                continue
+            review_question_ids.add(question_id)
+            if len(review_queue) >= review_limit:
+                continue
+            try:
+                question = ledger.get_question(question_id)
+            except LedgerNotFoundError:
+                continue
+            if question.status != "active":
+                continue
+            snapshot = ledger.get_current_snapshot(question.id)
+            review_queue.append(
+                {
+                    "id": question.id,
+                    "title": question.title,
+                    "domain": question.domain,
+                    "close_time": question.close_time,
+                    "resolution_time": question.resolution_time,
+                    "probability": snapshot.probability_or_distribution if snapshot else None,
+                    "as_of": snapshot.as_of if snapshot else None,
+                    "latest_rationale": snapshot.rationale if snapshot else None,
+                    "latest_evidence_at": None,
+                    "latest_evidence_claim": None,
+                    "latest_evidence_summary": None,
+                    "priority": alert_review_priority(alert.reason),
+                    "reasons": [alert.reason],
+                    "next_action": alert.recommended_action or review_next_action(question.id, [alert.reason]),
+                    "tail_audit": _snapshot_tail_audit(snapshot),
+                }
+            )
+    else:
+        for row in ledger.review_questions(stale=True, last_days=7, now=now)[: min(limit, 12)]:
+            question = row["question"]
+            snapshot = row["current_snapshot"]
+            reasons = list(row.get("reasons") or [])
+            evidence_items = ledger.list_evidence(question.id)
+            latest_evidence = evidence_items[-1] if evidence_items else None
+            review_queue.append(
+                {
+                    "id": question.id,
+                    "title": question.title,
+                    "domain": question.domain,
+                    "close_time": question.close_time,
+                    "resolution_time": question.resolution_time,
+                    "probability": snapshot.probability_or_distribution if snapshot else None,
+                    "as_of": snapshot.as_of if snapshot else None,
+                    "latest_rationale": snapshot.rationale if snapshot else None,
+                    "latest_evidence_at": latest_evidence.available_at if latest_evidence else None,
+                    "latest_evidence_claim": latest_evidence.claim if latest_evidence else None,
+                    "latest_evidence_summary": latest_evidence.summary if latest_evidence else None,
+                    "priority": row.get("priority", 9),
+                    "reasons": reasons,
+                    "next_action": review_next_action(question.id, reasons),
+                    "tail_audit": _snapshot_tail_audit(snapshot),
+                }
+            )
+    review_rows_by_id = {str(row["id"]): row for row in review_queue if row.get("id")}
+    if not fast:
+        for alert in alerts:
+            if not alert_promotes_to_review(alert.reason):
+                continue
+            question_id = alert.scope_ref if alert.scope_type == "question" else None
+            if not question_id:
+                continue
+            review_question_ids.add(question_id)
+            existing = review_rows_by_id.get(question_id)
+            if existing is not None:
+                reasons = existing.setdefault("reasons", [])
+                if alert.reason not in reasons:
+                    reasons.append(alert.reason)
+                existing["priority"] = min(
+                    int(existing.get("priority") or 9),
+                    alert_review_priority(alert.reason),
+                )
+                continue
+            try:
+                question = ledger.get_question(question_id)
+            except LedgerNotFoundError:
+                continue
+            if question.status != "active":
+                continue
+            snapshot = ledger.get_current_snapshot(question.id)
+            evidence_items = ledger.list_evidence(question.id)
+            latest_evidence = evidence_items[-1] if evidence_items else None
+            row = {
                 "id": question.id,
                 "title": question.title,
                 "domain": question.domain,
@@ -122,68 +211,29 @@ def build_dashboard_summary(
                 "latest_evidence_at": latest_evidence.available_at if latest_evidence else None,
                 "latest_evidence_claim": latest_evidence.claim if latest_evidence else None,
                 "latest_evidence_summary": latest_evidence.summary if latest_evidence else None,
-                "priority": row.get("priority", 9),
-                "reasons": reasons,
-                "next_action": review_next_action(question.id, reasons),
-                "tail_audit": _snapshot_tail_audit(snapshot),
+                "priority": alert_review_priority(alert.reason),
+                "reasons": [alert.reason],
+                "next_action": alert.recommended_action or review_next_action(question.id, [alert.reason]),
             }
-        )
-    review_rows_by_id = {str(row["id"]): row for row in review_queue if row.get("id")}
-    for alert in alerts:
-        if not alert_promotes_to_review(alert.reason):
-            continue
-        question_id = alert.scope_ref if alert.scope_type == "question" else None
-        if not question_id:
-            continue
-        existing = review_rows_by_id.get(question_id)
-        if existing is not None:
-            reasons = existing.setdefault("reasons", [])
-            if alert.reason not in reasons:
-                reasons.append(alert.reason)
-            existing["priority"] = min(
-                int(existing.get("priority") or 9),
-                alert_review_priority(alert.reason),
-            )
-            continue
-        try:
-            question = ledger.get_question(question_id)
-        except LedgerNotFoundError:
-            continue
-        if question.status != "active":
-            continue
-        snapshot = ledger.get_current_snapshot(question.id)
-        evidence_items = ledger.list_evidence(question.id)
-        latest_evidence = evidence_items[-1] if evidence_items else None
-        row = {
-            "id": question.id,
-            "title": question.title,
-            "domain": question.domain,
-            "close_time": question.close_time,
-            "resolution_time": question.resolution_time,
-            "probability": snapshot.probability_or_distribution if snapshot else None,
-            "as_of": snapshot.as_of if snapshot else None,
-            "latest_rationale": snapshot.rationale if snapshot else None,
-            "latest_evidence_at": latest_evidence.available_at if latest_evidence else None,
-            "latest_evidence_claim": latest_evidence.claim if latest_evidence else None,
-            "latest_evidence_summary": latest_evidence.summary if latest_evidence else None,
-            "priority": alert_review_priority(alert.reason),
-            "reasons": [alert.reason],
-            "next_action": alert.recommended_action or review_next_action(question.id, [alert.reason]),
-        }
-        review_queue.append(row)
-        review_rows_by_id[question.id] = row
+            review_queue.append(row)
+            review_rows_by_id[question.id] = row
     review_queue.sort(key=lambda row: int(row.get("priority") or 9))
 
-    closing_soon_count = sum(
-        1
-        for row in review_queue
-        if any(is_close_review_reason(reason) for reason in row.get("reasons", []))
-    )
+    if fast:
+        closing_ids = set(ledger.closing_question_ids(now=now))
+        review_question_ids.update(closing_ids)
+        closing_soon_count = len(closing_ids)
+    else:
+        closing_soon_count = sum(
+            1
+            for row in review_queue
+            if any(is_close_review_reason(reason) for reason in row.get("reasons", []))
+        )
 
     calibration = ledger.calibration_summary(calibration_eligible=True)
     backtest_summaries = []
     recent_backtests = []
-    for run in ledger.list_backtest_runs()[: min(limit, 20)]:
+    for run in ([] if fast else ledger.list_backtest_runs()[: min(limit, 20)]):
         report = ledger.backtest_performance_report(run["id"])
         agent_brier = report["agent"]["mean_brier"]
         best = best_baseline(report["baselines"])
@@ -277,10 +327,10 @@ def build_dashboard_summary(
         for row in ledger.list_scheduled_review_runs(limit=min(limit, 8))
     ]
 
-    evidence_status = build_forecasting_evidence_status(ledger, backtest_summaries)
-    live_performance = ledger.live_performance_report()
-    pilot_report = ledger.pilot_report()
-    doctor = build_doctor_gate_summary(pilot_report, evidence_status)
+    evidence_status = None if fast else build_forecasting_evidence_status(ledger, backtest_summaries)
+    live_performance = None if fast else ledger.live_performance_report()
+    pilot_report = None if fast else ledger.pilot_report()
+    doctor = None if fast else build_doctor_gate_summary(pilot_report, evidence_status)
 
     return {
         "product": PRODUCT_NAME,
@@ -292,7 +342,7 @@ def build_dashboard_summary(
         "factor_count": len(factors_active),
         "entity_count": entity_count,
         "open_alert_count": len(alerts),
-        "review_queue_count": len(review_queue),
+        "review_queue_count": len(review_question_ids) if fast else len(review_queue),
         "closing_soon_count": closing_soon_count,
         "open_assumption_count": open_assumption_count,
         "stale_assumption_count": stale_assumption_count,
