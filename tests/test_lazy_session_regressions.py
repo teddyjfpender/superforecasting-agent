@@ -123,6 +123,96 @@ class TestFinalizeSessionUsesAgentSessionId:
 
 
 # ===========================================================================
+# Upstream 86e64900b: preserve sessions across gateway restarts
+# ===========================================================================
+
+class TestSessionsPreservedAcrossRestart:
+    """Port of upstream fix(gateway) 86e64900b "preserve sessions across
+    restarts": a gateway PROCESS restart/shutdown must NOT end the durable
+    session row, so the conversation is restored intact on the next launch.
+
+    Our fork's routing index (``server._sessions``) is in-memory and ephemeral
+    — it is always empty after a restart — while the transcript lives durably
+    in ``state.db``. The regression: ``_shutdown_sessions()`` used to call
+    ``db.end_session(..., "tui_shutdown")``, conflating an involuntary restart
+    with a deliberate conversation boundary. The adapted fix marks the
+    shutdown finalize with ``mark_ended=False`` (the analog of upstream's
+    ``agent._end_session_on_close = False``).
+    """
+
+    def test_shutdown_does_not_end_session_row(self, tmp_path, monkeypatch):
+        """After a simulated gateway restart, the live session row stays
+        un-ended so it can be restored, and its transcript is intact."""
+        from tui_gateway import server
+
+        db = _make_session_db(tmp_path)
+        db.create_session(session_id="live-session", source="tui", model="test")
+        db.append_message("live-session", role="user", content="before restart")
+        db.append_message("live-session", role="assistant", content="ack")
+
+        agent = types.SimpleNamespace(
+            session_id="live-session",
+            commit_memory_session=lambda h: None,
+        )
+        session = _tui_session(
+            agent=agent,
+            session_key="live-session",
+            history=[{"role": "user", "content": "before restart"}],
+        )
+
+        monkeypatch.setattr(server, "_get_db", lambda: db)
+        monkeypatch.setattr(server, "_notify_session_boundary", lambda *a, **kw: None)
+        monkeypatch.setattr(server, "_stop_cron_ticker", lambda: None)
+
+        # Drive the real process-shutdown path with our session registered.
+        server._sessions["restart-sid"] = session
+        try:
+            server._shutdown_sessions()
+        finally:
+            server._sessions.pop("restart-sid", None)
+
+        # The durable row must NOT be marked ended by a process restart —
+        # this is what lets session.resume / session.most_recent restore it.
+        row = db.get_session("live-session")
+        assert row["ended_at"] is None, (
+            "gateway restart must NOT end the session row; otherwise the "
+            "conversation is treated as a deliberate boundary and lost"
+        )
+        assert row["end_reason"] is None
+
+        # And the transcript survives the simulated restart intact: a fresh
+        # SessionDB (new process) can still read the conversation back.
+        from hermes_state import SessionDB
+
+        reopened = SessionDB(db_path=tmp_path / "test_state.db")
+        restored = reopened.get_messages_as_conversation("live-session")
+        assert [m["content"] for m in restored] == ["before restart", "ack"]
+
+    def test_explicit_close_still_ends_session_row(self, tmp_path, monkeypatch):
+        """Regression guard: a user-initiated close (mark_ended default True)
+        must still end the row — only restarts are exempt."""
+        from tui_gateway import server
+
+        db = _make_session_db(tmp_path)
+        db.create_session(session_id="closed-session", source="tui", model="test")
+
+        agent = types.SimpleNamespace(
+            session_id="closed-session",
+            commit_memory_session=lambda h: None,
+        )
+        session = _tui_session(agent=agent, session_key="closed-session")
+
+        monkeypatch.setattr(server, "_get_db", lambda: db)
+        monkeypatch.setattr(server, "_notify_session_boundary", lambda *a, **kw: None)
+
+        server._finalize_session(session, end_reason="tui_close")
+
+        row = db.get_session("closed-session")
+        assert row["ended_at"] is not None
+        assert row["end_reason"] == "tui_close"
+
+
+# ===========================================================================
 # Bug #20001: _sync_session_key_after_compress post-run_conversation
 # ===========================================================================
 

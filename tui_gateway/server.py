@@ -406,8 +406,25 @@ def _notify_session_boundary(event_type: str, session_id: str | None) -> None:
         pass
 
 
-def _finalize_session(session: dict | None, end_reason: str = "tui_close") -> None:
-    """Best-effort finalize hook + memory commit for a session."""
+def _finalize_session(
+    session: dict | None,
+    end_reason: str = "tui_close",
+    *,
+    mark_ended: bool = True,
+) -> None:
+    """Best-effort finalize hook + memory commit for a session.
+
+    ``mark_ended`` controls whether the durable ``state.db`` row is marked
+    ended. A user-initiated close/branch is a real conversation boundary and
+    SHOULD end the row (``mark_ended=True``, the default). A gateway-PROCESS
+    restart/shutdown is NOT a conversation boundary: ending the row there
+    conflates an involuntary restart with a deliberate end, so the shutdown
+    path passes ``mark_ended=False`` to preserve the session across restarts
+    (port of upstream 86e64900b's ``_end_session_on_close = False`` guard).
+    The transcript already lives in ``state.db``; leaving the row un-ended lets
+    ``session.resume``/``session.most_recent`` restore it intact on the next
+    launch.
+    """
     if not session or session.get("_finalized"):
         return
     session["_finalized"] = True
@@ -436,7 +453,10 @@ def _finalize_session(session: dict | None, end_reason: str = "tui_close") -> No
     # Use session_id (from agent.session_id) not session_key — after compression,
     # session_key may be stale (the ended parent) while session_id is the live
     # continuation. Fix for #20001.
-    if session_id:
+    #
+    # Skipped on process restart/shutdown (``mark_ended=False``): the row stays
+    # live so the conversation is restored across restarts instead of being lost.
+    if session_id and mark_ended:
         try:
             db = _get_db()
             if db is not None:
@@ -533,7 +553,12 @@ def _shutdown_sessions() -> None:
     except Exception:
         pass
     for session in list(_sessions.values()):
-        _finalize_session(session, end_reason="tui_shutdown")
+        # Process restart/shutdown is NOT a conversation boundary: finalize
+        # (commit memory, stop pollers) but DO NOT end the durable session row,
+        # so the conversation is preserved and restored on the next launch.
+        _finalize_session(
+            session, end_reason="tui_shutdown", mark_ended=False
+        )
         try:
             worker = session.get("slash_worker")
             if worker:
