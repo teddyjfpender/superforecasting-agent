@@ -481,22 +481,36 @@ def build_workspace_payload(
     # NEXT column — one batched query, not the stale question.next_review_at column.
     next_reviews = ledger.next_review_by_question()
 
-    closing_ids = {
-        row["question"].id
-        for row in ledger.review_questions(stale=False, now=now)
-        if any(is_close_review_reason(reason) for reason in (row.get("reasons") or []))
-    }
+    # "Closing soon" = the close-review reasons review_questions(stale=False)
+    # would emit (close_time_passed / resolution_check_due). With stale=False
+    # those reduce to close_time<=now OR resolution_time<=now, so a single cheap
+    # filter replaces the heavy per-question review walk (~0.8s) with no change
+    # in semantics. (is_close_review_reason is kept imported for the close badge
+    # contract elsewhere in this module.)
+    closing_ids = ledger.closing_question_ids(now=now)
+
+    # Collapse the per-question N+1: fetch every per-question dataset the loop
+    # needs in ONE batched query each (keyed by question_id), mirroring the
+    # already-batched scores_by_question above. Each lookup defaults to the same
+    # empty value the singular method would have produced.
+    member_ids = [question.id for question in member_questions]
+    snapshots_by_q = ledger.snapshots_by_question(member_ids)
+    evidence_by_q = ledger.evidence_by_question(member_ids)
+    panel_by_q = ledger.latest_panel_run_by_question(member_ids)
+    resolution_by_q = ledger.latest_resolution_by_question(member_ids)
+    notes_by_q = ledger.analyst_notes_by_question(member_ids)
 
     closing_soon = 0
     forecasts: list[dict[str, Any]] = []
     for question in member_questions:
-        snapshots = ledger.list_snapshots(question.id)
+        snapshots = snapshots_by_q.get(question.id, [])
         current = snapshots[-1] if snapshots else None
         previous = snapshots[-2] if len(snapshots) >= 2 else None
-        evidence_items = ledger.list_evidence(question.id)
-        panel_runs = ledger.list_panel_runs(question.id, limit=1)
-        resolution = ledger.get_latest_resolution(question.id)
-        analyst_notes = ledger.list_analyst_notes(question.id)
+        evidence_items = evidence_by_q.get(question.id, [])
+        panel_run = panel_by_q.get(question.id)
+        panel_runs = [panel_run] if panel_run is not None else []
+        resolution = resolution_by_q.get(question.id)
+        analyst_notes = notes_by_q.get(question.id, [])
         question_scores = scores_by_question.get(question.id, [])
 
         probability = current.probability_or_distribution if current else None

@@ -6394,3 +6394,174 @@ def test_blocked_url_evidence_is_tagged(tmp_path, monkeypatch):
         claim="ok",
     )
     assert (legit_item.metadata or {}).get("blocked") is None
+
+
+# ── Batched per-question reads (desk-payload N+1 collapse) ────────────────────
+# The batched *_by_question helpers must return EXACTLY the per-question data the
+# singular methods return (same ordering, same contents) so build_workspace_payload
+# is byte-identical before/after the N+1 collapse.
+
+
+def _seed_batch_question(ledger, idx: int, *, with_data: bool = True) -> str:
+    question = ledger.create_question(
+        title=f"Batch question {idx}?",
+        resolution_criteria=f"Resolves yes if event {idx} is certified as occurring.",
+        domain="elections",
+        close_time="2030-01-01T00:00:00Z",
+    )
+    if not with_data:
+        return question.id
+    # Multiple snapshots so [-1]/[-2] (current/previous) ordering matters.
+    for p, as_of in [(0.4, "2026-05-01T00:00:00Z"), (0.5, "2026-05-10T00:00:00Z"), (0.55, "2026-05-20T00:00:00Z")]:
+        ledger.create_snapshot(
+            question_id=question.id,
+            probability_or_distribution=p,
+            rationale="update",
+            as_of=as_of,
+        )
+    # Multiple evidence items (oldest-first by available_at).
+    for n in range(2):
+        ledger.add_evidence(
+            question_id=question.id,
+            source_or_note=f"note-{idx}-{n}",
+            claim=f"claim {n}",
+        )
+    # Two panel runs so "latest" (created_at DESC) selection matters.
+    ledger.record_panel_run(
+        question_id=question.id,
+        estimates=[{"perspective": "outside", "probability": 0.4}],
+        trim=0,
+        triggered_by="first",
+    )
+    ledger.record_panel_run(
+        question_id=question.id,
+        estimates=[{"perspective": "inside", "probability": 0.6}],
+        trim=0,
+        triggered_by="second",
+    )
+    # Two analyst notes (oldest-first), including a retrospective.
+    ledger.add_analyst_note(question_id=question.id, body="first brief", kind="brief")
+    ledger.add_analyst_note(question_id=question.id, body="retro", kind="retrospective")
+    # A resolution.
+    ledger.resolve_question(
+        question_id=question.id,
+        outcome="yes",
+        resolution_status="confirmed",
+        criteria_satisfied=True,
+        resolution_source="official result",
+    )
+    return question.id
+
+
+def test_batched_helpers_match_per_question_methods(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    ids = [_seed_batch_question(ledger, i) for i in range(3)]
+    empty_id = _seed_batch_question(ledger, 99, with_data=False)
+    all_ids = ids + [empty_id]
+
+    snaps = ledger.snapshots_by_question(all_ids)
+    ev = ledger.evidence_by_question(all_ids)
+    panels = ledger.latest_panel_run_by_question(all_ids)
+    resolutions = ledger.latest_resolution_by_question(all_ids)
+    notes = ledger.analyst_notes_by_question(all_ids)
+
+    for qid in ids:
+        assert snaps.get(qid, []) == ledger.list_snapshots(qid)
+        assert ev.get(qid, []) == ledger.list_evidence(qid)
+        # latest panel == list_panel_runs(qid, limit=1)[0]
+        expected_panel = ledger.list_panel_runs(qid, limit=1)
+        assert panels.get(qid) == (expected_panel[0] if expected_panel else None)
+        assert resolutions.get(qid) == ledger.get_latest_resolution(qid)
+        assert notes.get(qid, []) == ledger.list_analyst_notes(qid)
+
+    # A question with no data defaults cleanly to empty/None.
+    assert snaps.get(empty_id, []) == []
+    assert ev.get(empty_id, []) == []
+    assert panels.get(empty_id) is None
+    assert resolutions.get(empty_id) is None
+    assert notes.get(empty_id, []) == []
+
+
+def test_batched_snapshots_preserve_current_previous_ordering(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    qid = _seed_batch_question(ledger, 0)
+    snaps = ledger.snapshots_by_question([qid])[qid]
+    singular = ledger.list_snapshots(qid)
+    # current == [-1], previous == [-2] must hold identically to the singular path.
+    assert snaps[-1].probability_or_distribution == singular[-1].probability_or_distribution
+    assert snaps[-2].probability_or_distribution == singular[-2].probability_or_distribution
+
+
+def test_batched_helpers_empty_id_list(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    assert ledger.snapshots_by_question([]) == {}
+    assert ledger.evidence_by_question([]) == {}
+    assert ledger.latest_panel_run_by_question([]) == {}
+    assert ledger.latest_resolution_by_question([]) == {}
+    assert ledger.analyst_notes_by_question([]) == {}
+
+
+def test_closing_question_ids_matches_review_walk(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    now = "2026-06-15T00:00:00Z"
+    # Past close_time -> closing.
+    q_closed = ledger.create_question(
+        title="Already past close?",
+        resolution_criteria="Resolves yes if the past event is certified.",
+        close_time="2026-06-01T00:00:00Z",
+    )
+    # Past resolution_time -> closing (resolution_check_due).
+    q_res_due = ledger.create_question(
+        title="Resolution due?",
+        resolution_criteria="Resolves yes if the due event is certified.",
+        close_time="2027-01-01T00:00:00Z",
+        resolution_time="2026-06-10T00:00:00Z",
+    )
+    # Future close + future resolution -> NOT closing.
+    ledger.create_question(
+        title="Future close?",
+        resolution_criteria="Resolves yes if the future event is certified.",
+        close_time="2027-01-01T00:00:00Z",
+        resolution_time="2027-02-01T00:00:00Z",
+    )
+
+    from forecasting.dashboard import is_close_review_reason
+
+    expected = {
+        row["question"].id
+        for row in ledger.review_questions(stale=False, now=now)
+        if any(is_close_review_reason(reason) for reason in (row.get("reasons") or []))
+    }
+    assert ledger.closing_question_ids(now=now) == expected
+    assert {q_closed.id, q_res_due.id} <= expected
+
+
+def test_workspace_payload_uses_batched_reads_equivalently(tmp_path):
+    # End-to-end: the payload with closing questions present still computes the
+    # closing_soon count + per-question closing flag correctly via the cheap path.
+    from forecasting.dashboard import build_workspace_payload
+
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    now = "2026-06-15T00:00:00Z"
+    closing = ledger.create_question(
+        title="Closing one?",
+        resolution_criteria="Resolves yes if the closing event is certified.",
+        close_time="2026-06-01T00:00:00Z",
+    )
+    ledger.create_snapshot(
+        question_id=closing.id,
+        probability_or_distribution=0.6,
+        rationale="r",
+        as_of="2026-05-01T00:00:00Z",
+    )
+    _seed_batch_question(ledger, 0)
+
+    payload = build_workspace_payload(
+        ledger=ledger, limit=1000, include_related=False, include_lessons=False, now=now
+    )
+    by_id = {f["id"]: f for f in payload["forecasts"]}
+    assert by_id[closing.id]["closing_soon"] is True
+    assert payload["closing_soon_count"] == sum(
+        1 for f in payload["forecasts"] if f["closing_soon"]
+    )
+    assert payload["closing_soon_count"] >= 1

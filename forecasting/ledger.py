@@ -4924,6 +4924,153 @@ class ForecastLedger:
         data["metadata"] = json_loads(data.get("metadata"), {})
         return data
 
+    # ── Batched per-question reads (desk-payload N+1 collapse) ───────────────
+    # The forecasts-workspace payload (forecasting.dashboard.build_workspace_payload)
+    # used to run ~5 SEPARATE ledger queries PER active question — list_snapshots,
+    # list_evidence, list_panel_runs, get_latest_resolution, list_analyst_notes —
+    # i.e. ~5×N connects+executes for N≈226 questions (~1.7s, the slow "starting
+    # forecast desk…"). These helpers fetch the SAME data for a set of question ids
+    # in ONE query each (WHERE question_id IN (…)), returning a dict keyed by
+    # question_id with IDENTICAL per-question ordering/contents to the singular
+    # methods. The IN-list is chunked under SQLite's ~999-variable limit (we have
+    # ~226, so a single chunk, but the guard keeps it correct for any book size).
+    # NOTE: unlike list_snapshots/list_evidence these skip the per-question
+    # get_question() existence check — callers already hold the question rows.
+
+    @staticmethod
+    def _chunk_ids(question_ids: list[str], size: int = 900) -> list[list[str]]:
+        seen: set[str] = set()
+        ordered: list[str] = []
+        for qid in question_ids:
+            if qid not in seen:
+                seen.add(qid)
+                ordered.append(qid)
+        return [ordered[i : i + size] for i in range(0, len(ordered), size)] or [[]]
+
+    def snapshots_by_question(self, question_ids: list[str]) -> dict[str, list[ForecastSnapshot]]:
+        """question_id -> snapshots oldest-first (mirrors list_snapshots ordering,
+        so current=snapshots[-1] / previous=snapshots[-2] still hold)."""
+        out: dict[str, list[ForecastSnapshot]] = {}
+        for chunk in self._chunk_ids(question_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT * FROM forecast_snapshots WHERE question_id IN ({placeholders}) "
+                    "ORDER BY question_id ASC, created_at ASC",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                out.setdefault(row["question_id"], []).append(self._row_to_snapshot(row))
+        return out
+
+    def evidence_by_question(self, question_ids: list[str]) -> dict[str, list[EvidenceItem]]:
+        """question_id -> evidence oldest-first by available_at (mirrors list_evidence)."""
+        out: dict[str, list[EvidenceItem]] = {}
+        for chunk in self._chunk_ids(question_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT * FROM evidence_items WHERE question_id IN ({placeholders}) "
+                    "ORDER BY question_id ASC, available_at ASC",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                out.setdefault(row["question_id"], []).append(self._row_to_evidence(row))
+        return out
+
+    def latest_panel_run_by_question(self, question_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """question_id -> its most-recent panel run dict (mirrors
+        list_panel_runs(qid, limit=1)[0]); absent when a question has no panel."""
+        out: dict[str, dict[str, Any]] = {}
+        for chunk in self._chunk_ids(question_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT * FROM panel_runs WHERE question_id IN ({placeholders}) "
+                    "ORDER BY question_id ASC, created_at DESC",
+                    chunk,
+                ).fetchall()
+                # Keep only the latest run per question (first row per id, since
+                # created_at DESC), then fetch each run's estimates.
+                latest_rows: list[sqlite3.Row] = []
+                seen: set[str] = set()
+                for row in rows:
+                    qid = row["question_id"]
+                    if qid not in seen:
+                        seen.add(qid)
+                        latest_rows.append(row)
+                for row in latest_rows:
+                    estimates = conn.execute(
+                        "SELECT * FROM panel_estimates WHERE panel_run_id = ? "
+                        "ORDER BY perspective ASC",
+                        (row["id"],),
+                    ).fetchall()
+                    out[row["question_id"]] = self._panel_run_dict(row, estimates)
+        return out
+
+    def latest_resolution_by_question(self, question_ids: list[str]) -> dict[str, Resolution]:
+        """question_id -> latest resolution by resolved_at (mirrors
+        get_latest_resolution with confirmed_only=False); absent when none."""
+        out: dict[str, Resolution] = {}
+        for chunk in self._chunk_ids(question_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT * FROM resolutions WHERE question_id IN ({placeholders}) "
+                    "ORDER BY question_id ASC, resolved_at DESC",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                qid = row["question_id"]
+                if qid not in out:  # first row per question = latest resolved_at
+                    out[qid] = self._row_to_resolution(row)
+        return out
+
+    def analyst_notes_by_question(self, question_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """question_id -> analyst notes oldest-first (mirrors list_analyst_notes,
+        same created_at ASC, rowid ASC tiebreaker)."""
+        out: dict[str, list[dict[str, Any]]] = {}
+        for chunk in self._chunk_ids(question_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT * FROM analyst_notes WHERE question_id IN ({placeholders}) "
+                    "ORDER BY question_id ASC, created_at ASC, rowid ASC",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                out.setdefault(row["question_id"], []).append(self._analyst_note_to_dict(row))
+        return out
+
+    def closing_question_ids(self, *, now: str | None = None) -> set[str]:
+        """Active question ids that are "closing soon" — i.e. would carry a
+        close-review reason (close_time_passed / resolution_check_due) from
+        review_questions(stale=False). With stale=False the only close-review
+        reasons are close_time<=now OR resolution_time<=now (the
+        close_time_within_*d reason requires stale=True), so this is a single
+        cheap filter — no per-question snapshot/evidence walk. Mirrors
+        is_close_review_reason's semantics for the desk's closing-soon count."""
+        now_iso = parse_timestamp(now, field_name="now") or utc_now_iso()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id FROM forecast_questions "
+                "WHERE status = 'active' "
+                "AND ((close_time IS NOT NULL AND close_time <= ?) "
+                "  OR (resolution_time IS NOT NULL AND resolution_time <= ?))",
+                (now_iso, now_iso),
+            ).fetchall()
+        return {row["id"] for row in rows}
+
     # ── Market Models ────────────────────────────────────────────────────────
     # A Market Model is an agentic quant-research artifact: a re-runnable spec
     # (which series + which computation), an append-only series of versioned
