@@ -738,10 +738,19 @@ _NOW = __import__("datetime").datetime(2026, 1, 1, tzinfo=__import__("datetime")
 def patched_open_fetch(monkeypatch):
     qs = _open_question_set()
 
+    # ``latest`` is resolved via the POINTER file (raw text) -> the DATED set is
+    # then fetched as JSON. Monkeypatch BOTH boundaries so nothing touches the
+    # network, and assert the JSON fetch hits the DATED url (NEVER latest-llm.json).
+    def fake_fetch_text(url: str):
+        assert url.endswith("/question_sets/latest-llm.json")
+        return f"{QUESTION_SET_DATE}-llm.json"
+
     def fake_fetch(url: str):
-        assert "question_sets" in url and "latest-llm.json" in url
+        assert "question_sets" in url and f"{QUESTION_SET_DATE}-llm.json" in url
+        assert "latest-llm.json" not in url
         return qs
 
+    monkeypatch.setattr(forecastbench, "_fetch_text", fake_fetch_text)
     monkeypatch.setattr(forecastbench, "_fetch_json", fake_fetch)
     return fake_fetch
 
@@ -827,18 +836,63 @@ def test_open_sources_filter_and_limit(patched_open_fetch, tmp_path):
     assert len(capped) == 1
 
 
-def test_open_latest_url_uses_latest_llm_template(monkeypatch):
+def test_open_latest_resolves_pointer_to_dated_url(monkeypatch, tmp_path):
+    # ``latest-llm.json`` is a POINTER file (its body is the newest set's
+    # FILENAME), NOT a question set. The loader must fetch the pointer as TEXT,
+    # resolve it to the dated set, then fetch the DATED url (never latest-llm.json)
+    # and cache it under question_set_<date>.json (never question_set_latest.json).
     from forecasting.forecastbench import load_forecastbench_open_questions
 
-    seen: dict = {}
+    seen: dict = {"json_urls": [], "text_urls": []}
+
+    def fake_fetch_text(url: str):
+        seen["text_urls"].append(url)
+        return "2026-06-21-llm.json\n"  # pointer body, newline-terminated
 
     def fake_fetch(url: str):
-        seen["url"] = url
+        seen["json_urls"].append(url)
         return {"question_set": []}
 
+    monkeypatch.setattr(forecastbench, "_fetch_text", fake_fetch_text)
     monkeypatch.setattr(forecastbench, "_fetch_json", fake_fetch)
-    load_forecastbench_open_questions(date="latest", now=_NOW)
-    assert seen["url"].endswith("/question_sets/latest-llm.json")
+    load_forecastbench_open_questions(date="latest", now=_NOW, cache_dir=tmp_path)
+
+    # the pointer was fetched as TEXT...
+    assert seen["text_urls"] == [
+        "https://raw.githubusercontent.com/forecastingresearch/"
+        "forecastbench-datasets/main/datasets/question_sets/latest-llm.json"
+    ]
+    # ...and the question set fetched at the DATED url, NOT latest-llm.json.
+    assert len(seen["json_urls"]) == 1
+    assert seen["json_urls"][0].endswith("/question_sets/2026-06-21-llm.json")
+    assert "latest-llm.json" not in seen["json_urls"][0]
+    # cached under the resolved date, NEVER a question_set_latest.json file.
+    assert (tmp_path / "question_set_2026-06-21.json").is_file()
+    assert not (tmp_path / "question_set_latest.json").exists()
+
+
+def test_resolve_latest_date_parsing(monkeypatch):
+    # The pointer body is the newest set's FILENAME; _resolve_latest_date strips
+    # the suffix to the bare date, tolerating a surrounding quote + trailing newline.
+    from forecasting.forecastbench import _resolve_latest_date
+
+    cases = {
+        "2026-06-21-llm.json": "2026-06-21",
+        '"2026-06-21-llm.json"\n': "2026-06-21",  # quoted + trailing newline
+        "  2026-06-21-llm.json  ": "2026-06-21",  # surrounding whitespace
+        "question_sets/2026-06-21-llm.json": "2026-06-21",  # full path
+        "2026-06-21_llm.json": "2026-06-21",  # underscore variant
+        "2026-06-21.json": "2026-06-21",  # bare .json variant
+    }
+    for body, expected in cases.items():
+        monkeypatch.setattr(forecastbench, "_fetch_text", lambda url, _b=body: _b)
+        assert _resolve_latest_date() == expected
+
+    # an empty / implausible pointer raises rather than silently mis-resolving.
+    for bad in ("", "  ", '"latest-llm.json"'):
+        monkeypatch.setattr(forecastbench, "_fetch_text", lambda url, _b=bad: _b)
+        with pytest.raises(ForecastBenchError):
+            _resolve_latest_date()
 
 
 def test_open_wired_into_market_nightly_load_open_markets(monkeypatch):

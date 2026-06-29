@@ -70,6 +70,12 @@ _RAW_BASE = (
 QUESTION_SET_URL_TEMPLATE = _RAW_BASE + "/question_sets/{date}-llm.json"
 RESOLUTION_SET_URL_TEMPLATE = _RAW_BASE + "/resolution_sets/{date}_resolution_set.json"
 
+# ``latest-llm.json`` is NOT a question set — it is a tiny POINTER file whose body
+# is the FILENAME of the newest dated set (e.g. ``2026-06-21-llm.json``). It must
+# be fetched as raw TEXT and resolved to a date; json.loads()-ing it raises (and
+# caching it as a question set poisons the cache). See ``_resolve_latest_date``.
+_LATEST_POINTER_URL = _RAW_BASE + "/question_sets/latest-llm.json"
+
 _USER_AGENT = "superforecasting-agent/forecastbench"
 _FETCH_TIMEOUT_SECONDS = 30
 _MAX_BYTES = 64 * 1024 * 1024
@@ -137,6 +143,55 @@ def _fetch_json(url: str) -> Any:
         return json.loads(text)
     except json.JSONDecodeError as exc:
         raise ForecastBenchError(f"ForecastBench document is not valid JSON: {url}") from exc
+
+
+def _fetch_text(url: str) -> str:
+    """Fetch one document over HTTP as raw TEXT (NO json.loads).
+
+    Same Request/urlopen/timeout/``_MAX_BYTES`` boundary + ``ForecastBenchError``
+    surface as :func:`_fetch_json`, but returns the undecoded body text. Used for
+    the ``latest-llm.json`` POINTER file, whose body is a bare filename, not JSON.
+    """
+
+    try:
+        request = Request(url, headers={"User-Agent": _USER_AGENT})
+        with urlopen(request, timeout=_FETCH_TIMEOUT_SECONDS) as response:
+            body = response.read(_MAX_BYTES)
+            charset = response.headers.get_content_charset() or "utf-8"
+            return body.decode(charset, errors="replace")
+    except (OSError, URLError, ValueError) as exc:
+        raise ForecastBenchError(f"could not fetch ForecastBench document: {url}") from exc
+
+
+def _resolve_latest_date() -> str:
+    """Resolve ``latest-llm.json`` (a POINTER file) to the newest set's BARE date.
+
+    The pointer body is the FILENAME of the newest dated question set (e.g.
+    ``2026-06-21-llm.json``, sometimes quoted / newline-terminated). We strip
+    whitespace + surrounding quotes, take the basename, and strip the
+    ``-llm.json`` (tolerating ``_llm.json`` / a bare ``.json``) suffix to recover
+    the immutable date (``2026-06-21``). The caller then keys every dated URL +
+    cache file off this resolved date, NEVER off the literal ``latest``.
+    """
+
+    raw = _fetch_text(_LATEST_POINTER_URL).strip()
+    # Strip a surrounding pair of matching quotes (the pointer is occasionally a
+    # JSON string literal rather than a bare filename).
+    if len(raw) >= 2 and raw[0] in {'"', "'"} and raw[-1] == raw[0]:
+        raw = raw[1:-1].strip()
+    # The body may be a full path; keep only the filename.
+    basename = raw.rsplit("/", 1)[-1].strip()
+    date = basename
+    for suffix in ("-llm.json", "_llm.json", ".json"):
+        if date.endswith(suffix):
+            date = date[: -len(suffix)]
+            break
+    date = date.strip()
+    if not date or len(date) < 8 or date.lower() == "latest":
+        raise ForecastBenchError(
+            f"could not resolve ForecastBench latest question-set date from pointer: {raw!r}"
+        )
+    return date
 
 
 def _fetch_cached(url: str, *, cache_path: Path | None) -> Any:
@@ -477,6 +532,13 @@ def load_forecastbench_cases(
     complementarity. Default False keeps produced cases byte-identical.
     """
 
+    # ``latest`` is a POINTER, not a dated set: resolve it to the immutable dated
+    # filename FIRST so the dated URL + cache files below (and the produced cases'
+    # dataset label) all key off the real date, never the literal ``latest``.
+    question_set_date = str(question_set_date or "").strip()
+    if not question_set_date or question_set_date.lower() == _LATEST_DATE:
+        question_set_date = _resolve_latest_date()
+
     root = _cache_root(cache_dir)
     q_cache = (root / f"question_set_{question_set_date}.json") if root else None
     r_cache = (root / f"resolution_set_{question_set_date}.json") if root else None
@@ -620,7 +682,10 @@ def load_forecastbench_cases(
 # backtest path — the live source ``url`` IS carried so the agent can reference the
 # venue. No resolution set is fetched (the questions are unresolved by construction).
 
-# "latest" resolves to ForecastBench's rolling ``latest-llm.json`` question set.
+# ``"latest"`` is a SENTINEL: it is resolved (via the ``latest-llm.json`` POINTER
+# file) to the newest IMMUTABLE dated question set BEFORE any fetch — we never
+# fetch ``latest-llm.json`` as a question set (it is a 19-byte filename pointer,
+# not JSON). See ``_resolve_latest_date``.
 _LATEST_DATE = "latest"
 
 
@@ -713,7 +778,10 @@ def load_forecastbench_open_questions(
     Reuses the closed-book module's :data:`QUESTION_SET_URL_TEMPLATE`
     (``{date}-llm.json``) and :func:`_fetch_json` network boundary (so tests
     monkeypatch ``_fetch_json`` with a tiny fixture and nothing here touches the
-    network). ``date="latest"`` resolves to the rolling ``latest-llm.json``.
+    network). ``date="latest"`` is FIRST resolved (via the ``latest-llm.json``
+    POINTER file — :func:`_resolve_latest_date`) to the newest IMMUTABLE dated set
+    (e.g. ``2026-06-21``); we NEVER fetch/cache the literal ``latest-llm.json`` as
+    a question set (it is a bare-filename pointer, not JSON).
 
     A question survives ONLY when it is:
 
@@ -759,6 +827,12 @@ def load_forecastbench_open_questions(
     """
 
     question_set_date = str(date or _LATEST_DATE).strip() or _LATEST_DATE
+    # ``latest`` is a POINTER, not a fetchable set: resolve it to the IMMUTABLE
+    # dated filename FIRST, so every dated URL + cache file below keys off the real
+    # date (e.g. ``2026-06-21``) and we NEVER fetch/cache the literal
+    # ``latest-llm.json`` (a 19-byte pointer that is not valid JSON).
+    if not question_set_date or question_set_date.lower() == _LATEST_DATE:
+        question_set_date = _resolve_latest_date()
     allowed: frozenset[str] = frozenset(
         str(s).strip().lower() for s in sources if str(s or "").strip()
     )
