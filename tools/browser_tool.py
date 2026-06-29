@@ -1023,6 +1023,11 @@ def _url_is_private(url: str) -> bool:
                 ip.is_private
                 or ip.is_loopback
                 or ip.is_link_local
+                # Match tools.url_safety._is_blocked_ip coverage so the local
+                # oracle never under-reports relative to the SSRF guard.
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
                 # 172.16.0.0/12: only covered by ip.is_private on Python
                 # ≥3.11 (bpo-40791).  Explicit check keeps 3.10 runtimes
                 # routing these to the local sidecar correctly.
@@ -1051,6 +1056,10 @@ def _url_is_private(url: str) -> bool:
                 ip.is_private
                 or ip.is_loopback
                 or ip.is_link_local
+                # Align with tools.url_safety._is_blocked_ip coverage.
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
                 or ip in ipaddress.ip_network("100.64.0.0/10")
             ):
                 return True
@@ -1058,6 +1067,51 @@ def _url_is_private(url: str) -> bool:
     except Exception as exc:
         logger.debug("URL-privacy check failed for %s: %s", url, exc)
         return False
+
+
+def _eval_ssrf_guard_active(task_id: str) -> bool:
+    """Return True when post-eval private-page rechecks are meaningful.
+
+    The pre-navigation SSRF guard in ``browser_open`` blocks the agent from
+    *opening* a private/internal URL, but a JavaScript navigation (e.g. via
+    ``browser_console``/eval setting ``location.href``) bypasses it.  Tools that
+    read page content after an eval must therefore re-check the live page URL.
+
+    That recheck is only meaningful when SSRF protection is in force:
+      * the backend is a cloud provider (a local backend already has full
+        network access on the same machine — see ``_is_local_backend``), and
+      * private URLs are not globally opted-in via
+        ``browser.allow_private_urls``.
+    """
+    if _is_local_backend():
+        return False
+    if _allow_private_urls():
+        return False
+    return True
+
+
+def _current_page_private_url(task_id: str) -> Optional[str]:
+    """Return the current page URL when it targets a private/internal address.
+
+    Reads ``window.location.href`` from the live page and runs it through
+    ``_url_is_private``.  Returns the offending URL (for the error message) when
+    the page is private, or ``None`` when it is public / undeterminable.
+    """
+    try:
+        url_result = _run_browser_command(
+            task_id, "eval", ["window.location.href"], timeout=10, _engine_override="auto"
+        )
+    except TypeError:
+        # Some call paths / test stubs do not accept the engine override kwarg.
+        url_result = _run_browser_command(task_id, "eval", ["window.location.href"])
+    if not isinstance(url_result, dict) or not url_result.get("success"):
+        return None
+    current_url = url_result.get("data", {}).get("result", "")
+    if isinstance(current_url, str):
+        current_url = current_url.strip().strip('"').strip("'")
+    if not current_url:
+        return None
+    return current_url if _url_is_private(current_url) else None
 
 
 def _navigation_session_key(task_id: str, url: str) -> str:
@@ -3011,6 +3065,23 @@ def browser_get_images(task_id: Optional[str] = None) -> str:
     result = _run_browser_command(effective_task_id, "eval", [js_code])
 
     if result.get("success"):
+        # ── Private-network guard ───────────────────────────────────────────
+        # browser_get_images bypasses _browser_eval and calls the eval command
+        # directly, so it must re-check the live page URL itself.  A JavaScript
+        # navigation (e.g. via browser_console) to a private/internal address
+        # would otherwise leak image src URLs and alt text from that page.
+        if _eval_ssrf_guard_active(effective_task_id):
+            _blocked_url = _current_page_private_url(effective_task_id)
+            if _blocked_url:
+                return json.dumps({
+                    "success": False,
+                    "error": (
+                        "Blocked: page URL targets a private or internal address "
+                        f"({_blocked_url}). This may have been caused by a "
+                        "JavaScript navigation via browser_console."
+                    ),
+                }, ensure_ascii=False)
+
         data = result.get("data", {})
         raw_result = data.get("result", "[]")
 

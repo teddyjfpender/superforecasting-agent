@@ -217,37 +217,89 @@ async def download_url(
         ValueError:  内容超过大小限制
         httpx.HTTPError: 网络/HTTP 错误
     """
+    # SSRF protection: yuanbao downloads model-supplied (outbound) and inbound
+    # URLs server-side. Reject private/internal targets up front, and re-validate
+    # every redirect hop so a public URL can't 302 to http://169.254.169.254/.
+    #
+    # httpx's response event hooks run BEFORE ``response.next_request`` is set
+    # under follow_redirects=True, so a hook-based redirect guard is dead code.
+    # Instead we disable httpx auto-follow and walk redirects manually, calling
+    # is_safe_url() on every hop before issuing the next request.
+    from tools.url_safety import is_safe_url
+
+    if not is_safe_url(url):
+        raise ValueError(f"Blocked unsafe URL (SSRF protection): {url}")
+
     max_bytes = max_size_mb * 1024 * 1024
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        # 先 HEAD 检查大小
+    max_redirects = 5
+    async with httpx.AsyncClient(
+        timeout=30.0,
+        follow_redirects=False,
+    ) as client:
+        current_url = url
+
+        # 先 HEAD 检查大小（HEAD 也手动跟随重定向并逐跳校验）
         try:
-            head = await client.head(url)
-            content_length = int(head.headers.get("content-length", 0) or 0)
-            if content_length > 0 and content_length > max_bytes:
-                raise ValueError(
-                    f"文件过大: {content_length / 1024 / 1024:.1f} MB > {max_size_mb} MB"
-                )
+            head_url = current_url
+            for _ in range(max_redirects + 1):
+                head = await client.head(head_url)
+                if head.is_redirect:
+                    location = head.headers.get("location")
+                    if not location:
+                        break
+                    head_url = str(httpx.URL(head_url).join(location))
+                    if not is_safe_url(head_url):
+                        raise ValueError(
+                            f"Blocked unsafe URL (SSRF protection): {head_url}"
+                        )
+                    continue
+                content_length = int(head.headers.get("content-length", 0) or 0)
+                if content_length > 0 and content_length > max_bytes:
+                    raise ValueError(
+                        f"文件过大: {content_length / 1024 / 1024:.1f} MB > {max_size_mb} MB"
+                    )
+                break
         except httpx.HTTPStatusError:
             pass  # 部分服务器不支持 HEAD，忽略
 
-        # GET 下载（流式读取，防止超限）
-        async with client.stream("GET", url) as resp:
-            resp.raise_for_status()
+        # GET 下载（手动跟随重定向 + 逐跳 SSRF 校验，流式读取防止超限）
+        redirects_followed = 0
+        while True:
+            async with client.stream("GET", current_url) as resp:
+                if resp.is_redirect:
+                    location = resp.headers.get("location")
+                    if not location:
+                        resp.raise_for_status()
+                        break
+                    redirects_followed += 1
+                    if redirects_followed > max_redirects:
+                        raise ValueError(
+                            f"Too many redirects (>{max_redirects}) for: {url}"
+                        )
+                    next_url = str(httpx.URL(current_url).join(location))
+                    if not is_safe_url(next_url):
+                        raise ValueError(
+                            f"Blocked unsafe URL (SSRF protection): {next_url}"
+                        )
+                    current_url = next_url
+                    continue
 
-            content_type = resp.headers.get("content-type", "").split(";")[0].strip()
+                resp.raise_for_status()
 
-            chunks: list[bytes] = []
-            downloaded = 0
-            async for chunk in resp.aiter_bytes(65536):
-                downloaded += len(chunk)
-                if downloaded > max_bytes:
-                    raise ValueError(
-                        f"文件过大: 已超过 {max_size_mb} MB 限制"
-                    )
-                chunks.append(chunk)
+                content_type = resp.headers.get("content-type", "").split(";")[0].strip()
 
-        data = b"".join(chunks)
-        return data, content_type
+                chunks: list[bytes] = []
+                downloaded = 0
+                async for chunk in resp.aiter_bytes(65536):
+                    downloaded += len(chunk)
+                    if downloaded > max_bytes:
+                        raise ValueError(
+                            f"文件过大: 已超过 {max_size_mb} MB 限制"
+                        )
+                    chunks.append(chunk)
+
+                data = b"".join(chunks)
+                return data, content_type
 
 
 # ============ COS 鉴权（HMAC-SHA1） ============

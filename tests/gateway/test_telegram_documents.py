@@ -112,9 +112,15 @@ def _make_message(document=None, caption=None, media_group_id=None, photo=None):
 
 
 def _make_update(msg):
-    """Wrap a message in a mock Update."""
+    """Wrap a message in a mock Update.
+
+    Sets ``effective_message`` to mirror real ``telegram.Update`` (where
+    ``effective_message`` resolves to ``message``/``channel_post``); the media
+    handler reads it via ``_effective_update_message`` for channel-post parity.
+    """
     update = MagicMock()
     update.message = msg
+    update.effective_message = msg
     return update
 
 

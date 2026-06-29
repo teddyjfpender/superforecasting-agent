@@ -534,6 +534,161 @@ class TelegramAdapter(BasePlatformAdapter):
         allowed_ids = {uid.strip() for uid in allowed_csv.split(",") if uid.strip()}
         return "*" in allowed_ids or normalized_user_id in allowed_ids
 
+    def _source_from_message_for_auth(self, message: Message):
+        """Build the same Telegram source shape the gateway auth path expects.
+
+        Resolves the identity to authorize from ``from_user`` for normal
+        messages, falling back to ``sender_chat`` for channel posts (which
+        carry no ``from_user``) so a removed/unauthorized channel cannot
+        inject content via the broadcast path either.
+        """
+        from gateway.session import SessionSource
+
+        user = getattr(message, "from_user", None)
+        chat = getattr(message, "chat", None)
+        user_id = str(getattr(user, "id", "")).strip() or None
+        user_name = (
+            str(getattr(user, "username", "") or getattr(user, "full_name", "") or "").strip()
+            or None
+        )
+        # Channel posts have no from_user — authorize the sender chat instead.
+        if not user_id:
+            sender_chat = getattr(message, "sender_chat", None)
+            if sender_chat is not None:
+                user_id = str(getattr(sender_chat, "id", "")).strip() or None
+                if not user_name:
+                    user_name = (
+                        str(getattr(sender_chat, "title", "") or "").strip() or None
+                    )
+
+        chat_id = str(getattr(chat, "id", "")).strip() or user_id
+        chat_type = str(getattr(chat, "type", "dm")).strip().lower() or "dm"
+        if chat_type == "private":
+            chat_type = "dm"
+        elif chat_type == "supergroup":
+            thread_id_raw = getattr(message, "message_thread_id", None)
+            is_topic_message = bool(getattr(message, "is_topic_message", False))
+            is_forum_group = getattr(chat, "is_forum", False) is True
+            chat_type = (
+                "forum"
+                if thread_id_raw is not None and (is_topic_message or is_forum_group)
+                else "group"
+            )
+
+        thread_id = None
+        thread_id_raw = getattr(message, "message_thread_id", None)
+        if thread_id_raw is not None:
+            is_topic_message = bool(getattr(message, "is_topic_message", False))
+            is_forum_group = getattr(chat, "is_forum", False) is True
+            if chat_type == "forum" and (is_topic_message or is_forum_group):
+                thread_id = str(thread_id_raw)
+            elif chat_type == "dm" and is_topic_message:
+                thread_id = str(thread_id_raw)
+
+        return SessionSource(
+            platform=Platform.TELEGRAM,
+            chat_id=chat_id or "",
+            chat_type=chat_type,
+            user_id=user_id,
+            user_name=user_name,
+            thread_id=thread_id,
+        )
+
+    def _telegram_auth_env_configured(self, chat_type: Optional[str] = None) -> bool:
+        """Return True when Telegram auth env vars make an early decision safe.
+
+        ``chat_type`` scopes which allowlist vars count. For a DM/private chat
+        the GROUP-scoped allowlists (``TELEGRAM_GROUP_ALLOWED_USERS`` /
+        ``TELEGRAM_GROUP_ALLOWED_CHATS``) are irrelevant — gating a DM on a
+        group-only allowlist would default-deny an unknown DM user at intake and
+        keep them from ever reaching the DM pairing flow (a regression). So when
+        deciding a DM/private chat we only consider DM-relevant config; group
+        messages still gate on the full set including the group allowlists.
+        """
+        dm_relevant_keys = (
+            "TELEGRAM_ALLOWED_USERS",
+            "TELEGRAM_ALLOW_ALL_USERS",
+            "GATEWAY_ALLOWED_USERS",
+            "GATEWAY_ALLOW_ALL_USERS",
+        )
+        group_only_keys = (
+            "TELEGRAM_GROUP_ALLOWED_USERS",
+            "TELEGRAM_GROUP_ALLOWED_CHATS",
+        )
+        normalized = (chat_type or "").strip().lower()
+        is_dm = normalized in ("dm", "private")
+        keys = dm_relevant_keys if is_dm else dm_relevant_keys + group_only_keys
+        return any(os.getenv(key, "").strip() for key in keys)
+
+    def _is_user_authorized_from_message(self, message: Message) -> bool:
+        """Check if the sender of a Telegram message is authorized.
+
+        Intake prefilter that runs BEFORE text batching, event construction,
+        and any observe/persist branch, so a removed/unauthorized user cannot
+        inject prompt content into the agent path or the observed transcript
+        (ports upstream #40863). It only rejects when it can make the same
+        context-aware decision the runner would make. Unknown DMs with no
+        allowlist still pass through so the normal pairing flow can run.
+        """
+        source = self._source_from_message_for_auth(message)
+        user_id = source.user_id
+        # No identity at all → genuine group service message (pin, delete,
+        # new_chat_members, etc.) or a channel post without sender_chat. Defer
+        # to the cold path; they carry no authorizable identity, so let the
+        # normal _should_process_message gating handle them.
+        if not user_id:
+            return True
+
+        # Adapter-level allow_from: when set, it is the sole authority.
+        adapter_allow_from = self.config.extra.get("allow_from")
+        if adapter_allow_from is not None:
+            allowed = {str(u).strip() for u in adapter_allow_from if str(u).strip()}
+            return user_id in allowed or "*" in allowed
+
+        # Test/custom injection only. The class method named
+        # _is_callback_user_authorized is for inline button callbacks and must
+        # not be treated as a user-id-only shortcut for real messages — only
+        # honor an instance-level override (set in tests).
+        callback_auth = self.__dict__.get("_is_callback_user_authorized")
+        if callable(callback_auth):
+            try:
+                return bool(
+                    callback_auth(
+                        user_id,
+                        chat_id=source.chat_id,
+                        chat_type=source.chat_type,
+                        thread_id=source.thread_id,
+                        user_name=source.user_name,
+                    )
+                )
+            except Exception:
+                pass
+
+        runner = getattr(getattr(self, "_message_handler", None), "__self__", None)
+        auth_fn = getattr(runner, "_is_user_authorized", None)
+        if callable(auth_fn):
+            # Only make an early decision via the runner when an allowlist
+            # actually exists; otherwise unknown DMs must reach the pairing
+            # flow rather than being default-denied here. Scope the check to the
+            # chat type so a GROUP-only allowlist does not gate (and default-deny)
+            # an unknown DM before pairing.
+            if not self._telegram_auth_env_configured(source.chat_type):
+                return True
+            try:
+                return bool(auth_fn(source))
+            except Exception:
+                logger.debug(
+                    "[Telegram] Falling back to env-only auth for user %s",
+                    user_id,
+                    exc_info=True,
+                )
+
+        allowed_csv = os.getenv("TELEGRAM_ALLOWED_USERS", "").strip()
+        if not allowed_csv:
+            return True
+        allowed_ids = {uid.strip() for uid in allowed_csv.split(",") if uid.strip()}
+        return "*" in allowed_ids or user_id in allowed_ids
+
     @classmethod
     def _metadata_thread_id(cls, metadata: Optional[Dict[str, Any]]) -> Optional[str]:
         if not metadata:
@@ -4589,6 +4744,17 @@ class TelegramAdapter(BasePlatformAdapter):
         msg = self._effective_update_message(update)
         if not msg or not msg.text:
             return
+        # Early user-level auth: reject unauthorized users before any text
+        # batching, event building, or response generation. Prevents a
+        # removed/blocked user from injecting prompts into the agent path
+        # (ports #40863).
+        if not self._is_user_authorized_from_message(msg):
+            logger.warning(
+                "[Telegram] Blocked unauthorized user %s in chat %s",
+                getattr(getattr(msg, "from_user", None), "id", None),
+                getattr(getattr(msg, "chat", None), "id", None),
+            )
+            return
         if not self._should_process_message(msg):
             return
         await self._ensure_forum_commands(update.message)
@@ -4602,6 +4768,13 @@ class TelegramAdapter(BasePlatformAdapter):
         msg = self._effective_update_message(update)
         if not msg or not msg.text:
             return
+        if not self._is_user_authorized_from_message(msg):
+            logger.warning(
+                "[Telegram] Blocked unauthorized user %s in chat %s",
+                getattr(getattr(msg, "from_user", None), "id", None),
+                getattr(getattr(msg, "chat", None), "id", None),
+            )
+            return
         if not self._should_process_message(msg, is_command=True):
             return
         await self._ensure_forum_commands(msg)
@@ -4613,6 +4786,13 @@ class TelegramAdapter(BasePlatformAdapter):
         """Handle incoming location/venue pin messages."""
         msg = self._effective_update_message(update)
         if not msg:
+            return
+        if not self._is_user_authorized_from_message(msg):
+            logger.warning(
+                "[Telegram] Blocked unauthorized user %s in chat %s",
+                getattr(getattr(msg, "from_user", None), "id", None),
+                getattr(getattr(msg, "chat", None), "id", None),
+            )
             return
         if not self._should_process_message(msg):
             return
@@ -4785,13 +4965,24 @@ class TelegramAdapter(BasePlatformAdapter):
 
     async def _handle_media_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle incoming media messages, downloading images to local cache."""
-        if not update.message:
+        msg = self._effective_update_message(update)
+        if not msg:
             return
-        if not self._should_process_message(update.message):
+        # Reject unauthorized senders before downloading any media or building
+        # an event — a removed user must not inject prompt-bearing documents or
+        # captions into the agent path (ports #40863). Use the effective message
+        # so channel-post media is authorized consistently with text/command/
+        # location handlers.
+        if not self._is_user_authorized_from_message(msg):
+            logger.info(
+                "[Telegram] Blocked media from unauthorized user %s in chat %s",
+                getattr(getattr(msg, "from_user", None), "id", None),
+                getattr(getattr(msg, "chat", None), "id", None),
+            )
             return
-        
-        msg = update.message
-        
+        if not self._should_process_message(msg):
+            return
+
         # Determine media type
         if msg.sticker:
             msg_type = MessageType.STICKER
