@@ -26,6 +26,7 @@ import re
 import signal
 import sys
 import tempfile
+import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -35,6 +36,25 @@ import pytest
 PROJECT_ROOT = Path(__file__).parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+def _install_third_party_warning_filters() -> None:
+    """Suppress known third-party import deprecations in warning audits."""
+
+    # Keep warning-focused runs actionable when third-party imports emit known
+    # deprecations before tests begin. Installing at runtime makes the filters
+    # apply even when developers pass ``-W default`` on the pytest command line.
+    warnings.filterwarnings(
+        "ignore",
+        message="SelectableGroups dict interface is deprecated. Use select.",
+        category=DeprecationWarning,
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message="Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.",
+    )
+
+
+_install_third_party_warning_filters()
 
 
 # ── Credential env-var filter ──────────────────────────────────────────────
@@ -741,12 +761,6 @@ def _ensure_current_event_loop(request):
     except RuntimeError:
         pass
 
-    if loop is None and sys.version_info < (3, 12):
-        try:
-            loop = asyncio.get_event_loop_policy().get_event_loop()
-        except RuntimeError:
-            loop = None
-
     created = loop is None or loop.is_closed()
     if created:
         loop = asyncio.new_event_loop()
@@ -848,6 +862,7 @@ _LIVE_SYSTEM_GUARD_BYPASS_MARK = "live_system_guard_bypass"
 
 def pytest_configure(config):  # noqa: D401 — pytest hook
     """Register markers used by hermetic conftest."""
+    _install_third_party_warning_filters()
     config.addinivalue_line(
         "markers",
         f"{_LIVE_SYSTEM_GUARD_BYPASS_MARK}: bypass the live-system guard "

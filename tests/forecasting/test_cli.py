@@ -95,12 +95,28 @@ class _ImportPayloadHandler(BaseHTTPRequestHandler):
         return
 
 
+class _ImportPayloadServer(ThreadingHTTPServer):
+    daemon_threads = True
+    _serve_thread: threading.Thread | None = None
+
+    def shutdown(self):  # noqa: D401 - test cleanup hook
+        """Stop serving and close the listening socket used by test fixtures."""
+        try:
+            super().shutdown()
+        finally:
+            self.server_close()
+            thread = getattr(self, "_serve_thread", None)
+            if thread is not None:
+                thread.join(timeout=2)
+
+
 def _serve_import_payload(body: str, *, content_type: str = "application/json"):
     _ImportPayloadHandler.body = body.encode("utf-8")
     _ImportPayloadHandler.content_type = content_type
     _ImportPayloadHandler.last_path = ""
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _ImportPayloadHandler)
+    server = _ImportPayloadServer(("127.0.0.1", 0), _ImportPayloadHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
+    server._serve_thread = thread
     thread.start()
     return server
 

@@ -232,6 +232,7 @@ class _ThreadedProcessHandle:
         read_fd, write_fd = os.pipe()
         self._stdout = os.fdopen(read_fd, "r", encoding="utf-8", errors="replace")
         self._write_fd = write_fd
+        self._closed = False
 
         def _worker():
             try:
@@ -276,6 +277,22 @@ class _ThreadedProcessHandle:
     def wait(self, timeout: float | None = None) -> int:
         self._done.wait(timeout=timeout)
         return self._returncode
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        try:
+            self._stdout.close()
+        except Exception:
+            pass
+        try:
+            os.close(self._write_fd)
+        except OSError:
+            pass
+
+    def __del__(self):
+        self.close()
 
 
 # ---------------------------------------------------------------------------
@@ -505,6 +522,22 @@ class BaseEnvironment(ABC):
         """
         output_chunks: list[str] = []
 
+        def _close_proc_output() -> None:
+            close = getattr(proc, "close", None)
+            if callable(close):
+                try:
+                    close()
+                    return
+                except Exception:
+                    pass
+            stdout = proc.stdout
+            if stdout is None:
+                return
+            try:
+                stdout.close()
+            except Exception:
+                pass
+
         # Non-blocking drain via select().
         #
         # The old pattern — ``for line in proc.stdout`` — blocks on
@@ -628,6 +661,7 @@ class BaseEnvironment(ABC):
                         )
                     self._kill_process(proc)
                     drain_thread.join(timeout=2)
+                    _close_proc_output()
                     return {
                         "output": "".join(output_chunks) + "\n[Command interrupted]",
                         "returncode": 130,
@@ -641,6 +675,7 @@ class BaseEnvironment(ABC):
                         )
                     self._kill_process(proc)
                     drain_thread.join(timeout=2)
+                    _close_proc_output()
                     partial = "".join(output_chunks)
                     timeout_msg = f"\n[Command timed out after {timeout}s]"
                     return {
@@ -699,6 +734,7 @@ class BaseEnvironment(ABC):
             try:
                 self._kill_process(proc)
                 drain_thread.join(timeout=2)
+                _close_proc_output()
             except Exception:
                 pass  # cleanup is best-effort
             raise
@@ -708,10 +744,7 @@ class BaseEnvironment(ABC):
         # it means the non-blocking loop itself stopped cooperating.
         drain_thread.join(timeout=2)
 
-        try:
-            proc.stdout.close()
-        except Exception:
-            pass
+        _close_proc_output()
 
         if _DEBUG_INTERRUPT:
             logger.info(

@@ -20,6 +20,27 @@ from tools.environments.local import _HERMES_PROVIDER_ENV_BLOCKLIST
 logger = logging.getLogger(__name__)
 
 
+def _launch_detached_shell(command: str) -> None:
+    """Launch a shell command that backgrounds its work, then reap the shell.
+
+    The command itself is expected to end with ``&``.  Waiting briefly reaps the
+    short-lived shell wrapper, avoiding ResourceWarning noise from uncollected
+    Popen objects while preserving fire-and-forget cleanup behavior.
+    """
+    proc = subprocess.Popen(
+        command,
+        shell=True,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        proc.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+
+
 # Common Docker Desktop install paths checked when 'docker' is not in PATH.
 # macOS Intel: /usr/local/bin, macOS Apple Silicon (Homebrew): /opt/homebrew/bin,
 # Docker Desktop app bundle: /Applications/Docker.app/Contents/Resources/bin
@@ -642,16 +663,15 @@ class DockerEnvironment(BaseEnvironment):
                     f"(timeout 60 {self._docker_exe} stop {self._container_id} || "
                     f"{self._docker_exe} rm -f {self._container_id}) >/dev/null 2>&1 &"
                 )
-                subprocess.Popen(stop_cmd, shell=True)
+                _launch_detached_shell(stop_cmd)
             except Exception as e:
                 logger.warning("Failed to stop container %s: %s", self._container_id, e)
 
             if not self._persistent:
                 # Also schedule removal (stop only leaves it as stopped)
                 try:
-                    subprocess.Popen(
-                        f"sleep 3 && {self._docker_exe} rm -f {self._container_id} >/dev/null 2>&1 &",
-                        shell=True,
+                    _launch_detached_shell(
+                        f"sleep 3 && {self._docker_exe} rm -f {self._container_id} >/dev/null 2>&1 &"
                     )
                 except Exception:
                     pass

@@ -39,17 +39,23 @@ class TestZombieReproduction:
         them — this models the gap that causes zombie accumulation when
         the gateway drops agent references without calling close()."""
         pids = []
+        procs = []
+        dropped_handles = []
 
         try:
             for _ in range(3):
                 proc = _spawn_sleep(60)
+                procs.append(proc)
                 pids.append(proc.pid)
 
             for pid in pids:
                 assert _pid_alive(pid), f"PID {pid} should be alive after spawn"
 
-            # Simulate "session end" by just dropping the reference
-            del proc  # noqa: F821
+            # Simulate "session end" by dropping the application-level handle
+            # list while keeping a private handle for test cleanup so Popen does
+            # not warn about still-running subprocesses.
+            dropped_handles = procs
+            procs = []
 
             # BUG: processes are still alive after reference is dropped
             for pid in pids:
@@ -58,10 +64,11 @@ class TestZombieReproduction:
                     f"expected it to survive (demonstrating the bug)"
                 )
         finally:
-            for pid in pids:
+            for proc in dropped_handles or procs:
                 try:
-                    os.kill(pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                    proc.wait(timeout=5)
+                except Exception:
                     pass
 
     def test_explicit_terminate_reaps_processes(self):

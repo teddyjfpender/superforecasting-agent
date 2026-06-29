@@ -1,5 +1,6 @@
 import logging
 from io import StringIO
+import os
 import subprocess
 import sys
 import types
@@ -208,9 +209,27 @@ def test_non_persistent_cleanup_removes_container(monkeypatch):
     calls = _mock_subprocess_run(monkeypatch)
 
     popen_cmds = []
+
+    class _CleanupPopen:
+        def __init__(self, cmd, **kw):
+            popen_cmds.append(cmd)
+            self.returncode = 0
+            self.stdout = open(os.devnull, "rb")
+            self.stdin = None
+
+        def poll(self):
+            return self.returncode
+
+        def wait(self, **k):
+            self.stdout.close()
+            return self.returncode
+
+        def kill(self):
+            self.returncode = -9
+
     monkeypatch.setattr(
         docker_env.subprocess, "Popen",
-        lambda cmd, **kw: (popen_cmds.append(cmd), type("P", (), {"poll": lambda s: 0, "wait": lambda s, **k: None, "returncode": 0, "stdout": iter([]), "stdin": None})())[1],
+        _CleanupPopen,
     )
 
     env = _make_dummy_env(persistent_filesystem=False, task_id="ephemeral-task")

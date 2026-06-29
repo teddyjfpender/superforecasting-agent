@@ -1156,6 +1156,9 @@ def execute_code(
     tool_call_counter = [0]  # mutable so the RPC thread can increment
     exec_start = time.monotonic()
     server_sock = None
+    proc = None
+    stdout_reader = None
+    stderr_reader = None
 
     try:
         # Write the auto-generated hermes_tools module.
@@ -1387,6 +1390,22 @@ def execute_code(
                 pass
             time.sleep(0.2)
 
+        # Reap the child before reading final status.  In interrupt/timeout paths
+        # the loop breaks immediately after signalling; waiting here prevents
+        # Popen's destructor from warning about a still-running subprocess and
+        # lets pipe readers see EOF.
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                _kill_process_group(proc, escalate=True)
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    logger.debug("execute_code child did not exit after kill", exc_info=True)
+        else:
+            proc.wait(timeout=0)
+
         # Wait for readers to finish draining
         stdout_reader.join(timeout=3)
         stderr_reader.join(timeout=3)
@@ -1481,6 +1500,29 @@ def execute_code(
         }, ensure_ascii=False)
 
     finally:
+        if proc is not None:
+            try:
+                if proc.poll() is None:
+                    _kill_process_group(proc, escalate=True)
+                    try:
+                        proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        logger.debug("execute_code child still running during cleanup")
+            except Exception as e:
+                logger.debug("Process cleanup error: %s", e, exc_info=True)
+
+            # Ensure background pipe readers are not left running, then close
+            # Popen-created pipe file objects to avoid ResourceWarning leaks.
+            for reader in (stdout_reader, stderr_reader):
+                if reader is not None and reader.is_alive():
+                    reader.join(timeout=1)
+            for pipe in (proc.stdout, proc.stderr):
+                if pipe is not None:
+                    try:
+                        pipe.close()
+                    except OSError as e:
+                        logger.debug("Process pipe close error: %s", e)
+
         # Cleanup temp dir and socket
         if server_sock is not None:
             try:

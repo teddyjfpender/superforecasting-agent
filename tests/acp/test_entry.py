@@ -1,8 +1,34 @@
 """Tests for acp_adapter.entry startup wiring."""
 
 import sys
+import warnings
+from pathlib import Path
 
-import acp
+_TESTS_ROOT = Path(__file__).resolve().parents[1]
+_removed_tests_paths: list[str] = []
+for _path in list(sys.path):
+    try:
+        if Path(_path).resolve() == _TESTS_ROOT:
+            sys.path.remove(_path)
+            _removed_tests_paths.append(_path)
+    except Exception:
+        pass
+_existing_acp = sys.modules.get("acp")
+_removed_shadow_acp = False
+if _existing_acp is not None and str(getattr(_existing_acp, "__file__", "")).startswith(str(_TESTS_ROOT)):
+    sys.modules.pop("acp", None)
+    _removed_shadow_acp = True
+try:
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="SelectableGroups dict interface is deprecated. Use select.",
+            category=DeprecationWarning,
+        )
+        import acp
+finally:
+    for _path in reversed(_removed_tests_paths):
+        sys.path.insert(0, _path)
 import pytest
 
 from acp_adapter import entry

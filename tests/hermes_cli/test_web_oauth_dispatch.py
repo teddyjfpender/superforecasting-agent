@@ -21,16 +21,28 @@ These tests pin the corrected behavior.
 """
 import asyncio
 import time
+import warnings
 from datetime import datetime, timezone
 from unittest.mock import patch
 
 import httpx
-from fastapi.testclient import TestClient
+import pytest
+with warnings.catch_warnings():
+    warnings.filterwarnings(
+        "ignore",
+        message="Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.",
+    )
+    from starlette.testclient import TestClient
 
 from hermes_cli.web_server import _SESSION_TOKEN, app
 
-client = TestClient(app)
 HEADERS = {"X-Hermes-Session-Token": _SESSION_TOKEN}
+
+
+@pytest.fixture()
+def client():
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def _fake_nous_device_data():
@@ -59,7 +71,7 @@ def _invoke_scope_refusal():
     return httpx.HTTPStatusError("invalid scope", request=request, response=response)
 
 
-def test_minimax_login_does_not_launch_anthropic_flow():
+def test_minimax_login_does_not_launch_anthropic_flow(client):
     """Click 'Login' on MiniMax → MUST NOT return claude.ai auth_url."""
     fake_user_code_resp = {
         "user_code": "ABCD-1234",
@@ -314,7 +326,7 @@ def test_minimax_dashboard_poller_accepts_absolute_ms_expired_in():
     assert datetime.fromisoformat(captured_state["expires_at"]).year < 9999
 
 
-def test_anthropic_pkce_branch_still_works():
+def test_anthropic_pkce_branch_still_works(client):
     """Sanity: the dispatcher tightening doesn't break the legitimate Anthropic PKCE path."""
     fake_anthropic_response = {
         "session_id": "stub-session",
@@ -337,7 +349,7 @@ def test_anthropic_pkce_branch_still_works():
     assert "claude.ai" in body["auth_url"]
 
 
-def test_unknown_pkce_provider_rejected_cleanly():
+def test_unknown_pkce_provider_rejected_cleanly(client):
     """A future PKCE provider without an explicit branch must NOT silently route to Anthropic.
 
     Simulates a hypothetical catalog entry with ``flow: "pkce"`` and an

@@ -26,6 +26,7 @@ import subprocess
 import sys
 import textwrap
 import unittest.mock as mock
+from pathlib import Path
 
 import pytest
 
@@ -442,7 +443,7 @@ class TestSandboxWritesUtf8:
         """Both ``hermes_tools.py`` and ``script.py`` writes in
         ``_execute_local`` must pass ``encoding="utf-8"``."""
         import tools.code_execution_tool as cet
-        src = open(cet.__file__, encoding="utf-8").read()
+        src = Path(cet.__file__).read_text(encoding="utf-8")
 
         # There should be no ``open(path, "w")`` without encoding= for
         # the two staging files.  Grep-style check: find every write of
@@ -594,7 +595,7 @@ class TestChildStdioIsUtf8:
         """Source-level check: the Popen call site must set
         PYTHONIOENCODING=utf-8 in child_env."""
         import tools.code_execution_tool as cet
-        src = open(cet.__file__, encoding="utf-8").read()
+        src = Path(cet.__file__).read_text(encoding="utf-8")
         assert 'child_env["PYTHONIOENCODING"] = "utf-8"' in src, (
             "PYTHONIOENCODING=utf-8 missing from child env — Windows "
             "scripts that print non-ASCII will crash with "
@@ -605,7 +606,7 @@ class TestChildStdioIsUtf8:
         """Source-level check: PYTHONUTF8=1 must be set too — it makes
         open()'s default encoding UTF-8 in user-written file I/O."""
         import tools.code_execution_tool as cet
-        src = open(cet.__file__, encoding="utf-8").read()
+        src = Path(cet.__file__).read_text(encoding="utf-8")
         assert 'child_env["PYTHONUTF8"] = "1"' in src, (
             "PYTHONUTF8=1 missing from child env — user scripts that "
             "call open(path, 'w') without encoding= will produce "

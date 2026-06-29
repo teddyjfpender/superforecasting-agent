@@ -3,6 +3,7 @@ that only manifest at runtime (not in mocked unit tests)."""
 
 import os
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -389,7 +390,7 @@ class TestHistoryDisplay:
         assert "Current preview" not in output
 
     def test_help_labels_dynamic_skills_as_optional_compatibility(self):
-        source = open(os.path.join(os.path.dirname(__file__), "..", "..", "cli.py"), encoding="utf-8").read()
+        source = (Path(__file__).resolve().parents[2] / "cli.py").read_text(encoding="utf-8")
 
         assert "Optional Skill Commands" in source
         assert "Compatibility Skill Bundles" in source

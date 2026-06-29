@@ -165,6 +165,9 @@ class TestOrphanedPipeReconciliation:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
+        proc.wait(timeout=5)
+        if proc.stdout is not None:
+            proc.stdout.close()
 
     def test_reconcile_noop_when_child_still_running(self, registry):
         """Reconcile must NOT flip exited when the direct child is alive."""
@@ -229,6 +232,9 @@ class TestOrphanedPipeReconciliation:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
+        proc.wait(timeout=5)
+        if proc.stdout is not None:
+            proc.stdout.close()
 
 
 # =========================================================================
