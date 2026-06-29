@@ -5118,7 +5118,7 @@ def _(rid, params: dict) -> dict:
     if not raw:
         return _err(rid, 4015, "path required")
     try:
-        from cli import (
+        from hermes_cli.file_drop import (
             _IMAGE_EXTENSIONS,
             _detect_file_drop,
             _resolve_attachment_path,
@@ -5158,7 +5158,11 @@ def _(rid, params: dict) -> dict:
     if err:
         return err
     try:
-        from cli import _detect_file_drop
+        # Import from the lightweight stdlib-only module, NOT cli.py — this
+        # handler runs on the serial main dispatch thread on EVERY message, and
+        # pulling cli.py (prompt_toolkit/fire/rich) onto that fast path adds
+        # ~0.18s (worse under import-lock contention with the startup build).
+        from hermes_cli.file_drop import _detect_file_drop
 
         raw = str(params.get("text", "") or "")
         dropped = _detect_file_drop(raw)

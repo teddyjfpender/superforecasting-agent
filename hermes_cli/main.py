@@ -1397,7 +1397,20 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
             return [str(tsx), "src/entry.tsx"], tui_dir
         return [npm, "start"], tui_dir
 
-    # Always rebuild — esbuild is fast and this avoids staleness-edge-case bugs.
+    # Skip the rebuild when the prebuilt bundle is already present AND fresh.
+    # The stale case is fully handled by the step-0 working-copy freshness guard
+    # (`_rebuild_stale_tui_bundle`, which rebuilds and returns the fresh bundle),
+    # so reaching here with a present, non-stale dist/entry.js means there is
+    # nothing to rebuild — launch it directly. This saves the ~0.4s esbuild pass
+    # every dev `--tui` launch otherwise paid unconditionally, with zero behavior
+    # change for a stale/missing bundle (which still rebuilds below).
+    node = _node_bin("node")
+    entry = tui_dir / "dist" / "entry.js"
+    if entry.is_file() and not _tui_bundle_is_stale(tui_dir):
+        return [node, str(entry)], tui_dir
+
+    # Bundle missing (fresh checkout never built) or stale-but-unrebuildable at
+    # step 0 — build it now. esbuild is fast and this avoids staleness edge cases.
     npm = _node_bin("npm")
     result = subprocess.run(
         [npm, "run", "build"],
@@ -1413,8 +1426,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
             print(preview)
         sys.exit(1)
 
-    node = _node_bin("node")
-    return [node, str(tui_dir / "dist" / "entry.js")], tui_dir
+    return [node, str(entry)], tui_dir
 
 
 def _normalize_tui_toolsets(toolsets: object) -> list[str]:

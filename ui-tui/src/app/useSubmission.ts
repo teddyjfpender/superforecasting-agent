@@ -1,6 +1,7 @@
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 
 import { TYPING_IDLE_MS } from '../config/timing.js'
+import { couldBeFileDrop } from '../domain/fileDrop.js'
 import { attachedImageNotice } from '../domain/messages.js'
 import { looksLikeSlashCommand } from '../domain/slash.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -126,9 +127,20 @@ export function useSubmission(opts: UseSubmissionOptions) {
         return sys('forecast session not ready yet')
       }
 
-      // Always ask the backend whether this looks like a file drop.
-      // The backend's _detect_file_drop handles paths with spaces, quotes,
-      // Windows drive letters, and escaped characters correctly.
+      // Fast path: input that cannot be a dragged/pasted file path (the
+      // overwhelmingly common case) renders the user's own bubble + submits
+      // OPTIMISTICALLY — instantly, never gated on the input.detect_drop
+      // round-trip (which could otherwise serialize behind an in-flight inline
+      // RPC and delay the echo). `couldBeFileDrop` mirrors the gateway's cheap
+      // `starts_like_path` prefilter, so the only inputs that still wait are
+      // genuinely path-shaped ones, whose display semantics stay unchanged.
+      if (!couldBeFileDrop(text)) {
+        return startSubmit(text, expand(text), showUserMessage)
+      }
+
+      // Path-shaped input: ask the backend to resolve it. The backend's
+      // _detect_file_drop handles paths with spaces, quotes, Windows drive
+      // letters, and escaped characters correctly.
       gw.request<InputDetectDropResponse>('input.detect_drop', { session_id: sid, text })
         .then(r => {
           if (!r?.matched) {

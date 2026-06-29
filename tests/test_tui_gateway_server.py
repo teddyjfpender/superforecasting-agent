@@ -2796,7 +2796,10 @@ def test_prompt_submit_expands_context_refs(monkeypatch):
 
 
 def test_image_attach_appends_local_image(monkeypatch):
-    fake_cli = types.ModuleType("cli")
+    # The handler imports the file-drop helpers from the lightweight
+    # hermes_cli.file_drop module (kept off cli.py's heavy import graph), so the
+    # fakes are injected there.
+    fake_cli = types.ModuleType("hermes_cli.file_drop")
     fake_cli._IMAGE_EXTENSIONS = {".png"}
     fake_cli._detect_file_drop = lambda raw: {
         "path": Path("/tmp/cat.png"),
@@ -2807,7 +2810,7 @@ def test_image_attach_appends_local_image(monkeypatch):
     fake_cli._resolve_attachment_path = lambda raw: Path("/tmp/cat.png")
 
     server._sessions["sid"] = _session()
-    monkeypatch.setitem(sys.modules, "cli", fake_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.file_drop", fake_cli)
 
     resp = server.handle_request(
         {
@@ -2824,7 +2827,7 @@ def test_image_attach_appends_local_image(monkeypatch):
 
 def test_image_attach_accepts_unquoted_screenshot_path_with_spaces(monkeypatch):
     screenshot = Path("/tmp/Screenshot 2026-04-21 at 1.04.43 PM.png")
-    fake_cli = types.ModuleType("cli")
+    fake_cli = types.ModuleType("hermes_cli.file_drop")
     fake_cli._IMAGE_EXTENSIONS = {".png"}
     fake_cli._detect_file_drop = lambda raw: {
         "path": screenshot,
@@ -2838,7 +2841,7 @@ def test_image_attach_accepts_unquoted_screenshot_path_with_spaces(monkeypatch):
     fake_cli._resolve_attachment_path = lambda raw: None
 
     server._sessions["sid"] = _session()
-    monkeypatch.setitem(sys.modules, "cli", fake_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.file_drop", fake_cli)
 
     resp = server.handle_request(
         {
@@ -3066,7 +3069,9 @@ def test_complete_slash_surfaces_completer_error(monkeypatch):
 
 
 def test_input_detect_drop_attaches_image(monkeypatch):
-    fake_cli = types.ModuleType("cli")
+    # input.detect_drop imports _detect_file_drop from the lightweight
+    # hermes_cli.file_drop module (off cli.py's hot path), so patch it there.
+    fake_cli = types.ModuleType("hermes_cli.file_drop")
     fake_cli._detect_file_drop = lambda raw: {
         "path": Path("/tmp/cat.png"),
         "is_image": True,
@@ -3074,7 +3079,7 @@ def test_input_detect_drop_attaches_image(monkeypatch):
     }
 
     server._sessions["sid"] = _session()
-    monkeypatch.setitem(sys.modules, "cli", fake_cli)
+    monkeypatch.setitem(sys.modules, "hermes_cli.file_drop", fake_cli)
 
     resp = server.handle_request(
         {

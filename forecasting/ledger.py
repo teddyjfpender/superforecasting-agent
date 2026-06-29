@@ -7846,6 +7846,38 @@ class ForecastLedger:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def theses_by_member(self, member_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
+        """member_id -> theses it belongs to (batched ``list_theses_for_member``).
+
+        Collapses the per-member N+1 the desk's workspace payload used to fire
+        (one ``list_theses_for_member`` connection per member question) into a
+        single chunked query, mirroring ``snapshots_by_question`` /
+        ``evidence_by_question``. Each absent member defaults to ``[]`` — the
+        exact value the singular method produces for a non-member."""
+        out: dict[str, list[dict[str, Any]]] = {}
+        for chunk in self._chunk_ids(member_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT tm.member_question_id AS member_id,
+                           tm.thesis_question_id AS thesis_id, tm.direction, tm.weight, tm.role,
+                           q.title AS thesis_title
+                    FROM thesis_members tm
+                    JOIN forecast_questions q ON q.id = tm.thesis_question_id
+                    WHERE tm.member_question_id IN ({placeholders})
+                    ORDER BY tm.member_question_id ASC, q.title ASC
+                    """,
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                data = dict(row)
+                mid = data.pop("member_id")
+                out.setdefault(mid, []).append(data)
+        return out
+
     def _belief_record(
         self,
         member_id: str,

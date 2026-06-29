@@ -499,6 +499,7 @@ def build_workspace_payload(
     panel_by_q = ledger.latest_panel_run_by_question(member_ids)
     resolution_by_q = ledger.latest_resolution_by_question(member_ids)
     notes_by_q = ledger.analyst_notes_by_question(member_ids)
+    theses_by_member = ledger.theses_by_member(member_ids)
 
     closing_soon = 0
     forecasts: list[dict[str, Any]] = []
@@ -623,8 +624,10 @@ def build_workspace_payload(
                 # so the LIST skips it and forecast.question carries it instead.
                 "related": _workspace_related(ledger, question, current) if include_related else None,
                 # The theses this question is a weighted member of (the "member
-                # of: AI infra thesis" badge).
-                "thesis_ids": ledger.list_theses_for_member(question.id),
+                # of: AI infra thesis" badge). Batched (theses_by_member) to
+                # collapse the per-member N+1 — same value as
+                # list_theses_for_member(question.id), one query for the page.
+                "thesis_ids": theses_by_member.get(question.id, []),
             }
         )
 
