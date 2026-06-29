@@ -467,6 +467,69 @@ _AUTH_JSON_PATH = get_hermes_home() / "auth.json"
 _CODEX_AUX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 
 
+def _extract_chatgpt_account_id(access_token: str) -> Optional[str]:
+    """Return the ``chatgpt_account_id`` claim from a Codex OAuth access token.
+
+    The ChatGPT Codex backend (``chatgpt.com/backend-api/codex``) requires the
+    ``ChatGPT-Account-ID`` header for OAuth tokens.  The account id is NOT a
+    top-level credential field — it lives inside the access-token JWT under
+    ``claims["https://api.openai.com/auth"]["chatgpt_account_id"]``.
+
+    This is a *claim read only*: we decode the base64url JWT payload (with
+    padding) and never verify the signature.  Malformed / non-JWT / empty
+    tokens return ``None`` so callers can drop the header rather than raise —
+    a bad token then surfaces as a clean 401 instead of a construction crash.
+
+    Single source of truth for the extraction, shared by the auxiliary client
+    (:func:`_codex_cloudflare_headers`) and the main-agent codex path
+    (:func:`_codex_agent_headers`).
+    """
+    if not isinstance(access_token, str) or not access_token.strip():
+        return None
+    try:
+        import base64
+        parts = access_token.split(".")
+        if len(parts) < 2:
+            return None
+        payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
+        acct_id = claims.get("https://api.openai.com/auth", {}).get("chatgpt_account_id")
+        if isinstance(acct_id, str) and acct_id:
+            return acct_id
+    except Exception:
+        pass
+    return None
+
+
+def _codex_account_id_from_store() -> Optional[str]:
+    """Resolve the ChatGPT account id from the canonical Codex token store.
+
+    Best-effort fallback for the main-agent codex path when the access token
+    the client is using does not itself carry the ``chatgpt_account_id`` claim.
+    Reads via :func:`hermes_cli.auth._read_codex_tokens` — the credential-pool-
+    aware reader (do NOT read ``d['providers']['openai-codex']['tokens']``
+    directly; the token now lives in the credential pool) — and:
+
+      1. extracts the JWT claim from the stored ``tokens["access_token"]``;
+      2. falls back to a top-level ``tokens["account_id"]`` if present.
+
+    Returns ``None`` on any error (never raises).
+    """
+    try:
+        from hermes_cli.auth import _read_codex_tokens
+        data = _read_codex_tokens() or {}
+        tokens = data.get("tokens", {}) or {}
+        acct = _extract_chatgpt_account_id(tokens.get("access_token") or "")
+        if acct:
+            return acct
+        top = tokens.get("account_id")
+        if isinstance(top, str) and top:
+            return top
+    except Exception:
+        pass
+    return None
+
+
 def _codex_cloudflare_headers(access_token: str) -> Dict[str, str]:
     """Headers required to avoid Cloudflare 403s on chatgpt.com/backend-api/codex.
 
@@ -479,7 +542,8 @@ def _codex_cloudflare_headers(access_token: str) -> Dict[str, str]:
     We pin ``originator: codex_cli_rs`` to match the upstream codex-rs CLI, set
     ``User-Agent`` to a codex_cli_rs-shaped string (beats SDK fingerprinting),
     and extract ``ChatGPT-Account-ID`` (canonical casing, from codex-rs
-    ``auth.rs``) out of the OAuth JWT's ``chatgpt_account_id`` claim.
+    ``auth.rs``) out of the OAuth JWT's ``chatgpt_account_id`` claim via the
+    shared :func:`_extract_chatgpt_account_id` reader.
 
     Malformed tokens are tolerated — we drop the account-ID header rather than
     raise, so a bad token still surfaces as an auth error (401) instead of a
@@ -489,20 +553,34 @@ def _codex_cloudflare_headers(access_token: str) -> Dict[str, str]:
         "User-Agent": "codex_cli_rs/0.0.0 (Superforecasting Agent)",
         "originator": "codex_cli_rs",
     }
-    if not isinstance(access_token, str) or not access_token.strip():
-        return headers
-    try:
-        import base64
-        parts = access_token.split(".")
-        if len(parts) < 2:
-            return headers
-        payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(payload_b64))
-        acct_id = claims.get("https://api.openai.com/auth", {}).get("chatgpt_account_id")
-        if isinstance(acct_id, str) and acct_id:
-            headers["ChatGPT-Account-ID"] = acct_id
-    except Exception:
-        pass
+    acct_id = _extract_chatgpt_account_id(access_token)
+    if acct_id:
+        headers["ChatGPT-Account-ID"] = acct_id
+    return headers
+
+
+def _codex_agent_headers(access_token: str) -> Dict[str, str]:
+    """Codex Cloudflare headers for the MAIN agent client, account-id guaranteed.
+
+    Identical to :func:`_codex_cloudflare_headers` but, when the supplied access
+    token doesn't itself carry the ``chatgpt_account_id`` claim, recovers the
+    account id from the canonical Codex token store
+    (:func:`_codex_account_id_from_store`).
+
+    Why this exists: the bare-CLI codex path resolves its credential through the
+    auto chain, which can hand back a ``CodexAuxiliaryClient`` wrapper whose
+    inner ``default_headers`` (including ``ChatGPT-Account-ID``) are dropped when
+    ``agent_init`` copies the routed client's headers.  Without the header the
+    ChatGPT backend returns 403 (``non_retryable_client_error``), so the agent
+    path must never ship a codex request without it.  The gateway path already
+    sends it (the session JWT carries the claim); this keeps the bare CLI
+    consistent and is idempotent when the header is already present.
+    """
+    headers = _codex_cloudflare_headers(access_token)
+    if "ChatGPT-Account-ID" not in headers:
+        acct = _codex_account_id_from_store()
+        if acct:
+            headers["ChatGPT-Account-ID"] = acct
     return headers
 
 

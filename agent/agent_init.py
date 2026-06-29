@@ -664,13 +664,19 @@ def init_agent(
         else:
             # No explicit creds — use the centralized provider router
             from agent.auxiliary_client import resolve_provider_client
-            _routed_client, _ = resolve_provider_client(
+            _routed_client, _routed_model = resolve_provider_client(
                 agent.provider or "auto", model=agent.model, raw_codex=True)
             if _routed_client is not None:
                 client_kwargs = {
                     "api_key": _routed_client.api_key,
                     "base_url": str(_routed_client.base_url),
                 }
+                # The auto chain resolves the concrete model from config
+                # (e.g. model.model / model.default) — adopt it when the
+                # caller left ``model`` blank.  Without this the codex
+                # ``/responses`` request ships ``model: ""`` and 4xx's.
+                if not (agent.model or "").strip() and (_routed_model or "").strip():
+                    agent.model = _routed_model
                 if _provider_timeout is not None:
                     client_kwargs["timeout"] = _provider_timeout
                 # Preserve provider-specific headers the router set.  The
@@ -770,6 +776,48 @@ def init_agent(
                 else:
                     headers["x-anthropic-beta"] = _FINE_GRAINED
                 client_kwargs["default_headers"] = headers
+
+        # Codex (chatgpt.com/backend-api/codex) requires ``ChatGPT-Account-ID``
+        # (plus the Cloudflare originator / User-Agent) on EVERY request.  The
+        # explicit-creds / gateway path sets it from the session JWT above, but
+        # the bare-CLI path resolves its credential through the auto chain,
+        # which can hand back a ``CodexAuxiliaryClient`` wrapper whose inner
+        # ``default_headers`` are dropped when we copy the routed client's
+        # headers — so without this the bare CLI ships a codex request with no
+        # account header and the ChatGPT backend returns 403
+        # (non_retryable_client_error).  Ensure the full codex header set is
+        # present regardless of how the credential was resolved.  ``setdefault``
+        # keeps this idempotent with the gateway path (same account id, derived
+        # from the same token) and never clobbers an explicitly-set header.
+        if (
+            base_url_host_matches(_effective_base, "chatgpt.com")
+            and "/backend-api/codex" in _effective_base
+        ):
+            try:
+                from agent.auxiliary_client import _codex_agent_headers
+                _codex_headers = _codex_agent_headers(client_kwargs.get("api_key", ""))
+                _merged_headers = dict(client_kwargs.get("default_headers") or {})
+                for _ch_k, _ch_v in _codex_headers.items():
+                    _merged_headers.setdefault(_ch_k, _ch_v)
+                client_kwargs["default_headers"] = _merged_headers
+                agent._client_kwargs = client_kwargs
+            except Exception:
+                pass
+            # The codex endpoint only serves the Responses API
+            # (``/backend-api/codex/responses``).  When the base URL was not
+            # yet known at init-time api_mode detection (the bare-CLI path
+            # resolves the credential lazily through the auto chain, with
+            # provider/base_url empty), api_mode defaulted to
+            # ``chat_completions`` and the request would hit a non-existent
+            # ``/chat/completions`` route (404).  Re-derive it here now that
+            # the codex base URL is known — mirrors the init-time detection at
+            # the top of init_agent.
+            if not agent.provider:
+                agent.provider = "openai-codex"
+            if agent.api_mode != "codex_responses":
+                agent.api_mode = "codex_responses"
+                if hasattr(agent, "_transport_cache"):
+                    agent._transport_cache.clear()
 
         agent.api_key = client_kwargs.get("api_key", "")
         agent.base_url = client_kwargs.get("base_url", agent.base_url)
