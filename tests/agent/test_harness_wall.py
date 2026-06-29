@@ -50,6 +50,71 @@ class TestHarnessRootDetection:
         assert len(harness_wall.get_harness_source_roots()) >= 1
 
 
+class TestPackagedReleaseLayout:
+    """RELEASE CORRECTNESS: the wall must fire in a packaged (wheel) install.
+
+    A pip/uv-installed release has NO ``.git`` and runs from site-packages, not
+    this repo. The wall must STILL protect the installed package tree, detected
+    from the top-level harness modules' on-disk locations (NOT from ``.git`` or
+    the dev repo root).
+    """
+
+    def test_install_root_refused_without_git(self, tmp_path, monkeypatch):
+        import importlib
+        import types
+
+        # Simulate site-packages: the harness top-level packages/modules laid
+        # out flat under one install root, with NO .git anywhere.
+        site = (tmp_path / "site-packages").resolve()
+        fake_modules: dict[str, types.ModuleType] = {}
+        for name in ("hermes_cli", "forecasting", "agent", "tools"):
+            d = site / name
+            d.mkdir(parents=True)
+            (d / "__init__.py").write_text("")
+            m = types.ModuleType(name)
+            m.__path__ = [str(d)]  # type: ignore[attr-defined]
+            m.__file__ = str(d / "__init__.py")
+            fake_modules[name] = m
+        hc = site / "hermes_constants.py"
+        hc.write_text("")
+        m = types.ModuleType("hermes_constants")
+        m.__file__ = str(hc)
+        fake_modules["hermes_constants"] = m
+
+        real_import = importlib.import_module
+
+        def _fake_import(name, *a, **k):
+            if name in fake_modules:
+                return fake_modules[name]
+            return real_import(name, *a, **k)
+
+        monkeypatch.setattr(importlib, "import_module", _fake_import)
+        # Packaged install: get_project_root() does not point at this repo, and
+        # there is no .git to walk to — the ONLY signal is the package layout.
+        monkeypatch.setattr(harness_wall, "_project_root", lambda: None)
+        # The pytest tmp dir lives under the system temp dir (a priority-allowed
+        # zone); neutralize it so the install-root reject is what decides.
+        monkeypatch.setattr(harness_wall, "_priority_allowed_roots", lambda: ())
+        harness_wall.reset_caches()
+
+        roots = {str(r) for r in harness_wall.get_harness_source_roots()}
+        # The common parent (install / site-packages root) must be detected.
+        assert str(site) in roots
+        # And each package dir individually.
+        assert str(site / "agent") in roots
+
+        # A write into the installed package tree is REFUSED.
+        target = str(site / "agent" / "harness_wall.py")
+        err = harness_wall.check_harness_write(target)
+        assert err is not None
+        assert "harness is immutable" in err
+        # And a brand-new module dropped into the install root is refused too.
+        assert (
+            harness_wall.check_harness_write(str(site / "tools" / "evil.py"))
+            is not None
+        )
+
+
 class TestRejectHarnessWrites:
     def test_write_into_tools_package_rejected(self):
         from hermes_cli.config import get_project_root
@@ -61,6 +126,20 @@ class TestRejectHarnessWrites:
         # Actionable: must name the workspace and the human-review path.
         assert "workspace" in err
         assert "human review" in err
+        # Anti-loop: the refusal must end with an explicit STOP directive so the
+        # agent does not retry / hunt for another route into the harness.
+        assert "STOP" in err
+        assert "do NOT retry" in err
+        assert "surface the patch path" in err
+
+    def test_terminal_refusal_carries_stop_directive(self):
+        from hermes_cli.config import get_project_root
+
+        cmd = f"echo evil > {get_project_root() / 'tools' / 'file_tools.py'}"
+        err = harness_wall.check_harness_command_write(cmd)
+        assert err is not None
+        assert "STOP" in err
+        assert "do NOT retry" in err
 
     def test_write_into_hermes_cli_rejected(self):
         from hermes_cli.config import get_project_root
@@ -357,3 +436,16 @@ class TestInternalIoUnaffected:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_release_lock_forces_wall_on_regardless_of_config(monkeypatch):
+    """SUPERFORECASTING_RELEASE=1 forces the wall ON even when config disables it —
+    a released build-file instance cannot self-disable the wall via its own config."""
+    import agent.harness_wall as hw
+    import hermes_cli.config as _cfg
+
+    monkeypatch.setattr(_cfg, "load_config", lambda: {"harness_wall": {"enabled": False}})
+    monkeypatch.delenv("SUPERFORECASTING_RELEASE", raising=False)
+    assert hw.is_harness_wall_enabled() is False  # dev: config can disable
+    monkeypatch.setenv("SUPERFORECASTING_RELEASE", "1")
+    assert hw.is_harness_wall_enabled() is True  # release lock wins

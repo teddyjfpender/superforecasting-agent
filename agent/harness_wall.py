@@ -84,6 +84,76 @@ def _project_root() -> Optional[Path]:
             return None
 
 
+# The harness's distinctive top-level packages / modules. In BOTH the dev repo
+# and a packaged wheel install these are siblings under one directory (the repo
+# root, or site-packages), so their on-disk locations pin the harness source
+# tree even when there is no ``.git`` to walk to. Names are intentionally the
+# project-specific ones (not generic ``tools``/``agent`` only) so resolution is
+# unambiguous within the running process.
+_HARNESS_TOP_LEVEL_MODULES = (
+    "hermes_cli",
+    "hermes_constants",
+    "forecasting",
+    "agent",
+    "tools",
+)
+
+
+def _installed_package_roots() -> list[Path]:
+    """Resolve the harness's installed package tree from its top-level modules.
+
+    RELEASE CORRECTNESS: a packaged install (``pip``/``uv`` wheel in
+    site-packages) has NO ``.git``, so the ``.git`` walk below adds nothing and
+    the wall must not depend on it. We import each known top-level harness
+    module and take its on-disk directory: the package directory itself is a
+    harness root, and the directory that contains all of them (the install /
+    site-packages root, i.e. their common parent) is added too so sibling
+    harness packages are covered. This fires in dev (where the common parent is
+    the repo root, already covered) AND in release (where it is site-packages).
+    """
+    import importlib
+
+    pkg_dirs: list[Path] = []
+    # Install-root CANDIDATES computed PER module so a top-level MODULE (whose
+    # own directory IS the install root) and a PACKAGE (whose directory is
+    # install_root/<pkg>) both contribute the SAME install root — never its
+    # parent. The prior code uniformly took ``dir.parent`` and so over-climbed
+    # one level for the module case (e.g. hermes_constants), which could mark
+    # an unrelated ancestor dir as harness source.
+    root_candidates: set[Path] = set()
+    for name in _HARNESS_TOP_LEVEL_MODULES:
+        try:
+            mod = importlib.import_module(name)
+        except Exception:
+            continue
+        path_attr = getattr(mod, "__path__", None)
+        if path_attr:  # package: dir == install_root/<pkg>; install root is its parent
+            try:
+                d = Path(next(iter(path_attr))).resolve()
+            except Exception:
+                continue
+            pkg_dirs.append(d)
+            root_candidates.add(d.parent)
+        else:  # plain module (e.g. hermes_constants.py): its dir IS the install root
+            f = getattr(mod, "__file__", None)
+            if not f:
+                continue
+            try:
+                d = Path(f).resolve().parent
+            except Exception:
+                continue
+            pkg_dirs.append(d)
+            root_candidates.add(d)
+
+    roots: list[Path] = list(pkg_dirs)
+    # Add the install root ONLY when every resolved module agrees on one (the
+    # normal flat layout, dev repo and wheel alike). Disagreement → don't guess,
+    # so we never protect an unrelated parent directory.
+    if len(root_candidates) == 1:
+        roots.append(next(iter(root_candidates)))
+    return roots
+
+
 def get_harness_source_roots() -> tuple[Path, ...]:
     """Return the set of directory roots that constitute the harness SOURCE TREE.
 
@@ -91,6 +161,10 @@ def get_harness_source_roots() -> tuple[Path, ...]:
     We include:
 
       * ``get_project_root()`` — the canonical install/repo root.
+      * The installed harness package tree, resolved from the top-level harness
+        modules' on-disk locations (:func:`_installed_package_roots`). This is
+        what makes the wall fire in a PACKAGED release where there is no
+        ``.git`` and ``get_project_root()`` is the site-packages root.
       * The directory that physically contains this module's package, walked
         up to the nearest ancestor holding a ``.git`` (the editable-install
         repo root), so an editable ``pip install -e .`` checkout living
@@ -105,6 +179,13 @@ def get_harness_source_roots() -> tuple[Path, ...]:
     pr = _project_root()
     if pr is not None:
         roots.append(pr)
+
+    # Installed-package detection — fires in BOTH dev (repo) and release
+    # (no-.git site-packages). Does not depend on .git or get_project_root.
+    try:
+        roots.extend(_installed_package_roots())
+    except Exception:
+        pass
 
     # Walk up from this file to the repo root (dir containing .git). This
     # catches editable installs whose source tree differs from the configured
@@ -225,7 +306,18 @@ def is_harness_wall_enabled() -> bool:
           enabled: false   # allow the agent to edit harness source
 
     Defaults to ON when the config is missing or unreadable — fail closed.
+
+    RELEASE LOCK: when ``SUPERFORECASTING_RELEASE=1`` is set (by the build/deploy
+    environment, which the agent's file tools cannot mutate for the running
+    process), the wall is FORCED ON regardless of config — a released build-file
+    instance cannot self-disable the wall by writing ``harness_wall.enabled:
+    false`` into its own ``config.yaml``. Dev keeps full config tunability.
     """
+    # Release lock (tamper-resistant): the agent cannot change this process's
+    # environment, so a packaged release that exports SUPERFORECASTING_RELEASE=1
+    # can never be talked into disabling its own harness wall via config.
+    if os.environ.get("SUPERFORECASTING_RELEASE") == "1":
+        return True
     try:
         from hermes_cli.config import load_config
 
@@ -294,7 +386,13 @@ def _harness_write_error(filepath: str) -> str:
         "Write forecasting models / backtests / scratch to your "
         f"workspace ({workspace}). "
         "To PROPOSE a harness change, write a patch + rationale into "
-        "the workspace and flag it for human review."
+        "the workspace and flag it for human review.\n"
+        "STOP: this refusal is FINAL — do NOT retry this write and do NOT "
+        "hunt for another route into the harness. Your proposed change "
+        "belongs in your workspace, not the harness. If you have already "
+        "written a patch there, you are DONE editing the harness: stop "
+        "retrying, surface the patch path to the user, and report it for "
+        "human review."
     )
 
 
