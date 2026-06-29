@@ -54,10 +54,27 @@ DEFAULT_TIMEOUT_SECONDS = 300
 MIN_MARKET_TRADERS = 8
 
 # This is the LIVE / future-resolving path, so search is LEGITIMATE (see module
-# docstring). "web" MUST be present so the agent researches the open question;
-# "forecasting" + "file" give it the desk's reasoning/scratch tools. This is the
-# DELIBERATE inverse of the closed-book backtest runner's empty toolset.
-LIVE_ENABLED_TOOLSETS = ["forecasting", "file", "web"]
+# docstring). "web" MUST be present so the agent researches the open question — and
+# it is the ONLY toolset here, BY DESIGN. This forecaster's whole job is to (a)
+# research an OPEN market and (b) return a JSON probability that
+# ``forecasting.market_nightly.record_pending`` records under a ``forecastbench:``
+# id against a proper de-vigged market baseline. It must therefore be a PURE
+# RESEARCH agent with NO ledger-mutating capability whatsoever.
+#
+# The "forecasting" toolset is DELIBERATELY EXCLUDED: it exposes the
+# ``forecast_ledger`` tool (create_question / update_forecast / record_panel /
+# self_check / record-quorum …), i.e. the FULL desk ledger-write surface. Handing
+# those to the live one-shot forecaster made it fumble through the desk's
+# ledger-write flow and POLLUTE THE LIVE LEDGER (it manufactured garbage ``fq_``
+# questions + stray snapshots, and under ``--parallel`` several agents RACED on the
+# ledger) instead of simply emitting a probability. "file" is likewise excluded:
+# the prompt (``build_live_market_messages``) only asks for a JSON object and the
+# parse path (``parse_agent_protocol_response``) reads the final response text — no
+# file read/write is on the agent-protocol forecast path, so read_file/write_file/
+# patch/search_files are dead weight that only widen the blast radius. Web search
+# alone is necessary and sufficient. This is also the DELIBERATE inverse of the
+# closed-book backtest runner's EMPTY toolset (no search at all).
+LIVE_ENABLED_TOOLSETS = ["web"]
 
 
 def _market_to_case(market: Mapping[str, Any]) -> dict[str, Any]:

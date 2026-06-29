@@ -90,6 +90,67 @@ def test_forecaster_search_toolset_includes_web_and_is_not_closed_book():
     assert agent.kwargs["enabled_toolsets"]  # non-empty (closed-book would be [])
 
 
+def test_live_forecaster_exposes_no_ledger_write_tools():
+    # ROOT-CAUSE REGRESSION: the LIVE one-shot market forecaster must be a PURE
+    # RESEARCH agent. It previously enabled the "forecasting" toolset, which exposes
+    # the ``forecast_ledger`` tool (create_question / update_forecast / record_panel /
+    # self_check …) — the FULL desk ledger-write surface. That made the agent fumble
+    # through the ledger-write flow and POLLUTE THE LIVE LEDGER (garbage fq_ questions
+    # + stray snapshots; races under --parallel) instead of just emitting a probability.
+    #
+    # The fix drops "forecasting" (and "file"): the forecaster holds ONLY research
+    # tools. Assert that the toolset the live forecaster is built with resolves to a
+    # tool registry that (a) exposes web search and (b) exposes NO ledger-write tool.
+    from model_tools import get_tool_definitions
+
+    defs = get_tool_definitions(
+        enabled_toolsets=list(mnf.LIVE_ENABLED_TOOLSETS), quiet_mode=True
+    )
+    tool_names = set()
+    for d in defs:
+        if isinstance(d, dict):
+            fn = d.get("function") if isinstance(d.get("function"), dict) else d
+            name = fn.get("name")
+            if name:
+                tool_names.add(name)
+
+    # (a) MUST be able to research the open question.
+    assert "web_search" in tool_names, tool_names
+
+    # (b) MUST NOT carry any ledger-mutating capability. ``forecast_ledger`` is the
+    # single tool that hosts every ledger-write action; its absence proves the agent
+    # cannot create_question / update_forecast / record_panel / self_check.
+    FORBIDDEN = {
+        "forecast_ledger",
+        "create_question",
+        "update_forecast",
+        "record_panel",
+        "self_check",
+    }
+    leaked = FORBIDDEN & tool_names
+    assert not leaked, f"live forecaster must hold NO ledger-write tool, got {leaked}"
+
+    # And no action-name substring of a ledger-write op may sneak in via any tool.
+    for forbidden in FORBIDDEN:
+        for name in tool_names:
+            assert forbidden != name, name
+
+
+def test_live_enabled_toolsets_is_research_only():
+    # The forecaster must NOT enable the "forecasting" toolset (ledger writes) or
+    # "file" (off the agent-protocol forecast path) — web research only.
+    assert "forecasting" not in mnf.LIVE_ENABLED_TOOLSETS
+    assert "web" in mnf.LIVE_ENABLED_TOOLSETS
+    # The built agent is constructed with exactly these toolsets (no widening).
+    agent = _MockAgent(response=json.dumps({"probability": 0.5}))
+    forecaster = mnf.build_informed_market_forecaster(
+        model="test-model", agent_factory=_factory_returning(agent), discover=False
+    )
+    forecaster(_open_market())
+    assert agent.kwargs["enabled_toolsets"] == mnf.LIVE_ENABLED_TOOLSETS
+    assert "forecasting" not in agent.kwargs["enabled_toolsets"]
+
+
 def test_forecaster_returns_none_when_agent_errors():
     agent = _MockAgent(raises=True)
     forecaster = mnf.build_informed_market_forecaster(
