@@ -412,7 +412,7 @@ const AlertsViewPane = memo(function AlertsViewPane() {
   const { gw } = useGateway()
   const ui = useStore($uiState)
 
-  return <AlertsView gw={gw} onClose={() => patchOverlayState({ alerts: false })} t={ui.theme} />
+  return <AlertsView gw={gw} onClose={() => patchOverlayState({ alerts: false })} sessionId={ui.sid ?? ''} t={ui.theme} />
 })
 
 const HelpViewPane = memo(function HelpViewPane() {

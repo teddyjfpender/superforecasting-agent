@@ -10329,11 +10329,25 @@ class ForecastLedger:
         mutating (so a cautious caller can preview). Idempotent.
 
         Acking liberally (any fresh evidence + any forecast update after the alert,
-        not necessarily from the alert's exact source) is intentional + safe: it
-        clears the backlog the operator already worked past, and if the underlying
-        source is still dirty the next self_check re-raises a fresh alert — so a
-        genuinely-open signal is never lost."""
+        not necessarily from the alert's exact source) is intentional + safe for
+        source-driven alerts: it clears the backlog the operator already worked
+        past, and if the underlying source is still dirty the next self_check
+        re-raises a fresh alert — so a genuinely-open signal is never lost.
+
+        EXCEPTION — NO_AUTO classes (domain-error profiles, assumption /
+        reference-class checks, central-in-band, calibration-lesson review) are
+        explicitly EXCLUDED from auto-ack. These are human-judgment alerts the
+        warning dispatcher deliberately *surfaces* and never auto-resolves, and a
+        new forecast + fresh evidence does NOT address them (an invalidated
+        assumption is still invalidated; a band is still off-centre). Reconciling
+        one on unrelated forecast activity would silently close a still-valid
+        signal the operator must act on — the same bare-ack the dispatcher forbids
+        — so they always stay OPEN here."""
         now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
+        # Local import keeps reconcile_alerts free of any module import-order
+        # coupling with the (model-only) warnings dispatcher.
+        from forecasting.warnings import ResolutionKind, classify_warning
+
         reconciled: list[dict[str, Any]] = []
         still_open: list[dict[str, Any]] = []
 
@@ -10341,6 +10355,16 @@ class ForecastLedger:
             if alert.scope_type != "question":
                 still_open.append(
                     {"id": alert.id, "reason": alert.reason, "open_because": "scope is not a single question"}
+                )
+                continue
+
+            if classify_warning(alert.reason) is ResolutionKind.NO_AUTO:
+                still_open.append(
+                    {
+                        "id": alert.id,
+                        "reason": alert.reason,
+                        "open_because": "no-auto class — surfaced for human review, never auto-reconciled",
+                    }
                 )
                 continue
 
@@ -10458,6 +10482,17 @@ class ForecastLedger:
                         recommended_action=action,
                     )
                 )
+        # Dedupe guard (mirrors check_update_triggers' open_reasons set): re-running
+        # self_check before reconcile must NOT accumulate duplicate postmortem_due
+        # alerts for the same question. One open postmortem alert per question until
+        # it is acknowledged. Both severity variants (postmortem_due /
+        # high_impact_postmortem_due) count as "already surfaced" for this question.
+        open_postmortem_questions = {
+            alert.scope_ref
+            for alert in self.list_alerts(unresolved_only=True)
+            if alert.scope_type == "question"
+            and alert.reason in ("postmortem_due", "high_impact_postmortem_due")
+        }
         for question in questions:
             if question.status != "resolved":
                 continue
@@ -10530,6 +10565,8 @@ class ForecastLedger:
                         )
                     )
                     continue
+                if question.id in open_postmortem_questions:
+                    continue  # one open postmortem_due alert per question until acked
                 high_impact = self._is_high_impact_question(question)
                 alerts.append(
                     self.create_alert(
@@ -10544,6 +10581,7 @@ class ForecastLedger:
                         ),
                     )
                 )
+                open_postmortem_questions.add(question.id)
         alerts.extend(self._domain_error_profile_alerts(domain=domain, topic=topic, questions=questions))
         alerts.extend(
             self._calibration_lesson_review_alerts(

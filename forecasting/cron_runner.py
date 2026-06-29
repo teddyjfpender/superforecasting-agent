@@ -272,6 +272,217 @@ def run_due_reviews(
     return "\n".join(sections)
 
 
+def build_warning_runners(
+    ledger: ForecastLedger,
+    *,
+    now: str | None = None,
+    reforecast_runner: Callable[[Any, Any], Any] | None = None,
+):
+    """Wire the warning dispatcher's injected runners to the REAL gated paths.
+
+    Shared by the CLI (`forecast warnings resolve/automode`), this cron phase,
+    the gateway RPCs, and the agent tool so the "what counts as real gated work"
+    judgment lives in exactly one place. Each runner performs genuine gated work
+    and signals success by returning a truthy result; the dispatcher acks ONLY on
+    that truthy result, so the load-bearing rule holds (no bare ack to drop the
+    count).
+
+    ``reforecast_runner`` (the LLM update-stage pass) is INJECTED by the caller:
+    the CLI passes its `--agent` closure, while the cron/gateway/tool paths leave
+    it ``None`` (so REFORECAST alerts are honestly reported "skipped" / left OPEN
+    rather than bare-acked — the heavy LLM pass is opt-in, never automatic).
+    """
+    from forecasting.warnings import ResolutionRunners
+
+    def autopilot_runner(led, warning):  # MATERIAL_CHANGE
+        if warning.scope_type != "question" or not warning.scope_ref:
+            return None
+        result = led.run_autopilot(
+            warning.scope_ref,
+            now=now,
+            trigger_reason=f"warnings:{warning.reason}"[:120],
+        )
+        # Real gated work = autopilot re-checked the watched source(s), recorded a
+        # source snapshot, and possibly proposed/committed an update. A hard
+        # "failed" status (required source down) leaves the alert OPEN to resurface.
+        if not result or result.get("status") == "failed":
+            return None
+        return result
+
+    def score_runner(led, warning):  # SCORE
+        if warning.scope_type != "question" or not warning.scope_ref:
+            return None
+        # The gated work for a score_due alert: compute + persist the resolved
+        # question's Brier/log score. score_question writes a real score record
+        # (SQLite write-gated) and returns a truthy ScoreRecord; it raises if the
+        # question can't be scored yet (no snapshot / unconfirmed resolution) ->
+        # the dispatcher catches it and leaves the alert OPEN. Idempotent: an
+        # already-scored question returns its existing score (truthy), so acking
+        # reflects real scoring work that exists, never a bare close to drop the
+        # count.
+        return led.score_question(warning.scope_ref)
+
+    def postmortem_runner(led, warning):  # POSTMORTEM
+        if warning.scope_type != "question" or not warning.scope_ref:
+            return None
+        # The gated work for a postmortem_due alert: score the resolved question
+        # and write a *real* postmortem record. Mirror self_check's auto_postmortem
+        # path (ledger.self_check ... auto_postmortem=True) so the automode-written
+        # postmortem carries the same deterministic structured signal — the
+        # derived lesson + calibration adjustment — instead of a shallow
+        # hard-coded placeholder. Both helpers are non-LLM: they key off the
+        # score's Brier / calibration-eligibility / sharpness, returning "" / {}
+        # when no real lesson is warranted (so create_postmortem only creates a
+        # tentative calibration lesson when the score actually justifies one).
+        # create_postmortem raises if the question can't yet be scored -> the
+        # dispatcher catches it and leaves the alert OPEN.
+        score = led.score_question(warning.scope_ref)
+        question = led.get_question(warning.scope_ref)
+        return led.create_postmortem(
+            question_id=warning.scope_ref,
+            summary="Auto-created by warnings resolution after confirmed resolution and scoring.",
+            what_happened="The forecast resolved and was scored while draining the open-warning backlog.",
+            what_was_expected="See the linked forecast snapshot and score record for the prior probability.",
+            lesson=led._auto_postmortem_lesson(question, score),
+            calibration_adjustment=led._auto_postmortem_adjustment(question, score),
+        )
+
+    return ResolutionRunners(
+        reforecast_runner=reforecast_runner,
+        autopilot_runner=autopilot_runner,
+        score_runner=score_runner,
+        postmortem_runner=postmortem_runner,
+    )
+
+
+def run_warning_resolution(
+    *,
+    db_path: str | None = None,
+    ledger: ForecastLedger | None = None,
+    now: str | None = None,
+    limit: int | None = None,
+    reason: str | None = None,
+    scope: str | None = None,
+    dry_run: bool = False,
+    reconcile: bool = True,
+    runners: Any = None,
+    reforecast_runner: Callable[[Any, Any], Any] | None = None,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """Drain the open ``alert_events`` backlog as a reusable, GATED, INTERRUPTIBLE
+    phase — the factored loop behind `forecast warnings automode`, the
+    ``forecast.warnings.automode.run`` background job, and the agent tool.
+
+    * GATED: every mutating pass runs inside :func:`allow_ledger_writes`; the
+      injected runners (autopilot / score / optional reforecast) are the only
+      things that move a forecast, and the dispatcher acks ONLY on their truthy
+      result. ``dry_run=True`` opens NO write context and acks NOTHING — it just
+      returns the per-alert plan via :func:`forecasting.warnings.plan_alert`.
+    * INTERRUPTIBLE: ``should_cancel`` is polled before each alert; on a set flag
+      the loop stops cleanly and returns ``cancelled=True`` with the partial
+      tally (the alerts already resolved stay resolved — real work is durable).
+    * STREAMING: ``progress`` receives a dict per phase
+      (``{"phase": "start"|"alert"|"reconcile"|"done", "done", "total",
+      "remaining", "alert_id", "reason", "status"}``) so a caller can render a
+      live heartbeat (the gateway turns these into events).
+
+    Returns a structured summary dict.
+    """
+    from forecasting import warnings as fwarn
+    from forecasting.ledger import allow_ledger_writes
+
+    led = ledger if ledger is not None else ForecastLedger(db_path)
+    if runners is None:
+        runners = build_warning_runners(led, now=now, reforecast_runner=reforecast_runner)
+
+    open_warnings = fwarn.select_open_warnings(led, scope=scope, reason=reason, limit=limit)
+    total = len(open_warnings)
+
+    def _emit(payload: dict[str, Any]) -> None:
+        if progress is not None:
+            try:
+                progress(payload)
+            except Exception:  # a progress sink must never break the sweep
+                pass
+
+    def _is_cancelled() -> bool:
+        if should_cancel is None:
+            return False
+        try:
+            return bool(should_cancel())
+        except Exception:
+            return False
+
+    _emit({"phase": "start", "done": 0, "total": total, "remaining": total, "dry_run": dry_run})
+
+    results: list[dict[str, Any]] = []
+    cancelled = False
+
+    if dry_run:
+        # Pure preview: no write context, no acks, no runner spend.
+        for index, warning in enumerate(open_warnings, start=1):
+            if _is_cancelled():
+                cancelled = True
+                break
+            entry = fwarn.plan_alert(warning, runners)
+            results.append(entry)
+            _emit({
+                "phase": "alert", "done": index, "total": total,
+                "remaining": total - index, "alert_id": warning.id,
+                "reason": warning.reason, "status": entry["planned"],
+            })
+        tally: dict[str, int] = {}
+        for entry in results:
+            tally[entry["planned"]] = tally.get(entry["planned"], 0) + 1
+        _emit({"phase": "done", "done": len(results), "total": total, "remaining": 0,
+               "cancelled": cancelled, "dry_run": True})
+        return {
+            "dry_run": True,
+            "cancelled": cancelled,
+            "processed": len(results),
+            "total": total,
+            "results": results,
+            "tally": tally,
+            "reconcile": None,
+        }
+
+    reconcile_result: dict[str, Any] | None = None
+    with allow_ledger_writes(reason="forecast_warnings_resolution"):
+        for index, warning in enumerate(open_warnings, start=1):
+            if _is_cancelled():
+                cancelled = True
+                break
+            result = fwarn.resolve_alert(led, warning, runners=runners, now=now)
+            results.append(result)
+            _emit({
+                "phase": "alert", "done": index, "total": total,
+                "remaining": total - index, "alert_id": warning.id,
+                "reason": warning.reason, "status": result.get("status"),
+            })
+        # Only reconcile if we ran the full backlog (a cancel leaves the sweep
+        # mid-flight; reconciling then could ack alerts we never got to inspect).
+        if reconcile and not cancelled:
+            _emit({"phase": "reconcile", "done": len(results), "total": total, "remaining": 0})
+            reconcile_result = led.reconcile_alerts(now=now)
+
+    tally = {}
+    for result in results:
+        status = result.get("status", "?")
+        tally[status] = tally.get(status, 0) + 1
+    _emit({"phase": "done", "done": len(results), "total": total, "remaining": 0,
+           "cancelled": cancelled, "dry_run": False})
+    return {
+        "dry_run": False,
+        "cancelled": cancelled,
+        "processed": len(results),
+        "total": total,
+        "results": results,
+        "tally": tally,
+        "reconcile": reconcile_result,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run due forecast scheduled reviews")
     parser.add_argument("--db")

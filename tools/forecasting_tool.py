@@ -141,6 +141,8 @@ FORECAST_LEDGER_SCHEMA = {
                     "self_check",
                     "list_alerts",
                     "acknowledge_alert",
+                    "resolve_warning",
+                    "run_warning_automode",
                     "calibration_summary",
                     "list_domain_error_profiles",
                     "run_backtest_dataset",
@@ -764,6 +766,8 @@ FORECAST_LEDGER_SCHEMA = {
             "use_active_lessons": {"type": "boolean"},
             "alert_id": {"type": "string"},
             "acknowledged_at": {"type": "string"},
+            "ref": {"type": "string", "description": "resolve_warning: an al_* alert id (resolve that one) or a scope/question ref (resolve every open alert for it)."},
+            "scope": {"type": "string", "description": "run_warning_automode: restrict the sweep to a single question/scope ref."},
             "proposal_id": {"type": "string"},
             "proposal_status": {
                 "type": "string",
@@ -1647,6 +1651,48 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 acknowledged_at=args.get("acknowledged_at"),
             )
             return tool_result(success=True, alert=alert.__dict__)
+
+        if action == "resolve_warning":
+            # Resolve open alert_events through the GATED dispatcher: each fix
+            # performs the real gated work (autopilot re-check / score + postmortem)
+            # and acks ONLY on success — never a bare ack to make the count drop.
+            # `ref` may be an al_* alert id (resolve that one) or a scope ref /
+            # question id (resolve every open alert for it, worst/oldest first).
+            from forecasting import warnings as fwarn
+            from forecasting.cron_runner import build_warning_runners
+
+            ref = _required(args, "ref")
+            now = args.get("now")
+            runners = build_warning_runners(ledger, now=now)
+            open_alerts = ledger.list_alerts(unresolved_only=True)
+            if ref.startswith("al_"):
+                selected = [a for a in open_alerts if a.id == ref]
+            else:
+                selected = [w.alert for w in fwarn.iter_warnings(ledger, scope=ref)]
+            if not selected:
+                return tool_result(success=False, error=f"no open alert for {ref}")
+            results = [
+                fwarn.resolve_alert(ledger, alert, runners=runners, now=now)
+                for alert in selected
+            ]
+            return tool_result(success=True, results=results, count=len(results))
+
+        if action == "run_warning_automode":
+            # Drain the open-warning backlog via the SAME factored, gated,
+            # interruptible phase the CLI + gateway use. `dry_run` previews the
+            # plan without writing. Bounded by `limit` (alerts processed).
+            from forecasting.cron_runner import run_warning_resolution
+
+            summary = run_warning_resolution(
+                ledger=ledger,
+                now=args.get("now"),
+                limit=int(args["limit"]) if args.get("limit") is not None else None,
+                reason=args.get("reason"),
+                scope=args.get("scope"),
+                dry_run=bool(args.get("dry_run", False)),
+                reconcile=bool(args.get("reconcile", True)),
+            )
+            return tool_result(success=True, **summary)
 
         if action == "calibration_summary":
             summary = ledger.calibration_summary(

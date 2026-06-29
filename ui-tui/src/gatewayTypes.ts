@@ -292,6 +292,76 @@ export interface ForecastDashboardAlert {
   severity?: string
 }
 
+// ── Warning-resolution RPCs (forecast.warnings.*) ────────────────────────────
+// The TUI Warnings overlay drives the same gated dispatcher the CLI/cron use:
+// resolve ONE alert, or run an interruptible AUTOMODE sweep that streams progress.
+
+export interface ForecastWarningsListResponse {
+  groups?: ForecastWarningGroup[]
+  group_count?: number
+  open_total?: number
+}
+
+export interface ForecastWarningGroup {
+  reason?: string
+  kind?: string
+  severity?: string
+  recommended_action?: string
+  auto_resolvable?: boolean
+  count?: number
+  scope_refs?: string[]
+}
+
+// One alert's resolution outcome (mirrors forecasting.warnings._result):
+// status ∈ resolved | surfaced | failed | skipped; acked ONLY on real work.
+export interface ForecastWarningResolveResult {
+  alert_id?: string
+  reason?: string
+  scope_ref?: string
+  kind?: string
+  status?: string
+  acknowledged?: boolean
+  detail?: string
+}
+
+export interface ForecastWarningsResolveResponse {
+  results?: ForecastWarningResolveResult[]
+  count?: number
+}
+
+export interface ForecastWarningsAutomodeRunResponse {
+  job_id?: string
+  dry_run?: boolean
+}
+
+// Streamed automode lifecycle (gw.on('forecast.warnings.automode.*')).
+export interface ForecastWarningsAutomodeProgress {
+  job_id?: string
+  phase?: 'alert' | 'done' | 'reconcile' | 'start'
+  done?: number
+  total?: number
+  remaining?: number
+  alert_id?: string
+  reason?: string
+  status?: string
+  cancelled?: boolean
+  dry_run?: boolean
+}
+
+export interface ForecastWarningsAutomodeComplete {
+  job_id?: string
+  processed?: number
+  total?: number
+  cancelled?: boolean
+  dry_run?: boolean
+  tally?: Record<string, number>
+}
+
+export interface ForecastWarningsAutomodeError {
+  job_id?: string
+  message?: string
+}
+
 export interface ForecastDashboardEvidenceStatus {
   backtests?: {
     agent_protocol_scored_count?: number

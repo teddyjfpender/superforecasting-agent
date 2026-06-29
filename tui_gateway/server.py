@@ -2873,6 +2873,150 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+# ── Warning resolution (open alert_events backlog) ────────────────────────────
+# The desk's "drain the open warnings" surface. `list` is read-only; `resolve`
+# resolves ONE alert through the gated dispatcher; `automode.run` spawns a
+# BACKGROUND job (daemon thread, request context snapshotted) that streams
+# progress events and is cooperatively cancellable via `automode.cancel`.
+#
+# Cancel uses a per-job threading.Event (the cooperative `should_cancel` hook the
+# factored phase polls) rather than subagent.interrupt: the gateway path injects
+# NO LLM reforecast runner (the heavy agent pass is opt-in via the CLI `--agent`
+# flag only), so there is no subagent to interrupt — the run is a pure ledger
+# loop and the Event IS the right primitive. The streamed progress events are the
+# heartbeat.
+_warning_jobs: dict[str, threading.Event] = {}
+
+
+@method("forecast.warnings.list")
+def _(rid, params: dict) -> dict:
+    """Group the open warning backlog by reason (counts + priority + recommended
+    action). Read-only — mirrors `forecast warnings list`."""
+    try:
+        from forecasting import warnings as fwarn
+        from forecasting.ledger import ForecastLedger
+
+        scope = params.get("scope") or None
+        reason = params.get("reason") or None
+        limit = params.get("limit")
+        summary = fwarn.summarize_open_warnings(
+            ForecastLedger(),
+            scope=scope,
+            reason=reason,
+            limit=int(limit) if limit is not None else None,
+        )
+        return _ok(rid, summary)
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.warnings.resolve")
+def _(rid, params: dict) -> dict:
+    """Resolve ONE open alert through the gated dispatcher and ack ONLY on real
+    work. ``alert_id`` may be an ``al_*`` id (resolve that one) or a scope ref
+    (resolve every open alert for it, worst/oldest first)."""
+    try:
+        from forecasting import warnings as fwarn
+        from forecasting.cron_runner import build_warning_runners
+        from forecasting.ledger import ForecastLedger, allow_ledger_writes
+
+        target = str(params.get("alert_id") or "").strip()
+        if not target:
+            return _err(rid, 5008, "alert_id is required")
+        ledger = ForecastLedger()
+        now = params.get("now")
+        open_alerts = ledger.list_alerts(unresolved_only=True)
+        if target.startswith("al_"):
+            selected = [a for a in open_alerts if a.id == target]
+        else:
+            selected = [w.alert for w in fwarn.iter_warnings(ledger, scope=target)]
+        if not selected:
+            return _err(rid, 5008, f"no open alert for {target}")
+
+        # No LLM reforecast runner in the synchronous RPC path (opt-in only) — the
+        # autopilot + score runners are the gated, non-LLM real work.
+        runners = build_warning_runners(ledger, now=now)
+        results = []
+        with allow_ledger_writes(reason="forecast_warnings_resolve"):
+            for alert in selected:
+                results.append(fwarn.resolve_alert(ledger, alert, runners=runners, now=now))
+        return _ok(rid, {"results": results, "count": len(results)})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.warnings.automode.run")
+def _(rid, params: dict) -> dict:
+    """Spawn a BACKGROUND warning-resolution sweep that streams progress events.
+
+    Returns a ``job_id`` immediately; the worker emits
+    ``forecast.warnings.automode.progress`` events (phase/done/total/current
+    alert), then a terminal ``forecast.warnings.automode.complete`` (or
+    ``.error``). ``dry_run`` previews the plan without writing anything."""
+    try:
+        from forecasting.cron_runner import run_warning_resolution
+
+        sid = str(params.get("session_id") or "")
+        if not sid:
+            # No session_id => the job's progress/complete/error events can't be
+            # session-routed by write_json's session-keyed branch; they fall back
+            # to the request/stdio transport instead. Log it so a no-session_id
+            # caller isn't left wondering why a background job appears to run
+            # blind, while still letting the (durable, real) work proceed.
+            logger.warning(
+                "forecast.warnings.automode.run called without session_id; "
+                "progress events will not be session-routed (falling back to the "
+                "request transport)"
+            )
+        dry_run = bool(params.get("dry_run", False))
+        limit = params.get("limit")
+        reason = params.get("reason") or None
+        scope = params.get("scope") or None
+        now = params.get("now")
+        job_id = "wj_" + uuid.uuid4().hex[:12]
+        stop = threading.Event()
+        _warning_jobs[job_id] = stop
+        ctx = contextvars.copy_context()
+
+        def _run():
+            try:
+                def _progress(ev: dict) -> None:
+                    _emit("forecast.warnings.automode.progress", sid, {"job_id": job_id, **ev})
+
+                summary = run_warning_resolution(
+                    now=now,
+                    limit=int(limit) if limit is not None else None,
+                    reason=reason,
+                    scope=scope,
+                    dry_run=dry_run,
+                    progress=_progress,
+                    should_cancel=stop.is_set,
+                )
+                _emit("forecast.warnings.automode.complete", sid, {"job_id": job_id, **summary})
+            except Exception as e:  # never lose the job; surface the failure
+                _emit("forecast.warnings.automode.error", sid, {"job_id": job_id, "message": str(e)})
+            finally:
+                _warning_jobs.pop(job_id, None)
+
+        threading.Thread(target=lambda: ctx.run(_run), daemon=True).start()
+        return _ok(rid, {"job_id": job_id, "dry_run": dry_run})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.warnings.automode.cancel")
+def _(rid, params: dict) -> dict:
+    """Cooperatively cancel a running automode job. The worker stops before its
+    next alert and emits a ``cancelled=True`` completion; work already committed
+    stays committed (real resolutions are durable)."""
+    job_id = str(params.get("job_id") or "").strip()
+    stop = _warning_jobs.get(job_id)
+    if stop is None:
+        return _ok(rid, {"job_id": job_id, "found": False})
+    stop.set()
+    return _ok(rid, {"job_id": job_id, "found": True, "cancelled": True})
+
+
 @method("news.search")
 def _(rid, params: dict) -> dict:
     """Semantically rank the caller's RSS articles against a query.

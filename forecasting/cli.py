@@ -2440,6 +2440,73 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     cycle_run.add_argument("--force", action="store_true", help="--agent: reforecast even when the pipeline update stage is gated")
     cycle_run.set_defaults(_forecast_handler=_cmd_cycle_run)
 
+    # Warning-resolution: drain the open alert_events backlog through REAL gated work
+    # (a reforecast / autopilot recheck / score+postmortem) — never a bare ack.
+    warnings_parser = forecast_sub.add_parser(
+        "warnings",
+        help="Resolve the open alert_events backlog through real gated work (never a bare ack)",
+    )
+    warnings_sub = warnings_parser.add_subparsers(dest="warnings_command")
+
+    warnings_list = warnings_sub.add_parser(
+        "list",
+        help="Group the open warnings by reason (counts + priority order + recommended action); read-only",
+    )
+    warnings_list.add_argument("--reason", help="Filter to reasons containing this text")
+    warnings_list.add_argument("--scope", help="Filter to a single question id / scope ref")
+    warnings_list.add_argument("--limit", type=int, default=None, help="Cap the number of reason groups shown")
+    warnings_list.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    warnings_list.set_defaults(_forecast_handler=_cmd_warnings_list)
+
+    warnings_resolve = warnings_sub.add_parser(
+        "resolve",
+        help="Resolve ONE alert (or every open alert for a question) via the gated dispatcher",
+    )
+    warnings_resolve.add_argument("target", help="Alert id (al_*) or question/scope ref (fq_*)")
+    warnings_resolve.add_argument(
+        "--agent",
+        action="store_true",
+        help="Enable the autonomous LLM reforecast runner for REFORECAST alerts (otherwise they stay OPEN)",
+    )
+    warnings_resolve.add_argument("--model", help="--agent: model id for the reforecast agent")
+    warnings_resolve.add_argument("--provider", help="--agent: provider for the reforecast agent")
+    warnings_resolve.add_argument("--max-iterations", type=int, default=12, help="--agent: max agent iterations per question")
+    warnings_resolve.add_argument(
+        "--force",
+        action="store_true",
+        help="--agent: reforecast even when the pipeline update stage is gated",
+    )
+    warnings_resolve.add_argument("--now")
+    warnings_resolve.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    warnings_resolve.set_defaults(_forecast_handler=_cmd_warnings_resolve)
+
+    warnings_automode = warnings_sub.add_parser(
+        "automode",
+        help="Drain the backlog by priority: classify + dispatch each, then reconcile at the end",
+    )
+    warnings_automode.add_argument("--dry-run", action="store_true", help="Print the plan WITHOUT writing")
+    warnings_automode.add_argument("--limit", type=int, default=None, help="Cap how many alerts to process this pass")
+    warnings_automode.add_argument("--reason", help="Filter to reasons containing this text")
+    warnings_automode.add_argument("--scope", help="Filter to a single question id / scope ref")
+    warnings_automode.add_argument(
+        "--agent",
+        action="store_true",
+        help="Enable the autonomous LLM reforecast runner for REFORECAST alerts (otherwise they stay OPEN)",
+    )
+    warnings_automode.add_argument("--model", help="--agent: model id for the reforecast agent")
+    warnings_automode.add_argument("--provider", help="--agent: provider for the reforecast agent")
+    warnings_automode.add_argument("--max-iterations", type=int, default=12, help="--agent: max agent iterations per question")
+    warnings_automode.add_argument("--max-questions", type=int, default=None, help="--agent: cap how many questions to reforecast in one sweep")
+    warnings_automode.add_argument(
+        "--force",
+        action="store_true",
+        help="--agent: reforecast even when the pipeline update stage is gated",
+    )
+    warnings_automode.add_argument("--no-reconcile", action="store_true", help="Skip the end-of-run reconcile_alerts pass")
+    warnings_automode.add_argument("--now")
+    warnings_automode.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    warnings_automode.set_defaults(_forecast_handler=_cmd_warnings_automode)
+
     watch_parser = forecast_sub.add_parser("watch", aliases=["source"], help="Manage watched sources for self-check alerts")
     watch_sub = watch_parser.add_subparsers(dest="watch_command")
     watch_add = watch_sub.add_parser("add", help="Watch a source for a question, domain, topic, or portfolio")
@@ -3330,6 +3397,29 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         templated_batches = []
 
+    # SLICE 5 fold: one place that shows ALL three "warning" models together — the
+    # alert_events backlog (grouped by reason), the saturation/hook issues, and the
+    # templated-batch clusters. Each sub-probe is read-only and fail-safe so a
+    # heuristic can never take down the audit (mirrors templated_batches above).
+    from forecasting.warnings import summarize_open_warnings
+
+    try:
+        alert_backlog = summarize_open_warnings(ledger)
+    except Exception:
+        alert_backlog = {"groups": [], "group_count": 0, "open_total": 0}
+    try:
+        from forecasting.hooks import finish_sweep
+
+        active_ids = [q.id for q in ledger.list_questions(status="active")]
+        saturation = finish_sweep(ledger, active_ids)
+    except Exception:
+        saturation = {"checked": 0, "clean": 0, "under_saturated": []}
+    warnings_fold = {
+        "alert_backlog": alert_backlog,
+        "saturation": saturation,
+        "templated_batches": templated_batches,
+    }
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3356,6 +3446,9 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         # + reasoning_methods + rationale tail) rather than per-question deliberation.
         # A heuristic flag for review, never a block — see skills/ledger-interaction.
         "templated_batches": templated_batches,
+        # SLICE 5: the three warning models folded into one view (alert backlog by
+        # reason + saturation/hook issues + templated batches).
+        "warnings_fold": warnings_fold,
     }
 
 
@@ -3649,6 +3742,29 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         f"mean_brier={_format_metric(status['calibration_mean_brier'])}"
     )
     print(f"claim_live_superforecasting: {report['claim_live_superforecasting']}")
+
+    # SLICE 5 fold: one unified "warnings" line that folds all three models —
+    # the alert_events backlog (by reason), the saturation/hook issues, and the
+    # templated-batch clusters — so there is a single place to see every warning.
+    fold = report.get("warnings_fold") or {}
+    backlog = fold.get("alert_backlog") or {}
+    backlog_groups = backlog.get("groups") or []
+    sweep = fold.get("saturation") or {}
+    under_saturated = sweep.get("under_saturated") or []
+    fold_templated = fold.get("templated_batches") or []
+    print(
+        "warnings: "
+        f"alerts={backlog.get('open_total', 0)} open across {backlog.get('group_count', 0)} reason(s); "
+        f"saturation={len(under_saturated)} under/{sweep.get('checked', 0)} checked; "
+        f"templated_batches={len(fold_templated)}"
+    )
+    for g in backlog_groups[:6]:
+        tag = g.get("kind", "")
+        if not g.get("auto_resolvable", True):
+            tag += " NO_AUTO"
+        print(f"  - alert x{g.get('count', 0):>3}  {(g.get('reason') or '')[:42]:<42} [{tag}]")
+    for u in under_saturated[:4]:
+        print(f"  - hook {u.get('question_id')}  {u.get('score')}/100 saturation")
 
     batches = report.get("templated_batches") or []
     if batches:
@@ -10322,6 +10438,214 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
         return results
 
     return _runner
+
+
+# ---------------------------------------------------------------------------
+# Warning resolution (the open alert_events backlog)
+# ---------------------------------------------------------------------------
+
+def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
+    """Wire the slice-1 dispatcher's injected runners to the REAL gated paths.
+
+    Each runner performs genuine gated work and signals success by returning a
+    truthy result (a committed snapshot / a non-failed autopilot run / a written
+    postmortem). The dispatcher acks ONLY on that truthy result, so the
+    load-bearing rule holds: no bare ack to make the number drop.
+    """
+    from forecasting.cron_runner import build_warning_runners
+
+    # REFORECAST runner: only wired when --agent is set, because the real gated
+    # work is an LLM update-stage run. Without --agent we leave REFORECAST alerts
+    # OPEN (the dispatcher reports them "skipped") rather than bare-acking them.
+    reforecast_runner = None
+    if getattr(args, "agent", False):
+        _inner = _build_cycle_reforecast_runner(args)
+
+        def reforecast_runner(_led, warning):  # noqa: ARG001 — uses the closed-over runner
+            if not warning.scope_ref:
+                return None
+            results = _inner([warning.scope_ref])
+            committed = [r for r in results if r.get("status") == "committed"]
+            # Truthy ONLY when the agent actually committed a fresh snapshot; a
+            # gated/declined/errored run returns falsy → alert stays open.
+            return committed[0] if committed else None
+
+    # The autopilot (MATERIAL_CHANGE) + score (POSTMORTEM) runners are the shared,
+    # non-LLM gated paths — factored into cron_runner so the CLI, the cron phase,
+    # the gateway, and the agent tool all wire identical "real work" semantics.
+    return build_warning_runners(
+        ledger, now=getattr(args, "now", None), reforecast_runner=reforecast_runner
+    )
+
+
+def _warning_plan_entry(warning, runners) -> dict[str, Any]:
+    """Pure (no-write) preview of what ``resolve_alert`` WOULD do for ``warning``.
+
+    Thin shim over :func:`forecasting.warnings.plan_alert` (kept for the existing
+    callers/tests) so `automode --dry-run` shows the plan without spending a
+    single gated runner call or acking anything.
+    """
+    from forecasting.warnings import plan_alert
+
+    return plan_alert(warning, runners)
+
+
+def _print_warning_result(result: dict[str, Any]) -> None:
+    flag = {
+        "resolved": "resolved",
+        "surfaced": "surfaced",
+        "failed": "open",
+        "skipped": "open",
+    }.get(result.get("status", ""), result.get("status", "?"))
+    print(
+        f"{result['alert_id']}  [{flag}] {result.get('kind', '?'):<15} "
+        f"{result.get('reason', ''):<34} {result.get('detail', '')}"
+    )
+
+
+def _cmd_warnings_list(args: argparse.Namespace) -> None:
+    from forecasting import warnings as fwarn
+
+    ledger = _ledger(args)
+    scope = getattr(args, "scope", None)
+    # Shared summarizer: identical grouping/priority as the gateway's
+    # forecast.warnings.list, so the desk + CLI can never drift.
+    summary = fwarn.summarize_open_warnings(
+        ledger, scope=scope, reason=getattr(args, "reason", None), limit=args.limit
+    )
+    ordered = summary["groups"]
+    open_total = summary["open_total"]
+    group_count = summary["group_count"]
+
+    if args.json:
+        print(json.dumps(summary, indent=2, sort_keys=True))
+        return
+
+    if not ordered:
+        print("No open warnings.")
+        return
+
+    print(f"{open_total} open warning(s) across {group_count} reason group(s) (worst/oldest first):")
+    print(f"{'Count':>5}  {'Sev':<7} {'Kind':<15} {'Reason':<34} Recommended action")
+    for group in ordered:
+        action = (group["recommended_action"] or "").replace("\n", " ").strip()
+        if len(action) > 60:
+            action = action[:57] + "..."
+        reason = group["reason"]
+        if len(reason) > 34:
+            reason = reason[:31] + "..."
+        print(f"{group['count']:>5}  {group['severity']:<7} {group['kind']:<15} {reason:<34} {action}")
+
+
+def _cmd_warnings_resolve(args: argparse.Namespace) -> None:
+    from forecasting import warnings as fwarn
+    from forecasting.ledger import allow_ledger_writes
+
+    ledger = _ledger(args)
+    runners = _build_warning_runners(args, ledger)
+    target = (args.target or "").strip()
+
+    open_alerts = ledger.list_alerts(unresolved_only=True)
+    if target.startswith("al_"):
+        selected = [a for a in open_alerts if a.id == target]
+        if not selected:
+            print(f"warnings resolve: no open alert with id {target}", file=sys.stderr)
+            raise SystemExit(1)
+    else:
+        # Treat the target as a scope ref (question id) or scope_type: resolve every
+        # open alert for it, worst/oldest first.
+        selected = [
+            w.alert
+            for w in fwarn.iter_warnings(ledger, scope=target)
+        ]
+        if not selected:
+            print(f"warnings resolve: no open alerts for scope {target}", file=sys.stderr)
+            raise SystemExit(1)
+
+    results: list[dict[str, Any]] = []
+    with allow_ledger_writes(reason="forecast_warnings_resolve"):
+        for alert in selected:
+            results.append(
+                fwarn.resolve_alert(ledger, alert, runners=runners, now=getattr(args, "now", None))
+            )
+
+    if args.json:
+        print(json.dumps({"results": results, "count": len(results)}, indent=2, sort_keys=True))
+        return
+    for result in results:
+        _print_warning_result(result)
+
+
+def _cmd_warnings_automode(args: argparse.Namespace) -> None:
+    from forecasting.cron_runner import run_warning_resolution
+
+    ledger = _ledger(args)
+    runners = _build_warning_runners(args, ledger)
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    # Drive the SAME factored, gated, interruptible phase the cron job + gateway
+    # background job use, so there is one loop, one set of gating semantics.
+    summary = run_warning_resolution(
+        ledger=ledger,
+        now=getattr(args, "now", None),
+        limit=args.limit,
+        reason=getattr(args, "reason", None),
+        scope=getattr(args, "scope", None),
+        dry_run=dry_run,
+        reconcile=not getattr(args, "no_reconcile", False),
+        runners=runners,
+    )
+    results = summary["results"]
+    tally = summary["tally"]
+
+    if dry_run:
+        if args.json:
+            print(
+                json.dumps(
+                    {"dry_run": True, "plan": results, "count": len(results), "tally": tally},
+                    indent=2,
+                    sort_keys=True,
+                )
+            )
+            return
+        if not results:
+            print("DRY RUN — no open warnings match.")
+            return
+        print(f"DRY RUN — {len(results)} open warning(s) would be processed by priority (no writes):")
+        for entry in results:
+            reason = entry["reason"]
+            if len(reason) > 34:
+                reason = reason[:31] + "..."
+            print(
+                f"  {entry['alert_id']}  [{entry['planned']}] {entry['kind']:<15} "
+                f"{reason:<34} {entry['detail']}"
+            )
+        print("plan: " + ", ".join(f"{status}={count}" for status, count in sorted(tally.items())))
+        return
+
+    reconcile = summary["reconcile"]
+    if args.json:
+        print(
+            json.dumps(
+                {
+                    "results": results,
+                    "count": len(results),
+                    "tally": tally,
+                    "reconcile": reconcile,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+    if not results:
+        print("No open warnings to process.")
+    for result in results:
+        _print_warning_result(result)
+    if results:
+        print("summary: " + ", ".join(f"{status}={count}" for status, count in sorted(tally.items())))
+    if reconcile is not None:
+        print(f"reconcile: acknowledged {reconcile.get('reconciled_count', 0)} stale alert(s)")
 
 
 def _cmd_schedule_run(args: argparse.Namespace) -> None:
