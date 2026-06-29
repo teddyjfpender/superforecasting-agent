@@ -84,6 +84,25 @@ STREAM_RETRIES_ENV_NAMES = (
     "FORECAST_STREAM_RETRIES",
     "HERMES_STREAM_RETRIES",
 )
+# Interactive sessions keep the stream-retry budget short (a human is waiting on the
+# stream). Unattended runs — cron / scheduled forecast reviews / batch, where stdout is
+# not a TTY and no one is watching — get a higher budget so a short intermittent provider
+# blip doesn't fail the whole job. An explicit STREAM_RETRIES env override wins over both.
+_INTERACTIVE_STREAM_RETRIES = 2
+_UNATTENDED_STREAM_RETRIES = 5
+
+
+def _is_unattended_run() -> bool:
+    """True when no human is watching the stream live (cron/batch/piped stdout)."""
+    try:
+        return not sys.stdout.isatty()
+    except Exception:  # noqa: BLE001 — any odd stdout (closed/None) → treat as unattended
+        return True
+
+
+def default_stream_retries() -> int:
+    """Stream-retry budget default: short when interactive, higher when unattended."""
+    return _UNATTENDED_STREAM_RETRIES if _is_unattended_run() else _INTERACTIVE_STREAM_RETRIES
 STREAM_STALE_TIMEOUT_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_STREAM_STALE_TIMEOUT",
     "FORECAST_STREAM_STALE_TIMEOUT",
@@ -2107,7 +2126,7 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
     def _call():
         import httpx as _httpx
 
-        _max_stream_retries = env_var_alias_int(STREAM_RETRIES_ENV_NAMES, 2)
+        _max_stream_retries = env_var_alias_int(STREAM_RETRIES_ENV_NAMES, default_stream_retries())
 
         try:
             for _stream_attempt in range(_max_stream_retries + 1):

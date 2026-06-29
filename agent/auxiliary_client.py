@@ -4628,6 +4628,33 @@ def _validate_llm_response(response: Any, task: str = None) -> Any:
     return response
 
 
+def _apply_compression_reasoning_default(
+    task: Optional[str],
+    effective_extra_body: dict,
+    resolved_provider: Optional[str],
+    resolved_api_mode: Optional[str],
+) -> dict:
+    """Default the Codex ``compression`` task to LOW reasoning effort when unset.
+
+    Compaction is a SUMMARIZATION, so full reasoning is wasted effort that can blow the
+    compaction timeout and then fall back to a flaky aux provider (the failure mode
+    observed 2026-06-29: 120s codex timeout → Gemini 503). OVERRIDABLE — only applied when
+    the caller/config did not set ``reasoning`` — and only on the Codex Responses path
+    (other providers handle/ignore ``reasoning`` differently). Mutates + returns the dict.
+    """
+
+    if (
+        task == "compression"
+        and "reasoning" not in effective_extra_body
+        and (
+            "codex" in str(resolved_provider or "").lower()
+            or "codex" in str(resolved_api_mode or "").lower()
+        )
+    ):
+        effective_extra_body["reasoning"] = {"effort": "low"}
+    return effective_extra_body
+
+
 def call_llm(
     task: str = None,
     *,
@@ -4671,6 +4698,10 @@ def call_llm(
         task, provider, model, base_url, api_key)
     effective_extra_body = _get_task_extra_body(task)
     effective_extra_body.update(extra_body or {})
+
+    effective_extra_body = _apply_compression_reasoning_default(
+        task, effective_extra_body, resolved_provider, resolved_api_mode
+    )
 
     if task == "vision":
         effective_provider, client, final_model = resolve_vision_provider_client(
@@ -5073,6 +5104,10 @@ async def async_call_llm(
         task, provider, model, base_url, api_key)
     effective_extra_body = _get_task_extra_body(task)
     effective_extra_body.update(extra_body or {})
+
+    effective_extra_body = _apply_compression_reasoning_default(
+        task, effective_extra_body, resolved_provider, resolved_api_mode
+    )
 
     if task == "vision":
         effective_provider, client, final_model = resolve_vision_provider_client(
