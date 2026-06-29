@@ -1139,6 +1139,101 @@ def _find_bundled_tui(hermes_cli_dir: Path | None = None) -> Path | None:
     return bundled if bundled.is_file() else None
 
 
+def _tui_bundle_is_stale(root: Path) -> bool:
+    """True when ``root/dist/entry.js`` is older than the TUI source it was built from.
+
+    Dev working-copy footgun guard: ``--tui`` runs the *prebuilt*
+    ``ui-tui/dist/entry.js``. When a dev edits ``ui-tui/src/**`` without
+    re-running ``npm run build`` the launcher would otherwise silently run the
+    *stale* bundle, so committed + green source fixes appear not to work.
+
+    Returns True iff **all** of:
+      - ``root/dist/entry.js`` exists, AND
+      - ``root/src`` exists (a source checkout — NOT a packaged/nix release),
+        AND
+      - the bundle's mtime is older than the newest mtime among
+        ``root/src/**/*.{ts,tsx}`` and the build script ``root/scripts/build.mjs``.
+
+    When there is **no** ``root/src`` dir (packaged wheel / nix release, where
+    the shipped ``dist/entry.js`` is the single authoritative artefact), returns
+    False — the bundle is canonical and must never be rebuilt. Any filesystem
+    error degrades to False (fail-safe: don't block the launch over staleness).
+    """
+    entry = root / "dist" / "entry.js"
+    src = root / "src"
+    if not entry.is_file() or not src.is_dir():
+        return False
+    try:
+        bundle_mtime = entry.stat().st_mtime
+    except OSError:
+        return False
+
+    newest_src = 0.0
+    try:
+        for pattern in ("*.ts", "*.tsx"):
+            for path in src.rglob(pattern):
+                try:
+                    newest_src = max(newest_src, path.stat().st_mtime)
+                except OSError:
+                    continue
+        build_script = root / "scripts" / "build.mjs"
+        if build_script.is_file():
+            try:
+                newest_src = max(newest_src, build_script.stat().st_mtime)
+            except OSError:
+                pass
+    except OSError:
+        return False
+
+    return newest_src > bundle_mtime
+
+
+def _rebuild_stale_tui_bundle(tui_dir: Path, *, quiet: bool) -> bool:
+    """Rebuild ``tui_dir/dist/entry.js`` when stale; return True on a fresh build.
+
+    Fail-safe by contract: returns True only when a rebuild actually ran and
+    succeeded. On a non-stale bundle, a missing node/npm toolchain, or a build
+    error it returns False and the caller launches the existing bundle — a
+    staleness check must NEVER crash the launch. Build is ~0.2s (esbuild via
+    ``npm run build`` → ``node scripts/build.mjs``).
+    """
+    if not _tui_bundle_is_stale(tui_dir):
+        return False
+
+    _ensure_tui_node()
+    npm = shutil.which("npm")
+    if not npm:
+        if not quiet:
+            print(
+                "⚠ TUI bundle may be stale and rebuild failed (npm not found); "
+                "launching existing bundle — run 'npm run build' in ui-tui/",
+                file=sys.stderr,
+            )
+        return False
+
+    if not quiet:
+        print("⟳ TUI bundle is stale — rebuilding (npm run build)…")
+    try:
+        result = subprocess.run(
+            [npm, "run", "build"],
+            cwd=str(tui_dir),
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        result = None
+
+    if result is None or result.returncode != 0:
+        if not quiet:
+            print(
+                "⚠ TUI bundle may be stale and rebuild failed; launching existing "
+                "bundle — run 'npm run build' in ui-tui/",
+                file=sys.stderr,
+            )
+        return False
+    return True
+
+
 def _tui_env(name: str = "") -> tuple[str, str]:
     suffix = f"_{name}" if name else ""
 
@@ -1225,6 +1320,19 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    # 0. Dev working-copy freshness guard. When launching from a source
+    #    checkout (ui-tui/src present) whose prebuilt dist/entry.js is older
+    #    than its src/**, rebuild it and launch the FRESH working-copy bundle.
+    #    This runs BEFORE the wheel-bundled early-return below so an editor's
+    #    source edits aren't silently shadowed by a stale packaged bundle. It is
+    #    a no-op for packaged releases (no src/ → _tui_bundle_is_stale False).
+    #    Fail-safe: a failed/impossible rebuild never crashes — fall through to
+    #    the existing bundle-resolution order.
+    quiet = _runtime_env_value("QUIET") is not None
+    if not tui_dev and not ext_dir and _rebuild_stale_tui_bundle(tui_dir, quiet=quiet):
+        node = _node_bin("node")
+        return [node, str(tui_dir / "dist" / "entry.js")], tui_dir
 
     # 1. Prebuilt bundle (nix / packaged release): just run it.
     if not tui_dev:
