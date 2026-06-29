@@ -1,0 +1,15 @@
+{
+  "n_total": 292,
+  "orthogonality": {
+    "n": 292,
+    "mean_abs_logit_gap": 1.2396885010186356,
+    "median_abs_logit_gap": 0.7721552773844825,
+    "mean_abs_prob_gap": 0.1444857876412334,
+    "pearson_r_agent_vs_market": 0.7563880640359038,
+    "frac_diverge_gt_0.05": 0.5958904109589042,
+    "frac_diverge_gt_0.10": 0.4383561643835616
+  },
+  "scored": {
+    "n_resolved": 0
+  }
+}

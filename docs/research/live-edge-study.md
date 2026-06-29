@@ -274,6 +274,49 @@ market), the simplex agent weight + `beats_both`, and ECE — committing the res
 decision rule (§3.3) and the null-result honesty pledge bind that future entry. Manual fallback at any
 time: `forecast --db <ledger> market-nightly score && python scripts/live_edge_analysis.py --db <ledger>`.
 
+### Iteration 5 — 2026-06-29 · scaled to ForecastBench (n=292), orthogonality holds on the quality set
+
+The Manifold sampler surfaced too much trivial/personal noise (e.g. *"will somebody mammogram me 1500
+times"*, *"Ashwin returns to US"*) — questions the agent cannot meaningfully research and that dilute the
+benchmark. We replaced the substrate with **curated ForecastBench open questions** — the standard the
+field benchmarks against, with published superforecaster/LLM baselines. A new `--source forecastbench`
+loads the latest question_set's open, market-priced questions (manifold/metaculus/polymarket/infer),
+foreknowledge-proof by construction (resolution strictly in the future).
+
+Hardening surfaced en route (the testable environment again catching real defects):
+- The live forecaster was **over-tooled** — it carried the ledger-WRITE `forecasting` toolset and, instead
+  of returning a probability, fumbled through `create_question`/`update_forecast`, **polluting the live
+  ledger** under `--parallel` (4 garbage questions, since deleted). Stripped to research-only (`["web"]`)
+  with a regression test (`823a6ddc2`).
+- Added a **parallel forecaster** (bounded `ThreadPoolExecutor`, serialized ledger writes) — a 237-question
+  sweep runs in ~70 min instead of many hours (`6a529239b`).
+- Fixed a `latest`-pointer bug — ForecastBench's `latest-llm.json` is a 19-byte *pointer* file naming the
+  newest dated set, not a question set; the mocked tests had hidden it (`49def5c04`).
+
+**Run:** `market-nightly run --source forecastbench --parallel 5 -n 250` → **233 recorded, 0 rejected**
+(4 deduped). The `#market` benchmark now holds **292** questions (55 Manifold + 237 ForecastBench):
+Anthropic ARR, Strait-of-Hormuz, Russia State Duma polling, Cerebras financials, FIFA World Cup, Senate
+reconciliation — researched, serious questions.
+
+**Orthogonality — robust to a 5× scale-up onto curated, harder questions:**
+
+| metric | n=55 (Manifold) | **n=292 (incl. 237 ForecastBench)** |
+|---|---|---|
+| mean \|Δp\| (agent − market) | 0.127 | **0.144** |
+| Pearson r(agent, market) | 0.765 | **0.756** |
+| diverging > 0.10 | — | **43.8%** |
+
+The independent-signal premise holds on the bigger, harder set — the agent moves ~14pp off the price on
+average and ~44% of its forecasts are materially its own call. (Caveat: the ForecastBench market baseline
+is the question_set *freeze* price, ~8 days stale at forecast time — a small agent-information advantage,
+flagged for the scored analysis.)
+
+**Scored: 0 / 292 resolved** (all open; close range 2026-06-29 → 2029-01-01). The **necessary** condition
+(orthogonality) is confirmed on the quality set; the **sufficient** condition (beats + complements the
+market) is now measured on the *same* questions ForecastBench scores, so the resolved-set Brier becomes
+directly comparable to its published superforecaster/LLM baselines. Scoring is on the market's clock via
+`score_matured` (cron `948b7e4b`); these foreknowledge-proof snapshots are deliberately **not** re-forecast.
+
 ## 5. Limitations
 
 - The decisive accuracy proof is **longitudinal**; in-session we can show orthogonality + a seeded
