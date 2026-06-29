@@ -1177,16 +1177,24 @@ def test_forecast_cli_self_check_and_schedule_filter_by_confidence(tmp_path, cap
     db_path = tmp_path / "forecasting.db"
     db = str(db_path)
     ledger = ForecastLedger(db_path)
+    # tags=["bench"] makes these auto-review-INELIGIBLE so create_question adds no
+    # default (unfiltered) per-question weekly review. This test exercises the
+    # confidence FILTER on the explicitly-added domain-scoped review, so the only
+    # scheduled review must be that filtered one — an unfiltered default per-question
+    # review would run high_confidence and defeat the filter assertion. The bench tag
+    # does not affect the domain="macro" matching the test relies on.
     low_confidence = ledger.create_question(
         title="Will low confidence CLI self-check alert?",
         resolution_criteria="Resolved yes if confidence-filtered self-checks alert.",
         domain="macro",
+        tags=["bench"],
         next_review_at="2026-01-01T00:00:00Z",
     )
     high_confidence = ledger.create_question(
         title="Will high confidence CLI self-check be skipped?",
         resolution_criteria="Resolved yes if confidence-filtered self-checks skip this.",
         domain="macro",
+        tags=["bench"],
         next_review_at="2026-01-01T00:00:00Z",
     )
     ledger.create_snapshot(
@@ -10551,7 +10559,11 @@ def test_forecast_cli_pilot_aggregate_summarizes_export_packets(tmp_path, capsys
 
     assert payload["aggregate_status"] == "collecting_live_evidence"
     assert payload["summary"]["live_score_count"] == 1
-    assert payload["summary"]["scheduled_review_count"] == 1
+    # Two scheduled reviews now: the explicit 1d review AND the default weekly
+    # question-scoped review create_question auto-adds for the eligible live question
+    # (domain "macro"). Only the explicit 1d review is due at 2026-05-24 (the default
+    # review's next_run_at = created_at + 7d is in the future), so exactly one RAN.
+    assert payload["summary"]["scheduled_review_count"] == 2
     assert payload["summary"]["scheduled_review_run_count"] == 1
     assert payload["exports"][0]["scheduled_review_run_count"] == 1
     assert payload["checks"][0]["required"] == 2
@@ -12475,7 +12487,11 @@ def test_forecast_cli_default_dashboard_and_schedule_run(tmp_path, capsys):
     )
     output = capsys.readouterr().out
 
-    assert "ran 1 scheduled review(s)" in output
+    # Two reviews are due at the 2026-01-03 run: the explicitly-added 1d review AND
+    # the default weekly question-scoped review create_question now auto-adds for an
+    # eligible live question (domain "ops"), which reused the explicit
+    # --next-review-at=2026-01-01 and is therefore also due.
+    assert "ran 2 scheduled review(s)" in output
     assert "created" in output
     assert question_id in output
     assert "review_due" in output

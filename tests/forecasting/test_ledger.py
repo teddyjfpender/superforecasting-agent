@@ -1167,6 +1167,107 @@ def test_question_review_cadence_creates_scheduled_review(tmp_path):
     assert reviews[0]["trigger_reason"] == "question_review_cadence"
 
 
+def test_live_question_defaults_to_weekly_scheduled_review(tmp_path):
+    # A live organic question created WITHOUT a review cadence should auto-get a
+    # weekly question-scoped scheduled review at ~ now + 7d, so it is auto-re-forecast
+    # and shows a "NEXT" column on the desk.
+    from datetime import datetime, timedelta, timezone
+
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    before = datetime.now(timezone.utc)
+    question = ledger.create_question(
+        title="Will the incumbent win the governor's race?",
+        resolution_criteria="Resolved yes if the incumbent is declared the winner.",
+        domain="politics",
+    )
+    after = datetime.now(timezone.utc)
+
+    reviews = ledger.list_scheduled_reviews()
+    assert len(reviews) == 1
+    review = reviews[0]
+    assert review["scope_type"] == "question"
+    assert review["scope_ref"] == question.id
+    assert review["cadence"] == "weekly"
+    assert review["trigger_reason"] == "question_review_cadence"
+
+    next_run = datetime.fromisoformat(review["next_run_at"].replace("Z", "+00:00"))
+    assert before + timedelta(days=7) - timedelta(seconds=5) <= next_run
+    assert next_run <= after + timedelta(days=7) + timedelta(seconds=5)
+
+
+def test_market_nightly_question_gets_no_default_review_by_domain(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    ledger.create_question(
+        title="Will the market-pinned event occur tonight?",
+        resolution_criteria="Resolved per the pinned market's outcome.",
+        domain="market_nightly",
+    )
+    assert ledger.list_scheduled_reviews() == []
+
+
+def test_market_nightly_question_gets_no_default_review_by_tag(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    ledger.create_question(
+        title="Will the market-pinned event occur tonight (tag form)?",
+        resolution_criteria="Resolved per the pinned market's outcome.",
+        domain="politics",
+        tags=["market_nightly"],
+    )
+    assert ledger.list_scheduled_reviews() == []
+
+
+def test_forecastbench_question_gets_no_default_review_by_domain(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    ledger.create_question(
+        title="ForecastBench replay: will the index close above 5000?",
+        resolution_criteria="Resolved by the linked ForecastBench source.",
+        domain="forecastbench",
+    )
+    assert ledger.list_scheduled_reviews() == []
+
+
+def test_forecastbench_question_gets_no_default_review_by_bench_tag(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    ledger.create_question(
+        title="ForecastBench replay (tag form): will the index close above 5000?",
+        resolution_criteria="Resolved by the linked ForecastBench source.",
+        domain="macro",
+        tags=["bench", "forecastbench"],
+    )
+    assert ledger.list_scheduled_reviews() == []
+
+
+def test_explicit_review_cadence_is_preserved_not_overridden(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will an explicit cadence be respected?",
+        resolution_criteria="Resolved yes if the caller's cadence is preserved.",
+        domain="politics",
+        review_cadence="3d",
+        next_review_at="2026-01-02T00:00:00Z",
+    )
+    reviews = ledger.list_scheduled_reviews()
+    assert len(reviews) == 1
+    assert reviews[0]["scope_ref"] == question.id
+    assert reviews[0]["cadence"] == "3d"
+    assert reviews[0]["next_run_at"] == "2026-01-02T00:00:00Z"
+
+
+def test_is_auto_review_eligible_rule(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    # Eligible: ordinary live questions.
+    assert ledger._is_auto_review_eligible("politics", None) is True
+    assert ledger._is_auto_review_eligible(None, ["election"]) is True
+    assert ledger._is_auto_review_eligible(None, None) is True
+    # Ineligible by domain (case-insensitive).
+    assert ledger._is_auto_review_eligible("forecastbench", None) is False
+    assert ledger._is_auto_review_eligible("Market_Nightly", None) is False
+    # Ineligible by tag (case-insensitive).
+    assert ledger._is_auto_review_eligible("macro", ["BENCH"]) is False
+    assert ledger._is_auto_review_eligible("politics", ["market_nightly"]) is False
+    assert ledger._is_auto_review_eligible("politics", ["forecastbench"]) is False
+
+
 def test_export_packet_includes_auditable_forecast_data(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
@@ -1896,17 +1997,21 @@ def test_due_scheduled_review_runs_self_check_and_advances_next_run(tmp_path):
 
     results = ledger.run_due_scheduled_reviews(now="2026-01-10T00:00:00Z")
 
-    assert results[0]["review"]["id"] == review["id"]
-    assert results[0]["review"]["stale_days"] == 3
-    assert results[0]["review"]["last_run_at"] == "2026-01-10T00:00:00Z"
-    assert results[0]["review"]["next_run_at"] == "2026-01-11T00:00:00Z"
-    assert {alert.reason for alert in results[0]["alerts"]} >= {"review_due", "last_update_3d_plus"}
-    assert results[0]["run"]["scheduled_review_id"] == review["id"]
-    assert results[0]["run"]["run_at"] == "2026-01-10T00:00:00Z"
-    assert results[0]["run"]["next_run_at"] == "2026-01-11T00:00:00Z"
-    assert results[0]["run"]["alert_count"] == len(results[0]["alerts"])
-    assert results[0]["run"]["metadata"]["scope_type"] == "domain"
-    assert ledger.list_scheduled_review_runs(scheduled_review_id=review["id"])[0]["id"] == results[0]["run"]["id"]
+    # The live question also carries a default weekly question-scoped review (it is
+    # eligible — domain "operations"), whose explicit next_review_at=2026-01-01 is
+    # due here too. This test exercises the DOMAIN-scoped review, so select it.
+    result = next(r for r in results if r["review"]["id"] == review["id"])
+    assert result["review"]["id"] == review["id"]
+    assert result["review"]["stale_days"] == 3
+    assert result["review"]["last_run_at"] == "2026-01-10T00:00:00Z"
+    assert result["review"]["next_run_at"] == "2026-01-11T00:00:00Z"
+    assert {alert.reason for alert in result["alerts"]} >= {"review_due", "last_update_3d_plus"}
+    assert result["run"]["scheduled_review_id"] == review["id"]
+    assert result["run"]["run_at"] == "2026-01-10T00:00:00Z"
+    assert result["run"]["next_run_at"] == "2026-01-11T00:00:00Z"
+    assert result["run"]["alert_count"] == len(result["alerts"])
+    assert result["run"]["metadata"]["scope_type"] == "domain"
+    assert ledger.list_scheduled_review_runs(scheduled_review_id=review["id"])[0]["id"] == result["run"]["id"]
 
 
 def test_watched_file_source_creates_alert_on_change(tmp_path):
@@ -5081,8 +5186,12 @@ def test_scheduled_review_accepts_every_cadence_phrases(tmp_path):
     results = ledger.run_due_scheduled_reviews(now="2026-01-02T00:30:00Z")
     updated = ledger.get_scheduled_review(review["id"])
 
-    assert results[0]["review"]["id"] == review["id"]
-    assert results[0]["run"]["scheduled_review_id"] == review["id"]
+    # The live question also carries a default weekly question-scoped review (no
+    # benchmark domain/tag → eligible); its explicit next_review_at=2026-01-01 is
+    # due here too. This test exercises the "every 1h" review, so select it.
+    result = next(r for r in results if r["review"]["id"] == review["id"])
+    assert result["review"]["id"] == review["id"]
+    assert result["run"]["scheduled_review_id"] == review["id"]
     assert updated["next_run_at"] == "2026-01-02T01:30:00Z"
 
 
@@ -5856,7 +5965,12 @@ def test_cron_runner_reports_alerts_and_stays_silent_without_work(tmp_path):
     assert "run_ids: srr_" in report
     assert question.id in report
     assert silent == ""
-    assert len(ForecastLedger(db_path).list_scheduled_review_runs()) == 1
+    # Two due reviews fire on the first tick: the explicit 1d question review AND
+    # the default weekly question-scoped review create_question now auto-adds for an
+    # eligible live question. The default review reuses the explicit
+    # next_review_at=2026-01-01 (only ABSENT values are defaulted), so it is also due
+    # by the 2026-01-03 cron tick. The second tick stays silent.
+    assert len(ForecastLedger(db_path).list_scheduled_review_runs()) == 2
 
 
 def test_cron_runner_uses_schedule_auto_learning_flags(tmp_path):

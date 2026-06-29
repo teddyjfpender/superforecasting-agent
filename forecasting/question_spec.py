@@ -373,6 +373,13 @@ class QuestionSpec:
         # row the cycle reads. Idempotent (schedule_review dedups), so a re-commit
         # or an explicit schedule won't spawn a duplicate. Fail-open: a scheduling
         # hiccup must never block the commit.
+        #
+        # trigger_reason="question_review_cadence" deliberately MATCHES the reason
+        # create_question uses for the weekly review it now auto-creates for eligible
+        # live questions. schedule_review is idempotent on
+        # (scope_type, scope_ref, cadence, trigger_reason), so this UPSERTS the
+        # auto_score/auto_postmortem flags onto that single row instead of spawning a
+        # second question-scoped review.
         scheduled_review = None
         scheduled_review_error = None
         try:
@@ -380,6 +387,7 @@ class QuestionSpec:
                 scope_type="question",
                 scope_ref=question_id,
                 cadence=(self.review_cadence or "weekly"),
+                trigger_reason="question_review_cadence",
                 auto_score=True,
                 auto_postmortem=True,
             )

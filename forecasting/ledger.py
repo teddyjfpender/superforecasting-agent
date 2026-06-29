@@ -79,6 +79,21 @@ _CASCADE_TLS = threading.local()
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
 
+# Auto-review eligibility — default-weekly-review gate for create_question.
+#
+# A LIVE organic forecast question created without an explicit review cadence
+# should DEFAULT to a weekly scheduled review so it is auto-re-forecast and shows
+# a "NEXT" column on the desk. But two classes of question are forecast-once-then-
+# scored and must STAY cadence-less:
+#   - market_nightly: foreknowledge-proof live benchmark snapshots — re-forecasting
+#     them later would break the foreknowledge lock (the agent must not revisit a
+#     question after the market it was pinned against has moved).
+#   - forecastbench: historical replay / closed-book backtest cases — re-forecasting
+#     them with today's information would contaminate the replay.
+# Membership is checked against the lowercased domain OR any lowercased tag.
+_AUTO_REVIEW_INELIGIBLE_DOMAINS = frozenset({"forecastbench", "market_nightly"})
+_AUTO_REVIEW_INELIGIBLE_TAGS = frozenset({"bench", "forecastbench", "market_nightly"})
+
 # AIA P0.2 — paired bootstrap significance.
 #
 # The paired Brier edge (per resolved question: baseline_brier - agent_brier,
@@ -1463,6 +1478,26 @@ class ForecastLedger:
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+    def _is_auto_review_eligible(
+        self,
+        domain: str | None,
+        tags: list[str] | None,
+    ) -> bool:
+        """Whether a newly-created question should DEFAULT to a weekly review.
+
+        INELIGIBLE (returns False — must stay cadence-less) when the question is a
+        forecast-once-then-scored benchmark/foreknowledge-proof case, identified by
+        a benchmark domain OR a benchmark tag (case-insensitive). See
+        ``_AUTO_REVIEW_INELIGIBLE_DOMAINS`` / ``_AUTO_REVIEW_INELIGIBLE_TAGS``.
+        Everything else is eligible.
+        """
+        if (domain or "").strip().lower() in _AUTO_REVIEW_INELIGIBLE_DOMAINS:
+            return False
+        for tag in tags or []:
+            if str(tag).strip().lower() in _AUTO_REVIEW_INELIGIBLE_TAGS:
+                return False
+        return True
+
     def create_question(
         self,
         *,
@@ -1543,6 +1578,19 @@ class ForecastLedger:
                     json_dumps(normalized_triggers),
                 ),
             )
+        # Default a weekly scheduled review for eligible LIVE questions. Without
+        # this, a live question created without a cadence never gets a scheduled
+        # review, so it is never auto-re-forecast and shows a blank desk "NEXT"
+        # column. An explicitly-passed review_cadence/next_review_at is respected
+        # unchanged; only ABSENT values are filled in. Benchmark/foreknowledge-proof
+        # questions (market_nightly, forecastbench) stay cadence-less so they are not
+        # re-forecast — see _is_auto_review_eligible.
+        if not review_cadence and self._is_auto_review_eligible(domain, tags):
+            review_cadence = "weekly"
+            if not parsed_next_review_at:
+                parsed_next_review_at = (
+                    timestamp_to_datetime(created_at) + timedelta(days=7)
+                ).strftime("%Y-%m-%dT%H:%M:%SZ")
         if review_cadence and parsed_next_review_at:
             self.schedule_review(
                 scope_type="question",
@@ -6785,33 +6833,39 @@ class ForecastLedger:
                     params.append(parse_timestamp(next_run_at, field_name="next_run_at") or utc_now_iso())
                 params.append(existing["id"])
                 conn.execute(f"UPDATE scheduled_reviews SET {', '.join(set_clauses)} WHERE id = ?", params)
-                return self.get_scheduled_review(existing["id"])
-            conn.execute(
-                """
-                INSERT INTO scheduled_reviews (
-                    id, scope_type, scope_ref, cadence, stale_days, next_run_at,
-                    trigger_reason, enabled, auto_score, auto_postmortem,
-                    confidence_below, confidence_above, large_delta_threshold
+                # Return the upserted row's id and read it AFTER this `with` commits:
+                # get_scheduled_review opens its own connection, so reading it inside
+                # this still-open transaction would return the pre-UPDATE row (the
+                # upserted auto_*/stale_days/filters would be invisible).
+                result_id = existing["id"]
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO scheduled_reviews (
+                        id, scope_type, scope_ref, cadence, stale_days, next_run_at,
+                        trigger_reason, enabled, auto_score, auto_postmortem,
+                        confidence_below, confidence_above, large_delta_threshold
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        review_id,
+                        scope_type,
+                        scope_ref,
+                        cadence,
+                        int(stale_days),
+                        parse_timestamp(next_run_at, field_name="next_run_at") or utc_now_iso(),
+                        trigger_reason,
+                        1 if enabled else 0,
+                        1 if auto_score else 0,
+                        1 if auto_postmortem else 0,
+                        confidence_below,
+                        confidence_above,
+                        large_delta_threshold,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    review_id,
-                    scope_type,
-                    scope_ref,
-                    cadence,
-                    int(stale_days),
-                    parse_timestamp(next_run_at, field_name="next_run_at") or utc_now_iso(),
-                    trigger_reason,
-                    1 if enabled else 0,
-                    1 if auto_score else 0,
-                    1 if auto_postmortem else 0,
-                    confidence_below,
-                    confidence_above,
-                    large_delta_threshold,
-                ),
-            )
-        return self.get_scheduled_review(review_id)
+                result_id = review_id
+        return self.get_scheduled_review(result_id)
 
     def get_scheduled_review(self, review_id: str) -> dict[str, Any]:
         with self._connect() as conn:

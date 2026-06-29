@@ -18,7 +18,14 @@ def _ledger(tmp_path) -> ForecastLedger:
 
 
 def _question(lg) -> str:
-    return lg.create_question(title="Will the metric exceed target by close?", resolution_criteria=CRIT).id
+    # domain="forecastbench" is auto-review-INELIGIBLE, so create_question adds no
+    # default weekly review. These tests assert schedule_review idempotency/dedupe
+    # from a clean slate, so the question must start with zero scheduled reviews.
+    return lg.create_question(
+        title="Will the metric exceed target by close?",
+        resolution_criteria=CRIT,
+        domain="forecastbench",
+    ).id
 
 
 def _enabled(lg) -> list[dict]:
