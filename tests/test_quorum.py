@@ -306,3 +306,121 @@ def test_run_quorum_records_timed_out_panelist_as_error(monkeypatch):
     errored = [f for f in res.forecasts if f.error]
     assert len(errored) == 1 and "timed out" in errored[0].error
     assert len(res.ok_forecasts) == 1
+
+
+# ── FOREKNOWLEDGE GUARD: cutoff-gated panelist toolset (the leak fix) ───────────
+
+
+def _tool_names_for(toolsets):
+    """Resolve a toolset list to its concrete tool names via the real registry.
+
+    Mirrors tests/forecasting/test_market_nightly_forecaster.py — the toolset the
+    panelist is built with is only a leak guard if it RESOLVES to a registry with no
+    web_search / forecast_ledger. So assert against get_tool_definitions, not the
+    string list.
+    """
+
+    from model_tools import get_tool_definitions
+
+    defs = get_tool_definitions(enabled_toolsets=list(toolsets), quiet_mode=True)
+    names = set()
+    for d in defs:
+        if isinstance(d, dict):
+            fn = d.get("function") if isinstance(d.get("function"), dict) else d
+            name = fn.get("name")
+            if name:
+                names.add(name)
+    return names
+
+
+def test_resolve_panelist_toolsets_historical_is_closed_book():
+    from forecasting.quorum import resolve_panelist_toolsets
+
+    # A HISTORICAL evidence_cutoff (a backtest / replay snapshot well in the past)
+    # must yield an EMPTY toolset: no web (no fresh post-cutoff search) and no
+    # forecasting (no forecast_ledger.import_source_evidence fetch of the now-known
+    # source value).
+    ts = resolve_panelist_toolsets("2020-01-01T00:00:00Z")
+    assert ts == ()
+    names = _tool_names_for(ts)
+    assert "web_search" not in names, names
+    assert "web_extract" not in names, names
+    assert "forecast_ledger" not in names, names
+    for forbidden in ("import_source_evidence", "update_forecast", "create_question", "record_panel"):
+        assert forbidden not in names, names
+
+
+def test_resolve_panelist_toolsets_live_is_research_only():
+    from forecasting.quorum import resolve_panelist_toolsets
+
+    # A LIVE cutoff (None == no cutoff) must yield web research ONLY — web_search is
+    # present so the panelist can research the open question, but forecast_ledger
+    # (and thus import_source_evidence + every ledger-write action) is absent: the
+    # quorum JOB aggregates + records, never the panelist.
+    for cutoff in (None, ""):
+        ts = resolve_panelist_toolsets(cutoff)
+        assert ts == ("web",)
+        names = _tool_names_for(ts)
+        assert "web_search" in names, names
+        assert "forecast_ledger" not in names, names
+        for forbidden in ("import_source_evidence", "update_forecast", "create_question", "record_panel"):
+            assert forbidden not in names, names
+
+
+def test_make_aiagent_runner_threads_cutoff_into_panelist_toolset(monkeypatch):
+    # The QUORUM call path (quorum_jobs.execute_job) builds the runner with
+    # evidence_cutoff; assert that flows into the build_agent enabled_toolsets so the
+    # leak guard is actually in force on the constructed panelist.
+    from forecasting.quorum import make_aiagent_runner
+
+    captured = {}
+
+    class FakeAIAgent:
+        def run_conversation(self, user_message, system_message=None):
+            return {"final_response": json.dumps({"probability": 0.4, "rationale": "r"})}
+
+    import agent.agent_factory as _af
+
+    def _fake_build_agent(**kwargs):
+        captured["enabled_toolsets"] = kwargs.get("enabled_toolsets")
+        return FakeAIAgent()
+
+    monkeypatch.setattr(_af, "build_agent", _fake_build_agent)
+
+    # HISTORICAL cutoff -> empty (closed-book).
+    runner = make_aiagent_runner(evidence_cutoff="2020-01-01T00:00:00Z")
+    runner("m/x", "system", "user")
+    assert captured["enabled_toolsets"] == []
+    hist_names = _tool_names_for(captured["enabled_toolsets"])
+    assert "web_search" not in hist_names and "forecast_ledger" not in hist_names
+
+    # LIVE cutoff -> web-only research.
+    runner = make_aiagent_runner(evidence_cutoff=None)
+    runner("m/x", "system", "user")
+    assert captured["enabled_toolsets"] == ["web"]
+    live_names = _tool_names_for(captured["enabled_toolsets"])
+    assert "web_search" in live_names and "forecast_ledger" not in live_names
+
+
+def test_make_aiagent_runner_default_is_backward_safe(monkeypatch):
+    # Without evidence_cutoff the historical default toolsets are preserved (no
+    # behavior change for callers that do not pass the guard).
+    from forecasting.quorum import make_aiagent_runner
+
+    captured = {}
+
+    class FakeAIAgent:
+        def run_conversation(self, user_message, system_message=None):
+            return {"final_response": json.dumps({"probability": 0.4, "rationale": "r"})}
+
+    import agent.agent_factory as _af
+
+    def _fake_build_agent(**kwargs):
+        captured["enabled_toolsets"] = kwargs.get("enabled_toolsets")
+        return FakeAIAgent()
+
+    monkeypatch.setattr(_af, "build_agent", _fake_build_agent)
+
+    runner = make_aiagent_runner()
+    runner("m/x", "system", "user")
+    assert captured["enabled_toolsets"] == ["forecasting", "web"]

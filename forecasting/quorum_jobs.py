@@ -236,9 +236,17 @@ def execute_job(run_id: str) -> dict[str, Any]:
         judge_model = spec.get("judge") or preset_judge or DEFAULT_JUDGE_MODEL
         self_fusion = bool(spec.get("self_fusion")) or spec.get("preset") == "self"
 
+        # FOREKNOWLEDGE GUARD (mirrors the supervisor-search guard below): gate the
+        # PANELIST toolset on the SAME _cutoff_is_live(evidence_cutoff) predicate.
+        # A HISTORICAL cutoff (backtest/replay snapshot) builds each panelist
+        # closed-book (EMPTY toolset — NO web, NO forecast_ledger.import_source_evidence,
+        # which would otherwise fetch the LIVE / now-known source value). A LIVE cutoff
+        # gives panelists web research only (still NO ledger-write surface — the quorum
+        # job, not the panelist, aggregates + records the forecast).
         runner = make_aiagent_runner(
             max_iterations=int(spec.get("max_iterations", 30)),
             timeout=spec.get("model_timeout"),
+            evidence_cutoff=evidence_cutoff,
         )
 
         # Panelists run concurrently, so the progress callback fires from worker

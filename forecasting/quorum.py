@@ -905,6 +905,40 @@ def _augment_context(base: str, fresh_evidence: Sequence[Mapping[str, Any]]) -> 
     return f"{base}\n{block}" if base else block.lstrip("\n")
 
 
+_UNSET_CUTOFF = object()
+
+
+def resolve_panelist_toolsets(evidence_cutoff: Any) -> tuple[str, ...]:
+    """Cutoff-gate the toolset every quorum PANELIST is built with (foreknowledge guard).
+
+    A panelist's job is to emit an INDEPENDENT forecast that the quorum job then
+    aggregates + records; the panelist itself must NEVER write the ledger. So the
+    ledger-WRITE "forecasting" toolset (which also exposes
+    ``forecast_ledger.import_source_evidence`` — a fetch of the LIVE current
+    manifold/metaculus/polymarket value, i.e. the potentially now-known answer) is
+    DROPPED in every case. What remains is gated on whether the forecast is LIVE,
+    using the SAME :func:`forecasting.quorum_jobs._cutoff_is_live` predicate that
+    guards the supervisor search:
+
+      * HISTORICAL cutoff (a backtest / replay snapshot): EMPTY toolset ``()`` —
+        closed-book, NO web, NO import_source_evidence. The panelist reasons only
+        from the supplied case, mirroring the closed-book backtest runner
+        (``forecasting.cli`` uses ``[]`` under ``--closed-book``). This closes the
+        leak: post-cutoff / now-known information can never be pulled into a
+        past-pinned forecast.
+      * LIVE cutoff (no cutoff, or within tolerance of now): RESEARCH-ONLY
+        ``("web",)`` — the panelist researches the open question via web search and
+        emits a parsed forecast (the parse path reads the final response text; no
+        forecasting tool is needed to emit a forecast). This mirrors the live market
+        forecaster's ``LIVE_ENABLED_TOOLSETS = ["web"]`` fix — web research only, NO
+        ledger-write surface.
+    """
+
+    from forecasting.quorum_jobs import _cutoff_is_live
+
+    return ("web",) if _cutoff_is_live(evidence_cutoff) else ()
+
+
 def make_aiagent_runner(
     *,
     max_iterations: int = 30,
@@ -912,6 +946,7 @@ def make_aiagent_runner(
     quiet: bool = True,
     timeout: float | None = None,
     requested_provider: str | None = None,
+    evidence_cutoff: Any = _UNSET_CUTOFF,
 ) -> QuorumRunner:
     """Default production runner: one :class:`run_agent.AIAgent` per call.
 
@@ -923,12 +958,24 @@ def make_aiagent_runner(
     old hardcoded ``provider="openrouter"`` broke every non-OpenRouter deployment.)
     Built lazily so importing this module never pulls in the full agent runtime.
 
+    ``evidence_cutoff`` is the FOREKNOWLEDGE GUARD (default ``_UNSET_CUTOFF`` keeps the
+    explicit ``toolsets`` for backward safety). When the quorum call path passes it,
+    :func:`resolve_panelist_toolsets` OVERRIDES ``toolsets`` with the cutoff-gated set:
+    an EMPTY toolset for a HISTORICAL cutoff (closed-book — no web, no
+    import_source_evidence, so no post-cutoff leak) and RESEARCH-ONLY ``("web",)`` for
+    a LIVE cutoff (web research, NO ledger-write surface). This mirrors the
+    supervisor-search leakage guard so a panelist can never pull now-known information
+    into a past-pinned forecast.
+
     ``timeout`` (seconds) bounds a single model call: a model that hangs past
     it raises ``RuntimeError`` so :func:`run_quorum` records that panelist as
     errored and the quorum still completes on the survivors. The call runs on a
     daemon thread, so a hung model cannot wedge the job — it is abandoned and
     reaped when the (per-run) process exits.
     """
+
+    if evidence_cutoff is not _UNSET_CUTOFF:
+        toolsets = resolve_panelist_toolsets(evidence_cutoff)
 
     def _call(model: str, system: str, user: str) -> str:
         from agent.agent_factory import build_agent
