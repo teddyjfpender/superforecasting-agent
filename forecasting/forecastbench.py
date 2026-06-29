@@ -47,14 +47,16 @@ Network fetch is isolated behind ``_fetch_json`` (mockable + on-disk cached);
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 __all__ = [
     "ForecastBenchError",
     "load_forecastbench_cases",
+    "load_forecastbench_open_questions",
     "build_forecastbench_case",
     "forecastbench_dataset_label",
     "QUESTION_SET_URL_TEMPLATE",
@@ -603,3 +605,231 @@ def load_forecastbench_cases(
             "dropped_limit": dropped_limit,
         },
     }
+
+
+# ── OPEN (future-resolving) question feed for the LIVE / forward harness ─────────
+#
+# The functions above ingest a HISTORICAL (question set + resolution set) pair for
+# CLOSED-BOOK backtests: every question is already resolved, so live search would
+# leak the answer and the live source URL is sealed. The feed below is the
+# OPPOSITE: it serves the still-OPEN (future-resolving) MARKET questions from a
+# question set so the foreknowledge-proof LIVE harness
+# (``market_nightly_forecaster``) can forecast curated, serious questions WITH live
+# search instead of random Manifold junk. Live search is LEGITIMATE here because
+# the outcome does not exist yet (it cannot be looked up), and — unlike the
+# backtest path — the live source ``url`` IS carried so the agent can reference the
+# venue. No resolution set is fetched (the questions are unresolved by construction).
+
+# "latest" resolves to ForecastBench's rolling ``latest-llm.json`` question set.
+_LATEST_DATE = "latest"
+
+
+def _question_set_resolution_instant(question: dict[str, Any]) -> datetime | None:
+    """Derive the question's RESOLUTION instant as an aware UTC datetime.
+
+    This is the moment the OUTCOME settles: the MAX of ``resolution_dates`` (the
+    last/final date the question can settle on); fall back to
+    ``market_info_close_datetime`` only when no resolution date is parseable.
+    Returns ``None`` when neither yields a parseable, non-sentinel timestamp — the
+    caller treats an underivable resolution as "cannot confirm OPEN" and drops the
+    question. The OPEN/foreknowledge filter keys off THIS instant (the outcome,
+    not the market close, must be in the future for live search to be legitimate).
+    """
+
+    candidates: list[str] = []
+    resolution_dates = question.get("resolution_dates")
+    if isinstance(resolution_dates, (list, tuple)):
+        for value in resolution_dates:
+            cleaned = _clean_close_time(value)
+            if cleaned:
+                candidates.append(cleaned)
+    elif resolution_dates is not None:
+        cleaned = _clean_close_time(resolution_dates)
+        if cleaned:
+            candidates.append(cleaned)
+
+    chosen: datetime | None = None
+    for cleaned in candidates:
+        dt = _to_utc_datetime(cleaned)
+        if dt is not None and (chosen is None or dt > chosen):
+            chosen = dt
+    if chosen is not None:
+        return chosen
+
+    fallback = _clean_close_time(question.get("market_info_close_datetime"))
+    return _to_utc_datetime(fallback)
+
+
+def _question_set_close_instant(question: dict[str, Any]) -> datetime | None:
+    """Derive the market CLOSE instant as an aware UTC datetime.
+
+    This is when the underlying market stops trading (``market_info_close_datetime``),
+    which can PRECEDE the resolution instant (a market may close, then resolve days
+    later). Falls back to the resolution instant when no market close is parseable.
+    """
+
+    close = _to_utc_datetime(_clean_close_time(question.get("market_info_close_datetime")))
+    if close is not None:
+        return close
+    return _question_set_resolution_instant(question)
+
+
+def _normalize_now(now: datetime | None) -> datetime:
+    """Return an aware-UTC ``now`` so comparisons are always aware-vs-aware.
+
+    ``None`` -> the current UTC instant. A tz-NAIVE ``now`` is treated as UTC
+    (tzinfo attached) so callers passing a naive ``datetime.utcnow()`` do not
+    trip a ``TypeError`` on the aware-vs-naive comparison.
+    """
+
+    if now is None:
+        return datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        return now.replace(tzinfo=timezone.utc)
+    return now.astimezone(timezone.utc)
+
+
+def _to_utc_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        from forecasting.models import timestamp_to_datetime
+
+        return timestamp_to_datetime(value)
+    except Exception:
+        return None
+
+
+def load_forecastbench_open_questions(
+    date: str = _LATEST_DATE,
+    *,
+    sources: Sequence[str] = ("manifold", "metaculus", "polymarket", "infer"),
+    limit: int | None = None,
+    cache_dir: str | Path | None = None,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """Fetch the OPEN (future-resolving) MARKET questions of a ForecastBench set.
+
+    Reuses the closed-book module's :data:`QUESTION_SET_URL_TEMPLATE`
+    (``{date}-llm.json``) and :func:`_fetch_json` network boundary (so tests
+    monkeypatch ``_fetch_json`` with a tiny fixture and nothing here touches the
+    network). ``date="latest"`` resolves to the rolling ``latest-llm.json``.
+
+    A question survives ONLY when it is:
+
+      * a MARKET source in ``sources`` (default the four market-probability
+        sources — dataset sources like ``acled``/``fred``/``dbnomics`` carry a raw
+        level, not a probability, and are dropped),
+      * has a non-empty, 0..1-parseable ``freeze_datetime_value`` (its freeze
+        market probability — used as the stale baseline below), AND
+      * is still OPEN: a RESOLUTION instant derived from ``resolution_dates``
+        (max) or ``market_info_close_datetime`` (fallback) that is STRICTLY in
+        the future (``> now``). The OUTCOME, not the market close, must be in the
+        future — a market that has stopped trading but resolves later is still
+        admissible. A question whose resolution cannot be derived is dropped (we
+        cannot confirm it is open).
+
+    Each survivor maps to the market-dict shape the live harness consumes
+    (mirroring ``market_nightly_forecaster._manifold_open_markets``)::
+
+        {
+          "id": "forecastbench:<id>",
+          "source": <source>,
+          "question": <question>,
+          "description": <background>,
+          "resolution_criteria": <resolution_criteria>,
+          "probability": float(freeze_datetime_value),
+          "close_time": <ISO market close>,        # market_info_close (fallback resolution)
+          "resolution_time": <ISO resolution>,     # max(resolution_dates) (fallback close)
+          "url": <live source url>,
+        }
+
+    FOREKNOWLEDGE NOTE: these are OPEN questions that resolve in the FUTURE, so a
+    live web search is LEGITIMATE — the outcome does not exist yet and cannot be
+    looked up. The ``probability`` is the freeze market price as of the question
+    SET's date, i.e. a slightly-STALE baseline (the set may be days/weeks old by
+    the time the harness runs); treat it as a coarse prior, not the live price.
+    The live source ``url`` is intentionally carried (the live harness may show
+    the venue) — there is no resolved outcome to seal.
+
+    ``limit`` caps the number of returned questions (applied after filtering).
+    ``now`` is the reference instant for the OPEN filter; ``None`` uses the
+    current UTC time and a tz-naive ``now`` is treated as UTC (so the aware
+    resolution instants are always compared aware-vs-aware).
+    """
+
+    question_set_date = str(date or _LATEST_DATE).strip() or _LATEST_DATE
+    allowed: frozenset[str] = frozenset(
+        str(s).strip().lower() for s in sources if str(s or "").strip()
+    )
+
+    root = _cache_root(cache_dir)
+    q_cache = (root / f"question_set_{question_set_date}.json") if root else None
+    payload = _fetch_cached(
+        QUESTION_SET_URL_TEMPLATE.format(date=question_set_date), cache_path=q_cache
+    )
+    if not isinstance(payload, dict):
+        raise ForecastBenchError("ForecastBench question set must be a JSON object")
+
+    # The OPEN feed reads the question set's ``question_set`` array (the closed-book
+    # path reads ``questions``); accept either key defensively so a schema rename
+    # does not silently empty the feed.
+    questions = payload.get("question_set")
+    if not isinstance(questions, list):
+        questions = payload.get("questions")
+    if not isinstance(questions, list):
+        raise ForecastBenchError(
+            "ForecastBench question set is missing a 'question_set'/'questions' array"
+        )
+
+    now = _normalize_now(now)
+
+    out: list[dict[str, Any]] = []
+    for question in questions:
+        if not isinstance(question, dict):
+            continue
+        source = _normalized_source(question)
+        if source not in allowed:
+            continue  # dataset source / source not requested
+        probability = _freeze_market_probability(question)
+        if probability is None:
+            continue  # no usable 0..1 freeze baseline
+        # The OPEN/foreknowledge filter keys off the RESOLUTION instant (the
+        # outcome must be in the future); a market whose trading has closed but
+        # whose outcome resolves later is still admissible as open.
+        resolution_dt = _question_set_resolution_instant(question)
+        if resolution_dt is None or resolution_dt <= now:
+            continue  # resolved / past / underivable -> not OPEN
+        # ``close_time`` is the market-close instant (when present); ``resolution_time``
+        # is the outcome instant. They can differ (market closes, then resolves later).
+        close_dt = _question_set_close_instant(question) or resolution_dt
+        close_iso = close_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        resolution_iso = (
+            resolution_dt.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        )
+
+        qid = str(question.get("id"))
+        question_text = str(
+            question.get("question") or f"ForecastBench {source} question {qid}"
+        )
+        resolution_criteria = str(
+            question.get("resolution_criteria")
+            or "Resolves YES/NO per the linked ForecastBench source's published criteria."
+        )
+        out.append(
+            {
+                "id": f"forecastbench:{qid}",
+                "source": source,
+                "question": question_text,
+                "description": str(question.get("background") or ""),
+                "resolution_criteria": resolution_criteria,
+                "probability": probability,
+                "close_time": close_iso,
+                "resolution_time": resolution_iso,
+                "url": question.get("url"),
+            }
+        )
+        if limit is not None and len(out) >= limit:
+            break
+
+    return out

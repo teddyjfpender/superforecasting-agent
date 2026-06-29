@@ -659,3 +659,197 @@ def test_recorded_agent_model_defaults_to_resolved_model():
 
     args_explicit = argparse.Namespace(agent_model="explicit-model")
     assert cli._resolved_recorded_agent_model(args_explicit, _Runner()) == "explicit-model"
+
+
+# --------------------------------------------------------------------------- #
+# OPEN (future-resolving) question feed for the LIVE / forward harness
+# --------------------------------------------------------------------------- #
+def _open_question_set() -> dict:
+    """A tiny question_set mixing OPEN/RESOLVED, market/dataset, priced/unpriced
+    rows for ``load_forecastbench_open_questions``. ``_NOW`` is the test clock."""
+
+    return {
+        "forecast_due_date": QUESTION_SET_DATE,
+        "question_set": [
+            # 0: OPEN market manifold w/ price -> KEPT
+            {
+                "id": "mf-open",
+                "source": "manifold",
+                "question": "Will event A happen?",
+                "resolution_criteria": "Resolves YES if A occurs.",
+                "background": "Background about A.",
+                "url": "https://manifold.markets/q/a",
+                "freeze_datetime": "2030-01-01T00:00:00Z",
+                "freeze_datetime_value": "0.62",
+                "market_info_close_datetime": "2030-02-01T00:00:00Z",
+                "resolution_dates": ["2030-02-15T00:00:00Z", "2030-03-15T00:00:00Z"],
+            },
+            # 1: OPEN metaculus, close derived from market_info_close (no resolution_dates) -> KEPT
+            {
+                "id": "mc-open",
+                "source": "metaculus",
+                "question": "Will event B happen?",
+                "resolution_criteria": "Resolves YES if B occurs.",
+                "background": "",
+                "url": "https://metaculus.com/q/b",
+                "freeze_datetime_value": "0.20",
+                "market_info_close_datetime": "2031-01-01T00:00:00Z",
+            },
+            # 2: RESOLVED/PAST market manifold (close in the past) -> DROPPED
+            {
+                "id": "mf-past",
+                "source": "manifold",
+                "question": "Will event C have happened?",
+                "freeze_datetime_value": "0.40",
+                "resolution_dates": ["2000-01-01T00:00:00Z"],
+                "market_info_close_datetime": "2000-02-01T00:00:00Z",
+            },
+            # 3: DATASET source (fred) — even though future + has a value -> DROPPED
+            {
+                "id": "fred-open",
+                "source": "fred",
+                "question": "What will CPI be?",
+                "freeze_datetime_value": "0.55",
+                "resolution_dates": ["2030-06-01T00:00:00Z"],
+            },
+            # 4: OPEN market manifold but NO price -> DROPPED
+            {
+                "id": "mf-noprice",
+                "source": "manifold",
+                "question": "Will event D happen?",
+                "resolution_dates": ["2030-06-01T00:00:00Z"],
+            },
+            # 5: OPEN market manifold but NO derivable close -> DROPPED
+            {
+                "id": "mf-noclose",
+                "source": "manifold",
+                "question": "Will event E happen?",
+                "freeze_datetime_value": "0.30",
+                "market_info_close_datetime": "N/A",
+            },
+        ],
+    }
+
+
+_NOW = __import__("datetime").datetime(2026, 1, 1, tzinfo=__import__("datetime").timezone.utc)
+
+
+@pytest.fixture
+def patched_open_fetch(monkeypatch):
+    qs = _open_question_set()
+
+    def fake_fetch(url: str):
+        assert "question_sets" in url and "latest-llm.json" in url
+        return qs
+
+    monkeypatch.setattr(forecastbench, "_fetch_json", fake_fetch)
+    return fake_fetch
+
+
+def test_open_keeps_only_future_market_priced_questions(patched_open_fetch, tmp_path):
+    from forecasting.forecastbench import load_forecastbench_open_questions
+
+    rows = load_forecastbench_open_questions(date="latest", now=_NOW, cache_dir=tmp_path)
+    ids = {r["id"] for r in rows}
+    # Only the two OPEN, market-source, priced, future-resolution questions survive.
+    assert ids == {"forecastbench:mf-open", "forecastbench:mc-open"}
+
+
+def test_open_drops_resolved_dataset_unpriced_noclose(patched_open_fetch, tmp_path):
+    from forecasting.forecastbench import load_forecastbench_open_questions
+
+    rows = load_forecastbench_open_questions(date="latest", now=_NOW, cache_dir=tmp_path)
+    ids = {r["id"] for r in rows}
+    assert "forecastbench:mf-past" not in ids       # resolved / past close
+    assert "forecastbench:fred-open" not in ids      # dataset source
+    assert "forecastbench:mf-noprice" not in ids     # no freeze price
+    assert "forecastbench:mf-noclose" not in ids     # no derivable close
+
+
+def test_open_naive_now_is_treated_as_utc(patched_open_fetch, tmp_path):
+    # A tz-NAIVE ``now`` must NOT raise a TypeError (aware vs naive); it is
+    # treated as UTC, so the same questions survive as the aware-now call.
+    import datetime as _dt
+
+    from forecasting.forecastbench import load_forecastbench_open_questions
+
+    naive_now = _dt.datetime(2026, 1, 1)  # no tzinfo
+    rows = load_forecastbench_open_questions(date="latest", now=naive_now, cache_dir=tmp_path)
+    ids = {r["id"] for r in rows}
+    assert ids == {"forecastbench:mf-open", "forecastbench:mc-open"}
+
+
+def test_open_mapping_shape_close_vs_resolution_instant(patched_open_fetch, tmp_path):
+    from forecasting.forecastbench import load_forecastbench_open_questions
+
+    rows = {
+        r["id"]: r
+        for r in load_forecastbench_open_questions(date="latest", now=_NOW, cache_dir=tmp_path)
+    }
+
+    a = rows["forecastbench:mf-open"]
+    assert a == {
+        "id": "forecastbench:mf-open",
+        "source": "manifold",
+        "question": "Will event A happen?",
+        "description": "Background about A.",
+        "resolution_criteria": "Resolves YES if A occurs.",
+        "probability": 0.62,
+        # close == market_info_close_datetime (when present): the market stops
+        # trading 2030-02-01, BEFORE it resolves.
+        "close_time": "2030-02-01T00:00:00Z",
+        # resolution == MAX of resolution_dates (2030-03-15), not the earlier date.
+        "resolution_time": "2030-03-15T00:00:00Z",
+        "url": "https://manifold.markets/q/a",
+    }
+    assert isinstance(a["probability"], float)
+
+    # No resolution_dates -> both close and resolution fall back to market_info_close.
+    b = rows["forecastbench:mc-open"]
+    assert b["close_time"] == "2031-01-01T00:00:00Z"
+    assert b["resolution_time"] == "2031-01-01T00:00:00Z"
+    assert b["probability"] == 0.20
+
+
+def test_open_sources_filter_and_limit(patched_open_fetch, tmp_path):
+    from forecasting.forecastbench import load_forecastbench_open_questions
+
+    # Restrict to metaculus only -> manifold open question is excluded.
+    only_mc = load_forecastbench_open_questions(
+        date="latest", sources=("metaculus",), now=_NOW, cache_dir=tmp_path
+    )
+    assert {r["id"] for r in only_mc} == {"forecastbench:mc-open"}
+
+    # limit caps the produced rows.
+    capped = load_forecastbench_open_questions(
+        date="latest", limit=1, now=_NOW, cache_dir=tmp_path
+    )
+    assert len(capped) == 1
+
+
+def test_open_latest_url_uses_latest_llm_template(monkeypatch):
+    from forecasting.forecastbench import load_forecastbench_open_questions
+
+    seen: dict = {}
+
+    def fake_fetch(url: str):
+        seen["url"] = url
+        return {"question_set": []}
+
+    monkeypatch.setattr(forecastbench, "_fetch_json", fake_fetch)
+    load_forecastbench_open_questions(date="latest", now=_NOW)
+    assert seen["url"].endswith("/question_sets/latest-llm.json")
+
+
+def test_open_wired_into_market_nightly_load_open_markets(monkeypatch):
+    # source="forecastbench" routes load_open_markets -> load_forecastbench_open_questions,
+    # and the source is advertised by available_open_market_sources().
+    from forecasting import market_nightly_forecaster as mnf
+
+    monkeypatch.setattr(
+        "forecasting.forecastbench.load_forecastbench_open_questions",
+        lambda date="latest", limit=None: [{"id": "forecastbench:x", "source": "manifold"}],
+    )
+    rows = mnf.load_open_markets("forecastbench", limit=5)
+    assert rows == [{"id": "forecastbench:x", "source": "manifold"}]
+    assert "forecastbench" in mnf.available_open_market_sources()

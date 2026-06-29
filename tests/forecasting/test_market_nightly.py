@@ -28,6 +28,7 @@ from forecasting.market_nightly import (
     MARKET_NIGHTLY_ORIGIN,
     MarketNightlyRun,
     default_market_devig,
+    market_id,
     market_nightly_report,
     record_pending,
     sample_open_markets,
@@ -285,3 +286,188 @@ def test_record_pending_makes_no_network_call(tmp_path, monkeypatch):
     assert run.n_recorded == 1
     # The offline default de-vig is also pure (no socket).
     assert default_market_devig(_market("z", close="2026-07-01T00:00:00Z", yes=0.33)) == pytest.approx(0.33)
+
+
+# ── BOUNDED PARALLELISM over the per-market forecaster (max_workers > 1) ────────
+#
+# The forecaster is the slow seam (~75s search-agent calls); record_pending can
+# fan it out across a ThreadPoolExecutor while keeping every ledger write
+# serialized. These tests MOCK the forecaster (no live agent) and prove:
+#   * max_workers=4 records the SAME set as max_workers=1 (order-independent),
+#   * ledger writes are not corrupted under concurrency (one clean snapshot +
+#     market baseline per recorded market, correct agent/market numbers),
+#   * a forecaster that returns None for some markets still SKIPS exactly those,
+#   * the strictly-future-close foreknowledge filter STILL applies in parallel.
+
+
+def _future_markets(n, *, base_yes=0.6):
+    # All close strictly after AS_OF -> all admissible. Distinct yes prices so a
+    # per-market mix-up under concurrency would show up in the stored baselines.
+    return [
+        _market(f"m{i}", close="2026-07-01T00:00:00Z", yes=round(base_yes - 0.01 * i, 4))
+        for i in range(n)
+    ]
+
+
+def _recorded_index(run):
+    """market_id -> recorded row (so assertions are order-independent)."""
+    return {row["market_id"]: row for row in run.recorded}
+
+
+def test_parallel_records_same_set_as_sequential(tmp_path):
+    markets = _future_markets(8)
+    # A per-market forecast keyed off the market id so we can verify each market's
+    # OWN number landed on its OWN snapshot (no cross-thread bleed).
+    def forecaster(m):
+        return 0.10 + 0.05 * int(market_id(m)[1:])
+
+    seq_ledger = ForecastLedger(tmp_path / "seq.db")
+    seq = record_pending(seq_ledger, markets, AS_OF, forecaster, max_workers=1)
+
+    par_ledger = ForecastLedger(tmp_path / "par.db")
+    par = record_pending(par_ledger, markets, AS_OF, forecaster, max_workers=4)
+
+    assert par.n_recorded == seq.n_recorded == 8
+    # Same SET of markets recorded (order-independent), with identical numbers.
+    seq_by = _recorded_index(seq)
+    par_by = _recorded_index(par)
+    assert set(par_by) == set(seq_by) == {f"m{i}" for i in range(8)}
+    for mid, row in par_by.items():
+        assert row["agent_forecast"] == pytest.approx(seq_by[mid]["agent_forecast"])
+        assert row["market_devig_probability"] == pytest.approx(seq_by[mid]["market_devig_probability"])
+    # Deterministic RECORDED order: the parallel run still records in input order.
+    assert [r["market_id"] for r in par.recorded] == [f"m{i}" for i in range(8)]
+    assert [r["market_id"] for r in seq.recorded] == [f"m{i}" for i in range(8)]
+
+
+def test_parallel_ledger_writes_are_not_corrupted(tmp_path):
+    markets = _future_markets(6)
+    def forecaster(m):
+        # A distinct agent prob per market; its OWN market price comes from the dict.
+        return 0.20 + 0.05 * int(market_id(m)[1:])
+
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(ledger, markets, AS_OF, forecaster, max_workers=4)
+    assert run.n_recorded == 6
+
+    market_by_id = {m["id"]: m for m in markets}
+    for row in run.recorded:
+        qid = row["question_id"]
+        snaps = ledger.list_snapshots(qid)
+        # EXACTLY one snapshot per recorded question (no double-write race).
+        assert len(snaps) == 1
+        snap = snaps[0]
+        assert snap.forecast_origin == MARKET_NIGHTLY_ORIGIN
+        # The agent number on the snapshot is THIS market's number, not another's.
+        expected_agent = 0.20 + 0.05 * int(row["market_id"][1:])
+        assert snap.probability_or_distribution == pytest.approx(expected_agent)
+        # Exactly one market-price baseline, carrying THIS market's de-vigged price.
+        market_bl = [
+            b for b in ledger.list_baseline_comparisons(qid)
+            if b["baseline_type"] == MARKET_BASELINE_TYPE
+        ]
+        assert len(market_bl) == 1
+        assert market_bl[0]["probability_or_distribution"] == pytest.approx(
+            market_by_id[row["market_id"]]["probability"]
+        )
+    # One question per market id — no duplicates created under concurrency.
+    mn_qids = [
+        (getattr(q, "metadata", {}) or {}).get("market_id")
+        for q in ledger.list_questions()
+    ]
+    assert sorted(mn_qids) == sorted(m["id"] for m in markets)
+
+
+def test_parallel_skips_markets_whose_forecaster_returns_none(tmp_path):
+    markets = _future_markets(6)
+    # The forecaster declines (None) for the odd-indexed markets.
+    def forecaster(m):
+        i = int(market_id(m)[1:])
+        return None if i % 2 == 1 else 0.5
+
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(ledger, markets, AS_OF, forecaster, max_workers=4)
+
+    recorded_ids = {r["market_id"] for r in run.recorded}
+    assert recorded_ids == {"m0", "m2", "m4"}  # only the non-None forecasts
+    assert set(run.skipped_ids) == {"m1", "m3", "m5"}
+    # A None forecast must NOT have written a question/snapshot for that market.
+    stored_mids = {
+        (getattr(q, "metadata", {}) or {}).get("market_id")
+        for q in ledger.list_questions()
+    }
+    assert stored_mids == {"m0", "m2", "m4"}
+
+
+def test_parallel_still_applies_strictly_future_close_filter(tmp_path):
+    # A mix: future-close (admissible) + at/before as_of (must be rejected even
+    # under parallelism — the foreknowledge gate runs BEFORE any forecaster call).
+    markets = [
+        _market("future1", close="2026-07-01T00:00:00Z"),
+        _market("exact", close=AS_OF),                    # exactly at -> rejected
+        _market("future2", close="2026-08-01T00:00:00Z"),
+        _market("past", close="2026-05-01T00:00:00Z"),    # before -> rejected
+        _market("future3", close="2026-09-01T00:00:00Z"),
+    ]
+    seen = []
+    def forecaster(m):
+        seen.append(market_id(m))  # records which markets the agent was asked about
+        return 0.6
+
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(ledger, markets, AS_OF, forecaster, max_workers=4)
+
+    assert {r["market_id"] for r in run.recorded} == {"future1", "future2", "future3"}
+    assert set(run.rejected_ids) == {"exact", "past"}
+    # The rejected markets were never even handed to the (parallel) forecaster.
+    assert set(seen) == {"future1", "future2", "future3"}
+
+
+def test_parallel_a_raising_forecaster_skips_only_that_market(tmp_path):
+    # A forecaster that RAISES on one market (not just returns None) must not abort
+    # the sweep — that one market is skipped, the rest record cleanly.
+    markets = _future_markets(5)
+    def forecaster(m):
+        if market_id(m) == "m2":
+            raise RuntimeError("boom")
+        return 0.5
+
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(ledger, markets, AS_OF, forecaster, max_workers=4)
+
+    assert {r["market_id"] for r in run.recorded} == {"m0", "m1", "m3", "m4"}
+    assert "m2" in run.skipped_ids
+
+
+def test_fresh_agent_per_call_builds_a_new_agent_each_forecast():
+    # The CLI uses fresh_agent_per_call=True under parallelism so concurrent
+    # workers never share one (non-thread-safe) agent. Prove the factory is
+    # invoked once PER market when fresh, and only ONCE total when reused.
+    from forecasting import market_nightly_forecaster as mnf
+
+    class _FakeAgent:
+        def run_conversation(self, *_a, **_k):
+            return '{"probability": 0.5}'
+
+    builds = {"n": 0}
+
+    def fake_factory(**_kwargs):
+        builds["n"] += 1
+        return _FakeAgent()
+
+    markets = _future_markets(3)
+
+    fresh = mnf.build_informed_market_forecaster(
+        model="x", agent_factory=fake_factory, discover=False, fresh_agent_per_call=True
+    )
+    for m in markets:
+        assert fresh(m) == pytest.approx(0.5)
+    assert builds["n"] == 3  # one agent per call
+
+    builds["n"] = 0
+    reused = mnf.build_informed_market_forecaster(
+        model="x", agent_factory=fake_factory, discover=False
+    )
+    for m in markets:
+        assert reused(m) == pytest.approx(0.5)
+    assert builds["n"] == 1  # default: one agent, reused

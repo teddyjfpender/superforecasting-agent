@@ -179,6 +179,7 @@ def build_informed_market_forecaster(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     agent_factory: Callable[..., Any] | None = None,
     discover: bool = True,
+    fresh_agent_per_call: bool = False,
 ) -> Callable[[Mapping[str, Any]], float | None]:
     """Return a SEARCH-ENABLED informed ``AgentForecaster`` for MarketNightly.
 
@@ -198,6 +199,16 @@ def build_informed_market_forecaster(
     ``config["model"]`` with the same ``_resolve_active_model_id`` logic the
     quorum uses — ``config["model"]`` is a dict). ``agent_factory`` is an injection
     seam for tests so no live agent is constructed; it defaults to ``build_agent``.
+
+    ``fresh_agent_per_call`` (default ``False``) controls agent REUSE. The default
+    builds ONE agent on the first market and reuses it across the sweep — fine for
+    the SEQUENTIAL path, but that single agent carries conversation state and is
+    NOT thread-safe. When the caller forecasts markets CONCURRENTLY (e.g.
+    :func:`forecasting.market_nightly.record_pending` with ``max_workers > 1``),
+    pass ``fresh_agent_per_call=True`` so each forecast builds its OWN isolated
+    agent — no shared state can race between worker threads. This is the correct
+    fix for parallel use (isolation, not a lock: the agent call is the whole cost,
+    so locking it would serialize the slow part and defeat the parallelism).
     """
 
     if not model:
@@ -220,8 +231,11 @@ def build_informed_market_forecaster(
     if factory is None:
         from agent.agent_factory import build_agent as factory  # type: ignore[no-redef]
 
-    # The agent is expensive to construct; build it once on the first market and
-    # reuse it across the sweep (one search-enabled agent forecasts every market).
+    # The agent is expensive to construct; by default build it once on the first
+    # market and reuse it across the sweep (one search-enabled agent forecasts
+    # every market). Under ``fresh_agent_per_call`` we skip the cache and build a
+    # NEW agent on every forecast so concurrent workers never share one agent's
+    # (non-thread-safe) conversation state.
     _agent_cell: dict[str, Any] = {}
 
     # ``timeout`` is part of the public budget contract (callers may pass it) but
@@ -229,14 +243,19 @@ def build_informed_market_forecaster(
     # construction — so it is accepted-and-held here, NOT passed to the factory.
     del timeout
 
+    def _build_agent() -> Any:
+        return factory(
+            model=model or "",
+            enabled_toolsets=LIVE_ENABLED_TOOLSETS,
+            max_iterations=max_iterations,
+            platform="cli",
+        )
+
     def _get_agent() -> Any:
+        if fresh_agent_per_call:
+            return _build_agent()  # isolated per call — safe for parallel workers
         if "agent" not in _agent_cell:
-            _agent_cell["agent"] = factory(
-                model=model or "",
-                enabled_toolsets=LIVE_ENABLED_TOOLSETS,
-                max_iterations=max_iterations,
-                platform="cli",
-            )
+            _agent_cell["agent"] = _build_agent()
         return _agent_cell["agent"]
 
     def forecaster(market: Mapping[str, Any]) -> float | None:
@@ -425,9 +444,28 @@ def _metaculus_open_questions(*, limit: int) -> list[dict[str, Any]]:
     return out
 
 
+def _forecastbench_open_questions(*, limit: int) -> list[dict[str, Any]]:
+    """Serve the OPEN (future-resolving) MARKET questions of the latest
+    ForecastBench question set as market dicts for the live harness.
+
+    This routes the live forward benchmark at a CURATED, serious question set
+    (the four ForecastBench market sources — manifold/metaculus/polymarket/infer)
+    instead of the raw Manifold tail. The questions are still OPEN, so a live
+    web search is legitimate; the carried ``probability`` is the freeze market
+    price as of the question SET's date — a slightly-STALE baseline (documented in
+    ``forecastbench.load_forecastbench_open_questions``). Read-only; the
+    foreknowledge strictly-future-close filter is applied both here (open check)
+    and again by ``forecasting.market_nightly.sample_open_markets``."""
+
+    from forecasting.forecastbench import load_forecastbench_open_questions
+
+    return load_forecastbench_open_questions(date="latest", limit=max(int(limit), 1))
+
+
 _OPEN_MARKET_SOURCES: dict[str, Callable[..., list[dict[str, Any]]]] = {
     "manifold": _manifold_open_markets,
     "metaculus": _metaculus_open_questions,
+    "forecastbench": _forecastbench_open_questions,
 }
 
 

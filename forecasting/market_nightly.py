@@ -323,6 +323,7 @@ def record_pending(
     *,
     domain: str | None = "market_nightly",
     tags: Sequence[str] | None = None,
+    max_workers: int = 1,
 ) -> MarketNightlyRun:
     """Store a pending market-nightly entry for each sampled market.
 
@@ -339,6 +340,32 @@ def record_pending(
 
     ``agent_forecaster`` and ``market_devig`` are INJECTED seams; this function
     never reaches a live market API. Returns a :class:`MarketNightlyRun`.
+
+    ``max_workers`` (default 1) bounds parallelism of the SLOW part — the
+    ``agent_forecaster(market)`` search-agent calls (each ~75s). With
+    ``max_workers == 1`` the recorded/skipped SET is preserved versus the
+    historical sequential sweep; an intra-batch duplicate id whose first
+    occurrence FAILS (None forecast / devig raise) is now deduped earlier (a
+    more-correct skip-note reclassification on that narrow edge, not a
+    byte-identical note). With ``max_workers > 1`` the admissible markets are
+    forecast CONCURRENTLY in a :class:`ThreadPoolExecutor` (mirroring
+    :func:`forecasting.quorum.run_quorum`'s panelist dispatch), but the ORDER of
+    recording is preserved and EVERY ledger write stays serialized on the calling
+    thread — the create_question / create_snapshot / add_baseline_comparison
+    calls never race, and the recorded order is deterministic (input order of the
+    admissible markets) regardless of which forecast finished first.
+
+    THREAD-SAFETY CONTRACT: when ``max_workers > 1`` ONLY the injected
+    ``agent_forecaster`` runs concurrently (the SLOW pass-2 fan-out), so the
+    CALLER must supply a thread-safe ``agent_forecaster``. ``market_devig`` is
+    called in the SERIAL pass 3 on the calling thread (never from a worker), so
+    it carries no concurrency requirement. The production forecaster from
+    :func:`forecasting.market_nightly_forecaster.build_informed_market_forecaster`
+    reuses ONE agent (shared conversation state — NOT thread-safe), so the CLI
+    builds it with ``fresh_agent_per_call=True`` for parallel runs (a fresh agent
+    per forecast). We do NOT lock the agent calls: the agent call is the whole
+    cost, so serializing it would defeat the parallelism — isolation, not a lock,
+    is the correct fix.
     """
 
     devig = market_devig or default_market_devig
@@ -361,25 +388,84 @@ def record_pending(
                 existing_mids.add(str(existing))
     except Exception:  # noqa: BLE001 — a ledger without prior entries -> no dedup needed
         existing_mids = set()
-    for market in sampled:
+
+    # ── pass 1 (serial, cheap): admissibility / dedup / foreknowledge filter ────
+    # Resolve which markets are ELIGIBLE to forecast WITHOUT appending to the run
+    # lists yet — every skip/reject append is deferred to pass 3 so it lands in
+    # original ``sampled`` order (byte-identical to the historical single loop).
+    # ``admissible_index`` maps an admissible market's sampled-index -> its slot in
+    # the agent_probs array. Intra-batch duplicate ids are skipped against
+    # ``seen_in_batch`` (the parallel pass must not forecast the same id twice).
+    admissible: list[Mapping[str, Any]] = []
+    admissible_slot: dict[int, int] = {}
+    dup_skip: set[int] = set()
+    seen_in_batch: set[str] = set()
+    for sidx, market in enumerate(sampled):
         mid = market_id(market)
-        if mid and mid in existing_mids:
-            run.skipped_ids.append(mid)
-            run.notes.append(f"skipped {mid!r}: already has a market-nightly entry (idempotent re-sample)")
+        if mid and (mid in existing_mids or mid in seen_in_batch):
+            dup_skip.add(sidx)
             continue
         close = market_close_time(market)
         # (b) The invariant is the whole point — re-assert at store time. A market
         # whose close is not strictly after the forecast instant is rejected and
-        # counted, never stored.
+        # counted, never stored. This gate runs BEFORE any forecaster call so a
+        # non-future-close market never reaches the (parallel) agent.
         if not _is_strictly_future_close(close, as_of_norm):
+            continue  # rejection note emitted in pass 3 (original order)
+        admissible_slot[sidx] = len(admissible)
+        admissible.append(market)
+        if mid:
+            seen_in_batch.add(mid)
+
+    # ── pass 2 (the SLOW part — optionally parallel): agent_forecaster(market) ──
+    # Each entry becomes the agent's P(yes) for one admissible market. With
+    # max_workers == 1 this is a plain sequential loop (byte-identical to before);
+    # with max_workers > 1 the agent calls fan out across a bounded thread pool
+    # while preserving input order in ``agent_probs`` (results are placed by index).
+    workers = max(1, min(int(max_workers), len(admissible))) if admissible else 1
+    agent_probs: list[Any] = [None] * len(admissible)
+    if workers == 1:
+        for slot, market in enumerate(admissible):
+            agent_probs[slot] = agent_forecaster(market)
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(agent_forecaster, market): slot
+                for slot, market in enumerate(admissible)
+            }
+            for future in futures:
+                slot = futures[future]
+                # A single forecaster raising must not abort the sweep; treat it as
+                # a None forecast (skipped below), matching the "any failure -> None"
+                # contract the production forecaster already honours internally.
+                try:
+                    agent_probs[slot] = future.result()
+                except Exception:  # noqa: BLE001
+                    agent_probs[slot] = None
+
+    # ── pass 3 (serial — ALL ledger writes here): record in deterministic order ─
+    # Walk the ORIGINAL sampled order so every recorded/skipped/rejected append +
+    # note matches the historical single-loop sequence exactly. Nothing below
+    # touches a worker thread, so the ledger writes can never race and the
+    # recorded order is deterministic regardless of which forecast finished first.
+    for sidx, market in enumerate(sampled):
+        mid = market_id(market)
+        if sidx in dup_skip:
+            run.skipped_ids.append(mid)
+            run.notes.append(f"skipped {mid!r}: already has a market-nightly entry (idempotent re-sample)")
+            continue
+        if sidx not in admissible_slot:
+            close = market_close_time(market)
             run.rejected_ids.append(mid)
             run.notes.append(
                 f"rejected {mid!r}: close {close!r} is not strictly after as_of {as_of_norm!r} "
                 "(foreknowledge not ruled out by construction)"
             )
             continue
-
-        agent_p = _coerce_prob(agent_forecaster(market))
+        close = market_close_time(market)
+        agent_p = _coerce_prob(agent_probs[admissible_slot[sidx]])
         if agent_p is None:
             run.skipped_ids.append(mid)
             run.notes.append(f"skipped {mid!r}: agent forecaster returned a non-probability")
@@ -460,8 +546,6 @@ def record_pending(
                 "close_time": close,
             }
         )
-        if mid:
-            existing_mids.add(mid)  # so an intra-batch duplicate id is skipped too
 
     return run
 

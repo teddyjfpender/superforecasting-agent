@@ -2249,6 +2249,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     mn_run.add_argument("--model", default=None, help="Agent model id (overrides the resolved active model).")
     mn_run.add_argument("--seed", type=int, default=0, dest="rng_seed", help="Deterministic sampling seed (default: 0).")
     mn_run.add_argument("--max-iterations", type=int, default=None, dest="max_iterations", help="Agent tool-calling budget per market.")
+    mn_run.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        dest="parallel",
+        help=(
+            "Bounded concurrency over the per-market agent forecasts (default: 1 = "
+            "sequential). N>1 forecasts up to N markets at once (each gets its own "
+            "isolated agent); ledger writes stay serialized."
+        ),
+    )
     mn_run.add_argument("--json", action="store_true", help="Emit the run record as JSON.")
     mn_run.set_defaults(_forecast_handler=_cmd_market_nightly_run)
 
@@ -9741,12 +9752,29 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
 
     picked = sample_open_markets(candidates, as_of, n, rng_seed=seed)
 
+    # Bounded parallelism over the slow per-market agent calls. N>1 forecasts up to
+    # N markets concurrently; each worker gets its OWN agent (fresh_agent_per_call)
+    # since the reused single agent carries non-thread-safe conversation state.
+    # record_pending keeps every ledger write serialized regardless; N=1 preserves
+    # the sequential recorded/skipped SET (notes may differ only on a narrow
+    # intra-batch-duplicate edge — see record_pending's docstring).
+    max_workers = max(1, int(getattr(args, "parallel", 1) or 1))
+
     forecaster_kwargs: dict[str, Any] = {"model": model}
     if getattr(args, "max_iterations", None) is not None:
         forecaster_kwargs["max_iterations"] = int(args.max_iterations)
+    if max_workers > 1:
+        forecaster_kwargs["fresh_agent_per_call"] = True
     forecaster = build_informed_market_forecaster(**forecaster_kwargs)
 
-    run = record_pending(_ledger(args), picked["sampled"], as_of, forecaster, default_market_devig)
+    run = record_pending(
+        _ledger(args),
+        picked["sampled"],
+        as_of,
+        forecaster,
+        default_market_devig,
+        max_workers=max_workers,
+    )
 
     if getattr(args, "json", False):
         out = {
