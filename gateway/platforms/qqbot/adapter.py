@@ -771,6 +771,11 @@ class QQAdapter(BasePlatformAdapter):
             loop = asyncio.get_running_loop()
             return loop.create_task(coro)
         except RuntimeError:
+            # No running loop (e.g. tests invoking _dispatch_payload
+            # synchronously). Close the coroutine so it doesn't leak as an
+            # unawaited-coroutine warning.
+            if asyncio.iscoroutine(coro):
+                coro.close()
             return None
 
     def _dispatch_payload(self, payload: Dict[str, Any]) -> None:

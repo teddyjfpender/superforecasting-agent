@@ -187,7 +187,11 @@ class BlueBubblesAdapter(BasePlatformAdapter):
             return False
 
         app = web.Application()
-        app.router.add_get("/health", lambda _: web.Response(text="ok"))
+
+        async def _health(_request):
+            return web.Response(text="ok")
+
+        app.router.add_get("/health", _health)
         app.router.add_post(self.webhook_path, self._handle_webhook)
         self._runner = web.AppRunner(app)
         await self._runner.setup()

@@ -1915,9 +1915,15 @@ class DiscordAdapter(BasePlatformAdapter):
                 receiver = VoiceReceiver(vc, allowed_user_ids=self._allowed_user_ids)
                 receiver.start()
                 self._voice_receivers[guild_id] = receiver
-                self._voice_listen_tasks[guild_id] = asyncio.ensure_future(
-                    self._voice_listen_loop(guild_id)
-                )
+                _listen_coro = self._voice_listen_loop(guild_id)
+                try:
+                    _listen_loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    _listen_coro.close()
+                else:
+                    self._voice_listen_tasks[guild_id] = _listen_loop.create_task(
+                        _listen_coro
+                    )
             except Exception as e:
                 logger.warning("Voice receiver failed to start: %s", e)
 
@@ -2006,9 +2012,15 @@ class DiscordAdapter(BasePlatformAdapter):
         task = self._voice_timeout_tasks.pop(guild_id, None)
         if task:
             task.cancel()
-        self._voice_timeout_tasks[guild_id] = asyncio.ensure_future(
-            self._voice_timeout_handler(guild_id)
-        )
+        coro = self._voice_timeout_handler(guild_id)
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            # No running loop (e.g. tests invoking the handler synchronously).
+            # Close the coroutine so it doesn't leak an unawaited warning.
+            coro.close()
+            return
+        self._voice_timeout_tasks[guild_id] = loop.create_task(coro)
 
     async def _voice_timeout_handler(self, guild_id: int) -> None:
         """Auto-disconnect after VOICE_TIMEOUT seconds of inactivity."""

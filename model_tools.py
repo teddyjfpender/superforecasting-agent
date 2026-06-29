@@ -116,6 +116,7 @@ def _run_async(coro):
 
         worker_loop: Optional[asyncio.AbstractEventLoop] = None
         loop_ready = threading.Event()
+        worker_started = threading.Event()
 
         def _run_in_worker():
             nonlocal worker_loop
@@ -123,6 +124,7 @@ def _run_async(coro):
             loop_ready.set()
             try:
                 asyncio.set_event_loop(worker_loop)
+                worker_started.set()
                 return worker_loop.run_until_complete(coro)
             finally:
                 try:
@@ -153,6 +155,11 @@ def _run_async(coro):
                 except RuntimeError:
                     # Loop already closed — nothing to cancel.
                     pass
+            elif not worker_started.is_set() and asyncio.iscoroutine(coro):
+                # The worker never reached run_until_complete (e.g. the executor
+                # never started it), so the coroutine was never awaited. Close it
+                # to avoid an unawaited-coroutine warning / leak.
+                coro.close()
             raise
         finally:
             # wait=False: don't block the caller on a stuck coroutine. We've

@@ -1519,10 +1519,10 @@ class HermesACPAgent(acp.Agent):
 
                 def _notify_title_update(_title: str) -> None:
                     if conn:
-                        loop.call_soon_threadsafe(
-                            asyncio.create_task,
-                            self._send_session_info_update(session_id),
-                        )
+                        def _schedule_session_info_update() -> None:
+                            asyncio.create_task(self._send_session_info_update(session_id))
+
+                        loop.call_soon_threadsafe(_schedule_session_info_update)
 
                 maybe_auto_title(
                     self.session_manager._get_db(),

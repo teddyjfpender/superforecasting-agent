@@ -70,6 +70,13 @@ CHAT_COMPLETIONS_SSE_KEEPALIVE_SECONDS = 30.0
 MAX_NORMALIZED_TEXT_LENGTH = 65_536  # 64 KB cap for normalized content parts
 MAX_CONTENT_LIST_SIZE = 1_000  # Max items when content is an array
 
+# Typed application key for stashing the adapter on the aiohttp app. Using a
+# web.AppKey (instead of a bare string) silences aiohttp's NotAppKeyWarning.
+if AIOHTTP_AVAILABLE:
+    API_SERVER_ADAPTER_KEY = web.AppKey("api_server_adapter", Any)
+else:  # pragma: no cover - aiohttp unavailable
+    API_SERVER_ADAPTER_KEY = "api_server_adapter"
+
 
 def _coerce_port(value: Any, default: int = DEFAULT_PORT) -> int:
     """Parse a listen port without letting malformed env/config values crash startup."""
@@ -468,7 +475,7 @@ if AIOHTTP_AVAILABLE:
     @web.middleware
     async def cors_middleware(request, handler):
         """Add CORS headers for explicitly allowed origins; handle OPTIONS preflight."""
-        adapter = request.app.get("api_server_adapter")
+        adapter = request.app.get(API_SERVER_ADAPTER_KEY)
         origin = request.headers.get("Origin", "")
         cors_headers = None
         if adapter is not None:
@@ -3422,7 +3429,7 @@ class APIServerAdapter(BasePlatformAdapter):
         try:
             mws = [mw for mw in (cors_middleware, body_limit_middleware, security_headers_middleware) if mw is not None]
             self._app = web.Application(middlewares=mws, client_max_size=MAX_REQUEST_BYTES)
-            self._app["api_server_adapter"] = self
+            self._app[API_SERVER_ADAPTER_KEY] = self
             self._app.router.add_get("/health", self._handle_health)
             self._app.router.add_get("/health/detailed", self._handle_health_detailed)
             self._app.router.add_get("/v1/health", self._handle_health)

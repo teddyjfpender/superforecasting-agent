@@ -666,6 +666,8 @@ class GoogleChatAdapter(BasePlatformAdapter):
         if not self._loop_accepts_callbacks(loop):
             # Loop already closed (shutdown race). Safe to drop; Pub/Sub will
             # redeliver on next reconnect.
+            if asyncio.iscoroutine(coro):
+                coro.close()
             logger.warning("[GoogleChat] Loop not accepting callbacks; dropping event")
             return
         try:
@@ -677,6 +679,8 @@ class GoogleChatAdapter(BasePlatformAdapter):
                 log_level=logging.WARNING,
             )
         except RuntimeError:
+            if asyncio.iscoroutine(coro):
+                coro.close()
             logger.warning("[GoogleChat] Loop closed between check and submit")
             return
         if future is None:

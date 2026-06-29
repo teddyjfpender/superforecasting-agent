@@ -668,7 +668,11 @@ class TeamsAdapter(BasePlatformAdapter):
         try:
             # Set up aiohttp app first — the bridge adapter wires SDK routes into it
             aiohttp_app = web.Application()
-            aiohttp_app.router.add_get("/health", lambda _: web.Response(text="ok"))
+
+            async def _health(_request):
+                return web.Response(text="ok")
+
+            aiohttp_app.router.add_get("/health", _health)
 
             self._app = App(
                 client_id=self._client_id,
