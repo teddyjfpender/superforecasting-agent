@@ -75,6 +75,28 @@ def test_read_codex_tokens_missing(tmp_path, monkeypatch):
     assert exc.value.code == "codex_auth_missing"
 
 
+def test_read_codex_tokens_missing_message_offers_both_auth_paths(tmp_path, monkeypatch):
+    """The 'no credentials' message must offer BOTH the in-TUI `/auth` slash command
+    and the shell `superforecasting-agent auth` — in every context, not one or the other."""
+    hermes_home = tmp_path / "hermes"
+    hermes_home.mkdir(parents=True, exist_ok=True)
+    (hermes_home / "auth.json").write_text(json.dumps({"version": 1, "providers": {}}))
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+    for gateway in (False, True):
+        if gateway:
+            monkeypatch.setenv("_HERMES_GATEWAY", "1")
+        else:
+            monkeypatch.delenv("_HERMES_GATEWAY", raising=False)
+        with pytest.raises(AuthError) as exc:
+            _read_codex_tokens()
+        msg = str(exc.value)
+        assert exc.value.code == "codex_auth_missing"
+        # Both paths offered regardless of surface.
+        assert "`/auth`" in msg
+        assert "`superforecasting-agent auth`" in msg
+
+
 def test_resolve_codex_runtime_credentials_missing_access_token(tmp_path, monkeypatch):
     hermes_home = tmp_path / "hermes"
     _setup_hermes_auth(hermes_home, access_token="")

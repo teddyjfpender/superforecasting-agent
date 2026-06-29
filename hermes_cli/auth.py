@@ -52,6 +52,19 @@ from hermes_cli.nous_env import nous_inference_base_url, nous_portal_base_url
 
 
 _PRIMARY_CLI = "superforecasting-agent"
+
+
+def _auth_command_hint() -> str:
+    """Re-authentication hint offering BOTH paths (backtick-wrapped).
+
+    Rather than guess the context, surface both ways to authenticate: the in-TUI
+    ``/auth`` slash command (the device-code flow, tui_gateway/server.py) and the
+    shell command ``superforecasting-agent auth``. Whichever surface the user is
+    on, one of the two is the one they need.
+    """
+    return f"`/auth` (in the TUI) or `{_PRIMARY_CLI} auth` (from a shell)"
+
+
 from hermes_constants import OPENROUTER_BASE_URL
 from agent.credential_persistence import sanitize_borrowed_credential_payload
 from utils import atomic_replace, atomic_yaml_write, env_var_alias_enabled, is_truthy_value
@@ -2578,7 +2591,7 @@ def _read_codex_tokens(*, _lock: bool = True) -> Dict[str, Any]:
     state = _load_provider_state(auth_store, "openai-codex")
     if not state:
         raise AuthError(
-            f"No Codex credentials stored. Run `{_PRIMARY_CLI} auth` to authenticate.",
+            f"No Codex credentials stored. Run {_auth_command_hint()} to authenticate.",
             provider="openai-codex",
             code="codex_auth_missing",
             relogin_required=True,
@@ -2586,7 +2599,7 @@ def _read_codex_tokens(*, _lock: bool = True) -> Dict[str, Any]:
     tokens = state.get("tokens")
     if not isinstance(tokens, dict):
         raise AuthError(
-            f"Codex auth state is missing tokens. Run `{_PRIMARY_CLI} auth` to re-authenticate.",
+            f"Codex auth state is missing tokens. Run {_auth_command_hint()} to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_invalid_shape",
             relogin_required=True,
@@ -2595,14 +2608,14 @@ def _read_codex_tokens(*, _lock: bool = True) -> Dict[str, Any]:
     refresh_token = tokens.get("refresh_token")
     if not isinstance(access_token, str) or not access_token.strip():
         raise AuthError(
-            f"Codex auth is missing access_token. Run `{_PRIMARY_CLI} auth` to re-authenticate.",
+            f"Codex auth is missing access_token. Run {_auth_command_hint()} to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_missing_access_token",
             relogin_required=True,
         )
     if not isinstance(refresh_token, str) or not refresh_token.strip():
         raise AuthError(
-            f"Codex auth is missing refresh_token. Run `{_PRIMARY_CLI} auth` to re-authenticate.",
+            f"Codex auth is missing refresh_token. Run {_auth_command_hint()} to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_missing_refresh_token",
             relogin_required=True,
@@ -2752,7 +2765,7 @@ def refresh_codex_oauth_pure(
     del access_token  # Access token is only used by callers to decide whether to refresh.
     if not isinstance(refresh_token, str) or not refresh_token.strip():
         raise AuthError(
-            f"Codex auth is missing refresh_token. Run `{_PRIMARY_CLI} auth` to re-authenticate.",
+            f"Codex auth is missing refresh_token. Run {_auth_command_hint()} to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_missing_refresh_token",
             relogin_required=True,

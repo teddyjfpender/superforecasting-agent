@@ -2571,9 +2571,14 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
 
     api_key = runtime.get("api_key", "")
     if not api_key:
+        # Context-aware auth hint: inside the gateway/TUI the user must use the
+        # in-TUI `/auth` slash command, not the shell command (see
+        # hermes_cli.auth._auth_command_hint).
+        from hermes_cli.auth import _auth_command_hint
+
         raise ValueError(
             f"Delegation provider '{configured_provider}' resolved but has no API key. "
-            f"Set the appropriate environment variable or run 'superforecasting-agent auth'."
+            f"Set the appropriate environment variable or run {_auth_command_hint()}."
         )
 
     return {
