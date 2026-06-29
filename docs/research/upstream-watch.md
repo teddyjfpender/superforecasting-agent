@@ -269,3 +269,18 @@ idea, not code).
 5. **`/learn` skill distillation** (hermes `e32ebc6aa`, medium) — feeds the lesson/skill flywheel
    we already invest in; lets the SF agent capture a forecasting workflow it just ran into a
    durable skill.
+
+## New since last watch
+
+### 2026-06-29 (auto-watch run)
+Marks advanced: hermes-agent `9a0010fd→dc5ef20d` (+133), grok-cli unchanged, opencode `bda0ddc2→c3637753` (+26).
+
+- **hermes-agent (+133)** — ~80% is desktop/Electron + Windows-launcher work (irrelevant to our headless fork). Harvest-worthy:
+  - **Security:** reject unauthorized Telegram users *before* event construction (#40863); SSRF guard on yuanbao media `download_url` (#54470); browser private-network guard extended to `browser_get_images`. → fold into the security-triage harvest.
+  - **Gateway:** *preserve sessions across restarts* (#54442) — directly relevant to our `tui_gateway` durability (pairs with the compaction-fold + runtime-registry carve-outs).
+  - **Provider/auth:** `auto`+`base_url` bypasses the cloud API when a custom endpoint is configured (#3846); ignore stale non-Anthropic `base_url` across all resolution paths; MCP reconnect after OAuth even when the server is disabled. → relevant to our `build_agent` provider routing.
+  - **Perf:** parse config + plugin manifests with libyaml `CSafeLoader` (#54486); lazy-load gateway platform adapters (#54448) — startup speed.
+- **grok-cli** — no change.
+- **opencode (+26)** — mostly app/UI polish (sticky session header, timeline header, message-part UI v2, slash popover v2, sidebar reactivity). Notable: **`feat(llm): response reducer` (#34417)** — the render/agent-decoupling family of our deferred **observer-split** (tui-design-adoption.md BUILD-NOW #1); plus MCP OAuth reconnect and ServerAuth headers for an externally-served TUI thread.
+
+**Recommendation:** the hermes batch is large but churn-heavy; the genuinely harvestable cluster is the **security fixes + gateway session-persistence + provider custom-endpoint routing** — worth a targeted re-run of the `upstream-watch-audit` workflow (or a focused security/gateway port pass) rather than a blanket re-audit. opencode's response-reducer (#34417) is a concrete reference for the deferred observer-split.
