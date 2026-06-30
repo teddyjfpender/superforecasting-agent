@@ -307,7 +307,7 @@ class TestReadFileToolIntegration(unittest.TestCase):
         ])
         res = json.loads(read_file_tool(p))
         self.assertTrue(res.get("extracted_document"))
-        # Our gutter format is "{i:6d}|CONTENT"; line 1 ends with "1|".
+        # Our gutter format is "{i}|CONTENT"; line 1 ends with "1|".
         self.assertIn("1|", res["content"])
         self.assertIn("print(1)", res["content"])
 

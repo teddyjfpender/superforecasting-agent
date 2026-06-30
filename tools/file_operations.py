@@ -735,7 +735,7 @@ class ShellFileOperations(FileOperations):
             # Truncate long lines
             if len(line) > max_line_length:
                 line = line[:max_line_length] + "... [truncated]"
-            numbered.append(f"{i:6d}|{line}")
+            numbered.append(f"{i}|{line}")
         return '\n'.join(numbered)
     
     def _expand_path(self, path: str) -> str:
