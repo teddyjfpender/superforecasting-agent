@@ -890,6 +890,18 @@ def load_forecastbench_open_questions(
             question.get("resolution_criteria")
             or "Resolves YES/NO per the linked ForecastBench source's published criteria."
         )
+        # PRICE PROVENANCE: the carried ``probability`` is the FROZEN freeze-market
+        # price as of the question SET's freeze instant (``freeze_datetime``, the set's
+        # date — e.g. 2026-06-11), NOT a live quote. We stamp ``price_asof`` with that
+        # true vintage and flag ``baseline_is_frozen=True`` so the live-edge roll-up can
+        # quarantine these stale baselines from the agent-vs-market edge claim. Fall
+        # back to the resolved question-set DATE when the per-question freeze instant is
+        # absent/garbage (still a frozen vintage, never the live forecast instant).
+        price_asof = (
+            _clean_close_time(question.get("freeze_datetime"))
+            or _clean_close_time(question_set_date)
+            or f"{question_set_date}T00:00:00Z"
+        )
         out.append(
             {
                 "id": f"forecastbench:{qid}",
@@ -901,6 +913,9 @@ def load_forecastbench_open_questions(
                 "close_time": close_iso,
                 "resolution_time": resolution_iso,
                 "url": question.get("url"),
+                # The frozen-baseline provenance the live harness records honestly.
+                "price_asof": price_asof,
+                "baseline_is_frozen": True,
             }
         )
         if limit is not None and len(out) >= limit:

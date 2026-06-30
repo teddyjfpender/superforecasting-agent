@@ -360,6 +360,13 @@ def _manifold_open_markets(*, limit: int, min_traders: int = MIN_MARKET_TRADERS)
     rows = payload if isinstance(payload, list) else (payload.get("markets") if isinstance(payload, dict) else None)
     if not isinstance(rows, list):
         return []
+    # PRICE PROVENANCE: a direct Manifold fetch returns the LIVE quote, so its
+    # ``price_asof`` is this fetch instant (== the forecast as_of, modulo the few
+    # seconds the sweep takes). Flag it CONTEMPORANEOUS so it feeds the agent-vs-market
+    # edge (unlike a frozen ForecastBench baseline).
+    from forecasting.models import utc_now_iso
+
+    fetch_instant = utc_now_iso()
     out: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):
@@ -397,6 +404,8 @@ def _manifold_open_markets(*, limit: int, min_traders: int = MIN_MARKET_TRADERS)
                 "url": market.url,
                 "n_traders": n_traders,
                 "volume": volume,
+                "price_asof": fetch_instant,
+                "baseline_is_frozen": False,
             }
         )
     return out
@@ -424,6 +433,11 @@ def _metaculus_open_questions(*, limit: int) -> list[dict[str, Any]]:
         rows = None
     if not isinstance(rows, list):
         return []
+    # PRICE PROVENANCE: a direct Metaculus fetch is the LIVE community prediction, so
+    # ``price_asof`` is this fetch instant and the baseline is CONTEMPORANEOUS.
+    from forecasting.models import utc_now_iso
+
+    fetch_instant = utc_now_iso()
     out: list[dict[str, Any]] = []
     for row in rows:
         if not isinstance(row, dict):

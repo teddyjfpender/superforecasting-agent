@@ -10067,17 +10067,47 @@ def _cmd_market_nightly_report(args: argparse.Namespace) -> None:
     def _fmt(value: Any) -> str:
         return f"{value:.4f}" if isinstance(value, (int, float)) else "-"
 
-    print(f"pending: {report['n_pending']}  scored: {report['n_scored']}")
-    print(f"  mean agent Brier  = {_fmt(report.get('mean_agent_brier'))}")
-    print(f"  mean market Brier = {_fmt(report.get('mean_market_brier'))}")
+    n_contemp = report.get("n_contemporaneous", 0)
+    n_frozen = report.get("n_frozen_excluded", 0)
+    print(
+        f"pending: {report['n_pending']}  scored: {report['n_scored']}"
+        f"  (contemporaneous: {n_contemp}, frozen-excluded: {n_frozen})"
+    )
+    # HEADLINE agent-vs-market: CONTEMPORANEOUS baselines ONLY (frozen priors quarantined
+    # — a stale freeze price cannot contaminate the "agent beats the market" claim). The
+    # clean mean Briers and paired edge are all computed over the contemporaneous subset.
+    print(f"  HEADLINE agent vs market [contemporaneous baselines only, n={n_contemp}]")
+    print(f"    mean agent Brier  = {_fmt(report.get('contemporaneous_mean_agent_brier'))}")
+    print(f"    mean market Brier = {_fmt(report.get('contemporaneous_mean_market_brier'))}")
     edge = report.get("paired_agent_edge_mean_brier")
     lo = report.get("paired_agent_edge_ci95_low")
     hi = report.get("paired_agent_edge_ci95_high")
     band = f" [95% CI {lo:.4f}..{hi:.4f}]" if isinstance(lo, (int, float)) and isinstance(hi, (int, float)) else ""
-    print(f"  paired agent edge (market_brier - agent_brier) = {edge:+.4f}{band}" if isinstance(edge, (int, float)) else "  paired agent edge = -")
+    print(f"    paired agent edge (market_brier - agent_brier) = {edge:+.4f}{band}" if isinstance(edge, (int, float)) else "    paired agent edge = -")
     p = report.get("paired_p_value")
-    print(f"  paired p-value = {p:.4f}" if isinstance(p, (int, float)) else "  paired p-value = -")
-    print(f"  wins agent/market/ties = {report.get('paired_agent_wins', 0)}/{report.get('paired_baseline_wins', 0)}/{report.get('paired_ties', 0)}")
+    print(f"    paired p-value = {p:.4f}" if isinstance(p, (int, float)) else "    paired p-value = -")
+    print(f"    wins agent/market/ties = {report.get('paired_agent_wins', 0)}/{report.get('paired_baseline_wins', 0)}/{report.get('paired_ties', 0)}")
+    # DIAGNOSTICS — surfaced for transparency, NEVER the headline edge.
+    full = report.get("full_set") or {}
+    if full.get("n_scored"):
+        ue = full.get("paired_agent_edge_mean_brier")
+        print(
+            f"  [diagnostic] full set: all {full.get('n_scored', 0)} samples incl. "
+            f"{n_frozen} frozen-baseline excluded from edge"
+        )
+        print(f"    mean agent Brier  = {_fmt(full.get('mean_agent_brier'))}")
+        print(f"    mean market Brier = {_fmt(full.get('mean_market_brier'))}")
+        print(
+            f"    full-set edge (incl. frozen) = "
+            + (f"{ue:+.4f}" if isinstance(ue, (int, float)) else "-")
+        )
+    frozen = report.get("frozen_diagnostic") or {}
+    if frozen.get("n_scored"):
+        fe = frozen.get("paired_agent_edge_mean_brier")
+        print(
+            f"  [diagnostic] agent-vs-FROZEN-prior edge (n={frozen.get('n_scored', 0)}, NOT the claim) = "
+            + (f"{fe:+.4f}" if isinstance(fe, (int, float)) else "-")
+        )
 
 
 def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = None) -> None:

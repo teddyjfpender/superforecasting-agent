@@ -24,12 +24,15 @@ import pytest
 from forecasting import ForecastLedger
 from forecasting.models import OutcomeSpace
 from forecasting.market_nightly import (
+    CONTEMPORANEOUS_THRESHOLD_SECONDS,
     MARKET_BASELINE_TYPE,
     MARKET_NIGHTLY_ORIGIN,
     MarketNightlyRun,
+    baseline_is_contemporaneous,
     default_market_devig,
     market_id,
     market_nightly_report,
+    market_price_asof,
     record_pending,
     sample_open_markets,
     score_matured,
@@ -471,3 +474,199 @@ def test_fresh_agent_per_call_builds_a_new_agent_each_forecast():
     for m in markets:
         assert reused(m) == pytest.approx(0.5)
     assert builds["n"] == 1  # default: one agent, reused
+
+
+# ── CONTEMPORANEOUS-vs-FROZEN baseline distinguisher (the live-edge fix) ────────
+#
+# The headline "agent beats the market" edge must count ONLY markets whose market
+# price is a CONTEMPORANEOUS baseline (sampled at the forecast instant). A FROZEN
+# ForecastBench freeze price (stamped weeks before the run) is still scored, but
+# QUARANTINED from the headline edge so it cannot contaminate the claim.
+
+
+def _frozen_market(mid, *, close, yes=0.6, price_asof, **extra):
+    """A frozen-baseline market: its price_asof is a stale vintage (weeks-old)."""
+    return _market(mid, close=close, yes=yes, source="manifold",
+                   price_asof=price_asof, baseline_is_frozen=True, **extra)
+
+
+def _live_market(mid, *, close, yes=0.6, **extra):
+    """A contemporaneous (live-fetch) market: price_asof == the forecast instant."""
+    return _market(mid, close=close, yes=yes, source="manifold",
+                   price_asof=AS_OF, baseline_is_frozen=False, **extra)
+
+
+def test_classifier_priority_flag_then_lag_then_id_fallback():
+    # 1. explicit recorded contemporaneous flag wins.
+    assert baseline_is_contemporaneous(metadata={"contemporaneous": True}) is True
+    assert baseline_is_contemporaneous(metadata={"contemporaneous": False}) is False
+    # 2. baseline_is_frozen flag.
+    assert baseline_is_contemporaneous(metadata={"baseline_is_frozen": True}) is False
+    assert baseline_is_contemporaneous(metadata={"baseline_is_frozen": False}) is True
+    # 3. price_asof vs forecast_as_of GAP under the threshold -> contemporaneous.
+    near = baseline_is_contemporaneous(
+        metadata={"price_asof": "2026-06-01T00:00:00Z", "forecast_as_of": "2026-06-01T06:00:00Z"}
+    )
+    assert near is True  # 6h gap < 48h
+    far = baseline_is_contemporaneous(
+        metadata={"price_asof": "2026-06-01T00:00:00Z", "forecast_as_of": "2026-06-20T00:00:00Z"}
+    )
+    assert far is False  # 19 days >> 48h
+    # 4. LEGACY fallback for rows with no provenance: a forecastbench id is FROZEN,
+    #    any other (direct live) market is contemporaneous. The legacy fallback must
+    #    NOT trust an equal as_of (the pre-fix bug stamped frozen prices that way).
+    assert baseline_is_contemporaneous(metadata={}, market_id_str="forecastbench:abc") is False
+    assert baseline_is_contemporaneous(metadata={}, source="forecastbench") is False
+    assert baseline_is_contemporaneous(metadata={}, market_id_str="manifold:xyz") is True
+
+
+def test_threshold_boundary_is_inclusive():
+    fa = "2026-06-03T00:00:00Z"  # exactly THRESHOLD seconds after price_asof
+    pa = "2026-06-01T00:00:00Z"
+    assert (CONTEMPORANEOUS_THRESHOLD_SECONDS) == 48 * 3600
+    assert baseline_is_contemporaneous(metadata={"price_asof": pa, "forecast_as_of": fa}) is True
+
+
+def test_market_price_asof_prefers_explicit_else_forecast_instant():
+    # Explicit price_asof is used as the true vintage.
+    m = _market("m", close="2026-07-01T00:00:00Z", price_asof="2026-05-01T00:00:00Z")
+    assert market_price_asof(m, forecast_as_of=AS_OF) == "2026-05-01T00:00:00Z"
+    # No price_asof -> falls back to the forecast instant (the live-source default).
+    m2 = _market("m2", close="2026-07-01T00:00:00Z")
+    assert market_price_asof(m2, forecast_as_of=AS_OF) == AS_OF
+
+
+def test_record_pending_stamps_baseline_with_price_asof_not_forecast_time(tmp_path):
+    # The FIX: a frozen baseline's as_of must be its TRUE price vintage, NOT the
+    # forecast time (the old bug stamped the forecast time, hiding the staleness).
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(
+        ledger,
+        [_frozen_market("frozen", close="2026-07-01T00:00:00Z", price_asof="2026-05-01T00:00:00Z")],
+        AS_OF,
+        lambda m: 0.7,
+    )
+    qid = run.recorded[0]["question_id"]
+    bl = [b for b in ledger.list_baseline_comparisons(qid) if b["baseline_type"] == MARKET_BASELINE_TYPE][0]
+    # Baseline as_of is the PRICE vintage (2026-05-01), not the forecast AS_OF (2026-06-01).
+    assert bl["as_of"] == "2026-05-01T00:00:00Z"
+    assert bl["as_of"] != AS_OF
+    meta = bl["metadata"]
+    assert meta["price_asof"] == "2026-05-01T00:00:00Z"
+    assert meta["forecast_as_of"] == AS_OF
+    assert meta["contemporaneous"] is False
+    assert meta["baseline_is_frozen"] is True
+    assert meta["baseline_lag_seconds"] > CONTEMPORANEOUS_THRESHOLD_SECONDS
+    # The agent snapshot still carries the FORECAST instant (unchanged).
+    snap = ledger.list_snapshots(qid)[0]
+    assert snap.as_of == AS_OF
+    # And the recorded row surfaces the flag.
+    assert run.recorded[0]["contemporaneous"] is False
+
+
+def test_live_market_records_a_contemporaneous_baseline(tmp_path):
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(
+        ledger, [_live_market("live", close="2026-07-01T00:00:00Z")], AS_OF, lambda m: 0.7
+    )
+    qid = run.recorded[0]["question_id"]
+    bl = [b for b in ledger.list_baseline_comparisons(qid) if b["baseline_type"] == MARKET_BASELINE_TYPE][0]
+    assert bl["as_of"] == AS_OF  # live fetch == forecast instant
+    assert bl["metadata"]["contemporaneous"] is True
+    assert run.recorded[0]["contemporaneous"] is True
+
+
+def _resolve_no(ledger, qid):
+    ledger.resolve_question(question_id=qid, outcome="no", resolution_source="https://example.test/settle")
+
+
+def test_report_excludes_frozen_baseline_from_headline_edge_but_still_scores_it(tmp_path):
+    """The core live-edge fix: a FROZEN-baseline market is scored + reported, but it is
+    EXCLUDED from the headline agent-vs-market edge; a CONTEMPORANEOUS market is the
+    only one that enters the claim; the counts are surfaced (no silent drop)."""
+    ledger = ForecastLedger(tmp_path / "mn.db")
+
+    # One contemporaneous (live) market + two frozen (stale) ForecastBench-style markets.
+    sampled = [
+        _live_market("live", close="2026-06-15T00:00:00Z", yes=0.50),
+        _frozen_market("frozenA", close="2026-06-16T00:00:00Z", yes=0.05, price_asof="2026-05-01T00:00:00Z"),
+        _frozen_market("frozenB", close="2026-06-17T00:00:00Z", yes=0.05, price_asof="2026-05-02T00:00:00Z"),
+    ]
+    # Agent is confident YES everywhere; outcomes resolve YES, so the agent trivially
+    # "beats" the STALE/wrong frozen 0.05 priors — exactly the contamination we must
+    # quarantine from the headline edge.
+    run = record_pending(ledger, sampled, AS_OF, lambda m: 0.80)
+    assert run.n_recorded == 3
+    for row in run.recorded:
+        _resolve_yes(ledger, row["question_id"])
+
+    matured = score_matured(ledger, now="2026-07-01T00:00:00Z")
+    # The resolver scores ALL THREE (both arms) — its job is maturity + Brier.
+    assert matured["n_scored"] == 3
+    assert matured["n_contemporaneous"] == 1
+    assert matured["n_frozen_excluded"] == 2
+    flag_by = {s["market_id"]: s["contemporaneous"] for s in matured["scored"]}
+    assert flag_by == {"live": True, "frozenA": False, "frozenB": False}
+
+    report = market_nightly_report(ledger)
+    # Counts surfaced — frozen is NOT silently dropped.
+    assert report["n_scored"] == 3           # full scored set (both arms)
+    assert report["n_contemporaneous"] == 1
+    assert report["n_frozen_excluded"] == 2
+    # HEADLINE edge counts ONLY the contemporaneous market (1 win), NOT the 3 frozen wins.
+    assert report["paired_agent_wins"] == 1
+    assert report["paired_baseline_wins"] == 0
+    assert report["paired_ties"] == 0
+    # The frozen markets live in the diagnostic bucket (still scored), never the headline.
+    assert report["frozen_diagnostic"]["n_scored"] == 2
+    assert report["full_set"]["n_scored"] == 3
+    # Full-set edge would have counted all 3 wins — proving the headline is the SUBSET.
+    assert report["full_set"]["paired_agent_wins"] == 3
+
+
+def test_report_contemporaneous_only_when_all_live(tmp_path):
+    # Sanity: with no frozen markets, the headline edge == the full set (back-compat).
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    sampled = [
+        _live_market("l1", close="2026-06-15T00:00:00Z", yes=0.40),
+        _live_market("l2", close="2026-06-16T00:00:00Z", yes=0.45),
+    ]
+    run = record_pending(ledger, sampled, AS_OF, lambda m: 0.85)
+    for row in run.recorded:
+        _resolve_yes(ledger, row["question_id"])
+    score_matured(ledger, now="2026-07-01T00:00:00Z")
+    report = market_nightly_report(ledger)
+    assert report["n_contemporaneous"] == 2
+    assert report["n_frozen_excluded"] == 0
+    assert report["paired_agent_wins"] == 2
+    assert report["full_set"]["paired_agent_wins"] == 2
+
+
+def test_legacy_frozen_row_without_provenance_is_excluded(tmp_path):
+    # A row written BEFORE the fix has no price_asof/contemporaneous metadata, and its
+    # baseline as_of equals the forecast time (the old bug). It must STILL be excluded
+    # from the headline via the forecastbench-id fallback.
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    # market id carries the forecastbench prefix; NO price_asof / baseline_is_frozen.
+    legacy = _market("forecastbench:legacy", close="2026-06-15T00:00:00Z", yes=0.95, source="manifold")
+    live = _live_market("manifold:live", close="2026-06-16T00:00:00Z", yes=0.50)
+    run = record_pending(ledger, [legacy, live], AS_OF, lambda m: 0.80)
+    for row in run.recorded:
+        _resolve_yes(ledger, row["question_id"])
+    # SIMULATE a legacy row: strip the provenance metadata the fix now records, so the
+    # report must fall back to the forecastbench-id proxy to classify it as frozen.
+    with ledger._connect() as conn:
+        for row in run.recorded:
+            bl = [b for b in ledger.list_baseline_comparisons(row["question_id"])
+                  if b["baseline_type"] == MARKET_BASELINE_TYPE][0]
+            conn.execute(
+                "UPDATE baseline_comparisons SET metadata = ? WHERE id = ?",
+                ('{"market_nightly": true}', bl["id"]),
+            )
+    score_matured(ledger, now="2026-07-01T00:00:00Z")
+    report = market_nightly_report(ledger)
+    assert report["n_scored"] == 2
+    # The forecastbench-id legacy row is classified FROZEN and excluded from the headline.
+    assert report["n_contemporaneous"] == 1
+    assert report["n_frozen_excluded"] == 1
+    assert report["paired_agent_wins"] == 1

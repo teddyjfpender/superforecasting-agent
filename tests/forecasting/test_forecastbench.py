@@ -810,6 +810,10 @@ def test_open_mapping_shape_close_vs_resolution_instant(patched_open_fetch, tmp_
         # resolution == MAX of resolution_dates (2030-03-15), not the earlier date.
         "resolution_time": "2030-03-15T00:00:00Z",
         "url": "https://manifold.markets/q/a",
+        # PRICE PROVENANCE: the freeze price is a FROZEN baseline whose vintage is the
+        # per-question freeze_datetime (2030-01-01) — not the live forecast instant.
+        "price_asof": "2030-01-01T00:00:00Z",
+        "baseline_is_frozen": True,
     }
     assert isinstance(a["probability"], float)
 
@@ -818,6 +822,10 @@ def test_open_mapping_shape_close_vs_resolution_instant(patched_open_fetch, tmp_
     assert b["close_time"] == "2031-01-01T00:00:00Z"
     assert b["resolution_time"] == "2031-01-01T00:00:00Z"
     assert b["probability"] == 0.20
+    # mc-open has NO per-question freeze_datetime -> price_asof falls back to the
+    # question-SET freeze date (still a frozen vintage), and stays flagged frozen.
+    assert b["baseline_is_frozen"] is True
+    assert b["price_asof"].startswith(QUESTION_SET_DATE)
 
 
 def test_open_sources_filter_and_limit(patched_open_fetch, tmp_path):

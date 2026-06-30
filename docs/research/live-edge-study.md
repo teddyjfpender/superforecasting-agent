@@ -317,6 +317,71 @@ market) is now measured on the *same* questions ForecastBench scores, so the res
 directly comparable to its published superforecaster/LLM baselines. Scoring is on the market's clock via
 `score_matured` (cron `948b7e4b`); these foreknowledge-proof snapshots are deliberately **not** re-forecast.
 
+### Iteration 6 - 2026-06-30 · first SCORED batch (4 of 13 due settled); contemporaneous edge is n=1, no contested-question edge yet
+
+The market clock turned over the first resolutions. Of the 13 entries whose close had passed, **4 settled
+with real source outcomes and were scored; 9 were correctly left pending** (no confirmed resolution yet, or
+close still ahead). This is the first time the harness produced agent-vs-market Brier on questions it could
+not have foreknown, so the discipline that matters here is **provenance**, not the headline delta. Most of
+what settled was scored against a **frozen ForecastBench freeze price**, and the now-fixed
+contemporaneous-only edge logic (`market_nightly.py`, `baseline_is_contemporaneous` + the
+`frozen_diagnostic` quarantine) is exactly what keeps that stale baseline out of the "agent beats the
+market" claim.
+
+**The four scored markets (agent Brier vs market Brier, realized outcome):**
+
+| question | id | agent P(yes) | market P(yes) | outcome | agent Brier | market Brier | baseline |
+|---|---|---|---|---|---|---|---|
+| Carolina Hurricanes win 2026 Stanley Cup | `fq_45e2624f4498` | 0.999 | 0.575 | yes | 0.000001 | 0.180625 | **frozen** |
+| Vegas Golden Knights win 2026 Stanley Cup | `fq_870d9c961d0b` | 0.001 | 0.422 | no | 0.000001 | 0.178084 | **frozen** |
+| X.com accessible in the UK on 30 Jun | `fq_aa9d042531ec` | 0.940 | 0.9712 | yes | 0.003600 | 0.000827 | **frozen** |
+| "Jackass: Best and Last" opens > $25M domestic | `fq_6d4b8e332580` | 0.003 | 0.108 | no | 0.000009 | 0.011625 | **contemporaneous** |
+
+**Why 3 of the 4 do not count toward edge (frozen-price provenance artifact).** The three ForecastBench
+markets carry a freeze price stamped weeks before the forecast instant, so the head-to-head is not
+contemporaneous and is quarantined into the `frozen_diagnostic` bucket. The two NHL Stanley Cup
+settlements are the clearest illustration of *why this exclusion is mandatory*: by the agent's forecast
+time the Cup was effectively decided, so the agent showed **0.999 (Carolina) / 0.001 (Vegas)** against a
+**stale 0.575 / 0.422** freeze baseline. That gap is the agent reading a near-settled outcome versus a
+weeks-old prior, not the agent out-forecasting a live market. Counting it would manufacture a fake edge.
+The third frozen market, X.com, is the inverse caution: there the frozen baseline (0.971) actually *beat*
+the agent (0.940), but because that baseline is also a stale freeze price it counts neither for nor against
+the agent. Frozen diagnostic for transparency: n=3, mean agent Brier **0.00120**, mean market Brier
+**0.11985**, paired agent edge **+0.11864** (agent 2 / baseline 1, p=0.038) -- impressive-looking and
+**deliberately excluded** from the claim.
+
+**The contemporaneous subset -- the only part that counts toward edge -- is n=1.** Exactly one settled
+market carried a genuinely live-priced baseline: the Manifold "Jackass: Best and Last" opening-weekend
+box-office question. It was a **low-probability NO that both the agent and the market called correctly**;
+the agent was marginally sharper (Brier **0.000009** vs **0.011625**, paired edge **+0.011616**, agent 1 /
+market 0). With n=1 there is **no bootstrap CI and no p-value** -- nothing statistically meaningful, and
+nothing about hard, contested questions. **Honest verdict: at n=1 the contemporaneous live-edge is
+undetermined; no edge on contested questions is demonstrated.** The one genuinely-contested fair market in
+this batch, X.com, would have been the interesting test, but it is frozen-price (ForecastBench), so it is
+excluded; had it been contemporaneous it would have gone *to the market* (market 0.971 vs agent 0.940), so
+its exclusion is not cherry-picking in the agent's favor.
+
+**Full set (transparency only, NOT the claim):** n=4, mean agent Brier **0.00090**, mean market Brier
+**0.09279**, paired agent edge **+0.09189** (agent 3 / baseline 1), bootstrap p **0.0044**, CI95
+**[+0.0044, +0.1794]**. This number looks like a decisive win and is reported here precisely so it is on
+the record that it is **inflated by the two frozen near-settled Stanley Cup pairs** and must not be read as
+live skill.
+
+**Surfaced edge confirms the fix.** `forecast --db <ledger> market-nightly report --json` now reports the
+**contemporaneous-only headline**: `n_scored: 4`, `n_contemporaneous: 1`, `n_frozen_excluded: 3`,
+`paired_agent_edge_mean_brier: 0.011616`, `paired_agent_wins: 1`, `paired_baseline_wins: 0`,
+`paired_agent_edge_ci95_low: null`, `paired_p_value: null` (n=1), with the inflated full-set
+(`+0.09189`) and frozen (`+0.11864`) numbers preserved in their `full_set` / `frozen_diagnostic`
+sub-objects. The surfaced headline matches the hand-computed contemporaneous result exactly.
+
+**Methodology change made load-bearing.** The agent-vs-market edge is now **restricted to contemporaneous
+baselines** (price vintage within 48h of the forecast instant); a frozen ForecastBench freeze price is
+scored and shown but can never enter the headline edge or its win counts. The standing decision rule is
+unchanged: the live-edge claim stays **undetermined** until a contemporaneous, multi-question, statistically
+powered batch resolves. 9 of the 13 due entries are still legitimately pending, and the large ForecastBench
+cohort settles on its own clock; the next scored batch will be the first with enough contemporaneous pairs
+to attempt a real CI.
+
 ## 5. Limitations
 
 - The decisive accuracy proof is **longitudinal**; in-session we can show orthogonality + a seeded

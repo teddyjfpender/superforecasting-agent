@@ -266,10 +266,15 @@ def run_due_reviews(
             # Only announce what was NEWLY scored this sweep, so a fully-scored set
             # does not re-emit the same alert on every cron run.
             if matured.get("n_newly_scored"):
+                # Surface the contemporaneous/frozen split: the agent-beats-market EDGE
+                # only counts contemporaneous baselines (frozen ForecastBench priors are
+                # scored but quarantined from the claim).
                 sections.append(
                     "Market-nightly scoring\n"
                     f"scored {matured['n_newly_scored']} newly-matured benchmark entr(ies); "
-                    f"{matured['n_still_pending']} still pending\n"
+                    f"{matured['n_still_pending']} still pending "
+                    f"(contemporaneous: {matured.get('n_contemporaneous', 0)}, "
+                    f"frozen-baseline excluded from edge: {matured.get('n_frozen_excluded', 0)})\n"
                 )
 
     return "\n".join(sections)

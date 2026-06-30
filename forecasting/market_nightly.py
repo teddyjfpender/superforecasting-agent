@@ -72,6 +72,16 @@ MARKET_BASELINE_TYPE = "market_price"
 # market-nightly entries without scanning every snapshot field.
 PENDING_MARKER = "market_nightly"
 
+# CONTEMPORANEOUS-BASELINE THRESHOLD. The live-edge "agent beats the market" claim is
+# only honest when the market price the agent is measured against was sampled at (very
+# nearly) the SAME instant as the forecast. A baseline whose price vintage
+# (``price_asof``) is older than this gap from the forecast instant is a FROZEN prior
+# (e.g. a ForecastBench freeze price stamped weeks before the run) and is QUARANTINED
+# from the headline edge — it is still scored, just in a separate diagnostic bucket.
+# 48h is generous enough to absorb a same-day/next-day live fetch while still excluding
+# a multi-day-stale frozen baseline.
+CONTEMPORANEOUS_THRESHOLD_SECONDS = 48 * 3600
+
 
 # ── injected-seam contracts (Callables — no live API in this module) ──────────
 #
@@ -207,6 +217,89 @@ def _is_strictly_future_close(close: str | None, as_of: str) -> bool:
     if close_dt is None or as_of_dt is None:
         return False
     return close_dt > as_of_dt
+
+
+# ── baseline price-provenance (the contemporaneous-vs-frozen distinguisher) ────
+
+
+def market_price_asof(market: Mapping[str, Any], *, forecast_as_of: str) -> str:
+    """The TRUE price-sample timestamp of this market's baseline YES price.
+
+    A direct manifold/metaculus/polymarket fetch carries the LIVE quote, so its
+    ``price_asof`` is the fetch instant (which the source adapters now stamp, and
+    which equals the forecast instant to within the sweep duration). A
+    forecastbench-sourced market carries a FROZEN freeze price whose vintage is the
+    set's ``freeze_datetime`` — recorded as ``price_asof``. When a market dict omits
+    an explicit ``price_asof`` we fall back to the forecast instant (the safe
+    assumption for a live source); a forecastbench id is additionally treated as
+    frozen by :func:`baseline_is_contemporaneous` so a missing stamp on a legacy
+    frozen row is never mis-counted as live."""
+
+    raw = _first(market, "price_asof", "priceAsOf", "price_as_of")
+    if raw is not None and str(raw).strip():
+        try:
+            parsed = parse_timestamp(str(raw))
+        except Exception:  # noqa: BLE001 — a garbage stamp falls back to forecast instant
+            parsed = None
+        if parsed:
+            return parsed
+    return forecast_as_of
+
+
+def _baseline_lag_seconds(price_asof: str | None, forecast_as_of: str | None) -> float | None:
+    """``forecast_as_of - price_asof`` in seconds (how STALE the baseline price is), or
+    None when either instant is unparseable."""
+
+    pa = timestamp_to_datetime(price_asof) if price_asof else None
+    fa = timestamp_to_datetime(forecast_as_of) if forecast_as_of else None
+    if pa is None or fa is None:
+        return None
+    return (fa - pa).total_seconds()
+
+
+def baseline_is_contemporaneous(
+    *,
+    metadata: Mapping[str, Any] | None = None,
+    forecast_as_of: str | None = None,
+    market_id_str: str | None = None,
+    source: str | None = None,
+) -> bool:
+    """Classify a recorded market baseline as CONTEMPORANEOUS (live) vs FROZEN (stale).
+
+    Robust to both the new honestly-recorded rows AND legacy rows written before the
+    fix, in priority order:
+
+      1. an explicit recorded ``contemporaneous`` bool (newest rows),
+      2. an explicit recorded ``baseline_is_frozen`` bool,
+      3. a recorded ``price_asof`` vs ``forecast_as_of`` GAP under the threshold,
+      4. FALLBACK for legacy rows that predate the provenance fields — a
+         ``forecastbench:`` market id (or ``forecastbench`` source) is FROZEN; any
+         other (direct live-fetch) market is contemporaneous.
+
+    The legacy fallback deliberately does NOT trust a baseline ``as_of`` that equals
+    the forecast instant: the pre-fix bug stamped every frozen freeze price with the
+    forecast time, so that gap reads as zero and would mis-classify a stale baseline
+    as live. The id/source proxy is what survives that bug."""
+
+    meta = metadata or {}
+    flag = meta.get("contemporaneous")
+    if isinstance(flag, bool):
+        return flag
+    frozen = meta.get("baseline_is_frozen")
+    if isinstance(frozen, bool):
+        return not frozen
+    price_asof = meta.get("price_asof")
+    fa = meta.get("forecast_as_of") or forecast_as_of
+    if price_asof:
+        lag = _baseline_lag_seconds(price_asof, fa)
+        if lag is not None:
+            return lag <= CONTEMPORANEOUS_THRESHOLD_SECONDS
+    # Legacy fallback: a frozen ForecastBench baseline is identifiable by its id/source.
+    mid = str(market_id_str or "").strip().lower()
+    src = str(source or "").strip().lower()
+    if mid.startswith("forecastbench") or src.startswith("forecastbench"):
+        return False
+    return True
 
 
 # ── 1. the pure, seeded foreknowledge-proof sampler ───────────────────────────
@@ -479,6 +572,33 @@ def record_pending(
             run.notes.append(f"skipped {mid!r}: market de-vig failed ({exc})")
             continue
 
+        # PRICE PROVENANCE (the contemporaneous-vs-frozen distinguisher). The agent
+        # snapshot is stamped with the FORECAST instant (as_of_norm); the market
+        # baseline is instead stamped with the price's TRUE vintage (``price_asof``) so a
+        # frozen ForecastBench freeze price (sampled weeks before the run) is no longer
+        # disguised as a forecast-time quote. We record the explicit lag + contemporaneous
+        # flag so the live-edge roll-up can quarantine a stale baseline from the "agent
+        # beats the market" claim without re-deriving it.
+        explicit_price_asof = _first(market, "price_asof", "priceAsOf", "price_as_of")
+        price_asof = market_price_asof(market, forecast_as_of=as_of_norm)
+        baseline_lag = _baseline_lag_seconds(price_asof, as_of_norm)
+        explicit_frozen = market.get("baseline_is_frozen")
+        if isinstance(explicit_frozen, bool):
+            is_contemporaneous = not explicit_frozen
+        elif explicit_price_asof is not None and str(explicit_price_asof).strip():
+            # A market that carries its TRUE price vintage: classify by the lag.
+            is_contemporaneous = (
+                baseline_lag is None or baseline_lag <= CONTEMPORANEOUS_THRESHOLD_SECONDS
+            )
+        else:
+            # No explicit provenance — DON'T trust the fallback-to-forecast-instant lag
+            # (it reads as zero and would mis-classify a frozen ForecastBench prior as
+            # live). Use the id/source proxy instead (forecastbench => frozen).
+            is_contemporaneous = baseline_is_contemporaneous(
+                forecast_as_of=as_of_norm, market_id_str=mid,
+                source=str(_first(market, "source", "platform") or ""),
+            )
+
         title = str(_first(market, "question", "title", "name") or f"Market {mid}").strip() or f"Market {mid}"
         criteria = str(
             _first(market, "resolution_criteria", "description")
@@ -521,6 +641,11 @@ def record_pending(
                 "market_close_time": close,
                 "agent_forecast": agent_p,
                 "market_devig_probability": market_p,
+                # Carry the baseline provenance onto the snapshot too, so score_matured
+                # can propagate the contemporaneous flag without re-reading the baseline.
+                "baseline_price_asof": price_asof,
+                "baseline_contemporaneous": is_contemporaneous,
+                "baseline_is_frozen": not is_contemporaneous,
             },
         )
 
@@ -529,11 +654,16 @@ def record_pending(
             source=str(_first(market, "source", "platform") or f"market:{mid}"),
             baseline_type=MARKET_BASELINE_TYPE,
             probability_or_distribution=market_p,
-            as_of=as_of_norm,
+            as_of=price_asof,
             metadata={
                 "market_nightly": True,
                 "market_id": mid,
                 "raw_yes_price": market_yes_price(market),
+                "price_asof": price_asof,
+                "forecast_as_of": as_of_norm,
+                "baseline_lag_seconds": baseline_lag,
+                "contemporaneous": is_contemporaneous,
+                "baseline_is_frozen": not is_contemporaneous,
             },
         )
 
@@ -546,6 +676,9 @@ def record_pending(
                 "agent_forecast": agent_p,
                 "market_devig_probability": market_p,
                 "close_time": close,
+                "price_asof": price_asof,
+                "baseline_lag_seconds": baseline_lag,
+                "contemporaneous": is_contemporaneous,
             }
         )
 
@@ -581,6 +714,46 @@ def _market_nightly_questions(ledger: Any) -> list[Any]:
         if meta.get("market_nightly") or MARKET_NIGHTLY_ORIGIN in (getattr(question, "tags", []) or []):
             out.append(question)
     return out
+
+
+def _market_baseline_row(ledger: Any, question_id: str) -> dict[str, Any] | None:
+    """The recorded market-price baseline ROW (with its provenance metadata), or None."""
+
+    try:
+        baselines = ledger.list_baseline_comparisons(question_id)
+    except Exception:  # noqa: BLE001
+        return None
+    for baseline in baselines:
+        if str(baseline.get("baseline_type") or "").lower() == MARKET_BASELINE_TYPE:
+            return baseline
+    return None
+
+
+def _snapshot_baseline_is_contemporaneous(ledger: Any, snapshot: Any) -> bool:
+    """Classify a market-nightly snapshot's MARKET baseline as contemporaneous vs frozen.
+
+    Reads the authoritative baseline-row provenance metadata when present, else the
+    snapshot's carried provenance, else the legacy id/source fallback — so the
+    distinguisher works for both honestly-recorded and pre-fix rows."""
+
+    snap_meta = getattr(snapshot, "metadata", None) or {}
+    market_id_str = snap_meta.get("market_id")
+    forecast_as_of = getattr(snapshot, "as_of", None) or snap_meta.get("as_of")
+
+    row = _market_baseline_row(ledger, snapshot.question_id)
+    if row is not None:
+        return baseline_is_contemporaneous(
+            metadata=row.get("metadata") or {},
+            forecast_as_of=forecast_as_of,
+            market_id_str=market_id_str,
+            source=str(row.get("source") or ""),
+        )
+    # No baseline row resolvable — fall back to the snapshot's carried provenance.
+    return baseline_is_contemporaneous(
+        metadata=snap_meta,
+        forecast_as_of=forecast_as_of,
+        market_id_str=market_id_str,
+    )
 
 
 # ── 3. score the matured entries ───────────────────────────────────────────────
@@ -661,6 +834,10 @@ def score_matured(ledger: Any, *, now: str | None = None) -> dict[str, Any]:
         except Exception as exc:
             notes.append(f"market-baseline scoring failed for {qid}: {exc}")
 
+        # Propagate the contemporaneous flag onto each scored entry: the resolver
+        # scores BOTH arms (its job is maturity + Brier), but the EDGE only counts
+        # contemporaneous pairs, so the cron/report must be able to read this flag.
+        contemporaneous = _snapshot_baseline_is_contemporaneous(ledger, snapshot)
         scored.append(
             {
                 "question_id": qid,
@@ -670,15 +847,20 @@ def score_matured(ledger: Any, *, now: str | None = None) -> dict[str, Any]:
                 "market_brier": market_brier,
                 "outcome": resolution.outcome,
                 "newly_scored": not already_scored,
+                "contemporaneous": contemporaneous,
+                "baseline_is_frozen": not contemporaneous,
             }
         )
 
     n_newly_scored = sum(1 for s in scored if s["newly_scored"])
+    n_contemporaneous = sum(1 for s in scored if s["contemporaneous"])
     return {
         "scored": scored,
         "still_pending": still_pending,
         "n_scored": len(scored),
         "n_newly_scored": n_newly_scored,
+        "n_contemporaneous": n_contemporaneous,
+        "n_frozen_excluded": len(scored) - n_contemporaneous,
         "n_still_pending": len(still_pending),
         "now": now_norm,
         "notes": notes,
@@ -688,20 +870,44 @@ def score_matured(ledger: Any, *, now: str | None = None) -> dict[str, Any]:
 # ── 4. the read-only report ────────────────────────────────────────────────────
 
 
+def _mean(values: list[float]) -> float | None:
+    return (sum(values) / len(values)) if values else None
+
+
+def _paired_block(ledger: Any, pairs: list[tuple[Any, Any]]) -> dict[str, Any]:
+    """The P0.2 seeded paired-bootstrap summary over agent/market score pairs (or
+    the empty stub when there are no pairs)."""
+
+    return ledger._paired_brier_summary(pairs) if pairs else _empty_paired()
+
+
 def market_nightly_report(ledger: Any) -> dict[str, Any]:
     """READ-ONLY roll-up of the market-nightly benchmark.
 
-    Reports ``n_pending`` (recorded but not yet scored), ``n_scored``, the mean
-    agent Brier vs the mean market Brier, and the paired agent-edge (agent vs
-    market) with the P0.2 seeded paired-bootstrap p-value/CI — computed by
-    reusing :meth:`ForecastLedger._paired_brier_summary` over the matched
-    agent/market score pairs. Never scores or mutates anything.
+    The HEADLINE agent-vs-market edge counts ONLY markets whose market baseline is a
+    CONTEMPORANEOUS price (sampled at — within :data:`CONTEMPORANEOUS_THRESHOLD_SECONDS`
+    of — the forecast instant). Frozen-baseline markets (e.g. a ForecastBench freeze
+    price stamped weeks before the run) are STILL scored and reported, but in a
+    SEPARATE ``frozen_diagnostic`` bucket ("agent-vs-frozen-prior") that NEVER feeds the
+    headline ``paired_agent_edge_*`` / win counts — a stale baseline cannot contaminate
+    the "agent beats the market" claim. The full set (contemporaneous + frozen) is also
+    surfaced under ``full_set`` so nothing is silently dropped; ``n_frozen_excluded``
+    flags how many scored pairs were quarantined from the headline.
+
+    Reuses :meth:`ForecastLedger._paired_brier_summary` over the matched agent/market
+    score pairs. Never scores or mutates anything.
     """
 
     n_pending = 0
-    pairs: list[tuple[Any, Any]] = []
+    contemporaneous_pairs: list[tuple[Any, Any]] = []
+    frozen_pairs: list[tuple[Any, Any]] = []
+    all_pairs: list[tuple[Any, Any]] = []
     agent_briers: list[float] = []
     market_briers: list[float] = []
+    c_agent_briers: list[float] = []
+    c_market_briers: list[float] = []
+    f_agent_briers: list[float] = []
+    f_market_briers: list[float] = []
 
     for snapshot in _pending_market_nightly_snapshots(ledger):
         qid = snapshot.question_id
@@ -721,26 +927,67 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
             n_pending += 1
             continue
 
-        agent_briers.append(float(agent_score.brier_score))
-        market_briers.append(float(market_score.brier_score))
+        a_brier = float(agent_score.brier_score)
+        m_brier = float(market_score.brier_score)
+        agent_briers.append(a_brier)
+        market_briers.append(m_brier)
         # _paired_brier_summary computes deltas as baseline_brier - agent_brier
         # (POSITIVE == agent better), exactly the agent-vs-market edge we want.
-        pairs.append((agent_score, market_score))
+        pair = (agent_score, market_score)
+        all_pairs.append(pair)
+        if _snapshot_baseline_is_contemporaneous(ledger, snapshot):
+            contemporaneous_pairs.append(pair)
+            c_agent_briers.append(a_brier)
+            c_market_briers.append(m_brier)
+        else:
+            frozen_pairs.append(pair)
+            f_agent_briers.append(a_brier)
+            f_market_briers.append(m_brier)
 
-    paired = ledger._paired_brier_summary(pairs) if pairs else _empty_paired()
+    # HEADLINE: the agent-vs-market edge is the CONTEMPORANEOUS-only paired summary.
+    headline = _paired_block(ledger, contemporaneous_pairs)
+    full = _paired_block(ledger, all_pairs)
+    frozen = _paired_block(ledger, frozen_pairs)
 
     return {
         "n_pending": n_pending,
-        "n_scored": len(pairs),
-        "mean_agent_brier": (sum(agent_briers) / len(agent_briers)) if agent_briers else None,
-        "mean_market_brier": (sum(market_briers) / len(market_briers)) if market_briers else None,
-        "paired_agent_edge_mean_brier": paired.get("paired_agent_edge_mean_brier"),
-        "paired_agent_edge_ci95_low": paired.get("paired_agent_edge_ci95_low"),
-        "paired_agent_edge_ci95_high": paired.get("paired_agent_edge_ci95_high"),
-        "paired_p_value": paired.get("paired_p_value"),
-        "paired_agent_wins": paired.get("paired_agent_wins", 0),
-        "paired_baseline_wins": paired.get("paired_baseline_wins", 0),
-        "paired_ties": paired.get("paired_ties", 0),
+        # n_scored stays the FULL scored count (both arms recorded); the headline edge
+        # below is the contemporaneous-only subset.
+        "n_scored": len(all_pairs),
+        "n_contemporaneous": len(contemporaneous_pairs),
+        "n_frozen_excluded": len(frozen_pairs),
+        # HEADLINE means — CONTEMPORANEOUS baselines ONLY. These are the clean
+        # agent-vs-market numbers the CLI leads with; frozen-baseline markets are
+        # excluded so a stale price cannot contaminate the "agent beats market" claim.
+        "contemporaneous_mean_agent_brier": _mean(c_agent_briers),
+        "contemporaneous_mean_market_brier": _mean(c_market_briers),
+        # Means over the FULL scored set (back-compat DIAGNOSTIC — INCLUDES the
+        # n_frozen_excluded frozen-baseline markets, so NOT the headline);
+        # contemporaneous/frozen means live in their respective buckets.
+        "mean_agent_brier": _mean(agent_briers),
+        "mean_market_brier": _mean(market_briers),
+        # HEADLINE agent-vs-market edge — CONTEMPORANEOUS baselines ONLY.
+        "paired_agent_edge_mean_brier": headline.get("paired_agent_edge_mean_brier"),
+        "paired_agent_edge_ci95_low": headline.get("paired_agent_edge_ci95_low"),
+        "paired_agent_edge_ci95_high": headline.get("paired_agent_edge_ci95_high"),
+        "paired_p_value": headline.get("paired_p_value"),
+        "paired_agent_wins": headline.get("paired_agent_wins", 0),
+        "paired_baseline_wins": headline.get("paired_baseline_wins", 0),
+        "paired_ties": headline.get("paired_ties", 0),
+        # FULL-set diagnostic (contemporaneous + frozen) — surfaced, NOT the claim.
+        "full_set": {
+            "n_scored": len(all_pairs),
+            "mean_agent_brier": _mean(agent_briers),
+            "mean_market_brier": _mean(market_briers),
+            **full,
+        },
+        # FROZEN-baseline diagnostic bucket — "agent vs frozen prior", never the edge.
+        "frozen_diagnostic": {
+            "n_scored": len(frozen_pairs),
+            "mean_agent_brier": _mean(f_agent_briers),
+            "mean_market_brier": _mean(f_market_briers),
+            **frozen,
+        },
     }
 
 
