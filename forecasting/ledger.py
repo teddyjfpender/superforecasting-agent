@@ -7575,7 +7575,11 @@ class ForecastLedger:
         self,
         question: Any,
         *,
-        limit: int = 5,
+        # Display default: the links/show surfaces use this and must show ALL
+        # explicit links (e.g. a 7-child component_of master), so the default is
+        # generous. The agent cross-pollination CONTEXT passes an explicit
+        # limit=5 (protocol.py) to stay within its context budget.
+        limit: int = 25,
         overlap_threshold: float = 0.2,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         """Resolve the forecasts related to `question` and pull their world-views.
