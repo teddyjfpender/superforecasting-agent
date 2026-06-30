@@ -1441,7 +1441,9 @@ export interface ModelOptionProvider {
   key_env?: string
   models?: string[]
   name: string
+  reasoning_efforts?: string[]
   slug: string
+  supports_reasoning_effort?: boolean
   total_models?: number
   warning?: string
 }
@@ -1450,6 +1452,7 @@ export interface ModelOptionsResponse {
   model?: string
   provider?: string
   providers?: ModelOptionProvider[]
+  reasoning_effort?: string
 }
 
 // ── MCP ──────────────────────────────────────────────────────────────

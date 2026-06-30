@@ -286,6 +286,49 @@ def grok_supports_reasoning_effort(model: str) -> bool:
     return any(name.startswith(prefix) for prefix in _GROK_EFFORT_CAPABLE_PREFIXES)
 
 
+# Reasoning-effort levels surfaced in the TUI model picker. ``minimal`` is
+# omitted on purpose — the codex transport clamps it to ``low`` (see
+# agent/transports/codex.py) — and ``none`` (disable reasoning) is handled by
+# the dedicated ``/reasoning`` plumbing, not the picker.
+PICKER_REASONING_EFFORTS = ("low", "medium", "high", "xhigh")
+
+
+def model_supports_reasoning_effort(
+    provider: str, model: str = "", base_url: str = ""
+) -> bool:
+    """Return True when a provider/model accepts a ``reasoning.effort`` dial.
+
+    Mirrors the codex transport's branches (agent/transports/codex.py):
+      * codex_responses backend (OpenAI / ChatGPT-OAuth, gpt-5.x) — always.
+      * xAI Responses — only for effort-capable Grok models
+        (``grok_supports_reasoning_effort``); the rest 400 on the dial.
+      * github_responses (models.github.ai / api.githubcopilot.com) — reasons
+        via ``github_reasoning_extra``, NOT this dial.
+      * chat_completions / anthropic — no ``reasoning.effort`` dial at all.
+
+    Conservative by default: unknown / non-codex providers return False so the
+    picker never offers an effort step that the transport would silently drop
+    or the API would reject.
+    """
+    from hermes_cli.providers import determine_api_mode
+
+    mode = determine_api_mode(provider or "", base_url or "")
+    if mode != "codex_responses":
+        return False
+
+    url = (base_url or "").lower()
+    # GitHub Models / Copilot Responses ride codex_responses but reason via
+    # github_reasoning_extra, not reasoning.effort.
+    if "models.github.ai" in url or "api.githubcopilot.com" in url:
+        return False
+
+    slug = (provider or "").lower()
+    is_xai = slug in {"xai", "xai-oauth"} or "api.x.ai" in url
+    if is_xai:
+        return grok_supports_reasoning_effort(model)
+    return True
+
+
 _CONTEXT_LENGTH_KEYS = (
     "context_length",
     "context_window",

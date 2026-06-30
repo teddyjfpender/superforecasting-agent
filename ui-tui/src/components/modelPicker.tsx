@@ -14,7 +14,19 @@ const VISIBLE = 12
 const MIN_WIDTH = 40
 const MAX_WIDTH = 90
 
-type Stage = 'provider' | 'key' | 'model' | 'disconnect'
+type Stage = 'provider' | 'key' | 'model' | 'effort' | 'disconnect'
+
+// Reasoning-effort levels offered when a provider/model is effort-capable.
+// Kept in sync with hermes_constants.VALID_REASONING_EFFORTS minus `minimal`
+// (codex clamps it to `low`) and `none` (handled by the /reasoning plumbing).
+const FALLBACK_EFFORTS = ['low', 'medium', 'high', 'xhigh']
+const DEFAULT_EFFORT = 'medium'
+const EFFORT_HINTS: Record<string, string> = {
+  low: 'fastest · cheapest · least thorough',
+  medium: 'balanced default',
+  high: 'slower · pricier · more thorough',
+  xhigh: 'slowest · most expensive · most thorough',
+}
 
 export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }: ModelPickerProps) {
   const [providers, setProviders] = useState<ModelOptionProvider[]>([])
@@ -24,6 +36,9 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
   const [persistGlobal, setPersistGlobal] = useState(false)
   const [providerIdx, setProviderIdx] = useState(0)
   const [modelIdx, setModelIdx] = useState(0)
+  const [effortIdx, setEffortIdx] = useState(0)
+  const [chosenModel, setChosenModel] = useState('')
+  const [currentEffort, setCurrentEffort] = useState(DEFAULT_EFFORT)
   const [stage, setStage] = useState<Stage>('provider')
   const [keyInput, setKeyInput] = useState('')
   const [keySaving, setKeySaving] = useState(false)
@@ -51,6 +66,7 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
         const next = r.providers ?? []
         setProviders(next)
         setCurrentModel(String(r.model ?? ''))
+        setCurrentEffort(String(r.reasoning_effort || DEFAULT_EFFORT))
         setProviderIdx(
           Math.max(
             0,
@@ -71,8 +87,29 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
   const provider = providers[providerIdx]
   const models = provider?.models ?? []
   const names = useMemo(() => providerDisplayNames(providers), [providers])
+  const supportsEffort = provider?.supports_reasoning_effort === true
+  const efforts = provider?.reasoning_efforts?.length ? provider.reasoning_efforts : FALLBACK_EFFORTS
+
+  // Commit the chosen model (and optionally the reasoning effort) back to the
+  // host, which runs `/model …` and, when an effort is supplied, `/reasoning …`.
+  const commit = (model: string, effort?: string) => {
+    if (!provider) {
+      return
+    }
+    onSelect(
+      `${model} --provider ${provider.slug}${persistGlobal ? ' --global' : ` ${TUI_SESSION_MODEL_FLAG}`}`,
+      effort
+    )
+  }
 
   const back = () => {
+    if (stage === 'effort') {
+      setStage('model')
+      setEffortIdx(0)
+
+      return
+    }
+
     if (stage === 'model' || stage === 'key' || stage === 'disconnect') {
       setStage('provider')
       setModelIdx(0)
@@ -201,9 +238,11 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
       return
     }
 
-    const count = stage === 'provider' ? providers.length : models.length
-    const sel = stage === 'provider' ? providerIdx : modelIdx
-    const setSel = stage === 'provider' ? setProviderIdx : setModelIdx
+    const count =
+      stage === 'provider' ? providers.length : stage === 'effort' ? efforts.length : models.length
+    const sel = stage === 'provider' ? providerIdx : stage === 'effort' ? effortIdx : modelIdx
+    const setSel =
+      stage === 'provider' ? setProviderIdx : stage === 'effort' ? setEffortIdx : setModelIdx
 
     if (key.upArrow && sel > 0) {
       setSel(v => v - 1)
@@ -247,10 +286,30 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
         return
       }
 
+      if (stage === 'effort') {
+        const effort = efforts[effortIdx]
+
+        if (chosenModel && effort) {
+          commit(chosenModel, effort)
+        } else {
+          setStage('model')
+        }
+
+        return
+      }
+
       const model = models[modelIdx]
 
       if (provider && model) {
-        onSelect(`${model} --provider ${provider.slug}${persistGlobal ? ' --global' : ` ${TUI_SESSION_MODEL_FLAG}`}`)
+        // Reasoning-capable model/provider → branch to the effort step,
+        // pre-selecting the current effort. Otherwise commit immediately.
+        if (supportsEffort) {
+          setChosenModel(model)
+          setEffortIdx(Math.max(0, efforts.indexOf(currentEffort)))
+          setStage('effort')
+        } else {
+          commit(model)
+        }
       } else {
         setStage('provider')
       }
@@ -386,7 +445,7 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
     return (
       <Box flexDirection="column" width={width}>
         <Text bold color={t.color.accent} wrap="truncate-end">
-          Select provider (step 1/2)
+          Select provider (step 1/{supportsEffort ? '3' : '2'})
         </Text>
 
         <Text color={t.color.muted} wrap="truncate-end">
@@ -439,13 +498,74 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
     )
   }
 
+  // ── Reasoning effort stage ───────────────────────────────────────────
+  if (stage === 'effort') {
+    const { items, offset } = windowItems(efforts, effortIdx, VISIBLE)
+
+    return (
+      <Box flexDirection="column" width={width}>
+        <Text bold color={t.color.accent} wrap="truncate-end">
+          Select reasoning effort (step 3/3)
+        </Text>
+
+        <Text color={t.color.muted} wrap="truncate-end">
+          {chosenModel || '(model)'} · Esc back
+        </Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          higher = slower + more expensive + more thorough
+        </Text>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {offset > 0 ? ` ↑ ${offset} more` : ' '}
+        </Text>
+
+        {Array.from({ length: VISIBLE }, (_, i) => {
+          const row = items[i]
+          const idx = offset + i
+
+          if (!row) {
+            return (
+              <Text color={t.color.muted} key={`pad-${i}`} wrap="truncate-end">
+                {' '}
+              </Text>
+            )
+          }
+
+          const prefix = effortIdx === idx ? '▸ ' : row === currentEffort ? '* ' : '  '
+          const hint = EFFORT_HINTS[row] ? ` — ${EFFORT_HINTS[row]}` : ''
+
+          return (
+            <Text
+              bold={effortIdx === idx}
+              color={effortIdx === idx ? t.color.accent : t.color.muted}
+              inverse={effortIdx === idx}
+              key={`effort:${idx}:${row}`}
+              wrap="truncate-end"
+            >
+              {prefix}
+              {idx + 1}. {row}{hint}
+            </Text>
+          )
+        })}
+
+        <Text color={t.color.muted} wrap="truncate-end">
+          {offset + VISIBLE < efforts.length ? ` ↓ ${efforts.length - offset - VISIBLE} more` : ' '}
+        </Text>
+
+        <Text color={t.color.muted} wrap="truncate-end">
+          current: {currentEffort}
+        </Text>
+        <OverlayHint t={t}>↑/↓ select · Enter apply · Esc back · q close</OverlayHint>
+      </Box>
+    )
+  }
+
   // ── Model selection stage ────────────────────────────────────────────
   const { items, offset } = windowItems(models, modelIdx, VISIBLE)
 
   return (
     <Box flexDirection="column" width={width}>
       <Text bold color={t.color.accent} wrap="truncate-end">
-        Select model (step 2/2)
+        Select model (step 2/{supportsEffort ? '3' : '2'})
       </Text>
 
       <Text color={t.color.muted} wrap="truncate-end">
@@ -511,7 +631,7 @@ interface ModelPickerProps {
   // closes the picker and runs `/auth <slug>`. Optional so the picker still
   // renders standalone (tests) — selecting an OAuth provider is then a no-op.
   onConnect?: (slug: string) => void
-  onSelect: (value: string) => void
+  onSelect: (value: string, effort?: string) => void
   sessionId: string | null
   t: Theme
 }

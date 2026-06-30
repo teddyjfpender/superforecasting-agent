@@ -334,7 +334,7 @@ export interface AppLayoutActions {
   answerSudo: (pw: string) => void
   clearSelection: () => void
   draftCommand: (command: string) => void
-  onModelSelect: (value: string) => void
+  onModelSelect: (value: string, effort?: string) => void
   resumeById: (id: string) => void
   runCommand: (command: string) => void
   setStickyPrompt: (value: string) => void
@@ -397,7 +397,7 @@ export interface AppOverlaysProps {
   onApprovalChoice: (choice: string) => void
   onClarifyAnswer: (value: string) => void
   onModelConnect: (slug: string) => void
-  onModelSelect: (value: string) => void
+  onModelSelect: (value: string, effort?: string) => void
   onPickerSelect: (sessionId: string) => void
   onSecretSubmit: (value: string) => void
   onSudoSubmit: (pw: string) => void

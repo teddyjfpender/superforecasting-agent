@@ -7319,6 +7319,20 @@ def _(rid, params: dict) -> dict:
             canonical_order=True,
             max_models=50,
         )
+        # Surface the live reasoning effort so the picker can pre-select it on
+        # the effort step. Prefer the running agent's in-memory config (set by
+        # the /reasoning path) and fall back to disk for a cold gateway.
+        try:
+            rc = getattr(agent, "reasoning_config", None) if agent else None
+            if not isinstance(rc, dict):
+                rc = _load_reasoning_config()
+            if isinstance(rc, dict):
+                if rc.get("enabled") is False:
+                    payload["reasoning_effort"] = "none"
+                elif rc.get("effort"):
+                    payload["reasoning_effort"] = str(rc["effort"])
+        except Exception:
+            pass
         return _ok(rid, payload)
     except Exception as e:
         return _err(rid, 5033, str(e))

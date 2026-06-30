@@ -827,9 +827,16 @@ export function useMainApp(gw: GatewayClient) {
     [overlay.secret, respondWith]
   )
 
-  const onModelSelect = useCallback((value: string) => {
+  const onModelSelect = useCallback((value: string, effort?: string) => {
     patchOverlayState({ modelPicker: false })
     slashRef.current(`/model ${value}`)
+    // Fire the reasoning effort AFTER the model switch so the live
+    // session-agent reasoning_config the gateway sets lands on the post-switch
+    // agent instance (switch_model keeps the agent object). The codex transport
+    // then sends reasoning.effort on the very next turn.
+    if (effort) {
+      slashRef.current(`/reasoning ${effort}`)
+    }
   }, [])
 
   const draftCommand = useCallback(

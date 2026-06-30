@@ -144,6 +144,7 @@ def build_models_payload(
         rows = list(rows) + _append_unconfigured_rows(rows, ctx)
     if picker_hints:
         _apply_picker_hints(rows)
+        _apply_reasoning_hints(rows)
     if canonical_order:
         rows = _reorder_canonical(rows)
 
@@ -217,6 +218,39 @@ def _apply_picker_hints(rows: list[dict]) -> None:
             if auth_type == "api_key" and key_env
             else f"run `superforecasting-agent model` to configure ({auth_type})"
         )
+
+
+def _apply_reasoning_hints(rows: list[dict]) -> None:
+    """Annotate each provider row with reasoning-effort capability.
+
+    The TUI picker shows its reasoning-effort step only when the codex
+    transport would actually send ``reasoning.effort`` — i.e. for OpenAI/ChatGPT
+    codex_responses providers and effort-capable Grok models. We compute a
+    provider-level ``supports_reasoning_effort`` (True when ANY listed model is
+    effort-capable, so a provider whose lineup mixes capable + non-capable
+    models still surfaces the step) plus the picker's ``reasoning_efforts``
+    level list. Both are mutated in-place.
+    """
+    from agent.model_metadata import (
+        PICKER_REASONING_EFFORTS,
+        model_supports_reasoning_effort,
+    )
+
+    for row in rows:
+        slug = row.get("slug", "") or ""
+        base_url = row.get("base_url", "") or ""
+        models = row.get("models") or []
+        if models:
+            supports = any(
+                model_supports_reasoning_effort(slug, m, base_url) for m in models
+            )
+        else:
+            # Unconfigured / skeleton rows have no model list yet — fall back to
+            # the provider-level capability (codex backends are always capable;
+            # xAI needs a concrete grok model so this stays False until listed).
+            supports = model_supports_reasoning_effort(slug, "", base_url)
+        row["supports_reasoning_effort"] = bool(supports)
+        row["reasoning_efforts"] = list(PICKER_REASONING_EFFORTS) if supports else []
 
 
 def _reorder_canonical(rows: list[dict]) -> list[dict]:
