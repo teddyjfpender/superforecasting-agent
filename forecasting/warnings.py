@@ -33,9 +33,11 @@ from __future__ import annotations
 
 import enum
 from dataclasses import dataclass
-from typing import Any, Callable, Iterator, Optional
+from typing import Any, Callable, Iterable, Iterator, Optional
 
-from forecasting.models import AlertEvent
+from datetime import datetime
+
+from forecasting.models import AlertEvent, timestamp_to_datetime
 
 __all__ = [
     "ResolutionKind",
@@ -47,18 +49,196 @@ __all__ = [
     "resolve_alert",
     "plan_alert",
     "summarize_open_warnings",
+    "MATERIAL_MOVE_THRESHOLD",
+    "is_material_move",
+    "WARNING_TIERS",
+    "coerce_kind",
+    "expand_tier",
+    "resolve_kind_filter",
+    "AGGREGATE_TIER_FOR_KIND",
+    "aggregate_open_warnings",
+    "fold_warning_groups",
+    "RESPEND_BACKOFF_BASE_HOURS",
+    "RESPEND_BACKOFF_CAP_HOURS",
+    "RESPEND_COOLDOWN_KINDS",
+    "respend_backoff_hours",
+    "is_alert_in_respend_cooldown",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Reforecast COMMIT policy — materiality
+# ---------------------------------------------------------------------------
+#
+# The auto-reforecast policy ("auto-reforecast commits material moves") needs a
+# single, shared notion of *what counts as a material move* so the agent's commit
+# instructions, the cron reforecast runner, and the tests all agree. This is the
+# forecast-UPDATE commit threshold and is deliberately SEPARATE from a question's
+# decision-card ACTION threshold (when to act on the number): a 0.46 -> 0.56 move
+# is material enough to RECORD even if neither side crosses an action line.
+MATERIAL_MOVE_THRESHOLD = 0.03
+
+
+def is_material_move(
+    prior: Any,
+    proposed: Any,
+    *,
+    threshold: float = MATERIAL_MOVE_THRESHOLD,
+) -> bool:
+    """True when ``proposed`` is a *material* move versus ``prior``.
+
+    For binary/scalar probabilities a move is material when ``|Δp| >= threshold``
+    (default 3pp). When there is no prior comparable scalar (a genuinely first
+    forecast, or a distribution/categorical payload), any change is treated as
+    material — there is no marginal "noise" band to suppress, and a brand-new
+    estimate is always worth recording. Two equal distributions are NOT material.
+    """
+
+    p_prev = _scalar_prob(prior)
+    p_new = _scalar_prob(proposed)
+    if p_prev is not None and p_new is not None:
+        return abs(p_new - p_prev) >= threshold
+    # Non-scalar (distribution / categorical) or no comparable prior: material
+    # unless it is byte-for-byte the same payload (a true no-op re-pool).
+    return prior != proposed
+
+
+def _scalar_prob(payload: Any) -> Optional[float]:
+    """The comparable scalar probability of a snapshot payload, or None.
+
+    Mirrors ``ForecastLedger._numeric_probability``: a bool is not a probability,
+    a bare int/float is, everything else (a distribution dict, a vote-share map)
+    has no single comparable scalar."""
+
+    if isinstance(payload, bool):
+        return None
+    if isinstance(payload, (int, float)):
+        return float(payload)
+    return None
 
 
 class ResolutionKind(enum.Enum):
     """How an open warning *can* be resolved (if at all)."""
 
-    REFORECAST = "reforecast"        # stale / missing / new evidence / close-soon → re-run the forecast
+    REFORECAST = "reforecast"        # stale / new evidence / close-soon → re-run the forecast
+    EVIDENCE_COLLECTION = "evidence_collection"  # NO evidence / NO snapshot yet → search+import evidence FIRST
     MATERIAL_CHANGE = "material_change"  # a watched source moved / trigger fired → check the source + reforecast
     SCORE = "score"                  # resolved question due a Brier score → real scoring work
     POSTMORTEM = "postmortem"        # resolved+scored question due a postmortem (score + write-up)
     BOOKKEEPING = "bookkeeping"      # informational notice; acking it is the correct close-out
     NO_AUTO = "no_auto"              # no safe auto-fix; surface for a human, never auto-resolve
+
+
+# ---------------------------------------------------------------------------
+# Tiers — named folds over ResolutionKind for per-tier BULK actions
+# ---------------------------------------------------------------------------
+#
+# A *tier* is just a named set of ResolutionKinds, so a caller can drain a whole
+# class of backlog in one bulk pass without re-typing the member kinds. The split
+# is operationally meaningful — NOT cosmetic:
+#
+#   * "free"       — the kinds whose injected runners are the NON-LLM gated paths
+#                    (bookkeeping close-out, real scoring, score+postmortem, and
+#                    the autopilot source re-check for a material change). None of
+#                    these spend a paid LLM pass, so a `free` sweep is safe to run
+#                    on every cron tick / unattended.
+#   * "reforecast" — the heavy AGENT tier: its runners are the opt-in LLM passes
+#                    (`automode --agent`). It holds BOTH heavy kinds — REFORECAST
+#                    (the LLM update pass over a question that already HAS evidence)
+#                    and EVIDENCE_COLLECTION (the LLM/web search+import pass that
+#                    bootstraps a question with NO evidence / NO snapshot yet).
+#                    Isolating them lets an operator say "only spend the model on
+#                    the reforecast + evidence backlog" without also re-acking the
+#                    cheap stuff (or vice versa). Both need a paid LLM pass, so they
+#                    share the one agent tier (alias "agent").
+#
+# NO_AUTO is deliberately in NO tier: it is never auto-resolved (always surfaced),
+# so folding it into a bulk action would be meaningless. A tier filter NEVER
+# weakens the no-bare-ack invariant — it only narrows WHICH open alerts the same
+# gated dispatcher considers this pass.
+WARNING_TIERS: dict[str, "frozenset[ResolutionKind]"] = {
+    "free": frozenset(
+        {
+            ResolutionKind.BOOKKEEPING,
+            ResolutionKind.SCORE,
+            ResolutionKind.POSTMORTEM,
+            ResolutionKind.MATERIAL_CHANGE,
+        }
+    ),
+    "reforecast": frozenset(
+        {ResolutionKind.REFORECAST, ResolutionKind.EVIDENCE_COLLECTION}
+    ),
+}
+
+# Operator-friendly aliases (the docs/prompt name them "run-free-pass" /
+# "reforecast-tier"). Normalised to canonical keys; "-tier"/"-pass" decoration and
+# hyphen/underscore styling are all accepted.
+_TIER_ALIASES = {
+    "free": "free",
+    "run-free": "free",
+    "run-free-pass": "free",
+    "free-pass": "free",
+    "reforecast": "reforecast",
+    "reforecast-tier": "reforecast",
+    "agent": "reforecast",
+}
+
+
+def coerce_kind(value: "ResolutionKind | str") -> ResolutionKind:
+    """Coerce a ResolutionKind or its string form (enum ``value`` or ``name``,
+    case-insensitive, ``-``/``_`` interchangeable) into a ResolutionKind.
+
+    Raises ``ValueError`` on an unknown kind so a typo at the CLI / RPC boundary
+    fails loudly rather than silently matching nothing (which would look like an
+    empty backlog).
+    """
+    if isinstance(value, ResolutionKind):
+        return value
+    text = str(value).strip().lower().replace("-", "_")
+    for kind in ResolutionKind:
+        if text == kind.value or text == kind.name.lower():
+            return kind
+    raise ValueError(f"unknown ResolutionKind: {value!r}")
+
+
+def expand_tier(tier: str) -> "frozenset[ResolutionKind]":
+    """Expand a tier name (or alias) to its frozenset of ResolutionKinds.
+
+    Raises ``ValueError`` on an unknown tier name.
+    """
+    key = str(tier).strip().lower().replace("_", "-")
+    canonical = _TIER_ALIASES.get(key)
+    if canonical is None:
+        raise ValueError(
+            f"unknown warning tier: {tier!r} (known: {sorted(WARNING_TIERS)})"
+        )
+    return WARNING_TIERS[canonical]
+
+
+def resolve_kind_filter(
+    *,
+    kinds: "Iterable[ResolutionKind | str] | None" = None,
+    tier: str | None = None,
+) -> "frozenset[ResolutionKind] | None":
+    """Fold an optional ``tier`` and/or explicit ``kinds`` list into a single
+    frozenset of ResolutionKinds to keep — or ``None`` when neither is given
+    (meaning "no kind filter", every kind passes).
+
+    A tier and an explicit kinds list are UNIONed (the result keeps an alert whose
+    kind is in either), so e.g. ``tier="free", kinds=["reforecast"]`` widens the
+    free tier by one kind. An empty (but non-None) kinds iterable with no tier
+    yields an empty frozenset — a deliberate "match nothing" the caller asked for,
+    distinct from the ``None`` "match everything".
+    """
+    if kinds is None and tier is None:
+        return None
+    selected: set[ResolutionKind] = set()
+    if tier is not None:
+        selected |= set(expand_tier(tier))
+    if kinds is not None:
+        for value in kinds:
+            selected.add(coerce_kind(value))
+    return frozenset(selected)
 
 
 # ---------------------------------------------------------------------------
@@ -91,12 +271,20 @@ _BOOKKEEPING_PREFIXES = (
     "review_due",
 )
 
+# EVIDENCE_COLLECTION is checked BEFORE REFORECAST: a question with NO evidence /
+# NO forecast snapshot cannot be re-forecast yet (the REFORECAST runner's
+# update-gate hard-blocks on zero evidence), so these reasons route to a distinct
+# kind whose runner SEARCHES FOR + IMPORTS evidence first, instead of being
+# bucketed into REFORECAST and forever resolving to "skipped: update gated".
+_EVIDENCE_COLLECTION_PREFIXES = (
+    "no_evidence",
+    "no_forecast_snapshot",
+)
+
 _REFORECAST_PREFIXES = (
     "evidence_stale",        # evidence_stale_7d_plus, etc.
     "last_update",           # last_update_* staleness
     "new_evidence",          # new_evidence:*
-    "no_evidence",
-    "no_forecast_snapshot",
     "close_time_within",     # close_time_within_*
 )
 
@@ -135,7 +323,14 @@ def classify_warning(reason: str | None) -> ResolutionKind:
     if text.startswith(_BOOKKEEPING_PREFIXES):
         return ResolutionKind.BOOKKEEPING
 
-    # 6. REFORECAST — staleness / missing-evidence / new-evidence / close-soon.
+    # 6. EVIDENCE_COLLECTION — a question with NO evidence / NO snapshot yet. Must
+    #    be checked BEFORE REFORECAST: re-forecasting needs evidence first, so these
+    #    route to the search+import runner, not the (zero-evidence-gated) LLM update.
+    if text.startswith(_EVIDENCE_COLLECTION_PREFIXES):
+        return ResolutionKind.EVIDENCE_COLLECTION
+
+    # 7. REFORECAST — staleness / new-evidence / close-soon (question already has
+    #    evidence; the LLM update pass can run).
     if text.startswith(_REFORECAST_PREFIXES):
         return ResolutionKind.REFORECAST
 
@@ -154,11 +349,12 @@ _SEVERITY_RANK = {"high": 0, "warning": 1, "info": 2}
 # retrospective; NO_AUTO needs a human; bookkeeping is least urgent.
 _KIND_RANK = {
     ResolutionKind.MATERIAL_CHANGE: 0,
-    ResolutionKind.REFORECAST: 1,
-    ResolutionKind.SCORE: 2,
-    ResolutionKind.POSTMORTEM: 3,
-    ResolutionKind.NO_AUTO: 4,
-    ResolutionKind.BOOKKEEPING: 5,
+    ResolutionKind.EVIDENCE_COLLECTION: 1,  # bootstrap a no-evidence question first
+    ResolutionKind.REFORECAST: 2,
+    ResolutionKind.SCORE: 3,
+    ResolutionKind.POSTMORTEM: 4,
+    ResolutionKind.NO_AUTO: 5,
+    ResolutionKind.BOOKKEEPING: 6,
 }
 
 
@@ -175,6 +371,8 @@ class NormalizedWarning:
     recommended_action: str
     kind: ResolutionKind
     alert: AlertEvent
+    last_attempted_at: str | None = None
+    attempt_count: int = 0
 
     @property
     def is_auto_resolvable(self) -> bool:
@@ -192,6 +390,8 @@ def _normalize(alert: AlertEvent) -> NormalizedWarning:
         recommended_action=(alert.recommended_action or ""),
         kind=classify_warning(alert.reason),
         alert=alert,
+        last_attempted_at=getattr(alert, "last_attempted_at", None),
+        attempt_count=int(getattr(alert, "attempt_count", 0) or 0),
     )
 
 
@@ -228,24 +428,145 @@ def iter_warnings(
     yield from normalized
 
 
+# ---------------------------------------------------------------------------
+# Re-spend cooldown — per-alert exponential backoff (Slice 8)
+# ---------------------------------------------------------------------------
+#
+# The continuous paid (LLM) tier must NOT re-spend on the same gated/failing alert
+# on every cron tick. When a paid runner attempts an alert and does NOT resolve it
+# (the runner failed / raised / did no real gated work), the ledger stamps the
+# alert with ``last_attempted_at`` + an incremented ``attempt_count`` (it stays
+# OPEN — never a bare-ack) and we hold off retrying it until a backoff window
+# passes. The window is EXPONENTIAL in the failure count (24h, 48h, 96h, …) so a
+# persistently-failing alert backs off fast, while a one-off failure is retried
+# the next day. The cooldown is scoped to the spendy AGENT-tier kinds only — the
+# free, idempotent, zero-token kinds (bookkeeping / score / postmortem /
+# material-change) are never throttled.
+RESPEND_BACKOFF_BASE_HOURS = 24.0
+# Cap the window so a long-failing alert still gets re-checked roughly fortnightly
+# instead of receding past any practical horizon.
+RESPEND_BACKOFF_CAP_HOURS = 24.0 * 14
+
+# The spendy kinds the cooldown governs (== the paid "reforecast"/agent tier).
+RESPEND_COOLDOWN_KINDS: "frozenset[ResolutionKind]" = WARNING_TIERS["reforecast"]
+
+
+def respend_backoff_hours(
+    attempt_count: int,
+    *,
+    base_hours: float = RESPEND_BACKOFF_BASE_HOURS,
+    cap_hours: float = RESPEND_BACKOFF_CAP_HOURS,
+) -> float:
+    """The backoff window (hours) an alert must wait after ``attempt_count`` failed
+    paid attempts before the paid tier may retry it.
+
+    Zero (no wait) until the first failure; then exponential — ``base`` after the
+    1st failure, ``2*base`` after the 2nd, and so on — capped at ``cap_hours``.
+    """
+    if attempt_count <= 0:
+        return 0.0
+    window = base_hours * (2.0 ** (attempt_count - 1))
+    return min(window, cap_hours)
+
+
+def is_alert_in_respend_cooldown(
+    warning: NormalizedWarning,
+    now_dt: datetime,
+    *,
+    base_hours: float = RESPEND_BACKOFF_BASE_HOURS,
+    cap_hours: float = RESPEND_BACKOFF_CAP_HOURS,
+) -> bool:
+    """True when ``warning`` is still inside its post-failure backoff window and so
+    must NOT be re-attempted by the paid tier yet.
+
+    Fail-OPEN to *attemptable* (returns False) when there is no recorded attempt or
+    the stamp is unparseable — a missing cooldown stamp must never silently suppress
+    a real alert. An alert whose window has elapsed is attemptable again (and, if it
+    fails once more, its ``attempt_count`` grows and the next window doubles).
+    """
+    if warning.attempt_count <= 0 or not warning.last_attempted_at:
+        return False
+    last_dt = timestamp_to_datetime(warning.last_attempted_at)
+    if last_dt is None:
+        return False
+    try:
+        elapsed_hours = (now_dt - last_dt).total_seconds() / 3600.0
+    except (TypeError, ValueError):
+        return False
+    return elapsed_hours < respend_backoff_hours(
+        warning.attempt_count, base_hours=base_hours, cap_hours=cap_hours
+    )
+
+
+def _coerce_now_dt(now: "str | datetime | None") -> datetime:
+    """Coerce a ``now`` (ISO string / datetime / None) into an aware UTC datetime."""
+    if isinstance(now, datetime):
+        dt = now
+        if dt.tzinfo is None:
+            from datetime import timezone
+
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    if isinstance(now, str) and now.strip():
+        parsed = timestamp_to_datetime(now.strip())
+        if parsed is not None:
+            return parsed
+    from hermes_time import now as hermes_now
+
+    dt = hermes_now()
+    if dt.tzinfo is None:
+        from datetime import timezone
+
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
 def select_open_warnings(
     ledger: Any,
     *,
     scope: str | None = None,
     reason: str | None = None,
     limit: int | None = None,
+    kinds: "Iterable[ResolutionKind | str] | None" = None,
+    tier: str | None = None,
+    cooldown: bool = False,
+    now: "str | datetime | None" = None,
 ) -> list[NormalizedWarning]:
     """Return the open backlog (priority order) after the common scope/reason/limit
     filters every driver (CLI, cron phase, gateway, tool) applies identically.
 
-    ``reason`` is a case-insensitive substring filter; ``limit`` caps how many
-    alerts are returned (NOT how many reason-groups). Kept in one place so the
-    automode loop, the dry-run plan, and the list summary can never drift apart.
+    ``reason`` is a case-insensitive substring filter; ``kinds``/``tier`` select by
+    ResolutionKind (a ``tier`` like ``"free"``/``"reforecast"`` expands to its
+    member kinds, optionally UNIONed with an explicit ``kinds`` list — see
+    :func:`resolve_kind_filter`); ``limit`` caps how many alerts are returned (NOT
+    how many reason-groups). The kind filter is applied BEFORE ``limit`` so a
+    per-tier bulk pass caps the tier's backlog, not the whole one. Kept in one
+    place so the automode loop, the dry-run plan, and the list summary can never
+    drift apart.
+
+    ``cooldown`` (Slice 8) drops any spendy AGENT-tier alert still inside its
+    post-failure backoff window (see :func:`is_alert_in_respend_cooldown`) BEFORE
+    ``limit`` is applied — so the continuous paid tier neither re-attempts a
+    cooled-down alert NOR lets it occupy a capped selection slot and starve fresh
+    work. It only ever filters the spendy kinds, so a free-tier sweep is unaffected.
     """
     reason_filter = (reason or "").strip().lower()
+    kind_filter = resolve_kind_filter(kinds=kinds, tier=tier)
     warnings = list(iter_warnings(ledger, scope=scope))
     if reason_filter:
         warnings = [w for w in warnings if reason_filter in (w.reason or "").lower()]
+    if kind_filter is not None:
+        warnings = [w for w in warnings if w.kind in kind_filter]
+    if cooldown:
+        now_dt = _coerce_now_dt(now)
+        warnings = [
+            w
+            for w in warnings
+            if not (
+                w.kind in RESPEND_COOLDOWN_KINDS
+                and is_alert_in_respend_cooldown(w, now_dt)
+            )
+        ]
     if limit is not None:
         warnings = warnings[:limit]
     return warnings
@@ -290,6 +611,112 @@ def summarize_open_warnings(
 
 
 # ---------------------------------------------------------------------------
+# Aggregate fold — the 4 operator-facing tiers (dashboard headline)
+# ---------------------------------------------------------------------------
+#
+# The aggregate view answers "how big is the backlog, and who has to act on it?"
+# It folds the per-reason groups into three ACTION tiers (distinct from the bulk
+# WARNING_TIERS above, which gate WHICH kinds a *sweep* drains):
+#
+#   * "free"   — the non-LLM gated close-outs (bookkeeping / score / postmortem /
+#                material-change source re-check). A `free` sweep clears these.
+#   * "agent"  — the opt-in LLM passes: REFORECAST (the update pass) AND
+#                EVIDENCE_COLLECTION (the search+import pass that bootstraps a
+#                no-evidence question). Both fold into the one agent tier.
+#   * "manual" — NO_AUTO: a human must judge it; never auto-resolved.
+#
+# Any unknown / unmapped kind fails safe into "manual" (needs-a-human), never
+# silently dropped from the total.
+AGGREGATE_TIER_FOR_KIND: dict[ResolutionKind, str] = {
+    ResolutionKind.BOOKKEEPING: "free",
+    ResolutionKind.SCORE: "free",
+    ResolutionKind.POSTMORTEM: "free",
+    ResolutionKind.MATERIAL_CHANGE: "free",
+    ResolutionKind.REFORECAST: "agent",
+    ResolutionKind.EVIDENCE_COLLECTION: "agent",
+    ResolutionKind.NO_AUTO: "manual",
+}
+
+# Reason prefixes that mark a REFORECAST (agent-tier) group as part of the STALE
+# sub-bucket — the subset of the reforecast backlog driven by elapsed-time
+# staleness (evidence aging out, no recent update, the close date drawing near)
+# rather than a fresh evidence signal. Surfaced as a NAMED sub-bucket of the agent
+# tier so an operator can see how much of the reforecast backlog is "just getting
+# old" versus a new-evidence prompt. It is a VIEW over the agent tier, not a
+# fourth tier: its reasons are still counted in agent.total.
+_STALE_REASON_PREFIXES = (
+    "evidence_stale",
+    "last_update",
+    "close_time_within",
+)
+
+
+def _aggregate_tier_for_kind_value(kind_value: Any) -> str:
+    """Map a group's ``kind`` (a ResolutionKind value string, as emitted by
+    :func:`summarize_open_warnings`) to its aggregate action tier. Unknown kinds
+    fail safe into ``"manual"`` so their count is never lost from the headline."""
+    try:
+        kind = coerce_kind(kind_value)
+    except ValueError:
+        return "manual"
+    return AGGREGATE_TIER_FOR_KIND.get(kind, "manual")
+
+
+def fold_warning_groups(summary: dict[str, Any]) -> dict[str, Any]:
+    """Fold a :func:`summarize_open_warnings` result into the 4 operator tiers.
+
+    Pure: takes the grouped summary and returns the aggregate shape with per-tier
+    and per-reason totals plus a ``headline`` ``{total, free, agent, manual}``. The
+    agent tier carries a ``stale`` sub-bucket (the elapsed-time-staleness subset of
+    its reforecast reasons). Reason groups keep their priority order (first sighting
+    of a reason fixes its rank) within each tier.
+    """
+    tiers: dict[str, dict[str, Any]] = {
+        "free": {"total": 0, "reasons": []},
+        "agent": {"total": 0, "reasons": [], "stale": {"total": 0, "reasons": []}},
+        "manual": {"total": 0, "reasons": []},
+    }
+    for group in summary.get("groups", []) or []:
+        count = int(group.get("count", 0) or 0)
+        tier_name = _aggregate_tier_for_kind_value(group.get("kind"))
+        tier = tiers[tier_name]
+        tier["total"] += count
+        tier["reasons"].append(group)
+        if tier_name == "agent" and str(group.get("reason", "")).startswith(
+            _STALE_REASON_PREFIXES
+        ):
+            tier["stale"]["total"] += count
+            tier["stale"]["reasons"].append(group)
+    total = tiers["free"]["total"] + tiers["agent"]["total"] + tiers["manual"]["total"]
+    return {
+        "headline": {
+            "total": total,
+            "free": tiers["free"]["total"],
+            "agent": tiers["agent"]["total"],
+            "manual": tiers["manual"]["total"],
+        },
+        "free": tiers["free"],
+        "agent": tiers["agent"],
+        "manual": tiers["manual"],
+    }
+
+
+def aggregate_open_warnings(
+    ledger: Any,
+    *,
+    scope: str | None = None,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Aggregate the FULL (untruncated) open backlog into the 4 operator tiers.
+
+    Server-side fold over every matching reason-group (no ``limit`` — the headline
+    must reflect the whole backlog, not a page of it). Shared by the
+    ``forecast.warnings.aggregate`` gateway RPC."""
+    summary = summarize_open_warnings(ledger, scope=scope, reason=reason, limit=None)
+    return fold_warning_groups(summary)
+
+
+# ---------------------------------------------------------------------------
 # Resolution dispatch
 # ---------------------------------------------------------------------------
 
@@ -307,6 +734,7 @@ class ResolutionRunners:
     """Injected gated actions, one family per auto-resolvable kind."""
 
     reforecast_runner: Optional[Runner] = None   # REFORECAST
+    evidence_runner: Optional[Runner] = None     # EVIDENCE_COLLECTION (search+import)
     autopilot_runner: Optional[Runner] = None    # MATERIAL_CHANGE
     score_runner: Optional[Runner] = None        # SCORE (score the resolved question)
     postmortem_runner: Optional[Runner] = None   # POSTMORTEM (score + write the postmortem)
@@ -314,6 +742,7 @@ class ResolutionRunners:
 
 _KIND_RUNNER_ATTR = {
     ResolutionKind.REFORECAST: "reforecast_runner",
+    ResolutionKind.EVIDENCE_COLLECTION: "evidence_runner",
     ResolutionKind.MATERIAL_CHANGE: "autopilot_runner",
     ResolutionKind.SCORE: "score_runner",
     ResolutionKind.POSTMORTEM: "postmortem_runner",

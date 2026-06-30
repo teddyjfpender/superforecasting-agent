@@ -2910,6 +2910,29 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.warnings.aggregate")
+def _(rid, params: dict) -> dict:
+    """Fold the FULL open warning backlog into the 4 operator tiers (free / agent /
+    manual + the agent-tier ``stale`` sub-bucket) with per-tier + per-reason totals
+    and a ``headline`` ``{total, free, agent, manual}``. Read-only; counts are
+    server-side UNTRUNCATED (no ``limit`` — the dashboard headline must reflect the
+    whole backlog). Mirrors `forecast.warnings.list` scope/reason filtering."""
+    try:
+        from forecasting import warnings as fwarn
+        from forecasting.ledger import ForecastLedger
+
+        scope = params.get("scope") or None
+        reason = params.get("reason") or None
+        aggregate = fwarn.aggregate_open_warnings(
+            ForecastLedger(),
+            scope=scope,
+            reason=reason,
+        )
+        return _ok(rid, aggregate)
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("forecast.warnings.resolve")
 def _(rid, params: dict) -> dict:
     """Resolve ONE open alert through the gated dispatcher and ack ONLY on real
@@ -2945,6 +2968,104 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.warnings.dismiss")
+def _(rid, params: dict) -> dict:
+    """DISMISS (silence) a matching group of OPEN alerts — a RECORDED human silence,
+    NOT a resolution.
+
+    Selects the open backlog matching ``scope`` / ``reason`` (substring) / ``kind``
+    (a ResolutionKind or list) — or an explicit ``alert_id`` / ``alert_ids`` — and
+    bulk-sets ``acknowledged_at`` WITHOUT invoking any runner or moving any forecast.
+    It stamps a dismissal audit trail (note + actor + ``dismissed_at`` +
+    ``dismiss_reason`` + TTL) so the silence is auditable and visibly distinct from a
+    runner-resolution. A non-empty ``note`` and ``actor`` are REQUIRED (no silent
+    mass-dismiss). The silence is bounded: the group RE-SURFACES after ``ttl_days``
+    (default 7) if the condition still holds."""
+    try:
+        from forecasting import warnings as fwarn
+        from forecasting.ledger import ForecastLedger, allow_ledger_writes
+
+        note = str(params.get("note") or "").strip()
+        if not note:
+            return _err(rid, 5008, "note is required to dismiss alerts (no silent mass-dismiss)")
+        actor = str(params.get("actor") or "").strip()
+        if not actor:
+            return _err(rid, 5008, "actor is required to dismiss alerts")
+
+        ledger = ForecastLedger()
+        now = params.get("now")
+        ttl_days = params.get("ttl_days")
+
+        explicit = params.get("alert_ids") or ([params["alert_id"]] if params.get("alert_id") else None)
+        scope = params.get("scope") or None
+        reason = params.get("reason") or None
+        kind = params.get("kind") or params.get("kinds") or None
+        kinds = None
+        if kind is not None:
+            kinds = kind if isinstance(kind, (list, tuple)) else [kind]
+
+        if explicit:
+            open_alerts = {a.id: a for a in ledger.list_alerts(unresolved_only=True)}
+            selected_ids = [aid for aid in explicit if aid in open_alerts]
+            label = "alert_ids=" + ",".join(str(a) for a in explicit)
+        else:
+            if scope is None and reason is None and kinds is None:
+                return _err(
+                    rid, 5008,
+                    "a selection (scope, reason, kind, or alert_id) is required to dismiss",
+                )
+            # Validate the kind filter loudly (a typo must not silently match nothing).
+            try:
+                warnings = fwarn.select_open_warnings(
+                    ledger, scope=scope, reason=reason, kinds=kinds
+                )
+            except ValueError as ve:
+                return _err(rid, 5008, str(ve))
+            selected_ids = [w.id for w in warnings]
+            parts = []
+            if scope:
+                parts.append(f"scope={scope}")
+            if reason:
+                parts.append(f"reason={reason}")
+            if kinds:
+                parts.append("kind=" + ",".join(str(k) for k in kinds))
+            label = "; ".join(parts)
+
+        if not selected_ids:
+            return _ok(rid, {"dismissed": [], "count": 0, "matched": 0})
+
+        with allow_ledger_writes(reason="forecast_warnings_dismiss"):
+            dismissed = ledger.dismiss_alerts(
+                selected_ids,
+                note=note,
+                actor=actor,
+                dismiss_reason=label,
+                ttl_days=int(ttl_days) if ttl_days is not None else None,
+                now=now,
+            )
+        return _ok(rid, {
+            "dismissed": [
+                {
+                    "alert_id": a.id,
+                    "reason": a.reason,
+                    "scope_ref": a.scope_ref,
+                    "dismissed_at": a.dismissed_at,
+                    "dismiss_note": a.dismiss_note,
+                    "dismiss_actor": a.dismiss_actor,
+                    "dismiss_reason": a.dismiss_reason,
+                    "dismiss_ttl_days": a.dismiss_ttl_days,
+                }
+                for a in dismissed
+            ],
+            "count": len(dismissed),
+            "matched": len(selected_ids),
+        })
+    except ValueError as e:
+        return _err(rid, 5008, str(e))
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("forecast.warnings.automode.run")
 def _(rid, params: dict) -> dict:
     """Spawn a BACKGROUND warning-resolution sweep that streams progress events.
@@ -2972,6 +3093,13 @@ def _(rid, params: dict) -> dict:
         limit = params.get("limit")
         reason = params.get("reason") or None
         scope = params.get("scope") or None
+        # Per-tier bulk filter: a `tier` name ("free"/"reforecast") expands to its
+        # member ResolutionKinds, optionally UNIONed with an explicit `kinds` list
+        # (kind values/names). Both are validated by the dispatcher's
+        # resolve_kind_filter, so a bad name fails the job loudly via the .error
+        # event rather than silently sweeping nothing.
+        tier = params.get("tier") or None
+        kinds = params.get("kinds") or None
         now = params.get("now")
         job_id = "wj_" + uuid.uuid4().hex[:12]
         stop = threading.Event()
@@ -2988,6 +3116,8 @@ def _(rid, params: dict) -> dict:
                     limit=int(limit) if limit is not None else None,
                     reason=reason,
                     scope=scope,
+                    kinds=kinds,
+                    tier=tier,
                     dry_run=dry_run,
                     progress=_progress,
                     should_cancel=stop.is_set,

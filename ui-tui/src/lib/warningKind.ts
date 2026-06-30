@@ -5,7 +5,14 @@
 // before the user confirms, WITHOUT a round-trip. The Python dispatcher remains
 // the source of truth; this only previews. Keep the prefixes in lockstep.
 
-export type WarningKind = 'bookkeeping' | 'material_change' | 'no_auto' | 'postmortem' | 'reforecast' | 'score'
+export type WarningKind =
+  | 'bookkeeping'
+  | 'evidence_collection'
+  | 'material_change'
+  | 'no_auto'
+  | 'postmortem'
+  | 'reforecast'
+  | 'score'
 
 // Human-judgment classes — never auto-resolved (checked FIRST, like Python).
 const NO_AUTO_PREFIXES = [
@@ -19,14 +26,11 @@ const NO_AUTO_PREFIXES = [
 ]
 const MATERIAL_PREFIXES = ['watched_source_changed', 'watched_source_unavailable', 'trigger_fired']
 const BOOKKEEPING_PREFIXES = ['autopilot_enabled', 'autopilot_source_failed', 'review_due']
-const REFORECAST_PREFIXES = [
-  'evidence_stale',
-  'last_update',
-  'new_evidence',
-  'no_evidence',
-  'no_forecast_snapshot',
-  'close_time_within'
-]
+// No evidence / no snapshot yet — collect evidence FIRST (the REFORECAST runner
+// hard-blocks on zero evidence), so these route to their own kind. Checked before
+// REFORECAST, like Python.
+const EVIDENCE_COLLECTION_PREFIXES = ['no_evidence', 'no_forecast_snapshot']
+const REFORECAST_PREFIXES = ['evidence_stale', 'last_update', 'new_evidence', 'close_time_within']
 
 const startsWithAny = (text: string, prefixes: string[]): boolean => prefixes.some(p => text.startsWith(p))
 
@@ -64,7 +68,12 @@ export const classifyWarning = (reason: string | undefined): WarningKind => {
     return 'bookkeeping'
   }
 
-  // 6. REFORECAST — staleness / missing-evidence / new-evidence / close-soon.
+  // 6. EVIDENCE_COLLECTION — no evidence / no snapshot yet (collect, then forecast).
+  if (startsWithAny(text, EVIDENCE_COLLECTION_PREFIXES)) {
+    return 'evidence_collection'
+  }
+
+  // 7. REFORECAST — staleness / new-evidence / close-soon (already has evidence).
   if (startsWithAny(text, REFORECAST_PREFIXES)) {
     return 'reforecast'
   }
@@ -111,6 +120,12 @@ export const warningResolution = (kind: WarningKind): WarningResolution => {
         label: 'Reforecast (needs agent)',
         detail: 'A fresh LLM reforecast is required — the TUI path has no agent runner, so this stays OPEN. Run `forecast warnings resolve --agent` from the CLI.'
       }
+    case 'evidence_collection':
+      return {
+        auto: false,
+        label: 'Collect evidence (needs agent)',
+        detail: 'No evidence yet — an LLM/web search+import pass is required, which the TUI path has no runner for, so this stays OPEN. It acks only if it imports ≥1 new reading. Run `forecast warnings resolve --agent` from the CLI.'
+      }
     case 'bookkeeping':
       return {
         auto: true,
@@ -129,6 +144,7 @@ export const warningResolution = (kind: WarningKind): WarningResolution => {
 
 const KIND_LABEL: Record<WarningKind, string> = {
   bookkeeping: 'bookkeeping',
+  evidence_collection: 'evidence collection',
   material_change: 'material change',
   no_auto: 'human review',
   postmortem: 'postmortem',

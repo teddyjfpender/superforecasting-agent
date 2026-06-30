@@ -44,6 +44,51 @@ def test_forecast_warnings_list_groups_open_backlog(tmp_path, monkeypatch):
     assert by_reason["domain_error_profile_applies:politics"]["auto_resolvable"] is False
 
 
+def test_forecast_warnings_aggregate_folds_into_tiers(tmp_path, monkeypatch):
+    lg, _ids = _seed(tmp_path, monkeypatch)
+    # Add agent-tier reforecast alerts: one fresh-evidence, two staleness (the
+    # STALE sub-bucket) so we can assert the sub-bucket is a subset of the tier.
+    lg.create_alert(
+        severity="warning", scope_type="question", scope_ref="fq_g",
+        reason="new_evidence:fred", recommended_action="Reforecast.")
+    lg.create_alert(
+        severity="warning", scope_type="question", scope_ref="fq_h",
+        reason="evidence_stale_7d_plus", recommended_action="Reforecast.")
+    lg.create_alert(
+        severity="warning", scope_type="question", scope_ref="fq_i",
+        reason="close_time_within_7d", recommended_action="Reforecast.")
+
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.warnings.aggregate", "params": {}}
+    )
+    assert "result" in resp, resp
+    res = resp["result"]
+
+    # Seed: postmortem (free), no_auto (manual), bookkeeping (free) + 3 agent.
+    head = res["headline"]
+    assert head["total"] == 6
+    assert head["free"] == 2          # postmortem_due + autopilot_enabled
+    assert head["agent"] == 3         # new_evidence + evidence_stale + close_time_within
+    assert head["manual"] == 1        # domain_error_profile_applies
+    # Tier totals match the headline and sum to the total.
+    assert res["free"]["total"] == 2
+    assert res["agent"]["total"] == 3
+    assert res["manual"]["total"] == 1
+    assert head["free"] + head["agent"] + head["manual"] == head["total"]
+
+    # The STALE sub-bucket is the elapsed-time subset of the agent tier (2 of 3),
+    # and its reasons are still counted in the agent total.
+    stale = res["agent"]["stale"]
+    assert stale["total"] == 2
+    stale_reasons = {g["reason"] for g in stale["reasons"]}
+    assert stale_reasons == {"evidence_stale_7d_plus", "close_time_within_7d"}
+    assert stale["total"] < res["agent"]["total"]
+
+    # Per-reason groups carry the manual tier's human-review alert.
+    manual_reasons = {g["reason"] for g in res["manual"]["reasons"]}
+    assert "domain_error_profile_applies:politics" in manual_reasons
+
+
 def test_forecast_warnings_resolve_acks_only_real_work(tmp_path, monkeypatch):
     lg, ids = _seed(tmp_path, monkeypatch)
 
@@ -71,6 +116,51 @@ def test_forecast_warnings_resolve_requires_alert_id(tmp_path, monkeypatch):
     _seed(tmp_path, monkeypatch)
     resp = server.handle_request(
         {"id": "1", "method": "forecast.warnings.resolve", "params": {}}
+    )
+    assert "error" in resp, resp
+
+
+def test_forecast_warnings_dismiss_records_silence_and_is_not_a_resolution(tmp_path, monkeypatch):
+    lg, ids = _seed(tmp_path, monkeypatch)
+    # Add a reforecast group to dismiss by reason.
+    lg.create_alert(
+        severity="warning", scope_type="question", scope_ref="fq_h",
+        reason="evidence_stale_7d_plus", recommended_action="Reforecast.")
+
+    # A non-empty note is required (no silent mass-dismiss).
+    bad = server.handle_request(
+        {"id": "1", "method": "forecast.warnings.dismiss",
+         "params": {"reason": "evidence_stale", "actor": "ops"}}
+    )
+    assert "error" in bad, bad
+
+    ok = server.handle_request(
+        {"id": "2", "method": "forecast.warnings.dismiss",
+         "params": {"reason": "evidence_stale", "note": "known noisy batch", "actor": "ops"}}
+    )
+    assert "result" in ok, ok
+    res = ok["result"]
+    assert res["count"] == 1
+    entry = res["dismissed"][0]
+    # Recorded, auditable silence — note + actor + TTL persisted.
+    assert entry["dismiss_note"] == "known noisy batch"
+    assert entry["dismiss_actor"] == "ops"
+    assert entry["dismiss_ttl_days"] == 7
+
+    # It dropped out of the open backlog WITHOUT being resolved: the stored alert
+    # carries the dismissal trail (distinct from a runner-resolution).
+    stored = lg.get_alert(entry["alert_id"])
+    assert stored.is_dismissed is True
+    assert stored.acknowledged_at is not None
+    open_now = {a.id for a in lg.list_alerts(unresolved_only=True)}
+    assert entry["alert_id"] not in open_now
+
+
+def test_forecast_warnings_dismiss_requires_a_selection(tmp_path, monkeypatch):
+    _seed(tmp_path, monkeypatch)
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.warnings.dismiss",
+         "params": {"note": "n", "actor": "ops"}}
     )
     assert "error" in resp, resp
 

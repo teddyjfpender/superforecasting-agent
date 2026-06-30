@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import sys
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -272,11 +275,48 @@ def run_due_reviews(
     return "\n".join(sections)
 
 
+def gated_evidence_collection(
+    led: ForecastLedger,
+    warning: Any,
+    *,
+    evidence_search: Callable[[Any, Any], Any],
+) -> dict[str, Any] | None:
+    """Run an injected evidence search+import for a no-evidence question and ack
+    ONLY when it actually imported NEW evidence.
+
+    ``evidence_search`` is the AGENT-tier (LLM/web) pass: it researches the
+    question and IMPORTS readings through the existing gated import path
+    (``import_source_evidence`` / the research stage), which already dedupes a
+    reading already on file. We measure the NET-NEW evidence rows it produced
+    (mirroring the CLI dedupe gate's ``skipped_duplicates`` accounting) and return
+    a truthy summary ONLY when ``>= 1`` genuinely-new row landed. An empty fetch or
+    a dup-only fetch nets zero rows → ``None`` → the dispatcher leaves the alert
+    OPEN (never a bare ack to drop the count). The search may raise (model/network
+    failure); the dispatcher catches it and re-surfaces the alert next pass.
+    """
+    if warning.scope_type != "question" or not warning.scope_ref:
+        return None
+    qid = warning.scope_ref
+    before = len(led.list_evidence(qid))
+    search_result = evidence_search(led, warning)
+    new_rows = len(led.list_evidence(qid)) - before
+    if new_rows < 1:
+        # No NEW evidence (empty or dup-only fetch) — the question still cannot be
+        # forecast, so leave the alert OPEN rather than acking on no real work.
+        return None
+    return {
+        "question_id": qid,
+        "new_evidence": new_rows,
+        "search_result": search_result,
+    }
+
+
 def build_warning_runners(
     ledger: ForecastLedger,
     *,
     now: str | None = None,
     reforecast_runner: Callable[[Any, Any], Any] | None = None,
+    evidence_search: Callable[[Any, Any], Any] | None = None,
 ):
     """Wire the warning dispatcher's injected runners to the REAL gated paths.
 
@@ -291,8 +331,20 @@ def build_warning_runners(
     the CLI passes its `--agent` closure, while the cron/gateway/tool paths leave
     it ``None`` (so REFORECAST alerts are honestly reported "skipped" / left OPEN
     rather than bare-acked — the heavy LLM pass is opt-in, never automatic).
+
+    ``evidence_search`` (the LLM/web EVIDENCE_COLLECTION pass for a no-evidence /
+    no-snapshot question) is likewise opt-in and injected only under the paid
+    `--agent` tier. When supplied it is wrapped by :func:`gated_evidence_collection`
+    so the alert is acked ONLY when the search imported >= 1 NEW evidence row;
+    when ``None`` the EVIDENCE_COLLECTION runner is left unwired, so those alerts
+    are honestly reported "skipped" / left OPEN, never bare-acked.
     """
     from forecasting.warnings import ResolutionRunners
+
+    evidence_runner = None
+    if evidence_search is not None:
+        def evidence_runner(led, warning):  # EVIDENCE_COLLECTION
+            return gated_evidence_collection(led, warning, evidence_search=evidence_search)
 
     def autopilot_runner(led, warning):  # MATERIAL_CHANGE
         if warning.scope_type != "question" or not warning.scope_ref:
@@ -349,6 +401,7 @@ def build_warning_runners(
 
     return ResolutionRunners(
         reforecast_runner=reforecast_runner,
+        evidence_runner=evidence_runner,
         autopilot_runner=autopilot_runner,
         score_runner=score_runner,
         postmortem_runner=postmortem_runner,
@@ -363,10 +416,15 @@ def run_warning_resolution(
     limit: int | None = None,
     reason: str | None = None,
     scope: str | None = None,
+    kinds: Any = None,
+    tier: str | None = None,
     dry_run: bool = False,
     reconcile: bool = True,
     runners: Any = None,
     reforecast_runner: Callable[[Any, Any], Any] | None = None,
+    evidence_search: Callable[[Any, Any], Any] | None = None,
+    cooldown: bool = False,
+    spend_cap: int | None = None,
     progress: Callable[[dict[str, Any]], None] | None = None,
     should_cancel: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
@@ -382,6 +440,16 @@ def run_warning_resolution(
     * INTERRUPTIBLE: ``should_cancel`` is polled before each alert; on a set flag
       the loop stops cleanly and returns ``cancelled=True`` with the partial
       tally (the alerts already resolved stay resolved — real work is durable).
+    * RE-SPEND SAFE (Slice 8): with ``cooldown=True`` a spendy AGENT-tier alert
+      still inside its post-failure backoff window is excluded from selection (so
+      the paid tier never re-spends on the same gated/failing alert every cycle),
+      and a paid attempt that does NOT resolve the alert is stamped via
+      :meth:`ForecastLedger.record_alert_attempt` (it stays OPEN — never a bare-ack
+      — but is now COOLED DOWN with a doubled next window). ``spend_cap`` is the
+      authoritative per-cycle agent-run ceiling: it is enforced IN THE LOOP
+      (counting only attempts that actually fired a runner), so the sweep halts
+      with ``budget_exhausted=True`` the moment the cap is reached, regardless of
+      how many alerts selection delivered.
     * STREAMING: ``progress`` receives a dict per phase
       (``{"phase": "start"|"alert"|"reconcile"|"done", "done", "total",
       "remaining", "alert_id", "reason", "status"}``) so a caller can render a
@@ -394,9 +462,14 @@ def run_warning_resolution(
 
     led = ledger if ledger is not None else ForecastLedger(db_path)
     if runners is None:
-        runners = build_warning_runners(led, now=now, reforecast_runner=reforecast_runner)
+        runners = build_warning_runners(
+            led, now=now, reforecast_runner=reforecast_runner, evidence_search=evidence_search
+        )
 
-    open_warnings = fwarn.select_open_warnings(led, scope=scope, reason=reason, limit=limit)
+    open_warnings = fwarn.select_open_warnings(
+        led, scope=scope, reason=reason, limit=limit, kinds=kinds, tier=tier,
+        cooldown=cooldown, now=now,
+    )
     total = len(open_warnings)
 
     def _emit(payload: dict[str, Any]) -> None:
@@ -448,21 +521,47 @@ def run_warning_resolution(
         }
 
     reconcile_result: dict[str, Any] | None = None
+    spent = 0  # actual agent-runner invocations this cycle (the spend_cap counter)
+    budget_exhausted = False
     with allow_ledger_writes(reason="forecast_warnings_resolution"):
         for index, warning in enumerate(open_warnings, start=1):
             if _is_cancelled():
                 cancelled = True
                 break
+            # Per-cycle agent-spend cap (Slice 8): halt the sweep BEFORE attempting
+            # another alert once we have already spent the budget this cycle. A
+            # cooldown-skipped alert never reaches here (filtered at selection), so
+            # the cap counts only real runner invocations.
+            if spend_cap is not None and spent >= spend_cap:
+                budget_exhausted = True
+                break
             result = fwarn.resolve_alert(led, warning, runners=runners, now=now)
             results.append(result)
+            status = result.get("status")
+            # A "resolved"/"failed" on an auto-resolvable (non-bookkeeping) kind means
+            # the injected runner actually fired — i.e. a real (paid) spend.
+            ran_runner = (
+                status in {"resolved", "failed"}
+                and warning.kind is not fwarn.ResolutionKind.BOOKKEEPING
+            )
+            if ran_runner:
+                spent += 1
+            # Re-spend cooldown stamp: a paid attempt that did NOT resolve the alert
+            # opens/extends its exponential backoff so we do not retry it next cycle.
+            # It stays OPEN (never bare-acked) — this is the opposite of an ack.
+            if cooldown and status == "failed" and warning.kind in fwarn.RESPEND_COOLDOWN_KINDS:
+                try:
+                    led.record_alert_attempt(warning.id, now=now)
+                except Exception:  # a cooldown-stamp failure must never break the sweep
+                    pass
             _emit({
                 "phase": "alert", "done": index, "total": total,
                 "remaining": total - index, "alert_id": warning.id,
-                "reason": warning.reason, "status": result.get("status"),
+                "reason": warning.reason, "status": status,
             })
-        # Only reconcile if we ran the full backlog (a cancel leaves the sweep
-        # mid-flight; reconciling then could ack alerts we never got to inspect).
-        if reconcile and not cancelled:
+        # Only reconcile if we ran the full backlog (a cancel/budget-halt leaves the
+        # sweep mid-flight; reconciling then could ack alerts we never inspected).
+        if reconcile and not cancelled and not budget_exhausted:
             _emit({"phase": "reconcile", "done": len(results), "total": total, "remaining": 0})
             reconcile_result = led.reconcile_alerts(now=now)
 
@@ -471,16 +570,470 @@ def run_warning_resolution(
         status = result.get("status", "?")
         tally[status] = tally.get(status, 0) + 1
     _emit({"phase": "done", "done": len(results), "total": total, "remaining": 0,
-           "cancelled": cancelled, "dry_run": False})
+           "cancelled": cancelled, "budget_exhausted": budget_exhausted, "dry_run": False})
     return {
         "dry_run": False,
         "cancelled": cancelled,
+        "budget_exhausted": budget_exhausted,
+        "spent": spent,
         "processed": len(results),
         "total": total,
         "results": results,
         "tally": tally,
         "reconcile": reconcile_result,
     }
+
+
+# ---------------------------------------------------------------------------
+# Continuous warning-automode (slice 7): a FREE-tier sweep on every cron tick at
+# ZERO token spend + a BOUNDED PAID tier (reforecast + evidence_collection) gated
+# by a per-cycle agent-run BUDGET and a MINIMUM INTERVAL, both config-tunable.
+#
+# This is the unattended counterpart to `forecast warnings automode`. The free
+# tier ({bookkeeping, score, postmortem, material_change}) wires only the non-LLM
+# gated runners, so it is safe to run every tick. The paid tier
+# ({reforecast, evidence_collection}) is the heavy LLM pass — it ALSO runs, but is
+# bounded two ways so an unattended loop cannot run away with the token budget:
+#   * BUDGET  — the paid pass is capped at N alerts via run_warning_resolution's
+#               ``limit`` (the tier filter is applied BEFORE the limit, so the cap
+#               bounds the PAID backlog, not the whole one). Each capped alert is
+#               at most one agent run, so N = max agent runs per cycle.
+#   * INTERVAL — the paid pass runs at most once per ``min_interval_hours``,
+#               tracked by a tiny state file (last paid-run timestamp). The free
+#               tier is unaffected — it runs every tick regardless.
+#
+# The load-bearing no-bare-ack invariant is fully preserved: this only orchestrates
+# WHICH gated sweep runs WHEN; the dispatcher still acks ONLY on real gated work.
+# ---------------------------------------------------------------------------
+
+_AUTOMODE_PAID_BUDGET_DEFAULT = 3
+_AUTOMODE_PAID_MIN_INTERVAL_HOURS_DEFAULT = 6.0
+
+_AUTOMODE_BUDGET_ENV_NAMES = (
+    "FORECAST_WARNINGS_PAID_BUDGET",
+    "SUPERFORECASTING_AGENT_WARNINGS_PAID_BUDGET",
+)
+_AUTOMODE_INTERVAL_ENV_NAMES = (
+    "FORECAST_WARNINGS_PAID_MIN_INTERVAL_HOURS",
+    "SUPERFORECASTING_AGENT_WARNINGS_PAID_MIN_INTERVAL_HOURS",
+)
+
+
+def _first_env_value(names: tuple[str, ...]) -> str:
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _automode_config() -> dict[str, Any]:
+    """Read the optional ``cron.warning_automode`` config block (best-effort)."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
+        block = cron_cfg.get("warning_automode", {}) if isinstance(cron_cfg, dict) else {}
+        return block if isinstance(block, dict) else {}
+    except Exception:
+        return {}
+
+
+def resolve_paid_budget(explicit: int | None = None) -> int:
+    """Resolve the per-cycle paid-tier agent-run budget.
+
+    Precedence: explicit arg > env (``FORECAST_WARNINGS_PAID_BUDGET``) >
+    ``cron.warning_automode.paid_budget`` in config > default (3). A value of 0
+    disables the paid tier entirely (free-tier-only continuous mode).
+    """
+    if explicit is not None:
+        try:
+            value = int(explicit)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    raw = _first_env_value(_AUTOMODE_BUDGET_ENV_NAMES)
+    if raw:
+        try:
+            value = int(float(raw))
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    cfg_val = _automode_config().get("paid_budget")
+    if cfg_val is not None:
+        try:
+            value = int(cfg_val)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    return _AUTOMODE_PAID_BUDGET_DEFAULT
+
+
+def resolve_paid_min_interval_hours(explicit: float | None = None) -> float:
+    """Resolve the minimum hours between paid-tier passes (default 6h).
+
+    Precedence: explicit arg > env > ``cron.warning_automode.paid_min_interval_hours``
+    in config > default. A value of 0 means "no interval gate" (paid runs every
+    tick, still budget-capped)."""
+    if explicit is not None:
+        try:
+            value = float(explicit)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    raw = _first_env_value(_AUTOMODE_INTERVAL_ENV_NAMES)
+    if raw:
+        try:
+            value = float(raw)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    cfg_val = _automode_config().get("paid_min_interval_hours")
+    if cfg_val is not None:
+        try:
+            value = float(cfg_val)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    return _AUTOMODE_PAID_MIN_INTERVAL_HOURS_DEFAULT
+
+
+def _automode_state_path(state_path: str | Path | None = None) -> Path:
+    if state_path is not None:
+        return Path(state_path)
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "cron" / "warning_automode_state.json"
+
+
+def _read_automode_state(state_path: str | Path | None = None) -> dict[str, Any]:
+    path = _automode_state_path(state_path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_automode_state(state: dict[str, Any], state_path: str | Path | None = None) -> None:
+    path = _automode_state_path(state_path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass  # a state-write failure must never break the sweep — worst case we run paid again sooner
+
+
+def _now_dt(now: str | None = None) -> datetime:
+    if isinstance(now, str) and now.strip():
+        try:
+            return datetime.fromisoformat(now.strip())
+        except ValueError:
+            pass
+    from hermes_time import now as hermes_now
+
+    return hermes_now()
+
+
+def _paid_interval_elapsed(last_iso: Any, now_dt: datetime, min_interval_hours: float) -> bool:
+    """Whether enough time has elapsed since the last paid run to run it again.
+
+    Fail-open: a missing or unparseable last-run timestamp is treated as eligible
+    (running the paid tier again is not an invariant breach — it only spends the
+    budget the operator explicitly opted into)."""
+    if min_interval_hours <= 0:
+        return True
+    if not last_iso:
+        return True
+    try:
+        last_dt = datetime.fromisoformat(str(last_iso))
+    except (TypeError, ValueError):
+        return True
+    try:
+        a, b = last_dt, now_dt
+        if (a.tzinfo is None) != (b.tzinfo is None):
+            # Normalise an awareness mismatch by dropping tzinfo from both so the
+            # subtraction never raises (the interval gate is coarse, hours-scale).
+            a = a.replace(tzinfo=None)
+            b = b.replace(tzinfo=None)
+        elapsed = (b - a).total_seconds()
+    except Exception:
+        return True
+    return elapsed >= min_interval_hours * 3600.0
+
+
+def run_warning_automode(
+    *,
+    db_path: str | None = None,
+    ledger: ForecastLedger | None = None,
+    now: str | None = None,
+    paid_budget: int | None = None,
+    paid_min_interval_hours: float | None = None,
+    state_path: str | Path | None = None,
+    runners: Any = None,
+    reforecast_runner: Callable[[Any, Any], Any] | None = None,
+    evidence_search: Callable[[Any, Any], Any] | None = None,
+    force_paid: bool = False,
+    reconcile: bool = True,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+    should_cancel: Callable[[], bool] | None = None,
+) -> dict[str, Any]:
+    """One continuous-automode cycle: an unbudgeted FREE-tier sweep followed by a
+    BOUNDED PAID-tier sweep (budget cap + min-interval gate).
+
+    The FREE tier ({bookkeeping, score, postmortem, material_change}) runs every
+    call at zero token spend — its tier filter excludes the LLM kinds, so the
+    injected agent closures are never invoked there. The PAID tier
+    ({reforecast, evidence_collection}) runs ONLY when agent runners are wired AND
+    the min interval has elapsed (or ``force_paid``); it is capped at ``paid_budget``
+    alerts via ``run_warning_resolution``'s ``limit`` (one agent run per alert).
+
+    Returns a structured summary with the per-tier ``run_warning_resolution``
+    results plus the paid gating decision.
+    """
+    led = ledger if ledger is not None else ForecastLedger(db_path)
+    budget = resolve_paid_budget(paid_budget)
+    interval = resolve_paid_min_interval_hours(paid_min_interval_hours)
+
+    if runners is None:
+        runners = build_warning_runners(
+            led, now=now, reforecast_runner=reforecast_runner, evidence_search=evidence_search
+        )
+
+    # FREE tier — every tick, unbudgeted, zero token spend (the tier filter keeps
+    # the agent closures out of this pass). Reconcile is deferred so we run it once
+    # at the end of the cycle, after whichever tier ran last.
+    free = run_warning_resolution(
+        ledger=led,
+        now=now,
+        tier="free",
+        reconcile=False,
+        runners=runners,
+        progress=progress,
+        should_cancel=should_cancel,
+    )
+
+    has_agent = (
+        getattr(runners, "reforecast_runner", None) is not None
+        or getattr(runners, "evidence_runner", None) is not None
+    )
+    state = _read_automode_state(state_path)
+    last_iso = state.get("last_paid_run_at")
+    now_dt = _now_dt(now)
+    interval_ok = force_paid or _paid_interval_elapsed(last_iso, now_dt, interval)
+
+    paid: dict[str, Any] | None = None
+    paid_ran = False
+    paid_skipped_reason: str | None = None
+    if not has_agent:
+        paid_skipped_reason = "no agent runners wired (free-tier-only continuous mode)"
+    elif budget <= 0:
+        paid_skipped_reason = "paid budget is 0 (paid tier disabled)"
+    elif not interval_ok:
+        paid_skipped_reason = (
+            f"min interval {interval}h not elapsed since last paid run {last_iso}"
+        )
+    else:
+        # BOUNDED paid pass: the tier filter restricts to the LLM kinds. The cap is
+        # enforced two ways that agree at ``budget``: ``limit`` bounds the SELECTED
+        # backlog (keeps the page small) while ``spend_cap`` is the authoritative
+        # per-cycle agent-run ceiling enforced IN THE LOOP (so even if selection ever
+        # over-delivers, actual runs never exceed ``budget``). ``cooldown=True`` drops
+        # any spendy alert still inside its post-failure backoff window — so this pass
+        # never re-spends on the same gated/failing alert every cycle. This pass owns
+        # the cycle's reconcile.
+        paid = run_warning_resolution(
+            ledger=led,
+            now=now,
+            tier="reforecast",
+            limit=budget,
+            spend_cap=budget,
+            cooldown=True,
+            reconcile=reconcile,
+            runners=runners,
+            progress=progress,
+            should_cancel=should_cancel,
+        )
+        paid_ran = True
+        state["last_paid_run_at"] = now_dt.isoformat()
+        _write_automode_state(state, state_path)
+
+    # When the paid tier did NOT run (so it could not reconcile), still close the
+    # alert lifecycle once after the free sweep — auto-ack any already-consumed
+    # alert. Conservative: reconcile_alerts only touches clearly-consumed alerts.
+    reconcile_result: dict[str, Any] | None = None
+    if paid is not None:
+        reconcile_result = paid.get("reconcile")
+    elif reconcile:
+        from forecasting.ledger import allow_ledger_writes
+
+        with allow_ledger_writes(reason="forecast_warning_automode_reconcile"):
+            try:
+                reconcile_result = led.reconcile_alerts(now=now)
+            except Exception:
+                reconcile_result = None
+
+    return {
+        "free": free,
+        "paid": paid,
+        "paid_ran": paid_ran,
+        "paid_skipped_reason": paid_skipped_reason,
+        "paid_budget": budget,
+        "paid_min_interval_hours": interval,
+        "last_paid_run_at": state.get("last_paid_run_at"),
+        "reconcile": reconcile_result,
+    }
+
+
+def _fmt_tally(tally: dict[str, int]) -> str:
+    if not tally:
+        return "nothing"
+    return ", ".join(f"{status} {count}" for status, count in sorted(tally.items()))
+
+
+def _automode_report(result: dict[str, Any]) -> str:
+    """Concise human report for the cron delivery. Returns "" (silent) when the
+    cycle did nothing worth surfacing, so the no_agent cron stays quiet."""
+    free = result.get("free") or {}
+    paid = result.get("paid")
+    reconcile = result.get("reconcile") or {}
+    free_processed = int(free.get("processed", 0) or 0)
+    reconciled = int(reconcile.get("reconciled_count", 0) or 0)
+    if free_processed == 0 and not result.get("paid_ran") and reconciled == 0:
+        return ""  # nothing happened — stay silent
+
+    lines = ["Warning automode"]
+    lines.append(
+        f"free: processed {free_processed}/{int(free.get('total', 0) or 0)} "
+        f"({_fmt_tally(free.get('tally', {}))})"
+    )
+    if result.get("paid_ran") and paid is not None:
+        lines.append(
+            f"paid: processed {int(paid.get('processed', 0) or 0)}/"
+            f"{int(paid.get('total', 0) or 0)} "
+            f"(budget {result.get('paid_budget')}; {_fmt_tally(paid.get('tally', {}))})"
+        )
+    else:
+        lines.append(f"paid: skipped — {result.get('paid_skipped_reason')}")
+    if reconciled:
+        lines.append(f"reconcile: acknowledged {reconciled} consumed alert(s)")
+    return "\n".join(lines) + "\n"
+
+
+def main_warning_automode(argv: list[str] | None = None) -> int:
+    """argparse entrypoint for the continuous warning-automode cron job.
+
+    Drives :func:`run_warning_automode`. The paid (LLM) tier is wired only under
+    ``--agent`` (or ``FORECAST_WARNINGS_AUTOMODE_AGENT``); the agent closures are
+    built lazily via the CLI layer so run_agent is never imported by this module.
+    """
+    parser = argparse.ArgumentParser(
+        description="Run a continuous warning-automode cycle (free tier + bounded paid tier)"
+    )
+    parser.add_argument("--db")
+    parser.add_argument("--now")
+    parser.add_argument("--paid-budget", type=int)
+    parser.add_argument("--paid-min-interval-hours", type=float)
+    parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="Wire the paid-tier LLM runners (reforecast + evidence collection). "
+        "Without it, only the free tier runs.",
+    )
+    parser.add_argument(
+        "--force-paid",
+        action="store_true",
+        help="Ignore the min-interval gate and run the paid tier this cycle (still budget-capped).",
+    )
+    parser.add_argument("--model")
+    parser.add_argument("--provider")
+    parser.add_argument("--max-iterations", type=int)
+    args = parser.parse_args(argv)
+    db_path = args.db or os.getenv("FORECAST_LEDGER_DB") or None
+
+    reforecast_runner = None
+    evidence_search = None
+    if args.agent or _env_flag("FORECAST_WARNINGS_AUTOMODE_AGENT"):
+        try:
+            from forecasting.cli import build_cron_warning_agent_runners
+
+            reforecast_runner, evidence_search = build_cron_warning_agent_runners(
+                db_path=db_path,
+                model=args.model,
+                provider=args.provider,
+                max_iterations=args.max_iterations,
+                now=args.now,
+            )
+        except Exception as exc:  # never let an agent-wiring failure kill the free tier
+            print(
+                f"Warning automode: failed to build paid-tier agent runners "
+                f"({exc!r}); running FREE tier only.",
+                file=sys.stderr,
+            )
+
+    result = run_warning_automode(
+        db_path=db_path,
+        now=args.now,
+        paid_budget=args.paid_budget,
+        paid_min_interval_hours=args.paid_min_interval_hours,
+        reforecast_runner=reforecast_runner,
+        evidence_search=evidence_search,
+        force_paid=args.force_paid,
+    )
+    text = _automode_report(result)
+    if text:
+        print(text, end="")
+    return 0
+
+
+def install_warning_automode_script(
+    script_path: Path,
+    *,
+    db_path: str | None = None,
+    agent: bool = False,
+    paid_budget: int | None = None,
+    paid_min_interval_hours: float | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    max_iterations: int | None = None,
+) -> None:
+    """Install the small script used by the continuous warning-automode cron job."""
+
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    args: list[str] = []
+    if db_path:
+        args.extend(["--db", db_path])
+    if agent:
+        args.append("--agent")
+    if paid_budget is not None:
+        args.extend(["--paid-budget", str(int(paid_budget))])
+    if paid_min_interval_hours is not None:
+        args.extend(["--paid-min-interval-hours", str(float(paid_min_interval_hours))])
+    if model:
+        args.extend(["--model", model])
+    if provider:
+        args.extend(["--provider", provider])
+    if max_iterations is not None:
+        args.extend(["--max-iterations", str(int(max_iterations))])
+    script_path.write_text(
+        "\n".join(
+            [
+                "from forecasting.cron_runner import main_warning_automode",
+                "",
+                "if __name__ == '__main__':",
+                f"    raise SystemExit(main_warning_automode({args!r}))",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

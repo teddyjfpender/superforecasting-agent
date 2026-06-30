@@ -126,6 +126,35 @@ def test_limit_and_scope_bound_the_sweep(tmp_path):
     assert scoped["results"][0]["reason"] == "autopilot_enabled"
 
 
+def test_tier_filter_bounds_the_sweep(tmp_path):
+    """`run_warning_resolution(tier=...)` threads the per-tier kind filter into
+    select_open_warnings so a bulk pass only considers that tier's backlog."""
+    lg = _ledger(tmp_path)
+    _seed_alerts(lg)  # one each: postmortem, material, no_auto, reforecast, bookkeeping
+
+    # The reforecast tier sees ONLY the REFORECAST alert.
+    refo = run_warning_resolution(ledger=lg, dry_run=True, tier="reforecast")
+    assert refo["total"] == 1
+    assert refo["results"][0]["reason"] == "evidence_stale_7d_plus"
+
+    # The free tier excludes REFORECAST and NO_AUTO (4 of the 5 seeded, minus the
+    # one reforecast and the one no_auto -> postmortem + material + bookkeeping).
+    free = run_warning_resolution(ledger=lg, dry_run=True, tier="free")
+    free_reasons = {r["reason"] for r in free["results"]}
+    assert "evidence_stale_7d_plus" not in free_reasons
+    assert "domain_error_profile_applies:politics" not in free_reasons
+    assert free["total"] == 3
+
+
+def test_kinds_filter_bounds_the_sweep(tmp_path):
+    lg = _ledger(tmp_path)
+    _seed_alerts(lg)
+
+    only = run_warning_resolution(ledger=lg, dry_run=True, kinds=["postmortem"])
+    assert only["total"] == 1
+    assert only["results"][0]["reason"] == "postmortem_due"
+
+
 def test_build_warning_runners_leaves_reforecast_unwired_by_default(tmp_path):
     lg = _ledger(tmp_path)
     runners = build_warning_runners(lg)

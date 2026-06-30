@@ -12,12 +12,17 @@ import pytest
 
 from forecasting.ledger import ForecastLedger
 from forecasting.warnings import (
+    WARNING_TIERS,
     NormalizedWarning,
     ResolutionKind,
     ResolutionRunners,
     classify_warning,
+    coerce_kind,
+    expand_tier,
     iter_warnings,
     resolve_alert,
+    resolve_kind_filter,
+    select_open_warnings,
 )
 
 CRIT = "Resolves yes if the reported value exceeds the stated threshold at the close date."
@@ -58,9 +63,12 @@ def _alert(lg, *, reason: str, severity: str = "warning", scope_ref: str = "fq_x
         ("evidence_stale_7d_plus", ResolutionKind.REFORECAST),
         ("last_update_30d", ResolutionKind.REFORECAST),
         ("new_evidence:ev_123", ResolutionKind.REFORECAST),
-        ("no_evidence", ResolutionKind.REFORECAST),
-        ("no_forecast_snapshot", ResolutionKind.REFORECAST),
         ("close_time_within_7d", ResolutionKind.REFORECAST),
+        # EVIDENCE_COLLECTION — no evidence / no snapshot yet: collect first, then
+        # (re)forecast. Routed to its own kind so the zero-evidence-gated REFORECAST
+        # runner never silently swallows them as "skipped: update gated".
+        ("no_evidence", ResolutionKind.EVIDENCE_COLLECTION),
+        ("no_forecast_snapshot", ResolutionKind.EVIDENCE_COLLECTION),
         # BOOKKEEPING
         ("autopilot_enabled:pol_1", ResolutionKind.BOOKKEEPING),
         ("autopilot_source_failed:w2", ResolutionKind.BOOKKEEPING),
@@ -295,3 +303,130 @@ def test_bookkeeping_acks_without_a_runner(tmp_path):
     assert res["status"] == "resolved"
     assert res["acknowledged"] is True
     assert not _is_open(lg, a.id)
+
+
+# ---------------------------------------------------------------------------
+# Tier / kinds filter — per-tier bulk selection
+# ---------------------------------------------------------------------------
+
+def test_coerce_kind_accepts_enum_value_and_name():
+    assert coerce_kind(ResolutionKind.SCORE) is ResolutionKind.SCORE
+    # by enum value (the wire form a JSON RPC / CLI would send)
+    assert coerce_kind("score") is ResolutionKind.SCORE
+    assert coerce_kind("material_change") is ResolutionKind.MATERIAL_CHANGE
+    # hyphen/underscore + case insensitive
+    assert coerce_kind("Material-Change") is ResolutionKind.MATERIAL_CHANGE
+    # by enum NAME
+    assert coerce_kind("REFORECAST") is ResolutionKind.REFORECAST
+
+
+def test_coerce_kind_rejects_unknown():
+    with pytest.raises(ValueError):
+        coerce_kind("not_a_kind")
+
+
+def test_expand_tier_free_and_reforecast():
+    assert expand_tier("free") == frozenset(
+        {
+            ResolutionKind.BOOKKEEPING,
+            ResolutionKind.SCORE,
+            ResolutionKind.POSTMORTEM,
+            ResolutionKind.MATERIAL_CHANGE,
+        }
+    )
+    # The heavy "reforecast"/agent tier holds both LLM kinds.
+    assert expand_tier("reforecast") == frozenset(
+        {ResolutionKind.REFORECAST, ResolutionKind.EVIDENCE_COLLECTION}
+    )
+    # NO_AUTO is in no tier (never auto-resolved, so it can't be bulk-actioned).
+    all_tier_kinds = set().union(*WARNING_TIERS.values())
+    assert ResolutionKind.NO_AUTO not in all_tier_kinds
+
+
+def test_expand_tier_aliases():
+    assert expand_tier("run-free-pass") == expand_tier("free")
+    assert expand_tier("reforecast-tier") == expand_tier("reforecast")
+
+
+def test_expand_tier_rejects_unknown():
+    with pytest.raises(ValueError):
+        expand_tier("nope")
+
+
+def test_resolve_kind_filter_none_when_unfiltered():
+    # No tier + no kinds => None ("match everything"), distinct from an empty set.
+    assert resolve_kind_filter() is None
+    assert resolve_kind_filter(kinds=[]) == frozenset()  # explicit "match nothing"
+
+
+def test_resolve_kind_filter_unions_tier_and_kinds():
+    got = resolve_kind_filter(tier="free", kinds=["reforecast"])
+    assert got == expand_tier("free") | {ResolutionKind.REFORECAST}
+
+
+def _seed_one_per_kind(lg):
+    """Create one open alert per resolution kind; return {kind: alert_id}."""
+    reasons = {
+        ResolutionKind.MATERIAL_CHANGE: "watched_source_changed:w1",
+        ResolutionKind.REFORECAST: "evidence_stale_7d_plus",
+        ResolutionKind.SCORE: "score_due",
+        ResolutionKind.POSTMORTEM: "postmortem_due",
+        ResolutionKind.BOOKKEEPING: "autopilot_enabled:p1",
+        ResolutionKind.NO_AUTO: "domain_error_profile_review",
+    }
+    ids = {}
+    for kind, reason in reasons.items():
+        a = _alert(lg, reason=reason, scope_ref=f"fq_{kind.value}")
+        ids[kind] = a.id
+    return ids
+
+
+def test_select_open_warnings_kinds_filter(tmp_path):
+    lg = _ledger(tmp_path)
+    ids = _seed_one_per_kind(lg)
+
+    got = select_open_warnings(lg, kinds=[ResolutionKind.SCORE, "postmortem"])
+    assert {w.kind for w in got} == {ResolutionKind.SCORE, ResolutionKind.POSTMORTEM}
+    assert {w.id for w in got} == {ids[ResolutionKind.SCORE], ids[ResolutionKind.POSTMORTEM]}
+
+
+def test_select_open_warnings_free_tier(tmp_path):
+    lg = _ledger(tmp_path)
+    _seed_one_per_kind(lg)
+
+    got = select_open_warnings(lg, tier="free")
+    assert {w.kind for w in got} == expand_tier("free")
+    # REFORECAST + NO_AUTO are excluded from the free tier.
+    assert ResolutionKind.REFORECAST not in {w.kind for w in got}
+    assert ResolutionKind.NO_AUTO not in {w.kind for w in got}
+
+
+def test_select_open_warnings_reforecast_tier(tmp_path):
+    lg = _ledger(tmp_path)
+    _seed_one_per_kind(lg)
+
+    got = select_open_warnings(lg, tier="reforecast")
+    assert {w.kind for w in got} == {ResolutionKind.REFORECAST}
+
+
+def test_select_open_warnings_no_filter_returns_all(tmp_path):
+    lg = _ledger(tmp_path)
+    ids = _seed_one_per_kind(lg)
+
+    got = select_open_warnings(lg)
+    assert {w.id for w in got} == set(ids.values())
+
+
+def test_select_open_warnings_kind_filter_applies_before_limit(tmp_path):
+    lg = _ledger(tmp_path)
+    # Two SCORE alerts + a higher-priority MATERIAL_CHANGE that the limit would
+    # otherwise eat first. The tier filter must run BEFORE the limit so limit caps
+    # the TIER's backlog, not the whole one.
+    _alert(lg, reason="watched_source_changed:w1", severity="high", scope_ref="fq_mc")
+    s1 = _alert(lg, reason="score_due", scope_ref="fq_s1")
+    s2 = _alert(lg, reason="score_due", scope_ref="fq_s2")
+
+    got = select_open_warnings(lg, kinds=["score"], limit=1)
+    assert len(got) == 1
+    assert got[0].kind is ResolutionKind.SCORE
+    assert got[0].id in {s1.id, s2.id}

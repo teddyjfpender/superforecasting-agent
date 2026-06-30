@@ -312,6 +312,39 @@ export interface ForecastWarningGroup {
   scope_refs?: string[]
 }
 
+// forecast.warnings.aggregate — the FULL open backlog folded into the 4 operator
+// action tiers with per-tier + per-reason totals. Counts are server-side
+// UNTRUNCATED (no limit); the headline must reflect the whole backlog.
+//   free   — non-LLM gated close-outs (bookkeeping / score / postmortem / material)
+//   agent  — REFORECAST (the opt-in LLM pass; folds the evidence-collection reasons)
+//   manual — NO_AUTO (needs a human; never auto-resolved)
+export interface ForecastWarningsTier {
+  total?: number
+  reasons?: ForecastWarningGroup[]
+}
+
+// The agent tier additionally carries a `stale` sub-bucket: the elapsed-time
+// -staleness subset of its reforecast reasons (evidence_stale / last_update /
+// close_time_within). Those reasons are STILL counted in the agent total — `stale`
+// is a view over the tier, not a fourth tier.
+export interface ForecastWarningsAgentTier extends ForecastWarningsTier {
+  stale?: ForecastWarningsTier
+}
+
+export interface ForecastWarningsHeadline {
+  total?: number
+  free?: number
+  agent?: number
+  manual?: number
+}
+
+export interface ForecastWarningsAggregateResponse {
+  headline?: ForecastWarningsHeadline
+  free?: ForecastWarningsTier
+  agent?: ForecastWarningsAgentTier
+  manual?: ForecastWarningsTier
+}
+
 // One alert's resolution outcome (mirrors forecasting.warnings._result):
 // status ∈ resolved | surfaced | failed | skipped; acked ONLY on real work.
 export interface ForecastWarningResolveResult {

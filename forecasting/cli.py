@@ -2418,6 +2418,43 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     schedule_cron.set_defaults(_forecast_handler=_cmd_schedule_install_cron)
 
+    automode_cron = schedule_sub.add_parser(
+        "automode-cron",
+        help="Start/stop/status the continuous warning-automode cron (free tier + bounded paid tier)",
+    )
+    automode_cron_sub = automode_cron.add_subparsers(dest="automode_cron_command")
+    ac_start = automode_cron_sub.add_parser(
+        "start", help="Install the continuous warning-automode cron job (clean re-arm)"
+    )
+    ac_start.add_argument("--schedule", default="every 30 minutes")
+    ac_start.add_argument("--name", default="Forecast warning automode")
+    ac_start.add_argument("--deliver", default="local")
+    ac_start.add_argument("--profile")
+    ac_start.add_argument(
+        "--no-agent",
+        dest="agent",
+        action="store_false",
+        help="Free-tier-only continuous mode (do NOT wire the paid LLM tier)",
+    )
+    ac_start.set_defaults(agent=True)
+    ac_start.add_argument(
+        "--paid-budget", type=int, help="Per-cycle paid-tier agent-run cap (default 3)"
+    )
+    ac_start.add_argument(
+        "--paid-min-interval-hours", type=float, help="Minimum hours between paid passes (default 6)"
+    )
+    ac_start.add_argument("--model")
+    ac_start.add_argument("--provider")
+    ac_start.add_argument("--max-iterations", type=int)
+    ac_start.set_defaults(_forecast_handler=_cmd_automode_cron_start)
+    ac_stop = automode_cron_sub.add_parser("stop", help="Remove the continuous warning-automode cron job")
+    ac_stop.add_argument("--name", default="Forecast warning automode")
+    ac_stop.set_defaults(_forecast_handler=_cmd_automode_cron_stop)
+    ac_status = automode_cron_sub.add_parser("status", help="Show the continuous warning-automode cron status")
+    ac_status.add_argument("--name", default="Forecast warning automode")
+    ac_status.add_argument("--json", action="store_true")
+    ac_status.set_defaults(_forecast_handler=_cmd_automode_cron_status)
+
     # `cycle`, not `desk` — `forecast desk` is the TUI desk launcher (a runtime
     # passthrough); this is the headless closed-loop cycle.
     cycle_parser = forecast_sub.add_parser("cycle", help="Run the closed-loop forecast cycle")
@@ -2488,6 +2525,24 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     warnings_automode.add_argument("--limit", type=int, default=None, help="Cap how many alerts to process this pass")
     warnings_automode.add_argument("--reason", help="Filter to reasons containing this text")
     warnings_automode.add_argument("--scope", help="Filter to a single question id / scope ref")
+    warnings_automode.add_argument(
+        "--tier",
+        choices=["free", "reforecast"],
+        help=(
+            "Per-tier bulk pass: 'free' = the non-LLM kinds "
+            "{bookkeeping,score,postmortem,material_change}; 'reforecast' = the "
+            "opt-in LLM reforecast/evidence tier (pair with --agent)"
+        ),
+    )
+    warnings_automode.add_argument(
+        "--kinds",
+        nargs="+",
+        metavar="KIND",
+        help=(
+            "Restrict to these ResolutionKinds (e.g. --kinds score postmortem); "
+            "UNIONed with --tier when both are given"
+        ),
+    )
     warnings_automode.add_argument(
         "--agent",
         action="store_true",
@@ -8531,13 +8586,20 @@ def _run_update_agent(
     provider: str | None,
     max_iterations: int,
     stage: str = "update",
+    commit_policy: str | None = None,
 ) -> dict[str, Any]:
     """Run the LLM agent for one question's pipeline stage and RETURN the structured
     result (no printing). The agent commits through the forecasting tool, whose commit
     hook writes the analyst brief — so the loop closes. Shared by `forecast agent`,
     `refresh --agent`, and the autonomous `cycle run --agent` sweep (run_agent is
-    imported lazily here so the ledger/cron layers never depend on it)."""
-    messages = build_protocol_messages(ledger, question_id, stage=stage)
+    imported lazily here so the ledger/cron layers never depend on it).
+
+    ``commit_policy="commit_material"`` is set by the autonomous re-forecast paths so
+    the update stage COMMITS a material move instead of stopping at a preview (see
+    ``forecasting.protocol._COMMIT_MATERIAL_POLICY``)."""
+    messages = build_protocol_messages(
+        ledger, question_id, stage=stage, commit_policy=commit_policy
+    )
     enabled_toolsets = _toolsets_for_stage(stage)
     from run_agent import AIAgent
 
@@ -8565,6 +8627,7 @@ def _cmd_agent(args: argparse.Namespace) -> None:
     result = _run_update_agent(
         _ledger(args), args.id,
         model=args.model, provider=args.provider, max_iterations=args.max_iterations, stage=args.stage,
+        commit_policy=getattr(args, "commit_policy", None),
     )
     print(result.get("final_response") or result)
 
@@ -10393,6 +10456,8 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
     the pipeline update gate (skip + report blockers unless --force), caps the count
     (--max-questions), runs the LLM update stage, and returns per-question result
     dicts. Lives here so run_agent is never imported by cron_runner/ledger."""
+    from forecasting.warnings import is_material_move
+
     ledger = _ledger(args)
     model, provider = args.model, args.provider
     _mi = getattr(args, "max_iterations", None)
@@ -10425,14 +10490,33 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
             # sessions, so a question that ran but declined to commit still counts.
             processed += 1
             try:
-                _run_update_agent(ledger, qid, model=model, provider=provider, max_iterations=max_iter)
+                _run_update_agent(
+                    ledger, qid, model=model, provider=provider,
+                    max_iterations=max_iter, commit_policy="commit_material",
+                )
             except Exception as exc:  # one failure must not abort the sweep
                 results.append({"question_id": qid, "status": "error", "detail": str(exc)[:160]})
                 continue
             post = ledger.get_current_snapshot(qid)
             new_commit = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
             if new_commit:
-                results.append({"question_id": qid, "status": "committed", "detail": f"new snapshot {post.forecast_id}"})
+                # A material move under the commit policy is the success the
+                # auto-reforecast wants. Surface the delta so the sweep report is
+                # honest about WHY this counted (and flags a marginal commit that
+                # slipped through, rather than silently calling it the same thing).
+                prior_p = prior.probability_or_distribution if prior is not None else None
+                material = is_material_move(prior_p, post.probability_or_distribution)
+                delta = None
+                if isinstance(prior_p, (int, float)) and not isinstance(prior_p, bool) and isinstance(
+                    post.probability_or_distribution, (int, float)
+                ) and not isinstance(post.probability_or_distribution, bool):
+                    delta = float(post.probability_or_distribution) - float(prior_p)
+                detail = f"new snapshot {post.forecast_id}"
+                if delta is not None:
+                    detail += f" (Δp {delta:+.3f}{'' if material else ', marginal'})"
+                elif not material:
+                    detail += " (marginal)"
+                results.append({"question_id": qid, "status": "committed", "detail": detail})
             else:
                 results.append({"question_id": qid, "status": "skipped", "detail": "agent committed no new snapshot"})
         return results
@@ -10458,6 +10542,7 @@ def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
     # work is an LLM update-stage run. Without --agent we leave REFORECAST alerts
     # OPEN (the dispatcher reports them "skipped") rather than bare-acking them.
     reforecast_runner = None
+    evidence_search = None
     if getattr(args, "agent", False):
         _inner = _build_cycle_reforecast_runner(args)
 
@@ -10470,12 +10555,83 @@ def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
             # gated/declined/errored run returns falsy → alert stays open.
             return committed[0] if committed else None
 
+        # EVIDENCE_COLLECTION search: the LLM/web research-stage pass that
+        # bootstraps a question with NO evidence yet (it searches + imports through
+        # the gated import_source_evidence path). cron_runner wraps this in the
+        # >= 1-new-row gate, so the alert acks ONLY when real evidence landed.
+        evidence_search = _build_evidence_search(args)
+
     # The autopilot (MATERIAL_CHANGE) + score (POSTMORTEM) runners are the shared,
     # non-LLM gated paths — factored into cron_runner so the CLI, the cron phase,
     # the gateway, and the agent tool all wire identical "real work" semantics.
     return build_warning_runners(
-        ledger, now=getattr(args, "now", None), reforecast_runner=reforecast_runner
+        ledger,
+        now=getattr(args, "now", None),
+        reforecast_runner=reforecast_runner,
+        evidence_search=evidence_search,
     )
+
+
+def _build_evidence_search(args: argparse.Namespace):
+    """The AGENT-tier callable the EVIDENCE_COLLECTION runner invokes to research +
+    import evidence for a no-evidence question. Runs the LLM `research`-stage agent
+    (web + forecasting toolsets), which imports readings through the gated
+    `import_source_evidence` path. Lives here so run_agent is never imported by
+    cron_runner/ledger; cron_runner owns the >= 1-new-row ack gate."""
+    model, provider = args.model, args.provider
+    _mi = getattr(args, "max_iterations", None)
+    max_iter = 12 if _mi is None else _mi
+
+    def _search(led, warning):  # noqa: ARG001 — uses the question id off the warning
+        if warning.scope_type != "question" or not warning.scope_ref:
+            return None
+        return _run_update_agent(
+            led, warning.scope_ref,
+            model=model, provider=provider, max_iterations=max_iter, stage="research",
+        )
+
+    return _search
+
+
+def build_cron_warning_agent_runners(
+    *,
+    db_path: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    max_iterations: int | None = None,
+    now: str | None = None,
+):
+    """Build the paid-tier (LLM) warning-automode runners for the no-agent cron
+    entrypoint: returns ``(reforecast_runner, evidence_search)``.
+
+    Lives in the CLI layer so ``run_agent`` is NEVER imported by
+    ``forecasting.cron_runner`` (layer purity). ``cron_runner.main_warning_automode``
+    imports this lazily only when ``--agent`` is set. The closures mirror the
+    ``--agent`` wiring in :func:`_build_warning_runners` exactly (the reforecast
+    closure is truthy ONLY when the agent committed a fresh snapshot; the evidence
+    search is the research-stage import pass cron_runner wraps in its >=1-new-row
+    ack gate)."""
+    args = argparse.Namespace(
+        db=db_path,
+        model=model,
+        provider=provider,
+        max_iterations=max_iterations,
+        now=now,
+        agent=True,
+        force=False,
+        max_questions=None,
+    )
+    _inner = _build_cycle_reforecast_runner(args)
+
+    def reforecast_runner(_led, warning):  # noqa: ARG001 — uses the closed-over runner
+        if not warning.scope_ref:
+            return None
+        results = _inner([warning.scope_ref])
+        committed = [r for r in results if r.get("status") == "committed"]
+        return committed[0] if committed else None
+
+    evidence_search = _build_evidence_search(args)
+    return reforecast_runner, evidence_search
 
 
 def _warning_plan_entry(warning, runners) -> dict[str, Any]:
@@ -10591,6 +10747,8 @@ def _cmd_warnings_automode(args: argparse.Namespace) -> None:
         limit=args.limit,
         reason=getattr(args, "reason", None),
         scope=getattr(args, "scope", None),
+        kinds=getattr(args, "kinds", None),
+        tier=getattr(args, "tier", None),
         dry_run=dry_run,
         reconcile=not getattr(args, "no_reconcile", False),
         runners=runners,
@@ -10722,6 +10880,57 @@ def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:
     print(f"schedule: {job['schedule_display']}")
     print(f"script: {job['script']}")
     print(f"mode: {'no-agent' if job.get('no_agent') else 'agent'}")
+
+
+def _cmd_automode_cron_start(args: argparse.Namespace) -> None:
+    from forecasting.scheduler import install_warning_automode_cron
+
+    job = install_warning_automode_cron(
+        schedule=args.schedule,
+        name=args.name,
+        deliver=args.deliver,
+        profile=args.profile,
+        db_path=getattr(args, "db", None),
+        agent=getattr(args, "agent", True),
+        paid_budget=getattr(args, "paid_budget", None),
+        paid_min_interval_hours=getattr(args, "paid_min_interval_hours", None),
+        model=getattr(args, "model", None),
+        provider=getattr(args, "provider", None),
+        max_iterations=getattr(args, "max_iterations", None),
+    )
+    print(f"cron_job: {job['id']}")
+    print(f"name: {job['name']}")
+    print(f"schedule: {job['schedule_display']}")
+    print(f"script: {job['script']}")
+    print(f"paid_tier: {'on' if getattr(args, 'agent', True) else 'off (free-only)'}")
+
+
+def _cmd_automode_cron_stop(args: argparse.Namespace) -> None:
+    from forecasting.scheduler import remove_warning_automode_cron
+
+    removed = remove_warning_automode_cron(name=args.name)
+    print(f"removed {removed} warning-automode cron job(s)")
+
+
+def _cmd_automode_cron_status(args: argparse.Namespace) -> None:
+    from forecasting.scheduler import warning_automode_cron_status
+
+    status = warning_automode_cron_status(name=args.name)
+    if getattr(args, "json", False):
+        print(json.dumps(status, indent=2, sort_keys=True, default=str))
+        return
+    if not status["installed"]:
+        print("warning-automode cron: not installed")
+        print(f"last_paid_run_at: {status.get('last_paid_run_at') or '(never)'}")
+        return
+    job = status["job"]
+    print("warning-automode cron: installed")
+    print(f"job_id: {job['id']}")
+    print(f"name: {job.get('name')}")
+    print(f"schedule: {job.get('schedule_display')}")
+    print(f"enabled: {job.get('enabled', True)}")
+    print(f"last_run_at: {job.get('last_run_at') or '(never)'}")
+    print(f"last_paid_run_at: {status.get('last_paid_run_at') or '(never)'}")
 
 
 def _cmd_link_add(args: argparse.Namespace) -> None:
@@ -11554,7 +11763,11 @@ def _cmd_refresh(args: argparse.Namespace) -> None:
     if args.agent:
         # Delegate to the full LLM update stage (forecast agent --stage update).
         # The agent commits through the forecasting tool, whose hook writes the brief.
+        # This is the AUTONOMOUS re-forecast path: it commits a MATERIAL move rather
+        # than stopping at a preview (the forecast-update commit is separate from the
+        # decision-card ACTION threshold — see protocol._COMMIT_MATERIAL_POLICY).
         args.stage = "update"
+        args.commit_policy = "commit_material"
         _cmd_agent(args)
         return
     from tools.forecasting_tool import fetch_watched_source_payloads

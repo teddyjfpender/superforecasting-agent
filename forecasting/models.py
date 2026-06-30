@@ -504,3 +504,29 @@ class AlertEvent:
     reason: str
     recommended_action: str
     acknowledged_at: str | None
+    # Dismissal audit trail (Slice 5). A dismissal is an explicit, RECORDED human
+    # silence — NOT a resolution. It sets ``acknowledged_at`` (so the alert drops
+    # out of the open backlog) but ALSO stamps these fields, which is what makes a
+    # dismissal visibly + auditably distinct from a runner-resolution (the latter
+    # leaves ``dismissed_at`` NULL). A dismissed group re-surfaces after the TTL.
+    dismissed_at: str | None = None
+    dismiss_note: str | None = None
+    dismiss_actor: str | None = None
+    dismiss_reason: str | None = None
+    dismiss_ttl_days: int | None = None
+    # Re-spend cooldown (Slice 8). A paid-tier (LLM) resolution attempt that did
+    # NOT resolve the alert stamps these — ``last_attempted_at`` (when the spendy
+    # runner last fired for this alert) and ``attempt_count`` (how many times it
+    # has failed). They drive an exponential backoff so the continuous paid tier
+    # does NOT re-spend on the same gated/failing alert every cycle. They are the
+    # opposite of an ack: the alert stays OPEN (never bare-acked) but COOLED DOWN
+    # until its backoff window passes. A successful resolution acks the alert (it
+    # drops out of the open backlog), so these never gate a forecast that moved.
+    last_attempted_at: str | None = None
+    attempt_count: int = 0
+
+    @property
+    def is_dismissed(self) -> bool:
+        """True when this alert was silenced by an explicit recorded human dismissal
+        (as opposed to acked by a real gated resolution)."""
+        return bool(self.dismissed_at)

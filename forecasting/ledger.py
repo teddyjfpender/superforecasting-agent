@@ -22,7 +22,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 from urllib.error import URLError
 from urllib.parse import parse_qsl, urlparse
 from urllib.request import Request, urlopen
@@ -1317,7 +1317,14 @@ class ForecastLedger:
                     scope_ref TEXT NOT NULL,
                     reason TEXT NOT NULL,
                     recommended_action TEXT NOT NULL,
-                    acknowledged_at TEXT
+                    acknowledged_at TEXT,
+                    dismissed_at TEXT,
+                    dismiss_note TEXT,
+                    dismiss_actor TEXT,
+                    dismiss_reason TEXT,
+                    dismiss_ttl_days INTEGER,
+                    last_attempted_at TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS autopilot_policies (
@@ -1646,6 +1653,18 @@ class ForecastLedger:
             # not-flagged state so an existing backtest is unchanged.
             self._ensure_column(conn, "backtest_cases", "leakage_verdicts", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_column(conn, "backtest_cases", "content_flag_count", "INTEGER NOT NULL DEFAULT 0")
+            # Slice 5 — dismissal audit trail on alert_events (recorded human silence).
+            self._ensure_column(conn, "alert_events", "dismissed_at", "TEXT")
+            self._ensure_column(conn, "alert_events", "dismiss_note", "TEXT")
+            self._ensure_column(conn, "alert_events", "dismiss_actor", "TEXT")
+            self._ensure_column(conn, "alert_events", "dismiss_reason", "TEXT")
+            self._ensure_column(conn, "alert_events", "dismiss_ttl_days", "INTEGER")
+            # Slice 8 — per-alert re-spend cooldown (paid-tier exponential backoff)
+            # so the continuous automode loop never re-spends on the same
+            # gated/failing alert every cycle. NEVER touched by an ack — a failed
+            # paid attempt stamps these while leaving the alert OPEN (no bare-ack).
+            self._ensure_column(conn, "alert_events", "last_attempted_at", "TEXT")
+            self._ensure_column(conn, "alert_events", "attempt_count", "INTEGER NOT NULL DEFAULT 0")
 
     def _ensure_column(
         self,
@@ -10319,6 +10338,139 @@ class ForecastLedger:
             )
         return self.get_alert(alert_id)
 
+    def record_alert_attempt(self, alert_id: str, *, now: str | None = None) -> AlertEvent:
+        """Record a FAILED paid-tier resolution attempt: stamp ``last_attempted_at``
+        and increment ``attempt_count`` so the per-alert exponential backoff window
+        opens.
+
+        This is the *opposite* of an acknowledgement — it NEVER sets
+        ``acknowledged_at``. The alert stays OPEN (the underlying condition still
+        holds, so it must re-surface) but is now COOLED DOWN: the continuous paid
+        (LLM) tier will not re-attempt it until the backoff window elapses, so an
+        unattended loop cannot re-spend on the same gated/failing alert every cycle.
+        Each repeated failure (after the window passes and it is retried) bumps
+        ``attempt_count`` again, doubling the next window. Idempotency is NOT a goal
+        here — every real spend that failed should advance the count.
+        """
+        self.get_alert(alert_id)  # raises LedgerNotFoundError on an unknown id
+        stamped = parse_timestamp(now, field_name="now") or utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE alert_events "
+                "SET last_attempted_at = ?, attempt_count = COALESCE(attempt_count, 0) + 1 "
+                "WHERE id = ?",
+                (stamped, alert_id),
+            )
+        return self.get_alert(alert_id)
+
+    # Default re-surface window for a dismissed group (the design's TTL). A
+    # dismissal silences a group for this many days; once the window elapses the
+    # group re-surfaces (self_check re-emits the alert IF the condition still
+    # holds). A dismissal is NEVER an indefinite silence.
+    DISMISS_TTL_DAYS_DEFAULT = 7
+
+    def dismiss_alerts(
+        self,
+        alert_ids: "Iterable[str]",
+        *,
+        note: str,
+        actor: str,
+        dismiss_reason: str | None = None,
+        ttl_days: int | None = None,
+        now: str | None = None,
+    ) -> list[AlertEvent]:
+        """Explicitly DISMISS (silence) a set of OPEN alerts — a RECORDED human
+        silence, NOT a resolution.
+
+        This is the bulk "ignore-this-group" path. It bulk-sets ``acknowledged_at``
+        on every still-OPEN alert in ``alert_ids`` (so the group drops out of the
+        open backlog) WITHOUT invoking any runner and WITHOUT doing any gated
+        forecast work. Crucially it ALSO stamps the dismissal audit trail
+        (``dismissed_at`` / ``dismiss_note`` / ``dismiss_actor`` / ``dismiss_reason``
+        / ``dismiss_ttl_days``), which is what makes a dismissal auditable and
+        visibly distinct from a runner-resolution (the latter leaves
+        ``dismissed_at`` NULL). The silence is bounded: after ``ttl_days`` the group
+        re-surfaces (``self_check`` respects an active dismissal and re-emits once
+        the window elapses — see :meth:`active_dismissal_keys`).
+
+        A non-empty ``note`` is REQUIRED: a mass-dismiss must always carry a human
+        rationale (no silent bare-ack). Already-acknowledged alerts are skipped (a
+        dismissal never overwrites a real resolution). Returns the alerts that were
+        actually dismissed.
+        """
+        if not (note or "").strip():
+            raise ValueError("dismiss_alerts requires a non-empty note (no silent mass-dismiss)")
+        if not (actor or "").strip():
+            raise ValueError("dismiss_alerts requires a non-empty actor")
+        ttl = self.DISMISS_TTL_DAYS_DEFAULT if ttl_days is None else int(ttl_days)
+        if ttl <= 0:
+            raise ValueError("dismiss_alerts ttl_days must be a positive number of days")
+        now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
+        note_text = note.strip()
+        actor_text = actor.strip()
+        reason_text = (dismiss_reason or "").strip() or None
+
+        dismissed_ids: list[str] = []
+        seen: set[str] = set()
+        with self._connect() as conn:
+            for alert_id in alert_ids:
+                if not alert_id or alert_id in seen:
+                    continue
+                seen.add(alert_id)
+                row = conn.execute(
+                    "SELECT acknowledged_at FROM alert_events WHERE id = ?", (alert_id,)
+                ).fetchone()
+                if row is None:
+                    continue
+                if row["acknowledged_at"] is not None:
+                    # Already resolved/dismissed — never clobber a real resolution.
+                    continue
+                conn.execute(
+                    """
+                    UPDATE alert_events
+                       SET acknowledged_at = ?,
+                           dismissed_at = ?,
+                           dismiss_note = ?,
+                           dismiss_actor = ?,
+                           dismiss_reason = ?,
+                           dismiss_ttl_days = ?
+                     WHERE id = ? AND acknowledged_at IS NULL
+                    """,
+                    (now_ts, now_ts, note_text, actor_text, reason_text, ttl, alert_id),
+                )
+                dismissed_ids.append(alert_id)
+        # Re-read AFTER the write transaction has committed so the returned objects
+        # reflect the persisted dismissal trail (get_alert opens its own connection,
+        # which would not see the still-open transaction's uncommitted rows).
+        return [self.get_alert(alert_id) for alert_id in dismissed_ids]
+
+    def active_dismissal_keys(self, *, now: str | None = None) -> "set[tuple[str, str]]":
+        """The ``(scope_ref, reason)`` pairs currently inside an UNEXPIRED dismissal
+        window — the silences ``self_check`` must respect so a dismissed group is
+        not immediately re-emitted.
+
+        A dismissal is active while ``dismissed_at + dismiss_ttl_days >= now``. Once
+        the window elapses the pair drops out of this set, so the very next
+        ``self_check`` re-creates the alert IF the underlying condition still holds —
+        i.e. the group RE-SURFACES after the TTL rather than being silenced forever.
+        """
+        now_dt = timestamp_to_datetime(parse_timestamp(now, field_name="now") or utc_now_iso())
+        active: set[tuple[str, str]] = set()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT scope_ref, reason, dismissed_at, dismiss_ttl_days "
+                "FROM alert_events WHERE dismissed_at IS NOT NULL"
+            ).fetchall()
+        for row in rows:
+            dismissed_dt = timestamp_to_datetime(row["dismissed_at"])
+            if dismissed_dt is None:
+                continue
+            ttl = row["dismiss_ttl_days"]
+            ttl_days = int(ttl) if ttl is not None else self.DISMISS_TTL_DAYS_DEFAULT
+            if dismissed_dt + timedelta(days=ttl_days) >= now_dt:
+                active.add((row["scope_ref"], row["reason"]))
+        return active
+
     def reconcile_alerts(self, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
         """Close the loop: source-changed -> evidence-imported -> forecast-updated
         -> acknowledged. A question-scoped alert that fired BEFORE both fresh
@@ -10454,6 +10606,12 @@ class ForecastLedger:
                 )
             ]
 
+        # Respect any UNEXPIRED dismissal (Slice 5): a group an operator explicitly
+        # silenced must NOT be re-emitted while its TTL window is live. Once the
+        # window elapses the (scope_ref, reason) pair drops out of this set and the
+        # alert is re-created below — i.e. the group RE-SURFACES after the TTL.
+        active_dismissals = self.active_dismissal_keys(now=now)
+
         alerts: list[AlertEvent] = []
         for row in self.review_questions(
             stale=True,
@@ -10472,6 +10630,8 @@ class ForecastLedger:
             if portfolio and not self._question_in_portfolio(question, portfolio):
                 continue
             for reason in row["reasons"]:
+                if (question.id, reason) in active_dismissals:
+                    continue  # silenced by an active dismissal — re-surfaces after TTL
                 action = self._recommended_action(reason)
                 alerts.append(
                     self.create_alert(
@@ -13482,6 +13642,9 @@ class ForecastLedger:
         )
 
     def _row_to_alert(self, row: sqlite3.Row) -> AlertEvent:
+        keys = set(row.keys())
+        ttl = row["dismiss_ttl_days"] if "dismiss_ttl_days" in keys else None
+        attempts = row["attempt_count"] if "attempt_count" in keys else 0
         return AlertEvent(
             id=row["id"],
             created_at=row["created_at"],
@@ -13491,6 +13654,13 @@ class ForecastLedger:
             reason=row["reason"],
             recommended_action=row["recommended_action"],
             acknowledged_at=row["acknowledged_at"],
+            dismissed_at=row["dismissed_at"] if "dismissed_at" in keys else None,
+            dismiss_note=row["dismiss_note"] if "dismiss_note" in keys else None,
+            dismiss_actor=row["dismiss_actor"] if "dismiss_actor" in keys else None,
+            dismiss_reason=row["dismiss_reason"] if "dismiss_reason" in keys else None,
+            dismiss_ttl_days=int(ttl) if ttl is not None else None,
+            last_attempted_at=row["last_attempted_at"] if "last_attempted_at" in keys else None,
+            attempt_count=int(attempts) if attempts is not None else 0,
         )
 
     def _row_to_scheduled_review_run(self, row: sqlite3.Row) -> dict[str, Any]:

@@ -768,6 +768,8 @@ FORECAST_LEDGER_SCHEMA = {
             "acknowledged_at": {"type": "string"},
             "ref": {"type": "string", "description": "resolve_warning: an al_* alert id (resolve that one) or a scope/question ref (resolve every open alert for it)."},
             "scope": {"type": "string", "description": "run_warning_automode: restrict the sweep to a single question/scope ref."},
+            "tier": {"type": "string", "enum": ["free", "reforecast"], "description": "run_warning_automode: per-tier bulk pass. 'free' = non-LLM kinds {bookkeeping,score,postmortem,material_change}; 'reforecast' = the opt-in LLM reforecast/evidence tier."},
+            "kinds": {"type": "array", "items": {"type": "string"}, "description": "run_warning_automode: restrict to these ResolutionKinds (e.g. ['score','postmortem']); UNIONed with tier when both are given."},
             "proposal_id": {"type": "string"},
             "proposal_status": {
                 "type": "string",
@@ -1689,6 +1691,8 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 limit=int(args["limit"]) if args.get("limit") is not None else None,
                 reason=args.get("reason"),
                 scope=args.get("scope"),
+                kinds=args.get("kinds"),
+                tier=args.get("tier"),
                 dry_run=bool(args.get("dry_run", False)),
                 reconcile=bool(args.get("reconcile", True)),
             )

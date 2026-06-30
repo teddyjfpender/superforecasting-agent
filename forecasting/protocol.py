@@ -179,15 +179,22 @@ def build_protocol_messages(
     question_id: str,
     *,
     stage: str,
+    commit_policy: str | None = None,
 ) -> list[ProtocolMessage]:
-    """Build stage-specific messages for a forecast-native agent pass."""
+    """Build stage-specific messages for a forecast-native agent pass.
+
+    ``commit_policy`` selects how the update stage should close out. ``None`` (the
+    default, used by interactive ``forecast agent``) keeps the recommend-and-preview
+    posture. ``"commit_material"`` (set by the autonomous re-forecast paths —
+    ``forecast refresh --agent`` and the ``cycle run --agent`` sweep) instructs the
+    agent to COMMIT a material move rather than stop at a preview."""
 
     if stage not in PROTOCOL_STAGES:
         raise ValueError(f"stage must be one of {', '.join(sorted(PROTOCOL_STAGES))}")
     question = ledger.get_question(question_id)
     snapshot = ledger.get_current_snapshot(question_id)
     context = build_context_packet(ledger, question, snapshot)
-    task = _stage_task(stage)
+    task = _stage_task(stage, commit_policy=commit_policy)
     return [
         ProtocolMessage(role="system", content=SYSTEM_PROMPT.strip()),
         ProtocolMessage(role="user", content=f"{context}\n\n## Stage Task\n{task}"),
@@ -554,7 +561,31 @@ def _render_rows(rows: list[dict[str, Any]], primary: str, status: str) -> list[
     return [f"- {row['id']} {row.get(status, '-')}: {row.get(primary, '')}" for row in rows]
 
 
-def _stage_task(stage: str) -> str:
+# Appended to the update-stage task when the caller wants the autonomous
+# commit-material posture (refresh --agent / cycle run --agent). It draws the
+# bright line the live reforecasts kept blurring: the forecast-UPDATE commit
+# decision is NOT the decision-card ACTION threshold.
+_COMMIT_MATERIAL_POLICY = (
+    "\n\nCOMMIT POLICY (auto-reforecast): committing the forecast UPDATE is a "
+    "SEPARATE decision from recommending decision-card ACTION. Record your current "
+    "best estimate even when it would NOT cross the action threshold — the action "
+    "threshold (e.g. 'act if P>=0.65') governs whether to ACT on the decision card, "
+    "NOT whether to write down the forecast. So do not stop at a sharpened preview "
+    "('No snapshot committed'): once you have re-collected fresh evidence and "
+    "re-reasoned the number, MATERIALITY decides. If your fresh estimate is a "
+    "MATERIAL move versus the prior snapshot — |Δp| >= 0.03 (3 percentage points) "
+    "for a binary, or any genuine change for a distribution/categorical/first "
+    "forecast — and the saturation/commit gates pass (components, structured "
+    "reasoning, panel where required), then COMMIT the updated snapshot now "
+    "(`forecast update <id> ...` / the `update_forecast` action), do not merely "
+    "preview it. If the move is MARGINAL/non-material (|Δp| < 0.03 and the drivers "
+    "are unchanged), leave it as a preview/recommendation and say so — a marginal "
+    "re-pool is not worth a new scored snapshot. State the prior, the proposed "
+    "number, the delta, and which branch (commit vs preview) you took and why."
+)
+
+
+def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
     tasks = {
         "parse": (
             "Audit whether the question is scoreable AND decision-relevant. Identify "
@@ -724,4 +755,7 @@ def _stage_task(stage: str) -> str:
             "recommendations without silently changing probabilities or claiming live superiority."
         ),
     }
-    return tasks[stage]
+    task = tasks[stage]
+    if stage == "update" and commit_policy == "commit_material":
+        task = task + _COMMIT_MATERIAL_POLICY
+    return task
