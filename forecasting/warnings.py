@@ -525,7 +525,7 @@ def select_open_warnings(
     ledger: Any,
     *,
     scope: str | None = None,
-    reason: str | None = None,
+    reason: "str | list[str] | None" = None,
     limit: int | None = None,
     kinds: "Iterable[ResolutionKind | str] | None" = None,
     tier: str | None = None,
@@ -550,11 +550,18 @@ def select_open_warnings(
     cooled-down alert NOR lets it occupy a capped selection slot and starve fresh
     work. It only ever filters the spendy kinds, so a free-tier sweep is unaffected.
     """
-    reason_filter = (reason or "").strip().lower()
+    # ``reason`` may be a single substring OR a list of reason substrings — a
+    # sub-view tier (e.g. STALE) dismisses several specific reasons at once, so
+    # the TUI sends a list. Match if a warning's reason contains ANY term.
+    if isinstance(reason, (list, tuple, set)):
+        reason_terms = [str(r).strip().lower() for r in reason if str(r).strip()]
+    else:
+        _r = (reason or "").strip().lower()
+        reason_terms = [_r] if _r else []
     kind_filter = resolve_kind_filter(kinds=kinds, tier=tier)
     warnings = list(iter_warnings(ledger, scope=scope))
-    if reason_filter:
-        warnings = [w for w in warnings if reason_filter in (w.reason or "").lower()]
+    if reason_terms:
+        warnings = [w for w in warnings if any(t in (w.reason or "").lower() for t in reason_terms)]
     if kind_filter is not None:
         warnings = [w for w in warnings if w.kind in kind_filter]
     if cooldown:

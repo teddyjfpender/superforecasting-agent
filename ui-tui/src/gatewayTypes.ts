@@ -362,6 +362,27 @@ export interface ForecastWarningsResolveResponse {
   count?: number
 }
 
+// forecast.warnings.dismiss — a RECORDED human silence (note + actor REQUIRED), NOT
+// a resolution: it bulk-sets acknowledged_at on the selected open group without
+// running any runner or moving any forecast. `matched` is the open group it
+// selected; `count` is how many it actually silenced (re-surfaces after ttl_days).
+export interface ForecastWarningDismissedItem {
+  alert_id?: string
+  reason?: string
+  scope_ref?: string
+  dismissed_at?: string
+  dismiss_note?: string
+  dismiss_actor?: string
+  dismiss_reason?: string
+  dismiss_ttl_days?: number
+}
+
+export interface ForecastWarningsDismissResponse {
+  dismissed?: ForecastWarningDismissedItem[]
+  count?: number
+  matched?: number
+}
+
 export interface ForecastWarningsAutomodeRunResponse {
   job_id?: string
   dry_run?: boolean
