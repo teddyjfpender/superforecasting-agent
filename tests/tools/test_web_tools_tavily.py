@@ -195,11 +195,10 @@ class TestWebExtractTavily:
 
         with patch("tools.web_tools._get_backend", return_value="tavily"), \
              patch.dict(os.environ, {"TAVILY_API_KEY": "tvly-test"}), \
-             patch("tools.web_tools.httpx.post", return_value=mock_response), \
-             patch("tools.web_tools.process_content_with_llm", return_value=None):
+             patch("tools.web_tools.httpx.post", return_value=mock_response):
             from tools.web_tools import web_extract_tool
             result = json.loads(asyncio.get_event_loop().run_until_complete(
-                web_extract_tool(["https://example.com"], use_llm_processing=False)
+                web_extract_tool(["https://example.com"])
             ))
             assert "results" in result
             assert len(result["results"]) == 1
@@ -229,7 +228,7 @@ class TestWebCrawlTavily:
              patch("tools.interrupt.is_interrupted", return_value=False):
             from tools.web_tools import web_crawl_tool
             result = json.loads(asyncio.get_event_loop().run_until_complete(
-                web_crawl_tool("https://example.com", use_llm_processing=False)
+                web_crawl_tool("https://example.com")
             ))
             assert "results" in result
             assert len(result["results"]) == 2
@@ -249,7 +248,7 @@ class TestWebCrawlTavily:
              patch("tools.interrupt.is_interrupted", return_value=False):
             from tools.web_tools import web_crawl_tool
             asyncio.get_event_loop().run_until_complete(
-                web_crawl_tool("https://example.com", instructions="Find docs", use_llm_processing=False)
+                web_crawl_tool("https://example.com", instructions="Find docs")
             )
             call_kwargs = mock_post.call_args
             payload = call_kwargs.kwargs.get("json") or call_kwargs[1].get("json")

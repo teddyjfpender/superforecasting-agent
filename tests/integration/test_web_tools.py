@@ -33,7 +33,6 @@ from tools.web_tools import (
     web_crawl_tool,
     check_firecrawl_api_key,
     check_web_api_key,
-    check_auxiliary_model,
     _get_backend,
 )
 
@@ -130,13 +129,10 @@ class WebToolsTester:
             backend = _get_backend()
             self.log_result("Web Backend API Key", "passed", f"Using {backend} backend")
         
-        # Check auxiliary LLM provider (optional)
-        if not check_auxiliary_model():
-            self.log_result("Auxiliary LLM", "skipped", "No auxiliary LLM provider available (LLM tests will be skipped)")
-            self.test_llm = False
-        else:
-            self.log_result("Auxiliary LLM", "passed", "Found")
-        
+        # web_extract no longer runs an auxiliary LLM (truncate-and-store path).
+        self.log_result("Auxiliary LLM", "skipped", "web_extract is LLM-free (truncate-and-store)")
+        self.test_llm = False
+
         return True
     
     def test_web_search(self) -> List[str]:
@@ -262,12 +258,11 @@ class WebToolsTester:
                     print(f"    - {url}")
                 
                 if self.verbose:
-                    print(f"  Calling web_extract_tool(urls={test_urls}, format='markdown', use_llm_processing=False)")
-                
+                    print(f"  Calling web_extract_tool(urls={test_urls}, format='markdown')")
+
                 result = await web_extract_tool(
                     test_urls,
                     format="markdown",
-                    use_llm_processing=False
                 )
                 
                 # Parse result
@@ -361,8 +356,7 @@ class WebToolsTester:
             result = await web_extract_tool(
                 [test_url],
                 format="markdown",
-                use_llm_processing=True,
-                min_length=1000  # Lower threshold for testing
+                char_limit=4000  # small budget to exercise the truncate path
             )
             
             data = json.loads(result)
@@ -424,12 +418,11 @@ class WebToolsTester:
                 
                 # Show what's being called
                 if self.verbose:
-                    print(f"  Calling web_crawl_tool(url='{url}', instructions={instructions}, use_llm_processing=False)")
-                
+                    print(f"  Calling web_crawl_tool(url='{url}', instructions={instructions})")
+
                 result = await web_crawl_tool(
                     url,
                     instructions=instructions,
-                    use_llm_processing=False  # Disable LLM for faster testing
                 )
                 
                 # Check if result is valid JSON
@@ -577,7 +570,6 @@ class WebToolsTester:
                 "web_backend": _get_backend() if check_web_api_key() else None,
                 "firecrawl_api_key": check_firecrawl_api_key(),
                 "parallel_api_key": bool(os.getenv("PARALLEL_API_KEY")),
-                "auxiliary_model": check_auxiliary_model(),
             }
         }
         

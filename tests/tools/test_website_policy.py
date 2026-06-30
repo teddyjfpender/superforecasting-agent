@@ -377,7 +377,7 @@ async def test_web_extract_short_circuits_blocked_url(monkeypatch):
     # Force the firecrawl plugin to be the active extract provider.
     monkeypatch.setenv("FIRECRAWL_API_KEY", "fake-key")
 
-    result = json.loads(await web_tools.web_extract_tool(["https://blocked.test"], use_llm_processing=False))
+    result = json.loads(await web_tools.web_extract_tool(["https://blocked.test"]))
 
     assert result["results"][0]["url"] == "https://blocked.test"
     assert "Blocked by website policy" in result["results"][0]["error"]
@@ -439,7 +439,7 @@ async def test_web_extract_blocks_redirected_final_url(monkeypatch):
     monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False)
     monkeypatch.setenv("FIRECRAWL_API_KEY", "fake-key")
 
-    result = json.loads(await web_tools.web_extract_tool(["https://allowed.test"], use_llm_processing=False))
+    result = json.loads(await web_tools.web_extract_tool(["https://allowed.test"]))
 
     assert result["results"][0]["url"] == "https://blocked.test/final"
     assert result["results"][0]["content"] == ""
@@ -477,7 +477,7 @@ async def test_web_crawl_short_circuits_blocked_url(monkeypatch):
     )
     monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False)
 
-    result = json.loads(await web_tools.web_crawl_tool("https://blocked.test", use_llm_processing=False))
+    result = json.loads(await web_tools.web_crawl_tool("https://blocked.test"))
 
     assert result["results"][0]["url"] == "https://blocked.test"
     assert result["results"][0]["blocked_by_policy"]["rule"] == "blocked.test"
@@ -531,7 +531,7 @@ async def test_web_crawl_blocks_redirected_final_url(monkeypatch):
     monkeypatch.setattr(firecrawl_provider, "_get_firecrawl_client", lambda: FakeCrawlClient())
     monkeypatch.setattr("tools.interrupt.is_interrupted", lambda: False)
 
-    result = json.loads(await web_tools.web_crawl_tool("https://allowed.test", use_llm_processing=False))
+    result = json.loads(await web_tools.web_crawl_tool("https://allowed.test"))
 
     assert result["results"][0]["content"] == ""
     assert result["results"][0]["error"] == "Blocked by website policy"
