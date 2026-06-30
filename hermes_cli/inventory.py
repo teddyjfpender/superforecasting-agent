@@ -225,11 +225,14 @@ def _apply_reasoning_hints(rows: list[dict]) -> None:
 
     The TUI picker shows its reasoning-effort step only when the codex
     transport would actually send ``reasoning.effort`` — i.e. for OpenAI/ChatGPT
-    codex_responses providers and effort-capable Grok models. We compute a
-    provider-level ``supports_reasoning_effort`` (True when ANY listed model is
-    effort-capable, so a provider whose lineup mixes capable + non-capable
-    models still surfaces the step) plus the picker's ``reasoning_efforts``
-    level list. Both are mutated in-place.
+    codex_responses providers and effort-capable Grok models. Capability is
+    inherently PER MODEL (an xAI lineup mixes effort-capable grok-3-mini /
+    grok-4.3 with non-capable grok-4 / grok-4-fast), so we surface the exact
+    effort-capable model names in ``reasoning_effort_models`` and let the picker
+    gate the step on the SELECTED model. The provider-level
+    ``supports_reasoning_effort`` (True when ANY listed model is capable) is
+    retained as a coarse hint for the step-count display; ``reasoning_efforts``
+    carries the picker's level list. All three are mutated in-place.
     """
     from agent.model_metadata import (
         PICKER_REASONING_EFFORTS,
@@ -241,15 +244,20 @@ def _apply_reasoning_hints(rows: list[dict]) -> None:
         base_url = row.get("base_url", "") or ""
         models = row.get("models") or []
         if models:
-            supports = any(
-                model_supports_reasoning_effort(slug, m, base_url) for m in models
-            )
+            effort_models = [
+                m
+                for m in models
+                if model_supports_reasoning_effort(slug, m, base_url)
+            ]
+            supports = bool(effort_models)
         else:
             # Unconfigured / skeleton rows have no model list yet — fall back to
             # the provider-level capability (codex backends are always capable;
             # xAI needs a concrete grok model so this stays False until listed).
+            effort_models = []
             supports = model_supports_reasoning_effort(slug, "", base_url)
         row["supports_reasoning_effort"] = bool(supports)
+        row["reasoning_effort_models"] = effort_models
         row["reasoning_efforts"] = list(PICKER_REASONING_EFFORTS) if supports else []
 
 

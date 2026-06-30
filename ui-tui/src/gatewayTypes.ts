@@ -1441,6 +1441,7 @@ export interface ModelOptionProvider {
   key_env?: string
   models?: string[]
   name: string
+  reasoning_effort_models?: string[]
   reasoning_efforts?: string[]
   slug: string
   supports_reasoning_effort?: boolean

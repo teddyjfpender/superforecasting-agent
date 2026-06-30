@@ -18,10 +18,14 @@ type Stage = 'provider' | 'key' | 'model' | 'effort' | 'disconnect'
 
 // Reasoning-effort levels offered when a provider/model is effort-capable.
 // Kept in sync with hermes_constants.VALID_REASONING_EFFORTS minus `minimal`
-// (codex clamps it to `low`) and `none` (handled by the /reasoning plumbing).
+// (codex clamps it to `low`). `none` is prepended below: it disables reasoning
+// via the dedicated /reasoning plumbing, so a user whose reasoning is currently
+// off isn't forced to re-enable it just to switch models.
 const FALLBACK_EFFORTS = ['low', 'medium', 'high', 'xhigh']
+const NONE_EFFORT = 'none'
 const DEFAULT_EFFORT = 'medium'
 const EFFORT_HINTS: Record<string, string> = {
+  none: 'disable reasoning (no thinking)',
   low: 'fastest · cheapest · least thorough',
   medium: 'balanced default',
   high: 'slower · pricier · more thorough',
@@ -87,8 +91,29 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
   const provider = providers[providerIdx]
   const models = provider?.models ?? []
   const names = useMemo(() => providerDisplayNames(providers), [providers])
+  // Provider-level hint: True when ANY model in the lineup is effort-capable.
+  // Used only for the coarse step-count display (2 vs 3 steps).
   const supportsEffort = provider?.supports_reasoning_effort === true
-  const efforts = provider?.reasoning_efforts?.length ? provider.reasoning_efforts : FALLBACK_EFFORTS
+  // Per-MODEL gating: the effort step shows only when the SELECTED model takes
+  // a reasoning.effort dial. A mixed xAI lineup pairs effort-capable models
+  // (grok-3-mini, grok-4.3) with non-capable ones (grok-4, grok-4-fast); the
+  // backend lists the capable names in `reasoning_effort_models`. Older
+  // payloads omit it — fall back to the provider-level flag for those.
+  const modelSupportsEffort = (model: string): boolean => {
+    if (!provider) {
+      return false
+    }
+    if (Array.isArray(provider.reasoning_effort_models)) {
+      return provider.reasoning_effort_models.includes(model)
+    }
+
+    return provider.supports_reasoning_effort === true
+  }
+  const baseEfforts = provider?.reasoning_efforts?.length ? provider.reasoning_efforts : FALLBACK_EFFORTS
+  // Prepend a "none" option so a user with reasoning disabled can keep it off
+  // when switching models (firing /reasoning none) instead of being forced to
+  // re-enable it.
+  const efforts = baseEfforts.includes(NONE_EFFORT) ? baseEfforts : [NONE_EFFORT, ...baseEfforts]
 
   // Commit the chosen model (and optionally the reasoning effort) back to the
   // host, which runs `/model …` and, when an effort is supplied, `/reasoning …`.
@@ -301,9 +326,11 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
       const model = models[modelIdx]
 
       if (provider && model) {
-        // Reasoning-capable model/provider → branch to the effort step,
-        // pre-selecting the current effort. Otherwise commit immediately.
-        if (supportsEffort) {
+        // Effort-capable SELECTED model → branch to the effort step,
+        // pre-selecting the current effort (which may be "none"). Otherwise
+        // commit immediately. Gating is per-model so a non-effort grok in an
+        // otherwise-capable xAI lineup skips the dead step.
+        if (modelSupportsEffort(model)) {
           setChosenModel(model)
           setEffortIdx(Math.max(0, efforts.indexOf(currentEffort)))
           setStage('effort')

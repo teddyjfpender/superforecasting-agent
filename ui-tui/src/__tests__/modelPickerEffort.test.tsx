@@ -48,8 +48,10 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
   return { stream, text: () => output }
 }
 
-// A model.options payload with one reasoning-capable (codex) provider and one
-// plain chat-completions provider that does NOT take an effort dial.
+// A model.options payload with one reasoning-capable (codex) provider, one
+// plain chat-completions provider that does NOT take an effort dial, and a
+// MIXED xAI provider whose lineup pairs an effort-capable grok with a
+// non-capable one (per-model gating must skip the dead step for the latter).
 const options = (): ModelOptionsResponse => ({
   model: 'gpt-5.4',
   provider: 'openai-codex',
@@ -59,6 +61,7 @@ const options = (): ModelOptionsResponse => ({
       is_current: true,
       models: ['gpt-5.4', 'gpt-5.4-mini'],
       name: 'OpenAI OAuth (ChatGPT)',
+      reasoning_effort_models: ['gpt-5.4', 'gpt-5.4-mini'],
       reasoning_efforts: ['low', 'medium', 'high', 'xhigh'],
       slug: 'openai-codex',
       supports_reasoning_effort: true,
@@ -68,10 +71,22 @@ const options = (): ModelOptionsResponse => ({
       authenticated: true,
       models: ['deepseek-chat'],
       name: 'DeepSeek',
+      reasoning_effort_models: [],
       reasoning_efforts: [],
       slug: 'deepseek',
       supports_reasoning_effort: false,
       total_models: 1
+    },
+    {
+      authenticated: true,
+      models: ['grok-4', 'grok-3-mini'],
+      name: 'xAI',
+      // Only grok-3-mini accepts reasoning.effort; grok-4 does not.
+      reasoning_effort_models: ['grok-3-mini'],
+      reasoning_efforts: ['low', 'medium', 'high', 'xhigh'],
+      slug: 'xai',
+      supports_reasoning_effort: true,
+      total_models: 2
     }
   ],
   reasoning_effort: 'medium'
@@ -176,6 +191,63 @@ describe('ModelPicker reasoning-effort step', () => {
     expect(m.selected.length).toBe(1)
     expect(m.selected[0].value).toContain('deepseek-chat --provider deepseek')
     expect(m.selected[0].effort).toBeUndefined()
+    m.cleanup()
+  })
+
+  // MINOR 1 — gating is per-MODEL, not per-provider.
+  it('skips the effort step for a non-effort model inside an effort-capable provider', async () => {
+    const m = await mountPicker(options())
+    // Provider stage: codex(0) → deepseek(1) → xai(2).
+    await m.press(`${ESC}[B`)
+    await m.press(`${ESC}[B`)
+    await m.press('\r')
+    // Model stage: first model grok-4 is NOT effort-capable even though the
+    // xAI provider is (grok-3-mini is). Enter commits immediately, no step.
+    await m.press('\r')
+    expect(m.text()).not.toContain('Select reasoning effort')
+    expect(m.selected.length).toBe(1)
+    expect(m.selected[0].value).toContain('grok-4 --provider xai')
+    expect(m.selected[0].effort).toBeUndefined()
+    m.cleanup()
+  })
+
+  it('shows the effort step for the effort-capable model in the same mixed lineup', async () => {
+    const m = await mountPicker(options())
+    await m.press(`${ESC}[B`)
+    await m.press(`${ESC}[B`)
+    await m.press('\r')
+    // Model stage: move from grok-4 (0) to grok-3-mini (1), which IS capable.
+    await m.press(`${ESC}[B`)
+    await m.press('\r')
+    expect(m.text()).toContain('Select reasoning effort (step 3/3)')
+    expect(m.selected.length).toBe(0)
+    m.cleanup()
+  })
+
+  // MINOR 2 — a "none" option keeps reasoning disabled across a model switch.
+  it('offers a none option on the effort step', async () => {
+    const m = await mountPicker(options())
+    await m.press('\r')
+    await m.press('\r')
+    const text = m.text()
+    expect(text).toContain('Select reasoning effort')
+    expect(text).toContain('none')
+    expect(text).toContain('disable reasoning')
+    m.cleanup()
+  })
+
+  it('preselects none and commits keeping reasoning disabled when current=none', async () => {
+    const payload = options()
+    payload.reasoning_effort = 'none'
+    const m = await mountPicker(payload)
+    await m.press('\r')
+    await m.press('\r')
+    expect(m.text()).toContain('Select reasoning effort')
+    // "none" is preselected (current=none); Enter without moving commits it.
+    await m.press('\r')
+    expect(m.selected.length).toBe(1)
+    expect(m.selected[0].value).toContain('gpt-5.4 --provider openai-codex')
+    expect(m.selected[0].effort).toBe('none')
     m.cleanup()
   })
 })

@@ -83,6 +83,21 @@ class TestChosenEffortReachesCodexTransport:
         )
         assert kw.get("reasoning", {}).get("effort") == "low"
 
+    def test_none_flows_through_to_disable_reasoning(self, transport):
+        # Picking "none" on the effort step fires `/reasoning none`, which
+        # disables reasoning entirely — the codex transport then sends NO
+        # reasoning key at all (switching models must not silently re-enable it).
+        reasoning_config = parse_reasoning_effort("none")
+        assert reasoning_config == {"enabled": False}
+
+        kw = transport.build_kwargs(
+            model="gpt-5.4",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[],
+            reasoning_config=reasoning_config,
+        )
+        assert "reasoning" not in kw
+
 
 class TestInventoryPayloadHints:
     def test_picker_payload_carries_effort_capability(self):
@@ -98,10 +113,15 @@ class TestInventoryPayloadHints:
         codex, deepseek, xai = rows
         assert codex["supports_reasoning_effort"] is True
         assert codex["reasoning_efforts"] == ["low", "medium", "high", "xhigh"]
+        # Every codex model is effort-capable, so the per-model list is the full lineup.
+        assert codex["reasoning_effort_models"] == ["gpt-5.4", "gpt-5.4-mini"]
 
         assert deepseek["supports_reasoning_effort"] is False
         assert deepseek["reasoning_efforts"] == []
+        assert deepseek["reasoning_effort_models"] == []
 
-        # xAI surfaces the step because at least one listed model (grok-3-mini)
-        # is effort-capable, even though grok-4 is not.
+        # xAI surfaces the step (provider hint) because at least one listed model
+        # is effort-capable, but the PER-MODEL list pins it to grok-3-mini only —
+        # grok-4 must skip the dead step in the picker.
         assert xai["supports_reasoning_effort"] is True
+        assert xai["reasoning_effort_models"] == ["grok-3-mini"]
