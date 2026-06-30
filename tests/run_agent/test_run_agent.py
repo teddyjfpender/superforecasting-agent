@@ -948,6 +948,39 @@ class TestBuildSystemPrompt:
         prompt = agent._build_system_prompt()
         assert DEFAULT_AGENT_IDENTITY in prompt
 
+    def test_includes_resolved_runtime_model_and_provider(self, agent):
+        """The assembled prompt must surface the RESOLVED runtime model +
+        provider (agent.model / agent.provider) as an authoritative line, so
+        the agent reports what it is actually being served by and does not
+        read config.yaml."""
+        agent.model = "gemini-2.5-pro"
+        agent.provider = "google"
+        prompt = agent._build_system_prompt()
+        assert "gemini-2.5-pro" in prompt
+        assert "google" in prompt
+        # The authoritative runtime line must steer away from config.yaml.
+        assert "config.yaml" in prompt
+        assert "Runtime: you are currently served by" in prompt
+
+    def test_runtime_switch_changes_the_runtime_line(self, agent):
+        """A mid-session runtime switch updates agent.model/agent.provider, so
+        rebuilding the prompt must re-render the runtime line — config.yaml is
+        NOT the source of truth."""
+        agent.model = "gpt-5.5"
+        agent.provider = "openai-codex"
+        before = agent._build_system_prompt()
+        assert "gpt-5.5" in before and "openai-codex" in before
+
+        # Simulate the runtime override (e.g. switch to Gemini).
+        agent.model = "gemini-2.5-pro"
+        agent.provider = "google"
+        after = agent._build_system_prompt()
+        assert "gemini-2.5-pro" in after and "google" in after
+        # The stale model must no longer be reported on the runtime line.
+        runtime_lines = [ln for ln in after.splitlines() if ln.startswith("Runtime: ")]
+        assert runtime_lines, "expected an authoritative 'Runtime:' line"
+        assert "gpt-5.5" not in runtime_lines[0]
+
     def test_can_use_soul_identity_even_when_context_files_are_skipped(self):
         with (
             patch("run_agent.get_tool_definitions", return_value=_make_tool_defs("terminal")),

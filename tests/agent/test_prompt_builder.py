@@ -19,6 +19,7 @@ from agent.prompt_builder import (
     build_nous_subscription_prompt,
     build_context_files_prompt,
     build_environment_hints,
+    build_runtime_identity_hint,
     get_agent_help_guidance,
     CONTEXT_FILE_MAX_CHARS,
     AGENT_HELP_GUIDANCE_ENV_NAMES,
@@ -977,6 +978,42 @@ class TestEnvironmentHints:
                 f"{backend!r} must be in _REMOTE_TERMINAL_BACKENDS so its host "
                 f"info is suppressed in the system prompt"
             )
+
+
+# =========================================================================
+# Runtime identity hint (self-knowledge of the resolved runtime model)
+# =========================================================================
+
+class TestRuntimeIdentityHint:
+    def test_includes_model_and_provider(self):
+        hint = build_runtime_identity_hint("gemini-2.5-pro", "google")
+        assert "gemini-2.5-pro" in hint
+        assert "google" in hint
+        # Authoritative + must steer the agent away from config.yaml.
+        assert "config.yaml" in hint
+        assert "authoritative" in hint.lower()
+
+    def test_reflects_a_runtime_switch(self):
+        """Changing the resolved model/provider must change the rendered line —
+        so a mid-session runtime switch is reflected and config.yaml is NOT the
+        source of truth."""
+        before = build_runtime_identity_hint("gpt-5.5", "openai-codex")
+        after = build_runtime_identity_hint("gemini-2.5-pro", "google")
+        assert "gpt-5.5" in before and "openai-codex" in before
+        assert "gemini-2.5-pro" in after and "google" in after
+        assert "gpt-5.5" not in after
+        assert before != after
+
+    def test_blank_model_and_provider_omits_block(self):
+        assert build_runtime_identity_hint("", "") == ""
+        assert build_runtime_identity_hint(None, None) == ""
+        assert build_runtime_identity_hint("   ", None) == ""
+
+    def test_model_only_renders_without_provider(self):
+        hint = build_runtime_identity_hint("kimi-k2.5", "")
+        assert "kimi-k2.5" in hint
+        assert "provider" not in hint.split("served by", 1)[1].split(".", 1)[0]
+        assert "config.yaml" in hint
 
 
 # =========================================================================

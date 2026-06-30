@@ -830,6 +830,40 @@ def build_environment_hints() -> str:
     return "\n\n".join(hints)
 
 
+def build_runtime_identity_hint(model: Optional[str], provider: Optional[str]) -> str:
+    """Return an authoritative runtime model/provider line for the system prompt.
+
+    Surfaces the *resolved* runtime that the agent object was actually
+    constructed with (``agent.model`` / ``agent.provider``) so the agent
+    reports what it is being served by — not the stale defaults baked into
+    ``config.yaml``. A mid-session runtime switch updates
+    ``agent.model``/``agent.provider``, so rebuilding the prompt re-renders
+    this line and the reported identity follows the switch.
+
+    Must be passed the RESOLVED values from the agent object, never read
+    from config.yaml. Returns ``""`` when both are blank so the caller can
+    omit the block entirely (and the agent falls back to "the configured
+    model" wording elsewhere).
+    """
+    model = (model or "").strip()
+    provider = (provider or "").strip()
+    if not model and not provider:
+        return ""
+    if model and provider:
+        served = f"the `{model}` model via the `{provider}` provider"
+    elif model:
+        served = f"the `{model}` model"
+    else:
+        served = f"the `{provider}` provider"
+    return (
+        f"Runtime: you are currently served by {served}. This is the live "
+        "runtime resolved at startup and is authoritative — it may differ "
+        "from the defaults in config.yaml. When asked what model or provider "
+        "you are, answer from this line; do NOT report your model by reading "
+        "config.yaml."
+    )
+
+
 CONTEXT_FILE_MAX_CHARS = 20_000
 CONTEXT_TRUNCATE_HEAD_RATIO = 0.7
 CONTEXT_TRUNCATE_TAIL_RATIO = 0.2

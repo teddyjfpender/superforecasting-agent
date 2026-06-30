@@ -38,6 +38,7 @@ from agent.prompt_builder import (
     SKILLS_GUIDANCE,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
+    build_runtime_identity_hint,
     get_agent_help_guidance,
 )
 
@@ -197,6 +198,16 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
             f"When asked what model you are, always answer based on this information, "
             f"not on any model name returned by the API."
         )
+
+    # Runtime self-knowledge — surface the RESOLVED runtime model + provider
+    # (agent.model / agent.provider, set at construction from the runtime
+    # resolution, updated by a mid-session model switch) so the agent reports
+    # what it is actually being served by instead of falling back to the stale
+    # defaults in config.yaml. Authoritative; do NOT read config.yaml to answer
+    # "what model are you". Omitted when both are blank.
+    _runtime_hint = build_runtime_identity_hint(agent.model, agent.provider)
+    if _runtime_hint:
+        stable_parts.append(_runtime_hint)
 
     # Environment hints (WSL, Termux, etc.) — tell the agent about the
     # execution environment so it can translate paths and adapt behavior.
