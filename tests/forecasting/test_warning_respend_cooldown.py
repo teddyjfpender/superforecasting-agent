@@ -90,6 +90,57 @@ def test_per_cycle_spend_cap_halts_the_sweep(tmp_path):
     assert attempts == [0, 1, 1]
 
 
+def test_reconcile_runs_even_when_the_spend_cap_halts_the_sweep(tmp_path):
+    """A BUDGET halt only caps the PAID agent sweep — the cheap, free, non-agent
+    end-of-sweep reconcile bookkeeping must STILL run so a budget-capped cycle
+    closes its already-consumed / condition-resolved alerts. Pins that reconcile is
+    no longer gated on ``not budget_exhausted``."""
+    lg = _ledger(tmp_path)
+
+    # A real question carrying a reconcilable (non-paid, non-NO_AUTO) alert: it fired
+    # BEFORE fresh evidence + a new snapshot landed, so reconcile should ack it.
+    q = lg.create_question(
+        title="Will the official index close above target in 2026?",
+        resolution_criteria="Resolves yes if the official index closes above target; otherwise no.",
+    )
+    reconcilable = lg.create_alert(
+        severity="warning", scope_type="question", scope_ref=q.id,
+        reason="watched_source_changed:src1", recommended_action="Recheck the source.")
+    with lg._connect() as conn:
+        conn.execute(
+            "UPDATE alert_events SET created_at = ? WHERE id = ?",
+            ("2020-01-01T00:00:00Z", reconcilable.id),
+        )
+    lg.add_evidence(question_id=q.id, source_or_note="A fresh reading landed after the alert.")
+    lg.create_snapshot(
+        question_id=q.id, probability_or_distribution=0.6, rationale="updated",
+        require_panel=False)
+
+    # Two PAID (reforecast-tier) alerts + a spend cap of 1 so the sweep halts after
+    # one agent run, leaving budget_exhausted=True. The reconcilable material-change
+    # alert is a DIFFERENT tier, so it is never selected by the tier="reforecast" pass.
+    _seed_paid(lg, 2)
+
+    def failing_reforecast(_led, _warning):
+        return None  # no real gated work → "failed", no ack
+
+    result = run_warning_resolution(
+        ledger=lg, tier="reforecast", reforecast_runner=failing_reforecast,
+        cooldown=True, spend_cap=1, reconcile=True, now="2026-06-30T12:00:00",
+    )
+
+    # The cap halted the paid sweep…
+    assert result["budget_exhausted"] is True
+    assert result["spent"] == 1
+    # …yet reconcile STILL ran and closed the condition-resolved alert.
+    assert result["reconcile"] is not None
+    assert result["reconcile"]["reconciled_count"] >= 1
+    open_now = {a.id for a in lg.list_alerts(unresolved_only=True)}
+    assert reconcilable.id not in open_now             # reconciled despite the budget halt
+    # The paid backlog itself is untouched by reconcile (no fresh evidence/snapshot).
+    assert len(_open_reason(lg, "evidence_stale_7d_plus")) == 2
+
+
 # ---------------------------------------------------------------------------
 # A failing alert is NOT re-attempted within its backoff window
 # ---------------------------------------------------------------------------

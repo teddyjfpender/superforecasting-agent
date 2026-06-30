@@ -151,3 +151,46 @@ def test_marginal_move_reforecast_does_not_commit(tmp_path, monkeypatch):
     assert after.forecast_id == before  # no new snapshot — marginal stays preview
     assert res[q.id]["status"] == "skipped"
     assert "no new snapshot" in res[q.id]["detail"]
+
+
+def _always_commit_stub(target_prob):
+    """A stand-in for an agent that slips the commit-material policy: it commits a
+    fresh snapshot UNCONDITIONALLY, even for a marginal move. Used to pin that the
+    runner REPORTS such a commit honestly as 'marginal' rather than tallying it as a
+    material-move success."""
+
+    def _stub(ledger, qid, **kw):
+        assert kw.get("commit_policy") == "commit_material"
+        ledger.create_snapshot(
+            question_id=qid,
+            probability_or_distribution=target_prob,
+            rationale="Re-reasoned; committed despite a marginal move.",
+            as_of="2026-05-08T00:00:00Z",
+            confidence=0.6,
+            method="weighted_ensemble",
+        )
+        return {}
+
+    return _stub
+
+
+def test_marginal_delta_commit_is_reported_as_marginal_not_material_success(tmp_path, monkeypatch):
+    """If the agent commits anyway on a MARGINAL delta (slipping the prompt policy),
+    the runner must classify the result HONESTLY as status 'marginal' — NOT tally it
+    as a 'committed' material-move success — so the sweep's status counts stay
+    truthful. A snapshot did land (so it is not 'skipped'), but it is not material."""
+    import forecasting.cli as cli
+
+    lg = _ledger(tmp_path)
+    q = _seed_with_prior(lg, 0.46)
+    before = lg.get_current_snapshot(q.id).forecast_id
+
+    monkeypatch.setattr(cli, "_run_update_agent", _always_commit_stub(0.47))  # 1pp commit
+    runner = cli._build_cycle_reforecast_runner(_args(tmp_path))
+    res = {r["question_id"]: r for r in runner([q.id])}
+
+    after = lg.get_current_snapshot(q.id)
+    assert after.forecast_id != before                 # a new snapshot DID land
+    assert res[q.id]["status"] == "marginal"           # …but reported honestly, not "committed"
+    assert "MARGINAL" in res[q.id]["detail"]
+    assert "+0.010" in res[q.id]["detail"]             # the sub-threshold delta is surfaced

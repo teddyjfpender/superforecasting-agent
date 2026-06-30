@@ -172,6 +172,33 @@ def test_failing_search_does_not_ack(tmp_path):
     assert _is_open(lg, a.id)
 
 
+def test_partial_import_that_landed_a_row_counts_as_success(tmp_path):
+    """A multi-source research pass can land >= 1 NEW evidence row and THEN raise
+    (mid-stream model/network drop). The gated work is the row that actually landed,
+    so the alert must resolve cleanly — re-surfacing it would just re-research
+    evidence we already hold. Only a raise that landed NOTHING stays OPEN."""
+    lg = _ledger(tmp_path)
+    qid = _question(lg)
+    a = _alert(lg, qid, reason="no_evidence")
+
+    def import_then_boom(led, warning):
+        # Import a genuine NEW reading through the gated path, THEN fail.
+        led.add_evidence(question_id=warning.scope_ref, archive_url_snapshot=False, **_READING)
+        raise RuntimeError("model/network dropped after the row landed")
+
+    runners = ResolutionRunners(evidence_runner=lambda led, w: gated_evidence_collection(
+        led, w, evidence_search=import_then_boom
+    ))
+    res = resolve_alert(lg, a, runners=runners)
+
+    assert res["status"] == "resolved"                 # the real gated work happened
+    assert res["acknowledged"] is True
+    assert res["runner_result"]["new_evidence"] == 1
+    assert res["runner_result"]["partial_import"] is True
+    assert not _is_open(lg, a.id)                       # acked, not left OPEN on the raise
+    assert len(lg.list_evidence(qid)) == 1             # the reading really landed
+
+
 # ---------------------------------------------------------------------------
 # Wiring — the runner is opt-in (AGENT tier), only present when a search is injected
 # ---------------------------------------------------------------------------

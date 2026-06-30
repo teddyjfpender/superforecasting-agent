@@ -565,23 +565,41 @@ def _render_rows(rows: list[dict[str, Any]], primary: str, status: str) -> list[
 # commit-material posture (refresh --agent / cycle run --agent). It draws the
 # bright line the live reforecasts kept blurring: the forecast-UPDATE commit
 # decision is NOT the decision-card ACTION threshold.
+#
+# DELIBERATE DESIGN (deferred follow-up): this policy is enforced at the PROMPT
+# layer — the agent itself owns the gated commit. We do NOT (and intentionally
+# will not, in a sweep) add a flow-forces-commit HARD gate that scrapes the
+# agent's freeform preview number and auto-commits it on the agent's behalf when
+# the runner judges the move material. That capture-and-commit design is fragile:
+# it would have to parse a probability out of free text (brittle, locale/format
+# dependent), it could not re-run the saturation/structured-reasoning/panel gates
+# the real `update_forecast` action enforces, and it would commit a number the
+# agent never actually decided to write down — exactly the conflation this policy
+# forbids. The honest, robust contract is: instruct the agent forcefully (below)
+# and report the outcome truthfully (the cron runner classifies a committed
+# snapshot by is_material_move, and surfaces a marginal commit as "marginal", not
+# as a material-move success). A deterministic commit gate, if ever wanted, is a
+# separate, carefully-designed change — out of scope for a sweep.
 _COMMIT_MATERIAL_POLICY = (
-    "\n\nCOMMIT POLICY (auto-reforecast): committing the forecast UPDATE is a "
-    "SEPARATE decision from recommending decision-card ACTION. Record your current "
-    "best estimate even when it would NOT cross the action threshold — the action "
-    "threshold (e.g. 'act if P>=0.65') governs whether to ACT on the decision card, "
-    "NOT whether to write down the forecast. So do not stop at a sharpened preview "
-    "('No snapshot committed'): once you have re-collected fresh evidence and "
-    "re-reasoned the number, MATERIALITY decides. If your fresh estimate is a "
-    "MATERIAL move versus the prior snapshot — |Δp| >= 0.03 (3 percentage points) "
-    "for a binary, or any genuine change for a distribution/categorical/first "
-    "forecast — and the saturation/commit gates pass (components, structured "
-    "reasoning, panel where required), then COMMIT the updated snapshot now "
-    "(`forecast update <id> ...` / the `update_forecast` action), do not merely "
-    "preview it. If the move is MARGINAL/non-material (|Δp| < 0.03 and the drivers "
-    "are unchanged), leave it as a preview/recommendation and say so — a marginal "
-    "re-pool is not worth a new scored snapshot. State the prior, the proposed "
-    "number, the delta, and which branch (commit vs preview) you took and why."
+    "\n\nCOMMIT POLICY (auto-reforecast — NON-NEGOTIABLE): committing the forecast "
+    "UPDATE is a SEPARATE decision from recommending decision-card ACTION, and you "
+    "MUST NOT conflate the two. The action threshold (e.g. 'act if P>=0.65') governs "
+    "ONLY whether to ACT on the decision card; it does NOT govern whether to write "
+    "down the forecast. So once you have re-collected fresh evidence and re-reasoned "
+    "the number, MATERIALITY — not the action threshold — decides whether to commit. "
+    "If your fresh estimate is a MATERIAL move versus the prior snapshot — |Δp| >= "
+    "0.03 (3 percentage points) for a binary, or any genuine change for a "
+    "distribution/categorical/first forecast — you MUST RECORD your current best "
+    "estimate by COMMITTING the updated snapshot NOW (`forecast update <id> ...` / "
+    "the `update_forecast` action), provided the saturation/commit gates pass "
+    "(components, structured reasoning, panel where required). Do NOT stop at a "
+    "sharpened preview and report 'No snapshot committed': a previewed-but-uncommitted "
+    "material move is a FAILED update, not a completed one — the number lives only in "
+    "your scratchpad and never reaches the scored ledger. ONLY when the move is "
+    "MARGINAL/non-material (|Δp| < 0.03 AND the drivers are unchanged) may you leave "
+    "it as a preview/recommendation and say so — a marginal re-pool is not worth a "
+    "new scored snapshot. Either way, STATE the prior, your proposed number, the "
+    "delta, and which branch (commit vs preview) you took and why."
 )
 
 

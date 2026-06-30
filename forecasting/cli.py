@@ -10455,7 +10455,19 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
     questions a sweep flagged. It validates each candidate is a LIVE question, honors
     the pipeline update gate (skip + report blockers unless --force), caps the count
     (--max-questions), runs the LLM update stage, and returns per-question result
-    dicts. Lives here so run_agent is never imported by cron_runner/ledger."""
+    dicts. Lives here so run_agent is never imported by cron_runner/ledger.
+
+    NOTE (deliberate deferred follow-up): the commit-material policy is enforced at
+    the PROMPT layer (the agent owns the gated `update_forecast` commit) and this
+    runner only REPORTS the outcome honestly — it classifies a committed snapshot by
+    is_material_move and surfaces a marginal-delta commit as status "marginal", not
+    as a material-move success. We intentionally do NOT build a flow-forces-commit
+    HARD gate that captures the agent's freeform preview number and auto-commits it:
+    that would have to parse a probability out of free text (brittle), could not
+    re-run the saturation/structured-reasoning/panel gates the real commit path
+    enforces, and would write a number the agent never actually decided to commit. A
+    deterministic commit gate, if ever wanted, is a separate carefully-designed
+    change — out of scope for a sweep. See _COMMIT_MATERIAL_POLICY in protocol.py."""
     from forecasting.warnings import is_material_move
 
     ledger = _ledger(args)
@@ -10500,10 +10512,13 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
             post = ledger.get_current_snapshot(qid)
             new_commit = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
             if new_commit:
-                # A material move under the commit policy is the success the
-                # auto-reforecast wants. Surface the delta so the sweep report is
-                # honest about WHY this counted (and flags a marginal commit that
-                # slipped through, rather than silently calling it the same thing).
+                # Classify the commit by MATERIALITY (the same is_material_move
+                # primitive the prompt instructs the agent to apply): a MATERIAL
+                # move is the success the auto-reforecast wants; a MARGINAL-delta
+                # commit that slipped through the prompt-level policy is reported
+                # HONESTLY as "marginal" — it is NOT tallied as a material-move
+                # success, so the sweep's status counts and the result detail stay
+                # truthful (and surface the Δp that justifies the classification).
                 prior_p = prior.probability_or_distribution if prior is not None else None
                 material = is_material_move(prior_p, post.probability_or_distribution)
                 delta = None
@@ -10511,12 +10526,16 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
                     post.probability_or_distribution, (int, float)
                 ) and not isinstance(post.probability_or_distribution, bool):
                     delta = float(post.probability_or_distribution) - float(prior_p)
-                detail = f"new snapshot {post.forecast_id}"
-                if delta is not None:
-                    detail += f" (Δp {delta:+.3f}{'' if material else ', marginal'})"
-                elif not material:
-                    detail += " (marginal)"
-                results.append({"question_id": qid, "status": "committed", "detail": detail})
+                if material:
+                    detail = f"new snapshot {post.forecast_id}"
+                    if delta is not None:
+                        detail += f" (Δp {delta:+.3f})"
+                    results.append({"question_id": qid, "status": "committed", "detail": detail})
+                else:
+                    detail = f"new snapshot {post.forecast_id} committed at a MARGINAL move"
+                    if delta is not None:
+                        detail += f" (Δp {delta:+.3f}, under the |Δp|>=0.03 material-move threshold)"
+                    results.append({"question_id": qid, "status": "marginal", "detail": detail})
             else:
                 results.append({"question_id": qid, "status": "skipped", "detail": "agent committed no new snapshot"})
         return results
@@ -10550,10 +10569,13 @@ def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
             if not warning.scope_ref:
                 return None
             results = _inner([warning.scope_ref])
-            committed = [r for r in results if r.get("status") == "committed"]
-            # Truthy ONLY when the agent actually committed a fresh snapshot; a
-            # gated/declined/errored run returns falsy → alert stays open.
-            return committed[0] if committed else None
+            # A landed snapshot is real gated work regardless of materiality, so the
+            # alert resolves on either a "committed" (material) OR a "marginal" commit
+            # — the material/marginal split is the cycle TALLY's honesty concern, not
+            # the alert-ack decision. A gated/declined/errored run lands no snapshot
+            # ("skipped"/"error") → falsy → the alert stays open (never bare-acked).
+            landed = [r for r in results if r.get("status") in {"committed", "marginal"}]
+            return landed[0] if landed else None
 
         # EVIDENCE_COLLECTION search: the LLM/web research-stage pass that
         # bootstraps a question with NO evidence yet (it searches + imports through
@@ -10627,8 +10649,11 @@ def build_cron_warning_agent_runners(
         if not warning.scope_ref:
             return None
         results = _inner([warning.scope_ref])
-        committed = [r for r in results if r.get("status") == "committed"]
-        return committed[0] if committed else None
+        # A landed snapshot is real gated work regardless of materiality (mirrors the
+        # --agent wiring above): resolve the alert on a "committed" OR "marginal"
+        # commit, leave it OPEN only when no snapshot landed.
+        landed = [r for r in results if r.get("status") in {"committed", "marginal"}]
+        return landed[0] if landed else None
 
     evidence_search = _build_evidence_search(args)
     return reforecast_runner, evidence_search

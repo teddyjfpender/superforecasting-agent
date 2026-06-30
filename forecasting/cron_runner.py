@@ -291,23 +291,45 @@ def gated_evidence_collection(
     (mirroring the CLI dedupe gate's ``skipped_duplicates`` accounting) and return
     a truthy summary ONLY when ``>= 1`` genuinely-new row landed. An empty fetch or
     a dup-only fetch nets zero rows → ``None`` → the dispatcher leaves the alert
-    OPEN (never a bare ack to drop the count). The search may raise (model/network
-    failure); the dispatcher catches it and re-surfaces the alert next pass.
+    OPEN (never a bare ack to drop the count).
+
+    PARTIAL IMPORT: the search may raise (model/network failure) AFTER it already
+    imported one or more readings — a multi-source research pass that lands a row
+    and then drops mid-stream. The gated work is the row(s) that ACTUALLY landed,
+    so we measure NET-NEW rows even on a raise: if ``>= 1`` row landed before the
+    error we treat it as SUCCESS (the alert resolves cleanly — the question is now
+    forecastable, and re-surfacing it would just re-research evidence we already
+    hold). Only a genuinely ZERO-new-row outcome stays OPEN: an empty/dup-only
+    fetch returns ``None``, and a raise that landed nothing is re-raised so the
+    dispatcher catches it and re-surfaces the alert next pass. The ``>= 1``-row
+    truthy gate is unchanged — no false-positive ack on a dup-only/empty fetch.
     """
     if warning.scope_type != "question" or not warning.scope_ref:
         return None
     qid = warning.scope_ref
     before = len(led.list_evidence(qid))
-    search_result = evidence_search(led, warning)
+    search_error: Exception | None = None
+    search_result: Any = None
+    try:
+        search_result = evidence_search(led, warning)
+    except Exception as exc:  # may have landed rows before failing — measure below.
+        search_error = exc
     new_rows = len(led.list_evidence(qid)) - before
     if new_rows < 1:
-        # No NEW evidence (empty or dup-only fetch) — the question still cannot be
-        # forecast, so leave the alert OPEN rather than acking on no real work.
+        # No NEW evidence (empty/dup-only fetch, or a raise that landed nothing) —
+        # the question still cannot be forecast, so leave the alert OPEN rather than
+        # acking on no real work. A genuine error re-raises so the dispatcher reports
+        # it "failed" (and stamps the re-spend cooldown); an empty fetch returns None.
+        if search_error is not None:
+            raise search_error
         return None
+    # >= 1 NEW row landed — real gated work happened (even if the search later
+    # raised on a partial import), so ack the alert as the natural consequence.
     return {
         "question_id": qid,
         "new_evidence": new_rows,
         "search_result": search_result,
+        "partial_import": search_error is not None,
     }
 
 
@@ -559,9 +581,14 @@ def run_warning_resolution(
                 "remaining": total - index, "alert_id": warning.id,
                 "reason": warning.reason, "status": status,
             })
-        # Only reconcile if we ran the full backlog (a cancel/budget-halt leaves the
-        # sweep mid-flight; reconciling then could ack alerts we never inspected).
-        if reconcile and not cancelled and not budget_exhausted:
+        # Reconcile unless a cooperative CANCEL stopped us mid-flight (an explicit
+        # abort: do not touch alerts we never inspected). A BUDGET halt is different
+        # — it only caps the PAID agent sweep; reconcile is cheap, free, non-agent
+        # bookkeeping that closes already-consumed/condition-resolved alerts, and it
+        # keys off persisted evidence+snapshot state (NOT on which alerts this sweep
+        # processed), so it is safe and correct to run even when the spend cap halted
+        # the paid pass — a budget-capped cycle still closes its resolved backlog.
+        if reconcile and not cancelled:
             _emit({"phase": "reconcile", "done": len(results), "total": total, "remaining": 0})
             reconcile_result = led.reconcile_alerts(now=now)
 
