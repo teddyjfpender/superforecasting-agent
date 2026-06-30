@@ -1488,6 +1488,22 @@ DEFAULT_CONFIG = {
         "inherit_mcp_toolsets": True,
         "max_iterations": 50,  # per-subagent iteration cap (each subagent gets its own budget,
                                # independent of the parent's max_iterations)
+        # Subagent summaries return to the parent's context verbatim. A batch
+        # fan-out (N children) returns N summaries at once, which can exceed
+        # the parent's context window and trigger a compression/429 death
+        # spiral. delegate_task sizes each summary against the parent's
+        # remaining context headroom (split across the batch); when it must
+        # trim, the full text is spilled to ~/.hermes/cache/delegation/
+        # (mounted into remote backends) and the in-context summary becomes a
+        # head+tail window plus a footer with the exact read_file offset to
+        # page the omitted middle — the same convention web_extract uses for
+        # large pages. Nothing is lost. The SAME trim is applied to async
+        # (background=true) delegations when their result re-enters the
+        # conversation. max_summary_chars is a hard per-summary character
+        # ceiling layered on top of that dynamic budget (belt-and-suspenders
+        # for models that ignore the "be concise" instruction). 0 disables the
+        # hard ceiling; the dynamic headroom budget still applies.
+        "max_summary_chars": 24000,
         "child_timeout_seconds": 600,  # wall-clock timeout for each child agent (floor 30s,
                                        # no ceiling). High-reasoning models on large tasks
                                        # (e.g. gpt-5.5 xhigh, opus-4.6) need generous budgets;
