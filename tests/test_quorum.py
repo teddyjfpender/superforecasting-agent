@@ -424,3 +424,202 @@ def test_make_aiagent_runner_default_is_backward_safe(monkeypatch):
     runner = make_aiagent_runner()
     runner("m/x", "system", "user")
     assert captured["enabled_toolsets"] == ["forecasting", "web"]
+
+
+# ── DELPHI: anonymous reveal → private second round (v1: 0 or 1 rounds) ─────────
+
+
+def test_run_quorum_delphi_zero_matches_existing_path():
+    # delphi_rounds=0 is the default un-delphi path: no delphi_audit rounds and a
+    # committed number byte-identical to a run that never mentions delphi at all.
+    table = {"a/b": 0.30, "c/d": 0.55, "e/f": 0.62}
+    common = dict(
+        question_title="Will X happen by 2027?",
+        resolution_criteria="Resolves YES if X.",
+        models=list(table),
+        runner=_stub_runner(table),
+        judge_model="anthropic/claude-opus-4-8",
+        pool_method="trimmed_geomean_odds",
+        trim=1,
+    )
+    baseline = run_quorum(**common)
+    zero = run_quorum(**common, delphi_rounds=0)
+    assert zero.delphi_rounds == 0
+    assert zero.delphi_audit == {}
+    assert "rounds" not in zero.delphi_audit
+    assert zero.final_probability == baseline.final_probability
+
+
+def test_run_quorum_delphi_runs_second_private_round():
+    # Panelists forecast one number in the sealed round and a DIFFERENT number once
+    # the anonymous "Delphi Revision Context" reveal is appended to their prompt.
+    r1 = {"a/b": 0.30, "c/d": 0.40, "e/f": 0.50}
+    r2 = {"a/b": 0.60, "c/d": 0.65, "e/f": 0.70}
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps(
+                {
+                    "probability": 0.5,
+                    "rationale": "judge synthesis",
+                    "consensus": ["panel agrees X"],
+                    "contradictions": ["A says hot, B says cold"],
+                    "reasons_up": ["u"],
+                    "reasons_down": ["d"],
+                    "change_my_mind": ["cmm"],
+                    "blind_spots": ["regime change unpriced"],
+                }
+            )
+        if "Delphi Revision Context" in user:
+            return _panelist_json(r2[model])
+        return _panelist_json(r1[model])
+
+    res = run_quorum(
+        question_title="Q",
+        resolution_criteria="R",
+        models=list(r1),
+        runner=runner,
+        judge_model="anthropic/claude-opus-4-8",
+        trim=1,
+        delphi_rounds=1,
+    )
+    assert res.delphi_rounds == 1
+    # The FINAL forecasts are the revision (round-2) estimates, not the sealed ones.
+    assert all(f.round_index == 2 for f in res.forecasts)
+    assert sorted(round(f.probability, 3) for f in res.forecasts) == sorted(r2.values())
+    # Each revision seat carries its own sealed-round prior.
+    for f in res.forecasts:
+        assert f.prior_probability == pytest.approx(r1[f.model], abs=1e-9)
+    # The sealed round-1 estimates are preserved in the audit trail.
+    rounds = res.delphi_audit["rounds"]
+    assert rounds[0]["round_index"] == 1
+    assert sorted(round(fc["probability"], 3) for fc in rounds[0]["forecasts"]) == sorted(
+        r1.values()
+    )
+    assert rounds[1]["round_index"] == 2
+
+
+def test_delphi_summary_is_anonymous():
+    from forecasting.quorum import (
+        JudgeSynthesis,
+        ModelForecast,
+        aggregate_panel_estimates,
+        build_delphi_summary,
+        disagreement_signal,
+    )
+
+    models = ("openai/gpt-5.5", "anthropic/claude-opus-4-8", "google/gemini-3")
+    forecasts = [
+        ModelForecast(
+            model=models[0],
+            probability=0.30,
+            reasons_up=["rate cuts land"],
+            reasons_down=["supply glut"],
+            participant_id="p01",
+        ),
+        ModelForecast(
+            model=models[1],
+            probability=0.55,
+            reasons_up=["demand shock"],
+            reasons_down=["inventory overhang"],
+            participant_id="p02",
+        ),
+        ModelForecast(
+            model=models[2],
+            probability=0.62,
+            reasons_up=["policy tailwind"],
+            reasons_down=["seasonality"],
+            participant_id="p03",
+        ),
+    ]
+    aggregation = aggregate_panel_estimates(
+        [f.to_estimate() for f in forecasts], method="trimmed_geomean_odds", trim=0
+    )
+    disagreement = disagreement_signal([f.probability for f in forecasts])
+    judge = JudgeSynthesis(
+        probability=0.48,
+        rationale="synthesis",
+        contradictions=["p-high vs p-low on supply"],
+        blind_spots=["nobody priced a regime change"],
+    )
+    summary = build_delphi_summary(
+        forecasts=forecasts,
+        aggregation=aggregation,
+        disagreement=disagreement,
+        judge=judge,
+        supervisor_evidence=[],
+    )
+    # NO model identity leaks into the anonymous reveal.
+    for model in models:
+        assert model not in summary
+    low = summary.lower()
+    for fragment in ("gpt", "claude", "opus", "gemini", "openai", "anthropic", "google"):
+        assert fragment not in low, fragment
+    # It DOES carry the distribution summary, contradictions, and shared blind spots.
+    assert "probability distribution" in summary
+    assert "contradictions:" in summary
+    assert "p-high vs p-low on supply" in summary
+    assert "shared blind spots:" in summary
+    assert "nobody priced a regime change" in summary
+
+
+def test_self_fusion_delphi_uses_participant_ids_not_model_ids():
+    # The `self` preset repeats a single model id, so the panel SEAT (p01..) must be
+    # the stable identity and each seat's own round-1 prior must map into ITS revision
+    # prompt (a model-keyed map would collapse all three seats into one).
+    import re
+
+    r1_by_seat = {1: 0.20, 2: 0.50, 3: 0.80}
+    revision_prompts: list[str] = []
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps(
+                {
+                    "probability": 0.5,
+                    "rationale": "s",
+                    "contradictions": ["x"],
+                    "blind_spots": ["y"],
+                }
+            )
+        if "Delphi Revision Context" in user:
+            revision_prompts.append(user)
+            return _panelist_json(0.55)
+        seat = int(re.search(r"Independent draft #(\d+)", user).group(1))
+        return _panelist_json(r1_by_seat[seat])
+
+    res = run_quorum(
+        question_title="Q",
+        resolution_criteria="R",
+        models=["x/y", "x/y", "x/y"],
+        runner=runner,
+        judge_model="anthropic/claude-opus-4-8",
+        self_fusion=True,
+        trim=0,
+        delphi_rounds=1,
+        max_concurrency=1,
+    )
+    assert res.delphi_rounds == 1
+    # Seats are the identity; the model id is shared across all three.
+    assert [f.participant_id for f in res.forecasts] == ["p01", "p02", "p03"]
+    assert {f.model for f in res.forecasts} == {"x/y"}
+    # All three distinct sealed-round priors survive (proves seat-keyed, not model-keyed).
+    assert sorted(round(f.prior_probability, 4) for f in res.forecasts) == [0.20, 0.50, 0.80]
+    # Each prior is rendered as the panelist's own prior inside its revision prompt.
+    assert len(revision_prompts) == 3
+    joined = "\n".join(revision_prompts)
+    for p in (0.20, 0.50, 0.80):
+        assert f"probability: {p:.4f}" in joined
+
+
+def test_delphi_rounds_rejects_more_than_one_for_v1():
+    # v1 supports only 0 or 1 revision rounds; anything else is rejected up front.
+    with pytest.raises(ValidationError):
+        run_quorum(
+            question_title="Q",
+            resolution_criteria="R",
+            models=["a/b"],
+            runner=_stub_runner({"a/b": 0.4}),
+            judge_model=None,
+            delphi_rounds=2,
+        )

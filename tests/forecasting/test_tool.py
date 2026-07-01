@@ -5181,3 +5181,162 @@ def test_update_forecast_blocks_stale_rerun(tmp_path):
     optout = json.loads(forecast_ledger_tool({**base, "require_fresh_evidence": False,
                                               "probability": 0.63, "rationale": "fourth"}))
     assert optout["success"] is True
+
+
+# --------------------------------------------------------------------------
+# start_quorum / show_quorum_status  (agent-facing quorum job surface)
+# --------------------------------------------------------------------------
+#
+# The tool enqueues an auditable quorum recommendation as a background job; it
+# never commits or mutates a probability. Under `wait=true` the job runs inline
+# with the model runner monkeypatched (no network, no real model). Both
+# `create_question` and the background job resolve the SAME default ledger db
+# (get_hermes_home()/forecasting/forecasting.db — HERMES_HOME is per-test
+# isolated by the autouse conftest fixture), so the seeded question is visible
+# to `execute_job`.
+
+
+def _quorum_stub_runner_factory(table):
+    """A `make_aiagent_runner` stand-in: deterministic panelist + judge JSON."""
+
+    def make(**_kwargs):
+        def runner(model, system, user):
+            if "JUDGE" in system:
+                return json.dumps(
+                    {
+                        "probability": 0.4,
+                        "rationale": "judge synthesis",
+                        "blind_spots": ["regime shift unpriced"],
+                        "reasons_up": ["u"],
+                        "reasons_down": ["d"],
+                        "change_my_mind": ["cmm"],
+                    }
+                )
+            return json.dumps(
+                {
+                    "probability": table.get(model, 0.5),
+                    "confidence_low": 0.2,
+                    "confidence_high": 0.7,
+                    "rationale": "panelist reasoning",
+                    "reasons_up": ["up"],
+                    "reasons_down": ["down"],
+                    "change_my_mind": ["cmm"],
+                    "crux": "the crux",
+                }
+            )
+
+        return runner
+
+    return make
+
+
+def _start_completed_quorum(monkeypatch):
+    """Seed a question and run a stubbed quorum inline; return the tool payload."""
+    # Force the default-db resolution so the tool and the job agree on the path.
+    monkeypatch.delenv("FORECAST_LEDGER_DB", raising=False)
+
+    import forecasting.quorum as quorum
+
+    table = {"a/m1": 0.25, "b/m2": 0.55, "c/m3": 0.62}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _quorum_stub_runner_factory(table))
+
+    created = json.loads(
+        forecast_ledger_tool(
+            {
+                "action": "create_question",
+                "title": "Will the central bank cut rates by Q3 2027?",
+                "resolution_criteria": "Resolves YES if a cut is announced before 2027-10-01.",
+                "impact": "high",
+            }
+        )
+    )
+    qid = created["question"]["id"]
+
+    return json.loads(
+        forecast_ledger_tool(
+            {
+                "action": "start_quorum",
+                "question_id": qid,
+                "models": list(table),
+                "pool_method": "trimmed_geomean_odds",
+                "trim": 1,
+                "wait": True,
+            }
+        )
+    )
+
+
+def test_forecast_ledger_tool_start_quorum_returns_run_id(monkeypatch):
+    from forecasting import quorum_jobs as qj
+
+    captured: dict = {}
+
+    def _fake_start_job(spec, *, wait=False):
+        captured["spec"] = dict(spec)
+        captured["wait"] = wait
+        return "qr_toolrunid"
+
+    def _no_read(_run_id):
+        raise AssertionError("read_job must not be called without wait")
+
+    monkeypatch.setattr(qj, "start_job", _fake_start_job)
+    monkeypatch.setattr(qj, "read_job", _no_read)
+
+    result = json.loads(
+        forecast_ledger_tool(
+            {
+                "action": "start_quorum",
+                "question_id": "fq_abc123",
+                "delphi_rounds": 1,
+            }
+        )
+    )
+
+    assert result["success"] is True
+    assert result["run_id"] == "qr_toolrunid"
+    # A detached enqueue does not read the job back.
+    assert result["job"] is None
+    # Only caller-set keys are forwarded (execute_job resolves its own defaults).
+    assert captured["spec"]["question_id"] == "fq_abc123"
+    assert captured["spec"]["delphi_rounds"] == 1
+    assert captured["wait"] is False
+
+
+def test_forecast_ledger_tool_start_quorum_wait_returns_completed_job(monkeypatch):
+    started = _start_completed_quorum(monkeypatch)
+
+    assert started["success"] is True
+    assert started["run_id"]
+    job = started["job"]
+    assert job is not None
+    assert job["status"] == "done", job.get("error")
+    assert job["panel_run_id"], "a completed quorum records a panel run"
+    assert 0.0 < job["result"]["aggregate_probability"] < 1.0
+
+
+def test_forecast_ledger_tool_show_quorum_status_returns_persisted_job(monkeypatch):
+    started = _start_completed_quorum(monkeypatch)
+    run_id = started["run_id"]
+
+    status = json.loads(
+        forecast_ledger_tool(
+            {
+                "action": "show_quorum_status",
+                "run_id": run_id,
+            }
+        )
+    )
+
+    assert status["success"] is True
+    assert status["job"]["run_id"] == run_id
+    assert status["job"]["status"] == "done"
+
+
+def test_forecast_ledger_tool_schema_advertises_quorum_actions_and_delphi():
+    props = FORECAST_LEDGER_SCHEMA["parameters"]["properties"]
+    action_enum = props["action"]["enum"]
+
+    assert "start_quorum" in action_enum
+    assert "show_quorum_status" in action_enum
+    assert "delphi_rounds" in props
+    assert set(props["delphi_rounds"]["enum"]) == {0, 1}

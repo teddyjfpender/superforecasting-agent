@@ -135,6 +135,17 @@ class ModelForecast:
     crux: str | None = None
     weight: float = 1.0
     error: str | None = None  # set when the model failed; excluded from pooling
+    # Delphi identity/provenance (default to the non-delphi single-round state so
+    # a delphi_rounds==0 quorum is unchanged): ``participant_id`` is the panel SEAT
+    # (``p01``…), stable across rounds and distinct from ``model`` because the
+    # ``self`` preset repeats one model; ``round_index`` is 1 for the sealed round
+    # and 2 for the private revision round; ``prior_probability`` is this seat's
+    # round-1 number (set only on the revision round); ``revision_reason`` is the
+    # panelist's optional one-liner on what moved (or held) its view.
+    participant_id: str | None = None
+    round_index: int = 1
+    prior_probability: float | None = None
+    revision_reason: str | None = None
 
     def to_estimate(self) -> dict[str, Any]:
         """Shape this forecast as a panel estimate for ``aggregate_panel_estimates``."""
@@ -151,7 +162,13 @@ class ModelForecast:
             "reasons_down": self.reasons_down,
             "change_my_mind": self.change_my_mind,
             "crux": self.crux,
-            "metadata": {"source": f"quorum:{self.model}"},
+            "metadata": {
+                "source": f"quorum:{self.model}",
+                "participant_id": self.participant_id,
+                "round_index": self.round_index,
+                "prior_probability": self.prior_probability,
+                "revision_reason": self.revision_reason,
+            },
         }
 
 
@@ -233,6 +250,13 @@ class QuorumResult:
     # the in-memory result and the persisted panel_run match a baseline run.
     research_rounds: int = 0
     supervisor_evidence: list[dict[str, Any]] = field(default_factory=list)
+    # Delphi-revision provenance. ``delphi_rounds`` is 0 on the default (un-delphi)
+    # path and 1 when a single private revision round ran; ``delphi_audit`` holds the
+    # compact, serializable per-round record (``{"rounds": [...], "revision_context":
+    # {...}}``) preserving the sealed round-1 estimates the final aggregate replaced.
+    # Both default to the no-delphi state so a delphi_rounds==0 result is byte-identical.
+    delphi_rounds: int = 0
+    delphi_audit: dict[str, Any] = field(default_factory=dict)
 
     @property
     def aggregate_probability(self) -> float:
@@ -270,6 +294,10 @@ class QuorumResult:
             "judge_model": self.judge_model,
             "research_rounds": self.research_rounds,
             "supervisor_evidence": self.supervisor_evidence,
+            # Delphi provenance (additive; 0 / {} on the default un-delphi path so a
+            # delphi_rounds==0 result stays byte-compatible with pre-Delphi readers).
+            "delphi_rounds": self.delphi_rounds,
+            "delphi_audit": self.delphi_audit,
             "judge": self.judge.to_dict() if self.judge else None,
             "forecasts": [
                 {
@@ -422,6 +450,204 @@ def build_judge_prompt(
         "evidence gaps to research next)"
     )
     return {"system": _JUDGE_SYSTEM, "user": user}
+
+
+# ── Delphi revision (anonymous reveal → private second round) ─────────────────
+#
+# The Delphi intervention is a PROCESS change, not a scoring change: after the
+# sealed round the panel sees an ANONYMOUS summary of the group's spread and the
+# judge's contradictions/blind-spots, then privately revises. The summary must
+# NEVER leak model identities ("Claude said", "GPT said") or the judge's preferred
+# number as an authority — only the distribution, the disagreement band, and the
+# anonymous strongest arguments. The prompt explicitly forbids deferring to the
+# median so a panelist moves only when an argument or fresh evidence changed its view.
+
+
+_DELPHI_REVISION_INSTRUCTIONS = (
+    "Revise privately. Do not defer to the median. Move your probability only if "
+    "the anonymous arguments or fresh evidence changed your view. If you keep the "
+    "same probability, say why.\n\n"
+    "Return ONLY the same JSON object as round 1 (probability, confidence_low, "
+    "confidence_high, rationale, reasons_up, reasons_down, change_my_mind, crux), "
+    "plus optional:\n"
+    "- revision_reason: one sentence explaining what changed or why you held steady"
+)
+
+
+def _fmt_prob(value: Any) -> str:
+    """Format a spread scalar to 3dp, tolerating missing/garbage values."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return "n/a"
+    try:
+        return f"{float(value):.3f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _dedup_capped(lists: Sequence[Sequence[str]], *, cap: int = 6) -> list[str]:
+    """Union of the given string lists, order-preserving, case-insensitively
+    de-duplicated, capped at ``cap`` — for the anonymous reasons roll-up."""
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for lst in lists:
+        for item in lst or []:
+            s = str(item).strip()
+            key = s.lower()
+            if not s or key in seen:
+                continue
+            seen.add(key)
+            out.append(s)
+            if len(out) >= cap:
+                return out
+    return out
+
+
+def _join_or_none(items: Sequence[str]) -> str:
+    return "; ".join(items) if items else "(none)"
+
+
+def _render_fresh_evidence(evidence: Sequence[Mapping[str, Any]]) -> str:
+    """One-line-per-item rendering of supervisor-search evidence (tolerant of the
+    ``{title, summary, source}`` / ``{claim, text, url}`` shapes)."""
+
+    pieces: list[str] = []
+    for item in evidence or []:
+        title = str(item.get("title") or item.get("claim") or "").strip()
+        summary = str(item.get("summary") or item.get("text") or "").strip()
+        if title and summary:
+            piece = f"{title}: {summary}"
+        else:
+            piece = title or summary
+        if piece:
+            pieces.append(piece)
+    return "; ".join(pieces) if pieces else "(none)"
+
+
+def build_delphi_summary(
+    *,
+    forecasts: Sequence[ModelForecast],
+    aggregation: PanelAggregation,
+    disagreement: Mapping[str, Any],
+    judge: JudgeSynthesis | None,
+    supervisor_evidence: Sequence[Mapping[str, Any]],
+) -> str:
+    """The ANONYMOUS first-round reveal handed to every revision-round panelist.
+
+    Emits the distribution summary (min/p25/median/p75/max), the disagreement band,
+    the anonymous strongest reasons up/down, the judge's contradictions and shared
+    blind-spots, and any fresh supervisor evidence. It deliberately contains NO
+    model identity and NO named ordering — the whole point of Delphi is that the
+    panelist revises against arguments, not against who said them.
+    """
+
+    ok = [f for f in forecasts if f.error is None]
+    spread = aggregation.spread
+    reasons_up = _dedup_capped(
+        [judge.reasons_up if judge else [], *[f.reasons_up for f in ok]]
+    )
+    reasons_down = _dedup_capped(
+        [judge.reasons_down if judge else [], *[f.reasons_down for f in ok]]
+    )
+    contradictions = list(judge.contradictions) if judge else []
+    blind_spots = list(judge.blind_spots) if judge else []
+    lines = [
+        "Anonymous first-round panel summary:",
+        (
+            "- probability distribution: "
+            f"min={_fmt_prob(spread.get('min'))}, "
+            f"p25={_fmt_prob(spread.get('p25'))}, "
+            f"median={_fmt_prob(spread.get('median'))}, "
+            f"p75={_fmt_prob(spread.get('p75'))}, "
+            f"max={_fmt_prob(spread.get('max'))}"
+        ),
+        (
+            "- disagreement: "
+            f"{disagreement.get('disagreement_band', 'n/a')} "
+            f"(index={disagreement.get('disagreement_index', 'n/a')})"
+        ),
+        f"- strongest reasons for YES: {_join_or_none(reasons_up)}",
+        f"- strongest reasons for NO: {_join_or_none(reasons_down)}",
+        f"- contradictions: {_join_or_none(contradictions)}",
+        f"- shared blind spots: {_join_or_none(blind_spots)}",
+        f"- fresh evidence added after round 1: {_render_fresh_evidence(supervisor_evidence)}",
+    ]
+    return "\n".join(lines)
+
+
+def build_revision_context_block(
+    *, prior: ModelForecast | None, delphi_summary: str
+) -> str:
+    """The ``## Delphi Revision Context`` block appended to a panelist's round-1
+    prompt for the private revision round: its OWN prior (probability/crux/
+    rationale) followed by the shared ANONYMOUS ``delphi_summary`` and the
+    do-not-defer-to-the-median instructions."""
+
+    if prior is not None:
+        own_prob = f"{prior.probability:.4f}"
+        own_crux = prior.crux or "(none)"
+        own_rationale = prior.rationale or "(none)"
+    else:
+        own_prob = "(unavailable)"
+        own_crux = "(none)"
+        own_rationale = "(none)"
+    return (
+        "\n\n## Delphi Revision Context\n"
+        "You previously forecast:\n"
+        f"- probability: {own_prob}\n"
+        f"- crux: {own_crux}\n"
+        f"- rationale: {own_rationale}\n\n"
+        f"{delphi_summary}\n\n"
+        f"{_DELPHI_REVISION_INSTRUCTIONS}"
+    )
+
+
+def _delphi_audit_round(
+    *,
+    round_index: int,
+    forecasts: Sequence[ModelForecast],
+    aggregation: PanelAggregation,
+    disagreement: Mapping[str, Any],
+    judge: JudgeSynthesis | None,
+) -> dict[str, Any]:
+    """Compact, JSON-serializable snapshot of one Delphi round for ``delphi_audit``.
+
+    Stores the round's aggregate, its disagreement signal, the judge's
+    consensus/contradictions/blind-spots, and the per-seat (participant) forecasts
+    that fed the aggregate — enough to reconstruct the round-1 → round-2 movement
+    without re-running anything, and without bloating ``panel_estimates`` (which
+    stays scoped to the FINAL round's aggregate)."""
+
+    ok = [f for f in forecasts if f.error is None]
+    return {
+        "round_index": round_index,
+        "aggregate_probability": round(aggregation.aggregate_probability, 6),
+        "disagreement": dict(disagreement),
+        "judge": (
+            {
+                "consensus": list(judge.consensus),
+                "contradictions": list(judge.contradictions),
+                "blind_spots": list(judge.blind_spots),
+            }
+            if judge is not None
+            else None
+        ),
+        "forecasts": [
+            {
+                "participant_id": f.participant_id,
+                "model": f.model,
+                "probability": f.probability,
+                "confidence_low": f.confidence_low,
+                "confidence_high": f.confidence_high,
+                "crux": f.crux,
+                "reasons_up": list(f.reasons_up),
+                "reasons_down": list(f.reasons_down),
+                "change_my_mind": list(f.change_my_mind),
+            }
+            for f in ok
+        ],
+    }
 
 
 # ── Parsing ──────────────────────────────────────────────────────────────────
@@ -686,6 +912,7 @@ def run_quorum(
     on_progress: Callable[[str, str], None] | None = None,
     search_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
     max_research_rounds: int = 1,
+    delphi_rounds: int = 0,
 ) -> QuorumResult:
     """Run the full quorum: dispatch panelists, aggregate, judge-synthesise.
 
@@ -719,20 +946,51 @@ def run_quorum(
     extra calls, and the committed probability / ``final_source`` are
     byte-identical to before — ``research_rounds`` stays 0 and
     ``supervisor_evidence`` empty.
+
+    ``delphi_rounds`` (v1 supports only ``0`` or ``1``) adds an optional Delphi
+    revision round. At ``0`` (the default) NOTHING changes — the sealed round →
+    optional supervisor search → override gate runs exactly as before and
+    ``delphi_rounds``/``delphi_audit`` return ``0``/``{}``. At ``1`` the sealed
+    round-1 panel is pooled and judged, an ANONYMOUS reveal of the round-1 spread +
+    the judge's contradictions/blind-spots (plus any round-1 supervisor evidence) is
+    built, each panel SEAT privately revises against that reveal, and the FINAL
+    aggregate/override runs on the revision round only. The sealed round is preserved
+    in ``delphi_audit['rounds'][0]``. The supervisor search runs at most once, on
+    round 1 only (no post-revision search), so cost stays bounded and predictable.
     """
 
     if not models:
         raise ValidationError("quorum requires at least one model")
+    if delphi_rounds not in (0, 1):
+        raise ValidationError("delphi_rounds must be 0 or 1")
     judge_runner = judge_runner or runner
 
-    def _run_pass(working_context: str) -> tuple[
+    def _run_pass(
+        working_context: str,
+        *,
+        round_index: int,
+        prior_by_participant: dict[str, ModelForecast] | None = None,
+        delphi_summary: str | None = None,
+    ) -> tuple[
         list[ModelForecast], PanelAggregation, dict[str, Any], JudgeSynthesis | None
     ]:
         """One full panel-dispatch → aggregate → judge-synthesise pass over the
         given (possibly fresh-evidence-augmented) context. Pure of the override
-        gate / terminal Platt, which are applied once on the final pass below."""
+        gate / terminal Platt, which are applied once on the final pass below.
+
+        ``round_index`` tags every seat's forecast (1 = sealed round, 2 = revision).
+        On the revision round ``delphi_summary`` (the anonymous reveal) is appended
+        to each panelist's prompt as a ``## Delphi Revision Context`` block seeded
+        with that seat's own prior from ``prior_by_participant`` (keyed by the stable
+        ``p01``… seat id, NOT the model id — the ``self`` preset repeats a model)."""
 
         def _dispatch(index: int, model: str) -> ModelForecast:
+            participant_id = f"p{index + 1:02d}"
+            prior = (
+                prior_by_participant.get(participant_id)
+                if prior_by_participant is not None
+                else None
+            )
             prompt = build_panelist_prompt(
                 question_title=question_title,
                 resolution_criteria=resolution_criteria,
@@ -740,9 +998,18 @@ def run_quorum(
                 evidence_cutoff=evidence_cutoff,
                 sample_hint=index + 1 if self_fusion else None,
             )
+            user = prompt["user"]
+            if delphi_summary is not None:
+                user = user + build_revision_context_block(
+                    prior=prior, delphi_summary=delphi_summary
+                )
+            revision_reason: str | None = None
             try:
-                raw = runner(model, prompt["system"], prompt["user"])
+                raw = runner(model, prompt["system"], user)
                 forecast = parse_panelist_response(raw, model)
+                if delphi_summary is not None:
+                    rr = _reparse_full(raw).get("revision_reason")
+                    revision_reason = str(rr).strip() if rr else None
             except Exception as exc:  # noqa: BLE001 — isolate one panelist's failure
                 # Any single model failing (bad JSON, timeout, provider/SDK error)
                 # is recorded as an errored panelist; the quorum completes on the
@@ -750,6 +1017,12 @@ def run_quorum(
                 forecast = ModelForecast(
                     model=model, probability=0.5, error=f"{type(exc).__name__}: {exc}"
                 )
+            # Delphi provenance (harmless on the round-1 / non-delphi path: seat id
+            # set, round_index=1, no prior, no revision_reason).
+            forecast.participant_id = participant_id
+            forecast.round_index = round_index
+            forecast.prior_probability = prior.probability if prior is not None else None
+            forecast.revision_reason = revision_reason
             if on_progress:
                 on_progress(
                     "panelist_done",
@@ -819,33 +1092,110 @@ def run_quorum(
                 on_progress("judge_done", judge_model)
         return pass_forecasts, pass_aggregation, pass_disagreement, pass_judge
 
-    # ── agentic-supervisor fresh-search loop (AIA P1.1) ────────────────────────
-    # First pass over the original context is ALWAYS run. When a search_runner is
-    # wired AND the judge flags an unresolved crux, we run fresh search, append
-    # the returned evidence to the working context, and re-synthesise — bounded
-    # by max_research_rounds. With NO search_runner the while-guard is never even
-    # evaluated for cost (search_runner is None), so the default path is exactly
-    # one pass and byte-identical to before.
     working_context = context_packet
     research_rounds = 0
     supervisor_evidence: list[dict[str, Any]] = []
-    forecasts, aggregation, disagreement, judge = _run_pass(working_context)
-    while (
-        search_runner is not None
-        and should_research(
-            judge, rounds_done=research_rounds, max_rounds=max_research_rounds
+    delphi_audit: dict[str, Any] = {}
+
+    if delphi_rounds == 1:
+        # ── Delphi flow (Forecast Flow steps 1-11) ─────────────────────────────
+        # Sealed round 1 → pool → judge → optional supervisor search (round 1 ONLY,
+        # NO post-revision search) → anonymous reveal → private revision round →
+        # final pool/judge. The override gate + terminal Platt below run on the
+        # revision round only; the sealed round is preserved in delphi_audit.
+        r1_forecasts, r1_aggregation, r1_disagreement, r1_judge = _run_pass(
+            working_context, round_index=1
         )
-    ):
-        assert judge is not None  # should_research guarantees this
+        # Supervisor search is bounded to a single round-1 pass here (the revision
+        # round is the re-synthesis, so we do NOT re-run the panel/judge as the
+        # AIA loop does). search_runner is None for historical cutoffs (the caller
+        # fails closed), so this branch also preserves the foreknowledge guard.
+        if search_runner is not None and should_research(
+            r1_judge, rounds_done=research_rounds, max_rounds=max_research_rounds
+        ):
+            assert r1_judge is not None  # should_research guarantees this
+            if on_progress:
+                on_progress("research_start", "round 1")
+            fresh = list(search_runner(list(r1_judge.clarifying_queries)) or [])
+            supervisor_evidence.extend(fresh)
+            research_rounds += 1
+            working_context = _augment_context(working_context, fresh)
+            if on_progress:
+                on_progress("research_done", f"{len(fresh)} item(s)")
+
+        delphi_summary = build_delphi_summary(
+            forecasts=r1_forecasts,
+            aggregation=r1_aggregation,
+            disagreement=r1_disagreement,
+            judge=r1_judge,
+            supervisor_evidence=supervisor_evidence,
+        )
+        prior_by_participant = {
+            f.participant_id: f for f in r1_forecasts if f.participant_id
+        }
         if on_progress:
-            on_progress("research_start", f"round {research_rounds + 1}")
-        fresh = list(search_runner(list(judge.clarifying_queries)) or [])
-        supervisor_evidence.extend(fresh)
-        research_rounds += 1
-        working_context = _augment_context(working_context, fresh)
+            on_progress("delphi_start", "revision round 1")
+        forecasts, aggregation, disagreement, judge = _run_pass(
+            working_context,
+            round_index=2,
+            prior_by_participant=prior_by_participant,
+            delphi_summary=delphi_summary,
+        )
         if on_progress:
-            on_progress("research_done", f"{len(fresh)} item(s)")
-        forecasts, aggregation, disagreement, judge = _run_pass(working_context)
+            on_progress("delphi_done", "revision round 1")
+
+        delphi_audit = {
+            "rounds": [
+                _delphi_audit_round(
+                    round_index=1,
+                    forecasts=r1_forecasts,
+                    aggregation=r1_aggregation,
+                    disagreement=r1_disagreement,
+                    judge=r1_judge,
+                ),
+                _delphi_audit_round(
+                    round_index=2,
+                    forecasts=forecasts,
+                    aggregation=aggregation,
+                    disagreement=disagreement,
+                    judge=judge,
+                ),
+            ],
+            "revision_context": {
+                "included_probability_distribution": True,
+                "included_model_names": False,
+                "included_supervisor_evidence": bool(supervisor_evidence),
+            },
+        }
+    else:
+        # ── agentic-supervisor fresh-search loop (AIA P1.1) ────────────────────
+        # First pass over the original context is ALWAYS run. When a search_runner
+        # is wired AND the judge flags an unresolved crux, we run fresh search,
+        # append the returned evidence to the working context, and re-synthesise —
+        # bounded by max_research_rounds. With NO search_runner the while-guard is
+        # never even evaluated for cost (search_runner is None), so the default
+        # path is exactly one pass and byte-identical to before.
+        forecasts, aggregation, disagreement, judge = _run_pass(
+            working_context, round_index=1
+        )
+        while (
+            search_runner is not None
+            and should_research(
+                judge, rounds_done=research_rounds, max_rounds=max_research_rounds
+            )
+        ):
+            assert judge is not None  # should_research guarantees this
+            if on_progress:
+                on_progress("research_start", f"round {research_rounds + 1}")
+            fresh = list(search_runner(list(judge.clarifying_queries)) or [])
+            supervisor_evidence.extend(fresh)
+            research_rounds += 1
+            working_context = _augment_context(working_context, fresh)
+            if on_progress:
+                on_progress("research_done", f"{len(fresh)} item(s)")
+            forecasts, aggregation, disagreement, judge = _run_pass(
+                working_context, round_index=1
+            )
 
     # ── confidence-gated supervisor override (AIA P0.3) ────────────────────────
     # The pool is already terminally-Platt'd inside aggregate_panel_estimates.
@@ -876,6 +1226,8 @@ def run_quorum(
         final_source=final_source,
         research_rounds=research_rounds,
         supervisor_evidence=supervisor_evidence,
+        delphi_rounds=delphi_rounds,
+        delphi_audit=delphi_audit,
     )
 
 
@@ -1031,6 +1383,8 @@ __all__ = [
     "disagreement_signal",
     "build_panelist_prompt",
     "build_judge_prompt",
+    "build_delphi_summary",
+    "build_revision_context_block",
     "parse_panelist_response",
     "parse_judge_response",
     "resolve_models",

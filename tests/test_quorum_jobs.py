@@ -93,6 +93,45 @@ def test_execute_job_records_quorum_panel_with_disagreement(home, tmp_path, monk
     assert "panelist_done" in stages and "judge_done" in stages and "record" in stages
 
 
+def test_execute_job_records_delphi_audit(home, tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = ledger.create_question(
+        title="Will the central bank cut rates by Q3 2027?",
+        resolution_criteria="Resolves YES if a cut is announced before 2027-10-01.",
+        impact="high",
+    )
+
+    table = {"a/m1": 0.25, "b/m2": 0.55, "c/m3": 0.62}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _stub_runner_factory(table))
+
+    spec = {
+        "question_id": q.id,
+        "db": db,
+        "models": list(table),
+        "pool_method": "trimmed_geomean_odds",
+        "trim": 1,
+        # A single anonymous revision round: run_quorum runs the sealed round,
+        # reveals the anonymous distribution, then re-synthesises.
+        "delphi_rounds": 1,
+    }
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+
+    assert job["status"] == "done", job.get("error")
+
+    # The job result surfaces the Delphi provenance.
+    assert job["result"]["delphi_rounds"] == 1
+
+    # The persisted panel run carries the Delphi round count + the audit artifact,
+    # so a completed Delphi quorum has a durable, round-trippable record.
+    panel = ledger.get_panel_run(job["panel_run_id"])
+    assert panel["delphi_rounds"] == 1
+    assert "rounds" in panel["delphi_audit"]
+    # Both the sealed round and the revision round are preserved.
+    assert len(panel["delphi_audit"]["rounds"]) == 2
+
+
 def test_quorum_auto_indicated_respects_scope():
     from forecasting.quorum import quorum_auto_indicated
 

@@ -332,6 +332,186 @@ def test_gate_on_but_historical_cutoff_disables_search(home, tmp_path, monkeypat
     assert "supervisor_search" in stages and "DISABLED" in stages["supervisor_search"]
 
 
+# ── 3. Delphi ⟷ supervisor-search interaction (spec §"Supervisor Search Interaction") ─
+
+
+_PANELIST_JSON = json.dumps(
+    {
+        "probability": 0.5,
+        "confidence_low": 0.2,
+        "confidence_high": 0.7,
+        "rationale": "panelist reasoning",
+        "reasons_up": ["up"],
+        "reasons_down": ["down"],
+        "change_my_mind": ["cmm"],
+        "crux": "the crux",
+    }
+)
+
+_GAP_JUDGE_JSON = json.dumps(
+    {
+        "probability": 0.4,
+        "rationale": "judge synthesis",
+        "directional_confidence": "medium",
+        "information_gap": True,
+        "clarifying_queries": ["latest poll?", "turnout model?"],
+        "blind_spots": ["regime shift unpriced"],
+    }
+)
+
+
+def test_delphi_supervisor_search_feeds_revision_round(home, tmp_path, monkeypatch):
+    # Gate ON + delphi_rounds=1: the round-1 judge flags an information gap, the mock
+    # supervisor search returns one fresh evidence item, and that item must be folded
+    # into the ANONYMOUS Delphi reveal handed to every revision-round panelist. The
+    # persisted result carries BOTH research_rounds=1 and delphi_rounds=1.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = _question(ledger)
+
+    revision_prompts: list[str] = []
+
+    def make(**_kwargs):
+        def runner(model, system, user):
+            if "JUDGE" in system:
+                return _GAP_JUDGE_JSON
+            # The private revision round appends the "## Delphi Revision Context".
+            if "Delphi Revision Context" in user:
+                revision_prompts.append(user)
+            return _PANELIST_JSON
+
+        return runner
+
+    monkeypatch.setattr(quorum, "make_aiagent_runner", make)
+
+    seen_queries: list[list[str]] = []
+    mock_evidence = [
+        {
+            "title": "Fresh poll",
+            "summary": "challenger +4",
+            "source": "pollster.com",
+            "url": "https://pollster.com/a",
+            "available_at": "2026-06-28T00:00:00Z",
+        }
+    ]
+
+    def fake_build(**_kwargs):
+        def runner(queries):
+            seen_queries.append(list(queries))
+            return list(mock_evidence)
+
+        return runner
+
+    monkeypatch.setattr(ss, "build_supervisor_search_runner", fake_build)
+
+    spec = {
+        "question_id": q.id,
+        "db": db,
+        "models": ["a/m1", "b/m2"],
+        "trim": 0,
+        "supervisor_search": True,  # GATE ON
+        "delphi_rounds": 1,  # one private revision round
+    }
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+
+    assert job["status"] == "done", job.get("error")
+    result = job["result"]
+    # One research round fired on the round-1 judge's gap queries, and one Delphi round.
+    assert result["research_rounds"] == 1
+    assert result["delphi_rounds"] == 1
+    assert seen_queries == [["latest poll?", "turnout model?"]]
+    assert result["supervisor_evidence"] == mock_evidence
+
+    # The fresh evidence reached the revision-round panelist prompt (via the anonymous
+    # Delphi summary's "fresh evidence added after round 1" line).
+    assert revision_prompts, "expected at least one Delphi revision-round panelist prompt"
+    assert all("Fresh poll: challenger +4" in p for p in revision_prompts)
+
+    # Persisted on the panel run.
+    panel = ledger.get_panel_run(job["panel_run_id"])
+    assert panel["research_rounds"] == 1
+    assert panel["delphi_rounds"] == 1
+    assert panel["supervisor_evidence"] == mock_evidence
+
+    stages = [p["stage"] for p in job["progress"]]
+    assert "supervisor_search" in stages
+    assert "research_start" in stages and "research_done" in stages
+    assert "delphi_start" in stages and "delphi_done" in stages
+
+
+def test_delphi_historical_cutoff_disables_fresh_search(home, tmp_path, monkeypatch):
+    # LEAKAGE GUARD under Delphi: even with the gate ON and delphi_rounds=1, a
+    # HISTORICAL evidence_cutoff must DISABLE the fresh supervisor search (present-day
+    # web content can't be pinned to a past cutoff). The Delphi revision round STILL
+    # runs — it just relies on the supplied historical context, adding NO fresh evidence.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = _question(ledger)
+    # A snapshot pinned to a long-past as_of => execute_job derives a historical cutoff.
+    ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.5,
+        rationale="seed",
+        as_of="2020-06-01T00:00:00Z",
+    )
+
+    revision_prompts: list[str] = []
+
+    def make(**_kwargs):
+        def runner(model, system, user):
+            if "JUDGE" in system:
+                return _GAP_JUDGE_JSON
+            if "Delphi Revision Context" in user:
+                revision_prompts.append(user)
+            return _PANELIST_JSON
+
+        return runner
+
+    monkeypatch.setattr(quorum, "make_aiagent_runner", make)
+    # If a search runner were built for a historical cutoff, fail loudly.
+    monkeypatch.setattr(
+        ss,
+        "build_supervisor_search_runner",
+        lambda **_k: (_ for _ in ()).throw(
+            AssertionError("search must be disabled for a historical cutoff")
+        ),
+    )
+
+    spec = {
+        "question_id": q.id,
+        "db": db,
+        "models": ["a/m1", "b/m2"],
+        "trim": 0,
+        "supervisor_search": True,  # GATE ON, but the cutoff guard overrides it
+        "delphi_rounds": 1,
+    }
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+
+    assert job["status"] == "done", job.get("error")
+    result = job["result"]
+    # No fresh search under a historical cutoff: no research round, no supervisor evidence.
+    assert result["research_rounds"] == 0
+    assert result["supervisor_evidence"] == []
+    # ...but Delphi still ran on the historical context.
+    assert result["delphi_rounds"] == 1
+    assert result["delphi_audit"].get("rounds")
+    assert revision_prompts, "Delphi revision round should still run without fresh search"
+    assert all(
+        "fresh evidence added after round 1: (none)" in p for p in revision_prompts
+    )
+
+    panel = ledger.get_panel_run(job["panel_run_id"])
+    assert panel["research_rounds"] == 0
+    assert panel["delphi_rounds"] == 1
+    assert panel["supervisor_evidence"] == []
+
+    stages = {p["stage"]: p["detail"] for p in job["progress"]}
+    assert "supervisor_search" in stages and "DISABLED" in stages["supervisor_search"]
+    assert "delphi_start" in stages and "delphi_done" in stages
+
+
 def test_resolve_active_model_id_handles_codex_dict_config():
     # Regression: config["model"] is a structured dict since the codex auth overhaul.
     # _quorum_run must extract the id STRING — passing the raw dict downstream made the

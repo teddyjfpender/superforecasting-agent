@@ -1809,6 +1809,20 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--draws", type=int,
         help="Bootstrap resamples per ensemble size for `quorum bench` (default 500).",
     )
+    quorum_parser.add_argument(
+        "--delphi",
+        action="store_true",
+        help="Add one anonymous Delphi-style revision round (shorthand for "
+        "--delphi-rounds 1). Default OFF (byte-identical baseline).",
+    )
+    quorum_parser.add_argument(
+        "--delphi-rounds",
+        dest="delphi_rounds",
+        type=int,
+        choices=(0, 1),
+        help="Number of Delphi revision rounds (v1 supports 0 or 1). Overrides "
+        "quorum.delphi_rounds.",
+    )
     quorum_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     quorum_parser.set_defaults(_forecast_handler=_cmd_quorum)
 
@@ -9164,6 +9178,20 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
     pool_method = args.pool_method or cfg.get("pool_method") or "trimmed_geomean_odds"
     trim = args.trim if args.trim is not None else int(cfg.get("trim", 1))
 
+    # Delphi revision rounds (v1: 0 or 1). Precedence: --delphi (=1) >
+    # --delphi-rounds > quorum.delphi_rounds > 0. --delphi with an explicit
+    # --delphi-rounds 0 is a contradiction; fail fast.
+    delphi_rounds_arg = getattr(args, "delphi_rounds", None)
+    if args.delphi and delphi_rounds_arg is not None and delphi_rounds_arg == 0:
+        raise SystemExit("forecast quorum: --delphi conflicts with --delphi-rounds 0")
+    delphi_rounds = (
+        1
+        if args.delphi
+        else delphi_rounds_arg
+        if delphi_rounds_arg is not None
+        else int(cfg.get("delphi_rounds", 0) or 0)
+    )
+
     self_fusion = preset == "self" and not models
     if self_fusion:
         if not active_model:
@@ -9192,6 +9220,7 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         "max_iterations": int(cfg.get("max_iterations", 30)),
         "model_timeout": int(cfg.get("model_timeout", 300)),
         "supervisor_search": supervisor_search,
+        "delphi_rounds": delphi_rounds,
     }
 
     run_id = start_job(spec, wait=bool(args.wait))
@@ -9251,6 +9280,19 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
           f"({result['pool_method']}, trim={result['trim']})")
     final_source = result.get("final_source", "pool")
     final_prob = result.get("final_probability", result["aggregate_probability"])
+    delphi_rounds = int(result.get("delphi_rounds") or 0)
+    if delphi_rounds:
+        plural = "round" if delphi_rounds == 1 else "rounds"
+        print(f"  delphi: {delphi_rounds} revision {plural}")
+        rounds = ((result.get("delphi_audit") or {}).get("rounds")) or []
+        for entry in rounds:
+            r_dis = entry.get("disagreement") or {}
+            r_prob = entry.get("aggregate_probability")
+            prob_str = f"{r_prob:.3f}" if isinstance(r_prob, (int, float)) else "?"
+            print(
+                f"  round {entry.get('round_index', '?')} pool: {prob_str} "
+                f"disagreement: {r_dis.get('disagreement_band', '?')}"
+            )
     committed_label = (
         "committed (judge override)" if final_source == "judge_high" else "committed (pool)"
     )
@@ -9290,6 +9332,7 @@ def _quorum_config(rest: list[str]) -> None:
     for key in (
         "default_enabled", "default_scope", "preset", "models",
         "judge", "pool_method", "trim", "model_timeout", "max_iterations",
+        "delphi_rounds",
     ):
         print(f"  {key}: {cfg.get(key)}")
 

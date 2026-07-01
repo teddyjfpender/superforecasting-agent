@@ -192,6 +192,8 @@ FORECAST_LEDGER_SCHEMA = {
                     "aggregate_panel",
                     "show_panel",
                     "list_panel",
+                    "start_quorum",
+                    "show_quorum_status",
                     "panel_perspectives",
                     "component_track_record",
                     "tail_audit",
@@ -550,6 +552,35 @@ FORECAST_LEDGER_SCHEMA = {
             "conflict": {"type": "string", "enum": ["error", "skip", "replace"]},
             "cases": {"type": "array", "items": {"type": "object"}},
             "run_id": {"type": "string"},
+            "preset": {
+                "type": "string",
+                "enum": ["frontier", "budget", "self", "wide"],
+                "description": "start_quorum: model panel preset.",
+            },
+            "models": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "start_quorum: explicit provider/model panelist ids (overrides the preset).",
+            },
+            "judge": {"type": "string", "description": "start_quorum: provider/model id for the judge synthesis pass."},
+            "pool_method": {
+                "type": "string",
+                "enum": sorted(["trimmed_geomean_odds", "log_odds_pool", "median", "mean"]),
+                "description": "start_quorum: panel aggregation method (default trimmed_geomean_odds).",
+            },
+            "delphi_rounds": {
+                "type": "integer",
+                "enum": [0, 1],
+                "description": "start_quorum: 0 (default) runs the standard sealed quorum; 1 adds one anonymous Delphi revision round.",
+            },
+            "supervisor_search": {
+                "type": "boolean",
+                "description": "start_quorum: opt into the live fresh-search supervisor loop (fails closed for historical cutoffs).",
+            },
+            "wait": {
+                "type": "boolean",
+                "description": "start_quorum: run inline to completion and return the finished job (default false = detached).",
+            },
             "policy_id": {"type": "string"},
             "forecast_id": {"type": "string"},
             "backtest_case_id": {"type": "string"},
@@ -2482,6 +2513,43 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 limit=int(args["limit"]) if args.get("limit") is not None else 20,
             )
             return tool_result(success=True, panel_runs=rows)
+
+        if action == "start_quorum":
+            # Enqueue a model-diverse forecast quorum as a detached background job
+            # (minutes of wall-clock, past the slash timeout). This creates an
+            # auditable recommendation artifact only — it does NOT commit or mutate
+            # any probability. The operator/agent commits explicitly via
+            # update_forecast with panel_run_ref.
+            from forecasting.quorum_jobs import read_job, start_job
+
+            # Only forward keys the caller actually set: execute_job resolves its
+            # own defaults from a MISSING key (e.g. int(spec.get("trim", 1)),
+            # pool_method fallback, the supervisor_search config fallback), so
+            # writing None here would clobber those defaults / break the run.
+            spec: dict[str, Any] = {"question_id": _required(args, "question_id")}
+            for _key in (
+                "preset",
+                "models",
+                "judge",
+                "pool_method",
+                "trim",
+                "delphi_rounds",
+                "supervisor_search",
+            ):
+                if args.get(_key) is not None:
+                    spec[_key] = args.get(_key)
+            wait = bool(args.get("wait"))
+            run_id = start_job(spec, wait=wait)
+            return tool_result(
+                success=True,
+                run_id=run_id,
+                job=read_job(run_id) if wait else None,
+            )
+
+        if action == "show_quorum_status":
+            from forecasting.quorum_jobs import read_job
+
+            return tool_result(success=True, job=read_job(_required(args, "run_id")))
 
         if action == "label_score":
             from forecasting.label_scoring import LABEL_TASK_TYPES, score_labels

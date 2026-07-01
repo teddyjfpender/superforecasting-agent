@@ -15716,3 +15716,114 @@ def test_forecast_onboard_propose_and_commit(tmp_path, capsys):
     assert "created forecast question" in commit_out
     assert "watched_sources: 1" in commit_out
     assert "reference_classes: 1" in commit_out
+
+
+# --------------------------------------------------------------------------
+# forecast quorum --delphi  (Delphi-style revision round; CLI arg resolution)
+# --------------------------------------------------------------------------
+#
+# These exercise the CLI-level delphi_rounds resolution + conflict guard in
+# `_quorum_run` without spawning a real background job or calling any model:
+# `forecasting.quorum_jobs.start_job` (re-imported inside `_quorum_run` at call
+# time) is monkeypatched to capture the enqueued spec.
+
+
+def _seed_quorum_question(db: str) -> str:
+    """Create a minimal question so `_quorum_run`'s fail-fast lookup succeeds."""
+    ledger = ForecastLedger(db)
+    question = ledger.create_question(
+        title="Will the central bank cut rates before Q4 2027?",
+        resolution_criteria="Resolves YES if a cut is announced before 2027-10-01.",
+        impact="high",
+    )
+    return question.id
+
+
+def test_quorum_delphi_flag_passes_delphi_rounds_one(tmp_path, monkeypatch, capsys):
+    from forecasting import quorum_jobs as qj
+
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    question_id = _seed_quorum_question(db)
+
+    captured: list[dict] = []
+
+    def _fake_start_job(spec, *, wait=False):
+        captured.append(dict(spec))
+        return "qr_delphione"
+
+    monkeypatch.setattr(qj, "start_job", _fake_start_job)
+    monkeypatch.setattr(
+        qj,
+        "read_job",
+        lambda run_id: {
+            "run_id": run_id,
+            "status": "done",
+            "question_id": question_id,
+            "result": None,
+        },
+    )
+
+    _run(
+        parser,
+        ["forecast", "--db", db, "quorum", question_id, "--delphi", "--wait", "--json"],
+    )
+
+    assert captured, "start_job should have been enqueued"
+    # `--delphi` is shorthand for one revision round.
+    assert captured[0]["delphi_rounds"] == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "qr_delphione"
+
+
+def test_quorum_delphi_rounds_zero_passes_zero(tmp_path, monkeypatch, capsys):
+    from forecasting import quorum_jobs as qj
+
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    question_id = _seed_quorum_question(db)
+
+    captured: list[dict] = []
+
+    def _fake_start_job(spec, *, wait=False):
+        captured.append(dict(spec))
+        return "qr_delphizero"
+
+    monkeypatch.setattr(qj, "start_job", _fake_start_job)
+
+    _run(parser, ["forecast", "--db", db, "quorum", question_id, "--delphi-rounds", "0"])
+
+    assert captured, "start_job should have been enqueued"
+    # Explicit --delphi-rounds 0 keeps the byte-identical baseline (no revision).
+    assert captured[0]["delphi_rounds"] == 0
+    assert "quorum run started" in capsys.readouterr().out
+
+
+def test_quorum_delphi_conflicts_with_delphi_rounds_zero(tmp_path, monkeypatch):
+    from forecasting import quorum_jobs as qj
+
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    question_id = _seed_quorum_question(db)
+
+    def _must_not_run(*_args, **_kwargs):
+        raise AssertionError("start_job must not run when the flags conflict")
+
+    monkeypatch.setattr(qj, "start_job", _must_not_run)
+
+    with pytest.raises(SystemExit) as exc:
+        _run(
+            parser,
+            ["forecast", "--db", db, "quorum", question_id, "--delphi", "--delphi-rounds", "0"],
+        )
+
+    assert "conflicts" in str(exc.value)
+
+
+def test_quorum_config_lists_delphi_rounds(capsys):
+    parser = _parser()
+
+    _run(parser, ["forecast", "quorum", "config"])
+
+    out = capsys.readouterr().out
+    assert "delphi_rounds" in out

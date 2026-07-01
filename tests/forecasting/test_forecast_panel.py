@@ -306,6 +306,40 @@ def test_record_panel_run_is_round_trippable(tmp_path):
     assert fetched["spread_summary"]["range"] == record["spread_summary"]["range"]
 
 
+def test_record_panel_run_persists_delphi_fields(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger)
+    audit = {
+        "rounds": [
+            {"round": 1, "pool_probability": 0.42, "disagreement": "high"},
+            {"round": 2, "pool_probability": 0.37, "disagreement": "moderate"},
+        ],
+        "revision_context": {
+            "included_probability_distribution": True,
+            "included_model_names": False,
+        },
+    }
+    record = ledger.record_panel_run(
+        question_id=q.id,
+        estimates=_five_estimates(),
+        triggered_by="quorum",
+        delphi_rounds=1,
+        delphi_audit=audit,
+    )
+    fetched = ledger.get_panel_run(record["id"])
+    assert fetched["delphi_rounds"] == 1
+    assert fetched["delphi_audit"] == audit
+
+
+def test_record_panel_run_delphi_fields_default_unchanged(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _question(ledger)
+    record = ledger.record_panel_run(question_id=q.id, estimates=_five_estimates())
+    fetched = ledger.get_panel_run(record["id"])
+    assert fetched["delphi_rounds"] == 0
+    assert fetched["delphi_audit"] == {}
+
+
 def test_attach_panel_to_snapshot(tmp_path):
     ledger = _ledger(tmp_path)
     q = _question(ledger)

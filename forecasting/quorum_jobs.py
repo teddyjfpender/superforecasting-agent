@@ -86,7 +86,7 @@ def start_job(spec: dict[str, Any], *, wait: bool = False) -> str:
 
     ``spec`` keys: ``question_id`` (required), ``db``, ``preset``, ``models``,
     ``judge``, ``pool_method``, ``trim``, ``self_fusion``, ``samples``,
-    ``triggered_by``, ``attach_snapshot``, ``active_model``.
+    ``triggered_by``, ``attach_snapshot``, ``active_model``, ``delphi_rounds``.
     """
 
     run_id = new_run_id()
@@ -236,6 +236,14 @@ def execute_job(run_id: str) -> dict[str, Any]:
         judge_model = spec.get("judge") or preset_judge or DEFAULT_JUDGE_MODEL
         self_fusion = bool(spec.get("self_fusion")) or spec.get("preset") == "self"
 
+        # Delphi v1 — optional single anonymous revision round. Resolved to a plain
+        # int here and threaded into run_quorum (which validates {0, 1} and raises
+        # ValidationError otherwise). ``0`` is the DEFAULT and keeps this path
+        # byte-identical: no extra model calls, no revision round, empty delphi_audit.
+        # When ``1`` fires, run_quorum emits the "delphi_start"/"delphi_done"
+        # progress events through ``on_progress`` below, so they land in job progress.
+        delphi_rounds = int(spec.get("delphi_rounds") or 0)
+
         # FOREKNOWLEDGE GUARD (mirrors the supervisor-search guard below): gate the
         # PANELIST toolset on the SAME _cutoff_is_live(evidence_cutoff) predicate.
         # A HISTORICAL cutoff (backtest/replay snapshot) builds each panelist
@@ -322,6 +330,7 @@ def execute_job(run_id: str) -> dict[str, Any]:
             on_progress=on_progress,
             search_runner=search_runner,
             max_research_rounds=max_research_rounds or 1,
+            delphi_rounds=delphi_rounds,
         )
 
         # Persist the quorum as a sibling panel run. The spread_summary already
@@ -345,6 +354,8 @@ def execute_job(run_id: str) -> dict[str, Any]:
                 final_source=result.final_source,
                 research_rounds=result.research_rounds,
                 supervisor_evidence=result.supervisor_evidence,
+                delphi_rounds=result.delphi_rounds,
+                delphi_audit=result.delphi_audit,
             )
         job["panel_run_id"] = panel_run["id"]
         job["result"] = result.to_dict()

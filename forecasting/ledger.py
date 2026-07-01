@@ -1401,7 +1401,9 @@ class ForecastLedger:
                     judge TEXT,
                     final_source TEXT NOT NULL DEFAULT 'pool',
                     research_rounds INTEGER NOT NULL DEFAULT 0,
-                    supervisor_evidence TEXT NOT NULL DEFAULT '[]'
+                    supervisor_evidence TEXT NOT NULL DEFAULT '[]',
+                    delphi_rounds INTEGER NOT NULL DEFAULT 0,
+                    delphi_audit TEXT NOT NULL DEFAULT '{}'
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_panel_runs_question
@@ -1690,6 +1692,17 @@ class ForecastLedger:
             )
             self._ensure_column(
                 conn, "panel_runs", "supervisor_evidence", "TEXT NOT NULL DEFAULT '[]'"
+            )
+            # Delphi v1 — optional anonymous revision round. delphi_rounds counts
+            # revision passes (0 = no Delphi / byte-identical legacy path; v1 caps
+            # at 1); delphi_audit holds the prior-round audit artifact. Both default
+            # to the no-Delphi state so existing rows + the delphi_rounds==0 path
+            # read back unchanged.
+            self._ensure_column(
+                conn, "panel_runs", "delphi_rounds", "INTEGER NOT NULL DEFAULT 0"
+            )
+            self._ensure_column(
+                conn, "panel_runs", "delphi_audit", "TEXT NOT NULL DEFAULT '{}'"
             )
             self._ensure_column(conn, "scheduled_reviews", "auto_score", "INTEGER NOT NULL DEFAULT 0")
             self._ensure_column(conn, "scheduled_reviews", "auto_postmortem", "INTEGER NOT NULL DEFAULT 0")
@@ -4676,6 +4689,8 @@ class ForecastLedger:
         final_source: str | None = None,
         research_rounds: int = 0,
         supervisor_evidence: list[dict[str, Any]] | None = None,
+        delphi_rounds: int = 0,
+        delphi_audit: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Aggregate a panel of perspective estimates and persist the artifact.
 
@@ -4745,6 +4760,10 @@ class ForecastLedger:
         # persist unchanged (0 rounds, no fresh evidence).
         research_rounds = max(0, int(research_rounds or 0))
         supervisor_evidence = list(supervisor_evidence or [])
+        # Delphi v1 — additive audit fields. Default to the no-Delphi state so the
+        # delphi_rounds==0 path (and every pre-Delphi caller) persists unchanged.
+        delphi_rounds = max(0, int(delphi_rounds or 0))
+        delphi_audit = dict(delphi_audit or {})
         now = utc_now_iso()
         run_id = f"pr_{uuid.uuid4().hex[:12]}"
         requested = perspectives if perspectives is not None else [
@@ -4769,9 +4788,10 @@ class ForecastLedger:
                     id, question_id, created_at, snapshot_id,
                     aggregation_method, trim, aggregate_probability,
                     perspectives, spread_summary, notes, triggered_by, judge,
-                    final_source, research_rounds, supervisor_evidence
+                    final_source, research_rounds, supervisor_evidence,
+                    delphi_rounds, delphi_audit
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     run_id,
@@ -4789,6 +4809,8 @@ class ForecastLedger:
                     committed_source,
                     research_rounds,
                     json_dumps(supervisor_evidence),
+                    delphi_rounds,
+                    json_dumps(delphi_audit),
                 ),
             )
             for row in aggregation.estimates:
@@ -4896,6 +4918,8 @@ class ForecastLedger:
         data["notes"] = json_loads(data["notes"], [])
         if "supervisor_evidence" in data:
             data["supervisor_evidence"] = json_loads(data["supervisor_evidence"], [])
+        if "delphi_audit" in data:
+            data["delphi_audit"] = json_loads(data.get("delphi_audit"), {})
         data["estimates"] = [self._panel_estimate_dict(e) for e in estimates_rows]
         return data
 
