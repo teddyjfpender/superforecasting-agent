@@ -632,7 +632,11 @@ def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
             "low, that is a signal to GATHER MORE, not to hedge later with a flat distribution: search the "
             "web/news (RSS adapter, or the browser for pages with no adapter) for expert opinion and analysis "
             "on THIS specific question, and reason explicitly from base rates and the closest analogous past "
-            "episodes to separate uncertainty that is real from uncertainty that is merely unexamined."
+            "episodes to separate uncertainty that is real from uncertainty that is merely unexamined. When a "
+            "candidate stream is large, TRIAGE before importing: run forecast_ledger triage_label to classify "
+            "readings relevant_interesting / relevant_uninteresting / irrelevant (keep/skim/skip) against the "
+            "desk rubric, import only the material ones, and route auto-labels you dispute to operator review "
+            "with triage_contested — so you reason over the signal, not the firehose."
         ),
         "base_rate": (
             "Propose reference classes with inclusion/exclusion criteria, base-rate estimates, "

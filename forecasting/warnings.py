@@ -127,6 +127,7 @@ class ResolutionKind(enum.Enum):
     POSTMORTEM = "postmortem"        # resolved+scored question due a postmortem (score + write-up)
     BOOKKEEPING = "bookkeeping"      # informational notice; acking it is the correct close-out
     NO_AUTO = "no_auto"              # no safe auto-fix; surface for a human, never auto-resolve
+    CONTESTED_LABEL = "contested_label"  # a triage auto-label the verifier disputes → operator hand-labels (never auto-resolved)
 
 
 # ---------------------------------------------------------------------------
@@ -259,6 +260,12 @@ _NO_AUTO_PREFIXES = (
     "calibration_lesson",    # calibration_lesson_review — human-curated
 )
 
+# A triage auto-label the verifier disputes (Thinking Machines L8 contested
+# routing). Its own MANUAL kind — surfaced for the operator to hand-label, never
+# auto-resolved — so it shows as a distinct "contested" line, not folded into the
+# generic NO_AUTO bucket.
+_CONTESTED_LABEL_PREFIXES = ("contested_label",)
+
 _MATERIAL_PREFIXES = (
     "watched_source_changed",
     "watched_source_unavailable",
@@ -302,6 +309,12 @@ def classify_warning(reason: str | None) -> ResolutionKind:
     # 1. NO_AUTO — human-judgment classes, checked before generic matching.
     if text.startswith(_NO_AUTO_PREFIXES):
         return ResolutionKind.NO_AUTO
+
+    # 1b. CONTESTED_LABEL — a triage auto-label the verifier disputes; the operator
+    #     hand-labels it. A manual kind (surfaced, never auto-resolved), but tracked
+    #     distinctly from NO_AUTO so the headline shows the contested-label backlog.
+    if text.startswith(_CONTESTED_LABEL_PREFIXES):
+        return ResolutionKind.CONTESTED_LABEL
 
     # 2. POSTMORTEM — covers both `postmortem_due` and `high_impact_postmortem_due`.
     if "postmortem_due" in text:
@@ -353,8 +366,9 @@ _KIND_RANK = {
     ResolutionKind.REFORECAST: 2,
     ResolutionKind.SCORE: 3,
     ResolutionKind.POSTMORTEM: 4,
-    ResolutionKind.NO_AUTO: 5,
-    ResolutionKind.BOOKKEEPING: 6,
+    ResolutionKind.CONTESTED_LABEL: 5,  # manual, but actionable by the operator
+    ResolutionKind.NO_AUTO: 6,
+    ResolutionKind.BOOKKEEPING: 7,
 }
 
 
@@ -376,7 +390,10 @@ class NormalizedWarning:
 
     @property
     def is_auto_resolvable(self) -> bool:
-        return self.kind is not ResolutionKind.NO_AUTO
+        return self.kind not in (
+            ResolutionKind.NO_AUTO,
+            ResolutionKind.CONTESTED_LABEL,
+        )
 
 
 def _normalize(alert: AlertEvent) -> NormalizedWarning:
@@ -641,6 +658,7 @@ AGGREGATE_TIER_FOR_KIND: dict[ResolutionKind, str] = {
     ResolutionKind.MATERIAL_CHANGE: "free",
     ResolutionKind.REFORECAST: "agent",
     ResolutionKind.EVIDENCE_COLLECTION: "agent",
+    ResolutionKind.CONTESTED_LABEL: "manual",
     ResolutionKind.NO_AUTO: "manual",
 }
 
@@ -810,7 +828,7 @@ def plan_alert(
     """
     warning = alert if isinstance(alert, NormalizedWarning) else _normalize(alert)
     kind = warning.kind
-    if kind is ResolutionKind.NO_AUTO:
+    if kind in (ResolutionKind.NO_AUTO, ResolutionKind.CONTESTED_LABEL):
         planned, detail = "surfaced", _surfaced_detail(warning)
     elif kind is ResolutionKind.BOOKKEEPING:
         planned, detail = "would_acknowledge", "bookkeeping notice — acked on run"
@@ -854,8 +872,10 @@ def resolve_alert(
     warning = alert if isinstance(alert, NormalizedWarning) else _normalize(alert)
     kind = warning.kind
 
-    # NO_AUTO: surface, never ack.
-    if kind is ResolutionKind.NO_AUTO:
+    # NO_AUTO / CONTESTED_LABEL: surface, never auto-ack. A contested triage label
+    # is closed only when the operator records a real expert label (relabel_route
+    # acks it) — never bare-acknowledged by the automode.
+    if kind in (ResolutionKind.NO_AUTO, ResolutionKind.CONTESTED_LABEL):
         return _result(
             warning,
             status="surfaced",

@@ -199,6 +199,13 @@ FORECAST_LEDGER_SCHEMA = {
                     "link_forecasts",
                     "list_links",
                     "unlink_forecasts",
+                    "label_score",
+                    "triage_label",
+                    "set_label_rubric",
+                    "list_label_rubrics",
+                    "triage_contested",
+                    "relabel_route",
+                    "triage_trust",
                 ],
             },
             "question_id": {"type": "string"},
@@ -914,6 +921,85 @@ FORECAST_LEDGER_SCHEMA = {
                     "extremize, correlation_matrix} for combine; {previous, current, "
                     "components} for forecast_diff)."
                 ),
+            },
+            "predictions": {
+                "type": "array",
+                "description": "label_score: predicted labels as [{id, label}, ...] (the auto-labeler's output).",
+                "items": {"type": "object"},
+            },
+            "gold": {
+                "type": "array",
+                "description": "label_score: gold labels as [{id, label}, ...] (the expert/ground-truth labels).",
+                "items": {"type": "object"},
+            },
+            "task_type": {
+                "type": "string",
+                "enum": ["relevance", "truncation"],
+                "description": "label_score: 'relevance' (multi-class classification, headline=accuracy) or 'truncation' (cut-point extraction, headline=exact-match).",
+            },
+            "positive_class": {
+                "type": "string",
+                "description": "label_score: optional class to treat as positive for a binary confusion matrix + positive-class F1 (e.g. 'relevant_interesting').",
+            },
+            "cost": {
+                "type": "number",
+                "description": "label_score: optional total inference cost for the scored batch; reported as cost_per_task.",
+            },
+            "candidates": {
+                "type": "array",
+                "description": "triage_label: candidate readings to classify as [{title, summary?, source_type?, source?, url?, id?}, ...] (pre-ingest, before they become evidence).",
+                "items": {"type": "object"},
+            },
+            "use_watched": {
+                "type": "boolean",
+                "description": "triage_label: instead of `candidates`, pull candidate readings from the question's watched sources (requires question_id).",
+            },
+            "rubric": {
+                "type": "object",
+                "description": "set_label_rubric: the desk taste {interesting_criteria (required), uninteresting_criteria?, irrelevant_criteria?, examples?:[{title,label,why}], notes?}.",
+            },
+            "rubric_ref": {
+                "type": "string",
+                "description": "triage_label: explicit triage rubric id to apply (else the most-specific active rubric for the question, else the default macro-desk rubric).",
+            },
+            "model": {
+                "type": "string",
+                "description": "triage_label: model id for the cheap auto-labeler (default $FORECAST_TRIAGE_MODEL or the house judge model).",
+            },
+            "persist": {
+                "type": "boolean",
+                "description": "triage_label: persist the verdicts as triage_labels staging rows (label_source='auto'). Default true.",
+            },
+            "label_ids": {
+                "type": "array",
+                "description": "triage_contested: specific triage_label row ids to check (else all auto-labeled, un-adjudicated rows for question_id).",
+                "items": {"type": "string"},
+            },
+            "verifier_labels": {
+                "type": "array",
+                "description": "triage_contested: optional second-opinion labels [{candidate_ref|id, label}]; an item is CONTESTED where the verifier disagrees with the auto-label (the L8 trick). Without it, the labeler's own boundary/conflict cases are flagged.",
+                "items": {"type": "object"},
+            },
+            "disagreement_threshold": {
+                "type": "number",
+                "description": "triage_contested: relevance band around 0.5 within which an auto-label is treated as boundary/uncertain and flagged for review (default 0.15; used only when no verifier_labels).",
+            },
+            "adjudications": {
+                "type": "array",
+                "description": "relabel_route: operator expert labels [{label_id, label}] for contested items.",
+                "items": {"type": "object"},
+            },
+            "label_id": {
+                "type": "string",
+                "description": "relabel_route: single triage_label id to adjudicate (with `label`).",
+            },
+            "label": {
+                "type": "string",
+                "description": "relabel_route: the operator's expert three-way label (relevant_interesting|relevant_uninteresting|irrelevant).",
+            },
+            "min_sample": {
+                "type": "integer",
+                "description": "triage_trust: minimum adjudicated labels before the labeler can be trusted to auto-filter (default 20 / $FORECAST_TRIAGE_TRUST_MIN_SAMPLE).",
             },
         },
         "required": ["action"],
@@ -2396,6 +2482,366 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 limit=int(args["limit"]) if args.get("limit") is not None else 20,
             )
             return tool_result(success=True, panel_runs=rows)
+
+        if action == "label_score":
+            from forecasting.label_scoring import LABEL_TASK_TYPES, score_labels
+
+            predictions = args.get("predictions")
+            gold = args.get("gold")
+            if not isinstance(predictions, list) or not isinstance(gold, list):
+                return tool_error(
+                    "label_score requires `predictions` and `gold` arrays of {id, label} objects",
+                    success=False,
+                )
+            task_type = (args.get("task_type") or "relevance").strip().lower()
+            if task_type not in LABEL_TASK_TYPES:
+                return tool_error(
+                    f"label_score task_type must be one of {sorted(LABEL_TASK_TYPES)}",
+                    success=False,
+                )
+            positive_class = args.get("positive_class")
+            cost = args.get("cost")
+            try:
+                score = score_labels(
+                    predictions,
+                    gold,
+                    task_type=task_type,
+                    positive_class=str(positive_class) if positive_class else None,
+                    cost=float(cost) if cost is not None else None,
+                )
+            except (TypeError, ValueError) as exc:
+                return tool_error(f"label_score: {exc}", success=False)
+            return tool_result(
+                success=True,
+                label_score=score.to_dict(),
+                note=(
+                    "Classification scoreboard for triage/relevance labels (the label analog of `score`, "
+                    "which only does Brier/log proper-scoring). 'accuracy'/'exact_match' is the headline; "
+                    "'positive_f1' + 'confusion' need a positive_class; 'macro_f1' averages per-class F1. "
+                    "Only ids present in BOTH predictions and gold are scored; the rest are counted 'skipped'."
+                ),
+            )
+
+        if action == "set_label_rubric":
+            scope_type = (args.get("scope_type") or "global").strip().lower()
+            rubric = args.get("rubric")
+            if not isinstance(rubric, dict):
+                return tool_error(
+                    "set_label_rubric requires a `rubric` object "
+                    "{interesting_criteria (required), uninteresting_criteria?, "
+                    "irrelevant_criteria?, examples?, notes?}",
+                    success=False,
+                )
+            interesting = (rubric.get("interesting_criteria") or "").strip()
+            if not interesting:
+                return tool_error(
+                    "set_label_rubric: rubric.interesting_criteria is required "
+                    "(what counts as INTERESTING to this desk — the relevant-vs-interesting reframe)",
+                    success=False,
+                )
+            stored = ledger.set_triage_rubric(
+                scope_type=scope_type,
+                scope_ref=args.get("scope_ref"),
+                interesting_criteria=interesting,
+                uninteresting_criteria=(rubric.get("uninteresting_criteria") or ""),
+                irrelevant_criteria=(rubric.get("irrelevant_criteria") or ""),
+                examples=rubric.get("examples") if isinstance(rubric.get("examples"), list) else None,
+                notes=(rubric.get("notes") or ""),
+                metadata=rubric.get("metadata") if isinstance(rubric.get("metadata"), dict) else None,
+            )
+            return tool_result(
+                success=True,
+                rubric=stored,
+                note=(
+                    "Desk triage rubric stored, scoped like a calibration lesson. The triage labeler "
+                    "retrieves the most-specific active rubric per question (domain_topic -> domain -> "
+                    "topic -> question_type -> global), so the 'what's interesting here' taste is explicit "
+                    "and versioned, not re-improvised each run."
+                ),
+            )
+
+        if action == "list_label_rubrics":
+            rubrics = ledger.list_triage_rubrics(
+                scope_type=args.get("scope_type"),
+                scope_ref=args.get("scope_ref"),
+                active_only=args.get("active_only", True) is not False,
+            )
+            return tool_result(success=True, rubrics=rubrics, count=len(rubrics))
+
+        if action == "triage_label":
+            from forecasting import triage as triage_mod
+
+            question_id = args.get("question_id")
+            candidates = args.get("candidates")
+            if not isinstance(candidates, list) or not candidates:
+                candidates = []
+                if args.get("use_watched") and question_id:
+                    try:
+                        result = search_watched_text_sources(
+                            ledger,
+                            question_id,
+                            query=args.get("query"),
+                            limit=int(args.get("limit") or 20),
+                        )
+                        candidates = [c.to_dict() for c in result.candidates]
+                    except Exception as exc:
+                        return tool_error(
+                            f"triage_label: could not pull watched-source candidates: {exc}",
+                            success=False,
+                        )
+                if not candidates:
+                    return tool_error(
+                        "triage_label requires a non-empty `candidates` array of "
+                        "{title, summary?, source_type?, source?, url?} objects "
+                        "(or use_watched=true with a question_id that has watched sources)",
+                        success=False,
+                    )
+
+            rubric = None
+            rubric_ref = args.get("rubric_ref")
+            if rubric_ref:
+                rubric = ledger.get_triage_rubric(rubric_ref)
+                if rubric is None:
+                    return tool_error(
+                        f"triage_label: rubric_ref '{rubric_ref}' not found", success=False
+                    )
+            elif question_id:
+                question = ledger.get_question(question_id)
+                if question is not None:
+                    rubric = triage_mod.active_rubric_for_question(ledger, question)
+
+            from forecasting.quorum import DEFAULT_JUDGE_MODEL, make_aiagent_runner
+
+            model = (
+                args.get("model")
+                or os.getenv("FORECAST_TRIAGE_MODEL")
+                or DEFAULT_JUDGE_MODEL
+            )
+            runner = make_aiagent_runner(
+                toolsets=(), max_iterations=2, quiet=True, timeout=180
+            )
+            try:
+                verdicts = triage_mod.triage_candidates(
+                    candidates, runner=runner, model=model, rubric=rubric
+                )
+            except Exception as exc:
+                return tool_error(f"triage_label: labeler failed: {exc}", success=False)
+
+            persist = args.get("persist", True) is not False
+            stored = (
+                ledger.record_triage_labels(question_id=question_id, verdicts=verdicts)
+                if persist
+                else None
+            )
+            summary = {"keep": 0, "skim": 0, "skip": 0, "n": len(verdicts)}
+            for verdict in verdicts:
+                key = verdict.get("verdict")
+                if key in summary:
+                    summary[key] += 1
+            return tool_result(
+                success=True,
+                verdicts=(stored if stored is not None else verdicts),
+                summary=summary,
+                rubric_id=(rubric or {}).get("id"),
+                model=model,
+                note=(
+                    "Cheap three-way triage labels "
+                    "(relevant_interesting/relevant_uninteresting/irrelevant -> keep/skim/skip). "
+                    "Import only the keep/skim readings as evidence. Run triage_contested to route "
+                    "auto-labels you disagree with to operator review (label_source='expert')."
+                ),
+            )
+
+        if action == "triage_contested":
+            from forecasting.triage import IRRELEVANT, normalize_label
+
+            question_id = args.get("question_id")
+            label_ids = args.get("label_ids")
+            if isinstance(label_ids, list) and label_ids:
+                rows = [
+                    r
+                    for r in (ledger.get_triage_label(str(i)) for i in label_ids)
+                    if r is not None
+                ]
+            elif question_id:
+                rows = ledger.list_triage_labels(
+                    question_id=question_id, label_source="auto", adjudicated=False
+                )
+            else:
+                return tool_error(
+                    "triage_contested requires `label_ids` or a `question_id` to select auto-labeled rows",
+                    success=False,
+                )
+            if not rows:
+                return tool_error(
+                    "triage_contested: no auto-labeled rows to check", success=False
+                )
+
+            verifier_labels = args.get("verifier_labels")
+            verifier_by_ref: dict[str, str] = {}
+            if isinstance(verifier_labels, list):
+                for entry in verifier_labels:
+                    if not isinstance(entry, dict):
+                        continue
+                    ref = entry.get("candidate_ref") or entry.get("id")
+                    if ref is not None and entry.get("label"):
+                        verifier_by_ref[str(ref)] = normalize_label(entry.get("label"))
+            try:
+                band = (
+                    float(args.get("disagreement_threshold"))
+                    if args.get("disagreement_threshold") is not None
+                    else 0.15
+                )
+            except (TypeError, ValueError):
+                band = 0.15
+
+            contested: list[dict[str, Any]] = []
+            agreed = 0
+            for row in rows:
+                auto = row.get("auto_label")
+                is_contested = False
+                detail = ""
+                if verifier_by_ref:
+                    ref = str(row.get("candidate_ref") or row.get("id"))
+                    verifier_label = verifier_by_ref.get(ref) or verifier_by_ref.get(
+                        str(row.get("id"))
+                    )
+                    if verifier_label is not None and verifier_label != auto:
+                        is_contested = True
+                        detail = f"verifier said {verifier_label}, auto said {auto}"
+                else:
+                    rel = row.get("relevance")
+                    if rel is None or abs(float(rel) - 0.5) <= band:
+                        is_contested = True
+                        detail = "labeler near the decision boundary"
+                    elif row.get("materiality") == "high" and auto == IRRELEVANT:
+                        is_contested = True
+                        detail = "high-materiality item labeled irrelevant"
+                if not is_contested:
+                    agreed += 1
+                    continue
+                scope_type = "question" if row.get("question_id") else "triage_label"
+                scope_ref = str(row.get("question_id") or row["id"])
+                alert = ledger.create_alert(
+                    severity="warning",
+                    scope_type=scope_type,
+                    scope_ref=scope_ref,
+                    reason=f"contested_label:{row['id']}",
+                    recommended_action=(
+                        f'Hand-label triage item {row["id"]} ("{(row.get("title") or "")[:60]}"): '
+                        f"auto={auto}; {detail}. Resolve with forecast_ledger relabel_route "
+                        f"(label_id={row['id']}, label=<relevant_interesting|relevant_uninteresting|irrelevant>)."
+                    ),
+                )
+                updated = ledger.update_triage_label(
+                    row["id"], contested=True, alert_id=alert.id
+                )
+                contested.append(
+                    {**(updated or row), "alert_id": alert.id, "contested_reason": detail}
+                )
+
+            return tool_result(
+                success=True,
+                contested=contested,
+                contested_count=len(contested),
+                agreed_count=agreed,
+                opened_alerts=[c["alert_id"] for c in contested],
+                note=(
+                    "Contested triage labels (auto-label disputed by the verifier, or the labeler was "
+                    "unsure) are opened as MANUAL contested_label alerts for operator hand-labeling — "
+                    "never auto-resolved by the automode. Adjudicate with relabel_route to record the "
+                    "expert label (label_source='expert') and acknowledge the alert."
+                ),
+            )
+
+        if action == "relabel_route":
+            from forecasting.triage import normalize_label, verdict_for_label
+
+            adjudications = args.get("adjudications")
+            if not (isinstance(adjudications, list) and adjudications):
+                label_id = args.get("label_id")
+                label = args.get("label")
+                if not (label_id and label):
+                    return tool_error(
+                        "relabel_route requires `adjudications`=[{label_id, label}] "
+                        "(or a single `label_id` + `label`)",
+                        success=False,
+                    )
+                adjudications = [{"label_id": label_id, "label": label}]
+
+            now = utc_now_iso()
+            relabeled: list[dict[str, Any]] = []
+            for adj in adjudications:
+                if not isinstance(adj, dict):
+                    continue
+                lid = adj.get("label_id")
+                raw_label = adj.get("label") or adj.get("expert_label")
+                if not lid or not raw_label:
+                    continue
+                row = ledger.get_triage_label(str(lid))
+                if row is None:
+                    continue
+                expert = normalize_label(raw_label)
+                updated = ledger.update_triage_label(
+                    str(lid),
+                    expert_label=expert,
+                    triage_label=expert,
+                    label_source="expert",
+                    contested=False,
+                    adjudicated_at=now,
+                    verdict=verdict_for_label(expert),
+                )
+                alert_id = row.get("alert_id")
+                if alert_id:
+                    try:
+                        ledger.acknowledge_alert(alert_id, acknowledged_at=now)
+                    except Exception:
+                        pass
+                relabeled.append(updated or row)
+
+            return tool_result(
+                success=True,
+                relabeled=relabeled,
+                count=len(relabeled),
+                note=(
+                    "Operator expert labels recorded (label_source='expert'); the linked contested_label "
+                    "alerts were acknowledged because the real adjudication work was done (never a bare ack). "
+                    "These rows are now held-out gold for the triage trust gate (auto_label vs expert_label)."
+                ),
+            )
+
+        if action == "triage_trust":
+            from forecasting.triage import build_triage_trust_gate
+
+            try:
+                threshold = (
+                    float(args.get("threshold"))
+                    if args.get("threshold") is not None
+                    else float(os.getenv("FORECAST_TRIAGE_TRUST_THRESHOLD", "0.8"))
+                )
+            except (TypeError, ValueError):
+                threshold = 0.8
+            try:
+                min_sample = (
+                    int(args.get("min_sample"))
+                    if args.get("min_sample") is not None
+                    else int(os.getenv("FORECAST_TRIAGE_TRUST_MIN_SAMPLE", "20"))
+                )
+            except (TypeError, ValueError):
+                min_sample = 20
+            gate = build_triage_trust_gate(
+                ledger, threshold=threshold, min_sample=min_sample
+            )
+            return tool_result(
+                success=True,
+                triage_gate=gate,
+                note=(
+                    "Held-out trust gate for the cheap auto-labeler (auto_label vs the operator's expert "
+                    "adjudication). Until accuracy clears the threshold over min_sample adjudicated items, "
+                    "mode='suggest_only' (surface verdicts, never auto-filter) — the 80%-trust-bar analog. "
+                    "This is also surfaced in forecast doctor."
+                ),
+            )
 
         return tool_error(f"unknown forecast_ledger action: {action}", success=False)
     except SaturationBlocked as blocked:

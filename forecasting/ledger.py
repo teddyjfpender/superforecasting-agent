@@ -1598,6 +1598,69 @@ class ForecastLedger:
 
                 CREATE INDEX IF NOT EXISTS idx_mds_model
                     ON market_data_series(model_id);
+
+                -- Triage rubrics: the desk-authored "what counts as INTERESTING
+                -- here" taste, scoped like calibration lessons (global / domain /
+                -- topic / domain_topic / question_type). The labeler retrieves the
+                -- most-specific active rubric for a question and folds its criteria
+                -- into the labeling prompt, so the desk's taste is explicit and
+                -- versioned, not re-improvised each run. (Thinking Machines L9: the
+                -- relevant-vs-interesting reframe carried the result.)
+                CREATE TABLE IF NOT EXISTS triage_rubrics (
+                    id TEXT PRIMARY KEY,
+                    scope_type TEXT NOT NULL,
+                    scope_ref TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'active',
+                    interesting_criteria TEXT NOT NULL DEFAULT '',
+                    uninteresting_criteria TEXT NOT NULL DEFAULT '',
+                    irrelevant_criteria TEXT NOT NULL DEFAULT '',
+                    examples TEXT NOT NULL DEFAULT '[]',
+                    notes TEXT NOT NULL DEFAULT '',
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_triage_rubrics_scope
+                    ON triage_rubrics(scope_type, scope_ref);
+
+                -- Triage labels: a STAGING surface that keeps the evidence table
+                -- clean. Each row is one candidate reading the cheap auto-labeler
+                -- classified BEFORE it becomes evidence. ``auto_label`` is the
+                -- model's three-way call; ``expert_label`` is the operator's
+                -- adjudication on a CONTESTED item (Thinking Machines L8 —
+                -- contested-routing). The held-out trust gate scores auto_label
+                -- against expert_label; the contested loop opens an alert when they
+                -- disagree. ``triage_label`` is the current best label (auto, or
+                -- expert once adjudicated).
+                CREATE TABLE IF NOT EXISTS triage_labels (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT,
+                    created_at TEXT NOT NULL,
+                    candidate_ref TEXT,
+                    title TEXT NOT NULL DEFAULT '',
+                    summary TEXT NOT NULL DEFAULT '',
+                    source_type TEXT,
+                    source TEXT,
+                    url TEXT,
+                    auto_label TEXT,
+                    expert_label TEXT,
+                    triage_label TEXT,
+                    label_source TEXT NOT NULL DEFAULT 'auto',
+                    materiality TEXT NOT NULL DEFAULT 'medium',
+                    verdict TEXT NOT NULL DEFAULT 'skim',
+                    relevance REAL,
+                    rationale TEXT NOT NULL DEFAULT '',
+                    rubric_id TEXT,
+                    model TEXT,
+                    contested INTEGER NOT NULL DEFAULT 0,
+                    alert_id TEXT,
+                    adjudicated_at TEXT,
+                    metadata TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_triage_labels_question
+                    ON triage_labels(question_id, created_at);
                 """
             )
             self._ensure_column(conn, "model_runs", "status", "TEXT NOT NULL DEFAULT 'success'")
@@ -5739,6 +5802,241 @@ class ForecastLedger:
                 params,
             ).fetchall()
         return [self._row_to_calibration_lesson(row) for row in rows]
+
+    # ── Triage rubrics + labels (information triage) ──────────────────────────
+    # The desk-authored "interesting vs merely relevant" taste (rubrics) plus a
+    # STAGING surface for the cheap auto-labeler's three-way calls (labels), kept
+    # OFF the evidence table. The labeler itself lives in forecasting/triage.py;
+    # the held-out trust gate scores auto_label vs expert_label.
+
+    _TRIAGE_RUBRIC_SCOPES = {"global", "domain", "topic", "domain_topic", "question_type"}
+
+    def _row_to_triage_rubric(self, row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        d["examples"] = json_loads(d.get("examples"), [])
+        d["metadata"] = json_loads(d.get("metadata"), {})
+        return d
+
+    def _row_to_triage_label(self, row: sqlite3.Row) -> dict[str, Any]:
+        d = dict(row)
+        d["contested"] = bool(d.get("contested"))
+        d["metadata"] = json_loads(d.get("metadata"), {})
+        return d
+
+    def set_triage_rubric(
+        self,
+        *,
+        scope_type: str,
+        scope_ref: str | None = None,
+        interesting_criteria: str,
+        uninteresting_criteria: str = "",
+        irrelevant_criteria: str = "",
+        examples: list[Any] | None = None,
+        notes: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Upsert the active rubric for a scope (mirrors calibration-lesson scoping)."""
+        if scope_type not in self._TRIAGE_RUBRIC_SCOPES:
+            raise ValidationError(
+                "invalid triage rubric scope_type: must be one of "
+                + ", ".join(sorted(self._TRIAGE_RUBRIC_SCOPES))
+            )
+        if scope_type == "global":
+            scope_ref = None
+        elif not (scope_ref or "").strip():
+            raise ValidationError(f"triage rubric scope_type={scope_type} requires a scope_ref")
+        if scope_type == "domain_topic" and ":" not in (scope_ref or ""):
+            raise ValidationError("domain_topic triage rubric requires a 'domain:topic' scope_ref")
+        now = utc_now_iso()
+        examples_json = json_dumps(list(examples or []))
+        metadata_json = json_dumps(dict(metadata or {}))
+        with self._connect() as conn:
+            existing = conn.execute(
+                "SELECT id FROM triage_rubrics WHERE scope_type = ? "
+                "AND IFNULL(scope_ref, '') = IFNULL(?, '') AND status = 'active'",
+                (scope_type, scope_ref),
+            ).fetchone()
+            if existing:
+                rubric_id = existing["id"]
+                conn.execute(
+                    "UPDATE triage_rubrics SET updated_at=?, interesting_criteria=?, "
+                    "uninteresting_criteria=?, irrelevant_criteria=?, examples=?, notes=?, "
+                    "metadata=? WHERE id=?",
+                    (
+                        now, interesting_criteria, uninteresting_criteria, irrelevant_criteria,
+                        examples_json, notes, metadata_json, rubric_id,
+                    ),
+                )
+            else:
+                rubric_id = f"tr_{uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    "INSERT INTO triage_rubrics (id, scope_type, scope_ref, created_at, "
+                    "updated_at, status, interesting_criteria, uninteresting_criteria, "
+                    "irrelevant_criteria, examples, notes, metadata) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        rubric_id, scope_type, scope_ref, now, now, "active",
+                        interesting_criteria, uninteresting_criteria, irrelevant_criteria,
+                        examples_json, notes, metadata_json,
+                    ),
+                )
+        return self.get_triage_rubric(rubric_id)
+
+    def get_triage_rubric(self, rubric_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM triage_rubrics WHERE id = ?", (rubric_id,)
+            ).fetchone()
+        return self._row_to_triage_rubric(row) if row else None
+
+    def list_triage_rubrics(
+        self,
+        *,
+        scope_type: str | None = None,
+        scope_ref: str | None = None,
+        active_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if scope_type:
+            clauses.append("scope_type = ?")
+            params.append(scope_type)
+        if scope_ref:
+            clauses.append("scope_ref = ?")
+            params.append(scope_ref)
+        if active_only:
+            clauses.append("status = 'active'")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM triage_rubrics {where} ORDER BY updated_at DESC", params
+            ).fetchall()
+        return [self._row_to_triage_rubric(row) for row in rows]
+
+    def record_triage_labels(
+        self, *, question_id: str | None = None, verdicts: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        """Persist the cheap auto-labeler's three-way calls as staging rows."""
+        now = utc_now_iso()
+        stored: list[str] = []
+        with self._connect() as conn:
+            for verdict in verdicts:
+                if not isinstance(verdict, dict):
+                    continue
+                label_id = f"tl_{uuid.uuid4().hex[:12]}"
+                auto = verdict.get("triage_label") or verdict.get("auto_label")
+                rel_raw = verdict.get("relevance")
+                try:
+                    relevance = float(rel_raw) if rel_raw is not None else None
+                except (TypeError, ValueError):
+                    relevance = None
+                conn.execute(
+                    "INSERT INTO triage_labels (id, question_id, created_at, candidate_ref, "
+                    "title, summary, source_type, source, url, auto_label, expert_label, "
+                    "triage_label, label_source, materiality, verdict, relevance, rationale, "
+                    "rubric_id, model, contested, alert_id, adjudicated_at, metadata) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        label_id, question_id, now, verdict.get("candidate_ref"),
+                        verdict.get("title") or "", verdict.get("summary") or "",
+                        verdict.get("source_type"), verdict.get("source"), verdict.get("url"),
+                        auto, None, auto, "auto",
+                        verdict.get("materiality") or "medium",
+                        verdict.get("verdict") or "skim", relevance,
+                        verdict.get("rationale") or "", verdict.get("rubric_id"),
+                        verdict.get("model"), 0, None, None,
+                        json_dumps(dict(verdict.get("metadata") or {})),
+                    ),
+                )
+                stored.append(label_id)
+        return [r for r in (self.get_triage_label(i) for i in stored) if r is not None]
+
+    def get_triage_label(self, label_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM triage_labels WHERE id = ?", (label_id,)
+            ).fetchone()
+        return self._row_to_triage_label(row) if row else None
+
+    def list_triage_labels(
+        self,
+        *,
+        question_id: str | None = None,
+        label_source: str | None = None,
+        contested: bool | None = None,
+        adjudicated: bool | None = None,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        if label_source:
+            clauses.append("label_source = ?")
+            params.append(label_source)
+        if contested is not None:
+            clauses.append("contested = ?")
+            params.append(1 if contested else 0)
+        if adjudicated is True:
+            clauses.append("adjudicated_at IS NOT NULL")
+        elif adjudicated is False:
+            clauses.append("adjudicated_at IS NULL")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM triage_labels {where} ORDER BY created_at DESC LIMIT ?",
+                params + [int(limit)],
+            ).fetchall()
+        return [self._row_to_triage_label(row) for row in rows]
+
+    def update_triage_label(
+        self,
+        label_id: str,
+        *,
+        expert_label: str | None = None,
+        triage_label: str | None = None,
+        label_source: str | None = None,
+        contested: bool | None = None,
+        alert_id: str | None = None,
+        adjudicated_at: str | None = None,
+        verdict: str | None = None,
+        materiality: str | None = None,
+    ) -> dict[str, Any] | None:
+        sets: list[str] = []
+        params: list[Any] = []
+        if expert_label is not None:
+            sets.append("expert_label = ?")
+            params.append(expert_label)
+        if triage_label is not None:
+            sets.append("triage_label = ?")
+            params.append(triage_label)
+        if label_source is not None:
+            sets.append("label_source = ?")
+            params.append(label_source)
+        if contested is not None:
+            sets.append("contested = ?")
+            params.append(1 if contested else 0)
+        if alert_id is not None:
+            sets.append("alert_id = ?")
+            params.append(alert_id)
+        if adjudicated_at is not None:
+            sets.append("adjudicated_at = ?")
+            params.append(adjudicated_at)
+        if verdict is not None:
+            sets.append("verdict = ?")
+            params.append(verdict)
+        if materiality is not None:
+            sets.append("materiality = ?")
+            params.append(materiality)
+        if not sets:
+            return self.get_triage_label(label_id)
+        with self._connect() as conn:
+            conn.execute(
+                f"UPDATE triage_labels SET {', '.join(sets)} WHERE id = ?",
+                params + [label_id],
+            )
+        return self.get_triage_label(label_id)
 
     # ── Signed calibration-bias loop ─────────────────────────────────────────
     # Measure whether committed binary forecasts run systematically over- or
@@ -10490,15 +10788,17 @@ class ForecastLedger:
         past, and if the underlying source is still dirty the next self_check
         re-raises a fresh alert — so a genuinely-open signal is never lost.
 
-        EXCEPTION — NO_AUTO classes (domain-error profiles, assumption /
-        reference-class checks, central-in-band, calibration-lesson review) are
-        explicitly EXCLUDED from auto-ack. These are human-judgment alerts the
-        warning dispatcher deliberately *surfaces* and never auto-resolves, and a
-        new forecast + fresh evidence does NOT address them (an invalidated
-        assumption is still invalidated; a band is still off-centre). Reconciling
-        one on unrelated forecast activity would silently close a still-valid
-        signal the operator must act on — the same bare-ack the dispatcher forbids
-        — so they always stay OPEN here."""
+        EXCEPTION — the MANUAL classes (NO_AUTO: domain-error profiles, assumption /
+        reference-class checks, central-in-band, calibration-lesson review; and
+        CONTESTED_LABEL: a triage auto-label the verifier disputes) are explicitly
+        EXCLUDED from auto-ack. These are human-judgment alerts the warning
+        dispatcher deliberately *surfaces* and never auto-resolves, and a new
+        forecast + fresh evidence does NOT address them (an invalidated assumption
+        is still invalidated; a band is still off-centre; a contested label is
+        closed only when the operator records a real expert label via
+        relabel_route). Reconciling one on unrelated forecast activity would
+        silently close a still-valid signal the operator must act on — the same
+        bare-ack the dispatcher forbids — so they always stay OPEN here."""
         now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
         # Local import keeps reconcile_alerts free of any module import-order
         # coupling with the (model-only) warnings dispatcher.
@@ -10514,12 +10814,15 @@ class ForecastLedger:
                 )
                 continue
 
-            if classify_warning(alert.reason) is ResolutionKind.NO_AUTO:
+            if classify_warning(alert.reason) in (
+                ResolutionKind.NO_AUTO,
+                ResolutionKind.CONTESTED_LABEL,
+            ):
                 still_open.append(
                     {
                         "id": alert.id,
                         "reason": alert.reason,
-                        "open_because": "no-auto class — surfaced for human review, never auto-reconciled",
+                        "open_because": "manual class (no-auto / contested-label) — surfaced for human review, never auto-reconciled",
                     }
                 )
                 continue

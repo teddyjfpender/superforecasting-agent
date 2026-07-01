@@ -3475,6 +3475,16 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "templated_batches": templated_batches,
     }
 
+    # Triage trust gate: is the cheap auto-labeler good enough (held-out auto-vs-
+    # expert accuracy) to be trusted to auto-filter, or still SUGGEST-ONLY? Read-
+    # only + fail-safe, like every probe above.
+    try:
+        from forecasting.triage import build_triage_trust_gate
+
+        triage_gate = build_triage_trust_gate(ledger)
+    except Exception:
+        triage_gate = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3482,6 +3492,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "doctor_status": doctor_status,
         "tester_handoff_ready": pilot_ready,
         "claim_live_superforecasting": evidence_status.get("can_claim_live_superforecasting"),
+        "triage_gate": triage_gate,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
