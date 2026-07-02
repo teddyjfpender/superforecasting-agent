@@ -154,6 +154,24 @@ def _t_quantile(df: int, p: float = 0.975) -> float:
     return 1.96 + 2.8 / max(1, df)
 
 
+def _holdout_fraction(value: Any) -> float | None:
+    """Coerce an opt-in holdout fraction to a float in the open interval (0, 1).
+
+    Returns ``None`` (in-sample-only mode) for anything missing, non-numeric, or
+    outside (0, 1). Shared by the backtest + regression out-of-sample paths so the
+    honesty gate reads the param identically everywhere.
+    """
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(f) or not (0.0 < f < 1.0):
+        return None
+    return f
+
+
 def _degraded(model_type: str, reason: str) -> dict[str, Any]:
     return {
         "ok": False,
@@ -244,6 +262,74 @@ def _solve_normal_equations(rows: list[list[float]], y: list[float]) -> list[flo
     return aty
 
 
+def _regression_validation(
+    x: list[float],
+    y: list[float],
+    x_label: str,
+    full_fit: dict[str, float],
+    holdout_fraction: Any,
+) -> tuple[dict[str, Any], str]:
+    """Out-of-sample validation for a 1d OLS fit (opt-in via ``holdout_fraction``).
+
+    Sorts the pairs by ``x`` so the training window is the low-``x`` region and the
+    held-out tail is the high-``x`` region (the extrapolation-relevant direction),
+    refits on the train segment ONLY, then scores the held-out points: OOS RMSE +
+    MAE and the fraction that fell inside the train fit's 95% prediction interval
+    (interval coverage). Pure-Python; reuses ``_ols_1d`` + ``_pred_interval`` so the
+    numpy/scipy-optional contract holds. Returns ``(validation_dict, note)``.
+
+    When no holdout is requested it returns an ``in_sample_only`` marker + a note so
+    no consumer can mistake in-sample fit for out-of-sample skill.
+    """
+    h = _holdout_fraction(holdout_fraction)
+    if h is None:
+        return (
+            {"mode": "in_sample_only"},
+            "Validation: in-sample only. R-squared and the prediction interval describe fit to the "
+            "data shown, not out-of-sample skill; set holdout_fraction to validate.",
+        )
+    pairs = sorted(zip(x, y), key=lambda p: p[0])
+    n = len(pairs)
+    n_test = min(max(1, round(n * h)), n - 1)
+    n_train = n - n_test
+    xs = [float(p[0]) for p in pairs]
+    ys = [float(p[1]) for p in pairs]
+    train_fit = _ols_1d(xs[:n_train], ys[:n_train])
+    if train_fit is None:
+        return (
+            {"mode": "holdout_degraded", "holdout_fraction": h, "n_train": n_train, "n_test": n_test},
+            f"Out-of-sample validation requested (holdout={h:.2f}) but the {n_train}-point training "
+            "segment has too little x variance to refit; showing in-sample fit only.",
+        )
+    resid: list[float] = []
+    inside = 0
+    for i in range(n_train, n):
+        yhat, lo, hi = _pred_interval(train_fit, xs[i])
+        resid.append(ys[i] - yhat)
+        if lo <= ys[i] <= hi:
+            inside += 1
+    m = len(resid)
+    rmse = math.sqrt(sum(r * r for r in resid) / m)
+    mae = sum(abs(r) for r in resid) / m
+    coverage = inside / m
+    validation = {
+        "mode": "holdout",
+        "holdout_fraction": h,
+        "n_train": n_train,
+        "n_test": n_test,
+        "in_sample_r2": full_fit["r2"],
+        "oos_rmse": rmse,
+        "oos_mae": mae,
+        "interval_coverage": coverage,
+    }
+    note = (
+        f"Out-of-sample validation: fit on the first {n_train} of {n} points (by {x_label}), tested on "
+        f"the held-out {n_test}-point tail. OOS RMSE {rmse:.4g}, MAE {mae:.4g}; {coverage*100:.0f}% of "
+        f"held-out points fell inside the 95% prediction interval (in-sample R-squared {full_fit['r2']:.3f})."
+    )
+    return validation, note
+
+
 def _regression_block(
     *,
     x: list[float],
@@ -252,6 +338,7 @@ def _regression_block(
     y_label: str,
     method: str,
     extrapolate_to: list[float] | None,
+    holdout_fraction: Any = None,
 ) -> dict[str, Any]:
     fit = _ols_1d(x, y)
     if fit is None:
@@ -267,6 +354,11 @@ def _regression_block(
     for xv in extrapolate_to or []:
         yhat, lo, hi = _pred_interval(fit, float(xv))
         extrapolation.append({"x": float(xv), "y": yhat, "lo": lo, "hi": hi})
+    # Honesty layer: an explicit validation marker + note flows through the block's
+    # existing note mechanism (see forecasting.presentation) so the fit is never
+    # mistaken for out-of-sample skill. Opt-in ``holdout_fraction`` adds real OOS
+    # RMSE/MAE + prediction-interval coverage from a train-only refit.
+    validation, note = _regression_validation(x, y, x_label, fit, holdout_fraction)
     block = {
         "type": "regression",
         "method": method,
@@ -281,13 +373,19 @@ def _regression_block(
         "fit_line": fit_line,
         "prediction_band": pred_band,
         "extrapolation": extrapolation,
+        "validation": validation,
+        "note": note,
     }
+    summary = {"slope": fit["slope"], "intercept": fit["intercept"], "r2": fit["r2"], "n": fit["n"]}
+    for key in ("oos_rmse", "oos_mae", "interval_coverage", "holdout_fraction", "n_train", "n_test"):
+        if key in validation:
+            summary[key] = validation[key]
     return {
         "ok": True,
         "degraded": False,
         "reason": "",
         "block": block,
-        "summary": {"slope": fit["slope"], "intercept": fit["intercept"], "r2": fit["r2"], "n": fit["n"]},
+        "summary": summary,
         "backend": backends(),
     }
 
@@ -364,6 +462,7 @@ def _timeseries_trend_block(payload: dict) -> dict[str, Any]:
         y_label=str(payload.get("y_label") or "value"),
         method="timeseries_trend",
         extrapolate_to=extra,
+        holdout_fraction=payload.get("holdout_fraction"),
     )
     return res
 
@@ -474,14 +573,14 @@ def _scenario_block(payload: dict) -> dict[str, Any]:
 # ── advanced econometrics (statsmodels-gated) ─────────────────────────────────
 
 
-def _backtest_block(payload: dict) -> dict[str, Any]:
-    """Simple long/flat backtest from a return series + signal (pure-Python)."""
-    returns = _floats(payload.get("returns") or [])
-    signal = payload.get("signal") or []
-    if len(returns) < 2:
-        return _degraded("backtest", "backtest needs a return series with >=2 points")
-    pos = [1.0 if (i < len(signal) and signal[i]) else (0.0 if signal else 1.0) for i in range(len(returns))]
-    strat = [pos[i] * returns[i] for i in range(len(returns))]
+def _score_strategy(strat: list[float]) -> dict[str, float]:
+    """Total return, annualized Sharpe, and max drawdown for a strategy-return leg.
+
+    Pure-Python; factored out so a full series and any train/test segment are scored
+    by the identical math (the byte-stable full-series path + the OOS/walk-forward
+    segments all go through here)."""
+    if not strat:
+        return {"total_return": 0.0, "sharpe": 0.0, "max_drawdown": 0.0}
     equity, eq = [], 1.0
     for r in strat:
         eq *= 1.0 + r
@@ -494,18 +593,99 @@ def _backtest_block(payload: dict) -> dict[str, Any]:
     for e in equity:
         peak = max(peak, e)
         mdd = min(mdd, e / peak - 1.0)
+    return {"total_return": total, "sharpe": sharpe, "max_drawdown": mdd}
+
+
+def _backtest_block(payload: dict) -> dict[str, Any]:
+    """Long/flat backtest from a return series + signal (pure-Python).
+
+    In-sample by default (scored on the same series it was derived from) with an
+    opt-in out-of-sample mode: when ``holdout_fraction`` is set the signal is treated
+    as fit on the leading train window and scored on the held-out tail, reporting the
+    in-sample and out-of-sample metrics side by side. ``walk_forward=N`` adds an
+    N-fold rolling out-of-sample check. Either way the block carries an explicit
+    honesty note so a fit can never be read as validated skill."""
+    returns = _floats(payload.get("returns") or [])
+    signal = payload.get("signal") or []
+    if len(returns) < 2:
+        return _degraded("backtest", "backtest needs a return series with >=2 points")
+    pos = [1.0 if (i < len(signal) and signal[i]) else (0.0 if signal else 1.0) for i in range(len(returns))]
+    strat = [pos[i] * returns[i] for i in range(len(returns))]
+    full = _score_strategy(strat)
+    total, sharpe, mdd = full["total_return"], full["sharpe"], full["max_drawdown"]
+    columns = [{"key": "metric", "label": "Metric"}, {"key": "value", "label": "Value", "align": "right"}]
+    rows = [
+        {"metric": "Total return", "value": f"{total*100:.1f}%"},
+        {"metric": "Sharpe (ann.)", "value": f"{sharpe:.2f}"},
+        {"metric": "Max drawdown", "value": f"{mdd*100:.1f}%"},
+    ]
+    summary: dict[str, Any] = {"total_return": total, "sharpe": sharpe, "max_drawdown": mdd}
+
+    n = len(strat)
+    h = _holdout_fraction(payload.get("holdout_fraction"))
+    if h is None:
+        note = (
+            "Validation: in-sample only. The strategy is scored on the same return series it was "
+            "derived from; read these as fit, not out-of-sample skill. Set holdout_fraction to validate."
+        )
+    else:
+        n_test = min(max(1, round(n * h)), n - 1)
+        n_train = n - n_test
+        is_m = _score_strategy(strat[:n_train])
+        oos_m = _score_strategy(strat[n_train:])
+        columns.append({"key": "in_sample", "label": "In-sample", "align": "right"})
+        columns.append({"key": "out_of_sample", "label": "Out-of-sample", "align": "right"})
+        pct = lambda v: f"{v*100:.1f}%"
+        two = lambda v: f"{v:.2f}"
+        for row, key, f in zip(rows, ("total_return", "sharpe", "max_drawdown"), (pct, two, pct)):
+            row["in_sample"] = f(is_m[key])
+            row["out_of_sample"] = f(oos_m[key])
+        summary.update(
+            {
+                "holdout_fraction": h, "n_train": n_train, "n_test": n_test,
+                "is_total_return": is_m["total_return"], "is_sharpe": is_m["sharpe"],
+                "is_max_drawdown": is_m["max_drawdown"],
+                "oos_total_return": oos_m["total_return"], "oos_sharpe": oos_m["sharpe"],
+                "oos_max_drawdown": oos_m["max_drawdown"],
+            }
+        )
+        note = (
+            f"Out-of-sample validation: strategy fit on the first {n_train} of {n} points, scored on the "
+            f"held-out {n_test}-point tail (holdout {h:.2f}). In-sample vs out-of-sample shown side by "
+            "side; a large gap flags overfitting."
+        )
+
+    # Optional N-fold rolling out-of-sample check (reuses _score_strategy): score each
+    # later fold as a held-out block, report the mean OOS return across folds.
+    try:
+        wf = int(payload.get("walk_forward")) if payload.get("walk_forward") is not None else 0
+    except (TypeError, ValueError):
+        wf = 0
+    if wf >= 2 and n >= wf + 1:
+        fold = n // wf
+        oos_returns = []
+        for k in range(1, wf):
+            seg = strat[k * fold : (k + 1) * fold] if k < wf - 1 else strat[k * fold :]
+            if seg:
+                oos_returns.append(_score_strategy(seg)["total_return"])
+        if oos_returns:
+            wf_mean = sum(oos_returns) / len(oos_returns)
+            summary["wf_splits"] = wf
+            summary["wf_oos_total_return_mean"] = wf_mean
+            note += (
+                f" Walk-forward: {len(oos_returns)} rolling out-of-sample folds, mean OOS return "
+                f"{wf_mean*100:.1f}%."
+            )
+
     block = {
         "type": "table",
         "title": "Backtest summary",
-        "columns": [{"key": "metric", "label": "Metric"}, {"key": "value", "label": "Value", "align": "right"}],
-        "rows": [
-            {"metric": "Total return", "value": f"{total*100:.1f}%"},
-            {"metric": "Sharpe (ann.)", "value": f"{sharpe:.2f}"},
-            {"metric": "Max drawdown", "value": f"{mdd*100:.1f}%"},
-        ],
+        "columns": columns,
+        "rows": rows,
+        "note": note,
     }
     return {"ok": True, "degraded": False, "reason": "", "block": block,
-            "summary": {"total_return": total, "sharpe": sharpe, "max_drawdown": mdd}, "backend": backends()}
+            "summary": summary, "backend": backends()}
 
 
 def _cointegration_block(payload: dict) -> dict[str, Any]:
@@ -612,6 +792,7 @@ def compute(model_type: str, payload: dict | None = None) -> dict[str, Any]:
             y_label=str(payload.get("y_label") or "y"),
             method="ols",
             extrapolate_to=[float(v) for v in (payload.get("extrapolate_to") or [])],
+            holdout_fraction=payload.get("holdout_fraction"),
         )
     if mt == "loglinear":
         x = _floats(payload.get("x") or [])
@@ -624,6 +805,7 @@ def compute(model_type: str, payload: dict | None = None) -> dict[str, Any]:
             x=x[:n], y=logy, x_label=str(payload.get("x_label") or "x"),
             y_label=f"ln({payload.get('y_label','y')})", method="loglinear",
             extrapolate_to=[float(v) for v in (payload.get("extrapolate_to") or [])],
+            holdout_fraction=payload.get("holdout_fraction"),
         )
         return res
     if mt == "multivariate":

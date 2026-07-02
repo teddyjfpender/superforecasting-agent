@@ -34,11 +34,15 @@ MARKET_COMPUTE_SCHEMA = {
                 "type": "object",
                 "description": (
                     "Inputs, by model_type: ols/loglinear → {x:[..], y:[..], x_label?, y_label?, "
-                    "extrapolate_to?:[..]}; multivariate → {X:[[..]], y:[..], x_labels:[..], y_label?}; "
-                    "timeseries_trend/arima → {values:[..], horizon?}; correlation/cointegration → "
+                    "extrapolate_to?:[..], holdout_fraction?:0..1 for out-of-sample OOS RMSE/MAE + interval coverage}; "
+                    "multivariate → {X:[[..]], y:[..], x_labels:[..], y_label?}; "
+                    "timeseries_trend/arima → {values:[..], horizon?} (timeseries_trend also takes holdout_fraction?:0..1); "
+                    "correlation/cointegration → "
                     "{a:[..], b:[..]}; montecarlo → {start, drift, vol, steps, n_paths, seed, bands?}; "
-                    "event_study → {returns:[..], event_index, window}; backtest → {returns:[..], signal?:[..]}; "
-                    "scenario → {scenarios:[{name, outcome, ...}]}."
+                    "event_study → {returns:[..], event_index, window}; backtest → {returns:[..], signal?:[..], "
+                    "holdout_fraction?:0..1 for in-sample vs out-of-sample metrics, walk_forward?:N rolling OOS folds}; "
+                    "scenario → {scenarios:[{name, outcome, ...}]}. Without holdout_fraction, regression/backtest results "
+                    "are labeled in-sample only (fit, not validated skill)."
                 ),
             },
         },
