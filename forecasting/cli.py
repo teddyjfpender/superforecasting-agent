@@ -50,6 +50,7 @@ from forecasting.extensions import extension_registry
 from forecasting.forecast_engine import forecast_engine_binary_probability
 from forecasting.learning import (
     apply_active_lesson_adjustments,
+    should_apply_active_lessons,
     is_learned_error_review_reason,
     is_learning_review_reason,
     learned_error_profile_id,
@@ -646,8 +647,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     new_parser.add_argument("--source-plan", action="store_true", help="Print recommended sources after creating the question")
     new_parser.add_argument(
         "--apply-source-plan",
+        "--apply-watch",
+        dest="apply_source_plan",
         action="store_true",
-        help="Add concrete watched sources from the generated source plan",
+        help="Add (apply) the top recommended watched sources from the generated source plan",
     )
     new_parser.add_argument("--review-cadence")
     new_parser.add_argument("--next-review-at")
@@ -946,10 +949,15 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     update_parser.add_argument("--calibration-adjustment-json", default="{}")
     update_parser.add_argument(
         "--use-active-lessons",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=None,
         help=(
             "Attach active global/domain/topic/question-type calibration lessons "
-            "and apply supported probability adjustments."
+            "and apply the measured probability adjustment. ON by default for LIVE "
+            "commits only (the pre-adjustment raw_probability is recorded for audit); "
+            "backtest/imported commits are NOT auto-adjusted (pass "
+            "--use-active-lessons to opt in). Use --no-use-active-lessons to commit "
+            "your raw number. Exploratory commits are never adjusted."
         ),
     )
     update_parser.add_argument("--preview", action="store_true", help="Show update preview without writing a snapshot")
@@ -2671,6 +2679,80 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     watch_check.add_argument("--now")
     watch_check.set_defaults(_forecast_handler=_cmd_watch_check)
 
+    # Information-triage: reach the three-way labeler / contested-routing / trust
+    # gate for non-agent users + cron. Thin wrappers over the SAME tool actions
+    # (forecast_ledger_tool), so the triage logic lives in exactly one place.
+    triage_parser = forecast_sub.add_parser(
+        "triage",
+        help="Three-way relevance labeling on candidate readings (keep/skim/skip) before they become evidence",
+    )
+    triage_sub = triage_parser.add_subparsers(dest="triage_command")
+
+    triage_label = triage_sub.add_parser("label", help="Auto-label candidate readings (three-way)")
+    triage_label.add_argument("--question", dest="question_id")
+    triage_label.add_argument(
+        "--use-watched",
+        action="store_true",
+        help="Pull candidates from the question's watched sources (requires --question)",
+    )
+    triage_label.add_argument(
+        "--candidates-json",
+        help="JSON array of candidate readings [{title, summary?, source_type?, source?, url?, id?}]",
+    )
+    triage_label.add_argument("--rubric-ref", help="Explicit triage rubric id to apply")
+    triage_label.add_argument("--model", help="Model id for the cheap auto-labeler (default $FORECAST_TRIAGE_MODEL)")
+    triage_label.add_argument("--query", help="Optional query when pulling watched candidates")
+    triage_label.add_argument("--limit", type=int, default=20)
+    triage_label.add_argument(
+        "--no-persist", action="store_true", help="Do not persist verdicts as triage_labels staging rows"
+    )
+    triage_label.set_defaults(_forecast_handler=_cmd_triage_label)
+
+    triage_contested = triage_sub.add_parser(
+        "contested", help="Route contested/boundary auto-labels to operator hand-labeling"
+    )
+    triage_contested.add_argument("--question", dest="question_id")
+    triage_contested.add_argument(
+        "--label-id", dest="label_ids", action="append", default=[], help="Specific triage_label id(s) to check"
+    )
+    triage_contested.add_argument(
+        "--verifier-json",
+        dest="verifier_json",
+        help="Optional second-opinion labels [{candidate_ref|id, label}] to define disagreement",
+    )
+    triage_contested.add_argument("--disagreement-threshold", type=float)
+    triage_contested.set_defaults(_forecast_handler=_cmd_triage_contested)
+
+    triage_relabel = triage_sub.add_parser(
+        "relabel", help="Record an operator expert label (adjudication) + ack its contested alert"
+    )
+    triage_relabel.add_argument("label_id", nargs="?")
+    triage_relabel.add_argument("label", nargs="?", help="relevant_interesting | relevant_uninteresting | irrelevant")
+    triage_relabel.add_argument(
+        "--adjudications-json", help="JSON array [{label_id, label}] for bulk adjudication"
+    )
+    triage_relabel.set_defaults(_forecast_handler=_cmd_triage_relabel)
+
+    triage_trust = triage_sub.add_parser("trust", help="Show the held-out trust gate for the auto-labeler")
+    triage_trust.add_argument("--threshold", type=float)
+    triage_trust.add_argument("--min-sample", type=int)
+    triage_trust.set_defaults(_forecast_handler=_cmd_triage_trust)
+
+    triage_set_rubric = triage_sub.add_parser("set-rubric", help="Store/replace a desk triage rubric for a scope")
+    triage_set_rubric.add_argument("--scope-type", default="global")
+    triage_set_rubric.add_argument("--scope-ref")
+    triage_set_rubric.add_argument("--interesting", required=True, help="What counts as INTERESTING here (required)")
+    triage_set_rubric.add_argument("--uninteresting", default="")
+    triage_set_rubric.add_argument("--irrelevant", default="")
+    triage_set_rubric.add_argument("--notes", default="")
+    triage_set_rubric.set_defaults(_forecast_handler=_cmd_triage_set_rubric)
+
+    triage_list_rubrics = triage_sub.add_parser("list-rubrics", help="List stored triage rubrics")
+    triage_list_rubrics.add_argument("--scope-type")
+    triage_list_rubrics.add_argument("--scope-ref")
+    triage_list_rubrics.add_argument("--all", action="store_true", help="Include inactive rubrics")
+    triage_list_rubrics.set_defaults(_forecast_handler=_cmd_triage_list_rubrics)
+
     # Cross-pollination links between forecasts.
     link_parser = forecast_sub.add_parser("link", help="Link related forecasts so they cross-pollinate context")
     link_sub = link_parser.add_subparsers(dest="link_command")
@@ -4004,6 +4086,116 @@ def _cmd_new(args: argparse.Namespace) -> None:
         _print_source_plan(ledger, question, apply_watch=args.apply_source_plan, limit=12)
 
 
+def _run_triage_tool(args: argparse.Namespace, payload: dict[str, Any]) -> dict[str, Any]:
+    """Call the SAME triage tool action the agent uses and return the parsed result.
+
+    The CLI triage group is a thin surface over ``forecast_ledger_tool`` so the
+    triage logic (labeler wiring, contested routing, trust gate) lives in exactly
+    one place. Prints the structured result and raises SystemExit(1) on a tool error.
+    """
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    payload = {**payload, "db": getattr(args, "db", None)}
+    out = forecast_ledger_tool(payload)
+    result = json.loads(out)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    if result.get("error") or result.get("success") is False:
+        raise SystemExit(1)
+    return result
+
+
+def _cmd_triage_label(args: argparse.Namespace) -> None:
+    payload: dict[str, Any] = {
+        "action": "triage_label",
+        "persist": not getattr(args, "no_persist", False),
+        "limit": getattr(args, "limit", 20),
+    }
+    if getattr(args, "question_id", None):
+        payload["question_id"] = args.question_id
+    if getattr(args, "use_watched", False):
+        payload["use_watched"] = True
+    if getattr(args, "rubric_ref", None):
+        payload["rubric_ref"] = args.rubric_ref
+    if getattr(args, "model", None):
+        payload["model"] = args.model
+    if getattr(args, "query", None):
+        payload["query"] = args.query
+    if getattr(args, "candidates_json", None):
+        try:
+            payload["candidates"] = json.loads(args.candidates_json)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"--candidates-json is not valid JSON: {exc}")
+    _run_triage_tool(args, payload)
+
+
+def _cmd_triage_contested(args: argparse.Namespace) -> None:
+    payload: dict[str, Any] = {"action": "triage_contested"}
+    if getattr(args, "question_id", None):
+        payload["question_id"] = args.question_id
+    if getattr(args, "label_ids", None):
+        payload["label_ids"] = args.label_ids
+    if getattr(args, "disagreement_threshold", None) is not None:
+        payload["disagreement_threshold"] = args.disagreement_threshold
+    if getattr(args, "verifier_json", None):
+        try:
+            payload["verifier_labels"] = json.loads(args.verifier_json)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"--verifier-json is not valid JSON: {exc}")
+    _run_triage_tool(args, payload)
+
+
+def _cmd_triage_relabel(args: argparse.Namespace) -> None:
+    payload: dict[str, Any] = {"action": "relabel_route"}
+    if getattr(args, "adjudications_json", None):
+        try:
+            payload["adjudications"] = json.loads(args.adjudications_json)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"--adjudications-json is not valid JSON: {exc}")
+    elif getattr(args, "label_id", None) and getattr(args, "label", None):
+        payload["label_id"] = args.label_id
+        payload["label"] = args.label
+    else:
+        raise SystemExit("forecast triage relabel needs LABEL_ID LABEL (or --adjudications-json)")
+    _run_triage_tool(args, payload)
+
+
+def _cmd_triage_trust(args: argparse.Namespace) -> None:
+    payload: dict[str, Any] = {"action": "triage_trust"}
+    if getattr(args, "threshold", None) is not None:
+        payload["threshold"] = args.threshold
+    if getattr(args, "min_sample", None) is not None:
+        payload["min_sample"] = args.min_sample
+    _run_triage_tool(args, payload)
+
+
+def _cmd_triage_set_rubric(args: argparse.Namespace) -> None:
+    rubric = {
+        "interesting_criteria": args.interesting,
+        "uninteresting_criteria": getattr(args, "uninteresting", "") or "",
+        "irrelevant_criteria": getattr(args, "irrelevant", "") or "",
+        "notes": getattr(args, "notes", "") or "",
+    }
+    payload = {
+        "action": "set_label_rubric",
+        "scope_type": getattr(args, "scope_type", "global") or "global",
+        "rubric": rubric,
+    }
+    if getattr(args, "scope_ref", None):
+        payload["scope_ref"] = args.scope_ref
+    _run_triage_tool(args, payload)
+
+
+def _cmd_triage_list_rubrics(args: argparse.Namespace) -> None:
+    payload: dict[str, Any] = {"action": "list_label_rubrics"}
+    if getattr(args, "scope_type", None):
+        payload["scope_type"] = args.scope_type
+    if getattr(args, "scope_ref", None):
+        payload["scope_ref"] = args.scope_ref
+    if getattr(args, "all", False):
+        payload["active_only"] = False
+    _run_triage_tool(args, payload)
+
+
 def _cmd_onboard(args: argparse.Namespace) -> None:
     from forecasting.question_spec import (
         apply_recommended_defaults,
@@ -4467,7 +4659,10 @@ def _cmd_update(args: argparse.Namespace) -> None:
         args.calibration_weight != 1.0,
         bool(args.calibration_lesson_refs),
         args.calibration_adjustment_json != "{}",
-        args.use_active_lessons,
+        # NOTE: use_active_lessons now DEFAULTS ON (BooleanOptionalAction), so it no
+        # longer signals "the user wants to save" — like require_citations, it is
+        # excluded from update-intent detection. A bare `forecast update <id>` stays
+        # a no-op inspection.
         args.preview,
     ]
     # require_citations now defaults ON for live forecasts, so it is no longer a
@@ -4520,7 +4715,14 @@ def _cmd_update(args: argparse.Namespace) -> None:
     payload = _probability_payload(args, components)
     calibration_adjustment = _json_arg(args.calibration_adjustment_json, "calibration-adjustment-json")
     calibration_lesson_refs = list(args.calibration_lesson_refs)
-    if args.use_active_lessons:
+    # Measured-bias correction applies BY DEFAULT for LIVE commits (S7);
+    # --no-use-active-lessons opts out. backtest/imported_baseline are never auto-
+    # adjusted (the live-derived correction would contaminate the closed-book
+    # benchmark) — pass --use-active-lessons to opt in. Exploratory scratchpad
+    # commits are never calibration-scored, so they are left untouched.
+    # apply_active_lesson_adjustments records raw_probability before adjusting, so
+    # net movement stays auditable.
+    if should_apply_active_lessons(args.use_active_lessons, args.forecast_origin):
         payload, calibration_lesson_refs, calibration_adjustment = apply_active_lesson_adjustments(
             ledger=ledger,
             question=question,
@@ -4609,26 +4811,38 @@ def _cmd_update(args: argparse.Namespace) -> None:
     # Standard step of the update process: write a time-indexed analyst brief for
     # the snapshot we just committed. Best-effort, after the ledger write.
     _write_analyst_brief(ledger, args.id, snapshot, previous=previous)
-    _maybe_recommend_quorum(
-        ledger, args.id, has_panel=panel_run_ref is not None,
+    _maybe_autorun_quorum(
+        ledger, args.id, snapshot=snapshot,
+        has_panel=panel_run_ref is not None,
         has_prior_snapshot=previous is not None,
         forecast_origin=args.forecast_origin,
     )
 
 
-def _maybe_recommend_quorum(
+def _maybe_autorun_quorum(
     ledger: "ForecastLedger",
     question_id: str,
     *,
+    snapshot: Any,
     has_panel: bool,
     has_prior_snapshot: bool,
     forecast_origin: str | None,
 ) -> None:
-    """Nudge to run a quorum when one is auto-indicated but none was attached.
+    """AUTO-RUN a quorum (detached) when one is auto-indicated but none attached.
 
-    Non-invasive: this runs after the commit and never alters it. The quorum
-    produces a ``panel_run_id`` that satisfies the existing ``--panel-run-ref``
-    gate, so the recommended flow keeps the senior process intact.
+    Wave-2 process autonomy: instead of merely PRINTING a command, we start a
+    detached quorum background job that attaches its panel run to the
+    just-committed snapshot (``attach_snapshot``), so the lazy prompter gets
+    multi-model fusion per keystroke. The panel shape is resolved by
+    :func:`forecasting.quorum.resolve_quorum_defaults` (impact/type-aware, with the
+    single-key reality guard) and cost-bounded by ``quorum.max_calls`` before we
+    spend anything.
+
+    STRICTLY BOUNDED + FAIL-OPEN: the commit already happened, so ANY failure here
+    (config, resolution, job spawn) is swallowed with a one-line note and never
+    blocks or corrupts the commit. Only fires for LIVE forecasts with no panel
+    already attached, and only when ``quorum.default_enabled`` + the scope gate say
+    so.
     """
 
     if has_panel or (forecast_origin or "live") != "live":
@@ -4636,9 +4850,16 @@ def _maybe_recommend_quorum(
     try:
         from hermes_cli.config import load_config
         from forecasting.panel import should_run_panel
-        from forecasting.quorum import quorum_auto_indicated
+        from forecasting.quorum import (
+            available_provider_slugs,
+            cap_preset_by_calls,
+            quorum_auto_indicated,
+            resolve_quorum_defaults,
+        )
+        from forecasting.quorum_jobs import start_job
 
-        cfg = load_config().get("quorum", {})
+        full_cfg = load_config()
+        cfg = full_cfg.get("quorum", {}) or {}
         if not cfg.get("default_enabled"):
             return
         question = ledger.get_question(question_id)
@@ -4650,15 +4871,71 @@ def _maybe_recommend_quorum(
             cfg, panel_indicated=panel_indicated, has_prior_snapshot=has_prior_snapshot
         ):
             return
-        print(
-            "↳ quorum recommended for this forecast (quorum.default_enabled, "
-            f"scope={cfg.get('default_scope', 'high_impact')}).\n"
-            f"  run:  forecast quorum {question_id}\n"
-            "  then commit with  forecast update "
-            f"{question_id} --panel-run-ref <panel_run_id>"
+
+        active_model = _resolve_active_model_id(full_cfg.get("model"))
+        samples = 3
+        defaults = resolve_quorum_defaults(
+            question,
+            available_providers=available_provider_slugs(),
+            active_model=active_model,
+            samples=samples,
         )
-    except Exception:  # pragma: no cover — a nudge must never break update
-        return
+        preset = defaults["preset"]
+        delphi_rounds = int(defaults["delphi_rounds"])
+        trim = int(defaults["trim"])
+        max_calls = int(cfg.get("max_calls", 12) or 12)
+        preset, delphi_rounds, samples, est_calls, cap_note = cap_preset_by_calls(
+            preset, delphi_rounds, max_calls=max_calls, samples=samples
+        )
+
+        judge = cfg.get("judge") or None
+        self_fusion = preset == "self"
+        models = None
+        preset_for_spec: str | None = preset
+        if self_fusion:
+            if not active_model:
+                print(
+                    "↳ quorum auto-run skipped: self-fusion needs a default model "
+                    "(set one with `superforecasting-agent model`)."
+                )
+                return
+            models = [active_model] * samples
+            judge = judge or active_model
+            preset_for_spec = None  # models now explicit
+
+        spec = {
+            "question_id": question_id,
+            # str() — the spec is JSON-persisted by quorum_jobs.write_job; a Path
+            # is not serializable. ForecastLedger accepts the str form.
+            "db": (str(ledger.db_path) if getattr(ledger, "db_path", None) else None),
+            "preset": preset_for_spec,
+            "models": models,
+            "judge": judge,
+            "pool_method": cfg.get("pool_method") or "trimmed_geomean_odds",
+            "trim": trim,
+            "self_fusion": self_fusion,
+            "samples": samples,
+            "attach_snapshot": getattr(snapshot, "forecast_id", None),
+            "triggered_by": "auto_quorum",
+            "active_model": active_model,
+            "max_iterations": int(cfg.get("max_iterations", 30)),
+            "model_timeout": int(cfg.get("model_timeout", 300)),
+            "supervisor_search": bool(cfg.get("supervisor_search")),
+            "delphi_rounds": delphi_rounds,
+        }
+        run_id = start_job(spec, wait=False)
+        print(
+            f"↳ quorum auto-run started: {run_id} "
+            f"(preset={preset}, delphi={delphi_rounds}, ~{est_calls} model calls) — "
+            f"{defaults['reason']}."
+        )
+        if cap_note:
+            print(f"  cost cap: {cap_note}")
+        print(f"  poll with:  forecast quorum status {run_id}")
+    except Exception as exc:  # noqa: BLE001 — auto-run is fail-open; the commit stands
+        # The commit already happened; ANY failure here (config, resolution, job
+        # spawn) degrades to a one-line note and never blocks or corrupts it.
+        print(f"↳ quorum auto-run skipped (non-fatal): {type(exc).__name__}: {exc}")
 
 
 def _print_update_preview(
@@ -9419,7 +9696,7 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
     # Fail fast if the question does not exist (immediate feedback before we
     # spawn a multi-minute background job).
     ledger = _ledger(args)
-    ledger.get_question(question_id)
+    question = ledger.get_question(question_id)
 
     models = None
     if args.models:
@@ -9427,7 +9704,38 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
     elif cfg.get("models"):
         models = [str(m).strip() for m in cfg["models"] if str(m).strip()]
 
-    preset = args.preset or cfg.get("preset") or "frontier"
+    from forecasting.quorum import (
+        available_provider_slugs,
+        cap_preset_by_calls,
+        estimate_quorum_calls,
+        preset_model_count,
+        resolve_quorum_defaults,
+    )
+
+    # Default resolution (item 1). When the caller passed NO explicit --preset and
+    # NO explicit model list, resolve the panel SHAPE from the question's
+    # impact/type (single-key reality guarded) rather than a static config default —
+    # so a bare `forecast quorum <id>` gets a right-sized panel. An explicit
+    # --preset (or a model list) is honoured verbatim.
+    samples_hint = args.samples or 3
+    autonomous_preset = args.preset is None and not models
+    resolution_note: str | None = None
+    if autonomous_preset:
+        defaults = resolve_quorum_defaults(
+            question,
+            available_providers=available_provider_slugs(),
+            active_model=active_model,
+            samples=samples_hint,
+        )
+        preset = defaults["preset"]
+        default_delphi = int(defaults["delphi_rounds"])
+        default_trim = int(defaults["trim"])
+        resolution_note = defaults["reason"]
+    else:
+        preset = args.preset or cfg.get("preset") or "frontier"
+        default_delphi = int(cfg.get("delphi_rounds", 0) or 0)
+        default_trim = int(cfg.get("trim", 1))
+
     judge = args.judge or (cfg.get("judge") or None)
     # GATE 2 (AIA P1.1, live): the --supervisor-search flag wins when passed;
     # otherwise inherit the quorum.supervisor_search config (default OFF). Only a
@@ -9438,10 +9746,10 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         else bool(cfg.get("supervisor_search"))
     )
     pool_method = args.pool_method or cfg.get("pool_method") or "trimmed_geomean_odds"
-    trim = args.trim if args.trim is not None else int(cfg.get("trim", 1))
+    trim = args.trim if args.trim is not None else default_trim
 
     # Delphi revision rounds (v1: 0 or 1). Precedence: --delphi (=1) >
-    # --delphi-rounds > quorum.delphi_rounds > 0. --delphi with an explicit
+    # --delphi-rounds > resolved/config default > 0. --delphi with an explicit
     # --delphi-rounds 0 is a contradiction; fail fast.
     delphi_rounds_arg = getattr(args, "delphi_rounds", None)
     if args.delphi and delphi_rounds_arg is not None and delphi_rounds_arg == 0:
@@ -9451,8 +9759,31 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         if args.delphi
         else delphi_rounds_arg
         if delphi_rounds_arg is not None
-        else int(cfg.get("delphi_rounds", 0) or 0)
+        else default_delphi
     )
+
+    # Cost cap (item 4): applies to any manual run WITHOUT an explicit --preset and
+    # without an explicit model list — an oversized default preset is downgraded to
+    # the largest that fits quorum.max_calls. An explicit --preset is respected.
+    cap_note: str | None = None
+    if args.preset is None and not models:
+        max_calls = int(cfg.get("max_calls", 12) or 12)
+        preset, delphi_rounds, samples_hint, est_calls, cap_note = cap_preset_by_calls(
+            preset, delphi_rounds, max_calls=max_calls, samples=samples_hint
+        )
+
+    if (resolution_note or cap_note) and not args.json:
+        model_count = preset_model_count(preset, samples=samples_hint)
+        est = estimate_quorum_calls(model_count=model_count, delphi_rounds=delphi_rounds)
+        detail = (
+            f"↳ quorum defaults: preset {preset}: {model_count} models + judge, "
+            f"delphi={delphi_rounds}, ~{est} calls"
+        )
+        if resolution_note:
+            detail += f" — {resolution_note}"
+        print(detail)
+        if cap_note:
+            print(f"  cost cap: {cap_note}")
 
     self_fusion = preset == "self" and not models
     if self_fusion:
@@ -9461,7 +9792,10 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
                 "forecast quorum: the 'self' preset needs a default model — set one "
                 "with `--models <id>` or a config `model`."
             )
-        samples = args.samples or 3
+        # samples_hint carries the cost-cap's (possibly reduced) sample count, so a
+        # capped self-fusion actually samples fewer times rather than silently
+        # overrunning max_calls; for an uncapped run it is still args.samples or 3.
+        samples = samples_hint
         models = [active_model] * samples
         judge = judge or active_model
         preset = None  # models now explicit
@@ -9475,7 +9809,7 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         "pool_method": pool_method,
         "trim": trim,
         "self_fusion": self_fusion,
-        "samples": args.samples,
+        "samples": samples_hint if self_fusion else args.samples,
         "attach_snapshot": args.attach_snapshot,
         "triggered_by": args.triggered_by or "quorum",
         "active_model": active_model,
@@ -9538,6 +9872,8 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
     result = job.get("result")
     if not result:
         return
+    if result.get("degraded"):
+        print(f"  ⚠ DEGRADED PANEL: {result.get('degraded_reason') or 'fewer than 2 panelists survived'}")
     print(f"  pool: {result['aggregate_probability']:.3f}  "
           f"({result['pool_method']}, trim={result['trim']})")
     final_source = result.get("final_source", "pool")
@@ -9562,11 +9898,23 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
     dis = result.get("disagreement") or {}
     print(f"  disagreement: {dis.get('disagreement_band', '?')} "
           f"(index={dis.get('disagreement_index')}, sd_logit={dis.get('sd_logit')})")
+    weights_used = result.get("model_weights_used") or {}
+    if weights_used:
+        print(
+            "  track-record weights: "
+            + ", ".join(f"{m}={w:.2f}" for m, w in sorted(weights_used.items()))
+        )
     for f in result.get("forecasts") or []:
         if f.get("error"):
             print(f"    ✗ {f['model']}: {f['error']}")
         else:
-            print(f"    • {f['model']}: {f['probability']:.3f}")
+            weight = f.get("weight")
+            weight_str = (
+                f" (weight {weight:.2f})"
+                if isinstance(weight, (int, float)) and abs(float(weight) - 1.0) > 1e-9
+                else ""
+            )
+            print(f"    • {f['model']}: {f['probability']:.3f}{weight_str}")
     judge = result.get("judge")
     if judge:
         if judge.get("probability") is not None:
@@ -10112,13 +10460,44 @@ def _cmd_calibration(args: argparse.Namespace) -> None:
             )
             _print_calibration_summary(summary, label=label)
         return
-    summary = _ledger(args).calibration_summary(
+    ledger = _ledger(args)
+    summary = ledger.calibration_summary(
         domain=args.domain,
         forecast_origin=args.forecast_origin,
         horizon=args.horizon,
         calibration_eligible=None if args.all else True,
     )
     _print_calibration_summary(summary)
+    # Plain-language read (S7): the measured signed-bias advisory teaching text for
+    # this scope, then the active lessons CORRECTING forecasts here + whether they
+    # are biting. Best-effort — a thin/legacy ledger simply prints nothing.
+    try:
+        report = ledger.calibration_bias(domain=args.domain)
+        advisory = report.get("advisory_text")
+        if advisory:
+            print(f"advisory: {advisory}")
+    except Exception:
+        pass
+    try:
+        lessons = ledger.calibration_correcting_lessons(domain=args.domain)
+    except Exception:
+        lessons = []
+    if lessons:
+        print("lessons_correcting_this:")
+        for row in lessons:
+            cov = row.get("coverage") or {}
+            adj = row.get("recommended_adjustment") or {}
+            adj_bits = [
+                f"{k}={v}"
+                for k, v in adj.items()
+                if k in ("probability_delta", "logit_shift", "logit_scale")
+            ]
+            adj_str = f" [{', '.join(adj_bits)}]" if adj_bits else ""
+            dormant = " DORMANT" if row.get("dormant") else ""
+            print(
+                f"  {row['scope']}: {(row.get('lesson') or '')[:70]}{adj_str} "
+                f"(applied {cov.get('applied_count', 0)}/{cov.get('in_scope_count', 0)}){dormant}"
+            )
 
 
 def _cmd_complementarity(args: argparse.Namespace) -> None:
@@ -10494,6 +10873,16 @@ def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = N
             print(
                 f"  {bucket['bucket']}: n={bucket['count']} "
                 f"mean_brier={_format_metric(bucket['mean_brier'])} {bucket['sample_status']}"
+            )
+    trend = summary.get("calibration_trend") or {}
+    windows = trend.get("windows") or []
+    if windows:
+        print(f"calibration_trend ({trend.get('direction', 'insufficient')}):")
+        for window in windows:
+            print(
+                f"  {window['period']}: n={window['n']} "
+                f"mean_brier={_format_metric(window.get('brier'))} "
+                f"sce={_format_metric(window.get('sce'))}"
             )
     if label is not None:
         print()
@@ -10945,6 +11334,8 @@ def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
     # OPEN (the dispatcher reports them "skipped") rather than bare-acking them.
     reforecast_runner = None
     evidence_search = None
+    triage_runner = None
+    triage_model = None
     if getattr(args, "agent", False):
         _inner = _build_cycle_reforecast_runner(args)
 
@@ -10966,6 +11357,11 @@ def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
         # >= 1-new-row gate, so the alert acks ONLY when real evidence landed.
         evidence_search = _build_evidence_search(args)
 
+        # PAID evidence-autopilot (S6.1): the CHEAP auto-labeler for the
+        # MATERIAL_CHANGE path. Wired only under --agent so the free continuous tick
+        # never spends; bounded to one small labeler call per material change.
+        triage_runner, triage_model = build_triage_runner(model=getattr(args, "model", None))
+
     # The autopilot (MATERIAL_CHANGE) + score (POSTMORTEM) runners are the shared,
     # non-LLM gated paths — factored into cron_runner so the CLI, the cron phase,
     # the gateway, and the agent tool all wire identical "real work" semantics.
@@ -10974,7 +11370,28 @@ def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
         now=getattr(args, "now", None),
         reforecast_runner=reforecast_runner,
         evidence_search=evidence_search,
+        triage_runner=triage_runner,
+        triage_model=triage_model,
     )
+
+
+def build_triage_runner(*, model: str | None = None):
+    """Construct the CHEAP triage auto-labeler runner + resolved model id.
+
+    Returns ``(runner, model)`` where ``runner`` has the injected labeler shape
+    ``(model, system, user) -> str``. The SAME construction the ``triage_label``
+    tool action uses (``forecasting.quorum.make_aiagent_runner``), so the CLI, the
+    tool, and the evidence-autopilot all label with identical wiring. Accessed via
+    the ``quorum`` module (not a ``from`` import) so tests can monkeypatch
+    ``forecasting.quorum.make_aiagent_runner`` like ``tests/forecasting/test_triage.py``.
+    """
+    import os
+
+    from forecasting import quorum
+
+    resolved = model or os.getenv("FORECAST_TRIAGE_MODEL") or quorum.DEFAULT_JUDGE_MODEL
+    runner = quorum.make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)
+    return runner, resolved
 
 
 def _build_evidence_search(args: argparse.Namespace):

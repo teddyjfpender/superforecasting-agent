@@ -33,6 +33,7 @@ def run_due_reviews(
     propose_resolutions: bool = True,
     score_market_nightly: bool = True,
     refresh: bool = True,
+    check_triage_graduation: bool = True,
     reforecast_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
@@ -323,6 +324,25 @@ def run_due_reviews(
                     f"frozen-baseline excluded from edge: {matured.get('n_frozen_excluded', 0)})\n"
                 )
 
+    # Trailing triage trust-gate graduation phase (deterministic, no LLM): if the
+    # cheap auto-labeler's held-out accuracy crossed the trust bar since the last
+    # sweep (or dropped back below it), fire the one-time graduation/demotion INFO
+    # alert. Idempotent — silent unless the mode actually TRANSITIONED — so it can
+    # run every sweep. Best-effort: never break the sweep on it.
+    if check_triage_graduation:
+        try:
+            transition = ledger.check_triage_gate_graduation(now=now)
+        except Exception as exc:  # never break the sweep on the graduation check
+            sections.append(f"Triage trust gate\nERROR: {exc}\n")
+        else:
+            if transition is not None and transition.get("alert") is not None:
+                gate = transition.get("gate") or {}
+                sections.append(
+                    "Triage trust gate\n"
+                    f"labeler {transition['transition']}: mode {transition.get('previous_mode')} -> "
+                    f"{transition['mode']} (n={gate.get('n')}, accuracy={gate.get('observed_accuracy')})\n"
+                )
+
     return "\n".join(sections)
 
 
@@ -384,12 +404,143 @@ def gated_evidence_collection(
     }
 
 
+# Default cap on candidates pulled + triaged per material-change evidence-autopilot
+# pass — bounds the cheap-model token spend to one small labeler call per change.
+_EVIDENCE_AUTOPILOT_CANDIDATE_CAP_DEFAULT = 10
+
+
+def run_evidence_autopilot(
+    led: ForecastLedger,
+    question_id: str,
+    *,
+    triage_runner: Callable[[str, str, str], str],
+    triage_model: str,
+    now: str | None = None,
+    candidate_cap: int | None = None,
+    trust_threshold: float = 0.8,
+    trust_min_sample: int = 20,
+) -> dict[str, Any] | None:
+    """INGEST -> TRIAGE -> IMPORT the watched-source firehose for one question (S6.1).
+
+    Pulls up to ``candidate_cap`` candidate readings from the question's watched
+    text sources, labels them with the CHEAP auto-labeler (``triage_runner`` — the
+    same injected ``(model, system, user) -> str`` shape the triage tool wires), and
+    then branches on the held-out trust gate:
+
+    * gate PASSES (``can_auto_filter``): auto-capture the keep/skim readings as
+      evidence via :func:`capture_watched_text_candidates`, measuring NET-NEW rows
+      exactly like :func:`gated_evidence_collection` so "imported" reflects real work;
+      the existing autopilot reforecast proposal then rides the fresh evidence.
+    * gate NOT passed: persist the labels as staging rows and open a SUGGEST-ONLY
+      "N candidates triaged, M keeps await review" alert — NO auto-import.
+
+    Cheap-model spend is bounded (one labeler call over <= cap candidates) and the
+    caller invokes this only in a PAID context (an injected ``triage_runner``). The
+    caller wraps this fail-open, so a broken pass degrades to the deterministic
+    autopilot, never blocks.
+    """
+    from forecasting import triage as triage_mod
+    from forecasting.source_search import (
+        capture_watched_text_candidates,
+        search_watched_text_sources,
+    )
+
+    cap = (
+        _EVIDENCE_AUTOPILOT_CANDIDATE_CAP_DEFAULT
+        if candidate_cap is None
+        else max(int(candidate_cap), 0)
+    )
+    if cap <= 0:
+        return None
+    search = search_watched_text_sources(led, question_id, limit=cap)
+    candidates = list(search.candidates)
+    if not candidates:
+        return {"candidates": 0, "triaged": 0, "imported": 0, "staged": 0, "mode": None}
+
+    question = led.get_question(question_id)
+    rubric = (
+        triage_mod.active_rubric_for_question(led, question) if question is not None else None
+    )
+    # parse_triage_response guarantees one verdict per candidate index, in order.
+    verdicts = triage_mod.triage_candidates(
+        [candidate.to_dict() for candidate in candidates],
+        runner=triage_runner,
+        model=triage_model,
+        rubric=rubric,
+    )
+    gate = triage_mod.build_triage_trust_gate(
+        led, threshold=trust_threshold, min_sample=trust_min_sample
+    )
+
+    if gate.get("can_auto_filter"):
+        keep_skim = [
+            candidates[index]
+            for index, verdict in enumerate(verdicts)
+            if verdict.get("verdict") in ("keep", "skim")
+        ]
+        before = len(led.list_evidence(question_id))
+        captured = (
+            capture_watched_text_candidates(led, question_id, keep_skim, limit=cap)
+            if keep_skim
+            else []
+        )
+        imported = len(led.list_evidence(question_id)) - before
+        # Persist the auto-labels as staging rows for provenance + trust-gate scoring.
+        led.record_triage_labels(question_id=question_id, verdicts=verdicts)
+        return {
+            "candidates": len(candidates),
+            "triaged": len(verdicts),
+            "imported": imported,
+            "captured": len([c for c in captured if c.evidence is not None]),
+            "staged": len(verdicts),
+            "mode": "auto",
+            "gate": gate,
+        }
+
+    # Trust gate NOT passed — stage the labels and leave a SUGGEST-ONLY alert; the
+    # keeps await human review. NEVER a bare ack, NEVER an auto-import.
+    staged = led.record_triage_labels(question_id=question_id, verdicts=verdicts)
+    keeps = sum(1 for verdict in verdicts if verdict.get("verdict") == "keep")
+    reason = f"triage_suggest_review:{question_id}"
+    # Dedup: don't stack a fresh suggest-review alert on top of an already-open one
+    # for the same question (repeated material changes would otherwise spam it).
+    already_open = any(
+        a.reason == reason for a in led.list_alerts(unresolved_only=True)
+    )
+    alert = None
+    if not already_open:
+        alert = led.create_alert(
+            severity="info",
+            scope_type="question",
+            scope_ref=question_id,
+            reason=reason,
+            recommended_action=(
+                f"{len(verdicts)} candidates triaged, {keeps} keeps await review — the triage "
+                "labeler is suggest-only (trust gate not cleared, so no auto-import). Review with "
+                f"`forecast triage list --question {question_id}` and import the keeps, or adjudicate "
+                "contested labels (`forecast triage relabel`) to graduate the labeler."
+            ),
+        )
+    return {
+        "candidates": len(candidates),
+        "triaged": len(verdicts),
+        "imported": 0,
+        "staged": len(staged),
+        "keeps": keeps,
+        "mode": "suggest_only",
+        "alert_id": alert.id if alert is not None else None,
+        "gate": gate,
+    }
+
+
 def build_warning_runners(
     ledger: ForecastLedger,
     *,
     now: str | None = None,
     reforecast_runner: Callable[[Any, Any], Any] | None = None,
     evidence_search: Callable[[Any, Any], Any] | None = None,
+    triage_runner: Callable[[str, str, str], str] | None = None,
+    triage_model: str | None = None,
 ):
     """Wire the warning dispatcher's injected runners to the REAL gated paths.
 
@@ -432,6 +583,23 @@ def build_warning_runners(
         # "failed" status (required source down) leaves the alert OPEN to resurface.
         if not result or result.get("status") == "failed":
             return None
+        # PAID evidence-autopilot (S6.1): only when a cheap-model labeler is wired
+        # (opt-in --agent tier — the free continuous tick leaves triage_runner None,
+        # so this never fires there and the free tier stays zero-spend). INGEST ->
+        # TRIAGE -> IMPORT the watched-source firehose so the reforecast proposal
+        # rides fresh, triaged evidence. Fail-open per source: a broken labeler pass
+        # degrades to the deterministic autopilot result above, never blocks the ack.
+        if triage_runner is not None:
+            try:
+                result["evidence_autopilot"] = run_evidence_autopilot(
+                    led,
+                    warning.scope_ref,
+                    triage_runner=triage_runner,
+                    triage_model=triage_model or "",
+                    now=now,
+                )
+            except Exception as exc:  # degrade to the deterministic autopilot result
+                result["evidence_autopilot_error"] = f"{exc.__class__.__name__}: {exc}"
         return result
 
     def score_runner(led, warning):  # SCORE
@@ -496,6 +664,8 @@ def run_warning_resolution(
     runners: Any = None,
     reforecast_runner: Callable[[Any, Any], Any] | None = None,
     evidence_search: Callable[[Any, Any], Any] | None = None,
+    triage_runner: Callable[[str, str, str], str] | None = None,
+    triage_model: str | None = None,
     cooldown: bool = False,
     spend_cap: int | None = None,
     progress: Callable[[dict[str, Any]], None] | None = None,
@@ -536,7 +706,12 @@ def run_warning_resolution(
     led = ledger if ledger is not None else ForecastLedger(db_path)
     if runners is None:
         runners = build_warning_runners(
-            led, now=now, reforecast_runner=reforecast_runner, evidence_search=evidence_search
+            led,
+            now=now,
+            reforecast_runner=reforecast_runner,
+            evidence_search=evidence_search,
+            triage_runner=triage_runner,
+            triage_model=triage_model,
         )
 
     open_warnings = fwarn.select_open_warnings(

@@ -257,6 +257,20 @@ class QuorumResult:
     # Both default to the no-delphi state so a delphi_rounds==0 result is byte-identical.
     delphi_rounds: int = 0
     delphi_audit: dict[str, Any] = field(default_factory=dict)
+    # Panel-integrity labeling (item 3). A quorum needs >=2 surviving panelist
+    # forecasts to be a genuine PANEL; when only one survives (the rest errored),
+    # the aggregate is a lone survivor dressed as a panel. We do NOT change the
+    # aggregation math — a single estimate still aggregates to itself — but we label
+    # the result HONESTLY so the desk (and the persisted job) can flag it rather
+    # than treat one model's number as multi-model fusion. Defaults to the healthy
+    # (non-degraded) state so an ordinary >=2-survivor run is unchanged.
+    degraded: bool = False
+    degraded_reason: str | None = None
+    # Track-record weighting (S7): the {model: weight} map actually applied to the
+    # panelists (empty on the default/cold-start path so an equal-weighted run is
+    # byte-compatible with pre-S7 readers). Echoed so the operator SEES why a
+    # weighted pool moved off the bare mean.
+    model_weights_used: dict[str, float] = field(default_factory=dict)
 
     @property
     def aggregate_probability(self) -> float:
@@ -298,6 +312,13 @@ class QuorumResult:
             # delphi_rounds==0 result stays byte-compatible with pre-Delphi readers).
             "delphi_rounds": self.delphi_rounds,
             "delphi_audit": self.delphi_audit,
+            # Panel-integrity labeling (item 3): honest flag when <2 panelists
+            # survived, so a lone-survivor aggregate is never read as a panel.
+            "degraded": self.degraded,
+            "degraded_reason": self.degraded_reason,
+            # Track-record weighting (S7): the applied {model: weight} map (empty on
+            # the default equal-weight path so the payload stays byte-compatible).
+            "model_weights_used": self.model_weights_used,
             "judge": self.judge.to_dict() if self.judge else None,
             "forecasts": [
                 {
@@ -839,6 +860,295 @@ def quorum_auto_indicated(
     return bool(panel_indicated)  # high_impact
 
 
+# ── Autonomy: default resolution, provider reality, cost bounding ─────────────
+#
+# One-size-fits-all quorum defaults are wrong: a high-impact contested question
+# deserves a wide/frontier panel with a Delphi revision round; a routine update
+# should stay cheap (self-fusion, no revision). resolve_quorum_defaults maps the
+# question's IMPACT (and its question_type) onto a preset/delphi/trim triple, then
+# two guards keep the choice honest and bounded: the single-key reality guard
+# (item 3 — never resolve a multi-provider preset when only one provider key is
+# reachable) and the max_calls cost cap (item 4 — downgrade a preset whose
+# pre-run call estimate blows the budget).
+
+
+def available_provider_slugs() -> set[str] | None:
+    """Authenticated LLM-provider slugs, or ``None`` when detection is unavailable.
+
+    Reuses the same :func:`hermes_cli.models.list_available_providers` seam the
+    ``/model`` picker uses (which itself checks ``get_auth_status`` / the
+    ``OPENROUTER_API_KEY``). Returning ``None`` on any failure is the FAIL-OPEN
+    signal: an unknown provider picture must never spuriously downgrade a panel to
+    self-fusion — the guards below treat ``None`` as "assume reachable".
+    """
+
+    try:
+        from hermes_cli.models import list_available_providers
+
+        slugs = {
+            str(p.get("id"))
+            for p in list_available_providers()
+            if p.get("authenticated")
+        }
+    except Exception:  # noqa: BLE001 — detection is best-effort; unknown ⇒ fail-open
+        return None
+    # An EMPTY set is indistinguishable from "detection is unreliable here" (no
+    # host creds, a sandboxed test, etc.), so treat it as UNKNOWN (fail-open) rather
+    # than "single/zero key" — otherwise we would spuriously downgrade every panel
+    # to self-fusion. Only a POSITIVELY detected provider picture guards the panel.
+    return slugs or None
+
+
+def _model_reachable(model: str, available: set[str]) -> bool:
+    """Whether one ``vendor/model`` id can be served given the available providers.
+
+    A bare id (no ``vendor/`` prefix) routes through the active provider, so it is
+    assumed reachable. A prefixed id (``anthropic/…``) is reachable when that
+    vendor's provider is authenticated — matched LENIENTLY, since a provider slug
+    may carry a suffix (``openai`` ⇄ ``openai-codex``). (OpenRouter — a universal
+    server — is handled by the caller as a short-circuit.)
+    """
+
+    if "/" not in model:
+        return True
+    prefix = model.split("/", 1)[0].strip().lower()
+    return any(
+        prefix == a or a.startswith(prefix) or prefix.startswith(a) for a in available
+    )
+
+
+def models_reachable(models: Sequence[str], available: set[str] | None) -> bool:
+    """True when the panel can plausibly be served by the available providers.
+
+    This is deliberately the CONSERVATIVE *single-key* guard the task calls for —
+    it only rejects a multi-provider panel when we POSITIVELY know the host has a
+    lone (non-OpenRouter) provider that cannot serve every model. Anything less
+    certain fails OPEN (keeps the panel), because the vendor-prefix→slug mapping is
+    too coarse to reject on:
+
+      * ``available is None`` (detection unavailable / empty) ⇒ ``True``.
+      * an OpenRouter key (universal server) ⇒ ``True``.
+      * two-or-more distinct providers authenticated ⇒ ``True`` (not a single-key
+        host; individual unreachable panelists simply error and the run is labeled
+        degraded rather than mis-downgraded here).
+      * exactly ONE provider ⇒ reachable only if every model maps to it.
+    """
+
+    if available is None:
+        return True
+    if "openrouter" in available:
+        return True
+    if len(available) >= 2:
+        return True
+    return all(_model_reachable(m, available) for m in models)
+
+
+def preset_model_count(preset: str | None, *, samples: int = 3) -> int:
+    """Number of panelist calls a preset issues per round (excludes the judge).
+
+    ``self`` samples the active model ``samples`` times; every other preset uses
+    its fixed model list. Unknown presets fall back to 1 (a single model)."""
+
+    if preset == "self":
+        return max(1, int(samples))
+    spec = QUORUM_PRESETS.get(preset or "")
+    if not spec:
+        return 1
+    if preset == "self":  # defensive; handled above
+        return max(1, int(spec.get("samples", samples)))
+    return max(1, len(spec.get("models", ())))
+
+
+def estimate_quorum_calls(
+    *, model_count: int, delphi_rounds: int, has_judge: bool = True
+) -> int:
+    """Pre-run model-call estimate for a quorum.
+
+    Each round dispatches ``model_count`` panelists plus (if wired) one judge; a
+    Delphi run adds a second full round (``delphi_rounds`` in {0, 1}). Supervisor
+    fresh-search, when enabled, adds further full rounds — it is OPT-IN/OFF by
+    default and reported separately, so it is deliberately excluded here (the
+    estimate is the guaranteed floor, not the search-enabled ceiling)."""
+
+    rounds = max(1, int(delphi_rounds) + 1)
+    per_round = max(1, int(model_count)) + (1 if has_judge else 0)
+    return per_round * rounds
+
+
+# Cost/size tiers for the downgrade ladder. A cap must never route a request to a
+# MORE EXPENSIVE tier than the one asked for — that would invert the cost cap
+# (e.g. "downgrading" a cheap self-fusion onto the 10-model premium `wide` panel).
+# The tiers rank by call count AND per-call model cost: `self` (one active model,
+# cheapest) < `budget` (3 cheap models) < `frontier` (2 premium models) < `wide`
+# (~10 mixed premium draws, most expensive).
+_DOWNGRADE_PRESETS = ("wide", "budget", "self", "frontier")
+_PRESET_TIER: dict[str, int] = {"self": 0, "budget": 1, "frontier": 2, "wide": 3}
+
+
+def cap_preset_by_calls(
+    preset: str,
+    delphi_rounds: int,
+    *,
+    max_calls: int,
+    samples: int = 3,
+) -> tuple[str, int, int, int, str | None]:
+    """Bound a (preset, delphi, samples) choice by ``max_calls``; downgrade if it overruns.
+
+    Returns ``(preset, delphi_rounds, samples, estimated_calls, note)``. When the
+    requested choice fits, ``note`` is ``None`` and nothing changes. Otherwise the
+    LARGEST still-fitting choice is picked WITHOUT ever escalating to a costlier
+    preset tier than the one requested (``self`` < ``budget`` < ``frontier`` <
+    ``wide``) — so lowering the cap or raising ``--samples`` can only ever make a
+    run CHEAPER, never route a routine ``self`` request onto a premium panel. Order
+    of attack: (1) drop the Delphi round; (2) step DOWN the preset ladder / reduce
+    ``self``'s sample count to the largest affordable panel AT OR BELOW the
+    requested tier. A pathologically small ``max_calls`` falls open to the cheapest
+    real panel (``self`` sampled once, no delphi) rather than blocking the run.
+    """
+
+    max_calls = int(max_calls)
+    samples = max(1, int(samples))
+
+    def _calls(cand: str, d: int, s: int) -> int:
+        return estimate_quorum_calls(
+            model_count=preset_model_count(cand, samples=s), delphi_rounds=d
+        )
+
+    est = _calls(preset, delphi_rounds, samples)
+    if est <= max_calls:
+        return preset, delphi_rounds, samples, est, None
+
+    requested_tier = _PRESET_TIER.get(preset, 0)
+
+    # (1) Drop the Delphi round first — it doubles cost for the same panel width.
+    if delphi_rounds:
+        est0 = _calls(preset, 0, samples)
+        if est0 <= max_calls:
+            return (
+                preset,
+                0,
+                samples,
+                est0,
+                f"downgraded: dropped Delphi revision to fit max_calls={max_calls} "
+                f"(would have been {est})",
+            )
+
+    # (2) Enumerate downgrade candidates — NEVER above the requested tier. For
+    #     ``self`` (the cheapest tier) the only lever is fewer samples, so we keep
+    #     it self-fusion of the active model rather than switching to a premium
+    #     model list. Pick the LARGEST call-count that still fits within that
+    #     bounded set (best affordable panel); ties break toward the cheaper tier.
+    candidates: list[tuple[int, int, str, int, int]] = []
+    for cand in _DOWNGRADE_PRESETS:
+        cand_tier = _PRESET_TIER.get(cand, 0)
+        if cand_tier > requested_tier:
+            continue
+        sample_options = range(samples, 0, -1) if cand == "self" else (samples,)
+        for s in sample_options:
+            for d in {delphi_rounds, 0}:
+                calls = _calls(cand, d, s)
+                if calls <= max_calls and calls < est:
+                    candidates.append((calls, -cand_tier, cand, d, s))
+    if candidates:
+        calls, _neg_tier, cand, d, s = max(candidates)
+        if cand != preset:
+            note = (
+                f"downgraded {preset}→{cand} (delphi={d}, samples={s}) to fit "
+                f"max_calls={max_calls} (would have been {est})"
+            )
+        else:
+            note = (
+                f"downgraded {preset}: samples→{s} (delphi={d}) to fit "
+                f"max_calls={max_calls} (would have been {est})"
+            )
+        return cand, d, s, calls, note
+
+    # Nothing fits — fail OPEN to the cheapest real panel (self sampled once)
+    # rather than blocking the run or escalating to a premium preset.
+    floor = _calls("self", 0, 1)
+    return (
+        "self",
+        0,
+        1,
+        floor,
+        f"max_calls={max_calls} below any panel's floor; using self/1-sample/no-delphi ({floor} calls)",
+    )
+
+
+def resolve_quorum_defaults(
+    question: Any,
+    *,
+    available_providers: set[str] | None = None,
+    active_model: str | None = None,
+    samples: int = 3,
+) -> dict[str, Any]:
+    """Map a question's impact + type onto a quorum preset/delphi/trim triple.
+
+    The single place default quorum shape is decided, shared by BOTH the manual
+    ``forecast quorum`` default resolution and the autonomous auto-run path, so a
+    picked default is identical and printable ("using preset X: N models + judge,
+    delphi=1 — why").
+
+      * ``high`` impact (or a contested type) → ``frontier`` panel, one Delphi
+        revision round, trim the extreme — the widest independent read.
+      * ``medium`` impact → ``budget`` panel, no revision, trim.
+      * routine / low / unset → ``self`` fusion, no revision, no trim — cheap.
+
+    Then the SINGLE-KEY REALITY GUARD (item 3): when the resolved multi-provider
+    preset spans a provider that is not reachable (only one provider key present,
+    no OpenRouter), it falls back to ``self`` (the active model sampled) with a
+    note — a panel that would silently error every non-local panelist is worse
+    than an honest self-fusion.
+
+    Returns ``{"preset", "delphi_rounds", "trim", "reason"}``. Does NOT apply the
+    max_calls cap — the caller composes :func:`cap_preset_by_calls` after (so the
+    cap note and the resolution note stay separately attributable).
+    """
+
+    impact = (getattr(question, "impact", None) or "").strip().lower()
+    try:
+        qtype = (getattr(getattr(question, "outcome_space", None), "type", None) or "").strip().lower()
+    except Exception:  # noqa: BLE001 — a malformed question must never crash resolution
+        qtype = ""
+
+    contested = qtype in {"vote_share", "multiple_choice", "thesis"}
+    if impact == "high" or contested:
+        preset, delphi_rounds, trim = "frontier", 1, 1
+        tier = "high-impact" if impact == "high" else f"contested ({qtype})"
+    elif impact == "medium":
+        preset, delphi_rounds, trim = "budget", 0, 1
+        tier = "medium-impact"
+    else:
+        preset, delphi_rounds, trim = "self", 0, 0
+        tier = "routine"
+
+    reason_parts = [f"impact={impact or 'unset'}→{tier}"]
+
+    if preset != "self":
+        preset_models = list(QUORUM_PRESETS[preset]["models"])
+        if not models_reachable(preset_models, available_providers):
+            if active_model:
+                preset = "self"
+                reason_parts.append(
+                    "single provider key reachable → self-fusion fallback"
+                )
+            else:
+                # Single-key host with no active model to self-fuse: keep the
+                # preset so the job still runs (unreachable panelists error and the
+                # run is labeled degraded) rather than dead-ending.
+                reason_parts.append(
+                    "single provider key but no active model — keeping preset "
+                    "(panelists may degrade)"
+                )
+
+    return {
+        "preset": preset,
+        "delphi_rounds": delphi_rounds,
+        "trim": trim,
+        "reason": "; ".join(reason_parts),
+    }
+
+
 def resolve_final_probability(
     pool_probability: float,
     judge: JudgeSynthesis | None,
@@ -913,6 +1223,7 @@ def run_quorum(
     search_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
     max_research_rounds: int = 1,
     delphi_rounds: int = 0,
+    model_weights: Mapping[str, float] | None = None,
 ) -> QuorumResult:
     """Run the full quorum: dispatch panelists, aggregate, judge-synthesise.
 
@@ -957,6 +1268,17 @@ def run_quorum(
     aggregate/override runs on the revision round only. The sealed round is preserved
     in ``delphi_audit['rounds'][0]``. The supervisor search runs at most once, on
     round 1 only (no post-revision search), so cost stays bounded and predictable.
+
+    ``model_weights`` (S7 track-record weighting) is an OPTIONAL ``{model: weight}``
+    map derived from each panelist model's measured Brier edge over past resolved
+    binaries (see :meth:`ForecastLedger.recommended_model_weights`). A surviving
+    panelist's :attr:`ModelForecast.weight` is set from it (default 1.0 for any
+    model NOT in the map), so a model with no measured track record — or a cold-
+    start desk with an empty map — keeps EQUAL weights and the committed number is
+    byte-identical to before. The weights are consumed by
+    :func:`aggregate_panel_estimates` (weighted log-odds pool) and
+    :func:`disagreement_signal`; the map actually used is echoed on
+    ``QuorumResult.model_weights_used`` so the operator can see why.
     """
 
     if not models:
@@ -1023,6 +1345,14 @@ def run_quorum(
             forecast.round_index = round_index
             forecast.prior_probability = prior.probability if prior is not None else None
             forecast.revision_reason = revision_reason
+            # Track-record weighting (S7): a surviving panelist carries its measured
+            # weight (default 1.0 when unmeasured/cold-start), consumed by the pool +
+            # disagreement. Errored panelists keep 1.0 but are excluded from pooling.
+            if model_weights and forecast.error is None:
+                try:
+                    forecast.weight = float(model_weights.get(model, 1.0))
+                except (TypeError, ValueError):
+                    forecast.weight = 1.0
             if on_progress:
                 on_progress(
                     "panelist_done",
@@ -1213,6 +1543,21 @@ def run_quorum(
 
             final_probability = float(platt_scale(final_probability, alpha=alpha, d=1.0))
 
+    # Panel-integrity labeling (item 3): a genuine quorum needs >=2 surviving
+    # panelist forecasts. When fewer survive, the aggregate is a lone survivor —
+    # we keep the (unchanged) number but flag it degraded so no downstream reader
+    # mistakes one model's answer for multi-model fusion.
+    ok_count = len([f for f in forecasts if f.error is None])
+    degraded = ok_count < 2
+    degraded_reason = (
+        f"only {ok_count} panelist forecast survived (need >=2 for a panel); "
+        "the committed number is a lone survivor, not a fused quorum"
+        if degraded
+        else None
+    )
+    if degraded and on_progress:
+        on_progress("degraded", degraded_reason or "")
+
     return QuorumResult(
         question_id=question_id,
         forecasts=forecasts,
@@ -1228,6 +1573,14 @@ def run_quorum(
         supervisor_evidence=supervisor_evidence,
         delphi_rounds=delphi_rounds,
         delphi_audit=delphi_audit,
+        degraded=degraded,
+        degraded_reason=degraded_reason,
+        # Only the weights that actually landed on a SURVIVING panelist (final pass).
+        model_weights_used={
+            f.model: float(f.weight)
+            for f in forecasts
+            if f.error is None and model_weights and f.model in model_weights
+        },
     )
 
 
@@ -1389,6 +1742,12 @@ __all__ = [
     "parse_judge_response",
     "resolve_models",
     "resolve_final_probability",
+    "resolve_quorum_defaults",
+    "available_provider_slugs",
+    "models_reachable",
+    "preset_model_count",
+    "estimate_quorum_calls",
+    "cap_preset_by_calls",
     "should_research",
     "run_quorum",
     "quorum_auto_indicated",

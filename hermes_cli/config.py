@@ -659,19 +659,29 @@ DEFAULT_CONFIG = {
     "credential_pool_strategies": {},
     "toolsets": ["forecast-desk"],
     # Quorum — model-diverse forecast panel ("Fusion" analogue). When
-    # default_enabled is on, a quorum auto-runs at the update stage wherever a
-    # deliberative panel is already indicated (see default_scope), so the user
-    # gets multi-model fusion without passing flags every time. See
+    # default_enabled is on, a quorum AUTO-RUNS (detached background job) at the
+    # update stage wherever a deliberative panel is already indicated (see
+    # default_scope), attaching to the just-committed snapshot — so a lazy prompter
+    # gets multi-model fusion without passing flags every time. Bounded by
+    # default_scope (which updates qualify) and max_calls (the per-run cost cap);
+    # an auto-run failure is fail-open (the commit already happened). See
     # forecasting/quorum.py.
     "quorum": {
-        # Run a quorum panel automatically when a panel is indicated.
-        "default_enabled": False,
-        # Which indicated panels get a quorum when default_enabled:
+        # Auto-run a quorum panel when a panel is indicated. ENABLED by default:
+        # the north-star is superforecaster-grade process per keystroke, bounded
+        # by default_scope + max_calls below.
+        "default_enabled": True,
+        # Which indicated panels get an auto-run quorum when default_enabled:
         #   "high_impact" — only high-impact / first-forecast (the existing
         #                   panel trigger). Keeps the multi-model spend bounded.
         #   "always"      — every probability-bearing update (expensive).
         #   "first_only"  — only the first forecast for a question.
         "default_scope": "high_impact",
+        # Per-run model-call CAP. A resolved preset whose pre-run call estimate
+        # ((models+1 judge) × delphi multiplier) exceeds this is DOWNGRADED to the
+        # largest fitting preset (dropping the Delphi round first). Applies to the
+        # auto-run path AND manual runs that pass no explicit --preset.
+        "max_calls": 12,
         # Default panel preset when none is passed: frontier | budget | self.
         "preset": "frontier",
         # Optional explicit model list (OpenRouter ids); overrides the preset.
@@ -694,8 +704,32 @@ DEFAULT_CONFIG = {
         # (Governs the run_quorum/quorum-jobs path only; it is gated off automatically
         # for a historical evidence_cutoff so fresh search can never leak.)
         "supervisor_search": False,
+        # TRACK-RECORD PANELIST WEIGHTING (S7). Weight each panelist by its measured
+        # Brier edge over past resolved binaries (shrunk toward 1.0, clipped). DEFAULT
+        # ON but HARMLESS-BY-CONSTRUCTION on cold start: a model must clear the
+        # resolved-sample gate (track_record_min_sample) before its weight moves off
+        # 1.0, so with no history every panelist is equal-weighted and the committed
+        # number is byte-identical to the unweighted pool. The applied weights are
+        # echoed in the quorum result so the operator sees why. Set False to force
+        # equal weights always.
+        "track_record_weights": True,
+        # Resolved-binary sample a model must clear before its measured weight is
+        # trusted (below it: weight 1.0). No model dominates early.
+        "track_record_min_sample": 10,
     },
     "forecasting": {
+        # Terminal-calibration derivation. EVIDENCE-GATED EXTREMIZATION (item 6):
+        # when derive_alpha is ON and a question carries NO explicit per-question
+        # alpha_extremize override, the quorum derives its terminal Platt slope from
+        # the domain's RESOLVED calibration via the validated extremization gate
+        # (sqrt(3) permitted only where the scope is measurably under-confident;
+        # 1.0 otherwise). DEFAULT OFF (fail-safe cold start): until a desk has enough
+        # resolved binaries per domain, the derived value is 1.0 anyway, and leaving
+        # it off keeps every committed number byte-identical to the hand-set/identity
+        # slope. An explicit metadata alpha_extremize ALWAYS wins over derivation.
+        "calibration": {
+            "derive_alpha": False,
+        },
         # Forecast saturation + style HOOKS: commit-time checks that block or warn
         # when a forecast is under-saturated (no decomposition, stale evidence, no
         # panel, missing citations, unjustified tail mass) or violates house style.

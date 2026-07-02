@@ -23,6 +23,11 @@ def _plant(ledger, *, domain, p_yes, yes_fraction, n, title_prefix):
     """Create ``n`` resolved binary questions in ``domain``, each forecast at
     ``p_yes``, with ``round(yes_fraction*n)`` resolving yes. Auto-scored."""
 
+    # These tests exercise the EXPLICIT synthesize_bias_lessons path in isolation,
+    # so suppress the resolve-time auto-synthesis (S7.1) during planting — otherwise
+    # a lesson would materialise mid-plant and pollute the supersession/dry-run
+    # assertions. (The auto-trigger itself is covered in test_s7_calibration_autoclose.)
+    ledger._live_score_count = lambda domain: 0  # type: ignore[method-assign]
     yes = round(yes_fraction * n)
     for i in range(n):
         q = ledger.create_question(

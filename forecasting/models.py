@@ -147,6 +147,25 @@ def timestamp_to_datetime(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def recency_halflife_weight(age_days: float, halflife_days: float | None) -> float:
+    """Deterministic exponential recency weight: ``0.5 ** (age_days / halflife)``.
+
+    The single source of truth for the half-life recency weighting used by the
+    calibration-bias loop (``ledger._bias_observations``) and the evidence
+    capture-quality stamp (``source_search``). A non-positive half-life, a
+    non-positive age, or an unusable input returns ``1.0`` (no down-weighting) so
+    the caller degrades to "treat as fresh" rather than error.
+    """
+    try:
+        halflife = float(halflife_days) if halflife_days is not None else 0.0
+        age = float(age_days)
+    except (TypeError, ValueError):
+        return 1.0
+    if halflife <= 0 or age <= 0:
+        return 1.0
+    return 0.5 ** (age / halflife)
+
+
 def json_dumps(value: Any) -> str:
     """Dump JSON deterministically for SQLite text columns."""
 

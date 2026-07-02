@@ -171,6 +171,80 @@ def _supervisor_search_enabled(spec: dict[str, Any]) -> bool:
     return _truthy(cfg.get("supervisor_search")) if isinstance(cfg, dict) else False
 
 
+def _track_record_weights_enabled(spec: dict[str, Any]) -> bool:
+    """Whether to weight panelists by their measured track record for this run.
+
+    DEFAULT ON but HARMLESS-BY-CONSTRUCTION on cold start: a model must clear the
+    resolved-sample gate before its weight moves off 1.0, so with no history every
+    panelist is equal-weighted and the committed number is byte-identical to the
+    unweighted pool. The per-run spec ``track_record_weights`` wins; otherwise the
+    fleet-wide config flag ``quorum.track_record_weights`` (default True) governs.
+    Any config/import failure defaults ON (the harmless-on-cold-start behaviour)."""
+
+    if "track_record_weights" in spec:
+        return _truthy(spec.get("track_record_weights"))
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config().get("quorum", {})
+    except Exception:  # noqa: BLE001 — config optional; harmless default ON
+        return True
+    if not isinstance(cfg, dict) or "track_record_weights" not in cfg:
+        return True
+    return _truthy(cfg.get("track_record_weights"))
+
+
+def _track_record_min_sample(spec: dict[str, Any]) -> int:
+    """Resolved-binary sample gate for panelist weighting: per-run spec wins, else
+    the fleet-wide ``quorum.track_record_min_sample`` (default 10). Fails safe to
+    10 on any config/parse error."""
+
+    if "track_record_min_sample" in spec:
+        try:
+            return max(1, int(spec.get("track_record_min_sample")))
+        except (TypeError, ValueError):
+            return 10
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config().get("quorum", {})
+        if isinstance(cfg, dict) and "track_record_min_sample" in cfg:
+            return max(1, int(cfg.get("track_record_min_sample")))
+    except Exception:  # noqa: BLE001 — config optional
+        pass
+    return 10
+
+
+def _has_explicit_alpha_override(metadata: Any) -> bool:
+    """True when a question carries an EXPLICIT ``alpha_extremize`` threshold.
+
+    The evidence-gated derivation (item 6) must NEVER override a hand-set slope, so
+    this checks ``metadata['forecast_hooks']['thresholds']['alpha_extremize']``
+    directly. A missing/garbage structure ⇒ ``False`` (no explicit override → the
+    derivation may run when enabled)."""
+
+    if not isinstance(metadata, dict):
+        return False
+    fh = metadata.get("forecast_hooks")
+    thresholds = fh.get("thresholds") if isinstance(fh, dict) else None
+    return isinstance(thresholds, dict) and "alpha_extremize" in thresholds
+
+
+def _derive_alpha_enabled() -> bool:
+    """Whether evidence-gated terminal-Platt derivation is turned on (DEFAULT OFF).
+
+    Reads ``forecasting.calibration.derive_alpha``. Any config/import failure ⇒
+    ``False`` (the fail-safe: never derive without an explicit opt-in)."""
+
+    try:
+        from hermes_cli.config import load_config
+
+        cal = (load_config().get("forecasting", {}) or {}).get("calibration", {})
+    except Exception:  # noqa: BLE001 — config optional; default OFF without it
+        return False
+    return _truthy(cal.get("derive_alpha")) if isinstance(cal, dict) else False
+
+
 def _cutoff_is_live(evidence_cutoff: Any, *, tolerance_hours: float = 48.0) -> bool:
     """True when fresh web search is admissible — i.e. the forecast is LIVE.
 
@@ -272,9 +346,24 @@ def execute_job(run_id: str) -> dict[str, Any]:
         # QuorumResult is already calibrated. record_panel_run then persists the
         # SAME resolved number (it does NOT re-pool), so the in-memory result and
         # the durable panel_run can never diverge.
-        alpha_extremize = resolve_alpha_extremize(
-            question.metadata if isinstance(question.metadata, dict) else None
-        )
+        metadata = question.metadata if isinstance(question.metadata, dict) else None
+        alpha_extremize = resolve_alpha_extremize(metadata)
+        # EVIDENCE-GATED EXTREMIZATION (item 6, config-gated DEFAULT OFF). When no
+        # EXPLICIT per-question alpha_extremize override is set AND
+        # forecasting.calibration.derive_alpha is enabled, derive the terminal Platt
+        # slope from the domain's RESOLVED calibration via the validated
+        # extremization gate (sqrt(3) permitted only where measurably
+        # under-confident; 1.0 otherwise — fail-safe cold start). The explicit
+        # metadata override always wins and is never overridden by derivation.
+        if not _has_explicit_alpha_override(metadata) and _derive_alpha_enabled():
+            derived = ledger.derive_extremize_alpha(question)
+            if derived and derived != 1.0:
+                alpha_extremize = float(derived)
+                _append_progress(
+                    job,
+                    "derived_alpha",
+                    f"terminal Platt slope {derived:.3f} from resolved calibration",
+                )
 
         # GATE 2 (AIA P1.1, live) — wire the agentic-supervisor fresh-search loop.
         # The judge can flag an unresolved crux (information_gap +
@@ -314,6 +403,28 @@ def execute_job(run_id: str) -> dict[str, Any]:
                     "fresh search would leak post-cutoff information",
                 )
 
+        # TRACK-RECORD WEIGHTING (S7). DEFAULT ON but harmless-by-construction: a
+        # model must clear the resolved-sample gate before its weight leaves 1.0, so
+        # a cold-start desk is equal-weighted and byte-identical to before. Best-
+        # effort — a measurement hiccup degrades to equal weights, never blocks.
+        model_weights: dict[str, float] = {}
+        if _track_record_weights_enabled(spec):
+            try:
+                model_weights = ledger.recommended_model_weights(
+                    min_sample=_track_record_min_sample(spec)
+                )
+            except Exception:  # noqa: BLE001 — degrade to equal weights, never crash
+                model_weights = {}
+            if model_weights:
+                _append_progress(
+                    job,
+                    "track_record_weights",
+                    "weighted by track record: "
+                    + ", ".join(
+                        f"{m}={w:.2f}" for m, w in sorted(model_weights.items())
+                    ),
+                )
+
         result = run_quorum(
             question_title=question.title,
             resolution_criteria=question.resolution_criteria,
@@ -331,6 +442,7 @@ def execute_job(run_id: str) -> dict[str, Any]:
             search_runner=search_runner,
             max_research_rounds=max_research_rounds or 1,
             delphi_rounds=delphi_rounds,
+            model_weights=model_weights or None,
         )
 
         # Persist the quorum as a sibling panel run. The spread_summary already

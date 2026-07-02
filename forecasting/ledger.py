@@ -16,6 +16,7 @@ import shutil
 import sqlite3
 import statistics
 import threading
+import time
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Callable
@@ -65,6 +66,7 @@ from forecasting.models import (
     normalize_update_triggers,
     parse_timestamp,
     question_decision_readiness_issues,
+    recency_halflife_weight,
     timestamp_to_datetime,
     utc_now_iso,
 )
@@ -841,6 +843,12 @@ def _factor_narrative(factor: Any, agg: Any) -> tuple[str, str, str, str, str]:
 class ForecastLedger:
     """Local-first SQLite ledger for questions, evidence, forecasts, and scores."""
 
+    # Resolve-time bias-synthesis debounce window (seconds). A burst of live
+    # resolutions in the same process re-synthesises a scope at most once per
+    # window; the cron path (run_due_reviews) is the periodic catch-up, so nothing
+    # is lost — only the redundant O(live-scores) rescans in a tight loop are cut.
+    _BIAS_SYNTH_DEBOUNCE_SECONDS = 30.0
+
     def __init__(self, db_path: str | Path | None = None) -> None:
         configured_db = os.getenv("FORECAST_LEDGER_DB", "").strip()
         self.db_path = (
@@ -858,6 +866,11 @@ class ForecastLedger:
                 f"{self.db_path.parent}: {exc}. Set FORECAST_LEDGER_DB or "
                 "pass --db with a writable path."
             ) from exc
+        # Per-scope wall-clock debounce for the resolve-time bias synthesis (S7):
+        # scope -> monotonic timestamp of the last auto-synthesis in THIS process.
+        # A burst of resolutions (a bulk close, a backfill loop) fires at most one
+        # synthesis per scope per window; human-paced resolutions each fire.
+        self._bias_synth_last: dict[str, float] = {}
         try:
             self.initialize_schema()
         except sqlite3.Error as exc:
@@ -1663,6 +1676,17 @@ class ForecastLedger:
 
                 CREATE INDEX IF NOT EXISTS idx_triage_labels_question
                     ON triage_labels(question_id, created_at);
+
+                -- Desk key/value state: a tiny durable side-table for
+                -- process-autonomy bookkeeping that does not belong on any
+                -- domain row (e.g. the last-observed triage trust-gate mode, so
+                -- graduation/demotion alerts fire once per TRANSITION, not every
+                -- sweep). Value is opaque text (JSON or a bare string).
+                CREATE TABLE IF NOT EXISTS desk_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT,
+                    updated_at TEXT NOT NULL
+                );
                 """
             )
             self._ensure_column(conn, "model_runs", "status", "TEXT NOT NULL DEFAULT 'success'")
@@ -2498,6 +2522,43 @@ class ForecastLedger:
                     "dormant": in_scope == 0,
                     "enforceable": kind in ("numeric", "rule"),
                 })
+        return out
+
+    def calibration_correcting_lessons(self, *, domain: str | None = None) -> list[dict[str, Any]]:
+        """Active calibration lessons CORRECTING forecasts in scope, each carrying
+        its ``recommended_adjustment``, its measured ``coverage`` (from
+        :meth:`lesson_coverage` — in-scope/applied counts + application rate), and
+        whether it is ``dormant`` (never yet encountered at a commit). When
+        ``domain`` is given, domain/domain_topic lessons are restricted to that
+        domain (global/topic/question_type lessons still apply broadly). The
+        plain-language answer to 'which learning is adjusting my numbers here, and
+        is it actually biting?'."""
+        coverage_by_id = {row["lesson_id"]: row for row in self.lesson_coverage()}
+        out: list[dict[str, Any]] = []
+        for lesson in self.list_calibration_lessons(active_only=True):
+            scope_type = lesson.get("scope_type")
+            scope_ref = lesson.get("scope_ref")
+            if domain is not None and scope_type in ("domain", "domain_topic"):
+                # domain_topic scope_ref is colon-joined ("politics:nyc-primaries").
+                lesson_domain = str(scope_ref or "").split(":", 1)[0]
+                if lesson_domain != domain:
+                    continue
+            cov = coverage_by_id.get(lesson["id"], {})
+            out.append({
+                "lesson_id": lesson["id"],
+                "scope": f"{scope_type}:{scope_ref or '*'}",
+                "scope_type": scope_type,
+                "scope_ref": scope_ref,
+                "lesson": lesson.get("lesson"),
+                "recommended_adjustment": lesson.get("recommended_adjustment") or {},
+                "coverage": {
+                    "in_scope_count": cov.get("in_scope_count", 0),
+                    "applied_count": cov.get("applied_count", 0),
+                    "application_rate": cov.get("application_rate", 0.0),
+                    "last_seen": cov.get("last_seen"),
+                },
+                "dormant": cov.get("dormant", True),
+            })
         return out
 
     def detect_templated_batches(
@@ -4090,7 +4151,7 @@ class ForecastLedger:
         scoreable: bool = True,
         auto_score: bool = True,
     ) -> Resolution:
-        self.get_question(question_id)
+        resolved_question = self.get_question(question_id)
         if resolution_status not in RESOLUTION_STATUSES:
             raise ValidationError(
                 f"resolution_status must be one of {', '.join(sorted(RESOLUTION_STATUSES))}"
@@ -4175,6 +4236,57 @@ class ForecastLedger:
                 snapshot = self.get_current_snapshot(question_id)
                 if snapshot is not None and snapshot.forecast_origin != "exploratory":
                     self.score_snapshot(snapshot.forecast_id)
+                    # Close the learning loop: a fresh LIVE score can shift the signed-
+                    # bias picture, so re-synthesise the corrective calibration lesson
+                    # for this question's scope family. synthesize_bias_lessons is
+                    # internally FDR/ESS-gated — it emits nothing on thin/noisy data —
+                    # so this is safe to fire on a live resolution. Gated on
+                    # forecast_origin == "live" for BOTH correctness and cost: the
+                    # synthesis measures the LIVE stratum only (forecast_origin="live"),
+                    # so firing it on a backtest/imported resolution would rescan the
+                    # same live data for no new signal — pure waste (and the per-resolve
+                    # scan is O(live-scores), so a bulk backtest must not trigger it).
+                    # Scoped to the resolved question's domain (or global when it has
+                    # none) to bound cost to a single domain target, not the full "all"
+                    # sweep. Best-effort: a synthesis hiccup must never break the
+                    # resolution — a broken step degrades to today's behaviour.
+                    # Cheap pre-gate (spend bound): the signed-bias estimator emits
+                    # NOTHING until a scope clears its ESS floor (12 domain / 20
+                    # global), and each synthesis is O(live-scores) — so a single
+                    # COUNT skips the whole scan whenever the scope is still obviously
+                    # too thin. This makes an ordinary small desk (and a bulk cohort
+                    # below the floor) pay nothing, and only mature scopes run the
+                    # full synthesis. Count is a necessary condition (ESS <= count),
+                    # so skipping below it can never suppress a lesson that would fire.
+                    synth_scope = resolved_question.domain or "global"
+                    _floor = 12 if resolved_question.domain else 20
+                    _now_mono = time.monotonic()
+                    _last = self._bias_synth_last.get(synth_scope)
+                    _debounced = _last is not None and (_now_mono - _last) < self._BIAS_SYNTH_DEBOUNCE_SECONDS
+                    if (
+                        snapshot.forecast_origin == "live"
+                        and not _debounced
+                        and self._live_score_count(resolved_question.domain) >= _floor
+                    ):
+                        self._bias_synth_last[synth_scope] = _now_mono
+                        try:
+                            synthesized = self.synthesize_bias_lessons(scope=synth_scope, now=now)
+                            fired = [
+                                r for r in synthesized
+                                if isinstance(r, dict) and (r.get("action") or {}).get("written")
+                            ]
+                            if fired:
+                                logger.debug(
+                                    "auto bias-lesson synthesis on resolution of %s wrote %d lesson(s)",
+                                    question_id,
+                                    len(fired),
+                                )
+                        except Exception:
+                            logger.debug(
+                                "auto bias-lesson synthesis on resolution failed for %s",
+                                question_id,
+                                exc_info=True,
+                            )
             except Exception:
                 logger.debug("auto-score on resolution failed for %s", question_id, exc_info=True)
 
@@ -4355,6 +4467,10 @@ class ForecastLedger:
         )
         sharpness_values: list[float] = []
         probability_movements: list[float] = []
+        # Time-bucketed calibration trend points (keyed on scored_at). Each row is
+        # {scored_at, brier, p_yes, outcome} — p_yes/outcome present only for binary
+        # forecasts so the rolling SCE can be computed per window.
+        trend_points: list[dict[str, Any]] = []
         question_type_stats: dict[str, dict[str, Any]] = defaultdict(
             lambda: {
                 "brier": [],
@@ -4403,6 +4519,13 @@ class ForecastLedger:
             if sharpness is not None:
                 sharpness_values.append(sharpness)
                 type_stats["sharpness"].append(sharpness)
+            # Trend point (all scoreable): rolling mean-Brier keyed on scored_at.
+            trend_point: dict[str, Any] = {
+                "scored_at": score.scored_at,
+                "brier": float(score.brier_score),
+                "p_yes": None,
+                "outcome": None,
+            }
             # Reliability point: bin the binary forecast by P(yes) and record the
             # realized outcome so observed frequency can be compared to it.
             if (
@@ -4416,6 +4539,10 @@ class ForecastLedger:
                     decile = min(int(p_yes * 10), 9)
                     curve_bins[decile]["predicted"].append(p_yes)
                     curve_bins[decile]["observed"].append(observed)
+                    # p_yes/outcome feed the per-window signed calibration error.
+                    trend_point["p_yes"] = p_yes
+                    trend_point["outcome"] = observed
+            trend_points.append(trend_point)
             movement = self._score_probability_movement_before_close(score, snapshot)
             if movement is not None:
                 probability_movements.append(movement)
@@ -4551,11 +4678,87 @@ class ForecastLedger:
             "observed_frequency": (
                 sum(curve_observed) / len(curve_observed) if curve_observed else None
             ),
+            "calibration_trend": self._calibration_trend(trend_points),
             "domain": domain,
             "forecast_origin": forecast_origin,
             "horizon": horizon,
             "calibration_eligible": calibration_eligible,
         }
+
+    def _calibration_trend(
+        self,
+        points: list[dict[str, Any]],
+        *,
+        windows: tuple[int, ...] = (30, 90),
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Rolling mean-Brier + signed calibration error over recency windows.
+
+        Each window reports ``{period, n, brier, sce}`` computed over the scored
+        forecasts whose ``scored_at`` falls within the trailing window; ``sce`` is
+        the signed calibration error over the window's binary forecasts (negative
+        ⇒ under-confident, positive ⇒ over-confident), reusing the same estimator
+        as the bias loop. ``direction`` compares the shortest to the longest
+        window's mean Brier (lower Brier = better): ``improving`` when the recent
+        window scores materially better, ``worsening`` when materially worse,
+        ``stable`` within noise, ``insufficient`` when either window is too thin.
+        Emits nothing misleading on thin data by construction."""
+        from forecasting.calibration_bias import Observation, signed_calibration_error
+
+        now_dt = timestamp_to_datetime(now or utc_now_iso())
+        # Pre-parse each point's scored_at once; drop unparseable timestamps.
+        parsed: list[tuple[Any, dict[str, Any]]] = []
+        for point in points:
+            try:
+                dt = timestamp_to_datetime(point["scored_at"])
+            except Exception:  # noqa: BLE001 — a garbage timestamp must not break the summary
+                continue
+            if dt is not None:
+                parsed.append((dt, point))
+
+        window_rows: list[dict[str, Any]] = []
+        means: dict[int, float | None] = {}
+        counts: dict[int, int] = {}
+        for days in windows:
+            cutoff = now_dt - timedelta(days=days)
+            in_window = [p for dt, p in parsed if dt >= cutoff]
+            briers = [p["brier"] for p in in_window if p.get("brier") is not None]
+            observations = [
+                Observation(p_yes=float(p["p_yes"]), outcome=float(p["outcome"]))
+                for p in in_window
+                if p.get("p_yes") is not None and p.get("outcome") is not None
+            ]
+            sce = signed_calibration_error(observations) if observations else None
+            mean_brier = sum(briers) / len(briers) if briers else None
+            means[days] = mean_brier
+            counts[days] = len(briers)
+            window_rows.append(
+                {
+                    "period": f"{days}d",
+                    "n": len(briers),
+                    "brier": mean_brier,
+                    "sce": sce,
+                }
+            )
+
+        # Direction: shortest vs longest window, both needing a floor sample.
+        short, long = min(windows), max(windows)
+        direction = "insufficient"
+        if (
+            short != long
+            and counts.get(short, 0) >= 3
+            and counts.get(long, 0) >= 3
+            and means.get(short) is not None
+            and means.get(long) is not None
+        ):
+            delta = means[short] - means[long]  # negative ⇒ recent Brier lower ⇒ better
+            if delta < -0.01:
+                direction = "improving"
+            elif delta > 0.01:
+                direction = "worsening"
+            else:
+                direction = "stable"
+        return {"windows": window_rows, "direction": direction}
 
     def create_postmortem(
         self,
@@ -5060,6 +5263,129 @@ class ForecastLedger:
             row["name"]: float(row["recommended_weight"])
             for row in records
             if row["kind"] == kind and row["status"] == "measured"
+        }
+
+    # ── Per-panelist-model track record (quorum weighting) ──────────────
+    # Default sample gate for a MODEL's recommended weight. Distinct from the
+    # component gate (DEFAULT_MIN_COUNT=5): a per-model quorum weight is applied
+    # SILENTLY at dispatch (when the config flag is on), so it needs a stiffer
+    # bar — a model must clear this many resolved binaries before its measured
+    # skill moves its weight off 1.0.
+    MODEL_WEIGHT_MIN_SAMPLE = 10
+
+    def model_track_record(
+        self,
+        *,
+        min_count: int | None = None,
+        shrink_n0: float | None = None,
+        edge_scale: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Measure each PANELIST MODEL's Brier edge over the cross-model panel
+        average across resolved binary questions, and map it to a shrunk,
+        clipped weight (reuses :mod:`forecasting.track_record` — the same math
+        as :meth:`component_track_record`, but keyed on the panelist ``model``
+        and scored against the OUTCOME with the per-question cross-model mean as
+        the reference).
+
+        One observation per (question, model): the latest panel run supplies
+        each panelist's probability; its Brier vs the confirmed outcome is paired
+        against the mean panelist Brier on that same question (positive edge ⇒
+        the model beat the pack). Non-binary questions and non-numeric payloads
+        are skipped — binary Brier only. A model that repeats within one run (the
+        ``self`` preset) is averaged to a single per-question observation so it
+        cannot double-count.
+
+        There is deliberately no ``forecast_origin`` filter: quorum ``panel_runs``
+        are not origin-tagged per estimate (a run's ``snapshot_id`` is often unset
+        at record time), so an origin argument could not honestly restrict pairing
+        and would silently mix backtest+live panelist performance. Strata-aware
+        weighting is a schema change (tag panel runs with an origin) — not a
+        parameter — and is left for when that need is real.
+        """
+        from forecasting.track_record import (
+            DEFAULT_EDGE_SCALE,
+            DEFAULT_SHRINK_N0,
+            ComponentObservation,
+            summarize_components,
+        )
+
+        observations: list[ComponentObservation] = []
+        for question in self.list_questions(status="resolved"):
+            if question.outcome_space.type != "binary":
+                continue
+            resolution = self.get_latest_resolution(question.id, confirmed_only=True)
+            if resolution is None:
+                continue
+
+            def _brier(probability: Any) -> float | None:
+                try:
+                    payload = self._score_forecast_payload(
+                        float(probability), resolution.outcome, question.outcome_space
+                    )
+                except (TypeError, ValueError, ValidationError):
+                    return None
+                value = payload.get("brier_score")
+                return float(value) if isinstance(value, (int, float)) else None
+
+            runs = self.list_panel_runs(question.id, limit=1)
+            if not runs:
+                continue
+            run = runs[0]
+            # Group each panelist model's Brier(s) on THIS question, then average
+            # within model so a repeated model (self preset) is one observation.
+            per_model: dict[str, list[float]] = {}
+            for estimate in run.get("estimates", []):
+                model = str(estimate.get("agent_model") or estimate.get("perspective") or "").strip()
+                brier = _brier(estimate.get("probability"))
+                if not model or brier is None:
+                    continue
+                per_model.setdefault(model, []).append(brier)
+            model_briers = {
+                model: sum(values) / len(values)
+                for model, values in per_model.items()
+                if values
+            }
+            if not model_briers:
+                continue
+            # Reference: the cross-model mean Brier on this question (difficulty-
+            # normalised — a model is rewarded/penalised only relative to the pack).
+            reference_brier = sum(model_briers.values()) / len(model_briers)
+            for model, brier in model_briers.items():
+                observations.append(
+                    ComponentObservation(
+                        name=model,
+                        kind="model",
+                        question_id=question.id,
+                        component_brier=brier,
+                        aggregate_brier=reference_brier,
+                    )
+                )
+
+        records = summarize_components(
+            observations,
+            min_count=min_count if min_count is not None else self.MODEL_WEIGHT_MIN_SAMPLE,
+            shrink_n0=shrink_n0 if shrink_n0 is not None else DEFAULT_SHRINK_N0,
+            edge_scale=edge_scale if edge_scale is not None else DEFAULT_EDGE_SCALE,
+        )
+        return [record.to_dict() for record in records]
+
+    def recommended_model_weights(
+        self,
+        *,
+        min_sample: int | None = None,
+    ) -> dict[str, float]:
+        """``{model: weight}`` for MEASURED panelist models only (those clearing
+        the resolved-sample gate). A model below the gate is absent — the quorum
+        dispatcher defaults it to weight 1.0, so a cold-start panel is equal-
+        weighted by construction and no model can dominate early. Shrinkage
+        toward 1.0 lives in :func:`forecasting.track_record.edge_to_weight`."""
+        records = self.model_track_record(
+            min_count=min_sample if min_sample is not None else self.MODEL_WEIGHT_MIN_SAMPLE,
+        )
+        return {
+            row["name"]: float(row["recommended_weight"])
+            for row in records
+            if row["status"] == "measured"
         }
 
     # ── Analyst notes (time-series desk write-ups) ──────────────────────
@@ -6062,6 +6388,181 @@ class ForecastLedger:
             )
         return self.get_triage_label(label_id)
 
+    # ── Desk key/value state ─────────────────────────────────────────────────
+    def get_desk_state(self, key: str) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT value FROM desk_state WHERE key = ?", (key,)
+            ).fetchone()
+        return row["value"] if row is not None else None
+
+    def set_desk_state(self, key: str, value: str | None, *, now: str | None = None) -> None:
+        stamped = parse_timestamp(now, field_name="now") or utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO desk_state (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (key, value, stamped),
+            )
+
+    def transition_desk_state(
+        self, key: str, new_value: str | None, *, now: str | None = None
+    ) -> tuple[bool, str | None]:
+        """Atomically set ``desk_state[key] = new_value`` under a write lock and
+        report whether THIS call performed the change.
+
+        Returns ``(changed, previous)``. ``changed`` is True only for the caller
+        that actually moved the value; a concurrent caller that lost the race
+        (``BEGIN IMMEDIATE`` serialises writers) — or a steady state where the
+        stored value already equals ``new_value`` — gets ``changed=False`` and must
+        not re-act. This makes a read-compare-write transition (e.g. the triage
+        trust-gate mode) safe under overlapping sweeps: two sweeps can no longer
+        both observe the old value and both fire the same transition alert.
+        """
+        stamped = parse_timestamp(now, field_name="now") or utc_now_iso()
+        conn = self._connect()
+        try:
+            conn.isolation_level = None  # take manual control of the transaction
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute(
+                "SELECT value FROM desk_state WHERE key = ?", (key,)
+            ).fetchone()
+            prev = row["value"] if row is not None else None
+            if prev == new_value:
+                conn.execute("COMMIT")
+                return False, prev
+            conn.execute(
+                "INSERT INTO desk_state (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+                (key, new_value, stamped),
+            )
+            conn.execute("COMMIT")
+            return True, prev
+        finally:
+            conn.close()
+
+    def _has_open_alert(self, *, reason: str, scope_type: str, scope_ref: str) -> bool:
+        """True when an unacknowledged alert with the SAME reason+scope already
+        exists — so a re-transition does not stack a duplicate row (mirrors the
+        dedup in :meth:`propose_due_resolutions`)."""
+        for alert in self.list_alerts(unresolved_only=True):
+            if (
+                alert.reason == reason
+                and alert.scope_type == scope_type
+                and alert.scope_ref == scope_ref
+            ):
+                return True
+        return False
+
+    # Desk-state key for the last-observed triage trust-gate mode.
+    _TRIAGE_GATE_MODE_KEY = "triage_gate_mode"
+
+    def check_triage_gate_graduation(
+        self,
+        *,
+        threshold: float = 0.8,
+        min_sample: int = 20,
+        demote_margin: float = 0.05,
+        now: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Detect a triage trust-gate MODE TRANSITION and alert on it once.
+
+        Builds the held-out trust gate, compares its mode ("auto" | "suggest_only")
+        to the last-persisted mode in ``desk_state``, and:
+
+        * persists the new mode whenever it changed (ATOMICALLY — see below);
+        * opens an INFO "triage labeler graduated" alert the first time the mode
+          flips to ``auto`` (auto-filter enabled), and a symmetric demotion alert if
+          it later drops back to ``suggest_only`` after having been ``auto``;
+        * fires NOTHING on the initial baseline observation of ``suggest_only`` (the
+          cold-start default — a labeler that has never cleared the bar is not news).
+
+        HYSTERESIS (anti-flap): once graduated to ``auto``, a dip that is merely
+        below the graduate bar but still within ``demote_margin`` of it does NOT
+        demote — demotion needs a real drop below ``threshold - demote_margin`` (the
+        auto-filter mode itself is decided live by :func:`build_triage_trust_gate`;
+        this band governs only the ALERT transition, so a small-sample accuracy
+        oscillation across the bar no longer spams graduated/demoted alerts).
+
+        Race- and dedup-safe: the mode is moved with an atomic compare-and-set
+        (:meth:`transition_desk_state`) so overlapping sweeps cannot both fire, and
+        alert creation is deduped against an already-open alert of the same
+        reason/scope. Deterministic + cheap (reads adjudicated labels, no model
+        call). Returns the transition dict (or ``None`` when nothing changed).
+        """
+        from forecasting.triage import build_triage_trust_gate
+
+        gate = build_triage_trust_gate(self, threshold=threshold, min_sample=min_sample)
+        raw_mode = gate["mode"]
+        accuracy = gate.get("observed_accuracy")
+
+        prev_observed = self.get_desk_state(self._TRIAGE_GATE_MODE_KEY)
+        # Hysteresis on the DEMOTE edge only: hold "auto" through a shallow dip.
+        demote_threshold = threshold - max(0.0, float(demote_margin))
+        if prev_observed == "auto" and raw_mode != "auto":
+            holds = isinstance(accuracy, (int, float)) and accuracy >= demote_threshold
+            mode = "auto" if holds else "suggest_only"
+        else:
+            mode = raw_mode
+
+        # Atomic compare-and-set: only the sweep that actually performs the
+        # transition proceeds; a concurrent sweep (or a steady state) is silent.
+        changed, prev = self.transition_desk_state(
+            self._TRIAGE_GATE_MODE_KEY, mode, now=now
+        )
+        if not changed:
+            return None
+
+        pct = f"{accuracy:.0%}" if isinstance(accuracy, (int, float)) else "n/a"
+        alert: AlertEvent | None = None
+        transition: str
+        if mode == "auto":
+            transition = "graduated"
+            reason = "triage_labeler_graduated"
+            if not self._has_open_alert(
+                reason=reason, scope_type="global", scope_ref="triage_labeler"
+            ):
+                alert = self.create_alert(
+                    severity="info",
+                    scope_type="global",
+                    scope_ref="triage_labeler",
+                    reason=reason,
+                    recommended_action=(
+                        f"triage labeler graduated: {gate['n']} adjudications at {pct} — "
+                        "auto-filter enabled. The autopilot may now auto-capture keep/skim "
+                        "candidates on a material change (previously suggest-only)."
+                    ),
+                )
+        elif prev == "auto":
+            # Only a DEMOTION from a previously-graduated state is worth an alert; a
+            # first-time suggest_only baseline (prev is None) is the cold start.
+            transition = "demoted"
+            reason = "triage_labeler_demoted"
+            if not self._has_open_alert(
+                reason=reason, scope_type="global", scope_ref="triage_labeler"
+            ):
+                alert = self.create_alert(
+                    severity="warning",
+                    scope_type="global",
+                    scope_ref="triage_labeler",
+                    reason=reason,
+                    recommended_action=(
+                        f"triage labeler demoted: accuracy {pct} over n={gate['n']} dropped below "
+                        f"the {threshold:.0%} bar — auto-filter disabled, back to suggest-only. "
+                        "Route disagreements to operator review (relabel_route) to rebuild trust."
+                    ),
+                )
+        else:
+            transition = "baseline"
+
+        return {
+            "transition": transition,
+            "mode": mode,
+            "previous_mode": prev,
+            "gate": gate,
+            "alert": alert,
+        }
+
     # ── Signed calibration-bias loop ─────────────────────────────────────────
     # Measure whether committed binary forecasts run systematically over- or
     # under-confident (the SIGNED companion to the unsigned ECE in
@@ -6141,8 +6642,7 @@ class ForecastLedger:
                 resolved_dt = _parse(resolved_at)
                 if resolved_dt is not None:
                     age_days = (now_dt - resolved_dt).total_seconds() / 86400.0
-                    if age_days > 0:
-                        weight = 0.5 ** (age_days / recency_halflife_days)
+                    weight = recency_halflife_weight(age_days, recency_halflife_days)
             observations.append(
                 Observation(
                     p_yes=float(probability),
@@ -6153,6 +6653,44 @@ class ForecastLedger:
                 )
             )
         return observations
+
+    def derive_extremize_alpha(
+        self,
+        question: Any,
+        *,
+        forecast_origin: str | None = "live",
+    ) -> float:
+        """Derive a per-scope terminal Platt slope from RESOLVED calibration data.
+
+        Reuses the VALIDATED extremization safety gate (AIA P2.3,
+        :func:`forecasting.calibration_bias.extremization_alpha_gate`): it proposes
+        the theory-grounded variance-matching slope
+        :data:`forecasting.bayes_toolkit.PLATT_ALPHA_VARIANCE_MATCH` (``sqrt(3)``)
+        and PERMITS it only when the question's domain is measurably
+        under-confident on its leaned side with enough effective sample; otherwise
+        the gate forces the slope back to ``1.0``. Invents NO new statistic — it is
+        the same help/hurt gate already unit-tested and used to make activating √3
+        Platt safe.
+
+        FAIL-SAFE COLD START: any thin/empty scope (a non-binary question, or a
+        domain without enough resolved binaries) or any error returns ``1.0`` (the
+        identity — no extremization). This is data-layer only (the ledger already
+        depends on ``calibration_bias``); the caller decides whether to consult it.
+        """
+
+        try:
+            from forecasting.bayes_toolkit import PLATT_ALPHA_VARIANCE_MATCH
+            from forecasting.calibration_bias import extremization_alpha_gate
+
+            observations = self._bias_observations(
+                domain=getattr(question, "domain", None),
+                forecast_origin=forecast_origin,
+            )
+            verdict = extremization_alpha_gate(PLATT_ALPHA_VARIANCE_MATCH, observations)
+            allowed = verdict.get("allowed_alpha", 1.0)
+            return float(allowed) if allowed else 1.0
+        except Exception:  # noqa: BLE001 — derivation is best-effort; identity on any failure
+            return 1.0
 
     def calibration_bias(
         self,
@@ -6196,6 +6734,27 @@ class ForecastLedger:
             shrink_prior=shrink_prior,
         )
         return report.to_payload()
+
+    def _live_score_count(self, domain: str | None) -> int:
+        """Fast COUNT of live, calibration-eligible, non-invalidated score records
+        (optionally in one domain). A cheap necessary-condition gate for the
+        resolve-time bias synthesis: ESS <= count, so a count below the ESS floor
+        guarantees the estimator would emit nothing — skip the O(n) scan."""
+        clauses = [
+            "forecast_origin = 'live'",
+            "calibration_eligible = 1",
+            "invalidated_by_correction_id IS NULL",
+        ]
+        params: list[Any] = []
+        if domain:
+            clauses.append("domain = ?")
+            params.append(domain)
+        with self._connect() as conn:
+            row = conn.execute(
+                f"SELECT COUNT(*) FROM score_records WHERE {' AND '.join(clauses)}",
+                params,
+            ).fetchone()
+        return int(row[0]) if row else 0
 
     def _domains_with_scores(self, *, forecast_origin: str | None = "live") -> list[str]:
         clauses = ["domain IS NOT NULL", "invalidated_by_correction_id IS NULL"]

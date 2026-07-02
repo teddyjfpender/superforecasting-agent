@@ -34,6 +34,34 @@ def is_learning_review_reason(reason: str | None) -> bool:
     return text in LEARNING_REVIEW_REASONS or is_learned_error_review_reason(text)
 
 
+def should_apply_active_lessons(
+    use_active_lessons: bool | None, forecast_origin: str | None
+) -> bool:
+    """Decide whether to auto-apply active calibration-lesson adjustments.
+
+    The ledger's learned calibration correction is DERIVED FROM THE LIVE STRATUM
+    (``synthesize_bias_lessons`` measures ``forecast_origin='live'`` only), so it
+    is DEFAULT-ON for ``live`` commits only. ``backtest`` / ``imported_baseline``
+    commits are NEVER auto-adjusted — folding a live-derived correction into a
+    closed-book backtest would contaminate the very benchmark that grounds
+    ``can_claim_live_superforecasting``. Those origins apply lessons ONLY on an
+    explicit opt-in. ``exploratory`` commits are never adjusted (they are not
+    calibration-scored, so a correction would be noise).
+
+    ``use_active_lessons`` is tri-state:
+      * ``None``  — unset; use the origin default (on for live, off otherwise);
+      * ``True``  — explicit opt-in (adjust even a backtest/imported commit);
+      * ``False`` — explicit opt-out (commit the raw number).
+    """
+
+    origin = (forecast_origin or "live").strip().lower()
+    if origin == "exploratory":
+        return False
+    if use_active_lessons is None:
+        return origin == "live"
+    return bool(use_active_lessons)
+
+
 def apply_active_lesson_adjustments(
     *,
     ledger: ForecastLedger,

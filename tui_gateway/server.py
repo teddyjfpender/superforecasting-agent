@@ -3466,6 +3466,44 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.quorum.status")
+def _(rid, params: dict) -> dict:
+    """READ-ONLY status/progress for a detached quorum background job.
+
+    Given a ``run_id``, returns the job's ``status`` (queued|running|done|error),
+    the ordered ``progress`` steps, the ``panel_run_id`` once recorded, and the
+    ``result`` summary (aggregate/committed probability, disagreement, per-model
+    forecasts, degraded flag). Reuses :func:`forecasting.quorum_jobs.read_job`;
+    never runs a quorum or mutates the ledger. Backs a later TUI surface.
+    """
+    try:
+        from forecasting.quorum_jobs import read_job
+
+        run_id = str(params.get("run_id") or "").strip()
+        if not run_id:
+            return _err(rid, 5008, "forecast.quorum.status requires a run_id")
+        try:
+            job = read_job(run_id)
+        except FileNotFoundError as exc:
+            return _err(rid, 5008, str(exc))
+        result = job.get("result") or {}
+        return _ok(
+            rid,
+            {
+                "run_id": job.get("run_id"),
+                "status": job.get("status"),
+                "question_id": job.get("question_id"),
+                "panel_run_id": job.get("panel_run_id"),
+                "progress": job.get("progress") or [],
+                "error": job.get("error"),
+                "result": result,
+                "degraded": bool(result.get("degraded")),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("forecast.onboard_propose")
 def _(rid, params: dict) -> dict:
     """Validate a draft QuestionSpec and return issues + the clarifications to ask.
@@ -3880,6 +3918,15 @@ def _(rid, params: dict) -> dict:
         )
         bias = _calibration_bias_or_none(ledger, domain=domain)
 
+        # Lessons-correcting-this (S7): the active calibration lessons adjusting
+        # forecasts in this scope, each with its recommended_adjustment + measured
+        # coverage + dormant flag — the honest "which learning is biting?" read.
+        try:
+            lessons = ledger.calibration_correcting_lessons(domain=domain)
+        except Exception:
+            logger.exception("forecast.calibration correcting-lessons lookup failed")
+            lessons = []
+
         # Per-domain / per-origin breakdowns only make sense on the unfiltered
         # view; a filtered request already IS one row of that breakdown.
         domains: list[dict] = []
@@ -3909,6 +3956,7 @@ def _(rid, params: dict) -> dict:
             {
                 "summary": summary,
                 "bias": bias,
+                "lessons": lessons,
                 "domains": domains,
                 "origins": origins,
                 "domain": domain,

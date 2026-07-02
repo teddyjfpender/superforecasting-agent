@@ -21,7 +21,7 @@ from forecasting.backtesting import (
 )
 from forecasting.ensembles import linear_trend_projection, weighted_binary_probability
 from forecasting.hooks import SaturationBlocked
-from forecasting.learning import apply_active_lesson_adjustments
+from forecasting.learning import apply_active_lesson_adjustments, should_apply_active_lessons
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.protocol import build_protocol_messages
 from forecasting.search import match_to_dict, search_forecasts
@@ -844,7 +844,7 @@ FORECAST_LEDGER_SCHEMA = {
             "calibration_lesson_refs": {"type": "array", "items": {"type": "string"}},
             "calibration_adjustment": {"type": "object"},
             "calibration_weight": {"type": "number"},
-            "use_active_lessons": {"type": "boolean"},
+            "use_active_lessons": {"type": "boolean", "description": "update_forecast: apply the ledger's measured calibration-bias correction (active in-scope lessons) to the committed probability. DEFAULT TRUE for LIVE commits only — the learned correction lands automatically and the pre-adjustment raw_probability is recorded for audit. backtest/imported_baseline are NEVER auto-adjusted (the correction is live-derived and would contaminate the closed-book benchmark); pass true to opt in explicitly. Pass false to opt out (commit your raw number). Exploratory commits are never adjusted."},
             "alert_id": {"type": "string"},
             "acknowledged_at": {"type": "string"},
             "ref": {"type": "string", "description": "resolve_warning: an al_* alert id (resolve that one) or a scope/question ref (resolve every open alert for it)."},
@@ -1865,7 +1865,16 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 )
             calibration_lesson_refs = args.get("calibration_lesson_refs") or []
             calibration_adjustment = args.get("calibration_adjustment") or {}
-            if args.get("use_active_lessons"):
+            # Measured-bias adjustments apply BY DEFAULT for LIVE commits (S7): the
+            # ledger's learned calibration correction lands on every live forecast
+            # unless the caller passes use_active_lessons=false. raw_probability is
+            # recorded before adjustment inside apply_active_lesson_adjustments, so net
+            # movement stays auditable. backtest/imported_baseline are NEVER auto-
+            # adjusted (the correction is live-derived; auto-applying it would
+            # contaminate the closed-book grounding benchmark) — they opt in
+            # explicitly. Exploratory scratchpad commits are never adjusted.
+            _lessons_origin = args.get("forecast_origin") or "live"
+            if should_apply_active_lessons(args.get("use_active_lessons"), _lessons_origin):
                 probability, calibration_lesson_refs, calibration_adjustment = apply_active_lesson_adjustments(
                     ledger=ledger,
                     question=ledger.get_question(question_id),
