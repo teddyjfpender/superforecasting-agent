@@ -19,6 +19,7 @@ import type {
   ForecastWarningsAutomodeRunResponse,
   ForecastWarningsDismissResponse
 } from '../gatewayTypes.js'
+import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { semantics } from '../lib/visualSemantics.js'
@@ -31,6 +32,21 @@ export const closeAlertsView = () => patchOverlayState({ alerts: false })
 
 const truncate = (value: string, max: number): string =>
   value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
+
+// Reason/kind keys arrive as backend snake_case (`postmortem_due`, `evidence_stale`);
+// raw they read as debug tokens. Sentence-case them for display — LENGTH-PRESERVING
+// (underscore→space, uppercase the first char) so every right-aligned count stays put.
+// Already-uppercase tier labels (FREE/STALE) have no underscores and are unaffected.
+const humanize = (value: string): string =>
+  value.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase())
+
+// Thousands-grouped integer — an at-a-glance backlog reads "1,250", not "1250".
+// Hand-rolled (no Intl/ICU dependence) so it's deterministic under any runtime.
+const nf = (n: number): string => {
+  const abs = Math.trunc(Math.abs(n)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')
+
+  return n < 0 ? `-${abs}` : abs
+}
 
 // ── Aggregate tier model ────────────────────────────────────────────────────
 // The aggregate RPC folds the whole open backlog into three action tiers (free /
@@ -113,16 +129,20 @@ const flattenTiers = (tiers: TierNode[], collapsed: Set<TierKey>): FlatNode[] =>
   return flat
 }
 
+// One coherent severity ladder shared by the summary strip and the tree bullets so
+// a tier always reads the same colour in both places: FREE (auto-clearable, benign)
+// → ok/green, AGENT + its STALE sub-view (needs an LLM pass) → accent/brand, MANUAL
+// (needs a human) → warn/gold. Danger/error is reserved for the CONTESTED block.
 const tierColor = (t: Theme, key: TierKey): string => {
   if (key === 'free') {
     return t.color.ok
   }
 
   if (key === 'manual') {
-    return t.color.error
+    return t.color.warn
   }
 
-  return t.color.warn
+  return t.color.accent
 }
 
 // One open-line text-capture target for the dismiss modal: the selection params
@@ -545,7 +565,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     gw.request<unknown>('forecast.warnings.dismiss', { ...target.params, actor: 'tui', note })
       .then(raw => {
         const res = asRpcResult<ForecastWarningsDismissResponse>(raw)
-        setFlash(`dismissed ${res?.count ?? 0}/${res?.matched ?? 0} — ${truncate(target.label, 24)}`)
+        setFlash(`dismissed ${res?.count ?? 0}/${res?.matched ?? 0} — ${truncate(humanize(target.label), 24)}`)
         load()
       })
       .catch((err: unknown) => {
@@ -763,6 +783,10 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   }, { isActive: !globalModal })
 
   const width = Math.max(40, cols - 4)
+  // The tree rows right-align a value (a tier's "+N", a reason's count) via a
+  // trailing filler that carries the selection highlight to the edge. Target a
+  // hair inside the content width so truncate-end never clips that right value.
+  const rowW = Math.max(24, width - 2)
 
   const nothing =
     !loading &&
@@ -774,17 +798,31 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     staleRefs === 0 &&
     contested.length === 0
 
-  // Headline summary line: the whole open backlog folded into action tiers.
+  // ── Summary strip ─────────────────────────────────────────────────────────
+  // The whole open backlog folded into action tiers as colour-coded stat chips —
+  // the at-a-glance read of the view. Each count carries its tier's semantic
+  // colour (free→ok, agent→accent, manual→warn, contested→danger) and goes muted
+  // at zero so the eye lands only on tiers that actually need work.
+  const freeCount = headline?.free ?? 0
+  const agentCount = headline?.agent ?? 0
+  const manualCount = headline?.manual ?? 0
+  const dot = <Text color={t.color.border}>{'  ·  '}</Text>
   const headlineLine = (
     <Text wrap="truncate-end">
-      <Text bold color={openTotal ? t.color.text : t.color.muted}>{openTotal}</Text>
-      <Text color={t.color.muted}> open · </Text>
-      <Text color={headline?.free ? t.color.ok : t.color.muted}>{headline?.free ?? 0}</Text>
-      <Text color={t.color.muted}> free · </Text>
-      <Text color={headline?.agent ? t.color.warn : t.color.muted}>{headline?.agent ?? 0}</Text>
-      <Text color={t.color.muted}> agent · </Text>
-      <Text color={headline?.manual ? t.color.error : t.color.muted}>{headline?.manual ?? 0}</Text>
+      <Text bold color={openTotal ? t.color.text : t.color.muted}>{nf(openTotal)}</Text>
+      <Text color={t.color.muted}> open</Text>
+      {dot}
+      <Text bold color={freeCount ? t.color.ok : t.color.muted}>{nf(freeCount)}</Text>
+      <Text color={t.color.muted}> free</Text>
+      {dot}
+      <Text bold color={agentCount ? t.color.accent : t.color.muted}>{nf(agentCount)}</Text>
+      <Text color={t.color.muted}> agent</Text>
+      {dot}
+      <Text bold color={manualCount ? t.color.warn : t.color.muted}>{nf(manualCount)}</Text>
       <Text color={t.color.muted}> manual</Text>
+      {dot}
+      <Text bold color={contested.length ? t.color.error : t.color.muted}>{nf(contested.length)}</Text>
+      <Text color={t.color.muted}> contested</Text>
     </Text>
   )
 
@@ -800,10 +838,17 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       </Box>
     )
   } else if (nothing) {
+    // Celebratory-but-teaching: name the win, then the mechanism that holds it,
+    // then the one live key that matters here (r refreshes; there is no other
+    // action to take on an empty backlog, so no other key is advertised).
     body = (
-      <Text color={t.color.ok} wrap="wrap">
-        All clear — no open alerts, nothing queued for review, no stale assumptions or evidence gaps.
-      </Text>
+      <Box flexDirection="column">
+        <Text wrap="truncate-end">
+          <Text bold color={t.color.ok}>{'✓ Backlog clear'}</Text>
+          <Text color={t.color.muted}>{' — no alerts, nothing queued for review, no stale assumptions or gaps.'}</Text>
+        </Text>
+        <Text color={t.color.muted} wrap="truncate-end">Automode keeps it that way · r to refresh</Text>
+      </Box>
     )
   } else {
     body = (
@@ -820,9 +865,23 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                   return null
                 }
 
+                // ── TIER header ─────────────────────────────────────────────
+                // A severity ● in the tier colour, the label, its total, the
+                // one-word affordance, and — when folded — a dim "+N" telling the
+                // operator how many reason groups are hidden. The selection paints
+                // the WHOLE row (a trailing filler carries the highlight to the
+                // right edge, the deskView pattern) so the cursor is unmistakable.
                 if (node.kind === 'tier') {
                   const tier = node.tier
                   const isCollapsed = collapsed.has(tier.key)
+                  const col = tierColor(t, tier.key)
+                  const marker = active ? '▸ ' : '  '
+                  const caret = `${isCollapsed ? '▸' : '▾'} `
+                  const totalStr = `  ${nf(tier.total)}`
+                  const affordStr = `  ${tier.affordance}`
+                  const hidden = isCollapsed && tier.reasons.length ? `+${tier.reasons.length}` : ''
+                  const leftLen = marker.length + caret.length + 2 + tier.label.length + totalStr.length + affordStr.length
+                  const fill = Math.max(1, rowW - leftLen - hidden.length)
 
                   return (
                     <Text
@@ -830,35 +889,53 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                       key={node.rowKey}
                       wrap="truncate-end"
                     >
-                      <Text color={active ? sem.cursor : t.color.muted}>{active ? '▸ ' : '  '}</Text>
-                      <Text color={t.color.muted}>{`${isCollapsed ? '▸' : '▾'} `}</Text>
-                      <Text bold color={tierColor(t, tier.key)}>{tier.label}</Text>
-                      <Text bold color={tier.total ? t.color.text : t.color.muted}>{`  ${tier.total}`}</Text>
-                      <Text color={t.color.muted}>{`  ${tier.affordance}`}</Text>
+                      <Text color={active ? sem.cursor : t.color.muted}>{marker}</Text>
+                      <Text color={t.color.muted}>{caret}</Text>
+                      <Text color={col}>{'● '}</Text>
+                      <Text bold color={col}>{tier.label}</Text>
+                      <Text bold color={tier.total ? t.color.text : t.color.muted}>{totalStr}</Text>
+                      <Text color={t.color.muted}>{affordStr}</Text>
+                      <Text color={t.color.border}>{' '.repeat(fill)}</Text>
+                      {hidden ? <Text color={t.color.muted}>{hidden}</Text> : null}
                     </Text>
                   )
                 }
 
+                // ── REASON group ────────────────────────────────────────────
+                // Indented one level under its tier: a small ▪ in the tier colour,
+                // the reason key, the recommended action dimmed behind an arrow, and
+                // the group count right-aligned + dim (the eye scans the counts down
+                // the right gutter). scope_refs preview on a fainter sub-line.
                 const g = node.group
+                const col = tierColor(t, node.tierKey)
                 const allRefs = g.scope_refs ?? []
-                const refs = allRefs.slice(0, 5)
+                const refs = allRefs.slice(0, 4)
                 // The row count is the full untruncated group size; the refs are only
                 // a preview, so flag how many scope_refs aren't shown ("+N more").
                 const moreRefs = Math.max(0, (g.count ?? refs.length) - refs.length)
+                const marker = active ? '  ▸ ' : '    '
+                const reasonStr = truncate(humanize(g.reason ?? '—'), 30)
+                const countStr = nf(g.count ?? 0)
+                const arrow = g.recommended_action ? ' → ' : ''
+                // Truncate the action so the right-aligned count is never clipped.
+                const actionMax = Math.max(0, rowW - marker.length - 2 - reasonStr.length - arrow.length - countStr.length - 2)
+                const action = g.recommended_action ? truncate(g.recommended_action, actionMax) : ''
+                const leftLen = marker.length + 2 + reasonStr.length + arrow.length + action.length
+                const fill = Math.max(1, rowW - leftLen - countStr.length)
 
                 return (
                   <Box flexDirection="column" key={node.rowKey}>
                     <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
-                      <Text color={active ? sem.cursor : t.color.border}>{active ? '  ▸ ' : '    '}</Text>
-                      <Text bold color={t.color.warn}>{`${g.count ?? 0}×`}</Text>
-                      <Text color={t.color.text}>{`  ${truncate(g.reason ?? '—', 30)}`}</Text>
-                      {g.recommended_action ? (
-                        <Text color={t.color.muted}>{`  → ${truncate(g.recommended_action, 40)}`}</Text>
-                      ) : null}
+                      <Text color={active ? sem.cursor : t.color.border}>{marker}</Text>
+                      <Text color={col}>{'▪ '}</Text>
+                      <Text color={t.color.text}>{reasonStr}</Text>
+                      {action ? <Text color={t.color.muted}>{`${arrow}${action}`}</Text> : null}
+                      <Text color={t.color.border}>{' '.repeat(fill)}</Text>
+                      <Text color={t.color.muted}>{countStr}</Text>
                     </Text>
                     {refs.length ? (
                       <Text color={t.color.border} wrap="truncate-end">
-                        {`        ${refs.map(r => truncate(r, 18)).join(' · ')}${moreRefs > 0 ? `  +${moreRefs} more` : ''}`}
+                        {`        ${refs.map(r => truncate(r, 18)).join(' · ')}${moreRefs > 0 ? `  +${nf(moreRefs)} more` : ''}`}
                       </Text>
                     ) : null}
                   </Box>
@@ -867,7 +944,15 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
             </Section>
 
             {contested.length > 0 ? (
-              <Section t={t} title={`Contested — hand-label (${contested.length})`}>
+              // ── CONTESTED — hand-label ─────────────────────────────────────
+              // Its own danger-tinted block so the adjudication work reads as
+              // distinct from the auto-resolvable backlog above. A ● in danger,
+              // the source, the disputed auto-label + linked question, the routing
+              // rationale — and, on the FOCUSED row (where 1/2/3 are live), the
+              // three-way mapping rendered as keycaps.
+              <Box flexDirection="column" marginTop={1}>
+                <Text color={t.color.error}>{'─'.repeat(Math.min(rowW, 44))}</Text>
+                <Text bold color={t.color.error}>{`Contested — hand-label (${contested.length})`}</Text>
                 {contestedNodes.map((node, j) => {
                   if (node.kind !== 'contested') {
                     return null
@@ -883,10 +968,10 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                   return (
                     <Box flexDirection="column" key={node.rowKey}>
                       <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
-                        <Text color={active ? sem.cursor : t.color.muted}>{active ? '▸ ' : '  '}</Text>
+                        <Text color={active ? sem.cursor : t.color.error}>{active ? '▸ ' : '● '}</Text>
                         <Text bold color={t.color.text}>{truncate(head, 40)}</Text>
                         {row.auto_label ? (
-                          <Text color={t.color.warn}>{`  auto:${truncate(row.auto_label, 24)}`}</Text>
+                          <Text color={t.color.muted}>{`  auto:${truncate(row.auto_label, 24)}`}</Text>
                         ) : null}
                         {row.question_id ? (
                           <Text color={t.color.muted}>{`  ${truncate(row.question_id, 18)}`}</Text>
@@ -895,10 +980,22 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                       {row.rationale ? (
                         <Text color={t.color.border} wrap="truncate-end">{`    ${truncate(row.rationale, Math.max(20, width - 6))}`}</Text>
                       ) : null}
+                      {active ? (
+                        // 1/2/3 are LIVE only on the focused contested row, so the
+                        // keycaps render exactly here (never as a static legend).
+                        <Text wrap="truncate-end">
+                          <Text color={t.color.border}>{'    '}</Text>
+                          <Keycap label="interesting" n="1" t={t} />
+                          <Text color={t.color.border}>{'  '}</Text>
+                          <Keycap label="uninteresting" n="2" t={t} />
+                          <Text color={t.color.border}>{'  '}</Text>
+                          <Keycap label="irrelevant" n="3" t={t} />
+                        </Text>
+                      ) : null}
                     </Box>
                   )
                 })}
-              </Section>
+              </Box>
             ) : null}
 
             {reviews.length > 0 ? (
@@ -947,29 +1044,33 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     )
   }
 
+  // The title bar carries the brand + a one-word live status on the right (a
+  // spinner while loading / while a pass runs — Nielsen's visibility of system
+  // status). The numeric breakdown lives in the summary strip below, so the
+  // header never competes with it.
   const header = (
-    <Box flexShrink={0} marginBottom={1}>
+    <Box flexShrink={0} justifyContent="space-between" marginBottom={1}>
       <Text wrap="truncate-end">
-        <Text bold color={t.color.primary}>
-          WARNINGS
-        </Text>
-        <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={openTotal ? t.color.error : t.color.muted}>{openTotal}</Text>
-        <Text color={t.color.muted}> open · </Text>
-        <Text color={headline?.free ? t.color.accent : t.color.muted}>{headline?.free ?? 0}</Text>
-        <Text color={t.color.muted}> auto-clearable · </Text>
-        <Text color={reviews.length ? t.color.warn : t.color.muted}>{reviews.length}</Text>
-        <Text color={t.color.muted}> to review · </Text>
-        <Text color={contested.length ? t.color.warn : t.color.muted}>{contested.length}</Text>
-        <Text color={t.color.muted}> contested</Text>
+        <Text bold color={t.color.primary}>WARNINGS</Text>
+        <Text color={t.color.muted}>{'   attention backlog'}</Text>
       </Text>
+      {loading || automode ? (
+        <Text color={t.color.accent} wrap="truncate-end">{`${spinnerFrame(now)} ${automode ? 'automode' : 'loading'}`}</Text>
+      ) : null}
     </Box>
   )
 
-  // Live automode heartbeat line (done/total + current alert reason + cancel hint).
+  // Live automode heartbeat: a single status line (spinner + phase + done/total +
+  // the current alert reason + the cancel affordance) — no interleaved text. The
+  // spinner rides the 500ms `now` tick so the operator can SEE it working.
   const automodeLine = automode ? (
     <Text color={t.color.accent} wrap="truncate-end">
-      {`◇ automode ${automode.phase} ${automode.done}/${automode.total || '…'}${automode.reason ? ` · ${truncate(automode.reason, 28)}` : ''} · Shift-A cancel`}
+      <Text>{`${spinnerFrame(now)} `}</Text>
+      <Text bold>automode</Text>
+      <Text color={t.color.muted}>{`  ${automode.phase}  ·  `}</Text>
+      <Text bold>{`${automode.done}/${automode.total || '…'}`}</Text>
+      {automode.reason ? <Text color={t.color.muted}>{`  ·  ${truncate(automode.reason, 28)}`}</Text> : null}
+      <Text color={t.color.muted}>{'  ·  Shift-A to cancel'}</Text>
     </Text>
   ) : null
 
@@ -978,7 +1079,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   const dismissModal = dismissTarget ? (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <Text color={t.color.warn} wrap="truncate-end">
-        {`Dismiss ${truncate(dismissTarget.label, 32)} — record a one-line reason (re-surfaces after its TTL)`}
+        {`Dismiss ${truncate(humanize(dismissTarget.label), 32)} — record a one-line reason (re-surfaces after its TTL)`}
       </Text>
       <Text wrap="truncate-end">
         <Text color={t.color.muted}>note: </Text>
@@ -997,7 +1098,12 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       {automodeLine}
       {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
       {dismissModal ??
-        (onContested ? (
+        (nothing ? (
+          // Empty backlog: only the keys that still do something are advertised.
+          <Text color={t.color.muted} wrap="truncate-end">
+            r refresh · q close
+          </Text>
+        ) : onContested ? (
           <Text color={t.color.muted} wrap="truncate-end">
             1 interesting · 2 uninteresting · 3 irrelevant · ↑↓/jk move · r refresh · q close
           </Text>
@@ -1015,6 +1121,19 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       {body}
       {footer}
     </Box>
+  )
+}
+
+// A keycap chip — a bracketed key + its verb — matching the FooterChips idiom.
+// Only ever rendered where that key is LIVE (here: the focused contested row).
+function Keycap({ label, n, t }: { label: string; n: string; t: Theme }) {
+  return (
+    <Text>
+      <Text color={t.color.muted}>[</Text>
+      <Text bold color={t.color.accent}>{n}</Text>
+      <Text color={t.color.muted}>]</Text>
+      <Text color={t.color.label}>{` ${label}`}</Text>
+    </Text>
   )
 }
 

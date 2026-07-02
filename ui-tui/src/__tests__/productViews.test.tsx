@@ -153,7 +153,9 @@ describe('MarketsView', () => {
     expect(text).toContain('Press d')
     expect(text).toContain('add providers')
     expect(text).toContain('search')
-    expect(text).toContain('Esc/q close')
+    // The close affordance now lives only in the FooterChips row (the duplicate
+    // prose hint line — which read "… · Esc/q close" — was removed).
+    expect(text).toContain('Close')
   })
 
   it('opens the add-data modal on d', async () => {

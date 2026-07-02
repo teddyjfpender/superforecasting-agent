@@ -22,9 +22,11 @@ import { statusGlyph } from '../lib/icons.js'
 import { createTexFile, docsDir, ensureLatexDir, latexSubdir, listTexFiles, readTexFile, type TexFile, writeTexFile } from '../lib/latexDocs.js'
 import { seedLatexExamples } from '../lib/latexExamples.js'
 import { type LatexBlock, renderLatex } from '../lib/latexRender.js'
+import { sortIndicator, sortRows, useTableSort } from '../lib/tableSort.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
+import { DocsHeader, DocsKindTabs, docAge, sizeChip, titlePath } from './docsShell.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 
 // LaTeX side of Docs: browse local .tex files, render them readably, and sync
@@ -36,6 +38,12 @@ const truncate = (value: string, max: number): string =>
 
 // Only the relative path is searchable on a TexFile.
 const LATEX_SEARCH_FIELDS: FieldSpec<TexFile>[] = [{ get: f => f.rel, weight: 1 }]
+
+// Sortable columns (o cycles, O toggles) — mirrors the Desk/Markets sort verbs.
+// Referentially stable so useTableSort's callbacks stay stable across renders.
+const LATEX_SORT_KEYS = ['name', 'modified'] as const
+const latexSortValue = (f: TexFile, key: string): null | number | string =>
+  key === 'modified' ? f.mtime : f.rel.toLowerCase()
 
 interface LatexDocsViewProps {
   docKind?: 'latex' | 'markdown'
@@ -57,6 +65,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
   const dir = dirRef.current
 
   const [files, setFiles] = useState<TexFile[]>([])
+  const sort = useTableSort(LATEX_SORT_KEYS)
   const [sel, setSel] = useState(0)
   const [focus, setFocus] = useState<'list' | 'reader'>('list')
   const [query, setQuery] = useState('')
@@ -121,11 +130,43 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
   }, [])
 
   // Ranked fuzzy filter over the file paths (same engine as news/markets/desk):
-  // best matches float up, non-matches drop out, empty query shows all.
-  const filtered = useMemo(() => filterRanked(files, query, LATEX_SEARCH_FIELDS), [files, query])
+  // best matches float up, non-matches drop out, empty query shows all. When an
+  // explicit sort is chosen (o/O) it takes over the ordering; otherwise the rank
+  // order stands (relevance while filtering, freshest-first when unfiltered).
+  const ranked = useMemo(() => filterRanked(files, query, LATEX_SEARCH_FIELDS), [files, query])
+  const filtered = useMemo(
+    () => (sort.state.key ? sortRows(ranked, sort.state.key, sort.state.dir, latexSortValue) : ranked),
+    [ranked, sort.state.key, sort.state.dir]
+  )
 
   const clampedSel = Math.min(sel, Math.max(0, filtered.length - 1))
   const activeFile = filtered[clampedSel]
+
+  // Keep the SAME document selected across a re-sort (track by rel-path, not
+  // index) — so sorting the list never swaps the doc out of the reader pane. A
+  // sort action stashes the active file's rel; once the re-sorted order lands, the
+  // cursor jumps to where that file now sits. Only sort arms this, so a filter
+  // change / reload leaves it null and the index-based cursor logic is untouched.
+  const pendingReselect = useRef<null | string>(null)
+  useEffect(() => {
+    const rel = pendingReselect.current
+
+    if (rel == null) {
+      return
+    }
+
+    pendingReselect.current = null
+    const idx = filtered.findIndex(f => f.rel === rel)
+
+    if (idx >= 0) {
+      setSel(idx)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filtered])
+
+  const armReselect = () => {
+    pendingReselect.current = activeFile?.rel ?? null
+  }
 
   // Read the selected file's source.
   useEffect(() => {
@@ -448,12 +489,29 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
       return setPrompt({ mode: 'github', value: dir.split('/').filter(Boolean).pop() || 'docs' })
     }
 
-    if (ch === 'O' && tools.git) {
+    // Connect an existing remote (Overleaf / GitHub git URL). Moved off `O` so
+    // o/O carry the house-standard sort verbs (Desk/Markets/Docs all agree).
+    if (ch === 'c' && tools.git) {
       return setPrompt({ mode: 'remote', value: '' })
     }
 
     if (ch === '/') {
       return setSearching(true)
+    }
+
+    // o cycles the sort column (name ↔ modified ↔ default); O flips direction.
+    // Keep the open document selected across the re-sort so reading is never
+    // interrupted (armReselect stashes the active file by rel-path).
+    if (ch === 'o') {
+      armReselect()
+
+      return sort.cycle()
+    }
+
+    if (ch === 'O') {
+      armReselect()
+
+      return sort.toggle()
     }
 
     if (ch === 'r') {
@@ -480,7 +538,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
       return runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider'))
     }
 
-    if (tools.olcli && ch === 'o') {
+    if (tools.olcli && ch === 'u') {
       return runSync('overleaf pull', () => overleaf(dir, ['pull']))
     }
 
@@ -534,18 +592,20 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
           : 'git ready'
 
   const header = (
-    <Box flexDirection="column" flexShrink={0} marginBottom={1}>
-      <Text wrap="truncate-end">
-        <Text bold color={t.color.primary}>
-          LATEX
-        </Text>
-        <Text color={t.color.muted}>{'   '}</Text>
-        <Text color={busy ? sem.star : repo ? sem.up : sem.subtle}>{statusGlyph(statusKind, tick)}</Text>
-        <Text color={t.color.muted}> {statusWord} · </Text>
-        <Text color={t.color.text}>{`${files.length} docs`}</Text>
-        <Text color={t.color.muted} wrap="truncate-end">{`  ${dir}`}</Text>
-      </Text>
-    </Box>
+    <DocsHeader
+      cols={cols}
+      filter={searching || query ? { live: searching, query } : null}
+      path={dir}
+      segments={
+        <>
+          <Text color={busy ? sem.star : repo ? sem.up : sem.subtle}>{statusGlyph(statusKind, tick)}</Text>
+          <Text color={t.color.muted}>{` ${statusWord} · `}</Text>
+          <Text color={t.color.text}>{`${files.length} doc${files.length === 1 ? '' : 's'}`}</Text>
+        </>
+      }
+      t={t}
+      title="LATEX"
+    />
   )
 
   // Inline prompt (shared by both states): name a doc, paste a remote URL, or
@@ -571,30 +631,17 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     </Box>
   ) : null
 
-  // DOCS kind tabs — shown in every footer (onboarding + populated) so it's
-  // always clear how to switch back to Markdown.
+  // DOCS kind tabs — the lens strip lives at the TOP under the header now (house
+  // pattern), so it's always clear how to switch collections.
   const kindTabs = onSelectKind ? (
-    <Box marginBottom={1}>
-      <Text color={t.color.muted}>DOCS </Text>
-      <Box onClick={() => { if (!globalModal) onSelectKind('markdown') }}>
-        <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
-          {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
-        </Text>
-      </Box>
-      <Text color={t.color.border}>{'   ·   '}</Text>
-      <Box onClick={() => { if (!globalModal) onSelectKind('latex') }}>
-        <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
-          {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
-        </Text>
-      </Box>
-    </Box>
+    <DocsKindTabs disabled={globalModal} kind={docKind ?? 'latex'} onSelect={onSelectKind} t={t} />
   ) : null
 
   const onboardChips: FooterChip[] = [
     { k: 'n', label: 'New doc', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
     ...(tools.git ? [{ k: 'g', label: 'Init git', run: () => runSync('git init', () => gitInit(dir)) }] : []),
     ...(tools.gh ? [{ k: 'G', label: 'GitHub repo', run: () => setPrompt({ mode: 'github', value: dir.split('/').filter(Boolean).pop() || 'docs' }) }] : []),
-    ...(tools.git ? [{ k: 'O', label: 'Connect remote', run: () => setPrompt({ mode: 'remote', value: '' }) }] : []),
+    ...(tools.git ? [{ k: 'c', label: 'Connect remote', run: () => setPrompt({ mode: 'remote', value: '' }) }] : []),
     { k: 'r', label: 'Refresh', run: () => { reload(); void refreshGit(); setFlash('refreshed') } },
     { k: 'q', label: 'Close', run: onClose }
   ]
@@ -604,6 +651,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     return (
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
+        {kindTabs}
         <Box alignItems="center" flexGrow={1} justifyContent="center">
           <Box flexDirection="column" width={Math.min(78, width)}>
             <Text bold color={t.color.text}>
@@ -626,7 +674,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
                 <Text bold color={t.color.accent}>G</Text> create a private GitHub repo + push {tools.gh ? '' : '— install gh first'}
               </Text>
               <Text color={t.color.text}>
-                <Text bold color={t.color.accent}>O</Text> connect an existing remote (Overleaf or GitHub git URL)
+                <Text bold color={t.color.accent}>c</Text> connect an existing remote (Overleaf or GitHub git URL)
               </Text>
             </Box>
             <Box marginTop={1}>
@@ -637,11 +685,10 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          {kindTabs}
           {prompt ? promptLine : <FooterChips chips={onboardChips} disabled={globalModal} t={t} />}
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-            {prompt ? '⏎ confirm · Esc cancel' : `1/2 switch · n new doc${tools.git ? ' · g init git' : ''}${tools.gh ? ' · G GitHub repo' : ''} · O connect · r refresh · q close`}
+            {prompt ? '⏎ confirm · Esc cancel' : `1/2 switch · n new doc${tools.git ? ' · g init git' : ''}${tools.gh ? ' · G GitHub repo' : ''} · c connect · r refresh · q close`}
           </Text>
         </Box>
       </Box>
@@ -667,38 +714,40 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
       paddingRight={1}
       width={listW}
     >
-      {searching ? (
-        <Text wrap="truncate-end">
-          <Text bold color={sem.cursor}>{'⌕ '}</Text>
-          <Text color={t.color.text}>{query}</Text>
-          <Text color={t.color.text} inverse>
-            {' '}
-          </Text>
-        </Text>
-      ) : (
-        <Text bold color={listFocused ? t.color.accent : t.color.label} wrap="truncate-end">
-          DOCS{query ? <Text color={t.color.muted}>{`  /${query}`}</Text> : null}
-        </Text>
-      )}
+      <Text bold color={listFocused ? t.color.accent : t.color.label} wrap="truncate-end">
+        DOCS
+        <Text color={t.color.muted}>{`  ${filtered.length}`}</Text>
+        {sort.state.key ? (
+          <Text color={t.color.muted}>{`  ${sort.state.key === 'modified' ? 'modified' : 'name'} ${sortIndicator(sort.state, sort.state.key)}`}</Text>
+        ) : null}
+      </Text>
       <Box flexDirection="column" marginTop={1}>
         {filtered.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
-            No match for “{query}”.
+            {query ? `No .tex file matches “${query}”. / to refine · Esc clears.` : 'No documents.'}
           </Text>
         ) : (
           windowed.map((f, i) => {
             const idx = listStart + i
             const on = idx === clampedSel
             const name = f.rel.replace(/\.tex$/i, '')
+            // Right-aligned dim meta: relative age (+ a size chip on wider lists).
+            const meta = [docAge(f.mtime), listW >= 34 ? sizeChip(f.size) : ''].filter(Boolean).join(' ')
+            const nameW = Math.max(6, listW - 4 - (meta ? meta.length + 1 : 0))
+            const { base, dir } = titlePath(name, nameW)
 
             return (
               <Box key={f.rel} onClick={() => { if (globalModal) return; setSel(idx); setScroll(0); setFocus('reader') }} width="100%">
-                <Text wrap="truncate-end">
-                  <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
-                  <Text bold={on} color={on ? t.color.text : t.color.label}>
-                    {truncate(name, listW - 4)}
+                <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
+                <Box flexGrow={1} minWidth={0}>
+                  <Text wrap="truncate-end">
+                    {dir ? <Text color={on ? t.color.muted : t.color.border}>{dir}</Text> : null}
+                    <Text bold={on} color={on ? t.color.text : t.color.label}>
+                      {base}
+                    </Text>
                   </Text>
-                </Text>
+                </Box>
+                {meta ? <Text color={t.color.muted}>{` ${meta}`}</Text> : null}
               </Box>
             )
           })
@@ -819,6 +868,10 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     </Box>
   )
 
+  // The footer chips are windowed to the width: at narrow terminals we show the
+  // core verbs only (every chip shown is still a LIVE key; the `?` cheat-sheet
+  // carries the rest) so the row never overflows and corrupts.
+  const narrow = cols < 100
   const chips: FooterChip[] = editing
     ? [
         { k: '⎋', label: dirty ? 'Save & exit' : 'Exit' },
@@ -828,35 +881,49 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
         { k: '↑↓', label: readerFocused ? 'Scroll' : 'Docs' },
         { k: '⏎', label: 'Read', run: () => activeFile && setFocus('reader') },
         { k: 'e', label: 'Edit', run: () => activeFile && enterEdit() },
-        { k: 'a', label: 'Ask agent', run: askAgent },
-        { k: 'n', label: 'New', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
-        { k: '/', label: 'Search', run: () => setSearching(true) },
-        ...(tools.git ? [{ k: 'P', label: 'Push', run: () => runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider')) }] : []),
+        { k: '/', label: 'Filter', run: () => setSearching(true) },
+        { k: 'o', label: 'Sort', run: () => { armReselect(); sort.cycle() } },
+        ...(narrow
+          ? []
+          : [
+              { k: 'a', label: 'Ask agent', run: askAgent },
+              { k: 'n', label: 'New', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
+              ...(tools.git ? [{ k: 'P', label: 'Push', run: () => runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider')) }] : [])
+            ]),
         { k: 'q', label: 'Close', run: onClose }
       ]
+
+  // The FooterChips above are the ONE shortcuts row (house pattern — Desk/Markets/
+  // News all dropped their prose duplicate). This second line is contextual STATUS
+  // only: a transient flash, the instructions for a transient mode (edit/prompt/
+  // filter), or the reader's back-hint (the only key there that is NOT a chip). It
+  // never restates the chips, and it only paints when there is something to say.
+  const statusHint = editing
+    ? 'type to edit · arrows move · ⏎ newline · ⌃S save · Esc save & exit'
+    : prompt
+      ? '⏎ confirm · Esc cancel'
+      : searching
+        ? 'type to filter · ⏎/Esc done'
+        : readerFocused
+          ? 'Esc/← back to list'
+          : null
 
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
+      {editing ? null : kindTabs}
       <Box flexDirection="row" flexShrink={0} height={contentHeight}>
         {list}
         {reader}
       </Box>
       <Box flexDirection="column" flexShrink={0} marginTop={1}>
-        {editing ? null : kindTabs}
         {prompt ? promptLine : <FooterChips chips={chips} disabled={globalModal} t={t} />}
-        <Text color={t.color.muted} wrap="truncate-end">
-          {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-          {editing
-            ? 'type to edit · arrows move · ⏎ newline · ⌃S save · Esc save & exit'
-            : prompt
-              ? '⏎ confirm · Esc cancel'
-              : searching
-                ? 'type to filter · ⏎/Esc done'
-                : readerFocused
-                  ? '↑↓ scroll · e edit · a ask agent · Esc/← back · q close'
-                  : `↑↓ docs · ⏎/→ read · e edit · a ask agent · n new · / search${tools.git ? ' · P push' : ''} · r refresh · q`}
-        </Text>
+        {flash || statusHint ? (
+          <Text color={t.color.muted} wrap="truncate-end">
+            {flash ? <Text color={t.color.accent}>{flash}{statusHint ? ' · ' : ''}</Text> : null}
+            {statusHint}
+          </Text>
+        ) : null}
       </Box>
     </Box>
   )

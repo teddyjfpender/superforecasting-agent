@@ -14,9 +14,11 @@ import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
 import { highlightMarkdownLine } from '../lib/markdownEditorHighlight.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { sortIndicator, sortRows, useTableSort } from '../lib/tableSort.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import { DocsHeader, DocsKindTabs, docAge, sizeChip, titlePath } from './docsShell.js'
 import { INLINE_RE, Md, stripInlineMarkup, wikiLinkLabel } from './markdown.js'
 import { ModalOverlay } from './modalOverlay.js'
 
@@ -175,7 +177,14 @@ interface TreeNode {
   path: string
 }
 
-export const buildNoteRows = (notes: ObsidianNote[], collapsed: Set<string>): TreeRow[] => {
+export const buildNoteRows = (
+  notes: ObsidianNote[],
+  collapsed: Set<string>,
+  // Optional leaf comparator (the notes within a folder). Folders always stay
+  // alphabetical; only the leaves reorder, so o/O sort can reorder notes without
+  // disturbing the directory structure. Defaults to name order (current behaviour).
+  sortLeaf?: (a: { name: string; noteIndex: number }, b: { name: string; noteIndex: number }) => number
+): TreeRow[] => {
   const root: TreeNode = { children: new Map(), name: '', noteIndex: -1, path: '' }
 
   notes.forEach((note, idx) => {
@@ -215,7 +224,9 @@ export const buildNoteRows = (notes: ObsidianNote[], collapsed: Set<string>): Tr
   const walk = (node: TreeNode, depth: number) => {
     const entries = [...node.children.values()]
     const folders = entries.filter(e => e.noteIndex < 0).sort((a, b) => a.name.localeCompare(b.name))
-    const leaves = entries.filter(e => e.noteIndex >= 0).sort((a, b) => a.name.localeCompare(b.name))
+    const leaves = entries
+      .filter(e => e.noteIndex >= 0)
+      .sort(sortLeaf ?? ((a, b) => a.name.localeCompare(b.name)))
 
     for (const f of folders) {
       const expanded = !collapsed.has(f.path)
@@ -362,6 +373,25 @@ const OBSIDIAN_SEARCH_FIELDS: FieldSpec<ObsidianNote>[] = [
   { get: n => n.folder, weight: 0.4 }
 ]
 
+// Sortable columns for the notes list (o cycles, O toggles) — the same verbs
+// the Desk/Markets tables use. `modified` reads the note's mtime; `name` the
+// title. Referentially stable so useTableSort's callbacks stay stable.
+const OBSIDIAN_SORT_KEYS = ['name', 'modified'] as const
+const noteSortValue = (n: ObsidianNote | undefined, key: string): null | number | string => {
+  if (!n) {
+    return null
+  }
+
+  if (key === 'modified') {
+    const m = n.modified
+    const ms = typeof m === 'number' ? m : m ? (/^\d+$/.test(m) ? Number(m) : Date.parse(m)) : NaN
+
+    return Number.isFinite(ms) ? ms : null
+  }
+
+  return (n.title ?? n.rel_path ?? '').toLowerCase()
+}
+
 export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid, t }: ObsidianViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
@@ -415,6 +445,13 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const [chat, setChat] = useState<ChatState | null>(null)
   const [spin, setSpin] = useState(0)
 
+  // Inline `/` filter over the notes list (distinct from the deeper `s` vault
+  // search modal): while `live`, typing edits the query; Enter keeps the filter
+  // applied and returns to nav; Esc clears it. A non-empty query flips the left
+  // pane from the directory tree to a flat ranked result list (Markets-style).
+  const [filter, setFilter] = useState<null | { live: boolean; query: string }>(null)
+  const sort = useTableSort(OBSIDIAN_SORT_KEYS)
+
   const dirtyRef = useRef(false)
   // Cursor source-of-truth for the editor. State (editCursor) drives the
   // render; the ref stays synchronously correct so rapid inserts (e.g. holding
@@ -447,8 +484,60 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     }
   }, [])
 
-  // The notes pane as a directory tree (folders collapse/expand).
-  const noteRows = buildNoteRows(notes, collapsed)
+  // Leaf comparator for the tree (o/O sort): reorder notes within each folder
+  // by the active column, leaving the folder structure intact.
+  const sortLeaf = sort.state.key
+    ? (a: { noteIndex: number }, b: { noteIndex: number }) => {
+        const av = noteSortValue(notes[a.noteIndex], sort.state.key!)
+        const bv = noteSortValue(notes[b.noteIndex], sort.state.key!)
+        const missA = av === null
+        const missB = bv === null
+
+        if (missA || missB) {
+          return missA === missB ? 0 : missA ? 1 : -1
+        }
+
+        const factor = sort.state.dir === 'desc' ? -1 : 1
+        const cmp = typeof av === 'number' && typeof bv === 'number'
+          ? av - bv
+          : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
+
+        return cmp * factor
+      }
+    : undefined
+
+  // Active filter query: a non-empty query switches the pane to a flat ranked
+  // list; empty query keeps the collapsible directory tree.
+  const filterQ = filter?.query.trim() ?? ''
+  const flatMode = filterQ.length > 0
+
+  const flatRows: TreeRow[] = (() => {
+    if (!flatMode) {
+      return []
+    }
+
+    const matched = rankItems(notes, filterQ, OBSIDIAN_SEARCH_FIELDS).map(r => r.item)
+    const ordered = sort.state.key
+      ? sortRows(matched, sort.state.key, sort.state.dir, (n, k) => noteSortValue(n, k))
+      : matched
+
+    return ordered.map(note => {
+      const idx = notes.indexOf(note)
+      const leaf = (note.rel_path ?? '').split('/').pop() ?? ''
+
+      return {
+        depth: 0,
+        expanded: false,
+        kind: 'note' as const,
+        name: note.title || leaf.replace(/\.md$/i, ''),
+        noteIndex: idx,
+        path: note.rel_path ?? ''
+      }
+    })
+  })()
+
+  // The notes pane: flat ranked results while filtering, else the directory tree.
+  const noteRows = flatMode ? flatRows : buildNoteRows(notes, collapsed, sortLeaf)
 
   const toggleFolder = (path: string) =>
     setCollapsed(s => {
@@ -1111,6 +1200,33 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       return
     }
 
+    // Inline `/` filter captures input while live: type to refine, Enter keeps
+    // the filter applied (returns to nav), Esc clears it entirely.
+    if (filter?.live) {
+      if (key.escape) {
+        return setFilter(null)
+      }
+
+      if (key.return) {
+        return setFilter(f => (f ? { ...f, live: false } : f))
+      }
+
+      if (key.backspace || key.delete) {
+        return setFilter(f => (f ? { ...f, query: f.query.slice(0, -1) } : f))
+      }
+
+      if (ch && !key.ctrl && !key.meta) {
+        const printable = [...ch].filter(c => c >= ' ').join('')
+
+        if (printable) {
+          setListIdx(0)
+          setFilter(f => (f ? { ...f, query: f.query + printable } : f))
+        }
+      }
+
+      return
+    }
+
     // Inline prompt (new note / comment) captures input while open.
     if (prompt) {
       if (key.escape) {
@@ -1177,9 +1293,18 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       return
     }
 
-    // Esc clears an active selection first, then closes the view.
+    // Esc peels back one layer at a time: an active selection, then an applied
+    // filter, then it closes the view.
     if (key.escape && selAnchor >= 0) {
       return setSelAnchor(-1)
+    }
+
+    // Only peel back an applied filter that is actually narrowing the list. An
+    // empty applied filter ({live:false, query:''}) changes nothing on screen, so
+    // consuming Esc on it would make the first Esc appear dead — let it fall
+    // through to close instead.
+    if (key.escape && filter?.query.trim()) {
+      return setFilter(null)
     }
 
     if (ch === 'q' || key.escape) {
@@ -1212,8 +1337,32 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       return setSearch({ loading: false, query: '', results: [], sel: 0 })
     }
 
+    // `/` opens the inline notes filter (flat ranked list); `s` above is the
+    // deeper full-content vault search modal.
+    if (ch === '/') {
+      setListIdx(0)
+      setFocus('list')
+
+      return setFilter({ live: true, query: filter?.query ?? '' })
+    }
+
+    // o cycles the notes sort column (name ↔ modified ↔ default); O flips it.
+    if (ch === 'o') {
+      return sort.cycle()
+    }
+
+    if (ch === 'O') {
+      return sort.toggle()
+    }
+
     if (ch === 'n') {
       return setPrompt({ mode: 'create', value: '' })
+    }
+
+    // Ask the desk — reachable even with an empty vault (e.g. to ask it to sync
+    // learnings), so it sits above the "needs a note" guard below.
+    if (ch === 'a') {
+      return askAgent()
     }
 
     if (!notes.length) {
@@ -1226,10 +1375,6 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
     if (ch === 'e') {
       return enterEdit()
-    }
-
-    if (ch === 'a') {
-      return askAgent()
     }
 
     // Start/stop a visual line selection at the cursor (vim-style). While
@@ -1688,35 +1833,62 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     )
   } else if (!hasVault) {
     body = (
-      <Box flexDirection="column">
-        <Text color={t.color.warn} wrap="wrap">
-          No Obsidian vault connected yet.
-        </Text>
-        <Box marginTop={1}>
-          <Text color={t.color.text} wrap="wrap">
-            Press{' '}
-            <Text bold color={t.color.primary}>
-              s
-            </Text>{' '}
-            to set one up. The desk will create a vault and seed it with a starter forecasting
-            knowledge base — the art of superforecasting, a getting-started guide, the core methods,
-            and a question-dossier template, all wikilinked into an index.
+      <Box alignItems="center" flexGrow={1} justifyContent="center">
+        <Box flexDirection="column" width={Math.min(76, cols - 4)}>
+          <Text bold color={t.color.text}>
+            Connect a knowledge vault.
           </Text>
-        </Box>
-        <Box marginTop={1}>
-          <Text color={t.color.muted} wrap="wrap">
-            Created at ~/Documents/Obsidian Vault by default; set OBSIDIAN_VAULT_PATH first to choose
-            a different location.
-          </Text>
+          <Box marginTop={1}>
+            <Text color={t.color.muted} wrap="wrap">
+              Press{' '}
+              <Text bold color={t.color.accent}>
+                s
+              </Text>{' '}
+              and the desk builds a vault seeded with a starter forecasting knowledge base — the art
+              of superforecasting, a getting-started guide, the core methods, and a question-dossier
+              template, all wikilinked into an index.
+            </Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={t.color.text}>
+              <Text bold color={t.color.accent}>s</Text> set up + seed the vault
+            </Text>
+            <Text color={t.color.text}>
+              <Text bold color={t.color.accent}>2</Text> switch to the LaTeX workspace instead
+            </Text>
+          </Box>
+          <Box marginTop={1}>
+            <Text color={t.color.muted} wrap="wrap">
+              Created at ~/Documents/Obsidian Vault by default — export OBSIDIAN_VAULT_PATH before
+              launching to choose another location.
+            </Text>
+          </Box>
         </Box>
       </Box>
     )
   } else if (notes.length === 0) {
     body = (
-      <Text color={t.color.muted} wrap="wrap">
-        Vault is connected but has no notes yet — press n to create one, or ask the desk to sync
-        learnings.
-      </Text>
+      <Box alignItems="center" flexGrow={1} justifyContent="center">
+        <Box flexDirection="column" width={Math.min(72, cols - 4)}>
+          <Text bold color={t.color.text}>
+            The vault is empty.
+          </Text>
+          <Box marginTop={1}>
+            <Text color={t.color.muted} wrap="wrap">
+              Nothing has been written here yet. Start a note, or ask the desk to sync what it has
+              learned so far into the vault.
+            </Text>
+          </Box>
+          <Box flexDirection="column" marginTop={1}>
+            <Text color={t.color.text}>
+              <Text bold color={t.color.accent}>n</Text> new note (folders in the path are created, e.g. Topic/Note)
+            </Text>
+            <Text color={t.color.text}>
+              <Text bold color={t.color.accent}>a</Text> ask the desk to sync learnings
+            </Text>
+          </Box>
+        </Box>
+      </Box>
     )
   } else {
     body = (
@@ -1724,9 +1896,14 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
         {/* Left: note list */}
         <Box flexDirection="column" flexShrink={0} marginRight={2} noSelect width={listW}>
           <Text bold color={focus === 'list' ? t.color.primary : t.color.label} wrap="truncate-end">
-            {`${focus === 'list' ? '▸ ' : '  '}Notes (${notes.length})`}
+            {`${focus === 'list' ? '▸ ' : '  '}${flatMode ? 'Results' : 'Notes'} (${flatMode ? flatRows.length : notes.length})`}
           </Text>
           <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={listScrollRef}>
+            {noteRows.length === 0 ? (
+              <Text color={t.color.muted} wrap="wrap">
+                {flatMode ? `No note matches “${filterQ}”.` : 'No notes.'}
+              </Text>
+            ) : null}
             {noteRows.map((row, ri) => {
               const onCursor = focus === 'list' && ri === listIdx
               const indent = '  '.repeat(row.depth)
@@ -1755,6 +1932,14 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
               }
 
               const sel = row.noteIndex === selected
+              const note = notes[row.noteIndex]
+              // Dim right-aligned meta: relative age (+ a size chip on wide lists).
+              const meta = [docAge(note?.modified), listW >= 26 ? sizeChip(note?.size) : ''].filter(Boolean).join(' ')
+              // In flat (filter) mode rows are full paths — protect the leaf
+              // title, shrink the folder. In the tree, row.name is already the
+              // bare title, so title-priority collapses to a plain truncation.
+              const nameW = Math.max(4, listW - indent.length - 3 - (meta ? meta.length + 1 : 0))
+              const { base, dir } = flatMode ? titlePath(row.name, nameW) : { base: truncate(row.name, nameW), dir: '' }
 
               return (
                 <Box
@@ -1773,9 +1958,15 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                   <Text color={onCursor ? t.color.primary : sel ? t.color.accent : t.color.muted}>
                     {`${indent}${onCursor ? '▸' : sel ? '•' : ' '} `}
                   </Text>
-                  <Text bold={sel || onCursor} color={sel || onCursor ? t.color.text : t.color.muted} wrap="truncate-end">
-                    {truncate(row.name, listW - indent.length - 3)}
-                  </Text>
+                  <Box flexGrow={1} minWidth={0}>
+                    <Text wrap="truncate-end">
+                      {dir ? <Text color={sel || onCursor ? t.color.muted : t.color.border}>{dir}</Text> : null}
+                      <Text bold={sel || onCursor} color={sel || onCursor ? t.color.text : t.color.muted}>
+                        {base}
+                      </Text>
+                    </Text>
+                  </Box>
+                  {meta ? <Text color={t.color.muted}>{` ${meta}`}</Text> : null}
                 </Box>
               )
             })}
@@ -2020,46 +2211,65 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   }
 
   const header = (
-    <Box flexDirection="column" flexShrink={0} marginBottom={1}>
-      <Text wrap="truncate-end">
-        <Text bold color={t.color.primary}>
-          OBSIDIAN
-        </Text>
-        <Text color={t.color.muted}>{'   '}</Text>
-        {hasVault ? (
+    <DocsHeader
+      cols={cols}
+      filter={filter}
+      path={hasVault && data?.vault ? data.vault : undefined}
+      segments={
+        hasVault ? (
           <>
             <Text color={t.color.text}>{data?.count ?? notes.length}</Text>
             <Text color={t.color.muted}> notes</Text>
+            {flatMode ? <Text color={t.color.muted}>{`  ·  ${flatRows.length} match${flatRows.length === 1 ? '' : 'es'}`}</Text> : null}
+            {sort.state.key ? (
+              <Text color={t.color.muted}>{`  ·  ${sort.state.key === 'modified' ? 'modified' : 'name'} ${sortIndicator(sort.state, sort.state.key)}`}</Text>
+            ) : null}
           </>
         ) : (
           <Text color={t.color.muted}>not connected</Text>
-        )}
-      </Text>
-      {hasVault && data?.vault ? (
-        <Text color={t.color.muted} wrap="truncate-end">
-          {truncate(data.vault, cols - 2)}
-        </Text>
-      ) : null}
-    </Box>
+        )
+      }
+      t={t}
+      title="OBSIDIAN"
+    />
   )
 
   // Clickable action bar — mirrors the hotkeys so it is obvious (and
   // mouse-reachable) what you can do. Contextual to the current state.
   type Action = { k: string; label: string; run: () => void }
 
+  // Footer chips are trimmed on narrow terminals so the row never overflows and
+  // corrupts — every chip shown is still a LIVE key; the `?` cheat-sheet carries
+  // the rest.
+  const narrow = cols < 100
   const actions: Action[] = !hasVault
-    ? [{ k: 's', label: 'Set up vault', run: runSetup }]
+    ? [
+        { k: 's', label: 'Set up vault', run: runSetup },
+        { k: 'a', label: 'Ask desk', run: askAgent }
+      ]
     : notes.length === 0
-      ? [{ k: 'n', label: 'New note', run: () => setPrompt({ mode: 'create', value: '' }) }]
-      : [
-          { k: 's', label: 'Search', run: () => setSearch({ loading: false, query: '', results: [], sel: 0 }) },
-          { k: 'v', label: selAnchor >= 0 ? 'End select' : 'Select', run: toggleSelect },
-          { k: 'e', label: 'Edit', run: enterEdit },
-          { k: 'n', label: 'New', run: () => setPrompt({ mode: 'create', value: '' }) },
-          { k: 'c', label: 'Comment', run: () => setPrompt({ mode: 'comment', value: '' }) },
-          { k: 'a', label: 'Ask desk', run: askAgent },
-          { k: 'r', label: 'Refresh', run: () => load(true) }
+      ? [
+          { k: 'n', label: 'New note', run: () => setPrompt({ mode: 'create', value: '' }) },
+          { k: 'a', label: 'Ask desk', run: askAgent }
         ]
+      : narrow
+        ? [
+            { k: '/', label: 'Filter', run: () => { setListIdx(0); setFocus('list'); setFilter({ live: true, query: filter?.query ?? '' }) } },
+            { k: 'o', label: 'Sort', run: () => sort.cycle() },
+            { k: 'e', label: 'Edit', run: enterEdit },
+            { k: 'a', label: 'Ask desk', run: askAgent }
+          ]
+        : [
+            { k: '/', label: 'Filter', run: () => { setListIdx(0); setFocus('list'); setFilter({ live: true, query: filter?.query ?? '' }) } },
+            { k: 'o', label: 'Sort', run: () => sort.cycle() },
+            { k: 's', label: 'Search', run: () => setSearch({ loading: false, query: '', results: [], sel: 0 }) },
+            { k: 'v', label: selAnchor >= 0 ? 'End select' : 'Select', run: toggleSelect },
+            { k: 'e', label: 'Edit', run: enterEdit },
+            { k: 'n', label: 'New', run: () => setPrompt({ mode: 'create', value: '' }) },
+            { k: 'c', label: 'Comment', run: () => setPrompt({ mode: 'comment', value: '' }) },
+            { k: 'a', label: 'Ask desk', run: askAgent },
+            { k: 'r', label: 'Refresh', run: () => load(true) }
+          ]
 
   actions.push({ k: 'q', label: 'Close', run: onClose })
 
@@ -2086,24 +2296,14 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
             ? 'modified'
             : ''
 
+  // The doc-kind lens strip lives at the top under the header now (house
+  // pattern); clicks are gated while the chat overlay traps the keyboard.
+  const kindTabs = onSelectKind ? (
+    <DocsKindTabs disabled={Boolean(chat) || globalModal} kind={docKind ?? 'markdown'} onSelect={onSelectKind} t={t} />
+  ) : null
+
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      {onSelectKind ? (
-        <Box marginBottom={1}>
-          <Text color={t.color.muted}>DOCS </Text>
-          <Box onClick={() => { if (!chat && !globalModal) onSelectKind('markdown') }}>
-            <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
-              {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
-            </Text>
-          </Box>
-          <Text color={t.color.border}>{'   ·   '}</Text>
-          <Box onClick={() => { if (!chat && !globalModal) onSelectKind('latex') }}>
-            <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
-              {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
-            </Text>
-          </Box>
-        </Box>
-      ) : null}
       {editing ? (
         <>
           <Box>
@@ -2155,7 +2355,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
             <Text color={t.color.muted} wrap="truncate-end">
               {selAnchor >= 0
                 ? `SELECTING ${lineRef} · ↑↓ extend · c comment · Esc cancel`
-                : `←/→ ${focus === 'list' ? 'notes' : focus === 'outline' ? 'outline' : 'doc'} · ↑↓ navigate · v select · ⏎ open link · c comment`}
+                : `←/→ ${focus === 'list' ? 'notes' : focus === 'outline' ? 'outline' : 'doc'} · ↑↓ navigate · ⏎ open link`}
             </Text>
           ) : null}
         </>
@@ -2270,6 +2470,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
       {header}
+      {kindTabs}
       {body}
       {footer}
       {chat ? chatOverlay : null}

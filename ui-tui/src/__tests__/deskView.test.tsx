@@ -474,9 +474,11 @@ describe('DeskView (redesigned forecast desk)', () => {
     const desk = await mountDesk(120, plainFixture())
     await desk.press('R')
     const text = desk.text()
-    // The flash points at the Actions/resolve section, and the modal opens over the
-    // still-visible desk (its title = the selected forecast).
-    expect(text).toContain('resolve')
+    // R opens the detail modal over the still-visible desk (its title = the
+    // selected forecast); the resolve context now rides the modal's own footer
+    // hint (visible in a real terminal, not this non-TTY harness) rather than the
+    // old always-on prose shortcuts row, which was removed.
+    expect(text).toContain('FORECASTS') // desk body still rendered behind the overlay
     expect(text).toContain('Under-saturated forecast')
     desk.cleanup()
   })
@@ -707,6 +709,68 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('members 1')
     expect(text).toContain('Sticky services inflation') // analyst teaser
     expect(text).toContain('open full lens read')
+  })
+
+  it('o sorts the column (▲) and O toggles the direction (▼); the header carries the indicator', async () => {
+    const desk = await mountDesk(120, fixture())
+    // All tab holds the whole book so the dense column table + header render.
+    await desk.press('\t')
+    await desk.press('\t')
+    await desk.press('\t')
+    // `o` sorts the first column (QUESTION) ascending → a ▲ indicator on the header.
+    await desk.press('o')
+    expect(desk.text()).toContain('QUESTION ▲')
+    // `O` toggles to descending → the same column now shows ▼.
+    await desk.press('O')
+    expect(desk.text()).toContain('QUESTION ▼')
+    desk.cleanup()
+  })
+
+  it('o cycles forward through the columns (QUESTION → PROB → …) in header order', async () => {
+    const desk = await mountDesk(120, fixture())
+    await desk.press('\t')
+    await desk.press('\t')
+    await desk.press('\t')
+    await desk.press('o') // QUESTION
+    await desk.press('o') // PROB (next in header order)
+    expect(desk.text()).toContain('PROB ▲')
+    desk.cleanup()
+  })
+
+  it('keeps the SELECTED forecast selected across a re-sort (tracks by id, not index)', async () => {
+    const desk = await mountDesk(120, fixture())
+    // All tab → rows are [texas ("Will…"), cpi ("May…")] in server order.
+    await desk.press('\t')
+    await desk.press('\t')
+    await desk.press('\t')
+    // Put the cursor on row 1 — the CPI question.
+    await desk.press('j')
+    // Sort by QUESTION ascending → "May…"(cpi) sorts before "Will…"(texas), so the
+    // CPI row moves to row 0. If selection tracked by INDEX the cursor would now sit
+    // on texas; tracking by ID it follows CPI to row 0.
+    await desk.press('o')
+    // Open the selected row — the modal must lead with the CPI question (its full
+    // title is modal-unique because the dense list truncates it).
+    await desk.press('\r')
+    expect(desk.text()).toContain('May 2026 CPI-U YoY')
+    desk.cleanup()
+  })
+
+  it('sort composes with the / filter (sorts the filtered set, not the whole book)', async () => {
+    const desk = await mountDesk(120, fixture())
+    await desk.press('\t')
+    await desk.press('\t')
+    await desk.press('\t') // All tab
+    await desk.press('/')
+    await desk.press('senate') // narrows to the Texas Senate question only
+    await desk.press('\r') // apply (drop filter focus)
+    await desk.press('o') // sort the FILTERED set
+    const text = desk.text()
+    // The one match survives the sort and the indicator renders on the header.
+    expect(text).toContain('Will the Repub')
+    expect(text).toContain('1 matches')
+    expect(text).toContain('QUESTION ▲')
+    desk.cleanup()
   })
 
   it('NEXT column: scheduled review reads its due-time; no-review falls back to the marked resolution date; neither stays "—"', async () => {

@@ -237,8 +237,11 @@ describe('AlertsView warning resolution', () => {
     expect(text).toContain('STALE')
     expect(text).toContain('auto')
     expect(text).toContain('needs-agent')
-    // Expanded reason rows show count + recommended_action + scope_refs.
-    expect(text).toContain('postmortem_due')
+    // Expanded reason rows show count + recommended_action + scope_refs; the raw
+    // snake_case reason key renders sentence-cased ("postmortem_due" → "Postmortem due").
+    expect(text).toContain('Postmortem due')
+    // The raw debug token never leaks to the surface (sentence-cased for display).
+    expect(text).not.toContain('postmortem_due')
     expect(text).toContain('score the resolved question')
     expect(text).toContain('fq_alpha')
     m.cleanup()
@@ -257,18 +260,19 @@ describe('AlertsView warning resolution', () => {
 
   it('Enter on a tier header collapses it, hiding its reason rows from the tree', async () => {
     const m = await mount()
-    // Cursor starts on the FREE header → Enter collapses it.
-    expect(m.text()).toContain('postmortem_due')
+    // Cursor starts on the FREE header → Enter collapses it. (Reason rows render
+    // the sentence-cased reason key: "postmortem_due" → "Postmortem due".)
+    expect(m.text()).toContain('Postmortem due')
     m.clear()
     await m.press('\r')
     // The FREE reason row is now hidden, but the tier header (and others) remain.
-    expect(m.text()).not.toContain('postmortem_due')
+    expect(m.text()).not.toContain('Postmortem due')
     expect(m.text()).toContain('FREE')
     expect(m.text()).toContain('AGENT')
     // Re-expand restores the reason row.
     m.clear()
     await m.press('\r')
-    expect(m.text()).toContain('postmortem_due')
+    expect(m.text()).toContain('Postmortem due')
     m.cleanup()
   })
 
@@ -288,7 +292,7 @@ describe('AlertsView warning resolution', () => {
     // Re-expand AGENT to confirm the cursor is still parked on that header.
     m.clear()
     await m.press('\r')
-    expect(m.text()).toContain('evidence_stale')
+    expect(m.text()).toContain('Evidence stale')
     m.cleanup()
   })
 
@@ -408,19 +412,20 @@ describe('AlertsView warning resolution', () => {
 
   it('c collapses every tier; e expands them all again', async () => {
     const m = await mount()
-    expect(m.text()).toContain('postmortem_due')
-    expect(m.text()).toContain('evidence_stale')
+    // Reason keys render sentence-cased ("postmortem_due" → "Postmortem due").
+    expect(m.text()).toContain('Postmortem due')
+    expect(m.text()).toContain('Evidence stale')
     m.clear()
     await m.press('c') // collapse all → every reason row hidden
-    expect(m.text()).not.toContain('postmortem_due')
-    expect(m.text()).not.toContain('evidence_stale')
+    expect(m.text()).not.toContain('Postmortem due')
+    expect(m.text()).not.toContain('Evidence stale')
     // The four tier headers survive a collapse-all.
     expect(m.text()).toContain('FREE')
     expect(m.text()).toContain('AGENT')
     m.clear()
     await m.press('e') // expand all → reason rows return
-    expect(m.text()).toContain('postmortem_due')
-    expect(m.text()).toContain('evidence_stale')
+    expect(m.text()).toContain('Postmortem due')
+    expect(m.text()).toContain('Evidence stale')
     m.cleanup()
   })
 
@@ -438,9 +443,9 @@ describe('AlertsView warning resolution', () => {
   })
 
   it('one keypress is one VISIBLE move even when a collapse stranded the cursor past the end', async () => {
-    // The active-row marker (cursor ▸ + collapse caret ▸) renders inline, so a
-    // collapsed tier the cursor sits on shows "▸ ▸ LABEL".
-    const ACTIVE_COLLAPSED = (label: string) => `▸ ▸ ${label}`
+    // The active-row marker (cursor ▸ + collapse caret ▸ + tier-colour bullet ●)
+    // renders inline, so a collapsed tier the cursor sits on shows "▸ ▸ ● LABEL".
+    const ACTIVE_COLLAPSED = (label: string) => `▸ ▸ ● ${label}`
     const m = await mount()
     // Walk the cursor down to the LAST node of the fully-expanded tree (the STALE
     // reason row). Six downs: free reason → AGENT → agent reason → MANUAL → STALE →

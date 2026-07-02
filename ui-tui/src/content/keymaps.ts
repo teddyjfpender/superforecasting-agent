@@ -69,23 +69,38 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['↑/↓ / j k', 'move the cursor'],
     ['Enter / Space', 'expand / collapse'],
     ['h / ←', 'collapse · l / → expand'],
+    ['Tab / ] / [', 'jump to next / previous tier'],
     ['c / e', 'collapse-all / expand-all'],
     ['1 / 2 / 3', 'label contested row: interesting / uninteresting / irrelevant'],
     ['R / Shift-A', 'free pass · agent pass · x dismiss'],
-    ['q / Esc', 'close the view']
+    ['r', 'refresh · q / Esc close the view']
   ],
   calibration: [
     ['↑/↓', 'scroll'],
     ['q / Esc', 'close the view']
   ],
   calendar: [
-    ['↑/↓', 'scroll'],
-    ['q / Esc', 'close the view']
+    ['Tab', 'switch month-grid ↔ agenda (wide terminals)'],
+    ['←→ ↑↓', 'move the day focus (grid)'],
+    ['PgUp/PgDn · [ ]', 'previous / next month (grid)'],
+    ['t', 'jump to today (grid)'],
+    ['↑/↓ · j k', 'select an event (agenda)'],
+    ['o / O', 'sort column · toggle asc/desc (agenda)'],
+    ['/', 'filter the agenda'],
+    ['Enter', 'open the focused day / deep-link to the Desk'],
+    ['r', 'refresh · q / Esc close the view']
   ],
   obsidian: [
-    ['↑/↓', 'navigate the vault'],
-    ['Enter', 'open a note'],
-    ['q / Esc', 'close the view']
+    ['1 / 2', 'switch collection: Markdown vault ↔ LaTeX workspace'],
+    ['↑↓ / j k', 'navigate the focused pane'],
+    ['←→ / h l', 'move across panes: list · outline · doc'],
+    ['Enter', 'open a note / doc · follow the focused wikilink'],
+    ['Tab', 'cycle the wikilinks in the doc (Markdown)'],
+    ['/', 'filter the list · o / O sort (name / modified)'],
+    ['s', 'search the vault (Markdown) · e edit · a ask the desk'],
+    ['n / c', 'new note · comment on the selected lines (Markdown)'],
+    ['g / G / P', 'git init · GitHub repo · commit + push (LaTeX)'],
+    ['q / Esc', 'clear selection / filter, then close the view']
   ],
   agents: [
     ['↑/↓ / j k', 'move the cursor'],

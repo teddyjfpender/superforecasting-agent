@@ -216,6 +216,39 @@ describe('ObsidianView render', () => {
     cleanup()
   })
 
+  it('flips the notes list to a flat ranked Results pane on "/" filter', async () => {
+    const { cleanup, read, stdin } = await renderView()
+
+    stdin.write('/') // open the inline filter
+    await tick(40)
+    stdin.write('cal') // matches "Calibration and Scoring"
+    await tick(120)
+    const text = read()
+
+    // Header shows the live filter query; the left pane switches tree → Results.
+    expect(text).toContain('⌕ cal')
+    expect(text).toContain('Results')
+    expect(text).toContain('Calibration and Scoring')
+    // The non-matching note drops out of the flat results.
+    expect(text).not.toMatch(/Results \(1\)[\s\S]*Bayesian Updating[\s\S]*Forecasting\/Knowledge\/Bayesian/)
+
+    cleanup()
+  })
+
+  it('surfaces the sort column in the header on "o"', async () => {
+    const { cleanup, read, stdin } = await renderView()
+
+    stdin.write('o') // cycle sort → name ascending
+    await tick(40)
+    expect(read()).toContain('name ▲')
+
+    stdin.write('O') // toggle direction → descending
+    await tick(40)
+    expect(read()).toContain('name ▼')
+
+    cleanup()
+  })
+
   it('opens the in-Obsidian chat modal on "a"', async () => {
     const { cleanup, read, stdin } = await renderView()
 
