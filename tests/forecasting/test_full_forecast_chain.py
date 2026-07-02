@@ -402,3 +402,81 @@ def test_cli_onboard_auto_attaches_watches(tmp_path, monkeypatch, capsys):
     ledger = ForecastLedger(db_path=db)
     q = ledger.list_questions()[0]
     assert ledger.list_watched_sources(scope_type="question", scope_ref=q.id, status=None)
+
+
+# ── stage 0: the --auto criteria draft (one sentence in, a forecast out) ──────
+
+
+def test_cli_onboard_auto_drafts_criteria_from_a_bare_sentence(tmp_path, monkeypatch, capsys):
+    import forecasting.cli as cli
+    db = str(tmp_path / "chain.db")
+    _chain_agent(cli, monkeypatch)
+    monkeypatch.setattr(
+        cli,
+        "_draft_resolution_criteria",
+        lambda spec, **kw: (
+            "Resolves YES if the FOMC lowers the federal funds target range per the "
+            "Federal Reserve's official statement on or before 2026-09-30; otherwise NO."
+        ),
+    )
+    parser = _parser()
+    args = parser.parse_args(["forecast", "--db", db, "onboard", "Will the Fed cut rates by September?", "--auto"])
+    args.func(args)
+
+    out = capsys.readouterr().out
+    assert "drafted resolution criteria" in out
+    assert "created forecast question" in out
+    assert "committed forecast" in out
+    ledger = ForecastLedger(db_path=db)
+    q = ledger.list_questions()[0]
+    assert "FOMC" in q.resolution_criteria
+    # the criteria-implied September deadline upgraded the end-of-year fallback
+    assert (q.close_time or "").startswith("2026-09")
+
+
+def test_cli_onboard_auto_criteria_flag_pins_without_drafting(tmp_path, monkeypatch, capsys):
+    import forecasting.cli as cli
+    db = str(tmp_path / "chain.db")
+    _chain_agent(cli, monkeypatch)
+    monkeypatch.setattr(
+        cli, "_draft_resolution_criteria",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not draft when --criteria is given")),
+    )
+    parser = _parser()
+    args = parser.parse_args([
+        "forecast", "--db", db, "onboard", "Will CPI YoY fall below 3%?", "--auto",
+        "--criteria", "Resolves YES if BLS CPI-U YoY is below 3.0% in any release on or before 2026-12-31; otherwise NO.",
+    ])
+    args.func(args)
+    out = capsys.readouterr().out
+    assert "drafted resolution criteria" not in out
+    assert "created forecast question" in out
+
+
+def test_draft_resolution_criteria_sanitizes_and_rejects_junk(monkeypatch):
+    import forecasting.cli as cli
+    import forecasting.quorum as quorum_mod
+    from types import SimpleNamespace
+
+    import hermes_cli.config as cfgmod
+
+    monkeypatch.setattr(cfgmod, "load_config", lambda: {"model": {"default": "openai/gpt-5.5"}})
+    spec = SimpleNamespace(title="Will X happen?", close_time="2026-09-30")
+
+    def _factory(reply):
+        def make(**kw):
+            assert kw.get("toolsets") == (), "criteria draft must be tool-less"
+            return lambda model, system, user: reply
+        return make
+
+    good = '"Resolves YES if X is confirmed per the official register on or before 2026-09-30; otherwise NO."\nextra line'
+    monkeypatch.setattr(quorum_mod, "make_aiagent_runner", _factory(good))
+    drafted = cli._draft_resolution_criteria(spec)
+    assert drafted.startswith("Resolves YES if X")
+    assert "extra line" not in drafted and '"' not in drafted[:1]
+
+    monkeypatch.setattr(quorum_mod, "make_aiagent_runner", _factory("I cannot help with that."))
+    assert cli._draft_resolution_criteria(spec) is None
+
+    monkeypatch.setattr(quorum_mod, "make_aiagent_runner", _factory(""))
+    assert cli._draft_resolution_criteria(spec) is None

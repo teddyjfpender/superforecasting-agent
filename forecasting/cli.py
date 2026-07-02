@@ -698,6 +698,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
             "vague sentence yields a complete, committed forecast"
         ),
     )
+    onboard_parser.add_argument(
+        "--criteria",
+        help="Resolution criteria for the question (skips the LLM criteria draft under --auto)",
+    )
     onboard_parser.add_argument("--model", help="--auto: model the pipeline stages run on")
     onboard_parser.add_argument("--provider", help="--auto: provider the pipeline stages run on")
     onboard_parser.add_argument(
@@ -4206,6 +4210,43 @@ def _cmd_triage_list_rubrics(args: argparse.Namespace) -> None:
     _run_triage_tool(args, payload)
 
 
+def _draft_resolution_criteria(spec: Any, *, model: str | None = None, provider: str | None = None) -> str | None:
+    """One bounded, tool-less LLM call drafting auditable resolution criteria for
+    the ``onboard --auto`` path (stage 0 of the autonomous pipeline). Fail-open:
+    any error (no model configured, provider down, junk reply) returns ``None``
+    and the caller falls back to the honest "fix these first" refusal. The draft
+    is never trusted — it still passes the full spec validation before commit."""
+
+    try:
+        from hermes_cli.config import load_config
+        from forecasting.quorum import make_aiagent_runner
+
+        active = model or _resolve_active_model_id(load_config().get("model"))
+        if not active:
+            return None
+        runner = make_aiagent_runner(max_iterations=1, toolsets=(), quiet=True, timeout=120)
+        system = (
+            "You draft resolution criteria for forecasting questions. Reply with ONE "
+            "sentence only — no preamble, no quotes. The sentence must state the "
+            "measurable condition, the authoritative source that adjudicates it, and "
+            "the deadline, in the form: 'Resolves YES if <measurable condition> per "
+            "<authoritative source> on or before <date>; otherwise NO.'"
+        )
+        user = (
+            f'Question: "{spec.title}"\n'
+            f"Deadline hint (use it if the question implies none): {spec.close_time or 'end of this year'}\n"
+            "Draft the resolution criteria sentence."
+        )
+        text = (runner(active, system, user) or "").strip().strip('"')
+        first_line = text.splitlines()[0].strip() if text.strip() else ""
+        # a real criteria sentence is short prose; refuse obvious junk/refusals
+        if not first_line or len(first_line) > 500 or "resolves" not in first_line.lower():
+            return None
+        return first_line
+    except Exception:
+        return None
+
+
 def _cmd_onboard(args: argparse.Namespace) -> None:
     from forecasting.question_spec import (
         apply_recommended_defaults,
@@ -4220,7 +4261,7 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
         with open(args.spec, encoding="utf-8") as fh:
             raw = json.load(fh)
     elif args.prompt:
-        raw = {"title": args.prompt, "resolution_criteria": ""}
+        raw = {"title": args.prompt, "resolution_criteria": getattr(args, "criteria", None) or ""}
     else:
         raise SystemExit("forecast onboard needs a prompt or --spec FILE")
 
@@ -4234,6 +4275,26 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
         # manual run uses (no gate is weakened — error-severity issues still block
         # the commit below via spec.commit()).
         spec, applied = apply_recommended_defaults(spec)
+
+        # Stage 0 of the autonomous pipeline: DRAFT the resolution criteria when the
+        # bare sentence carries none. accept-defaults rightly refuses to fabricate
+        # free text, but --auto already requires an LLM for the research/base_rate/
+        # update chain below — so one bounded, tool-less drafting call is what makes
+        # "one sentence in, a forecast out" actually true from the CLI. The draft
+        # still faces the full spec validation: an unscoreable draft fails the same
+        # honest error below, never a weaker commit.
+        if not (spec.resolution_criteria or "").strip():
+            drafted = _draft_resolution_criteria(spec, model=args.model, provider=args.provider)
+            if drafted:
+                from dataclasses import replace as _spec_replace
+
+                spec = _spec_replace(spec, resolution_criteria=drafted)
+                print(f'  drafted resolution criteria: "{drafted}"')
+                # criteria text can pin the horizon — re-apply so close_time upgrades
+                # from the end-of-year fallback to the criteria-implied deadline.
+                spec, more = apply_recommended_defaults(spec)
+                applied += more
+
         errs = [i for i in spec.errors()]
         if errs:
             # accept-defaults never fabricates past an un-defaultable error (e.g. an
@@ -4365,7 +4426,10 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
             choices = f"  [{' / '.join(c['choices'])}]" if c["choices"] else "  (free text)"
             print(f"  - {c['question']}{choices}")
     print("")
-    print("then edit a spec JSON and commit:  forecast onboard --spec spec.json --commit")
+    print('fastest: forecast onboard "<your question>" --auto   (accepts every recommended')
+    print("         default, drafts auditable criteria, then runs research -> base rate ->")
+    print("         committed forecast autonomously; add --criteria to pin your own)")
+    print("or edit a spec JSON and commit:  forecast onboard --spec spec.json --commit")
     print("(get the JSON skeleton with:  forecast onboard \"<your question>\" --json)")
 
 
