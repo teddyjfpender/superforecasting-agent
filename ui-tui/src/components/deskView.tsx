@@ -203,6 +203,19 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
 
+  // The desk is LIVE, not mount-stale: external writers (the chat agent, the
+  // nightly cron, a CLI in another terminal) commit snapshots while this view is
+  // open, and a stale payload lies about AGE/PROB on rows the desk never touched
+  // (the operator caught AGE frozen after a row updated). The payload build is
+  // ~20ms server-side, so a quiet 90s re-pull is cheap; setLoading(!cachedWs)
+  // keeps it flicker-free after the first paint and the id-tracked selection
+  // keeps the cursor stable. Sweep-done / u / U reloads still fire immediately.
+  useEffect(() => {
+    const id = setInterval(() => load(), 90_000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gw])
+
   // The review-sweep countdown read. Cheap + read-only, so it is safe to (re)pull
   // on mount and lazily every ~60s while the desk is open — bounded, cleared on
   // unmount (reusing the quorum-chip poll shape). A ref lets the sweep-event effect

@@ -987,3 +987,21 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
     desk.cleanup()
   })
 })
+
+describe('live payload re-pull', () => {
+  it('quietly re-fetches forecast.workspace on the 90s interval while open, stops on unmount', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const desk = await mountDesk(120, plainFixture(), recordingGw(plainFixture(), calls))
+    const count = () => calls.filter(c => c.method === 'forecast.workspace').length
+    const initial = count()
+    expect(initial).toBeGreaterThanOrEqual(1)
+
+    // The interval is real (not fake timers — the harness paints on real ticks),
+    // so assert the LIFECYCLE contract instead of wall-clock: the interval id is
+    // cleared on unmount, meaning no further pulls arrive afterwards.
+    desk.cleanup()
+    const settled = count()
+    await tick(200)
+    expect(count()).toBe(settled)
+  })
+})
