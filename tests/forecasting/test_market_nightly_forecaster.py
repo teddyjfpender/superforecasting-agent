@@ -342,6 +342,167 @@ def test_live_prompt_is_forward_and_encourages_search_not_backtest():
     assert msgs[0]["role"] == "system" and msgs[1]["role"] == "user"
 
 
+# ── VOI research-disciplined arm (the A/B "voi" prompt variant) ────────────────
+
+
+def test_voi_prompt_injects_research_plan_and_adequacy_and_keeps_json_contract():
+    # The VOI arm's prompt carries (a) the four STANDARD research angles from
+    # build_research_plan (run against a title-only shim) and (b) the adequacy
+    # source-coverage floor — while preserving the SAME forward framing + JSON schema.
+    from forecasting.market_nightly_forecaster import (
+        ADEQUACY_DISCIPLINE_BLOCK,
+        build_live_market_messages,
+        build_voi_market_messages,
+    )
+
+    case = {
+        "id": "manifold:x",
+        "question": "Will WTI crude close above $80 on 2027-01-01?",
+        "resolution_criteria": "Resolves YES if WTI settles above $80.",
+        "close_time": "2027-01-01T00:00:00Z",
+        "market_source": "manifold",
+    }
+    voi = build_voi_market_messages(case)
+    blob = " ".join(m["content"] for m in voi)
+    # (a) all four standard angles present.
+    for kind in ("primary_source", "base_rate", "recent_developments", "contrarian"):
+        assert kind in blob, kind
+    assert "Research plan" in blob
+    # (b) the adequacy floor is present verbatim.
+    assert ADEQUACY_DISCIPLINE_BLOCK.split("\n", 1)[0] in blob
+    assert "DISCONFIRMING" in blob
+    # forward framing + JSON contract preserved (same parse path as plain).
+    lb = blob.lower()
+    assert "web search" in lb and "open" in lb and "future" in lb
+    assert "probability" in lb
+    assert "historical backtest" not in lb  # still NOT the backtest packet
+    assert voi[0]["role"] == "system" and voi[1]["role"] == "user"
+
+    # The PLAIN prompt must NOT carry the research plan / adequacy block (control arm).
+    plain = build_live_market_messages(case)
+    pblob = " ".join(m["content"] for m in plain)
+    assert "Research plan" not in pblob
+    assert "Adequacy discipline" not in pblob
+
+
+def test_research_arm_voi_routes_voi_prompt_sharing_the_agent_plumbing():
+    # research_arm='voi' sends the VOI prompt but is built with the SAME toolset /
+    # factory plumbing as plain (only the prompt differs) — and still returns a float.
+    class _CapturingAgent:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            self.last_user = None
+
+        def run_conversation(self, user_message, system_message=None):
+            self.last_user = user_message
+            return {"final_response": json.dumps({"probability": 0.42})}
+
+    agent = _CapturingAgent()
+    voi_forecaster = mnf.build_informed_market_forecaster(
+        model="m", agent_factory=_factory_returning(agent), discover=False, research_arm="voi"
+    )
+    p = voi_forecaster(_open_market())
+    assert p == pytest.approx(0.42)
+    assert "Adequacy discipline" in agent.last_user  # VOI prompt was sent
+    # Same search-enabled plumbing as plain (no widening for the voi arm).
+    assert agent.kwargs["enabled_toolsets"] == mnf.LIVE_ENABLED_TOOLSETS
+
+
+def test_research_arm_plain_and_unknown_use_the_plain_prompt():
+    # plain (default) AND an unrecognised arm both send the plain (control) prompt.
+    for arm in ("plain", "nonsense", ""):
+        agent = _MockAgent(response=json.dumps({"probability": 0.5}))
+
+        class _Cap:
+            last = None
+
+        def factory(**kwargs):
+            agent.kwargs.update(kwargs)
+            orig = agent.run_conversation
+
+            def run_conversation(user_message, system_message=None):
+                _Cap.last = user_message
+                return orig(user_message, system_message=system_message)
+
+            agent.run_conversation = run_conversation
+            return agent
+
+        forecaster = mnf.build_informed_market_forecaster(
+            model="m", agent_factory=factory, discover=False, research_arm=arm
+        )
+        forecaster(_open_market())
+        assert "Adequacy discipline" not in (_Cap.last or ""), arm
+
+
+def test_cli_run_both_arms_records_two_tagged_pendings_per_market(tmp_path, monkeypatch):
+    # --research-arm both forecasts each sampled market TWICE (once per arm) and
+    # records two arm-tagged pendings — the paired A/B substrate.
+    markets = [_open_market("a", yes=0.30), _open_market("b", yes=0.80)]
+    monkeypatch.setattr(
+        "forecasting.market_nightly_forecaster.load_open_markets",
+        lambda source, *, limit: markets,
+    )
+    seen_arms: list[str] = []
+
+    def fake_build(**kwargs):
+        arm = kwargs.get("research_arm")
+        seen_arms.append(arm)
+        return lambda market: 0.60 if arm == "plain" else 0.75
+
+    monkeypatch.setattr(
+        "forecasting.market_nightly_forecaster.build_informed_market_forecaster", fake_build
+    )
+
+    cli._cmd_market_nightly_run(_run_args(tmp_path, research_arm="both"))
+
+    # Both arms were built, once each.
+    assert seen_arms == ["plain", "voi"]
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    by_arm: dict[str, set[str]] = {"plain": set(), "voi": set()}
+    for q in ledger.list_questions():
+        meta = getattr(q, "metadata", {}) or {}
+        if not meta.get("market_nightly"):
+            continue
+        by_arm[meta.get("arm")].add(meta.get("market_id"))
+    assert by_arm == {"plain": {"a", "b"}, "voi": {"a", "b"}}
+    # Each arm stored its OWN agent number on its own snapshot.
+    for q in ledger.list_questions():
+        meta = getattr(q, "metadata", {}) or {}
+        if not meta.get("market_nightly"):
+            continue
+        snap = ledger.list_snapshots(q.id)[0]
+        expected = 0.60 if meta.get("arm") == "plain" else 0.75
+        assert snap.probability_or_distribution == pytest.approx(expected)
+        assert snap.metadata.get("arm") == meta.get("arm")
+
+
+def test_cli_run_arm_defaults_from_config_when_flag_absent(tmp_path, monkeypatch):
+    # With no --research-arm flag, the run reads forecasting.market_nightly.research_arm.
+    monkeypatch.setattr(
+        "forecasting.market_nightly_forecaster.load_open_markets",
+        lambda source, *, limit: [_open_market("a")],
+    )
+    captured: dict = {}
+
+    def fake_build(**kwargs):
+        captured.update(kwargs)
+        return lambda market: 0.5
+
+    monkeypatch.setattr(
+        "forecasting.market_nightly_forecaster.build_informed_market_forecaster", fake_build
+    )
+    monkeypatch.setattr(
+        "hermes_cli.config.load_config",
+        lambda: {
+            "model": {"default": "openrouter/m", "provider": "openrouter"},
+            "forecasting": {"market_nightly": {"research_arm": "voi"}},
+        },
+    )
+    # flag absent (base _run_args does not set research_arm) -> config default 'voi'.
+    cli._cmd_market_nightly_run(_run_args(tmp_path, model=None))
+    assert captured["research_arm"] == "voi"
+
+
 def test_looks_personal_heuristic_excludes_self_referential_markets():
     # Quality gate: Manifold's tail is personal/meta markets that are not researchable
     # skill tests; the study samples only objective real-world questions.

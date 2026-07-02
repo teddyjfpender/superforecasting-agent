@@ -2367,6 +2367,20 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     mn_run.add_argument("-n", "--count", type=int, default=10, dest="count", help="Max open markets to sample + forecast (default: 10).")
     mn_run.add_argument("--source", default="manifold", help="Open-market source adapter (manifold|metaculus|...). Default: manifold.")
     mn_run.add_argument("--model", default=None, help="Agent model id (overrides the resolved active model).")
+    mn_run.add_argument(
+        "--research-arm",
+        dest="research_arm",
+        choices=["plain", "voi", "both"],
+        default=None,
+        help=(
+            "A/B research arm (default: config forecasting.market_nightly.research_arm, "
+            "itself 'plain'). plain = the plain agent-protocol packet (the existing "
+            "accrued record); voi = the research-disciplined packet (VOI research plan + "
+            "adequacy floor); both = forecast EACH sampled market TWICE, once per arm "
+            "(2x LLM calls) recording two pendings, so the voi-vs-plain lift is paired "
+            "and attributable in `report`."
+        ),
+    )
     mn_run.add_argument("--seed", type=int, default=0, dest="rng_seed", help="Deterministic sampling seed (default: 0).")
     mn_run.add_argument("--max-iterations", type=int, default=None, dest="max_iterations", help="Agent tool-calling budget per market.")
     mn_run.add_argument(
@@ -11305,7 +11319,7 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
         build_informed_market_forecaster,
         load_open_markets,
     )
-    from hermes_cli.config import load_config
+    from hermes_cli.config import cfg_get, load_config
 
     # available_at / evidence stamping is NOW (live): the whole point is the agent
     # uses fresh search on an OPEN market whose outcome does not exist yet. There is
@@ -11315,9 +11329,23 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
     source = getattr(args, "source", "manifold") or "manifold"
     seed = int(getattr(args, "rng_seed", 0) or 0)
 
+    cfg = load_config()
     # Resolve the agent model with the SAME logic the quorum uses (config["model"]
     # is a structured dict since the codex auth overhaul).
-    model = getattr(args, "model", None) or _resolve_active_model_id(load_config().get("model"))
+    model = getattr(args, "model", None) or _resolve_active_model_id(cfg.get("model"))
+
+    # A/B research arm: CLI flag wins, else config default (itself 'plain' so the
+    # existing accrued record stays comparable). 'both' forecasts each market TWICE.
+    arm_choice = getattr(args, "research_arm", None) or cfg_get(
+        cfg, "forecasting", "market_nightly", "research_arm", default="plain"
+    )
+    arm_choice = str(arm_choice or "plain").strip().lower()
+    if arm_choice == "both":
+        arms = ["plain", "voi"]
+    elif arm_choice == "voi":
+        arms = ["voi"]
+    else:
+        arms = ["plain"]
 
     try:
         candidates = load_open_markets(source, limit=max(n * 4, n, 1))
@@ -11334,46 +11362,56 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
     # intra-batch-duplicate edge — see record_pending's docstring).
     max_workers = max(1, int(getattr(args, "parallel", 1) or 1))
 
-    forecaster_kwargs: dict[str, Any] = {"model": model}
-    if getattr(args, "max_iterations", None) is not None:
-        forecaster_kwargs["max_iterations"] = int(args.max_iterations)
-    if max_workers > 1:
-        forecaster_kwargs["fresh_agent_per_call"] = True
-    forecaster = build_informed_market_forecaster(**forecaster_kwargs)
-
-    run = record_pending(
-        _ledger(args),
-        picked["sampled"],
-        as_of,
-        forecaster,
-        default_market_devig,
-        max_workers=max_workers,
-    )
+    ledger = _ledger(args)
+    runs: list[Any] = []
+    for arm in arms:
+        forecaster_kwargs: dict[str, Any] = {"model": model, "research_arm": arm}
+        if getattr(args, "max_iterations", None) is not None:
+            forecaster_kwargs["max_iterations"] = int(args.max_iterations)
+        if max_workers > 1:
+            forecaster_kwargs["fresh_agent_per_call"] = True
+        forecaster = build_informed_market_forecaster(**forecaster_kwargs)
+        runs.append(
+            record_pending(
+                ledger,
+                picked["sampled"],
+                as_of,
+                forecaster,
+                default_market_devig,
+                max_workers=max_workers,
+                arm=arm,
+            )
+        )
 
     if getattr(args, "json", False):
         out = {
             "as_of": as_of,
             "source": source,
             "model": model,
+            "research_arm": arm_choice,
             "candidates": len(candidates),
             "admissible": picked["admissible"],
             "sampled": len(picked["sampled"]),
             "rejected_sampling": picked["rejected"],
-            "run": run.to_dict(),
+            "runs": {run.arm: run.to_dict() for run in runs},
         }
+        # Back-compat: single-arm runs keep the flat "run" key existing tooling reads.
+        if len(runs) == 1:
+            out["run"] = runs[0].to_dict()
         print(json.dumps(out, indent=2, sort_keys=True))
         return
 
-    print(f"market-nightly run @ {as_of}  (source={source}, model={model or 'active default'})")
+    print(f"market-nightly run @ {as_of}  (source={source}, model={model or 'active default'}, arm={arm_choice})")
     print(f"  candidates fetched: {len(candidates)}  admissible (future close): {picked['admissible']}")
-    print(f"  sampled: {len(picked['sampled'])}  recorded: {run.n_recorded}  "
-          f"rejected: {run.n_rejected}  skipped: {len(run.skipped_ids)}")
-    for row in run.recorded:
-        print(f"  - {row['question_id']} market={row['market_id']} "
-              f"agent={row['agent_forecast']:.3f} market={row['market_devig_probability']:.3f} "
-              f"close={row['close_time']}")
-    for note in run.notes:
-        print(f"  note: {note}")
+    for run in runs:
+        print(f"  [arm {run.arm}] sampled: {len(picked['sampled'])}  recorded: {run.n_recorded}  "
+              f"rejected: {run.n_rejected}  skipped: {len(run.skipped_ids)}")
+        for row in run.recorded:
+            print(f"    - {row['question_id']} market={row['market_id']} "
+                  f"agent={row['agent_forecast']:.3f} market={row['market_devig_probability']:.3f} "
+                  f"close={row['close_time']}")
+        for note in run.notes:
+            print(f"    note: {note}")
 
 
 def _cmd_market_nightly_sample(args: argparse.Namespace) -> None:
@@ -11496,6 +11534,43 @@ def _cmd_market_nightly_report(args: argparse.Namespace) -> None:
         print(
             f"  [diagnostic] agent-vs-FROZEN-prior edge (n={frozen.get('n_scored', 0)}, NOT the claim) = "
             + (f"{fe:+.4f}" if isinstance(fe, (int, float)) else "-")
+        )
+
+    # A/B ARM SPLIT — per-arm agent-vs-market (contemporaneous baselines only).
+    by_arm = report.get("by_arm") or {}
+    for arm in ("plain", "voi"):
+        a = by_arm.get(arm) or {}
+        if not a.get("n_scored"):
+            continue
+        edge = a.get("paired_agent_edge_mean_brier")
+        edge_s = f"{edge:+.4f}" if isinstance(edge, (int, float)) else "-"
+        print(
+            f"  [arm {arm}] n={a['n_scored']}  mean agent Brier={_fmt(a.get('mean_agent_brier'))}"
+            f"  vs market={_fmt(a.get('mean_market_brier'))}  agent-vs-market edge={edge_s}"
+        )
+
+    # THE A/B SCOREBOARD — paired voi-vs-plain Brier delta (markets with BOTH arms).
+    vp = report.get("paired_voi_vs_plain") or {}
+    if vp.get("n_paired"):
+        d = vp.get("delta_mean_brier")
+        p = vp.get("p_value")
+        lo = vp.get("ci95_low")
+        hi = vp.get("ci95_high")
+        band = (
+            f" [95% CI {lo:+.4f}..{hi:+.4f}]"
+            if isinstance(lo, (int, float)) and isinstance(hi, (int, float))
+            else ""
+        )
+        d_s = f"{d:+.4f}" if isinstance(d, (int, float)) else "-"
+        p_s = f"{p:.2f}" if isinstance(p, (int, float)) else "-"
+        # Honest significance note: only claim significance at the seeded-bootstrap p.
+        sig = "significant" if isinstance(p, (int, float)) and p < 0.05 else "not yet significant"
+        print(
+            f"  voi arm: n={vp['n_paired']} paired, ΔBrier(plain−voi, +=VOI better)={d_s}{band}, "
+            f"p={p_s} — {sig}"
+        )
+        print(
+            f"    wins voi/plain/ties = {vp.get('voi_wins', 0)}/{vp.get('plain_wins', 0)}/{vp.get('ties', 0)}"
         )
 
 

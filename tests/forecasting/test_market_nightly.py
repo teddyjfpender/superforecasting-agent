@@ -670,3 +670,153 @@ def test_legacy_frozen_row_without_provenance_is_excluded(tmp_path):
     assert report["n_contemporaneous"] == 1
     assert report["n_frozen_excluded"] == 1
     assert report["paired_agent_wins"] == 1
+
+
+# ── A/B research arm tagging + paired voi-vs-plain scoreboard ───────────────────
+#
+# The market-hidden ForecastBench result proved the closed-book LLM has no intrinsic
+# edge; the only path to edge is fresh information, provable only FORWARD. Arc 2
+# shipped VOI-directed research but build_informed_market_forecaster used the plain
+# packet, so the lift was INVISIBLE to the scoreboard. These tests prove the paired
+# A/B: each arm is tagged, split by arm, and the voi-vs-plain Brier delta is computed
+# via the SAME P0.2 paired-bootstrap machinery (reused, never reimplemented).
+
+
+def _live(mid, *, close, yes=0.5):
+    # A contemporaneous live market (price_asof == forecast instant) so it enters the
+    # headline / per-arm agent-vs-market split without frozen-baseline quarantine.
+    return _market(mid, close=close, yes=yes, source="manifold", price_asof=AS_OF,
+                   baseline_is_frozen=False)
+
+
+def test_record_pending_tags_arm_on_question_snapshot_and_row(tmp_path):
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(
+        ledger, [_market("m", close="2026-07-01T00:00:00Z")], AS_OF, lambda m: 0.7, arm="voi"
+    )
+    assert run.arm == "voi"
+    row = run.recorded[0]
+    assert row["arm"] == "voi"
+    q = [q for q in ledger.list_questions() if (getattr(q, "metadata", {}) or {}).get("market_id") == "m"][0]
+    assert q.metadata.get("arm") == "voi"
+    snap = ledger.list_snapshots(row["question_id"])[0]
+    assert snap.metadata.get("arm") == "voi"
+
+
+def test_record_pending_default_arm_is_plain(tmp_path):
+    # Back-compat: the default arm is 'plain' (the existing accrued record).
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(ledger, [_market("m", close="2026-07-01T00:00:00Z")], AS_OF, lambda m: 0.7)
+    assert run.arm == "plain"
+    assert run.recorded[0]["arm"] == "plain"
+    snap = ledger.list_snapshots(run.recorded[0]["question_id"])[0]
+    assert snap.metadata.get("arm") == "plain"
+
+
+def test_arm_aware_idempotence_allows_both_arms_but_not_a_duplicate_within_an_arm(tmp_path):
+    # The SAME market may hold one plain AND one voi entry (the paired A/B), but never
+    # two entries for the SAME arm.
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    market = _market("dup", close="2026-07-01T00:00:00Z")
+    first = record_pending(ledger, [market], AS_OF, lambda m: 0.6, arm="plain")
+    assert first.n_recorded == 1
+    # Re-running plain on the same still-open market is deduped.
+    again = record_pending(ledger, [market], "2026-06-02T00:00:00Z", lambda m: 0.6, arm="plain")
+    assert again.n_recorded == 0 and "dup" in again.skipped_ids
+    # But the voi arm is a DIFFERENT key, so it records.
+    voi = record_pending(ledger, [market], "2026-06-02T00:00:00Z", lambda m: 0.9, arm="voi")
+    assert voi.n_recorded == 1
+    # Exactly two questions for this market: one per arm.
+    qs = [q for q in ledger.list_questions() if (getattr(q, "metadata", {}) or {}).get("market_id") == "dup"]
+    assert sorted((getattr(q, "metadata", {}) or {}).get("arm") for q in qs) == ["plain", "voi"]
+
+
+def test_score_matured_surfaces_arm_and_counts_by_arm(tmp_path):
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    markets = [_live("a", close="2026-06-15T00:00:00Z"), _live("b", close="2026-06-16T00:00:00Z")]
+    plain = record_pending(ledger, markets, AS_OF, lambda m: 0.6, arm="plain")
+    voi = record_pending(ledger, markets, AS_OF, lambda m: 0.8, arm="voi")
+    for run in (plain, voi):
+        for row in run.recorded:
+            _resolve_yes(ledger, row["question_id"])
+    matured = score_matured(ledger, now="2026-07-01T00:00:00Z")
+    assert matured["n_scored"] == 4
+    assert matured["n_by_arm"] == {"plain": 2, "voi": 2}
+    assert {s["arm"] for s in matured["scored"]} == {"plain", "voi"}
+
+
+def test_report_paired_voi_vs_plain_delta_is_hand_checkable(tmp_path):
+    # Two markets forecast by BOTH arms; both resolve YES. Hand-checkable Briers:
+    #   market x: plain=0.5 -> (1-0.5)^2 = 0.25 ; voi=0.9 -> (1-0.9)^2 = 0.01 ; delta=0.24
+    #   market y: plain=0.6 -> (1-0.6)^2 = 0.16 ; voi=0.8 -> (1-0.8)^2 = 0.04 ; delta=0.12
+    # delta = plain_brier - voi_brier (POSITIVE = VOI better). mean = (0.24+0.12)/2 = 0.18.
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    mx = _live("x", close="2026-06-15T00:00:00Z")
+    my = _live("y", close="2026-06-16T00:00:00Z")
+
+    def plain_forecaster(m):
+        return {"x": 0.5, "y": 0.6}[market_id(m)]
+
+    def voi_forecaster(m):
+        return {"x": 0.9, "y": 0.8}[market_id(m)]
+
+    plain = record_pending(ledger, [mx, my], AS_OF, plain_forecaster, arm="plain")
+    voi = record_pending(ledger, [mx, my], AS_OF, voi_forecaster, arm="voi")
+    for run in (plain, voi):
+        for row in run.recorded:
+            _resolve_yes(ledger, row["question_id"])
+    score_matured(ledger, now="2026-07-01T00:00:00Z")
+
+    report = market_nightly_report(ledger)
+    vp = report["paired_voi_vs_plain"]
+    assert vp["n_paired"] == 2
+    assert vp["delta_mean_brier"] == pytest.approx(0.18)
+    assert vp["voi_wins"] == 2
+    assert vp["plain_wins"] == 0
+    assert vp["ties"] == 0
+    # Non-degenerate spread (0.24 vs 0.12) -> the seeded bootstrap yields a real p + CI.
+    assert isinstance(vp["p_value"], float) and 0.0 <= vp["p_value"] <= 1.0
+    assert vp["ci95_low"] is not None and vp["ci95_high"] is not None
+
+
+def test_report_by_arm_splits_agent_vs_market(tmp_path):
+    # Per-arm agent-vs-market split (contemporaneous baselines). voi (0.85) is sharper
+    # than plain (0.55) toward the realized YES, so voi's mean agent Brier is lower.
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    markets = [_live("a", close="2026-06-15T00:00:00Z", yes=0.50),
+               _live("b", close="2026-06-16T00:00:00Z", yes=0.45)]
+    plain = record_pending(ledger, markets, AS_OF, lambda m: 0.55, arm="plain")
+    voi = record_pending(ledger, markets, AS_OF, lambda m: 0.85, arm="voi")
+    for run in (plain, voi):
+        for row in run.recorded:
+            _resolve_yes(ledger, row["question_id"])
+    score_matured(ledger, now="2026-07-01T00:00:00Z")
+
+    report = market_nightly_report(ledger)
+    by_arm = report["by_arm"]
+    assert by_arm["plain"]["n_scored"] == 2
+    assert by_arm["voi"]["n_scored"] == 2
+    # voi mean agent Brier (0.85 on YES -> 0.0225) < plain (0.55 on YES -> 0.2025).
+    assert by_arm["voi"]["mean_agent_brier"] == pytest.approx(0.0225)
+    assert by_arm["plain"]["mean_agent_brier"] == pytest.approx(0.2025)
+    # Both arms share the SAME market baseline mean (same markets, same de-vigged price).
+    assert by_arm["voi"]["mean_market_brier"] == pytest.approx(by_arm["plain"]["mean_market_brier"])
+    # voi's agent-vs-market edge is bigger than plain's (both positive, voi sharper).
+    assert by_arm["voi"]["paired_agent_edge_mean_brier"] > by_arm["plain"]["paired_agent_edge_mean_brier"]
+
+
+def test_report_paired_voi_vs_plain_empty_without_both_arms(tmp_path):
+    # With only ONE arm recorded, there are no both-arm pairs -> n_paired == 0 and the
+    # delta is None (the empty paired stub), never a fabricated number.
+    ledger = ForecastLedger(tmp_path / "mn.db")
+    run = record_pending(
+        ledger, [_live("solo", close="2026-06-15T00:00:00Z")], AS_OF, lambda m: 0.7, arm="plain"
+    )
+    _resolve_yes(ledger, run.recorded[0]["question_id"])
+    score_matured(ledger, now="2026-07-01T00:00:00Z")
+    report = market_nightly_report(ledger)
+    assert report["paired_voi_vs_plain"]["n_paired"] == 0
+    assert report["paired_voi_vs_plain"]["delta_mean_brier"] is None
+    # by_arm still surfaces the single arm; voi bucket is empty (not scored).
+    assert report["by_arm"]["plain"]["n_scored"] == 1
+    assert report["by_arm"]["voi"]["n_scored"] == 0

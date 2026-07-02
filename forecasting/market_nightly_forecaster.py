@@ -176,6 +176,89 @@ def build_live_market_messages(case: Mapping[str, Any]) -> list[dict[str, str]]:
     ]
 
 
+# ── the VOI research-disciplined prompt variant (the A/B "voi" arm) ────────────
+#
+# Arc 2 shipped VOI-directed research (forecasting/research_audit.py:
+# build_research_plan + the four-angle scaffold + disconfirming discipline), but
+# build_informed_market_forecaster used the PLAIN agent-protocol packet — so the
+# research improvements were INVISIBLE to the only scoreboard that can prove them
+# (MarketNightly). This variant injects that research discipline into the live
+# prompt so the lift is attributable via a PAIRED voi-vs-plain comparison.
+#
+# A raw market dict has NO desk levers (update_triggers / change_my_mind /
+# outcome_paths), so build_research_plan is run against a MINIMAL question-like
+# shim (title = the market question). With no levers present the plan is exactly
+# the four STANDARD angles (primary_source / base_rate / recent_developments /
+# contrarian) — verified pure + total (Arc 2's contract). We surface those angles
+# to the agent and add an explicit source-coverage adequacy floor.
+ADEQUACY_DISCIPLINE_BLOCK = (
+    "## Adequacy discipline (source-coverage floor)\n"
+    "Before you commit a probability, actively seek ALL FOUR of the following, and "
+    "treat missing any of them as a signal to widen your uncertainty:\n"
+    "  1. a PRIMARY source that directly adjudicates the resolution criteria,\n"
+    "  2. a BASE-RATE / reference-class anchor (the outside view for questions like this),\n"
+    "  3. a RECENT development that moves the estimate off the base rate,\n"
+    "  4. at least one DISCONFIRMING piece of evidence AGAINST your current lean.\n"
+    "In your rationale, state explicitly which of these four you could NOT find — do "
+    "not fabricate coverage you did not actually obtain."
+)
+
+
+def _format_research_plan_block(case: Mapping[str, Any]) -> str:
+    """Render the four standard research angles (from build_research_plan against a
+    minimal title-only shim) as a directive block for the VOI prompt. Pure string
+    work: the plan itself is deterministic and LLM-free."""
+
+    from types import SimpleNamespace
+
+    from forecasting.research_audit import build_research_plan
+
+    title = str(case.get("question") or case.get("title") or "").strip()
+    shim = SimpleNamespace(title=title, id=str(case.get("id") or ""))
+    plan = build_research_plan(shim)
+    lines = ["## Research plan — attack these angles before you answer"]
+    for angle in plan.get("angles", []):
+        kind = str(angle.get("kind") or "").strip() or "angle"
+        rationale = str(angle.get("rationale") or "").strip()
+        lines.append(f"- [{kind}] {rationale}")
+        queries = [q for q in (angle.get("suggested_queries") or []) if str(q).strip()]
+        if queries:
+            lines.append(f"    suggested searches: {'; '.join(queries)}")
+    return "\n".join(lines)
+
+
+def build_voi_market_messages(case: Mapping[str, Any]) -> list[dict[str, str]]:
+    """The VOI (research-disciplined) prompt for an OPEN market — the ``voi`` A/B arm.
+
+    Same forward/live framing and IDENTICAL JSON output contract as
+    :func:`build_live_market_messages` (so the SAME parse path + failure->None
+    semantics apply), but the user turn additionally carries (a) the four standard
+    research angles from :func:`forecasting.research_audit.build_research_plan` and
+    (b) the :data:`ADEQUACY_DISCIPLINE_BLOCK` source-coverage floor. The plain arm
+    is the control; this arm's only difference is the injected research discipline,
+    so a paired voi-vs-plain Brier delta attributes any lift to that discipline."""
+
+    base = build_live_market_messages(case)
+    system = (
+        base[0]["content"]
+        + " Follow the supplied research plan and the adequacy discipline before you answer."
+    )
+    plan_block = _format_research_plan_block(case)
+    user = (
+        base[1]["content"]
+        + "\n\n"
+        + plan_block
+        + "\n\n"
+        + ADEQUACY_DISCIPLINE_BLOCK
+        + "\n\nAfter completing this research discipline, output ONLY the JSON object "
+        "described above (probability, confidence, rationale, components)."
+    )
+    return [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+
+
 def _ensure_plugins_discovered() -> None:
     """Register web-search providers once (idempotent) so the live search path
     has its tools available. A discovery failure is non-fatal — the agent simply
@@ -197,8 +280,25 @@ def build_informed_market_forecaster(
     agent_factory: Callable[..., Any] | None = None,
     discover: bool = True,
     fresh_agent_per_call: bool = False,
+    research_arm: str = "plain",
 ) -> Callable[[Mapping[str, Any]], float | None]:
     """Return a SEARCH-ENABLED informed ``AgentForecaster`` for MarketNightly.
+
+    ``research_arm`` selects the prompt variant (the A/B lever), sharing ALL of the
+    agent-build plumbing below (one factory, one closure) so the two arms differ
+    ONLY in the prompt they send:
+
+      * ``"plain"`` (default) — the plain forward/live agent-protocol packet
+        (:func:`build_live_market_messages`); the existing accrued record.
+      * ``"voi"`` — the research-disciplined packet
+        (:func:`build_voi_market_messages`): the same forward framing plus the four
+        standard research angles from
+        :func:`forecasting.research_audit.build_research_plan` and the adequacy
+        source-coverage floor. Identical JSON contract, parse path, and
+        failure->None semantics as the plain arm, so a paired voi-vs-plain Brier
+        delta attributes any lift to the injected research discipline.
+
+    An unrecognised value falls back to ``"plain"``.
 
     The returned callable maps ``market dict -> float in [0, 1] | None``:
 
@@ -244,6 +344,11 @@ def build_informed_market_forecaster(
     if discover:
         _ensure_plugins_discovered()
 
+    # The A/B prompt lever: "voi" -> research-disciplined packet, anything else ->
+    # the plain packet. Resolved ONCE here so the per-market closure is branch-free.
+    use_voi = str(research_arm or "plain").strip().lower() == "voi"
+    build_messages = build_voi_market_messages if use_voi else build_live_market_messages
+
     factory = agent_factory
     if factory is None:
         from agent.agent_factory import build_agent as factory  # type: ignore[no-redef]
@@ -280,8 +385,9 @@ def build_informed_market_forecaster(
             case = _market_to_case(market)
             # FORWARD/LIVE prompt (encourages fresh web search) — NOT the backtest
             # packet, whose "historical backtest / use only supplied data" framing
-            # would suppress the search this experiment exists to measure.
-            messages = build_live_market_messages(case)
+            # would suppress the search this experiment exists to measure. The
+            # research_arm selects plain vs the VOI research-disciplined variant.
+            messages = build_messages(case)
             agent = _get_agent()
             result = agent.run_conversation(
                 messages[1]["content"],
@@ -521,11 +627,14 @@ def available_open_market_sources() -> list[str]:
 
 # Re-export the de-vig + price helpers so the CLI imports a single module.
 __all__ = [
+    "ADEQUACY_DISCIPLINE_BLOCK",
     "DEFAULT_MAX_ITERATIONS",
     "DEFAULT_TIMEOUT_SECONDS",
     "LIVE_ENABLED_TOOLSETS",
     "available_open_market_sources",
     "build_informed_market_forecaster",
+    "build_live_market_messages",
+    "build_voi_market_messages",
     "load_open_markets",
     "market_yes_price",
 ]

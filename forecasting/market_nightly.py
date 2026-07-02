@@ -72,6 +72,20 @@ MARKET_BASELINE_TYPE = "market_price"
 # market-nightly entries without scanning every snapshot field.
 PENDING_MARKER = "market_nightly"
 
+# The A/B research arms. ``plain`` is the plain agent-protocol packet (the existing
+# accrued record); ``voi`` is the research-disciplined variant (VOI research plan +
+# adequacy floor). Any legacy row WITHOUT an arm field reads as ``plain`` (back-compat),
+# so the historical record is fully comparable to the plain arm going forward.
+DEFAULT_RESEARCH_ARM = "plain"
+RESEARCH_ARMS = ("plain", "voi")
+
+
+def _normalize_arm(arm: Any) -> str:
+    """Coerce an arm value to one of :data:`RESEARCH_ARMS`; unknown/blank -> ``plain``."""
+
+    val = str(arm or "").strip().lower()
+    return val if val in RESEARCH_ARMS else DEFAULT_RESEARCH_ARM
+
 # CONTEMPORANEOUS-BASELINE THRESHOLD. The live-edge "agent beats the market" claim is
 # only honest when the market price the agent is measured against was sampled at (very
 # nearly) the SAME instant as the forecast. A baseline whose price vintage
@@ -373,6 +387,7 @@ class MarketNightlyRun:
     against."""
 
     as_of: str
+    arm: str = "plain"
     recorded: list[dict[str, Any]] = field(default_factory=list)
     rejected_ids: list[str] = field(default_factory=list)
     skipped_ids: list[str] = field(default_factory=list)
@@ -393,6 +408,7 @@ class MarketNightlyRun:
     def to_dict(self) -> dict[str, Any]:
         return {
             "as_of": self.as_of,
+            "arm": self.arm,
             "recorded": self.recorded,
             "n_recorded": self.n_recorded,
             "rejected_ids": self.rejected_ids,
@@ -419,8 +435,18 @@ def record_pending(
     domain: str | None = "market_nightly",
     tags: Sequence[str] | None = None,
     max_workers: int = 1,
+    arm: str = DEFAULT_RESEARCH_ARM,
 ) -> MarketNightlyRun:
     """Store a pending market-nightly entry for each sampled market.
+
+    ``arm`` (``plain`` | ``voi``, default ``plain``) tags every stored question,
+    snapshot, and recorded row with the A/B research arm that produced the forecast,
+    so the scoring/report path can split agent-vs-market metrics BY ARM and compute a
+    PAIRED voi-vs-plain Brier delta on markets that carry BOTH arms. Idempotence is
+    arm-aware: the SAME market may hold one ``plain`` entry AND one ``voi`` entry (the
+    two arms of a paired A/B), but never two entries for the SAME arm. A legacy row
+    written before arm tagging reads as ``plain`` (back-compat), so re-running the
+    plain arm still dedups against it exactly as before.
 
     For each market this:
       1. RE-ASSERTS the foreknowledge-proof invariant (close STRICTLY > as_of);
@@ -464,25 +490,29 @@ def record_pending(
     """
 
     devig = market_devig or default_market_devig
+    arm = _normalize_arm(arm)
     as_of_norm = parse_timestamp(as_of, field_name="as_of")
     if not as_of_norm:
         raise ValueError("record_pending requires a concrete as_of timestamp")
 
-    run = MarketNightlyRun(as_of=as_of_norm)
+    run = MarketNightlyRun(as_of=as_of_norm, arm=arm)
     tag_list = list(tags or []) + [MARKET_NIGHTLY_ORIGIN]
-    # Idempotence: a still-open market re-sampled on a later night must NOT be
-    # recorded twice. Skip any market that already has a market-nightly entry (a
-    # resolved market won't be re-sampled — it fails the strictly-future-close
-    # filter). Seed from existing questions, then grow as we record this batch so
-    # an intra-batch duplicate id is also skipped.
-    existing_mids: set[str] = set()
+    # Idempotence (ARM-AWARE): a still-open market re-sampled on a later night must
+    # NOT be recorded twice FOR THE SAME ARM (a resolved market won't be re-sampled
+    # — it fails the strictly-future-close filter). The dedup key is
+    # ``(market_id, arm)`` so the same market may carry one plain AND one voi entry
+    # (the paired A/B) while never duplicating within an arm. A legacy entry with no
+    # arm reads as ``plain``. Seed from existing questions, then grow as we record
+    # this batch so an intra-batch duplicate id (same arm) is also skipped.
+    existing_pairs: set[tuple[str, str]] = set()
     try:
         for q in _market_nightly_questions(ledger):
-            existing = (getattr(q, "metadata", {}) or {}).get("market_id")
+            meta = getattr(q, "metadata", {}) or {}
+            existing = meta.get("market_id")
             if existing:
-                existing_mids.add(str(existing))
+                existing_pairs.add((str(existing), _normalize_arm(meta.get("arm"))))
     except Exception:  # noqa: BLE001 — a ledger without prior entries -> no dedup needed
-        existing_mids = set()
+        existing_pairs = set()
 
     # ── pass 1 (serial, cheap): admissibility / dedup / foreknowledge filter ────
     # Resolve which markets are ELIGIBLE to forecast WITHOUT appending to the run
@@ -494,10 +524,10 @@ def record_pending(
     admissible: list[Mapping[str, Any]] = []
     admissible_slot: dict[int, int] = {}
     dup_skip: set[int] = set()
-    seen_in_batch: set[str] = set()
+    seen_in_batch: set[tuple[str, str]] = set()
     for sidx, market in enumerate(sampled):
         mid = market_id(market)
-        if mid and (mid in existing_mids or mid in seen_in_batch):
+        if mid and ((mid, arm) in existing_pairs or (mid, arm) in seen_in_batch):
             dup_skip.add(sidx)
             continue
         close = market_close_time(market)
@@ -510,7 +540,7 @@ def record_pending(
         admissible_slot[sidx] = len(admissible)
         admissible.append(market)
         if mid:
-            seen_in_batch.add(mid)
+            seen_in_batch.add((mid, arm))
 
     # ── pass 2 (the SLOW part — optionally parallel): agent_forecaster(market) ──
     # Each entry becomes the agent's P(yes) for one admissible market. With
@@ -549,7 +579,9 @@ def record_pending(
         mid = market_id(market)
         if sidx in dup_skip:
             run.skipped_ids.append(mid)
-            run.notes.append(f"skipped {mid!r}: already has a market-nightly entry (idempotent re-sample)")
+            run.notes.append(
+                f"skipped {mid!r}: already has a {arm!r}-arm market-nightly entry (idempotent re-sample)"
+            )
             continue
         if sidx not in admissible_slot:
             close = market_close_time(market)
@@ -619,6 +651,7 @@ def record_pending(
                 "market_id": mid,
                 "market_source": str(_first(market, "source", "platform") or ""),
                 "as_of": as_of_norm,
+                "arm": arm,
             },
         )
 
@@ -639,6 +672,7 @@ def record_pending(
                 PENDING_MARKER: True,
                 "market_id": mid,
                 "market_close_time": close,
+                "arm": arm,
                 "agent_forecast": agent_p,
                 "market_devig_probability": market_p,
                 # Carry the baseline provenance onto the snapshot too, so score_matured
@@ -673,6 +707,7 @@ def record_pending(
                 "question_id": question.id,
                 "forecast_id": snapshot.forecast_id,
                 "baseline_id": baseline["id"],
+                "arm": arm,
                 "agent_forecast": agent_p,
                 "market_devig_probability": market_p,
                 "close_time": close,
@@ -714,6 +749,15 @@ def _market_nightly_questions(ledger: Any) -> list[Any]:
         if meta.get("market_nightly") or MARKET_NIGHTLY_ORIGIN in (getattr(question, "tags", []) or []):
             out.append(question)
     return out
+
+
+def _snapshot_arm(snapshot: Any) -> str:
+    """The A/B research arm a market-nightly snapshot was recorded under (``plain`` |
+    ``voi``). A snapshot with no ``arm`` metadata (legacy, pre-tagging) reads as
+    ``plain`` so the historical record stays comparable to the plain arm."""
+
+    meta = getattr(snapshot, "metadata", None) or {}
+    return _normalize_arm(meta.get("arm"))
 
 
 def _market_baseline_row(ledger: Any, question_id: str) -> dict[str, Any] | None:
@@ -843,6 +887,7 @@ def score_matured(ledger: Any, *, now: str | None = None) -> dict[str, Any]:
                 "question_id": qid,
                 "market_id": mid,
                 "forecast_id": snapshot.forecast_id,
+                "arm": _snapshot_arm(snapshot),
                 "agent_brier": agent_score.brier_score,
                 "market_brier": market_brier,
                 "outcome": resolution.outcome,
@@ -854,6 +899,7 @@ def score_matured(ledger: Any, *, now: str | None = None) -> dict[str, Any]:
 
     n_newly_scored = sum(1 for s in scored if s["newly_scored"])
     n_contemporaneous = sum(1 for s in scored if s["contemporaneous"])
+    n_by_arm = {a: sum(1 for s in scored if s["arm"] == a) for a in RESEARCH_ARMS}
     return {
         "scored": scored,
         "still_pending": still_pending,
@@ -861,6 +907,7 @@ def score_matured(ledger: Any, *, now: str | None = None) -> dict[str, Any]:
         "n_newly_scored": n_newly_scored,
         "n_contemporaneous": n_contemporaneous,
         "n_frozen_excluded": len(scored) - n_contemporaneous,
+        "n_by_arm": n_by_arm,
         "n_still_pending": len(still_pending),
         "now": now_norm,
         "notes": notes,
@@ -909,8 +956,23 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
     f_agent_briers: list[float] = []
     f_market_briers: list[float] = []
 
+    # ── A/B arm splits ─────────────────────────────────────────────────────────
+    # ``per_arm``: per-arm CONTEMPORANEOUS agent-vs-market pairs (mirrors the headline
+    # discipline, split by arm). ``by_market_agent``: mid -> {arm: agent_score}, used to
+    # build the PAIRED voi-vs-plain agent-vs-agent comparison on markets forecast by
+    # BOTH arms. The voi-vs-plain comparison uses ONLY the two agent snapshots on the
+    # same resolved outcome (the market baseline never enters it), so it does NOT gate
+    # on the market baseline being scored or contemporaneous — both arms forecast the
+    # same open market at the same instant, so there is no staleness asymmetry.
+    per_arm: dict[str, dict[str, list[Any]]] = {
+        a: {"pairs": [], "agent": [], "market": []} for a in RESEARCH_ARMS
+    }
+    by_market_agent: dict[str, dict[str, Any]] = {}
+
     for snapshot in _pending_market_nightly_snapshots(ledger):
         qid = snapshot.question_id
+        arm = _snapshot_arm(snapshot)
+        mid = str((getattr(snapshot, "metadata", None) or {}).get("market_id") or qid)
         resolution = ledger.get_latest_resolution(qid, confirmed_only=True)
         agent_score = None
         if resolution is not None:
@@ -918,6 +980,10 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
         if agent_score is None or agent_score.brier_score is None:
             n_pending += 1
             continue
+
+        # Record the scored AGENT forecast for the voi-vs-plain pairing BEFORE the
+        # market-baseline gate — that comparison needs only the two agent scores.
+        by_market_agent.setdefault(mid, {})[arm] = agent_score
 
         market_score = _scored_market_baseline(ledger, qid)
         if market_score is None or market_score.brier_score is None:
@@ -939,6 +1005,11 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
             contemporaneous_pairs.append(pair)
             c_agent_briers.append(a_brier)
             c_market_briers.append(m_brier)
+            # Per-arm headline mirrors the contemporaneous-only discipline.
+            bucket = per_arm[arm]
+            bucket["pairs"].append(pair)
+            bucket["agent"].append(a_brier)
+            bucket["market"].append(m_brier)
         else:
             frozen_pairs.append(pair)
             f_agent_briers.append(a_brier)
@@ -948,6 +1019,18 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
     headline = _paired_block(ledger, contemporaneous_pairs)
     full = _paired_block(ledger, all_pairs)
     frozen = _paired_block(ledger, frozen_pairs)
+
+    # ── PAIRED voi-vs-plain: same market forecast by BOTH arms, agent-vs-agent ──
+    # Pair (voi_agent, plain_agent) so _paired_brier_summary yields deltas of
+    # plain_brier - voi_brier (POSITIVE == VOI better, matching the "positive = the
+    # left arm improves" convention used for the agent-vs-market edge). This is the
+    # scoreboard that makes the Arc-2 research lift ATTRIBUTABLE.
+    voi_plain_pairs: list[tuple[Any, Any]] = [
+        (arms["voi"], arms["plain"])
+        for arms in by_market_agent.values()
+        if "voi" in arms and "plain" in arms
+    ]
+    voi_vs_plain = _paired_block(ledger, voi_plain_pairs)
 
     return {
         "n_pending": n_pending,
@@ -987,6 +1070,32 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
             "mean_agent_brier": _mean(f_agent_briers),
             "mean_market_brier": _mean(f_market_briers),
             **frozen,
+        },
+        # A/B ARM SPLIT. Per-arm agent-vs-market (CONTEMPORANEOUS baselines only, same
+        # discipline as the headline) so ``plain`` and ``voi`` each carry their own
+        # n / mean Briers / paired edge vs the market.
+        "by_arm": {
+            a: {
+                "n_scored": len(per_arm[a]["pairs"]),
+                "mean_agent_brier": _mean(per_arm[a]["agent"]),
+                "mean_market_brier": _mean(per_arm[a]["market"]),
+                **_paired_block(ledger, per_arm[a]["pairs"]),
+            }
+            for a in RESEARCH_ARMS
+        },
+        # THE A/B SCOREBOARD: paired voi-vs-plain Brier delta over markets forecast by
+        # BOTH arms. ``delta_mean_brier`` = plain_brier - voi_brier (POSITIVE = VOI
+        # better); ``voi_wins``/``plain_wins``/``ties`` and the seeded-bootstrap CI + p
+        # come straight from the reused P0.2 paired machinery — never reimplemented.
+        "paired_voi_vs_plain": {
+            "n_paired": len(voi_plain_pairs),
+            "delta_mean_brier": voi_vs_plain.get("paired_agent_edge_mean_brier"),
+            "ci95_low": voi_vs_plain.get("paired_agent_edge_ci95_low"),
+            "ci95_high": voi_vs_plain.get("paired_agent_edge_ci95_high"),
+            "p_value": voi_vs_plain.get("paired_p_value"),
+            "voi_wins": voi_vs_plain.get("paired_agent_wins", 0),
+            "plain_wins": voi_vs_plain.get("paired_baseline_wins", 0),
+            "ties": voi_vs_plain.get("paired_ties", 0),
         },
     }
 

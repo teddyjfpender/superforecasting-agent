@@ -821,6 +821,22 @@ DEFAULT_CONFIG = {
             # `forecast warnings automode`. 0 disables the drain.
             "free_tier_sweep_cap": 500,
         },
+        # MarketNightly A/B research arm (forecasting/market_nightly.py): the
+        # foreknowledge-proof live benchmark can forecast each OPEN market with the
+        # PLAIN agent-protocol packet or the VOI research-disciplined packet (VOI
+        # research plan + adequacy source-coverage floor) so the Arc-2 research lift
+        # becomes ATTRIBUTABLE on the only scoreboard that can prove it.
+        "market_nightly": {
+            # Default arm for `forecast market-nightly run` (override per-run with
+            # --research-arm):
+            #   plain -> the plain packet (the existing accrued record),
+            #   voi   -> the research-disciplined packet,
+            #   both  -> forecast each market with BOTH arms (2x LLM calls),
+            #            recording two pendings so `report` shows the PAIRED
+            #            voi-vs-plain Brier delta.
+            # DEFAULT 'plain' so the accrued record stays comparable going forward.
+            "research_arm": "plain",
+        },
     },
     "agent": {
         "max_turns": 90,
