@@ -171,6 +171,79 @@ def test_run_quorum_parallel_preserves_input_order():
     assert [round(f.probability, 3) for f in res.forecasts] == [0.1, 0.2, 0.3, 0.4]
 
 
+def _make_concurrency_probe_runner():
+    """Return (runner, get_max) where the runner records peak parallelism."""
+    import threading
+    import time
+
+    lock = threading.Lock()
+    state = {"live": 0, "max": 0}
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps({"probability": 0.5, "rationale": "ok"})
+        with lock:
+            state["live"] += 1
+            state["max"] = max(state["max"], state["live"])
+        # Hold the slot long enough that genuinely-parallel dispatch overlaps.
+        time.sleep(0.05)
+        with lock:
+            state["live"] -= 1
+        return json.dumps({"probability": 0.4, "rationale": "r"})
+
+    return runner, (lambda: state["max"])
+
+
+def test_run_quorum_default_dispatches_whole_panel_in_one_wave():
+    # Wave-5 P3: with no explicit max_concurrency an 8-model panel should fire
+    # all 8 at once (capped at 8), not serialise into 4-wide waves.
+    runner, get_max = _make_concurrency_probe_runner()
+    models = [f"m/{i}" for i in range(8)]
+    res = run_quorum(
+        question_title="Q",
+        resolution_criteria="R",
+        models=models,
+        runner=runner,
+        judge_model=None,
+        trim=0,
+    )
+    assert len(res.ok_forecasts) == 8
+    assert get_max() == 8  # == min(len(models), 8)
+
+
+def test_run_quorum_auto_concurrency_caps_at_eight():
+    # A panel wider than the cap must not exceed 8 concurrent workers.
+    runner, get_max = _make_concurrency_probe_runner()
+    models = [f"m/{i}" for i in range(12)]
+    res = run_quorum(
+        question_title="Q",
+        resolution_criteria="R",
+        models=models,
+        runner=runner,
+        judge_model=None,
+        trim=0,
+    )
+    assert len(res.ok_forecasts) == 12
+    assert get_max() == 8
+
+
+def test_run_quorum_explicit_max_concurrency_still_honoured():
+    # An explicit override (incl. the sequential branch) is preserved.
+    runner, get_max = _make_concurrency_probe_runner()
+    models = [f"m/{i}" for i in range(8)]
+    res = run_quorum(
+        question_title="Q",
+        resolution_criteria="R",
+        models=models,
+        runner=runner,
+        judge_model=None,
+        trim=0,
+        max_concurrency=1,
+    )
+    assert len(res.ok_forecasts) == 8
+    assert get_max() == 1  # sequential branch — never overlaps
+
+
 def test_run_quorum_isolates_unexpected_panelist_error():
     # An unexpected error type (not just bad JSON) from one model must degrade
     # to an errored panelist, never abort the whole quorum.

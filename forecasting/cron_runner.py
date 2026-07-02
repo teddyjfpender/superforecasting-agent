@@ -35,6 +35,7 @@ def run_due_reviews(
     refresh: bool = True,
     check_triage_graduation: bool = True,
     saturation_sweep: bool = True,
+    refresh_market_models_phase: bool = False,
     reforecast_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
@@ -362,6 +363,24 @@ def run_due_reviews(
                     "Saturation sweep\n"
                     f"under-saturated: {sat['under_saturated']} of {sat['checked']} checked; "
                     f"opened {len(sat['alerted'])} WARN alert(s)\n"
+                )
+
+    # Trailing Market-Model refresh phase (M5, flag-gated OFF by default): re-pull +
+    # recompute active Market Models linked to still-open questions and open a deduped
+    # WARN alert when a linked model's projection moves materially, so a data-driven
+    # forecast leg staying stale is VISIBLE. Deterministic recompute + best-effort
+    # re-narration; never breaks the sweep.
+    if refresh_market_models_phase:
+        try:
+            mm = refresh_market_models(ledger, now=now)
+        except Exception as exc:  # never break the sweep on the model refresh
+            sections.append(f"Market-model refresh\nERROR: {exc}\n")
+        else:
+            if mm.get("alerted"):
+                sections.append(
+                    "Market-model refresh\n"
+                    f"moved: {mm['moved']} of {mm['refreshed']} refreshed ({mm['checked']} checked); "
+                    f"opened {len(mm['alerted'])} WARN alert(s)\n"
                 )
 
     return "\n".join(sections)
@@ -1310,6 +1329,131 @@ def install_warning_automode_script(
     )
 
 
+# Default relative-move threshold for a "material" Market Model projection move.
+# A refreshed projection that moves more than this fraction of the prior value (or
+# whose fresh interval no longer contains the prior point) opens a deduped alert.
+_MARKET_MODEL_MOVE_REL_DEFAULT = 0.10
+_MARKET_MODEL_MOVE_ALERT_REASON = "market_model_moved"
+
+
+def _projection_value_interval(primary: dict | None) -> tuple[float | None, float | None, float | None]:
+    """Pull (projected_value, lo, hi) from a market_model._primary_projection result."""
+    if not isinstance(primary, dict):
+        return None, None, None
+    out = primary.get("output") or {}
+    pv = out.get("projected_value")
+    pv = pv if isinstance(pv, (int, float)) else (out.get("value") if isinstance(out.get("value"), (int, float)) else None)
+    lo = out.get("lo") if isinstance(out.get("lo"), (int, float)) else None
+    hi = out.get("hi") if isinstance(out.get("hi"), (int, float)) else None
+    return pv, lo, hi
+
+
+def _projection_moved(prior: dict | None, fresh: dict | None, *, rel_threshold: float) -> tuple[bool, str]:
+    """Material-move test between two primary projections.
+
+    Material when the fresh projected value moves more than ``rel_threshold`` of the
+    prior value, OR the fresh prediction interval no longer contains the prior point
+    (a distribution shift even without a big central move). Returns ``(moved, detail)``."""
+    p_val, _p_lo, _p_hi = _projection_value_interval(prior)
+    f_val, f_lo, f_hi = _projection_value_interval(fresh)
+    if p_val is None or f_val is None:
+        return False, ""
+    denom = max(abs(p_val), 1e-9)
+    rel = abs(f_val - p_val) / denom
+    if rel > rel_threshold:
+        return True, f"projection moved {rel*100:.0f}% ({p_val:.4g} -> {f_val:.4g}, bar {rel_threshold*100:.0f}%)"
+    if f_lo is not None and f_hi is not None and not (f_lo <= p_val <= f_hi):
+        return True, f"prior point {p_val:.4g} is outside the fresh interval [{f_lo:.4g}, {f_hi:.4g}]"
+    return False, ""
+
+
+def refresh_market_models(
+    ledger: ForecastLedger,
+    *,
+    now: str | None = None,
+    rel_threshold: float | None = None,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """Re-pull + recompute active Market Models linked to still-OPEN questions and
+    alert on a material projection move (M5).
+
+    Iterates active market models whose ``spec['forecast_question_id']`` points at a
+    still-active forecast, re-runs the deterministic recompute (``open_market_model``
+    — re-pull + recompute, keeping the timestamped writeup), and when the projection
+    moves materially vs the stored presentation: re-narrates the prose against the
+    fresh numbers (``renarrate_market_model``) and opens a deduped WARN alert on the
+    linked question. Never a bare ack; deduped by reason+scope so it does not
+    re-alert every sweep. Best-effort per model — one failure never aborts the sweep.
+    Returns ``{checked, refreshed, moved, alerted:[question_id]}``.
+    """
+    from forecasting import market_model as MM
+
+    bar = _MARKET_MODEL_MOVE_REL_DEFAULT if rel_threshold is None else float(rel_threshold)
+    checked = refreshed = moved = 0
+    alerted: list[str] = []
+    try:
+        models = ledger.list_market_models(status="active", limit=limit)
+    except Exception:
+        models = []
+    for model in models:
+        spec = model.get("spec") or {}
+        qid = spec.get("forecast_question_id")
+        model_id = model.get("id")
+        if not qid or not model_id:
+            continue
+        # Only still-OPEN questions are worth refreshing.
+        try:
+            question = ledger.get_question(qid)
+        except Exception:
+            continue
+        if getattr(question, "status", None) not in (None, "active"):
+            continue
+        checked += 1
+        try:
+            prior_pres = ledger.get_market_presentation(model_id)["presentation"]
+        except Exception:
+            prior_pres = {}
+        prior_primary = MM._primary_projection(prior_pres)
+        try:
+            opened = MM.open_market_model(model_id, ledger=ledger)
+        except Exception:
+            continue
+        if not opened.get("refreshed"):
+            continue
+        refreshed += 1
+        fresh_primary = MM._primary_projection(opened.get("presentation") or {})
+        did_move, detail = _projection_moved(prior_primary, fresh_primary, rel_threshold=bar)
+        if not did_move:
+            continue
+        moved += 1
+        # Re-narrate the prose against the fresh numbers (best-effort — degrades to
+        # the prior prose if the aux LLM is unavailable).
+        try:
+            MM.renarrate_market_model(model_id, ledger=ledger)
+        except Exception:
+            pass
+        if ledger._has_open_alert(
+            reason=_MARKET_MODEL_MOVE_ALERT_REASON, scope_type="question", scope_ref=qid
+        ):
+            continue
+        try:
+            ledger.create_alert(
+                severity="warning",
+                scope_type="question",
+                scope_ref=qid,
+                reason=_MARKET_MODEL_MOVE_ALERT_REASON,
+                recommended_action=(
+                    f"Linked Market Model {model_id} moved: {detail}. Re-check the forecast — "
+                    "re-open the model (`forecast model` / Markets tab) and re-run the update stage "
+                    "if the driver shift changes your number."
+                ),
+            )
+            alerted.append(qid)
+        except Exception:
+            pass
+    return {"checked": checked, "refreshed": refreshed, "moved": moved, "alerted": alerted}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run due forecast scheduled reviews")
     parser.add_argument("--db")
@@ -1329,6 +1473,10 @@ def main(argv: list[str] | None = None) -> int:
         "--obsidian-sync", action="store_true",
         help="Republish lessons + question dossiers to the Obsidian vault after the sweep",
     )
+    parser.add_argument(
+        "--refresh-market-models", action="store_true",
+        help="Re-pull + recompute Market Models linked to open questions; alert on a material projection move",
+    )
     args = parser.parse_args(argv)
     db_path = args.db or os.getenv("FORECAST_LEDGER_DB") or None
     synthesize: bool | None = None
@@ -1344,6 +1492,9 @@ def main(argv: list[str] | None = None) -> int:
         thesis_aggregate=args.thesis_aggregate or _env_flag("FORECAST_THESIS_AGGREGATE"),
         synthesize_lessons=synthesize,
         obsidian_sync=args.obsidian_sync or _env_flag("FORECAST_OBSIDIAN_SYNC"),
+        refresh_market_models_phase=(
+            args.refresh_market_models or _env_flag("FORECAST_MARKET_MODEL_REFRESH")
+        ),
     )
     if text:
         print(text, end="")

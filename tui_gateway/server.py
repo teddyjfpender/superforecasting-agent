@@ -4117,11 +4117,38 @@ def _(rid, params: dict) -> dict:
         ledger = ForecastLedger()
         applies = would_block = 0
         failing: list = []
-        for q in ledger.list_questions(status="active"):
+        questions = ledger.list_questions(status="active")
+        # Batch the current-snapshot fetch (one query) instead of the previous
+        # per-question ``get_current_snapshot`` (which cost 2 queries each — one
+        # here, one again inside ``build_context_from_ledger``). We resolve the
+        # SAME snapshot the old code did — the one referenced by the question's
+        # ``current_forecast_id`` (not merely the newest by created_at) — from the
+        # batched map, skip questions with no committed forecast BEFORE the
+        # expensive context build, and thread the snapshot into the context
+        # builder so it does not re-run the lookup.
+        snaps_by_q = ledger.snapshots_by_question([q.id for q in questions])
+        # Optional safety cap for pathological ledgers; ``None`` (default) scans
+        # every question so the reported counts stay exact.
+        raw_cap = params.get("max_scan")
+        max_scan = int(raw_cap) if isinstance(raw_cap, (int, float)) and raw_cap else None
+        scanned = 0
+        capped = False
+        for q in questions:
+            current_id = getattr(q, "current_forecast_id", None)
+            if not current_id:
+                continue  # no committed forecast → nothing to lint
+            current_snap = next(
+                (s for s in (snaps_by_q.get(q.id) or []) if s.forecast_id == current_id),
+                None,
+            )
+            if current_snap is None:
+                continue
+            if max_scan is not None and scanned >= max_scan:
+                capped = True
+                break
+            scanned += 1
             try:
-                if ledger.get_current_snapshot(q.id) is None:
-                    continue
-                ctx = build_context_from_ledger(ledger, q.id, event="lint")
+                ctx = build_context_from_ledger(ledger, q.id, event="lint", snapshot=current_snap)
             except Exception:
                 continue
             if not compiled.applies(ctx):
@@ -4132,7 +4159,10 @@ def _(rid, params: dict) -> dict:
                 would_block += 1
                 if len(failing) < 8:
                     failing.append(q.id)
-        return _ok(rid, {"valid": True, "applies": applies, "would_block": would_block, "failing": failing})
+        result = {"valid": True, "applies": applies, "would_block": would_block, "failing": failing}
+        if capped:
+            result["capped_at"] = max_scan
+        return _ok(rid, result)
     except Exception as e:
         return _err(rid, 4007, str(e))
 

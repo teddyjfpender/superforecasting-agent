@@ -87,6 +87,17 @@ from forecasting.source_adapters import (
 from tools.registry import registry, tool_error, tool_result
 
 
+# Deterministic model families routed through the SINGLE forecasting.market_compute
+# engine in the record_model_run action (M3). ``trend_projection`` keeps its own
+# alias path (which itself delegates to market_compute via linear_trend_projection),
+# so it is intentionally NOT listed here. Kept as literals (not imported) so the
+# tool module stays cheap to import; market_compute.MODEL_TYPES is the source of truth.
+_MARKET_COMPUTE_MODEL_TYPES = frozenset(
+    {"ols", "multivariate", "loglinear", "timeseries_trend", "correlation", "montecarlo",
+     "scenario", "cointegration", "event_study", "arima", "backtest"}
+)
+
+
 FORECAST_LEDGER_SCHEMA = {
     "name": "forecast_ledger",
     "description": (
@@ -137,6 +148,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "update_reference_class",
                     "record_model_run",
                     "list_model_runs",
+                    "build_model",
                     "update_forecast",
                     "resolve",
                     "score",
@@ -609,6 +621,23 @@ FORECAST_LEDGER_SCHEMA = {
             "target_x": {"type": "number"},
             "date_field": {"type": "string"},
             "value_field": {"type": "string"},
+            "payload": {
+                "type": "object",
+                "description": (
+                    "record_model_run: the market_compute payload for a deterministic family "
+                    "(ols/loglinear/timeseries_trend/montecarlo/correlation/arima/...) — e.g. "
+                    "{\"x\":[...],\"y\":[...]} for ols, {\"values\":[...],\"horizon\":6} for timeseries_trend. "
+                    "Its summary + block are merged into the model_run output via the single market_compute engine."
+                ),
+            },
+            "market_model_id": {"type": "string", "description": "Link a model_run (or build_model result) to a Market Model."},
+            "params": {
+                "type": "object",
+                "description": "build_model: Market Model build params (depth, analysis_type, tickers, horizon, target_year, assumptions).",
+            },
+            "analysis_type": {"type": "string", "description": "build_model: preferred model family (overrides the recommender)."},
+            "depth": {"type": "string", "description": "build_model: research depth (quick|standard|deep|ultra)."},
+            "question": {"type": "string", "description": "build_model: the quant question text (defaults to the linked question's title/description when question_id is given)."},
             "code_ref": {"type": "string"},
             "artifact_paths": {"type": "array", "items": {"type": "string"}},
             "model_version": {"type": "string"},
@@ -1798,6 +1827,9 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                         target_x = parameters.get("target_x")
                     date_field = args.get("date_field") or parameters.get("date_field") or "date"
                     value_field = args.get("value_field") or parameters.get("value_field") or "value"
+                    # ONE engine: linear_trend_projection now delegates its OLS fit +
+                    # prediction interval to forecasting.market_compute, so this and the
+                    # market_compute tool share a single audited least-squares path.
                     projection = linear_trend_projection(
                         series,
                         target_date=target_date,
@@ -1812,6 +1844,36 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     parameters.setdefault("value_field", value_field)
                     for key, value in projection.items():
                         output.setdefault(key, value)
+            elif model_type in _MARKET_COMPUTE_MODEL_TYPES:
+                # Route deterministic families (ols / loglinear / timeseries_trend /
+                # montecarlo / correlation / arima / ...) through the SAME
+                # market_compute engine the Market Model uses, and merge its summary
+                # scalars (r2, projected endpoints, tail percentiles, ...) into the
+                # stored output alongside whatever the caller passed. No-backend safe:
+                # market_compute is pure-Python by default. Keys are ADDED, never
+                # overwritten (setdefault), so existing outputs' shape is preserved.
+                from forecasting import market_compute as _mc
+
+                payload = args.get("payload")
+                if not isinstance(payload, dict):
+                    payload = inputs.get("payload") if isinstance(inputs.get("payload"), dict) else inputs
+                res = _mc.compute(model_type, payload or {})
+                # When the caller passed the compute params directly in ``inputs``
+                # (the fallback above sets ``payload is inputs``), snapshot them into
+                # a fresh dict — folding ``inputs`` back into ``inputs['payload']``
+                # would create a self-referential dict that json_dumps rejects.
+                if payload is inputs:
+                    inputs.setdefault("payload", dict(inputs))
+                else:
+                    inputs.setdefault("payload", payload or {})
+                parameters.setdefault("backend", res.get("backend"))
+                if res.get("degraded"):
+                    output.setdefault("degraded", True)
+                    output.setdefault("reason", res.get("reason"))
+                for key, value in (res.get("summary") or {}).items():
+                    output.setdefault(key, value)
+                if res.get("block") is not None:
+                    output.setdefault("compute_block", res["block"])
             model_run = ledger.record_model_run(
                 question_id=_required(args, "question_id"),
                 model_type=model_type,
@@ -1826,8 +1888,64 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 prompt_version=args.get("prompt_version"),
                 data_version=args.get("data_version"),
                 evidence_cutoff=args.get("evidence_cutoff"),
+                market_model_id=args.get("market_model_id"),
             )
             return tool_result(success=True, model_run=model_run)
+
+        if action == "build_model":
+            # M1 REACHABILITY: build a deterministic quant Market Model as a
+            # forecast leg and link it to a question. ``question_id`` (optional) is
+            # an EXISTING forecast to attach the model to; ``question`` is the quant
+            # question text (defaults to the linked question's title/description).
+            from forecasting import market_model as MM
+
+            q_id = args.get("question_id")
+            linked_question = None
+            question_text = (args.get("question") or "").strip()
+            outcome_type = args.get("outcome_type")
+            if q_id:
+                linked_question = ledger.get_question(q_id)
+                if not question_text:
+                    title = getattr(linked_question, "title", "") or ""
+                    desc = getattr(linked_question, "description", "") or ""
+                    question_text = (f"{title}\n\n{desc}".strip()) or title
+                if not outcome_type:
+                    outcome_type = getattr(getattr(linked_question, "outcome_space", None), "type", None)
+            if not question_text:
+                return tool_error("build_model requires 'question' (or a 'question_id' to derive it from)", success=False)
+
+            mparams = dict(args.get("params") or {})
+            if outcome_type and "outcome_type" not in mparams:
+                mparams["outcome_type"] = outcome_type
+            for k in ("depth", "analysis_type", "tickers", "horizon", "target_year", "assumptions", "model", "provider"):
+                if args.get(k) is not None and k not in mparams:
+                    mparams[k] = args.get(k)
+
+            recommendation = MM.recommend_model_family(outcome_type, question_text)
+            out = MM.build_market_model(question_text, mparams, ledger=ledger, runtime=args.get("runtime"))
+            model_id = out.get("model_id")
+
+            # Link the built model to the existing question BOTH ways (reuse the
+            # model_to_forecast seam): forecast_question_id on the model spec +
+            # source_market_model on the question metadata.
+            if q_id and model_id:
+                try:
+                    model = ledger.get_market_model(model_id)
+                    spec = dict(model.get("spec") or {})
+                    spec["forecast_question_id"] = q_id
+                    ledger.update_market_model_spec(model_id, spec)
+                    ledger.link_question_market_model(q_id, model_id)
+                except Exception:
+                    pass
+
+            return tool_result(
+                success=True,
+                model_id=model_id,
+                version=out.get("version"),
+                model_status=out.get("status"),
+                question_id=q_id,
+                recommended_model=recommendation,
+            )
 
         if action == "list_model_runs":
             model_runs = ledger.list_model_runs(_required(args, "question_id"))

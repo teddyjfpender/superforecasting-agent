@@ -884,6 +884,18 @@ class ForecastLedger:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
+        # Write-Ahead Logging lets a reader run concurrently with an in-flight
+        # writer (DELETE-mode journaling would block it), which is what the TUI
+        # gateway + cron reforecasts actually do. journal_mode=WAL persists at the
+        # DB-file level (a one-time flip); synchronous=NORMAL is the safe/fast
+        # pairing under WAL. On :memory: WAL is a silent no-op, and on a read-only
+        # filesystem the PRAGMA can raise — degrade quietly rather than break
+        # connectivity (the DB still works in its prior journal mode).
+        try:
+            conn.execute("PRAGMA journal_mode = WAL")
+            conn.execute("PRAGMA synchronous = NORMAL")
+        except Exception:  # pragma: no cover - read-only FS / stripped build
+            logger.debug("could not set WAL journal mode", exc_info=True)
         # Connection-level write gate. This is the REAL chokepoint: the
         # method-level _enforce_write_gate only sees create_question /
         # create_snapshot / record_panel_run, but a script can grab THIS raw
@@ -4197,6 +4209,7 @@ class ForecastLedger:
         prompt_version: str | None = None,
         data_version: str | None = None,
         evidence_cutoff: str | None = None,
+        market_model_id: str | None = None,
     ) -> dict[str, Any]:
         self.get_question(question_id)
         if not model_type.strip():
@@ -4210,9 +4223,9 @@ class ForecastLedger:
                 INSERT INTO model_runs (
                     id, question_id, created_at, model_type, status, inputs, parameters,
                     output, diagnostics, code_ref, artifact_paths, model_version,
-                    prompt_version, data_version, evidence_cutoff
+                    prompt_version, data_version, evidence_cutoff, market_model_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     model_run_id,
@@ -4230,9 +4243,30 @@ class ForecastLedger:
                     prompt_version,
                     data_version,
                     parse_timestamp(evidence_cutoff, field_name="evidence_cutoff"),
+                    market_model_id,
                 ),
             )
         return self.get_model_run(model_run_id)
+
+    def link_question_market_model(self, question_id: str, market_model_id: str) -> ForecastQuestion:
+        """Record the question<->market-model edge on the QUESTION side.
+
+        Writes ``metadata['source_market_model']`` (the reciprocal of the model
+        spec's ``forecast_question_id``), so a question built/seeded from a Market
+        Model carries the link both ways. Idempotent — re-linking the same model is
+        a no-op. The spec side is written by the caller via
+        :meth:`update_market_model_spec`."""
+        question = self.get_question(question_id)
+        meta = dict(question.metadata) if isinstance(question.metadata, dict) else {}
+        if meta.get("source_market_model") == market_model_id:
+            return question
+        meta["source_market_model"] = market_model_id
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE forecast_questions SET metadata = ? WHERE id = ?",
+                (json_dumps(meta), question_id),
+            )
+        return self.get_question(question_id)
 
     def get_model_run(self, model_run_id: str) -> dict[str, Any]:
         with self._connect() as conn:

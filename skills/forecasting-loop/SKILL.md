@@ -42,7 +42,11 @@ parse -> research -> base_rate -> [model] -> update -> resolve -> postmortem
    rare events decompose into a conditional chain with an unconditional
    sanity-check.
 4. **model** *(optional)* — Quantitative models / Bayesian building blocks that
-   improve the estimate. Skippable; it never blocks progress.
+   improve the estimate. Skippable; it never blocks progress. For a data-driven
+   numeric question you can build a deterministic quant Market Model as a scoreable
+   component (`forecast model build <id>`, or the `build_model` action): it computes
+   every statistic via the shared market_compute engine and links back a model_run +
+   reference class the panel/ensemble can pool like any other input.
 5. **update** — Commit the forecast. Pool disagreeing sources in log-odds, not a
    naive average; decompose the change; stress-test it.
 6. **resolve** — Once criteria are met, record the resolution. Scoring is

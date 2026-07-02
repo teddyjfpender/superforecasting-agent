@@ -206,6 +206,52 @@ def test_poll_margin_fundamentals_shrinkage():
     assert full < 0.5
 
 
+# ── 6. SciPy is imported lazily; the stdlib fallback is numerically exact ──────
+
+
+def test_importing_bayes_toolkit_does_not_eagerly_load_scipy():
+    # Merely importing the module (as the CLI / agent-tool / TUI paths do) must
+    # not pull scipy.stats — that import is ~0.3s and is deferred to first use.
+    # Run in a clean subprocess so the check is not polluted by scipy already
+    # being resident from earlier tests in this session.
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; import forecasting.bayes_toolkit as bt; "
+        "print('scipy.stats' in sys.modules)"
+    )
+    out = subprocess.run(
+        [sys.executable, "-c", code], capture_output=True, text=True, check=True
+    )
+    assert out.stdout.strip() == "False", out.stdout + out.stderr
+
+
+def test_normal_cdf_ppf_parity_with_and_without_scipy(monkeypatch):
+    """The math.erf / Acklam fallbacks must match SciPy to within tolerance, so
+    a scipy-less install returns the SAME numbers."""
+    scipy_stats = bt._get_scipy_stats()
+    if scipy_stats is None:
+        pytest.skip("scipy not installed; only the fallback path is exercised")
+
+    cdf_pts = [0.5, 1.0, -2.3, 0.01, 0.99, -0.7]
+    ppf_pts = [0.1, 0.5, 0.9, 0.975, 0.025, 0.3]
+    cdf_scipy = [bt.normal_cdf(v) for v in cdf_pts]
+    ppf_scipy = [bt.normal_ppf(q) for q in ppf_pts]
+
+    # Force the stdlib fallback: sentinel None + "already probed" so no re-import.
+    monkeypatch.setattr(bt, "_scipy_stats", None)
+    monkeypatch.setattr(bt, "_scipy_stats_probed", True)
+    assert bt._get_scipy_stats() is None
+    cdf_fallback = [bt.normal_cdf(v) for v in cdf_pts]
+    ppf_fallback = [bt.normal_ppf(q) for q in ppf_pts]
+
+    for a, b in zip(cdf_scipy, cdf_fallback):
+        assert a == pytest.approx(b, abs=1e-12)
+    for a, b in zip(ppf_scipy, ppf_fallback):
+        assert a == pytest.approx(b, abs=1e-6)
+
+
 def test_polls_to_win_probability_pipeline():
     model = bt.polls_to_win_probability(
         [

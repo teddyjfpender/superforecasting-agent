@@ -64,6 +64,11 @@ QuorumRunner = Callable[[str, str, str], str]
 
 DEFAULT_JUDGE_MODEL = "anthropic/claude-opus-4-8"
 
+# When ``run_quorum`` is called without an explicit ``max_concurrency`` the whole
+# panel is dispatched in one wave, bounded by this cap so a very wide panel does
+# not spawn an unreasonable number of concurrent LLM calls.
+_AUTO_CONCURRENCY_CAP = 8
+
 # Built-in presets mirror the Fusion blog's panels. ``self`` is the
 # single-provider self-fusion config — the model list is filled in at runtime
 # from the active model, repeated ``samples`` times.
@@ -1218,7 +1223,7 @@ def run_quorum(
     trim: int = 1,
     alpha_extremize: float = 1.0,
     self_fusion: bool = False,
-    max_concurrency: int = 4,
+    max_concurrency: int | None = None,
     on_progress: Callable[[str, str], None] | None = None,
     search_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
     max_research_rounds: int = 1,
@@ -1233,6 +1238,11 @@ def run_quorum(
     wall-clock is the slowest single model, not the sum. ``on_progress(stage,
     detail)`` fires as each panelist completes so the caller can stream desk
     progress; it may be called from worker threads.
+
+    ``max_concurrency`` defaults to ``None`` → dispatch the whole panel at once,
+    capped at ``_AUTO_CONCURRENCY_CAP`` (8) threads, so a wide preset runs in a
+    single LLM wave. Pass an explicit int to bound it (``1`` forces the
+    deterministic sequential branch).
 
     A panelist that errors (bad JSON, runtime failure, timeout) is recorded
     with its ``error`` set and excluded from pooling; the quorum still completes
@@ -1363,7 +1373,15 @@ def run_quorum(
         slots: list[ModelForecast | None] = [None] * len(models)
         if on_progress:
             on_progress("panelists_start", f"{len(models)} models")
-        workers = max(1, min(int(max_concurrency), len(models)))
+        # Default to dispatching the whole panel at once (capped at 8 threads) so
+        # a wide preset fires in a single LLM wave instead of serialising into
+        # ``ceil(len(models)/4)`` sequential waves. An explicit ``max_concurrency``
+        # (including ``1`` for the deterministic sequential branch) is honoured.
+        if max_concurrency is None:
+            requested = min(len(models), _AUTO_CONCURRENCY_CAP)
+        else:
+            requested = int(max_concurrency)
+        workers = max(1, min(requested, len(models)))
         if workers == 1:
             for index, model in enumerate(models):
                 slots[index] = _dispatch(index, model)

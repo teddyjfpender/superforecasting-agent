@@ -655,7 +655,11 @@ def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
             "turn a source into a likelihood ratio (separating reliability from relevance and "
             "discounting correlated/biased signal), 'poll_to_prob'/'polls' for poll→probability, "
             "'devig'/'combine_markets' to de-vig prediction markets, and 'evidence_cluster' to "
-            "avoid double-counting sources that trace back to one signal."
+            "avoid double-counting sources that trace back to one signal. For a data-driven "
+            "numeric question, build a deterministic quant Market Model as a scoreable component "
+            "with the forecast_ledger build_model action (or `forecast model build <id>`): it "
+            "researches, computes every statistic via the shared market_compute engine, and links "
+            "back a model_run + reference class you can pool like any other input."
         ),
         "update": (
             "RE-RUN FIRST STEP (when a committed snapshot already exists — see 'Current Forecast' / "

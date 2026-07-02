@@ -25,15 +25,32 @@ try:  # pragma: no cover - import guard
 except Exception:  # pragma: no cover - numpy optional
     _np = None
 
-try:  # pragma: no cover - import guard
-    from scipy import stats as _scipy_stats
-except Exception:  # pragma: no cover - scipy optional
-    _scipy_stats = None
+# ``scipy.stats`` costs ~0.3s to import; keep it off the hot import path and load
+# it lazily on first use (or when a diagnostic queries availability). The
+# module-global sentinel stays ``None`` until then; ``_scipy_stats_probed``
+# records a prior (possibly failing) attempt so we never retry it per call.
+_scipy_stats = None
+_scipy_stats_probed = False
 
-try:  # pragma: no cover - import guard
-    import statsmodels.api as _sm  # noqa: N813
-except Exception:  # pragma: no cover - statsmodels optional
-    _sm = None
+
+def _get_scipy_stats():
+    """Return ``scipy.stats`` (cached) or ``None`` if unavailable. Lazy import."""
+
+    global _scipy_stats, _scipy_stats_probed
+    if _scipy_stats is None and not _scipy_stats_probed:
+        _scipy_stats_probed = True
+        try:  # pragma: no cover - import guard
+            from scipy import stats as _s
+        except Exception:  # pragma: no cover - scipy optional
+            _s = None
+        _scipy_stats = _s
+    return _scipy_stats
+
+
+# statsmodels drags scipy in at import time and is only needed for the advanced
+# econometric families; keep it off the hot import path and provision it lazily
+# via ``ensure_econometrics``. The sentinel stays ``None`` until then.
+_sm = None
 
 
 CORE_MODELS = frozenset(
@@ -44,33 +61,41 @@ MODEL_TYPES = CORE_MODELS | ECONOMETRIC_MODELS
 
 
 def backends() -> dict[str, bool]:
-    return {"numpy": _np is not None, "scipy": _scipy_stats is not None, "statsmodels": _sm is not None}
+    # Probe scipy (cached) so a diagnostic query reports its true availability
+    # rather than the lazy sentinel — the module docstring calls this out as an
+    # intended trigger ("or when a diagnostic queries availability"), and it
+    # matches ``bayes_toolkit.using_industry_libraries``. statsmodels stays a raw
+    # sentinel: it is only provisioned (heavily) via ``ensure_econometrics`` for
+    # the advanced families, so backends() must not drag it in.
+    return {"numpy": _np is not None, "scipy": _get_scipy_stats() is not None, "statsmodels": _sm is not None}
 
 
 def ensure_industry_backends() -> dict[str, bool]:
     """Provision numpy+scipy (forecast.bayes). No-op once present; safe offline."""
-    global _np, _scipy_stats
-    if _np is None or _scipy_stats is None:
-        try:
-            from tools.lazy_deps import ensure as _ensure
+    global _np, _scipy_stats, _scipy_stats_probed
+    if _np is not None and _get_scipy_stats() is not None:
+        return backends()
+    try:
+        from tools.lazy_deps import ensure as _ensure
 
-            _ensure("forecast.bayes", prompt=False)
+        _ensure("forecast.bayes", prompt=False)
+    except Exception:
+        pass
+    if _np is None:
+        try:  # pragma: no cover
+            import numpy as _m
+
+            _np = _m
         except Exception:
             pass
-        if _np is None:
-            try:  # pragma: no cover
-                import numpy as _m
+    if _scipy_stats is None:
+        try:  # pragma: no cover
+            from scipy import stats as _s
 
-                _np = _m
-            except Exception:
-                pass
-        if _scipy_stats is None:
-            try:  # pragma: no cover
-                from scipy import stats as _s
-
-                _scipy_stats = _s
-            except Exception:
-                pass
+            _scipy_stats = _s
+        except Exception:
+            pass
+        _scipy_stats_probed = True
     return backends()
 
 
@@ -78,6 +103,15 @@ def ensure_econometrics() -> dict[str, bool]:
     """Provision statsmodels (market.econometrics) for advanced families."""
     global _sm
     ensure_industry_backends()
+    if _sm is None:
+        # Fast path: statsmodels already installed → import without touching
+        # lazy_deps (matches the old eager-import behavior for present installs).
+        try:  # pragma: no cover - depends on environment
+            import statsmodels.api as _m0  # noqa: N813
+
+            _sm = _m0
+        except Exception:
+            pass
     if _sm is None:
         try:
             from tools.lazy_deps import ensure as _ensure
@@ -110,9 +144,10 @@ def _t_quantile(df: int, p: float = 0.975) -> float:
     """Two-sided t critical value; scipy when present else a normal approx."""
     if df <= 0:
         return 1.96
-    if _scipy_stats is not None:
+    _stats = _get_scipy_stats()
+    if _stats is not None:
         try:
-            return float(_scipy_stats.t.ppf(p, df))
+            return float(_stats.t.ppf(p, df))
         except Exception:  # pragma: no cover
             pass
     # crude small-sample bump over the 1.96 normal value
@@ -345,9 +380,10 @@ def _correlation_block(payload: dict) -> dict[str, Any]:
     except Exception:
         r = _pearson(a, b)
     p_value = None
-    if _scipy_stats is not None:
+    _stats = _get_scipy_stats()
+    if _stats is not None:
         try:
-            p_value = float(_scipy_stats.pearsonr(a, b)[1])
+            p_value = float(_stats.pearsonr(a, b)[1])
         except Exception:  # pragma: no cover
             p_value = None
     block = {

@@ -41,10 +41,28 @@ try:  # pragma: no cover - import guard
 except Exception:  # pragma: no cover - numpy optional
     _np = None
 
-try:  # pragma: no cover - import guard
-    from scipy import stats as _scipy_stats
-except Exception:  # pragma: no cover - scipy optional
-    _scipy_stats = None
+# SciPy's ``scipy.stats`` costs ~0.3s to import and would tax *every* CLI run,
+# agent-tool load and TUI first paint even though the vast majority of calls hit
+# the pure-stdlib helpers. So we do NOT import it eagerly: the module-global
+# ``_scipy_stats`` sentinel stays ``None`` until first use and is populated
+# lazily via ``_get_scipy_stats``. ``_scipy_stats_probed`` records that we have
+# already attempted the (possibly failing) import so we never retry it per call.
+_scipy_stats = None
+_scipy_stats_probed = False
+
+
+def _get_scipy_stats():
+    """Return ``scipy.stats`` (cached) or ``None`` if unavailable. Lazy import."""
+
+    global _scipy_stats, _scipy_stats_probed
+    if _scipy_stats is None and not _scipy_stats_probed:
+        _scipy_stats_probed = True
+        try:  # pragma: no cover - import guard
+            from scipy import stats as _stats_mod
+        except Exception:  # pragma: no cover - scipy optional
+            _stats_mod = None
+        _scipy_stats = _stats_mod
+    return _scipy_stats
 
 
 _EPS = 1e-9
@@ -53,7 +71,7 @@ _EPS = 1e-9
 def using_industry_libraries() -> dict[str, bool]:
     """Report which industry-standard backends are active (for diagnostics)."""
 
-    return {"numpy": _np is not None, "scipy": _scipy_stats is not None}
+    return {"numpy": _np is not None, "scipy": _get_scipy_stats() is not None}
 
 
 def ensure_industry_backends() -> dict[str, bool]:
@@ -65,8 +83,8 @@ def ensure_industry_backends() -> dict[str, bool]:
     active afterwards.
     """
 
-    global _np, _scipy_stats
-    if _np is not None and _scipy_stats is not None:
+    global _np, _scipy_stats, _scipy_stats_probed
+    if _np is not None and _get_scipy_stats() is not None:
         return using_industry_libraries()
     try:
         from tools.lazy_deps import ensure as _lazy_ensure
@@ -88,6 +106,7 @@ def ensure_industry_backends() -> dict[str, bool]:
             _scipy_stats = _stats_mod
         except Exception:
             pass
+        _scipy_stats_probed = True
     return using_industry_libraries()
 
 
@@ -216,8 +235,9 @@ def normal_cdf(x: float, mean: float = 0.0, sd: float = 1.0) -> float:
     if sd <= 0:
         raise ValidationError("sd must be positive")
     z = (_finite(x, "x") - _finite(mean, "mean")) / sd
-    if _scipy_stats is not None:
-        return float(_scipy_stats.norm.cdf(z))
+    _stats = _get_scipy_stats()
+    if _stats is not None:
+        return float(_stats.norm.cdf(z))
     return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
 
 
@@ -227,8 +247,9 @@ def normal_ppf(q: float) -> float:
     q = _finite(q, "quantile")
     if not (0.0 < q < 1.0):
         raise ValidationError("quantile must be strictly between 0 and 1")
-    if _scipy_stats is not None:
-        return float(_scipy_stats.norm.ppf(q))
+    _stats = _get_scipy_stats()
+    if _stats is not None:
+        return float(_stats.norm.ppf(q))
     return _acklam_ppf(q)
 
 

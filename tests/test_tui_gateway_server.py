@@ -140,6 +140,126 @@ def test_forecast_config_read_and_write_roundtrip(tmp_path, monkeypatch):
     assert thr["min_perspectives"]["looser"] is True
 
 
+def _seed_questions_with_snapshots(ledger, n_with: int, n_without: int):
+    """Create ``n_with`` questions carrying a committed snapshot (0 evidence) and
+    ``n_without`` questions with none. Returns the with-snapshot question ids."""
+    from forecasting.ledger import allow_ledger_writes
+
+    with_ids: list[str] = []
+    with allow_ledger_writes(reason="test_seed"):
+        for i in range(n_with):
+            q = ledger.create_question(
+                title=f"Seeded question {i}?",
+                resolution_criteria="Resolved by the official release.",
+            )
+            ledger.create_snapshot(
+                question_id=q.id,
+                probability_or_distribution=0.4,
+                rationale="seed snapshot",
+            )
+            with_ids.append(q.id)
+        for j in range(n_without):
+            ledger.create_question(
+                title=f"No-snapshot question {j}?",
+                resolution_criteria="Resolved by the official release.",
+            )
+    return with_ids
+
+
+def test_hooks_preview_batches_and_skips_snapshotless_questions(tmp_path, monkeypatch):
+    """forecast.hooks.preview counts only questions with a committed snapshot and
+    resolves the current snapshot from a single batched fetch (P4)."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    from forecasting.ledger import ForecastLedger
+
+    ledger = ForecastLedger()
+    _seed_questions_with_snapshots(ledger, n_with=4, n_without=2)
+
+    # A rule that fails for any question with < 1 evidence item (all seeds have 0)
+    # → applies to every snapshot-carrying question, blocks them all.
+    rule = {
+        "id": "needs-evidence",
+        "severity": "warn",
+        "check": {"signal": "evidence.count", "op": ">=", "value": 1},
+        "message": "collect at least one evidence item",
+    }
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.hooks.preview", "params": {"rule": rule}}
+    )
+    assert "result" in resp, resp
+    out = json.loads(resp["result"]["output"]) if "output" in resp["result"] else resp["result"]
+    assert out["valid"] is True
+    assert out["applies"] == 4  # the 2 snapshotless questions are skipped
+    assert out["would_block"] == 4
+    assert len(out["failing"]) == 4
+    assert "capped_at" not in out
+
+
+def test_hooks_preview_snapshot_matches_get_current_snapshot(tmp_path, monkeypatch):
+    """The batched snapshot handed to the context builder must be the SAME one
+    ``get_current_snapshot`` returns — spy on the batch call to prove it ran once."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    import tui_gateway.server as srv
+    from forecasting.ledger import ForecastLedger
+    import forecasting.ledger as ledger_mod
+
+    ledger = ForecastLedger()
+    _seed_questions_with_snapshots(ledger, n_with=3, n_without=0)
+
+    calls = {"batch": 0, "per_q": 0}
+    real_batch = ledger_mod.ForecastLedger.snapshots_by_question
+    real_single = ledger_mod.ForecastLedger.get_current_snapshot
+
+    def spy_batch(self, ids):
+        calls["batch"] += 1
+        return real_batch(self, ids)
+
+    def spy_single(self, qid):
+        calls["per_q"] += 1
+        return real_single(self, qid)
+
+    monkeypatch.setattr(ledger_mod.ForecastLedger, "snapshots_by_question", spy_batch)
+    monkeypatch.setattr(ledger_mod.ForecastLedger, "get_current_snapshot", spy_single)
+
+    rule = {
+        "id": "always-applies",
+        "severity": "warn",
+        "check": {"signal": "evidence.count", "op": ">=", "value": 0},
+        "message": "ok",
+    }
+    resp = srv.handle_request(
+        {"id": "1", "method": "forecast.hooks.preview", "params": {"rule": rule}}
+    )
+    out = json.loads(resp["result"]["output"]) if "output" in resp["result"] else resp["result"]
+    assert out["applies"] == 3
+    assert out["would_block"] == 0  # evidence.count >= 0 always passes
+    # One batched snapshot fetch for the whole panel; no per-question snapshot
+    # query from the preview loop (the old code did one per question, twice).
+    assert calls["batch"] == 1
+    assert calls["per_q"] == 0
+
+
+def test_hooks_preview_max_scan_caps_the_scan(tmp_path, monkeypatch):
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    from forecasting.ledger import ForecastLedger
+
+    ledger = ForecastLedger()
+    _seed_questions_with_snapshots(ledger, n_with=5, n_without=0)
+
+    rule = {
+        "id": "needs-evidence",
+        "severity": "warn",
+        "check": {"signal": "evidence.count", "op": ">=", "value": 1},
+        "message": "collect evidence",
+    }
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.hooks.preview", "params": {"rule": rule, "max_scan": 2}}
+    )
+    out = json.loads(resp["result"]["output"]) if "output" in resp["result"] else resp["result"]
+    assert out["applies"] == 2
+    assert out["capped_at"] == 2
+
+
 def test_forecast_config_set_rejects_lesson_demotion(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
     from forecasting.ledger import ForecastLedger

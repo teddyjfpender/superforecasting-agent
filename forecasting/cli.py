@@ -1623,8 +1623,18 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     base_rate_parser.add_argument("--notes")
     base_rate_parser.set_defaults(_forecast_handler=_cmd_base_rate)
 
-    model_parser = forecast_sub.add_parser("model", help="Record a probabilistic model run")
-    model_parser.add_argument("id")
+    model_parser = forecast_sub.add_parser("model", help="Record a probabilistic model run (or `model build <ref>` to build a Market Model as a forecast leg)")
+    model_parser.add_argument(
+        "id",
+        help="A forecast question id/name — OR the literal 'build' to build a deterministic Market Model as a forecast leg.",
+    )
+    model_parser.add_argument(
+        "build_question",
+        nargs="?",
+        help="With `build`: the question ref (id or free-text quant question) to build a Market Model for.",
+    )
+    model_parser.add_argument("--depth", choices=["quick", "standard", "deep", "ultra"], help="model build: research depth")
+    model_parser.add_argument("--analysis-type", dest="analysis_type", help="model build: pin a model family (overrides the recommender)")
     model_parser.add_argument("--type", dest="model_type")
     model_parser.add_argument("--status", choices=["success", "failure"], default="success")
     model_parser.add_argument("--input-json", default="{}")
@@ -8865,7 +8875,46 @@ def _cmd_apikey_unset(args: argparse.Namespace) -> None:
     print(f"unset {provider.env_var} in {default_env_path()}")
 
 
+def _cmd_model_build(args: argparse.Namespace) -> None:
+    """`forecast model build <ref>` — build a deterministic Market Model as a
+    forecast leg and link it to the question. ``<ref>`` may be an existing forecast
+    (id or name) OR free-text quant question. Delegates to the forecast_ledger
+    build_model action so the CLI and the agent share one code path."""
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    ref = (args.build_question or "").strip()
+    if not ref:
+        raise SystemExit("forecast model build requires a question ref or quant question text")
+    ledger = _ledger(args)
+    tool_args: dict[str, Any] = {"action": "build_model", "db": getattr(args, "db", None)}
+    # Attach to an existing forecast when the ref uniquely resolves; otherwise treat
+    # it as free-text to build a standalone model for.
+    resolution = resolve_question_ref(ledger, ref)
+    if resolution.question is not None:
+        tool_args["question_id"] = resolution.question.id
+    else:
+        tool_args["question"] = ref
+    if args.depth:
+        tool_args["depth"] = args.depth
+    if args.analysis_type:
+        tool_args["analysis_type"] = args.analysis_type
+    result = json.loads(forecast_ledger_tool(tool_args))
+    if not result.get("success"):
+        raise SystemExit(f"model build failed: {result.get('error') or result}")
+    rec = result.get("recommended_model") or {}
+    print(f"model build: {result.get('model_id')} (v{result.get('version')}, {result.get('model_status')})")
+    if result.get("question_id"):
+        print(f"linked to question: {result['question_id']}")
+    if rec:
+        print(f"recommended: {rec.get('model_type')} — {rec.get('family')}")
+
+
 def _cmd_model(args: argparse.Namespace) -> None:
+    # `forecast model build <ref>` sub-verb (M1 reachability): build a Market Model
+    # as a forecast leg. The `build` sentinel is unambiguous — question ids are
+    # `q_`-prefixed, so a forecast is never literally named "build".
+    if args.id == "build":
+        return _cmd_model_build(args)
     if not args.model_type:
         write_fields = [
             args.status != "success",

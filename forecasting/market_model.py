@@ -67,6 +67,72 @@ DEPTH_PRESETS: dict[str, dict[str, Any]] = {
 }
 DEFAULT_DEPTH = "standard"
 
+
+# ── model-type recommender (M4) ───────────────────────────────────────────────
+# A tiny DETERMINISTIC map from a question's outcome shape (and a couple of cheap
+# keyword signals in the prompt) to the model family a quant would reach for
+# first. Injected as a strong DEFAULT into the build prompt (only when the caller
+# did not pin an ``analysis_type``) and returned from the build_model action so
+# the agent/TUI can show "recommended: timeseries_trend (numeric level question)".
+# It never overrides an explicit choice and never gates anything.
+
+# Keyword signals that refine the numeric default (checked lowercased on the
+# question text). Order matters: the first family whose cues hit wins.
+_RECOMMENDER_CUES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("montecarlo", ("path", "trajectory", "tail", "worst case", "drawdown", "simulate", "scenario fan", "distribution of")),
+    ("correlation", ("correlat", "cointegrat", "relationship between", "co-move", "spread between", "versus ", " vs ", "two series")),
+    ("loglinear", ("growth", "compound", "exponential", "doubling", "cagr", "% per year", "percent per year")),
+)
+
+
+def recommend_model_family(outcome_type: str | None, question: str | None = None) -> dict[str, str]:
+    """Suggest a model family from the question's outcome shape + cheap cues.
+
+    Returns ``{"model_type", "family", "rationale"}``. ``model_type`` is a
+    market_compute step name (or 'reference_class' for the binary outside view);
+    ``family`` is the human label; ``rationale`` explains the pick. Pure + total:
+    an unknown outcome type falls back to the numeric-level default.
+    """
+    ot = (outcome_type or "").strip().lower()
+    text = (question or "").lower()
+
+    if ot == "binary":
+        return {
+            "model_type": "ols",
+            "family": "reference-class base rate + driver OLS",
+            "rationale": "binary question: anchor on a reference-class base rate, then a driver regression (ols) for the inside-view adjustment.",
+        }
+    if ot in ("vote_share", "multiple_choice", "categorical"):
+        return {
+            "model_type": "montecarlo",
+            "family": "reference class + Monte-Carlo share fan",
+            "rationale": "share/multi-outcome question: base rates per option plus a Monte-Carlo fan for the correlated share uncertainty.",
+        }
+    if ot == "thesis":
+        return {
+            "model_type": "correlation",
+            "family": "driver correlation / cointegration",
+            "rationale": "thesis question: relate the member drivers (correlation / cointegration) rather than a single point projection.",
+        }
+
+    # Numeric (or unknown) — refine with keyword cues, else a timeseries trend.
+    for family, cues in _RECOMMENDER_CUES:
+        if any(cue in text for cue in cues):
+            if family == "montecarlo":
+                return {"model_type": "montecarlo", "family": "Monte-Carlo simulation fan",
+                        "rationale": "path/tail question: simulate trajectories (montecarlo) for the fan of outcomes and tail percentiles."}
+            if family == "correlation":
+                return {"model_type": "correlation", "family": "correlation / cointegration",
+                        "rationale": "two-series relationship: measure correlation (and cointegration for a stable long-run link)."}
+            if family == "loglinear":
+                return {"model_type": "loglinear", "family": "log-linear (exponential) trend",
+                        "rationale": "growth question: fit a log-linear trend so a constant growth rate is a straight line."}
+    return {
+        "model_type": "timeseries_trend",
+        "family": "time-series trend (with ARIMA as a robustness check)",
+        "rationale": "numeric level question: project the level with a time-series trend (prediction interval), cross-check with arima.",
+    }
+
 MARKET_MODEL_SYSTEM_PROMPT = """You are a quantitative markets researcher building a saved, reproducible "Market Model" for a forecasting desk. Think like a sharp quant AND a calibrated superforecaster: anchor on an outside view before the case-specific story, decompose into measurable drivers, gather REAL data, compute every number deterministically, stress-test your own estimates, and present formal findings.
 
 Forecasting discipline (this is a scoreable forecasting artifact, not just a chart):
@@ -494,6 +560,14 @@ def _build_user_prompt(question: str, params: dict, preset: dict) -> str:
         extras.append(f"Primary assets/tickers: {', '.join(params['tickers'])}.")
     if params.get("analysis_type"):
         extras.append(f"Preferred analysis type: {params['analysis_type']}.")
+    else:
+        # No explicit analysis type — inject the deterministic recommender's pick
+        # as a STRONG DEFAULT (the agent may override it if the data argues otherwise).
+        rec = recommend_model_family(params.get("outcome_type"), question)
+        extras.append(
+            f"Recommended primary model: {rec['model_type']} ({rec['family']}) — {rec['rationale']} "
+            "Use it as your default primary model unless the data clearly argues for another."
+        )
     if params.get("horizon"):
         extras.append(f"Horizon: {params['horizon']}.")
     if params.get("target_year"):
@@ -822,8 +896,16 @@ def chat_market_model(
 def model_to_forecast(model_id: str, *, ledger) -> dict[str, Any]:
     """Create a Desk forecast question seeded by the model's projection; link them.
 
-    Best-effort: returns {question_id?, seed} so the caller can route to the normal
-    forecast-create flow if the ledger can't create a full question directly.
+    Best-effort: returns {question_id?, seed, model_run_id?, reference_class_id?} so
+    the caller can route to the normal forecast-create flow if the ledger can't
+    create a full question directly.
+
+    The COMPUTED numbers are preserved as scoreable ledger inputs, not just pasted
+    into prose: after creating the linked question we ``record_model_run`` (with the
+    ``market_model_id`` FK back to this model) carrying the primary compute step's
+    output {projected_value, lo, hi, r2, ...}, and when the model produced a
+    base-rate-like probability we also ``add_reference_class`` from it — so the
+    panel / ensemble can consume the model as an input component.
     """
     model = ledger.get_market_model(model_id)
     try:
@@ -831,6 +913,7 @@ def model_to_forecast(model_id: str, *, ledger) -> dict[str, Any]:
     except Exception:
         pres = {}
     proj = _extrapolation_summary(pres)
+    primary = _primary_projection(pres)
     seed = {
         "title": f"{model.get('title')} — will the projection hold?",
         "description": (model.get("question") or "")
@@ -841,6 +924,8 @@ def model_to_forecast(model_id: str, *, ledger) -> dict[str, Any]:
     # and record the edge BOTH ways: source_market_model on the question + the
     # spawned question id back on the model's spec. Best-effort, never raises.
     question_id = None
+    model_run_id = None
+    reference_class_id = None
     try:
         from forecasting.ledger import allow_ledger_writes
 
@@ -855,17 +940,144 @@ def model_to_forecast(model_id: str, *, ledger) -> dict[str, Any]:
                 tags=["market-model"],
                 metadata={"source_market_model": model_id},
             )
-        question_id = getattr(q, "id", None) or (q.get("id") if isinstance(q, dict) else None)
-        if question_id:
-            spec = dict(model.get("spec") or {})
-            spec["forecast_question_id"] = question_id
-            try:
-                ledger.update_market_model_spec(model_id, spec)
-            except Exception:
-                pass
+            question_id = getattr(q, "id", None) or (q.get("id") if isinstance(q, dict) else None)
+            if question_id:
+                spec = dict(model.get("spec") or {})
+                spec["forecast_question_id"] = question_id
+                try:
+                    ledger.update_market_model_spec(model_id, spec)
+                except Exception:
+                    pass
+                model_run_id, reference_class_id = _record_model_leg(
+                    ledger, question_id, model_id, primary
+                )
     except Exception:
         question_id = None
-    return {"model_id": model_id, "question_id": question_id, "seed": seed}
+    return {
+        "model_id": model_id,
+        "question_id": question_id,
+        "model_run_id": model_run_id,
+        "reference_class_id": reference_class_id,
+        "seed": seed,
+    }
+
+
+def _record_model_leg(ledger, question_id: str, model_id: str, primary: dict | None) -> tuple[str | None, str | None]:
+    """Persist the model's computed numbers as scoreable ledger inputs.
+
+    Records a model_run (with the ``market_model_id`` FK) carrying the primary
+    compute step's output, and — when the model produced a base-rate-like
+    probability — a reference class from it. Best-effort; returns
+    ``(model_run_id, reference_class_id)`` (either may be None). Callers hold the
+    write context.
+    """
+    if not primary:
+        return None, None
+    model_run_id = None
+    reference_class_id = None
+    try:
+        run = ledger.record_model_run(
+            question_id=question_id,
+            model_type=primary.get("model_type") or "market_model",
+            inputs={"market_model_id": model_id},
+            output=primary.get("output") or {},
+            diagnostics={"source": "market_model", "block_type": primary.get("block_type")},
+            market_model_id=model_id,
+        )
+        model_run_id = run.get("id")
+    except Exception:
+        model_run_id = None
+    base_rate = primary.get("base_rate")
+    if isinstance(base_rate, (int, float)) and 0.0 <= float(base_rate) <= 1.0:
+        try:
+            rc = ledger.add_reference_class(
+                question_id=question_id,
+                name=(primary.get("base_rate_label") or "market-model base rate")[:120],
+                inclusion_criteria=(
+                    "Derived from the linked Market Model's computed base-rate-like quantity "
+                    f"({primary.get('model_type')})."
+                ),
+                base_rate=float(base_rate),
+                source_refs=[model_id],
+                notes="Auto-recorded from a Market Model projection (model_to_forecast).",
+            )
+            reference_class_id = rc.get("id")
+        except Exception:
+            reference_class_id = None
+    return model_run_id, reference_class_id
+
+
+def _primary_projection(pres: dict) -> dict | None:
+    """Extract the PRIMARY computed number(s) from a presentation for a model_run.
+
+    Returns ``{model_type, block_type, output:{...}, base_rate?, base_rate_label?}``
+    or None. Prefers a regression/trend block's endpoint (with prediction interval
+    + r2), then a Monte-Carlo/ARIMA fan's terminal median+band, then a correlation
+    /probability metric. ``base_rate`` is set only when we can confidently read a
+    probability in [0,1] (so we never fabricate a reference class from an arbitrary
+    numeric projection)."""
+    blocks = [b for b in (pres or {}).get("blocks", []) if isinstance(b, dict)]
+
+    # 1) regression / trend endpoint
+    for b in blocks:
+        if b.get("type") == "regression" and b.get("extrapolation"):
+            last = b["extrapolation"][-1]
+            if not isinstance(last, dict):
+                continue
+            output = {
+                "projected_value": last.get("y"),
+                "lo": last.get("lo"),
+                "hi": last.get("hi"),
+                "x": last.get("x"),
+                "r2": b.get("r2"),
+                "method": b.get("method"),
+            }
+            out = {"model_type": b.get("method") or "ols", "block_type": "regression", "output": output}
+            _maybe_base_rate(out, last.get("y"), b.get("y_label"))
+            return out
+
+    # 2) Monte-Carlo / ARIMA fan terminal point
+    for b in blocks:
+        if b.get("type") == "fan" and b.get("median"):
+            median = b["median"]
+            bands = b.get("bands") or []
+            lo = hi = None
+            if bands and isinstance(bands[0], dict):
+                lower = bands[0].get("lower") or []
+                upper = bands[0].get("upper") or []
+                lo = lower[-1] if lower else None
+                hi = upper[-1] if upper else None
+            mt = "arima" if str(b.get("title", "")).lower().startswith("arima") else "montecarlo"
+            output = {"projected_value": median[-1], "lo": lo, "hi": hi, "n_paths": b.get("n_paths")}
+            return {"model_type": mt, "block_type": "fan", "output": output}
+
+    # 3) correlation / probability metric
+    for b in blocks:
+        if b.get("type") == "metric" and isinstance(b.get("value"), (int, float)):
+            label = str(b.get("label") or "")
+            unit = str(b.get("unit") or "")
+            mt = "correlation" if unit == "r" or "corr" in label.lower() else "metric"
+            output = {"value": b.get("value"), "label": label, "unit": unit}
+            out = {"model_type": mt, "block_type": "metric", "output": output}
+            if mt != "correlation":
+                _maybe_base_rate(out, b.get("value"), label, unit=unit)
+            return out
+    return None
+
+
+def _maybe_base_rate(out: dict, value: Any, label: str | None, *, unit: str | None = None) -> None:
+    """Tag ``out`` with a base_rate ONLY when value reads as a probability in [0,1]
+    and the label/unit signals a rate/probability (never an arbitrary level)."""
+    if not isinstance(value, (int, float)) or not (0.0 <= float(value) <= 1.0):
+        return
+    hay = f"{label or ''} {unit or ''}".lower()
+    # NB: no ``share`` cue — a market/vote SHARE in [0,1] is a level, not the
+    # probability of the question resolving, and promoting it to a reference-class
+    # base rate silently pollutes the outside view (the very "arbitrary level"
+    # this guard exists to reject).
+    if any(cue in hay for cue in ("rate", "probability", "prob", "likelihood", "p(")):
+        out["base_rate"] = float(value)
+        out["base_rate_label"] = (label or "market-model base rate").strip()[:120]
 
 
 def _extrapolation_summary(pres: dict) -> str:

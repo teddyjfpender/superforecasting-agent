@@ -76,19 +76,26 @@ def linear_trend_projection(
 
     xs = [point[0] for point in points]
     ys = [point[1] for point in points]
-    x_mean = sum(xs) / len(xs)
-    y_mean = sum(ys) / len(ys)
-    denominator = sum((x - x_mean) ** 2 for x in xs)
-    if denominator <= 0:
+    if sum((x - (sum(xs) / len(xs))) ** 2 for x in xs) <= 0:
         raise ValidationError("trend_projection requires observations with varying x values")
 
-    slope = sum((x - x_mean) * (y - y_mean) for x, y in points) / denominator
-    intercept = y_mean - slope * x_mean
-    residuals = [y - (intercept + slope * x) for x, y in points]
-    residual_sum_squares = sum(value**2 for value in residuals)
-    total_sum_squares = sum((y - y_mean) ** 2 for y in ys)
-    r_squared = 1.0 if total_sum_squares == 0 else 1.0 - residual_sum_squares / total_sum_squares
-    residual_std = math.sqrt(residual_sum_squares / max(len(points) - 2, 1))
+    # ONE deterministic engine: delegate the OLS fit + prediction interval to
+    # forecasting.market_compute (the same code the Market Model / market_compute
+    # tool run), so there is a single audited least-squares implementation instead
+    # of a second hand-rolled one. market_compute is pure-Python/stdlib by default
+    # (numpy/scipy only accelerate), so this keeps the no-backend fallback working.
+    # The fit numbers (slope/intercept/r2/residual_std) are byte-for-byte identical
+    # to the prior hand-rolled math; we ADD the prediction interval (lo/hi) alongside
+    # the backward-compatible keys.
+    from forecasting import market_compute as MC
+
+    fit = MC._ols_1d(xs, ys)
+    if fit is None:  # pragma: no cover - guarded above, defensive
+        raise ValidationError("trend_projection requires observations with varying x values")
+    slope = fit["slope"]
+    intercept = fit["intercept"]
+    r_squared = 1.0 if fit["r2"] == 0.0 and _total_ss(ys) == 0 else fit["r2"]
+    residual_std = fit["residual_std"]
 
     first_date = _first_observation_date(series, date_field=date_field)
     projected_x = _trend_target_x(
@@ -97,7 +104,7 @@ def linear_trend_projection(
         first_date=first_date,
         fallback=max(xs),
     )
-    projected_value = intercept + slope * projected_x
+    projected_value, projected_lo, projected_hi = MC._pred_interval(fit, projected_x)
 
     return {
         "count": len(points),
@@ -111,7 +118,18 @@ def linear_trend_projection(
         "target_x": projected_x,
         "target_date": target_date,
         "projected_value": projected_value,
+        # Richer fields from the shared market_compute engine (prediction interval
+        # for the projected point). Additive — existing keys above are unchanged.
+        "projected_lo": projected_lo,
+        "projected_hi": projected_hi,
     }
+
+
+def _total_ss(ys: list[float]) -> float:
+    if not ys:
+        return 0.0
+    y_mean = sum(ys) / len(ys)
+    return sum((y - y_mean) ** 2 for y in ys)
 
 
 def _component_rows(components: dict[str, Any]) -> list[dict[str, Any]]:
