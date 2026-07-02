@@ -1,6 +1,8 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { ChartKind } from '../lib/viz/index.js'
 import type { Theme } from '../theme.js'
 
@@ -113,6 +115,8 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
   const termRows = stdout?.rows ?? 24
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
   const [tick, setTick] = useState(0)
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   useEffect(() => {
     const id = setInterval(() => setTick(v => v + 1), 600)
@@ -153,7 +157,7 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
     if (ch === 'G') {
       return scrollRef.current?.scrollToBottom?.()
     }
-  })
+  }, { isActive: !globalModal })
 
   return (
     <Box flexDirection="column" flexGrow={1} paddingX={1}>

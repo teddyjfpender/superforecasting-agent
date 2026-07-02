@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import { MARKET_CATEGORIES, MARKET_PROVIDERS, providerByKey } from '../content/marketProviders.js'
 import { getProviderKey, saveProviderKey } from '../lib/marketKeys.js'
 import { type MarketConfig, saveMarketConfig } from '../lib/marketStore.js'
@@ -37,6 +39,8 @@ interface AddProviderModalProps {
 
 export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSymbols, rows, t }: AddProviderModalProps) {
   const sem = semantics(t)
+  // Go inert while the global palette / cheat-sheet stacks above this modal.
+  const globalModal = useStore($globalModal)
   const [providers, setProviders] = useState<Set<string>>(() => new Set(initial.providers))
 
   const [categories, setCategories] = useState<Set<string>>(
@@ -208,7 +212,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
 
       return setCategories(next)
     }
-  })
+  }, { isActive: !globalModal })
 
   const railWidth = 26
   const inner = modalW - 6
@@ -285,7 +289,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
               const keyWanted = p.needsKey || p.keyRecommended
 
               return (
-                <Box key={p.key} onClick={() => { setFocus('providers'); setProvIdx(i) }} width="100%">
+                <Box key={p.key} onClick={() => { if (globalModal) return; setFocus('providers'); setProvIdx(i) }} width="100%">
                   <Text wrap="truncate-end">
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                     <Text bold color={enabled ? sem.up : sem.subtle}>
@@ -311,7 +315,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
               const sel = categories.has(c)
 
               return (
-                <Box key={c} onClick={() => { setFocus('categories'); setCatIdx(i) }} width="100%">
+                <Box key={c} onClick={() => { if (globalModal) return; setFocus('categories'); setCatIdx(i) }} width="100%">
                   <Text wrap="truncate-end">
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                     <Text bold color={sel ? sem.up : sem.subtle}>

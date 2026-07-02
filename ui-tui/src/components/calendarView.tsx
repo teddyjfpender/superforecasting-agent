@@ -1,7 +1,8 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
@@ -91,6 +92,8 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   // Render the last dashboard immediately on reopen, refresh in the background.
   const [data, setData] = useState<ForecastDashboardResponse | null>(
@@ -183,7 +186,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
     if (ch === 'G') {
       return scrollRef.current?.scrollToBottom?.()
     }
-  })
+  }, { isActive: !globalModal })
 
   const width = Math.max(40, cols - 4)
   const wallNow = Date.now()

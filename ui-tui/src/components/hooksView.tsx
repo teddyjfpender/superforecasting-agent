@@ -1,6 +1,8 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
@@ -60,6 +62,8 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
   const [tick, setTick] = useState(0)
   const [data, setData] = useState<HooksData | null>(null)
   const [error, setError] = useState('')
@@ -233,7 +237,7 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
     if (ch === 'x' && current?.is_user) {
       return setConfirmRemove(current.id)
     }
-  })
+  }, { isActive: !globalModal })
 
   const wizardOverlay = wizard && data ? (
     <HooksWizard
@@ -443,7 +447,7 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
         )}
       </Box>
 
-      <FooterChips chips={footerChips} disabled={!!wizard} t={t} />
+      <FooterChips chips={footerChips} disabled={!!wizard || globalModal} t={t} />
       {/* The body stays mounted; the wizard paints ABOVE it as an absolute overlay.
           The keyboard is trapped by the `if (wizard) return` in useInput, and the
           master list is keyboard-driven (no mouse handlers to gate). */}

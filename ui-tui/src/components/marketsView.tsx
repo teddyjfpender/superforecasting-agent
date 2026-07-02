@@ -3,7 +3,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries, providerByKey } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
@@ -153,6 +153,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
   const sem = semantics(t)
+  // While the Ctrl+K palette / `?` cheat-sheet stacks above the view, its own
+  // useInput goes inert and its still-visible body mouse handlers are gated.
+  const globalModal = useStore($globalModal)
 
   const [config, setConfig] = useState<MarketConfig>(() => loadMarketConfig())
   const [active, setActive] = useState(0)
@@ -1006,7 +1009,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     if (key.downArrow || ch === 'j' || key.wheelDown) {
       return setSel(i => Math.min(Math.max(0, visibleRows.length - 1), i + 1))
     }
-  })
+  }, { isActive: !globalModal })
 
   const width = Math.max(40, cols - 4)
   const hasContent = providers.size > 0 || watchlist.length > 0
@@ -1159,7 +1162,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     <NoSelect flexShrink={0} marginBottom={1}>
       <Box>
         {categories.map((cat, i) => (
-          <Box key={cat} onClick={() => { if (!modal) { setActive(i); setSel(0) } }}>
+          <Box key={cat} onClick={() => { if (!modal && !globalModal) { setActive(i); setSel(0) } }}>
             {i > 0 ? <Text color={t.color.border}>{'  ·  '}</Text> : null}
             <Text bold={i === active} color={i === active ? t.color.accent : t.color.muted}>
               {cat}
@@ -1277,7 +1280,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             const trend = showTrend && quote?.history ? sparkline(quote.history, trendW) : ''
 
             return (
-              <Box key={`${series.provider}:${series.symbol}`} onClick={() => { if (!modal) { setSel(idx) } }} width="100%">
+              <Box key={`${series.provider}:${series.symbol}`} onClick={() => { if (!modal && !globalModal) { setSel(idx) } }} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   {keptCols.map(c => {
@@ -1464,7 +1467,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} disabled={!!modal} t={t} />
+      <FooterChips chips={chips} disabled={!!modal || globalModal} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {footerHint}

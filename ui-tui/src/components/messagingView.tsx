@@ -1,7 +1,8 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
 import { openAttachment } from '../lib/openAttachment.js'
 import {
@@ -158,6 +159,8 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   const [cfg, setCfg] = useState<ReturnType<typeof resolveSignalConfig>>(() => resolveSignalConfig())
   const [setup, setSetup] = useState(false)
@@ -805,7 +808,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
       return setFocus('thread')
     }
-  })
+  }, { isActive: !globalModal })
 
   const live = tick % 2 === 0
 
@@ -1018,7 +1021,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'q', label: 'Close', run: onClose }]} disabled={setup} t={t} />
+          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'q', label: 'Close', run: onClose }]} disabled={setup || globalModal} t={t} />
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
             s set up Signal · Esc/q close
@@ -1064,7 +1067,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             const prefix = on ? '▸ ' : isUnread ? '● ' : '  '
 
             return (
-              <Box key={conv.chatId} onClick={() => { if (setup || newChat || contactView) return; setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
+              <Box key={conv.chatId} onClick={() => { if (setup || newChat || contactView || globalModal) return; setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
                 <Text wrap="truncate-end">
                   <Text bold={isUnread} color={on ? t.color.accent : isUnread ? t.color.ok : t.color.border}>
                     {prefix}
@@ -1147,7 +1150,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                     </Text>
                   ) : null}
                   {m.attachments > 0 ? (
-                    <Box onClick={() => { if (!setup && !newChat && !contactView) openMessageAttachment(m) }}>
+                    <Box onClick={() => { if (!setup && !newChat && !contactView && !globalModal) openMessageAttachment(m) }}>
                       <Text color={t.color.accent} wrap="truncate-end">
                         {attachmentLabel(m)}
                         {(m.files ?? []).some(f => f.id) ? <Text color={t.color.muted}> · open</Text> : null}
@@ -1196,7 +1199,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} disabled={setup || newChat || contactView} t={t} />
+      <FooterChips chips={chips} disabled={setup || newChat || contactView || globalModal} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {composing

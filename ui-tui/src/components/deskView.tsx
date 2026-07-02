@@ -1,8 +1,9 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { Fragment, memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastAnalystNote,
@@ -101,6 +102,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
   const wide = cols >= WIDE_COLS
+  // While the Ctrl+K palette / `?` cheat-sheet stacks above the desk, its own
+  // useInput goes inert and its still-visible body mouse handlers are gated, so
+  // nothing double-handles keys/clicks beneath the overlay.
+  const globalModal = useStore($globalModal)
 
   // Hydrate from the last workspace payload so reopening the desk is instant; it
   // then refreshes in the background. The cache survives unmount.
@@ -622,7 +627,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     if (ch === 'G') {
       return setSel(Math.max(0, rowCount - 1))
     }
-  })
+  }, { isActive: !globalModal })
 
   // ── Header ──────────────────────────────────────────────────────────────
   const header = (
@@ -718,7 +723,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         <DeskLensRow
           active={lensActive}
           onOpen={() => {
-            if (modalOpen || settingsOpen) return
+            if (modalOpen || settingsOpen || globalModal) return
             setSel(0)
             setModalOpen(true)
           }}
@@ -733,7 +738,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
         items={visible}
         nowMs={Math.floor(Date.now() / 60_000) * 60_000}
-        onSelect={i => { if (!modalOpen && !settingsOpen) setSel(i + lensOffset) }}
+        onSelect={i => { if (!modalOpen && !settingsOpen && !globalModal) setSel(i + lensOffset) }}
         t={t}
         visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
         width={listW}
@@ -890,7 +895,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           keyboard is already trapped (useInput early-returns on settingsOpen), so
           the still-visible footer must not leak clicks past that trap. The detail
           modal swaps to its own modal-only chip set, so it needs no gate here. */}
-      <FooterChips chips={chips} disabled={settingsOpen} t={t} />
+      <FooterChips chips={chips} disabled={settingsOpen || globalModal} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {footerHint}
@@ -905,7 +910,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           Body clicks are gated while the modal is open (switchTab/onSelect early-
           return) so the still-visible tabs/rows can't leak interaction — the
           keyboard is already trapped by the `if (modalOpen) return` in useInput. */}
-      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen) switchTab(i) }} t={t} tabs={tabs} width={width} />
+      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen && !globalModal) switchTab(i) }} t={t} tabs={tabs} width={width} />
       {onBench ? (
         // The Bench lens replaces the list+panel with its own read-only scoreboard
         // — bench questions never mix into the live organic-forecast list.

@@ -1,7 +1,8 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ObsidianNote,
@@ -365,6 +366,9 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
+  // While the Ctrl+K palette / `?` cheat-sheet stacks above the view, its own
+  // useInput goes inert and its still-visible body mouse handlers are gated.
+  const globalModal = useStore($globalModal)
 
   // Render the last known vault immediately on reopen, then refresh in the
   // background — reopening should feel instant, not flash a loading screen.
@@ -1308,7 +1312,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
       return last >= 0 ? jumpCursor(last) : docScrollRef.current?.scrollToBottom?.()
     }
-  })
+  }, { isActive: !globalModal })
 
   const { body: rawBody, tags: docTags } = doc?.content ? splitFrontmatter(doc.content) : { body: '', tags: '' }
   const { body: docBody, comments: docComments } = splitComments(rawBody)
@@ -1638,7 +1642,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                     flexDirection="column"
                     key={r.rel_path ?? i}
                     onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                      if (event.cellIsBlank) {
+                      if (event.cellIsBlank || globalModal) {
                         return
                       }
 
@@ -1732,7 +1736,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                   <Box
                     key={`f:${row.path}`}
                     onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                      if (event.cellIsBlank || editing || chat) {
+                      if (event.cellIsBlank || editing || chat || globalModal) {
                         return
                       }
 
@@ -1756,7 +1760,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                 <Box
                   key={`n:${row.path}`}
                   onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                    if (event.cellIsBlank || editing || chat) {
+                    if (event.cellIsBlank || editing || chat || globalModal) {
                       return
                     }
 
@@ -1794,7 +1798,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                     <Box
                       key={h.i}
                       onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                        if (event.cellIsBlank || chat) {
+                        if (event.cellIsBlank || chat || globalModal) {
                           return
                         }
 
@@ -1873,7 +1877,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                         flexDirection="row"
                         key={i}
                         onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                          if (event.cellIsBlank || chat) {
+                          if (event.cellIsBlank || chat || globalModal) {
                             return
                           }
 
@@ -1928,7 +1932,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                       <Box
                         key={note.rel_path ?? i}
                         onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                          if (event.cellIsBlank || chat) {
+                          if (event.cellIsBlank || chat || globalModal) {
                             return
                           }
 
@@ -1977,7 +1981,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                       key={i}
                       marginBottom={1}
                       onClick={(event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
-                        if (event.cellIsBlank || chat) {
+                        if (event.cellIsBlank || chat || globalModal) {
                           return
                         }
 
@@ -2063,7 +2067,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     (run: () => void) => (event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
       // Body mouse handlers no-op while the chat overlay is open (the keyboard is
       // already trapped by the `if (chat)` branch in useInput).
-      if (event.cellIsBlank || chat) {
+      if (event.cellIsBlank || chat || globalModal) {
         return
       }
 
@@ -2087,13 +2091,13 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       {onSelectKind ? (
         <Box marginBottom={1}>
           <Text color={t.color.muted}>DOCS </Text>
-          <Box onClick={() => { if (!chat) onSelectKind('markdown') }}>
+          <Box onClick={() => { if (!chat && !globalModal) onSelectKind('markdown') }}>
             <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
               {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
             </Text>
           </Box>
           <Text color={t.color.border}>{'   ·   '}</Text>
-          <Box onClick={() => { if (!chat) onSelectKind('latex') }}>
+          <Box onClick={() => { if (!chat && !globalModal) onSelectKind('latex') }}>
             <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
               {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
             </Text>

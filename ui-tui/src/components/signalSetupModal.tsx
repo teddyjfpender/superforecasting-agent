@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import { qrLines } from '../lib/qrRender.js'
 import {
   type BinaryStatus,
@@ -50,6 +52,8 @@ const tail = (lines: string[], n: number) => lines.slice(-n)
 
 export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: SignalSetupModalProps) {
   const qr = qrColors(t)
+  // Go inert while the global palette / cheat-sheet stacks above this modal.
+  const globalModal = useStore($globalModal)
   const [step, setStep] = useState<Step>('menu')
   const [cli, setCli] = useState<BinaryStatus>({ found: false, path: '', version: '' })
   const [java, setJava] = useState<BinaryStatus>({ found: false, path: '', version: '' })
@@ -328,7 +332,7 @@ export function SignalSetupModal({ cols, onCancel, onConnected, rows, t }: Signa
         }
       }
     }
-  })
+  }, { isActive: !globalModal })
 
   // ---- rendering -----------------------------------------------------------
   const prereqLine = (label: string, ok: boolean, detail: string) => (

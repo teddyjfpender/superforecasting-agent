@@ -1,7 +1,8 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -122,6 +123,8 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   const [subscribed, setSubscribed] = useState<SubscribedFeed[]>(() => loadSubscribedFeeds())
   const [source, setSource] = useState(0)
@@ -542,7 +545,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     if (key.downArrow || ch === 'j' || key.wheelDown) {
       return setSel(i => Math.min(Math.max(0, visibleArticles.length - 1), i + 1))
     }
-  })
+  }, { isActive: !globalModal })
 
   const width = Math.max(48, cols - 4)
   const contentHeight = Math.max(8, termRows - 7)
@@ -639,7 +642,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               justifyContent="space-between"
               key={src}
               onClick={() => {
-                if (adding) return
+                if (adding || globalModal) return
                 setSource(i)
                 setSel(0)
               }}
@@ -690,7 +693,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             const provider = providerName(article.feedTitle)
 
             return (
-              <Box key={`${article.feedUrl}:${idx}`} onClick={() => { if (!adding) setSel(idx) }} width="100%">
+              <Box key={`${article.feedUrl}:${idx}`} onClick={() => { if (!adding && !globalModal) setSel(idx) }} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   <Text color={sem.subtle}>{when} </Text>
@@ -806,7 +809,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} disabled={adding} t={t} />
+      <FooterChips chips={chips} disabled={adding || globalModal} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         ↑↓/jk browse · / search · Tab/←→ source · Enter open · a add feed · r refresh · Esc/q close

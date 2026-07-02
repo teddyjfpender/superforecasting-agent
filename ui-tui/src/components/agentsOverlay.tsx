@@ -8,7 +8,7 @@ import {
   applyDelegationStatus,
   toggleOverlaySection
 } from '../app/delegationStore.js'
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../app/spawnHistoryStore.js'
 import { useTurnSelector } from '../app/turnStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -374,10 +374,13 @@ function OverlaySection({
 }) {
   const openMap = useStore($overlaySectionsOpen)
   const open = title in openMap ? openMap[title]! : defaultOpen
+  // Gate the section-toggle click while the global palette / cheat-sheet stacks
+  // above the agents view, so the still-visible header can't leak clicks.
+  const globalModal = useStore($globalModal)
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Box onClick={() => toggleOverlaySection(title, defaultOpen)}>
+      <Box onClick={() => { if (!globalModal) toggleOverlaySection(title, defaultOpen) }}>
         <Text color={t.color.label}>
           <Text color={t.color.accent}>{open ? '▾ ' : '▸ '}</Text>
           {title}
@@ -641,12 +644,14 @@ function DiffView({
   const aTotals = useMemo(() => treeTotals(buildSubagentTree(pair.baseline.subagents)), [pair.baseline])
   const bTotals = useMemo(() => treeTotals(buildSubagentTree(pair.candidate.subagents)), [pair.candidate])
   const paneWidth = Math.floor((cols - 4) / 2)
+  // Go inert while the global palette / cheat-sheet stacks above the diff.
+  const globalModal = useStore($globalModal)
 
   useInput((ch, key) => {
     if (key.escape || ch === 'q') {
       onClose()
     }
-  })
+  }, { isActive: !globalModal })
 
   const round = (n: number) => String(Math.round(n))
   const sumTokens = (x: typeof aTotals) => x.inputTokens + x.outputTokens
@@ -696,6 +701,8 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
   const delegation = useStore($delegationState)
   const history = useStore($spawnHistory)
   const diffPair = useStore($spawnDiff)
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
   const { stdout } = useStdout()
 
   // historyIndex === 0: live turn.  1..N pulls the Nth-most-recent archived
@@ -954,7 +961,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     if (ch === 'f') {
       return setFilter(m => cycle(FILTER_ORDER, m))
     }
-  })
+  }, { isActive: !globalModal })
 
   // ── Header assembly ────────────────────────────────────────────────
 

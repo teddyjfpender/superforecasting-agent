@@ -1,5 +1,7 @@
 import { Box, Text } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { ICON } from '../lib/icons.js'
 import { ensureFeedUrlScheme, feedHost } from '../lib/newsFeedStore.js'
@@ -71,6 +73,10 @@ export function AddFeedModal({
   subscribedCount,
   t
 }: AddFeedModalProps) {
+  // Keyboard lives in NewsView's (already globalModal-gated) useInput; gate this
+  // modal's own mouse handlers on the same flag so a click can't leak past the
+  // Ctrl+K palette / `?` cheat-sheet stacked above it.
+  const globalModal = useStore($globalModal)
   // Mirror ModalOverlay's own box sizing so the windowed body math is exact.
   // ModalOverlay: modalW = narrow ? max(40, cols−2) : max(48, min(cols−6, maxWidth));
   //               modalH = max(8, min(rows−6, maxHeight)). We pass maxWidth/maxHeight
@@ -96,7 +102,7 @@ export function AddFeedModal({
   const res = window(results, resultSel, bodyRows)
 
   const click = (run: () => void) => (event: ClickEvent) => {
-    if (event.cellIsBlank) {
+    if (event.cellIsBlank || globalModal) {
       return
     }
 

@@ -1,6 +1,8 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import {
   commandExists,
   ghAuthStatus,
@@ -48,6 +50,8 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
   const sem = semantics(t)
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   const dirRef = useRef(docsDir())
   const dir = dirRef.current
@@ -514,7 +518,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
 
       return setFocus('reader')
     }
-  })
+  }, { isActive: !globalModal })
 
   // ── status ────────────────────────────────────────────────────────────────
   const statusKind = busy ? 'busy' : repo ? 'live' : 'idle'
@@ -572,13 +576,13 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
   const kindTabs = onSelectKind ? (
     <Box marginBottom={1}>
       <Text color={t.color.muted}>DOCS </Text>
-      <Box onClick={() => onSelectKind('markdown')}>
+      <Box onClick={() => { if (!globalModal) onSelectKind('markdown') }}>
         <Text bold={docKind !== 'latex'} color={docKind !== 'latex' ? t.color.accent : t.color.muted}>
           {docKind !== 'latex' ? '▸ 1 Markdown' : '  1 Markdown'}
         </Text>
       </Box>
       <Text color={t.color.border}>{'   ·   '}</Text>
-      <Box onClick={() => onSelectKind('latex')}>
+      <Box onClick={() => { if (!globalModal) onSelectKind('latex') }}>
         <Text bold={docKind === 'latex'} color={docKind === 'latex' ? t.color.accent : t.color.muted}>
           {docKind === 'latex' ? '▸ 2 LaTeX' : '  2 LaTeX'}
         </Text>
@@ -634,7 +638,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
           {kindTabs}
-          {prompt ? promptLine : <FooterChips chips={onboardChips} t={t} />}
+          {prompt ? promptLine : <FooterChips chips={onboardChips} disabled={globalModal} t={t} />}
           <Text color={t.color.muted} wrap="truncate-end">
             {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
             {prompt ? '⏎ confirm · Esc cancel' : `1/2 switch · n new doc${tools.git ? ' · g init git' : ''}${tools.gh ? ' · G GitHub repo' : ''} · O connect · r refresh · q close`}
@@ -688,7 +692,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
             const name = f.rel.replace(/\.tex$/i, '')
 
             return (
-              <Box key={f.rel} onClick={() => { setSel(idx); setScroll(0); setFocus('reader') }} width="100%">
+              <Box key={f.rel} onClick={() => { if (globalModal) return; setSel(idx); setScroll(0); setFocus('reader') }} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
                   <Text bold={on} color={on ? t.color.text : t.color.label}>
@@ -840,7 +844,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
       </Box>
       <Box flexDirection="column" flexShrink={0} marginTop={1}>
         {editing ? null : kindTabs}
-        {prompt ? promptLine : <FooterChips chips={chips} t={t} />}
+        {prompt ? promptLine : <FooterChips chips={chips} disabled={globalModal} t={t} />}
         <Text color={t.color.muted} wrap="truncate-end">
           {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
           {editing

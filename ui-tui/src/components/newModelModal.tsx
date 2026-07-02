@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
@@ -47,6 +49,8 @@ export function NewModelModal({
   rows: number
   t: Theme
 }) {
+  // Go inert while the global palette / cheat-sheet stacks above this modal.
+  const globalModal = useStore($globalModal)
   const [step, setStep] = useState<Step>('question')
   const [question, setQuestion] = useState('')
   const [asset, setAsset] = useState(initialAsset)
@@ -178,7 +182,7 @@ export function NewModelModal({
         setText(s => s + printable)
       }
     }
-  })
+  }, { isActive: !globalModal })
 
   const STEP_PROMPT: Record<Step, string> = {
     analysis: 'Analysis type',
@@ -258,7 +262,7 @@ export function NewModelModal({
           ) : null}
         </Box>
 
-        <FooterChips chips={chips} t={t} />
+        <FooterChips chips={chips} disabled={globalModal} t={t} />
     </ModalOverlay>
   )
 }

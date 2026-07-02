@@ -1,7 +1,8 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import { HOTKEYS } from '../content/hotkeys.js'
 import type { Theme } from '../theme.js'
 
@@ -45,6 +46,9 @@ export function HelpView({ onClose, t }: HelpViewProps) {
   const termRows = stdout?.rows ?? 24
   const [now, setNow] = useState(0)
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
+  // While the Ctrl+K palette / `?` cheat-sheet stacks above this view, its own
+  // useInput must go inert so keys don't double-handle beneath the overlay.
+  const globalModal = useStore($globalModal)
 
   useEffect(() => {
     const id = setInterval(() => setNow(value => value + 1), 500)
@@ -82,7 +86,7 @@ export function HelpView({ onClose, t }: HelpViewProps) {
     if (ch === 'G') {
       return scrollRef.current?.scrollToBottom?.()
     }
-  })
+  }, { isActive: !globalModal })
 
   const labelW = Math.min(
     24,

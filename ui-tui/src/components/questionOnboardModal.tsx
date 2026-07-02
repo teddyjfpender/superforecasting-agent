@@ -1,6 +1,8 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { emptyAnswers, type OnboardAnswers, parseSourceLine, specFromAnswers } from '../lib/onboardSpec.js'
 import { semantics } from '../lib/visualSemantics.js'
@@ -121,6 +123,8 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const sem = semantics(t)
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   const [step, setStep] = useState<Step>('title')
   const [answers, setAnswers] = useState<OnboardAnswers>(() => emptyAnswers())
@@ -291,7 +295,7 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
         setText(s => s + printable)
       }
     }
-  })
+  }, { isActive: !globalModal })
 
   return (
     <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>

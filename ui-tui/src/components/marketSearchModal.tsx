@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { MarketSeries } from '../content/marketProviders.js'
 import { ICON, spinnerFrame } from '../lib/icons.js'
 import { searchCatalog, searchYahoo } from '../lib/marketSearch.js'
@@ -54,6 +56,8 @@ export function MarketSearchModal({
   t
 }: MarketSearchModalProps) {
   const sem = semantics(t)
+  // Go inert while the global palette / cheat-sheet stacks above this modal.
+  const globalModal = useStore($globalModal)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<MarketSeries[]>([])
   const [sel, setSel] = useState(0)
@@ -157,7 +161,7 @@ export function MarketSearchModal({
         setQuery(s => s + printable)
       }
     }
-  })
+  }, { isActive: !globalModal })
 
   const start = Math.max(0, Math.min(sel - Math.floor(listRows / 2), results.length - listRows))
   const windowed = results.slice(Math.max(0, start), Math.max(0, start) + listRows)

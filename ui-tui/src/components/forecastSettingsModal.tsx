@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastConfigGate,
@@ -85,6 +87,8 @@ export function ForecastSettingsModal({
   t,
   title
 }: ForecastSettingsModalProps) {
+  // Go inert while the global palette / cheat-sheet stacks above this modal.
+  const globalModal = useStore($globalModal)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
@@ -292,7 +296,7 @@ export function ForecastSettingsModal({
       const printable = [...ch].filter(c => c >= ' ').join('')
       if (printable) editText(s => s + printable)
     }
-  })
+  }, { isActive: !globalModal })
 
   const modalW = Math.max(54, Math.min(cols - 4, 96))
   const modalH = Math.max(18, Math.min(rows - 4, 38))

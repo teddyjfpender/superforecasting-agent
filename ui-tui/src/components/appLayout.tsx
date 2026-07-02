@@ -462,14 +462,15 @@ const DemoVizViewPane = memo(function DemoVizViewPane() {
 })
 
 // The global interaction chrome (Ctrl+K palette / `?` cheat-sheet). Both paint
-// through the shared ModalOverlay (absolute box, opaque, centred). Over the HOME
-// body it STACKS above the still-mounted landing (Today panel + hints stay
-// visible around it — the AppLayout body renders it LAST); over a fullscreen
-// VIEW it REPLACES the body (those views own an ungated useInput, so leaving them
-// mounted would double-handle keys). Either way the modal's own useInput is the
-// active keyboard handler — the global seam early-returns while $isBlocked (which
-// includes palette/cheatSheet) is set. Reads the live overlay flags to pick the
-// palette vs the cheat-sheet + the active view.
+// through the shared ModalOverlay (absolute box, opaque, centred). It STACKS
+// above the still-mounted body EVERYWHERE now — the HOME landing OR any
+// fullscreen VIEW (Desk, Markets, …) — rendered LAST so the body stays visible
+// around it. Every fullscreen view gates its own useInput (`isActive:
+// !globalModal`) + its mouse handlers on the $globalModal flag, so nothing
+// beneath the overlay double-handles keys/clicks. The modal's own useInput is
+// the active keyboard handler; the global seam early-returns while $isBlocked
+// (which includes palette/cheatSheet) is set. Reads the live overlay flags to
+// pick the palette vs the cheat-sheet + the active view.
 const GlobalChromePane = memo(function GlobalChromePane({
   cols,
   onRun,
@@ -661,10 +662,11 @@ export const AppLayout = memo(function AppLayout({
   const { stdout } = useStdout()
   const rows = stdout?.rows ?? 24
 
-  // The global chrome (Ctrl+K palette / `?` cheat-sheet) takes over the body
-  // while open — see GlobalChromePane. It is NOT part of `fullscreen`, so it
-  // can open over Home OR over a view; rendered first, it unmounts the body
-  // beneath so keys can't double-fire.
+  // The global chrome (Ctrl+K palette / `?` cheat-sheet) STACKS above the body
+  // while open — see GlobalChromePane. It is NOT part of `fullscreen`, so it can
+  // open over Home OR over a view; rendered LAST as an absolute ModalOverlay, it
+  // leaves the body mounted beneath and floats on top. Every fullscreen view
+  // gates its own useInput + mouse handlers on this flag so nothing double-fires.
   const globalModal = overlay.palette || overlay.cheatSheet
 
   // Keep the Signal receiver running app-wide — not just while the Messaging
@@ -888,20 +890,13 @@ export const AppLayout = memo(function AppLayout({
         </PerfPane>
 
         {fullscreen ? (
-          // Over a fullscreen VIEW the palette / cheat-sheet still REPLACES the
-          // body: those views own their own useInput with no isBlocked gate, so
-          // leaving them mounted beneath the overlay would double-handle keys.
-          // The home body (below) has no such hazard — its composer input is
-          // isBlocked-gated, and Today/rail are overlay-gated — so THERE the body
-          // stays mounted and the overlay stacks on top (the fix for the
-          // vanishing landing).
-          globalModal ? (
-            <PerfPane id="globalChrome">
-              <Box flexDirection="row" flexGrow={1}>
-                <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
-              </Box>
-            </PerfPane>
-          ) : (
+          // Over a fullscreen VIEW the palette / cheat-sheet now STACKS above the
+          // still-mounted body (same recipe as Home below): every view gates its
+          // own useInput (`isActive: !globalModal`) + its mouse handlers on the
+          // $globalModal flag, so leaving them mounted beneath the overlay can no
+          // longer double-handle keys/clicks. The overlay renders LAST as an
+          // absolute ModalOverlay and floats on top.
+          <>
           <ViewErrorBoundary onRecover={recoverFromCrash} onReport={reportCrash} t={ui.theme}>
           <Box flexDirection="row" flexGrow={1}>
             {overlay.forecasts ? (
@@ -964,7 +959,15 @@ export const AppLayout = memo(function AppLayout({
             )}
           </Box>
           </ViewErrorBoundary>
-          )
+          {/* The palette / cheat-sheet stacks LAST as an absolute overlay above
+              the still-mounted view body (ModalOverlay recipe), so the view stays
+              visible around it — identical to the Home paths below. */}
+          {globalModal ? (
+            <PerfPane id="globalChrome">
+              <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
+            </PerfPane>
+          ) : null}
+          </>
         ) : showRail ? (
           // Home two-pane (wide terminals): a fixed conversations rail on the
           // left + the conversation on the right. The transcript ScrollBox stays

@@ -127,6 +127,18 @@ export const $isBlocked = computed(
     )
 )
 
+/**
+ * The two GLOBAL interaction-chrome overlays — the Ctrl+K command palette and
+ * the `?` cheat-sheet.  Both now render as STACKED ModalOverlays above the
+ * current body (Home OR any fullscreen view), so every view that mounts its own
+ * `useInput` must gate it (`isActive: !globalModal`) + gate its mouse handlers
+ * on this flag, else the still-mounted body would double-handle keys/clicks
+ * beneath the overlay's trap.  A dedicated computed atom (rather than a raw
+ * `overlay.palette || overlay.cheatSheet` read) keeps view re-renders scoped:
+ * it only notifies when one of these two flags actually flips.
+ */
+export const $globalModal = computed($overlayState, ({ cheatSheet, palette }) => Boolean(cheatSheet || palette))
+
 export const getOverlayState = () => $overlayState.get()
 
 export const patchOverlayState = (next: Partial<OverlayState> | ((state: OverlayState) => OverlayState)) => {

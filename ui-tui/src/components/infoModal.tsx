@@ -1,6 +1,8 @@
 import { Box, type ScrollBoxHandle, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useRef } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -31,12 +33,14 @@ interface InfoModalProps {
 export function InfoModal({ cols, items, onClose, rows, subtitle, t, title }: InfoModalProps) {
   const sem = semantics(t)
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
+  // Go inert while the global palette / cheat-sheet stacks above this modal.
+  const globalModal = useStore($globalModal)
 
   useInput((ch, key) => {
     if (key.escape || key.return || ch === 'h' || ch === 'i' || ch === 'q') {
       onClose()
     }
-  })
+  }, { isActive: !globalModal })
 
   return (
     <ModalOverlay cols={cols} footerHint="Esc close" maxHeight={28} maxWidth={96} rows={rows} scrollRef={scrollRef} t={t} title={title}>

@@ -1,7 +1,8 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
-import { patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastDashboardResponse,
@@ -156,6 +157,8 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
   const sem = semantics(t)
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   const [data, setData] = useState<ForecastDashboardResponse | null>(
     () => getOverlayCache<ForecastDashboardResponse>('forecast.dashboard:alerts') ?? null
@@ -757,7 +760,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     if (ch === 'G') {
       return scrollRef.current?.scrollToBottom?.()
     }
-  })
+  }, { isActive: !globalModal })
 
   const width = Math.max(40, cols - 4)
 

@@ -1,6 +1,8 @@
 import { Box, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
@@ -89,6 +91,8 @@ export function HooksWizard({
   rows: number
   t: Theme
 }) {
+  // Go inert while the global palette / cheat-sheet stacks above this modal.
+  const globalModal = useStore($globalModal)
   const [step, setStep] = useState<Step>('id')
   const [id, setId] = useState(initial?.id ?? '')
   const [desc, setDesc] = useState(initial?.desc ?? '')
@@ -386,7 +390,7 @@ export function HooksWizard({
 
       return
     }
-  })
+  }, { isActive: !globalModal })
 
   const field = (placeholder: string) => (
     <Box marginTop={1} width={contentW}>
@@ -511,7 +515,7 @@ export function HooksWizard({
           ) : null}
         </Box>
 
-        <FooterChips chips={chips} t={t} />
+        <FooterChips chips={chips} disabled={globalModal} t={t} />
       </Box>
     </ModalOverlay>
   )

@@ -1,6 +1,8 @@
 import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
+import { $globalModal } from '../app/overlayStore.js'
 import { commandExists, gitInit } from '../lib/docsCli.js'
 import { docsDir, ensureWorkspaceDirs, migrateLegacyVault, vaultDir } from '../lib/latexDocs.js'
 import { seedLatexExamples } from '../lib/latexExamples.js'
@@ -27,6 +29,8 @@ export function DocsSetup({ onClose, onReady, t }: DocsSetupProps) {
   const sem = semantics(t)
   const root = docsDir()
   const vault = vaultDir()
+  // Go inert while the Ctrl+K palette / `?` cheat-sheet stacks above the view.
+  const globalModal = useStore($globalModal)
 
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState('')
@@ -81,7 +85,7 @@ export function DocsSetup({ onClose, onReady, t }: DocsSetupProps) {
     if (ch === 'c' && !busy) {
       return create()
     }
-  })
+  }, { isActive: !globalModal })
 
   const width = Math.min(80, Math.max(40, cols - 8))
 
@@ -137,6 +141,7 @@ export function DocsSetup({ onClose, onReady, t }: DocsSetupProps) {
             { k: 'c', label: 'Create workspace', run: create },
             { k: 'q', label: 'Close', run: onClose }
           ]}
+          disabled={globalModal}
           t={t}
         />
         <Text color={t.color.muted} wrap="truncate-end">
