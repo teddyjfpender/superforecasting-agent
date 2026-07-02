@@ -3305,15 +3305,30 @@ def _(rid, params: dict) -> dict:
         status = params.get("status", "active")
         limit = int(params.get("limit") or 200)
         models = ledger.list_market_models(status=status if status else None, limit=limit)
-        rows = [
-            {
+        rows = []
+        for m in models:
+            row = {
                 "id": m["id"], "title": m["title"], "question": m["question"], "depth": m.get("depth"),
                 "status": m.get("status"), "last_status": m.get("last_status"),
                 "current_version": m.get("current_version"),
                 "updated_at": m.get("updated_at"), "tags": m.get("tags") or [],
             }
-            for m in models
-        ]
+            # R4 Living Models: attach the model's measured skill (payload only; TUI
+            # renders later). Best-effort — a skill hiccup never drops the model row.
+            try:
+                skill = ledger.model_skill(market_model_id=m["id"])
+                row["skill"] = {
+                    "n_scored": skill.get("n_scored"),
+                    "n_binary": skill.get("n_binary"),
+                    "n_numeric": skill.get("n_numeric"),
+                    "brier": skill.get("brier"),
+                    "coverage": skill.get("coverage"),
+                    "weight_multiplier": skill.get("weight_multiplier"),
+                    "status": skill.get("status"),
+                }
+            except Exception:
+                row["skill"] = None
+            rows.append(row)
         return _ok(rid, {"models": rows})
     except Exception as e:
         return _err(rid, 5008, str(e))
@@ -4065,6 +4080,16 @@ def _(rid, params: dict) -> dict:
             logger.exception("forecast.calibration correcting-lessons lookup failed")
             lessons = []
 
+        # Operator practice loop (R2): the human's own calibration, when they
+        # have recorded + scored any practice/drill estimates. Best-effort — a
+        # legacy ledger with no operator_estimates simply returns n=0. Payload
+        # only here (TUI render is a later slice).
+        try:
+            operator = ledger.operator_calibration_summary()
+        except Exception:
+            logger.exception("forecast.calibration operator summary failed")
+            operator = None
+
         # Per-domain / per-origin breakdowns only make sense on the unfiltered
         # view; a filtered request already IS one row of that breakdown.
         domains: list[dict] = []
@@ -4095,6 +4120,7 @@ def _(rid, params: dict) -> dict:
                 "summary": summary,
                 "bias": bias,
                 "lessons": lessons,
+                "operator": operator,
                 "domains": domains,
                 "origins": origins,
                 "domain": domain,

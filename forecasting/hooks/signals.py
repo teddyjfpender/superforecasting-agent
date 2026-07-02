@@ -182,6 +182,19 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         _latest_run = None
     is_quorum, persp_count, quorum_models, quorum_judged = quorum_signals_from_panel_run(_latest_run)
 
+    # research adequacy (VOI-directed research judge): the deterministic checks only,
+    # over the CURRENT ledger state + this snapshot. Fail-open (defaults adequate).
+    research_adequate = True
+    research_adequacy_score = None
+    try:
+        from forecasting.research_audit import audit_research
+
+        _ra = audit_research(ledger, question, snapshot=snap)
+        research_adequate = bool(_ra.get("adequate"))
+        research_adequacy_score = _ra.get("score")
+    except Exception:
+        research_adequate, research_adequacy_score = True, None
+
     return HookContext(
         question_id=question_id,
         forecast_origin=_g("forecast_origin", "live") or "live",
@@ -237,6 +250,8 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         min_reasoning_methods=min_methods,
         domain=getattr(question, "domain", None),
         outcome_type=question.outcome_space.type,
+        research_adequate=research_adequate,
+        research_adequacy_score=research_adequacy_score,
         thresholds=_qthr,
     )
 
@@ -296,6 +311,8 @@ def build_commit_context(
     derived_child_present: bool = False,
     machine_scoreable: bool = True,
     terminal_calibration_present: bool = True,
+    research_adequate: bool = True,
+    research_adequacy_score: float | None = None,
     thresholds: dict[str, float] | None = None,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
@@ -354,5 +371,7 @@ def build_commit_context(
         derived_child_present=derived_child_present,
         machine_scoreable=machine_scoreable,
         terminal_calibration_present=terminal_calibration_present,
+        research_adequate=research_adequate,
+        research_adequacy_score=research_adequacy_score,
         thresholds=dict(thresholds or {}),
     )

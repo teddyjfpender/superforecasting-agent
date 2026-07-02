@@ -2233,6 +2233,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     calibration_parser.add_argument("--horizon", help="Filter by horizon in days, e.g. 7 or 30-90")
     calibration_parser.add_argument("--all", action="store_true", help="Include calibration-ineligible scores")
     calibration_parser.add_argument(
+        "--operator",
+        action="store_true",
+        help="Show the OPERATOR's own calibration (practice/drill estimates) instead of the system's",
+    )
+    calibration_parser.add_argument(
+        "--window-days",
+        type=int,
+        dest="operator_window_days",
+        help="Operator view: restrict to estimates scored within the trailing N days",
+    )
+    calibration_parser.add_argument(
         "--bias",
         action="store_true",
         help="Show the SIGNED over/under-confidence view (per scope: SCE, CI, status) instead of the unsigned summary",
@@ -2242,6 +2253,23 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "--recency-halflife", type=float, dest="recency_halflife_days", help="Bias view: recency half-life (days)"
     )
     calibration_parser.set_defaults(_forecast_handler=_cmd_calibration)
+
+    # Operator practice loop (R2): train the HUMAN, Tetlock-style.
+    practice_parser = forecast_sub.add_parser(
+        "practice",
+        help="Record YOUR OWN estimate for a question (scored when it resolves) — Tetlock practice",
+    )
+    practice_parser.add_argument("question_ref", help="Question id or free-text name")
+    practice_parser.add_argument("--note", help="Optional rationale for your number")
+    practice_parser.set_defaults(_forecast_handler=_cmd_practice)
+
+    drill_parser = forecast_sub.add_parser(
+        "drill",
+        help="Practice on already-RESOLVED binary questions and get scored instantly",
+    )
+    drill_parser.add_argument("--n", type=int, default=5, help="How many questions to drill (default 5)")
+    drill_parser.add_argument("--domain", help="Restrict to a domain")
+    drill_parser.set_defaults(_forecast_handler=_cmd_drill)
 
     complementarity_parser = forecast_sub.add_parser(
         "complementarity",
@@ -2503,12 +2531,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
                                help="Synthesize calibration lessons after the nightly sweep")
     schedule_cron.add_argument("--no-synthesize-lessons", dest="synthesize_lessons", action="store_false",
                                help="Do NOT synthesize calibration lessons in the nightly sweep")
+    schedule_cron.add_argument("--refresh-market-models", dest="refresh_market_models", action="store_true",
+                               help="Re-pull + recompute Market Models linked to open questions in the nightly sweep")
+    schedule_cron.add_argument("--no-refresh-market-models", dest="refresh_market_models", action="store_false",
+                               help="Do NOT refresh Market Models in the nightly sweep")
     schedule_cron.set_defaults(
         _forecast_handler=_cmd_schedule_install_cron,
         auto_score=True,
         auto_postmortem=True,
         thesis_aggregate=True,
         synthesize_lessons=True,
+        refresh_market_models=True,
     )
 
     automode_cron = schedule_sub.add_parser(
@@ -8885,12 +8918,46 @@ def _cmd_model_build(args: argparse.Namespace) -> None:
         print(f"recommended: {rec.get('model_type')} — {rec.get('family')}")
 
 
+def _cmd_model_skill(args: argparse.Namespace) -> None:
+    """`forecast model skill [<mm_id | model_type>]` — measured model skill (R4).
+
+    With no ref: the GLOBAL skill over every scored model_run. With an ``mm_...``
+    ref: that Market Model's skill. Otherwise the ref is treated as a model_type.
+    """
+    ref = getattr(args, "build_question", None)
+    kwargs: dict[str, Any] = {}
+    label = "all scored model runs"
+    if ref:
+        if ref.startswith("mm_"):
+            kwargs["market_model_id"] = ref
+            label = f"market model {ref}"
+        else:
+            kwargs["model_type"] = ref
+            label = f"model_type {ref}"
+    skill = _ledger(args).model_skill(**kwargs)
+    print(f"model skill — {label}")
+    print(f"  status:            {skill['status']}")
+    print(f"  scored runs:       {skill['n_scored']} (binary={skill['n_binary']}, numeric={skill['n_numeric']})")
+    brier = skill.get("brier")
+    coverage = skill.get("coverage")
+    mae = skill.get("mae")
+    print(f"  brier (binary):    {brier:.4f}" if isinstance(brier, (int, float)) else "  brier (binary):    n/a")
+    print(f"  coverage (numeric):{coverage:.3f}" if isinstance(coverage, (int, float)) else "  coverage (numeric):n/a")
+    print(f"  mae (numeric):     {mae:.4g}" if isinstance(mae, (int, float)) else "  mae (numeric):     n/a")
+    print(f"  weight multiplier: {skill['weight_multiplier']:.3f} (min sample {skill['min_sample']})")
+
+
 def _cmd_model(args: argparse.Namespace) -> None:
     # `forecast model build <ref>` sub-verb (M1 reachability): build a Market Model
     # as a forecast leg. The `build` sentinel is unambiguous — question ids are
     # `q_`-prefixed, so a forecast is never literally named "build".
     if args.id == "build":
         return _cmd_model_build(args)
+    # `forecast model skill [<mm_id | model_type>]` sub-verb (R4): read a Market
+    # Model's (or model_type's) measured skill from scored model_runs. The `skill`
+    # sentinel is unambiguous — question ids are `q_`-prefixed.
+    if args.id == "skill":
+        return _cmd_model_skill(args)
     if not args.model_type:
         write_fields = [
             args.status != "success",
@@ -9085,6 +9152,7 @@ def _run_update_agent(
     max_iterations: int,
     stage: str = "update",
     commit_policy: str | None = None,
+    supplemental: str | None = None,
 ) -> dict[str, Any]:
     """Run the LLM agent for one question's pipeline stage and RETURN the structured
     result (no printing). The agent commits through the forecasting tool, whose commit
@@ -9094,9 +9162,11 @@ def _run_update_agent(
 
     ``commit_policy="commit_material"`` is set by the autonomous re-forecast paths so
     the update stage COMMITS a material move instead of stopping at a preview (see
-    ``forecasting.protocol._COMMIT_MATERIAL_POLICY``)."""
+    ``forecasting.protocol._COMMIT_MATERIAL_POLICY``). ``supplemental`` injects a
+    stage-scoped note (the chain's research re-run passes the adequacy gap list)."""
     messages = build_protocol_messages(
-        ledger, question_id, stage=stage, commit_policy=commit_policy
+        ledger, question_id, stage=stage, commit_policy=commit_policy,
+        supplemental=supplemental,
     )
     enabled_toolsets = _toolsets_for_stage(stage)
     from run_agent import AIAgent
@@ -9149,6 +9219,25 @@ def _snapshot_summary(snapshot: Any) -> dict[str, Any] | None:
     }
 
 
+def _format_research_gaps(audit: dict[str, Any]) -> str:
+    """Render a research_audit result's gap list into the supplemental note the
+    chain injects when it re-runs the research stage. Prose only."""
+    gaps = audit.get("gaps") or []
+    lines = [
+        f"Your research is not yet adequate (score {audit.get('score')}/100, "
+        f"threshold {audit.get('threshold')}). Close these specific gaps with fresh "
+        "research + import_source_evidence, then finish:",
+    ]
+    for gap in gaps:
+        detail = str(gap.get("detail") or gap.get("kind") or "").strip()
+        queries = gap.get("suggested_queries") or []
+        line = f"- {detail}"
+        if queries:
+            line += " Suggested searches: " + "; ".join(str(q) for q in queries[:3]) + "."
+        lines.append(line)
+    return "\n".join(lines)
+
+
 def run_forecast_chain(
     ledger: ForecastLedger,
     question_id: str,
@@ -9183,6 +9272,8 @@ def run_forecast_chain(
         # optional `model` stage so the lazy path gets the deterministic quant leg.
         stages = auto_forecast_stages(ledger.get_question(question_id))
     stage_results: list[dict[str, Any]] = []
+    research_audit_final: dict[str, Any] | None = None
+    research_audit_rounds = 0
     for stage in stages:
         prior = ledger.get_current_snapshot(question_id)
         outcome: dict[str, Any] = {"stage": stage, "status": "ran", "committed": False}
@@ -9212,6 +9303,20 @@ def run_forecast_chain(
         if on_stage is not None:
             on_stage(stage, outcome)
 
+        # VOI-directed research adequacy loop: after the research stage completes for
+        # a LIVE (active) question, audit whether the evidence set covers the levers
+        # that would move the forecast (deterministic — NO LLM runner, cheap). If it
+        # is inadequate and rounds remain, re-run the research stage ONCE per round
+        # with the concrete gap list injected. This is BOUNDED (max_audit_rounds
+        # counts EXTRA passes) and fail-open: any audit error simply stops the loop.
+        if stage == "research":
+            research_audit_rounds, research_audit_final = _run_research_audit_loop(
+                ledger, question_id,
+                model=model, provider=provider, max_iterations=max_iterations,
+                commit_policy=commit_policy, on_stage=on_stage,
+                stage_results=stage_results,
+            )
+
     final = ledger.get_current_snapshot(question_id)
     status = build_pipeline_status(ledger, question_id)
     return {
@@ -9221,7 +9326,97 @@ def run_forecast_chain(
         "snapshot": _snapshot_summary(final),
         "update_ready": status.get("update_ready"),
         "update_blockers": status.get("update_blockers") or [],
+        "research_audit_rounds": research_audit_rounds,
+        "research_audit": research_audit_final,
     }
+
+
+def _run_research_audit_loop(
+    ledger: ForecastLedger,
+    question_id: str,
+    *,
+    model: str | None,
+    provider: str | None,
+    max_iterations: int,
+    commit_policy: str | None,
+    on_stage: Callable[[str, dict[str, Any]], None] | None,
+    stage_results: list[dict[str, Any]],
+) -> tuple[int, dict[str, Any] | None]:
+    """Deterministic research-adequacy re-run loop (see run_forecast_chain). Returns
+    ``(extra_rounds_run, final_audit)``. Fully fail-open: never raises."""
+    from forecasting.research_audit import audit_research, research_stage_incomplete
+
+    try:
+        question = ledger.get_question(question_id)
+    except Exception:
+        return 0, None
+    # Only live (active) questions get the extra research passes.
+    if getattr(question, "status", None) != "active":
+        try:
+            return 0, audit_research(ledger, question)
+        except Exception:
+            return 0, None
+
+    try:
+        from hermes_cli.config import cfg_get, load_config_readonly
+
+        max_rounds = int(cfg_get(load_config_readonly(), "forecasting", "research", "max_audit_rounds", default=2) or 0)
+    except Exception:
+        max_rounds = 2
+    max_rounds = max(0, max_rounds)
+
+    def _safe_audit(q: Any) -> dict[str, Any] | None:
+        try:
+            return audit_research(ledger, q)
+        except Exception:
+            return None
+
+    audit = _safe_audit(question)
+    rounds = 0
+    # Re-run RESEARCH only for research-stage-controllable gaps (evidence floor,
+    # independence, disconfirming, recency, trigger coverage). reference_class is the
+    # base_rate stage's job (it runs after this checkpoint), so it never drives a
+    # research re-run here.
+    while research_stage_incomplete(audit) and rounds < max_rounds:
+        rounds += 1
+        prev_score = audit.get("score")
+        supplemental = _format_research_gaps(audit)
+        re_outcome: dict[str, Any] = {
+            "stage": "research", "status": "ran", "committed": False,
+            "audit_round": rounds, "audit_score": prev_score,
+        }
+        try:
+            result = _run_update_agent(
+                ledger, question_id,
+                model=model, provider=provider, max_iterations=max_iterations,
+                stage="research", commit_policy=commit_policy, supplemental=supplemental,
+            )
+        except Exception as exc:
+            re_outcome["status"] = "error"
+            re_outcome["detail"] = str(exc)[:200]
+        else:
+            response = result.get("final_response") if isinstance(result, dict) else None
+            if response:
+                re_outcome["detail"] = _truncate(str(response).strip(), 200)
+        stage_results.append(re_outcome)
+        if on_stage is not None:
+            on_stage("research", re_outcome)
+        try:
+            question = ledger.get_question(question_id)
+        except Exception:
+            break
+        audit = _safe_audit(question)
+        # No-progress guard (spend bound): a re-run that did not RAISE the adequacy
+        # score won't be helped by another identical pass — stop rather than burn the
+        # remaining rounds on research that isn't finding anything.
+        if (
+            research_stage_incomplete(audit)
+            and isinstance(audit.get("score"), (int, float))
+            and isinstance(prev_score, (int, float))
+            and audit["score"] <= prev_score
+        ):
+            break
+    return rounds, audit
 
 
 def _cmd_agent(args: argparse.Namespace) -> None:
@@ -10477,6 +10672,12 @@ def _cmd_lessons_apply(args: argparse.Namespace) -> None:
 
 
 def _cmd_calibration(args: argparse.Namespace) -> None:
+    if getattr(args, "operator", False):
+        _print_operator_calibration(
+            _ledger(args),
+            window_days=getattr(args, "operator_window_days", None),
+        )
+        return
     if getattr(args, "mode", "summary") == "status":
         _print_calibration_cockpit(args)
         return
@@ -10538,6 +10739,183 @@ def _cmd_calibration(args: argparse.Namespace) -> None:
                 f"  {row['scope']}: {(row.get('lesson') or '')[:70]}{adj_str} "
                 f"(applied {cov.get('applied_count', 0)}/{cov.get('in_scope_count', 0)}){dormant}"
             )
+
+
+# ── Operator practice loop (R2) ──────────────────────────────────────────
+# Tetlock training: score the OPERATOR, not just the system. `practice` records
+# the human's own number (scored when the question resolves); `drill` replays
+# resolved questions and scores on the spot; `calibration --operator` reports the
+# human's own reliability + a vs-system pairing.
+
+
+def _parse_operator_estimate(raw: str) -> Any:
+    """Parse a CLI-entered operator estimate: a bare number in [0,1] for a
+    binary, or a JSON distribution dict. Raises SystemExit with a clear message
+    on bad input (so the interactive flow fails politely)."""
+
+    text = (raw or "").strip()
+    if not text:
+        raise SystemExit("practice: no estimate entered")
+    if text.startswith("{"):
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise SystemExit(f"practice: distribution is not valid JSON: {exc}")
+        if not isinstance(payload, dict):
+            raise SystemExit("practice: distribution must be a JSON object")
+        return payload
+    try:
+        value = float(text)
+    except ValueError:
+        raise SystemExit(f"practice: '{text}' is not a number in [0, 1] or a JSON distribution")
+    if not (0.0 <= value <= 1.0):
+        raise SystemExit("practice: probability must be in [0, 1]")
+    return value
+
+
+def _print_operator_calibration(ledger: "ForecastLedger", *, window_days: int | None = None) -> None:
+    summary = ledger.operator_calibration_summary(window_days=window_days)
+    n = summary["n"]
+    window_note = f" over the last {window_days}d" if window_days else ""
+    print(f"operator calibration ({n} scored estimate(s)){window_note}:")
+    print(f"  brier: {_format_metric(summary['brier'])}")
+    vs = summary.get("vs_system") or {}
+    if vs.get("shared_n"):
+        print(
+            f"  vs system (shared {vs['shared_n']} question(s)): "
+            f"operator={_format_metric(vs.get('operator_brier'))} "
+            f"system={_format_metric(vs.get('system_brier'))}"
+        )
+    trend = summary.get("trend") or {}
+    if trend.get("direction"):
+        print(f"  trend: {trend['direction']}")
+    curve = [row for row in summary.get("calibration_curve", []) if row["count"]]
+    if curve:
+        print("  reliability curve (predicted -> observed):")
+        for row in curve:
+            print(
+                f"    {row['bucket']}: n={row['count']} "
+                f"predicted={_format_optional_float(row['mean_predicted'])} "
+                f"observed={_format_optional_float(row['observed_frequency'])}"
+            )
+    if n == 0:
+        print("  no scored operator estimates yet — try `forecast practice <id>` or `forecast drill`.")
+
+
+def _cmd_practice(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    question_id = _resolve_question_id(ledger, args.question_ref)
+    question = ledger.get_question(question_id)
+    otype = question.outcome_space.type
+    print(f"practice: {question.title}")
+    print(f"  resolution: {question.resolution_criteria}")
+    if otype == "binary":
+        prompt = "your probability of YES (0-1): "
+    else:
+        prompt = f"your estimate ({otype}) — a number in [0,1] or a JSON distribution: "
+    try:
+        raw = input(prompt)
+    except EOFError:
+        raise SystemExit("practice: no input received (stdin closed)")
+    value = _parse_operator_estimate(raw)
+    estimate = ledger.record_operator_estimate(
+        question_id, value, note=getattr(args, "note", None), context="practice"
+    )
+    print(
+        f"recorded operator estimate {estimate['id']} — it will be scored when "
+        f"'{question.title}' resolves. See `forecast calibration --operator`."
+    )
+
+
+def _drill_candidates(
+    ledger: "ForecastLedger", *, domain: str | None, limit: int
+) -> list[tuple[Any, Any]]:
+    """Resolved, scoreable, binary questions the operator has NOT yet estimated,
+    each paired with its confirmed resolution. Newest-resolved first, capped."""
+
+    candidates: list[tuple[Any, Any]] = []
+    for question in ledger.list_questions(status="resolved", domain=domain):
+        if question.outcome_space.type != "binary":
+            continue
+        if ledger.list_operator_estimates(question.id):
+            continue  # already drilled/practiced — no repeats
+        resolution = ledger.get_latest_resolution(question.id, confirmed_only=True)
+        if resolution is None:
+            continue
+        candidates.append((question, resolution))
+        if len(candidates) >= limit:
+            break
+    return candidates
+
+
+def _cmd_drill(args: argparse.Namespace) -> None:
+    # Non-interactive guard: a drill needs a live human at a TTY to enter numbers.
+    if not sys.stdin.isatty():
+        raise SystemExit(
+            "forecast drill needs an interactive terminal (stdin is not a TTY). "
+            "Run it from a shell, or use `forecast practice <id>` in a pipeline."
+        )
+    ledger = _ledger(args)
+    limit = max(1, int(getattr(args, "n", 5) or 5))
+    candidates = _drill_candidates(ledger, domain=getattr(args, "domain", None), limit=limit)
+    if not candidates:
+        print(
+            "no un-drilled resolved binary questions available"
+            + (f" in domain '{args.domain}'" if getattr(args, "domain", None) else "")
+            + " — resolve some binary forecasts first."
+        )
+        return
+    drill_briers: list[float] = []
+    for index, (question, resolution) in enumerate(candidates, start=1):
+        print(f"\n[{index}/{len(candidates)}] {question.title}")
+        print(f"  resolution criteria: {question.resolution_criteria}")
+        # Honest replay: show only evidence that existed BEFORE resolution, and
+        # never the outcome. resolved_at bounds what was knowable at the time.
+        resolved_at = resolution.resolved_at
+        prior_evidence = [
+            item
+            for item in ledger.list_evidence(question.id)
+            if item.available_at and resolved_at and item.available_at < resolved_at
+        ]
+        if prior_evidence:
+            print("  evidence available before resolution:")
+            for item in prior_evidence[:5]:
+                source = item.source_url or item.source_name or item.source_type
+                print(f"    - [{item.available_at}] {item.claim or item.summary} ({source})")
+        else:
+            print("  (no pre-resolution evidence recorded)")
+        try:
+            raw = input("  your probability of YES (0-1), or blank to stop: ")
+        except EOFError:
+            break
+        if not raw.strip():
+            break
+        value = _parse_operator_estimate(raw)
+        if not isinstance(value, (int, float)):
+            print("  drill is binary-only — enter a probability in [0, 1].")
+            continue
+        estimate = ledger.record_operator_estimate(
+            question.id, value, context="drill"
+        )
+        scored = ledger.score_operator_estimates(question.id, resolution.outcome)
+        this_brier = next(
+            (row["brier"] for row in scored if row["id"] == estimate["id"] and row["brier"] is not None),
+            None,
+        )
+        if this_brier is None:
+            # Fall back to a re-read in case scoring paired a different row.
+            this_brier = ledger.get_operator_estimate(estimate["id"]).get("brier")
+        if this_brier is not None:
+            drill_briers.append(float(this_brier))
+        print(
+            f"  outcome: {resolution.outcome}  |  your Brier: {_format_metric(this_brier)}"
+        )
+    if drill_briers:
+        running = sum(drill_briers) / len(drill_briers)
+        print(f"\ndrill Brier (this session, {len(drill_briers)} scored): {running:.6f}")
+    else:
+        print("\nno estimates scored this session.")
+    _print_operator_calibration(ledger)
 
 
 def _cmd_complementarity(args: argparse.Namespace) -> None:
@@ -11740,6 +12118,7 @@ def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:
         auto_postmortem=getattr(args, "auto_postmortem", True),
         thesis_aggregate=getattr(args, "thesis_aggregate", True),
         synthesize_lessons=getattr(args, "synthesize_lessons", True),
+        refresh_market_models=getattr(args, "refresh_market_models", True),
     )
     print(f"cron_job: {job['id']}")
     print(f"name: {job['name']}")
@@ -13148,17 +13527,77 @@ def _cmd_backtest(args: argparse.Namespace) -> None:
         agent_model=_resolved_recorded_agent_model(args, agent_runner),
         agent_provider=args.agent_provider,
     )
+    market_hidden = bool(getattr(args, "market_hidden", False))
     run = ledger.run_backtest_dataset(
         dataset=args.dataset,
         cases=cases,
         default_forecast_time_cutoff=args.as_of,
         evidence_cutoff_policy=args.evidence_cutoff_policy,
         allow_calibration_memory=args.allow_calibration_memory,
+        arm="market_hidden" if market_hidden else None,
     )
     print(f"backtest_run: {run['id']}")
     print(f"cases: {run['result_summary'].get('case_count', 0)}")
     print(f"scored_cases: {run['result_summary'].get('scored_cases', 0)}")
     print(f"leakage_checks_passed: {run['leakage_checks_passed']}")
+    if market_hidden:
+        _print_market_hidden_report(ledger, run["id"])
+
+
+def _print_market_hidden_report(ledger: ForecastLedger, run_id: str) -> None:
+    """Market-hidden arm scoring report: agent vs the WITHHELD market baseline.
+
+    Reuses the run's :meth:`ForecastLedger.backtest_performance_report` for the
+    agent Brier + market baseline Brier + P0.2 paired-bootstrap edge CI / p-value /
+    win-rate (same cases), and :func:`market_ensemble.market_hidden_pool_report` for
+    the equal-weight log-odds POOL Brier + the P1.3 fitted-simplex complementarity
+    (does a market+agent blend beat both?). Read-only."""
+    from forecasting.market_ensemble import market_hidden_pool_report
+
+    perf = ledger.backtest_performance_report(run_id)
+    pool = market_hidden_pool_report(ledger, run_id)
+    agent_brier = (perf.get("agent") or {}).get("mean_brier")
+    market_row = next(
+        (b for b in perf.get("baselines") or [] if b.get("baseline_type") == "market"),
+        None,
+    )
+
+    print("market-hidden arm (market price scored as baseline, WITHHELD from the agent):")
+    print(f"  paired cases: {pool['n']}" + (f" (skipped {pool['skipped']})" if pool["skipped"] else ""))
+    print(f"  agent Brier   = {_format_metric(agent_brier)}")
+    if market_row is not None:
+        print(f"  market Brier  = {_format_metric(market_row.get('mean_brier'))}")
+        print(
+            "  agent edge vs market (market_brier - agent_brier) = "
+            f"{_format_delta(market_row.get('paired_agent_edge_mean_brier'))} "
+            f"ci95={_format_ci95(market_row.get('paired_agent_edge_ci95_low'), market_row.get('paired_agent_edge_ci95_high'))} "
+            f"p={_format_pvalue(market_row.get('paired_p_value'))}"
+        )
+        print(
+            "  win-rate vs market = "
+            f"{_format_win_rate(pool.get('win_rate_vs_market'), pool['n'])} "
+            f"(wins/losses/ties {market_row.get('paired_agent_wins', 0)}/"
+            f"{market_row.get('paired_baseline_wins', 0)}/{market_row.get('paired_ties', 0)})"
+        )
+    else:
+        print("  market Brier  = - (no scored market baseline on this run)")
+    print(
+        "  pooled (agent+market log-odds) Brier = "
+        f"{_format_metric(pool.get('pooled_brier'))}  "
+        f"beats_both={bool(pool.get('pool_beats_both'))}"
+    )
+    fitted = pool.get("fitted") or {}
+    weights = fitted.get("weights")
+    if weights:
+        wtxt = ", ".join(f"{name}={weights[name]:.3f}" for name in sorted(weights))
+        print(f"  fitted simplex complementarity: weights[{wtxt}]")
+    print(
+        "    loo_ensemble_brier (honest) = "
+        f"{_format_metric(fitted.get('loo_ensemble_brier'))}  "
+        f"blend beats BOTH (LOO) = {bool(fitted.get('beats_both'))}"
+    )
+    for note in pool.get("notes") or []:
+        print(f"  note: {note}")
 
 
 def _cmd_performance(args: argparse.Namespace) -> None:

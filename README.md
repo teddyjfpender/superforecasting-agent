@@ -103,6 +103,16 @@ In chat, the same journey is one tool call: ask the agent to forecast something
 and it uses `full_forecast`. Every gate still applies — autonomy never buys a
 weaker forecast, it buys fewer keystrokes.
 
+### Become the forecaster
+
+The desk scores YOU too, not only itself. Flip on practice mode
+(`forecasting.practice.estimate_first: true`) and the agent asks for your own
+probability before it reveals its number, recording it so it is scored when the
+question resolves — or run `forecast drill --n 5` to replay already-resolved
+binary questions and get your Brier back on the spot. `forecast calibration
+--operator` then shows your reliability curve, your trend, and how your Brier
+stacks up against the system's on the same questions.
+
 ### The full command surface
 
 ```bash

@@ -39,7 +39,14 @@ def _question(ledger, **over):
 def _stage_side_effects(ledger, qid, stage):
     """The artifacts each pipeline stage would land, so the pipeline gate unlocks."""
     if stage == "research":
-        ledger.add_evidence(question_id=qid, source_or_note="BLS prior prints", available_at="2026-01-01T00:00:00Z")
+        # Land ADEQUATE research (>=3 distinct, fresh sources with a disconfirming
+        # stance) so the chain's VOI research-adequacy loop passes on the first audit
+        # and adds no extra research pass — the stage sequence stays as authored.
+        from datetime import datetime, timezone
+        _fresh = datetime.now(timezone.utc).isoformat()
+        ledger.add_evidence(question_id=qid, source_or_note="BLS prior prints", source_name="bls", available_at=_fresh, stance="supports")
+        ledger.add_evidence(question_id=qid, source_or_note="skeptic take", source_name="analyst-b", available_at=_fresh, stance="opposes")
+        ledger.add_evidence(question_id=qid, source_or_note="market read", source_name="market-c", available_at=_fresh, stance="context")
     elif stage == "base_rate":
         ledger.add_reference_class(question_id=qid, name="recent CPI prints", inclusion_criteria="last 12 prints", base_rate=0.4)
     elif stage == "update":
@@ -121,8 +128,10 @@ def test_chain_continues_past_a_failing_stage(tmp_path, monkeypatch):
     result = run_forecast_chain(ledger, q.id, max_iterations=3)
 
     # research errored but the chain CONTINUED through base_rate and update; with no
-    # evidence the update stage stayed gated, so nothing was fabricated
-    assert seen == ["research", "base_rate", "update"]
+    # evidence the update stage stayed gated, so nothing was fabricated. The VOI
+    # adequacy loop re-ran research once (it also raised, landed nothing) before the
+    # no-progress guard stopped it.
+    assert seen == ["research", "research", "base_rate", "update"]
     research = next(s for s in result["stages"] if s["stage"] == "research")
     assert research["status"] == "error"
     assert result["committed"] is False
@@ -536,9 +545,12 @@ def test_chain_explicit_stages_still_win(tmp_path, monkeypatch):
         outcome_space=OutcomeSpace(type="numeric", choices=[], units="percent"),
     )
     seen: list[str] = []
-    monkeypatch.setattr(
-        cli, "_run_update_agent",
-        lambda led, qid, *, stage="update", **kw: seen.append(stage) or {"final_response": "ok"},
-    )
+
+    def fake_agent(led, qid, *, stage="update", **kw):
+        seen.append(stage)
+        _stage_side_effects(led, qid, stage)  # research lands adequate evidence -> no adequacy re-run
+        return {"final_response": "ok"}
+
+    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
     run_forecast_chain(ledger, q.id, max_iterations=3, stages=("research",))
     assert seen == ["research"], "an explicit stages argument must not be overridden"

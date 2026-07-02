@@ -1509,6 +1509,7 @@ def install_script(
     auto_postmortem: bool = False,
     thesis_aggregate: bool = False,
     synthesize_lessons: bool = False,
+    refresh_market_models: bool = False,
 ) -> None:
     """Install the small script used by no-agent forecast cron jobs."""
 
@@ -1524,6 +1525,8 @@ def install_script(
         args.append("--thesis-aggregate")
     if synthesize_lessons:
         args.append("--synthesize-lessons")
+    if refresh_market_models:
+        args.append("--refresh-market-models")
     script_path.write_text(
         "\n".join(
             [

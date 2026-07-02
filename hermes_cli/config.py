@@ -765,6 +765,46 @@ DEFAULT_CONFIG = {
             # `forecast freshen` / `keep_fresh` still install it on demand).
             "auto_install": True,
         },
+        # VOI-directed research + the research-adequacy judge (research_audit.py):
+        # the research stage plans against the question's OWN levers (update
+        # triggers, change_my_mind, outcome paths) and, before finishing, audits
+        # whether the evidence set is adequate (reference class present, evidence
+        # floor, source independence, disconfirming evidence, recency, trigger
+        # coverage). The chain loop re-runs research when the deterministic audit
+        # says inadequate, up to `max_audit_rounds` EXTRA passes.
+        "research": {
+            # A forecast is "research-adequate" when it clears the ERROR-weight
+            # checks (reference class + evidence floor) AND scores >= this out of
+            # 100. Also the WARN/ERROR threshold for the `research_adequate` hook.
+            "adequacy_threshold": 70,
+            # Max EXTRA research passes the chain loop runs when the post-research
+            # audit reports the evidence set is inadequate (0 = never re-run).
+            "max_audit_rounds": 2,
+        },
+        # Operator practice loop (R2): the desk's goal is to make the OPERATOR a
+        # superforecaster, not only to score itself. When estimate_first is ON,
+        # the agent ASKS the user for THEIR probability BEFORE revealing its own
+        # number on a new-question / update conversation, records it (context
+        # 'practice'), then proceeds — so the human builds a scored track record.
+        # DEFAULT OFF: strictly opt-in; with it off the chat/update prompts are
+        # byte-identical to before (no elicitation sentence is injected).
+        "practice": {
+            "estimate_first": False,
+        },
+        # R4 Living Models: Market Models are scored at resolution (Brier for a
+        # binary projection; interval coverage + absolute error for a numeric one),
+        # a per-model SKILL accrues on-read from those scores, and the deterministic
+        # forecast refresh scales each model-sourced ensemble component's weight by
+        # its model's skill multiplier before re-pooling.
+        "models": {
+            # Weight model-sourced components by measured skill in the deterministic
+            # re-pool. DEFAULT ON but HARMLESS-BY-CONSTRUCTION on cold start: a model
+            # must clear the resolved-binary sample gate before its multiplier moves
+            # off 1.0, so with no history the pooled number is byte-identical to the
+            # unweighted re-pool. Applied multipliers are echoed in the snapshot
+            # metadata (refresh.skill_multipliers). Set False to force identity.
+            "skill_weights": True,
+        },
     },
     "agent": {
         "max_turns": 90,

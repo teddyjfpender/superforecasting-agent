@@ -214,6 +214,8 @@ FORECAST_LEDGER_SCHEMA = {
                     "component_track_record",
                     "tail_audit",
                     "market_quality",
+                    "research_plan",
+                    "research_audit",
                     "link_forecasts",
                     "list_links",
                     "unlink_forecasts",
@@ -224,6 +226,8 @@ FORECAST_LEDGER_SCHEMA = {
                     "triage_contested",
                     "relabel_route",
                     "triage_trust",
+                    "record_operator_estimate",
+                    "operator_calibration",
                 ],
             },
             "question_id": {"type": "string"},
@@ -519,6 +523,7 @@ FORECAST_LEDGER_SCHEMA = {
             "triggered_by": {"type": "string"},
             "question_title": {"type": "string"},
             "context": {"type": "string"},
+            "note": {"type": "string", "description": "record_operator_estimate: an optional rationale for the operator's number."},
             "name": {"type": "string"},
             "dataset": {"type": "string"},
             "limit": {"type": "integer"},
@@ -1088,7 +1093,7 @@ FORECAST_LEDGER_SCHEMA = {
             },
             "model": {
                 "type": "string",
-                "description": "triage_label: model id for the cheap auto-labeler (default $FORECAST_TRIAGE_MODEL or the house judge model).",
+                "description": "triage_label: model id for the cheap auto-labeler (default $FORECAST_TRIAGE_MODEL or the house judge model). research_audit: optional model for the advisory change_my_mind-coverage check (omit for deterministic-only).",
             },
             "persist": {
                 "type": "boolean",
@@ -2300,6 +2305,30 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             )
             return tool_result(success=True, calibration=summary)
 
+        if action == "record_operator_estimate":
+            # Operator practice loop (R2): record the OPERATOR's own number for a
+            # question so the human is scored + calibrated like the system. The
+            # estimate is scored when the question resolves (context='practice').
+            probability = args.get("probability")
+            if probability is None:
+                probability = args.get("probability_or_distribution")
+            if probability is None:
+                raise ValueError("probability is required")
+            estimate = ledger.record_operator_estimate(
+                _required(args, "question_id"),
+                probability,
+                note=args.get("note"),
+                context=args.get("context") or "practice",
+            )
+            return tool_result(success=True, operator_estimate=estimate)
+
+        if action == "operator_calibration":
+            window_days = args.get("window_days")
+            summary = ledger.operator_calibration_summary(
+                window_days=int(window_days) if window_days is not None else None
+            )
+            return tool_result(success=True, operator_calibration=summary)
+
         if action == "list_domain_error_profiles":
             profiles = ledger.list_domain_error_profiles(
                 domain=args.get("domain"),
@@ -2838,6 +2867,55 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     "it into the market component's `weight` in ensemble_components on update_forecast "
                     "(e.g. a liquid market weight 2 stays 2; a stale one at 0.25 becomes 0.5). Never "
                     "drop a market silently — record the discounted weight."
+                ),
+            )
+
+        if action == "research_plan":
+            from forecasting.research_audit import build_research_plan
+
+            question = ledger.get_question(_required(args, "question_id"))
+            snapshot = ledger.get_current_snapshot(question.id)
+            plan = build_research_plan(question, snapshot=snapshot)
+            return tool_result(
+                success=True,
+                plan=plan,
+                note=(
+                    "Work the VOI angles FIRST — update_trigger / change_my_mind / outcome_path "
+                    "angles hunt for exactly what would move THIS forecast, not the topic in "
+                    "general. Import material findings with import_source_evidence, then call "
+                    "action='research_audit' before you finish to close any gaps."
+                ),
+            )
+
+        if action == "research_audit":
+            from forecasting.research_audit import audit_research
+
+            question = ledger.get_question(_required(args, "question_id"))
+            # Opt-in LLM change_my_mind-coverage check: only when a model is passed
+            # (deterministic checks always run and are cheap). Fail-open — a runner
+            # that errors simply drops that one check.
+            runner = None
+            audit_model = args.get("model")
+            if audit_model:
+                try:
+                    from forecasting.quorum import make_aiagent_runner
+
+                    runner = make_aiagent_runner(
+                        max_iterations=1, toolsets=(), quiet=True, timeout=120
+                    )
+                except Exception:
+                    runner = None
+            audit = audit_research(
+                ledger, question, runner=runner, model=audit_model
+            )
+            return tool_result(
+                success=True,
+                audit=audit,
+                note=(
+                    "adequate=false means the research is thin on a lever that matters — close the "
+                    "listed gaps (import evidence for the suggested_queries, add a reference class, "
+                    "or watch an executable trigger's source) and re-audit. The deterministic checks "
+                    "always run; a model= arg adds an advisory change_my_mind-coverage check."
                 ),
             )
 

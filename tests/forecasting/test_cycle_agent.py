@@ -75,7 +75,10 @@ def test_runner_bootstraps_prereqs_then_skips_when_gate_stays_closed(tmp_path, m
     # so the runner BOOTSTRAPS the missing prerequisite stages then re-checks the gate
     assert res[q.id]["status"] == "skipped" and "gated" in res[q.id]["detail"]
     assert res["fq_missing"]["status"] == "skipped"
-    assert stages == ["research", "base_rate"]  # bootstrapped prereqs, never the gated update
+    # The chain's VOI research-adequacy loop re-runs RESEARCH once when the stub lands
+    # no evidence (inadequate), then the no-progress guard stops it — so exactly one
+    # extra research pass precedes base_rate. It never forces the gated update.
+    assert stages == ["research", "research", "base_rate"]
     assert "update" not in stages
 
 
@@ -85,10 +88,18 @@ def test_runner_bootstrap_unlocks_gate_then_updates(tmp_path, monkeypatch):
     q = lg.create_question(title="Will the metric exceed target by the close date?", resolution_criteria="Resolves yes if it exceeds target; otherwise no.")
     stages: list[str] = []
 
+    from datetime import datetime, timezone
+    fresh = datetime.now(timezone.utc).isoformat()
+
     def fake_agent(ledger, qid, *, stage="update", **kw):
         stages.append(stage)
         if stage == "research":
-            ledger.add_evidence(question_id=qid, source_or_note="prior prints", available_at="2026-01-01T00:00:00Z")
+            # Land ADEQUATE research on the first pass (>=3 distinct, fresh sources
+            # with a disconfirming stance) so the VOI research-adequacy loop passes
+            # and adds NO extra research pass — the sequence stays research/base_rate/update.
+            ledger.add_evidence(question_id=qid, source_or_note="wire A", source_name="wire-a", available_at=fresh, stance="supports")
+            ledger.add_evidence(question_id=qid, source_or_note="wire B", source_name="wire-b", available_at=fresh, stance="opposes")
+            ledger.add_evidence(question_id=qid, source_or_note="wire C", source_name="wire-c", available_at=fresh, stance="context")
         elif stage == "base_rate":
             ledger.add_reference_class(question_id=qid, name="recent", inclusion_criteria="last 12", base_rate=0.4)
         elif stage == "update":
@@ -122,7 +133,9 @@ def test_runner_bootstrap_failure_falls_back_to_skip(tmp_path, monkeypatch):
     assert res[q.id]["status"] == "skipped"
     assert "gated after bootstrap" in res[q.id]["detail"]
     assert "bootstrap stage error" in res[q.id]["detail"]
-    assert stages == ["research", "base_rate"]  # both prereqs attempted; update never run
+    # research raises and lands nothing, so the VOI adequacy loop re-runs research once
+    # (then the no-progress guard stops it) before base_rate is attempted; update never runs.
+    assert stages == ["research", "research", "base_rate"]  # both prereqs attempted; update never run
 
 
 def test_force_invokes_agent_past_the_gate(tmp_path, monkeypatch):

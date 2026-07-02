@@ -643,6 +643,40 @@ def test_market_hidden_rejected_for_non_forecastbench_datasets():
             _load_backtest_cases(ds, hide_market_baseline=True)
 
 
+def test_prepared_agent_prompt_jsonl_has_no_market_value(patched_fetch, tmp_path):
+    # LEAK TEST on the EXACT agent-facing payloads: serialize the prompt packets the
+    # market-hidden prep path hands the agent and assert the freeze market price
+    # (0.62) appears NOWHERE — while the loaded case STILL carries it for scoring.
+    import json as _json
+
+    from forecasting.cli import (
+        _load_backtest_cases,
+        _write_agent_protocol_prompt_jsonl,
+    )
+
+    dataset = f"forecastbench:{QUESTION_SET_DATE}"
+    cases = _load_backtest_cases(
+        dataset, ledger=None, hide_market_baseline=True
+    )
+    # the market baseline is preserved on the loaded case (for scoring)...
+    mf = next(c for c in cases if c["metadata"]["forecastbench_id"] == "mf-1")
+    market = [b for b in mf["baselines"] if b["baseline_type"] == "market"]
+    assert market and market[0]["probability"] == pytest.approx(0.62)
+
+    # ...but the serialized agent-facing prompt packets carry no market price/marker.
+    out = tmp_path / "prompts.jsonl"
+    _write_agent_protocol_prompt_jsonl(str(out), cases, dataset=dataset)
+    text = out.read_text(encoding="utf-8")
+    assert "0.62" not in text
+    assert "hidden_from_agent" not in text
+    # every emitted packet is valid JSON with no market baseline anywhere.
+    for line in text.splitlines():
+        packet = _json.loads(line)
+        blob = _json.dumps(packet)
+        assert '"market"' not in blob
+        assert "0.62" not in blob
+
+
 def test_recorded_agent_model_defaults_to_resolved_model():
     # P2.4 model-cutoff gate fires on the recorded agent_model. When
     # --agent-model is omitted, the recorded model defaults to the runner's

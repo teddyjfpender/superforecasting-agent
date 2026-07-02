@@ -46,6 +46,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "reasoning_composition": _O,
         "require_outside_view_anchor": _O,
         "thesis_aggregate_fresh": _O,
+        "research_adequate": _O,
     },
     # == the pre-hooks enforcement (tool require_* defaults + Phase 2 style gate),
     # which also equals the builtin default severities. Adopting it changes nothing.
@@ -76,6 +77,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "reasoning_composition": _W,
         "require_outside_view_anchor": _W,
         "thesis_aggregate_fresh": _W,
+        "research_adequate": _W,
     },
     # Everything blocking — for high-stakes desks that want full saturation.
     "strict": {
@@ -104,6 +106,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "reasoning_composition": _E,
         "require_outside_view_anchor": _E,
         "thesis_aggregate_fresh": _W,
+        "research_adequate": _E,
     },
 }
 

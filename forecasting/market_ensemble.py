@@ -584,3 +584,196 @@ def complementarity_report(
         "advisory_weight_decision": decision,
         "notes": [*collected.get("notes", []), *fit.get("notes", [])],
     }
+
+
+# ── MARKET-HIDDEN backtest arm: collect triples from ONE backtest run ─────────
+#
+# The live collector above joins resolved LIVE score_records to their market
+# baseline. For the market-hidden ForecastBench arm we need the SAME (market,
+# agent, outcome) triples but scoped to a SINGLE backtest RUN — the arm where the
+# market price was scored as a baseline yet WITHHELD from the agent's prompt. This
+# reuses the identical extraction (agent snapshot probability + realized outcome +
+# de-vigged market baseline); only the row source differs (run cases, not live
+# scores). No statistics are reimplemented: the report below feeds these triples
+# straight into :func:`simplex_brier_weights` (P1.3) and
+# :func:`forecasting.bayes_toolkit.log_odds_pool`.
+
+
+def collect_backtest_market_llm_triples(
+    ledger: Any,
+    run_id: str,
+    *,
+    market_baseline_types: Sequence[str] = ("market_price", "market", "imported_market"),
+) -> dict[str, Any]:
+    """Collect aligned (market_price, agent_forecast, outcome) triples for ONE run.
+
+    Mirrors :func:`collect_market_llm_triples` but iterates the backtest run's
+    cases: each scored case yields the agent forecast (its snapshot probability),
+    the realized binary outcome, and the FIRST market-typed baseline_comparison
+    (de-vigged through the same helper). Returns the same shape ready for
+    :func:`simplex_brier_weights`.
+    """
+    from forecasting import bayes_toolkit
+    from forecasting.models import LedgerNotFoundError
+
+    market_types = {str(t).lower() for t in market_baseline_types}
+    outcomes: list[float] = []
+    market_probs: list[float] = []
+    llm_probs: list[float] = []
+    skipped = 0
+    notes: list[str] = []
+
+    for case in ledger.list_backtest_cases(run_id):
+        score_id = case.get("score_record_id")
+        if not score_id:
+            skipped += 1
+            continue
+        try:
+            score = ledger.get_score(score_id)
+        except LedgerNotFoundError:
+            skipped += 1
+            continue
+        try:
+            question = ledger.get_question(score.question_id)
+        except LedgerNotFoundError:
+            skipped += 1
+            continue
+        # Only resolved binary questions carry a single P(yes) + a {0,1} outcome.
+        if question.outcome_space.type != "binary":
+            continue
+        outcome = ledger._binary_outcome_value(score, question.outcome_space)
+        if outcome is None:
+            skipped += 1
+            continue
+        try:
+            snapshot = ledger.get_snapshot(score.forecast_id)
+        except LedgerNotFoundError:
+            skipped += 1
+            continue
+        llm_p = _coerce_prob(snapshot.probability_or_distribution)
+        if llm_p is None:
+            skipped += 1
+            continue
+
+        # First market-typed baseline for THIS case (via its own comparison refs,
+        # so a question that recurs across cutoffs keeps each forecast paired with
+        # its own baseline). De-vig is identical to the live collector.
+        market_p: float | None = None
+        for ref in case.get("baseline_comparison_refs") or []:
+            try:
+                baseline = ledger.get_baseline_comparison(ref)
+            except LedgerNotFoundError:
+                continue
+            if str(baseline.get("baseline_type") or "").lower() not in market_types:
+                continue
+            if not baseline.get("score_record_id"):
+                continue  # baseline was not scored -> not a usable paired row
+            raw = ledger._baseline_probability_value(baseline)
+            market_p = _devig_market_baseline(raw, baseline, bayes_toolkit)
+            if market_p is not None:
+                break
+        if market_p is None:
+            continue
+
+        outcomes.append(outcome)
+        market_probs.append(market_p)
+        llm_probs.append(llm_p)
+
+    if skipped:
+        notes.append(f"{skipped} case(s) skipped (unscored / non-binary outcome / unreadable)")
+    return {
+        "outcomes": outcomes,
+        "sources": {MARKET_SOURCE: market_probs, LLM_SOURCE: llm_probs},
+        "n": len(outcomes),
+        "skipped": skipped,
+        "notes": notes,
+    }
+
+
+def market_hidden_pool_report(
+    ledger: Any,
+    run_id: str,
+    *,
+    min_sample: int = DEFAULT_MIN_SAMPLE,
+) -> dict[str, Any]:
+    """Market-hidden arm head-to-head + pool report over ONE backtest run.
+
+    Read-only. Over the run's paired (market, agent, outcome) triples it reports:
+
+    * ``agent_brier`` / ``market_brier`` — standalone Brier of each source.
+    * ``agent_edge_vs_market`` — ``market_brier - agent_brier`` (positive == the
+      agent, forecasting WITHOUT seeing the price, beat the market).
+    * ``win_rate_vs_market`` — fraction of cases where the agent's per-case Brier
+      is strictly lower than the market's (ties count as a half-win).
+    * ``pooled_brier`` — Brier of the EQUAL-WEIGHT log-odds pool of the agent and
+      market forecasts (reuses :func:`forecasting.bayes_toolkit.log_odds_pool`).
+    * ``pool_beats_both`` — whether that fixed pool's Brier beats BOTH standalones.
+    * ``fitted`` — the P1.3 simplex complementarity block (fitted convex weights,
+      LOO ensemble Brier, ``beats_both``) via :func:`simplex_brier_weights`, the
+      HONEST out-of-sample complementarity test.
+
+    The log-odds pool + agent-vs-market comparison answer "does the agent
+    manufacture signal ORTHOGONAL to the withheld price?"; the fitted simplex block
+    proves whether that orthogonal signal has additive value out-of-sample.
+    """
+    from forecasting import bayes_toolkit
+
+    collected = collect_backtest_market_llm_triples(ledger, run_id)
+    outcomes = collected["outcomes"]
+    market = collected["sources"][MARKET_SOURCE]
+    agent = collected["sources"][LLM_SOURCE]
+    n = collected["n"]
+
+    agent_brier = brier(agent, outcomes)
+    market_brier = brier(market, outcomes)
+    agent_edge = (
+        market_brier - agent_brier
+        if agent_brier is not None and market_brier is not None
+        else None
+    )
+
+    # Equal-weight log-odds pool per case (reuses the toolkit; interior clamp there
+    # keeps p=0/1 finite). Pool over the SAME paired rows the Briers use.
+    pooled = [_clamp01(bayes_toolkit.log_odds_pool([m, a])) for m, a in zip(market, agent)]
+    pooled_brier = brier(pooled, outcomes)
+    pool_beats_both = (
+        pooled_brier is not None
+        and agent_brier is not None
+        and market_brier is not None
+        and pooled_brier < agent_brier
+        and pooled_brier < market_brier
+    )
+
+    # Per-case win-rate vs market (ties == half-win), matching the head-to-head
+    # convention used elsewhere (lower Brier wins).
+    wins = 0.0
+    for m, a, y in zip(market, agent, outcomes):
+        agent_case = (a - y) ** 2
+        market_case = (m - y) ** 2
+        if agent_case < market_case:
+            wins += 1.0
+        elif agent_case == market_case:
+            wins += 0.5
+    win_rate_vs_market = (wins / n) if n else None
+
+    fit = simplex_brier_weights(outcomes, collected["sources"], min_sample=min_sample)
+
+    return {
+        "run_id": run_id,
+        "n": n,
+        "skipped": collected["skipped"],
+        "agent_brier": agent_brier,
+        "market_brier": market_brier,
+        "agent_edge_vs_market": agent_edge,
+        "win_rate_vs_market": win_rate_vs_market,
+        "pooled_brier": pooled_brier,
+        "pool_beats_both": pool_beats_both,
+        "fitted": {
+            "weights": fit.get("weights"),
+            "ensemble_brier": fit.get("ensemble_brier"),
+            "loo_ensemble_brier": fit.get("loo_ensemble_brier"),
+            "beats_both": fit.get("beats_both", False),
+            "bootstrap_ci_95": fit.get("bootstrap_ci_95"),
+        },
+        "notes": [*collected.get("notes", []), *fit.get("notes", [])],
+    }

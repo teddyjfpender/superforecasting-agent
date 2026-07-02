@@ -55,6 +55,7 @@ def install_forecast_cron(
     auto_postmortem: bool = False,
     thesis_aggregate: bool = False,
     synthesize_lessons: bool = False,
+    refresh_market_models: bool = False,
 ) -> dict[str, Any]:
     """Install a no-agent cron job for forecast schedule execution.
 
@@ -74,6 +75,7 @@ def install_forecast_cron(
         auto_postmortem=auto_postmortem,
         thesis_aggregate=thesis_aggregate,
         synthesize_lessons=synthesize_lessons,
+        refresh_market_models=refresh_market_models,
     )
 
     from cron.jobs import create_job
@@ -149,6 +151,11 @@ def ensure_default_routines(
         auto_postmortem=True,
         thesis_aggregate=True,
         synthesize_lessons=True,
+        # R4: the nightly self-check re-pulls + recomputes Market Models linked to
+        # still-OPEN questions and alerts on a material projection move. Bounded
+        # (only active models on active questions) and deduped by the standard
+        # _has_open_alert guard, so it never re-alerts every sweep.
+        refresh_market_models=True,
     )
     return {"installed": True, "created": True, "job": job, "reason": "installed"}
 

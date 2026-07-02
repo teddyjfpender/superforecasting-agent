@@ -1699,6 +1699,28 @@ class ForecastLedger:
                     value TEXT,
                     updated_at TEXT NOT NULL
                 );
+
+                -- Operator practice loop (R2): the OPERATOR's own forecasts,
+                -- recorded so the human can be scored + calibrated exactly like
+                -- the system is. `probability_or_distribution` is JSON (a scalar
+                -- in [0,1] for a binary, or a distribution dict). `context` is
+                -- 'practice' (recorded live, scored when the question resolves) or
+                -- 'drill' (a replay of an already-resolved question, scored on the
+                -- spot). `resolved_outcome`/`brier`/`scored_at` fill in at scoring.
+                CREATE TABLE IF NOT EXISTS operator_estimates (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    probability_or_distribution TEXT NOT NULL,
+                    note TEXT,
+                    context TEXT NOT NULL DEFAULT 'practice',
+                    created_at TEXT NOT NULL,
+                    resolved_outcome TEXT,
+                    brier REAL,
+                    scored_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_operator_estimates_question
+                    ON operator_estimates(question_id, created_at);
                 """
             )
             self._ensure_column(conn, "model_runs", "status", "TEXT NOT NULL DEFAULT 'success'")
@@ -1755,6 +1777,14 @@ class ForecastLedger:
             self._ensure_column(conn, "forecast_snapshots", "change_my_mind", "TEXT NOT NULL DEFAULT '[]'")
             self._ensure_column(conn, "postmortems", "failure_class", "TEXT")
             self._ensure_column(conn, "model_runs", "market_model_id", "TEXT")
+            # R4 Living Models — score a model_run against its question's confirmed
+            # outcome (binary: Brier of the model's probability; numeric: coverage
+            # hit inside [lo,hi] + absolute error vs projected_value). All nullable:
+            # an unscored run (no confirmed resolution, or output carries no usable
+            # projection) leaves them NULL and is invisible to model-skill.
+            self._ensure_column(conn, "model_runs", "outcome_score", "REAL")
+            self._ensure_column(conn, "model_runs", "interval_hit", "INTEGER")
+            self._ensure_column(conn, "model_runs", "scored_at", "TEXT")
             # Typed watched-source roles: distinguish resolution-critical sources
             # (resolver/consensus/official_primary) from background context (RSS).
             self._ensure_column(conn, "watched_sources", "role", "TEXT")
@@ -1777,6 +1807,11 @@ class ForecastLedger:
             # paid attempt stamps these while leaving the alert OPEN (no bare-ack).
             self._ensure_column(conn, "alert_events", "last_attempted_at", "TEXT")
             self._ensure_column(conn, "alert_events", "attempt_count", "INTEGER NOT NULL DEFAULT 0")
+            # R2 operator practice loop — defensive migrations for the scoring
+            # columns (idempotent; a fresh CREATE already carries them).
+            self._ensure_column(conn, "operator_estimates", "resolved_outcome", "TEXT")
+            self._ensure_column(conn, "operator_estimates", "brier", "REAL")
+            self._ensure_column(conn, "operator_estimates", "scored_at", "TEXT")
 
     def _ensure_column(
         self,
@@ -3080,6 +3115,27 @@ class ForecastLedger:
         except Exception:
             _qthresholds = {}
 
+        # VOI-directed research adequacy (research_audit.py): the DETERMINISTIC checks
+        # only (NO LLM at commit), computed against the current evidence/reference/
+        # watched state + THIS candidate commit's reasons_down + evidence_refs. Feeds
+        # the `research_adequate` hook rule (WARN standard / ERROR strict). Fail-open:
+        # any read error yields adequate=True so a commit is never falsely blocked.
+        _research_adequate = True
+        _research_adequacy_score = None
+        if forecast_origin == "live":
+            try:
+                from forecasting.research_audit import audit_research_for_commit
+
+                _ra = audit_research_for_commit(
+                    self, question,
+                    reasons_down=reasons_down_list, evidence_refs=evidence_refs or [],
+                    stale_evidence_days=stale_evidence_days,
+                )
+                _research_adequate = bool(_ra.get("adequate"))
+                _research_adequacy_score = _ra.get("score")
+            except Exception:
+                _research_adequate, _research_adequacy_score = True, None
+
         # User-defined rule enforcement (Phase 5). Only runs when the desk has
         # authored custom rules (zero overhead otherwise). A buggy rule engine must
         # never brick a commit (fail-OPEN on evaluation errors), but a legitimately
@@ -3179,6 +3235,8 @@ class ForecastLedger:
                         derived_child_present=_has_child,
                         machine_scoreable=_scoreable,
                         terminal_calibration_present=_terminal_calibration_present,
+                        research_adequate=_research_adequate,
+                        research_adequacy_score=_research_adequacy_score,
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
                     _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
@@ -3308,6 +3366,8 @@ class ForecastLedger:
                 derived_child_present=_has_child,
                 machine_scoreable=_scoreable,
                 terminal_calibration_present=_terminal_calibration_present,
+                research_adequate=_research_adequate,
+                research_adequacy_score=_research_adequacy_score,
                 thresholds=_qthresholds,
             )
             # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that
@@ -4284,6 +4344,116 @@ class ForecastLedger:
             ).fetchall()
         return [self._row_to_model_run(row) for row in rows]
 
+    # ── R4 Living Models: score model runs at resolution ────────────────
+    @staticmethod
+    def _model_run_probability(output: dict[str, Any]) -> float | None:
+        """Read a projected PROBABILITY in [0,1] from a model_run output, if one
+        is present. Only genuine model projections carry these keys — a
+        ``forecast_refresh`` run stores ``proposed_probability`` (deliberately not
+        matched here) so the desk's own committed number never masquerades as an
+        independent model observation."""
+        if not isinstance(output, dict):
+            return None
+        for key in ("probability", "value", "projected_value", "p", "base_rate"):
+            raw = output.get(key)
+            if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                continue
+            val = float(raw)
+            if math.isfinite(val) and 0.0 <= val <= 1.0:
+                return val
+        return None
+
+    @staticmethod
+    def _model_run_numeric(output: dict[str, Any]) -> tuple[float | None, float | None, float | None]:
+        """Read ``(projected_value, lo, hi)`` from a model_run output for numeric
+        interval scoring. Any of the three may be None."""
+        if not isinstance(output, dict):
+            return None, None, None
+
+        def _num(*keys: str) -> float | None:
+            for key in keys:
+                raw = output.get(key)
+                if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+                    continue
+                val = float(raw)
+                if math.isfinite(val):
+                    return val
+            return None
+
+        return _num("projected_value", "value", "mean", "point"), _num("lo", "lower"), _num("hi", "upper")
+
+    def score_model_runs(
+        self,
+        question_id: str,
+        outcome: Any,
+        *,
+        now: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Score this question's model_runs against a confirmed ``outcome`` and
+        persist ``outcome_score`` / ``interval_hit`` / ``scored_at`` on each row.
+
+        * BINARY question — Brier of the model's projected probability (via the
+          same :meth:`_score_forecast_payload` path as a snapshot). ``interval_hit``
+          stays NULL (the read-side discriminator for a binary-Brier observation).
+        * NUMERIC question — coverage: ``interval_hit`` is 1 when the outcome falls
+          inside the model's ``[lo, hi]`` (else 0; NULL when the model emitted no
+          interval); ``outcome_score`` is the absolute error vs ``projected_value``.
+
+        Only runs whose output carries a usable projection are scored; the rest are
+        left untouched. Best-effort per run — never raises (the caller in
+        :meth:`resolve_question` is already fail-open, but a malformed single run
+        must not skip its siblings). Returns the list of scored-run summaries."""
+        question = self.get_question(question_id)
+        stamped = parse_timestamp(now, field_name="now") or utc_now_iso()
+        scored: list[dict[str, Any]] = []
+        for run in self.list_model_runs(question_id):
+            output = run.get("output") if isinstance(run.get("output"), dict) else {}
+            outcome_score: float | None = None
+            interval_hit: int | None = None
+            try:
+                if question.outcome_space.type == "binary":
+                    prob = self._model_run_probability(output)
+                    if prob is None:
+                        continue
+                    payload = self._score_forecast_payload(
+                        prob, outcome, question.outcome_space
+                    )
+                    brier = payload.get("brier_score")
+                    if not isinstance(brier, (int, float)):
+                        continue
+                    outcome_score = float(brier)
+                elif question.outcome_space.type == "numeric":
+                    projected, lo, hi = self._model_run_numeric(output)
+                    if projected is None and lo is None and hi is None:
+                        continue
+                    outcome_value = self._numeric_outcome(outcome)
+                    if lo is not None and hi is not None:
+                        low, high = (lo, hi) if lo <= hi else (hi, lo)
+                        interval_hit = 1 if low <= outcome_value <= high else 0
+                    if projected is not None:
+                        outcome_score = abs(projected - outcome_value)
+                    if outcome_score is None and interval_hit is None:
+                        continue
+                else:
+                    continue
+            except (TypeError, ValueError, ValidationError):
+                continue
+            with self._connect() as conn:
+                conn.execute(
+                    "UPDATE model_runs SET outcome_score = ?, interval_hit = ?, scored_at = ? WHERE id = ?",
+                    (outcome_score, interval_hit, stamped, run["id"]),
+                )
+            scored.append(
+                {
+                    "model_run_id": run["id"],
+                    "model_type": run.get("model_type"),
+                    "market_model_id": run.get("market_model_id"),
+                    "outcome_score": outcome_score,
+                    "interval_hit": interval_hit,
+                }
+            )
+        return scored
+
     def resolve_question(
         self,
         *,
@@ -4440,6 +4610,35 @@ class ForecastLedger:
                             )
             except Exception:
                 logger.debug("auto-score on resolution failed for %s", question_id, exc_info=True)
+
+        # Operator practice loop (R2): score the OPERATOR's own estimates for
+        # this question against the confirmed outcome — fail-open, exactly like
+        # auto-score, and independent of the system-scoreable flag (the operator's
+        # practice number is scored against the same realized outcome). A hiccup
+        # here must never break the resolution itself.
+        if resolution_status == "confirmed" and criteria_satisfied:
+            try:
+                self.score_operator_estimates(question_id, outcome, now=now)
+            except Exception:
+                logger.debug(
+                    "operator-estimate scoring on resolution failed for %s",
+                    question_id,
+                    exc_info=True,
+                )
+
+        # R4 Living Models: score this question's model_runs against the confirmed
+        # outcome so a model's skill accrues (model_skill reads these on-read).
+        # Fail-open + gated on scoreable exactly like auto-score — a scoring hiccup
+        # must never break the resolution itself.
+        if resolution_status == "confirmed" and criteria_satisfied and scoreable:
+            try:
+                self.score_model_runs(question_id, outcome, now=now)
+            except Exception:
+                logger.debug(
+                    "model-run scoring on resolution failed for %s",
+                    question_id,
+                    exc_info=True,
+                )
 
         return self.get_resolution(resolution_id)
 
@@ -4910,6 +5109,320 @@ class ForecastLedger:
             else:
                 direction = "stable"
         return {"windows": window_rows, "direction": direction}
+
+    # ------------------------------------------------------------------
+    # Operator practice loop (R2) — score the HUMAN, not just the system.
+    #
+    # The system already scores its own forecasts and learns from the Brier;
+    # the goal of the desk is also to make the OPERATOR a superforecaster, so we
+    # record the operator's own numbers (practice or drill), score them on
+    # resolution, and surface an operator calibration curve + a vs-system pairing.
+    # These tables are NOT forecast-producing (the operator's practice number is
+    # never a committed forecast), so they are deliberately kept OUT of the
+    # forecast-fabrication write gate — but the tool/CLI callers still open an
+    # allow_ledger_writes context for hygiene.
+    # ------------------------------------------------------------------
+
+    def _row_to_operator_estimate(self, row: sqlite3.Row) -> dict[str, Any]:
+        raw_outcome = row["resolved_outcome"]
+        return {
+            "id": row["id"],
+            "question_id": row["question_id"],
+            "probability_or_distribution": json_loads(row["probability_or_distribution"], None),
+            "note": row["note"],
+            "context": row["context"],
+            "created_at": row["created_at"],
+            "resolved_outcome": json_loads(raw_outcome, None) if raw_outcome is not None else None,
+            "brier": row["brier"],
+            "scored_at": row["scored_at"],
+        }
+
+    def get_operator_estimate(self, estimate_id: str) -> dict[str, Any]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM operator_estimates WHERE id = ?", (estimate_id,)
+            ).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"operator estimate not found: {estimate_id}")
+        return self._row_to_operator_estimate(row)
+
+    def record_operator_estimate(
+        self,
+        question_id: str,
+        probability_or_distribution: Any,
+        *,
+        note: str | None = None,
+        context: str = "practice",
+    ) -> dict[str, Any]:
+        """Record the OPERATOR's own forecast for ``question_id``.
+
+        ``probability_or_distribution`` is a scalar in [0, 1] for a binary
+        estimate, or a distribution dict (stored as JSON, scored later only if
+        binary). ``context`` is 'practice' (scored when the question resolves)
+        or 'drill' (a replay of an already-resolved question). Validates the
+        probability range; the question must exist."""
+
+        self.get_question(question_id)
+        if context not in {"practice", "drill"}:
+            raise ValidationError("operator estimate context must be 'practice' or 'drill'")
+        payload = probability_or_distribution
+        if isinstance(payload, bool):
+            raise ValidationError("operator probability must be a number in [0, 1], not a boolean")
+        if isinstance(payload, (int, float)):
+            payload = float(payload)
+            if not (0.0 <= payload <= 1.0):
+                raise ValidationError("operator probability must be in [0, 1]")
+        elif isinstance(payload, dict):
+            if not payload:
+                raise ValidationError("operator distribution must not be empty")
+            for key, value in payload.items():
+                try:
+                    float(value)
+                except (TypeError, ValueError):
+                    raise ValidationError(
+                        f"operator distribution value for {key!r} is not numeric"
+                    )
+        else:
+            raise ValidationError(
+                "operator estimate must be a probability in [0, 1] or a distribution dict"
+            )
+        note = (note or "").strip() or None
+        estimate_id = f"oe_{uuid.uuid4().hex[:12]}"
+        now = utc_now_iso()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO operator_estimates (
+                    id, question_id, probability_or_distribution, note, context,
+                    created_at, resolved_outcome, brier, scored_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL)
+                """,
+                (
+                    estimate_id,
+                    question_id,
+                    json_dumps(payload),
+                    note,
+                    context,
+                    now,
+                ),
+            )
+        return self.get_operator_estimate(estimate_id)
+
+    def list_operator_estimates(
+        self,
+        question_id: str | None = None,
+        *,
+        unscored_only: bool = False,
+    ) -> list[dict[str, Any]]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if question_id:
+            clauses.append("question_id = ?")
+            params.append(question_id)
+        if unscored_only:
+            clauses.append("scored_at IS NULL")
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM operator_estimates {where} ORDER BY created_at DESC",
+                params,
+            ).fetchall()
+        return [self._row_to_operator_estimate(row) for row in rows]
+
+    def score_operator_estimates(
+        self,
+        question_id: str,
+        outcome: Any,
+        *,
+        now: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Score the operator's UNSCORED estimates for ``question_id`` against a
+        confirmed ``outcome``. Binary estimates get a Brier score; non-binary
+        estimates are marked scored with brier=None + a skip note (kept out of
+        the calibration curve). Called best-effort from ``resolve_question``."""
+
+        question = self.get_question(question_id)
+        outcome_space = question.outcome_space
+        now = now or utc_now_iso()
+        outcome_json = json_dumps(outcome)
+        scored: list[dict[str, Any]] = []
+        for estimate in self.list_operator_estimates(question_id, unscored_only=True):
+            payload = estimate["probability_or_distribution"]
+            brier: float | None = None
+            skip_reason: str | None = None
+            if outcome_space.type == "binary" and isinstance(payload, (int, float)):
+                try:
+                    brier = self._brier_score(payload, outcome, outcome_space)
+                except Exception:
+                    brier = None
+                    skip_reason = "unscoreable binary outcome"
+            else:
+                skip_reason = (
+                    f"non-binary estimate ({outcome_space.type}) — operator scoring is binary-only"
+                )
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE operator_estimates
+                    SET resolved_outcome = ?, brier = ?, scored_at = ?
+                    WHERE id = ?
+                    """,
+                    (outcome_json, brier, now, estimate["id"]),
+                )
+            row = self.get_operator_estimate(estimate["id"])
+            if skip_reason:
+                row["skip_reason"] = skip_reason
+            scored.append(row)
+        return scored
+
+    def _operator_binary_observed(
+        self, resolved_outcome: Any, outcome_space: OutcomeSpace
+    ) -> float | None:
+        """1.0 yes / 0.0 no / None ambiguous — the realized value of a scored
+        operator estimate, from the stored resolved_outcome."""
+
+        label = str(resolved_outcome).strip().lower()
+        yes_labels = {"yes", "y", "true", "1", "occurred", "success"}
+        no_labels = {"no", "n", "false", "0", "not_occurred", "failed"}
+        choices = [str(choice).lower() for choice in outcome_space.choices]
+        if label in yes_labels or (choices and label == choices[0]):
+            return 1.0
+        if label in no_labels or (len(choices) > 1 and label == choices[1]):
+            return 0.0
+        return None
+
+    def _operator_vs_system(
+        self, estimates: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Pair each question that has a scored operator estimate with the
+        system's own snapshot Brier on the SAME question, and report the shared
+        sample + mean Brier on each side. The operator brier for a question is
+        the mean over its estimates; the system brier is its best-available
+        (calibration-eligible, else latest) non-invalidated snapshot score."""
+
+        operator_by_question: dict[str, list[float]] = defaultdict(list)
+        for estimate in estimates:
+            if estimate["brier"] is not None:
+                operator_by_question[estimate["question_id"]].append(float(estimate["brier"]))
+        operator_shared: list[float] = []
+        system_shared: list[float] = []
+        with self._connect() as conn:
+            for question_id, briers in operator_by_question.items():
+                row = conn.execute(
+                    """
+                    SELECT brier_score FROM score_records
+                    WHERE question_id = ?
+                      AND brier_score IS NOT NULL
+                      AND invalidated_by_correction_id IS NULL
+                    ORDER BY calibration_eligible DESC, scored_at DESC
+                    LIMIT 1
+                    """,
+                    (question_id,),
+                ).fetchone()
+                if row is None or row["brier_score"] is None:
+                    continue
+                operator_shared.append(sum(briers) / len(briers))
+                system_shared.append(float(row["brier_score"]))
+        return {
+            "shared_n": len(operator_shared),
+            "operator_brier": self._mean(operator_shared),
+            "system_brier": self._mean(system_shared),
+        }
+
+    def operator_calibration_summary(
+        self, window_days: int | None = None
+    ) -> dict[str, Any]:
+        """Operator calibration: n, mean Brier, a reliability curve over the
+        operator's binary estimates, a recency trend, and a vs-system pairing.
+
+        Only SCORED estimates with a numeric Brier feed the curve/trend/mean;
+        ``window_days`` (when set) restricts to estimates scored within the
+        trailing window."""
+
+        estimates = [
+            estimate
+            for estimate in self.list_operator_estimates()
+            if estimate["scored_at"] is not None and estimate["brier"] is not None
+        ]
+        if window_days:
+            cutoff = timestamp_to_datetime(utc_now_iso()) - timedelta(days=window_days)
+            windowed: list[dict[str, Any]] = []
+            for estimate in estimates:
+                try:
+                    scored_dt = timestamp_to_datetime(estimate["scored_at"])
+                except Exception:
+                    continue
+                if scored_dt is not None and scored_dt >= cutoff:
+                    windowed.append(estimate)
+            estimates = windowed
+
+        briers = [float(estimate["brier"]) for estimate in estimates]
+        curve_bins: dict[int, dict[str, list[float]]] = defaultdict(
+            lambda: {"predicted": [], "observed": []}
+        )
+        trend_points: list[dict[str, Any]] = []
+        for estimate in estimates:
+            payload = estimate["probability_or_distribution"]
+            trend_point: dict[str, Any] = {
+                "scored_at": estimate["scored_at"],
+                "brier": float(estimate["brier"]),
+                "p_yes": None,
+                "outcome": None,
+            }
+            if isinstance(payload, (int, float)) and estimate["resolved_outcome"] is not None:
+                try:
+                    outcome_space = self.get_question(estimate["question_id"]).outcome_space
+                except LedgerNotFoundError:
+                    outcome_space = None
+                observed = (
+                    self._operator_binary_observed(estimate["resolved_outcome"], outcome_space)
+                    if outcome_space is not None
+                    else None
+                )
+                if observed is not None:
+                    p_yes = float(payload)
+                    decile = min(int(p_yes * 10), 9)
+                    curve_bins[decile]["predicted"].append(p_yes)
+                    curve_bins[decile]["observed"].append(observed)
+                    trend_point["p_yes"] = p_yes
+                    trend_point["outcome"] = observed
+            trend_points.append(trend_point)
+
+        curve_rows = []
+        for index in range(10):
+            data = curve_bins.get(index)
+            predicted = data["predicted"] if data else []
+            observed = data["observed"] if data else []
+            count = len(observed)
+            mean_predicted = sum(predicted) / count if count else None
+            observed_frequency = sum(observed) / count if count else None
+            gap = (
+                abs(observed_frequency - mean_predicted)
+                if count and mean_predicted is not None
+                else None
+            )
+            curve_rows.append(
+                {
+                    "bucket": f"{index / 10:.1f}-{(index + 1) / 10:.1f}",
+                    "count": count,
+                    "mean_predicted": mean_predicted,
+                    "observed_frequency": observed_frequency,
+                    "calibration_gap": gap,
+                    "sample_status": "empty"
+                    if not count
+                    else ("low_sample" if count < 5 else "ok"),
+                }
+            )
+
+        return {
+            "n": len(briers),
+            "brier": self._mean(briers),
+            "calibration_curve": curve_rows,
+            "trend": self._calibration_trend(trend_points),
+            "vs_system": self._operator_vs_system(estimates),
+            "window_days": window_days,
+        }
 
     def create_postmortem(
         self,
@@ -5537,6 +6050,125 @@ class ForecastLedger:
             row["name"]: float(row["recommended_weight"])
             for row in records
             if row["status"] == "measured"
+        }
+
+    # ── R4 Living Models: per-model skill from scored model_runs ─────────
+    # Uninformative binary reference: a p=0.5 forecast scores Brier 0.25, so a
+    # model's edge over the coin flip is 0.25 - its Brier. Any informative model
+    # beats it; the shrink+clip in forecasting.track_record keeps a thin record
+    # near 1.0 (identity on cold start).
+    _MODEL_SKILL_BASELINE_BRIER = 0.25
+
+    def model_skill(
+        self,
+        *,
+        model_type: str | None = None,
+        market_model_id: str | None = None,
+        min_count: int | None = None,
+        shrink_n0: float | None = None,
+        edge_scale: float | None = None,
+    ) -> dict[str, Any]:
+        """Compute a model's SKILL on-read from scored ``model_runs`` (R4).
+
+        Mirrors :meth:`model_track_record`: iterate resolved questions, read each
+        matching model_run's persisted score, and reuse
+        :mod:`forecasting.track_record` (shrink toward 1.0, clip, minimum resolved
+        sample before the weight moves — the S7.5 semantics) to map the BINARY
+        Brier edge over the uninformative baseline into a ``weight_multiplier``.
+
+        ``model_type`` / ``market_model_id`` narrow the population (both None =
+        every scored run, one global skill record). Cold start (fewer than
+        ``min_count`` binary-scored runs) returns ``weight_multiplier`` exactly
+        1.0 and ``status='insufficient_track_record'`` — harmless by construction.
+        Numeric runs contribute ``coverage`` (interval-hit rate) and ``mae`` but do
+        not move the binary weight multiplier (the re-pool they weight is
+        binary-only)."""
+        from forecasting.track_record import (
+            DEFAULT_EDGE_SCALE,
+            DEFAULT_SHRINK_N0,
+            edge_to_weight,
+            shrink_edge,
+        )
+
+        gate = min_count if min_count is not None else self.MODEL_WEIGHT_MIN_SAMPLE
+        binary_briers: list[float] = []
+        interval_hits: list[int] = []
+        abs_errors: list[float] = []
+        numeric_run_count = 0
+        question_ids: set[str] = set()
+        for question in self.list_questions(status="resolved"):
+            resolution = self.get_latest_resolution(question.id, confirmed_only=True)
+            if resolution is None:
+                continue
+            q_type = question.outcome_space.type
+            for run in self.list_model_runs(question.id):
+                if run.get("scored_at") is None:
+                    continue
+                if model_type is not None and run.get("model_type") != model_type:
+                    continue
+                if market_model_id is not None and run.get("market_model_id") != market_model_id:
+                    continue
+                score = run.get("outcome_score")
+                hit = run.get("interval_hit")
+                # Classify by the QUESTION's type (authoritative), not the NULL-ness
+                # of interval_hit — a numeric run may legitimately carry no interval.
+                if q_type == "binary":
+                    if isinstance(score, (int, float)):
+                        binary_briers.append(float(score))
+                        question_ids.add(question.id)
+                elif q_type == "numeric":
+                    if hit is not None:
+                        interval_hits.append(1 if hit else 0)
+                    if isinstance(score, (int, float)):
+                        abs_errors.append(float(score))
+                    if hit is not None or isinstance(score, (int, float)):
+                        numeric_run_count += 1
+                        question_ids.add(question.id)
+
+        n_binary = len(binary_briers)
+        n_numeric = numeric_run_count
+        brier_mean = (sum(binary_briers) / n_binary) if n_binary else None
+        coverage = (sum(interval_hits) / len(interval_hits)) if interval_hits else None
+        mae = (sum(abs_errors) / len(abs_errors)) if abs_errors else None
+
+        # Weight multiplier: shrink+clip the binary edge over the baseline, gated
+        # on the resolved-binary sample (identity below the gate).
+        edge_shrunk = 0.0
+        weight_multiplier = 1.0
+        status = "insufficient_track_record"
+        if brier_mean is not None and n_binary >= gate:
+            edge_mean = self._MODEL_SKILL_BASELINE_BRIER - brier_mean
+            edge_shrunk = shrink_edge(
+                edge_mean, n_binary,
+                shrink_n0=shrink_n0 if shrink_n0 is not None else DEFAULT_SHRINK_N0,
+            )
+            weight_multiplier = edge_to_weight(
+                edge_shrunk,
+                scale=edge_scale if edge_scale is not None else DEFAULT_EDGE_SCALE,
+            )
+            status = "measured"
+        elif brier_mean is not None:
+            # Report direction-of-travel even below the gate (weight stays 1.0).
+            edge_mean = self._MODEL_SKILL_BASELINE_BRIER - brier_mean
+            edge_shrunk = shrink_edge(
+                edge_mean, n_binary,
+                shrink_n0=shrink_n0 if shrink_n0 is not None else DEFAULT_SHRINK_N0,
+            )
+
+        return {
+            "model_type": model_type,
+            "market_model_id": market_model_id,
+            "n_scored": n_binary + n_numeric,
+            "n_binary": n_binary,
+            "n_numeric": n_numeric,
+            "brier": brier_mean,
+            "coverage": coverage,
+            "mae": mae,
+            "edge_shrunk": edge_shrunk,
+            "weight_multiplier": weight_multiplier,
+            "status": status,
+            "min_sample": gate,
+            "question_ids": sorted(question_ids),
         }
 
     # ── Analyst notes (time-series desk write-ups) ──────────────────────
@@ -7846,6 +8478,7 @@ class ForecastLedger:
         calibration_policy: dict[str, Any] | None = None,
         allow_calibration_memory: bool = False,
         leak_judge_runner: "LeakJudgeRunner | None" = None,
+        arm: str | None = None,
     ) -> dict[str, Any]:
         run_id = f"bt_{uuid.uuid4().hex[:12]}"
         default_cutoff = parse_timestamp(
@@ -7896,6 +8529,12 @@ class ForecastLedger:
             "leakage_checks_passed": leakage_passed,
             "scored_cases": sum(1 for row in case_rows if row.get("score_record_id")),
         }
+        # MARKET-HIDDEN ARM label: stamp the experimental arm on the run so later
+        # analysis can separate arms (e.g. arm='market_hidden' — the market price was
+        # scored as a baseline but withheld from the agent's prompt). Additive: absent
+        # by default, so a run with no arm is byte-identical to before.
+        if arm:
+            result_summary["arm"] = str(arm)
         # AIA P1.2 — surface the content-channel bookkeeping + read-only robustness
         # bounds ONLY when the judge channel ran (a runner was supplied). With the
         # channel OFF these keys are absent, keeping the summary byte-identical.
@@ -10264,6 +10903,7 @@ class ForecastLedger:
         dry_run: bool = False,
         commit: bool = True,
         trigger_reason: str = "manual_refresh",
+        skill_weights: bool | None = None,
     ) -> dict[str, Any]:
         """Pull the latest watched-source readings, import the new values as
         evidence, deterministically re-pool the forecast, and (by default)
@@ -10394,6 +11034,7 @@ class ForecastLedger:
         reasons_up: list[str] = []
         reasons_down: list[str] = []
         needs_agent = not can_repool
+        skill_multipliers_applied: list[dict[str, Any]] = []
 
         if can_repool:
             from forecasting.bayes_toolkit import (  # local import avoids cycle / heavy import at module load
@@ -10404,8 +11045,21 @@ class ForecastLedger:
 
             ensure_industry_backends()
             method = self._refresh_pool_method(current.method)
+            # R4 Living Models: scale each model-sourced component's weight by its
+            # Market Model's measured skill multiplier BEFORE pooling. The persisted
+            # component weights stay the ORIGINAL (unscaled) values, so the
+            # multiplier is re-derived fresh from current skill on every refresh and
+            # never compounds. Config-gated (forecasting.models.skill_weights, default
+            # ON) and identity on cold start — the pooled number is unchanged until a
+            # model earns a measured skill.
+            use_skill_weights = (
+                self._skill_weights_enabled() if skill_weights is None else bool(skill_weights)
+            )
+            pool_rows = updated_components["rows"]
+            if use_skill_weights:
+                pool_rows, skill_multipliers_applied = self._apply_model_skill_weights(pool_rows)
             pool = combine_forecasts(
-                updated_components["rows"],
+                pool_rows,
                 method=method,
                 extremize=extremize,
                 correlation_matrix=correlation,
@@ -10476,6 +11130,7 @@ class ForecastLedger:
             "fetch_failures": fetch_failures,
             "needs_agent": needs_agent,
             "triggers_fired": [alert.reason for alert in trigger_alerts],
+            "skill_multipliers": skill_multipliers_applied,
         }
 
         if not persist:
@@ -10532,6 +11187,10 @@ class ForecastLedger:
                     "needs_agent": needs_agent,
                     "diff": diff_dict,
                 },
+                # R4 audit trail: the skill multipliers applied to model-sourced
+                # components in this re-pool (empty when none applied / cold start),
+                # mirroring how calibration_adjustment records its applied factors.
+                **({"skill_multipliers": skill_multipliers_applied} if skill_multipliers_applied else {}),
                 # Provenance only — the deterministic re-pool does NOT derive its
                 # number from siblings, so cross_refs are advisory.
                 **({"cross_refs": cross_refs} if (cross_refs := self.build_cross_refs(question_id, advisory_only=True)) else {}),
@@ -10547,6 +11206,113 @@ class ForecastLedger:
             "new_evidence_ids": new_evidence_ids,
             "message": None,
         }
+
+    # A market-model id is ``mm_<hex12>`` (create_market_model). A component is
+    # "model-sourced" when it carries that id explicitly or references it in its
+    # source slug (e.g. ``market_model:mm_abc123``, ``model:mm_abc123``, or the
+    # bare id) — the R4 re-pool scales such a component's weight by the model's skill.
+    _MARKET_MODEL_ID_RE = re.compile(r"mm_[0-9a-f]{12}")
+
+    @classmethod
+    def _component_market_model_id(cls, row: dict[str, Any]) -> str | None:
+        """Return the ``mm_...`` market-model id a component references, or None."""
+        if not isinstance(row, dict):
+            return None
+        explicit = row.get("market_model_id")
+        if isinstance(explicit, str) and cls._MARKET_MODEL_ID_RE.fullmatch(explicit.strip()):
+            return explicit.strip()
+        for key in ("source", "source_ref", "name"):
+            raw = row.get(key)
+            if isinstance(raw, str):
+                match = cls._MARKET_MODEL_ID_RE.search(raw)
+                if match:
+                    return match.group(0)
+        return None
+
+    def _skill_weights_enabled(self) -> bool:
+        """Read ``forecasting.models.skill_weights`` (default TRUE). Best-effort:
+        a config-read failure degrades to enabled — the R4 re-pool weighting is
+        harmless-by-construction on cold start (every multiplier is 1.0 until a
+        model clears the resolved-binary sample gate)."""
+        try:
+            from hermes_cli.config import load_config
+
+            cfg = load_config() or {}
+            fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
+            models_cfg = fc.get("models", {}) if isinstance(fc, dict) else {}
+            if isinstance(models_cfg, dict) and "skill_weights" in models_cfg:
+                return bool(models_cfg["skill_weights"])
+        except Exception:
+            pass
+        return True
+
+    def _market_model_scored_run_count(self, market_model_id: str) -> int:
+        """Cheap COUNT of scored model_runs tagged to a Market Model — an UPPER bound
+        on the binary sample :meth:`model_skill` would find (some may be numeric). The
+        skill weight can only move once ``n_binary >= MODEL_WEIGHT_MIN_SAMPLE``, so a
+        count below the gate proves the multiplier is identity by construction. This
+        lets the skill-weighted re-pool skip the O(resolved) skill scan on cold-start /
+        lightly-tagged books (a batch sweep would otherwise pay it per question).
+        Returns -1 on any read error so the caller falls back to the full scan."""
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    "SELECT COUNT(*) FROM model_runs WHERE market_model_id = ? AND scored_at IS NOT NULL",
+                    (market_model_id,),
+                ).fetchone()
+            return int(row[0]) if row else 0
+        except Exception:
+            return -1
+
+    def _apply_model_skill_weights(
+        self, rows: list[dict[str, Any]]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Scale each model-sourced component's weight by its Market Model's skill
+        multiplier (R4). Returns ``(scaled_rows, applied)`` where ``applied`` is the
+        audit trail of ``{name, market_model_id, multiplier, prior_weight,
+        new_weight}`` for every component actually scaled (skill measured +
+        multiplier != 1.0). Non-model components and cold-start models pass through
+        unchanged (identity multiplier), so the pooled number is byte-identical to
+        the unweighted re-pool until a model earns a measured skill."""
+        applied: list[dict[str, Any]] = []
+        skill_cache: dict[str, dict[str, Any]] = {}
+        scaled: list[dict[str, Any]] = []
+        for raw in rows:
+            row = dict(raw)
+            mmid = self._component_market_model_id(row)
+            if mmid is not None:
+                skill = skill_cache.get(mmid)
+                if skill is None:
+                    # Precheck: if the model has fewer scored runs than the sample gate,
+                    # its skill is identity by construction — skip the O(resolved) scan
+                    # (the batch-sweep cost the finding flagged). -1 = read error → do
+                    # the real scan rather than silently skip.
+                    n_scored = self._market_model_scored_run_count(mmid)
+                    if 0 <= n_scored < self.MODEL_WEIGHT_MIN_SAMPLE:
+                        skill = {"weight_multiplier": 1.0, "status": "insufficient_track_record"}
+                    else:
+                        try:
+                            skill = self.model_skill(market_model_id=mmid)
+                        except Exception:
+                            skill = {"weight_multiplier": 1.0, "status": "insufficient_track_record"}
+                    skill_cache[mmid] = skill
+                multiplier = float(skill.get("weight_multiplier") or 1.0)
+                if skill.get("status") == "measured" and abs(multiplier - 1.0) > 1e-9:
+                    prior_weight = self._numeric_probability(row.get("weight", 1.0)) or 0.0
+                    new_weight = prior_weight * multiplier
+                    row["weight"] = new_weight
+                    applied.append(
+                        {
+                            "name": str(row.get("name") or row.get("source") or mmid),
+                            "market_model_id": mmid,
+                            "multiplier": multiplier,
+                            "prior_weight": prior_weight,
+                            "new_weight": new_weight,
+                            "n_scored": skill.get("n_binary"),
+                        }
+                    )
+            scaled.append(row)
+        return scaled, applied
 
     def _refresh_reading_value(self, item: dict[str, Any]) -> float | None:
         """Extract the latest numeric reading from an adapter item (the same

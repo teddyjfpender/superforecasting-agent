@@ -152,6 +152,40 @@ When you are exploring rather than committing, set `forecast_origin="exploratory
 """
 
 
+# Operator practice loop (R2): the single elicitation sentence injected into the
+# chat prompt + the update-stage task WHEN forecasting.practice.estimate_first is
+# ON. Default OFF, so with the flag off the prompts are byte-identical to before.
+_ESTIMATE_FIRST_SENTENCE = (
+    "PRACTICE MODE IS ON: on a NEW-question or forecast-UPDATE conversation, before you "
+    "reveal your OWN probability, first ASK the user for THEIR estimate, record it with "
+    "the forecast_ledger `record_operator_estimate` action (context 'practice'), then "
+    "proceed with your own analysis — this builds the operator's scored calibration track record."
+)
+
+
+def _estimate_first_enabled() -> bool:
+    """True iff forecasting.practice.estimate_first is enabled in config.
+
+    Best-effort: any config-read failure (legacy install, missing block) falls
+    back to the default OFF, so the elicitation sentence is strictly opt-in and
+    never injected unless the operator turned it on."""
+
+    try:
+        from hermes_cli.config import cfg_get, load_config_readonly
+
+        return bool(
+            cfg_get(
+                load_config_readonly(),
+                "forecasting",
+                "practice",
+                "estimate_first",
+                default=False,
+            )
+        )
+    except Exception:
+        return False
+
+
 @dataclass(frozen=True)
 class ProtocolMessage:
     role: str
@@ -168,6 +202,8 @@ def build_forecast_chat_system_prompt(extra_prompt: str | None = None) -> str:
     extra = (extra_prompt or "").strip()
     marker = f"[[forecasting-process-version: {PROCESS_VERSION}]]"
     parts = [FORECAST_CHAT_SYSTEM_PROMPT.strip()]
+    if _estimate_first_enabled():
+        parts += ["## Practice Mode", _ESTIMATE_FIRST_SENTENCE]
     if extra:
         parts += ["## User Or Session Instructions", extra]
     parts.append(marker)
@@ -180,6 +216,7 @@ def build_protocol_messages(
     *,
     stage: str,
     commit_policy: str | None = None,
+    supplemental: str | None = None,
 ) -> list[ProtocolMessage]:
     """Build stage-specific messages for a forecast-native agent pass.
 
@@ -187,7 +224,12 @@ def build_protocol_messages(
     default, used by interactive ``forecast agent``) keeps the recommend-and-preview
     posture. ``"commit_material"`` (set by the autonomous re-forecast paths —
     ``forecast refresh --agent`` and the ``cycle run --agent`` sweep) instructs the
-    agent to COMMIT a material move rather than stop at a preview."""
+    agent to COMMIT a material move rather than stop at a preview.
+
+    ``supplemental`` appends a stage-scoped note AFTER the stage task (the chain
+    loop uses it to inject the research-adequacy gap list when re-running the
+    research stage). It is additive prose only — it never changes the toolset, the
+    commit policy, or any gate."""
 
     if stage not in PROTOCOL_STAGES:
         raise ValueError(f"stage must be one of {', '.join(sorted(PROTOCOL_STAGES))}")
@@ -195,9 +237,12 @@ def build_protocol_messages(
     snapshot = ledger.get_current_snapshot(question_id)
     context = build_context_packet(ledger, question, snapshot)
     task = _stage_task(stage, commit_policy=commit_policy)
+    user = f"{context}\n\n## Stage Task\n{task}"
+    if (supplemental or "").strip():
+        user += f"\n\n## Supplemental — close these before finishing\n{supplemental.strip()}"
     return [
         ProtocolMessage(role="system", content=SYSTEM_PROMPT.strip()),
-        ProtocolMessage(role="user", content=f"{context}\n\n## Stage Task\n{task}"),
+        ProtocolMessage(role="user", content=user),
     ]
 
 
@@ -623,6 +668,14 @@ def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
             "required clarifications before any forecast update."
         ),
         "research": (
+            "START by calling the forecast_ledger research_plan action for this question and work the "
+            "angles it returns — the VOI angles FIRST (one per update_trigger, change_my_mind clause, and "
+            "outcome_path): these hunt for exactly what would move THIS forecast, not the topic in general. "
+            "A serious forecast researches its own change_my_mind clauses, not just the headline. BEFORE you "
+            "finish the stage, call the forecast_ledger research_audit action and CLOSE the gaps it lists "
+            "(missing reference class, thin evidence, no independent second source, no disconfirming evidence, "
+            "stale readings, an executable trigger with no watched source) — do not leave the stage while the "
+            "audit reports adequate=false. "
             "Identify evidence gaps and propose timestamped evidence to collect. Distinguish facts, "
             "estimates, rumors, opinions, and assumptions. Do not update the probability. Pull data and "
             "market prices with the forecast_ledger import_source_evidence action (source_type fred/bls/"
@@ -788,4 +841,8 @@ def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
     task = tasks[stage]
     if stage == "update" and commit_policy == "commit_material":
         task = task + _COMMIT_MATERIAL_POLICY
+    # Operator practice loop (R2): opt-in elicitation on the update stage only,
+    # gated on config (default OFF -> byte-identical task text).
+    if stage == "update" and _estimate_first_enabled():
+        task = task + "\n\n" + _ESTIMATE_FIRST_SENTENCE
     return task

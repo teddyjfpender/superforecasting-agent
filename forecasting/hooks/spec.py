@@ -172,6 +172,15 @@ class HookContext:
     aggregate_stale: bool = False
     newer_member_count: int = 0
 
+    # research adequacy (VOI-directed research judge, forecasting/research_audit.py):
+    # the deterministic checks (reference class present, evidence floor, source
+    # independence, disconfirming evidence, recency, trigger coverage) computed at
+    # commit-context build (NO LLM at commit). research_adequate defaults True so a
+    # commit whose audit could not be computed never false-fires; research_adequacy_score
+    # is the 0-100 score (None when not computed).
+    research_adequate: bool = True
+    research_adequacy_score: float | None = None
+
     # domain / outcome type for user-rule applies_to filters
     domain: str | None = None
     outcome_type: str | None = None

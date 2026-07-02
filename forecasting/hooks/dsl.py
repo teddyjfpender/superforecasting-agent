@@ -68,6 +68,9 @@ _SIGNALS: dict[str, tuple[Callable[[HookContext], Any], str, str]] = {
     # v3 — thesis / factor aggregate freshness
     "aggregate.stale": (lambda c: c.aggregate_stale, "bool", "Thesis/factor aggregate is stale vs its members (a member moved since the last aggregate)."),
     "members.newer_count": (lambda c: c.newer_member_count, "number", "Count of members whose current snapshot is newer than the aggregate."),
+    # v3 — VOI-directed research adequacy
+    "research.adequate": (lambda c: c.research_adequate, "bool", "Research covers the levers that would move the forecast (reference class, evidence floor, independent + disconfirming + fresh evidence, watched triggers)."),
+    "research.adequacy_score": (lambda c: c.research_adequacy_score if c.research_adequacy_score is not None else 100.0, "number", "Research-adequacy score 0..100 from the deterministic research_audit checks."),
 }
 
 SIGNAL_NAMES: tuple[str, ...] = tuple(sorted(_SIGNALS))

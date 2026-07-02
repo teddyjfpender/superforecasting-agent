@@ -468,6 +468,33 @@ def _rem_run_aggregate(_ctx: HookContext) -> RemediationDescriptor:
     return RemediationDescriptor("mechanical", "run_aggregate", "Re-aggregate the thesis/factor from its current members.")
 
 
+# ── research adequacy (VOI-directed research judge) ───────────────────────────
+def _check_research_adequate(ctx: HookContext):
+    # research_adequate is precomputed at commit-context build from the deterministic
+    # research_audit checks (NO LLM at commit). True by default so a commit whose
+    # audit could not be computed never false-fires.
+    if ctx.research_adequate:
+        return _OK
+    score = ctx.research_adequacy_score
+    score_txt = f" (adequacy {score:.0f}/100)" if isinstance(score, (int, float)) else ""
+    return False, (
+        f"the research backing this forecast is thin on a lever that matters{score_txt}: it is "
+        "missing a reference class, below the evidence floor, single-sourced, has no disconfirming "
+        "evidence, is stale, or leaves an executable update trigger unwatched. Call the "
+        "forecast_ledger research_audit action, work the VOI angles from research_plan, and close the "
+        "gaps it lists before committing."
+    ), {"adequacy_score": score}
+
+
+def _rem_research(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "agentic", "collect_evidence",
+        "Run research_plan + research_audit and close the listed research gaps (reference class, "
+        "evidence floor, independent source, disconfirming evidence, recency, trigger coverage).",
+        target_stage="research",
+    )
+
+
 # ── outside-view anchor (reference class) ─────────────────────────────────────
 def _check_outside_view_anchor(ctx: HookContext):
     # Snapshot-honest: a serious forecast must LINK its outside-view anchor to THIS
@@ -563,6 +590,9 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
     # v3 — thesis/factor aggregate freshness (members moved since last aggregate)
     SimpleRule("thesis_aggregate_fresh", Category.SATURATION, Severity.WARN, 8.0,
                _check_thesis_fresh, lambda c: c.is_live and c.is_thesis_or_factor, _rem_run_aggregate),
+    # v3 — VOI-directed research adequacy (research_audit.py deterministic checks)
+    SimpleRule("research_adequate", Category.SATURATION, Severity.WARN, 10.0,
+               _check_research_adequate, _modeled, _rem_research),
 )
 
 BUILTIN_RULE_IDS: tuple[str, ...] = tuple(r.id for r in BUILTIN_RULES)
@@ -593,6 +623,7 @@ RULE_DOCS: dict[str, str] = {
     "confidence_committed": "Avoid near-maximum hedging unless genuine uncertainty is justified.",
     "reasoning_composition": "Declare a sufficient set + count of reasoning methods.",
     "thesis_aggregate_fresh": "A thesis/factor must re-aggregate after its members move (no stale health).",
+    "research_adequate": "Research must cover the levers that would move the forecast (reference class, evidence floor, independent + disconfirming + fresh evidence, watched triggers).",
 }
 
 _RULE_BY_ID = {r.id: r for r in BUILTIN_RULES}
