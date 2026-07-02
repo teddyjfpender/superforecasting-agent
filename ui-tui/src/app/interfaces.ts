@@ -76,6 +76,9 @@ export interface OverlayState {
   agents: boolean
   agentsInitialHistoryIndex: number
   alerts: boolean
+  // Deep-link hint for the Warnings view: 'contested' parks the cursor on the
+  // first contested triage row (set by the Today feed's contested badge).
+  alertsInitialFocus: 'contested' | null
   approval: ApprovalReq | null
   calendar: boolean
   calibration: boolean
@@ -126,6 +129,9 @@ export interface UiState {
   compact: boolean
   detailsMode: DetailsMode
   detailsModeCommandOverride: boolean
+  // Open contested triage rows awaiting a hand-label (forecast.triage.contested),
+  // polled alongside the desk rail. Drives the Today feed's contested badge.
+  forecastContestedCount: number
   forecastDeskRailSections: PanelSection[]
   forecastDeskStatus: string
   info: null | SessionInfo

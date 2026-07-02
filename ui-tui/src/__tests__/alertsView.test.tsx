@@ -4,7 +4,11 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import type { ForecastDashboardResponse, ForecastWarningsAggregateResponse } from '../gatewayTypes.js'
+import type {
+  ForecastDashboardResponse,
+  ForecastTriageContestedRow,
+  ForecastWarningsAggregateResponse
+} from '../gatewayTypes.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -113,8 +117,9 @@ interface Call {
 }
 
 // An EventEmitter-backed fake gateway: request() records calls + returns canned
-// results, and on/off/emit drive the streamed automode events.
-const fakeGw = (calls: Call[]) => {
+// results, and on/off/emit drive the streamed automode events. `contestedStore`
+// is MUTABLE — relabel splices the labeled row out so a reload reflects the ack.
+const fakeGw = (calls: Call[], contestedStore: ForecastTriageContestedRow[]) => {
   const gw = new EventEmitter() as EventEmitter & {
     request: (method: string, params?: Record<string, unknown>) => Promise<unknown>
   }
@@ -127,6 +132,18 @@ const fakeGw = (calls: Call[]) => {
     }
     if (method === 'forecast.dashboard') {
       return Promise.resolve(dashboard())
+    }
+    if (method === 'forecast.triage.contested') {
+      return Promise.resolve({ contested: [...contestedStore], count: contestedStore.length })
+    }
+    if (method === 'forecast.triage.relabel') {
+      const idx = contestedStore.findIndex(row => row.id === params.label_id)
+
+      if (idx >= 0) {
+        contestedStore.splice(idx, 1)
+      }
+
+      return Promise.resolve({ count: idx >= 0 ? 1 : 0, success: true })
     }
     if (method === 'forecast.warnings.automode.run') {
       return Promise.resolve({ dry_run: false, job_id: 'wj_test' })
@@ -144,10 +161,16 @@ const fakeGw = (calls: Call[]) => {
   return gw
 }
 
-const mount = async () => {
+interface MountOpts {
+  contested?: ForecastTriageContestedRow[]
+  initialFocus?: 'contested'
+}
+
+const mount = async (opts: MountOpts = {}) => {
   process.env.FORECAST_TUI_INLINE = '1'
   const calls: Call[] = []
-  const gw = fakeGw(calls)
+  const contestedStore: ForecastTriageContestedRow[] = [...(opts.contested ?? [])]
+  const gw = fakeGw(calls, contestedStore)
 
   const [{ Box, render }, { AlertsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
     import('@hermes/ink'),
@@ -165,6 +188,7 @@ const mount = async () => {
       { flexDirection: 'column', height: 40, width: 120 },
       React.createElement(AlertsView, {
         gw: gw as never,
+        initialFocus: opts.initialFocus,
         onClose: () => undefined,
         sessionId: 'sess-1',
         t: DARK_THEME
@@ -445,6 +469,91 @@ describe('AlertsView warning resolution', () => {
     // kind=['reforecast'], which would silence the ENTIRE reforecast tier.
     expect(dismiss?.params.reason).toEqual(['evidence_stale'])
     expect(dismiss?.params.kind).toBeUndefined()
+    m.cleanup()
+  })
+})
+
+// Two contested triage rows the auto-labeler disputed, awaiting a hand-label.
+const contestedRows = (): ForecastTriageContestedRow[] => [
+  {
+    alert_id: 'al_1',
+    auto_label: 'relevant_uninteresting',
+    candidate_ref: 'ev_1',
+    id: 'tl_1',
+    question_id: 'fq_alpha',
+    rationale: 'near the decision boundary — a verifier disagreed',
+    title: 'Reuters: Fed signals a hold'
+  },
+  {
+    alert_id: 'al_2',
+    auto_label: 'irrelevant',
+    candidate_ref: 'ev_2',
+    id: 'tl_2',
+    question_id: 'fq_beta',
+    rationale: 'source reliability disputed',
+    title: 'Blog rumor on a rate cut'
+  }
+]
+
+describe('AlertsView contested-triage lens', () => {
+  afterEach(() => {
+    delete process.env.FORECAST_TUI_INLINE
+  })
+
+  it('renders the Contested section with title, auto label, rationale, question ref, and header badge', async () => {
+    const m = await mount({ contested: contestedRows() })
+    const text = m.text()
+    // The header badge and the section header both carry the count.
+    expect(text).toContain('2 contested')
+    expect(text).toContain('Contested — hand-label (2)')
+    // Each row shows its title, the auto label, the linked question, and rationale.
+    expect(text).toContain('Reuters: Fed signals a hold')
+    expect(text).toContain('auto:relevant_uninteresting')
+    expect(text).toContain('fq_alpha')
+    expect(text).toContain('near the decision boundary')
+    m.cleanup()
+  })
+
+  it('1 labels the focused contested row relevant_interesting via forecast.triage.relabel, then removes it', async () => {
+    const m = await mount({ contested: contestedRows(), initialFocus: 'contested' })
+    // initialFocus parked the cursor on the first contested row (tl_1). Drop the
+    // pre-label frames so the assertions read only the post-label render (the
+    // PassThrough is cumulative, so the removed row lingers in earlier frames).
+    m.clear()
+    await m.press('1')
+    await tick(60)
+    const relabel = m.calls.find(c => c.method === 'forecast.triage.relabel')
+    expect(relabel).toBeTruthy()
+    expect(relabel?.params.label_id).toBe('tl_1')
+    expect(relabel?.params.label).toBe('relevant_interesting')
+    // The row is gone (optimistic removal, confirmed by the reload) and the flash fired.
+    expect(m.text()).not.toContain('Reuters: Fed signals a hold')
+    expect(m.text()).toContain('alert closed')
+    // The count settled to 1 (the other row survives).
+    expect(m.text()).toContain('Blog rumor on a rate cut')
+    m.cleanup()
+  })
+
+  it('2 maps to relevant_uninteresting and 3 maps to irrelevant', async () => {
+    const two = await mount({ contested: contestedRows(), initialFocus: 'contested' })
+    await two.press('2')
+    await tick(60)
+    expect(two.calls.find(c => c.method === 'forecast.triage.relabel')?.params.label).toBe('relevant_uninteresting')
+    two.cleanup()
+
+    const three = await mount({ contested: contestedRows(), initialFocus: 'contested' })
+    await three.press('3')
+    await tick(60)
+    expect(three.calls.find(c => c.method === 'forecast.triage.relabel')?.params.label).toBe('irrelevant')
+    three.cleanup()
+  })
+
+  it('the digit keys are inert while the cursor is on the backlog tree (not a contested row)', async () => {
+    // No initialFocus → the cursor starts on the FREE tier header, not a contested row.
+    const m = await mount({ contested: contestedRows() })
+    await m.press('1')
+    await tick(40)
+    expect(m.calls.find(c => c.method === 'forecast.triage.relabel')).toBeFalsy()
     m.cleanup()
   })
 })

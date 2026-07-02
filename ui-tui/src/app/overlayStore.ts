@@ -6,6 +6,7 @@ const buildOverlayState = (): OverlayState => ({
   agents: false,
   agentsInitialHistoryIndex: 0,
   alerts: false,
+  alertsInitialFocus: null,
   approval: null,
   calendar: false,
   calibration: false,
@@ -192,6 +193,7 @@ export const resetFlowOverlays = () => {
     // User-toggled fullscreen views — opened deliberately, so they must
     // survive a turn ending (e.g. asking the desk from inside Obsidian).
     alerts: $overlayState.get().alerts,
+    alertsInitialFocus: $overlayState.get().alertsInitialFocus,
     calendar: $overlayState.get().calendar,
     calibration: $overlayState.get().calibration,
     demoViz: $overlayState.get().demoViz,

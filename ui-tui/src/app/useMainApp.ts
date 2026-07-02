@@ -408,6 +408,16 @@ export function useMainApp(gw: GatewayClient) {
           })
         })
         .catch(() => {})
+
+      // The contested-triage count for the Today badge — a separate cheap read so
+      // a slow/failed triage query never perturbs the desk-rail refresh above.
+      rpc('forecast.triage.contested', { limit: 200 })
+        .then((r: any) => {
+          const count =
+            typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
+          patchUiState({ forecastContestedCount: Math.max(0, count) })
+        })
+        .catch(() => {})
     }
 
     const id = setInterval(refresh, 30_000)

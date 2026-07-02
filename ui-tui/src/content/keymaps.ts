@@ -68,6 +68,8 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['Enter / Space', 'expand / collapse'],
     ['h / ←', 'collapse · l / → expand'],
     ['c / e', 'collapse-all / expand-all'],
+    ['1 / 2 / 3', 'label contested row: interesting / uninteresting / irrelevant'],
+    ['R / Shift-A', 'free pass · agent pass · x dismiss'],
     ['q / Esc', 'close the view']
   ],
   calibration: [

@@ -227,6 +227,19 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         })
       })
       .catch(() => {})
+    pullContestedCount()
+  }
+
+  // The open contested-triage count that drives the Today feed's hand-label badge.
+  // A cheap, separate read so a slow/failed triage query never perturbs the rail.
+  const pullContestedCount = () => {
+    rpc<{ contested?: unknown[]; count?: number }>('forecast.triage.contested', { limit: 200 })
+      .then(r => {
+        const count =
+          typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
+        patchUiState({ forecastContestedCount: Math.max(0, count) })
+      })
+      .catch(() => {})
   }
 
   const showStartupForecastDashboard = () => {

@@ -11,6 +11,9 @@ import type { PanelRow, PanelSection } from '../types.js'
 export type TodayItemKind = 'alerts' | 'command' | 'question'
 
 export interface TodayItem {
+  // Set when kind==='alerts': deep-link the Warnings view onto a specific lens
+  // ('contested' → the contested triage hand-label list). Undefined opens plain.
+  focus?: 'contested'
   // '1'..'9' — the per-row hotkey the panel renders and the keymap dispatches.
   hotkey: string
   kind: TodayItemKind
@@ -114,12 +117,25 @@ const dedupeKey = (item: Omit<TodayItem, 'hotkey'>): string => {
   return `cmd:${item.command}`
 }
 
+// The contested-triage badge row: a hand-label loop is open only the operator
+// can clear (the auto-labeler disputed these), so it LEADS the feed and deep-links
+// straight into the Warnings view's contested lens. Built here (not from a rail
+// section) so the count can come from the forecast.triage.contested RPC.
+const contestedItem = (count: number): Omit<TodayItem, 'hotkey'> => ({
+  focus: 'contested',
+  kind: 'alerts',
+  note: 'auto-labeler disputed — you decide',
+  section: 'Contested',
+  title: `${count} contested triage ${count === 1 ? 'row needs' : 'rows need'} a hand-label`
+})
+
 /**
  * Flatten the desk-rail PanelSections into a prioritised, deduped, hotkeyed
  * attention feed for the Home "Today" panel. Returns at most `max` items,
- * most-urgent first (triage → focused → watchlist → alerts).
+ * most-urgent first (contested triage → triage → focused → watchlist → alerts).
+ * `contestedCount` (> 0) prepends the contested hand-label badge.
  */
-export const todayFeedItems = (sections: PanelSection[], max = 9): TodayItem[] => {
+export const todayFeedItems = (sections: PanelSection[], max = 9, contestedCount = 0): TodayItem[] => {
   const byTitle = new Map<string, PanelSection>()
 
   for (const section of sections) {
@@ -128,15 +144,21 @@ export const todayFeedItems = (sections: PanelSection[], max = 9): TodayItem[] =
     }
   }
 
-  const items: TodayItem[] = []
+  const collected: Omit<TodayItem, 'hotkey'>[] = []
   const seen = new Set<string>()
+
+  // The contested badge leads (a human-only hand-label loop) — its own identity,
+  // so it never collides with the open-alerts summary row below.
+  if (contestedCount > 0) {
+    collected.push(contestedItem(contestedCount))
+  }
 
   for (const sectionTitle of FEED_SECTION_ORDER) {
     const section = byTitle.get(sectionTitle)
 
     for (const row of section?.rows ?? []) {
-      if (items.length >= max) {
-        return items
+      if (collected.length >= max) {
+        break
       }
 
       const classified = classify(row, sectionTitle)
@@ -152,9 +174,14 @@ export const todayFeedItems = (sections: PanelSection[], max = 9): TodayItem[] =
       }
 
       seen.add(key)
-      items.push({ ...classified, hotkey: String(items.length + 1) })
+      collected.push(classified)
+    }
+
+    if (collected.length >= max) {
+      break
     }
   }
 
-  return items
+  // Assign the per-row hotkeys last, over the final ordered list (contested first).
+  return collected.slice(0, max).map((item, idx) => ({ ...item, hotkey: String(idx + 1) }))
 }

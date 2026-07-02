@@ -28,6 +28,7 @@ export const NAV_TABS: NavTab[] = [
 export const HOME_PATCH = {
   agents: false,
   alerts: false,
+  alertsInitialFocus: null,
   calendar: false,
   calibration: false,
   // Clear the global overlays too: a NavBar click routes through here even while

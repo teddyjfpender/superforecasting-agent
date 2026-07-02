@@ -31,10 +31,13 @@ const glyphFor = (item: TodayItem): string => {
 }
 
 interface TodayPanelProps {
+  // Open contested triage rows awaiting a hand-label — surfaced as the leading
+  // feed row (a deep-link into the Warnings view's contested lens) when > 0.
+  contestedCount?: number
   focused: boolean
   onBlur: () => void
   onNewQuestion: () => void
-  onOpenAlerts: () => void
+  onOpenAlerts: (focus?: 'contested') => void
   onOpenQuestion: (id: string) => void
   onRunCommand: (command: string) => void
   sections: PanelSection[]
@@ -43,6 +46,7 @@ interface TodayPanelProps {
 }
 
 export function TodayPanel({
+  contestedCount = 0,
   focused,
   onBlur,
   onNewQuestion,
@@ -53,7 +57,7 @@ export function TodayPanel({
   t,
   width
 }: TodayPanelProps) {
-  const items = useMemo(() => todayFeedItems(sections), [sections])
+  const items = useMemo(() => todayFeedItems(sections, 9, contestedCount), [sections, contestedCount])
   const narrow = width < NARROW_COLS
   const maxRows = narrow ? NARROW_ROWS : WIDE_ROWS
   const visible = items.slice(0, maxRows)
@@ -86,7 +90,7 @@ export function TodayPanel({
     }
 
     if (item.kind === 'alerts') {
-      return onOpenAlerts()
+      return onOpenAlerts(item.focus)
     }
 
     if (item.kind === 'command' && item.command) {

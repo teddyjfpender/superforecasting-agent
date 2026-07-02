@@ -48,6 +48,7 @@ import { NewsView } from './newsView.js'
 import { PaletteOverlay } from './paletteOverlay.js'
 import { QuestionOnboardModal } from './questionOnboardModal.js'
 import { QueuedMessages } from './queuedMessages.js'
+import { ScheduleStrip } from './scheduleStrip.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
 import { TodayPanel } from './todayPanel.js'
@@ -426,14 +427,32 @@ const CalibrationViewPane = memo(function CalibrationViewPane() {
 const AlertsViewPane = memo(function AlertsViewPane() {
   const { gw } = useGateway()
   const ui = useStore($uiState)
+  const overlay = useStore($overlayState)
 
-  return <AlertsView gw={gw} onClose={() => patchOverlayState({ alerts: false })} sessionId={ui.sid ?? ''} t={ui.theme} />
+  return (
+    <AlertsView
+      gw={gw}
+      initialFocus={overlay.alertsInitialFocus ?? undefined}
+      onClose={() => patchOverlayState({ alerts: false, alertsInitialFocus: null })}
+      sessionId={ui.sid ?? ''}
+      t={ui.theme}
+    />
+  )
 })
 
 const HelpViewPane = memo(function HelpViewPane() {
   const ui = useStore($uiState)
 
   return <HelpView onClose={() => patchOverlayState({ help: false })} t={ui.theme} />
+})
+
+// The Home schedule-health strip — self-fetches forecast.schedule.status and
+// renders nothing until the desk actually has something scheduled.
+const ScheduleStripPane = memo(function ScheduleStripPane({ width }: { width: number }) {
+  const { gw } = useGateway()
+  const ui = useStore($uiState)
+
+  return <ScheduleStrip gw={gw} t={ui.theme} width={width} />
 })
 
 const DemoVizViewPane = memo(function DemoVizViewPane() {
@@ -786,15 +805,16 @@ export const AppLayout = memo(function AppLayout({
           yields the keyboard while the panel explicitly holds Home focus). */}
       <Box flexShrink={0} paddingTop={1} paddingX={1}>
         <TodayPanel
+          contestedCount={ui.forecastContestedCount}
           focused={homeFocus.pane === 'today'}
           onBlur={() => setHomePane('conversation')}
           onNewQuestion={() => {
             setHomePane('conversation')
             patchOverlayState({ onboard: true })
           }}
-          onOpenAlerts={() => {
+          onOpenAlerts={focus => {
             setHomePane('conversation')
-            patchOverlayState({ alerts: true })
+            patchOverlayState({ alerts: true, alertsInitialFocus: focus ?? null })
           }}
           onOpenQuestion={id => {
             setHomePane('conversation')
@@ -808,6 +828,11 @@ export const AppLayout = memo(function AppLayout({
           t={ui.theme}
           width={Math.max(20, heroCols - 2)}
         />
+      </Box>
+      {/* Schedule-health strip: sits just under Today, hidden unless the desk has
+          something scheduled (self-fetches forecast.schedule.status). */}
+      <Box flexShrink={0} paddingX={1}>
+        <ScheduleStripPane width={Math.max(20, heroCols - 2)} />
       </Box>
       <Box flexGrow={1} />
       <HomeHero info={ui.info ?? undefined} maxCols={heroCols} t={ui.theme} />

@@ -6,6 +6,10 @@ import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastDashboardResponse,
   ForecastDashboardReview,
+  ForecastTriageContestedResponse,
+  ForecastTriageContestedRow,
+  ForecastTriageLabel,
+  ForecastTriageRelabelResponse,
   ForecastWarningGroup,
   ForecastWarningsAggregateResponse,
   ForecastWarningsAutomodeComplete,
@@ -49,10 +53,31 @@ interface TierNode {
 }
 
 // The flattened, currently-visible node list the cursor walks: a tier header,
-// then (when the tier is expanded) each of its reason-group rows.
+// then (when the tier is expanded) each of its reason-group rows, then — at the
+// tail — the CONTESTED triage rows awaiting an operator hand-label (their own
+// cursor space, so j/k walks straight from the backlog tree into them).
 type FlatNode =
+  | { kind: 'contested'; row: ForecastTriageContestedRow; rowKey: string }
   | { kind: 'reason'; group: ForecastWarningGroup; rowKey: string; tierKey: TierKey }
   | { kind: 'tier'; rowKey: string; tier: TierNode }
+
+// The contested-triage hand-label loop. Each auto-labeler call the
+// contested-routing subsystem disputed (near the decision boundary, or a
+// verifier disagreed) is adjudicated with a single keystroke: 1/2/3 assign the
+// three-way relevance label, which routes through forecast.triage.relabel (the
+// SAME relabel_route the CLI + agent use — it records the expert label AND acks
+// the linked contested_label alert through real work, never a bare ack).
+const CONTESTED_LABELS: Record<string, ForecastTriageLabel> = {
+  '1': 'relevant_interesting',
+  '2': 'relevant_uninteresting',
+  '3': 'irrelevant'
+}
+
+const LABEL_SHORT: Record<ForecastTriageLabel, string> = {
+  irrelevant: 'irrelevant',
+  relevant_interesting: 'interesting',
+  relevant_uninteresting: 'uninteresting'
+}
 
 const buildTiers = (agg: ForecastWarningsAggregateResponse | null): TierNode[] => {
   const free = agg?.free
@@ -118,12 +143,15 @@ interface AutomodeState {
 
 interface AlertsViewProps {
   gw: GatewayClient
+  // Deep-link hint: when 'contested', park the cursor on the first contested
+  // triage row once it loads (the Today feed's contested badge routes here).
+  initialFocus?: 'contested'
   onClose: () => void
   sessionId?: string
   t: Theme
 }
 
-export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) {
+export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: AlertsViewProps) {
   const { stdout } = useStdout()
   const cols = stdout?.columns ?? 80
   const termRows = stdout?.rows ?? 24
@@ -134,6 +162,9 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
   )
   const [aggregate, setAggregate] = useState<ForecastWarningsAggregateResponse | null>(
     () => getOverlayCache<ForecastWarningsAggregateResponse>('forecast.warnings.aggregate:alerts') ?? null
+  )
+  const [contested, setContested] = useState<ForecastTriageContestedRow[]>(
+    () => getOverlayCache<ForecastTriageContestedRow[]>('forecast.triage.contested:alerts') ?? []
   )
 
   const [loading, setLoading] = useState(!aggregate)
@@ -153,6 +184,10 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
   // Mirror the live automode job id into a ref so the (stable) gateway-event
   // handlers can filter their own job's events without re-subscribing.
   const automodeIdRef = useRef<null | string>(null)
+  // The contested deep-link (initialFocus) parks the cursor on the first
+  // contested row exactly ONCE, the first time it loads — after that the
+  // operator owns the cursor (labeling a row must not yank it back).
+  const focusAppliedRef = useRef(false)
 
   const load = (announce = false) => {
     setLoading(!aggregate)
@@ -161,11 +196,15 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
     // / stale-assumption sections kept below (out of scope to fold into the tree).
     Promise.all([
       gw.request<unknown>('forecast.warnings.aggregate', {}),
-      gw.request<unknown>('forecast.dashboard', { limit: 50 })
+      gw.request<unknown>('forecast.dashboard', { limit: 50 }),
+      // The contested list is supplementary — a failure here must NOT nuke the
+      // whole warnings view, so it resolves to null rather than rejecting the all.
+      gw.request<unknown>('forecast.triage.contested', { limit: 200 }).catch(() => null)
     ])
-      .then(([aggRaw, dashRaw]) => {
+      .then(([aggRaw, dashRaw, contestedRaw]) => {
         const agg = asRpcResult<ForecastWarningsAggregateResponse>(aggRaw)
         const dash = asRpcResult<ForecastDashboardResponse>(dashRaw)
+        const contestedRes = asRpcResult<ForecastTriageContestedResponse>(contestedRaw)
 
         if (!agg && !dash) {
           setError('forecast.warnings.aggregate returned no data')
@@ -182,6 +221,12 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
         if (dash) {
           setOverlayCache('forecast.dashboard:alerts', dash)
           setData(dash)
+        }
+
+        if (contestedRes) {
+          const rows = contestedRes.contested ?? []
+          setOverlayCache('forecast.triage.contested:alerts', rows)
+          setContested(rows)
         }
 
         setError(null)
@@ -222,9 +267,15 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
   const openTotal = headline?.total ?? 0
 
   // The 4 tier nodes + the flattened, currently-visible cursor list (tier headers
-  // plus the reason rows of any EXPANDED tier).
+  // plus the reason rows of any EXPANDED tier), with the contested triage rows
+  // appended at the tail so one cursor walks the whole surface.
   const tiers = useMemo(() => buildTiers(aggregate), [aggregate])
-  const flat = useMemo(() => flattenTiers(tiers, collapsed), [tiers, collapsed])
+  const tierFlat = useMemo(() => flattenTiers(tiers, collapsed), [tiers, collapsed])
+  const contestedNodes = useMemo<FlatNode[]>(
+    () => contested.map((row, idx) => ({ kind: 'contested', row, rowKey: `contested:${row.id ?? idx}` })),
+    [contested]
+  )
+  const flat = useMemo(() => [...tierFlat, ...contestedNodes], [tierFlat, contestedNodes])
 
   // Render off a derived clamp so a shrunk list never indexes past the end (the
   // desk-fix pattern). We ALSO pull the stored `sel` back into range whenever the
@@ -232,11 +283,12 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
   // move relative to the VISIBLE position, so one keypress is always one move.
   const clampedSel = Math.min(sel, Math.max(0, flat.length - 1))
   const selectedNode = flat[clampedSel] ?? null
-  const selectedKey = selectedNode
-    ? selectedNode.kind === 'tier'
-      ? selectedNode.tier.key
-      : selectedNode.tierKey
-    : null
+  const selectedKey =
+    selectedNode && selectedNode.kind !== 'contested'
+      ? selectedNode.kind === 'tier'
+        ? selectedNode.tier.key
+        : selectedNode.tierKey
+      : null
 
   // Re-clamp the stored cursor when collapse/expand changes the visible node count
   // so a stale past-the-end `sel` can never leave a keypress visibly stuck (the
@@ -244,6 +296,15 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
   useEffect(() => {
     setSel(i => Math.min(Math.max(0, i), Math.max(0, flat.length - 1)))
   }, [flat.length])
+
+  // Honour the contested deep-link once the rows are in: jump to the first
+  // contested node (which sits right after the backlog tree).
+  useEffect(() => {
+    if (initialFocus === 'contested' && !focusAppliedRef.current && contestedNodes.length > 0) {
+      focusAppliedRef.current = true
+      setSel(tierFlat.length)
+    }
+  }, [initialFocus, contestedNodes.length, tierFlat.length])
 
   // Best-effort follow: keep the selected row roughly centred as the cursor moves
   // over the flattened tree (each node renders as ~2 rows; +1 for the headline).
@@ -368,11 +429,46 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
   // Shift-A is the agent pass; while a pass is live it doubles as the cancel.
   const agentPassOrCancel = () => (automode ? cancelAutomode() : runAgentPass())
 
+  // 1/2/3 on a focused contested row — record the operator's three-way relevance
+  // label. Optimistically drop the row (immediate-apply with a flash), fire the
+  // relabel_route RPC, then reload so the count settles (a failure re-surfaces the
+  // row on the reload, since the backend still holds it as contested).
+  const relabelContested = (label: ForecastTriageLabel) => {
+    if (selectedNode?.kind !== 'contested') {
+      return
+    }
+
+    const labelId = selectedNode.row.id
+
+    if (!labelId) {
+      setFlash('no label id to relabel')
+
+      return
+    }
+
+    setContested(prev => prev.filter(row => row.id !== labelId))
+    setFlash(`labeled ${LABEL_SHORT[label]} — alert closed`)
+    gw.request<unknown>('forecast.triage.relabel', { label, label_id: labelId })
+      .then(raw => {
+        const res = asRpcResult<ForecastTriageRelabelResponse>(raw)
+
+        if (res?.success === false) {
+          setFlash('relabel failed')
+        }
+
+        load()
+      })
+      .catch((err: unknown) => {
+        setFlash(`relabel error: ${err instanceof Error ? err.message : String(err)}`)
+        load()
+      })
+  }
+
   // x — open the dismiss modal for the focused group: a reason row dismisses that
   // exact reason; a tier header dismisses the distinct kinds it folds (so we never
   // re-derive the tier→kind map client-side — we read it off the aggregate).
   const openDismiss = () => {
-    if (!selectedNode) {
+    if (!selectedNode || selectedNode.kind === 'contested') {
       return
     }
 
@@ -563,6 +659,13 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
       return openDismiss()
     }
 
+    // 1/2/3 — assign the three-way relevance label to the focused contested row
+    // (interesting / uninteresting / irrelevant). No-op unless the cursor is on a
+    // contested node, so the digits never steal input over the backlog tree.
+    if ((ch === '1' || ch === '2' || ch === '3') && selectedNode?.kind === 'contested') {
+      return relabelContested(CONTESTED_LABELS[ch])
+    }
+
     if (ch === 'r') {
       return load(true)
     }
@@ -660,7 +763,8 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
     reviews.length === 0 &&
     gaps.length === 0 &&
     staleAssumptions === 0 &&
-    staleRefs === 0
+    staleRefs === 0 &&
+    contested.length === 0
 
   // Headline summary line: the whole open backlog folded into action tiers.
   const headlineLine = (
@@ -701,8 +805,12 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
             {headlineLine}
 
             <Section t={t} title="Backlog">
-              {flat.map((node, i) => {
+              {tierFlat.map((node, i) => {
                 const active = i === clampedSel
+
+                if (node.kind === 'contested') {
+                  return null
+                }
 
                 if (node.kind === 'tier') {
                   const tier = node.tier
@@ -749,6 +857,41 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
                 )
               })}
             </Section>
+
+            {contested.length > 0 ? (
+              <Section t={t} title={`Contested — hand-label (${contested.length})`}>
+                {contestedNodes.map((node, j) => {
+                  if (node.kind !== 'contested') {
+                    return null
+                  }
+
+                  // Contested nodes sit at the tail of the flat list, right after
+                  // the backlog tree — so their global cursor index is offset by it.
+                  const i = tierFlat.length + j
+                  const active = i === clampedSel
+                  const row = node.row
+                  const head = row.title || row.candidate_ref || row.id || '—'
+
+                  return (
+                    <Box flexDirection="column" key={node.rowKey}>
+                      <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
+                        <Text color={active ? sem.cursor : t.color.muted}>{active ? '▸ ' : '  '}</Text>
+                        <Text bold color={t.color.text}>{truncate(head, 40)}</Text>
+                        {row.auto_label ? (
+                          <Text color={t.color.warn}>{`  auto:${truncate(row.auto_label, 24)}`}</Text>
+                        ) : null}
+                        {row.question_id ? (
+                          <Text color={t.color.muted}>{`  ${truncate(row.question_id, 18)}`}</Text>
+                        ) : null}
+                      </Text>
+                      {row.rationale ? (
+                        <Text color={t.color.border} wrap="truncate-end">{`    ${truncate(row.rationale, Math.max(20, width - 6))}`}</Text>
+                      ) : null}
+                    </Box>
+                  )
+                })}
+              </Section>
+            ) : null}
 
             {reviews.length > 0 ? (
               <Section t={t} title={`Review queue (${reviews.length})`}>
@@ -808,7 +951,9 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
         <Text color={headline?.free ? t.color.accent : t.color.muted}>{headline?.free ?? 0}</Text>
         <Text color={t.color.muted}> auto-clearable · </Text>
         <Text color={reviews.length ? t.color.warn : t.color.muted}>{reviews.length}</Text>
-        <Text color={t.color.muted}> to review</Text>
+        <Text color={t.color.muted}> to review · </Text>
+        <Text color={contested.length ? t.color.warn : t.color.muted}>{contested.length}</Text>
+        <Text color={t.color.muted}> contested</Text>
       </Text>
     </Box>
   )
@@ -836,15 +981,23 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
     </Box>
   ) : null
 
+  // On a contested row the footer swaps to the hand-label mapping (1/2/3) so the
+  // relevance verbs are always in view while adjudicating.
+  const onContested = selectedNode?.kind === 'contested'
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       {automodeLine}
       {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-      {dismissModal ?? (
-        <Text color={t.color.muted} wrap="truncate-end">
-          ↑↓/jk move · ⏎/space expand · Tab/][ tier · c/e fold-all · R free · Shift-A agent · x dismiss · r refresh · q close
-        </Text>
-      )}
+      {dismissModal ??
+        (onContested ? (
+          <Text color={t.color.muted} wrap="truncate-end">
+            1 interesting · 2 uninteresting · 3 irrelevant · ↑↓/jk move · r refresh · q close
+          </Text>
+        ) : (
+          <Text color={t.color.muted} wrap="truncate-end">
+            ↑↓/jk move · ⏎/space expand · Tab/][ tier · c/e fold-all · R free · Shift-A agent · x dismiss · r refresh · q close
+          </Text>
+        ))}
     </Box>
   )
 

@@ -80,6 +80,24 @@ describe('todayFeedItems', () => {
   it('teaches an empty feed (no actionable rows) as zero items', () => {
     expect(todayFeedItems([{ rows: [['active', '0']], title: 'Book' }])).toEqual([])
   })
+
+  it('prepends the contested hand-label badge as the leading row when contestedCount > 0', () => {
+    const items = todayFeedItems(railSections(), 9, 3)
+
+    // The contested badge leads the feed and deep-links into the Warnings lens.
+    expect(items[0].kind).toBe('alerts')
+    expect(items[0].focus).toBe('contested')
+    expect(items[0].title).toContain('3 contested triage rows need')
+    // The section rows still follow, re-hotkeyed after the badge (1..5).
+    expect(items.map(i => i.hotkey)).toEqual(['1', '2', '3', '4', '5'])
+    // The open-alerts summary row is distinct from the contested badge — both survive.
+    expect(items.filter(i => i.kind === 'alerts').length).toBe(2)
+  })
+
+  it('omits the contested badge when the count is zero and singularizes it for one', () => {
+    expect(todayFeedItems(railSections(), 9, 0).some(i => i.focus === 'contested')).toBe(false)
+    expect(todayFeedItems([], 9, 1)[0].title).toContain('1 contested triage row needs')
+  })
 })
 
 // ── Component render + keyboard ───────────────────────────────────────────────
@@ -128,7 +146,7 @@ interface TodaySpies {
   onRunCommand: ReturnType<typeof vi.fn>
 }
 
-const mountToday = async (columns: number, sections: PanelSection[], focused = true) => {
+const mountToday = async (columns: number, sections: PanelSection[], focused = true, contestedCount = 0) => {
   const [{ render }, { TodayPanel }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
     import('@hermes/ink'),
     import('../components/todayPanel.js'),
@@ -149,6 +167,7 @@ const mountToday = async (columns: number, sections: PanelSection[], focused = t
 
   const instance = render(
     React.createElement(TodayPanel, {
+      contestedCount,
       focused,
       sections,
       t: DARK_THEME,
@@ -235,6 +254,15 @@ describe('TodayPanel', () => {
   it('teaches an empty state and does not grab keys', async () => {
     const today = await mountToday(120, [{ rows: [['active', '0']], title: 'Book' }])
     expect(today.text()).toContain('Nothing needs you')
+    today.cleanup()
+  })
+
+  it('surfaces the contested badge and opens the contested lens when activated', async () => {
+    const today = await mountToday(120, railSections(), true, 2)
+    expect(today.text()).toContain('contested triage')
+    // Hotkey 1 is the leading contested badge → opens Warnings focused on contested.
+    await today.press('1')
+    expect(today.spies.onOpenAlerts).toHaveBeenCalledWith('contested')
     today.cleanup()
   })
 })

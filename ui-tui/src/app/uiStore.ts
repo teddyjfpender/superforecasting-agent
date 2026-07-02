@@ -13,6 +13,7 @@ const buildUiState = (): UiState => ({
   compact: false,
   detailsMode: 'collapsed',
   detailsModeCommandOverride: false,
+  forecastContestedCount: 0,
   forecastDeskRailSections: [],
   forecastDeskStatus: '',
   indicatorStyle: DEFAULT_INDICATOR_STYLE,

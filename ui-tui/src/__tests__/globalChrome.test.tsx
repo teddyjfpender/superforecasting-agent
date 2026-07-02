@@ -209,6 +209,8 @@ describe('cheat-sheet overlay', () => {
 
     expect(text).toContain('This view — Warnings')
     expect(text).toContain('collapse-all')
+    // The contested hand-label keys are registered so the cheat sheet stays truthful.
+    expect(text).toContain('label contested row')
   })
 
   it('has a per-view key table for every NAV route the chords reach', () => {
