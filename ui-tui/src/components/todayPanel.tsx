@@ -209,7 +209,7 @@ export function TodayPanel({
             <Text color={t.color.muted} wrap="truncate-end">
               {focused
                 ? '↑↓ select · ⏎ open · a alerts · n new · Esc back'
-                : truncate(`⏎/click opens in the Desk · a alerts · n new`, inner)}
+                : truncate(`Ctrl+T to act · click opens in the Desk`, inner)}
             </Text>
           </Box>
         </Box>

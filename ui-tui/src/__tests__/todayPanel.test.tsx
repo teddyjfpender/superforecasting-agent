@@ -138,7 +138,7 @@ describe('todayFeedItems', () => {
 
     expect(item.kind).toBe('alerts')
     expect(item.title).toBe('1,250 open alerts')
-    expect(item.note).toBe('a to review')
+    expect(item.note).toBe('source/resolution review')
   })
 })
 

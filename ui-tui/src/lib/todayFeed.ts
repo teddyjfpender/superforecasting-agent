@@ -98,15 +98,16 @@ const classify = (
     const alertTitle = section === 'Alerts' ? splitValue(value).title || title : title || value
     const openAlerts = OPEN_ALERTS_RE.exec(alertTitle)
 
-    // The open-alerts summary: thousands-separate the count and END the row with
-    // the concrete key to act (the panel's `a` opens Warnings), instead of tailing
-    // into the raw "need source or resolution review".
+    // The open-alerts summary: thousands-separate the count and keep the note
+    // SELF-DESCRIBING (what kind of review), never a key claim — the panel's
+    // action keys are only live while it holds focus, so the focus-aware footer
+    // is the one honest place to teach them.
     if (openAlerts) {
       const count = Number(openAlerts[1].replace(/,/g, ''))
 
       return {
         kind: 'alerts',
-        note: 'a to review',
+        note: 'source/resolution review',
         section,
         title: `${count.toLocaleString('en-US')} open alert${count === 1 ? '' : 's'}`
       }
