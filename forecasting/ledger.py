@@ -5276,6 +5276,89 @@ class ForecastLedger:
             scored.append(row)
         return scored
 
+    # Labels a corpus DRILL outcome may carry (ForecastBench resolves to yes/no).
+    _CORPUS_DRILL_YES_LABELS = frozenset({"yes", "y", "true", "1", "occurred", "success"})
+    _CORPUS_DRILL_NO_LABELS = frozenset({"no", "n", "false", "0", "not_occurred", "failed"})
+
+    def record_and_score_corpus_drill(
+        self,
+        corpus_ref: str,
+        probability: Any,
+        outcome: Any,
+        *,
+        note: str | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Record + INSTANTLY score an operator drill against a CORPUS question.
+
+        Unlike :meth:`record_operator_estimate`, ``corpus_ref`` (e.g.
+        ``'fb:<case-id>'``) is a reference to a question that lives OUTSIDE the
+        desk's ``forecast_questions`` table (a ForecastBench replay case). It is
+        stored verbatim as the estimate's ``question_id`` so corpus drills flow
+        into :meth:`operator_calibration_summary` alongside desk drills, and the
+        ``operator_estimates -> forecast_questions`` FK is bypassed FOR THIS INSERT
+        ONLY (the ref has, by construction, no desk row to point at).
+
+        The estimate is a binary probability in [0, 1] and ``outcome`` is the
+        KNOWN binary label ('yes'/'no'); the Brier is computed on the spot and the
+        row is written already-scored (``context='drill'``). Raises
+        :class:`ValidationError` on a bad ref / probability / outcome so the
+        interactive flow fails politely.
+        """
+
+        ref = str(corpus_ref or "").strip()
+        if not ref or ":" not in ref:
+            raise ValidationError(
+                "corpus drill reference must look like 'fb:<case-id>'"
+            )
+        if isinstance(probability, bool):
+            raise ValidationError("operator probability must be a number in [0, 1], not a boolean")
+        if not isinstance(probability, (int, float)):
+            raise ValidationError("corpus drill estimate must be a probability in [0, 1]")
+        prob = float(probability)
+        if not (0.0 <= prob <= 1.0):
+            raise ValidationError("operator probability must be in [0, 1]")
+        outcome_label = str(outcome).strip().lower()
+        if outcome_label in self._CORPUS_DRILL_YES_LABELS:
+            observed = 1.0
+        elif outcome_label in self._CORPUS_DRILL_NO_LABELS:
+            observed = 0.0
+        else:
+            raise ValidationError(
+                f"corpus drill outcome must be a binary yes/no label, got {outcome!r}"
+            )
+        brier = (prob - observed) ** 2
+
+        note = (note or "").strip() or None
+        estimate_id = f"oe_{uuid.uuid4().hex[:12]}"
+        now = now or utc_now_iso()
+        with self._connect() as conn:
+            # The corpus ref has no forecast_questions row, so the FK on
+            # operator_estimates.question_id must not fire for THIS insert. The
+            # PRAGMA is per-connection and each _connect() re-enables it, so this
+            # never weakens FK enforcement anywhere else.
+            conn.execute("PRAGMA foreign_keys = OFF")
+            conn.execute(
+                """
+                INSERT INTO operator_estimates (
+                    id, question_id, probability_or_distribution, note, context,
+                    created_at, resolved_outcome, brier, scored_at
+                )
+                VALUES (?, ?, ?, ?, 'drill', ?, ?, ?, ?)
+                """,
+                (
+                    estimate_id,
+                    ref,
+                    json_dumps(prob),
+                    note,
+                    now,
+                    json_dumps(outcome_label),
+                    brier,
+                    now,
+                ),
+            )
+        return self.get_operator_estimate(estimate_id)
+
     def _operator_binary_observed(
         self, resolved_outcome: Any, outcome_space: OutcomeSpace
     ) -> float | None:
@@ -5374,7 +5457,12 @@ class ForecastLedger:
                 try:
                     outcome_space = self.get_question(estimate["question_id"]).outcome_space
                 except LedgerNotFoundError:
-                    outcome_space = None
+                    # A corpus drill (question_id is a 'fb:<case-id>' ref with no
+                    # forecast_questions row) — do NOT crash the whole summary
+                    # joining it against the desk. Fall back to a binary outcome
+                    # space so its yes/no resolution still maps into the
+                    # reliability curve, exactly like a desk drill.
+                    outcome_space = OutcomeSpace(type="binary", choices=["yes", "no"])
                 observed = (
                     self._operator_binary_observed(estimate["resolved_outcome"], outcome_space)
                     if outcome_space is not None

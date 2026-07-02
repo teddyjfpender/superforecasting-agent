@@ -343,3 +343,334 @@ def test_gateway_calibration_payload_has_operator_section(monkeypatch):
     assert operator is not None
     assert operator["n"] == 1
     assert operator["brier"] == pytest.approx((0.8 - 1.0) ** 2)
+
+
+# ── Corpus (ForecastBench) drills ───────────────────────────────────────────
+# The flaw the corpus drill fixes: `drill --corpus desk` samples the operator's
+# OWN resolved questions, which they watched resolve (recall, not calibration).
+# The ForecastBench corpus feeds obscure, never-seen resolved questions, scored
+# instantly — and MUST leak neither the outcome nor the freeze market price.
+
+FB_DATE = "2099-01-01"
+
+
+def _fb_question_set() -> dict:
+    return {
+        "forecast_due_date": FB_DATE,
+        "questions": [
+            # clean binary manifold, resolves YES -> produced
+            {
+                "id": "mf-1",
+                "source": "manifold",
+                "question": "Will alpha resolve yes by close?",
+                "resolution_criteria": "Resolves YES if alpha occurs.",
+                "background": "Background about alpha.",
+                "url": "https://manifold.markets/q/alpha",
+                "freeze_datetime": f"{FB_DATE}T00:00:00Z",
+                "freeze_datetime_value": "0.83",
+                "market_info_close_datetime": "2099-03-01T00:00:00Z",
+                "resolution_dates": ["2099-02-15T00:00:00Z"],
+            },
+            # clean binary metaculus, resolves NO -> produced
+            {
+                "id": "mc-2",
+                "source": "metaculus",
+                "question": "Will beta happen?",
+                "resolution_criteria": "Resolves YES if beta occurs.",
+                "background": "",
+                "url": "https://metaculus.com/q/beta",
+                "freeze_datetime": f"{FB_DATE}T00:00:00Z",
+                "freeze_datetime_value": "0.24",
+                "market_info_close_datetime": "2099-03-01T00:00:00Z",
+            },
+            # dataset source (fred level, not a probability) -> dropped non-binary
+            {
+                "id": "fred-3",
+                "source": "fred",
+                "question": "What will CPI be?",
+                "freeze_datetime": f"{FB_DATE}T00:00:00Z",
+                "freeze_datetime_value": "317.5",
+            },
+            # unresolved manifold -> dropped
+            {
+                "id": "mf-4",
+                "source": "manifold",
+                "question": "Will delta happen?",
+                "freeze_datetime": f"{FB_DATE}T00:00:00Z",
+                "freeze_datetime_value": "0.40",
+            },
+            # fractional metaculus resolution -> dropped (never coerced to yes/no)
+            {
+                "id": "mc-5",
+                "source": "metaculus",
+                "question": "How much gamma by close?",
+                "freeze_datetime": f"{FB_DATE}T00:00:00Z",
+                "freeze_datetime_value": "0.49",
+                "market_info_close_datetime": "2099-03-01T00:00:00Z",
+            },
+        ],
+    }
+
+
+def _fb_resolution_set() -> dict:
+    return {
+        "forecast_due_date": FB_DATE,
+        "resolutions": [
+            {"id": "mf-1", "source": "manifold", "direction": None,
+             "resolution_date": "2099-02-15T00:00:00Z", "resolved_to": 1.0, "resolved": True},
+            {"id": "mc-2", "source": "metaculus", "direction": None,
+             "resolution_date": "2099-02-20T00:00:00Z", "resolved_to": 0.0, "resolved": True},
+            {"id": "fred-3", "source": "fred", "direction": None,
+             "resolution_date": "2099-02-20T00:00:00Z", "resolved_to": 1.0, "resolved": True},
+            {"id": "mf-4", "source": "manifold", "direction": None,
+             "resolution_date": "2099-02-20T00:00:00Z", "resolved_to": 0.0, "resolved": False},
+            {"id": "mc-5", "source": "metaculus", "direction": None,
+             "resolution_date": "2099-02-20T00:00:00Z", "resolved_to": 0.49, "resolved": True},
+        ],
+    }
+
+
+@pytest.fixture
+def patched_fb(monkeypatch):
+    """Monkeypatch the ForecastBench network boundary with a canned payload pair."""
+
+    from forecasting import forecastbench
+
+    q, r = _fb_question_set(), _fb_resolution_set()
+
+    def fake_fetch(url: str):
+        if "question_sets" in url:
+            return q
+        if "resolution_sets" in url:
+            return r
+        raise AssertionError(f"unexpected fetch url: {url}")
+
+    monkeypatch.setattr(forecastbench, "_fetch_json", fake_fetch)
+    return fake_fetch
+
+
+class _FakeTTY(io.StringIO):
+    def isatty(self):
+        return True
+
+
+def _mf1_id() -> str:
+    return f"forecastbench-{FB_DATE}-manifold-mf-1"
+
+
+def _mc2_id() -> str:
+    return f"forecastbench-{FB_DATE}-metaculus-mc-2"
+
+
+def test_forecastbench_drill_cases_excludes_non_binary_and_unresolved(patched_fb, tmp_path):
+    import forecasting.cli as cli
+
+    ledger = ForecastLedger(db_path=str(tmp_path / "op.db"))
+    cases = cli._forecastbench_drill_cases(ledger, date=FB_DATE, limit=10)
+    assert cases is not None
+    ids = {c["id"] for c in cases}
+    # only the two clean binary resolved MARKET singles survive (fred/unresolved/
+    # fractional are all excluded).
+    assert ids == {_mf1_id(), _mc2_id()}
+    for case in cases:
+        assert case["outcome"] in ("yes", "no")
+
+
+def test_forecastbench_drill_cases_excludes_already_drilled(patched_fb, tmp_path):
+    import forecasting.cli as cli
+
+    ledger = ForecastLedger(db_path=str(tmp_path / "op.db"))
+    # Drill mf-1 once; it must not be re-served (no repeats, like desk drills).
+    ledger.record_and_score_corpus_drill(f"fb:{_mf1_id()}", 0.5, "yes")
+    cases = cli._forecastbench_drill_cases(ledger, date=FB_DATE, limit=10)
+    assert {c["id"] for c in cases} == {_mc2_id()}
+
+
+def test_forecastbench_drill_prompt_never_leaks_outcome_or_market(patched_fb, tmp_path):
+    import forecasting.cli as cli
+
+    ledger = ForecastLedger(db_path=str(tmp_path / "op.db"))
+    cases = {c["id"]: c for c in cli._forecastbench_drill_cases(ledger, date=FB_DATE, limit=10)}
+    case = cases[_mf1_id()]
+    shown = cli._forecastbench_drill_prompt_text(case)
+
+    # The freeze market probability (0.83) is NEVER in the shown text.
+    assert "0.83" not in shown
+    # And the outcome-side + market-side fields are never consulted: flip BOTH and
+    # the rendered text is byte-identical -> neither could possibly have leaked.
+    flipped = dict(
+        case,
+        outcome="no",
+        baselines=[{"baseline_type": "market", "probability": 0.17}],
+    )
+    assert cli._forecastbench_drill_prompt_text(flipped) == shown
+    # It DOES show the genuine pre-freeze context (question + background + criteria).
+    assert "Will alpha resolve yes by close?" in shown
+    assert "Background about alpha." in shown
+    assert "Resolves YES if alpha occurs." in shown
+
+
+def test_cmd_drill_forecastbench_scores_instantly(patched_fb, tmp_path, monkeypatch, capsys):
+    import forecasting.cli as cli
+
+    db = str(tmp_path / "op.db")
+    ledger = ForecastLedger(db_path=db)
+
+    monkeypatch.setattr("sys.stdin", _FakeTTY())
+    # mf-1 (yes) -> 0.7; mc-2 (no) -> 0.4; then nothing more to drill.
+    answers = iter(["0.7", "0.4", ""])
+    monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+
+    args = argparse.Namespace(db=db, n=5, domain=None, corpus="forecastbench", date=FB_DATE)
+    cli._cmd_drill(args)
+
+    recorded = {r["question_id"]: r for r in ledger.list_operator_estimates()}
+    assert set(recorded) == {f"fb:{_mf1_id()}", f"fb:{_mc2_id()}"}
+    for row in recorded.values():
+        assert row["context"] == "drill"
+        assert row["scored_at"] is not None
+    # instant Brier: 0.7 vs yes, 0.4 vs no.
+    assert recorded[f"fb:{_mf1_id()}"]["brier"] == pytest.approx((0.7 - 1.0) ** 2)
+    assert recorded[f"fb:{_mc2_id()}"]["brier"] == pytest.approx((0.4 - 0.0) ** 2)
+    out = capsys.readouterr().out
+    assert "drill Brier" in out
+    # the outcome/market are only revealed AFTER the estimate (scoring), never 0.83.
+    assert "0.83" not in out
+
+
+def test_cmd_drill_forecastbench_degrades_without_dataset(tmp_path, monkeypatch, capsys):
+    import forecasting.cli as cli
+    from forecasting import forecastbench
+
+    db = str(tmp_path / "op.db")
+    ForecastLedger(db_path=db)
+
+    monkeypatch.setattr("sys.stdin", _FakeTTY())
+
+    def _no_network(url: str):
+        raise forecastbench.ForecastBenchError("no network and nothing cached")
+
+    monkeypatch.setattr(forecastbench, "_fetch_json", _no_network)
+
+    args = argparse.Namespace(db=db, n=5, domain=None, corpus="forecastbench", date=FB_DATE)
+    cli._cmd_drill(args)  # must NOT raise — polite degradation
+    out = capsys.readouterr().out
+    assert "no benchmark dataset available" in out
+
+
+def test_cmd_drill_auto_prefers_forecastbench_when_cached_and_desk_thin(
+    patched_fb, tmp_path, monkeypatch, capsys
+):
+    import forecasting.cli as cli
+    from forecasting import forecastbench
+
+    db = str(tmp_path / "op.db")
+    ledger = ForecastLedger(db_path=db)
+    # Warm the on-disk cache so available_forecastbench_dates() sees the set
+    # OFFLINE (this is what makes AUTO reach for the corpus).
+    forecastbench.load_forecastbench_cases(FB_DATE)
+    assert forecastbench.available_forecastbench_dates() == [FB_DATE]
+
+    monkeypatch.setattr("sys.stdin", _FakeTTY())
+    answers = iter(["0.6", ""])
+    monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+
+    # Desk has ZERO never-drilled resolved questions -> AUTO uses the corpus.
+    args = argparse.Namespace(db=db, n=5, domain=None, corpus=None, date=None)
+    cli._cmd_drill(args)
+
+    recorded = ledger.list_operator_estimates()
+    assert recorded and all(r["question_id"].startswith("fb:") for r in recorded)
+
+
+# ── Ledger: corpus-drill storage + calibration ──────────────────────────────
+
+
+def test_record_corpus_drill_stores_fb_ref_with_brier(tmp_path):
+    ledger = ForecastLedger(db_path=str(tmp_path / "op.db"))
+    est = ledger.record_and_score_corpus_drill(f"fb:{_mf1_id()}", 0.7, "yes", note="lean yes")
+
+    assert est["question_id"] == f"fb:{_mf1_id()}"
+    assert est["context"] == "drill"
+    assert est["note"] == "lean yes"
+    assert est["brier"] == pytest.approx((0.7 - 1.0) ** 2)
+    assert est["scored_at"] is not None
+    assert est["resolved_outcome"] == "yes"
+
+
+def test_record_corpus_drill_validates(tmp_path):
+    ledger = ForecastLedger(db_path=str(tmp_path / "op.db"))
+    with pytest.raises(ValidationError):
+        ledger.record_and_score_corpus_drill("no-colon-ref", 0.5, "yes")
+    with pytest.raises(ValidationError):
+        ledger.record_and_score_corpus_drill(f"fb:{_mf1_id()}", 1.5, "yes")
+    with pytest.raises(ValidationError):
+        ledger.record_and_score_corpus_drill(f"fb:{_mf1_id()}", True, "yes")  # noqa: FBT003
+    with pytest.raises(ValidationError):
+        ledger.record_and_score_corpus_drill(f"fb:{_mf1_id()}", 0.5, "maybe")
+
+
+def test_operator_calibration_summary_includes_corpus_drills(tmp_path):
+    ledger = ForecastLedger(db_path=str(tmp_path / "op.db"))
+    # Two corpus drills whose question_ids are 'fb:' refs with NO forecast_questions
+    # row — the summary must count them without trying to join them against the desk.
+    ledger.record_and_score_corpus_drill(f"fb:{_mf1_id()}", 0.7, "yes")
+    ledger.record_and_score_corpus_drill(f"fb:{_mc2_id()}", 0.4, "no")
+
+    summary = ledger.operator_calibration_summary()
+    assert summary["n"] == 2
+    assert summary["brier"] == pytest.approx(((0.7 - 1.0) ** 2 + (0.4 - 0.0) ** 2) / 2)
+    # curve populates for corpus refs (flow in like desk drills), no crash on join.
+    populated = {row["bucket"] for row in summary["calibration_curve"] if row["count"]}
+    assert "0.7-0.8" in populated
+
+
+# ── Desk-drill memory-leak guard (prefer resolutions > 30 days old) ──────────
+
+
+def _backdate_resolution(ledger: ForecastLedger, question_id: str, resolved_at: str) -> None:
+    with ledger._connect() as conn:
+        conn.execute(
+            "UPDATE resolutions SET resolved_at = ? WHERE question_id = ?",
+            (resolved_at, question_id),
+        )
+
+
+def test_drill_candidates_prefer_older_than_30_days(tmp_path):
+    import forecasting.cli as cli
+
+    ledger = ForecastLedger(db_path=str(tmp_path / "op.db"))
+    old_q = _binary_question(ledger, "Will the OLD (uncontaminated) question be preferred?")
+    ledger.resolve_question(question_id=old_q.id, outcome="yes")
+    _backdate_resolution(ledger, old_q.id, "2000-01-01T00:00:00Z")
+
+    recent_q = _binary_question(ledger, "Will the RECENT (recall-risk) question be second?")
+    ledger.resolve_question(question_id=recent_q.id, outcome="no")
+
+    # limit 1 -> the old resolution is preferred even though the recent one is newer.
+    only_one = cli._drill_candidates(ledger, domain=None, limit=1)
+    assert [q.id for q, _ in only_one] == [old_q.id]
+
+    # limit 5 -> both, old first (recent only fills the remaining slots).
+    both = cli._drill_candidates(ledger, domain=None, limit=5)
+    assert [q.id for q, _ in both][0] == old_q.id
+    assert {q.id for q, _ in both} == {old_q.id, recent_q.id}
+
+
+def test_desk_drill_warns_when_only_recent_available(tmp_path, monkeypatch, capsys):
+    import forecasting.cli as cli
+
+    db = str(tmp_path / "op.db")
+    ledger = ForecastLedger(db_path=db)
+    # Only a RECENTLY-resolved question is available (recall risk).
+    q = _binary_question(ledger, "Will the recent-only desk drill warn about recall?")
+    ledger.resolve_question(question_id=q.id, outcome="yes")
+
+    monkeypatch.setattr("sys.stdin", _FakeTTY())
+    answers = iter(["0.9", ""])
+    monkeypatch.setattr(builtins, "input", lambda prompt="": next(answers))
+
+    args = argparse.Namespace(db=db, n=5, domain=None, corpus="desk", date=None)
+    cli._cmd_drill(args)
+    out = capsys.readouterr().out
+    assert "you may remember" in out

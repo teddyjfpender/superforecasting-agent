@@ -57,6 +57,7 @@ __all__ = [
     "ForecastBenchError",
     "load_forecastbench_cases",
     "load_forecastbench_open_questions",
+    "available_forecastbench_dates",
     "build_forecastbench_case",
     "forecastbench_dataset_label",
     "QUESTION_SET_URL_TEMPLATE",
@@ -121,6 +122,42 @@ def _cache_root(cache_dir: str | Path | None) -> Path | None:
     except OSError:
         return None
     return root
+
+
+def available_forecastbench_dates(cache_dir: str | Path | None = None) -> list[str]:
+    """Locally-cached ForecastBench dataset dates, newest-first.
+
+    Scans the on-disk cache (the same ``_cache_root`` ``load_forecastbench_cases``
+    writes) for dates that have BOTH a cached ``question_set_<date>.json`` AND its
+    paired ``resolution_set_<date>.json`` — i.e. a dataset a closed-book DRILL can
+    load fully OFFLINE (no network). Used by the operator-practice ``drill`` to
+    decide, without touching the network, whether the ForecastBench corpus is
+    available. Returns ``[]`` when the cache is absent/empty (the drill then
+    degrades politely, or fetches ``latest`` only when EXPLICITLY asked).
+    """
+
+    root = _cache_root(cache_dir)
+    if root is None:
+        return []
+    try:
+        question_files = list(root.glob("question_set_*.json"))
+    except OSError:
+        return []
+    prefix, suffix = "question_set_", ".json"
+    dates: set[str] = set()
+    for path in question_files:
+        name = path.name
+        if not name.startswith(prefix) or not name.endswith(suffix):
+            continue
+        date = name[len(prefix) : -len(suffix)].strip()
+        if not date:
+            continue
+        # Require the PAIRED resolution set too — a question set alone has no
+        # outcomes to score a drill against.
+        if (root / f"resolution_set_{date}.json").is_file():
+            dates.add(date)
+    # ISO dates sort lexically; newest first.
+    return sorted(dates, reverse=True)
 
 
 def _fetch_json(url: str) -> Any:

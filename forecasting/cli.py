@@ -2268,7 +2268,27 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         help="Practice on already-RESOLVED binary questions and get scored instantly",
     )
     drill_parser.add_argument("--n", type=int, default=5, help="How many questions to drill (default 5)")
-    drill_parser.add_argument("--domain", help="Restrict to a domain")
+    drill_parser.add_argument("--domain", help="Restrict to a domain (desk corpus only)")
+    drill_parser.add_argument(
+        "--corpus",
+        choices=("desk", "forecastbench"),
+        default=None,
+        help=(
+            "Which corpus to drill. 'desk' replays YOUR resolved questions; "
+            "'forecastbench' replays obscure resolved market questions you've "
+            "never seen (deliberate practice, no recall). Default: auto — "
+            "forecastbench when its dataset is cached and the desk has too few "
+            "never-drilled questions, else desk."
+        ),
+    )
+    drill_parser.add_argument(
+        "--date",
+        help=(
+            "ForecastBench question-set date for --corpus forecastbench "
+            "(e.g. 2026-06-07, or 'latest' to fetch the newest). Defaults to the "
+            "newest locally-cached set."
+        ),
+    )
     drill_parser.set_defaults(_forecast_handler=_cmd_drill)
 
     complementarity_parser = forecast_sub.add_parser(
@@ -10827,13 +10847,42 @@ def _cmd_practice(args: argparse.Namespace) -> None:
     )
 
 
+# A desk drill on a question resolved within this window risks RECALL rather than
+# calibration practice (the operator watched it resolve). We prefer older
+# resolutions and warn when only recent ones remain. The ForecastBench corpus
+# (obscure questions the operator has never seen) sidesteps the problem entirely.
+_DRILL_MEMORY_WINDOW_DAYS = 30
+
+
+def _resolution_age_days(resolution: Any, now: Any) -> float | None:
+    """Age in days of a confirmed resolution, or None when undatable."""
+
+    resolved_at = getattr(resolution, "resolved_at", None)
+    if not resolved_at:
+        return None
+    try:
+        resolved_dt = timestamp_to_datetime(resolved_at)
+    except Exception:
+        return None
+    if resolved_dt is None or now is None:
+        return None
+    return (now - resolved_dt).total_seconds() / 86400.0
+
+
 def _drill_candidates(
     ledger: "ForecastLedger", *, domain: str | None, limit: int
 ) -> list[tuple[Any, Any]]:
     """Resolved, scoreable, binary questions the operator has NOT yet estimated,
-    each paired with its confirmed resolution. Newest-resolved first, capped."""
+    each paired with its confirmed resolution.
 
-    candidates: list[tuple[Any, Any]] = []
+    MEMORY-LEAK GUARD: a question the operator watched resolve is recall, not
+    calibration practice. We therefore PREFER questions resolved more than
+    :data:`_DRILL_MEMORY_WINDOW_DAYS` days ago (older = less contaminated) and only
+    fall back to recent ones to fill the requested count."""
+
+    now = timestamp_to_datetime(utc_now_iso())
+    older: list[tuple[Any, Any]] = []
+    recent: list[tuple[Any, Any]] = []
     for question in ledger.list_questions(status="resolved", domain=domain):
         if question.outcome_space.type != "binary":
             continue
@@ -10842,29 +10891,182 @@ def _drill_candidates(
         resolution = ledger.get_latest_resolution(question.id, confirmed_only=True)
         if resolution is None:
             continue
-        candidates.append((question, resolution))
-        if len(candidates) >= limit:
+        age = _resolution_age_days(resolution, now)
+        if age is not None and age > _DRILL_MEMORY_WINDOW_DAYS:
+            older.append((question, resolution))
+        else:
+            recent.append((question, resolution))
+        if len(older) >= limit:
             break
-    return candidates
+    selected = older[:limit]
+    if len(selected) < limit:
+        selected += recent[: limit - len(selected)]
+    return selected
 
 
-def _cmd_drill(args: argparse.Namespace) -> None:
-    # Non-interactive guard: a drill needs a live human at a TTY to enter numbers.
-    if not sys.stdin.isatty():
-        raise SystemExit(
-            "forecast drill needs an interactive terminal (stdin is not a TTY). "
-            "Run it from a shell, or use `forecast practice <id>` in a pipeline."
+def _forecastbench_drill_prompt_text(case: dict[str, Any]) -> str:
+    """The EXACT text a corpus drill shows the operator for one case.
+
+    Built ONLY from pre-freeze fields — the question, its background, the
+    resolution criteria, and the case's freeze-pinned context evidence (which
+    carries no live source URL). It NEVER reads ``case['outcome']`` (the answer)
+    nor ``case['baselines']`` (the freeze market probability — an equally
+    revealing answer leak). Because those fields are never consulted, the rendered
+    text is invariant to them; the drill's leak tests assert exactly that."""
+
+    lines: list[str] = [str(case.get("title") or "").strip()]
+    background = str(case.get("description") or "").strip()
+    if background:
+        lines.append(f"  background: {background}")
+    criteria = str(case.get("resolution_criteria") or "").strip()
+    if criteria:
+        lines.append(f"  resolution criteria: {criteria}")
+    context_rows: list[str] = []
+    for item in case.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        claim = str(item.get("claim") or item.get("summary") or "").strip()
+        if not claim:
+            continue
+        available_at = str(item.get("available_at") or "").strip()
+        stamp = f"[{available_at}] " if available_at else ""
+        context_rows.append(f"    - {stamp}{claim}")
+    if context_rows:
+        lines.append("  context available at the forecast freeze:")
+        lines.extend(context_rows)
+    return "\n".join(lines)
+
+
+def _forecastbench_drill_cases(
+    ledger: "ForecastLedger", *, date: str, limit: int
+) -> list[dict[str, Any]] | None:
+    """Resolved BINARY ForecastBench cases the operator has NOT yet drilled.
+
+    Reuses the SAME loading seam the backtest uses
+    (:func:`forecasting.forecastbench.load_forecastbench_cases`, which reads the
+    on-disk cache and only touches the network for an uncached date). Returns
+    ``None`` when no dataset can be loaded (so the caller can degrade politely);
+    an empty list means the dataset loaded but every case is already drilled."""
+
+    from forecasting.forecastbench import ForecastBenchError, load_forecastbench_cases
+
+    try:
+        report = load_forecastbench_cases(
+            date, binary_only=True, resolved_only=True
         )
-    ledger = _ledger(args)
-    limit = max(1, int(getattr(args, "n", 5) or 5))
-    candidates = _drill_candidates(ledger, domain=getattr(args, "domain", None), limit=limit)
+    except ForecastBenchError:
+        return None
+    cases = report.get("cases") or []
+    drilled = {
+        estimate["question_id"]
+        for estimate in ledger.list_operator_estimates()
+        if str(estimate.get("question_id", "")).startswith("fb:")
+    }
+    fresh: list[dict[str, Any]] = []
+    for case in cases:
+        if case.get("outcome") not in ("yes", "no"):
+            continue  # scoreable binary outcomes only
+        if f"fb:{case['id']}" in drilled:
+            continue  # never repeat a case the operator has already seen
+        fresh.append(case)
+        if len(fresh) >= limit:
+            break
+    return fresh
+
+
+def _resolve_drill_bench_date(requested: str | None) -> str:
+    """Resolve the ForecastBench date for an EXPLICIT --corpus forecastbench.
+
+    An explicit ``--date`` wins (including the literal 'latest', which fetches);
+    otherwise prefer the newest locally-cached set so the common case stays
+    offline, falling back to 'latest' only when nothing is cached."""
+
+    from forecasting.forecastbench import available_forecastbench_dates
+
+    requested = (requested or "").strip()
+    if requested:
+        return requested
+    cached = available_forecastbench_dates()
+    return cached[0] if cached else "latest"
+
+
+def _run_forecastbench_drill(
+    ledger: "ForecastLedger", *, date: str, limit: int
+) -> None:
+    """Deliberate-practice drill over obscure resolved ForecastBench questions."""
+
+    cases = _forecastbench_drill_cases(ledger, date=date, limit=limit)
+    if cases is None:
+        print(
+            "no benchmark dataset available for the drill — cache one with "
+            "`forecast backtest --dataset forecastbench:latest ...`, or use "
+            "`forecast drill --corpus desk`."
+        )
+        return
+    if not cases:
+        print(
+            "no un-drilled ForecastBench cases available (you've drilled them all) "
+            "— try a different --date or `forecast drill --corpus desk`."
+        )
+        return
+    print(
+        f"ForecastBench drill ({len(cases)} obscure resolved question(s)) — "
+        "closed-book: you've never seen these, and neither the outcome nor the "
+        "market price is shown."
+    )
+    drill_briers: list[float] = []
+    for index, case in enumerate(cases, start=1):
+        print(f"\n[{index}/{len(cases)}] {_forecastbench_drill_prompt_text(case)}")
+        try:
+            raw = input("  your probability of YES (0-1), or blank to stop: ")
+        except EOFError:
+            break
+        if not raw.strip():
+            break
+        value = _parse_operator_estimate(raw)
+        if not isinstance(value, (int, float)):
+            print("  drill is binary-only — enter a probability in [0, 1].")
+            continue
+        estimate = ledger.record_and_score_corpus_drill(
+            f"fb:{case['id']}", value, case["outcome"]
+        )
+        this_brier = estimate.get("brier")
+        if this_brier is not None:
+            drill_briers.append(float(this_brier))
+        print(
+            f"  outcome: {case['outcome']}  |  your Brier: {_format_metric(this_brier)}"
+        )
+    _finish_drill(ledger, drill_briers)
+
+
+def _run_desk_drill(
+    ledger: "ForecastLedger",
+    candidates: list[tuple[Any, Any]],
+    *,
+    domain: str | None,
+) -> None:
+    """Drill the operator's OWN resolved questions (the recall-risk corpus)."""
+
     if not candidates:
         print(
             "no un-drilled resolved binary questions available"
-            + (f" in domain '{args.domain}'" if getattr(args, "domain", None) else "")
-            + " — resolve some binary forecasts first."
+            + (f" in domain '{domain}'" if domain else "")
+            + " — resolve some binary forecasts first, or try "
+            "`forecast drill --corpus forecastbench`."
         )
         return
+    now = timestamp_to_datetime(utc_now_iso())
+    only_recent = all(
+        (_resolution_age_days(res, now) or 0.0) <= _DRILL_MEMORY_WINDOW_DAYS
+        for _, res in candidates
+    )
+    if only_recent:
+        print(
+            "note: these resolved within the last "
+            f"{_DRILL_MEMORY_WINDOW_DAYS} days — you may remember the outcomes, so "
+            "this leans toward recall. For never-seen questions, try "
+            "`forecast drill --corpus forecastbench`."
+        )
     drill_briers: list[float] = []
     for index, (question, resolution) in enumerate(candidates, start=1):
         print(f"\n[{index}/{len(candidates)}] {question.title}")
@@ -10910,12 +11112,53 @@ def _cmd_drill(args: argparse.Namespace) -> None:
         print(
             f"  outcome: {resolution.outcome}  |  your Brier: {_format_metric(this_brier)}"
         )
+    _finish_drill(ledger, drill_briers)
+
+
+def _finish_drill(ledger: "ForecastLedger", drill_briers: list[float]) -> None:
     if drill_briers:
         running = sum(drill_briers) / len(drill_briers)
         print(f"\ndrill Brier (this session, {len(drill_briers)} scored): {running:.6f}")
     else:
         print("\nno estimates scored this session.")
     _print_operator_calibration(ledger)
+
+
+def _cmd_drill(args: argparse.Namespace) -> None:
+    # Non-interactive guard: a drill needs a live human at a TTY to enter numbers.
+    if not sys.stdin.isatty():
+        raise SystemExit(
+            "forecast drill needs an interactive terminal (stdin is not a TTY). "
+            "Run it from a shell, or use `forecast practice <id>` in a pipeline."
+        )
+    ledger = _ledger(args)
+    limit = max(1, int(getattr(args, "n", 5) or 5))
+    domain = getattr(args, "domain", None)
+    corpus = (getattr(args, "corpus", None) or "").strip().lower() or None
+
+    if corpus == "forecastbench":
+        _run_forecastbench_drill(
+            ledger, date=_resolve_drill_bench_date(getattr(args, "date", None)), limit=limit
+        )
+        return
+    if corpus == "desk":
+        _run_desk_drill(
+            ledger, _drill_candidates(ledger, domain=domain, limit=limit), domain=domain
+        )
+        return
+
+    # AUTO (no explicit --corpus): reach for the ForecastBench corpus when its
+    # dataset is CACHED (no surprise network) AND the desk can't supply a full
+    # never-drilled set — obscure, never-seen questions beat recall-contaminated
+    # ones. Otherwise fall back to the desk.
+    from forecasting.forecastbench import available_forecastbench_dates
+
+    candidates = _drill_candidates(ledger, domain=domain, limit=limit)
+    cached_dates = available_forecastbench_dates()
+    if len(candidates) < limit and cached_dates:
+        _run_forecastbench_drill(ledger, date=cached_dates[0], limit=limit)
+        return
+    _run_desk_drill(ledger, candidates, domain=domain)
 
 
 def _cmd_complementarity(args: argparse.Namespace) -> None:
