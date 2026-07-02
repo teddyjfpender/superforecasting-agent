@@ -44,7 +44,15 @@ interface TodayPanelProps {
   onOpenAlerts: (focus?: 'contested') => void
   onOpenQuestion: (id: string) => void
   onRunCommand: (command: string) => void
+  // True while a global overlay (palette / cheat-sheet) paints ABOVE the
+  // still-mounted landing: hard-gates the panel's keys AND clicks so nothing
+  // leaks past the overlay's keyboard trap.
+  overlayOpen?: boolean
   sections: PanelSection[]
+  // The SOFT focus tier: the panel is mounted on the landing with rows and the
+  // composer is empty, so it borrows ↑↓/⏎ WITHOUT taking the keyboard from
+  // typing. Distinct from `focused` (the explicit Ctrl+T full-focus mode).
+  softFocus?: boolean
   t: Theme
   width: number
 }
@@ -57,7 +65,9 @@ export function TodayPanel({
   onOpenAlerts,
   onOpenQuestion,
   onRunCommand,
+  overlayOpen = false,
   sections,
+  softFocus = false,
   t,
   width
 }: TodayPanelProps) {
@@ -69,6 +79,27 @@ export function TodayPanel({
 
   const [sel, setSel] = useState(0)
   const clampedSel = Math.min(sel, Math.max(0, visible.length - 1))
+
+  // Soft-focus highlight index. null = resting / no highlight — the initial
+  // state AND the post-Esc state; the first ↑/↓ engages it at row 0, Esc clears
+  // it back to null. Kept SEPARATE from `sel` (the Ctrl+T full-focus cursor) so
+  // the two focus tiers never cross-contaminate.
+  const [softSel, setSoftSel] = useState<null | number>(null)
+
+  // Soft focus is live only while the parent says so (`softFocus`), the panel
+  // isn't in full Ctrl+T mode, and there's actually a row to highlight. Mutually
+  // exclusive with `focused` by construction (the parent gates softFocus on the
+  // conversation pane), but guarded defensively.
+  const softActive = softFocus && !focused && visible.length > 0
+  const softIdx = softSel === null ? -1 : Math.min(softSel, Math.max(0, visible.length - 1))
+
+  // Drop the soft-focus highlight the moment soft focus ends (a char typed, an
+  // overlay opened, Ctrl+T taken) so a later re-entry always starts resting.
+  useEffect(() => {
+    if (!softFocus) {
+      setSoftSel(null)
+    }
+  }, [softFocus])
 
   // Report the actionable count so the global keymap knows whether the Ctrl+T
   // leader should grab focus. Keep the two concerns in SEPARATE effects: the
@@ -104,45 +135,78 @@ export function TodayPanel({
 
   useInput(
     (ch, key) => {
-      if (!focused) {
-        return
-      }
+      if (focused) {
+        // FULL Ctrl+T focus — the panel owns the keyboard: ↑↓/jk select, ⏎ open,
+        // a alerts, n new, digits jump, Tab/Esc/q hand focus back.
+        if (key.escape || key.tab || ch === 'q') {
+          return onBlur()
+        }
 
-      if (key.escape || key.tab || ch === 'q') {
-        return onBlur()
-      }
+        if (key.upArrow || ch === 'k') {
+          return setSel(i => Math.max(0, i - 1))
+        }
 
-      if (key.upArrow || ch === 'k') {
-        return setSel(i => Math.max(0, i - 1))
-      }
+        if (key.downArrow || ch === 'j') {
+          return setSel(i => Math.min(Math.max(0, visible.length - 1), i + 1))
+        }
 
-      if (key.downArrow || ch === 'j') {
-        return setSel(i => Math.min(Math.max(0, visible.length - 1), i + 1))
-      }
+        if (ch === 'a') {
+          return onOpenAlerts()
+        }
 
-      if (ch === 'a') {
-        return onOpenAlerts()
-      }
+        if (ch === 'n') {
+          return onNewQuestion()
+        }
 
-      if (ch === 'n') {
-        return onNewQuestion()
-      }
+        if (ch && ch >= '1' && ch <= '9') {
+          const hit = visible.find(item => item.hotkey === ch)
 
-      if (ch && ch >= '1' && ch <= '9') {
-        const hit = visible.find(item => item.hotkey === ch)
+          if (hit) {
+            return activate(hit)
+          }
 
-        if (hit) {
-          return activate(hit)
+          return
+        }
+
+        if (key.return) {
+          return activate(visible[clampedSel])
         }
 
         return
       }
 
-      if (key.return) {
-        return activate(visible[clampedSel])
+      // SOFT focus — the panel borrows ONLY the non-typing nav keys. Every
+      // printable char (a, n, digits, j/k, …) is deliberately left unhandled so
+      // it flows to the still-active composer: typing always wins, the panel
+      // never eats the first letter of a message. The first ↑/↓ engages the
+      // highlight at row 0, then arrows move it (shift+arrow is reserved for
+      // transcript scroll); ⏎ opens the highlighted row (same path as full
+      // focus); Esc clears the highlight back to the resting composer.
+      if (!softActive) {
+        return
+      }
+
+      if (key.escape) {
+        if (softSel !== null) {
+          setSoftSel(null)
+        }
+
+        return
+      }
+
+      if (key.upArrow && !key.shift) {
+        return setSoftSel(s => (s === null ? 0 : Math.max(0, s - 1)))
+      }
+
+      if (key.downArrow && !key.shift) {
+        return setSoftSel(s => (s === null ? 0 : Math.min(Math.max(0, visible.length - 1), s + 1)))
+      }
+
+      if (key.return && softSel !== null) {
+        return activate(visible[Math.min(softSel, Math.max(0, visible.length - 1))])
       }
     },
-    { isActive: focused }
+    { isActive: (focused || softActive) && !overlayOpen }
   )
 
   const inner = Math.max(20, width - 2)
@@ -173,7 +237,7 @@ export function TodayPanel({
       ) : (
         <Box flexDirection="column" marginTop={1}>
           {visible.map((item, i) => {
-            const active = focused && i === clampedSel
+            const active = focused ? i === clampedSel : softActive && i === softIdx
             const glyph = glyphFor(item)
 
             const glyphColor =
@@ -187,7 +251,10 @@ export function TodayPanel({
             const noteText = item.note && noteRoom >= NOTE_MIN_COLS ? truncate(item.note, noteRoom) : ''
 
             return (
-              <Box key={`${item.kind}:${item.questionId ?? item.command ?? item.title}:${i}`} onClick={() => activate(item)}>
+              <Box
+                key={`${item.kind}:${item.questionId ?? item.command ?? item.title}:${i}`}
+                onClick={overlayOpen ? undefined : () => activate(item)}
+              >
                 <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
                   <Text color={active ? t.color.accent : t.color.muted}>{active ? '▸ ' : '  '}</Text>
                   <Text bold color={t.color.accent}>{item.hotkey}</Text>
@@ -209,7 +276,9 @@ export function TodayPanel({
             <Text color={t.color.muted} wrap="truncate-end">
               {focused
                 ? '↑↓ select · ⏎ open · a alerts · n new · Esc back'
-                : truncate(`Ctrl+T to act · click opens in the Desk`, inner)}
+                : softActive && softSel !== null
+                  ? '↑↓ · ⏎ open · type to ask · Ctrl+T actions'
+                  : truncate(`Ctrl+T to act · click opens in the Desk`, inner)}
             </Text>
           </Box>
         </Box>

@@ -33,6 +33,10 @@ interface ConversationsRailProps {
   // True when the rail holds keyboard focus (↑↓ navigate, Enter opens).
   focused?: boolean
   gw: GatewayClient
+  // False while a global overlay (palette / cheat-sheet) paints above the
+  // still-mounted home body: gates the rail's row clicks so they can't leak past
+  // the overlay (the keyboard is gated separately via `focused`).
+  interactive?: boolean
   onNewChat: () => void
   // Called after the rail acts on Enter, to hand focus back to the conversation.
   onExitFocus?: () => void
@@ -49,6 +53,7 @@ export function ConversationsRail({
   currentSid,
   focused = false,
   gw,
+  interactive = true,
   onNewChat,
   onExitFocus,
   onSelect,
@@ -195,7 +200,7 @@ export function ConversationsRail({
         </Text>
       </Box>
 
-      <Box flexShrink={0} onClick={() => select(0)}>
+      <Box flexShrink={0} onClick={interactive ? () => select(0) : undefined}>
         <Text bold color={(focused ? sel === 0 : clickedId === null) ? t.color.accent : t.color.muted}>
           {(focused ? sel === 0 : clickedId === null) ? '▸ ✎ New chat' : '  ✎ New chat'}
         </Text>
@@ -236,7 +241,7 @@ export function ConversationsRail({
                 : currentSid !== null && s.id === currentSid
 
             return (
-              <Box flexShrink={0} key={s.id} onClick={() => select(i + 1)} width="100%">
+              <Box flexShrink={0} key={s.id} onClick={interactive ? () => select(i + 1) : undefined} width="100%">
                 <Text bold={on} color={on ? t.color.accent : t.color.text} wrap="truncate-end">
                   {on ? '▸ ' : '  '}
                   {cleanLabel(s.title, s.preview)}

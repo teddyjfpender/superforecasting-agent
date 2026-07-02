@@ -20,7 +20,7 @@ import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 import { resolveViewChord } from '../content/keymaps.js'
 
 import { $chordPending, armChord, clearChord } from './chordStore.js'
-import { getHomeFocus, setHomePane } from './homeFocusStore.js'
+import { getHomeFocus, type HomePane, setHomePane } from './homeFocusStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
 import { canOpenGlobalOverlay, selectNavView } from './navRoutes.js'
@@ -66,6 +66,20 @@ export function shouldFallThroughForScroll(key: {
 
   return false
 }
+
+/**
+ * The landing "Today" attention panel earns a SOFT focus tier between the plain
+ * composer and the explicit Ctrl+T full-focus mode: while the composer is empty
+ * (chromeArmable), the panel is mounted with actionable rows, and the
+ * conversation pane holds focus, ↑/↓ + ⏎ route to the panel instead of the
+ * composer's history/queue recall — WITHOUT taking the keyboard from typing
+ * (every printable char still flows to the composer). Returns true only where
+ * that routing should win; false everywhere history recall must stay live
+ * (typing started → chromeArmable false, no Today rows → todayCount 0, the
+ * rail/Today pane holds focus, or an overlay owns the keys → chromeArmable false).
+ */
+export const shouldSoftFocusToday = (chromeArmable: boolean, pane: HomePane, todayCount: number): boolean =>
+  chromeArmable && pane === 'conversation' && todayCount > 0
 
 export function applyVoiceRecordResponse(
   response: null | VoiceRecordResponse,
@@ -612,6 +626,25 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
     if (key.escape && terminal.hasSelection) {
       return clearSelection()
+    }
+
+    // ── Landing "Today" soft focus ─────────────────────────────────────────
+    // The attention panel owns ↑/↓ (move its selection) + ⏎ (open the row) while
+    // the composer is empty and Today has rows. The panel's OWN useInput does the
+    // work (its softFocus prop mirrors this predicate); here we only SWALLOW the
+    // arrows so the history/queue recall below can't also steal them. Typing is
+    // untouched — printable chars never reach this branch, so the first letter of
+    // a message always lands in the composer. ⏎ is left to the panel + a no-op
+    // empty submit; Esc is left to the panel (it clears its own highlight).
+    // Reached only when pane === 'conversation' (the Ctrl+T / rail branches above
+    // already returned for their panes) and shift+arrow already scrolled above.
+    const homeFocusNow = getHomeFocus()
+
+    if (
+      shouldSoftFocusToday(chromeArmable, homeFocusNow.pane, homeFocusNow.todayCount) &&
+      (key.upArrow || key.downArrow)
+    ) {
+      return
     }
 
     if (key.upArrow && !cState.inputBuf.length) {

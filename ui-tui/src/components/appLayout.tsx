@@ -6,7 +6,7 @@ import { $chordPending } from '../app/chordStore.js'
 import { useGateway } from '../app/gatewayContext.js'
 import { $homeFocus, setHomePane } from '../app/homeFocusStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
-import { activeNavKey } from '../app/navRoutes.js'
+import { activeNavKey, canOpenGlobalOverlay } from '../app/navRoutes.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
 import { $uiSessionId, $uiState, $uiTheme } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
@@ -461,12 +461,15 @@ const DemoVizViewPane = memo(function DemoVizViewPane() {
   return <DemoVizView onClose={() => patchOverlayState({ demoViz: false })} t={ui.theme} />
 })
 
-// The global interaction chrome (Ctrl+K palette / `?` cheat-sheet). It renders
-// as its OWN branch — replacing the view/composer body while open — so the
-// underlying view unmounts and can't double-handle keys; the modal's useInput
-// is then the only active keyboard handler (it also stopImmediatePropagation's
-// to keep the global seam out). Composes over any route because it reads the
-// live overlay flags to pick the palette vs the cheat-sheet + the active view.
+// The global interaction chrome (Ctrl+K palette / `?` cheat-sheet). Both paint
+// through the shared ModalOverlay (absolute box, opaque, centred). Over the HOME
+// body it STACKS above the still-mounted landing (Today panel + hints stay
+// visible around it — the AppLayout body renders it LAST); over a fullscreen
+// VIEW it REPLACES the body (those views own an ungated useInput, so leaving them
+// mounted would double-handle keys). Either way the modal's own useInput is the
+// active keyboard handler — the global seam early-returns while $isBlocked (which
+// includes palette/cheatSheet) is set. Reads the live overlay flags to pick the
+// palette vs the cheat-sheet + the active view.
 const GlobalChromePane = memo(function GlobalChromePane({
   cols,
   onRun,
@@ -569,13 +572,20 @@ const ConversationsRailPane = memo(function ConversationsRailPane({
   const sid = useStore($uiSessionId)
   const t = useStore($uiTheme)
   const homeFocus = useStore($homeFocus)
+  const overlay = useStore($overlayState)
   const onExitFocus = useCallback(() => setHomePane('conversation'), [])
+
+  // While the palette / cheat-sheet overlay paints above the still-mounted home
+  // body, the rail must yield BOTH its keyboard (drop `focused`) and its row
+  // clicks (`interactive={false}`) so nothing leaks past the overlay's trap.
+  const globalModal = overlay.palette || overlay.cheatSheet
 
   return (
     <ConversationsRail
       currentSid={sid}
-      focused={homeFocus.pane === 'rail'}
+      focused={homeFocus.pane === 'rail' && !globalModal}
       gw={gw}
+      interactive={!globalModal}
       onExitFocus={onExitFocus}
       onNewChat={onNewChat}
       onSelect={onSelect}
@@ -697,6 +707,17 @@ export const AppLayout = memo(function AppLayout({
   // Startup notices (credential/config warnings, update tips) still surface on
   // the landing — rendered under the prompt rather than lost behind it.
   const landingNotices = landing ? transcript.historyItems.filter(msg => msg.kind !== 'intro') : []
+
+  // The landing "Today" panel earns a SOFT focus tier: while it's mounted with
+  // rows, the composer is empty (no completions / buffer / draft — the exact
+  // chromeArmable predicate the keyboard uses), the conversation pane holds
+  // focus, and no overlay owns the keys, ↑↓/⏎ drive the panel WITHOUT taking the
+  // keyboard from typing. `globalModal` additionally hard-gates the panel while
+  // the palette / cheat-sheet paints above the still-mounted landing.
+  const composerArmable = !composer.completions.length && !composer.inputBuf.length && !composer.input
+
+  const todaySoftFocus =
+    landing && homeFocus.pane === 'conversation' && composerArmable && canOpenGlobalOverlay(overlay)
 
   // Home is a persistent two-pane layout on wide terminals: a recent-conversations
   // rail on the left (kept whether you're on a new chat or reading one), and the
@@ -824,7 +845,9 @@ export const AppLayout = memo(function AppLayout({
             setHomePane('conversation')
             actions.runCommand(command)
           }}
+          overlayOpen={globalModal}
           sections={ui.forecastDeskRailSections}
+          softFocus={todaySoftFocus}
           t={ui.theme}
           width={Math.max(20, heroCols - 2)}
         />
@@ -864,13 +887,21 @@ export const AppLayout = memo(function AppLayout({
           <NavBar />
         </PerfPane>
 
-        {globalModal ? (
-          <PerfPane id="globalChrome">
-            <Box flexDirection="row" flexGrow={1}>
-              <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
-            </Box>
-          </PerfPane>
-        ) : fullscreen ? (
+        {fullscreen ? (
+          // Over a fullscreen VIEW the palette / cheat-sheet still REPLACES the
+          // body: those views own their own useInput with no isBlocked gate, so
+          // leaving them mounted beneath the overlay would double-handle keys.
+          // The home body (below) has no such hazard — its composer input is
+          // isBlocked-gated, and Today/rail are overlay-gated — so THERE the body
+          // stays mounted and the overlay stacks on top (the fix for the
+          // vanishing landing).
+          globalModal ? (
+            <PerfPane id="globalChrome">
+              <Box flexDirection="row" flexGrow={1}>
+                <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
+              </Box>
+            </PerfPane>
+          ) : (
           <ViewErrorBoundary onRecover={recoverFromCrash} onReport={reportCrash} t={ui.theme}>
           <Box flexDirection="row" flexGrow={1}>
             {overlay.forecasts ? (
@@ -933,6 +964,7 @@ export const AppLayout = memo(function AppLayout({
             )}
           </Box>
           </ViewErrorBoundary>
+          )
         ) : showRail ? (
           // Home two-pane (wide terminals): a fixed conversations rail on the
           // left + the conversation on the right. The transcript ScrollBox stays
@@ -977,6 +1009,14 @@ export const AppLayout = memo(function AppLayout({
                 {renderPromptBar(contentComposer, true)}
               </Box>
             </Box>
+            {/* The palette / cheat-sheet stacks LAST as an absolute overlay above
+                the still-mounted home body (ModalOverlay recipe), so the landing
+                Today panel + hints stay visible around it. */}
+            {globalModal ? (
+              <PerfPane id="globalChrome">
+                <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
+              </PerfPane>
+            ) : null}
           </>
         ) : (
           // Single-pane (rail hidden on narrow terminals): the proven full-width
@@ -992,6 +1032,13 @@ export const AppLayout = memo(function AppLayout({
               )}
             </Box>
             {renderPromptBar(composer, false)}
+            {/* Palette / cheat-sheet stacks LAST above the still-mounted single-
+                pane home body (ModalOverlay recipe). */}
+            {globalModal ? (
+              <PerfPane id="globalChrome">
+                <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
+              </PerfPane>
+            ) : null}
           </>
         )}
       </Box>

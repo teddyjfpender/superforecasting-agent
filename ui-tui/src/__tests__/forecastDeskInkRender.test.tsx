@@ -163,7 +163,10 @@ const normalizeOutput = (value: string, stripAnsi: (input: string) => string) =>
     .replace(/\n{3,}/g, '\n\n')
     .trim()
 
-const renderForecastDesk = async (columns: number, { landing = false }: { landing?: boolean } = {}) => {
+const renderForecastDesk = async (
+  columns: number,
+  { landing = false, palette = false }: { landing?: boolean; palette?: boolean } = {}
+) => {
   vi.resetModules()
   process.env.FORECAST_TUI_INLINE = '1'
 
@@ -171,7 +174,7 @@ const renderForecastDesk = async (columns: number, { landing = false }: { landin
     { renderSync },
     { GatewayProvider },
     { forecastDashboardSections, forecastDeskRailSections, forecastDeskStatusLabel },
-    { resetOverlayState },
+    { patchOverlayState, resetOverlayState },
     { resetUiState, patchUiState },
     { AppLayout },
     { stripAnsi },
@@ -225,6 +228,11 @@ const renderForecastDesk = async (columns: number, { landing = false }: { landin
     sid: 's_forecast_render',
     status: 'ready'
   })
+
+  // Open the command palette to exercise the overlay-not-replacement path.
+  if (palette) {
+    patchOverlayState({ palette: true })
+  }
 
   const noop = () => undefined
 
@@ -365,6 +373,24 @@ describe('forecast desk Ink render', () => {
     for (const label of ['Home', 'Desk', 'Calendar', 'Warnings', 'Calibration', 'Docs', 'Agents', 'Help']) {
       expect(compact).toContain(label)
     }
+  })
+
+  it('opens Ctrl+K as an OVERLAY above the still-mounted landing (body + palette coexist)', async () => {
+    const output = await renderForecastDesk(150, { landing: true, palette: true })
+    const compact = output.replace(/\s+/g, '')
+
+    // The palette's top row (its title) paints ABOVE the landing.
+    expect(output).toContain('Command palette')
+    // And the landing BODY is still mounted beneath it — proving the overlay
+    // STACKS rather than replacing the body (the pre-fix bug unmounted all of
+    // this). The hero + its hint + the desk-derived status line all survive; the
+    // Today panel is mounted too, its header just clipped by the centred overlay
+    // in the content-height headless render (see TEST-HARNESS REALITY).
+    expect(compact).toContain('Outrider')
+    expect(compact).toContain('Askaforecastingquestiontobegin')
+    expect(compact).toContain('2forecasts·1toreview')
+    // The clipped Today-panel header is still present beneath the overlay.
+    expect(compact).toContain('TO╭')
   })
 
   it('keeps the landing minimal at narrow width too', async () => {

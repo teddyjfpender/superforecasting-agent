@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { applyVoiceRecordResponse, shouldFallThroughForScroll } from '../app/useInputHandlers.js'
+import { applyVoiceRecordResponse, shouldFallThroughForScroll, shouldSoftFocusToday } from '../app/useInputHandlers.js'
 
 const baseKey = {
   downArrow: false,
@@ -39,6 +39,25 @@ describe('shouldFallThroughForScroll — keep transcript scrolling alive during 
 
   it('does NOT fall through for unrelated state (no scroll keys held)', () => {
     expect(shouldFallThroughForScroll(baseKey)).toBe(false)
+  })
+})
+
+describe('shouldSoftFocusToday — the landing Today panel borrows ↑↓/⏎ only where history recall would otherwise fire', () => {
+  it('is active on the empty conversation composer with Today rows present', () => {
+    expect(shouldSoftFocusToday(true, 'conversation', 3)).toBe(true)
+  })
+
+  it('is INACTIVE once typing starts (chromeArmable false) — history recall stays live', () => {
+    expect(shouldSoftFocusToday(false, 'conversation', 3)).toBe(false)
+  })
+
+  it('is INACTIVE when Today has no rows — history recall stays live', () => {
+    expect(shouldSoftFocusToday(true, 'conversation', 0)).toBe(false)
+  })
+
+  it('is INACTIVE when the rail or full Ctrl+T Today pane owns the keyboard', () => {
+    expect(shouldSoftFocusToday(true, 'rail', 3)).toBe(false)
+    expect(shouldSoftFocusToday(true, 'today', 3)).toBe(false)
   })
 })
 

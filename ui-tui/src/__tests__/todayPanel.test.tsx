@@ -188,7 +188,16 @@ interface TodaySpies {
   onRunCommand: ReturnType<typeof vi.fn>
 }
 
-const mountToday = async (columns: number, sections: PanelSection[], focused = true, contestedCount = 0) => {
+interface MountTodayOpts {
+  contestedCount?: number
+  focused?: boolean
+  overlayOpen?: boolean
+  softFocus?: boolean
+}
+
+const mountToday = async (columns: number, sections: PanelSection[], opts: MountTodayOpts = {}) => {
+  const { contestedCount = 0, focused = true, overlayOpen = false, softFocus = false } = opts
+
   const [{ render }, { TodayPanel }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
     import('@hermes/ink'),
     import('../components/todayPanel.js'),
@@ -211,7 +220,9 @@ const mountToday = async (columns: number, sections: PanelSection[], focused = t
     React.createElement(TodayPanel, {
       contestedCount,
       focused,
+      overlayOpen,
       sections,
+      softFocus,
       t: DARK_THEME,
       width: columns - 2,
       ...spies
@@ -300,11 +311,89 @@ describe('TodayPanel', () => {
   })
 
   it('surfaces the contested badge and opens the contested lens when activated', async () => {
-    const today = await mountToday(120, railSections(), true, 2)
+    const today = await mountToday(120, railSections(), { contestedCount: 2 })
     expect(today.text()).toContain('contested triage')
     // Hotkey 1 is the leading contested badge → opens Warnings focused on contested.
     await today.press('1')
     expect(today.spies.onOpenAlerts).toHaveBeenCalledWith('contested')
+    today.cleanup()
+  })
+})
+
+// ── Soft focus tier (landing, empty composer) ─────────────────────────────────
+// The panel borrows ↑↓/⏎ WITHOUT taking the keyboard from typing: printable
+// chars must flow to the composer untouched, and Esc clears the highlight.
+
+const DOWN = '[B'
+const UP = '[A'
+const ESC_KEY = ''
+
+describe('TodayPanel soft focus', () => {
+  afterEach(async () => {
+    const { setTodayCount } = await import('../app/homeFocusStore.js')
+    setTodayCount(0)
+  })
+
+  it('the first ↓ engages the highlight and ⏎ opens the top row', async () => {
+    const today = await mountToday(120, railSections(), { focused: false, softFocus: true })
+    // Resting: no highlight, and the footer teaches Ctrl+T (not the soft row).
+    expect(today.text()).toContain('Ctrl+T to act')
+    expect(today.text()).not.toContain('type to ask')
+
+    await today.press(DOWN) // engage → row 0 (the open-alerts summary)
+    expect(today.text()).toContain('type to ask') // footer flips to the soft row
+    await today.press('\r')
+    expect(today.spies.onOpenAlerts).toHaveBeenCalled()
+    today.cleanup()
+  })
+
+  it('↓↓ moves to the second row and ⏎ runs its command', async () => {
+    const today = await mountToday(120, railSections(), { focused: false, softFocus: true })
+    await today.press(DOWN) // engage → row 0
+    await today.press(DOWN) // → row 1 (the /review --stale triage command)
+    await today.press('\r')
+    expect(today.spies.onRunCommand).toHaveBeenCalledWith('/review --stale')
+    today.cleanup()
+  })
+
+  it('leaves every printable char for the composer — a / n / digits never act', async () => {
+    const today = await mountToday(120, railSections(), { focused: false, softFocus: true })
+    await today.press('a')
+    await today.press('n')
+    await today.press('2')
+    // In full focus these open alerts / new / a row; in soft focus they must be
+    // ignored so the letter reaches the composer instead.
+    expect(today.spies.onOpenAlerts).not.toHaveBeenCalled()
+    expect(today.spies.onNewQuestion).not.toHaveBeenCalled()
+    expect(today.spies.onOpenQuestion).not.toHaveBeenCalled()
+    expect(today.spies.onRunCommand).not.toHaveBeenCalled()
+    today.cleanup()
+  })
+
+  it('Esc clears the highlight (⏎ then opens nothing) and the next ↑ re-engages at the top', async () => {
+    const today = await mountToday(120, railSections(), { focused: false, softFocus: true })
+    await today.press(DOWN) // engage row 0
+    expect(today.text()).toContain('type to ask') // footer flipped to the soft row
+    await today.press(ESC_KEY)
+    await tick(60) // a lone ESC only flushes after the reader's 50ms NORMAL_TIMEOUT
+    // Highlight cleared → Enter opens nothing (behavioural, not footer text — the
+    // stdout buffer is cumulative so a stale "type to ask" frame lingers in it).
+    await today.press('\r')
+    expect(today.spies.onOpenAlerts).not.toHaveBeenCalled()
+    // The next ↑ re-engages at the top row, so Enter now opens it.
+    await today.press(UP)
+    await today.press('\r')
+    expect(today.spies.onOpenAlerts).toHaveBeenCalled()
+    today.cleanup()
+  })
+
+  it('while an overlay is open the panel is inert — keys do nothing even in full focus', async () => {
+    const today = await mountToday(120, railSections(), { focused: true, overlayOpen: true })
+    await today.press('a')
+    await today.press('n')
+    await today.press('\r')
+    expect(today.spies.onOpenAlerts).not.toHaveBeenCalled()
+    expect(today.spies.onNewQuestion).not.toHaveBeenCalled()
     today.cleanup()
   })
 })
