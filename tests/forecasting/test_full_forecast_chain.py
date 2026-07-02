@@ -480,3 +480,65 @@ def test_draft_resolution_criteria_sanitizes_and_rejects_junk(monkeypatch):
 
     monkeypatch.setattr(quorum_mod, "make_aiagent_runner", _factory(""))
     assert cli._draft_resolution_criteria(spec) is None
+
+
+# ── outcome-shape-aware chain: numeric questions get the model leg ────────────
+
+
+def test_auto_stages_numeric_includes_model():
+    from types import SimpleNamespace
+    from forecasting.cli import AUTO_FORECAST_STAGES, auto_forecast_stages
+
+    numeric = SimpleNamespace(outcome_space=SimpleNamespace(type="numeric"))
+    binary = SimpleNamespace(outcome_space=SimpleNamespace(type="binary"))
+    distribution = SimpleNamespace(outcome_space=SimpleNamespace(type="distribution"))
+    weird = SimpleNamespace(outcome_space=None)
+
+    assert auto_forecast_stages(numeric) == ("research", "base_rate", "model", "update")
+    assert auto_forecast_stages(distribution) == ("research", "base_rate", "model", "update")
+    assert auto_forecast_stages(binary) == AUTO_FORECAST_STAGES
+    assert auto_forecast_stages(weird) == AUTO_FORECAST_STAGES
+
+
+def test_chain_runs_model_stage_for_numeric_question(tmp_path, monkeypatch):
+    import forecasting.cli as cli
+
+    ledger = ForecastLedger(db_path=str(tmp_path / "chain.db"))
+    from forecasting.models import OutcomeSpace
+
+    q = ledger.create_question(
+        title="What will May 2027 CPI-U YoY be?",
+        resolution_criteria="Resolves to the BLS CPI-U YoY value in the May 2027 release.",
+        outcome_space=OutcomeSpace(type="numeric", choices=[], units="percent YoY"),
+    )
+    seen: list[str] = []
+
+    def fake_agent(led, qid, *, stage="update", **kw):
+        seen.append(stage)
+        _stage_side_effects(led, qid, stage)
+        return {"final_response": f"{stage} ok"}
+
+    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    result = run_forecast_chain(ledger, q.id, max_iterations=3)
+    assert seen == ["research", "base_rate", "model", "update"]
+    assert [s["stage"] for s in result["stages"]] == ["research", "base_rate", "model", "update"]
+
+
+def test_chain_explicit_stages_still_win(tmp_path, monkeypatch):
+    import forecasting.cli as cli
+
+    ledger = ForecastLedger(db_path=str(tmp_path / "chain.db"))
+    from forecasting.models import OutcomeSpace
+
+    q = ledger.create_question(
+        title="What will Q3 2027 GDP growth be?",
+        resolution_criteria="Resolves to the BEA advance estimate for Q3 2027 annualized growth.",
+        outcome_space=OutcomeSpace(type="numeric", choices=[], units="percent"),
+    )
+    seen: list[str] = []
+    monkeypatch.setattr(
+        cli, "_run_update_agent",
+        lambda led, qid, *, stage="update", **kw: seen.append(stage) or {"final_response": "ok"},
+    )
+    run_forecast_chain(ledger, q.id, max_iterations=3, stages=("research",))
+    assert seen == ["research"], "an explicit stages argument must not be overridden"

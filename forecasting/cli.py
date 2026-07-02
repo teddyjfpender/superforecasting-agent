@@ -9118,6 +9118,24 @@ def _run_update_agent(
 AUTO_FORECAST_STAGES: tuple[str, ...] = ("research", "base_rate", "update")
 
 
+def auto_forecast_stages(question: Any) -> tuple[str, ...]:
+    """Resolve the autonomous stage chain for THIS question's outcome shape.
+
+    Numeric/distribution questions get the optional ``model`` stage between
+    base_rate and update — a deterministic quant model (time-series trend,
+    monte-carlo fan) is exactly what anchors a level/path forecast, and the
+    lazy path must not silently skip the leg the machinery supports
+    (``OPTIONAL_PIPELINE_STAGES`` already marks ``model`` optional, so a stage
+    agent that finds no usable series simply moves on — the chain captures a
+    non-committing stage without aborting). Binary/categorical keep the lighter
+    3-stage chain: their outside view IS the base_rate stage."""
+
+    outcome = getattr(getattr(question, "outcome_space", None), "type", None)
+    if (outcome or "").strip().lower() in {"numeric", "distribution"}:
+        return ("research", "base_rate", "model", "update")
+    return AUTO_FORECAST_STAGES
+
+
 def _snapshot_summary(snapshot: Any) -> dict[str, Any] | None:
     """Compact, JSON-safe view of a committed snapshot for chain results."""
     if snapshot is None:
@@ -9138,7 +9156,7 @@ def run_forecast_chain(
     model: str | None = None,
     provider: str | None = None,
     max_iterations: int = 12,
-    stages: Sequence[str] = AUTO_FORECAST_STAGES,
+    stages: Sequence[str] | None = None,
     commit_policy: str | None = "commit_material",
     on_stage: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
@@ -9160,6 +9178,10 @@ def run_forecast_chain(
     Returns ``{question_id, stages:[per-stage outcome], committed, snapshot,
     update_ready, update_blockers}``.
     """
+    if stages is None:
+        # Outcome-shape-aware default: numeric/distribution questions include the
+        # optional `model` stage so the lazy path gets the deterministic quant leg.
+        stages = auto_forecast_stages(ledger.get_question(question_id))
     stage_results: list[dict[str, Any]] = []
     for stage in stages:
         prior = ledger.get_current_snapshot(question_id)
