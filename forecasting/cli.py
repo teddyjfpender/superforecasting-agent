@@ -3747,6 +3747,26 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         free_tier_drain = None
 
+    # Gateway DUE-SWEEPER: is the sweeper closing the "due on the Desk vs actually
+    # runs" gap between nightly cron runs? Read its config (enabled/interval), its
+    # last-tick state file (the run_review_sweep writer), and the LIVE count of
+    # reviews already due right now. Read-only + fail-safe, like every probe above.
+    try:
+        from forecasting.cron_runner import (
+            read_review_sweeper_state,
+            resolve_review_sweep_interval_minutes,
+        )
+
+        sweep_interval = resolve_review_sweep_interval_minutes()
+        review_sweeper = {
+            "enabled": sweep_interval > 0,
+            "interval_minutes": sweep_interval,
+            "last": read_review_sweeper_state() or None,
+            "due_now": int(ledger.count_due_scheduled_reviews()),
+        }
+    except Exception:
+        review_sweeper = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3757,6 +3777,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "triage_gate": triage_gate,
         "cron_health": cron_health,
         "free_tier_drain": free_tier_drain,
+        "review_sweeper": review_sweeper,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
@@ -4110,6 +4131,30 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
             print(f"free_tier_drain: {drained}; {remaining_text}")
         else:
             print(f"free_tier_drain: not yet run; {remaining_text}")
+
+    # Gateway due-sweeper: whether the between-nightly-runs sweeper is enabled and
+    # what its last tick did (a sibling of free_tier_drain / cron_health).
+    rsweep = report.get("review_sweeper") or {}
+    if rsweep:
+        if not rsweep.get("enabled"):
+            print(f"review_sweeper: disabled; {rsweep.get('due_now', 0)} review(s) due now")
+        else:
+            interval = rsweep.get("interval_minutes")
+            due_now = rsweep.get("due_now", 0)
+            last = rsweep.get("last") or {}
+            if last:
+                if last.get("ran"):
+                    tail = (
+                        f"last sweep refreshed {last.get('refreshed', 0)}, "
+                        f"alerts {last.get('alerts', 0)}"
+                    )
+                else:
+                    tail = f"last tick skipped ({last.get('skipped_reason') or 'none due'})"
+            else:
+                tail = "not yet run"
+            print(
+                f"review_sweeper: every {interval}m; {due_now} due now; {tail}"
+            )
 
     batches = report.get("templated_batches") or []
     if batches:

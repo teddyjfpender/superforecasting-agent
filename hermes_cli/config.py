@@ -765,6 +765,19 @@ DEFAULT_CONFIG = {
             # `forecast freshen` / `keep_fresh` still install it on demand).
             "auto_install": True,
         },
+        # Gateway DUE-SWEEPER: the Desk shows a review as "due now" the instant its
+        # next_run_at passes, but historically only the NIGHTLY self-check cron
+        # ACTED on due-ness — a review due at 09:00 sat idle until the next 08:00
+        # tick. While the gateway runs, its cron ticker also checks (on this cadence)
+        # whether any scheduled review is due and, if so, runs the SAME deterministic
+        # sweep the nightly does (refresh + self-check + saturation + free-tier drain;
+        # NO agent/LLM). Guarded against concurrent sweeps and against doubling the
+        # nightly cron's work.
+        "reviews": {
+            # Minutes between gateway due-sweeps (0 disables — the nightly cron stays
+            # the only executor). Cheap when nothing is due (one indexed COUNT).
+            "sweep_interval_minutes": 10,
+        },
         # VOI-directed research + the research-adequacy judge (research_audit.py):
         # the research stage plans against the question's OWN levers (update
         # triggers, change_my_mind, outcome paths) and, before finishing, audits

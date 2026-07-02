@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -520,6 +520,15 @@ def _cron_ticker_loop(stop_event: threading.Event, interval: int) -> None:
         except Exception:
             # A single bad tick must never kill the ticker — keep looping.
             pass
+        # Ride the SAME tick for the review due-sweeper: close the gap between a
+        # review going "due" on the Desk and something actually acting on it (only
+        # the nightly cron did, historically). Gated to its own cadence internally,
+        # cheap when nothing is due, and fully fail-open — a bad sweep never kills
+        # the ticker.
+        try:
+            _maybe_run_review_sweep()
+        except Exception:
+            pass
         stop_event.wait(interval)
 
 
@@ -539,6 +548,209 @@ def start_cron_ticker() -> None:
 
 def _stop_cron_ticker() -> None:
     _cron_ticker_stop.set()
+
+
+# ── Review due-sweeper ────────────────────────────────────────────────
+#
+# Rides the cron ticker above (no new thread subsystem). Every ticker iteration
+# calls _maybe_run_review_sweep(); it runs the deterministic sweep AT MOST once
+# per forecasting.reviews.sweep_interval_minutes (default 10; 0 disables). The
+# sweep itself is run_due_reviews() with its defaults — the SAME work the nightly
+# self-check cron does, minus any agent/LLM runner. Guards: never two concurrent
+# sweeps (an in-flight flag), and never sweep when the nightly cron fired within
+# the interval (dedupe against the cron job's last_run_at). Fully fail-open.
+_review_sweep_state_lock = threading.Lock()
+_review_sweep_running = False
+# The wall-clock (ISO-Z) the sweeper is next ELIGIBLE to run; None = run on the
+# next tick. Read by the forecast.reviews.next RPC for the TUI countdown.
+_review_sweep_next_tick_at: str | None = None
+
+
+def _review_sweep_now_iso() -> str:
+    from forecasting.models import utc_now_iso
+
+    return utc_now_iso()
+
+
+def _iso_add_minutes(ts: str, minutes: int) -> str:
+    try:
+        base = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        base = datetime.now(timezone.utc)
+    if base.tzinfo is None:
+        base = base.replace(tzinfo=timezone.utc)
+    return (
+        (base + timedelta(minutes=minutes))
+        .astimezone(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def _emit_review_sweep(phase: str, payload: dict) -> None:
+    """Emit a sessionless ``review.sweep`` event (mirrors the ``cron.fired`` frame)."""
+    body = {"phase": phase}
+    body.update(payload or {})
+    write_json({
+        "jsonrpc": "2.0",
+        "method": "event",
+        "params": {"type": "review.sweep", "payload": body},
+    })
+
+
+def _nightly_self_check_job() -> dict | None:
+    try:
+        from forecasting.scheduler import forecast_self_check_job
+
+        return forecast_self_check_job()
+    except Exception:
+        return None
+
+
+def _nightly_ran_within(now_iso: str, minutes: int) -> bool:
+    """True when the nightly self-check cron's ``last_run_at`` is within ``minutes``
+    of now — the dedupe guard so a catch-up sweep never doubles the nightly work."""
+    job = _nightly_self_check_job()
+    last = (job or {}).get("last_run_at")
+    if not last:
+        return False
+    try:
+        last_dt = datetime.fromisoformat(str(last).replace("Z", "+00:00"))
+        now_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return False
+    if (last_dt.tzinfo is None) != (now_dt.tzinfo is None):
+        last_dt = last_dt.replace(tzinfo=None)
+        now_dt = now_dt.replace(tzinfo=None)
+    age_min = (now_dt - last_dt).total_seconds() / 60.0
+    # A future last_run_at (age negative) is degenerate; treat it as "just ran"
+    # and skip — fail-closed toward avoiding double work.
+    return age_min < minutes
+
+
+def _persist_review_sweep_state(result: dict) -> None:
+    try:
+        from forecasting.cron_runner import (
+            read_review_sweeper_state,
+            write_review_sweeper_state,
+        )
+
+        prior = read_review_sweeper_state()
+        write_review_sweeper_state({
+            "last_tick_at": result.get("last_tick_at"),
+            # Preserve the last time a sweep ACTUALLY ran across skip-writes.
+            "last_sweep_at": result.get("last_sweep_at") or prior.get("last_sweep_at"),
+            "ran": bool(result.get("ran")),
+            "due_count": int(result.get("due_count") or 0),
+            "refreshed": int(result.get("refreshed") or 0),
+            "alerts": int(result.get("alerts") or 0),
+            "duration_ms": int(result.get("duration_ms") or 0),
+            "skipped_reason": result.get("skipped_reason"),
+        })
+    except Exception:
+        pass
+
+
+def _run_review_sweep(now: str | None = None) -> dict:
+    """Run the deterministic due-review sweep IF anything is due AND the nightly
+    cron did not just run. NO agent/LLM (``run_due_reviews`` defaults). Fail-open:
+    any error degrades to a skipped result and never propagates to the ticker."""
+    from forecasting.cron_runner import (
+        parse_review_sweep_report,
+        resolve_review_sweep_interval_minutes,
+        run_due_reviews,
+    )
+
+    now_iso = now or _review_sweep_now_iso()
+    interval = resolve_review_sweep_interval_minutes()
+    result: dict = {
+        "ran": False,
+        "due_count": 0,
+        "skipped_reason": None,
+        "refreshed": 0,
+        "alerts": 0,
+        "duration_ms": 0,
+        "last_tick_at": now_iso,
+    }
+
+    if interval <= 0:
+        result["skipped_reason"] = "disabled"
+        return result
+
+    # Cheap due check — one indexed COUNT. The common "nothing due" case is free.
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        due_count = ForecastLedger().count_due_scheduled_reviews(now=now_iso)
+    except Exception:
+        logger.exception("review sweep: due check failed")
+        result["skipped_reason"] = "due_check_failed"
+        return result
+    result["due_count"] = int(due_count)
+    if due_count <= 0:
+        result["skipped_reason"] = "none_due"
+        _persist_review_sweep_state(result)
+        return result
+
+    # Nightly dedupe: don't double the work the nightly cron just did.
+    if _nightly_ran_within(now_iso, interval):
+        result["skipped_reason"] = "nightly_recent"
+        _persist_review_sweep_state(result)
+        return result
+
+    # No-concurrent guard — atomic test-and-set on the in-flight flag.
+    global _review_sweep_running
+    with _review_sweep_state_lock:
+        if _review_sweep_running:
+            result["skipped_reason"] = "already_running"
+            return result
+        _review_sweep_running = True
+
+    started = time.monotonic()
+    _emit_review_sweep("started", {"due_count": int(due_count)})
+    try:
+        # The SAME sweep the nightly runs — NO reforecast_runner → no LLM/agent.
+        report = run_due_reviews()
+        counts = parse_review_sweep_report(report)
+        result["refreshed"] = int(counts.get("refreshed", 0))
+        result["alerts"] = int(counts.get("alerts", 0))
+        result["ran"] = True
+        result["last_sweep_at"] = now_iso
+    except Exception:
+        logger.exception("review sweep: run_due_reviews failed")
+        result["skipped_reason"] = "sweep_error"
+    finally:
+        with _review_sweep_state_lock:
+            _review_sweep_running = False
+    result["duration_ms"] = int((time.monotonic() - started) * 1000)
+    _emit_review_sweep(
+        "done",
+        {
+            "refreshed": result["refreshed"],
+            "alerts": result["alerts"],
+            "duration_ms": result["duration_ms"],
+        },
+    )
+    _persist_review_sweep_state(result)
+    return result
+
+
+def _maybe_run_review_sweep() -> dict | None:
+    """Ride one cron-ticker iteration: run the due-sweep at most once per configured
+    interval (the ticker itself fires every ~60s). Returns the sweep result, or
+    None when disabled / not yet time."""
+    from forecasting.cron_runner import resolve_review_sweep_interval_minutes
+
+    interval = resolve_review_sweep_interval_minutes()
+    if interval <= 0:
+        return None
+    global _review_sweep_next_tick_at
+    now_iso = _review_sweep_now_iso()
+    if _review_sweep_next_tick_at is not None and now_iso < _review_sweep_next_tick_at:
+        return None  # not yet time for the next sweep
+    _review_sweep_next_tick_at = _iso_add_minutes(now_iso, interval)
+    return _run_review_sweep(now=now_iso)
 
 
 def _shutdown_sessions() -> None:
@@ -3653,6 +3865,60 @@ def _(rid, params: dict) -> dict:
             "healthy": bool(cron.get("healthy", True)),
             "scheduled_reviews": reviews,
             "scheduled_review_count": len(reviews),
+        },
+    )
+
+
+@method("forecast.reviews.next")
+def _(rid, params: dict) -> dict:
+    """READ-ONLY: everything the TUI needs to render the review-sweep countdown +
+    a running indicator, without re-deriving scheduler state.
+
+    Returns the soonest DUE scheduled review (``next_due_at`` — a past value means
+    already overdue), how many are due right now (``due_count``), the gateway
+    sweeper's live state (``sweeper``: enabled / interval / next-eligible-tick /
+    running), and the nightly self-check cron's next/last run (``nightly``). The
+    TUI combines these with the ``review.sweep`` event stream to show "runs in 4m"
+    and a spinner while a sweep is in flight. Never runs or installs anything.
+    """
+    from forecasting.cron_runner import resolve_review_sweep_interval_minutes
+
+    interval = resolve_review_sweep_interval_minutes()
+    next_due_at: str | None = None
+    due_count = 0
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        next_due_at = ledger.next_scheduled_review_at()
+        due_count = ledger.count_due_scheduled_reviews()
+    except Exception:
+        logger.exception("forecast.reviews.next scheduled-review read failed")
+
+    nightly = {"installed": False, "next_run_at": None, "last_run_at": None}
+    try:
+        job = _nightly_self_check_job()
+        if job:
+            nightly = {
+                "installed": True,
+                "next_run_at": job.get("next_run_at"),
+                "last_run_at": job.get("last_run_at"),
+            }
+    except Exception:
+        logger.exception("forecast.reviews.next nightly read failed")
+
+    return _ok(
+        rid,
+        {
+            "next_due_at": next_due_at,
+            "due_count": int(due_count),
+            "sweeper": {
+                "enabled": interval > 0,
+                "interval_minutes": interval,
+                "next_tick_at": _review_sweep_next_tick_at,
+                "running": _review_sweep_running,
+            },
+            "nightly": nightly,
         },
     )
 

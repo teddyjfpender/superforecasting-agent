@@ -160,6 +160,24 @@ def ensure_default_routines(
     return {"installed": True, "created": True, "job": job, "reason": "installed"}
 
 
+def forecast_self_check_job() -> dict[str, Any] | None:
+    """The installed nightly self-check cron job (matched by script), or None.
+
+    The gateway due-sweeper reads its ``last_run_at`` to DEDUPE (skip a catch-up
+    sweep when the nightly cron just ran, so the two never double the work) and
+    its ``next_run_at`` for the TUI's "next nightly run" countdown. Best-effort:
+    returns None on any error."""
+    try:
+        from cron.jobs import list_jobs
+
+        for job in list_jobs(include_disabled=True):
+            if job.get("script") == FORECAST_CRON_SCRIPT:
+                return job
+    except Exception:
+        return None
+    return None
+
+
 def _parse_iso(value: Any) -> datetime | None:
     if not isinstance(value, str) or not value.strip():
         return None

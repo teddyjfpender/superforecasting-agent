@@ -9114,6 +9114,32 @@ class ForecastLedger:
                 out[ref] = {"cadence": row["cadence"], "next_run_at": row["next_run_at"]}
         return out
 
+    def count_due_scheduled_reviews(self, *, now: str | None = None) -> int:
+        """Cheap COUNT of enabled scheduled-review rows already DUE (next_run_at <= now).
+
+        The gateway due-sweeper reads this every tick to decide whether to run the
+        deterministic sweep at all — one indexed COUNT, no row materialization, so
+        the common "nothing due" case is nearly free."""
+        now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM scheduled_reviews "
+                "WHERE enabled = 1 AND next_run_at <= ?",
+                (now_ts,),
+            ).fetchone()
+        return int(row["n"]) if row else 0
+
+    def next_scheduled_review_at(self) -> str | None:
+        """The SOONEST enabled scheduled-review ``next_run_at`` (a past value means
+        already due; a future value is the next time something becomes due), or
+        None when nothing is scheduled. Backs the TUI review-sweep countdown."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT MIN(next_run_at) AS soonest FROM scheduled_reviews "
+                "WHERE enabled = 1 AND next_run_at IS NOT NULL",
+            ).fetchone()
+        return (row["soonest"] if row else None) or None
+
     def mark_question_review_due(self, question_id: str, *, now: str | None = None) -> dict[str, Any]:
         """Re-arm a question's review to fire on the next cron tick — the desk's
         "run update" shortcut. Sets the enabled per-question schedule's next_run_at

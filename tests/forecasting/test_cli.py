@@ -10302,6 +10302,37 @@ def test_forecast_cli_doctor_combines_pilot_and_readiness_gates(tmp_path, capsys
     assert exc.value.code == 1
 
 
+def test_forecast_cli_doctor_reports_review_sweeper(tmp_path, capsys, monkeypatch):
+    """doctor folds in the gateway due-sweeper: enabled/interval + the LIVE count of
+    reviews due right now (sibling of free_tier_drain / cron_health)."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    ledger = ForecastLedger(db)
+    question = ledger.create_question(
+        title="Will the sweeper surface in doctor?",
+        resolution_criteria="Resolved yes if doctor reports the review sweeper.",
+        domain="software",
+    )
+    # A review already OVERDUE (past next_run_at) → due_now should be >= 1.
+    ledger.schedule_review(
+        scope_type="question",
+        scope_ref=question.id,
+        cadence="1d",
+        next_run_at="2020-01-01T00:00:00Z",
+    )
+
+    _run(parser, ["forecast", "--db", db, "doctor", "--json"])
+    payload = json.loads(capsys.readouterr().out)
+
+    sweeper = payload["review_sweeper"]
+    assert sweeper is not None
+    assert sweeper["enabled"] is True
+    assert sweeper["interval_minutes"] == 10  # DEFAULT_CONFIG default
+    assert sweeper["due_now"] >= 1
+    assert sweeper["last"] is None  # no sweep has run in this fresh home
+
+
 def test_forecast_cli_pilot_cohort_seeds_live_questions(tmp_path, capsys):
     parser = _parser()
     db_path = tmp_path / "forecasting.db"

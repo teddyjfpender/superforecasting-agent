@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from collections.abc import Callable
 from datetime import datetime
@@ -126,6 +127,119 @@ def _write_free_tier_drain_state(
         path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
     except OSError:
         pass  # a state-write failure must never break the sweep
+
+
+# ---------------------------------------------------------------------------
+# Gateway DUE-SWEEPER — close the display/execution gap between nightly runs
+# ---------------------------------------------------------------------------
+#
+# The Desk shows a review as "due now" the instant its next_run_at passes, but
+# historically only the NIGHTLY self-check cron ACTED on due-ness — a review due
+# at 09:00 sat idle until the next 08:00 tick. While the gateway runs, its cron
+# ticker now ALSO (config forecasting.reviews.sweep_interval_minutes, default 10)
+# checks whether any scheduled_review is due and, if so, runs the SAME
+# deterministic sweep the nightly runs (run_due_reviews defaults — deterministic
+# refresh + self-check + saturation sweep + free-tier drain; NO agent/LLM). The
+# config resolver, state file, and report parser live HERE (co-located with
+# run_due_reviews) so the gateway thread and `forecast doctor` share one contract.
+_REVIEW_SWEEP_INTERVAL_DEFAULT = 10
+
+
+def _reviews_config() -> dict[str, Any]:
+    """Read the optional ``forecasting.reviews`` config block (best-effort)."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
+        block = fc.get("reviews", {}) if isinstance(fc, dict) else {}
+        return block if isinstance(block, dict) else {}
+    except Exception:
+        return {}
+
+
+def resolve_review_sweep_interval_minutes(explicit: int | None = None) -> int:
+    """Minutes between gateway due-sweeps (default 10; 0 disables).
+
+    Precedence: explicit arg > ``forecasting.reviews.sweep_interval_minutes`` in
+    config > default (10). A value of 0 is HONORED as "disabled" (the gateway
+    never sweeps; the nightly cron remains the only executor). Negative /
+    unparseable values fall through to the default. Best-effort: a config-read
+    failure degrades to the default."""
+    if explicit is not None:
+        try:
+            value = int(explicit)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    cfg_val = _reviews_config().get("sweep_interval_minutes")
+    if cfg_val is not None:
+        try:
+            value = int(cfg_val)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    return _REVIEW_SWEEP_INTERVAL_DEFAULT
+
+
+def _review_sweeper_state_path(state_path: "str | Path | None" = None) -> Path:
+    if state_path is not None:
+        return Path(state_path)
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "cron" / "review_sweeper_state.json"
+
+
+def read_review_sweeper_state(state_path: "str | Path | None" = None) -> dict[str, Any]:
+    """The last gateway due-sweep tick's result (or ``{}`` when none ran yet).
+
+    Shape: ``{"last_tick_at", "last_sweep_at", "ran", "due_count", "refreshed",
+    "alerts", "duration_ms", "skipped_reason"}``. Read by ``forecast doctor`` so an
+    operator can see the sweeper acting BETWEEN nightly runs (or why it skipped).
+    Best-effort: a missing / unreadable state file degrades to ``{}``."""
+    path = _review_sweeper_state_path(state_path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_review_sweeper_state(
+    state: dict[str, Any], state_path: "str | Path | None" = None
+) -> None:
+    """Persist the last due-sweep tick's result (the gateway writer; doctor reads).
+
+    Public (unlike the free-tier sibling) because the WRITER is the gateway
+    module, not this one. Best-effort: a state-write failure must never break the
+    sweep."""
+    path = _review_sweeper_state_path(state_path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass
+
+
+def parse_review_sweep_report(report: str) -> dict[str, int]:
+    """Extract ``{refreshed, alerts}`` counts from a :func:`run_due_reviews` report.
+
+    The sweep returns a formatted text report (the same one the nightly cron
+    logs); the gateway needs two structured counts for its ``review.sweep`` done
+    event. Fail-open: a missing section yields 0 for that count. Co-located with
+    ``run_due_reviews`` so the "committed:" / "alerts:" line formats stay in sync."""
+    refreshed = 0
+    alerts = 0
+    if isinstance(report, str):
+        m = re.search(r"^committed: (\d+)", report, re.MULTILINE)
+        if m:
+            refreshed = int(m.group(1))
+        m = re.search(r"^alerts: (\d+)", report, re.MULTILINE)
+        if m:
+            alerts = int(m.group(1))
+    return {"refreshed": refreshed, "alerts": alerts}
 
 
 @allow_ledger_writes_decorator("cron_runner.run_due_reviews")
