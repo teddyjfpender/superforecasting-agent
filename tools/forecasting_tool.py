@@ -113,8 +113,12 @@ FORECAST_LEDGER_SCHEMA = {
                     "create_question",
                     "propose_spec",
                     "commit_spec",
+                    "full_forecast",
+                    "set_resolution_rule",
+                    "propose_resolution",
                     "set_decision",
                     "configure",
+                    "keep_fresh",
                     "rename_question",
                     "list_questions",
                     "search_questions",
@@ -649,6 +653,45 @@ FORECAST_LEDGER_SCHEMA = {
             "source_url": {"type": "string"},
             "source_name": {"type": "string"},
             "apply_watch": {"type": "boolean"},
+            "accept_defaults": {
+                "type": "boolean",
+                "description": (
+                    "propose_spec/commit_spec: auto-apply the recommended default of every "
+                    "gap/error clarification and commit in one shot (for a vague/casual ask). "
+                    "Only error-severity issues still surface and block; the applied choices "
+                    "come back as `applied_defaults` to echo in a one-line summary."
+                ),
+            },
+            "allow_duplicate": {
+                "type": "boolean",
+                "description": (
+                    "full_forecast: by default a strong near-duplicate routes the stage chain "
+                    "onto the EXISTING question (routed_to_existing=true) instead of forking a "
+                    "rival. Set true to force a NEW question anyway (the duplicate warning is "
+                    "surfaced either way)."
+                ),
+            },
+            "prompt": {
+                "type": "string",
+                "description": (
+                    "propose_spec/full_forecast: the user's plain-language question. "
+                    "full_forecast turns this one sentence into a committed forecast — it "
+                    "structures + commits the question (accept-defaults) then autonomously "
+                    "chains research -> base_rate -> update through the gated pipeline."
+                ),
+            },
+            "spec": {
+                "type": "object",
+                "description": "propose_spec/commit_spec/full_forecast: an explicit QuestionSpec draft (overrides `prompt` when both are given).",
+            },
+            "provider": {
+                "type": "string",
+                "description": "full_forecast: provider the chained pipeline stages run on (default: house model).",
+            },
+            "max_iterations": {
+                "type": "integer",
+                "description": "full_forecast: agent tool-calling budget per chained stage (default 12).",
+            },
             "keywords": {"type": "array", "items": {"type": "string"}},
             "exclude_keywords": {"type": "array", "items": {"type": "string"}},
             "dedupe": {"type": "boolean"},
@@ -837,6 +880,27 @@ FORECAST_LEDGER_SCHEMA = {
             "criteria_satisfied": {"type": "boolean"},
             "confirmed_by": {"type": "string"},
             "resolver_notes": {"type": "string"},
+            "field": {
+                "type": "string",
+                "description": "For set_resolution_rule: the parsed source value to read (e.g. 'yoy_percent').",
+            },
+            "comparator": {
+                "type": "string",
+                "enum": [">=", ">", "<=", "<", "==", "!="],
+                "description": "For set_resolution_rule: how the observed value is compared to threshold.",
+            },
+            "threshold": {
+                "type": "number",
+                "description": "For set_resolution_rule: the numeric threshold the observed value is compared against.",
+            },
+            "source_role": {
+                "type": "string",
+                "description": "For set_resolution_rule: which watched-source role supplies the value (default 'resolver').",
+            },
+            "resolver": {
+                "type": "string",
+                "description": "For set_resolution_rule: the resolver engine (default 'metric_threshold').",
+            },
             "correction_ref": {"type": "string"},
             "trusted_policy_id": {"type": "string"},
             "scoreable": {"type": "boolean"},
@@ -1042,6 +1106,35 @@ def check_forecasting_requirements() -> bool:
     return True
 
 
+# Duplicate-detection thresholds over the search ranker's integer scores. The floor
+# keeps a single trivial token hit from surfacing as a "duplicate"; the higher warn
+# threshold is roughly a title-substring-level match (the ranker gives title weight
+# 18, ×3 for substring containment) and only nudges — it never blocks a commit.
+_DUPLICATE_SCORE_FLOOR = 18
+_DUPLICATE_WARN_SCORE = 54
+
+
+def _find_possible_duplicates(ledger: Any, title: str, *, limit: int = 5) -> list[dict[str, Any]]:
+    """Rank existing active questions against a draft title and return the top few
+    above a sane score floor. Pure reuse of the forecast search ranker — no new
+    subsystem. Empty when the title is blank/trivial or nothing scores."""
+    title = (title or "").strip()
+    if not title:
+        return []
+    matches = search_forecasts(ledger, title, status="active", limit=limit)
+    out: list[dict[str, Any]] = []
+    for match in matches:
+        if match.score < _DUPLICATE_SCORE_FLOOR:
+            continue
+        out.append({
+            "id": match.question.id,
+            "title": match.question.title,
+            "score": match.score,
+            "status": match.question.status,
+        })
+    return out
+
+
 @allow_ledger_writes_decorator("forecast_ledger_tool")
 def forecast_ledger_tool(args: dict[str, Any]) -> str:
     # This IS the gated commit flow: every forecast-producing action here runs
@@ -1089,12 +1182,28 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             # the user's prompt, and hand back the exact clarifications to fire.
             # The agent supplies the content (it's the LLM); this stays
             # deterministic — no model call here.
-            from forecasting.question_spec import recommended_clarifications, spec_from_dict
+            from forecasting.question_spec import (
+                apply_recommended_defaults,
+                recommended_clarifications,
+                spec_from_dict,
+                spec_quality,
+                suggest_resolution_rule,
+            )
 
             raw = dict(args.get("spec") or {})
             if not raw.get("title") and args.get("prompt"):
                 raw["title"] = str(args.get("prompt"))
             spec = spec_from_dict(raw)
+
+            # Accept-defaults fast path: a vague/casual ask (accept_defaults=true, or a
+            # 'full'-autonomy spec) auto-applies the recommended default of every
+            # gap/error clarification so the agent commits in one shot instead of
+            # interrogating. Error-severity issues still surface below and block.
+            accept_defaults = bool(args.get("accept_defaults")) or spec.autonomy == "full"
+            applied_defaults: list[dict[str, Any]] = []
+            if accept_defaults:
+                spec, applied_defaults = apply_recommended_defaults(spec)
+
             issues = [issue.to_dict() for issue in spec.validate()]
 
             return tool_result(
@@ -1105,14 +1214,34 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 readiness_gaps=[i for i in issues if i["severity"] == "gap"],
                 recommended_clarifications=recommended_clarifications(spec),
                 committable=spec.is_committable(),
+                spec_quality=spec_quality(spec),
+                accept_defaults=accept_defaults,
+                applied_defaults=applied_defaults,
+                # Reuse the existing ranker to surface near-duplicates so the agent
+                # can refresh an existing question instead of forking a rival one.
+                possible_duplicates=_find_possible_duplicates(ledger, spec.title),
+                suggested_resolution_rule=suggest_resolution_rule(spec),
             )
 
         if action == "commit_spec":
             # Validate a finalized spec and commit the whole fan-out in one shot
             # (question + watched sources + reference classes + decision card).
-            from forecasting.question_spec import spec_from_dict
+            from forecasting.question_spec import (
+                apply_recommended_defaults,
+                spec_from_dict,
+                spec_quality,
+            )
 
             spec = spec_from_dict(args.get("spec") or {})
+
+            # Accept-defaults fast path (see propose_spec): fill every gap/error
+            # clarification's recommended default and commit in one shot. Only
+            # error-severity issues still block — the gate below is unchanged.
+            accept_defaults = bool(args.get("accept_defaults")) or spec.autonomy == "full"
+            applied_defaults: list[dict[str, Any]] = []
+            if accept_defaults:
+                spec, applied_defaults = apply_recommended_defaults(spec)
+
             errs = [issue.to_dict() for issue in spec.errors()]
             if errs:
                 return tool_error(
@@ -1120,10 +1249,160 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     + "; ".join(f"{e['field']}: {e['message']}" for e in errs),
                     success=False,
                     issues=errs,
+                    spec_quality=spec_quality(spec),
+                    applied_defaults=applied_defaults,
                 )
+            # Surface (never block on) a strong near-duplicate BEFORE committing, so
+            # the operator can choose to refresh the existing question instead.
+            duplicates = _find_possible_duplicates(ledger, spec.title)
+            quality = spec_quality(spec)
             result = spec.commit(ledger)
+            result["spec_quality"] = quality
+            result["accept_defaults"] = accept_defaults
+            result["applied_defaults"] = applied_defaults
+            if duplicates:
+                result["possible_duplicates"] = duplicates
+                top = duplicates[0]
+                if top["score"] >= _DUPLICATE_WARN_SCORE:
+                    result["duplicate_warning"] = (
+                        f"you already track {top['id']} (\"{top['title']}\") — "
+                        "consider refreshing that instead of committing a rival question"
+                    )
 
             return tool_result(success=True, **result)
+
+        if action == "full_forecast":
+            # The autonomous entry point: a single vague sentence -> a complete,
+            # committed forecast. Structure + commit the question (accept-defaults),
+            # then chain research -> base_rate -> update through the SAME gated agent
+            # path a manual run uses. This is ORCHESTRATION only — no gate is
+            # weakened; the update stage's commit still runs the panel/calibration
+            # gates, writes the analyst brief, and schedules the review. The stage
+            # loop lives in forecasting.cli (imported lazily, like _run_safe_benchmarks)
+            # so it is defined once and shared with the `forecast onboard --auto` CLI.
+            from forecasting.cli import run_forecast_chain
+            from forecasting.question_spec import (
+                apply_recommended_defaults,
+                spec_from_dict,
+                spec_quality,
+            )
+
+            raw = dict(args.get("spec") or {})
+            if not raw.get("title") and args.get("prompt"):
+                raw["title"] = str(args.get("prompt"))
+            spec = spec_from_dict(raw)
+            # A full_forecast is by definition the accept-defaults fast path.
+            spec, applied_defaults = apply_recommended_defaults(spec)
+
+            errs = [issue.to_dict() for issue in spec.errors()]
+            if errs:
+                return tool_error(
+                    "question spec is not committable: "
+                    + "; ".join(f"{e['field']}: {e['message']}" for e in errs),
+                    success=False,
+                    issues=errs,
+                    spec_quality=spec_quality(spec),
+                    applied_defaults=applied_defaults,
+                )
+
+            # Duplicate routing on the laziest path: calling full_forecast twice with
+            # the same sentence must REFRESH the existing question, not fork a rival.
+            # When a strong near-duplicate exists (score >= the warn threshold) and the
+            # caller did not pass allow_duplicate=true, run the SAME gated stage chain
+            # onto the EXISTING question id instead of committing a new one.
+            allow_duplicate = bool(args.get("allow_duplicate"))
+            duplicates = _find_possible_duplicates(ledger, spec.title)
+            top = duplicates[0] if duplicates else None
+            strong_dup = top is not None and top["score"] >= _DUPLICATE_WARN_SCORE
+            routed_to_existing = False
+            duplicate_of: dict[str, Any] | None = None
+            duplicate_note: str | None = None
+            duplicate_warning: str | None = None
+            watched_sources_attached: list[dict[str, Any]] = []
+            commit_result: dict[str, Any] | None = None
+            if strong_dup and not allow_duplicate:
+                question_id = top["id"]
+                routed_to_existing = True
+                duplicate_of = top
+                duplicate_note = (
+                    f"you already track {top['id']} (\"{top['title']}\") — refreshed that "
+                    "instead of forking a rival (pass allow_duplicate=true to force a new question)"
+                )
+            else:
+                commit_result = spec.commit(ledger)
+                question_id = commit_result["question_id"]
+                if strong_dup:
+                    # allow_duplicate forced a new, rival question — surface the warning anyway.
+                    duplicate_warning = (
+                        f"you already track {top['id']} (\"{top['title']}\") — "
+                        "committed a rival question anyway (allow_duplicate=true)"
+                    )
+                # Feed the spine: an auto-path question usually commits with ZERO
+                # watched sources, so the deterministic scheduled refresh has nothing
+                # to refresh. Auto-attach the top recommended watches (reusing the
+                # source-plan apply seam) so the question refreshes itself. Fail-open:
+                # a planner hiccup must never block the forecast.
+                if not spec.watched_sources and spec.allow_evidence_gathering:
+                    try:
+                        question = ledger.get_question(question_id)
+                        recs = plan_sources_for_question(question)
+                        candidates = [r for r in recs if not r.requires_user_source and r.watch_source][:3]
+                        watched_sources_attached, _ = _apply_source_plan_watches(ledger, question_id, candidates)
+                    except Exception:
+                        watched_sources_attached = []
+
+            chain = run_forecast_chain(
+                ledger,
+                question_id,
+                model=args.get("model"),
+                provider=args.get("provider"),
+                max_iterations=int(args["max_iterations"]) if args.get("max_iterations") is not None else 12,
+            )
+            payload: dict[str, Any] = dict(
+                success=True,
+                question_id=question_id,
+                created=commit_result,
+                routed_to_existing=routed_to_existing,
+                applied_defaults=applied_defaults,
+                spec_quality=spec_quality(spec),
+                watched_sources_attached=watched_sources_attached,
+                stages=chain["stages"],
+                committed=chain["committed"],
+                snapshot=chain["snapshot"],
+                update_ready=chain["update_ready"],
+                update_blockers=chain["update_blockers"],
+            )
+            if duplicates:
+                payload["possible_duplicates"] = duplicates
+            if duplicate_of is not None:
+                payload["duplicate_of"] = duplicate_of
+                payload["duplicate_note"] = duplicate_note
+            if duplicate_warning is not None:
+                payload["duplicate_warning"] = duplicate_warning
+            return tool_result(**payload)
+
+        if action == "set_resolution_rule":
+            # Attach a structured metric_threshold rule so the desk can PROPOSE a
+            # resolution from ingested source data instead of resolving by hand.
+            question_id = _required(args, "question_id")
+            if args.get("threshold") is None:
+                raise ForecastingError("threshold is required for set_resolution_rule")
+            rule = ledger.set_resolution_rule(
+                question_id,
+                field=_required(args, "field"),
+                comparator=_required(args, "comparator"),
+                threshold=float(args["threshold"]),
+                resolver=args.get("resolver") or "metric_threshold",
+                source_role=args.get("source_role") or "resolver",
+            )
+            return tool_result(success=True, question_id=question_id, resolution_rule=rule)
+
+        if action == "propose_resolution":
+            # Run the question's resolution rule against the latest ingested value and
+            # return a PROPOSED (never committed) resolution. None when no rule is set.
+            question_id = _required(args, "question_id")
+            proposal = ledger.propose_resolution(question_id)
+            return tool_result(success=True, question_id=question_id, resolution_proposal=proposal)
 
         if action == "set_decision":
             question_id = _required(args, "question_id")
@@ -1158,6 +1437,32 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             ledger.update_question_config(question_id, **kwargs)
             config = ledger.resolve_question_config(question_id)
             return tool_result(success=True, config=config)
+
+        if action == "keep_fresh":
+            # One verb for "keep this current": set the question's refresh cadence AND
+            # idempotently ensure the nightly self-check cron, then report both.
+            question_id = _required(args, "question_id")
+            cadence = str(args.get("cadence") or "daily").strip()
+            ledger.update_question_config(question_id, review_cadence=cadence)
+            from forecasting.scheduler import ensure_default_routines
+
+            db_path = getattr(ledger, "db_path", None)
+            routines = ensure_default_routines(
+                db_path=str(db_path) if db_path else None, force=True
+            )
+            # ensure_default_routines already tells us everything: it INSTALLED the
+            # cron this call (created) or found it already PRESENT — no separate
+            # pre-check needed.
+            cron_state = "installed" if routines.get("created") else "present"
+            return tool_result(
+                success=True,
+                question_id=question_id,
+                cadence=cadence,
+                cron=cron_state,
+                message=f"this question refreshes {cadence}; nightly cron {cron_state}",
+                config=ledger.resolve_question_config(question_id),
+                default_routines=routines,
+            )
 
         if action == "rename_question":
             question_id = _required(args, "question_id")

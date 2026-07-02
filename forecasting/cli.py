@@ -9,7 +9,7 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Sequence
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -686,6 +686,28 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         action="store_true",
         help="Validate and commit the --spec (refuses on error-severity issues)",
     )
+    onboard_parser.add_argument(
+        "--auto",
+        action="store_true",
+        help=(
+            "Accept every recommended default, commit the question, then autonomously "
+            "chain research -> base_rate -> update through the gated agent — a single "
+            "vague sentence yields a complete, committed forecast"
+        ),
+    )
+    onboard_parser.add_argument("--model", help="--auto: model the pipeline stages run on")
+    onboard_parser.add_argument("--provider", help="--auto: provider the pipeline stages run on")
+    onboard_parser.add_argument(
+        "--max-iterations", type=int, default=12, help="--auto: agent tool-calling budget per stage"
+    )
+    onboard_parser.add_argument(
+        "--force-new",
+        action="store_true",
+        help=(
+            "--auto: commit a NEW question even when a strong near-duplicate exists "
+            "(default routes the refresh onto the existing question instead of forking a rival)"
+        ),
+    )
     onboard_parser.add_argument("--json", action="store_true", help="Emit the proposed spec + issues + clarifications as JSON")
     onboard_parser.set_defaults(_forecast_handler=_cmd_onboard)
 
@@ -973,6 +995,20 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     refresh_parser.add_argument("--provider")
     refresh_parser.add_argument("--max-iterations", type=int, default=12)
     refresh_parser.set_defaults(_forecast_handler=_cmd_refresh)
+
+    freshen_parser = forecast_sub.add_parser(
+        "freshen",
+        help="Put a forecast on a refresh cadence + ensure the nightly self-check cron (one verb)",
+    )
+    freshen_parser.add_argument("id", nargs="?", help="Question id (or --all for every active question)")
+    freshen_parser.add_argument("--all", action="store_true", help="Freshen every active question")
+    freshen_parser.add_argument(
+        "--cadence",
+        default="daily",
+        help="Review cadence (daily/weekly, 'every 2 days', '12h', ...). Default daily.",
+    )
+    freshen_parser.add_argument("--json", action="store_true")
+    freshen_parser.set_defaults(_forecast_handler=_cmd_freshen)
 
     ingest_parser = forecast_sub.add_parser(
         "ingest",
@@ -2419,18 +2455,39 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "install-cron",
         help="Install a no-agent cron bridge for forecast self-checks",
     )
-    schedule_cron.add_argument("--schedule", default="every 1h")
+    schedule_cron.add_argument("--schedule", default="0 8 * * *")
     schedule_cron.add_argument("--name", default="Forecast self-check")
     schedule_cron.add_argument("--deliver", default="local")
     schedule_cron.add_argument("--profile")
-    schedule_cron.add_argument("--auto-score", action="store_true")
-    schedule_cron.add_argument("--auto-postmortem", action="store_true")
+    # Feature flags default ON so an operator-installed cron is as capable as the
+    # auto-installed nightly routine (ensure_default_routines) — a bare install-cron
+    # must not silently downgrade the desk's learning loop. `--no-*` opts out; the
+    # positive flags are kept as no-ops for backward compatibility.
+    schedule_cron.add_argument("--auto-score", dest="auto_score", action="store_true")
+    schedule_cron.add_argument("--no-auto-score", dest="auto_score", action="store_false",
+                               help="Do NOT auto-score resolved questions in the nightly sweep")
+    schedule_cron.add_argument("--auto-postmortem", dest="auto_postmortem", action="store_true")
+    schedule_cron.add_argument("--no-auto-postmortem", dest="auto_postmortem", action="store_false",
+                               help="Do NOT auto-write postmortems in the nightly sweep")
     schedule_cron.add_argument(
         "--thesis-aggregate",
+        dest="thesis_aggregate",
         action="store_true",
         help="Re-aggregate all theses (+ entity suitabilities) after each member review sweep",
     )
-    schedule_cron.set_defaults(_forecast_handler=_cmd_schedule_install_cron)
+    schedule_cron.add_argument("--no-thesis-aggregate", dest="thesis_aggregate", action="store_false",
+                               help="Do NOT re-aggregate theses in the nightly sweep")
+    schedule_cron.add_argument("--synthesize-lessons", dest="synthesize_lessons", action="store_true",
+                               help="Synthesize calibration lessons after the nightly sweep")
+    schedule_cron.add_argument("--no-synthesize-lessons", dest="synthesize_lessons", action="store_false",
+                               help="Do NOT synthesize calibration lessons in the nightly sweep")
+    schedule_cron.set_defaults(
+        _forecast_handler=_cmd_schedule_install_cron,
+        auto_score=True,
+        auto_postmortem=True,
+        thesis_aggregate=True,
+        synthesize_lessons=True,
+    )
 
     automode_cron = schedule_sub.add_parser(
         "automode-cron",
@@ -3499,6 +3556,17 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         triage_gate = None
 
+    # SLICE S4 fold: cron health. Is the recurrence spine actually FIRING? Read the
+    # installed forecast cron jobs' last_status/last_error/last_run_at and flag
+    # errored or missed (last_run_at older than 2x cadence) jobs. Read-only +
+    # fail-safe, like every probe above.
+    try:
+        from forecasting.scheduler import forecast_cron_health
+
+        cron_health = forecast_cron_health()
+    except Exception:
+        cron_health = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3507,6 +3575,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "tester_handoff_ready": pilot_ready,
         "claim_live_superforecasting": evidence_status.get("can_claim_live_superforecasting"),
         "triage_gate": triage_gate,
+        "cron_health": cron_health,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
@@ -3936,7 +4005,13 @@ def _cmd_new(args: argparse.Namespace) -> None:
 
 
 def _cmd_onboard(args: argparse.Namespace) -> None:
-    from forecasting.question_spec import recommended_clarifications, spec_from_dict
+    from forecasting.question_spec import (
+        apply_recommended_defaults,
+        recommended_clarifications,
+        spec_from_dict,
+        spec_quality,
+        suggest_resolution_rule,
+    )
 
     ledger = _ledger(args)
     if args.spec:
@@ -3948,6 +4023,100 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
         raise SystemExit("forecast onboard needs a prompt or --spec FILE")
 
     spec = spec_from_dict(raw)
+
+    if getattr(args, "auto", False):
+        # Accept-defaults autonomous entry point: a single vague sentence becomes a
+        # complete, committed, self-refreshing forecast. Apply the recommended
+        # default of every gap/error clarification, commit the whole fan-out, then
+        # chain research -> base_rate -> update through the SAME gated agent path a
+        # manual run uses (no gate is weakened — error-severity issues still block
+        # the commit below via spec.commit()).
+        spec, applied = apply_recommended_defaults(spec)
+        errs = [i for i in spec.errors()]
+        if errs:
+            # accept-defaults never fabricates past an un-defaultable error (e.g. an
+            # unscoreable resolution criteria) — the commit gate is unchanged.
+            print("cannot auto-forecast — fix these first:")
+            for e in errs:
+                print(f"  [error] {e.field}: {e.message}" + (f"  ({e.fix})" if e.fix else ""))
+            raise SystemExit(1)
+
+        # Duplicate routing: two lazy prompts of the same sentence must REFRESH the
+        # existing question, not fork a rival. Reuse the tool's duplicate ranker — a
+        # strong near-duplicate (score >= the warn threshold) routes the SAME stage
+        # chain onto the existing id unless --force-new is set.
+        from tools.forecasting_tool import _DUPLICATE_WARN_SCORE, _find_possible_duplicates
+
+        duplicates = _find_possible_duplicates(ledger, spec.title)
+        top = duplicates[0] if duplicates else None
+        strong_dup = top is not None and top["score"] >= _DUPLICATE_WARN_SCORE
+        force_new = getattr(args, "force_new", False)
+        if strong_dup and not force_new:
+            qid = top["id"]
+            print(
+                f"routed to existing forecast {qid} (\"{top['title']}\") — refreshing that "
+                "instead of forking a rival (pass --force-new to create a new question)"
+            )
+        else:
+            if strong_dup:
+                print(
+                    f"warning: you already track {top['id']} (\"{top['title']}\") — "
+                    "committing a new rival question anyway (--force-new)"
+                )
+            result = spec.commit(ledger)
+            qid = result["question_id"]
+            print(f"created forecast question {qid} (accepted {len(applied)} defaults)")
+            print(f"  watched_sources: {len(result['watched_sources'])}")
+            print(f"  reference_classes: {len(result['reference_classes'])}")
+            if result["readiness_gaps"]:
+                print(f"  readiness gaps (waived): {', '.join(g['field'] for g in result['readiness_gaps'])}")
+            # Feed the spine: an auto-path question usually commits with ZERO watched
+            # sources, so the deterministic scheduled refresh has nothing to pull.
+            # Auto-attach the top recommended watches via the SAME apply seam
+            # `forecast sources --apply-watch` uses. Fail-open — a planner hiccup must
+            # never block the forecast.
+            if not spec.watched_sources and spec.allow_evidence_gathering:
+                attached: list[dict[str, Any]] = []
+                try:
+                    question = ledger.get_question(qid)
+                    recs = plan_sources_for_question(question)
+                    candidates = [r for r in recs if not r.requires_user_source and r.watch_source][:3]
+                    attached, _ = _apply_source_plan_watches(ledger, qid, candidates)
+                except Exception:
+                    attached = []
+                if attached:
+                    print(f"  attached {len(attached)} watched source(s) so this refreshes itself:")
+                    for row in attached:
+                        print(f"    {row['source_type']} {row['source']}")
+
+        def _progress(stage: str, outcome: dict[str, Any]) -> None:
+            mark = "committed" if outcome.get("committed") else outcome.get("status", "ran")
+            detail = outcome.get("detail")
+            line = f"  stage {stage:<10} [{mark}]"
+            if outcome.get("forecast_id"):
+                line += f" -> {outcome['forecast_id']}"
+            if detail:
+                line += f"  {detail}"
+            print(line)
+
+        print("chaining pipeline stages:")
+        chain = run_forecast_chain(
+            ledger,
+            qid,
+            model=args.model,
+            provider=args.provider,
+            max_iterations=args.max_iterations,
+            on_stage=_progress,
+        )
+        if chain["committed"] and chain["snapshot"]:
+            snap = chain["snapshot"]
+            print(f"committed forecast {snap['forecast_id']}: {snap['probability_or_distribution']}")
+        elif chain["update_blockers"]:
+            print(f"forecast NOT committed — update still gated by: {', '.join(chain['update_blockers'])}")
+        else:
+            print("forecast NOT committed — the agent declined to commit a new snapshot")
+        return
+
     issues = spec.validate()
 
     if args.commit:
@@ -3973,6 +4142,8 @@ def _cmd_onboard(args: argparse.Namespace) -> None:
                     "issues": [i.to_dict() for i in issues],
                     "recommended_clarifications": recommended_clarifications(spec),
                     "committable": spec.is_committable(),
+                    "spec_quality": spec_quality(spec),
+                    "suggested_resolution_rule": suggest_resolution_rule(spec),
                 },
                 indent=2,
             )
@@ -8638,6 +8809,97 @@ def _run_update_agent(
     return agent.run_conversation(messages[1].content, system_message=messages[0].content)
 
 
+# The default stage chain a lazy prompter's "just forecast this" runs through:
+# gather evidence (research) → set an outside view (base_rate) → commit (update).
+# `parse` is skipped — commit_spec already structured the question — and the later
+# resolve/postmortem stages only run once the world resolves.
+AUTO_FORECAST_STAGES: tuple[str, ...] = ("research", "base_rate", "update")
+
+
+def _snapshot_summary(snapshot: Any) -> dict[str, Any] | None:
+    """Compact, JSON-safe view of a committed snapshot for chain results."""
+    if snapshot is None:
+        return None
+    return {
+        "forecast_id": getattr(snapshot, "forecast_id", None),
+        "question_id": getattr(snapshot, "question_id", None),
+        "probability_or_distribution": getattr(snapshot, "probability_or_distribution", None),
+        "rationale": getattr(snapshot, "rationale", None),
+        "created_at": getattr(snapshot, "created_at", None),
+    }
+
+
+def run_forecast_chain(
+    ledger: ForecastLedger,
+    question_id: str,
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+    max_iterations: int = 12,
+    stages: Sequence[str] = AUTO_FORECAST_STAGES,
+    commit_policy: str | None = "commit_material",
+    on_stage: Callable[[str, dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    """Drive one question through a sequence of pipeline stages, each via the same
+    gated update agent (:func:`_run_update_agent`) a manual ``forecast agent --stage S``
+    run uses. This is ORCHESTRATION ONLY — every stage runs the identical
+    protocol/toolset/commit path, so the panel gate, analyst brief, and
+    scheduled-review side-effects fire unchanged; nothing here weakens or bypasses a
+    gate. The chain is what turns a lazy prompter's one committed question row into a
+    researched, base-rated, committed forecast.
+
+    A stage that raises is captured (``status="error"``) and the chain CONTINUES: a
+    flaky research stage must not abort the run, and the update stage's own commit
+    gate still refuses if prerequisites are genuinely missing (so a skipped/failed
+    prerequisite surfaces as an un-committed, still-gated result — never a fabricated
+    number). ``on_stage(stage, outcome)`` fires after each stage for progress
+    reporting.
+
+    Returns ``{question_id, stages:[per-stage outcome], committed, snapshot,
+    update_ready, update_blockers}``.
+    """
+    stage_results: list[dict[str, Any]] = []
+    for stage in stages:
+        prior = ledger.get_current_snapshot(question_id)
+        outcome: dict[str, Any] = {"stage": stage, "status": "ran", "committed": False}
+        try:
+            result = _run_update_agent(
+                ledger,
+                question_id,
+                model=model,
+                provider=provider,
+                max_iterations=max_iterations,
+                stage=stage,
+                commit_policy=commit_policy,
+            )
+        except Exception as exc:  # one bad stage must not abort the chain
+            outcome["status"] = "error"
+            outcome["detail"] = str(exc)[:200]
+        else:
+            post = ledger.get_current_snapshot(question_id)
+            committed = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
+            outcome["committed"] = committed
+            if committed:
+                outcome["forecast_id"] = post.forecast_id
+            response = result.get("final_response") if isinstance(result, dict) else None
+            if response:
+                outcome["detail"] = _truncate(str(response).strip(), 200)
+        stage_results.append(outcome)
+        if on_stage is not None:
+            on_stage(stage, outcome)
+
+    final = ledger.get_current_snapshot(question_id)
+    status = build_pipeline_status(ledger, question_id)
+    return {
+        "question_id": question_id,
+        "stages": stage_results,
+        "committed": any(s.get("committed") for s in stage_results),
+        "snapshot": _snapshot_summary(final),
+        "update_ready": status.get("update_ready"),
+        "update_blockers": status.get("update_blockers") or [],
+    }
+
+
 def _cmd_agent(args: argparse.Namespace) -> None:
     if args.dry_run:
         messages = build_protocol_messages(_ledger(args), args.id, stage=args.stage)
@@ -10575,16 +10837,53 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
             if question is None or getattr(question, "status", None) != "active":
                 results.append({"question_id": qid, "status": "skipped", "detail": "not an active question"})
                 continue
+            counted = False  # whether this question already consumed one of the max_q session budgets
             if not force:
                 pstatus = build_pipeline_status(ledger, qid)
                 if not pstatus.get("update_ready", True):
-                    blockers = ", ".join(pstatus.get("update_blockers") or []) or "prerequisites missing"
-                    results.append({"question_id": qid, "status": "skipped", "detail": f"update gated: {blockers}"})
-                    continue
+                    # BOOTSTRAP instead of skip: drive the missing prerequisite
+                    # stages (research, then base_rate) through the SAME gated agent
+                    # chain, then re-check the gate. This is what lets the cron sweep
+                    # re-forecast a FRESH question an operator just dropped in — not
+                    # only ones hand-researched already. Skip stays the honest
+                    # fallback when bootstrap fails to satisfy the gate.
+                    blockers = pstatus.get("update_blockers") or []
+                    prereq_stages = [s for s in ("research", "base_rate") if s in blockers]
+                    errored: list[str] = []
+                    if prereq_stages:
+                        # A bootstrap runs up to 2 real, multi-minute LLM stages, so it
+                        # must COUNT against --max-questions the moment it starts —
+                        # otherwise a batch of never-ready questions burns 2N uncounted
+                        # sessions (each hits `continue` below without incrementing).
+                        # Counting here (not after) bounds the expensive work honestly;
+                        # `counted` then suppresses the pre-update increment so a
+                        # question that bootstraps AND proceeds to update is charged once.
+                        processed += 1
+                        counted = True
+                        # run_forecast_chain captures a raising stage per-stage (it
+                        # never re-raises), so the sweep is not aborted by a flaky
+                        # bootstrap; a still-closed gate below is the honest fallback.
+                        boot = run_forecast_chain(
+                            ledger, qid, model=model, provider=provider,
+                            max_iterations=max_iter, stages=prereq_stages,
+                            commit_policy="commit_material",
+                        )
+                        errored = [s["stage"] for s in boot["stages"] if s.get("status") == "error"]
+                        pstatus = build_pipeline_status(ledger, qid)
+                    if not pstatus.get("update_ready", True):
+                        still = ", ".join(pstatus.get("update_blockers") or []) or "prerequisites missing"
+                        detail = f"update gated after bootstrap: {still}"
+                        if errored:
+                            detail += f" (bootstrap stage error: {', '.join(errored)})"
+                        results.append({"question_id": qid, "status": "skipped", "detail": detail})
+                        continue
             prior = ledger.get_current_snapshot(qid)
             # Count BEFORE the agent runs: the cap bounds expensive multi-minute LLM
             # sessions, so a question that ran but declined to commit still counts.
-            processed += 1
+            # A question that already paid for its budget in the bootstrap above
+            # (counted=True) is not charged twice.
+            if not counted:
+                processed += 1
             try:
                 _run_update_agent(
                     ledger, qid, model=model, provider=provider,
@@ -10980,9 +11279,10 @@ def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:
         deliver=args.deliver,
         profile=args.profile,
         db_path=args.db,
-        auto_score=args.auto_score,
-        auto_postmortem=args.auto_postmortem,
-        thesis_aggregate=getattr(args, "thesis_aggregate", False),
+        auto_score=getattr(args, "auto_score", True),
+        auto_postmortem=getattr(args, "auto_postmortem", True),
+        thesis_aggregate=getattr(args, "thesis_aggregate", True),
+        synthesize_lessons=getattr(args, "synthesize_lessons", True),
     )
     print(f"cron_job: {job['id']}")
     print(f"name: {job['name']}")
@@ -11933,6 +12233,50 @@ def _cmd_refresh(args: argparse.Namespace) -> None:
             pass
     else:
         print("(preview only — not committed)")
+
+
+def _cmd_freshen(args: argparse.Namespace) -> None:
+    """One verb: put a forecast (or all) on a refresh cadence AND ensure the nightly
+    self-check cron. Answers the lazy prompter's implicit ask — "keep this current"."""
+    ledger = _ledger(args)
+    cadence = (args.cadence or "daily").strip()
+    if args.all:
+        targets = [q.id for q in ledger.list_questions(status="active")]
+    elif args.id:
+        targets = [_resolve_question_id(ledger, args.id)]
+    else:
+        print("freshen: pass a question id or --all", file=sys.stderr)
+        raise SystemExit(2)
+
+    updated: list[str] = []
+    errors: list[str] = []
+    for qid in targets:
+        try:
+            ledger.update_question_config(qid, review_cadence=cadence)
+            updated.append(qid)
+        except Exception as exc:  # a bad cadence / missing question must not abort the sweep
+            errors.append(f"{qid}: {exc}")
+
+    # Ensure the nightly self-check cron (force past the auto_install config gate —
+    # this is explicit operator intent). Idempotent: silent when already present.
+    from forecasting.scheduler import default_routines_installed, ensure_default_routines
+
+    was_present = default_routines_installed()
+    routines = ensure_default_routines(db_path=getattr(args, "db", None), force=True)
+    cron_state = "present" if was_present else ("installed" if routines.get("created") else "present")
+
+    if getattr(args, "json", False):
+        print(json.dumps(
+            {"updated": updated, "errors": errors, "cadence": cadence,
+             "cron": cron_state, "routines": routines},
+            indent=2, default=str,
+        ))
+        return
+    for qid in updated:
+        print(f"{qid}: refreshes {cadence}")
+    for err in errors:
+        print(f"  skipped {err}", file=sys.stderr)
+    print(f"nightly self-check cron {cron_state}")
 
 
 def _cmd_autopilot_run(args: argparse.Namespace) -> None:

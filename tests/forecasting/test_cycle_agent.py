@@ -61,18 +61,68 @@ def _args(tmp_path, **over):
     return argparse.Namespace(**base)
 
 
-def test_runner_skips_inactive_and_gated_without_invoking_agent(tmp_path, monkeypatch):
+def test_runner_bootstraps_prereqs_then_skips_when_gate_stays_closed(tmp_path, monkeypatch):
     import forecasting.cli as cli
     lg = _ledger(tmp_path)
     q = lg.create_question(title="Will the metric exceed target by the close date?", resolution_criteria="Resolves yes if it exceeds target; otherwise no.")
-    calls: list[str] = []
-    monkeypatch.setattr(cli, "_run_update_agent", lambda ledger, qid, **kw: calls.append(qid) or {})
+    stages: list[str] = []
+    # A no-op stub that never lands research/base-rate artifacts: bootstrap runs but
+    # the gate stays closed, so the runner falls back to skip (never forcing update).
+    monkeypatch.setattr(cli, "_run_update_agent", lambda ledger, qid, *, stage="update", **kw: stages.append(stage) or {})
     runner = cli._build_cycle_reforecast_runner(_args(tmp_path, force=False))
     res = {r["question_id"]: r for r in runner([q.id, "fq_missing"])}
-    # a fresh question has no research/base-rate artifacts -> update stage is gated
+    # a fresh question has no research/base-rate artifacts -> update stage is gated,
+    # so the runner BOOTSTRAPS the missing prerequisite stages then re-checks the gate
     assert res[q.id]["status"] == "skipped" and "gated" in res[q.id]["detail"]
     assert res["fq_missing"]["status"] == "skipped"
-    assert calls == []  # the agent is never invoked for a gated/invalid question
+    assert stages == ["research", "base_rate"]  # bootstrapped prereqs, never the gated update
+    assert "update" not in stages
+
+
+def test_runner_bootstrap_unlocks_gate_then_updates(tmp_path, monkeypatch):
+    import forecasting.cli as cli
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Will the metric exceed target by the close date?", resolution_criteria="Resolves yes if it exceeds target; otherwise no.")
+    stages: list[str] = []
+
+    def fake_agent(ledger, qid, *, stage="update", **kw):
+        stages.append(stage)
+        if stage == "research":
+            ledger.add_evidence(question_id=qid, source_or_note="prior prints", available_at="2026-01-01T00:00:00Z")
+        elif stage == "base_rate":
+            ledger.add_reference_class(question_id=qid, name="recent", inclusion_criteria="last 12", base_rate=0.4)
+        elif stage == "update":
+            ledger.create_snapshot(question_id=qid, probability_or_distribution=0.42, rationale="bootstrapped commit", require_panel=False)
+        return {}
+
+    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    runner = cli._build_cycle_reforecast_runner(_args(tmp_path, force=False))
+    res = {r["question_id"]: r for r in runner([q.id])}
+    # bootstrap satisfied the gate, so the runner proceeded to a committed update
+    assert res[q.id]["status"] == "committed"
+    assert stages == ["research", "base_rate", "update"]
+    assert lg.get_current_snapshot(q.id) is not None
+
+
+def test_runner_bootstrap_failure_falls_back_to_skip(tmp_path, monkeypatch):
+    import forecasting.cli as cli
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Will the metric exceed target by the close date?", resolution_criteria="Resolves yes if it exceeds target; otherwise no.")
+    stages: list[str] = []
+
+    def boom(ledger, qid, *, stage="update", **kw):
+        stages.append(stage)
+        raise RuntimeError("research stage blew up")
+
+    monkeypatch.setattr(cli, "_run_update_agent", boom)
+    runner = cli._build_cycle_reforecast_runner(_args(tmp_path, force=False))
+    res = {r["question_id"]: r for r in runner([q.id])}
+    # a bootstrap whose stages raise never satisfies the gate, so the runner falls
+    # back to skip (never forcing update) and surfaces the failing stage in detail
+    assert res[q.id]["status"] == "skipped"
+    assert "gated after bootstrap" in res[q.id]["detail"]
+    assert "bootstrap stage error" in res[q.id]["detail"]
+    assert stages == ["research", "base_rate"]  # both prereqs attempted; update never run
 
 
 def test_force_invokes_agent_past_the_gate(tmp_path, monkeypatch):
@@ -119,6 +169,39 @@ def test_max_questions_caps_processed_runs_not_just_commits(tmp_path, monkeypatc
     res = {r["question_id"]: r for r in runner([q1.id, q2.id])}
     assert len(calls) == 1  # the cap bounds expensive LLM runs to 1, even with no commits
     assert res[q2.id]["status"] == "skipped" and "max-questions" in res[q2.id]["detail"]
+
+
+def test_max_questions_caps_bootstrap_sessions_for_never_ready_batch(tmp_path, monkeypatch):
+    import forecasting.cli as cli
+    lg = _ledger(tmp_path)
+    qs = [
+        lg.create_question(
+            title=f"Question {i} that exceeds target by the close date?",
+            resolution_criteria="Resolves yes if it exceeds target; otherwise no.",
+        )
+        for i in range(3)
+    ]
+    bootstrapped: list[str] = []
+
+    # A no-op stub that never lands research/base-rate artifacts: every fresh question
+    # stays gated AFTER bootstrap, so each one runs 2 real (research+base_rate) LLM
+    # sessions. Without the cap bounding BOOTSTRAP sessions (not just committed
+    # updates), all 3 would burn 2 sessions each; the cap must stop at 2 questions.
+    def fake_agent(ledger, qid, *, stage="update", **kw):
+        bootstrapped.append(qid)
+        return {}
+
+    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    runner = cli._build_cycle_reforecast_runner(_args(tmp_path, force=False, max_questions=2))
+    res = {r["question_id"]: r for r in runner([q.id for q in qs])}
+
+    # exactly 2 distinct questions were bootstrapped; the 3rd hit the cap and never ran
+    assert len(set(bootstrapped)) == 2
+    assert qs[2].id not in bootstrapped
+    assert res[qs[2].id]["status"] == "skipped" and "max-questions" in res[qs[2].id]["detail"]
+    # the two that ran are honestly reported as still-gated after their bootstrap
+    for q in qs[:2]:
+        assert res[q.id]["status"] == "skipped" and "gated after bootstrap" in res[q.id]["detail"]
 
 
 def test_one_failure_does_not_abort_the_sweep(tmp_path, monkeypatch):

@@ -4,15 +4,23 @@ from __future__ import annotations
 
 import pytest
 
+import datetime as _dt
+
 from forecasting.ledger import ForecastLedger
 from forecasting.models import ValidationError
 from forecasting.question_spec import (
     QuestionSpec,
     ReferenceClassSpec,
+    ResolutionRuleSpec,
     UpdateTriggerSpec,
     WatchedSourceSpec,
+    apply_recommended_defaults,
+    infer_close_time,
+    recommended_clarifications,
     spec_from_dict,
+    spec_quality,
     spec_to_dict,
+    suggest_resolution_rule,
 )
 
 
@@ -26,6 +34,7 @@ def _good_spec(**overrides) -> QuestionSpec:
     base = dict(
         title="US CPI YoY for the June 2026 print",
         resolution_criteria="Resolves yes if the BLS June 2026 CPI YoY exceeds 3.0 percent.",
+        close_time="2026-07-15T00:00:00Z",
         decision_owner="me",
         action_threshold=">=70% act",
         update_triggers=(UpdateTriggerSpec(mechanism="CPI print", operator=">", threshold=3.0, source_ref="fred:CPIAUCSL"),),
@@ -152,3 +161,191 @@ def test_commit_refuses_unscoreable_spec(tmp_path):
         spec.commit(ledger)
     # nothing was written
     assert ledger.list_questions() == [] or all(q.title != spec.title for q in ledger.list_questions())
+
+
+# ── deadline required-or-inferred ──────────────────────────────────────────────
+def test_missing_deadline_is_a_gap_not_an_error():
+    spec = _good_spec(close_time=None, resolution_time=None)
+    assert spec.errors() == []  # gap does not block commit
+    gaps = {g.field for g in spec.readiness_gaps()}
+    assert "close_time" in gaps
+
+
+def test_deadline_gap_waived_by_resolution_time():
+    spec = _good_spec(close_time=None, resolution_time="2026-08-01T00:00:00Z")
+    gaps = {g.field for g in spec.readiness_gaps()}
+    assert "close_time" not in gaps
+
+
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ("Will X ship by September?", "-09-"),           # bare month -> next occurrence
+        ("Metric in 2027", "2027-12-31"),                 # bare year
+        ("Result by Q4 2026", "2026-12-31"),              # quarter
+        ("Will it land by September 2026?", "2026-09-30"),  # month + year
+        ("Happens within the next 12 months?", "-"),      # relative window (just non-None)
+    ],
+)
+def test_infer_close_time_parses_horizons(title, expected):
+    now = _dt.datetime(2026, 6, 1, tzinfo=_dt.timezone.utc)
+    out = infer_close_time(title, "", now=now)
+    assert out is not None
+    assert expected in out
+
+
+def test_infer_close_time_ignores_modal_may():
+    # "may" as a modal verb must not be read as the month May.
+    now = _dt.datetime(2026, 6, 1, tzinfo=_dt.timezone.utc)
+    assert infer_close_time("The tally may exceed 50 percent", "") is None
+
+
+def test_infer_close_time_explicit_year_beats_incidental_bare_month():
+    # An explicit "in 2027" must NOT be shadowed by an incidental month name in the
+    # criteria ("...the September legislative calendar"), which would otherwise commit
+    # a wrong (often past) deadline on the accept-defaults path.
+    now = _dt.datetime(2026, 6, 1, tzinfo=_dt.timezone.utc)
+    out = infer_close_time(
+        "Will the bill pass in 2027?",
+        "Tracked via the September legislative calendar.",
+        now=now,
+    )
+    assert out == "2027-12-31"
+
+
+def test_deadline_clarification_carries_inferred_default():
+    spec = _good_spec(close_time=None, resolution_time=None, resolution_criteria="Resolves yes if it ships by Q4 2026.")
+    prompts = {p["field"]: p for p in recommended_clarifications(spec)}
+    assert "close_time" in prompts
+    assert "recommended" in prompts["close_time"]["choices"][0]
+    assert "2026-12-31" in prompts["close_time"]["choices"][0]
+
+
+# ── quality score ──────────────────────────────────────────────────────────────
+def test_spec_quality_full_for_clean_spec():
+    q = spec_quality(_good_spec())
+    assert q["score"] == 100
+    assert q["penalty_total"] == 0
+
+
+def test_spec_quality_penalizes_issues_and_clamps():
+    spec = QuestionSpec(title="forecast", resolution_criteria="tbd")
+    q = spec_quality(spec)
+    assert 0 <= q["score"] < 100
+    assert q["counts"]["error"] >= 1
+    assert q["breakdown"]  # itemized penalties
+
+
+# ── resolution rule (auto-resolver reachability) ───────────────────────────────
+def test_resolution_rule_validates_and_commits(tmp_path):
+    ledger = _make_ledger(tmp_path)
+    spec = _good_spec(
+        resolution_rule=ResolutionRuleSpec(field="yoy_percent", comparator=">=", threshold=3.0, source_role="resolver"),
+    )
+    assert spec.errors() == []
+    result = spec.commit(ledger)
+    assert result["resolution_rule"]["field"] == "yoy_percent"
+    q = ledger.get_question(result["question_id"])
+    assert q.metadata["resolution_rule"]["comparator"] == ">="
+
+
+def test_bad_resolution_rule_is_an_error():
+    spec = _good_spec(resolution_rule=ResolutionRuleSpec(field="", comparator="~", threshold=None))
+    fields = {e.field for e in spec.errors()}
+    assert "resolution_rule" in fields
+
+
+def test_bad_resolution_rule_source_role_is_an_error():
+    spec = _good_spec(resolution_rule=ResolutionRuleSpec(field="v", comparator=">=", threshold=1.0, source_role="bogus"))
+    assert any(e.field == "resolution_rule" and "source_role" in e.message for e in spec.errors())
+
+
+def test_bad_resolution_rule_resolver_is_an_error_refused_up_front(tmp_path):
+    # An unknown resolver must be caught at spec-time (mirroring source_role), not
+    # raise MID-COMMIT after the question row + watches are already written.
+    spec = _good_spec(
+        resolution_rule=ResolutionRuleSpec(field="v", comparator=">=", threshold=1.0, resolver="bogus"),
+    )
+    assert any(e.field == "resolution_rule" and "resolver" in e.message for e in spec.errors())
+    assert spec.is_committable() is False
+    ledger = _make_ledger(tmp_path)
+    with pytest.raises(ValidationError):
+        spec.commit(ledger)
+    # commit refused up-front — no half-created question row exists
+    assert ledger.list_questions() == []
+
+
+def test_suggest_resolution_rule_seeds_from_trigger():
+    spec = _good_spec()  # binary + watched source + executable trigger
+    suggestion = suggest_resolution_rule(spec)
+    assert suggestion is not None
+    assert suggestion["comparator"] == ">"
+    assert suggestion["threshold"] == 3.0
+
+
+def test_suggest_resolution_rule_none_when_rule_present_or_no_sources():
+    assert suggest_resolution_rule(_good_spec(watched_sources=())) is None
+    with_rule = _good_spec(resolution_rule=ResolutionRuleSpec(field="v", comparator=">=", threshold=1.0))
+    assert suggest_resolution_rule(with_rule) is None
+
+
+def test_resolution_rule_round_trips_through_dict():
+    spec = _good_spec(resolution_rule=ResolutionRuleSpec(field="v", comparator="<", threshold=2.5, source_role="consensus"))
+    again = spec_from_dict(spec_to_dict(spec))
+    assert again == spec
+
+
+# ── accept-defaults onboarding ─────────────────────────────────────────────────
+def test_apply_recommended_defaults_fills_gaps_in_one_shot():
+    # A casual ask: binary (defaults) but no deadline / owner / action threshold.
+    spec = QuestionSpec(
+        title="Will the Fed cut in September 2026?",
+        resolution_criteria="Resolves yes if the FOMC lowers the target rate at or before its September 2026 meeting; otherwise no.",
+    )
+    assert spec.readiness_gaps()  # gaps exist before defaults are applied
+
+    new_spec, applied = apply_recommended_defaults(spec)
+
+    fields = {a["field"] for a in applied}
+    assert {"close_time", "decision_owner", "action_threshold"} <= fields
+    # concrete values landed on the spec
+    assert new_spec.close_time == "2026-09-30"  # inferred from "September 2026"
+    assert new_spec.decision_owner == "you"
+    assert new_spec.action_threshold == ">=70% act"
+    # the decision-readiness gaps those fields drove are now closed
+    closed = {g.field for g in new_spec.readiness_gaps()}
+    assert "close_time" not in closed and "decision_owner" not in closed and "action_threshold" not in closed
+    # the auto-applied answers are recorded for the audit trail
+    assert any(c.get("auto_default") for c in new_spec.clarifications)
+
+
+def test_apply_recommended_defaults_never_fabricates_past_an_error():
+    # An unscoreable criteria is a free-text (no-recommended) prompt — defaults must
+    # NOT invent an auditable condition, so the error survives and still blocks.
+    spec = QuestionSpec(title="forecast", resolution_criteria="tbd")
+    new_spec, _applied = apply_recommended_defaults(spec)
+    error_fields = {e.field for e in new_spec.errors()}
+    assert "resolution_criteria" in error_fields
+    assert not new_spec.is_committable()
+
+
+def test_apply_recommended_defaults_preserves_explicit_choices():
+    # An already-complete spec has no gap/error clarifications to default, so nothing
+    # is applied and the explicit values are untouched.
+    spec = _good_spec()
+    new_spec, applied = apply_recommended_defaults(spec)
+    assert applied == []
+    assert new_spec == spec
+
+
+def test_apply_recommended_defaults_falls_back_to_end_of_year_without_horizon():
+    now = _dt.datetime(2026, 3, 1, tzinfo=_dt.timezone.utc)
+    spec = QuestionSpec(
+        title="Will the merger close?",
+        resolution_criteria="Resolves yes if the acquisition formally completes; otherwise no.",
+    )
+    # no horizon phrase -> infer_close_time returns None; default is end of THIS year.
+    assert infer_close_time(spec.title, spec.resolution_criteria, now=now) is None
+    new_spec, applied = apply_recommended_defaults(spec)
+    close = next(a for a in applied if a["field"] == "close_time")
+    assert close["value"].endswith("-12-31")

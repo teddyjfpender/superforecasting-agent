@@ -24,6 +24,31 @@ watched sources is one that re-runs can actually refresh (see
 
 This is a **plan-before-commit** loop, single-threaded, on a typed `QuestionSpec`.
 
+## 0. Fast path — a vague/casual ask? Accept the defaults, don't interrogate
+
+Every clarification carries a recommended default, so a lazy one-liner ("track
+whether the Fed cuts in September", "keep an eye on CPI") does **not** need an
+eight-question interview. Pass `accept_defaults=true` to `propose_spec` /
+`commit_spec`:
+
+```
+forecast_ledger commit_spec { spec: <your best-effort draft>, accept_defaults: true }
+```
+
+It auto-applies the first `(recommended)` choice of every gap/error clarification
+(the S1-inferred `close_time`, `decision_owner=you`, action threshold ≥70%, the
+binary outcome shape) into `spec.clarifications` and commits in **one shot**. Only
+**error-severity** issues still surface and block — a genuinely unscoreable
+title/criteria is refused just as strictly as on the slow path (nothing is
+fabricated to slip past the gate). A `full`-`autonomy` spec implies
+`accept_defaults` automatically.
+
+The result carries an `applied_defaults` list. Echo it as a **single line**, e.g.
+"created with these defaults — deadline 2026-09-30, owner you, act ≥70% — say the
+word to change any", then proceed to run the first forecast (see the last
+section). Reserve the full curation loop below for high-stakes questions or when
+the user clearly wants to shape the spec themselves.
+
 ## 1. Draft the spec, then ask the gateway to structure it
 
 From the user's prompt, infer a COMPLETE first draft: a specific title,
@@ -85,9 +110,30 @@ question, registers the watched sources with their priors, seeds the reference
 classes, and stashes the toggles under `metadata.onboarding` — which the run /
 re-run paths read (evidence permission, panel default, per-source reliability).
 
+## 4. After commit, run the first forecast — do not stop at a bare question
+
+A committed question with no forecast is a dead entry, not a desk. The moment
+`commit_spec` succeeds, keep going and produce the first live estimate — do not
+hand back a bare "created question <id>" and wait to be asked again. Run the
+opening pass of the loop end-to-end:
+
+- **research** — pull the watched sources you just registered
+  (`import_source_evidence` / `refresh_forecast`) and record timestamped evidence;
+- **base_rate** — establish the outside view from the reference class(es) seeded
+  at commit;
+- **update** — pool the drivers into `ensemble_components` and commit the first
+  live snapshot.
+
+The one-call form is `forecast_ledger full_forecast { question_id: <id> }`, which
+sequences research → base_rate → update for you; drive the stages individually
+only when you need to intervene between them. Then hand back the number with its
+decomposition, not just the question id. Continue into the full loop with the
+[forecasting-loop] skill.
+
 ## Guardrails
 
-- **Never commit on `error`s.** Repair via one scoped `clarify`, don't abort.
+- **Never commit on `error`s** (even with `accept_defaults` — the gate is
+  identical). Repair via one scoped `clarify`, don't abort.
 - **No watched sources is a `warn` you should fix**, not ignore — re-runs need
   something to refresh.
 - **Honor the toggles afterward**: if `allow_evidence_gathering` is false, do

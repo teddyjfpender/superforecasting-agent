@@ -9,7 +9,7 @@ metadata:
   hermes:
     tags: [forecasting, superforecasting, pipeline, workflow, base-rate, calibration, panel, resolution, scoring]
     category: forecasting
-    related_skills: [bayes-forecast-scratchpad]
+    related_skills: [forecast-onboard, bayes-forecast-scratchpad]
 ---
 
 # The Forecasting Loop
@@ -29,7 +29,12 @@ parse -> research -> base_rate -> [model] -> update -> resolve -> postmortem
 
 1. **parse** — Is the question scoreable AND decision-relevant? Pin resolution
    criteria, outcome space, and the decision card (owner, action threshold,
-   update triggers). A forecast that informs no decision is entertainment.
+   update triggers). A forecast that informs no decision is entertainment. If the
+   question just arrived from onboarding (the [forecast-onboard] skill / a
+   `commit_spec`, including the `accept_defaults` fast path), **parse is already
+   done** — the spec committed it scoreable with a decision card and watched
+   sources. Do not re-interrogate; pick up at **research** and drive straight to
+   the first live `update`.
 2. **research** — Collect *timestamped* evidence; separate facts, estimates,
    rumors, opinions, assumptions. Do not move the probability yet.
 3. **base_rate** — Establish the outside view first: reference classes with

@@ -721,6 +721,16 @@ DEFAULT_CONFIG = {
             "rules_file": "hooks/rules.yaml",
             "rules": [],
         },
+        # Recurrence-by-default: committing the first forecast idempotently installs
+        # a nightly no-agent self-check cron (auto-score + auto-postmortem + thesis
+        # aggregate + lesson synthesis + deterministic refresh) so forecasts stay
+        # fresh without the operator remembering to schedule anything. Cheap + silent
+        # when the cron is already installed.
+        "cron": {
+            # False -> never auto-install the nightly cron at commit time (explicit
+            # `forecast freshen` / `keep_fresh` still install it on demand).
+            "auto_install": True,
+        },
     },
     "agent": {
         "max_turns": 90,

@@ -15,6 +15,9 @@ import cycle.
 
 from __future__ import annotations
 
+import calendar
+import datetime as _dt
+import re
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Literal
 
@@ -25,6 +28,7 @@ from forecasting.models import (
     ValidationError,
     normalize_update_triggers,
 )
+from forecasting.resolvers import RESOLVER_TYPES, validate_metric_threshold_rule
 
 OnboardingStatus = Literal["draft", "needs_clarification", "ready", "committed"]
 
@@ -134,6 +138,30 @@ class UpdateTriggerSpec:
 
 
 @dataclass(frozen=True)
+class ResolutionRuleSpec:
+    """A structured auto-resolver rule so the desk can PROPOSE a resolution from an
+    ingested source value instead of resolving by hand. Mirrors the ledger's
+    ``set_resolution_rule`` shape (metric_threshold): read ``field`` from a watched
+    source in role ``source_role`` and compare it to ``threshold``. Propose-only —
+    the operator still confirms."""
+
+    field: str
+    comparator: str
+    threshold: float
+    source_role: str = "resolver"
+    resolver: str = "metric_threshold"
+
+    def to_rule(self) -> dict[str, Any]:
+        return {
+            "resolver": self.resolver,
+            "field": self.field,
+            "comparator": self.comparator,
+            "threshold": self.threshold,
+            "source_role": self.source_role,
+        }
+
+
+@dataclass(frozen=True)
 class QuestionSpec:
     """A complete, typed staging object for a forecast question."""
 
@@ -166,6 +194,7 @@ class QuestionSpec:
     # attach-after-creation payloads
     watched_sources: tuple[WatchedSourceSpec, ...] = ()
     reference_classes: tuple[ReferenceClassSpec, ...] = ()
+    resolution_rule: ResolutionRuleSpec | None = None
 
     # onboarding-only toggles
     allow_evidence_gathering: bool = True
@@ -254,7 +283,40 @@ class QuestionSpec:
         if self.autonomy not in {"ask", "auto_low_stakes", "full"}:
             issues.append(SpecIssue("autonomy", "error", "autonomy must be ask | auto_low_stakes | full", ""))
 
+        # auto-resolver rule — validated against the same shape the ledger enforces
+        # so a bad rule is refused at spec time, not silently at resolution.
+        if self.resolution_rule is not None:
+            for problem in validate_metric_threshold_rule(self.resolution_rule.to_rule()):
+                issues.append(SpecIssue("resolution_rule", "error", problem, "Fix the resolution rule (field/comparator/threshold)."))
+            # resolver is a ledger enum too — validate it up front (mirroring the
+            # source_role check below) so a bad resolver is refused at spec time
+            # rather than raising MID-COMMIT after the question row + watches exist.
+            if self.resolution_rule.resolver not in RESOLVER_TYPES:
+                issues.append(SpecIssue(
+                    "resolution_rule",
+                    "error",
+                    "resolver must be one of: " + ", ".join(sorted(RESOLVER_TYPES)),
+                    "",
+                ))
+            # source_role is a ledger enum; mirror it lazily to avoid an import cycle.
+            from forecasting.ledger import WATCH_SOURCE_ROLES
+
+            if self.resolution_rule.source_role not in WATCH_SOURCE_ROLES:
+                issues.append(SpecIssue(
+                    "resolution_rule",
+                    "error",
+                    "source_role must be one of: " + ", ".join(sorted(WATCH_SOURCE_ROLES)),
+                    "",
+                ))
+
         # decision-readiness gaps (block convergence, not create_question itself).
+        if not (self.close_time or "").strip() and not (self.resolution_time or "").strip():
+            issues.append(SpecIssue(
+                "close_time",
+                "gap",
+                "no resolution deadline — when should this resolve by?",
+                "Set close_time (or resolution_time), or waive to track-only.",
+            ))
         if not (self.decision_owner or "").strip():
             issues.append(SpecIssue("decision_owner", "gap", "no decision owner — who acts on this?", "Set decision_owner, or waive to track-only."))
         if not (self.action_threshold or "").strip():
@@ -371,6 +433,21 @@ class QuestionSpec:
                 )
             )
 
+        # Auto-resolver rule: attach the structured metric_threshold rule so the desk
+        # can PROPOSE a resolution from ingested source data (propose-then-confirm)
+        # instead of resolving by hand. Gated write, so re-open the write context.
+        resolution_rule = None
+        if self.resolution_rule is not None:
+            with allow_ledger_writes(reason="question_spec.commit"):
+                resolution_rule = ledger.set_resolution_rule(
+                    question_id,
+                    field=self.resolution_rule.field,
+                    comparator=self.resolution_rule.comparator,
+                    threshold=self.resolution_rule.threshold,
+                    resolver=self.resolution_rule.resolver,
+                    source_role=self.resolution_rule.source_role,
+                )
+
         # Loop coverage: a committed (serious) question is put on the review cycle
         # so it is actually re-checked + auto-scored/postmortemed without the
         # operator remembering to schedule it (the "review runs = 0" pain). The spec
@@ -403,6 +480,23 @@ class QuestionSpec:
             scheduled_review = None
             scheduled_review_error = str(exc)
 
+        # Recurrence by default: a committed forecast should REFRESH ITSELF without
+        # the operator remembering to schedule a cron. Idempotently ensure the
+        # nightly no-agent self-check cron (auto-score + auto-postmortem + thesis
+        # aggregate + lesson synthesis + deterministic refresh). Gated behind
+        # forecasting.cron.auto_install (default TRUE) and cheap+silent when already
+        # installed. Fail-open: a cron hiccup must never block the commit.
+        default_routines = None
+        try:
+            from forecasting.scheduler import ensure_default_routines
+
+            db_path = getattr(ledger, "db_path", None)
+            default_routines = ensure_default_routines(
+                db_path=str(db_path) if db_path else None
+            )
+        except Exception:
+            default_routines = None
+
         question_dict = dict(question.__dict__) if hasattr(question, "__dict__") else dict(question)
         # OutcomeSpace is the one non-JSON-serializable field on the question.
         outcome = question_dict.get("outcome_space")
@@ -414,8 +508,10 @@ class QuestionSpec:
             "question": question_dict,
             "watched_sources": watched,
             "reference_classes": ref_classes,
+            "resolution_rule": resolution_rule,
             "scheduled_review": scheduled_review,
             "scheduled_review_error": scheduled_review_error,
+            "default_routines": default_routines,
             "readiness_gaps": [g.to_dict() for g in gaps],
         }
 
@@ -437,6 +533,152 @@ def onboarding_settings(question_metadata: dict[str, Any] | None) -> dict[str, A
         "allow_evidence_gathering": bool(raw.get("allow_evidence_gathering", ONBOARDING_DEFAULTS["allow_evidence_gathering"])),
         "panel_by_default": bool(raw.get("panel_by_default", ONBOARDING_DEFAULTS["panel_by_default"])),
         "autonomy": raw.get("autonomy") or ONBOARDING_DEFAULTS["autonomy"],
+    }
+
+
+# ── horizon inference (proposes a concrete deadline from free text) ──────────
+_MONTHS = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "jun": 6, "jul": 7, "aug": 8,
+    "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+# "may"/"march" double as a modal verb / verb; only trust them when a year pins them.
+_AMBIGUOUS_BARE_MONTHS = {"may", "march", "mar"}
+_QUARTER_END = {1: (3, 31), 2: (6, 30), 3: (9, 30), 4: (12, 31)}
+
+
+def _end_of_month(year: int, month: int) -> str:
+    last = calendar.monthrange(year, month)[1]
+    return f"{year:04d}-{month:02d}-{last:02d}"
+
+
+def infer_close_time(title: str, resolution_criteria: str = "", *, now: _dt.datetime | None = None) -> str | None:
+    """Scan free text for a resolution horizon and propose a concrete ISO close date.
+
+    Pure + deterministic. Returns ``YYYY-MM-DD`` (end of the named period) or None
+    when no horizon phrase is found. Never fabricates precision it can't justify: a
+    bare month with no year resolves to the NEXT occurrence of that month from
+    ``now``, and ambiguous bare words ("may", "march") are ignored without a year.
+    """
+    now = now or _dt.datetime.now(_dt.timezone.utc)
+    text = f"{title or ''} {resolution_criteria or ''}".lower()
+
+    # "Q4 2026" -> end of that quarter.
+    m = re.search(r"\bq([1-4])\s*(\d{4})\b", text)
+    if m:
+        month, day = _QUARTER_END[int(m.group(1))]
+        return f"{int(m.group(2)):04d}-{month:02d}-{day:02d}"
+
+    # <Month> <year> anywhere, e.g. "by September 2026", "June 2026".
+    month_alt = "|".join(sorted(_MONTHS, key=len, reverse=True))
+    m = re.search(rf"\b({month_alt})\b\s+(\d{{4}})\b", text)
+    if m:
+        return _end_of_month(int(m.group(2)), _MONTHS[m.group(1)])
+
+    # "by EOY" / "end of (the) year" / "this year" / "year-end".
+    if re.search(r"\b(by\s+eoy|end of (the )?year|this year|year[- ]end)\b", text):
+        return _end_of_month(now.year, 12)
+
+    if re.search(r"\bnext year\b", text):
+        return _end_of_month(now.year + 1, 12)
+
+    # "next 12 months" / "next N months".
+    m = re.search(r"\bnext\s+(\d{1,2})\s+months?\b", text)
+    if m:
+        total = (now.year * 12 + (now.month - 1)) + int(m.group(1))
+        year, month0 = divmod(total, 12)
+        return _end_of_month(year, month0 + 1)
+
+    # "in 2026" / "by 2027" / "before 2026". An EXPLICIT year must win over an
+    # incidental bare month name elsewhere in the text (e.g. "Tracked via the
+    # September legislative calendar" must NOT shadow "pass in 2027"), so every
+    # year-bearing pattern is matched BEFORE the bare-month fallback below.
+    m = re.search(r"\b(?:in|by|during|before)\s+(\d{4})\b", text)
+    if m:
+        return _end_of_month(int(m.group(1)), 12)
+
+    # Bare "by <Month>" / "in <Month>" with no year -> next occurrence. This is the
+    # last-resort fallback: it only fires once no year-bearing phrase matched.
+    m = re.search(rf"\b({month_alt})\b", text)
+    if m and m.group(1) not in _AMBIGUOUS_BARE_MONTHS:
+        month = _MONTHS[m.group(1)]
+        year = now.year if month >= now.month else now.year + 1
+        return _end_of_month(year, month)
+
+    return None
+
+
+# ── question-quality score (deterministic rubric over validate() issues) ─────
+# Penalty per issue severity — a single error is a hard "not committable"; gaps
+# and warns erode the score without blocking. Tunable in one place.
+_QUALITY_PENALTY = {"error": 25, "gap": 8, "warn": 3}
+
+
+def spec_quality(spec: QuestionSpec) -> dict[str, Any]:
+    """Aggregate ``validate()`` issues into a 0-100 quality score + breakdown.
+
+    Deterministic: start at 100, subtract each issue's severity weight, clamp to
+    [0, 100]. Exposed as ``spec_quality`` so a lazy prompter sees, at a glance, how
+    close the draft is to a serious question.
+    """
+    issues = spec.validate()
+    breakdown: list[dict[str, Any]] = []
+    penalty_total = 0
+    for issue in issues:
+        penalty = _QUALITY_PENALTY.get(issue.severity, 0)
+        penalty_total += penalty
+        breakdown.append({"field": issue.field, "severity": issue.severity, "penalty": penalty})
+    score = max(0, min(100, 100 - penalty_total))
+    return {
+        "score": score,
+        "penalty_total": penalty_total,
+        "breakdown": breakdown,
+        "counts": {
+            "error": sum(1 for i in issues if i.severity == "error"),
+            "gap": sum(1 for i in issues if i.severity == "gap"),
+            "warn": sum(1 for i in issues if i.severity == "warn"),
+        },
+    }
+
+
+# ── resolver suggestion (nudges toward an auto-resolvable rule) ──────────────
+def suggest_resolution_rule(spec: QuestionSpec) -> dict[str, Any] | None:
+    """Suggest a metric_threshold ``resolution_rule`` when the draft looks auto-
+    resolvable: a binary/numeric question that already watches a source. Returns a
+    ready-to-edit template (never committed), seeded from an executable update
+    trigger when one exists. None when a rule is already set or it doesn't apply."""
+    if spec.resolution_rule is not None:
+        return None
+    if spec.outcome_type not in {"binary", "numeric"}:
+        return None
+    if not spec.watched_sources:
+        return None
+
+    for tr in spec.update_triggers:
+        if tr.operator and tr.threshold is not None:
+            return {
+                "field": "value",
+                "comparator": tr.operator,
+                "threshold": tr.threshold,
+                "source_role": "resolver",
+                "resolver": "metric_threshold",
+                "note": (
+                    f"Seeded from update trigger '{tr.mechanism}'. Set 'field' to the parsed "
+                    "value to read from the resolver source, then set_resolution_rule."
+                ),
+            }
+    return {
+        "field": None,
+        "comparator": ">=",
+        "threshold": None,
+        "source_role": "resolver",
+        "resolver": "metric_threshold",
+        "note": (
+            "This binary/numeric question has watched sources — a metric_threshold rule "
+            "(field + comparator + threshold) would let the desk PROPOSE a resolution "
+            "instead of resolving by hand."
+        ),
     }
 
 
@@ -465,6 +707,14 @@ def recommended_clarifications(spec: QuestionSpec) -> list[dict[str, Any]]:
             "field": "resolution_criteria",
             "question": "The criteria are too vague to score — what measurable condition + source resolves this?",
             "choices": [],  # free text
+        })
+    if "close_time" in by_field:
+        inferred = infer_close_time(spec.title, spec.resolution_criteria)
+        default = f"By {inferred} (recommended)" if inferred else "End of this year (recommended)"
+        out.append({
+            "field": "close_time",
+            "question": "When should this resolve by?",
+            "choices": [default, "Pick a specific date", "No deadline — track only"],
         })
     if "decision_owner" in by_field:
         out.append({
@@ -506,6 +756,73 @@ def recommended_clarifications(spec: QuestionSpec) -> list[dict[str, Any]]:
     return out
 
 
+# ── accept-defaults onboarding (one-shot: apply every recommended default) ────
+def _recommended_choice(choices: list[str]) -> str | None:
+    """Return the first choice tagged '(recommended)', else None (free-text prompt)."""
+    for choice in choices or []:
+        if "(recommended)" in choice.lower():
+            return choice
+    return None
+
+
+def apply_recommended_defaults(spec: QuestionSpec) -> tuple[QuestionSpec, list[dict[str, Any]]]:
+    """Auto-apply the recommended default of every gap/error clarification in one shot.
+
+    Turns the ~8-question onboarding interrogation into a single pass for a lazy
+    prompter: each recommended clarification whose default maps to a concrete field
+    is filled, the answer is appended to ``clarifications`` (marked ``auto_default``),
+    and the applied choices are returned so the agent can echo a one-line
+    "created with these defaults — say the word to change any" summary.
+
+    Deliberately conservative so accept-defaults never fabricates or clobbers:
+    - free-text prompts with no recommended choice (resolution_criteria, update
+      triggers) are left untouched, so an error-severity issue still surfaces and
+      blocks the commit;
+    - the binary outcome default is only applied to an already-binary draft (it
+      never overrides an explicit numeric/categorical/distribution intent);
+    - the preference toggles (evidence permission, panel) already carry a concrete
+      value on the spec, so accept-defaults consumes that value instead of asking —
+      it never overrides an explicit non-default choice.
+    """
+    now_year = _dt.datetime.now(_dt.timezone.utc).year
+    updates: dict[str, Any] = {}
+    applied: list[dict[str, Any]] = []
+    clarifications = list(spec.clarifications)
+
+    for prompt in recommended_clarifications(spec):
+        field = prompt["field"]
+        recommended = _recommended_choice(prompt.get("choices") or [])
+        if recommended is None:
+            continue  # free text — cannot default without fabricating content
+
+        if field == "close_time":
+            value: Any = infer_close_time(spec.title, spec.resolution_criteria) or _end_of_month(now_year, 12)
+            updates["close_time"] = value
+        elif field == "decision_owner":
+            value = "you"
+            updates["decision_owner"] = value
+        elif field == "action_threshold":
+            value = ">=70% act"
+            updates["action_threshold"] = value
+        elif field == "outcome_type" and spec.outcome_type == "binary":
+            # Only repair a malformed BINARY draft (e.g. bad choices) — never coerce an
+            # explicit numeric/categorical/distribution question into yes/no.
+            value = "binary"
+            updates.update(choices=("yes", "no"), units=None, bounds=None)
+        else:
+            # watched_sources ("Add all") has no concrete sources to add here, and the
+            # preference toggles already carry their answer on the spec — skip both.
+            continue
+
+        applied.append({"field": field, "choice": recommended.replace(" (recommended)", "").strip(), "value": value})
+        clarifications.append({"field": field, "question": prompt["question"], "answer": recommended, "auto_default": True})
+
+    if not applied:
+        return spec, []
+
+    return replace(spec, clarifications=tuple(clarifications), **updates), applied
+
+
 # ── dict round-trip (transport for CLI/gateway/TUI) ──────────────────────────
 def _tuple(value: Any) -> tuple:
     if value is None:
@@ -514,6 +831,25 @@ def _tuple(value: Any) -> tuple:
         return tuple(value)
 
     return (value,)
+
+
+def _resolution_rule_from_dict(value: Any) -> ResolutionRuleSpec | None:
+    if not value:
+        return None
+    if isinstance(value, ResolutionRuleSpec):
+        return value
+    if not isinstance(value, dict):
+        raise ValidationError("resolution_rule must be an object")
+    threshold = value.get("threshold")
+    return ResolutionRuleSpec(
+        # A missing/non-numeric threshold stays non-numeric so validate() flags it
+        # honestly (never coerced to a fabricated 0.0 / NaN that passes the gate).
+        field=str(value.get("field") or ""),
+        comparator=str(value.get("comparator") or ""),
+        threshold=float(threshold) if isinstance(threshold, (int, float)) else threshold,
+        source_role=str(value.get("source_role") or "resolver"),
+        resolver=str(value.get("resolver") or "metric_threshold"),
+    )
 
 
 def spec_to_dict(spec: QuestionSpec) -> dict[str, Any]:
@@ -596,6 +932,7 @@ def spec_from_dict(data: dict[str, Any]) -> QuestionSpec:
             )
             for r in (data.get("reference_classes") or [])
         ),
+        resolution_rule=_resolution_rule_from_dict(data.get("resolution_rule")),
         allow_evidence_gathering=bool(data.get("allow_evidence_gathering", True)),
         panel_by_default=bool(data.get("panel_by_default", False)),
         autonomy=str(data.get("autonomy") or "ask"),

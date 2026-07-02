@@ -10287,7 +10287,19 @@ class ForecastLedger:
         now: str | None = None,
         auto_score: bool = False,
         auto_postmortem: bool = False,
+        refresh_fetcher: Any = None,
     ) -> list[dict[str, Any]]:
+        """Run every due scheduled-review row, advancing each row's cadence.
+
+        ``refresh_fetcher`` (injected by the cron layer — the ledger never imports
+        the tool/adapter layer) turns the sweep into a DETERMINISTIC self-refresh:
+        for each due QUESTION-scoped review that is refreshable (has a baseline
+        snapshot with structured ensemble_components AND active watched sources) we
+        re-pull the sources, re-pool, and auto-commit a fresh snapshot — no LLM.
+        Fail-open per question: one broken source records an error in the row's
+        result and never aborts the sweep. The cadence is also DEADLINE-AWARE — a
+        question's next run is escalated (never slowed) as its close/resolution/
+        decision deadline nears."""
         now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
         with self._connect() as conn:
             rows = conn.execute(
@@ -10308,6 +10320,9 @@ class ForecastLedger:
             confidence_below = review.get("confidence_below")
             confidence_above = review.get("confidence_above")
             large_delta_threshold = review.get("large_delta_threshold")
+            refresh_result: dict[str, Any] | None = None
+            refresh_error: str | None = None
+            deadlines: list[str | None] | None = None
             if scope_type == "question":
                 alerts = self.self_check(
                     question_id=scope_ref,
@@ -10319,6 +10334,25 @@ class ForecastLedger:
                     confidence_above=confidence_above,
                     large_delta_threshold=large_delta_threshold,
                 )
+                # Deadline-aware cadence input: read the question's live deadlines so
+                # the next run can be escalated as close/resolution/decision nears.
+                try:
+                    question = self.get_question(scope_ref)
+                    deadlines = [
+                        getattr(question, "close_time", None),
+                        getattr(question, "resolution_time", None),
+                        getattr(question, "decision_deadline", None),
+                    ]
+                except Exception:
+                    deadlines = None
+                # Deterministic self-refresh (no LLM) for a refreshable question.
+                if refresh_fetcher is not None:
+                    try:
+                        refresh_result = self._refresh_due_question(
+                            scope_ref, fetcher=refresh_fetcher, now=now_ts
+                        )
+                    except Exception as exc:  # never abort the sweep on one question
+                        refresh_error = str(exc)
             elif scope_type == "domain":
                 alerts = self.self_check(
                     domain=scope_ref,
@@ -10376,7 +10410,9 @@ class ForecastLedger:
                     confidence_above=confidence_above,
                     large_delta_threshold=large_delta_threshold,
                 )
-            next_run_at = self._advance_cadence(now_ts, review["cadence"])
+            next_run_at = self._advance_cadence(
+                now_ts, review["cadence"], deadlines=deadlines
+            )
             with self._connect() as conn:
                 conn.execute(
                     """
@@ -10397,9 +10433,40 @@ class ForecastLedger:
                     "review": self.get_scheduled_review(review["id"]),
                     "run": run,
                     "alerts": alerts,
+                    "refresh": refresh_result,
+                    "refresh_error": refresh_error,
                 }
             )
         return results
+
+    def _refresh_due_question(
+        self, question_id: str, *, fetcher: Any, now: str | None
+    ) -> dict[str, Any] | None:
+        """Deterministically self-refresh a due question when it is refreshable.
+
+        Refreshable = a baseline snapshot with structured ensemble_components AND
+        at least one active watched source. Returns ``None`` (skipped) otherwise,
+        so a bare/no-source question is quietly left for the agent-tier re-reason.
+        Opens its own write context so the commit is permitted even when the caller
+        did not (e.g. the tool's direct ``run_scheduled_reviews``)."""
+        current = self.get_current_snapshot(question_id)
+        if current is None:
+            return None
+        components = current.ensemble_components
+        if not isinstance(components, dict) or not components:
+            return None
+        watches = self.list_watched_sources(
+            scope_type="question", scope_ref=question_id, status="active"
+        )
+        if not watches:
+            return None
+        with allow_ledger_writes(reason="scheduled_refresh"):
+            return self.refresh_forecast(
+                question_id,
+                fetcher=fetcher,
+                now=now,
+                trigger_reason="scheduled_refresh",
+            )
 
     def _record_scheduled_review_run(
         self,
@@ -13790,11 +13857,43 @@ class ForecastLedger:
             )
         ]
 
-    def _advance_cadence(self, now_ts: str, cadence: str) -> str:
+    def _advance_cadence(
+        self, now_ts: str, cadence: str, *, deadlines: list[str | None] | None = None
+    ) -> str:
         now_dt = timestamp_to_datetime(now_ts)
         assert now_dt is not None
         delta = self._cadence_delta(cadence)
+        delta = self._clamp_cadence_to_deadline(now_dt, delta, deadlines)
         return (now_dt + delta).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+    def _clamp_cadence_to_deadline(
+        self, now_dt, delta: timedelta, deadlines: list[str | None] | None
+    ) -> timedelta:
+        """Escalate (never slow) the cadence as the nearest deadline nears.
+
+        Within 7 days of the nearest of close/resolution/decision deadline -> at
+        most daily; within 48h -> at most twice-daily. Only SHORTENS the interval
+        (``min`` with the base cadence), so a slow base cadence still speeds up near
+        the wire but a fast one is never slowed. Past deadlines are ignored."""
+        if not deadlines:
+            return delta
+        nearest = None
+        for ts in deadlines:
+            dt = timestamp_to_datetime(ts) if ts else None
+            if dt is None or dt <= now_dt:
+                continue
+            if nearest is None or dt < nearest:
+                nearest = dt
+        if nearest is None:
+            return delta
+        horizon = nearest - now_dt
+        if horizon <= timedelta(hours=48):
+            cap = timedelta(hours=12)
+        elif horizon <= timedelta(days=7):
+            cap = timedelta(days=1)
+        else:
+            return delta
+        return min(delta, cap)
 
     def _cadence_due(self, last_checked_at: str | None, cadence: str | None, now_dt) -> bool:
         if not last_checked_at or not cadence:

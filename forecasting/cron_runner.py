@@ -32,6 +32,7 @@ def run_due_reviews(
     reconcile_alerts: bool = True,
     propose_resolutions: bool = True,
     score_market_nightly: bool = True,
+    refresh: bool = True,
     reforecast_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
@@ -55,10 +56,26 @@ def run_due_reviews(
     """
 
     ledger = ForecastLedger(db_path)
+
+    # DETERMINISTIC self-refresh (no LLM): inject the watched-source fetcher so the
+    # cadence sweep re-pulls + re-pools + auto-commits every refreshable due question.
+    # The ledger (data layer) never imports the tool/adapter layer, so the fetcher is
+    # built HERE and injected. A missing tool import degrades to "no refresh", not an
+    # error — the alert self-check still runs.
+    refresh_fetcher = None
+    if refresh:
+        try:
+            from tools.forecasting_tool import fetch_watched_source_payloads
+
+            refresh_fetcher = lambda specs: fetch_watched_source_payloads(specs, concurrency=4)  # noqa: E731
+        except Exception:
+            refresh_fetcher = None
+
     results = ledger.run_due_scheduled_reviews(
         now=now,
         auto_score=auto_score,
         auto_postmortem=auto_postmortem,
+        refresh_fetcher=refresh_fetcher,
     )
     alert_rows = []
     for result in results:
@@ -86,6 +103,35 @@ def run_due_reviews(
             lines.append(f"- {alert.severity} {alert.scope_ref}: {alert.reason}")
             lines.append(f"  action: {alert.recommended_action}")
         sections.append("\n".join(lines) + "\n")
+
+    # Deterministic-refresh summary: how many due questions self-refreshed this
+    # sweep (committed a fresh snapshot) and which errored. Emitted only when the
+    # refresh pass actually did something, so a quiet cron stays quiet.
+    if refresh_fetcher is not None:
+        committed = 0
+        no_change = 0
+        refresh_errors: list[str] = []
+        for result in results:
+            ref = result.get("refresh")
+            if isinstance(ref, dict):
+                status = ref.get("status")
+                if ref.get("forecast_id") or status == "committed":
+                    committed += 1
+                else:
+                    no_change += 1
+            err = result.get("refresh_error")
+            if err:
+                qid = (result.get("review") or {}).get("scope_ref") or "?"
+                refresh_errors.append(f"{qid}: {err}")
+        if committed or refresh_errors:
+            lines = [
+                "Deterministic refresh",
+                f"committed: {committed}  no_change/skipped: {no_change}  errors: {len(refresh_errors)}",
+                "",
+            ]
+            for row in refresh_errors:
+                lines.append(f"- ERROR {row}")
+            sections.append("\n".join(lines) + "\n")
 
     # Autonomous reforecast pass (opt-in via `cycle run --agent`): drive an LLM update
     # over the questions this sweep flagged, BEFORE thesis aggregation + lesson
@@ -1115,6 +1161,7 @@ def install_script(
     auto_score: bool = False,
     auto_postmortem: bool = False,
     thesis_aggregate: bool = False,
+    synthesize_lessons: bool = False,
 ) -> None:
     """Install the small script used by no-agent forecast cron jobs."""
 
@@ -1128,6 +1175,8 @@ def install_script(
         args.append("--auto-postmortem")
     if thesis_aggregate:
         args.append("--thesis-aggregate")
+    if synthesize_lessons:
+        args.append("--synthesize-lessons")
     script_path.write_text(
         "\n".join(
             [
