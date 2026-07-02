@@ -6539,6 +6539,52 @@ class ForecastLedger:
                 out.setdefault(row["question_id"], []).append(self._analyst_note_to_dict(row))
         return out
 
+    def active_watched_source_counts(self, question_ids: list[str]) -> dict[str, int]:
+        """question_id -> count of its ACTIVE question-scoped watched sources.
+
+        ONE batched ``GROUP BY`` per id-chunk (the desk N+1 lesson is law) — the
+        batched equivalent of ``len(list_watched_sources(scope_type='question',
+        scope_ref=qid, status='active'))``. Ids with no active watch are absent
+        (caller defaults to 0)."""
+        out: dict[str, int] = {}
+        for chunk in self._chunk_ids(question_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT scope_ref, COUNT(*) AS n FROM watched_sources "
+                    f"WHERE scope_type = 'question' AND status = 'active' "
+                    f"AND scope_ref IN ({placeholders}) GROUP BY scope_ref",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                if row["scope_ref"] is not None:
+                    out[row["scope_ref"]] = int(row["n"])
+        return out
+
+    def active_reference_class_counts(self, question_ids: list[str]) -> dict[str, int]:
+        """question_id -> count of its ACTIVE reference classes.
+
+        ONE batched ``GROUP BY`` per id-chunk — the batched equivalent of
+        ``len([rc for rc in list_reference_classes(qid) if rc['status']=='active'])``.
+        Ids with no active class are absent (caller defaults to 0)."""
+        out: dict[str, int] = {}
+        for chunk in self._chunk_ids(question_ids):
+            if not chunk:
+                continue
+            placeholders = ",".join("?" for _ in chunk)
+            with self._connect() as conn:
+                rows = conn.execute(
+                    f"SELECT question_id, COUNT(*) AS n FROM reference_classes "
+                    f"WHERE status = 'active' AND question_id IN ({placeholders}) "
+                    f"GROUP BY question_id",
+                    chunk,
+                ).fetchall()
+            for row in rows:
+                out[row["question_id"]] = int(row["n"])
+        return out
+
     def closing_question_ids(self, *, now: str | None = None) -> set[str]:
         """Active question ids that are "closing soon" — i.e. would carry a
         close-review reason (close_time_passed / resolution_check_due) from

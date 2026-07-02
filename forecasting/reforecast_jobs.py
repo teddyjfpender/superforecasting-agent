@@ -50,6 +50,12 @@ DEFAULT_MAX_BATCH = 25
 # run_forecast_chain default so a bare enqueue behaves like a manual chain run.
 DEFAULT_MAX_ITERATIONS = 12
 
+# Bound the ONE agent session a 'task' job runs (spec override). A batch chore
+# ("add watched sources to these five", "set executable triggers") sweeps several
+# questions in a single session, so it gets a larger default than the per-question
+# reforecast leg.
+DEFAULT_TASK_MAX_ITERATIONS = 20
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -241,6 +247,12 @@ def execute_job(run_id: str) -> dict[str, Any]:
 
     job = read_job(run_id)
     spec = job.get("spec") or {}
+    # A 'task' job is a DIFFERENT shape: one operator free-text session over the whole
+    # batch (not the per-question reforecast chain), so it forks to its own runner.
+    # Both modes share this job store + the forecast.reforecast.status contract; the
+    # spec.mode field is what distinguishes them for readers.
+    if (spec.get("mode") or "").strip() == "task":
+        return _execute_task_job(run_id)
     job["status"] = "running"
     write_job(job)
 
@@ -361,6 +373,199 @@ def execute_job(run_id: str) -> dict[str, Any]:
 
     job["status"] = "done"
     job["current"] = None
+    write_job(job)
+    return job
+
+
+# ── Desk task jobs (the operator's free-text fix loop) ────────────────────────
+#
+# A 'task' job is the visibility arc's other half: the readiness composite SHOWS
+# the operator what a question is missing (no watched sources, no executable
+# trigger, ...), and a task job is how they FIX it — a free-text instruction over a
+# batch of questions, run as ONE gated agent session. The session works the SAME
+# gated forecast_ledger_tool every commit path uses; this module only scopes it to
+# the instruction + the question list (each carrying its readiness gaps so the agent
+# sees WHAT is missing) and reports progress honestly. NOTHING here opens a new
+# write path.
+
+
+def _append_progress(job: dict[str, Any], stage: str, detail: str) -> None:
+    """Stage a human-readable progress note into the job file (started/working/done).
+    Tolerant of a job record without a ``progress`` key (reforecast-mode jobs never
+    set one)."""
+    job.setdefault("progress", []).append(
+        {"stage": stage, "detail": detail, "at": _now_iso()}
+    )
+    write_job(job)
+
+
+def _run_task_agent(
+    user_message: str,
+    *,
+    system_message: str,
+    model: str | None,
+    provider: str | None,
+    max_iterations: int,
+) -> dict[str, Any]:
+    """Run ONE gated agent session for a Desk task job — the SAME seam
+    :func:`forecasting.cli._run_update_agent` uses (the ``forecasting`` toolset
+    through ``run_agent.AIAgent``), so every write still goes through the gated
+    ``forecast_ledger_tool``; this only scopes the session to the composed
+    instruction. Returns ``run_conversation``'s result dict. A module-level function
+    so tests can stub it exactly as they stub ``cli._run_update_agent``."""
+    from run_agent import AIAgent
+
+    agent = AIAgent(
+        model=model or "",
+        provider=provider,
+        max_iterations=max_iterations,
+        # The forecasting toolset is the gated write path; file+web let the chore
+        # do real research (import a source, add a reference class) when the
+        # instruction calls for it — the same toolset a research/base_rate stage uses.
+        enabled_toolsets=["forecasting", "file", "web"],
+        platform="cli",
+    )
+    return agent.run_conversation(user_message, system_message=system_message)
+
+
+def _compose_task_prompt(
+    ledger: Any, instruction: str, question_ids: list[str]
+) -> tuple[str, str]:
+    """Build ``(system, user)`` for a task session: the forecasting-desk system
+    prompt + the operator's instruction followed by the scoped question list, each
+    line carrying id + title + the machine-readiness GAPS the desk is missing, so the
+    agent sees exactly WHAT to fix. Read-only assembly."""
+    from forecasting.protocol import SYSTEM_PROMPT
+    from forecasting.readiness_lens import build_question_readiness
+
+    lines: list[str] = []
+    for qid in question_ids:
+        try:
+            composite = build_question_readiness(ledger, qid)
+        except Exception:  # noqa: BLE001 — a bad id never aborts the compose
+            lines.append(f"- {qid}")
+            continue
+        header = f"- {qid}"
+        if composite.get("title"):
+            header += f" — {composite['title']}"
+        score = composite.get("score")
+        if score is not None:
+            header += f"  (machine-readiness {score}/100)"
+        lines.append(header)
+        gaps = composite.get("gaps") or []
+        if not gaps:
+            lines.append("    · machine-ready — no missing inputs")
+        for gap in gaps:
+            lines.append(f"    · MISSING {gap['label']}: {gap['fix_hint']}")
+
+    user = (
+        "## Operator task\n"
+        f"{instruction.strip()}\n\n"
+        "## Questions in scope\n"
+        "Work through these questions. Each line lists the question id, title, and the "
+        "machine-readiness gaps the autonomous desk is currently missing (watched "
+        "sources, structured components, reference classes, an executable update "
+        "trigger, an enabled review schedule, close_time / impact / resolution rule). "
+        "Use the forecasting tools to close the gaps the instruction calls for, "
+        "committing every change through the gated tool. When finished, summarise what "
+        "you changed per question.\n\n" + "\n".join(lines)
+    )
+    return SYSTEM_PROMPT.strip(), user
+
+
+def _execute_task_job(run_id: str) -> dict[str, Any]:
+    """Run a 'task' job: ONE gated agent session over the whole batch, staging
+    started/working/done progress notes + a final summary of what the agent reported.
+
+    Honest completion: the job is ``done`` only when the session returns; any failure
+    (bad db, empty instruction, agent raise) lands ``error`` with the reason. The
+    summary is the agent's own ``final_response`` — never fabricated."""
+    from forecasting.ledger import ForecastLedger
+
+    job = read_job(run_id)
+    spec = job.get("spec") or {}
+    job["status"] = "running"
+    job.setdefault("progress", [])
+    write_job(job)
+
+    instruction = str(spec.get("instruction") or "").strip()
+    question_ids = [
+        str(q).strip() for q in (spec.get("question_ids") or []) if str(q).strip()
+    ]
+    model = spec.get("model") or None
+    provider = spec.get("provider") or None
+    try:
+        max_iterations = int(spec.get("max_iterations") or DEFAULT_TASK_MAX_ITERATIONS)
+    except (TypeError, ValueError):
+        max_iterations = DEFAULT_TASK_MAX_ITERATIONS
+
+    if not instruction:
+        _append_progress(job, "error", "task job requires a non-empty instruction")
+        job["status"] = "error"
+        job["error"] = "task job requires a non-empty instruction"
+        write_job(job)
+        return job
+
+    _append_progress(
+        job, "start", f"composing task over {len(question_ids)} question(s)"
+    )
+
+    try:
+        ledger = ForecastLedger(spec.get("db"))
+    except Exception as exc:  # noqa: BLE001 — a bad db is a whole-job failure
+        _append_progress(job, "error", f"{type(exc).__name__}: {exc}")
+        job["status"] = "error"
+        job["error"] = f"{type(exc).__name__}: {exc}"
+        write_job(job)
+        return job
+
+    try:
+        system_message, user_message = _compose_task_prompt(
+            ledger, instruction, question_ids
+        )
+    except Exception as exc:  # noqa: BLE001
+        _append_progress(job, "error", f"compose failed: {type(exc).__name__}: {exc}")
+        job["status"] = "error"
+        job["error"] = f"{type(exc).__name__}: {exc}"
+        write_job(job)
+        return job
+
+    job["current"] = {"stage": "agent", "question_ids": question_ids}
+    _append_progress(
+        job, "working", f"running one agent session (max_iterations={max_iterations})"
+    )
+
+    try:
+        result = _run_task_agent(
+            user_message,
+            system_message=system_message,
+            model=model,
+            provider=provider,
+            max_iterations=max_iterations,
+        )
+    except Exception as exc:  # noqa: BLE001 — the session raising is a job error
+        _append_progress(job, "error", f"agent session failed: {type(exc).__name__}: {exc}")
+        job["status"] = "error"
+        job["error"] = f"{type(exc).__name__}: {exc}"
+        job["current"] = None
+        write_job(job)
+        return job
+
+    result = result or {}
+    summary = str(result.get("final_response") or "").strip()
+    job["task_summary"] = summary
+    job["task_result"] = {
+        "final_response": summary,
+        "api_calls": result.get("api_calls"),
+        "completed": result.get("completed"),
+        "failed": bool(result.get("failed")),
+    }
+    _append_progress(
+        job, "done", summary[:500] if summary else "agent session complete (no summary)"
+    )
+    job["done_count"] = len(question_ids)
+    job["current"] = None
+    job["status"] = "done"
     write_job(job)
     return job
 

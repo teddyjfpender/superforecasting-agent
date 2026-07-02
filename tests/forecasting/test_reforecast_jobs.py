@@ -351,6 +351,226 @@ def test_active_jobs_by_question_maps_every_member(home):
     assert "qc" not in mapping  # terminal job never chipped
 
 
+# ── desk task jobs (the operator's free-text fix loop) ────────────────────────
+
+
+def _capture_task_agent(monkeypatch, response=None, raises=None):
+    captured: dict = {}
+
+    def fake(user_message, *, system_message, model, provider, max_iterations):
+        captured["user_message"] = user_message
+        captured["system_message"] = system_message
+        captured["model"] = model
+        captured["provider"] = provider
+        captured["max_iterations"] = max_iterations
+        if raises is not None:
+            raise raises
+        return response if response is not None else {"final_response": "task summary"}
+
+    monkeypatch.setattr(rf, "_run_task_agent", fake)
+    return captured
+
+
+def test_task_job_runs_one_session_with_gaps_in_prompt_and_writes_progress(home, tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    # One bare question (missing watches/components/ref-classes/triggers) + one with
+    # a watch already, so the composed prompt shows differing gaps per question.
+    q1 = _make_question(ledger, 1)
+    q2 = _make_question(ledger, 2)
+    ledger.add_watched_source(scope_type="question", scope_ref=q2.id, source="fred:X")
+
+    captured = _capture_task_agent(monkeypatch, response={"final_response": "added 2 watched sources", "api_calls": 4, "completed": True})
+
+    run_id = rf.start_job(
+        {
+            "mode": "task",
+            "instruction": "Add watched sources to every question in scope.",
+            "question_ids": [q1.id, q2.id],
+            "db": db,
+            "triggered_by": "desk_task",
+        },
+        wait=True,
+    )
+    job = rf.read_job(run_id)
+
+    assert job["status"] == "done", job.get("error")
+    assert job["done_count"] == 2
+    assert job["current"] is None
+    assert job["task_summary"] == "added 2 watched sources"
+    assert job["task_result"]["completed"] is True
+
+    # Progress notes: started → working → done (staged into the job file).
+    stages = [p["stage"] for p in job["progress"]]
+    assert stages[0] == "start"
+    assert "working" in stages
+    assert stages[-1] == "done"
+
+    # The composed session: ONE call, the forecasting system prompt, the instruction,
+    # both ids, and each question's readiness GAPS (so the agent sees WHAT is missing).
+    from forecasting.protocol import SYSTEM_PROMPT
+
+    assert captured["system_message"] == SYSTEM_PROMPT.strip()
+    user = captured["user_message"]
+    assert "Add watched sources to every question in scope." in user
+    assert q1.id in user and q2.id in user
+    assert "MISSING watched sources" in user  # q1 has no watch -> the gap is surfaced
+    assert "machine-readiness" in user
+    assert captured["max_iterations"] == rf.DEFAULT_TASK_MAX_ITERATIONS
+
+
+def test_task_job_empty_instruction_errors_before_agent(home, tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q1 = _make_question(ledger, 1)
+    called = {"n": 0}
+    monkeypatch.setattr(rf, "_run_task_agent", lambda *a, **k: called.__setitem__("n", called["n"] + 1) or {})
+
+    run_id = rf.start_job(
+        {"mode": "task", "instruction": "   ", "question_ids": [q1.id], "db": db},
+        wait=True,
+    )
+    job = rf.read_job(run_id)
+    assert job["status"] == "error"
+    assert "instruction" in job["error"]
+    assert called["n"] == 0  # never reached the agent
+
+
+def test_task_job_agent_failure_is_honest(home, tmp_path, monkeypatch):
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q1 = _make_question(ledger, 1)
+    _capture_task_agent(monkeypatch, raises=RuntimeError("provider exploded"))
+
+    run_id = rf.start_job(
+        {"mode": "task", "instruction": "do the thing", "question_ids": [q1.id], "db": db},
+        wait=True,
+    )
+    job = rf.read_job(run_id)
+    assert job["status"] == "error"
+    assert "provider exploded" in job["error"]
+    assert job["progress"][-1]["stage"] == "error"
+
+
+# ── forecast.desk.task RPC ────────────────────────────────────────────────────
+
+
+def test_desk_task_rpc_enqueues(home, tmp_path, monkeypatch):
+    from tui_gateway import server
+
+    ledger = ForecastLedger()
+    q1 = _make_question(ledger, 1)
+    q2 = _make_question(ledger, 2)
+
+    captured = {}
+
+    def fake_start(spec, *, wait=False):
+        captured["spec"] = spec
+        captured["wait"] = wait
+        return "rf_task0001"
+
+    monkeypatch.setattr(rf, "start_job", fake_start)
+    resp = server.handle_request({
+        "id": "1", "method": "forecast.desk.task",
+        "params": {"instruction": "set executable triggers", "question_ids": [q1.id, q2.id]},
+    })
+    result = resp["result"]
+    assert result["run_id"] == "rf_task0001"
+    assert result["total"] == 2
+    assert "poll forecast.reforecast.status" in result["note"]
+    assert captured["wait"] is False
+    assert captured["spec"]["mode"] == "task"
+    assert captured["spec"]["instruction"] == "set executable triggers"
+    assert captured["spec"]["question_ids"] == [q1.id, q2.id]
+    assert captured["spec"]["triggered_by"] == "desk_task"
+
+
+def test_desk_task_rpc_requires_instruction(home, monkeypatch):
+    from tui_gateway import server
+
+    ForecastLedger()
+    called = {"n": 0}
+    monkeypatch.setattr(rf, "start_job", lambda *a, **k: called.__setitem__("n", called["n"] + 1) or "rf_x")
+    resp = server.handle_request({
+        "id": "1", "method": "forecast.desk.task",
+        "params": {"instruction": "  ", "question_ids": ["fq_x"]},
+    })
+    assert "error" in resp
+    assert "instruction" in resp["error"]["message"]
+    assert called["n"] == 0
+
+
+def test_desk_task_rpc_requires_ids(home):
+    from tui_gateway import server
+
+    resp = server.handle_request({
+        "id": "1", "method": "forecast.desk.task",
+        "params": {"instruction": "do it", "question_ids": []},
+    })
+    assert "error" in resp
+    assert "non-empty question_ids" in resp["error"]["message"]
+
+
+def test_desk_task_rpc_validates_ids_via_shared_validator(home, monkeypatch):
+    from tui_gateway import server
+
+    ForecastLedger()
+    called = {"n": 0}
+    monkeypatch.setattr(rf, "start_job", lambda *a, **k: called.__setitem__("n", called["n"] + 1) or "rf_x")
+    resp = server.handle_request({
+        "id": "1", "method": "forecast.desk.task",
+        "params": {"instruction": "do it", "question_ids": ["fq_nope"]},
+    })
+    assert "error" in resp
+    assert "no such question" in resp["error"]["message"]
+    assert called["n"] == 0  # refused before any job was enqueued
+
+
+# ── forecast.question.readiness RPC ───────────────────────────────────────────
+
+
+def test_question_readiness_rpc_roundtrip(home, tmp_path):
+    from tui_gateway import server
+
+    ledger = ForecastLedger()
+    q1 = _make_question(ledger, 1, close_time="2026-12-31T00:00:00Z", impact="high")
+
+    resp = server.handle_request({
+        "id": "1", "method": "forecast.question.readiness",
+        "params": {"question_id": q1.id},
+    })
+    result = resp["result"]
+    assert result["question_id"] == q1.id
+    assert result["title"] == q1.title
+    assert 0 <= result["score"] <= 100
+    assert result["src_count"] == 0
+    keys = {g["key"] for g in result["gaps"]}
+    assert {"watches", "components", "ref_classes", "triggers"} <= keys
+    for gap in result["gaps"]:
+        assert {"key", "label", "fix_hint"} <= set(gap)
+
+
+def test_question_readiness_rpc_requires_id(home):
+    from tui_gateway import server
+
+    resp = server.handle_request({
+        "id": "1", "method": "forecast.question.readiness", "params": {},
+    })
+    assert "error" in resp
+    assert "question_id" in resp["error"]["message"]
+
+
+def test_question_readiness_rpc_unknown_id(home):
+    from tui_gateway import server
+
+    ForecastLedger()
+    resp = server.handle_request({
+        "id": "1", "method": "forecast.question.readiness",
+        "params": {"question_id": "fq_missing"},
+    })
+    assert "error" in resp
+
+
 # ── detached-worker entrypoint ────────────────────────────────────────────────
 
 

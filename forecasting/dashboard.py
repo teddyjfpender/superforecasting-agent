@@ -566,6 +566,18 @@ def build_workspace_payload(
     notes_by_q = ledger.analyst_notes_by_question(member_ids)
     theses_by_member = ledger.theses_by_member(member_ids)
 
+    # Machine-readiness composite (the operator's hidden-parameter visibility): two
+    # more batched GROUP BYs — active watched-source counts + active reference-class
+    # counts, keyed by question id. Every OTHER readiness dimension is already in
+    # memory (structured components off the current snapshot, executable triggers on
+    # the question row, an enabled scheduled review is presence in next_reviews, and
+    # close_time/impact/resolution_criteria are question columns) — so this adds ONLY
+    # these two queries for the WHOLE book, never one per question.
+    from forecasting.readiness_lens import question_machine_readiness
+
+    watch_counts = ledger.active_watched_source_counts(member_ids)
+    ref_class_counts = ledger.active_reference_class_counts(member_ids)
+
     # Saturation visibility (Wave 3 H4): the under-saturation bar, read ONCE for the
     # whole page (config forecasting.hooks.sweep_alert_threshold, default 60). Each
     # forecast row carries its stored observe-mode score + a below-threshold flag so
@@ -602,6 +614,24 @@ def build_workspace_payload(
         closing = question.id in closing_ids
         if closing:
             closing_soon += 1
+
+        # Machine-readiness: the desk's visibility into the hidden per-question
+        # workability parameters. src_count is the ACTIVE watched-source count;
+        # readiness is the 0-100 composite + the exact-fix gap list. All inputs
+        # are already in memory here (only watch/ref-class counts were batched).
+        _watch_count = watch_counts.get(question.id, 0)
+        _components = current.ensemble_components if current else None
+        readiness = question_machine_readiness(
+            question_id=question.id,
+            watch_count=_watch_count,
+            has_components=bool(_components) if isinstance(_components, dict) else False,
+            ref_class_count=ref_class_counts.get(question.id, 0),
+            update_triggers=question.update_triggers,
+            has_scheduled_review=question.id in next_reviews,
+            close_time=question.close_time,
+            impact=question.impact,
+            resolution_rule=question.resolution_criteria,
+        )
 
         outcome_type = question.outcome_space.type
         distribution = _distribution_view(probability) if current else None
@@ -722,6 +752,11 @@ def build_workspace_payload(
                 # collapse the per-member N+1 — same value as
                 # list_theses_for_member(question.id), one query for the page.
                 "thesis_ids": theses_by_member.get(question.id, []),
+                # Machine-readiness (the operator's hidden-parameter visibility):
+                # the active watched-source count + the 0-100 composite with an
+                # exact-fix gap list per missing dimension.
+                "src_count": _watch_count,
+                "readiness": readiness,
             }
         )
 

@@ -3847,6 +3847,119 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.desk.task")
+def _(rid, params: dict) -> dict:
+    """Enqueue a DETACHED Desk "task" job — the operator's free-text fix loop.
+
+    Runs ONE gated agent session over an EXPLICIT batch of questions (not the
+    per-question reforecast chain): the operator's ``instruction`` composed with the
+    question list, each carrying its machine-readiness gaps so the agent sees WHAT is
+    missing. Validates each id EXISTS and is ACTIVE via the shared
+    :func:`forecasting.reforecast_jobs.validate_reforecast_ids`, refuses an empty
+    instruction, and caps the batch at ``forecasting.reforecast.max_batch``. Returns
+    ``{run_id, total, note}`` immediately; poll ``forecast.reforecast.status`` (the
+    same job store — the spec.mode field distinguishes a task run). No gate is
+    weakened — the session commits through the same gated ``forecast_ledger_tool``.
+    """
+    try:
+        from forecasting.ledger import ForecastLedger
+        from forecasting.reforecast_jobs import (
+            DEFAULT_MAX_BATCH,
+            DEFAULT_TASK_MAX_ITERATIONS,
+            start_job,
+            validate_reforecast_ids,
+        )
+        from hermes_cli.config import cfg_get, load_config_readonly
+
+        instruction = str(params.get("instruction") or "").strip()
+        if not instruction:
+            return _err(
+                rid, 5008, "forecast.desk.task requires a non-empty instruction"
+            )
+        raw_ids = params.get("question_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return _err(
+                rid, 5008,
+                "forecast.desk.task requires a non-empty question_ids list",
+            )
+        model = (params.get("model") or "").strip() or None
+        provider = (params.get("provider") or "").strip() or None
+        try:
+            max_iterations = int(
+                params.get("max_iterations") or DEFAULT_TASK_MAX_ITERATIONS
+            )
+        except (TypeError, ValueError):
+            max_iterations = DEFAULT_TASK_MAX_ITERATIONS
+
+        ledger = ForecastLedger()
+        try:
+            max_batch = int(
+                cfg_get(
+                    load_config_readonly(),
+                    "forecasting", "reforecast", "max_batch",
+                    default=DEFAULT_MAX_BATCH,
+                )
+                or DEFAULT_MAX_BATCH
+            )
+        except (TypeError, ValueError):
+            max_batch = DEFAULT_MAX_BATCH
+
+        accepted, errors = validate_reforecast_ids(ledger, raw_ids, max_batch=max_batch)
+        if errors:
+            return _err(rid, 5008, "; ".join(errors))
+
+        spec = {
+            "mode": "task",
+            "instruction": instruction,
+            "question_ids": accepted,
+            "db": str(ledger.db_path) if getattr(ledger, "db_path", None) else None,
+            "model": model,
+            "provider": provider,
+            "max_iterations": max_iterations,
+            "triggered_by": "desk_task",
+        }
+        run_id = start_job(spec, wait=False)
+        return _ok(
+            rid,
+            {
+                "run_id": run_id,
+                "total": len(accepted),
+                "note": (
+                    f"task over {len(accepted)} question(s) — one agent session; "
+                    f"poll forecast.reforecast.status"
+                ),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.question.readiness")
+def _(rid, params: dict) -> dict:
+    """READ-ONLY machine-readiness composite for ONE question (the settings modal).
+
+    Returns ``{question_id, title, score (0-100), src_count, gaps:[{key, label,
+    fix_hint}]}`` — the hidden per-question workability parameters (watched sources,
+    structured components, reference classes, executable triggers, an enabled review
+    schedule, close_time/impact/resolution rule) and the EXACT operator fix for each
+    unmet one. Never mutates the ledger."""
+    try:
+        from forecasting.ledger import ForecastLedger
+        from forecasting.readiness_lens import build_question_readiness
+
+        qid = str(params.get("question_id") or "").strip()
+        if not qid:
+            return _err(rid, 5008, "forecast.question.readiness requires a question_id")
+        ledger = ForecastLedger()
+        try:
+            payload = build_question_readiness(ledger, qid)
+        except Exception as exc:  # noqa: BLE001 — unknown id / read failure
+            return _err(rid, 5008, str(exc))
+        return _ok(rid, payload)
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("forecast.triage.contested")
 def _(rid, params: dict) -> dict:
     """READ-ONLY list of CONTESTED triage staging rows awaiting an operator label.
