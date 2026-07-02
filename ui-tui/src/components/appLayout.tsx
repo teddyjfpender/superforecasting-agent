@@ -28,7 +28,7 @@ import { AgentsOverlay } from './agentsOverlay.js'
 import { AlertsView } from './alertsView.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
-import { HomeHero, Panel, SessionPanel } from './branding.js'
+import { FirstRunHint, HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
 import { CheatSheetOverlay } from './cheatSheetOverlay.js'
@@ -836,6 +836,7 @@ export const AppLayout = memo(function AppLayout({
       </Box>
       <Box flexGrow={1} />
       <HomeHero info={ui.info ?? undefined} maxCols={heroCols} t={ui.theme} />
+      <FirstRunHint t={ui.theme} />
       {landingNotices.length > 0 && (
         <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
           {landingNotices.map((msg, index) => (

@@ -14,6 +14,7 @@ import { forecastFindDraft, forecastShortcutForKey } from '../lib/forecastShortc
 import { RAIL_WIDTH } from '../lib/homeLayout.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
+import { dismissFirstRunHint } from '../lib/uiFlagsStore.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 
 import { resolveViewChord } from '../content/keymaps.js'
@@ -296,6 +297,9 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // own useInput traps first (stopImmediatePropagation), so we never reach
     // here for those keys.
     if (canOpenGlobalOverlay(overlay) && isCtrl(key, ch, 'k')) {
+      // Discovering the palette permanently retires the landing "New here?" hint.
+      dismissFirstRunHint()
+
       return patchOverlayState({ palette: true })
     }
 
@@ -315,6 +319,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       !cState.input
     ) {
       cActions.clearIn()
+      // Opening the cheat-sheet is itself the discovery act — retire the hint.
+      dismissFirstRunHint()
 
       return patchOverlayState({ cheatSheet: true })
     }
@@ -435,6 +441,8 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
       if (nav && selectNavView(nav)) {
         cActions.clearIn()
+        // A completed Ctrl+G view-chord means the chords are discovered too.
+        dismissFirstRunHint()
 
         return
       }

@@ -1,10 +1,14 @@
 import { Box, Text, useStdout } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 
+import { canOpenGlobalOverlay } from '../app/navRoutes.js'
+import { $overlayState } from '../app/overlayStore.js'
 import { artWidth, FORECAST_HERO_WIDTH, forecastHero } from '../banner.js'
 import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import { flat } from '../lib/text.js'
+import { $firstRunHintDismissed, dismissFirstRunHint } from '../lib/uiFlagsStore.js'
 import type { Theme } from '../theme.js'
 import type { PanelRow, PanelSection, SessionInfo } from '../types.js'
 
@@ -158,6 +162,52 @@ export function HomeHero({ info, maxCols, t }: { info?: SessionInfo; maxCols?: n
             <Text color={t.color.accent}>{key}</Text> {label}
           </Text>
         ))}
+      </Box>
+    </Box>
+  )
+}
+
+// ── First-run discovery hint ─────────────────────────────────────────
+//
+// A one-line nudge on the Home landing that teaches the Wave-4 chrome a new
+// user has no other way to find: Ctrl+K (palette), Ctrl+G-then-letter (view
+// chords), and `?` (the full cheat-sheet — the only screen that documents the
+// rest, but which is itself only reachable by the key it teaches). Shown until
+// dismissed: pressing any of those keys counts as discovered (wired in
+// useInputHandlers), or click the ✕. Dismissal persists across sessions via
+// $firstRunHintDismissed (ui_flags.json). It renders ONLY when no modal/prompt
+// owns the keyboard (canOpenGlobalOverlay) — belt-and-suspenders, since the
+// landing already unmounts under the palette/cheat-sheet — and truncates to a
+// single line so it can never grow the hero into the pinned composer.
+
+export function FirstRunHint({ t }: { t: Theme }) {
+  const dismissed = useStore($firstRunHintDismissed)
+  const overlay = useStore($overlayState)
+
+  if (dismissed || !canOpenGlobalOverlay(overlay)) {
+    return null
+  }
+
+  return (
+    <Box justifyContent="center" marginTop={1}>
+      <Box
+        onClick={(e: { cellIsBlank?: boolean }) => {
+          if (!e.cellIsBlank) {
+            dismissFirstRunHint()
+          }
+        }}
+      >
+        <Text color={t.color.muted} wrap="truncate-end">
+          <Text color={t.color.accent}>New here?</Text>
+          {'  '}
+          <Text color={t.color.accent}>Ctrl+K</Text>
+          {' commands  ·  '}
+          <Text color={t.color.accent}>g</Text>
+          {'+letter views  ·  '}
+          <Text color={t.color.accent}>?</Text>
+          {' all keys  ·  '}
+          <Text color={t.color.muted}>✕ dismiss</Text>
+        </Text>
       </Box>
     </Box>
   )
