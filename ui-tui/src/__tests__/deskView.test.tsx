@@ -288,7 +288,10 @@ const mountDesk = async (columns: number, response: ForecastWorkspaceResponse, g
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
-  await tick(60)
+  // Give Ink time to wire raw-mode input BEFORE any press — under heavy parallel
+  // suite load a 60ms settle occasionally raced the subscription, dropping the
+  // first keypress.
+  await tick(100)
 
   return {
     cleanup: () => {
@@ -984,6 +987,218 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
     // Its NEXT cell reads a plain forward duration, NOT the running/spinner text.
     expect(text).toMatch(/\b\d+[dh]\b/)
     expect(text).not.toMatch(/due · \d+m/)
+    desk.cleanup()
+  })
+})
+
+// ── Mass forced re-run ("run en masse") ──────────────────────────────────────
+// A plain (no thesis/factor) forecast under a shared #tag so the FIRST tab has
+// concrete markable rows at cursor 0 (no lens row to offset).
+const plainRow = (id: string, title: string): ForecastWorkspaceItem => ({
+  as_of: '2026-06-29T00:00:00Z',
+  close_time: '2026-12-31T00:00:00Z',
+  delta: 0.01,
+  domain: 'macro',
+  evidence_count: 1,
+  freshness: 'fresh today',
+  headline_kind: 'probability',
+  headline_probability: 0.44,
+  history: [{ as_of: '2026-06-29T00:00:00Z', headline_probability: 0.44 }],
+  id,
+  open_alert_count: 0,
+  probability: 0.44,
+  probability_display: '0.440',
+  snapshot_count: 2,
+  status: 'active',
+  title,
+  topics: ['macro']
+})
+
+const multiFixture = (): ForecastWorkspaceResponse => ({
+  active_count: 3,
+  closing_soon_count: 0,
+  forecasts: [
+    plainRow('fq_a', 'Alpha question'),
+    plainRow('fq_b', 'Beta question'),
+    plainRow('fq_c', 'Gamma question')
+  ],
+  generated_at: '2026-06-29T14:00:00Z',
+  open_alert_count: 0,
+  product: 'Superforecasting Agent'
+})
+
+// A thesis with TWO member questions, so a lens-row U provably fans out over BOTH.
+const twoMemberFixture = (): ForecastWorkspaceResponse => ({
+  active_count: 2,
+  closing_soon_count: 0,
+  factors: [],
+  forecasts: [cpiItem(), { ...cpiItem(), id: 'fq_cpi2', title: 'Jun 2026 CPI-U YoY' }],
+  generated_at: '2026-05-29T14:00:00Z',
+  open_alert_count: 0,
+  product: 'Superforecasting Agent',
+  theses: [{ ...inflationThesis(), member_count: 2, question_ids: ['fq_cpi', 'fq_cpi2'] }]
+})
+
+describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
+  it('classifyRefresh maps the --json status honestly (committed / no_change / no_watched_sources / error)', async () => {
+    const { classifyRefresh } = await import('../components/deskView.js')
+    const out = (status: string) => ({ code: 0, output: JSON.stringify({ status }) })
+    expect(classifyRefresh(out('committed'))).toBe('refreshed')
+    expect(classifyRefresh(out('no_change'))).toBe('unchanged')
+    expect(classifyRefresh(out('no_watched_sources'))).toBe('noSources')
+    expect(classifyRefresh({ code: 2, output: '' })).toBe('error')
+    // An unrecognised / non-JSON body defaults to a real refresh (conservative).
+    expect(classifyRefresh({ code: 0, output: 'not json' })).toBe('refreshed')
+    expect(classifyRefresh(undefined)).toBe('refreshed')
+  })
+
+  it('Space marks the cursor row and advances; marks stack + the header and chips show the count', async () => {
+    const desk = await mountDesk(120, multiFixture())
+    await desk.press(' ') // mark fq_a → cursor advances to fq_b
+    await desk.press(' ') // mark fq_b → cursor advances to fq_c
+    // The cumulative buffer holds both the 1-selected frame (after the first mark)
+    // and the 2-selected frame (after the advance + second mark), proving marks
+    // stack AND the cursor advanced onto a fresh row each time.
+    const text = desk.text()
+    expect(text).toContain('▎') // the leading accent mark glyph
+    expect(text).toContain('1 selected') // header count after the first mark
+    expect(text).toContain('2 selected') // header count after the second
+    expect(text).toContain('Update (2)') // chips carry the live count
+    expect(text).toContain('Re-arm (2)')
+    desk.cleanup()
+  })
+
+  it('un-marking a row (Space toggles off) removes it from the fan-out', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const desk = await mountDesk(120, multiFixture(), recordingGw(multiFixture(), calls))
+    await desk.press(' ') // mark fq_a → cursor fq_b
+    await desk.press(' ') // mark fq_b → cursor fq_c
+    await desk.press('k') // cursor back to fq_b
+    await desk.press(' ') // UN-mark fq_b → cursor fq_c
+    await desk.press('U') // only fq_a remains marked
+    const refreshes = calls.filter(c => c.method === 'forecast.command')
+    expect(refreshes).toHaveLength(1)
+    expect(refreshes[0]?.params.argv).toEqual(['refresh', 'fq_a', '--json'])
+    desk.cleanup()
+  })
+
+  it('Shift+↓ extends the marked run over the rows it passes over', async () => {
+    const desk = await mountDesk(120, multiFixture())
+    // Shift+Down from fq_a marks the anchor (fq_a) AND the row it lands on (fq_b).
+    await desk.press('\x1b[1;2B')
+    expect(desk.text()).toContain('2 selected')
+    // A second Shift+Down lands on fq_c and marks it too → a contiguous run of 3.
+    await desk.press('\x1b[1;2B')
+    expect(desk.text()).toContain('3 selected')
+    desk.cleanup()
+  })
+
+  it('Esc clears the selection FIRST, before it would clear the filter', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const desk = await mountDesk(120, multiFixture(), recordingGw(multiFixture(), calls))
+    // A filter that keeps all three rows, then mark two of them.
+    await desk.press('/')
+    await desk.press('question')
+    await desk.press('\r')
+    await desk.press(' ') // mark fq_a
+    await desk.press(' ') // mark fq_b
+    // Esc must eat the MARKS, not the query: U then hits the single cursor row →
+    // exactly ONE refresh (it would be two if the marks had survived the Esc).
+    await desk.press('\x1b')
+    await desk.press('U')
+    const refreshes = calls.filter(c => c.method === 'forecast.command')
+    expect(refreshes).toHaveLength(1)
+    desk.cleanup()
+  })
+
+  it('U fans the real update over EVERY marked id and flashes an honest tally', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const gw = {
+      request: (method: string, params: Record<string, unknown>) => {
+        calls.push({ method, params })
+        if (method === 'forecast.question') {
+          return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+        }
+        if (method === 'forecast.command') {
+          const id = (params.argv as string[])?.[1]
+          const status = id === 'fq_a' ? 'committed' : id === 'fq_b' ? 'no_change' : 'no_watched_sources'
+          return Promise.resolve({ code: 0, output: JSON.stringify({ status }) })
+        }
+        return Promise.resolve(multiFixture())
+      }
+    }
+    const desk = await mountDesk(120, multiFixture(), gw as never)
+    await desk.press(' ') // mark fq_a
+    await desk.press(' ') // mark fq_b
+    await desk.press(' ') // mark fq_c
+    await desk.press('U')
+    const refreshes = calls.filter(c => c.method === 'forecast.command')
+    // One forecast.command per selected id, in visible order.
+    expect(refreshes.map(c => (c.params.argv as string[])[1])).toEqual(['fq_a', 'fq_b', 'fq_c'])
+    // Only fq_a truly refreshed; fq_b was a no-op; fq_c had no sources — the summary
+    // must NOT claim three updates.
+    expect(desk.text()).toContain('✓ 1 updated · 1 unchanged · 1 no sources')
+    desk.cleanup()
+  })
+
+  it('U on a thesis LENS row fans the update over ALL its member questions', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const desk = await mountDesk(120, twoMemberFixture(), recordingGw(twoMemberFixture(), calls))
+    // Default thesis tab, cursor on the lens row (no marks) → U selects all members.
+    await desk.press('U')
+    const refreshes = calls.filter(c => c.method === 'forecast.command')
+    expect(refreshes.map(c => (c.params.argv as string[])[1]).sort()).toEqual(['fq_cpi', 'fq_cpi2'])
+    desk.cleanup()
+  })
+
+  it('the marked selection survives a payload reload (keyed by id, not index)', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const desk = await mountDesk(120, multiFixture(), recordingGw(multiFixture(), calls))
+    await desk.press(' ') // mark fq_a
+    await desk.press(' ') // mark fq_b
+    await desk.press('r') // force a workspace reload
+    await desk.press('U') // marks persist → both fan out
+    const refreshes = calls.filter(c => c.method === 'forecast.command')
+    expect(refreshes.map(c => (c.params.argv as string[])[1])).toEqual(['fq_a', 'fq_b'])
+    desk.cleanup()
+  })
+
+  it('u with a selection fans the cheap re-arm over every marked id', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const desk = await mountDesk(120, multiFixture(), recordingGw(multiFixture(), calls))
+    await desk.press(' ') // mark fq_a
+    await desk.press(' ') // mark fq_b
+    await desk.press('u')
+    const rearms = calls.filter(c => c.method === 'forecast.reforecast')
+    expect(rearms.map(c => c.params.id)).toEqual(['fq_a', 'fq_b'])
+    expect(desk.text()).toContain('✓ 2 re-armed')
+    desk.cleanup()
+  })
+
+  it('ignores a re-triggered U while a mass run is in flight (no duplicate fan-out)', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const gw = {
+      request: (method: string, params: Record<string, unknown>) => {
+        calls.push({ method, params })
+        if (method === 'forecast.question') {
+          return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+        }
+        if (method === 'forecast.command') {
+          return new Promise(res => setTimeout(() => res({ code: 0, output: '{"status":"committed"}' }), 120))
+        }
+        return Promise.resolve(multiFixture())
+      }
+    }
+    const desk = await mountDesk(120, multiFixture(), gw as never)
+    await desk.press(' ') // mark fq_a
+    await desk.press(' ') // mark fq_b
+    await desk.press('U') // starts the run; first refresh is pending (120ms)
+    await desk.press('U') // in-flight → guarded (parks "already updating", no 2nd run)
+    expect(desk.text()).toContain('already updating')
+    await tick(400) // let the single fan-out drain both refreshes
+    const refreshes = calls.filter(c => c.method === 'forecast.command')
+    // Exactly ONE fan-out of the two ids — the guarded re-trigger enqueued nothing.
+    expect(refreshes).toHaveLength(2)
     desk.cleanup()
   })
 })

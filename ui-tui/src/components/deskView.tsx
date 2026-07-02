@@ -97,6 +97,80 @@ const FORECAST_SEARCH_FIELDS: FieldSpec<ForecastWorkspaceItem>[] = [
   { get: i => i.id, weight: 0.3 }
 ]
 
+// ── Mass forced re-run ("run en masse") ──────────────────────────────────────
+// The operator can mark a set of rows (Space toggles, Shift+↑/↓ extends) and fan
+// the REAL update / re-arm over every one. Each outcome is classified HONESTLY so
+// the completion summary never claims success for a row that had nothing to do.
+export type MassOutcome = 'error' | 'noSources' | 'refreshed' | 'unchanged'
+export type MassTally = Record<MassOutcome, number>
+
+interface MassProgress {
+  current: number
+  title: string
+  total: number
+  verb: 're-arming' | 'updating'
+}
+
+// Classify one `forecast refresh <id> --json` result. The forecast.command RPC
+// returns `{ code, output }`: a non-zero exit is an error; otherwise the --json
+// payload's `status` distinguishes a committed update from a no-op (`no_change`)
+// or a sourceless question (`no_watched_sources`). Anything unrecognised (or a
+// non-JSON body) is treated as a real refresh — the conservative default only
+// down-grades to unchanged/no-sources on an explicit honest signal.
+export const classifyRefresh = (raw: unknown): MassOutcome => {
+  const env = raw as { code?: unknown; output?: unknown } | null | undefined
+  if (env && typeof env.code === 'number' && env.code !== 0) {
+    return 'error'
+  }
+  const out = env && typeof env.output === 'string' ? env.output : ''
+  let status: null | string = null
+  if (out) {
+    try {
+      const parsed = JSON.parse(out) as { status?: unknown }
+      status = typeof parsed.status === 'string' ? parsed.status : null
+    } catch {
+      // Non-JSON (or JSON with log-line noise) — scan for the status token.
+      const m = /"status"\s*:\s*"([a-z_]+)"/i.exec(out)
+      status = m ? m[1]! : null
+    }
+  }
+  switch (status) {
+    case 'no_watched_sources':
+      return 'noSources'
+
+    case 'no_change':
+      return 'unchanged'
+
+    default:
+      return 'refreshed'
+  }
+}
+
+// The honest completion summaries — "✓ 7 updated · 3 unchanged · 7 no sources".
+// The updated count is always shown (even 0, so a run that refreshed nothing says
+// so); the rest only when non-zero.
+export const summarizeUpdate = (t: MassTally): string => {
+  const parts = [`${t.refreshed} updated`]
+  if (t.unchanged) {
+    parts.push(`${t.unchanged} unchanged`)
+  }
+  if (t.noSources) {
+    parts.push(`${t.noSources} no sources`)
+  }
+  if (t.error) {
+    parts.push(`${t.error} failed`)
+  }
+  return `✓ ${parts.join(' · ')}`
+}
+
+export const summarizeRearm = (t: MassTally): string => {
+  const parts = [`${t.refreshed} re-armed`]
+  if (t.error) {
+    parts.push(`${t.error} failed`)
+  }
+  return `✓ ${parts.join(' · ')}`
+}
+
 interface DeskViewProps {
   gw: GatewayClient
   initialId?: null | string
@@ -145,6 +219,19 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // whole modal session so the modal's own footer hint keeps pointing at the
   // Actions/resolve tail. Cleared when the modal closes.
   const [resolveContext, setResolveContext] = useState(false)
+
+  // ── Mass selection + forced re-run (operator "run en masse") ────────────────
+  // A per-lens Set of marked question ids: Space toggles the cursor row's mark
+  // (mutt-style — advances after), Shift+↑/↓ extends the run. Cleared on a lens
+  // switch and by the first Esc. Keyed by id (not index) so it survives the 90s
+  // live re-pull / sweep reloads; ids that vanish from the book are pruned.
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
+  // The in-flight mass run's live progress (null when idle). Drives the swept
+  // progress flash; massRunningRef is the SYNC truth that gates re-triggers, and
+  // unmountedRef stops the async loop from setState-after-unmount.
+  const [massProgress, setMassProgress] = useState<MassProgress | null>(null)
+  const massRunningRef = useRef(false)
+  const unmountedRef = useRef(false)
 
   // The detail packet (tail audit, ensemble, packet-tail sections) loads ASYNC
   // per selection and is rendered inside the modal only.
@@ -521,12 +608,45 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
   }, [selected, packet, packetId, selectedId])
 
-  // Switch tabs reset the selection to row 0 (locked decision).
+  // Mark the desk unmounted so the mass-run loop's async tail never setState after
+  // teardown (the loop checks unmountedRef before every state write / reschedule).
+  useEffect(() => {
+    unmountedRef.current = false
+    return () => {
+      unmountedRef.current = true
+    }
+  }, [])
+
+  // Prune marks whose question left the book. A payload reload (90s re-pull, sweep
+  // done, r) may retire a question; drop only its id. An unchanged set returns the
+  // SAME reference so live marking isn't disturbed by a quiet re-pull.
+  useEffect(() => {
+    setSelectedIds(prev => {
+      if (prev.size === 0) {
+        return prev
+      }
+      const live = new Set(items.map(i => i.id).filter(Boolean))
+      let changed = false
+      const next = new Set<string>()
+      for (const id of prev) {
+        if (live.has(id)) {
+          next.add(id)
+        } else {
+          changed = true
+        }
+      }
+      return changed ? next : prev
+    })
+  }, [items])
+
+  // Switch tabs reset the selection to row 0 (locked decision). The mark set is
+  // per-lens, so a lens switch also clears it.
   const switchTab = (next: number) => {
     const n = Math.max(1, tabs.length)
     setTab(((next % n) + n) % n)
     setSel(0)
     setModalOpen(false)
+    setSelectedIds(new Set())
   }
 
   // `u` — RE-ARM: mark the selected forecast (or, on a lens row, the thesis/factor)
@@ -544,23 +664,125 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       .catch(() => setFlash('re-arm failed'))
   }
 
-  // `U` — REAL UPDATE NOW: run `forecast refresh <id>` in-process (pull watched
-  // sources, re-estimate, commit a fresh snapshot). Unlike `u`/re-arm this is an
-  // actual reforecast, so it only applies to a concrete question (never a lens
-  // aggregate). Heavier than re-arm — the flash reflects the in-flight work.
-  const runRealUpdate = () => {
-    if (lensActive || !selectedId) {
-      setFlash('select a forecast to update now')
+  // ── Mark set + mass forced re-run ──────────────────────────────────────────
+  const clearSelection = () => setSelectedIds(new Set())
+
+  // The question id at a given cursor row (null for the lead lens row, which has
+  // no markable question).
+  const rowIdAt = (rowIndex: number): null | string => {
+    if (hasLens && rowIndex === 0) {
+      return null
+    }
+    return sortedVisible[rowIndex - lensOffset]?.id ?? null
+  }
+
+  // Space — toggle the cursor row's mark, then advance one row (mutt-style). On
+  // the lens row (no id) it just advances.
+  const toggleMark = () => {
+    const id = selectedId
+    if (id) {
+      setSelectedIds(prev => {
+        const next = new Set(prev)
+        if (next.has(id)) {
+          next.delete(id)
+        } else {
+          next.add(id)
+        }
+        return next
+      })
+    }
+    setSel(i => Math.min(Math.max(0, rowCount - 1), i + 1))
+  }
+
+  // Shift+↑/↓ — move the cursor AND mark both the anchor row and the row it lands
+  // on, so a shift-run paints a contiguous range (marking the start row too).
+  const extendSelection = (dir: -1 | 1) => {
+    const from = clampedSel
+    const to = Math.min(Math.max(0, rowCount - 1), from + dir)
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      const a = rowIdAt(from)
+      const b = rowIdAt(to)
+      if (a) {
+        next.add(a)
+      }
+      if (b) {
+        next.add(b)
+      }
+      return next
+    })
+    setSel(to)
+  }
+
+  // The ordered (id, title) targets a mass run fans out over: an explicit marked
+  // set wins; else — for `U` — a lens row means "every member of the lens"; else
+  // the single cursor row (the legacy single-`U`/`u` behaviour). Order follows
+  // the visible list.
+  const massTargets = (kind: 'rearm' | 'update'): { id: string; title: string }[] => {
+    if (selectedIds.size > 0) {
+      return sortedVisible
+        .filter(it => it.id && selectedIds.has(it.id))
+        .map(it => ({ id: it.id!, title: it.title ?? it.id! }))
+    }
+    if (kind === 'update' && lensActive) {
+      // `U` on the thesis/factor lens row → trigger every member question.
+      return sortedVisible.filter(it => it.id).map(it => ({ id: it.id!, title: it.title ?? it.id! }))
+    }
+    if (!lensActive && selectedId) {
+      return [{ id: selectedId, title: selected?.title ?? selectedId }]
+    }
+    return []
+  }
+
+  // `U` — REAL UPDATE NOW (`forecast refresh <id> --json`, per row) — or `u`'s
+  // cheap re-arm (`forecast.reforecast`), fanned SEQUENTIALLY over every target
+  // with a live swept progress flash. On completion it reloads once and flashes an
+  // HONEST tally parsed per row (refreshed / unchanged / no-sources / failed),
+  // then clears the marks. Re-triggers while a run is in flight are ignored; an
+  // unmount cancels the loop cleanly.
+  const runMass = (kind: 'rearm' | 'update') => {
+    if (massRunningRef.current) {
+      const p = massProgress
+      setFlash(p ? `already ${p.verb} ${p.total}…` : 'already updating…')
       return
     }
-    const title = truncate(selected?.title ?? selectedId, 32)
-    setFlash(`↻ updating ${title}…`)
-    gw.request('forecast.command', { arg: `refresh ${selectedId} --json`, argv: ['refresh', selectedId, '--json'] })
-      .then(() => {
-        setFlash(`✓ updated ${title}`)
-        load()
-      })
-      .catch(() => setFlash('update failed'))
+    const targets = massTargets(kind)
+    if (!targets.length) {
+      setFlash(kind === 'update' ? 'select a forecast to update now' : 'select a forecast to re-arm')
+      return
+    }
+    massRunningRef.current = true
+    setFlash('') // clear any stale flash so only the live progress shows during the run
+    const total = targets.length
+    const verb: MassProgress['verb'] = kind === 'update' ? 'updating' : 're-arming'
+    const tally: MassTally = { error: 0, noSources: 0, refreshed: 0, unchanged: 0 }
+
+    const step = (i: number) => {
+      if (unmountedRef.current) return
+      if (i >= total) {
+        massRunningRef.current = false
+        setMassProgress(null)
+        clearSelection()
+        load() // one reload after the whole fan-out
+        setFlash(kind === 'update' ? summarizeUpdate(tally) : summarizeRearm(tally))
+        return
+      }
+      const { id, title } = targets[i]!
+      setMassProgress({ current: i + 1, title: truncate(title, 32), total, verb })
+      const req =
+        kind === 'update'
+          ? gw.request('forecast.command', { arg: `refresh ${id} --json`, argv: ['refresh', id, '--json'] })
+          : gw.request('forecast.reforecast', { id })
+      req
+        .then((raw: unknown) => {
+          tally[kind === 'update' ? classifyRefresh(raw) : 'refreshed'] += 1
+        })
+        .catch(() => {
+          tally.error += 1
+        })
+        .finally(() => step(i + 1))
+    }
+    step(0)
   }
 
   // `R` — RESOLVE: open the question detail modal and scroll it to the Actions
@@ -675,7 +897,11 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     if (key.escape) {
-      // Esc clears an active filter first, else closes the view.
+      // Esc clears a non-empty selection FIRST, then an active filter, else closes.
+      if (selectedIds.size > 0) {
+        return clearSelection()
+      }
+
       if (query) {
         return setQuery('')
       }
@@ -715,11 +941,21 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     if (ch === 'u') {
-      return runRearm()
+      return selectedIds.size > 0 ? runMass('rearm') : runRearm()
     }
 
     if (ch === 'U') {
-      return runRealUpdate()
+      return runMass('update')
+    }
+
+    // Space — mark the cursor row (mutt-style, advances after). Shift+↑/↓ extends
+    // the marked run. Both are inert on the read-only Bench lens (trapped above).
+    if (ch === ' ') {
+      return toggleMark()
+    }
+
+    if (key.shift && (key.upArrow || key.downArrow)) {
+      return extendSelection(key.upArrow ? -1 : 1)
     }
 
     if (ch === 'R') {
@@ -807,6 +1043,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             {` open alert${desk.alerts === 1 ? '' : 's'}`}
             {desk.generatedAt ? ` · as of ${shortDate(desk.generatedAt)}` : ''}
           </Text>
+          {selectedIds.size > 0 ? (
+            <Text bold color={t.color.accent}>{` · ${selectedIds.size} selected`}</Text>
+          ) : null}
         </Text>
       )}
     </Box>
@@ -880,6 +1119,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         cursor={lensActive ? -1 : clampedSel - lensOffset}
         empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
         items={sortedVisible}
+        markedIds={selectedIds}
         nowMs={Math.floor(Date.now() / 60_000) * 60_000}
         onSelect={i => { if (!modalOpen && !settingsOpen && !globalModal) setSel(i + lensOffset) }}
         // The header sorts on click, but only while nothing modal is covering the
@@ -1023,19 +1263,30 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           { k: 'r', label: 'Refresh', run: () => { setBenchLoading(true); gw.request<unknown>('forecast.bench', {}).then(raw => { const r = asRpcResult<ForecastBenchResponse>(raw); if (r) { setOverlayCache('forecast.bench', r); setBench(r) } setBenchLoading(false) }).catch(() => setBenchLoading(false)) } },
           { k: 'q', label: 'Close', run: onClose }
         ]
-      : [
-          { k: '↑↓', label: 'Select' },
-          { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
-          { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
-          { k: 'U', label: 'Update', run: () => runRealUpdate() },
-          { k: 'u', label: 'Re-arm', run: () => runRearm() },
-          { k: 'R', label: 'Resolve', run: () => openResolve() },
-          { k: 'n', label: 'New', run: () => openNewQuestion() },
-          { k: 's', label: 'Settings', run: () => openSettings() },
-          { k: 'o', label: 'Sort', run: () => onSortCycle() },
-          { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
-          { k: 'q', label: 'Close', run: onClose }
-        ]
+      : selectedIds.size > 0
+        ? // With a selection the footer focuses on the mass actions (live-keys-only):
+          // Update/Re-arm carry the live count, plus Mark/extend and the Esc clear.
+          [
+            { k: 'U', label: `Update (${selectedIds.size})`, run: () => runMass('update') },
+            { k: 'u', label: `Re-arm (${selectedIds.size})`, run: () => runMass('rearm') },
+            { k: 'Spc', label: 'Mark', run: () => toggleMark() },
+            { k: '⇧↑↓', label: 'Extend' },
+            { k: 'Esc', label: 'Clear', run: () => clearSelection() },
+            { k: 'q', label: 'Close', run: onClose }
+          ]
+        : [
+            { k: '↑↓', label: 'Select' },
+            { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
+            { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
+            { k: 'U', label: 'Update', run: () => runMass('update') },
+            { k: 'u', label: 'Re-arm', run: () => runRearm() },
+            { k: 'R', label: 'Resolve', run: () => openResolve() },
+            { k: 'n', label: 'New', run: () => openNewQuestion() },
+            { k: 's', label: 'Settings', run: () => openSettings() },
+            { k: 'o', label: 'Sort', run: () => onSortCycle() },
+            { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
+            { k: 'q', label: 'Close', run: onClose }
+          ]
 
   // When the selected row's review is overdue/stale, spell out the honest split:
   // `u` only re-arms the schedule, `U` runs a real update now. This is contextual
@@ -1053,9 +1304,19 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           the still-visible footer must not leak clicks past that trap. The detail
           modal swaps to its own modal-only chip set, so it needs no gate here. */}
       <FooterChips chips={chips} disabled={settingsOpen || globalModal} t={t} />
-      {/* An OPTIONAL status line — a transient flash, or a stale-review note — not
-          a second shortcuts row: it only paints when there is something to say. */}
-      {flash || showStaleNote ? (
+      {/* An OPTIONAL status line — the in-flight mass-run progress (accent-swept,
+          like the sweep indicator), else a transient flash / stale-review note. It
+          only paints when there is something to say. */}
+      {massProgress ? (
+        <Text wrap="truncate-end">
+          <Text color={sweepColor(sweepStops(t), now)}>
+            {`↻ ${massProgress.verb} ${massProgress.current}/${massProgress.total} · ${massProgress.title}…`}
+          </Text>
+          {/* A re-trigger while the run is in flight parks its "already updating N…"
+              guard note here (the run keeps going) rather than a duplicate fan-out. */}
+          {flash ? <Text color={t.color.warn}>{`  ${flash}`}</Text> : null}
+        </Text>
+      ) : flash || showStaleNote ? (
         <Text wrap="truncate-end">
           {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
           {showStaleNote ? <Text color={t.color.warn}>stale · u re-arms next cycle · U updates now</Text> : null}
@@ -1813,6 +2074,7 @@ function DeskForecastList({
   cursor,
   empty,
   items,
+  markedIds,
   nowMs,
   onSelect,
   onSort,
@@ -1826,6 +2088,8 @@ function DeskForecastList({
   cursor: number
   empty: string
   items: ForecastWorkspaceItem[]
+  // The marked (mass-selected) question ids; a leading ▎ paints each marked row.
+  markedIds: Set<string>
   nowMs: number
   onSelect: (i: number) => void
   // Clicking a column header sorts by it; undefined while a modal covers the body.
@@ -1940,6 +2204,7 @@ function DeskForecastList({
               colWidth={colWidth}
               cols={keptCols}
               item={item}
+              marked={markedIds.has(item.id ?? '')}
               nowMs={nowMs}
               satGutter={satGutter}
               sem={sem}
@@ -1970,6 +2235,7 @@ const DeskListRow = memo(function DeskListRow({
   colWidth,
   cols,
   item,
+  marked,
   nowMs,
   satGutter,
   sem,
@@ -1982,6 +2248,10 @@ const DeskListRow = memo(function DeskListRow({
   colWidth: (c: DeskCol) => number
   cols: DeskCol[]
   item: ForecastWorkspaceItem
+  // Marked in the mass-selection set → a leading accent ▎. A cursor move flips
+  // only `active`; a mark toggle flips only `marked` — either way just this row
+  // re-renders (the memo bails on the rest).
+  marked: boolean
   nowMs: number
   satGutter: number
   sem: Semantics
@@ -2020,8 +2290,12 @@ const DeskListRow = memo(function DeskListRow({
 
   return (
     <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
-      <Text bold={active} color={active ? sem.cursor : sem.faint}>
-        {active ? '▸ ' : '  '}
+      {/* Leading 2-char gutter: a marked row shows the accent ▎ (leading, priority
+          over the cursor arrow — the row's background highlight still signals the
+          cursor); else the plain ▸ / blank. Unmarked+active is byte-identical to
+          before (`▸ `), so the dense table is untouched when nothing is marked. */}
+      <Text bold={active || marked} color={marked ? t.color.accent : active ? sem.cursor : sem.faint}>
+        {`${marked ? '▎' : active ? '▸' : ' '} `}
       </Text>
       {satGutter ? (
         // The reserved saturation gutter: a dim ◌ for an under-saturated forecast,

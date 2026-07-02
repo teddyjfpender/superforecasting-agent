@@ -47,11 +47,13 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
   ],
   desk: [
     ['↑/↓', 'select a forecast'],
+    ['Space', 'mark the row (advances) · Shift+↑/↓ extend the selection'],
     ['Tab / ←→ / h l', 'switch lens'],
     ['Enter', 'open the selected forecast'],
+    ['U / u', 'update now / re-arm — marked rows (or a lens → all its questions)'],
     ['o / O', 'sort column · toggle asc/desc (or click a header)'],
-    ['u', 'update · s settings · / filter · r refresh'],
-    ['q / Esc', 'close the view']
+    ['s / / / r', 'settings · filter · refresh'],
+    ['q / Esc', 'clear selection / filter, then close the view']
   ],
   markets: [
     ['↑/↓', 'select a market'],
