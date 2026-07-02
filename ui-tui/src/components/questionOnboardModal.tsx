@@ -362,18 +362,14 @@ export function QuestionOnboardModal({ gw, onClose, onDone, t }: QuestionOnboard
                   ? [{ k: '↑↓', label: 'Choose' }, { k: '⏎', label: 'Select' }, { k: '⎋', label: 'Cancel' }]
                   : [{ k: '⏎', label: step === 'source' ? 'Add / next' : 'Next' }, { k: '⎋', label: 'Cancel' }]
           }
+          disabled={globalModal}
           t={t}
         />
-        <Text color={t.color.muted} wrap="truncate-end">
-          {error ? <Text color={t.color.error}>{error} · </Text> : null}
-          {step === 'confirm'
-            ? '⏎ create · Esc cancel'
-            : step === 'done'
-              ? 'Esc/⏎ close'
-              : choices
-                ? '↑↓ choose · ⏎ select · Esc cancel'
-                : `type · ⏎ ${step === 'source' ? 'add a source (blank ⏎ to finish)' : 'next'} · Esc cancel`}
-        </Text>
+        {error ? (
+          <Text color={t.color.error} wrap="truncate-end">
+            {error}
+          </Text>
+        ) : null}
       </Box>
     </Box>
   )

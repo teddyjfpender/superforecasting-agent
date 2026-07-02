@@ -19,6 +19,7 @@ import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { DocsHeader, DocsKindTabs, docAge, sizeChip, titlePath } from './docsShell.js'
+import { type FooterChip, FooterChips } from './footerChips.js'
 import { INLINE_RE, Md, stripInlineMarkup, wikiLinkLabel } from './markdown.js'
 import { ModalOverlay } from './modalOverlay.js'
 
@@ -914,15 +915,6 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
-
-  // No real text cursor in this view — park it so it doesn't sit in the corner.
-  useEffect(() => {
-    stdout?.write('\x1b[?25l')
-
-    return () => {
-      stdout?.write('\x1b[?25h')
-    }
-  }, [stdout])
 
   useEffect(() => {
     if (notes.length && selected > notes.length - 1) {
@@ -2273,6 +2265,22 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
   actions.push({ k: 'q', label: 'Close', run: onClose })
 
+  // The pane-nav keys now ride in the ONE chips row (the separate prose nav row
+  // was removed). While selecting comment lines the row swaps to the extend
+  // affordance; these are keyboard-driven, so they carry no mouse `run`.
+  const navChips: FooterChip[] =
+    hasVault && notes.length > 0
+      ? selAnchor >= 0
+        ? [{ k: '↑↓', label: 'Extend' }]
+        : [
+            { k: '←/→', label: 'Panes' },
+            { k: '↑↓', label: 'Move' },
+            { k: '⏎', label: 'Open' }
+          ]
+      : []
+
+  const browseChips: FooterChip[] = [...navChips, ...actions]
+
   const onActionClick =
     (run: () => void) => (event: { cellIsBlank?: boolean; stopPropagation?: () => void }) => {
       // Body mouse handlers no-op while the chat overlay is open (the keyboard is
@@ -2339,24 +2347,9 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       ) : (
         <>
           {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-          <Box>
-            {actions.map(action => (
-              <Box key={action.k} marginRight={2} onClick={onActionClick(action.run)}>
-                <Text color={t.color.muted}>[</Text>
-                <Text bold color={t.color.accent}>
-                  {action.k}
-                </Text>
-                <Text color={t.color.label}>{` ${action.label}`}</Text>
-                <Text color={t.color.muted}>]</Text>
-              </Box>
-            ))}
-          </Box>
-          {hasVault && notes.length > 0 ? (
-            <Text color={t.color.muted} wrap="truncate-end">
-              {selAnchor >= 0
-                ? `SELECTING ${lineRef} · ↑↓ extend · c comment · Esc cancel`
-                : `←/→ ${focus === 'list' ? 'notes' : focus === 'outline' ? 'outline' : 'doc'} · ↑↓ navigate · ⏎ open link`}
-            </Text>
+          <FooterChips chips={browseChips} disabled={Boolean(chat) || globalModal} t={t} />
+          {selAnchor >= 0 && hasVault && notes.length > 0 ? (
+            <Text color={t.color.muted} wrap="truncate-end">{`SELECTING ${lineRef}`}</Text>
           ) : null}
         </>
       )}

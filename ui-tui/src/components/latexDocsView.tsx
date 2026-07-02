@@ -97,14 +97,6 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     }
   }, [])
 
-  useEffect(() => {
-    stdout?.write('\x1b[?25l')
-
-    return () => {
-      stdout?.write('\x1b[?25h')
-    }
-  }, [stdout])
-
   const refreshGit = async () => {
     const isRepo = await isGitRepo(dir)
 

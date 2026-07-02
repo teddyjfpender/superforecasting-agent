@@ -19,6 +19,7 @@ import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import { type FooterChip, FooterChips } from './footerChips.js'
 
 export const openCalibrationView = () => patchOverlayState({ calibration: true })
 
@@ -331,12 +332,22 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
     </Box>
   )
 
+  const chips: FooterChip[] = [
+    { k: '↑↓', label: 'Scroll' },
+    { k: 'PgUp/Dn', label: 'Page' },
+    { k: 'g/G', label: 'Top/Bot' },
+    { k: 'r', label: 'Refresh', run: () => load(true) },
+    { k: 'q', label: 'Close', run: onClose }
+  ]
+
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-      <Text color={t.color.muted} wrap="truncate-end">
-        ↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · r refresh · Esc/q close
-      </Text>
+      <FooterChips chips={chips} disabled={globalModal} t={t} />
+      {flash ? (
+        <Text color={t.color.accent} wrap="truncate-end">
+          {flash}
+        </Text>
+      ) : null}
     </Box>
   )
 

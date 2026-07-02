@@ -10,7 +10,7 @@ import type { Theme } from '../theme.js'
 import { OverlayScrollbar } from './agentsOverlay.js'
 import { FooterChips } from './footerChips.js'
 import { type GlossarySignal, HooksWizard } from './hooksWizard.js'
-import { Rule, SectionTitle } from './textBlocks.js'
+import { SectionTitle } from './textBlocks.js'
 
 // Interactive MANAGER for the forecast saturation + style hooks: a two-pane
 // master-detail view. Left = every rule with its resolved severity (color
@@ -377,15 +377,6 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
                   ))}
               </Box>
             ) : null}
-
-            <Box marginTop={1}>
-              <Rule t={t} width={Math.max(12, cols - listW - 6)} />
-            </Box>
-            <Text color={t.color.muted} wrap="wrap">
-              {current.is_user
-                ? 'c cycle severity · e enable · d disable · E edit · x remove'
-                : 'c cycle severity · e enable (profile) · d disable'}
-            </Text>
           </>
         ) : (
           <Text color={t.color.muted}>no rules</Text>
@@ -394,9 +385,17 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
     </ScrollBox>
   )
 
+  // One chips row carries every live key — including enable/disable, which used
+  // to live in a second prose row under the inspector.
   const footerChips = [
     { k: '↑↓', label: 'Select' },
     { k: 'c', label: 'Severity' },
+    ...(current
+      ? [
+          { k: 'e', label: 'Enable', run: () => mutate({ rule_id: current.id, target: 'enable' }, `${current.id} enabled (profile severity)`) },
+          { k: 'd', label: 'Disable', run: () => mutate({ rule_id: current.id, target: 'disable' }, `${current.id} disabled`) }
+        ]
+      : []),
     { k: 'p', label: 'Profile' },
     { k: 'n', label: 'New rule' },
     ...(current?.is_user ? [{ k: 'E', label: 'Edit' }, { k: 'x', label: 'Remove' }] : []),

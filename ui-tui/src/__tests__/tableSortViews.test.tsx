@@ -255,15 +255,88 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
     view.cleanup()
   })
 
-  it('Warnings (Alerts) keeps its single prose shortcuts row (it has no chips duplicate)', async () => {
+  it('Warnings (Alerts) shows exactly one (chips) shortcuts row — the prose row was converted', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
     const [{ AlertsView }, { DARK_THEME }] = await Promise.all([import('../components/alertsView.js'), import('../theme.js')])
-    const gw = { off: () => undefined, on: () => undefined, request: () => Promise.resolve({}) } as never
+    // A non-empty aggregate so the tree footer (its full chip set) renders — the
+    // empty backlog would show only [r Refresh] [q Close].
+    const aggregate = {
+      agent: { reasons: [{ auto_resolvable: false, count: 1, kind: 'reforecast', reason: 'evidence_stale', recommended_action: 'reforecast', scope_refs: ['fq_a'] }], stale: { reasons: [], total: 0 }, total: 1 },
+      free: { reasons: [{ auto_resolvable: true, count: 1, kind: 'postmortem', reason: 'postmortem_due', recommended_action: 'score', scope_refs: ['fq_b'] }], total: 1 },
+      headline: { agent: 1, free: 1, manual: 0, total: 2 },
+      manual: { reasons: [], total: 0 }
+    }
+    const dashboard = { summary: { alerts: [], open_alert_count: 2, review_queue: [] } }
+    const gw = {
+      off: () => undefined,
+      on: () => undefined,
+      request: (method: string) =>
+        Promise.resolve(
+          method === 'forecast.warnings.aggregate' ? aggregate : method === 'forecast.dashboard' ? dashboard : {}
+        )
+    } as never
     const view = await mountView(React.createElement(AlertsView, { gw, onClose: () => undefined, sessionId: '', t: DARK_THEME }))
     const text = view.text()
-    // Alerts never grew a FooterChips row — its single prose row is the one (top)
-    // row, so its only shortcut-row style is 'prose' (no chips duplicate).
-    expect(shortcutStyles(text, '↑↓/jk move')).toEqual(['prose'])
+    // The tree footer is now the single bracketed chips row; the old prose row
+    // ("↑↓/jk move · ⏎/space expand · …") is gone.
+    expect(text).toContain('Dismiss')
+    expect(shortcutStyles(text, '↑↓/jk move · ⏎/space expand')).toEqual(['chips'])
+    view.cleanup()
+  })
+
+  // The remaining fullscreen views converted from prose to chips this round: each
+  // must render EXACTLY ONE (chips) shortcuts row and ZERO prose shortcut rows.
+  it('Calibration shows exactly one (chips) shortcuts row', async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+    const [{ CalibrationView }, { DARK_THEME }, { clearOverlayCache }] = await Promise.all([
+      import('../components/calibrationView.js'),
+      import('../theme.js'),
+      import('../lib/overlayCache.js')
+    ])
+    clearOverlayCache()
+    const gw = { request: () => Promise.resolve({}) } as never
+    const view = await mountView(React.createElement(CalibrationView, { gw, onClose: () => undefined, t: DARK_THEME }))
+    const text = view.text()
+    expect(shortcutStyles(text, '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · r refresh · Esc/q close')).toEqual(['chips'])
+    view.cleanup()
+  })
+
+  it('Help shows exactly one (chips) shortcuts row', async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+    const [{ HelpView }, { DARK_THEME }] = await Promise.all([import('../components/helpView.js'), import('../theme.js')])
+    const view = await mountView(React.createElement(HelpView, { onClose: () => undefined, t: DARK_THEME }))
+    const text = view.text()
+    expect(shortcutStyles(text, '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close')).toEqual(['chips'])
+    view.cleanup()
+  })
+
+  it('Demo-viz shows exactly one (chips) shortcuts row', async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+    const [{ DemoVizView }, { DARK_THEME }] = await Promise.all([import('../components/demoVizView.js'), import('../theme.js')])
+    const view = await mountView(React.createElement(DemoVizView, { onClose: () => undefined, t: DARK_THEME }))
+    const text = view.text()
+    expect(shortcutStyles(text, '↑↓/jk scroll · PgUp/PgDn · g/G top/bottom · Esc back')).toEqual(['chips'])
+    view.cleanup()
+  })
+
+  it('Hooks shows exactly one (chips) shortcuts row — the inspector prose row is gone', async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+    const [{ HooksView }, { DARK_THEME }] = await Promise.all([import('../components/hooksView.js'), import('../theme.js')])
+    const rule = {
+      check: 'saturation < 40',
+      default: 'warn',
+      doc: 'Saturation floor',
+      id: 'saturation_floor',
+      is_user: false,
+      severity: 'warn',
+      source: 'built-in'
+    }
+    const gw = { request: () => Promise.resolve({ enabled: true, profile: 'default', rules: [rule] }) } as never
+    const view = await mountView(React.createElement(HooksView, { gw, onClose: () => undefined, t: DARK_THEME }))
+    const text = view.text()
+    // The inspector's second prose key row ("c cycle severity · e enable · …") was
+    // aggregated into the one chips row (e/d now chips).
+    expect(shortcutStyles(text, 'c cycle severity · e enable')).toEqual(['chips'])
     view.cleanup()
   })
 })

@@ -33,6 +33,8 @@ import { compactPreview } from '../lib/text.js'
 import type { Theme } from '../theme.js'
 import type { SubagentNode, SubagentProgress } from '../types.js'
 
+import { type FooterChip, FooterChips } from './footerChips.js'
+
 // ── Types + lookup tables ────────────────────────────────────────────
 
 type SortMode = 'depth-first' | 'duration-desc' | 'status' | 'tools-desc'
@@ -991,9 +993,39 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
   const metaLine = [formatSummary(totals), spark, capsLabel, mix ? `· ${mix}` : ''].filter(Boolean).join('  ')
 
-  const controlsHint = replayMode
-    ? ' · controls locked'
-    : ` · x kill · X subtree · p ${delegation.paused ? 'resume' : 'pause'}`
+  // The live delegation controls (x/X/p) fold into the one chips row — locked out
+  // in replay, and x/X only where a node is selected. Sort/filter carry their
+  // current value in the chip label so the state stays visible without a prose row.
+  const controlChips: FooterChip[] = replayMode
+    ? []
+    : [
+        ...(selected
+          ? [
+              { k: 'x', label: 'Kill', run: () => killOne(selected.item.id) },
+              { k: 'X', label: 'Subtree', run: () => killSubtree(selected) }
+            ]
+          : []),
+        { k: 'p', label: delegation.paused ? 'Resume' : 'Pause', run: () => togglePause() }
+      ]
+
+  const listChips: FooterChip[] = [
+    { k: '↑↓', label: 'Move' },
+    { k: '⏎', label: 'Detail', run: () => selected && setMode('detail') },
+    { k: 's', label: `Sort: ${SORT_LABEL[sort]}`, run: () => setSort(m => cycle(SORT_ORDER, m)) },
+    { k: 'f', label: `Filter: ${FILTER_LABEL[filter]}`, run: () => setFilter(m => cycle(FILTER_ORDER, m)) },
+    ...controlChips,
+    ...(history.length > 0 ? [{ k: '[/]', label: `History ${historyIndex}/${history.length}` }] : []),
+    { k: 'q', label: 'Close', run: () => closeWithCleanup() }
+  ]
+
+  const detailChips: FooterChip[] = [
+    { k: '↑↓', label: 'Scroll' },
+    { k: 'PgUp/Dn', label: 'Page' },
+    { k: 'g/G', label: 'Top/Bot' },
+    { k: '⎋', label: 'Back', run: () => setMode('list') },
+    ...controlChips,
+    { k: 'q', label: 'Close', run: () => closeWithCleanup() }
+  ]
 
   // ── Rendering ──────────────────────────────────────────────────────
 
@@ -1055,19 +1087,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
 
       <Box flexDirection="column" marginTop={1}>
         {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-
-        {mode === 'list' ? (
-          <Text color={t.color.muted}>
-            ↑↓/jk move · g/G top/bottom · Enter/→ open detail{controlsHint} · s sort:{SORT_LABEL[sort]} · f filter:
-            {FILTER_LABEL[filter]}
-            {history.length > 0 ? ` · [ / ] history ${historyIndex}/${history.length}` : ''}
-            {' · q close'}
-          </Text>
-        ) : (
-          <Text color={t.color.muted}>
-            ↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/← back to list{controlsHint} · q close
-          </Text>
-        )}
+        <FooterChips chips={mode === 'list' ? listChips : detailChips} disabled={globalModal} t={t} />
       </Box>
     </Box>
   )

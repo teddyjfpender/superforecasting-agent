@@ -12,6 +12,7 @@ import { $uiSessionId, $uiState, $uiTheme } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { VIEW_CHORDS } from '../content/keymaps.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
+import { useHideCursorWhileFullscreen } from '../lib/cursorVisibility.js'
 import { RAIL_WIDTH, showRailFor } from '../lib/homeLayout.js'
 import {
   COMPOSER_PROMPT_GAP_WIDTH,
@@ -694,6 +695,12 @@ export const AppLayout = memo(function AppLayout({
     overlay.messaging ||
     overlay.obsidian ||
     overlay.onboard
+
+  // Single owner of the hardware cursor: hide it while any fullscreen view is
+  // mounted (no view writes ?25l/?25h itself now), restore it on the way back to
+  // the landing/composer. The composer's TextInput re-shows it while typing (see
+  // useInputCursor) — that runs after this mount-hide, so it wins.
+  useHideCursorWhileFullscreen(fullscreen, stdout)
 
   // Landing = the first-run screen, before any real interaction. We hold it
   // through gateway connect / startup notices and only leave once a turn or a

@@ -7,6 +7,7 @@ import type { ChartKind } from '../lib/viz/index.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import { FooterChips } from './footerChips.js'
 import { Rule, SectionTitle } from './textBlocks.js'
 import { Chart as VizChart } from './viz/Chart.js'
 
@@ -190,9 +191,16 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
           <OverlayScrollbar scrollRef={scrollRef} t={t} tick={tick} />
         </NoSelect>
       </Box>
-      <Text color={t.color.muted} wrap="truncate-end">
-        ↑↓/jk scroll · PgUp/PgDn · g/G top/bottom · Esc back
-      </Text>
+      <FooterChips
+        chips={[
+          { k: '↑↓', label: 'Scroll' },
+          { k: 'PgUp/Dn', label: 'Page' },
+          { k: 'g/G', label: 'Top/Bot' },
+          { k: '⎋', label: 'Back', run: onClose }
+        ]}
+        disabled={globalModal}
+        t={t}
+      />
     </Box>
   )
 }

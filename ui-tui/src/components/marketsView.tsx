@@ -275,14 +275,6 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
   }, [])
 
-  useEffect(() => {
-    stdout?.write('\x1b[?25l')
-
-    return () => {
-      stdout?.write('\x1b[?25h')
-    }
-  }, [stdout])
-
   const providers = useMemo(() => new Set(config.providers), [config])
 
   // Enabled providers that require (or strongly need) an API key but don't have

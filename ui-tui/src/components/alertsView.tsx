@@ -26,6 +26,7 @@ import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import { type FooterChip, FooterChips } from './footerChips.js'
 
 export const openAlertsView = () => patchOverlayState({ alerts: true })
 export const closeAlertsView = () => patchOverlayState({ alerts: false })
@@ -1091,27 +1092,41 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   ) : null
 
   // On a contested row the footer swaps to the hand-label mapping (1/2/3) so the
-  // relevance verbs are always in view while adjudicating.
+  // relevance verbs are always in view while adjudicating. Each state advertises
+  // ONLY its live keys — as the single bracketed chips row (no prose duplicate).
   const onContested = selectedNode?.kind === 'contested'
+  const footerChips: FooterChip[] = nothing
+    ? [
+        // Empty backlog: only the keys that still do something.
+        { k: 'r', label: 'Refresh', run: () => load(true) },
+        { k: 'q', label: 'Close', run: onClose }
+      ]
+    : onContested
+      ? [
+          { k: '1', label: 'Interesting', run: () => relabelContested(CONTESTED_LABELS['1']) },
+          { k: '2', label: 'Uninteresting', run: () => relabelContested(CONTESTED_LABELS['2']) },
+          { k: '3', label: 'Irrelevant', run: () => relabelContested(CONTESTED_LABELS['3']) },
+          { k: '↑↓', label: 'Move' },
+          { k: 'r', label: 'Refresh', run: () => load(true) },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
+      : [
+          { k: '↑↓', label: 'Move' },
+          { k: '⏎', label: 'Expand', run: () => toggleSelected() },
+          { k: 'Tab', label: 'Tier', run: () => jumpTier(1) },
+          { k: 'c/e', label: 'Fold' },
+          { k: 'R', label: 'Free', run: () => runFreePass() },
+          { k: '⇧A', label: 'Agent', run: () => agentPassOrCancel() },
+          { k: 'x', label: 'Dismiss', run: () => openDismiss() },
+          { k: 'r', label: 'Refresh', run: () => load(true) },
+          { k: 'q', label: 'Close', run: onClose }
+        ]
+
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       {automodeLine}
       {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
-      {dismissModal ??
-        (nothing ? (
-          // Empty backlog: only the keys that still do something are advertised.
-          <Text color={t.color.muted} wrap="truncate-end">
-            r refresh · q close
-          </Text>
-        ) : onContested ? (
-          <Text color={t.color.muted} wrap="truncate-end">
-            1 interesting · 2 uninteresting · 3 irrelevant · ↑↓/jk move · r refresh · q close
-          </Text>
-        ) : (
-          <Text color={t.color.muted} wrap="truncate-end">
-            ↑↓/jk move · ⏎/space expand · Tab/][ tier · c/e fold-all · R free · Shift-A agent · x dismiss · r refresh · q close
-          </Text>
-        ))}
+      {dismissModal ?? <FooterChips chips={footerChips} disabled={globalModal} t={t} />}
     </Box>
   )
 

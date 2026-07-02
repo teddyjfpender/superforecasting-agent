@@ -218,14 +218,6 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
   }, [])
 
-  useEffect(() => {
-    stdout?.write('\x1b[?25l')
-
-    return () => {
-      stdout?.write('\x1b[?25h')
-    }
-  }, [stdout])
-
   // Connect: health check → load contacts/groups → ensure the app-level receiver
   // is streaming from this daemon (idempotent; it keeps running when this view
   // closes, so messages are captured app-wide).
@@ -1022,10 +1014,11 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
           <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'q', label: 'Close', run: onClose }]} disabled={setup || globalModal} t={t} />
-          <Text color={t.color.muted} wrap="truncate-end">
-            {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-            s set up Signal · Esc/q close
-          </Text>
+          {flash ? (
+            <Text color={t.color.accent} wrap="truncate-end">
+              {flash}
+            </Text>
+          ) : null}
         </Box>
         {/* Modals overlay even the not-configured prompt (setup opens from here). */}
         {setup ? setupOverlay : newChat ? newChatOverlay : null}
@@ -1183,10 +1176,13 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     </Box>
   )
 
+  // One chips row carries every live key — including the daemon controls (r / R)
+  // and attachment-open (^O) the old prose row had to spell out separately.
   const chips: FooterChip[] = composing
     ? [
         { k: '⏎', label: 'Send' },
         { k: '↑↓', label: 'Scroll' },
+        { k: '^O', label: 'Attachment', run: openLatestAttachment },
         { k: '⎋', label: 'Back', run: () => setFocus('list') }
       ]
     : [
@@ -1194,18 +1190,20 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         { k: '⏎', label: 'Open', run: () => activeConv && setFocus('thread') },
         { k: 'c', label: 'Contact', run: openContact },
         { k: 'n', label: 'New / group', run: openNewChat },
+        { k: 'r', label: 'Reconnect', run: reconnect },
+        { k: 'R', label: 'Restart', run: restartDaemonAndReconnect },
+        ...(connected ? [] : [{ k: 's', label: 'Set up', run: () => setSetup(true) }]),
         { k: 'q', label: 'Close', run: onClose }
       ]
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <FooterChips chips={chips} disabled={setup || newChat || contactView || globalModal} t={t} />
-      <Text color={t.color.muted} wrap="truncate-end">
-        {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        {composing
-          ? 'type · ⏎ send · ↑↓ scroll · ^O open attachment · Esc back'
-          : `↑↓/jk chats · ⏎/→ open & write · c contact · n new · r reconnect · R restart daemon${connected ? '' : ' · s set up'} · Esc/q close`}
-      </Text>
+      {flash ? (
+        <Text color={t.color.accent} wrap="truncate-end">
+          {flash}
+        </Text>
+      ) : null}
     </Box>
   )
 

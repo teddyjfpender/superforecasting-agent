@@ -472,13 +472,19 @@ describe('MessagingView', () => {
     expect(text).toContain('not connected')
     expect(text).toContain('Press s')
     expect(text).toContain('set up Signal')
-    expect(text).toContain('Esc/q close')
+    // The close affordance lives only in the FooterChips row now (the duplicate
+    // prose hint line — which read "s set up Signal · Esc/q close" — was removed).
+    expect(text).toContain('[q Close]')
     expect(text).not.toContain('start messaging…')
   })
 
   it('opens the in-TUI onboarding modal on s with a prerequisites check', async () => {
     const m = await renderMessaging()
     await m.press('s')
+    // The setup modal is a tall (30-row) overlay whose lower rows (the register
+    // path) paint over a couple of frames plus an async prerequisite probe — let
+    // it settle before reading, so the assertion isn't racing the paint.
+    await tick(150)
     const text = m.text()
     m.cleanup()
 

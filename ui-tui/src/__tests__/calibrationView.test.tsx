@@ -253,8 +253,9 @@ describe('CalibrationView render', () => {
     expect(text).toContain('by origin')
     expect(text).toContain('live')
     expect(text).toContain('backtest')
-    // footer keys
-    expect(text).toContain('r refresh')
+    // footer keys — now the single bracketed chips row (the prose row was converted)
+    expect(text).toContain('[r Refresh]')
+    expect(text).toContain('[q Close]')
   })
 
   it('renders the rolling-Brier trend row and the lessons-correcting-this section when the payload carries them', async () => {

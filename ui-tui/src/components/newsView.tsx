@@ -166,15 +166,6 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     }
   }, [])
 
-  // No real text cursor in this view — park it so it doesn't sit in the corner.
-  useEffect(() => {
-    stdout?.write('\x1b[?25l')
-
-    return () => {
-      stdout?.write('\x1b[?25h')
-    }
-  }, [stdout])
-
   const subscribedUrls = useMemo(() => new Set(subscribed.map(f => normalizeFeedUrl(f.url))), [subscribed])
   const isSubscribed = (url: string) => subscribedUrls.has(normalizeFeedUrl(url))
 

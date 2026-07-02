@@ -4,6 +4,7 @@ import { type MutableRefObject, useEffect, useMemo, useRef, useState } from 'rea
 
 import { setInputSelection } from '../app/inputSelectionStore.js'
 import { readClipboardText, writeClipboardText } from '../lib/clipboard.js'
+import { useInputCursor } from '../lib/cursorVisibility.js'
 import { forecastShortcutForKey } from '../lib/forecastShortcuts.js'
 import { cursorLayout, offsetFromPosition } from '../lib/inputMetrics.js'
 import {
@@ -434,25 +435,16 @@ export function TextInput({
     active: focus && termFocus && !selected
   })
 
-  // Hide the hardware cursor while a selection is active (prevents
-  // auto-wrap onto the next row when inverted text fills the column
-  // exactly) or when the terminal loses focus (suppresses the hollow-rect
-  // ghost most terminals draw at the parked position).
-  const hideHardwareCursor = focus && !!stdout?.isTTY && (!!selected || !termFocus)
-
-  useEffect(() => {
-    if (!hideHardwareCursor || !stdout) {
-      return
-    }
-
-    stdout.write('\x1b[?25l')
-
-    return () => {
-      stdout.write('\x1b[?25h')
-    }
-  }, [hideHardwareCursor, stdout])
-
   const nativeCursor = focus && termFocus && !selected && !!stdout?.isTTY
+
+  // The input-level owner of the hardware cursor (see lib/cursorVisibility). SHOW
+  // it while this focused field wants a native cursor; HIDE it during a selection
+  // (prevents auto-wrap onto the next row when inverted text fills the column
+  // exactly), on terminal-blur (suppresses the hollow-rect ghost), and on
+  // field-blur/unmount. Running after the layout mount-hide, a text field inside
+  // a fullscreen view re-shows the cursor while typing and the view's hidden
+  // state resumes when it blurs.
+  useInputCursor(nativeCursor, stdout)
 
   // Placeholder text is just a hint, not a selection — render it dim
   // without inverse styling. In a TTY the hardware cursor parks at column

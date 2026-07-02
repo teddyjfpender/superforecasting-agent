@@ -7,6 +7,7 @@ import { HOTKEYS } from '../content/hotkeys.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import { FooterChips } from './footerChips.js'
 
 export const openHelpView = () => patchOverlayState({ help: true })
 export const closeHelpView = () => patchOverlayState({ help: false })
@@ -148,9 +149,16 @@ export function HelpView({ onClose, t }: HelpViewProps) {
       </Box>
 
       <Box flexShrink={0} marginTop={1}>
-        <Text color={t.color.muted} wrap="truncate-end">
-          ↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close
-        </Text>
+        <FooterChips
+          chips={[
+            { k: '↑↓', label: 'Scroll' },
+            { k: 'PgUp/Dn', label: 'Page' },
+            { k: 'g/G', label: 'Top/Bot' },
+            { k: 'q', label: 'Close', run: onClose }
+          ]}
+          disabled={globalModal}
+          t={t}
+        />
       </Box>
     </Box>
   )
