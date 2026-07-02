@@ -852,15 +852,27 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
   })
 
   it('dueNowCell: running spinner, countdown boundaries (<1m / minutes), tonight fallback, disabled, and the no-context "now"', async () => {
-    const [{ dueNowCell }, { DARK_THEME }] = await Promise.all([
+    const [{ dueNowCell }, { DARK_THEME }, { SPINNER }, { sweepColor, sweepStops }] = await Promise.all([
       import('../components/deskView.js'),
-      import('../theme.js')
+      import('../theme.js'),
+      import('../lib/icons.js'),
+      import('../lib/accentSweep.js')
     ])
     const now = 1_700_000_000_000
     const base = { frame: 0, nightlyNextAt: NaN, nextTickAt: NaN, nowMs: now, running: false, sweeperEnabled: false }
 
-    // Running → an animated spinner glyph + "running".
-    expect(dueNowCell({ ...base, running: true }, DARK_THEME).text).toContain('running')
+    // Running → the animated spinner glyph + "running", with its colour swept
+    // through the brand accent family by the SAME helper the Home chat's busy
+    // spinner uses (frame-driven). Assert the helper output — NOT a brittle ANSI
+    // code — so the desk cell provably cycles colour in step with the chat.
+    const runningCell = dueNowCell({ ...base, running: true, frame: 3 }, DARK_THEME)
+    expect(runningCell.text).toContain('running')
+    expect(runningCell.text.startsWith(SPINNER[3 % SPINNER.length]!)).toBe(true)
+    expect(runningCell.color).toBe(sweepColor(sweepStops(DARK_THEME), 3))
+    // A different frame → a different swept colour (the animation is live).
+    expect(dueNowCell({ ...base, running: true, frame: 9 }, DARK_THEME).color).toBe(
+      sweepColor(sweepStops(DARK_THEME), 9)
+    )
     // Sweeper enabled, next tick 4 minutes out → a minute countdown.
     expect(dueNowCell({ ...base, nextTickAt: now + 4 * 60000, sweeperEnabled: true }, DARK_THEME).text).toBe('due · 4m')
     // Sweeper enabled, next tick 30s out → the sub-minute "<1m".
@@ -876,11 +888,12 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
   })
 
   it('SweepStatusLine: running spinner line, countdown line, tonight fallback, and NOTHING when the desk is quiet', async () => {
-    const [{ renderSync }, { SweepStatusLine }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+    const [{ renderSync }, { SweepStatusLine }, { DARK_THEME }, { stripAnsi }, { SPINNER }] = await Promise.all([
       import('@hermes/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
-      import('../lib/text.js')
+      import('../lib/text.js'),
+      import('../lib/icons.js')
     ])
 
     const draw = (props: Record<string, unknown>): string => {
@@ -895,8 +908,13 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
 
     const future = new Date(Date.now() + 8 * 60000).toISOString()
 
-    // Running → "⟳ sweeping N due…" (the count comes from the running marker).
-    expect(draw({ now: 0, reviews: null, sweepRunning: { dueCount: 4 }, t: DARK_THEME })).toContain('sweeping 4 due')
+    // Running → the Home-chat busy animation: the frame-driven spinner glyph +
+    // the accent-swept "sweeping N due…" (the count comes from the running marker).
+    // At now=0 the leading glyph is SPINNER frame 0; the ForecastPulse Δ stays dark
+    // (its tick<=0 guard) so the line is deterministic to assert on.
+    const sweeping = draw({ now: 0, reviews: null, sweepRunning: { dueCount: 4 }, t: DARK_THEME })
+    expect(sweeping).toContain('sweeping 4 due')
+    expect(sweeping).toContain(SPINNER[0])
     // Due + enabled sweeper w/ a future tick → "next sweep in Xm · N due".
     const countdown = draw({
       now: 0,

@@ -19,6 +19,7 @@ import type {
   ForecastWorkspacePanel,
   ForecastWorkspaceResponse
 } from '../gatewayTypes.js'
+import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import {
   buildDeskTabs,
   type DeskTab,
@@ -37,6 +38,7 @@ import { dirColor, pad, type Semantics, semantics } from '../lib/visualSemantics
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import { ForecastPulse } from './appChrome.js'
 import { DeskTabs as DeskTabsStrip } from './deskTabs.js'
 import { ForecastSettingsModal } from './forecastSettingsModal.js'
 import { ModalOverlay } from './modalOverlay.js'
@@ -1103,9 +1105,16 @@ export function SweepStatusLine({
 }) {
   if (sweepRunning) {
     const dueCount = sweepRunning.dueCount ?? reviews?.due_count ?? 0
+    // Reuse the Home chat's busy animation: the leading spinner glyph + the label
+    // sweep the brand accent family via sweepColor(sweepStops(t), now) — the exact
+    // mechanism appChrome's FaceTicker uses — and the ForecastPulse Δ pulses at the
+    // tail (the same graphic the chat header floats). Both ride the desk's existing
+    // `now` tick (500ms), so no new timer is introduced.
+    const swept = sweepColor(sweepStops(t), now)
     return (
-      <Text color={t.color.accent} wrap="truncate-end">
-        {`${spinnerFrame(now)} sweeping ${dueCount} due…`}
+      <Text wrap="truncate-end">
+        <Text color={swept}>{`${spinnerFrame(now)} sweeping ${dueCount} due… `}</Text>
+        <ForecastPulse t={t} tick={now} />
       </Text>
     )
   }
@@ -1681,7 +1690,12 @@ export const dueNowCell = (sweep: DeskSweepCtx | undefined, t: Theme): { color: 
     return { color: t.color.error, text: 'now' }
   }
   if (sweep.running) {
-    return { color: t.color.accent, text: `${spinnerFrame(sweep.frame)} running` }
+    // Match the Home chat's busy spinner: colour the glyph (+ its "running" label)
+    // by sweeping the brand accent family via sweepColor(sweepStops(t), frame) — the
+    // exact helper appChrome's FaceTicker uses — instead of a static accent. `frame`
+    // is the shared 500ms tick, so the cell cycles colour in lock-step with the
+    // summary line while the memo keeps idle rows frozen.
+    return { color: sweepColor(sweepStops(t), sweep.frame), text: `${spinnerFrame(sweep.frame)} running` }
   }
   if (sweep.sweeperEnabled) {
     const imminent = !Number.isFinite(sweep.nextTickAt) || sweep.nextTickAt <= sweep.nowMs
