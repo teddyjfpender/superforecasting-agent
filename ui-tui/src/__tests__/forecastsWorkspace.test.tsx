@@ -676,7 +676,7 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('All')
     // The active tab's forecast renders as a dense table row (cursor + QUESTION
     // column); the long title truncates, so assert the visible prefix.
-    expect(text).toContain('Will the Repub')
+    expect(text).toContain('Will the Rep')
     // Footer chip shortcuts bar (Markets-style).
     expect(text).toContain('Lens')
     expect(text).toContain('Open')
@@ -969,7 +969,7 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('All')
     // Its member forecast (CPI) renders in the active-tab list with its μ label.
     // The dense QUESTION column truncates the title, so assert the visible prefix.
-    expect(text).toContain('CPI-U Y')
+    expect(text).toContain('May 2026')
     expect(text).toContain('μ4.23%')
   })
 
@@ -1077,7 +1077,7 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('All')
     // Its member forecast (Texas) renders in the active-tab list; the dense
     // QUESTION column truncates the long title, so assert the visible prefix.
-    expect(text).toContain('Will the Repub')
+    expect(text).toContain('Will the Rep')
   })
 
   it('renders the factor read with return trend, factor-return stats, constituents, and caveats', async () => {

@@ -7,9 +7,11 @@ import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastConfigGate,
   ForecastConfigResponse,
-  ForecastConfigThreshold
+  ForecastConfigThreshold,
+  ForecastQuestionReadinessResponse
 } from '../gatewayTypes.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { readinessColor } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
@@ -105,6 +107,11 @@ export function ForecastSettingsModal({
   })
   const [gates, setGates] = useState<ForecastConfigGate[]>([])
   const [thresholds, setThresholds] = useState<ForecastConfigThreshold[]>([])
+  // The machine-readiness composite for the READINESS section at the top of the
+  // modal — score + the FULL gaps list with exact-fix hints. Read-only, fetched
+  // independently of the config load so a slow config never blocks it; a missing
+  // composite (benchmark/market question) just hides the section.
+  const [readiness, setReadiness] = useState<ForecastQuestionReadinessResponse | null>(null)
 
   useEffect(() => {
     aliveRef.current = true
@@ -149,6 +156,22 @@ export function ForecastSettingsModal({
     return () => {
       aliveRef.current = false
       clearTimeout(timer)
+    }
+  }, [gw, questionId])
+
+  // Fetch the readiness composite for the READINESS section (independent of config).
+  useEffect(() => {
+    let alive = true
+    gw.request<unknown>('forecast.question.readiness', { question_id: questionId })
+      .then(raw => {
+        if (!alive) return
+        setReadiness(asRpcResult<ForecastQuestionReadinessResponse>(raw) ?? null)
+      })
+      .catch(() => {
+        if (alive) setReadiness(null)
+      })
+    return () => {
+      alive = false
     }
   }, [gw, questionId])
 
@@ -360,6 +383,29 @@ export function ForecastSettingsModal({
 
   const saveActive = current.kind === 'save'
 
+  // READINESS section — score + the FULL gaps list with exact-fix hints, at the TOP
+  // of the modal (configuration below). Read-only; hidden when the composite is
+  // unavailable (a benchmark/market question). A fully-ready question shows "· ready".
+  const gapCount = readiness?.gaps?.length ?? 0
+  const readinessSection = readiness && Number.isFinite(readiness.score) ? (
+    <Box flexDirection="column" flexShrink={0}>
+      <Box flexShrink={0}>
+        <Text bold color={t.color.primary}>
+          {'READINESS  '}
+        </Text>
+        <Text bold color={readinessColor(t, readiness.score)}>
+          {`${Math.round(readiness.score)}/100`}
+        </Text>
+        <Text color={t.color.muted}>{gapCount > 0 ? ` · ${gapCount} gap${gapCount === 1 ? '' : 's'}` : ' · ready'}</Text>
+      </Box>
+      {(readiness.gaps ?? []).map(gap => (
+        <Text color={t.color.muted} key={gap.key} wrap="truncate-end">
+          {`  · ${gap.label} — ${gap.fix_hint}`}
+        </Text>
+      ))}
+    </Box>
+  ) : null
+
   const body = loading ? (
     <Text color={t.color.muted}>Loading settings…</Text>
   ) : (
@@ -406,6 +452,7 @@ export function ForecastSettingsModal({
           <Text color={t.color.muted}>config</Text>
         </Box>
         <Box flexDirection="column" flexGrow={1} marginTop={1} minHeight={0} overflow="hidden">
+          {readinessSection}
           {body}
           {error ? (
             <Box flexShrink={0} marginTop={1}>

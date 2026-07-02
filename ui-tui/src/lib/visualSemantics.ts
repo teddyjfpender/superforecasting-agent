@@ -69,6 +69,18 @@ export const dirColor = (s: Semantics, v: null | number | undefined): string => 
   return d === 'up' ? s.up : d === 'down' ? s.down : s.flat
 }
 
+// ── Machine-readiness band colour ─────────────────────────────────────────────
+// The 0-100 question machine-readiness composite (the RDY desk column, the summary
+// readiness block, the settings-modal READINESS section) reads by BAND: ≥80 healthy
+// (ok), 50-79 partial (warn), <50 under-fuelled (danger). A null/non-finite score
+// (no composite — a benchmark/market question) paints subtle so it never fakes a band.
+export const readinessColor = (t: Theme, score: null | number | undefined): string => {
+  if (score === null || score === undefined || !Number.isFinite(score)) {
+    return t.color.muted
+  }
+  return score >= 80 ? t.color.ok : score >= 50 ? t.color.warn : t.color.error
+}
+
 // ── Theme-aware QR colours ─────────────────────────────────────────────────
 // A QR must always be dark modules on a light field to scan reliably. Pick the
 // lightest / darkest of the theme's candidate colours by luminance so it stays

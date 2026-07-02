@@ -1339,6 +1339,12 @@ export interface ForecastWorkspaceItem {
   // signal (Wave 3). saturation_score is null when the snapshot was unscored.
   saturation_score?: null | number
   saturation_below_threshold?: boolean
+  // Machine-readiness (the operator's hidden-parameter visibility): the active
+  // watched-source count (SRC column; 0 = "no fuel") + the 0-100 composite with
+  // an exact-fix gap list per missing dimension (RDY column + summary readiness
+  // block). Absent on benchmark/market questions with no configurable profile.
+  src_count?: number
+  readiness?: ForecastReadiness | null
   scores?: ForecastWorkspaceScores | null
   snapshot_count?: number
   status?: string
@@ -1352,6 +1358,73 @@ export interface ForecastWorkspaceItem {
   update_triggers?: ForecastWorkspaceTrigger[]
   // The theses this question is a weighted member of (the "member of" badge).
   thesis_ids?: ForecastThesisBadge[]
+}
+
+// ── Machine-readiness composite (forecasting/readiness_lens.py) ────────────────
+// One unmet workability dimension: a stable key, a human label, and the EXACT
+// operator fix (a concrete CLI command where one exists, always with "or a T task"
+// as the universal fallback the operator can dispatch from the Desk).
+export interface ForecastReadinessGap {
+  key: string
+  label: string
+  fix_hint: string
+}
+
+// The 0-100 machine-readiness score + the gaps for every UNMET dimension, in
+// weight order. A healthy question has an empty `gaps` list (the quiet desk).
+export interface ForecastReadiness {
+  score: number
+  gaps: ForecastReadinessGap[]
+}
+
+// forecast.question.readiness — the single-question composite the settings modal
+// fetches on open (READINESS section): the score, the active watched-source count,
+// and the FULL gaps list with fix hints (plus the question id/title for display).
+export interface ForecastQuestionReadinessResponse {
+  question_id?: string
+  title?: string
+  score: number
+  src_count?: number
+  gaps: ForecastReadinessGap[]
+}
+
+// ── Detached Desk agent jobs (forecast.reforecast.* / forecast.desk.task) ──────
+// forecast.reforecast.start / forecast.desk.task both return this immediately, then
+// the caller polls forecast.reforecast.status by the run_id (the same job store —
+// spec.mode distinguishes an agent re-run from a free-text task).
+export interface ForecastReforecastStartResponse {
+  run_id: string
+  total: number
+  note?: string
+}
+
+// One question's HONEST outcome inside a detached job: whether the gated commit
+// landed, the resulting forecast id, an observe-mode saturation score, whether the
+// commit auto-started a quorum, and any error. Nothing claims success it didn't earn.
+export interface ForecastReforecastResultRow {
+  question_id: string
+  title?: string
+  committed?: boolean
+  forecast_id?: null | string
+  saturation?: null | number
+  quorum_autorun?: boolean | null
+  error?: null | string
+}
+
+// forecast.reforecast.status — READ-ONLY progress for a detached job. `current` is
+// the question+stage in flight; `results` accrues per-question outcomes; `progress`
+// + `task_summary` are populated only in task mode (spec.mode === 'task').
+export interface ForecastReforecastStatusResponse {
+  run_id?: string
+  status: 'done' | 'error' | 'queued' | 'running'
+  total?: number
+  done_count?: number
+  current?: { question_id?: string; title?: string; stage?: string } | null
+  results?: ForecastReforecastResultRow[]
+  error?: null | string
+  quorums_started?: number
+  progress?: string[]
+  task_summary?: string
 }
 
 export interface ForecastWorkspaceDistribution {

@@ -13,6 +13,8 @@ import type {
   ForecastBenchRow,
   ForecastFactor,
   ForecastQuestionPacketResponse,
+  ForecastReforecastStartResponse,
+  ForecastReforecastStatusResponse,
   ForecastReviewsNextResponse,
   ForecastThesis,
   ForecastWorkspaceItem,
@@ -34,7 +36,7 @@ import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { sortIndicator, sortRows, type SortDir, type SortValue, useTableSort } from '../lib/tableSort.js'
-import { dirColor, pad, type Semantics, semantics } from '../lib/visualSemantics.js'
+import { dirColor, pad, readinessColor, type Semantics, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
@@ -78,6 +80,10 @@ import { windowItems } from './overlayControls.js'
 // opens a full-screen (rather than centered overlay) modal. Matches the WIDE_COLS
 // threshold the old workspace used.
 const WIDE_COLS = 100
+
+// A shared frozen empty id-set: the "no agent job running" remaining set. A stable
+// reference keeps the list rows byte-identical at rest (the memoised rows bail out).
+const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>()
 
 // Packet sections rendered under the visual summary inside the modal — the
 // long-form content the skinny panel + ForecastDetail summary omit.
@@ -171,6 +177,55 @@ export const summarizeRearm = (t: MassTally): string => {
   return `✓ ${parts.join(' · ')}`
 }
 
+// ── Detached Desk agent job (A agent-run / T task) ───────────────────────────
+// A single detached background job — the FULL formal reforecast flow (A) or a
+// free-text task session (T) over an explicit batch — polled by run_id every ~5s.
+// `targetIds` is the fixed set the job was launched over; `doneIds` accrues from
+// the status `results[]`, so the remaining set (targetIds − doneIds) is the rows
+// that still show the in-flight ⋯ gutter marker.
+export interface AgentJob {
+  runId: string
+  mode: 'agent' | 'task'
+  total: number
+  done: number
+  status: string
+  current: { stage?: string; title?: string } | null
+  // Task mode: the latest progress[] note (the running commentary of the single
+  // agent session). Agent mode drives the line from `current` instead.
+  note?: string
+  targetIds: Set<string>
+  doneIds: Set<string>
+}
+
+// The HONEST completion toast for a detached job. Agent mode reports the gated
+// outcome split parsed from results[] — committed (the commit landed), blocked
+// (ran but the gate/saturation refused the commit), errors, and quorums started —
+// so a run never claims a commit it didn't earn. Task mode leads with the agent's
+// own task_summary (falling back to the same split when it withheld one).
+export const summarizeAgentJob = (r: ForecastReforecastStatusResponse, mode: 'agent' | 'task'): string => {
+  const results = r.results ?? []
+  const committed = results.filter(x => x.committed).length
+  const errors = results.filter(x => x.error).length
+  const blocked = results.filter(x => !x.committed && !x.error).length
+  const quorums = r.quorums_started ?? results.filter(x => x.quorum_autorun).length
+  const parts = [`${committed} committed`]
+  if (blocked) {
+    parts.push(`${blocked} blocked`)
+  }
+  if (errors) {
+    parts.push(`${errors} errors`)
+  }
+  if (quorums) {
+    parts.push(`${quorums} quorum${quorums === 1 ? '' : 's'} started`)
+  }
+  const tally = `✓ ${parts.join(' · ')}`
+  if (mode === 'task') {
+    const summary = (r.task_summary ?? '').trim()
+    return summary ? `✓ ${truncate(summary, 96)}` : tally
+  }
+  return tally
+}
+
 interface DeskViewProps {
   gw: GatewayClient
   initialId?: null | string
@@ -232,6 +287,19 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const [massProgress, setMassProgress] = useState<MassProgress | null>(null)
   const massRunningRef = useRef(false)
   const unmountedRef = useRef(false)
+
+  // ── Detached Desk agent job (A agent-run / T free-text task) ────────────────
+  // ONE job at a time from this desk; agentRunningRef is the SYNC guard that gates
+  // re-triggers. The job runs server-side and is polled by run_id; closing the desk
+  // stops the poll (cleanup) but the job continues (detached — that is the point).
+  const [agentJob, setAgentJob] = useState<AgentJob | null>(null)
+  const agentRunningRef = useRef(false)
+  // The T task modal: a free-text instruction over an explicit id batch. The id
+  // batch is captured when T is pressed (so it can't drift from the live selection);
+  // the modal owns the instruction text itself (updater-form state, safe against a
+  // pasted multiline chunk) and hands it back on submit.
+  const [taskOpen, setTaskOpen] = useState(false)
+  const [taskTargetIds, setTaskTargetIds] = useState<string[]>([])
 
   // The detail packet (tail audit, ensemble, packet-tail sections) loads ASYNC
   // per selection and is rendered inside the modal only.
@@ -639,6 +707,81 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     })
   }, [items])
 
+  // Poll the detached agent job's status every ~5s while the desk is open (bounded,
+  // cleaned up — the quorum-chip poll shape). An immediate poll paints the first
+  // progress frame; on done/error it toasts the HONEST tally, reloads the payload,
+  // and clears the job (which tears the interval down). The job keeps running
+  // server-side if the desk closes — the cleanup only stops the POLL, not the work.
+  useEffect(() => {
+    const job = agentJob
+    if (!job?.runId) {
+      return
+    }
+    const { mode, runId } = job
+    let cancelled = false
+    const poll = () => {
+      gw.request<unknown>('forecast.reforecast.status', { run_id: runId })
+        .then(raw => {
+          if (cancelled) {
+            return
+          }
+          const r = asRpcResult<ForecastReforecastStatusResponse>(raw)
+          if (!r) {
+            return
+          }
+          const results = r.results ?? []
+          const doneIds = new Set((results.map(row => row.question_id).filter(Boolean) as string[]))
+          if (r.status === 'done' || r.status === 'error') {
+            agentRunningRef.current = false
+            setAgentJob(null)
+            setFlash(
+              r.status === 'error' && r.error
+                ? `agent failed: ${truncate(r.error, 80)}`
+                : summarizeAgentJob(r, mode)
+            )
+            load() // reload once so the freshly-committed rows land
+            return
+          }
+          const progress = r.progress ?? []
+          setAgentJob(prev =>
+            prev && prev.runId === runId
+              ? {
+                  ...prev,
+                  current: r.current ?? null,
+                  done: r.done_count ?? results.length,
+                  doneIds,
+                  note: progress.length ? progress[progress.length - 1] : prev.note,
+                  status: r.status ?? prev.status
+                }
+              : prev
+          )
+        })
+        .catch(() => {})
+    }
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [agentJob?.runId, gw])
+
+  // The rows still in flight (targetIds − doneIds) → a dim ⋯ gutter marker. Empty
+  // (stable ref) when no job runs, so the list rows are byte-identical at rest.
+  const agentRemaining = useMemo<ReadonlySet<string>>(() => {
+    if (!agentJob) {
+      return EMPTY_ID_SET
+    }
+    const rem = new Set<string>()
+    for (const id of agentJob.targetIds) {
+      if (!agentJob.doneIds.has(id)) {
+        rem.add(id)
+      }
+    }
+    return rem
+  }, [agentJob])
+
   // Switch tabs reset the selection to row 0 (locked decision). The mark set is
   // per-lens, so a lens switch also clears it.
   const switchTab = (next: number) => {
@@ -785,6 +928,107 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     step(0)
   }
 
+  // `A` — AGENT RUN: fan the FULL formal reforecast flow over the selection (marked
+  // set, or a lens row → all its members, reusing massTargets) as ONE detached
+  // background job. Confirm-free but HONEST: flash the scope, start the job, then
+  // the poll effect drives the progress line + the completion tally. One job at a
+  // time — a re-press while a job runs just flashes the running run_id.
+  const runAgent = () => {
+    if (agentRunningRef.current) {
+      setFlash(`agent running: ${agentJob?.runId ?? '…'}`)
+      return
+    }
+    const targets = massTargets('update')
+    if (!targets.length) {
+      setFlash('select a forecast for the agent')
+      return
+    }
+    const ids = targets.map(target => target.id)
+    agentRunningRef.current = true
+    setFlash(
+      `🧠 agent run: ${ids.length} question${ids.length === 1 ? '' : 's'}, ~${ids.length} LLM session${ids.length === 1 ? '' : 's'}`
+    )
+    gw.request<unknown>('forecast.reforecast.start', { question_ids: ids })
+      .then(raw => {
+        const r = asRpcResult<ForecastReforecastStartResponse>(raw)
+        if (!r?.run_id) {
+          agentRunningRef.current = false
+          setFlash('agent start failed')
+          return
+        }
+        setAgentJob({
+          current: null,
+          done: 0,
+          doneIds: new Set(),
+          mode: 'agent',
+          runId: r.run_id,
+          status: 'queued',
+          targetIds: new Set(ids),
+          total: r.total ?? ids.length
+        })
+        clearSelection()
+      })
+      .catch(() => {
+        agentRunningRef.current = false
+        setFlash('agent start failed')
+      })
+  }
+
+  // `T` — TASK: capture the selection's id batch and open the free-text task modal.
+  // Same one-job guard as A; the modal's Enter → submitTask below.
+  const openTask = () => {
+    if (agentRunningRef.current) {
+      setFlash(`agent running: ${agentJob?.runId ?? '…'}`)
+      return
+    }
+    const targets = massTargets('update')
+    if (!targets.length) {
+      setFlash('select a forecast for a task')
+      return
+    }
+    setTaskTargetIds(targets.map(target => target.id))
+    setTaskOpen(true)
+  }
+
+  // The T modal's Enter → dispatch forecast.desk.task over the captured batch, then
+  // ride the SAME progress/poll surface as A (the status RPC is shared; spec.mode
+  // 'task'). The modal already rejects an empty instruction, so `instruction` is
+  // non-empty here.
+  const submitTask = (instruction: string) => {
+    if (agentRunningRef.current || !taskTargetIds.length) {
+      setTaskOpen(false)
+      return
+    }
+    const ids = taskTargetIds
+    agentRunningRef.current = true
+    setTaskOpen(false)
+    setFlash(`🧠 task: ${ids.length} question${ids.length === 1 ? '' : 's'}`)
+    gw.request<unknown>('forecast.desk.task', { instruction, question_ids: ids })
+      .then(raw => {
+        const r = asRpcResult<ForecastReforecastStartResponse>(raw)
+        if (!r?.run_id) {
+          agentRunningRef.current = false
+          setFlash('task start failed')
+          return
+        }
+        setAgentJob({
+          current: null,
+          done: 0,
+          doneIds: new Set(),
+          mode: 'task',
+          runId: r.run_id,
+          status: 'queued',
+          targetIds: new Set(ids),
+          total: r.total ?? ids.length
+        })
+        clearSelection()
+      })
+      .catch(() => {
+        agentRunningRef.current = false
+        setFlash('task start failed')
+      })
+  }
+
   // `R` — RESOLVE: open the question detail modal and scroll it to the Actions
   // section (bottom), where the `/forecast resolve …` playbook row lives. There is
   // no standalone resolve modal, so this reuses the detail modal's Actions tail.
@@ -822,9 +1066,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const modalPageSize = Math.max(4, termRows - 12)
 
   useInput((ch, key) => {
-    // The settings modal owns the keyboard while open (it has its own useInput);
-    // trap everything here so the desk can't double-handle a key.
-    if (settingsOpen) {
+    // The settings / task modals own the keyboard while open (each has its own
+    // useInput); trap everything here so the desk can't double-handle a key.
+    if (settingsOpen || taskOpen) {
       return
     }
     // Filter text-entry mode swallows printable keys.
@@ -946,6 +1190,16 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
     if (ch === 'U') {
       return runMass('update')
+    }
+
+    // `A` — AGENT RUN (detached full reforecast flow); `T` — free-text TASK modal.
+    // Both fan over the selection (marked set, or a lens → all its members).
+    if (ch === 'A') {
+      return runAgent()
+    }
+
+    if (ch === 'T') {
+      return openTask()
     }
 
     // Space — mark the cursor row (mutt-style, advances after). Shift+↑/↓ extends
@@ -1105,7 +1359,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         <DeskLensRow
           active={lensActive}
           onOpen={() => {
-            if (modalOpen || settingsOpen || globalModal) return
+            if (modalOpen || settingsOpen || taskOpen || globalModal) return
             setSel(0)
             setModalOpen(true)
           }}
@@ -1121,10 +1375,11 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         items={sortedVisible}
         markedIds={selectedIds}
         nowMs={Math.floor(Date.now() / 60_000) * 60_000}
-        onSelect={i => { if (!modalOpen && !settingsOpen && !globalModal) setSel(i + lensOffset) }}
+        onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) setSel(i + lensOffset) }}
         // The header sorts on click, but only while nothing modal is covering the
         // body — matches the row/tab click gating.
-        onSort={modalOpen || settingsOpen || globalModal ? undefined : onSortByKey}
+        onSort={modalOpen || settingsOpen || taskOpen || globalModal ? undefined : onSortByKey}
+        runningIds={agentRemaining}
         sortDir={sort.state.dir}
         sortKey={sort.state.key}
         sweep={sweepCtx}
@@ -1142,6 +1397,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const panel = (
     <Box flexDirection="column" flexShrink={0} width={panelWidth}>
       <SweepStatusLine now={now} reviews={reviewsNext} sweepRunning={sweepRunning} t={t} />
+      <AgentProgressLine agent={agentJob} now={now} t={t} width={panelWidth} />
       <DeskSummary
         latestNote={latestNote}
         refFactor={refFactor}
@@ -1225,6 +1481,20 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     />
   ) : null
 
+  // The `T` task modal: a free-text instruction over the captured id batch. Owns
+  // its own keyboard (the desk useInput traps `taskOpen`); Enter → submitTask,
+  // Esc cancels. On submit it rides the same detached-job progress/poll surface as A.
+  const taskModal = taskOpen ? (
+    <DeskTaskModal
+      cols={cols}
+      count={taskTargetIds.length}
+      onCancel={() => setTaskOpen(false)}
+      onSubmit={submitTask}
+      rows={termRows}
+      t={t}
+    />
+  ) : null
+
   const modal = modalOpen ? (
     <ModalOverlay
       cols={cols}
@@ -1269,6 +1539,8 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           [
             { k: 'U', label: `Update (${selectedIds.size})`, run: () => runMass('update') },
             { k: 'u', label: `Re-arm (${selectedIds.size})`, run: () => runMass('rearm') },
+            { k: 'A', label: `Agent (${selectedIds.size})`, run: () => runAgent() },
+            { k: 'T', label: `Task (${selectedIds.size})`, run: () => openTask() },
             { k: 'Spc', label: 'Mark', run: () => toggleMark() },
             { k: '⇧↑↓', label: 'Extend' },
             { k: 'Esc', label: 'Clear', run: () => clearSelection() },
@@ -1303,7 +1575,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           keyboard is already trapped (useInput early-returns on settingsOpen), so
           the still-visible footer must not leak clicks past that trap. The detail
           modal swaps to its own modal-only chip set, so it needs no gate here. */}
-      <FooterChips chips={chips} disabled={settingsOpen || globalModal} t={t} />
+      <FooterChips chips={chips} disabled={settingsOpen || taskOpen || globalModal} t={t} />
       {/* An OPTIONAL status line — the in-flight mass-run progress (accent-swept,
           like the sweep indicator), else a transient flash / stale-review note. It
           only paints when there is something to say. */}
@@ -1332,7 +1604,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           Body clicks are gated while the modal is open (switchTab/onSelect early-
           return) so the still-visible tabs/rows can't leak interaction — the
           keyboard is already trapped by the `if (modalOpen) return` in useInput. */}
-      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen && !globalModal) switchTab(i) }} t={t} tabs={tabs} width={width} />
+      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) switchTab(i) }} t={t} tabs={tabs} width={width} />
       {onBench ? (
         // The Bench lens replaces the list+panel with its own read-only scoreboard
         // — bench questions never mix into the live organic-forecast list.
@@ -1356,6 +1628,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       {footer}
       {modalOpen ? modal : null}
       {settingsModal}
+      {taskModal}
     </Box>
   )
 }
@@ -1417,6 +1690,131 @@ export function SweepStatusLine({
     <Text color={t.color.muted} wrap="truncate-end">
       {reviews?.nightly?.next_run_at ? `${due} due · tonight` : `${due} due`}
     </Text>
+  )
+}
+
+// ── Detached agent-job progress line (skinny-panel header) ───────────────────
+// A persistent, accent-swept one-liner while a detached A/T job runs — "🧠 agent
+// 3/17 · <current title> · <stage>" — and NOTHING at rest. It sits directly under
+// the sweep line in the summary panel, riding the desk's existing `now` tick so its
+// colour sweeps the brand accent family in lock-step with the sweep spinner.
+export function AgentProgressLine({
+  agent,
+  now,
+  t,
+  width
+}: {
+  agent: AgentJob | null
+  now: number
+  t: Theme
+  width: number
+}) {
+  if (!agent) {
+    return null
+  }
+  const inner = Math.max(16, width - 2)
+  const label = agent.mode === 'task' ? 'task' : 'agent'
+  const title = agent.current?.title ? ` · ${agent.current.title}` : ''
+  const stage = agent.current?.stage ? ` · ${agent.current.stage}` : ''
+  // Agent mode reads the per-question current title/stage; task mode (one session,
+  // often no `current`) reads the latest progress[] note instead.
+  const detail = agent.mode === 'task' && agent.note ? ` · ${agent.note}` : `${title}${stage}`
+  const line = `🧠 ${label} ${agent.done}/${agent.total}${detail}`
+  return (
+    <Text color={sweepColor(sweepStops(t), now)} wrap="truncate-end">
+      {truncate(line, inner)}
+    </Text>
+  )
+}
+
+// ── `T` task modal: free-text instruction over the selected batch ────────────
+// A ModalOverlay form with a single free-text field (Enter submits, Esc cancels;
+// a pasted multiline instruction survives intact). Owns its own keyboard — the desk
+// useInput traps `taskOpen` — and goes inert while the palette / cheat-sheet stacks
+// above. On submit the parent dispatches forecast.desk.task and rides the same
+// detached-job progress/poll surface as A.
+export function DeskTaskModal({
+  cols,
+  count,
+  onCancel,
+  onSubmit,
+  rows,
+  t
+}: {
+  cols: number
+  count: number
+  onCancel: () => void
+  onSubmit: (instruction: string) => void
+  rows: number
+  t: Theme
+}) {
+  const globalModal = useStore($globalModal)
+  // The modal OWNS the instruction (updater-form state, so a rapid/pasted multiline
+  // chunk can't drop chars via a stale closure) and hands the trimmed text back on
+  // submit — an empty instruction is rejected here (the server refuses one too).
+  const [value, setValue] = useState('')
+  useInput(
+    (ch, key) => {
+      if (key.escape) {
+        return onCancel()
+      }
+      if (key.return) {
+        // A bare Enter submits. (Multiline instructions arrive via paste — a pasted
+        // chunk carries its own embedded newlines, with key.return unset.)
+        const trimmed = value.trim()
+        if (trimmed) {
+          onSubmit(trimmed)
+        }
+        return
+      }
+      if (key.backspace || key.delete) {
+        return setValue(v => v.slice(0, -1))
+      }
+      if (ch && !key.ctrl && !key.meta) {
+        // Accept printable chars AND embedded newlines (bracketed paste) so a
+        // multiline instruction survives intact.
+        const printable = [...ch].filter(c => c >= ' ' || c === '\n').join('')
+        if (printable) {
+          setValue(v => v + printable)
+        }
+      }
+    },
+    { isActive: !globalModal }
+  )
+
+  const modalW = Math.max(48, Math.min(cols - 4, 84))
+  const modalH = Math.max(10, Math.min(rows - 4, 16))
+  const lines = value.length ? value.split('\n') : ['']
+
+  return (
+    <ModalOverlay cols={cols} footerHint="⏎ submit · Esc cancel" maxHeight={modalH} maxWidth={modalW} rows={rows} t={t} title="Agent task">
+      <Box flexDirection="column" flexGrow={1} minHeight={0}>
+        <Text color={t.color.muted} wrap="truncate-end">
+          {`What should the agent do with these ${count} question${count === 1 ? '' : 's'}?`}
+        </Text>
+        <Box flexDirection="column" marginTop={1}>
+          {value.length ? (
+            lines.map((ln, i) => (
+              <Text color={t.color.text} key={`tl:${i}`} wrap="truncate-end">
+                {ln}
+                {i === lines.length - 1 ? (
+                  <Text color={t.color.text} inverse>
+                    {' '}
+                  </Text>
+                ) : null}
+              </Text>
+            ))
+          ) : (
+            <Text wrap="truncate-end">
+              <Text color={t.color.text} inverse>
+                {' '}
+              </Text>
+              <Text color={t.color.muted}>{' e.g. add a watched source + a reference class, then reforecast'}</Text>
+            </Text>
+          )}
+        </Box>
+      </Box>
+    </ModalOverlay>
   )
 }
 
@@ -1546,6 +1944,27 @@ export function DeskSummary({
         <Text color={t.color.accent} wrap="truncate-end">
           {`⟳ quorum ${selected.quorum_run.status ?? 'running'}`}
         </Text>
+      ) : null}
+      {/* Machine-readiness: when the selected row has UNMET workability gaps, a
+          compact score + up to 3 gap labels with their exact fix hints (muted, one
+          truncated line each). A healthy row (no gaps) shows nothing — quiet desk. */}
+      {selected.readiness && selected.readiness.gaps.length ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text wrap="truncate-end">
+            <Text color={t.color.muted}>readiness </Text>
+            <Text bold color={readinessColor(t, selected.readiness.score)}>
+              {`${Math.round(selected.readiness.score)}/100`}
+            </Text>
+            <Text color={t.color.muted}>
+              {` · ${selected.readiness.gaps.length} gap${selected.readiness.gaps.length === 1 ? '' : 's'}`}
+            </Text>
+          </Text>
+          {selected.readiness.gaps.slice(0, 3).map(gap => (
+            <Text color={t.color.muted} key={gap.key} wrap="truncate-end">
+              {truncate(`· ${gap.label} — ${gap.fix_hint}`, inner)}
+            </Text>
+          ))}
+        </Box>
       ) : null}
       <Text color={t.color.muted} wrap="truncate-end">
         {`updated ${shortDate(selected.as_of)}${selected.freshness ? ` (${selected.freshness})` : ''}`}
@@ -1826,6 +2245,12 @@ const DESK_COLS: DeskCol[] = [
   { align: 'right', key: '1w', label: '1W', w: 7 },
   { align: 'right', key: '1mo', label: '1MO', w: 8 },
   { align: 'right', key: 'ev', label: 'EV', w: 4 },
+  // SRC = active watched-source count (0 = "no fuel", warning-coloured); RDY = the
+  // 0-100 machine-readiness composite, banded by colour. Both reserve 5 (label 3 +
+  // the " ▲/▼" sort indicator) so the sortable header renders without clipping —
+  // the same "label + indicator fits" sizing every other numeric column uses.
+  { align: 'right', key: 'src', label: 'SRC', w: 5 },
+  { align: 'right', key: 'rdy', label: 'RDY', w: 5 },
   { align: 'right', key: 'age', label: 'AGE', w: 7 },
   // NEXT reserves 9 (vs the other numerics' 7-8): the honest due-state strings
   // ("◐ running", "due · Xm") are 8-9 chars, and unlike a min-width pad the column
@@ -1834,9 +2259,11 @@ const DESK_COLS: DeskCol[] = [
 ]
 
 // Keep by priority when narrow (render still follows display order). QUESTION is
-// always kept; PROB matters most, then the wider 1W/1MO windows, then NEXT (when
-// the forecast next auto-updates), then EV, then the noisier 1D, then AGE.
-const DESK_PRIORITY = ['prob', '1w', '1mo', 'next', 'ev', '1d', 'age']
+// always kept; PROB matters most; then SRC/RDY — the operator's machine-readiness
+// signals (a 0-source row explains WHY nothing updates, which outranks momentum
+// deltas: the operator asked for this column expressly) — then NEXT, the wider
+// 1W window, EV, the noisier 1D/1MO, and AGE last.
+const DESK_PRIORITY = ['prob', 'src', 'rdy', 'next', '1w', 'ev', '1d', '1mo', 'age']
 
 // Every desk column is sortable except the trailing trend spark (which is not a
 // column). `o` cycles through them in header (display) order.
@@ -1846,7 +2273,7 @@ const DESK_SORT_KEYS = DESK_COLS.map(c => c.key)
 // QUESTION; the raw signed window Δ for 1D/1W/1MO; the probability/μ for PROB; a
 // numeric age (older → larger, so ascending = freshest first) for AGE; the next
 // event's epoch (soonest first ascending) for NEXT. Missing values sort last.
-const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: number): SortValue => {
+export const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: number): SortValue => {
   switch (key) {
     case '1d':
       return windowDelta(item.history, nowMs, 1)
@@ -1877,6 +2304,12 @@ const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: number):
 
     case 'q':
       return item.title ?? item.id ?? ''
+
+    case 'rdy':
+      return finite(item.readiness?.score) ? item.readiness!.score : null
+
+    case 'src':
+      return item.src_count ?? 0
 
     default:
       return null
@@ -2019,8 +2452,9 @@ const windowChgCell = (
 }
 
 // One cell's colour + text. `windows` are the precomputed 1D/1W/1MO deltas so the
-// switch stays a pure formatter.
-const deskCellText = (
+// switch stays a pure formatter. Exported so the SRC "no fuel" warning + the RDY
+// band colours are unit-testable in isolation (the dueNowCell pattern).
+export const deskCellText = (
   key: string,
   item: ForecastWorkspaceItem,
   sem: Semantics,
@@ -2059,6 +2493,23 @@ const deskCellText = (
     case 'ev':
       return { color: sem.subtle, text: String(item.evidence_count ?? 0) }
 
+    case 'src': {
+      // Active watched-source count. 0 is the "no fuel" signal — the autonomous
+      // desk has nothing to refresh — so it paints in the warning colour; a
+      // fuelled row stays subtle so only the empty ones draw the eye.
+      const n = item.src_count ?? 0
+      return { color: n > 0 ? sem.subtle : t.color.warn, text: String(n) }
+    }
+
+    case 'rdy': {
+      // The 0-100 machine-readiness composite, banded by colour (≥80 ok, 50-79
+      // warn, <50 danger). No composite (benchmark/market question) → subtle "—".
+      const score = item.readiness?.score
+      return finite(score)
+        ? { color: readinessColor(t, score), text: String(Math.round(score)) }
+        : { color: sem.subtle, text: '—' }
+    }
+
     case 'prob':
       return { color: t.color.text, text: headlineCompact(item) }
 
@@ -2070,7 +2521,7 @@ const deskCellText = (
   }
 }
 
-function DeskForecastList({
+export function DeskForecastList({
   cursor,
   empty,
   items,
@@ -2078,6 +2529,7 @@ function DeskForecastList({
   nowMs,
   onSelect,
   onSort,
+  runningIds,
   sortDir,
   sortKey,
   sweep,
@@ -2094,6 +2546,9 @@ function DeskForecastList({
   onSelect: (i: number) => void
   // Clicking a column header sorts by it; undefined while a modal covers the body.
   onSort?: (key: string) => void
+  // The ids still in flight in the running detached agent job → a dim ⋯ gutter
+  // marker. A stable empty set at rest keeps the memoised rows byte-identical.
+  runningIds: ReadonlySet<string>
   sortDir: SortDir
   sortKey: null | string
   // Live review-sweep state for the NEXT column (referentially STABLE while idle so
@@ -2206,6 +2661,7 @@ function DeskForecastList({
               item={item}
               marked={markedIds.has(item.id ?? '')}
               nowMs={nowMs}
+              running={runningIds.has(item.id ?? '')}
               satGutter={satGutter}
               sem={sem}
               showTrend={showTrend}
@@ -2237,6 +2693,7 @@ const DeskListRow = memo(function DeskListRow({
   item,
   marked,
   nowMs,
+  running,
   satGutter,
   sem,
   showTrend,
@@ -2253,6 +2710,9 @@ const DeskListRow = memo(function DeskListRow({
   // re-renders (the memo bails on the rest).
   marked: boolean
   nowMs: number
+  // In the running detached agent job's remaining set → a dim ⋯ gutter marker.
+  // Flips only this row (the memo bails on the rest) when the job starts/advances.
+  running: boolean
   satGutter: number
   sem: Semantics
   showTrend: boolean
@@ -2290,12 +2750,16 @@ const DeskListRow = memo(function DeskListRow({
 
   return (
     <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
-      {/* Leading 2-char gutter: a marked row shows the accent ▎ (leading, priority
-          over the cursor arrow — the row's background highlight still signals the
-          cursor); else the plain ▸ / blank. Unmarked+active is byte-identical to
-          before (`▸ `), so the dense table is untouched when nothing is marked. */}
-      <Text bold={active || marked} color={marked ? t.color.accent : active ? sem.cursor : sem.faint}>
-        {`${marked ? '▎' : active ? '▸' : ' '} `}
+      {/* Leading 2-char gutter, in precedence order: a marked row shows the accent
+          ▎; else a row in the running agent job's remaining set shows a dim ⋯; else
+          the cursor ▸ / blank. The row's background highlight always signals the
+          cursor, so ▎/⋯ overriding the arrow never hides it. Idle + unmarked is
+          byte-identical to before (`▸ `), so the dense table is untouched at rest. */}
+      <Text
+        bold={active || marked}
+        color={marked ? t.color.accent : running ? t.color.muted : active ? sem.cursor : sem.faint}
+      >
+        {`${marked ? '▎' : running ? '⋯' : active ? '▸' : ' '} `}
       </Text>
       {satGutter ? (
         // The reserved saturation gutter: a dim ◌ for an under-saturated forecast,

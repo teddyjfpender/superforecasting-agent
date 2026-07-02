@@ -87,12 +87,26 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 
 const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+const readinessFixture = () => ({
+  gaps: [
+    { fix_hint: 'no watched sources — `forecast watch add <source>`, or a T task', key: 'watches', label: 'watched sources' },
+    { fix_hint: 'no active reference class — `forecast base-rate …`, or a T task', key: 'ref_classes', label: 'reference classes' }
+  ],
+  question_id: 'fq_demo',
+  score: 64,
+  src_count: 0,
+  title: 'Will the metric exceed 5 percent?'
+})
+
 // Records every forecast.config.set call so we can assert the write payload.
-const fakeGw = (cfg: ForecastConfigResponse, sink: Record<string, unknown>[]) =>
+const fakeGw = (cfg: ForecastConfigResponse, sink: Record<string, unknown>[], readiness: unknown = readinessFixture()) =>
   ({
     request: (method: string, params: Record<string, unknown>) => {
       if (method === 'forecast.config') {
         return Promise.resolve(cfg)
+      }
+      if (method === 'forecast.question.readiness') {
+        return Promise.resolve(readiness)
       }
       if (method === 'forecast.config.set') {
         sink.push(params)
@@ -212,6 +226,24 @@ describe('ForecastSettingsModal', () => {
     // The overridden threshold is written; the at-default one is not.
     expect(hooks.thresholds.min_perspectives).toBe(2)
     expect(hooks.thresholds.max_width_ratio).toBeUndefined()
+    m.cleanup()
+  })
+
+  it('leads with a READINESS section — the score + the full gaps list with fix hints — above the config', async () => {
+    const m = await mountModal(config())
+    await m.press(`${ESC}[B`)
+    await m.press(`${ESC}[A`)
+    const text = m.text()
+    // The section header + banded score + gap count, fetched from forecast.question.readiness.
+    expect(text).toContain('READINESS')
+    expect(text).toContain('64/100')
+    // The FULL gaps list (both dimensions) with their exact-fix hints.
+    expect(text).toContain('watched sources')
+    expect(text).toContain('reference classes')
+    expect(text).toContain('or a T task')
+    // The existing config controls still render below it.
+    expect(text).toContain('CADENCE')
+    expect(text).toContain('GATES')
     m.cleanup()
   })
 })

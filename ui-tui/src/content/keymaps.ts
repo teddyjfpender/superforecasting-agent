@@ -51,6 +51,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['Tab / ←→ / h l', 'switch lens'],
     ['Enter', 'open the selected forecast'],
     ['U / u', 'update now / re-arm — marked rows (or a lens → all its questions)'],
+    ['A / T', 'agent run · task over the selection (or a lens → all its questions)'],
     ['o / O', 'sort column · toggle asc/desc (or click a header)'],
     ['s / / / r', 'settings · filter · refresh'],
     ['q / Esc', 'clear selection / filter, then close the view']

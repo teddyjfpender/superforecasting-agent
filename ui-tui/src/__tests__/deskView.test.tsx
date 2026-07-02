@@ -331,7 +331,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     const text = desk.text()
     // The first (thesis) tab is active → its member forecast renders in the list.
     // The dense QUESTION column truncates the title, so assert the visible prefix.
-    expect(text).toContain('CPI-U Y')
+    expect(text).toContain('May 2026')
     // Footer chips.
     expect(text).toContain('Lens')
     expect(text).toContain('Open')
@@ -349,10 +349,12 @@ describe('DeskView (redesigned forecast desk)', () => {
     // The bold header row names the dense columns (mirrors the Markets table).
     expect(text).toContain('QUESTION')
     expect(text).toContain('PROB')
+    // SRC/RDY (machine-readiness) now outrank the delta windows in the priority
+    // order — the operator asked for these columns expressly, so they must render
+    // at the common two-pane width even when 1MO/AGE drop.
+    expect(text).toContain('SRC')
+    expect(text).toContain('RDY')
     expect(text).toContain('1W')
-    expect(text).toContain('1MO')
-    expect(text).toContain('EV')
-    expect(text).toContain('AGE')
     // The '─' rule under the header.
     expect(text).toContain('───')
     // A binary row carries its compact probability + an evidence count; a
@@ -418,8 +420,8 @@ describe('DeskView (redesigned forecast desk)', () => {
     const text = desk.text()
     // The All lens shows every forecast. The dense QUESTION column truncates long
     // titles to fit, so assert the visible prefixes.
-    expect(text).toContain('Will the Repub')
-    expect(text).toContain('CPI-U Y')
+    expect(text).toContain('Will the Rep')
+    expect(text).toContain('May 2026')
     desk.cleanup()
   })
 
@@ -584,7 +586,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     // Filter bar reflects the query; the matching forecast survives (the dense
     // QUESTION column truncates the long title, so assert the visible prefix).
     expect(text).toContain('⌕')
-    expect(text).toContain('Will the Repub')
+    expect(text).toContain('Will the Rep')
     // The header match count proves the list narrowed to just the one match
     // (the cumulative stdout buffer keeps earlier frames, so we assert the
     // live match indicator rather than the absence of the filtered-out row).
@@ -771,7 +773,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     await desk.press('o') // sort the FILTERED set
     const text = desk.text()
     // The one match survives the sort and the indicator renders on the header.
-    expect(text).toContain('Will the Repub')
+    expect(text).toContain('Will the Rep')
     expect(text).toContain('1 matches')
     expect(text).toContain('QUESTION ▲')
     desk.cleanup()
@@ -1218,5 +1220,390 @@ describe('live payload re-pull', () => {
     const settled = count()
     await tick(200)
     expect(count()).toBe(settled)
+  })
+})
+
+// ── SRC / RDY machine-readiness columns ───────────────────────────────────────
+// The desk's two-pane list|panel flex is not measured reliably in the inline
+// harness (the existing DeskSummary tests render that component DIRECTLY for the
+// same reason). So the width-dependent column packing — SRC/RDY render + colours +
+// priority-drop — is asserted on the exported DeskForecastList in isolation with an
+// EXPLICIT width, and the readiness summary block on DeskSummary directly.
+type Gap = { fix_hint: string; key: string; label: string }
+
+const readyRow = (id: string, title: string, src: number, score: number, gaps: Gap[] = []): ForecastWorkspaceItem => ({
+  ...plainRow(id, title),
+  readiness: { gaps, score },
+  src_count: src
+})
+
+const lowGaps = (): Gap[] => [
+  { fix_hint: 'no watched sources — add one, or a T task', key: 'watches', label: 'watched sources' },
+  { fix_hint: 'reforecast to decompose into drivers, or a T task', key: 'components', label: 'structured components' },
+  { fix_hint: 'no enabled scheduled review — add one, or a T task', key: 'scheduled', label: 'enabled review schedule' },
+  { fix_hint: 'add a base rate, or a T task', key: 'ref_classes', label: 'reference classes' }
+]
+
+const readinessItems = (): ForecastWorkspaceItem[] => [
+  readyRow('fq_hi', 'Alpha question', 5, 90),
+  readyRow('fq_mid', 'Beta question', 2, 60, [{ fix_hint: 'add a base rate, or a T task', key: 'ref_classes', label: 'reference classes' }]),
+  readyRow('fq_low', 'Gamma question', 0, 30, lowGaps())
+]
+
+const renderList = async (width: number, items: ForecastWorkspaceItem[], props: Record<string, unknown> = {}) => {
+  const [{ renderSync }, { DeskForecastList }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+    import('@hermes/ink'),
+    import('../components/deskView.js'),
+    import('../theme.js'),
+    import('../lib/text.js')
+  ])
+  const stdout = writeStream(Math.max(width + 6, 80), 40)
+  renderSync(
+    React.createElement(DeskForecastList as never, {
+      cursor: 0,
+      empty: 'none',
+      items,
+      markedIds: new Set<string>(),
+      nowMs: Math.floor(Date.now() / 60_000) * 60_000,
+      onSelect: () => undefined,
+      runningIds: new Set<string>(),
+      sortDir: 'asc',
+      sortKey: null,
+      t: DARK_THEME,
+      visibleRows: 12,
+      width,
+      ...props
+    } as never),
+    { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+  )
+  return normalize(stdout.text(), stripAnsi)
+}
+
+describe('DeskView SRC / RDY readiness columns', () => {
+  it('renders the SRC + RDY headers and per-row values on a wide list', async () => {
+    const text = await renderList(112, readinessItems())
+    expect(text).toContain('SRC')
+    expect(text).toContain('RDY')
+    // The readiness scores land in the RDY column (90 / 60 / 30).
+    expect(text).toContain('90')
+    expect(text).toContain('60')
+    expect(text).toContain('30')
+  })
+
+  it('deskCellText colours SRC=0 as the warning "no fuel" signal and bands RDY by score', async () => {
+    const [{ deskCellText }, { DARK_THEME }, { semantics }] = await Promise.all([
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/visualSemantics.js')
+    ])
+    const sem = semantics(DARK_THEME)
+    const win = { '1d': null, '1mo': null, '1w': null }
+    const cell = (key: string, item: ForecastWorkspaceItem) => deskCellText(key, item, sem, DARK_THEME, win, 0)
+    // SRC: 0 → warning ("no fuel"); >0 → subtle.
+    expect(cell('src', { src_count: 0 })).toEqual({ color: DARK_THEME.color.warn, text: '0' })
+    expect(cell('src', { src_count: 4 })).toEqual({ color: sem.subtle, text: '4' })
+    // RDY bands: ≥80 ok, 50-79 warn, <50 danger; no composite → subtle "—".
+    expect(cell('rdy', { readiness: { gaps: [], score: 88 } }).color).toBe(DARK_THEME.color.ok)
+    expect(cell('rdy', { readiness: { gaps: [], score: 60 } }).color).toBe(DARK_THEME.color.warn)
+    expect(cell('rdy', { readiness: { gaps: [], score: 40 } }).color).toBe(DARK_THEME.color.error)
+    expect(cell('rdy', {})).toEqual({ color: sem.subtle, text: '—' })
+  })
+
+  it('deskSortValue exposes SRC/RDY so the shared tableSort can order by them', async () => {
+    const { deskSortValue } = await import('../components/deskView.js')
+    expect(deskSortValue(readyRow('a', 'A', 3, 70), 'src', 0)).toBe(3)
+    expect(deskSortValue(readyRow('a', 'A', 3, 70), 'rdy', 0)).toBe(70)
+    // A missing source count is 0 (no fuel), a missing composite is null (sorts last).
+    expect(deskSortValue({}, 'src', 0)).toBe(0)
+    expect(deskSortValue({}, 'rdy', 0)).toBeNull()
+  })
+
+  it('a header click sorts by SRC/RDY (the ▲/▼ indicator renders without clipping)', async () => {
+    const sorts: string[] = []
+    const text = await renderList(112, readinessItems(), { onSort: (k: string) => sorts.push(k), sortDir: 'asc', sortKey: 'rdy' })
+    // The RDY column is the active sort → its header carries the ascending indicator,
+    // and the 5-wide column hosts "RDY ▲" without clipping to "RD…".
+    expect(text).toContain('RDY ▲')
+  })
+
+  it('keeps SRC/RDY at narrow widths — the delta windows drop first', async () => {
+    // The operator's machine-readiness columns outrank momentum deltas in the
+    // priority order: at a width too tight for the full set, SRC/RDY survive and
+    // 1MO/AGE are the ones that drop.
+    const text = await renderList(76, readinessItems())
+    expect(text).toContain('SRC')
+    expect(text).toContain('RDY')
+    expect(text).not.toContain('1MO')
+  })
+
+  it('marks the running agent job\'s remaining rows with a dim ⋯ gutter marker', async () => {
+    // fq_hi + fq_low are still in flight; fq_mid has landed → only the remaining
+    // rows carry the ⋯ marker.
+    const running = await renderList(112, readinessItems(), { runningIds: new Set(['fq_hi', 'fq_low']) })
+    expect(running).toContain('⋯')
+    // No job running → no ⋯ (byte-identical-at-rest gutter).
+    const idle = await renderList(112, readinessItems())
+    expect(idle).not.toContain('⋯')
+  })
+})
+
+describe('DeskView readiness summary block', () => {
+  const renderSummary = async (selected: ForecastWorkspaceItem) => {
+    const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const stdout = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: null,
+        refFactor: undefined,
+        refThesis: undefined,
+        selected,
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    return normalize(stdout.text(), stripAnsi)
+  }
+
+  it('shows score + up to 3 gap labels with fix hints when the selected row has gaps', async () => {
+    const text = await renderSummary(readyRow('fq_low', 'Gamma question', 0, 30, lowGaps()))
+    expect(text).toContain('readiness')
+    expect(text).toContain('30/100')
+    expect(text).toContain('4 gaps')
+    // The first gap label + the leading fragment of its fix hint (one truncated line).
+    expect(text).toContain('watched sources')
+    // Only the first THREE gaps are shown (the fourth label is omitted).
+    expect(text).not.toContain('reference classes')
+  })
+
+  it('shows NOTHING for a healthy row (no gaps) — the quiet desk', async () => {
+    const text = await renderSummary(readyRow('fq_hi', 'Alpha question', 5, 90))
+    expect(text).not.toContain('readiness')
+  })
+})
+
+describe('AgentProgressLine', () => {
+  const agentJob = (over: Record<string, unknown> = {}) => ({
+    current: { stage: 'research', title: 'Some macro question' },
+    done: 3,
+    doneIds: new Set<string>(),
+    mode: 'agent' as const,
+    runId: 'run_1',
+    status: 'running',
+    targetIds: new Set<string>(),
+    total: 17,
+    ...over
+  })
+
+  it('renders the accent-swept "🧠 agent done/total · title · stage" line while a job runs', async () => {
+    const [{ renderSync }, { AgentProgressLine }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const stdout = writeStream(60, 6)
+    renderSync(
+      React.createElement(AgentProgressLine as never, { agent: agentJob(), now: 0, t: DARK_THEME, width: 56 } as never),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('🧠 agent 3/17')
+    expect(text).toContain('research')
+
+    // Task mode reads the latest progress[] note instead of a per-question title.
+    const task = writeStream(60, 6)
+    renderSync(
+      React.createElement(AgentProgressLine as never, {
+        agent: agentJob({ current: null, done: 0, mode: 'task', note: 'watching sources', total: 2 }),
+        now: 0,
+        t: DARK_THEME,
+        width: 56
+      } as never),
+      { exitOnCtrlC: false, patchConsole: false, stdout: task.stream } as never
+    )
+    const taskText = normalize(task.text(), stripAnsi)
+    expect(taskText).toContain('🧠 task 0/2')
+    expect(taskText).toContain('watching sources')
+
+    // No job → the line renders nothing (quiet at rest).
+    const idle = writeStream(60, 6)
+    renderSync(
+      React.createElement(AgentProgressLine as never, { agent: null, now: 0, t: DARK_THEME, width: 56 } as never),
+      { exitOnCtrlC: false, patchConsole: false, stdout: idle.stream } as never
+    )
+    expect(normalize(idle.text(), stripAnsi)).toBe('')
+  })
+})
+
+// ── Detached A/T agent jobs (start → poll → tally) ────────────────────────────
+// A gw that answers the detached-job RPCs: start/task return a run_id, and status
+// returns a fixed scripted payload (done/running) so the poll cycle is deterministic.
+const jobGw = (
+  response: ForecastWorkspaceResponse,
+  calls: { method: string; params: Record<string, unknown> }[],
+  status: unknown
+) =>
+  ({
+    request: (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params })
+      if (method === 'forecast.question') {
+        return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+      }
+      if (method === 'forecast.reforecast.start' || method === 'forecast.desk.task') {
+        return Promise.resolve({
+          note: 'ok',
+          run_id: 'run_1',
+          total: Array.isArray(params.question_ids) ? (params.question_ids as unknown[]).length : 0
+        })
+      }
+      if (method === 'forecast.reforecast.status') {
+        return Promise.resolve(status)
+      }
+      return Promise.resolve(response)
+    }
+  }) as never
+
+describe('DeskView detached agent jobs (A / T)', () => {
+  it('A starts a detached agent run over the marked batch, polls status, and toasts the HONEST tally', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const status = {
+      current: null,
+      done_count: 3,
+      quorums_started: 1,
+      results: [
+        { committed: true, question_id: 'fq_a', quorum_autorun: true },
+        { committed: false, question_id: 'fq_b' },
+        { committed: false, error: 'boom', question_id: 'fq_c' }
+      ],
+      run_id: 'run_1',
+      status: 'done',
+      total: 3
+    }
+    const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, status))
+    await desk.press(' ') // mark fq_a
+    await desk.press(' ') // mark fq_b
+    await desk.press(' ') // mark fq_c
+    await desk.press('A')
+    await tick(220)
+    const start = calls.find(c => c.method === 'forecast.reforecast.start')
+    expect(start).toBeDefined()
+    expect(start?.params.question_ids).toEqual(['fq_a', 'fq_b', 'fq_c'])
+    expect(calls.some(c => c.method === 'forecast.reforecast.status')).toBe(true)
+    // 1 committed, 1 blocked (ran, no commit, no error), 1 error, 1 quorum started —
+    // the tally never claims a commit it didn't earn.
+    const text = desk.text()
+    expect(text).toContain('1 committed')
+    expect(text).toContain('1 blocked')
+    expect(text).toContain('1 quorum')
+    desk.cleanup()
+  })
+
+  it('guards ONE job at a time — a second A while running flashes the run_id, no duplicate start', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const running = {
+      current: { stage: 'research', title: 'Beta question' },
+      done_count: 1,
+      results: [{ committed: true, question_id: 'fq_a' }],
+      run_id: 'run_1',
+      status: 'running',
+      total: 3
+    }
+    const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, running))
+    await desk.press(' ')
+    await desk.press(' ')
+    await desk.press(' ')
+    await desk.press('A') // starts run_1 (status stays 'running')
+    await tick(140)
+    await desk.press('A') // guarded — no second start
+    const starts = calls.filter(c => c.method === 'forecast.reforecast.start')
+    expect(starts).toHaveLength(1)
+    expect(desk.text()).toContain('agent running')
+    desk.cleanup()
+  })
+
+  it('the selection footer gains the "Agent (N)" and "Task (N)" chips', async () => {
+    const desk = await mountDesk(120, multiFixture())
+    await desk.press(' ') // mark fq_a → 1 selected
+    const text = desk.text()
+    expect(text).toContain('Agent (1)')
+    expect(text).toContain('Task (1)')
+    desk.cleanup()
+  })
+
+  it('T opens the task modal, captures typed text, and submits forecast.desk.task with the batch + toast', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const status = {
+      current: null,
+      done_count: 1,
+      results: [{ committed: true, question_id: 'fq_a' }],
+      run_id: 'run_1',
+      status: 'done',
+      task_summary: 'added a watched source and reforecast',
+      total: 1
+    }
+    const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, status))
+    await desk.press(' ') // mark fq_a → the task batch is {fq_a}
+    await desk.press('T')
+    let text = desk.text()
+    expect(text).toContain('Agent task')
+    expect(text).toContain('What should the agent do with these 1 question')
+    await desk.press('add a watched source')
+    expect(desk.text()).toContain('add a watched source')
+    await desk.press('\r') // submit
+    await tick(220)
+    const task = calls.find(c => c.method === 'forecast.desk.task')
+    expect(task).toBeDefined()
+    expect(task?.params.instruction).toBe('add a watched source')
+    expect(task?.params.question_ids).toEqual(['fq_a'])
+    // Task mode leads the toast with the agent's own task_summary.
+    text = desk.text()
+    expect(text).toContain('added a watched source and reforecast')
+    desk.cleanup()
+  })
+
+  it('Esc cancels the task modal without dispatching a task', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const desk = await mountDesk(120, multiFixture(), recordingGw(multiFixture(), calls))
+    await desk.press(' ')
+    await desk.press('T')
+    await desk.press('never mind')
+    await desk.press('\x1b') // Esc → cancel
+    await tick(60)
+    expect(calls.some(c => c.method === 'forecast.desk.task')).toBe(false)
+    desk.cleanup()
+  })
+
+  it('summarizeAgentJob leads task mode with the task_summary, agent mode with the committed/blocked split', async () => {
+    const { summarizeAgentJob } = await import('../components/deskView.js')
+    const agent = summarizeAgentJob(
+      {
+        quorums_started: 4,
+        results: [
+          { committed: true, question_id: 'a' },
+          ...Array.from({ length: 11 }, (_, i) => ({ committed: true, question_id: `c${i}` })),
+          { committed: false, question_id: 'b1' },
+          { committed: false, question_id: 'b2' },
+          { committed: false, error: 'x', question_id: 'e1' },
+          { committed: false, error: 'y', question_id: 'e2' },
+          { committed: false, error: 'z', question_id: 'e3' }
+        ],
+        status: 'done'
+      },
+      'agent'
+    )
+    expect(agent).toContain('12 committed')
+    expect(agent).toContain('2 blocked')
+    expect(agent).toContain('3 errors')
+    expect(agent).toContain('4 quorum')
+    // Task mode with a summary leads with it.
+    expect(summarizeAgentJob({ results: [], status: 'done', task_summary: 'did the thing' }, 'task')).toBe('✓ did the thing')
+    // Task mode WITHOUT a summary falls back to the same split.
+    expect(summarizeAgentJob({ results: [{ committed: true, question_id: 'a' }], status: 'done' }, 'task')).toContain('1 committed')
   })
 })
