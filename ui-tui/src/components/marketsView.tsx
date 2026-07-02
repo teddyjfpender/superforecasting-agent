@@ -24,6 +24,7 @@ import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { type MarketModelListItem, normalizeModelList, normalizePresentation, type Presentation } from '../lib/presentation.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
+import { sortIndicator, sortRows, type SortDir, type SortValue, useTableSort } from '../lib/tableSort.js'
 import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -147,6 +148,43 @@ const MARKET_SEARCH_FIELDS: FieldSpec<MarketSeries>[] = [
   { get: s => s.name, weight: 0.8 },
   { get: s => s.category, weight: 0.5 }
 ]
+
+// A tape row = its series + the latest quote (which may be missing until it
+// fetches). Sorting composes over the filtered rows.
+type TapeRow = { quote?: MarketQuote; series: MarketSeries }
+
+// Every quote-table column is sortable except the trailing trend spark (not a
+// column). `o` cycles them in header (display) order. Kept in sync with COLS.
+const MARKET_SORT_KEYS = ['sym', 'name', 'last', 'chg', 'pct', 'vol']
+
+// The comparable value a tape row contributes for a given sort key: the symbol /
+// name string, or the raw numeric quote field (missing quotes sort last).
+const marketSortValue = (row: TapeRow, key: string): SortValue => {
+  const { quote: q, series: s } = row
+
+  switch (key) {
+    case 'chg':
+      return q?.change ?? null
+
+    case 'last':
+      return q?.value ?? null
+
+    case 'name':
+      return q?.name || s.name || s.symbol || ''
+
+    case 'pct':
+      return q?.changePct ?? null
+
+    case 'sym':
+      return s.symbol
+
+    case 'vol':
+      return q?.volume ?? null
+
+    default:
+      return null
+  }
+}
 
 export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsViewProps) {
   const { stdout } = useStdout()
@@ -662,8 +700,46 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     return rows.filter(r => rankOf.has(r.series)).sort((a, b) => (rankOf.get(a.series) ?? 0) - (rankOf.get(b.series) ?? 0))
   }, [rows, searchActive])
 
-  const clampedSel = Math.min(sel, Math.max(0, visibleRows.length - 1))
-  const selectedRow = visibleRows[clampedSel]
+  // Column sort (`o` cycles, `O` toggles, header click sorts). Composes ON TOP of
+  // the `/` filter: sort the already-filtered `visibleRows`. Default = unsorted →
+  // the loaded tape order is preserved.
+  const marketSort = useTableSort(MARKET_SORT_KEYS)
+  const sortedRows = useMemo(
+    () => sortRows(visibleRows, marketSort.state.key, marketSort.state.dir, marketSortValue),
+    [visibleRows, marketSort.state.key, marketSort.state.dir]
+  )
+
+  const clampedSel = Math.min(sel, Math.max(0, sortedRows.length - 1))
+  const selectedRow = sortedRows[clampedSel]
+
+  // Keep the SELECTED tape row selected across a re-sort (track by provider:symbol,
+  // not index): a sort action stashes the current key, and once the re-sorted order
+  // lands we move the cursor to wherever that row now sits. A filter/quote update
+  // leaves the ref null, so it never fights the existing cursor logic.
+  const pendingReselect = useRef<null | string>(null)
+  useEffect(() => {
+    const key = pendingReselect.current
+    if (key == null) return
+    pendingReselect.current = null
+    const idx = sortedRows.findIndex(r => quoteKey(r.series.provider, r.series.symbol) === key)
+    if (idx >= 0) setSel(idx)
+  }, [sortedRows])
+
+  const armReselect = () => {
+    pendingReselect.current = selectedRow ? quoteKey(selectedRow.series.provider, selectedRow.series.symbol) : null
+  }
+  const onSortCycle = () => {
+    armReselect()
+    marketSort.cycle()
+  }
+  const onSortToggle = () => {
+    armReselect()
+    marketSort.toggle()
+  }
+  const onSortByKey = (key: string) => {
+    armReselect()
+    marketSort.sortByKey(key)
+  }
 
   // Hand the highlighted line item to the agent as a ready-to-send question.
   const askAgent = () => {
@@ -982,6 +1058,15 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       return void refresh(true)
     }
 
+    // `o` cycles the sort column (header order → unsorted); `O` toggles asc/desc.
+    if (ch === 'o') {
+      return onSortCycle()
+    }
+
+    if (ch === 'O') {
+      return onSortToggle()
+    }
+
     if (key.return && selectedRow?.series.provider === 'yahoo') {
       if (openExternalUrl(`https://finance.yahoo.com/quote/${encodeURIComponent(selectedRow.series.symbol)}`)) {
         setFlash('opened in browser')
@@ -1007,7 +1092,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     if (key.downArrow || ch === 'j' || key.wheelDown) {
-      return setSel(i => Math.min(Math.max(0, visibleRows.length - 1), i + 1))
+      return setSel(i => Math.min(Math.max(0, sortedRows.length - 1), i + 1))
     }
   }, { isActive: !globalModal })
 
@@ -1180,8 +1265,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const tableWidth = Math.max(28, width - detailWidth - 2)
   const avail = Math.max(20, tableWidth - 2) // inside border + paddingRight
   const listRows = Math.max(3, contentHeight - 2)
-  const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), visibleRows.length - listRows))
-  const windowed = visibleRows.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
+  const listStart = Math.max(0, Math.min(clampedSel - Math.floor(listRows / 2), sortedRows.length - listRows))
+  const windowed = sortedRows.slice(Math.max(0, listStart), Math.max(0, listStart) + listRows)
 
   const cellColor = (v: null | number | undefined): string => dirColor(sem, v)
 
@@ -1258,14 +1343,28 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       paddingRight={1}
       width={tableWidth}
     >
-      <Text bold color={sem.heading} wrap="truncate-end">
-        {'  '}
-        {keptCols.map(c => `${pad(c.label, c.w, c.align)} `).join('')}
-        {showTrend ? pad('1MO', trendW, 'left') : ''}
-      </Text>
+      {/* The header row: each column label is a click target that sorts by it
+          (gated while a modal covers the body). The active column shows a ▲/▼
+          direction glyph and paints in accent; the rest stay the plain heading. */}
+      <Box>
+        <Text bold color={sem.heading}>{'  '}</Text>
+        {keptCols.map(c => {
+          const active = marketSort.state.key === c.key
+          const ind = active ? ` ${sortIndicator(marketSort.state, c.key)}` : ''
+
+          return (
+            <Box key={c.key} onClick={!modal && !globalModal ? () => onSortByKey(c.key) : undefined}>
+              <Text bold color={active ? t.color.accent : sem.heading}>
+                {`${pad(`${c.label}${ind}`, c.w, c.align)} `}
+              </Text>
+            </Box>
+          )
+        })}
+        {showTrend ? <Text bold color={sem.heading}>{pad('1MO', trendW, 'left')}</Text> : null}
+      </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       <Box flexDirection="column">
-        {visibleRows.length === 0 ? (
+        {sortedRows.length === 0 ? (
           <Text color={t.color.muted} wrap="wrap">
             {searchActive
               ? `No matches for “${searchActive}” in the loaded tape — press d to add data and pull in what you're looking for.`
@@ -1417,6 +1516,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: '↑↓', label: 'Select' },
     { k: '⇥', label: 'Category', run: () => { setSel(0); setActive(i => (i + 1) % Math.max(1, categories.length)) } },
     { k: 'a', label: 'Ask agent', run: askAgent },
+    { k: 'o', label: 'Sort', run: () => onSortCycle() },
     { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
     { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } },
     { k: 'd', label: 'Add data', run: () => setModal('providers') },
@@ -1453,25 +1553,27 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
   const chips = isEmpty ? emptyChips : mode === 'data' ? dataChips : openModelId ? modelOpenChips : modelsListChips
 
-  const footerHint = isEmpty
-    ? 'd add providers · / search · Esc/q close'
-    : mode === 'data'
-      ? '↑↓/jk select · Tab/←→ category · a ask agent · m models · / filter · d add data · h help · q close'
-      : openModelId
-        ? chatOpen
-          ? chatFocus === 'input'
-            ? '⏎ send · Tab focus reader · wheel scrolls · Esc close chat'
-            : '↑↓/jk/PgUp/PgDn/g/G scroll · Tab focus chat · Esc close chat'
-          : 'c chat · w rewrite · R retry · e export json · F → forecast · ←→ version · ↑↓ scroll · Esc back'
-        : 'n new model · ⏎ open · R retry · x delete · ↑↓ select · m data · h help · q close'
+  // The FooterChips are the ONE canonical shortcuts row (the old always-on prose
+  // duplicate below them was removed). The only surviving prose is a CONTEXTUAL
+  // hint for the chat composer/reader — a mode whose keys (⏎ send, Tab focus,
+  // scroll) the chips don't spell out — plus the transient flash. Every other
+  // state is fully covered by the chips, so no second shortcuts row is drawn.
+  const contextHint =
+    openModelId && chatOpen
+      ? chatFocus === 'input'
+        ? '⏎ send · Tab focus reader · wheel scrolls · Esc close chat'
+        : '↑↓/jk/PgUp/PgDn/g/G scroll · Tab focus chat · Esc close chat'
+      : ''
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
       <FooterChips chips={chips} disabled={!!modal || globalModal} t={t} />
-      <Text color={t.color.muted} wrap="truncate-end">
-        {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        {footerHint}
-      </Text>
+      {flash || contextHint ? (
+        <Text color={t.color.muted} wrap="truncate-end">
+          {flash ? <Text color={t.color.accent}>{`${flash}${contextHint ? ' · ' : ''}`}</Text> : null}
+          {contextHint}
+        </Text>
+      ) : null}
     </Box>
   )
 

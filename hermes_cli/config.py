@@ -805,6 +805,22 @@ DEFAULT_CONFIG = {
             # metadata (refresh.skill_multipliers). Set False to force identity.
             "skill_weights": True,
         },
+        # Free-tier warning DRAIN by default: the nightly self-check ends with a
+        # zero-token-spend sweep that RESOLVES the free-tier open-alert backlog
+        # through REAL gated work (score / postmortem / watched-source re-check /
+        # bookkeeping close-out) — never the paid (LLM reforecast/evidence) or manual
+        # (operator-judgment, incl. contested_label) kinds. Free warnings that merely
+        # capture changed source data + write it to the ledger drain themselves
+        # instead of piling up as operator to-dos. See forecasting-scheduled-routines.md.
+        "warnings": {
+            # False -> the nightly free-tier drain never runs (the standalone
+            # `forecast warnings automode` command still drains on demand).
+            "auto_free_tier": True,
+            # Max free-tier alerts drained per nightly sweep. A large backlog drains
+            # over a few nights (1,250 at 500/sweep ~= 3 nights), or immediately via
+            # `forecast warnings automode`. 0 disables the drain.
+            "free_tier_sweep_cap": 500,
+        },
     },
     "agent": {
         "max_turns": 90,

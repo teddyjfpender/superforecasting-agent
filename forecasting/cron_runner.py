@@ -19,6 +19,115 @@ def _env_flag(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+# ---------------------------------------------------------------------------
+# Free-tier warning DRAIN — nightly, zero-token-spend backlog resolution
+# ---------------------------------------------------------------------------
+#
+# The nightly self-check ends with a FREE-tier warning drain: it RESOLVES the
+# free-tier open-alert backlog through REAL gated work at zero token spend, so the
+# "free" warnings that merely capture changed source data and write it to the
+# ledger drain THEMSELVES instead of piling up as operator to-dos. It reuses the
+# exact free-tier sweep the CLI `forecast warnings automode` runs
+# (:func:`run_warning_resolution` with ``tier="free"``) — whose runners are the
+# NON-LLM gated paths (score / postmortem / watched-source re-check / bookkeeping
+# close-out); no LLM or agent session plumbing, which is what makes the tier free.
+# It NEVER touches the paid (LLM reforecast/evidence) or manual (operator-judgment,
+# incl. contested_label) kinds — the tier filter is applied at selection — so the
+# load-bearing no-bare-ack invariant is fully preserved (the dispatcher acks ONLY
+# on real gated work).
+_FREE_TIER_SWEEP_CAP_DEFAULT = 500
+
+
+def _warnings_config() -> dict[str, Any]:
+    """Read the optional ``forecasting.warnings`` config block (best-effort)."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
+        block = fc.get("warnings", {}) if isinstance(fc, dict) else {}
+        return block if isinstance(block, dict) else {}
+    except Exception:
+        return {}
+
+
+def resolve_auto_free_tier(explicit: bool | None = None) -> bool:
+    """Whether the nightly free-tier warning drain is enabled (default TRUE).
+
+    Precedence: explicit arg > ``forecasting.warnings.auto_free_tier`` in config >
+    default (TRUE). Best-effort: a config-read failure degrades to enabled — the
+    free-tier drain is the intended default for the autonomous spine.
+    """
+    if explicit is not None:
+        return bool(explicit)
+    block = _warnings_config()
+    if "auto_free_tier" in block:
+        return bool(block["auto_free_tier"])
+    return True
+
+
+def resolve_free_tier_sweep_cap(explicit: int | None = None) -> int:
+    """Resolve the per-sweep cap on free-tier alerts drained (default 500).
+
+    Precedence: explicit arg > ``forecasting.warnings.free_tier_sweep_cap`` in
+    config > default (500). A 1,250-alert backlog drains in ~3 nights at 500/sweep
+    (or immediately via ``forecast warnings automode``). A value of 0 disables the
+    drain (nothing is selected). Negative / unparseable values fall through to the
+    default.
+    """
+    if explicit is not None:
+        try:
+            value = int(explicit)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    cfg_val = _warnings_config().get("free_tier_sweep_cap")
+    if cfg_val is not None:
+        try:
+            value = int(cfg_val)
+            if value >= 0:
+                return value
+        except (TypeError, ValueError):
+            pass
+    return _FREE_TIER_SWEEP_CAP_DEFAULT
+
+
+def _free_tier_drain_state_path(state_path: "str | Path | None" = None) -> Path:
+    if state_path is not None:
+        return Path(state_path)
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "cron" / "free_tier_drain_state.json"
+
+
+def read_free_tier_drain_state(state_path: "str | Path | None" = None) -> dict[str, Any]:
+    """The last nightly free-tier drain result (or ``{}`` when none ran yet).
+
+    Shape: ``{"last_drain_at", "resolved", "remaining_free", "errors", "cap",
+    "cap_hit"}``. Read by ``forecast doctor`` so an operator can see how the free
+    backlog is draining without re-running the sweep. Best-effort: a missing /
+    unreadable state file degrades to ``{}``.
+    """
+    path = _free_tier_drain_state_path(state_path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_free_tier_drain_state(
+    state: dict[str, Any], state_path: "str | Path | None" = None
+) -> None:
+    path = _free_tier_drain_state_path(state_path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass  # a state-write failure must never break the sweep
+
+
 @allow_ledger_writes_decorator("cron_runner.run_due_reviews")
 def run_due_reviews(
     *,
@@ -36,6 +145,8 @@ def run_due_reviews(
     check_triage_graduation: bool = True,
     saturation_sweep: bool = True,
     refresh_market_models_phase: bool = False,
+    free_tier_drain: bool = True,
+    free_tier_sweep_cap: int | None = None,
     reforecast_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
@@ -382,6 +493,72 @@ def run_due_reviews(
                     f"moved: {mm['moved']} of {mm['refreshed']} refreshed ({mm['checked']} checked); "
                     f"opened {len(mm['alerted'])} WARN alert(s)\n"
                 )
+
+    # Trailing FREE-tier warning-DRAIN phase (default ON, config-gated by
+    # forecasting.warnings.auto_free_tier): RESOLVE the free-tier open-alert backlog
+    # through REAL gated work at ZERO token spend so the "free" warnings that merely
+    # capture changed source data drain themselves instead of piling up as operator
+    # to-dos. STRICTLY the free tier ({bookkeeping, score, postmortem,
+    # material_change}) — the tier filter is applied at selection, so the paid (LLM
+    # reforecast/evidence) and manual (operator-judgment, incl. contested_label)
+    # kinds are NEVER touched and the no-bare-ack invariant holds (the dispatcher
+    # acks ONLY on real gated work). Capped at forecasting.warnings.free_tier_sweep_cap
+    # (default 500/sweep) so a large backlog drains over a few nights; the report
+    # says so explicitly when the cap is hit. reconcile=False — the reconcile phase
+    # above already ran, and the drain acks its own resolutions directly. Best-effort:
+    # a failure here never breaks the sweep.
+    if free_tier_drain and resolve_auto_free_tier():
+        cap = resolve_free_tier_sweep_cap(free_tier_sweep_cap)
+        try:
+            drain = run_warning_resolution(
+                ledger=ledger,
+                now=now,
+                tier="free",
+                limit=cap,
+                reconcile=False,
+            )
+        except Exception as exc:  # never break the sweep on the free-tier drain
+            sections.append(f"Free-tier automode\nERROR: {exc}\n")
+        else:
+            tally = drain.get("tally", {}) or {}
+            resolved_n = int(tally.get("resolved", 0) or 0)
+            # An error is a runner that ran but did no real gated work (failed) or an
+            # alert whose runner was not injected (skipped) — both stay OPEN.
+            errors_n = int(tally.get("failed", 0) or 0) + int(tally.get("skipped", 0) or 0)
+            # The FREE backlog still OPEN after the drain (the live count — includes
+            # both alerts beyond the cap this sweep and any that failed to resolve).
+            try:
+                from forecasting.warnings import select_open_warnings
+
+                remaining_free = len(select_open_warnings(ledger, tier="free"))
+            except Exception:
+                remaining_free = None
+            # The cap was the binding constraint (there were MORE free alerts than
+            # one sweep could drain) when the approximate pre-drain backlog
+            # (resolved + still-open) exceeds the cap. Distinguishes a genuine
+            # cap-hit from a handful of failures within the cap.
+            approx_pre = resolved_n + (remaining_free or 0)
+            cap_hit = remaining_free is not None and approx_pre > cap
+            _write_free_tier_drain_state({
+                "last_drain_at": _now_dt(now).isoformat(),
+                "resolved": resolved_n,
+                "remaining_free": remaining_free,
+                "errors": errors_n,
+                "cap": cap,
+                "cap_hit": bool(cap_hit),
+            })
+            if resolved_n or errors_n or (remaining_free or 0) > 0:
+                remaining_text = str(remaining_free) if remaining_free is not None else "?"
+                lines = [
+                    "Free-tier automode",
+                    f"resolved {resolved_n} / remaining {remaining_text} / errors {errors_n}",
+                ]
+                if cap_hit:
+                    lines.append(
+                        f"cap {cap} hit — {remaining_free} free-tier alert(s) remain; "
+                        "run `forecast warnings automode` to drain now"
+                    )
+                sections.append("\n".join(lines) + "\n")
 
     return "\n".join(sections)
 

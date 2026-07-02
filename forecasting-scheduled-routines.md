@@ -37,8 +37,22 @@ superforecasting-agent schedule install-cron
 You usually do not need to run this by hand: the first committed question
 auto-installs the nightly self-check routine (auto-score + auto-postmortem +
 thesis aggregation + lesson synthesis + deterministic refresh + saturation
-sweep). Disable with `forecasting.cron.auto_install: false` in config, or put a
-single question on its own cadence with `forecast freshen <id> --cadence daily`.
+sweep + free-tier warning drain). Disable with
+`forecasting.cron.auto_install: false` in config, or put a single question on its
+own cadence with `forecast freshen <id> --cadence daily`.
+
+The nightly routine ends with a **free-tier warning drain**: a zero-token-spend
+sweep that resolves the "free" open-alert backlog through real gated work — score
+a resolved question, write a due postmortem, re-check a changed watched source,
+close a bookkeeping notice — so alerts that only capture data and write it to the
+ledger drain themselves instead of accumulating as operator to-dos. It never
+touches the paid (LLM reforecast/evidence) or manual (operator-judgment) alert
+kinds. It is capped per sweep (`forecasting.warnings.free_tier_sweep_cap`,
+default 500) so a large backlog drains over a few nights; when the cap is hit the
+self-check report says how many remain and points you at
+`forecast warnings automode` to drain the rest immediately. Turn the nightly drain
+off with `forecasting.warnings.auto_free_tier: false`. `forecast doctor` shows the
+last drain count and the remaining free backlog.
 
 Scheduled checks create review alerts. They do not silently overwrite active
 probabilities — with one deliberate exception: a due question that has active

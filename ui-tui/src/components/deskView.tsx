@@ -28,6 +28,7 @@ import { packetTailAudit } from '../lib/forecastTail.js'
 import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
+import { sortIndicator, sortRows, type SortDir, type SortValue, useTableSort } from '../lib/tableSort.js'
 import { dirColor, pad, type Semantics, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -125,6 +126,11 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // `R` opens the modal and asks it to scroll to the Actions/resolve tail once
   // the packet's tail sections have loaded (async), then clears the request.
   const [resolveScroll, setResolveScroll] = useState(false)
+  // Whether the OPEN modal was entered via `R` (resolve). Unlike `resolveScroll`
+  // (a one-shot scroll request that clears after firing), this persists for the
+  // whole modal session so the modal's own footer hint keeps pointing at the
+  // Actions/resolve tail. Cleared when the modal closes.
+  const [resolveContext, setResolveContext] = useState(false)
 
   // The detail packet (tail audit, ensemble, packet-tail sections) loads ASYNC
   // per selection and is rendered inside the modal only.
@@ -237,15 +243,57 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const tabItems = useMemo(() => forecastsForTab(activeTab, items), [activeTab, items])
   const visible = useMemo(() => filterRanked(tabItems, query, FORECAST_SEARCH_FIELDS), [tabItems, query])
 
+  // Column sort (`o` cycles the column, `O` toggles asc/desc, header click sorts).
+  // Composes ON TOP of the `/` filter: we sort the already-filtered `visible` set.
+  // Default state is unsorted → the original server/filter order is preserved.
+  const sort = useTableSort(DESK_SORT_KEYS)
+  // Minute-bucketed clock so the window/age/next sort values stay stable within a
+  // minute (the memo doesn't re-sort on every 500ms reflow tick).
+  const nowMinute = Math.floor(Date.now() / 60_000) * 60_000
+  const sortedVisible = useMemo(
+    () => sortRows(visible, sort.state.key, sort.state.dir, (it, k) => deskSortValue(it, k, nowMinute)),
+    [visible, sort.state.key, sort.state.dir, nowMinute]
+  )
+
   // On a thesis/factor tab, a "lens row" leads the section (row 0) — a click/Enter
   // into the lens's own aggregate read. The cursor space is [lens?, ...forecasts].
   const hasLens = !!(refThesis || refFactor)
   const lensOffset = hasLens ? 1 : 0
-  const rowCount = lensOffset + visible.length
+  const rowCount = lensOffset + sortedVisible.length
   const clampedSel = Math.min(sel, Math.max(0, rowCount - 1))
   const lensActive = hasLens && clampedSel === 0
-  const selected = lensActive ? null : visible[clampedSel - lensOffset] ?? null
+  const selected = lensActive ? null : sortedVisible[clampedSel - lensOffset] ?? null
   const selectedId = selected?.id ?? null
+
+  // Keep the SELECTED forecast selected across a re-sort (track by id, not index):
+  // a sort action stashes the current id, and once the re-sorted order lands we
+  // move the cursor to wherever that id now sits. Only sort actions arm this — a
+  // filter change / data reload leaves the ref null, so the cursor logic there is
+  // untouched.
+  const pendingReselectId = useRef<null | string>(null)
+  useEffect(() => {
+    const id = pendingReselectId.current
+    if (id == null) return
+    pendingReselectId.current = null
+    const idx = sortedVisible.findIndex(it => it.id === id)
+    if (idx >= 0) setSel(idx + lensOffset)
+  }, [sortedVisible, lensOffset])
+
+  const armReselect = () => {
+    pendingReselectId.current = selectedId
+  }
+  const onSortCycle = () => {
+    armReselect()
+    sort.cycle()
+  }
+  const onSortToggle = () => {
+    armReselect()
+    sort.toggle()
+  }
+  const onSortByKey = (key: string) => {
+    armReselect()
+    sort.sortByKey(key)
+  }
 
   useEffect(() => {
     // Resolve a pending `/forecast <id>` jump: find the first tab that holds it,
@@ -331,6 +379,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       // A closed modal drops any pending resolve-scroll request so the next
       // plain Enter-open starts at the top, not at the Actions tail.
       setResolveScroll(false)
+      setResolveContext(false)
     }
   }, [selectedId, modalOpen])
 
@@ -440,6 +489,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
     setFlash('resolve · see the Actions section (⤓ scrolled to it)')
     setResolveScroll(true)
+    setResolveContext(true)
     setModalOpen(true)
   }
 
@@ -604,6 +654,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       return
     }
 
+    // `o` cycles the sort column (header order → unsorted); `O` toggles asc/desc.
+    if (ch === 'o') {
+      return onSortCycle()
+    }
+
+    if (ch === 'O') {
+      return onSortToggle()
+    }
+
     if (key.return) {
       if (lensActive || selected) {
         return setModalOpen(true)
@@ -736,9 +795,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       <DeskForecastList
         cursor={lensActive ? -1 : clampedSel - lensOffset}
         empty={query ? `No forecasts match "${query}".` : 'No forecasts under this lens.'}
-        items={visible}
+        items={sortedVisible}
         nowMs={Math.floor(Date.now() / 60_000) * 60_000}
         onSelect={i => { if (!modalOpen && !settingsOpen && !globalModal) setSel(i + lensOffset) }}
+        // The header sorts on click, but only while nothing modal is covering the
+        // body — matches the row/tab click gating.
+        onSort={modalOpen || settingsOpen || globalModal ? undefined : onSortByKey}
+        sortDir={sort.state.dir}
+        sortKey={sort.state.key}
         t={t}
         visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
         width={listW}
@@ -832,7 +896,11 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const modal = modalOpen ? (
     <ModalOverlay
       cols={cols}
-      footerHint="↑↓ scroll · PgUp/PgDn page · Esc/q close"
+      footerHint={
+        resolveContext
+          ? '↑↓ scroll · Esc/q close · resolve → see the Actions section (⤓ below)'
+          : '↑↓ scroll · PgUp/PgDn page · Esc/q close'
+      }
       rows={termRows}
       scrollRef={modalScrollRef}
       t={t}
@@ -872,34 +940,35 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           { k: 'R', label: 'Resolve', run: () => openResolve() },
           { k: 'n', label: 'New', run: () => openNewQuestion() },
           { k: 's', label: 'Settings', run: () => openSettings() },
+          { k: 'o', label: 'Sort', run: () => onSortCycle() },
           { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
           { k: 'q', label: 'Close', run: onClose }
         ]
 
-  // When the selected row's review is overdue/stale, the hint spells out the
-  // honest split: `u` only re-arms the schedule, `U` runs a real update now.
+  // When the selected row's review is overdue/stale, spell out the honest split:
+  // `u` only re-arms the schedule, `U` runs a real update now. This is contextual
+  // STATUS, not a shortcuts row — the FooterChips above are the single, canonical
+  // key row (the old always-on prose duplicate was removed).
   const selectedDue = !onBench && !lensActive && selected ? dueText(selected, Math.floor(Date.now() / 60_000) * 60_000) : null
   const selectedStale = selectedDue?.status === 'now'
-
-  const footerHint = filtering
-    ? `filter: ${truncate(query, Math.max(8, cols - 30))}▌  · ⏎ apply · Esc clear`
-    : modalOpen
-      ? '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close'
-      : onBench
-        ? '◇ Bench — read-only ForecastBench scoreboard · Tab/←→ lens · r refresh · q close'
-        : `${selectedStale ? 'stale · u re-arms · U updates now · ' : ''}↑↓/jk select · Tab/←→ lens · ⏎ open · U update · u re-arm · R resolve · n new · s settings · / filter · ? help · q close`
+  const showStaleNote = !flash && !filtering && !modalOpen && !onBench && selectedStale
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      {/* Gate chip mouse-runs while the settings modal owns the screen: the desk
+      {/* The FooterChips are the ONE shortcuts row (top row, per the operator).
+          Gate chip mouse-runs while the settings modal owns the screen: the desk
           keyboard is already trapped (useInput early-returns on settingsOpen), so
           the still-visible footer must not leak clicks past that trap. The detail
           modal swaps to its own modal-only chip set, so it needs no gate here. */}
       <FooterChips chips={chips} disabled={settingsOpen || globalModal} t={t} />
-      <Text color={t.color.muted} wrap="truncate-end">
-        {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        {footerHint}
-      </Text>
+      {/* An OPTIONAL status line — a transient flash, or a stale-review note — not
+          a second shortcuts row: it only paints when there is something to say. */}
+      {flash || showStaleNote ? (
+        <Text wrap="truncate-end">
+          {flash ? <Text color={t.color.accent}>{flash}</Text> : null}
+          {showStaleNote ? <Text color={t.color.warn}>stale · u re-arms next cycle · U updates now</Text> : null}
+        </Text>
+      ) : null}
     </Box>
   )
 
@@ -1353,6 +1422,51 @@ const DESK_COLS: DeskCol[] = [
 // the forecast next auto-updates), then EV, then the noisier 1D, then AGE.
 const DESK_PRIORITY = ['prob', '1w', '1mo', 'next', 'ev', '1d', 'age']
 
+// Every desk column is sortable except the trailing trend spark (which is not a
+// column). `o` cycles through them in header (display) order.
+const DESK_SORT_KEYS = DESK_COLS.map(c => c.key)
+
+// The comparable value a desk row contributes for a given sort key. Text for
+// QUESTION; the raw signed window Δ for 1D/1W/1MO; the probability/μ for PROB; a
+// numeric age (older → larger, so ascending = freshest first) for AGE; the next
+// event's epoch (soonest first ascending) for NEXT. Missing values sort last.
+const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: number): SortValue => {
+  switch (key) {
+    case '1d':
+      return windowDelta(item.history, nowMs, 1)
+
+    case '1mo':
+      return windowDelta(item.history, nowMs, 30)
+
+    case '1w':
+      return windowDelta(item.history, nowMs, 7)
+
+    case 'age': {
+      const at = Date.parse(item.as_of ?? '')
+      return Number.isFinite(at) ? nowMs - at : null
+    }
+
+    case 'ev':
+      return item.evidence_count ?? 0
+
+    case 'next': {
+      const at = item.next_review_at
+        ? Date.parse(item.next_review_at)
+        : Date.parse(item.resolution_time ?? item.close_time ?? '')
+      return Number.isFinite(at) ? at : null
+    }
+
+    case 'prob':
+      return finite(item.headline_probability) ? item.headline_probability : null
+
+    case 'q':
+      return item.title ?? item.id ?? ''
+
+    default:
+      return null
+  }
+}
+
 // Short freshness for the AGE column: "3d old" → "3d", "fresh today" → "now".
 const shortAge = (freshness: string | undefined): string => {
   if (!freshness) {
@@ -1491,6 +1605,9 @@ function DeskForecastList({
   items,
   nowMs,
   onSelect,
+  onSort,
+  sortDir,
+  sortKey,
   t,
   visibleRows,
   width
@@ -1500,6 +1617,10 @@ function DeskForecastList({
   items: ForecastWorkspaceItem[]
   nowMs: number
   onSelect: (i: number) => void
+  // Clicking a column header sorts by it; undefined while a modal covers the body.
+  onSort?: (key: string) => void
+  sortDir: SortDir
+  sortKey: null | string
   t: Theme
   visibleRows: number
   width: number
@@ -1574,11 +1695,25 @@ function DeskForecastList({
 
   return (
     <Box flexDirection="column" flexGrow={0} flexShrink={0} minHeight={0} overflow="hidden">
-      <Text bold color={sem.heading} wrap="truncate-end">
-        {satGutter ? '    ' : '  '}
-        {keptCols.map(c => `${pad(c.label, colWidth(c), c.align)} `).join('')}
-        {showTrend ? pad('1MO', trendW, 'left') : ''}
-      </Text>
+      {/* The header row: each column label is a click target that sorts by it
+          (gated while a modal covers the body). The active column shows a ▲/▼
+          direction glyph and paints in accent; the rest stay the plain heading. */}
+      <Box>
+        <Text bold color={sem.heading}>{satGutter ? '    ' : '  '}</Text>
+        {keptCols.map(c => {
+          const active = sortKey === c.key
+          const ind = active ? ` ${sortIndicator({ dir: sortDir, key: sortKey }, c.key)}` : ''
+
+          return (
+            <Box key={c.key} onClick={onSort ? () => onSort(c.key) : undefined}>
+              <Text bold color={active ? t.color.accent : sem.heading}>
+                {`${pad(`${c.label}${ind}`, colWidth(c), c.align)} `}
+              </Text>
+            </Box>
+          )
+        })}
+        {showTrend ? <Text bold color={sem.heading}>{pad('1MO', trendW, 'left')}</Text> : null}
+      </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       {windowed.map((item, i) => {
         const index = offset + i

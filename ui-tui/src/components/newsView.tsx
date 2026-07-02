@@ -809,11 +809,15 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
+      {/* The FooterChips are the ONE canonical shortcuts row (the always-on prose
+          duplicate below them was removed). Only a transient flash survives, and
+          only when there is something to say — never a second shortcuts row. */}
       <FooterChips chips={chips} disabled={adding || globalModal} t={t} />
-      <Text color={t.color.muted} wrap="truncate-end">
-        {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
-        ↑↓/jk browse · / search · Tab/←→ source · Enter open · a add feed · r refresh · Esc/q close
-      </Text>
+      {flash ? (
+        <Text color={t.color.accent} wrap="truncate-end">
+          {flash}
+        </Text>
+      ) : null}
     </Box>
   )
 

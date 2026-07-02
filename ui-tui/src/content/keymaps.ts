@@ -49,6 +49,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['↑/↓', 'select a forecast'],
     ['Tab / ←→ / h l', 'switch lens'],
     ['Enter', 'open the selected forecast'],
+    ['o / O', 'sort column · toggle asc/desc (or click a header)'],
     ['u', 'update · s settings · / filter · r refresh'],
     ['q / Esc', 'close the view']
   ],
@@ -56,6 +57,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['↑/↓', 'select a market'],
     ['Tab / ←→', 'switch lens'],
     ['Enter', 'open · / filter · r refresh'],
+    ['o / O', 'sort column · toggle asc/desc (or click a header)'],
     ['q / Esc', 'close the view']
   ],
   news: [

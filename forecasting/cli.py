@@ -3716,6 +3716,23 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         cron_health = None
 
+    # Free-tier warning DRAIN (nightly): the last drain count (from the state file
+    # the run_due_reviews free-tier phase writes) + the LIVE remaining free-tier
+    # backlog, so an operator can see the "free" alerts draining themselves at zero
+    # token spend without re-running the sweep. Read-only + fail-safe, like every
+    # probe above.
+    try:
+        from forecasting.cron_runner import read_free_tier_drain_state
+        from forecasting.warnings import aggregate_open_warnings
+
+        drain_state = read_free_tier_drain_state()
+        remaining_free = int(
+            (aggregate_open_warnings(ledger).get("headline") or {}).get("free", 0) or 0
+        )
+        free_tier_drain = {"last": drain_state or None, "remaining_free": remaining_free}
+    except Exception:
+        free_tier_drain = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3725,6 +3742,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "claim_live_superforecasting": evidence_status.get("can_claim_live_superforecasting"),
         "triage_gate": triage_gate,
         "cron_health": cron_health,
+        "free_tier_drain": free_tier_drain,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
@@ -4063,6 +4081,21 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         print(f"  - alert x{g.get('count', 0):>3}  {(g.get('reason') or '')[:42]:<42} [{tag}]")
     for u in under_saturated[:4]:
         print(f"  - hook {u.get('question_id')}  {u.get('score')}/100 saturation")
+
+    # Free-tier warning drain: the nightly zero-spend sweep's last result + the live
+    # remaining free backlog (a sibling of cron_health).
+    fdrain = report.get("free_tier_drain") or {}
+    if fdrain:
+        last = fdrain.get("last") or {}
+        remaining = fdrain.get("remaining_free")
+        remaining_text = f"{remaining} free alert(s) remain" if remaining is not None else "backlog unknown"
+        if last:
+            drained = f"last drain resolved {last.get('resolved', 0)}, errors {last.get('errors', 0)}"
+            if last.get("cap_hit"):
+                drained += f" (cap {last.get('cap')} hit — run `forecast warnings automode`)"
+            print(f"free_tier_drain: {drained}; {remaining_text}")
+        else:
+            print(f"free_tier_drain: not yet run; {remaining_text}")
 
     batches = report.get("templated_batches") or []
     if batches:
