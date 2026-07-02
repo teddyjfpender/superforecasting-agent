@@ -20,6 +20,7 @@ const buildUiState = (): UiState => ({
   info: null,
   inlineDiffs: true,
   mouseTracking: MOUSE_TRACKING,
+  reviewSweep: null,
   sections: {},
   showCost: false,
   showReasoning: false,
@@ -35,6 +36,9 @@ export const $uiState = atom<UiState>(buildUiState())
 
 export const $uiTheme = computed($uiState, state => state.theme)
 export const $uiSessionId = computed($uiState, state => state.sid)
+// The review-sweep in-flight marker, scoped so the Desk subscribes to JUST this
+// (not every status flash) — it re-renders only when a sweep starts/finishes.
+export const $reviewSweep = computed($uiState, state => state.reviewSweep)
 
 export const getUiState = () => $uiState.get()
 

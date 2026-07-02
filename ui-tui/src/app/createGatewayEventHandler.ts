@@ -677,6 +677,37 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
+      case 'review.sweep': {
+        // The gateway due-sweeper acted on due-ness (mirrors cron.fired). 'started'
+        // arms a running marker (with the due count) that the Desk turns into a
+        // spinner; 'done' clears it, flashes a transient toast built from the REAL
+        // payload fields (refreshed / alerts / wall time), and re-pulls the desk
+        // rail so the Home "Today" panel reflects any forecasts that just refreshed.
+        // Sessionless (no session_id).
+        const payload = ev.payload
+
+        if (payload?.phase === 'started') {
+          patchUiState({ reviewSweep: { dueCount: Number(payload.due_count ?? 0) } })
+
+          return
+        }
+
+        if (payload?.phase === 'done') {
+          patchUiState({ reviewSweep: null })
+
+          const refreshed = Number(payload.refreshed ?? 0)
+          const alerts = Number(payload.alerts ?? 0)
+          const secs = (Number(payload.duration_ms ?? 0) / 1000).toFixed(1)
+          const label = `review sweep: ${refreshed} refreshed${alerts > 0 ? ` · ${alerts} alert${alerts === 1 ? '' : 's'}` : ''} · ${secs}s`
+          setStatus(label)
+          turnController.pushActivity(label, 'info')
+          restoreStatusAfter(6000)
+          pullForecastDeskRail()
+        }
+
+        return
+      }
+
       case 'review.summary': {
         // Self-improvement background review emitted a persistent summary
         // of what it saved to memory/skills. Surface it as a system line

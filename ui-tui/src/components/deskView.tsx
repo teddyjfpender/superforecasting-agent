@@ -3,7 +3,9 @@ import { useStore } from '@nanostores/react'
 import { Fragment, memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
+import type { ReviewSweepState } from '../app/interfaces.js'
 import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $reviewSweep } from '../app/uiStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastAnalystNote,
@@ -11,6 +13,7 @@ import type {
   ForecastBenchRow,
   ForecastFactor,
   ForecastQuestionPacketResponse,
+  ForecastReviewsNextResponse,
   ForecastThesis,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
@@ -26,6 +29,7 @@ import {
 import { bandChart, deltaGlyph, levelSparkline, pct, shortDate, windowDelta } from '../lib/forecastCharts.js'
 import { packetTailAudit } from '../lib/forecastTail.js'
 import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
+import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { sortIndicator, sortRows, type SortDir, type SortValue, useTableSort } from '../lib/tableSort.js'
@@ -107,6 +111,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // useInput goes inert and its still-visible body mouse handlers are gated, so
   // nothing double-handles keys/clicks beneath the overlay.
   const globalModal = useStore($globalModal)
+  // The gateway review due-sweeper's in-flight marker (object while running, else
+  // null). Drives the spinner in the NEXT column + the summary status line. Scoped
+  // so the desk re-renders only when a sweep starts/finishes, not on every status.
+  const sweepRunning = useStore($reviewSweep)
 
   // Hydrate from the last workspace payload so reopening the desk is instant; it
   // then refreshes in the background. The cache survives unmount.
@@ -123,6 +131,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const [filtering, setFiltering] = useState(false)
   const [flash, setFlash] = useState('')
   const [now, setNow] = useState(0)
+  // The review-sweep countdown snapshot (forecast.reviews.next): the sweeper's
+  // next-tick time, the nightly fallback, and how many reviews are due. Pulled on
+  // mount, lazily every ~60s while the desk is open, and on every sweep event.
+  const [reviewsNext, setReviewsNext] = useState<ForecastReviewsNextResponse | null>(null)
   // `R` opens the modal and asks it to scroll to the Actions/resolve tail once
   // the packet's tail sections have loaded (async), then clears the request.
   const [resolveScroll, setResolveScroll] = useState(false)
@@ -189,6 +201,43 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
 
+  // The review-sweep countdown read. Cheap + read-only, so it is safe to (re)pull
+  // on mount and lazily every ~60s while the desk is open — bounded, cleared on
+  // unmount (reusing the quorum-chip poll shape). A ref lets the sweep-event effect
+  // below trigger the same pull without re-arming the interval.
+  const pullReviewsNextRef = useRef<() => void>(() => undefined)
+  useEffect(() => {
+    let cancelled = false
+    const pull = () => {
+      gw.request<unknown>('forecast.reviews.next', {})
+        .then(raw => {
+          if (cancelled) return
+          const r = asRpcResult<ForecastReviewsNextResponse>(raw)
+          if (r) setReviewsNext(r)
+        })
+        .catch(() => {})
+    }
+    pullReviewsNextRef.current = pull
+    pull()
+    const id = setInterval(pull, 60_000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+  }, [gw])
+
+  // React to sweep events: whenever the running marker flips, re-pull the countdown
+  // so the NEXT column / summary reflect the new state; when a sweep FINISHES (was
+  // running, now cleared) also reload the workspace so the refreshed rows land.
+  const prevSweepRef = useRef(sweepRunning)
+  useEffect(() => {
+    const was = prevSweepRef.current
+    prevSweepRef.current = sweepRunning
+    pullReviewsNextRef.current()
+    if (was && !sweepRunning) load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sweepRunning])
+
   useEffect(() => {
     // Drives OverlayScrollbar reflow detection while the modal is scrolled.
     const id = setInterval(() => setNow(value => value + 1), 500)
@@ -253,6 +302,26 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const sortedVisible = useMemo(
     () => sortRows(visible, sort.state.key, sort.state.dir, (it, k) => deskSortValue(it, k, nowMinute)),
     [visible, sort.state.key, sort.state.dir, nowMinute]
+  )
+
+  // The NEXT-column sweep context, memoised so it stays REFERENTIALLY STABLE while
+  // idle (the memoised rows keep bailing out on the 500ms reflow tick) yet changes
+  // every tick WHILE a sweep runs, so the spinner animates. `frame` only advances
+  // while running; countdown math rides the minute-bucketed clock.
+  const sweeper = reviewsNext?.sweeper
+  const nightlyNextAt = reviewsNext?.nightly?.next_run_at
+  const nextTickAt = sweeper?.next_tick_at
+  const spinTick = sweepRunning ? now : 0
+  const sweepCtx = useMemo<DeskSweepCtx>(
+    () => ({
+      frame: spinTick,
+      nightlyNextAt: nightlyNextAt ? Date.parse(nightlyNextAt) : NaN,
+      nextTickAt: nextTickAt ? Date.parse(nextTickAt) : NaN,
+      nowMs: nowMinute,
+      running: !!sweepRunning,
+      sweeperEnabled: !!sweeper?.enabled
+    }),
+    [spinTick, nightlyNextAt, nextTickAt, nowMinute, sweepRunning, sweeper?.enabled]
   )
 
   // On a thesis/factor tab, a "lens row" leads the section (row 0) — a click/Enter
@@ -803,6 +872,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         onSort={modalOpen || settingsOpen || globalModal ? undefined : onSortByKey}
         sortDir={sort.state.dir}
         sortKey={sort.state.key}
+        sweep={sweepCtx}
         t={t}
         visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
         width={listW}
@@ -810,16 +880,23 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     </Box>
   )
 
+  // The skinny right panel. A one-line sweep status rides ABOVE the summary — but
+  // only when something is due or a sweep is running (otherwise the quiet desk stays
+  // quiet). It lives inside the panel, so a narrow terminal (which drops the panel
+  // entirely) shows the NEXT-column behaviour alone, never a stray summary line.
   const panel = (
-    <DeskSummary
-      latestNote={latestNote}
-      refFactor={refFactor}
-      refThesis={refThesis}
-      rows={termRows}
-      selected={selected}
-      t={t}
-      width={panelWidth}
-    />
+    <Box flexDirection="column" flexShrink={0} width={panelWidth}>
+      <SweepStatusLine now={now} reviews={reviewsNext} sweepRunning={sweepRunning} t={t} />
+      <DeskSummary
+        latestNote={latestNote}
+        refFactor={refFactor}
+        refThesis={refThesis}
+        rows={termRows}
+        selected={selected}
+        t={t}
+        width={panelWidth}
+      />
+    </Box>
   )
 
   // ── Detail modal content (reused heavy components) ────────────────────────
@@ -1004,6 +1081,59 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       {modalOpen ? modal : null}
       {settingsModal}
     </Box>
+  )
+}
+
+// ── Sweep status line (skinny-panel header) ──────────────────────────────────
+// One compact, honest line about the review due-sweep — and NOTHING when the desk
+// is quiet (nothing due, no sweep running). WHILE a sweep runs: an animated
+// spinner + "sweeping N due…". Otherwise, when reviews are due: a countdown to the
+// gateway sweeper's next tick ("next sweep in Xm · N due"), or — when the sweeper
+// is disabled — the nightly fallback ("N due · tonight") / a plain "N due".
+export function SweepStatusLine({
+  now,
+  reviews,
+  sweepRunning,
+  t
+}: {
+  now: number
+  reviews: ForecastReviewsNextResponse | null
+  sweepRunning: null | ReviewSweepState
+  t: Theme
+}) {
+  if (sweepRunning) {
+    const dueCount = sweepRunning.dueCount ?? reviews?.due_count ?? 0
+    return (
+      <Text color={t.color.accent} wrap="truncate-end">
+        {`${spinnerFrame(now)} sweeping ${dueCount} due…`}
+      </Text>
+    )
+  }
+
+  const due = reviews?.due_count ?? 0
+  if (due <= 0) {
+    return null
+  }
+
+  const sweeper = reviews?.sweeper
+  if (sweeper?.enabled) {
+    const tickAt = sweeper.next_tick_at ? Date.parse(sweeper.next_tick_at) : NaN
+    const nowMs = Date.now()
+    const imminent = !Number.isFinite(tickAt) || tickAt <= nowMs || tickAt - nowMs < 60000
+    const label = imminent ? 'next sweep <1m' : `next sweep in ${Math.ceil((tickAt - nowMs) / 60000)}m`
+    return (
+      <Text color={t.color.muted} wrap="truncate-end">
+        {`${label} · ${due} due`}
+      </Text>
+    )
+  }
+
+  // Sweeper disabled → the nightly cron is the only path. Show "tonight" only when
+  // a nightly run is actually scheduled; otherwise just flag the count.
+  return (
+    <Text color={t.color.muted} wrap="truncate-end">
+      {reviews?.nightly?.next_run_at ? `${due} due · tonight` : `${due} due`}
+    </Text>
   )
 }
 
@@ -1414,7 +1544,10 @@ const DESK_COLS: DeskCol[] = [
   { align: 'right', key: '1mo', label: '1MO', w: 8 },
   { align: 'right', key: 'ev', label: 'EV', w: 4 },
   { align: 'right', key: 'age', label: 'AGE', w: 7 },
-  { align: 'right', key: 'next', label: 'NEXT', w: 7 }
+  // NEXT reserves 9 (vs the other numerics' 7-8): the honest due-state strings
+  // ("◐ running", "due · Xm") are 8-9 chars, and unlike a min-width pad the column
+  // must actually RESERVE the slot or the row's truncate-end clips into the string.
+  { align: 'right', key: 'next', label: 'NEXT', w: 9 }
 ]
 
 // Keep by priority when narrow (render still follows display order). QUESTION is
@@ -1521,6 +1654,49 @@ const dueText = (
   return { status: 'res', text: `⤓${relTime(ms)}` }
 }
 
+// The live review-sweep context threaded into the NEXT column so a DUE row can
+// render honest state instead of a static "now": is a sweep running (spinner),
+// when will the gateway sweeper next tick, and — when the sweeper is disabled —
+// whether the nightly cron will pick it up "tonight". All epochs are ms (NaN when
+// absent). `frame` is the 500ms spinner tick (only read while `running`). `nowMs`
+// is the minute-bucketed clock so the "due · Xm" text is stable within a minute
+// (which keeps the memoised row from re-rendering on every 500ms reflow when idle).
+export interface DeskSweepCtx {
+  frame: number
+  nightlyNextAt: number
+  nowMs: number
+  running: boolean
+  nextTickAt: number
+  sweeperEnabled: boolean
+}
+
+// The NEXT cell for a row whose scheduled review is DUE (status 'now'). Honest,
+// at-a-glance: while a sweep runs → an animated spinner + "running"; else, when
+// the gateway sweeper is enabled → a countdown to its next tick ("due · Xm",
+// "due · <1m" under a minute, imminent when the tick time is unknown/past); when
+// the sweeper is disabled → "due · tonight" if the nightly cron will pick it up,
+// else a plain "due". Strings stay narrow (≤ ~9 chars, bar the rare "tonight").
+export const dueNowCell = (sweep: DeskSweepCtx | undefined, t: Theme): { color: string; text: string } => {
+  if (!sweep) {
+    return { color: t.color.error, text: 'now' }
+  }
+  if (sweep.running) {
+    return { color: t.color.accent, text: `${spinnerFrame(sweep.frame)} running` }
+  }
+  if (sweep.sweeperEnabled) {
+    const imminent = !Number.isFinite(sweep.nextTickAt) || sweep.nextTickAt <= sweep.nowMs
+    if (imminent) {
+      return { color: t.color.warn, text: 'due · <1m' }
+    }
+    const diff = sweep.nextTickAt - sweep.nowMs
+    return { color: t.color.warn, text: diff < 60000 ? 'due · <1m' : `due · ${Math.ceil(diff / 60000)}m` }
+  }
+  if (Number.isFinite(sweep.nightlyNextAt)) {
+    return { color: t.color.warn, text: 'due · tonight' }
+  }
+  return { color: t.color.warn, text: 'due' }
+}
+
 // Window change → display text only (colour is applied by the caller from the
 // raw signed value so direction reads via colour AND glyph). For distributions
 // the magnitude is outcome-unit Δμ; for probabilities it is percent-points.
@@ -1562,7 +1738,8 @@ const deskCellText = (
   sem: Semantics,
   t: Theme,
   windows: { '1d': number | null; '1mo': number | null; '1w': number | null },
-  nowMs: number
+  nowMs: number,
+  sweep?: DeskSweepCtx
 ): { color: string; text: string } => {
   switch (key) {
     case '1d':
@@ -1579,9 +1756,15 @@ const deskCellText = (
 
     case 'next': {
       const due = dueText(item, nowMs)
+      // A DUE row ('now') no longer reads a static "now": spell out honest sweep
+      // state (spinner while running, a countdown to the next tick, or the nightly
+      // fallback). Every other status is unchanged.
+      if (due.status === 'now') {
+        return dueNowCell(sweep, t)
+      }
       // A resolution-date fallback is informational (not an urgent review) → paint
       // it subtle so the "⤓" marker, not colour, signals the distinction.
-      const color = due.status === 'now' ? t.color.error : due.status === 'soon' ? t.color.warn : sem.subtle
+      const color = due.status === 'soon' ? t.color.warn : sem.subtle
       return { color, text: due.text }
     }
 
@@ -1608,6 +1791,7 @@ function DeskForecastList({
   onSort,
   sortDir,
   sortKey,
+  sweep,
   t,
   visibleRows,
   width
@@ -1621,6 +1805,10 @@ function DeskForecastList({
   onSort?: (key: string) => void
   sortDir: SortDir
   sortKey: null | string
+  // Live review-sweep state for the NEXT column (referentially STABLE while idle so
+  // the memoised rows still bail out on 500ms reflow ticks; changes each tick only
+  // WHILE a sweep runs, to animate the spinner).
+  sweep?: DeskSweepCtx
   t: Theme
   visibleRows: number
   width: number
@@ -1729,6 +1917,7 @@ function DeskForecastList({
               satGutter={satGutter}
               sem={sem}
               showTrend={showTrend}
+              sweep={sweep}
               t={t}
               trendW={trendW}
             />
@@ -1758,6 +1947,7 @@ const DeskListRow = memo(function DeskListRow({
   satGutter,
   sem,
   showTrend,
+  sweep,
   t,
   trendW
 }: {
@@ -1769,6 +1959,7 @@ const DeskListRow = memo(function DeskListRow({
   satGutter: number
   sem: Semantics
   showTrend: boolean
+  sweep?: DeskSweepCtx
   t: Theme
   trendW: number
 }) {
@@ -1812,7 +2003,7 @@ const DeskListRow = memo(function DeskListRow({
         <Text color={t.color.muted}>{underSaturated ? '◌ ' : '  '}</Text>
       ) : null}
       {cols.map(c => {
-        const cell = deskCellText(c.key, item, sem, t, windows, nowMs)
+        const cell = deskCellText(c.key, item, sem, t, windows, nowMs, sweep)
         const highlight = active && c.key === 'q'
 
         return (

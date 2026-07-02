@@ -327,7 +327,8 @@ describe('DeskView (redesigned forecast desk)', () => {
     const desk = await mountDesk(120, fixture())
     const text = desk.text()
     // The first (thesis) tab is active → its member forecast renders in the list.
-    expect(text).toContain('CPI-U YoY')
+    // The dense QUESTION column truncates the title, so assert the visible prefix.
+    expect(text).toContain('CPI-U Y')
     // Footer chips.
     expect(text).toContain('Lens')
     expect(text).toContain('Open')
@@ -412,10 +413,10 @@ describe('DeskView (redesigned forecast desk)', () => {
     await desk.press('\t')
     await desk.press('\t')
     const text = desk.text()
-    // The All lens shows every forecast. The dense QUESTION column truncates a
-    // long title to fit, so assert the visible prefix (the CPI title fits whole).
+    // The All lens shows every forecast. The dense QUESTION column truncates long
+    // titles to fit, so assert the visible prefixes.
     expect(text).toContain('Will the Repub')
-    expect(text).toContain('CPI-U YoY')
+    expect(text).toContain('CPI-U Y')
     desk.cleanup()
   })
 
@@ -797,6 +798,174 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('⤓')
     // 3) The orphan (no review, no dates) keeps the blank "—".
     expect(text).toContain('—')
+    desk.cleanup()
+  })
+})
+
+// An overdue-review question (next_review_at in the PAST) → dueText status 'now',
+// so the NEXT cell renders the honest sweep state instead of a static "now".
+const dueItem = (): ForecastWorkspaceItem => ({
+  as_of: '2026-06-29T00:00:00Z',
+  close_time: inDays(180),
+  freshness: 'fresh today',
+  headline_kind: 'probability',
+  headline_probability: 0.5,
+  history: [{ as_of: '2026-06-29T00:00:00Z', headline_probability: 0.5 }],
+  id: 'fq_due',
+  next_review_at: inDays(-1),
+  probability: 0.5,
+  probability_display: '0.500',
+  snapshot_count: 1,
+  status: 'active',
+  title: 'An overdue-review question',
+  topics: ['misc']
+})
+
+const dueWorkspace = (): ForecastWorkspaceResponse => ({
+  active_count: 1,
+  closing_soon_count: 0,
+  forecasts: [dueItem()],
+  generated_at: '2026-06-29T14:00:00Z',
+  open_alert_count: 0,
+  product: 'Superforecasting Agent'
+})
+
+// A gw that answers the review-sweep countdown read (forecast.reviews.next) with a
+// fixed payload while still serving the workspace/question like fakeGw.
+const reviewsGw = (workspace: ForecastWorkspaceResponse, reviews: unknown) =>
+  ({
+    request: (method: string, params: Record<string, unknown>) => {
+      if (method === 'forecast.reviews.next') return Promise.resolve(reviews)
+      if (method === 'forecast.question') {
+        return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+      }
+
+      return Promise.resolve(workspace)
+    }
+  }) as never
+
+describe('DeskView review-sweep NEXT column + summary status', () => {
+  afterEach(async () => {
+    delete process.env.FORECAST_TUI_INLINE
+    const { patchUiState } = await import('../app/uiStore.js')
+    patchUiState({ reviewSweep: null })
+  })
+
+  it('dueNowCell: running spinner, countdown boundaries (<1m / minutes), tonight fallback, disabled, and the no-context "now"', async () => {
+    const [{ dueNowCell }, { DARK_THEME }] = await Promise.all([
+      import('../components/deskView.js'),
+      import('../theme.js')
+    ])
+    const now = 1_700_000_000_000
+    const base = { frame: 0, nightlyNextAt: NaN, nextTickAt: NaN, nowMs: now, running: false, sweeperEnabled: false }
+
+    // Running → an animated spinner glyph + "running".
+    expect(dueNowCell({ ...base, running: true }, DARK_THEME).text).toContain('running')
+    // Sweeper enabled, next tick 4 minutes out → a minute countdown.
+    expect(dueNowCell({ ...base, nextTickAt: now + 4 * 60000, sweeperEnabled: true }, DARK_THEME).text).toBe('due · 4m')
+    // Sweeper enabled, next tick 30s out → the sub-minute "<1m".
+    expect(dueNowCell({ ...base, nextTickAt: now + 30_000, sweeperEnabled: true }, DARK_THEME).text).toBe('due · <1m')
+    // Sweeper enabled, tick time unknown (NaN) → imminent "<1m".
+    expect(dueNowCell({ ...base, sweeperEnabled: true }, DARK_THEME).text).toBe('due · <1m')
+    // Sweeper DISABLED but a nightly run is scheduled → the nightly fallback.
+    expect(dueNowCell({ ...base, nightlyNextAt: now + 8 * 3600000 }, DARK_THEME).text).toBe('due · tonight')
+    // Sweeper disabled and no nightly → a plain "due".
+    expect(dueNowCell(base, DARK_THEME).text).toBe('due')
+    // No sweep context at all → the legacy static "now".
+    expect(dueNowCell(undefined, DARK_THEME).text).toBe('now')
+  })
+
+  it('SweepStatusLine: running spinner line, countdown line, tonight fallback, and NOTHING when the desk is quiet', async () => {
+    const [{ renderSync }, { SweepStatusLine }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const draw = (props: Record<string, unknown>): string => {
+      const out = writeStream(48, 6)
+      renderSync(React.createElement(SweepStatusLine as never, props as never), {
+        exitOnCtrlC: false,
+        patchConsole: false,
+        stdout: out.stream
+      } as never)
+      return normalize(out.text(), stripAnsi)
+    }
+
+    const future = new Date(Date.now() + 8 * 60000).toISOString()
+
+    // Running → "⟳ sweeping N due…" (the count comes from the running marker).
+    expect(draw({ now: 0, reviews: null, sweepRunning: { dueCount: 4 }, t: DARK_THEME })).toContain('sweeping 4 due')
+    // Due + enabled sweeper w/ a future tick → "next sweep in Xm · N due".
+    const countdown = draw({
+      now: 0,
+      reviews: { due_count: 3, sweeper: { enabled: true, next_tick_at: future } },
+      sweepRunning: null,
+      t: DARK_THEME
+    })
+    expect(countdown).toContain('next sweep in')
+    expect(countdown).toContain('3 due')
+    // Due + DISABLED sweeper + a scheduled nightly → "N due · tonight".
+    expect(
+      draw({
+        now: 0,
+        reviews: { due_count: 2, nightly: { next_run_at: future }, sweeper: { enabled: false } },
+        sweepRunning: null,
+        t: DARK_THEME
+      })
+    ).toContain('2 due · tonight')
+    // Nothing due and nothing running → the quiet desk stays quiet (renders NOTHING).
+    expect(draw({ now: 0, reviews: { due_count: 0 }, sweepRunning: null, t: DARK_THEME })).toBe('')
+  })
+
+  it('NEXT cell: an overdue review with an enabled sweeper reads "due · Xm" (not a static "now")', async () => {
+    const future = new Date(Date.now() + 8 * 60000).toISOString()
+    const ws = dueWorkspace()
+    const reviews = {
+      due_count: 1,
+      nightly: { installed: true, next_run_at: future },
+      sweeper: { enabled: true, interval_minutes: 10, next_tick_at: future, running: false }
+    }
+    const desk = await mountDesk(120, ws, reviewsGw(ws, reviews))
+    const text = desk.text()
+    // The honest countdown replaced the static "now".
+    expect(text).toMatch(/due · \d+m/)
+    desk.cleanup()
+  })
+
+  it('NEXT cell: while a sweep is running an overdue row shows the spinner "running" text', async () => {
+    const { patchUiState } = await import('../app/uiStore.js')
+    // Arm the in-flight marker BEFORE mount so the desk paints the running state.
+    patchUiState({ reviewSweep: { dueCount: 1 } })
+
+    const ws = dueWorkspace()
+    const reviews = { due_count: 1, sweeper: { enabled: true, next_tick_at: null, running: true } }
+    const desk = await mountDesk(120, ws, reviewsGw(ws, reviews))
+    const text = desk.text()
+    expect(text).toContain('running')
+    desk.cleanup()
+  })
+
+  it('NEXT cell: a NOT-due row keeps its plain countdown even while a sweep runs', async () => {
+    const { patchUiState } = await import('../app/uiStore.js')
+    patchUiState({ reviewSweep: { dueCount: 1 } })
+
+    // reviewedItem has next_review_at 5 days out → status is 'soon'/'ok', never 'now'.
+    const ws: ForecastWorkspaceResponse = {
+      active_count: 1,
+      closing_soon_count: 0,
+      forecasts: [reviewedItem()],
+      generated_at: '2026-06-29T14:00:00Z',
+      open_alert_count: 0,
+      product: 'Superforecasting Agent'
+    }
+    const reviews = { due_count: 1, sweeper: { enabled: true, next_tick_at: null, running: true } }
+    const desk = await mountDesk(120, ws, reviewsGw(ws, reviews))
+    const text = desk.text()
+    // Its NEXT cell reads a plain forward duration, NOT the running/spinner text.
+    expect(text).toMatch(/\b\d+[dh]\b/)
+    expect(text).not.toMatch(/due · \d+m/)
     desk.cleanup()
   })
 })

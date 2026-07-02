@@ -968,7 +968,8 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('Inflation stays stick')
     expect(text).toContain('All')
     // Its member forecast (CPI) renders in the active-tab list with its μ label.
-    expect(text).toContain('CPI-U YoY')
+    // The dense QUESTION column truncates the title, so assert the visible prefix.
+    expect(text).toContain('CPI-U Y')
     expect(text).toContain('μ4.23%')
   })
 

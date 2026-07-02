@@ -122,6 +122,11 @@ export interface TranscriptRow {
   msg: Msg
 }
 
+// The gateway review-sweep in-flight marker (present only WHILE a sweep runs).
+export interface ReviewSweepState {
+  dueCount: number
+}
+
 export interface UiState {
   bgTasks: Set<string>
   busy: boolean
@@ -137,6 +142,10 @@ export interface UiState {
   info: null | SessionInfo
   inlineDiffs: boolean
   mouseTracking: boolean
+  // The gateway review due-sweeper's in-flight state: an object (with the due count
+  // it started on) WHILE a sweep runs, else null. Set by the review.sweep event
+  // ('started' → object, 'done' → null); read by the Desk for its running spinner.
+  reviewSweep: null | ReviewSweepState
   sections: SectionVisibility
   showCost: boolean
   showReasoning: boolean

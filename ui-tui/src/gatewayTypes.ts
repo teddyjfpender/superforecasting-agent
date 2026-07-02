@@ -1781,6 +1781,16 @@ export type GatewayEvent =
   | { payload: { task_id: string; text: string }; session_id?: string; type: 'background.complete' }
   | { payload?: { text?: string }; session_id?: string; type: 'review.summary' }
   | { payload?: { count?: number }; session_id?: string; type: 'cron.fired' }
+  | {
+      // The gateway due-sweeper acting on due-ness (mirrors cron.fired). 'started'
+      // carries how many reviews are due; 'done' carries the deterministic sweep's
+      // result (refreshed count, opened alerts, wall time). Sessionless.
+      payload:
+        | { due_count?: number; phase: 'started' }
+        | { alerts?: number; duration_ms?: number; phase: 'done'; refreshed?: number }
+      session_id?: string
+      type: 'review.sweep'
+    }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.spawn_requested' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.start' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.thinking' }
@@ -1879,4 +1889,26 @@ export interface ForecastConfigResponse {
   question_id?: string
   thresholds?: ForecastConfigThreshold[]
   title?: string
+}
+
+// ── forecast.reviews.next (the desk review-sweep countdown + running state) ────
+// READ-ONLY snapshot the Desk polls to render an honest NEXT column + a summary
+// status line: the soonest DUE scheduled review, how many are due right now, the
+// gateway sweeper's live state (enabled / interval / next-eligible tick / running),
+// and the nightly self-check cron's next/last run. Combined with the review.sweep
+// event stream to show "due · 4m" + a spinner while a sweep is in flight.
+export interface ForecastReviewsNextResponse {
+  due_count?: number
+  next_due_at?: null | string
+  nightly?: {
+    installed?: boolean
+    last_run_at?: null | string
+    next_run_at?: null | string
+  }
+  sweeper?: {
+    enabled?: boolean
+    interval_minutes?: number
+    next_tick_at?: null | string
+    running?: boolean
+  }
 }

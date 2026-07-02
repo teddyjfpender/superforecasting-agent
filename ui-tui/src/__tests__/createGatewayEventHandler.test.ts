@@ -1251,4 +1251,57 @@ describe('createGatewayEventHandler', () => {
       expect(getUiState().status).toBe(before)
     })
   })
+
+  describe('review.sweep due-sweeper indicator', () => {
+    it('started arms the running marker with the due count', () => {
+      const ctx = buildCtx([])
+      const onEvent = createGatewayEventHandler(ctx)
+
+      expect(getUiState().reviewSweep).toBeNull()
+
+      onEvent({ payload: { due_count: 4, phase: 'started' }, type: 'review.sweep' } as any)
+
+      expect(getUiState().reviewSweep).toEqual({ dueCount: 4 })
+    })
+
+    it('done clears the marker, flashes a toast from the real payload, and re-pulls the desk rail', () => {
+      const ctx = buildCtx([])
+      const rpcCalls: string[] = []
+      ctx.gateway.rpc = vi.fn(async (method: string) => {
+        rpcCalls.push(method)
+        if (method === 'forecast.dashboard') {
+          return { summary: { active_count: 1, questions: [] } }
+        }
+
+        return null
+      })
+
+      const onEvent = createGatewayEventHandler(ctx)
+      // Arm it first so we can prove 'done' clears it.
+      onEvent({ payload: { due_count: 3, phase: 'started' }, type: 'review.sweep' } as any)
+      expect(getUiState().reviewSweep).toEqual({ dueCount: 3 })
+
+      onEvent({ payload: { alerts: 1, duration_ms: 1200, phase: 'done', refreshed: 3 }, type: 'review.sweep' } as any)
+
+      // Marker cleared.
+      expect(getUiState().reviewSweep).toBeNull()
+      // Toast built from the REAL payload fields (refreshed · alerts · wall time).
+      expect(getUiState().status).toContain('review sweep: 3 refreshed')
+      expect(getUiState().status).toContain('1 alert')
+      expect(getUiState().status).toContain('1.2s')
+      // …and it re-pulls the dashboard so the Home "Today" panel reflects the refresh.
+      expect(rpcCalls).toContain('forecast.dashboard')
+    })
+
+    it('done with no alerts omits the alert clause', () => {
+      const ctx = buildCtx([])
+      ctx.gateway.rpc = vi.fn(async () => null)
+      const onEvent = createGatewayEventHandler(ctx)
+
+      onEvent({ payload: { alerts: 0, duration_ms: 800, phase: 'done', refreshed: 2 }, type: 'review.sweep' } as any)
+
+      expect(getUiState().status).toContain('review sweep: 2 refreshed · 0.8s')
+      expect(getUiState().status).not.toContain('alert')
+    })
+  })
 })
