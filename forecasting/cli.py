@@ -12694,11 +12694,10 @@ def _cmd_freshen(args: argparse.Namespace) -> None:
 
     # Ensure the nightly self-check cron (force past the auto_install config gate —
     # this is explicit operator intent). Idempotent: silent when already present.
-    from forecasting.scheduler import default_routines_installed, ensure_default_routines
+    from forecasting.scheduler import ensure_default_routines
 
-    was_present = default_routines_installed()
     routines = ensure_default_routines(db_path=getattr(args, "db", None), force=True)
-    cron_state = "present" if was_present else ("installed" if routines.get("created") else "present")
+    cron_state = "installed" if routines.get("created") else "present"
 
     if getattr(args, "json", False):
         print(json.dumps(
@@ -12707,6 +12706,8 @@ def _cmd_freshen(args: argparse.Namespace) -> None:
             indent=2, default=str,
         ))
         return
+    if not updated and not errors:
+        print("no active questions to freshen")
     for qid in updated:
         print(f"{qid}: refreshes {cadence}")
     for err in errors:
