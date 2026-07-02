@@ -861,6 +861,10 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
       return mode === 'detail' ? setMode('list') : closeWithCleanup()
     }
 
+    if (ch === '?') {
+      return patchOverlayState({ cheatSheet: true })
+    }
+
     // Shared actions (both modes).
     if (ch === '<' || ch === '[') {
       return stepHistory(1)

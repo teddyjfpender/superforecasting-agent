@@ -1,13 +1,16 @@
-import { AlternateScreen, Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text } from '@hermes/ink'
+import { AlternateScreen, Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { Fragment, memo, type RefObject, useCallback, useEffect, useMemo, useRef } from 'react'
 
+import { $chordPending } from '../app/chordStore.js'
 import { useGateway } from '../app/gatewayContext.js'
 import { $homeFocus, setHomePane } from '../app/homeFocusStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
+import { activeNavKey } from '../app/navRoutes.js'
 import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
 import { $uiSessionId, $uiState, $uiTheme } from '../app/uiStore.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
+import { VIEW_CHORDS } from '../content/keymaps.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
 import { RAIL_WIDTH, showRailFor } from '../lib/homeLayout.js'
 import {
@@ -28,6 +31,7 @@ import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
+import { CheatSheetOverlay } from './cheatSheetOverlay.js'
 import { ConversationsRail } from './conversationsRail.js'
 import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
@@ -41,10 +45,12 @@ import { MessageLine } from './messageLine.js'
 import { MessagingView } from './messagingView.js'
 import { NavBar } from './navBar.js'
 import { NewsView } from './newsView.js'
+import { PaletteOverlay } from './paletteOverlay.js'
 import { QuestionOnboardModal } from './questionOnboardModal.js'
 import { QueuedMessages } from './queuedMessages.js'
 import { LiveTodoPanel, StreamingAssistant } from './streamingAssistant.js'
 import { TextInput, type TextInputMouseApi } from './textInput.js'
+import { TodayPanel } from './todayPanel.js'
 import { type CrashReport, ViewErrorBoundary } from './viewErrorBoundary.js'
 
 const PromptPrefix = memo(function PromptPrefix({
@@ -200,6 +206,7 @@ const ComposerPane = memo(function ComposerPane({
 }: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { confined?: boolean }) {
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
+  const chordPending = useStore($chordPending)
 
   // Guided OAuth connect from the model picker: close it and launch the in-TUI
   // device-code sign-in (`/auth <slug>`), so connecting Codex never dead-ends.
@@ -211,9 +218,10 @@ const ComposerPane = memo(function ComposerPane({
     [actions]
   )
 
-  // When the conversations rail holds focus, the composer goes inactive so its
-  // keystrokes/cursor don't compete with rail navigation.
-  const railFocused = useStore($homeFocus).pane === 'rail'
+  // The composer only owns the keyboard while the 'conversation' pane holds focus;
+  // when the conversations rail OR the landing "Today" panel holds it, the composer
+  // goes inactive so its keystrokes/cursor don't compete with that pane's navigation.
+  const composerActive = useStore($homeFocus).pane === 'conversation'
   const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
   const promptText = composerPromptText(ui.theme.brand.prompt, ui.info?.profile_name, sh)
   const promptWidth = composerPromptWidth(promptText)
@@ -283,6 +291,13 @@ const ComposerPane = memo(function ComposerPane({
         </Text>
       )}
 
+      {chordPending ? (
+        <Text color={ui.theme.color.accent}>
+          {chordPending} …{' '}
+          <Text color={ui.theme.color.muted}>{VIEW_CHORDS.map(c => `${c.key} ${c.label}`).join(' · ')}</Text>
+        </Text>
+      ) : null}
+
       {status.showStickyPrompt ? (
         <Text color={ui.theme.color.muted} wrap="truncate-end">
           <Text color={ui.theme.color.label}>↳ </Text>
@@ -345,7 +360,7 @@ const ComposerPane = memo(function ComposerPane({
                 {/* Reserve the transcript scrollbar gutter too so typing never rewraps when the scrollbar column repaints. */}
                 <TextInput
                   columns={inputColumns}
-                  focus={!railFocused}
+                  focus={composerActive}
                   mouseApiRef={inputMouseRef}
                   onChange={composer.updateInput}
                   onPaste={composer.handleTextPaste}
@@ -425,6 +440,47 @@ const DemoVizViewPane = memo(function DemoVizViewPane() {
   const ui = useStore($uiState)
 
   return <DemoVizView onClose={() => patchOverlayState({ demoViz: false })} t={ui.theme} />
+})
+
+// The global interaction chrome (Ctrl+K palette / `?` cheat-sheet). It renders
+// as its OWN branch — replacing the view/composer body while open — so the
+// underlying view unmounts and can't double-handle keys; the modal's useInput
+// is then the only active keyboard handler (it also stopImmediatePropagation's
+// to keep the global seam out). Composes over any route because it reads the
+// live overlay flags to pick the palette vs the cheat-sheet + the active view.
+const GlobalChromePane = memo(function GlobalChromePane({
+  cols,
+  onRun,
+  rows
+}: {
+  cols: number
+  onRun: (command: string) => void
+  rows: number
+}) {
+  const ui = useStore($uiState)
+  const overlay = useStore($overlayState)
+
+  if (overlay.palette) {
+    return (
+      <PaletteOverlay
+        cols={cols}
+        onClose={() => patchOverlayState({ palette: false })}
+        onRun={onRun}
+        rows={rows}
+        t={ui.theme}
+      />
+    )
+  }
+
+  return (
+    <CheatSheetOverlay
+      activeView={activeNavKey(overlay)}
+      cols={cols}
+      onClose={() => patchOverlayState({ cheatSheet: false })}
+      rows={rows}
+      t={ui.theme}
+    />
+  )
 })
 
 const HooksViewPane = memo(function HooksViewPane() {
@@ -572,6 +628,15 @@ export const AppLayout = memo(function AppLayout({
 }: AppLayoutProps) {
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
+  const homeFocus = useStore($homeFocus)
+  const { stdout } = useStdout()
+  const rows = stdout?.rows ?? 24
+
+  // The global chrome (Ctrl+K palette / `?` cheat-sheet) takes over the body
+  // while open — see GlobalChromePane. It is NOT part of `fullscreen`, so it
+  // can open over Home OR over a view; rendered first, it unmounts the body
+  // beneath so keys can't double-fire.
+  const globalModal = overlay.palette || overlay.cheatSheet
 
   // Keep the Signal receiver running app-wide — not just while the Messaging
   // view is open — so inbound messages are captured and cached even when you're
@@ -715,6 +780,35 @@ export const AppLayout = memo(function AppLayout({
   // to `heroCols` (the right-pane width when the rail is shown, else full width).
   const renderHero = (heroCols: number) => (
     <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
+      {/* The landing "Today" attention panel: the desk-rail sections the status
+          strip already carries, rendered as an interactive feed of what needs a
+          human. Sits ABOVE the hero; the composer below stays usable (it only
+          yields the keyboard while the panel explicitly holds Home focus). */}
+      <Box flexShrink={0} paddingTop={1} paddingX={1}>
+        <TodayPanel
+          focused={homeFocus.pane === 'today'}
+          onBlur={() => setHomePane('conversation')}
+          onNewQuestion={() => {
+            setHomePane('conversation')
+            patchOverlayState({ onboard: true })
+          }}
+          onOpenAlerts={() => {
+            setHomePane('conversation')
+            patchOverlayState({ alerts: true })
+          }}
+          onOpenQuestion={id => {
+            setHomePane('conversation')
+            patchOverlayState({ forecasts: true, forecastsInitialId: id })
+          }}
+          onRunCommand={command => {
+            setHomePane('conversation')
+            actions.runCommand(command)
+          }}
+          sections={ui.forecastDeskRailSections}
+          t={ui.theme}
+          width={Math.max(20, heroCols - 2)}
+        />
+      </Box>
       <Box flexGrow={1} />
       <HomeHero info={ui.info ?? undefined} maxCols={heroCols} t={ui.theme} />
       {landingNotices.length > 0 && (
@@ -744,7 +838,13 @@ export const AppLayout = memo(function AppLayout({
           <NavBar />
         </PerfPane>
 
-        {fullscreen ? (
+        {globalModal ? (
+          <PerfPane id="globalChrome">
+            <Box flexDirection="row" flexGrow={1}>
+              <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
+            </Box>
+          </PerfPane>
+        ) : fullscreen ? (
           <ViewErrorBoundary onRecover={recoverFromCrash} onReport={reportCrash} t={ui.theme}>
           <Box flexDirection="row" flexGrow={1}>
             {overlay.forecasts ? (

@@ -575,6 +575,16 @@ def build_workspace_payload(
 
     saturation_threshold = _sweep_alert_threshold()
 
+    # In-flight auto-quorum runs keyed by question (ONE jobs-dir scan for the whole
+    # page) so the desk can badge a "quorum running" chip on the row whose commit
+    # just kicked one off + poll forecast.quorum.status by the surfaced run_id.
+    try:
+        from forecasting.quorum_jobs import active_jobs_by_question
+
+        active_quorum_by_q = active_jobs_by_question()
+    except Exception:
+        active_quorum_by_q = {}
+
     closing_soon = 0
     forecasts: list[dict[str, Any]] = []
     for question in member_questions:
@@ -674,6 +684,9 @@ def build_workspace_payload(
                 "decision_readiness_issues": ledger.decision_readiness_issues(question),
                 "evidence_count": len(evidence_items),
                 "open_alert_count": alert_counts.get(question.id, 0),
+                # Run id + status of an in-flight auto-quorum for this question, else
+                # None — the desk chip polls forecast.quorum.status by this run_id.
+                "quorum_run": active_quorum_by_q.get(question.id),
                 "relevant_lessons": relevant_lessons,
                 "lessons_count": len(relevant_lessons),
                 "snapshot_count": len(snapshots),

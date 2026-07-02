@@ -2,6 +2,7 @@ import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdo
 import { Fragment, memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
+import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastAnalystNote,
@@ -116,6 +117,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const [filtering, setFiltering] = useState(false)
   const [flash, setFlash] = useState('')
   const [now, setNow] = useState(0)
+  // `R` opens the modal and asks it to scroll to the Actions/resolve tail once
+  // the packet's tail sections have loaded (async), then clears the request.
+  const [resolveScroll, setResolveScroll] = useState(false)
 
   // The detail packet (tail audit, ensemble, packet-tail sections) loads ASYNC
   // per selection and is rendered inside the modal only.
@@ -318,6 +322,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   useEffect(() => {
     if (modalOpen) {
       modalScrollRef.current?.scrollTo?.(0)
+    } else {
+      // A closed modal drops any pending resolve-scroll request so the next
+      // plain Enter-open starts at the top, not at the Actions tail.
+      setResolveScroll(false)
     }
   }, [selectedId, modalOpen])
 
@@ -330,6 +338,16 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       section => section.title && TAIL_SECTION_TITLES.has(section.title)
     )
   }, [packet, packetId, selectedId])
+
+  // `R` (resolve) opened the modal asking for the Actions/resolve tail: once the
+  // packet's tail sections have loaded, scroll to the bottom (Actions is last),
+  // then consume the request so a later plain Enter-open still starts at the top.
+  useEffect(() => {
+    if (modalOpen && resolveScroll && packetTail && packetTail.length) {
+      modalScrollRef.current?.scrollToBottom?.()
+      setResolveScroll(false)
+    }
+  }, [modalOpen, resolveScroll, packetTail])
 
   const packetPanel = useMemo<ForecastWorkspacePanel | null>(
     () => (packet && packetId === selectedId ? panelFromPacket(packet.packet) : null),
@@ -373,17 +391,58 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     setModalOpen(false)
   }
 
-  // Run update: queue the selected forecast (or, on a lens row, the thesis/factor)
-  // for the next reforecast cycle — re-arms its schedule to due-now, so NEXT flips
-  // to "now" on the refresh and the autonomous cycle reforecasts it on its next tick.
-  const runUpdate = () => {
+  // `u` — RE-ARM: mark the selected forecast (or, on a lens row, the thesis/factor)
+  // as review-due-now via forecast.reforecast. This does NOT run a forecast — it
+  // only re-arms the schedule so NEXT flips to "now" and the autonomous cron cycle
+  // reforecasts it on its next tick. Labelled honestly ("re-arm"), distinct from
+  // `U` (which runs a real update in-process now).
+  const runRearm = () => {
     const targetId = lensActive ? (refThesis?.id ?? refFactor?.id) : selectedId
     const targetTitle = lensActive ? (refThesis?.title ?? refFactor?.title) : selected?.title
     if (!targetId) return
-    setFlash(`↻ queued for update: ${truncate(targetTitle ?? targetId, 32)}`)
+    setFlash(`↻ re-armed for next cycle: ${truncate(targetTitle ?? targetId, 32)}`)
     gw.request('forecast.reforecast', { id: targetId })
-      .then(() => load()) // silent refresh (no 'refreshed' flash) so NEXT flips to "now" but the queued message stays
+      .then(() => load()) // silent refresh (no 'refreshed' flash) so NEXT flips to "now" but the re-arm message stays
+      .catch(() => setFlash('re-arm failed'))
+  }
+
+  // `U` — REAL UPDATE NOW: run `forecast refresh <id>` in-process (pull watched
+  // sources, re-estimate, commit a fresh snapshot). Unlike `u`/re-arm this is an
+  // actual reforecast, so it only applies to a concrete question (never a lens
+  // aggregate). Heavier than re-arm — the flash reflects the in-flight work.
+  const runRealUpdate = () => {
+    if (lensActive || !selectedId) {
+      setFlash('select a forecast to update now')
+      return
+    }
+    const title = truncate(selected?.title ?? selectedId, 32)
+    setFlash(`↻ updating ${title}…`)
+    gw.request('forecast.command', { arg: `refresh ${selectedId} --json`, argv: ['refresh', selectedId, '--json'] })
+      .then(() => {
+        setFlash(`✓ updated ${title}`)
+        load()
+      })
       .catch(() => setFlash('update failed'))
+  }
+
+  // `R` — RESOLVE: open the question detail modal and scroll it to the Actions
+  // section (bottom), where the `/forecast resolve …` playbook row lives. There is
+  // no standalone resolve modal, so this reuses the detail modal's Actions tail.
+  const openResolve = () => {
+    if (lensActive || !selected) {
+      setFlash('select a forecast to resolve')
+      return
+    }
+    setFlash('resolve · see the Actions section (⤓ scrolled to it)')
+    setResolveScroll(true)
+    setModalOpen(true)
+  }
+
+  // `n` — NEW QUESTION: the desk is a fullscreen overlay and the onboard modal is
+  // another, so hand off by closing the desk and opening onboarding (the seam the
+  // empty-state text — "press n to track a new one" — points at).
+  const openNewQuestion = () => {
+    patchOverlayState({ forecasts: false, forecastsInitialId: null, onboard: true })
   }
 
   // The id + title the settings modal targets: the selected forecast, or (on a
@@ -495,26 +554,41 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       return load(true)
     }
 
-    if (key.tab || key.rightArrow) {
+    if (key.tab || key.rightArrow || ch === 'l') {
       return switchTab(tab + 1)
     }
 
-    if (key.leftArrow) {
+    // `h` / `←` steps to the previous lens — `h` is back/left everywhere now
+    // (Alerts/Agents use it the same way); the `?` cheat-sheet replaced the old
+    // `h`-for-help so navigation stays consistent across views.
+    if (key.leftArrow || ch === 'h') {
       return switchTab(tab - 1)
+    }
+
+    if (ch === '?') {
+      return patchOverlayState({ cheatSheet: true })
     }
 
     // The Bench lens is a read-only scoreboard: no per-row selection, modal, update,
     // settings, or filter — only tab-switching + refresh apply. Trap the rest here.
     if (onBench) {
-      if (ch === 'h') {
-        return setFlash('◇ Bench: read-only ForecastBench scoreboard · Tab/←→ lens · r refresh · q close')
-      }
-
       return
     }
 
     if (ch === 'u') {
-      return runUpdate()
+      return runRearm()
+    }
+
+    if (ch === 'U') {
+      return runRealUpdate()
+    }
+
+    if (ch === 'R') {
+      return openResolve()
+    }
+
+    if (ch === 'n') {
+      return openNewQuestion()
     }
 
     if (ch === 's') {
@@ -523,10 +597,6 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       }
 
       return
-    }
-
-    if (ch === 'h') {
-      return setFlash('↑↓ select · Tab/←→ lens · Enter open · / filter · q close')
     }
 
     if (key.return) {
@@ -623,7 +693,11 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       <Box alignItems="stretch" flexDirection="column" flexGrow={1} paddingX={1} paddingY={1}>
         {header}
         <Box flexDirection="column" flexGrow={1}>
-          <Text color={t.color.muted}>No active forecasts. Create one with /forecast new …</Text>
+          <Text color={t.color.muted}>
+            {'No active forecasts — press '}
+            <Text color={t.color.accent}>n</Text>
+            {' to track a new one.'}
+          </Text>
         </Box>
       </Box>
     )
@@ -788,12 +862,19 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           { k: '↑↓', label: 'Select' },
           { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
           { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
-          { k: 'u', label: 'Update', run: () => runUpdate() },
+          { k: 'U', label: 'Update', run: () => runRealUpdate() },
+          { k: 'u', label: 'Re-arm', run: () => runRearm() },
+          { k: 'R', label: 'Resolve', run: () => openResolve() },
+          { k: 'n', label: 'New', run: () => openNewQuestion() },
           { k: 's', label: 'Settings', run: () => openSettings() },
           { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
-          { k: 'h', label: 'Help', run: () => setFlash('↑↓ select · Tab/←→ lens · Enter open · u update · s settings · / filter · q close') },
           { k: 'q', label: 'Close', run: onClose }
         ]
+
+  // When the selected row's review is overdue/stale, the hint spells out the
+  // honest split: `u` only re-arms the schedule, `U` runs a real update now.
+  const selectedDue = !onBench && !lensActive && selected ? dueText(selected, Math.floor(Date.now() / 60_000) * 60_000) : null
+  const selectedStale = selectedDue?.status === 'now'
 
   const footerHint = filtering
     ? `filter: ${truncate(query, Math.max(8, cols - 30))}▌  · ⏎ apply · Esc clear`
@@ -801,11 +882,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       ? '↑↓/jk scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close'
       : onBench
         ? '◇ Bench — read-only ForecastBench scoreboard · Tab/←→ lens · r refresh · q close'
-        : '↑↓/jk select · Tab/←→ lens · ⏎ open · u update · s settings · / filter · r refresh · h help · q close'
+        : `${selectedStale ? 'stale · u re-arms · U updates now · ' : ''}↑↓/jk select · Tab/←→ lens · ⏎ open · U update · u re-arm · R resolve · n new · s settings · / filter · ? help · q close`
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
-      <FooterChips chips={chips} t={t} />
+      {/* Gate chip mouse-runs while the settings modal owns the screen: the desk
+          keyboard is already trapped (useInput early-returns on settingsOpen), so
+          the still-visible footer must not leak clicks past that trap. The detail
+          modal swaps to its own modal-only chip set, so it needs no gate here. */}
+      <FooterChips chips={chips} disabled={settingsOpen} t={t} />
       <Text color={t.color.muted} wrap="truncate-end">
         {flash ? <Text color={t.color.accent}>{flash} · </Text> : null}
         {footerHint}
@@ -959,6 +1044,22 @@ export function DeskSummary({
           {`panel ${panelCount} · ev ${selected.evidence_count ?? 0} · src ${sources}`}
         </Text>
       </Box>
+      {/* Under-saturated badge (Wave 3): only when the current snapshot scored
+          below the alert bar — a compact "◌ saturation N/100 · below bar". Healthy
+          forecasts show nothing, so the badge is a genuine attention signal. */}
+      {selected.saturation_below_threshold ? (
+        <Text color={t.color.warn} wrap="truncate-end">
+          {`◌ saturation ${Math.round(selected.saturation_score ?? 0)}/100 · below bar`}
+        </Text>
+      ) : null}
+      {/* In-flight auto-quorum chip: the payload only attaches quorum_run while a
+          job for this question is queued/running (dashboard.py → active_quorum_by_q),
+          so its mere presence means "a quorum is running right now". */}
+      {selected.quorum_run?.run_id ? (
+        <Text color={t.color.accent} wrap="truncate-end">
+          {`⟳ quorum ${selected.quorum_run.status ?? 'running'}`}
+        </Text>
+      ) : null}
       <Text color={t.color.muted} wrap="truncate-end">
         {`updated ${shortDate(selected.as_of)}${selected.freshness ? ` (${selected.freshness})` : ''}`}
       </Text>
@@ -1406,17 +1507,26 @@ function DeskForecastList({
   // move re-renders 2 rows (the one that lost and the one that gained the cursor),
   // not all ~38 in the viewport, and never recomputes windowDelta×3 + the sparkline
   // for the untouched rows.
+  // A 2-col saturation gutter is reserved ONLY when the book actually holds an
+  // under-saturated forecast (Wave 3) — so a healthy book's table is byte-for-byte
+  // unchanged, and the ◌ marker (always in the leading gutter) is never truncated.
+  const hasUnderSaturated = useMemo(
+    () => items.some(item => item.saturation_below_threshold === true),
+    [items]
+  )
+
   const layout = useMemo(() => {
     const sem = semantics(t)
     // Usable inner width (leave a column for the cursor marker + a trailing space).
     const avail = Math.max(20, width - 2)
+    const satGutter = hasUnderSaturated ? 2 : 0
 
     // Pack the FIXED numeric columns by priority, but ALWAYS reserve QMIN for the
     // QUESTION column so a column is dropped (priority-drop) rather than QUESTION
     // overflowing + clipping the rightmost numerics on a tight terminal.
     const QMIN = 14
     const keep = new Set<string>(['q'])
-    let usedW = 2 // cursor marker
+    let usedW = 2 + satGutter // cursor marker + optional saturation gutter
     for (const key of DESK_PRIORITY) {
       const c = DESK_COLS.find(col => col.key === key)
       if (c && usedW + c.w + 1 <= avail - QMIN) {
@@ -1439,9 +1549,9 @@ function DeskForecastList({
     const colWidth = (c: DeskCol): number => (c.key === 'q' ? questionW : c.w)
     const keptCols = DESK_COLS.filter(c => keep.has(c.key))
 
-    return { avail, colWidth, keptCols, sem, showTrend, trendW }
-  }, [t, width])
-  const { avail, colWidth, keptCols, sem, showTrend, trendW } = layout
+    return { avail, colWidth, keptCols, satGutter, sem, showTrend, trendW }
+  }, [t, width, hasUnderSaturated])
+  const { avail, colWidth, keptCols, satGutter, sem, showTrend, trendW } = layout
 
   if (!items.length) {
     return (
@@ -1460,7 +1570,7 @@ function DeskForecastList({
   return (
     <Box flexDirection="column" flexGrow={0} flexShrink={0} minHeight={0} overflow="hidden">
       <Text bold color={sem.heading} wrap="truncate-end">
-        {'  '}
+        {satGutter ? '    ' : '  '}
         {keptCols.map(c => `${pad(c.label, colWidth(c), c.align)} `).join('')}
         {showTrend ? pad('1MO', trendW, 'left') : ''}
       </Text>
@@ -1476,6 +1586,7 @@ function DeskForecastList({
               cols={keptCols}
               item={item}
               nowMs={nowMs}
+              satGutter={satGutter}
               sem={sem}
               showTrend={showTrend}
               t={t}
@@ -1504,6 +1615,7 @@ const DeskListRow = memo(function DeskListRow({
   cols,
   item,
   nowMs,
+  satGutter,
   sem,
   showTrend,
   t,
@@ -1514,6 +1626,7 @@ const DeskListRow = memo(function DeskListRow({
   cols: DeskCol[]
   item: ForecastWorkspaceItem
   nowMs: number
+  satGutter: number
   sem: Semantics
   showTrend: boolean
   t: Theme
@@ -1543,12 +1656,21 @@ const DeskListRow = memo(function DeskListRow({
   const trendColor = dirColor(sem, item.delta ?? windows['1mo'])
 
   const alertBadge = (item.open_alert_count ?? 0) > 0 ? `!${item.open_alert_count}` : ''
+  // A dim trailing marker for an under-saturated forecast (Wave 3). Appended like
+  // the alert badge so the healthy case never widens the dense table.
+  const underSaturated = item.saturation_below_threshold === true
 
   return (
     <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
       <Text bold={active} color={active ? sem.cursor : sem.faint}>
         {active ? '▸ ' : '  '}
       </Text>
+      {satGutter ? (
+        // The reserved saturation gutter: a dim ◌ for an under-saturated forecast,
+        // else blank. Always visible (leading, never truncated); only present when
+        // the book holds at least one under-saturated row.
+        <Text color={t.color.muted}>{underSaturated ? '◌ ' : '  '}</Text>
+      ) : null}
       {cols.map(c => {
         const cell = deskCellText(c.key, item, sem, t, windows, nowMs)
         const highlight = active && c.key === 'q'

@@ -3,6 +3,7 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import type {
   ForecastFactor,
   ForecastThesis,
@@ -68,17 +69,23 @@ const cpiItem = (): ForecastWorkspaceItem => ({
   units: 'percent year-over-year'
 })
 
+// Dates relative to "now" so the NEXT column (which reads real Date.now(), not
+// the payload's generated_at) renders a stable forward duration regardless of the
+// wall-clock date the suite runs on. Fixed calendar dates here silently rot: once
+// real time passes them they collapse to "now" and the assertions break.
+const inDays = (n: number): string => new Date(Date.now() + n * 86400000).toISOString()
+
 // A question with a LIVE scheduled review → the NEXT column must read its
 // relative due-time exactly as before (no resolution-fallback marker).
 const reviewedItem = (): ForecastWorkspaceItem => ({
   as_of: '2026-06-29T00:00:00Z',
-  close_time: '2026-12-31T00:00:00Z',
+  close_time: inDays(180),
   freshness: 'fresh today',
   headline_kind: 'probability',
   headline_probability: 0.4,
   history: [{ as_of: '2026-06-29T00:00:00Z', headline_probability: 0.4 }],
   id: 'fq_reviewed',
-  next_review_at: '2026-07-01T00:00:00Z',
+  next_review_at: inDays(5),
   probability: 0.4,
   probability_display: '0.400',
   review_cadence: 'every 2 days',
@@ -93,7 +100,7 @@ const reviewedItem = (): ForecastWorkspaceItem => ({
 // to that date with the distinguishing "⤓" marker.
 const nightlyItem = (): ForecastWorkspaceItem => ({
   as_of: '2026-06-29T00:00:00Z',
-  close_time: '2026-07-05T00:00:00Z',
+  close_time: inDays(6),
   freshness: 'fresh today',
   headline_kind: 'probability',
   headline_probability: 0.6,
@@ -101,7 +108,7 @@ const nightlyItem = (): ForecastWorkspaceItem => ({
   id: 'fq_nightly',
   probability: 0.6,
   probability_display: '0.600',
-  resolution_time: '2026-07-05T00:00:00Z',
+  resolution_time: inDays(6),
   snapshot_count: 1,
   status: 'active',
   title: 'A market_nightly live-edge market',
@@ -161,6 +168,41 @@ const fixture = (): ForecastWorkspaceResponse => ({
   theses: [inflationThesis()]
 })
 
+// A single under-saturated forecast (Wave-3 saturation flag) with NO thesis/factor
+// lens and no alerts — the first tab's row 0 is this concrete question, so keyboard
+// actions (U update, R resolve, n new) target it directly.
+const underSatItem = (): ForecastWorkspaceItem => ({
+  as_of: '2026-06-29T00:00:00Z',
+  close_time: '2026-12-31T00:00:00Z',
+  confidence: 0.6,
+  delta: 0.01,
+  domain: 'macro',
+  evidence_count: 2,
+  freshness: 'fresh today',
+  headline_kind: 'probability',
+  headline_probability: 0.44,
+  history: [{ as_of: '2026-06-29T00:00:00Z', headline_probability: 0.44 }],
+  id: 'fq_undersat',
+  open_alert_count: 0,
+  probability: 0.44,
+  probability_display: '0.440',
+  saturation_below_threshold: true,
+  saturation_score: 42,
+  snapshot_count: 2,
+  status: 'active',
+  title: 'Under-saturated forecast',
+  topics: ['macro']
+})
+
+const plainFixture = (): ForecastWorkspaceResponse => ({
+  active_count: 1,
+  closing_soon_count: 0,
+  forecasts: [underSatItem()],
+  generated_at: '2026-06-29T14:00:00Z',
+  open_alert_count: 0,
+  product: 'Superforecasting Agent'
+})
+
 const writeStream = (columns: number, rows: number, isTTY = false) => {
   const stream = new PassThrough() as PassThrough & {
     columns: number
@@ -211,7 +253,22 @@ const fakeGw = (response: ForecastWorkspaceResponse) =>
     }
   }) as never
 
-const mountDesk = async (columns: number, response: ForecastWorkspaceResponse) => {
+// A gw that RECORDS every request so tests can assert the RPC the desk fired
+// (e.g. `U` → forecast.command refresh). Still resolves like fakeGw otherwise.
+const recordingGw = (response: ForecastWorkspaceResponse, calls: { method: string; params: Record<string, unknown> }[]) =>
+  ({
+    request: (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params })
+
+      if (method === 'forecast.question') {
+        return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+      }
+
+      return Promise.resolve(response)
+    }
+  }) as never
+
+const mountDesk = async (columns: number, response: ForecastWorkspaceResponse, gwOverride?: unknown) => {
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { DeskView }, { DARK_THEME }, { stripAnsi }, { clearOverlayCache }] = await Promise.all([
@@ -227,7 +284,7 @@ const mountDesk = async (columns: number, response: ForecastWorkspaceResponse) =
   const stdin = writeStream(columns, 40, true)
 
   const instance = render(
-    React.createElement(DeskView, { gw: fakeGw(response), onClose: () => undefined, t: DARK_THEME }),
+    React.createElement(DeskView, { gw: (gwOverride ?? fakeGw(response)) as never, onClose: () => undefined, t: DARK_THEME }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
@@ -379,12 +436,135 @@ describe('DeskView (redesigned forecast desk)', () => {
     desk.cleanup()
   })
 
-  it('u queues the selected lens/forecast for update (flash + reforecast RPC)', async () => {
+  it('u re-arms the selected lens/forecast for the next cycle (honest flash + reforecast RPC)', async () => {
     const desk = await mountDesk(120, fixture())
-    // Default thesis tab → the lens row is selected; u queues the thesis for update.
+    // Default thesis tab → the lens row is selected; u RE-ARMS the schedule (it does
+    // NOT run a forecast) so the flash must say "re-armed", not "update".
     await desk.press('u')
-    expect(desk.text()).toContain('queued for update')
+    expect(desk.text()).toContain('re-armed for next cycle')
     desk.cleanup()
+  })
+
+  it('U runs a REAL update via forecast refresh (records the RPC + shows the updating flash)', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    // plainFixture has no thesis/factor lens → the first tab's row 0 is a concrete
+    // forecast, so U targets a real question id.
+    const desk = await mountDesk(120, plainFixture(), recordingGw(plainFixture(), calls))
+    await desk.press('U')
+    // The in-process update runs `forecast refresh <id> --json` — the honest "real
+    // update", distinct from `u`/re-arm which only marks the schedule due.
+    const refresh = calls.find(c => c.method === 'forecast.command')
+    expect(refresh).toBeDefined()
+    expect(refresh?.params.argv).toEqual(['refresh', 'fq_undersat', '--json'])
+    expect(desk.text()).toMatch(/updating|updated/)
+    desk.cleanup()
+  })
+
+  it('n hands off to the new-question onboard modal (closes the desk overlay)', async () => {
+    resetOverlayState()
+    const desk = await mountDesk(120, plainFixture())
+    await desk.press('n')
+    expect(getOverlayState().onboard).toBe(true)
+    expect(getOverlayState().forecasts).toBe(false)
+    desk.cleanup()
+    resetOverlayState()
+  })
+
+  it('R opens the detail modal for the selected forecast at the resolve/Actions tail', async () => {
+    const desk = await mountDesk(120, plainFixture())
+    await desk.press('R')
+    const text = desk.text()
+    // The flash points at the Actions/resolve section, and the modal opens over the
+    // still-visible desk (its title = the selected forecast).
+    expect(text).toContain('resolve')
+    expect(text).toContain('Under-saturated forecast')
+    desk.cleanup()
+  })
+
+  it('marks an under-saturated forecast with the dim ◌ marker in the list', async () => {
+    const desk = await mountDesk(120, plainFixture())
+    // The Wave-3 saturation flag renders a trailing dim marker; a healthy forecast
+    // (open_alert_count 0, above bar) would show nothing here.
+    expect(desk.text()).toContain('◌')
+    desk.cleanup()
+  })
+
+  it('skinny summary shows the under-saturated badge only when below the bar', async () => {
+    const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: null,
+        refFactor: undefined,
+        refThesis: undefined,
+        selected: underSatItem(),
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    const text = normalize(stdout.text(), stripAnsi)
+    expect(text).toContain('saturation 42/100')
+    expect(text).toContain('below bar')
+
+    // A healthy forecast (no saturation flag) shows NO badge.
+    const healthy = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: null,
+        refFactor: undefined,
+        refThesis: undefined,
+        selected: { ...underSatItem(), saturation_below_threshold: false, saturation_score: 88 },
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: healthy.stream } as never
+    )
+    expect(normalize(healthy.text(), stripAnsi)).not.toContain('below bar')
+  })
+
+  it('skinny summary shows the in-flight quorum chip only when a quorum_run is attached', async () => {
+    const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const running = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: null,
+        refFactor: undefined,
+        refThesis: undefined,
+        selected: { ...underSatItem(), quorum_run: { run_id: 'qr_123', status: 'running' } },
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: running.stream } as never
+    )
+    expect(normalize(running.text(), stripAnsi)).toContain('quorum running')
+
+    // No quorum_run attached → no chip.
+    const idle = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: null,
+        refFactor: undefined,
+        refThesis: undefined,
+        selected: underSatItem(),
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: idle.stream } as never
+    )
+    expect(normalize(idle.text(), stripAnsi)).not.toContain('quorum')
   })
 
   it('/ opens the inline filter and narrows the visible list', async () => {

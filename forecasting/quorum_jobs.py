@@ -77,6 +77,31 @@ def list_jobs(limit: int = 20) -> list[dict[str, Any]]:
     return rows[:limit]
 
 
+def active_jobs_by_question(limit: int = 40) -> dict[str, dict[str, Any]]:
+    """question_id -> {run_id, status, created_at} for the MOST RECENT still-in-flight
+    quorum job (``queued`` | ``running``) per question.
+
+    A single jobs-dir scan (no per-question I/O) so the desk workspace payload can
+    badge a "quorum running" chip on the row whose auto-quorum just started, then
+    poll ``forecast.quorum.status`` by the surfaced run_id. Only live jobs — a
+    ``done``/``error`` job is terminal and never chipped."""
+    out: dict[str, dict[str, Any]] = {}
+    # list_jobs already returns newest-first, so the first live job seen per
+    # question is the most recent one.
+    for job in list_jobs(limit=limit):
+        qid = job.get("question_id")
+        if not qid or qid in out:
+            continue
+        if job.get("status") not in ("queued", "running"):
+            continue
+        out[str(qid)] = {
+            "run_id": job.get("run_id"),
+            "status": job.get("status"),
+            "created_at": job.get("created_at"),
+        }
+    return out
+
+
 def new_run_id() -> str:
     return f"qr_{uuid.uuid4().hex[:12]}"
 

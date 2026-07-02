@@ -1217,4 +1217,38 @@ describe('createGatewayEventHandler', () => {
       expect(appended.find(m => (m as any).kind === 'panel')).toBeUndefined()
     })
   })
+
+  describe('cron.fired self-check toast', () => {
+    it('flashes a transient nightly self-check status and re-pulls the desk rail', () => {
+      const ctx = buildCtx([])
+      const dashboardCalls: string[] = []
+      ctx.gateway.rpc = vi.fn(async (method: string) => {
+        dashboardCalls.push(method)
+        if (method === 'forecast.dashboard') {
+          return { summary: { active_count: 1, questions: [] } }
+        }
+
+        return null
+      })
+
+      const onEvent = createGatewayEventHandler(ctx)
+      onEvent({ payload: { count: 3 }, type: 'cron.fired' } as any)
+
+      // The status line carries the honest toast (payload only knows the job count).
+      expect(getUiState().status).toContain('nightly self-check ran — 3 jobs fired')
+      // …and it re-pulls the dashboard so the Home "Today" panel reflects any refresh.
+      expect(dashboardCalls).toContain('forecast.dashboard')
+    })
+
+    it('ignores an empty cron tick (count 0)', () => {
+      const ctx = buildCtx([])
+      ctx.gateway.rpc = vi.fn(async () => null)
+      const onEvent = createGatewayEventHandler(ctx)
+      const before = getUiState().status
+
+      onEvent({ payload: { count: 0 }, type: 'cron.fired' } as any)
+
+      expect(getUiState().status).toBe(before)
+    })
+  })
 })

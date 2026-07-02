@@ -5745,3 +5745,130 @@ def test_register_method_rejects_bad_args():
         server.register_method("", handler)
     with pytest.raises(TypeError):
         server.register_method("test.runtime.notcallable", object())
+
+
+# ── T3 data surfaces: triage contested + relabel, schedule status ────────────
+
+
+def _seed_contested_label(ledger, question_id):
+    """Record one auto-labeled triage row + open its contested alert, mirroring the
+    contested-routing loop. Returns (label_id, alert_id)."""
+    from forecasting.ledger import allow_ledger_writes
+
+    with allow_ledger_writes(reason="test_seed"):
+        rows = ledger.record_triage_labels(
+            question_id=question_id,
+            verdicts=[
+                {
+                    "title": "a candidate reading",
+                    "auto_label": "irrelevant",
+                    "relevance": 0.5,
+                    "rationale": "labeler near the decision boundary",
+                    "materiality": "high",
+                }
+            ],
+        )
+        label_id = rows[0]["id"]
+        alert = ledger.create_alert(
+            severity="warning",
+            scope_type="question",
+            scope_ref=question_id,
+            reason=f"contested_label:{label_id}",
+            recommended_action="hand-label this triage item",
+        )
+        ledger.update_triage_label(label_id, contested=True, alert_id=alert.id)
+    return label_id, alert.id
+
+
+def test_forecast_triage_contested_and_relabel(tmp_path, monkeypatch):
+    """forecast.triage.contested lists the open contested staging rows (question ref
+    + rationale + linked alert); forecast.triage.relabel records the expert label,
+    acks the alert, and drops the row from the contested list."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    from forecasting.ledger import ForecastLedger, allow_ledger_writes
+
+    ledger = ForecastLedger()
+    with allow_ledger_writes(reason="test_seed"):
+        question = ledger.create_question(
+            title="Will CPI YoY exceed 3.0% in 2027?",
+            resolution_criteria="Resolved by the official BLS CPI-U release for 2027.",
+        )
+    label_id, alert_id = _seed_contested_label(ledger, question.id)
+
+    listed = server.handle_request(
+        {"id": "1", "method": "forecast.triage.contested", "params": {}}
+    )
+    assert "result" in listed, listed
+    res = listed["result"]
+    assert res["count"] == 1, res
+    row = res["contested"][0]
+    assert row["id"] == label_id
+    assert row["question_id"] == question.id
+    assert row["auto_label"] == "irrelevant"
+    assert row["alert_id"] == alert_id
+    assert "boundary" in row["rationale"]
+
+    relabel = server.handle_request(
+        {
+            "id": "2",
+            "method": "forecast.triage.relabel",
+            "params": {"label_id": label_id, "label": "relevant_interesting"},
+        }
+    )
+    assert "result" in relabel, relabel
+    assert relabel["result"].get("success") is True, relabel
+
+    # The expert label is recorded and the linked alert acknowledged (real work).
+    updated = ledger.get_triage_label(label_id)
+    assert updated["expert_label"] == "relevant_interesting"
+    assert updated["label_source"] == "expert"
+    assert bool(updated["contested"]) is False
+    assert ledger.get_alert(alert_id).acknowledged_at is not None
+
+    # And it no longer appears in the contested list.
+    after = server.handle_request(
+        {"id": "3", "method": "forecast.triage.contested", "params": {}}
+    )
+    assert after["result"]["count"] == 0, after["result"]
+
+
+def test_forecast_triage_relabel_requires_label(tmp_path, monkeypatch):
+    """A relabel with neither adjudications nor label_id+label is a param error."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.triage.relabel", "params": {"label_id": "tl_x"}}
+    )
+    assert "error" in resp, resp
+    assert resp["error"]["code"] == 4003
+
+
+def test_forecast_schedule_status(tmp_path, monkeypatch):
+    """forecast.schedule.status returns cron health (defensive default when no jobs
+    installed) joined with the enabled per-question scheduled reviews."""
+    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    from forecasting.ledger import ForecastLedger, allow_ledger_writes
+
+    ledger = ForecastLedger()
+    with allow_ledger_writes(reason="test_seed"):
+        question = ledger.create_question(
+            title="Will CPI YoY exceed 3.0% in 2027?",
+            resolution_criteria="Resolved by the official BLS CPI-U release for 2027.",
+        )
+        ledger.schedule_review(
+            scope_type="question",
+            scope_ref=question.id,
+            cadence="weekly",
+            next_run_at="2027-01-01T00:00:00Z",
+            trigger_reason="scheduled",
+        )
+
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.schedule.status", "params": {}}
+    )
+    assert "result" in resp, resp
+    res = resp["result"]
+    assert "cron" in res and "jobs" in res["cron"]
+    assert res["healthy"] is True  # no errored/missed jobs
+    assert res["scheduled_review_count"] >= 1
+    refs = {r["scope_ref"] for r in res["scheduled_reviews"]}
+    assert question.id in refs

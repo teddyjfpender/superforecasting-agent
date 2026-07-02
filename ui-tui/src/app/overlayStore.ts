@@ -9,6 +9,7 @@ const buildOverlayState = (): OverlayState => ({
   approval: null,
   calendar: false,
   calibration: false,
+  cheatSheet: false,
   clarify: null,
   confirm: null,
   demoViz: false,
@@ -24,6 +25,7 @@ const buildOverlayState = (): OverlayState => ({
   obsidian: false,
   onboard: false,
   pager: null,
+  palette: false,
   picker: false,
   secret: null,
   skillsHub: false,
@@ -74,6 +76,7 @@ export const $isBlocked = computed(
     approval,
     calendar,
     calibration,
+    cheatSheet,
     clarify,
     confirm,
     demoViz,
@@ -87,6 +90,7 @@ export const $isBlocked = computed(
     obsidian,
     onboard,
     pager,
+    palette,
     picker,
     secret,
     skillsHub,
@@ -99,6 +103,7 @@ export const $isBlocked = computed(
         approval ||
         calendar ||
         calibration ||
+        cheatSheet ||
         clarify ||
         confirm ||
         demoViz ||
@@ -112,6 +117,7 @@ export const $isBlocked = computed(
         obsidian ||
         onboard ||
         pager ||
+        palette ||
         picker ||
         secret ||
         skillsHub ||

@@ -79,6 +79,8 @@ export interface OverlayState {
   approval: ApprovalReq | null
   calendar: boolean
   calibration: boolean
+  // The `?` cheat-sheet overlay — global keys + the active view's key rows.
+  cheatSheet: boolean
   clarify: ClarifyReq | null
   confirm: ConfirmReq | null
   demoViz: boolean
@@ -96,6 +98,8 @@ export interface OverlayState {
   obsidian: boolean
   onboard: boolean
   pager: null | PagerState
+  // The Ctrl+K command palette — fuzzy-launch any slash command from anywhere.
+  palette: boolean
   picker: boolean
   secret: null | SecretReq
   skillsHub: boolean

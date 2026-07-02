@@ -544,6 +544,10 @@ export function AlertsView({ gw, onClose, sessionId = '', t }: AlertsViewProps) 
       return onClose()
     }
 
+    if (ch === '?') {
+      return patchOverlayState({ cheatSheet: true })
+    }
+
     // Bulk passes on the focused tier/reason. Shift-A = AGENT (reforecast) pass /
     // cancel-while-running; R = FREE (non-LLM gated) pass.
     if (ch === 'A') {

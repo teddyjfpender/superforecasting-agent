@@ -556,15 +556,51 @@ export interface ForecastCalibrationBias {
   status?: 'calibrated' | 'insufficient_evidence' | 'overconfident' | 'underconfident'
 }
 
+// One recency window of the rolling calibration trend (ledger._calibration_trend).
+export interface ForecastCalibrationTrendWindow {
+  brier?: null | number
+  n?: number
+  period?: string
+  sce?: null | number
+}
+
+// Rolling mean-Brier + signed-error over recency windows + a coarse direction.
+export interface ForecastCalibrationTrend {
+  direction?: 'improving' | 'insufficient' | 'stable' | 'worsening'
+  windows?: ForecastCalibrationTrendWindow[]
+}
+
 // The full unsigned summary (forecasting/ledger.py calibration_summary).
 export interface ForecastCalibrationSummary extends ForecastDashboardCalibration {
   buckets?: ForecastCalibrationBucketRow[]
   calibration_curve?: ForecastCalibrationCurveRow[]
   calibration_curve_sample_count?: number
+  calibration_trend?: ForecastCalibrationTrend
   expected_calibration_error?: null | number
   max_calibration_error?: null | number
   mean_predicted?: null | number
   observed_frequency?: null | number
+}
+
+// A calibration lesson CORRECTING forecasts in scope + its measured coverage
+// (forecasting/ledger.py calibration_correcting_lessons). `dormant` ⇒ never yet
+// encountered at a commit (the recommended adjustment isn't biting yet).
+export interface ForecastCalibrationLessonCoverage {
+  application_rate?: number
+  applied_count?: number
+  in_scope_count?: number
+  last_seen?: null | string
+}
+
+export interface ForecastCalibrationLesson {
+  coverage?: ForecastCalibrationLessonCoverage
+  dormant?: boolean
+  lesson?: null | string
+  lesson_id?: string
+  recommended_adjustment?: Record<string, unknown>
+  scope?: string
+  scope_ref?: null | string
+  scope_type?: string
 }
 
 // A compact per-scope breakdown row (headline metrics only, no curve).
@@ -584,9 +620,111 @@ export interface ForecastCalibrationResponse {
   bias?: ForecastCalibrationBias | null
   domain?: null | string
   domains?: ForecastCalibrationBreakdownRow[]
+  lessons?: ForecastCalibrationLesson[]
   origin?: null | string
   origins?: ForecastCalibrationBreakdownRow[]
   summary?: ForecastCalibrationSummary
+}
+
+// ── forecast.triage.contested / .relabel (the contested-triage lens) ─────────
+
+// One CONTESTED triage staging row awaiting an operator hand-label.
+export interface ForecastTriageContestedRow {
+  alert_id?: null | string
+  auto_label?: null | string
+  candidate_ref?: null | string
+  created_at?: null | string
+  id?: string
+  materiality?: null | string
+  question_id?: null | string
+  rationale?: string
+  relevance?: null | number
+  source?: null | string
+  summary?: string
+  title?: string
+  url?: null | string
+}
+
+export interface ForecastTriageContestedResponse {
+  contested?: ForecastTriageContestedRow[]
+  count?: number
+}
+
+export type ForecastTriageLabel = 'irrelevant' | 'relevant_interesting' | 'relevant_uninteresting'
+
+export interface ForecastTriageRelabelResponse {
+  count?: number
+  relabeled?: Record<string, unknown>[]
+  success?: boolean
+}
+
+// ── forecast.schedule.status (schedule health) ───────────────────────────────
+
+export interface ForecastScheduleCronJob {
+  enabled?: boolean
+  errored?: boolean
+  id?: null | string
+  last_error?: null | string
+  last_run_at?: null | string
+  last_status?: null | string
+  missed?: boolean
+  name?: null | string
+  next_run_at?: null | string
+  schedule?: null | string
+  script?: null | string
+}
+
+export interface ForecastScheduleCronHealth {
+  errored?: string[]
+  healthy?: boolean
+  installed?: number
+  jobs?: ForecastScheduleCronJob[]
+  missed?: string[]
+}
+
+export interface ForecastScheduleReviewRow {
+  cadence?: null | string
+  id?: string
+  last_run_at?: null | string
+  next_run_at?: null | string
+  scope_ref?: null | string
+  scope_type?: null | string
+  trigger_reason?: null | string
+}
+
+export interface ForecastScheduleStatusResponse {
+  cron?: ForecastScheduleCronHealth
+  healthy?: boolean
+  scheduled_review_count?: number
+  scheduled_reviews?: ForecastScheduleReviewRow[]
+}
+
+// ── forecast.quorum.status (the running-quorum chip) ─────────────────────────
+
+// An in-flight auto-quorum reference attached to a desk forecast row.
+export interface ForecastQuorumRunRef {
+  created_at?: null | string
+  run_id?: string
+  status?: string
+}
+
+export interface ForecastQuorumStatusResult {
+  aggregate_probability?: null | number
+  committed_probability?: null | number
+  disagreement?: null | number
+  degraded?: boolean
+  [key: string]: unknown
+}
+
+export interface ForecastQuorumStatusResponse {
+  degraded?: boolean
+  error?: null | string
+  panel_run_id?: null | string
+  progress?: { at?: string; detail?: string; stage?: string }[]
+  question_id?: null | string
+  result?: ForecastQuorumStatusResult
+  run_id?: string
+  status?: 'done' | 'error' | 'queued' | 'running'
 }
 
 export interface ForecastDashboardBacktest {
@@ -1180,6 +1318,9 @@ export interface ForecastWorkspaceItem {
   method?: null | string
   open_alert_count?: number
   outcome_choices?: unknown[]
+  // An in-flight auto-quorum run kicked off by this question's last commit, else
+  // null — the desk summary chip polls forecast.quorum.status by this run_id.
+  quorum_run?: ForecastQuorumRunRef | null
   relevant_lessons?: ForecastDashboardLesson[]
   outcome_type?: string
   panel?: ForecastWorkspacePanel | null
@@ -1193,6 +1334,11 @@ export interface ForecastWorkspaceItem {
   resolution_criteria?: string
   resolution_time?: null | string
   retrospective?: ForecastAnalystNote | null
+  // Observe-mode saturation score (0-100) recorded on the current snapshot +
+  // whether it is under the alert bar — a glanceable "under-saturated" desk
+  // signal (Wave 3). saturation_score is null when the snapshot was unscored.
+  saturation_score?: null | number
+  saturation_below_threshold?: boolean
   scores?: ForecastWorkspaceScores | null
   snapshot_count?: number
   status?: string
@@ -1634,6 +1780,7 @@ export type GatewayEvent =
   | { payload: { env_var: string; prompt: string; request_id: string }; session_id?: string; type: 'secret.request' }
   | { payload: { task_id: string; text: string }; session_id?: string; type: 'background.complete' }
   | { payload?: { text?: string }; session_id?: string; type: 'review.summary' }
+  | { payload?: { count?: number }; session_id?: string; type: 'cron.fired' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.spawn_requested' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.start' }
   | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.thinking' }

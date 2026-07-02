@@ -257,6 +257,51 @@ describe('CalibrationView render', () => {
     expect(text).toContain('r refresh')
   })
 
+  it('renders the rolling-Brier trend row and the lessons-correcting-this section when the payload carries them', async () => {
+    const base = fixture()
+
+    const text = await renderView({
+      ...base,
+      lessons: [
+        {
+          coverage: { applied_count: 4, application_rate: 0.8, in_scope_count: 5 },
+          dormant: false,
+          lesson: 'shade macro-rate forecasts 5pt toward the base rate',
+          lesson_id: 'lsn_macro01',
+          recommended_adjustment: { shade_pct: -5 },
+          scope: 'domain:macro'
+        },
+        {
+          coverage: { applied_count: 0, application_rate: 0, in_scope_count: 3 },
+          dormant: true,
+          lesson: 'never yet applied at a commit',
+          lesson_id: 'lsn_dormant01',
+          scope: 'domain:tech'
+        }
+      ],
+      summary: {
+        ...base.summary,
+        calibration_trend: {
+          direction: 'improving',
+          windows: [
+            { brier: 0.24, n: 8, period: 'older' },
+            { brier: 0.183, n: 13, period: 'recent' }
+          ]
+        }
+      }
+    })
+
+    // rolling-Brier trend row (oldest → newest + direction word)
+    expect(text).toContain('0.240')
+    expect(text).toContain('0.183')
+    expect(text).toContain('improving')
+    // lessons-correcting-this section: active + dormant rows
+    expect(text).toContain('lessons correcting this')
+    expect(text).toContain('active')
+    expect(text).toContain('DORMANT')
+    expect(text).toContain('shade macro-rate forecasts')
+  })
+
   it('shows an honest empty state when nothing has resolved yet', async () => {
     const text = await renderView({ bias: null, domains: [], origins: [], summary: { calibration_curve: [], calibration_curve_sample_count: 0, count: 0 } })
     expect(text).toContain('no resolved forecasts to calibrate against yet — resolve some questions first')

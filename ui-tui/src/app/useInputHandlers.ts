@@ -16,9 +16,13 @@ import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platfo
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
 
+import { resolveViewChord } from '../content/keymaps.js'
+
+import { $chordPending, armChord, clearChord } from './chordStore.js'
 import { getHomeFocus, setHomePane } from './homeFocusStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
+import { canOpenGlobalOverlay, selectNavView } from './navRoutes.js'
 import { $isBlocked, $overlayState, patchOverlayState } from './overlayStore.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
@@ -161,6 +165,14 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       return patchOverlayState({ skillsHub: false })
     }
 
+    if (overlay.palette) {
+      return patchOverlayState({ palette: false })
+    }
+
+    if (overlay.cheatSheet) {
+      return patchOverlayState({ cheatSheet: false })
+    }
+
     if (overlay.picker) {
       return patchOverlayState({ picker: false })
     }
@@ -276,6 +288,37 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
   useInput((ch, key, event) => {
     const live = getUiState()
 
+    // ── Global interaction chrome: command palette ──────────────────────────
+    // Ctrl+K opens the palette from ANYWHERE — the Home composer or over a
+    // fullscreen view — so it sits BEFORE the blocked-overlay early-return.
+    // Suppressed only while an input-owning prompt/picker holds the keyboard
+    // (canOpenGlobalOverlay). When the palette/cheat-sheet is itself open its
+    // own useInput traps first (stopImmediatePropagation), so we never reach
+    // here for those keys.
+    if (canOpenGlobalOverlay(overlay) && isCtrl(key, ch, 'k')) {
+      return patchOverlayState({ palette: true })
+    }
+
+    // `?` opens the cheat sheet from ANYWHERE — the Home composer or over a
+    // fullscreen view — so, like Ctrl+K, it sits BEFORE the blocked-overlay
+    // early-return (a fullscreen view sets $isBlocked, which used to swallow it
+    // everywhere but Home). Gated on an EMPTY composer draft so a message that
+    // contains `?` is never hijacked; the composer captured the glyph as a
+    // sibling, so clear it when we fire.
+    if (
+      canOpenGlobalOverlay(overlay) &&
+      ch === '?' &&
+      !key.ctrl &&
+      !key.meta &&
+      !cState.completions.length &&
+      !cState.inputBuf.length &&
+      !cState.input
+    ) {
+      cActions.clearIn()
+
+      return patchOverlayState({ cheatSheet: true })
+    }
+
     if (isBlocked) {
       // When approval/clarify/confirm overlays are active, their own useInput
       // handlers must receive keystrokes (arrow keys, numbers, Enter).  Only
@@ -371,6 +414,68 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       // Otherwise nothing above this comment matched, and there's nothing
       // useful to do for an arbitrary key while blocked.
       if (!fallThroughForScroll) {
+        return
+      }
+    }
+
+    // ── Global interaction chrome: view chords (Home) ──────────────────────
+    // Reached only when NOT blocked — i.e. the Home route, where the composer
+    // is focused. The leader is Ctrl+G (armed below), so it can never eat typed
+    // text; the SECOND key is a plain letter the composer captures as a sibling,
+    // which we drop with `clearIn` when a chord actually fires a switch. Over a
+    // fullscreen VIEW these are handled inside the view (after its own filter
+    // submode); Ctrl+K / `?` above already cover the palette + cheat sheet
+    // everywhere.
+    if ($chordPending.get() === 'g') {
+      // Second key of a `Ctrl+G …` chord: route to a view, or cancel and fall
+      // through so the key still does whatever it normally would.
+      const nav = ch ? resolveViewChord(ch) : null
+
+      clearChord()
+
+      if (nav && selectNavView(nav)) {
+        cActions.clearIn()
+
+        return
+      }
+    }
+
+    const chromeArmable =
+      canOpenGlobalOverlay(overlay) && !cState.completions.length && !cState.inputBuf.length && !cState.input
+
+    // Ctrl+G arms the view-chord leader (Ctrl+G then a letter → a view). A
+    // NON-printable leader is deliberate: a bare `g` over the focused Home
+    // composer hijacked any message starting `g`+a chord letter ("go …",
+    // "gather …", "game …"), discarding the draft. The second key is still a
+    // plain letter — the composer captures it as a sibling, and `clearChord` +
+    // `clearIn` (in the $chordPending branch above) drop the stray glyph when a
+    // chord actually fires.
+    if (chromeArmable && isCtrl(key, ch, 'g')) {
+      return armChord('g')
+    }
+
+    // Ctrl+T hands the keyboard to the landing "Today" attention panel (↑↓
+    // select, ⏎ open, a alerts, n new). Gated on todayCount so it only grabs
+    // focus when the panel is actually mounted with actionable rows (the
+    // landing). Ctrl (not a bare `t`) so a message starting with `t` — a very
+    // common sentence-initial letter — is never hijacked out of the composer.
+    if (chromeArmable && isCtrl(key, ch, 't') && getHomeFocus().todayCount > 0) {
+      setHomePane('today')
+
+      return
+    }
+
+    // While the landing "Today" panel holds focus, its own useInput drives
+    // ↑↓/⏎/a/n; swallow non-wheel keys here so the global handler can't
+    // double-handle them (Tab/Esc hand the keyboard back to the composer).
+    // Placed BEFORE the rail switch so Tab from Today returns to the composer
+    // rather than falling into the rail-entry branch. Wheel still flows below.
+    if (getHomeFocus().pane === 'today') {
+      if (key.tab || key.escape) {
+        setHomePane('conversation')
+      }
+
+      if (!key.wheelUp && !key.wheelDown) {
         return
       }
     }

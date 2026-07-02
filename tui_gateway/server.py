@@ -3504,6 +3504,144 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.triage.contested")
+def _(rid, params: dict) -> dict:
+    """READ-ONLY list of CONTESTED triage staging rows awaiting an operator label.
+
+    These are the auto-labeler calls the contested-routing loop disputed (near the
+    decision boundary, or a verifier disagreed): each carries its question ref, the
+    auto label, the model's rationale, and the linked alert id. Un-adjudicated only
+    (``expert_label`` still unset) so the list is exactly the open hand-label work —
+    the same rows the CLI ``forecast triage contested`` surfaces. Adjudicate via
+    ``forecast.triage.relabel`` (which records the expert label AND acks the alert).
+    """
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        try:
+            limit = int(params.get("limit") or 100)
+        except (TypeError, ValueError):
+            limit = 100
+        ledger = ForecastLedger()
+        question_id = params.get("question_id") or params.get("question") or None
+        rows = ledger.list_triage_labels(
+            question_id=str(question_id) if question_id else None,
+            contested=True,
+            adjudicated=False,
+            limit=max(1, min(limit, 500)),
+        )
+        contested = [
+            {
+                "id": row.get("id"),
+                "question_id": row.get("question_id"),
+                "candidate_ref": row.get("candidate_ref"),
+                "title": row.get("title") or "",
+                "summary": row.get("summary") or "",
+                "url": row.get("url"),
+                "source": row.get("source"),
+                "auto_label": row.get("auto_label"),
+                "materiality": row.get("materiality"),
+                "relevance": row.get("relevance"),
+                "rationale": row.get("rationale") or "",
+                "alert_id": row.get("alert_id"),
+                "created_at": row.get("created_at"),
+            }
+            for row in rows
+        ]
+        return _ok(rid, {"contested": contested, "count": len(contested)})
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.triage.relabel")
+def _(rid, params: dict) -> dict:
+    """Record an operator expert label for a contested triage row + ACK its alert.
+
+    Routes through the SAME ``relabel_route`` tool action the CLI + agent use (one
+    place owns the triage logic): sets ``expert_label``/``triage_label`` +
+    ``label_source='expert'``, clears ``contested``, and acknowledges the linked
+    contested_label alert because the real adjudication work was done (never a bare
+    ack). ``label`` must be one of relevant_interesting | relevant_uninteresting |
+    irrelevant. Accepts a single ``{label_id, label}`` or bulk ``adjudications``.
+    """
+    label_id = params.get("label_id")
+    label = params.get("label")
+    adjudications = params.get("adjudications")
+    if not (isinstance(adjudications, list) and adjudications):
+        if not (label_id and label):
+            return _err(rid, 4003, "forecast.triage.relabel requires label_id + label (or adjudications)")
+    try:
+        from tools.forecasting_tool import forecast_ledger_tool
+
+        payload: dict = {"action": "relabel_route"}
+        if isinstance(adjudications, list) and adjudications:
+            payload["adjudications"] = adjudications
+        else:
+            payload["label_id"] = label_id
+            payload["label"] = label
+        result = json.loads(forecast_ledger_tool(payload))
+        if result.get("error") or result.get("success") is False:
+            return _err(rid, 5008, str(result.get("error") or "relabel failed"))
+        return _ok(rid, result)
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.schedule.status")
+def _(rid, params: dict) -> dict:
+    """READ-ONLY schedule health: the forecast cron jobs' liveness joined with the
+    per-question scheduled reviews (the live, self-advancing schedule).
+
+    Reuses :func:`forecasting.scheduler.forecast_cron_health` (last-fired / errored /
+    missed + next-run per installed forecast cron job) and the ledger's
+    ``list_scheduled_reviews`` — so the TUI can show a compact green/red schedule
+    strip (last-fired ok vs last-error, next-run) without re-deriving cron state.
+    Never installs, pauses, or runs anything.
+    """
+    try:
+        from forecasting.scheduler import forecast_cron_health
+
+        cron = forecast_cron_health()
+    except Exception:
+        logger.exception("forecast.schedule.status cron health failed")
+        cron = {"installed": 0, "jobs": [], "errored": [], "missed": [], "healthy": True}
+
+    reviews: list[dict] = []
+    try:
+        from forecasting.ledger import ForecastLedger
+
+        ledger = ForecastLedger()
+        try:
+            review_limit = int(params.get("limit") or 12)
+        except (TypeError, ValueError):
+            review_limit = 12
+        enabled = [r for r in ledger.list_scheduled_reviews() if r.get("enabled")]
+        for row in enabled[: max(1, min(review_limit, 100))]:
+            reviews.append(
+                {
+                    "id": row.get("id"),
+                    "scope_type": row.get("scope_type"),
+                    "scope_ref": row.get("scope_ref"),
+                    "cadence": row.get("cadence"),
+                    "next_run_at": row.get("next_run_at"),
+                    "last_run_at": row.get("last_run_at"),
+                    "trigger_reason": row.get("trigger_reason"),
+                }
+            )
+    except Exception:
+        logger.exception("forecast.schedule.status scheduled-review listing failed")
+
+    return _ok(
+        rid,
+        {
+            "cron": cron,
+            "healthy": bool(cron.get("healthy", True)),
+            "scheduled_reviews": reviews,
+            "scheduled_review_count": len(reviews),
+        },
+    )
+
+
 @method("forecast.onboard_propose")
 def _(rid, params: dict) -> dict:
     """Validate a draft QuestionSpec and return issues + the clarifications to ask.

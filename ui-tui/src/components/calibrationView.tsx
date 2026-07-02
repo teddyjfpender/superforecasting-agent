@@ -7,10 +7,12 @@ import type {
   ForecastCalibrationBias,
   ForecastCalibrationBreakdownRow,
   ForecastCalibrationCurveRow,
+  ForecastCalibrationLesson,
   ForecastCalibrationResponse,
-  ForecastCalibrationSummary
+  ForecastCalibrationSummary,
+  ForecastCalibrationTrend
 } from '../gatewayTypes.js'
-import { bandChart, type BandPoint, pct } from '../lib/forecastCharts.js'
+import { bandChart, type BandPoint, levelSparkline, pct } from '../lib/forecastCharts.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
@@ -150,6 +152,18 @@ export const biasShortLabel = (bias: ForecastCalibrationBias | null | undefined)
   }
 
   return 'thin data'
+}
+
+// ── Calibration trend (S7): rolling Brier over recency windows + direction ──
+
+const trendTone = (direction: string | undefined): CalibrationVerdict['tone'] =>
+  direction === 'improving' ? 'ok' : direction === 'worsening' ? 'error' : 'muted'
+
+/** Windows oldest→recent (longest window first) so the row reads left=old right=now. */
+const orderedTrendWindows = (trend: ForecastCalibrationTrend | undefined) => {
+  const days = (period: string | undefined): number => Number((period ?? '').replace(/[^\d]/g, '')) || 0
+
+  return [...(trend?.windows ?? [])].sort((a, b) => days(b.period) - days(a.period))
 }
 
 interface CalibrationViewProps {
@@ -347,9 +361,85 @@ function SectionTitle({ children, t }: { children: string; t: Theme }) {
 const toneColor = (t: Theme, tone: CalibrationVerdict['tone']): string =>
   tone === 'ok' ? t.color.ok : tone === 'warn' ? t.color.warn : tone === 'error' ? t.color.error : t.color.muted
 
+// Compact rolling-Brier trend row above the reliability curve. Reuses the level
+// sparkline over the window Briers; the direction word is the coarse verdict.
+function TrendRow({ t, trend }: { t: Theme; trend: ForecastCalibrationTrend | undefined }) {
+  const windows = orderedTrendWindows(trend)
+  const withBrier = windows.filter(w => finite(w.brier))
+
+  if (withBrier.length < 2) {
+    return null
+  }
+
+  const oldest = withBrier[0]
+  const newest = withBrier[withBrier.length - 1]
+  const briers = withBrier.map(w => (finite(w.brier) ? w.brier : null))
+  const yMax = Math.max(...briers.filter((b): b is number => finite(b)), 0.001)
+  const spark = levelSparkline(briers, { yMax, yMin: 0 })
+  const direction = trend?.direction ?? 'insufficient'
+  const tone = trendTone(direction)
+
+  return (
+    <Text wrap="truncate-end">
+      <Text color={t.color.muted}>{`Brier ${newest.period ?? ''}: `}</Text>
+      <Text color={t.color.text}>{oldest.brier!.toFixed(3)}</Text>
+      <Text color={t.color.muted}>{' → '}</Text>
+      <Text bold color={toneColor(t, tone)}>{newest.brier!.toFixed(3)}</Text>
+      <Text color={t.color.accent}>{`  ${spark}  `}</Text>
+      <Text bold color={toneColor(t, tone)}>{direction}</Text>
+    </Text>
+  )
+}
+
+// "Lessons correcting this": the active calibration lessons adjusting forecasts in
+// scope, each with its recommended adjustment + measured coverage. DORMANT lessons
+// (never yet encountered at a commit) are highlighted — the adjustment isn't biting.
+function LessonsCorrectingSection({ lessons, t, width }: { lessons: ForecastCalibrationLesson[]; t: Theme; width: number }) {
+  const trunc = (value: string, max: number): string =>
+    value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value
+
+  const adjustmentText = (adj: Record<string, unknown> | undefined): string => {
+    const entries = Object.entries(adj ?? {})
+
+    if (!entries.length) {
+      return ''
+    }
+
+    return entries
+      .map(([k, v]) => `${k}=${typeof v === 'number' ? v : String(v)}`)
+      .join(' ')
+  }
+
+  return (
+    <>
+      <SectionTitle t={t}>lessons correcting this</SectionTitle>
+      {lessons.map((lesson, i) => {
+        const cov = lesson.coverage ?? {}
+        const rate = finite(cov.application_rate) ? `${Math.round((cov.application_rate ?? 0) * 100)}%` : '—'
+        const adj = adjustmentText(lesson.recommended_adjustment)
+
+        return (
+          <Box flexDirection="column" key={lesson.lesson_id ?? i} marginTop={i === 0 ? 0 : 1}>
+            <Text wrap="truncate-end">
+              <Text bold color={lesson.dormant ? t.color.warn : t.color.ok}>{lesson.dormant ? '○ DORMANT' : '● active'}</Text>
+              <Text color={t.color.muted}>{`  ${lesson.scope ?? '*'}`}</Text>
+            </Text>
+            <Text color={t.color.text} wrap="truncate-end">{`  ${trunc(lesson.lesson ?? '—', Math.max(20, width - 4))}`}</Text>
+            {adj ? <Text color={t.color.label} wrap="truncate-end">{`  → ${trunc(adj, Math.max(16, width - 6))}`}</Text> : null}
+            <Text color={t.color.muted} wrap="truncate-end">
+              {`  coverage ${cov.applied_count ?? 0}/${cov.in_scope_count ?? 0} applied · rate ${rate}`}
+            </Text>
+          </Box>
+        )
+      })}
+    </>
+  )
+}
+
 function CalibrationBody({ data, t, width }: { data: ForecastCalibrationResponse; t: Theme; width: number }) {
   const summary = data.summary ?? {}
   const bias = data.bias ?? null
+  const lessons = data.lessons ?? []
   const verdict = calibrationVerdict(summary, bias)
   const curve = summary.calibration_curve ?? []
   const curveSamples = summary.calibration_curve_sample_count ?? 0
@@ -388,6 +478,8 @@ function CalibrationBody({ data, t, width }: { data: ForecastCalibrationResponse
         </Text>
       </Box>
 
+      <TrendRow t={t} trend={summary.calibration_trend} />
+
       {chart ? (
         <>
           <SectionTitle t={t}>reliability curve (observed vs predicted)</SectionTitle>
@@ -419,6 +511,8 @@ function CalibrationBody({ data, t, width }: { data: ForecastCalibrationResponse
       {(data.origins ?? []).length ? (
         <BreakdownSection label="by origin" rows={data.origins ?? []} t={t} width={width} />
       ) : null}
+
+      {lessons.length ? <LessonsCorrectingSection lessons={lessons} t={t} width={width} /> : null}
     </Box>
   )
 }

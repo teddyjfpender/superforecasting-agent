@@ -210,16 +210,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }, 0)
   }
 
-  const showStartupForecastDashboard = () => {
-    if (startupForecastDashboardShown) {
-      return
-    }
-
-    startupForecastDashboardShown = true
-    // Pull the dashboard for the bottom status line only — do NOT dump a panel
-    // into the transcript on startup. That panel both clobbered the clean
-    // landing and was the visible repaint on the setting-up → ready transition.
-    // The full dashboard stays one command away (`/forecast desk`).
+  // Pull the desk dashboard and refresh the rail sections (the Home "Today"
+  // panel) + the bottom status line. Deliberately does NOT dump a panel into the
+  // transcript — that clobbered the clean landing. The full dashboard stays one
+  // command away (`/forecast desk`).
+  const pullForecastDeskRail = () => {
     rpc<ForecastDashboardResponse>('forecast.dashboard', { fast: true, limit: 8 })
       .then(r => {
         if (!r?.summary && !String(r?.output || '').trim()) {
@@ -232,6 +227,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         })
       })
       .catch(() => {})
+  }
+
+  const showStartupForecastDashboard = () => {
+    if (startupForecastDashboardShown) {
+      return
+    }
+
+    startupForecastDashboardShown = true
+    pullForecastDeskRail()
   }
 
   const startNewSession = () => {
@@ -641,6 +645,25 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         sys(`[bg ${ev.payload.task_id}] ${ev.payload.text}`)
 
         return
+      case 'cron.fired': {
+        // The gateway's background cron ticker ran and fired N scheduled jobs
+        // (nightly self-checks / reforecast sweeps). Surface it as a one-line
+        // transient toast — the status line flashes it, then falls back to
+        // ready — and re-pull the desk rail so the Home "Today" panel reflects
+        // any forecasts that just refreshed. Sessionless event (no session_id).
+        const count = Number(ev.payload?.count ?? 0)
+
+        if (count > 0) {
+          const label = `nightly self-check ran — ${count} job${count === 1 ? '' : 's'} fired`
+          setStatus(label)
+          turnController.pushActivity(label, 'info')
+          restoreStatusAfter(6000)
+          pullForecastDeskRail()
+        }
+
+        return
+      }
+
       case 'review.summary': {
         // Self-improvement background review emitted a persistent summary
         // of what it saved to memory/skills. Surface it as a system line
