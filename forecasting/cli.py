@@ -4840,112 +4840,24 @@ def _maybe_autorun_quorum(
 ) -> None:
     """AUTO-RUN a quorum (detached) when one is auto-indicated but none attached.
 
-    Wave-2 process autonomy: instead of merely PRINTING a command, we start a
-    detached quorum background job that attaches its panel run to the
-    just-committed snapshot (``attach_snapshot``), so the lazy prompter gets
-    multi-model fusion per keystroke. The panel shape is resolved by
-    :func:`forecasting.quorum.resolve_quorum_defaults` (impact/type-aware, with the
-    single-key reality guard) and cost-bounded by ``quorum.max_calls`` before we
-    spend anything.
-
-    STRICTLY BOUNDED + FAIL-OPEN: the commit already happened, so ANY failure here
-    (config, resolution, job spawn) is swallowed with a one-line note and never
-    blocks or corrupts the commit. Only fires for LIVE forecasts with no panel
-    already attached, and only when ``quorum.default_enabled`` + the scope gate say
-    so.
+    Thin CLI wrapper over :func:`forecasting.quorum_jobs.maybe_autorun_quorum` —
+    the shared seam every commit surface uses (the agent tool's
+    ``update_forecast`` calls the same function, so the autonomous paths get the
+    same multi-model fusion a hand-typed ``forecast update`` does) — printing its
+    progress lines. Fail-open by construction: the shared helper never raises.
     """
 
-    if has_panel or (forecast_origin or "live") != "live":
-        return
-    try:
-        from hermes_cli.config import load_config
-        from forecasting.panel import should_run_panel
-        from forecasting.quorum import (
-            available_provider_slugs,
-            cap_preset_by_calls,
-            quorum_auto_indicated,
-            resolve_quorum_defaults,
-        )
-        from forecasting.quorum_jobs import start_job
+    from forecasting.quorum_jobs import maybe_autorun_quorum
 
-        full_cfg = load_config()
-        cfg = full_cfg.get("quorum", {}) or {}
-        if not cfg.get("default_enabled"):
-            return
-        question = ledger.get_question(question_id)
-        panel_indicated = should_run_panel(
-            impact=getattr(question, "impact", None),
-            has_prior_snapshot=has_prior_snapshot,
-        )
-        if not quorum_auto_indicated(
-            cfg, panel_indicated=panel_indicated, has_prior_snapshot=has_prior_snapshot
-        ):
-            return
-
-        active_model = _resolve_active_model_id(full_cfg.get("model"))
-        samples = 3
-        defaults = resolve_quorum_defaults(
-            question,
-            available_providers=available_provider_slugs(),
-            active_model=active_model,
-            samples=samples,
-        )
-        preset = defaults["preset"]
-        delphi_rounds = int(defaults["delphi_rounds"])
-        trim = int(defaults["trim"])
-        max_calls = int(cfg.get("max_calls", 12) or 12)
-        preset, delphi_rounds, samples, est_calls, cap_note = cap_preset_by_calls(
-            preset, delphi_rounds, max_calls=max_calls, samples=samples
-        )
-
-        judge = cfg.get("judge") or None
-        self_fusion = preset == "self"
-        models = None
-        preset_for_spec: str | None = preset
-        if self_fusion:
-            if not active_model:
-                print(
-                    "↳ quorum auto-run skipped: self-fusion needs a default model "
-                    "(set one with `superforecasting-agent model`)."
-                )
-                return
-            models = [active_model] * samples
-            judge = judge or active_model
-            preset_for_spec = None  # models now explicit
-
-        spec = {
-            "question_id": question_id,
-            # str() — the spec is JSON-persisted by quorum_jobs.write_job; a Path
-            # is not serializable. ForecastLedger accepts the str form.
-            "db": (str(ledger.db_path) if getattr(ledger, "db_path", None) else None),
-            "preset": preset_for_spec,
-            "models": models,
-            "judge": judge,
-            "pool_method": cfg.get("pool_method") or "trimmed_geomean_odds",
-            "trim": trim,
-            "self_fusion": self_fusion,
-            "samples": samples,
-            "attach_snapshot": getattr(snapshot, "forecast_id", None),
-            "triggered_by": "auto_quorum",
-            "active_model": active_model,
-            "max_iterations": int(cfg.get("max_iterations", 30)),
-            "model_timeout": int(cfg.get("model_timeout", 300)),
-            "supervisor_search": bool(cfg.get("supervisor_search")),
-            "delphi_rounds": delphi_rounds,
-        }
-        run_id = start_job(spec, wait=False)
-        print(
-            f"↳ quorum auto-run started: {run_id} "
-            f"(preset={preset}, delphi={delphi_rounds}, ~{est_calls} model calls) — "
-            f"{defaults['reason']}."
-        )
-        if cap_note:
-            print(f"  cost cap: {cap_note}")
-        print(f"  poll with:  forecast quorum status {run_id}")
-    except Exception as exc:  # noqa: BLE001 — auto-run is fail-open; the commit stands
-        # The commit already happened; ANY failure here (config, resolution, job
-        # spawn) degrades to a one-line note and never blocks or corrupts it.
-        print(f"↳ quorum auto-run skipped (non-fatal): {type(exc).__name__}: {exc}")
+    maybe_autorun_quorum(
+        ledger,
+        question_id,
+        snapshot=snapshot,
+        has_panel=has_panel,
+        has_prior_snapshot=has_prior_snapshot,
+        forecast_origin=forecast_origin,
+        notify=print,
+    )
 
 
 def _print_update_preview(
@@ -9718,21 +9630,14 @@ def _quorum_overview() -> None:
 
 
 def _resolve_active_model_id(model_cfg: Any) -> str | None:
-    """Extract the active model-id STRING from the config ``model`` value.
+    """Canonical implementation lives in :mod:`forecasting.quorum_jobs` (single
+    source of truth for every commit surface — the agent tool's auto-quorum uses
+    the same resolver); this lazy alias keeps cli-internal callers and the
+    module import weight unchanged."""
 
-    Since the codex auth overhaul ``config["model"]`` is a structured dict
-    ({base_url, default, provider}); the canonical id is ``default`` (or legacy
-    ``model``), as fallback_cmd/dump/doctor resolve it. A legacy bare string is
-    tolerated. Returns None when unset. (Passing the raw dict downstream made the
-    quorum's `self`/judge model a dict and blew up the panelist with
-    ``'dict' object has no attribute 'lower'`` — a silent, total quorum failure.)
-    """
+    from forecasting.quorum_jobs import resolve_active_model_id
 
-    if isinstance(model_cfg, dict):
-        return (model_cfg.get("default") or model_cfg.get("model") or "").strip() or None
-    if model_cfg:
-        return str(model_cfg).strip() or None
-    return None
+    return resolve_active_model_id(model_cfg)
 
 
 def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:

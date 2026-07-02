@@ -26,14 +26,28 @@ Run due reviews manually:
 superforecasting-agent schedule run
 ```
 
-Install the local cron bridge for no-agent self-checks:
+Install the local cron bridge for no-agent self-checks (idempotent — a
+re-install re-arms the job instead of stacking duplicates; the default schedule
+is nightly at 08:00):
 
 ```bash
 superforecasting-agent schedule install-cron
 ```
 
+You usually do not need to run this by hand: the first committed question
+auto-installs the nightly self-check routine (auto-score + auto-postmortem +
+thesis aggregation + lesson synthesis + deterministic refresh + saturation
+sweep). Disable with `forecasting.cron.auto_install: false` in config, or put a
+single question on its own cadence with `forecast freshen <id> --cadence daily`.
+
 Scheduled checks create review alerts. They do not silently overwrite active
-probabilities.
+probabilities — with one deliberate exception: a due question that has active
+watched sources AND structured ensemble components is deterministically
+refreshed (sources re-pulled, components re-pooled, snapshot re-committed
+through the same gates, no LLM). The cadence also escalates as a question's
+close/resolution/decision deadline approaches (within 7 days → at most daily;
+within 48h → twice daily). `forecast doctor` shows cron health (errored or
+missed jobs).
 
 ### Watched Sources
 

@@ -2056,6 +2056,11 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     )
                     _rc_refs.append(_created_rc["id"])
 
+            # Read BEFORE the commit: whether a prior snapshot existed feeds the
+            # auto-quorum indication below (should_run_panel treats a first
+            # forecast differently from a re-forecast).
+            _had_prior_snapshot = ledger.get_current_snapshot(question_id) is not None
+
             snapshot = ledger.create_snapshot(
                 question_id=question_id,
                 probability_or_distribution=probability,
@@ -2131,6 +2136,31 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             # just-committed snapshot's metadata; absent when no report was recorded.
             _sat = saturation_summary((getattr(snapshot, "metadata", None) or {}).get("saturation"))
             _extra = {"saturation": _sat} if _sat is not None else {}
+            # Auto-quorum on the AGENT path (the lazy path): the same shared seam the
+            # CLI `forecast update` verb uses — a high-impact live commit with no
+            # panel attached detached-starts a multi-model quorum that attaches its
+            # panel run to this snapshot. Without this, full_forecast, the chained
+            # pipeline, and `cycle run --agent` (which all commit through THIS
+            # handler) would never get the fusion the goal promises. Fail-open by
+            # construction (the helper never raises); the notes + run_id land in the
+            # result so the agent can report and poll it (show_quorum_status).
+            try:
+                from forecasting.quorum_jobs import maybe_autorun_quorum
+
+                _qa_notes: list[str] = []
+                _qa = maybe_autorun_quorum(
+                    ledger,
+                    question_id,
+                    snapshot=snapshot,
+                    has_panel=args.get("panel_run_ref") is not None,
+                    has_prior_snapshot=_had_prior_snapshot,
+                    forecast_origin=args.get("forecast_origin") or "live",
+                    notify=_qa_notes.append,
+                )
+                if _qa is not None:
+                    _extra["quorum_autorun"] = {**_qa, "notes": _qa_notes}
+            except Exception:
+                pass
             return tool_result(success=True, forecast_snapshot=snapshot.__dict__, **_extra)
 
         if action == "resolve":

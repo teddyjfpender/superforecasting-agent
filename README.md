@@ -67,6 +67,44 @@ installed, but new workflows should use `forecast` or `superforecasting-agent`.
 
 ## Getting Started
 
+### One sentence → a forecast
+
+The laziest path is the intended path. Give the desk a single sentence and it
+does the rest — structures the question (inferring the deadline, accepting the
+recommended defaults, refusing only genuinely unscoreable asks), attaches
+recommended watched sources, then autonomously runs research → base rate →
+committed forecast through the same gated pipeline a hand-driven session uses:
+
+```bash
+forecast onboard "Will the Fed cut rates by September?" --auto
+```
+
+What you get without asking for it:
+
+- **No rival questions** — a near-duplicate ask refreshes the existing forecast
+  instead of forking a new one (`--force-new` overrides).
+- **Multi-model fusion on the big calls** — a high-impact commit with no panel
+  auto-starts a detached quorum (impact-aware preset, Delphi round, cost-capped
+  by `quorum.max_calls`) and attaches its panel to the snapshot.
+- **It stays fresh by itself** — the first commit installs the nightly
+  self-check cron (idempotent; `forecasting.cron.auto_install: false` to opt
+  out). Due questions with watched sources re-pull, re-pool, and re-commit with
+  no LLM; the cadence escalates automatically as the deadline nears.
+  `forecast freshen <id> --cadence daily` is the one-verb form.
+- **It learns from every resolution** — resolutions auto-score, synthesize
+  calibration lessons, and apply the measured bias correction to future live
+  commits (raw numbers stay on the audit trail; `--no-use-active-lessons`
+  opts out).
+- **Reading is triaged, not hoarded** — watched-source items are labeled
+  keep/skim/skip by a cheap model; auto-import only unlocks after the labeler
+  earns ≥80% agreement with your own adjudications (`forecast triage trust`).
+
+In chat, the same journey is one tool call: ask the agent to forecast something
+and it uses `full_forecast`. Every gate still applies — autonomy never buys a
+weaker forecast, it buys fewer keystrokes.
+
+### The full command surface
+
 ```bash
 forecast status     # Show desk state, calibration, and live baseline comparisons
 forecast doctor     # One-shot pilot/readiness/operator gate

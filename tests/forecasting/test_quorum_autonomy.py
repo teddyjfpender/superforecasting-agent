@@ -402,3 +402,128 @@ def test_explicit_alpha_override_blocks_derivation():
     ) is True
     assert qj._has_explicit_alpha_override({"forecast_hooks": {"thresholds": {}}}) is False
     assert qj._has_explicit_alpha_override(None) is False
+
+
+# ── the AGENT path: update_forecast fires the SAME auto-run seam ──────────────
+# Without this wiring, full_forecast / the chained pipeline / `cycle run --agent`
+# (which all commit through the tool's update_forecast) would never get the
+# multi-model fusion the CLI `forecast update` verb gets — the flagship autonomy
+# feature would fire only for the least lazy path.
+
+
+def _tool_update_args(ledger, q, **over):
+    args = {
+        "action": "update_forecast",
+        "db": ledger.db_path,
+        "question_id": q.id,
+        "probability_or_distribution": 0.62,
+        "rationale": "Regulator signaled conditional approval in the latest filing.",
+        "components": {
+            "base_rate": {"probability": 0.55, "weight": 2},
+            "case_specific": {"probability": 0.7, "weight": 1},
+        },
+        "reasons_up": ["fresh filing signals approval"],
+        "reasons_down": ["remedies could still collapse"],
+        "change_my_mind": "A formal second request would flip this.",
+        "reasoning_methods": ["outside_view", "base_rate", "disconfirmation"],
+        "require_panel": False,
+        "require_fresh_evidence": False,
+        "require_decision_readiness": False,
+    }
+    args.update(over)
+    return args
+
+
+def _seed_commit_prereqs(ledger, q):
+    ledger.add_evidence(
+        question_id=q.id,
+        source_or_note="regulator filing 2026-07-01",
+        claim="conditional approval signaled",
+    )
+    ledger.add_reference_class(
+        question_id=q.id,
+        name="mega-merger approvals",
+        inclusion_criteria="US mergers over $10B since 2010",
+        base_rate=0.55,
+    )
+
+
+def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
+    import forecasting.quorum_jobs as qj
+    import hermes_cli.config as cfgmod
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    ledger, q = _high_impact_ledger(tmp_path)
+    _seed_commit_prereqs(ledger, q)
+
+    captured = {}
+    monkeypatch.setattr(qj, "start_job", lambda spec, *, wait=False: (captured.update(spec=spec), "qr_tool1")[1])
+    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+    monkeypatch.setattr(quorum, "available_provider_slugs", lambda: None)
+
+    out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))
+
+    assert out["success"] is True, out.get("error")
+    qa = out.get("quorum_autorun")
+    assert qa, "the agent commit path must fire the same auto-quorum seam as the CLI"
+    assert qa["run_id"] == "qr_tool1"
+    assert captured["spec"]["triggered_by"] == "auto_quorum"
+    # the job attaches to the JUST-committed snapshot
+    assert captured["spec"]["attach_snapshot"] == out["forecast_snapshot"]["forecast_id"]
+    assert any("auto-run started" in note for note in qa["notes"])
+
+
+def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch):
+    import forecasting.quorum_jobs as qj
+    import hermes_cli.config as cfgmod
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    ledger, q = _high_impact_ledger(tmp_path)
+    _seed_commit_prereqs(ledger, q)
+    monkeypatch.setattr(qj, "start_job", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not fire")))
+    monkeypatch.setattr(cfgmod, "load_config", lambda: {"quorum": {"default_enabled": False}})
+
+    out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))
+    assert out["success"] is True
+    assert "quorum_autorun" not in out
+
+
+def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monkeypatch):
+    import forecasting.quorum_jobs as qj
+    import hermes_cli.config as cfgmod
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    ledger, q = _high_impact_ledger(tmp_path)
+    _seed_commit_prereqs(ledger, q)
+    panel = ledger.record_panel_run(
+        question_id=q.id,
+        estimates=[
+            {"perspective": "base-rate", "probability": 0.5},
+            {"perspective": "insider", "probability": 0.6},
+            {"perspective": "skeptic", "probability": 0.45},
+        ],
+        aggregation_method="median",
+    )
+    monkeypatch.setattr(qj, "start_job", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not fire")))
+    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+
+    out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q, panel_run_ref=panel["id"])))
+    assert out["success"] is True
+    assert "quorum_autorun" not in out
+
+
+def test_tool_update_forecast_autorun_fail_open(tmp_path, monkeypatch):
+    import forecasting.quorum_jobs as qj
+    import hermes_cli.config as cfgmod
+    from tools.forecasting_tool import forecast_ledger_tool
+
+    ledger, q = _high_impact_ledger(tmp_path)
+    _seed_commit_prereqs(ledger, q)
+    monkeypatch.setattr(qj, "start_job", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("spawn failed")))
+    monkeypatch.setattr(cfgmod, "load_config", _on_config)
+    monkeypatch.setattr(quorum, "available_provider_slugs", lambda: None)
+
+    out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))
+    # the commit stands; the failed auto-run is invisible except for the absence
+    assert out["success"] is True
+    assert "quorum_autorun" not in out
