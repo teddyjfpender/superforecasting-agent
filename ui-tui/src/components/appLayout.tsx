@@ -294,7 +294,7 @@ const ComposerPane = memo(function ComposerPane({
 
       {chordPending ? (
         <Text color={ui.theme.color.accent}>
-          {chordPending} …{' '}
+          {`Ctrl+${chordPending.toUpperCase()}`} …{' '}
           <Text color={ui.theme.color.muted}>{VIEW_CHORDS.map(c => `${c.key} ${c.label}`).join(' · ')}</Text>
         </Text>
       ) : null}

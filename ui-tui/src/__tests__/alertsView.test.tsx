@@ -244,6 +244,17 @@ describe('AlertsView warning resolution', () => {
     m.cleanup()
   })
 
+  it('loads the dashboard in FAST mode (the view only reads fast-carried fields)', async () => {
+    const m = await mount()
+    const dash = m.calls.find(c => c.method === 'forecast.dashboard')
+    expect(dash).toBeTruthy()
+    // At 120q/1250 alerts the full build measured ~1s vs ~0.2s fast; this view
+    // reads only review_queue + stale counts, all carried in fast mode.
+    expect(dash?.params.fast).toBe(true)
+    expect(dash?.params.limit).toBe(50)
+    m.cleanup()
+  })
+
   it('Enter on a tier header collapses it, hiding its reason rows from the tree', async () => {
     const m = await mount()
     // Cursor starts on the FREE header → Enter collapses it.

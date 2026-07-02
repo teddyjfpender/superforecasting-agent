@@ -56,6 +56,34 @@ const splitValue = (value: string): { note: string; title: string } => {
   return { note: parts.slice(1).join(' · '), title: parts[0] }
 }
 
+// Rail status strings tail into reason-label DEBRIS that reads as soup on the
+// Today feed: forecastPanel's `formatReviewReason` emits 'learned error profile'
+// | <reason> | 'review', and `focusedForecastContext` prefixes the set with
+// "reasons …" (e.g. "reasons learned error profile"). The rail also glues rows
+// with a bare "—" separator. None of that belongs on a one-line attention row.
+const isNoteDebris = (segment: string): boolean =>
+  /^reasons\b/i.test(segment) ||
+  segment === 'learned error profile' ||
+  segment === 'review' ||
+  segment === '—' ||
+  segment === '-'
+
+// Clean a splitValue note (already " · "-joined) for the feed: drop reason-label
+// debris and bare separators, then keep at most the FIRST TWO genuinely useful
+// segments (probability+delta like "Andy Burnham 0.80 (+7)", status, "as-of …",
+// "close <date>"), so a long question title never trails into metadata soup.
+const sanitizeNote = (note: string): string =>
+  (note ?? '')
+    .split(' · ')
+    .map(segment => segment.trim())
+    .filter(segment => segment.length > 0 && !isNoteDebris(segment))
+    .slice(0, 2)
+    .join(' · ')
+
+// The open-alerts summary row ("1250 open alerts need source or resolution
+// review"): capture the leading count so the feed can thousands-separate it.
+const OPEN_ALERTS_RE = /^(\d[\d,]*)\s+open alerts?\b/i
+
 const classify = (
   row: PanelRow,
   section: string
@@ -68,10 +96,25 @@ const classify = (
   // single "jump to Alerts" entry (deduped by the shared 'alerts' key upstream).
   if (target === '/alerts' || section === 'Alerts') {
     const alertTitle = section === 'Alerts' ? splitValue(value).title || title : title || value
+    const openAlerts = OPEN_ALERTS_RE.exec(alertTitle)
+
+    // The open-alerts summary: thousands-separate the count and END the row with
+    // the concrete key to act (the panel's `a` opens Warnings), instead of tailing
+    // into the raw "need source or resolution review".
+    if (openAlerts) {
+      const count = Number(openAlerts[1].replace(/,/g, ''))
+
+      return {
+        kind: 'alerts',
+        note: 'a to review',
+        section,
+        title: `${count.toLocaleString('en-US')} open alert${count === 1 ? '' : 's'}`
+      }
+    }
 
     return {
       kind: 'alerts',
-      note: section === 'Alerts' ? note : note || '',
+      note: sanitizeNote(section === 'Alerts' ? note : note || ''),
       section,
       title: truncate(alertTitle || 'open alerts', 72)
     }
@@ -82,7 +125,7 @@ const classify = (
   if (questionMatch) {
     return {
       kind: 'question',
-      note: truncate(note, 96),
+      note: truncate(sanitizeNote(note), 96),
       questionId: questionMatch[1],
       section,
       title: truncate(title || value || questionMatch[1], 72)

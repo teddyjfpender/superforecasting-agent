@@ -98,6 +98,48 @@ describe('todayFeedItems', () => {
     expect(todayFeedItems(railSections(), 9, 0).some(i => i.focus === 'contested')).toBe(false)
     expect(todayFeedItems([], 9, 1)[0].title).toContain('1 contested triage row needs')
   })
+
+  it('strips reason-label debris from a question note, keeping the first two useful segments', () => {
+    // A real Focused Actions row: title, an em-dash separator, then the
+    // probability+delta, as-of, close, and the "reasons learned error profile"
+    // debris the rail glues on. The feed must keep the useful head and drop soup.
+    const sections: PanelSection[] = [
+      {
+        rows: [
+          [
+            '/questions fq_mayor',
+            'Manchester Mayor  —  Andy Burnham 0.80 (+7)  as-of 2026-06-24  close 2026-09-01  reasons learned error profile'
+          ]
+        ],
+        title: 'Focused Actions'
+      }
+    ]
+
+    const [item] = todayFeedItems(sections)
+
+    expect(item.kind).toBe('question')
+    expect(item.title).toBe('Manchester Mayor')
+    // First two useful segments survive; the "—" separator and the reason debris go.
+    expect(item.note).toBe('Andy Burnham 0.80 (+7) · as-of 2026-06-24')
+    expect(item.note).not.toContain('reasons')
+    expect(item.note).not.toContain('learned error profile')
+    expect(item.note).not.toContain('close 2026-09-01')
+  })
+
+  it('formats the open-alerts summary with a thousands separator and a concrete action', () => {
+    const sections: PanelSection[] = [
+      {
+        rows: [['/alerts', '1250 open alerts need source or resolution review']],
+        title: 'Triage'
+      }
+    ]
+
+    const [item] = todayFeedItems(sections)
+
+    expect(item.kind).toBe('alerts')
+    expect(item.title).toBe('1,250 open alerts')
+    expect(item.note).toBe('a to review')
+  })
 })
 
 // ── Component render + keyboard ───────────────────────────────────────────────

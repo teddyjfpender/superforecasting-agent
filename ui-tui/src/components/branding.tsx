@@ -202,8 +202,8 @@ export function FirstRunHint({ t }: { t: Theme }) {
           {'  '}
           <Text color={t.color.accent}>Ctrl+K</Text>
           {' commands  ·  '}
-          <Text color={t.color.accent}>g</Text>
-          {'+letter views  ·  '}
+          <Text color={t.color.accent}>Ctrl+G</Text>
+          {' views  ·  '}
           <Text color={t.color.accent}>?</Text>
           {' all keys  ·  '}
           <Text color={t.color.muted}>✕ dismiss</Text>

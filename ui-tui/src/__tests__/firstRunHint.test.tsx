@@ -101,14 +101,18 @@ describe('FirstRunHint — the Home landing discovery nudge', () => {
     patchOverlayState({ cheatSheet: false, palette: false })
   })
 
-  it('renders one line teaching Ctrl+K, the g-chord and ? on a fresh store', async () => {
+  it('renders one line teaching Ctrl+K, the Ctrl+G chord and ? on a fresh store', async () => {
     const hint = await mountHint()
     const text = hint.text()
 
     expect(text).toContain('New here?')
     expect(text).toContain('Ctrl+K')
     expect(text).toContain('commands')
-    expect(text).toContain('+letter views')
+    // The view chord is Ctrl+G (a bare `g` was hijacked out of the composer) — the
+    // hint must advertise the REAL binding, not a bare key.
+    expect(text).toContain('Ctrl+G')
+    expect(text).toContain('views')
+    expect(text).not.toContain('g+letter')
     expect(text).toContain('all keys')
     // One line: no interior newline in the rendered hint.
     expect(text.split('\n').filter(Boolean)).toHaveLength(1)

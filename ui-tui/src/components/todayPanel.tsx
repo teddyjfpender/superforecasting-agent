@@ -17,6 +17,10 @@ import type { PanelSection } from '../types.js'
 const NARROW_COLS = 84
 const NARROW_ROWS = 3
 const WIDE_ROWS = 6
+// Row prefix cells before the title: marker "▸ " (2) + hotkey (1) + " glyph " (3).
+const ROW_GLYPH_COLS = 6
+// Only append the muted note when at least this many cols are left after the title.
+const NOTE_MIN_COLS = 12
 
 const glyphFor = (item: TodayItem): string => {
   if (item.kind === 'alerts') {
@@ -153,7 +157,7 @@ export function TodayPanel({
         {!focused && items.length ? (
           <Text color={t.color.muted}>
             {'   '}
-            <Text color={t.color.accent}>t</Text> focus
+            <Text color={t.color.accent}>Ctrl+T</Text> focus
           </Text>
         ) : null}
       </Text>
@@ -175,6 +179,13 @@ export function TodayPanel({
             const glyphColor =
               item.kind === 'alerts' ? t.color.statusBad : item.kind === 'question' ? t.color.accent : t.color.muted
 
+            // Give the TITLE priority (mirror how deskView reserves the trailing
+            // trend only once QUESTION is comfortable): append the muted note only
+            // when the title leaves comfortable room on the line, and clip it to the
+            // leftover width so a long title never shares its row with rail status.
+            const noteRoom = inner - ROW_GLYPH_COLS - item.title.length - 2
+            const noteText = item.note && noteRoom >= NOTE_MIN_COLS ? truncate(item.note, noteRoom) : ''
+
             return (
               <Box key={`${item.kind}:${item.questionId ?? item.command ?? item.title}:${i}`} onClick={() => activate(item)}>
                 <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
@@ -184,7 +195,7 @@ export function TodayPanel({
                   <Text bold={active} color={t.color.text}>
                     {item.title}
                   </Text>
-                  {item.note ? <Text color={t.color.muted}>{`  ${item.note}`}</Text> : null}
+                  {noteText ? <Text color={t.color.muted}>{`  ${noteText}`}</Text> : null}
                 </Text>
               </Box>
             )

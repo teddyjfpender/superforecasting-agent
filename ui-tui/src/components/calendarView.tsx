@@ -105,7 +105,10 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
 
   const load = (announce = false) => {
     setLoading(!data)
-    gw.request<unknown>('forecast.dashboard', { limit: 200 })
+    // fast: the calendar reads only questions[].{title,id,close_time,resolution_time},
+    // all carried in fast mode — so skip the full-build cost (backtests, live/pilot
+    // reports, evidence status, stale-review walk) the calendar never renders.
+    gw.request<unknown>('forecast.dashboard', { fast: true, limit: 200 })
       .then(raw => {
         const result = asRpcResult<ForecastDashboardResponse>(raw)
 

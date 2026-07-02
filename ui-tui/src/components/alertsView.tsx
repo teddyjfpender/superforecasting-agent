@@ -196,7 +196,12 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     // / stale-assumption sections kept below (out of scope to fold into the tree).
     Promise.all([
       gw.request<unknown>('forecast.warnings.aggregate', {}),
-      gw.request<unknown>('forecast.dashboard', { limit: 50 }),
+      // fast: skip the full-build cost (backtests, live/pilot reports, stale-review
+      // walk) — at 120q/1250 alerts the full build measured ~1s vs ~0.2s fast. This
+      // view only reads review_queue + stale-{assumption,ref} counts (all carried in
+      // fast mode); evidence_status.gaps is full-only, so the "Readiness gaps"
+      // section below simply doesn't render under fast (it degrades to empty).
+      gw.request<unknown>('forecast.dashboard', { fast: true, limit: 50 }),
       // The contested list is supplementary — a failure here must NOT nuke the
       // whole warnings view, so it resolves to null rather than rejecting the all.
       gw.request<unknown>('forecast.triage.contested', { limit: 200 }).catch(() => null)

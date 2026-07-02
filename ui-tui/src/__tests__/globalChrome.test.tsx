@@ -218,6 +218,52 @@ describe('cheat-sheet overlay', () => {
       expect(PER_VIEW_KEYS[chord.nav]).toBeDefined()
     }
   })
+
+  it('defaults to two sections and Tab expands to the full registry', async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+    const [{ Box, render }, { CheatSheetOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/cheatSheetOverlay.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 40)
+    const stdin = writeStream(120, 40, true)
+
+    const instance = render(
+      React.createElement(
+        Box,
+        { flexDirection: 'column', height: 40, width: 120 },
+        React.createElement(CheatSheetOverlay, {
+          activeView: 'desk',
+          cols: 120,
+          onClose: () => undefined,
+          rows: 40,
+          t: DARK_THEME
+        })
+      ),
+      { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
+    )
+
+    await tick(60)
+    const before = stripAnsi(stdout.text())
+    // Default: Global + the active Desk view only. The footer teaches Tab, and no
+    // OTHER view's unique rows leak in (Home's Today-focus row is not shown).
+    expect(before).toContain('This view — Desk')
+    expect(before).toContain('Tab all views')
+    expect(before).not.toContain('focus the Today attention panel')
+
+    // Tab expands to the full registry: every view's rows, so a Home-only row shows.
+    stdin.stream.write('\t')
+    await tick(60)
+    const after = stripAnsi(stdout.text())
+    expect(after).toContain('focus the Today attention panel')
+    expect(after).toContain('Tab this view')
+
+    instance.unmount?.()
+    delete process.env.FORECAST_TUI_INLINE
+  })
 })
 
 // ─────────────────────────────────────────────────────────────────────────
