@@ -1884,6 +1884,41 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     quorum_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     quorum_parser.set_defaults(_forecast_handler=_cmd_quorum)
 
+    rerun_parser = forecast_sub.add_parser(
+        "rerun",
+        help=(
+            "Mass LLM re-run: run the FULL formal forecast flow (fresh research + "
+            "VOI audit + base rate + gated commit + auto-quorum where indicated) for "
+            "explicit question ids, DETACHED so a keypress can start many multi-minute "
+            "sessions. Subcommands: `rerun <id> [<id> ...]` (start), `rerun status "
+            "<run-id>`."
+        ),
+    )
+    rerun_parser.add_argument(
+        "ids",
+        nargs="*",
+        help="Question ids to reforecast; or `status <run-id>` to poll a run.",
+    )
+    rerun_parser.add_argument(
+        "--agent",
+        action="store_true",
+        help="Explicit opt-in flag (the mass re-run is always the LLM agent flow); "
+        "accepted for parity with `cycle run --agent`.",
+    )
+    rerun_parser.add_argument("--model", help="Model id for the reforecast agent.")
+    rerun_parser.add_argument("--provider", help="Provider for the reforecast agent.")
+    rerun_parser.add_argument(
+        "--max-iterations", dest="max_iterations", type=int, default=12,
+        help="Max agent iterations per question (default 12).",
+    )
+    rerun_parser.add_argument(
+        "--wait",
+        action="store_true",
+        help="Run synchronously and print the result (default: background job + run-id).",
+    )
+    rerun_parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    rerun_parser.set_defaults(_forecast_handler=_cmd_rerun)
+
     apikey_parser = forecast_sub.add_parser(
         "api-key",
         help="Manage data-provider API keys (FRED, EIA, Firecrawl, Exa, …). Writes to the user .env and activates immediately.",
@@ -10002,6 +10037,115 @@ def _cmd_quorum(args: argparse.Namespace) -> None:
         _quorum_overview()
         return
     _quorum_run(args, question_id=target)
+
+
+def _cmd_rerun(args: argparse.Namespace) -> None:
+    """Dispatch `forecast rerun …` — start a detached mass reforecast over explicit
+    ids, or `rerun status <run-id>` to poll one.
+
+    The detached job runs :func:`run_forecast_chain` directly per question (it does
+    NOT shell back to the CLI), so this handler only validates + enqueues; the full
+    formal flow and every gate live in the shared chain."""
+
+    ids = [str(i).strip() for i in (args.ids or []) if str(i).strip()]
+    if ids and ids[0] == "status":
+        _rerun_status(args, ids[1:])
+        return
+    if not ids:
+        print("forecast rerun — mass LLM re-run over explicit question ids")
+        print("usage:")
+        print("  forecast rerun <id> [<id> ...] [--model M] [--max-iterations N] [--wait]")
+        print("  forecast rerun status <run-id>")
+        return
+
+    from forecasting.reforecast_jobs import (
+        DEFAULT_MAX_BATCH,
+        read_job,
+        start_job,
+        validate_reforecast_ids,
+    )
+    from hermes_cli.config import cfg_get, load_config_readonly
+
+    ledger = _ledger(args)
+    try:
+        max_batch = int(
+            cfg_get(load_config_readonly(), "forecasting", "reforecast", "max_batch", default=DEFAULT_MAX_BATCH)
+            or DEFAULT_MAX_BATCH
+        )
+    except (TypeError, ValueError):
+        max_batch = DEFAULT_MAX_BATCH
+
+    accepted, errors = validate_reforecast_ids(ledger, ids, max_batch=max_batch)
+    if errors:
+        raise SystemExit("forecast rerun: " + "; ".join(errors))
+
+    spec = {
+        "question_ids": accepted,
+        "db": str(ledger.db_path) if getattr(ledger, "db_path", None) else getattr(args, "db", None),
+        "model": args.model,
+        "provider": args.provider,
+        "max_iterations": int(getattr(args, "max_iterations", None) or 12),
+        "triggered_by": "desk_mass_agent",
+    }
+    run_id = start_job(spec, wait=bool(args.wait))
+
+    if args.wait:
+        _print_rerun_job(read_job(run_id), json_output=args.json)
+        return
+    if args.json:
+        print(json.dumps({"run_id": run_id, "status": "queued", "total": len(accepted)}, indent=2))
+        return
+    print(f"reforecast run started: {run_id} ({len(accepted)} question(s))")
+    print(f"  poll with:  forecast rerun status {run_id}")
+
+
+def _rerun_status(args: argparse.Namespace, rest: list[str]) -> None:
+    from forecasting.reforecast_jobs import list_jobs, read_job
+
+    if not rest:
+        jobs = list_jobs()
+        if args.json:
+            print(json.dumps(jobs, indent=2))
+            return
+        if not jobs:
+            print("No reforecast runs yet. Start one with `forecast rerun <id> [<id> ...]`.")
+            return
+        print("Run            Status   Done/Total  Updated")
+        for job in jobs:
+            done = f"{job.get('done_count', 0)}/{job.get('total', 0)}"
+            print(f"{job['run_id']:<14} {job['status']:<8} {done:<11} {job.get('updated_at', '-')}")
+        return
+    try:
+        job = read_job(rest[0])
+    except FileNotFoundError as exc:
+        raise SystemExit(str(exc))
+    _print_rerun_job(job, json_output=args.json)
+
+
+def _print_rerun_job(job: dict[str, Any], *, json_output: bool) -> None:
+    if json_output:
+        print(json.dumps(job, indent=2))
+        return
+    print(f"reforecast run {job['run_id']}: {job['status']}")
+    print(f"  progress: {job.get('done_count', 0)}/{job.get('total', 0)}")
+    current = job.get("current")
+    if current:
+        print(f"  current:  {current.get('question_id')} — {current.get('stage')}")
+    if job.get("error"):
+        print(f"  error:    {job['error']}")
+    quorums = sum(1 for r in (job.get("results") or []) if r.get("quorum_autorun"))
+    if quorums:
+        print(f"  quorums started: {quorums}")
+    for r in job.get("results") or []:
+        state = "error" if r.get("error") else ("committed" if r.get("committed") else "no-commit")
+        line = f"    {r.get('question_id')}: {state}"
+        if r.get("forecast_id"):
+            line += f" ({r['forecast_id']})"
+        if r.get("error"):
+            line += f" — {r['error']}"
+        elif not r.get("committed") and r.get("update_blockers"):
+            line += f" — gated: {', '.join(r['update_blockers'])}"
+        print(line)
 
 
 def _quorum_overview() -> None:

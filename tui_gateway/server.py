@@ -3731,6 +3731,122 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.reforecast.start")
+def _(rid, params: dict) -> dict:
+    """Enqueue a DETACHED "mass LLM re-run" over EXPLICIT question ids.
+
+    Runs the FULL formal forecast flow per question (fresh research + VOI audit +
+    base rate + gated LLM commit + auto-quorum where indicated) — NOT the
+    deterministic re-pool — one LLM session at a time in a child process, so a
+    single TUI keypress can start many multi-minute sessions without blocking.
+    Validates each id EXISTS and is ACTIVE and caps the batch at
+    ``forecasting.reforecast.max_batch`` (default 25) with an explicit refusal
+    beyond it; returns ``{run_id, total, note}`` immediately. Poll
+    ``forecast.reforecast.status``. No gate is weakened — each commit goes through
+    the exact same gated chain a manual run uses.
+    """
+    try:
+        from forecasting.ledger import ForecastLedger
+        from forecasting.reforecast_jobs import (
+            DEFAULT_MAX_BATCH,
+            DEFAULT_MAX_ITERATIONS,
+            start_job,
+            validate_reforecast_ids,
+        )
+        from hermes_cli.config import cfg_get, load_config_readonly
+
+        raw_ids = params.get("question_ids")
+        if not isinstance(raw_ids, list) or not raw_ids:
+            return _err(
+                rid, 5008,
+                "forecast.reforecast.start requires a non-empty question_ids list",
+            )
+        model = (params.get("model") or "").strip() or None
+        provider = (params.get("provider") or "").strip() or None
+        try:
+            max_iterations = int(params.get("max_iterations") or DEFAULT_MAX_ITERATIONS)
+        except (TypeError, ValueError):
+            max_iterations = DEFAULT_MAX_ITERATIONS
+
+        ledger = ForecastLedger()
+        try:
+            max_batch = int(
+                cfg_get(
+                    load_config_readonly(),
+                    "forecasting", "reforecast", "max_batch",
+                    default=DEFAULT_MAX_BATCH,
+                )
+                or DEFAULT_MAX_BATCH
+            )
+        except (TypeError, ValueError):
+            max_batch = DEFAULT_MAX_BATCH
+
+        accepted, errors = validate_reforecast_ids(ledger, raw_ids, max_batch=max_batch)
+        if errors:
+            return _err(rid, 5008, "; ".join(errors))
+
+        spec = {
+            "question_ids": accepted,
+            "db": str(ledger.db_path) if getattr(ledger, "db_path", None) else None,
+            "model": model,
+            "provider": provider,
+            "max_iterations": max_iterations,
+            "triggered_by": "desk_mass_agent",
+        }
+        run_id = start_job(spec, wait=False)
+        return _ok(
+            rid,
+            {
+                "run_id": run_id,
+                "total": len(accepted),
+                "note": (
+                    f"reforecasting {len(accepted)} question(s) — the full formal flow "
+                    f"runs one at a time; poll forecast.reforecast.status"
+                ),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
+@method("forecast.reforecast.status")
+def _(rid, params: dict) -> dict:
+    """READ-ONLY status/progress for a detached mass-reforecast background job.
+
+    Given a ``run_id``, returns ``status`` (queued|running|done|error), the running
+    ``done_count``/``total``, the ``current`` question+stage, and the honest
+    per-question ``results`` (committed, forecast_id, stages, saturation,
+    quorum_autorun). ``quorums_started`` counts results whose commit auto-started a
+    quorum, so the TUI toast can report "N quorums started". Reuses
+    :func:`forecasting.reforecast_jobs.read_job`; never mutates the ledger."""
+    try:
+        from forecasting.reforecast_jobs import read_job
+
+        run_id = str(params.get("run_id") or "").strip()
+        if not run_id:
+            return _err(rid, 5008, "forecast.reforecast.status requires a run_id")
+        try:
+            job = read_job(run_id)
+        except FileNotFoundError as exc:
+            return _err(rid, 5008, str(exc))
+        results = job.get("results") or []
+        return _ok(
+            rid,
+            {
+                "run_id": job.get("run_id"),
+                "status": job.get("status"),
+                "total": job.get("total"),
+                "done_count": job.get("done_count"),
+                "current": job.get("current"),
+                "results": results,
+                "error": job.get("error"),
+                "quorums_started": sum(1 for r in results if r.get("quorum_autorun")),
+            },
+        )
+    except Exception as e:
+        return _err(rid, 5008, str(e))
+
+
 @method("forecast.triage.contested")
 def _(rid, params: dict) -> dict:
     """READ-ONLY list of CONTESTED triage staging rows awaiting an operator label.
