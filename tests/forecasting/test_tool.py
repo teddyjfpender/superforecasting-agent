@@ -50,6 +50,18 @@ from tools.registry import discover_builtin_tools, registry
 from toolsets import get_toolset, resolve_toolset, validate_toolset
 
 
+def _seed_evidence(db, question_id, *, note="baseline reading", claim="observed signal"):
+    """Attach one evidence record so an AGENT-path update_forecast clears the
+    require_evidence floor. The interactive tool opts into the ledger's resolved-policy
+    blocking pass (enforce_resolved_hooks=True), which makes require_evidence (ERROR by
+    default) a hard floor: an evidence-free live agent commit is refused. Tests that
+    exercise the commit path for other reasons attach a token evidence record here."""
+    return json.loads(forecast_ledger_tool({
+        "action": "add_evidence", "db": db, "question_id": question_id,
+        "source_or_note": note, "claim": claim,
+    }))
+
+
 def test_forecasting_toolset_is_discoverable():
     discover_builtin_tools()
 
@@ -1006,6 +1018,9 @@ def test_forecast_ledger_tool_high_impact_requires_panel_by_default(tmp_path):
         "change_my_mind": ["a confirming data release"],
     }
     blocked = json.loads(forecast_ledger_tool(dict(base)))
+    # The panel-skip path clears the panel gate; attach evidence so it then also
+    # clears the require_evidence floor (this test isolates the panel formality).
+    _seed_evidence(db, question_id)
     skipped = json.loads(
         forecast_ledger_tool({**base, "panel_skipped_reason": "time-boxed; panel next cycle"})
     )
@@ -1079,6 +1094,7 @@ def test_forecast_ledger_tool_records_structured_postmortem_learning(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     forecast_ledger_tool(
         {
             "db": db,
@@ -1532,6 +1548,7 @@ def test_forecast_ledger_tool_manages_autopilot_update_proposals(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     baseline = json.loads(
         forecast_ledger_tool(
             {
@@ -1643,6 +1660,7 @@ def test_forecast_ledger_tool_can_save_ensemble_components(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
 
     updated = json.loads(
         forecast_ledger_tool(
@@ -1765,6 +1783,7 @@ def test_forecast_ledger_tool_lists_model_runs_and_postmortems(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     forecast_ledger_tool(
         {
             "db": db,
@@ -2096,6 +2115,7 @@ def test_forecast_ledger_tool_records_corrections_and_invalidates_learning(tmp_p
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     forecast_ledger_tool(
         {
             "db": db,
@@ -2183,6 +2203,7 @@ def test_forecast_ledger_tool_lists_scores_for_calibration_review(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     forecast_ledger_tool(
         {
             "db": db,
@@ -2351,6 +2372,7 @@ def test_forecast_ledger_tool_stores_snapshot_audit_metadata(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     updated = json.loads(
         forecast_ledger_tool(
             {
@@ -2408,6 +2430,7 @@ def test_forecast_ledger_tool_can_apply_active_calibration_lessons(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     ledger = ForecastLedger(db)
     lesson = ledger.create_calibration_lesson(
         scope_type="domain",
@@ -2782,6 +2805,8 @@ def test_forecast_ledger_tool_reviews_focused_books(tmp_path):
             }
         )
     )["question"]
+    _seed_evidence(db, low_confidence["id"])
+    _seed_evidence(db, high_confidence["id"])
     forecast_ledger_tool(
         {
             "db": db,
@@ -2839,6 +2864,7 @@ def test_forecast_ledger_tool_reads_calibration_and_error_memory(tmp_path):
         )
     )
     question_id = created["question"]["id"]
+    _seed_evidence(db, question_id)
     forecast_ledger_tool(
         {
             "db": db,
@@ -4861,6 +4887,7 @@ def test_forecast_ledger_tool_update_forecast_persists_reasons(tmp_path):
         )
     )
     qid = created["question"]["id"]
+    _seed_evidence(db, qid)
     updated = json.loads(
         forecast_ledger_tool(
             {
@@ -4927,7 +4954,10 @@ def test_forecast_ledger_tool_structured_reasoning_enforced_by_default_for_live(
     assert rejected["success"] is False
     assert "reasons_up" in rejected["error"]
 
-    # Explicit opt-out lets a bare live forecast through (judgment retained).
+    # Explicit opt-out of the structured-reasoning formality lets the forecast
+    # through (judgment retained). It still needs evidence: require_evidence is a
+    # hard floor for an agent commit and is not opt-out-able, so attach one record.
+    _seed_evidence(db, qid)
     allowed = json.loads(forecast_ledger_tool({
         "db": db, "action": "update_forecast", "require_components": False, "question_id": qid,
         "probability": 0.55, "rationale": "rough call",
@@ -5002,6 +5032,7 @@ def test_forecast_ledger_tool_postmortem_persists_failure_class(tmp_path):
         )
     )
     qid = created["question"]["id"]
+    _seed_evidence(db, qid)
     forecast_ledger_tool(
         {
             "db": db,
@@ -5124,7 +5155,9 @@ def test_forecast_ledger_tool_requires_components_by_default_for_live(tmp_path):
     assert rejected["success"] is False
     assert "ensemble_components" in rejected["error"]
 
-    # Providing pooled components satisfies the gate.
+    # Providing pooled components satisfies the gate (evidence attached so the
+    # commit also clears the require_evidence floor — this test isolates components).
+    _seed_evidence(db, qid)
     allowed = json.loads(forecast_ledger_tool({
         "db": db, "action": "update_forecast", "question_id": qid,
         "rationale": "decomposed", "method": "weighted_ensemble", **reasons,

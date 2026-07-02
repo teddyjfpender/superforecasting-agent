@@ -750,7 +750,11 @@ def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
             "and the now-shorter time-to-close — do not inherit a hedge you set when the evidence was "
             "thinner; as resolution nears and evidence accumulates, conviction should generally RISE "
             "and the distribution CONCENTRATE, not perpetuate stale tail mass. Sharpen, then commit "
-            "with conviction."
+            "with conviction. "
+            "After a successful commit, `update_forecast` returns a `saturation` block — the "
+            "0-100 score the commit scored plus any WARN advisories (checks that passed the gate "
+            "but flag a gap): read it, and if the score is low or advisories remain, remediate "
+            "them and re-commit rather than leaving the forecast under-saturated."
         ),
         "resolve": (
             "Check whether the resolution criteria are satisfied. Propose resolution status, source snapshot needs, "

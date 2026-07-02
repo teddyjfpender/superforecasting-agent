@@ -21,7 +21,12 @@ def test_standard_profile_matches_prior_defaults():
     assert sev["require_decision_readiness"] is Severity.WARN
 
 
-def test_strict_profile_blocks_everything():
+def test_strict_profile_resolves_everything_to_error():
+    # NOTE: this asserts only the resolved severity MAP. The BEHAVIORAL assertion
+    # that a strict-profile commit actually raises SaturationBlocked on the resolved
+    # rule lives in tests/forecasting/test_hook_blocking_pass.py (the map being ERROR
+    # is necessary but not sufficient — the ledger's resolved-policy blocking pass is
+    # what turns the map into an enforced block).
     sev = resolve_severities(_q(), forecast_origin="live", hooks_config={"profile": "strict"})
     assert sev["require_citations"] is Severity.ERROR
     assert sev["require_decision_readiness"] is Severity.ERROR

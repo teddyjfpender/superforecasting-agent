@@ -34,7 +34,13 @@ from forecasting.hooks.signals import (
     detect_style_offenders,
     style_clean_for_rationale,
 )
-from forecasting.hooks.sweep import finish_sweep, lint_forecast
+from forecasting.hooks.sweep import (
+    DEFAULT_SWEEP_ALERT_THRESHOLD,
+    finish_sweep,
+    lint_forecast,
+    saturation_summary,
+    sweep_alert_threshold,
+)
 from forecasting.hooks.spec import (
     Category,
     HookContext,
@@ -69,8 +75,11 @@ __all__ = [
     "build_commit_context",
     "build_context_from_ledger",
     "detect_style_offenders",
+    "DEFAULT_SWEEP_ALERT_THRESHOLD",
     "finish_sweep",
     "lint_forecast",
+    "saturation_summary",
+    "sweep_alert_threshold",
     "load_hook_config",
     "policy_from_require_flags",
     "resolve_severities",

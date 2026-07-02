@@ -101,6 +101,100 @@ def test_quorum_judged():
     assert _verdict(_ctx(is_quorum=False), "quorum_judged").passed is True
 
 
+# ── H1: quorum signals live at COMMIT (populated from the linked panel_run_ref) ──
+def _quorum_estimates():
+    return [
+        {"perspective": p, "probability": 0.5, "rationale": "r", "agent_model": f"m-{p}"}
+        for p in ("outside", "inside", "market", "red_team", "sanity")
+    ]
+
+
+def _bin_q(lg):
+    return lg.create_question(title="Will X happen by year end?", resolution_criteria="Resolves YES if X occurs.")
+
+
+_COMMIT_COMMON = dict(method="m", require_panel=False, require_components=False, require_structured_reasoning=False)
+
+
+def test_quorum_signals_true_at_commit_with_linked_panel(tmp_path):
+    """A commit linking a judged quorum run computes the quorum signals from that run:
+    participation does NOT false-fire (perspectives populated, not 0) and a judged
+    quorum does not raise the quorum_judged warn."""
+    lg = ForecastLedger(db_path=str(tmp_path / "q1.db"))
+    lg.initialize_schema()
+    q = _bin_q(lg)
+    run = lg.record_panel_run(question_id=q.id, estimates=_quorum_estimates(), triggered_by="quorum",
+                              judge={"consensus": "c", "judge_model": "j"})
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="r",
+                              panel_run_ref=run["id"], **_COMMIT_COMMON)
+    sat = (snap.metadata or {}).get("saturation") or {}
+    assert "quorum_participation" not in sat.get("warnings", [])
+    assert "quorum_judged" not in sat.get("warnings", [])
+
+
+def test_unjudged_quorum_flags_quorum_judged_at_commit(tmp_path):
+    """A commit linking an UNjudged quorum run now honestly raises the quorum_judged
+    warn — before H1, is_quorum defaulted False at commit and this never fired."""
+    lg = ForecastLedger(db_path=str(tmp_path / "q2.db"))
+    lg.initialize_schema()
+    q = _bin_q(lg)
+    run = lg.record_panel_run(question_id=q.id, estimates=_quorum_estimates(), triggered_by="quorum")
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="r",
+                              panel_run_ref=run["id"], **_COMMIT_COMMON)
+    sat = (snap.metadata or {}).get("saturation") or {}
+    assert "quorum_judged" in sat.get("warnings", [])
+    # a 5-perspective quorum still satisfies participation
+    assert "quorum_participation" not in sat.get("warnings", [])
+
+
+def test_quorum_participation_no_false_fire_without_panel_at_commit(tmp_path):
+    """A commit with NO panel linked must not false-fire quorum_participation /
+    quorum_judged (the rules key on panel_run_count / is_quorum being falsey)."""
+    lg = ForecastLedger(db_path=str(tmp_path / "q3.db"))
+    lg.initialize_schema()
+    q = _bin_q(lg)
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="r",
+                              **_COMMIT_COMMON)
+    sat = (snap.metadata or {}).get("saturation") or {}
+    assert "quorum_participation" not in sat.get("warnings", [])
+    assert "quorum_judged" not in sat.get("warnings", [])
+
+
+def test_quorum_participation_no_false_fire_on_unlinked_recommit_with_prior_run(tmp_path):
+    """Regression: a re-commit that does NOT link a panel_run_ref, on a question that
+    ALREADY has an older panel run, must not false-fire quorum_participation. At commit
+    the participation counts come only from the linked run (0 here) while panel_run_count
+    spans all runs (>0) — keying the rule on panel_run_count blocked/flagged a legitimate
+    re-forecast with the wrong reason (perspectives=0). The rule must key on the counts."""
+    lg = ForecastLedger(db_path=str(tmp_path / "q4.db"))
+    lg.initialize_schema()
+    q = _bin_q(lg)
+    run = lg.record_panel_run(question_id=q.id, estimates=_quorum_estimates(), triggered_by="quorum",
+                              judge={"consensus": "c", "judge_model": "j"})
+    # forecast #1 links the panel
+    lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="r",
+                       panel_run_ref=run["id"], **_COMMIT_COMMON)
+    # re-forecast (has_prior) WITHOUT linking a panel, recording a skip reason instead
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.55, rationale="r2",
+                              panel_skipped_reason="no material change since the judged panel",
+                              **_COMMIT_COMMON)
+    sat = (snap.metadata or {}).get("saturation") or {}
+    assert "quorum_participation" not in sat.get("warnings", [])
+    assert "quorum_participation" not in sat.get("blocking", [])
+
+
+def test_quorum_participation_na_when_no_counts_even_with_prior_run():
+    """The rule keys on the participation COUNTS (perspectives/models), not the
+    question-total panel_run_count. So the finding's shape — panel_run_count>0 (an older
+    run on the question) but this context carries 0 perspectives / 0 models (unlinked
+    re-commit) — is N/A and does NOT fire, even at ERROR severity (strict profile).
+    quorum_required owns the 'a run must exist' requirement at this tier."""
+    ctx = _ctx(panel_run_count=1, panel_perspective_count=0, quorum_model_count=0)
+    assert _verdict(ctx, "quorum_participation").passed is True
+    # a linked run WITH counts still enforces the minimum
+    assert _verdict(_ctx(panel_run_count=1, panel_perspective_count=2), "quorum_participation").passed is False
+
+
 # ── confidence lean ───────────────────────────────────────────────────────────
 def test_tails_justified():
     assert _verdict(_ctx(is_categorical=True, tail_audit_passes=False), "tails_justified").passed is False

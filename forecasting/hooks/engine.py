@@ -12,6 +12,7 @@ from __future__ import annotations
 from forecasting.hooks.builtins import BUILTIN_RULE_IDS, BUILTIN_RULES
 from forecasting.hooks.profiles import DEFAULT_PROFILE, profile_severities, scaled_profile
 from forecasting.hooks.spec import (
+    Category,
     HookContext,
     SaturationReport,
     Severity,
@@ -117,14 +118,37 @@ def run_hooks(
     default severity. Score = 100 * (1 - failed_weight / applicable_weight)."""
     policy = policy or {}
     verdicts: list[Verdict] = []
+    engine_errors: list[str] = []
     applicable_weight = 0.0
     failed_weight = 0.0
 
     for rule in rules:
-        severity = policy.get(rule.id, rule.default_severity)
-        if severity is Severity.OFF or not rule.applies(ctx):
+        # Per-rule fail-soft: a single throwing rule (buggy applies()/check()) must
+        # NOT abort the batch — that would trip the ledger-level fail-open and
+        # silently disable ALL lesson + user-rule enforcement for the commit. It
+        # degrades to a non-passing WARN (never blocks — bricking commits on a buggy
+        # rule is worse than a missed check) but stays VISIBLE via facts + engine_errors.
+        try:
+            severity = policy.get(rule.id, rule.default_severity)
+            if severity is Severity.OFF or not rule.applies(ctx):
+                continue
+            verdict = rule.evaluate(ctx, severity)
+        except Exception as exc:  # noqa: BLE001 — degrade one rule, never the batch
+            weight = getattr(rule, "weight", 0.0) or 0.0
+            engine_errors.append(f"{rule.id}: {exc!r}")
+            verdict = Verdict(
+                rule_id=rule.id,
+                category=getattr(rule, "category", Category.CUSTOM),
+                severity=Severity.WARN,  # degraded — a broken rule must not block
+                passed=False,
+                score_penalty=weight,
+                message=f"hook rule {rule.id!r} raised during evaluation and was degraded to a warning: {exc}",
+                facts={"engine_error": repr(exc), "rule_id": rule.id},
+            )
+            verdicts.append(verdict)
+            applicable_weight += weight
+            failed_weight += weight
             continue
-        verdict = rule.evaluate(ctx, severity)
         verdicts.append(verdict)
         applicable_weight += rule.weight
         if not verdict.passed:
@@ -138,6 +162,7 @@ def run_hooks(
         score=score,
         passed=passed,
         verdicts=verdicts,
+        engine_errors=engine_errors,
     )
 
 

@@ -198,3 +198,47 @@ def test_outside_view_anchor_is_snapshot_honest():
 def test_outside_view_anchor_satisfied_by_snapshot_link():
     report = run_hooks(_saturated_live(linked_reference_class_count=1), ALL_ERROR)
     assert not [w for w in report.warnings() if w.rule_id == "require_outside_view_anchor"]
+
+
+# ── H2: per-rule fail-soft ──────────────────────────────────────────────────
+def _throwing_rule(rule_id="boom"):
+    from forecasting.hooks import Category, SimpleRule
+
+    def _boom(_ctx):
+        raise RuntimeError("kaboom")
+
+    return SimpleRule(rule_id, Category.CUSTOM, Severity.WARN, 9.0, _boom)
+
+
+def _ok_rule(rule_id="fine"):
+    from forecasting.hooks import Category, SimpleRule
+
+    return SimpleRule(rule_id, Category.CUSTOM, Severity.WARN, 5.0, lambda _c: (True, "", {}))
+
+
+def test_throwing_rule_degrades_to_warn_and_batch_continues():
+    """A rule that raises during evaluation must degrade to a non-passing WARN (with
+    the exception recorded in facts + engine_errors) while every other rule still
+    evaluates — it must NOT abort the batch (which would trip the ledger fail-open)."""
+    ctx = _saturated_live()
+    rules = (_throwing_rule(), _ok_rule())
+    report = run_hooks(ctx, {}, rules=rules)
+
+    boom = next(v for v in report.verdicts if v.rule_id == "boom")
+    assert boom.severity is Severity.WARN and boom.passed is False
+    assert "kaboom" in (boom.facts.get("engine_error") or "")
+    assert boom.facts.get("rule_id") == "boom"
+    assert any("boom" in e for e in report.engine_errors)
+    # the healthy rule still ran
+    assert any(v.rule_id == "fine" and v.passed for v in report.verdicts)
+
+
+def test_throwing_error_severity_rule_does_not_block():
+    """Even when a throwing rule is configured ERROR-severity, the degraded verdict is
+    WARN — a buggy rule must never brick a commit — but stays visible via engine_errors."""
+    ctx = _saturated_live()
+    report = run_hooks(ctx, {"boom": Severity.ERROR}, rules=(_throwing_rule(),))
+    assert report.passed is True  # degraded to WARN -> no blocking failure
+    assert report.blocking_failures() == []
+    assert report.engine_errors and "boom" in report.engine_errors[0]
+    assert report.to_dict().get("engine_errors")

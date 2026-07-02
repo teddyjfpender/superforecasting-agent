@@ -135,3 +135,40 @@ def test_user_rule_on_v2_signal_enforces_at_commit(home, tmp_path):
     snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.6, rationale="r",
                               reasoning_methods=["bayesian", "outside_view"], **common)
     assert snap is not None
+
+
+def _quorum_estimates():
+    return [
+        {"perspective": p, "probability": 0.5, "rationale": "r", "agent_model": f"m-{p}"}
+        for p in ("outside", "inside", "market", "red_team", "sanity")
+    ]
+
+
+def test_user_rule_on_quorum_signal_enforces_at_commit(home, tmp_path):
+    """A user rule on a v2 QUORUM signal (quorum.judged) must evaluate against the
+    LINKED panel run's real value at commit — an unjudged quorum blocks, a judged one
+    commits. This is the H1 fix: quorum signals are populated in build_commit_context
+    from panel_run_ref, so they are no longer indeterminate at commit."""
+    from forecasting import ForecastLedger
+    from forecasting.hooks import SaturationBlocked, store
+
+    store.save_rule({
+        "id": "quorum-must-be-judged", "severity": "error", "remediation_hint": "run_quorum",
+        "check": {"signal": "quorum.judged", "op": "is_true"},
+        "message": "a quorum run must carry a judge synthesis",
+    })
+    lg = ForecastLedger(db_path=str(tmp_path / "quser.db"))
+    lg.initialize_schema()
+    q = lg.create_question(title="Will X happen by year end?", resolution_criteria="Resolves YES if X occurs.")
+    common = dict(method="m", require_panel=False, require_components=False, require_structured_reasoning=False)
+
+    unjudged = lg.record_panel_run(question_id=q.id, estimates=_quorum_estimates(), triggered_by="quorum")
+    with pytest.raises(SaturationBlocked):
+        lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="r",
+                           panel_run_ref=unjudged["id"], **common)
+
+    judged = lg.record_panel_run(question_id=q.id, estimates=_quorum_estimates(), triggered_by="quorum",
+                                 judge={"consensus": "c", "judge_model": "j"})
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="r",
+                              panel_run_ref=judged["id"], **common)
+    assert snap is not None

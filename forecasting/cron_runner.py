@@ -34,6 +34,7 @@ def run_due_reviews(
     score_market_nightly: bool = True,
     refresh: bool = True,
     check_triage_graduation: bool = True,
+    saturation_sweep: bool = True,
     reforecast_runner: Callable[[list[str]], list[dict[str, Any]]] | None = None,
 ) -> str:
     """Run due forecast schedule rows and return a concise alert report.
@@ -341,6 +342,26 @@ def run_due_reviews(
                     "Triage trust gate\n"
                     f"labeler {transition['transition']}: mode {transition.get('previous_mode')} -> "
                     f"{transition['mode']} (n={gate.get('n')}, accuracy={gate.get('observed_accuracy')})\n"
+                )
+
+    # Trailing saturation-sweep phase (Wave 3 H4): scan active LIVE forecasts and
+    # open a deduped WARN alert for each whose STORED observe-mode saturation score
+    # is below the bar (forecasting.hooks.sweep_alert_threshold, default 60). The
+    # observe score is recorded on every commit but changes no behaviour; this makes
+    # a chronically under-saturated forecast VISIBLE + actionable. Read-only over the
+    # stored report (no hook recompute), deduped (fold like the neighbouring alert
+    # kinds — never a bare re-alert), and best-effort (never breaks the sweep).
+    if saturation_sweep:
+        try:
+            sat = ledger.sweep_saturation_alerts()
+        except Exception as exc:  # never break the sweep on the saturation pass
+            sections.append(f"Saturation sweep\nERROR: {exc}\n")
+        else:
+            if sat.get("alerted"):
+                sections.append(
+                    "Saturation sweep\n"
+                    f"under-saturated: {sat['under_saturated']} of {sat['checked']} checked; "
+                    f"opened {len(sat['alerted'])} WARN alert(s)\n"
                 )
 
     return "\n".join(sections)

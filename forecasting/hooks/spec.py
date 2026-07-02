@@ -242,6 +242,10 @@ class SaturationReport:
     score: float                     # 0..100
     passed: bool                     # no ERROR-severity verdict failed
     verdicts: list[Verdict]
+    # Rules that RAISED during evaluation (one entry per throwing rule). A buggy
+    # rule degrades to a non-passing WARN verdict (never blocks) but stays visible
+    # here so a broken rule is diagnosable instead of silently disabling the batch.
+    engine_errors: list[str] = field(default_factory=list)
 
     def blocking_failures(self) -> list[Verdict]:
         return [v for v in self.verdicts if v.severity.blocks and not v.passed]
@@ -262,7 +266,7 @@ class SaturationReport:
         return out
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "score": round(self.score, 1),
             "passed": self.passed,
             "event": self.event,
@@ -270,6 +274,9 @@ class SaturationReport:
             "blocking": [v.rule_id for v in self.blocking_failures()],
             "warnings": [v.rule_id for v in self.warnings()],
         }
+        if self.engine_errors:
+            out["engine_errors"] = list(self.engine_errors)
+        return out
 
 
 # A Rule is a small bundle of metadata + an applies() scope predicate + a pure

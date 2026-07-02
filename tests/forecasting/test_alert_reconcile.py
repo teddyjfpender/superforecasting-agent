@@ -51,6 +51,38 @@ def test_reconcile_acks_consumed_alert_and_keeps_unconsumed_open(tmp_path):
     assert lg.reconcile_alerts()["reconciled_count"] == 0
 
 
+def test_reconcile_score_clears_under_saturated_without_new_evidence(tmp_path, monkeypatch):
+    """Wave 3 H4 regression: an under_saturated alert is SCORE-based, not evidence-based.
+    It must auto-clear once the current snapshot's stored saturation score is at/above the
+    bar, even when NO new evidence was imported (a non-evidence re-saturation). The generic
+    evidence-AND-update reconcile would leave an evidence-free re-saturation stuck open."""
+    import forecasting.hooks as hooks_mod
+
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Will the metric exceed target by close?", resolution_criteria=CRIT)
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=0.6, rationale="baseline")
+    score = ((snap.metadata or {}).get("saturation") or {}).get("score")
+    assert isinstance(score, (int, float))
+
+    a = lg.create_alert(
+        severity="warning", scope_type="question", scope_ref=q.id,
+        reason="under_saturated", recommended_action="raise saturation",
+    )
+
+    # Bar ABOVE the current score -> still under-saturated -> stays open (no evidence needed
+    # for the decision either way; this is purely a score comparison).
+    monkeypatch.setattr(hooks_mod, "sweep_alert_threshold", lambda *a, **k: float(score) + 10.0)
+    r_open = lg.reconcile_alerts()
+    assert r_open["reconciled_count"] == 0
+    assert "still below the bar" in r_open["still_open"][0]["open_because"]
+
+    # Bar BELOW the current score -> re-saturated -> clears WITHOUT importing any evidence.
+    monkeypatch.setattr(hooks_mod, "sweep_alert_threshold", lambda *a, **k: max(0.0, float(score) - 10.0))
+    r_clear = lg.reconcile_alerts()
+    assert [entry["id"] for entry in r_clear["reconciled"]] == [a.id]
+    assert lg.list_alerts(unresolved_only=True) == []
+
+
 def test_reconcile_needs_both_evidence_and_update(tmp_path):
     lg = _ledger(tmp_path)
     q = lg.create_question(title="Will the indicator cross the line by close?", resolution_criteria=CRIT)

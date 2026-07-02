@@ -30,6 +30,21 @@ def _snapshot_tail_audit(snapshot: Any) -> dict[str, Any] | None:
     return audit if isinstance(audit, dict) else None
 
 
+def _snapshot_saturation_score(snapshot: Any) -> float | None:
+    """The observe-mode saturation score (0-100) recorded on this snapshot's
+    metadata, or None when no report was stored. Read from the metadata the
+    payload builder ALREADY holds — never a per-question query (the desk N+1 was
+    a hard-won perf fix)."""
+    metadata = getattr(snapshot, "metadata", None)
+    if not isinstance(metadata, dict):
+        return None
+    saturation = metadata.get("saturation")
+    if not isinstance(saturation, dict):
+        return None
+    score = saturation.get("score")
+    return float(score) if isinstance(score, (int, float)) else None
+
+
 def build_dashboard_summary(
     *,
     ledger: ForecastLedger | None = None,
@@ -551,6 +566,15 @@ def build_workspace_payload(
     notes_by_q = ledger.analyst_notes_by_question(member_ids)
     theses_by_member = ledger.theses_by_member(member_ids)
 
+    # Saturation visibility (Wave 3 H4): the under-saturation bar, read ONCE for the
+    # whole page (config forecasting.hooks.sweep_alert_threshold, default 60). Each
+    # forecast row carries its stored observe-mode score + a below-threshold flag so
+    # the desk can badge under-saturated forecasts; the score is read from the
+    # current snapshot's metadata already in memory (no added query).
+    from forecasting.hooks import sweep_alert_threshold as _sweep_alert_threshold
+
+    saturation_threshold = _sweep_alert_threshold()
+
     closing_soon = 0
     forecasts: list[dict[str, Any]] = []
     for question in member_questions:
@@ -636,6 +660,13 @@ def build_workspace_payload(
                 "reasons_down": list(current.reasons_down) if current else [],
                 "change_my_mind": list(current.change_my_mind) if current else [],
                 "tail_audit": _snapshot_tail_audit(current),
+                # Observe-mode saturation score (0-100) recorded on the current
+                # snapshot + whether it is under the alert bar — glanceable desk
+                # signal that this forecast is under-saturated. None when unscored.
+                "saturation_score": (_sat_score := _snapshot_saturation_score(current) if current else None),
+                "saturation_below_threshold": (
+                    _sat_score is not None and _sat_score < saturation_threshold
+                ),
                 "decision_owner": question.decision_owner,
                 "decision_deadline": question.decision_deadline,
                 "action_threshold": question.action_threshold,

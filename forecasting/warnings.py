@@ -293,6 +293,11 @@ _REFORECAST_PREFIXES = (
     "last_update",           # last_update_* staleness
     "new_evidence",          # new_evidence:*
     "close_time_within",     # close_time_within_*
+    "under_saturated",       # Wave 3 H4: a live forecast scored below the saturation bar —
+                             # the agent re-saturates it (re-run / added reasoning / decompose)
+                             # and reconcile_alerts SCORE-clears it once the current snapshot's
+                             # stored saturation score is back at/above the bar (evidence-free
+                             # re-saturation counts); the deduped sweep re-raises if still low.
 )
 
 

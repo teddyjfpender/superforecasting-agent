@@ -332,8 +332,14 @@ def _check_uncertainty_width(ctx: HookContext):
 
 
 def _check_quorum_participation(ctx: HookContext):
-    # Only meaningful when a panel/quorum actually ran; quorum_required handles "must run".
-    if ctx.panel_run_count == 0:
+    # Only meaningful when THIS context actually carries a counted deliberation to
+    # judge — key on the SAME signal the counts are derived from (perspectives /
+    # models), NOT the question-total panel_run_count. On the commit path the
+    # participation counts come only from the run linked to this commit (0 when
+    # unlinked) while panel_run_count spans ALL historical runs; keying on
+    # panel_run_count there false-fired this rule for an unlinked re-commit whose
+    # question merely had an older panel run. quorum_required handles "must run".
+    if not (ctx.panel_perspective_count or ctx.quorum_model_count):
         return _OK
     need = ctx.threshold("min_perspectives")
     need = MIN_PERSPECTIVES if need is None else int(need)

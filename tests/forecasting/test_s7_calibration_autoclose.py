@@ -175,6 +175,9 @@ class TestUseActiveLessonsDefault:
             domain="macro",
         )
         _make_active_delta_lesson(ledger, delta=0.05)
+        # Agent commits enforce the require_evidence floor; attach one record so this
+        # test isolates the calibration-lesson auto-apply behavior.
+        ledger.add_evidence(question_id=q.id, source_or_note="macro print", claim="supports yes")
 
         # No use_active_lessons key passed at all — should apply by default.
         out = _update(db, q.id)
@@ -195,6 +198,9 @@ class TestUseActiveLessonsDefault:
             domain="macro",
         )
         _make_active_delta_lesson(ledger, delta=0.05)
+        # Agent commits enforce the require_evidence floor; attach one record so this
+        # test isolates the explicit opt-out behavior.
+        ledger.add_evidence(question_id=q.id, source_or_note="macro print", claim="supports yes")
 
         out = _update(db, q.id, use_active_lessons=False)
         assert out["success"] is True

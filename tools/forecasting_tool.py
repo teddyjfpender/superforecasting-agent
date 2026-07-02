@@ -20,7 +20,7 @@ from forecasting.backtesting import (
     build_forecasting_evidence_status,
 )
 from forecasting.ensembles import linear_trend_projection, weighted_binary_probability
-from forecasting.hooks import SaturationBlocked
+from forecasting.hooks import SaturationBlocked, saturation_summary
 from forecasting.learning import apply_active_lesson_adjustments, should_apply_active_lessons
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.protocol import build_protocol_messages
@@ -1992,6 +1992,13 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     else (_hook_sev.get("output_renderable") == _HookSeverity.ERROR
                           or _hook_sev.get("uncertainty_well_formed") == _HookSeverity.ERROR)
                 ),
+                # Agent commit: opt into the ledger's RESOLVED-POLICY blocking pass so the
+                # built-in rules that carry no inline require_* gate (require_evidence and,
+                # under a strict / impact-scaled profile, the outside-view / quorum /
+                # reasoning-composition rules) enforce their resolved severity for THIS
+                # commit — the evidence floor + profile promotions become real for the
+                # agent path, while direct/programmatic callers stay observe-only.
+                enforce_resolved_hooks=True,
             )
             try:
                 from forecasting.writeup import write_brief
@@ -1999,7 +2006,14 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 write_brief(ledger, question_id, snapshot)
             except Exception:
                 pass
-            return tool_result(success=True, forecast_snapshot=snapshot.__dict__)
+            # Saturation visibility (Wave 3 H4): surface the observe-mode score +
+            # WARN advisories ALREADY recorded on this snapshot (no recompute) so the
+            # agent SEES "committed at 72/100, 3 advisories" and can self-improve on
+            # the next call without the user re-prompting. Read straight from the
+            # just-committed snapshot's metadata; absent when no report was recorded.
+            _sat = saturation_summary((getattr(snapshot, "metadata", None) or {}).get("saturation"))
+            _extra = {"saturation": _sat} if _sat is not None else {}
+            return tool_result(success=True, forecast_snapshot=snapshot.__dict__, **_extra)
 
         if action == "resolve":
             resolution = ledger.resolve_question(

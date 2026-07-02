@@ -2673,6 +2673,7 @@ class ForecastLedger:
         reasoning_methods: list[str] | None = None,
         require_output_structure: bool = True,
         distribution_autofix: bool = False,
+        enforce_resolved_hooks: bool = False,
     ) -> ForecastSnapshot:
         _enforce_write_gate("create_snapshot")
         question = self.get_question(question_id)
@@ -2811,12 +2812,15 @@ class ForecastLedger:
         # highest there. For a non-high-impact first forecast the panel is only
         # recommended (recorded as a note), so routine and exploratory research
         # stays unencumbered. Exploratory snapshots are exempt entirely.
+        # Read the linked panel run at most ONCE per commit; reused below for the
+        # terminal-calibration + quorum-participation signals (no N+1).
+        _linked_panel: dict[str, Any] | None = None
         if forecast_origin == "live":
             from forecasting.panel import should_run_panel  # local import avoids cycle
 
             if panel_run_ref:
-                linked_panel = self.get_panel_run(panel_run_ref)
-                if linked_panel["question_id"] != question_id:
+                _linked_panel = self.get_panel_run(panel_run_ref)
+                if _linked_panel["question_id"] != question_id:
                     raise ValidationError("panel_run_ref belongs to a different question")
             panel_skip = (panel_skipped_reason or "").strip()
             high_impact = (question.impact or "").strip().lower() == "high"
@@ -3036,10 +3040,21 @@ class ForecastLedger:
         # calibration stage (which records `applied_alpha` on the persisted spread)?
         # True when no panel is linked (nothing to skip). Best-effort / fail-open.
         _terminal_calibration_present = True
+        # Quorum / panel participation signals (v2) derived from the SAME linked
+        # panel run, so the quorum rules (participation / judged) evaluate truthfully
+        # at commit instead of defaulting (which false-fired quorum_participation and
+        # left quorum_judged indeterminate). Fail-open: defaults on any error.
+        _quorum_is = False
+        _quorum_persp = 0
+        _quorum_models = 0
+        _quorum_judged = False
         if panel_run_ref:
             try:
-                _pr = self.get_panel_run(panel_run_ref)
+                from forecasting.hooks.signals import quorum_signals_from_panel_run as _quorum_signals
+
+                _pr = _linked_panel if _linked_panel is not None else self.get_panel_run(panel_run_ref)
                 _terminal_calibration_present = "applied_alpha" in (_pr.get("spread_summary") or {})
+                _quorum_is, _quorum_persp, _quorum_models, _quorum_judged = _quorum_signals(_pr)
             except Exception:
                 _terminal_calibration_present = True
 
@@ -3141,6 +3156,10 @@ class ForecastLedger:
                         bounds_in_range=(_uda.in_range if _uda else True),
                         interval_width_ratio=(_uda.width_ratio if _uda else None),
                         sharpness=_ush,
+                        is_quorum=_quorum_is,
+                        panel_perspective_count=_quorum_persp,
+                        quorum_model_count=_quorum_models,
+                        quorum_judged=_quorum_judged,
                         calibration_under_confident=_uuc,
                         tail_null_excess=float(((_utd.get("null_model") or {}).get("excess_tail")) or 0.0),
                         active_lessons_unapplied=_active_unapplied,
@@ -3158,11 +3177,53 @@ class ForecastLedger:
                 if _ublocked is not None:
                     raise SaturationBlocked(_ublocked)
 
-        # Forecast hooks (Phase 1, OBSERVE mode): compute a saturation score +
-        # per-rule report and record it on the snapshot. The inline gates above
-        # remain the enforcement; this runs read-only and must never break a
-        # commit, so it is fully guarded. Phase 1b flips enforcement to the engine
-        # once the parity test confirms identical verdicts.
+        # Forecast hooks (Wave 3): the shared commit context is assembled ONCE below
+        # and drives two consumers:
+        #   (1) a RESOLVED-POLICY blocking pass (Slice H3) for the built-in rules that
+        #       have NO inline gate above — evaluated under resolve_severities (profile
+        #       + impact/origin scaling + config/per-question overrides, the SAME
+        #       resolution the observe call uses). A failing ERROR-severity rule here
+        #       raises SaturationBlocked with the rule's canonical builtin message +
+        #       remediation. This is what makes require_evidence (ERROR by default) a
+        #       real floor for an agent commit, and lets the strict profile /
+        #       impact-scaling actually block the non-inline rules instead of only
+        #       colouring the observe report.
+        #   (2) the OBSERVE-mode recording (Phase 1): compute the FULL saturation score
+        #       + per-rule report and record it on the snapshot.
+        # The inline gates above stay the byte-identical, first-failing-wins enforcement
+        # for the rules they own; the blocking pass NEVER re-evaluates a rule an inline
+        # gate already owns (de-duplicated by rule_id), so precedence + messages are
+        # preserved.
+        #
+        # SCOPE (all must hold for the blocking pass to fire):
+        #   * forecast_origin == 'live' (exploratory / backtest / imported stay observe-only);
+        #   * enforce_resolved_hooks is True — the OPT-IN the AGENT path (the interactive
+        #     forecast tool's update_forecast) sets. This mirrors the codebase's existing
+        #     require_* opt-in discipline: the ledger stays lenient for direct callers
+        #     (operator seeds, migrations, fixtures, internal recompute) so a raw
+        #     create_snapshot never retroactively hard-blocks, while the agent commit —
+        #     the path this floor is FOR — enforces the resolved policy. Programmatic
+        #     system paths (refresh / aggregate / autopilot / pilot-cohort) commit
+        #     directly with their style_autofix / distribution_autofix leniency and do
+        #     NOT opt in, so they keep observe + autofix (belt-and-braces: the autofix
+        #     flags below are also treated as an exemption);
+        #   * neither style_autofix nor distribution_autofix is set (programmatic exemption);
+        #   * the env kill-switch FORECAST_DISABLE_HOOK_BLOCKING is not set (it disables
+        #     the pass entirely; observe still runs).
+        # Everything is fully guarded and must NEVER break a commit; the block report is
+        # computed inside the fail-open try (run_hooks returns a report, it does not
+        # raise) and RAISED afterwards so SaturationBlocked escapes the fail-open.
+        #
+        # Built-in rule_ids already owned by an inline gate above (excluded from the
+        # blocking pass so nothing is evaluated as blocking twice; their precedence +
+        # exact messages are unchanged).
+        _INLINE_GATE_RULE_IDS = frozenset({
+            "require_structured_reasoning", "require_components", "require_fresh_evidence",
+            "require_decision_readiness", "require_panel", "require_citations",
+            "require_outcome_paths", "style_clean", "output_renderable",
+            "uncertainty_well_formed",
+        })
+        _resolved_block: SaturationReport | None = None
         try:
             from forecasting.hooks import build_commit_context, policy_from_require_flags, run_hooks
 
@@ -3226,6 +3287,10 @@ class ForecastLedger:
                 interval_width_ratio=(_oda.width_ratio if _oda else None),
                 sharpness=_osharp,
                 panel_run_count=len(self.list_panel_runs(question_id)),
+                is_quorum=_quorum_is,
+                panel_perspective_count=_quorum_persp,
+                quorum_model_count=_quorum_models,
+                quorum_judged=_quorum_judged,
                 active_lessons_unapplied=_active_unapplied,
                 committed_winner_prob=_winner_prob,
                 derived_child_present=_has_child,
@@ -3233,6 +3298,35 @@ class ForecastLedger:
                 terminal_calibration_present=_terminal_calibration_present,
                 thresholds=_qthresholds,
             )
+            # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that
+            # is NOT a programmatic (autofix) path and has not disabled the pass via the
+            # kill-switch. Evaluate ONLY the built-in rules with no inline gate, under the
+            # resolved (profile + scaling + override) severities, and stage the block to be
+            # raised after this fail-open try. run_hooks preserves builtin order, so the
+            # first failing ERROR is the same rule the report's blocking_failures()[0] names.
+            _block_disabled = os.environ.get("FORECAST_DISABLE_HOOK_BLOCKING", "").strip().lower() in {
+                "1", "true", "yes", "on",
+            }
+            if (
+                forecast_origin == "live"
+                and enforce_resolved_hooks
+                and not style_autofix
+                and not distribution_autofix
+                and not _block_disabled
+            ):
+                from forecasting.hooks import resolve_severities as _resolve_sev_block
+                from forecasting.hooks.builtins import BUILTIN_RULES as _ALL_BUILTIN_RULES
+
+                _resolved_policy = _resolve_sev_block(
+                    question, forecast_origin=forecast_origin, hooks_config=_hcfg,
+                )
+                _noninline_rules = tuple(
+                    r for r in _ALL_BUILTIN_RULES if r.id not in _INLINE_GATE_RULE_IDS
+                )
+                _block_report = run_hooks(_hook_ctx, _resolved_policy, rules=_noninline_rules)
+                if _block_report.blocking_failures():
+                    _resolved_block = _block_report
+
             _hook_policy = policy_from_require_flags(
                 forecast_origin=forecast_origin,
                 require_structured_reasoning=require_structured_reasoning,
@@ -3243,6 +3337,10 @@ class ForecastLedger:
             snapshot_metadata["saturation"] = run_hooks(_hook_ctx, _hook_policy).to_dict()
         except Exception:  # observe-mode is best-effort and must NEVER break a commit
             logger.debug("forecast-hooks observe-mode failed (non-fatal)", exc_info=True)
+        # RAISE the resolved-policy block OUTSIDE the fail-open try so SaturationBlocked
+        # (a ValidationError) is never swallowed by the observe guard above.
+        if _resolved_block is not None:
+            raise SaturationBlocked(_resolved_block)
 
         forecast_id = f"fs_{uuid.uuid4().hex[:12]}"
         horizon_days = self._forecast_horizon_days(question.close_time, as_of_ts)
@@ -3317,6 +3415,25 @@ class ForecastLedger:
         # commit, so `forecast lessons audit` can show whether each is actually used.
         if forecast_origin == "live":
             self._record_lesson_applications(question, forecast_id, probability_or_distribution, calibration_adjustment)
+        # Programmatic escalation (Wave 3 H4): a programmatic commit (refresh /
+        # aggregate / autopilot — the lenient autofix paths that never hard-block)
+        # whose recorded saturation is under the sweep bar escalates the SAME deduped
+        # WARN under-saturation alert the scheduled sweep raises, so the leniency
+        # stays but the under-saturation becomes VISIBLE + actionable. Live-only,
+        # deduped, fail-open; the AGENT path (no autofix — it sees the tool-result
+        # advisory instead) and non-live origins are untouched. Disable with
+        # FORECAST_DISABLE_SATURATION_ESCALATION.
+        if (
+            set_current
+            and forecast_origin == "live"
+            and (style_autofix or distribution_autofix)
+            and os.environ.get("FORECAST_DISABLE_SATURATION_ESCALATION", "").strip().lower()
+            not in {"1", "true", "yes", "on"}
+        ):
+            try:
+                self.enqueue_saturation_alert(question_id, snapshot_metadata.get("saturation"))
+            except Exception:  # visibility is best-effort and must NEVER break a commit
+                logger.debug("saturation escalation failed (non-fatal)", exc_info=True)
         return self.get_snapshot(forecast_id)
 
     def _thesis_auto_aggregate_enabled(self, thesis_id: str) -> bool:
@@ -6453,6 +6570,112 @@ class ForecastLedger:
             ):
                 return True
         return False
+
+    # ── Saturation visibility: under-saturation WARN alerts ──────────────────
+    # The observe-mode saturation score is recorded on every snapshot but changes
+    # no behaviour. These make an under-saturated LIVE forecast VISIBLE + actionable
+    # without ever hard-blocking a commit: the scheduled cron sweep raises a deduped
+    # WARN alert for each active live forecast below the bar, and a programmatic
+    # commit (refresh / aggregate / autopilot — the lenient autofix paths) escalates
+    # the SAME alert the moment it commits under the bar. The alert routes to the
+    # REFORECAST resolution kind (the agent re-saturates it), so `reconcile_alerts`
+    # auto-clears it once a fresh snapshot lands and the next sweep re-raises only if
+    # it is still under-saturated. Never a bare-ack; deduped by reason+scope.
+    _SATURATION_ALERT_REASON = "under_saturated"
+
+    def enqueue_saturation_alert(
+        self,
+        question_id: str,
+        saturation: Any,
+        *,
+        threshold: float | None = None,
+    ) -> "AlertEvent | None":
+        """Open a deduped WARN under-saturation alert for a forecast whose STORED
+        saturation report (``snapshot_metadata['saturation']``, passed in — no
+        recompute) scores below ``threshold`` (config
+        ``forecasting.hooks.sweep_alert_threshold``, default 60). The
+        ``recommended_action`` carries the failing rule ids + remediation hints.
+        Deduped against an already-open alert of the same reason+scope (mirrors the
+        triage-graduation + resolver-proposal kinds — never stacks a duplicate).
+        Returns the new AlertEvent, or None (no report / at-or-above the bar /
+        already open). Fail-open callers should still wrap this."""
+        from forecasting.hooks import saturation_summary, sweep_alert_threshold
+
+        summary = saturation_summary(saturation)
+        if summary is None:
+            return None
+        score = summary.get("score")
+        if not isinstance(score, (int, float)):
+            return None
+        bar = threshold if threshold is not None else sweep_alert_threshold()
+        if score >= bar:
+            return None
+        if self._has_open_alert(
+            reason=self._SATURATION_ALERT_REASON,
+            scope_type="question",
+            scope_ref=question_id,
+        ):
+            return None
+        advisories = summary.get("advisories") or []
+        rule_ids = [str(a.get("rule_id")) for a in advisories if a.get("rule_id")]
+        hints = sorted({str(a.get("remediation")) for a in advisories if a.get("remediation")})
+        action = f"forecast saturation {float(score):.0f}/100 is below the {float(bar):.0f} bar — under-saturated. "
+        if rule_ids:
+            action += f"Failing checks: {', '.join(rule_ids)}. "
+        if hints:
+            action += f"Remediate: {', '.join(hints)}. "
+        action += (
+            "Re-run the forecast (collect fresh evidence / run the panel / decompose / "
+            "tag reasoning) to raise saturation, then re-commit."
+        )
+        return self.create_alert(
+            severity="warning",
+            scope_type="question",
+            scope_ref=question_id,
+            reason=self._SATURATION_ALERT_REASON,
+            recommended_action=action,
+        )
+
+    def sweep_saturation_alerts(
+        self,
+        *,
+        threshold: float | None = None,
+        limit: int = 500,
+    ) -> dict[str, Any]:
+        """Scan active LIVE forecasts and open a deduped WARN alert for each whose
+        STORED saturation score is below the bar. Read-only over the observe report
+        already on each current snapshot — no hook recompute. Batched
+        (``snapshots_by_question``) to avoid a per-question query. Returns
+        ``{checked, under_saturated, alerted:[question_id]}``."""
+        from forecasting.hooks import saturation_summary, sweep_alert_threshold
+
+        bar = threshold if threshold is not None else sweep_alert_threshold()
+        questions = [
+            q for q in self.list_questions(status="active", limit=limit)
+            if q.outcome_space.type != "thesis"
+        ]
+        snapshots_by_q = self.snapshots_by_question([q.id for q in questions])
+        checked = 0
+        under = 0
+        alerted: list[str] = []
+        for question in questions:
+            snaps = snapshots_by_q.get(question.id) or []
+            current = snaps[-1] if snaps else None
+            if current is None or getattr(current, "forecast_origin", None) != "live":
+                continue
+            metadata = getattr(current, "metadata", None)
+            saturation = metadata.get("saturation") if isinstance(metadata, dict) else None
+            summary = saturation_summary(saturation)
+            if summary is None or not isinstance(summary.get("score"), (int, float)):
+                continue
+            checked += 1
+            if summary["score"] >= bar:
+                continue
+            under += 1
+            alert = self.enqueue_saturation_alert(question.id, saturation, threshold=bar)
+            if alert is not None:
+                alerted.append(question.id)
+        return {"checked": checked, "under_saturated": under, "alerted": alerted}
 
     # Desk-state key for the last-observed triage trust-gate mode.
     _TRIAGE_GATE_MODE_KEY = "triage_gate_mode"
@@ -11478,6 +11701,46 @@ class ForecastLedger:
                 continue
 
             question_id = alert.scope_ref
+
+            # under_saturated is a SCORE-based signal, not an evidence-based one: it
+            # clears when the current snapshot's STORED saturation score is back
+            # at/above the bar, regardless of whether new evidence was imported. A
+            # non-evidence re-saturation (added reasoning tags, a re-run panel, a
+            # fuller decomposition) is a legitimate fix; the score on an immutable
+            # snapshot only rises via a fresh commit, so a current score >= bar
+            # already implies a re-forecast landed. Evidence-gated reconcile would
+            # leave an evidence-free re-saturation stuck open forever (alert fatigue,
+            # since the deduped sweep won't re-raise it).
+            if alert.reason == self._SATURATION_ALERT_REASON:
+                _sat_score: float | None = None
+                _sat_bar: float | None = None
+                try:
+                    from forecasting.hooks import saturation_summary, sweep_alert_threshold
+
+                    _snap = self.get_current_snapshot(question_id)
+                    _meta = getattr(_snap, "metadata", None) if _snap is not None else None
+                    _summary = saturation_summary(_meta.get("saturation") if isinstance(_meta, dict) else None)
+                    _raw = _summary.get("score") if _summary else None
+                    _sat_score = float(_raw) if isinstance(_raw, (int, float)) else None
+                    _sat_bar = float(sweep_alert_threshold())
+                except Exception:
+                    _sat_score, _sat_bar = None, None
+                if _sat_score is not None and _sat_bar is not None and _sat_score >= _sat_bar:
+                    if not dry_run:
+                        self.acknowledge_alert(alert.id, acknowledged_at=now_ts)
+                    reconciled.append({"id": alert.id, "reason": alert.reason, "scope_ref": question_id})
+                else:
+                    still_open.append({
+                        "id": alert.id,
+                        "reason": alert.reason,
+                        "open_because": (
+                            "saturation still below the bar"
+                            if _sat_score is not None
+                            else "no saturation score on the current snapshot"
+                        ),
+                    })
+                continue
+
             try:
                 evidence_after = any(
                     (getattr(item, "captured_at", None) or getattr(item, "available_at", None) or "") > alert.created_at

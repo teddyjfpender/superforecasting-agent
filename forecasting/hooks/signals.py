@@ -42,6 +42,32 @@ def style_clean_for_rationale(rationale: str, extra: dict[str, str] | None = Non
     return (not offenders), offenders
 
 
+def quorum_signals_from_panel_run(run: Any) -> tuple[bool, int, int, bool]:
+    """Derive the four quorum/panel-participation signals from a SINGLE panel-run
+    dict (as returned by ``ledger.get_panel_run`` / ``list_panel_runs``), or the
+    all-falsey defaults when there is no run. Shared by the lint path (latest run)
+    and the commit path (the run linked via ``panel_run_ref``) so both compute the
+    signals identically.
+
+    Returns ``(is_quorum, panel_perspective_count, quorum_model_count, quorum_judged)``.
+
+    Judge presence is VALUE-based: a quorum is "judged" when a judge synthesis value
+    is stored (``panel_runs.judge``, persisted for runs from quorum_jobs). Value-based
+    so a genuinely-unjudged quorum is honestly flagged, while a NULL judge on an old
+    committed run stays honest too.
+    """
+    if not isinstance(run, dict):
+        return False, 0, 0, False
+    persp_count = len(run.get("perspectives") or [])
+    is_quorum = (run.get("triggered_by") == "quorum")
+    ests = run.get("estimates") or []
+    quorum_models = len({(e.get("agent_model") or e.get("model")) for e in ests if (e.get("agent_model") or e.get("model"))})
+    _meta = run.get("metadata")
+    _judge_field = (_meta.get("judge") if isinstance(_meta, dict) else None) or run.get("judge_model") or run.get("judge")
+    quorum_judged = bool(_judge_field)
+    return is_quorum, persp_count, quorum_models, quorum_judged
+
+
 def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", snapshot=None) -> HookContext:
     """Assemble a HookContext for an EXISTING current snapshot by reading the
     ledger's saturation signals (read-only). Used by ``forecast lint`` / the finish
@@ -149,24 +175,12 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     except Exception:
         is_tf, agg_stale, newer_members = is_tf, agg_stale, newer_members
 
-    persp_count, is_quorum, quorum_models, quorum_judged = 0, False, 0, False
     try:
         runs = ledger.list_panel_runs(question_id, limit=1)
-        if runs and isinstance(runs[0], dict):
-            r = runs[0]
-            persp_count = len(r.get("perspectives") or [])
-            is_quorum = (r.get("triggered_by") == "quorum")
-            ests = r.get("estimates") or []
-            quorum_models = len({(e.get("agent_model") or e.get("model")) for e in ests if (e.get("agent_model") or e.get("model"))})
-            # Judge presence: a quorum is "judged" when a judge synthesis VALUE is stored
-            # (panel_runs.judge, persisted for runs from quorum_jobs). Value-based, so a
-            # genuinely-unjudged quorum is honestly flagged (the gate is live now that the
-            # judge is persisted), while a NULL judge on an old committed run is never
-            # re-gated (only re-read lint sees it, informational + non-blocking).
-            _judge_field = (r.get("metadata") or {}).get("judge") or r.get("judge_model") or r.get("judge")
-            quorum_judged = bool(_judge_field)
+        _latest_run = runs[0] if runs else None
     except Exception:
-        pass
+        _latest_run = None
+    is_quorum, persp_count, quorum_models, quorum_judged = quorum_signals_from_panel_run(_latest_run)
 
     return HookContext(
         question_id=question_id,
@@ -268,6 +282,12 @@ def build_commit_context(
     interval_width_ratio: float | None = None,
     sharpness: float | None = None,
     panel_run_count: int = 0,
+    # quorum / panel participation (v2): derived from the linked panel_run_ref via
+    # quorum_signals_from_panel_run so the quorum rules evaluate truthfully at commit.
+    is_quorum: bool = False,
+    panel_perspective_count: int = 0,
+    quorum_model_count: int = 0,
+    quorum_judged: bool = False,
     calibration_under_confident: bool = False,
     reference_class_count: int = 0,
     linked_reference_class_count: int = 0,
@@ -322,6 +342,10 @@ def build_commit_context(
         interval_width_ratio=interval_width_ratio,
         sharpness=sharpness,
         panel_run_count=panel_run_count,
+        is_quorum=is_quorum,
+        panel_perspective_count=panel_perspective_count,
+        quorum_model_count=quorum_model_count,
+        quorum_judged=quorum_judged,
         calibration_under_confident=calibration_under_confident,
         reference_class_count=reference_class_count,
         linked_reference_class_count=linked_reference_class_count,
