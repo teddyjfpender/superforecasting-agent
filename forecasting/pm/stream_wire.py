@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
+from forecasting.pm.model import honest_yes_mid
+
 POLYMARKET_WS = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 KALSHI_WS = "wss://api.elections.kalshi.com/trade-api/ws/v2"
 
@@ -19,6 +21,13 @@ class Tick:
     market_id: str
     kind: str  # "price" | "book"
     payload: dict
+    # The HONEST probability estimate for this tick, computed server-side via
+    # the canonical honest_yes_mid rule — None when the message carries no
+    # estimate-grade information (degenerate/one-sided books, level deltas).
+    # Consumers (the TUI overlay) must fold ONLY this field and never re-derive
+    # prices from the raw payload: the operator caught a streamed empty book
+    # overwriting Putin's honest 12% with a fabricated 50% client-side.
+    estimate: float | None = None
 
 
 def _as_messages(raw: object) -> list[dict]:
@@ -37,8 +46,27 @@ def parse_polymarket(raw: object) -> list[Tick]:
         if not asset:
             continue
         kind = "book" if event == "book" else "price"
-        ticks.append(Tick(market_id=str(asset), kind=kind, payload=msg))
+        estimate: float | None = None
+        if kind == "book":
+            bids = [b for b in (msg.get("bids") or []) if isinstance(b, dict)]
+            asks = [a for a in (msg.get("asks") or []) if isinstance(a, dict)]
+            bb = max((_f(b.get("price")) for b in bids), default=None)
+            ba = min((_f(a.get("price")) for a in asks), default=None)
+            estimate = honest_yes_mid(bb, ba, None)
+        elif event == "last_trade_price":
+            estimate = _f(msg.get("price"))
+        # price_change carries LEVEL deltas (not a trade, not a full book):
+        # no estimate can honestly be derived from it.
+        ticks.append(Tick(market_id=str(asset), kind=kind, payload=msg, estimate=estimate))
     return ticks
+
+
+def _f(value: object) -> float | None:
+    try:
+        v = float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return v
 
 
 def parse_kalshi(raw: object) -> list[Tick]:
@@ -51,8 +79,24 @@ def parse_kalshi(raw: object) -> list[Tick]:
         if not ticker:
             continue
         kind = "book" if chan in ("orderbook_delta", "orderbook_snapshot") else "price"
-        ticks.append(Tick(market_id=str(ticker), kind=kind, payload=msg))
+        estimate: float | None = None
+        if chan == "ticker":
+            bid = _cents(body.get("yes_bid"))
+            ask = _cents(body.get("yes_ask"))
+            last = _cents(body.get("last_price") or body.get("price"))
+            if last is not None and last <= 0.0:
+                last = None  # 0 = no trade yet, never a 0% probability
+            estimate = honest_yes_mid(bid, ask, last)
+        elif chan == "trade":
+            price = _cents(body.get("yes_price") or body.get("price"))
+            estimate = price if price and price > 0.0 else None
+        ticks.append(Tick(market_id=str(ticker), kind=kind, payload=msg, estimate=estimate))
     return ticks
+
+
+def _cents(value: object) -> float | None:
+    v = _f(value)
+    return None if v is None else (v / 100.0 if v > 1.0 else v)
 
 
 @dataclass(frozen=True)

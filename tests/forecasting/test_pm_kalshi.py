@@ -114,7 +114,10 @@ def test_text_query_paginates_the_catalog():
     client = KalshiClient(fetch=fetch)
     found = client.list_events(query=target["title"][:10].lower(), limit=5)
     assert len(found) == 1 and found[0].title == target["title"]
-    assert len(calls) == 2, "must have followed the cursor to page 2"
+    # 3 calls now: the series-catalog probe (finds nothing in this fixture) +
+    # the two cursor pages of the event scan.
+    event_calls = [c for c in calls if "/events?" in c]
+    assert len(event_calls) == 2, "must have followed the cursor to page 2"
 
 
 def test_untraded_market_last_price_zero_is_no_estimate():

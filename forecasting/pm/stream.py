@@ -16,7 +16,7 @@ Design invariants (per the integration plan):
 * one long-lived connection per venue, subscriptions multiplexed onto it;
 * auto-reconnect with bounded exponential backoff, re-sending the live
   subscription set on every reconnect;
-* a callback bus — ``on_tick(venue, market_id, kind, payload)`` — so the gateway
+* a callback bus — ``on_tick(venue, market_id, kind, payload, estimate)`` — so the gateway
   can re-emit ``pm.tick`` frames without this module importing the gateway;
 * polite degradation: no ``websockets`` lib, or no Kalshi key, → ``start``
   returns ``{"streaming": False, "reason": ...}`` and nobody raises.
@@ -56,7 +56,7 @@ logger = logging.getLogger(__name__)
 _BACKOFF = (1.0, 2.0, 4.0, 8.0, 16.0, 30.0)
 _RECV_TIMEOUT = 30.0
 
-OnTick = Callable[[str, str, str, dict], None]
+OnTick = Callable[[str, str, str, dict, float | None], None]
 Sleeper = Callable[[float], None]
 KalshiCreds = Callable[[], "tuple[str, str] | None"]
 # Produces the per-handshake auth headers. Called ANEW on every (re)connect so a
@@ -245,7 +245,7 @@ class _VenueStream:
 
     def _dispatch(self, tick: Tick) -> None:
         try:
-            self._on_tick(self._spec.venue, tick.market_id, tick.kind, tick.payload)
+            self._on_tick(self._spec.venue, tick.market_id, tick.kind, tick.payload, tick.estimate)
         except Exception:  # pragma: no cover - a bad callback never kills the pump
             logger.debug("pm-stream %s on_tick raised", self._spec.venue)
 

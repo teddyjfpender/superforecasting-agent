@@ -84,8 +84,12 @@ def parse_market(raw: dict, *, event_id: str | None = None) -> PMMarket:
 
 
 # Bounded catalog scan for text search (Kalshi has no search endpoint):
-# up to 5 cursor pages x 200 events per query.
+# up to 5 cursor pages x 200 events per query, plus a series-catalog match
+# (2 pages x 200 series; events fetched for the top matches) so whole market
+# FAMILIES (daily temperature series etc.) are reachable by name.
 _SEARCH_MAX_PAGES = 5
+_SERIES_MAX_PAGES = 2
+_SERIES_EVENT_FETCHES = 4
 
 
 def parse_event(raw: dict) -> PMEvent:
@@ -271,7 +275,48 @@ class KalshiClient:
             # One top page (the old behaviour) missed everything below it.
             needle = query.strip().lower()
             matches: list[PMEvent] = []
-            cursor: str | None = None
+            seen: set[str] = set()
+
+            def _add(events: list[PMEvent]) -> None:
+                for e in events:
+                    if e.event_id not in seen:
+                        seen.add(e.event_id)
+                        matches.append(e)
+
+            # PHASE 1 — SERIES search: whole market families (e.g. the daily
+            # max-temperature series) never surface in the event scan because
+            # their events sit thousands deep; matching the series CATALOG by
+            # title/ticker reaches them directly (the operator: "i can't see
+            # any max temperature markets").
+            try:
+                series_hits: list[str] = []
+                cursor: str | None = None
+                for _ in range(_SERIES_MAX_PAGES):
+                    sp: dict[str, str] = {"limit": "200"}
+                    if cursor:
+                        sp["cursor"] = cursor
+                    raw = self._fetch(f"{self._base}/series?{urlencode(sp)}")
+                    page = raw.get("series") if isinstance(raw, dict) else []
+                    for s in page or []:
+                        hay = f"{s.get('title') or ''} {s.get('ticker') or ''}".lower()
+                        if needle in hay:
+                            series_hits.append(str(s.get("ticker")))
+                    cursor = raw.get("cursor") if isinstance(raw, dict) else None
+                    if not cursor or not page:
+                        break
+                for ticker in series_hits[:_SERIES_EVENT_FETCHES]:
+                    ep = urlencode({
+                        "series_ticker": ticker, "status": "open",
+                        "with_nested_markets": "true", "limit": "50",
+                    })
+                    _add(parse_events(self._fetch(f"{self._base}/events?{ep}")))
+                    if len(matches) >= int(limit):
+                        return matches[: int(limit)]
+            except Exception:
+                pass  # fail-open: the event scan below still runs
+
+            # PHASE 2 — bounded cursor scan of open events, filtered by title.
+            cursor = None
             for _ in range(_SEARCH_MAX_PAGES):
                 page_params: dict[str, str] = {
                     "with_nested_markets": "true", "status": "open", "limit": "200",
@@ -280,7 +325,7 @@ class KalshiClient:
                     page_params["cursor"] = cursor
                 raw = self._fetch(f"{self._base}/events?{urlencode(page_params)}")
                 page = parse_events(raw)
-                matches.extend(e for e in page if needle in e.title.lower())
+                _add([e for e in page if needle in e.title.lower()])
                 if len(matches) >= int(limit):
                     break
                 cursor = raw.get("cursor") if isinstance(raw, dict) else None

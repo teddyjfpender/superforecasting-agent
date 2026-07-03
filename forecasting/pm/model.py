@@ -83,6 +83,21 @@ class PMOrderBook:
 _DEGENERATE_SPREAD = 0.90
 
 
+def honest_yes_mid(
+    yes_bid: float | None, yes_ask: float | None, last_price: float | None
+) -> float | None:
+    """THE canonical price->probability rule (single source of truth — the
+    market model, the aggregate layer, and the STREAMING wire all delegate
+    here so no consumer can re-derive a dishonest number):
+    two-sided non-degenerate book -> mid; else a real last trade; else None.
+    """
+    if yes_bid is not None and yes_ask is not None:
+        if (yes_ask - yes_bid) < _DEGENERATE_SPREAD:
+            return (yes_bid + yes_ask) / 2.0
+        return last_price
+    return last_price
+
+
 @dataclass(frozen=True)
 class PMMarket:
     """One outcome-market. On Polymarket a categorical event's child market; on
@@ -113,15 +128,10 @@ class PMMarket:
         (the operator saw a 12-outcome event render 50% across the board and
         "book sums to 5.95"). Fall through to last trade, else honest None.
         """
-        if self.yes_bid is not None and self.yes_ask is not None:
-            if (self.yes_ask - self.yes_bid) < _DEGENERATE_SPREAD:
-                return (self.yes_bid + self.yes_ask) / 2.0
-            return self.last_price
         # ONE-SIDED books produce no estimate: a lone ask is an offer to sell,
         # not a probability (the operator caught a dead market with no bid, no
         # trades, and a 98c ask rendering as "98%" against a real <1% twin).
-        # Last trade is the only honest fallback.
-        return self.last_price
+        return honest_yes_mid(self.yes_bid, self.yes_ask, self.last_price)
 
     def to_dict(self) -> dict[str, Any]:
         return {

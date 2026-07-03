@@ -49,8 +49,8 @@ class FakeConn:
 
 
 def _collect(ticks: list, done: threading.Event, expected: int):
-    def on_tick(venue, market_id, kind, payload):
-        ticks.append((venue, market_id, kind))
+    def on_tick(venue, market_id, kind, payload, estimate):
+        ticks.append((venue, market_id, kind, estimate))
         if len(ticks) >= expected:
             done.set()
 
@@ -101,7 +101,7 @@ def test_start_subscribes_and_emits_ticks():
     # exactly one subscribe frame carrying the asset (Polymarket shape)
     subs = [f for f in conn.sent if f.get("type") == "market"]
     assert subs and subs[0]["assets_ids"] == ["tok1"]
-    assert ("polymarket", "tok1", "book") in ticks
+    assert any(t[:3] == ("polymarket", "tok1", "book") for t in ticks)
 
 
 def test_multiplex_adds_incremental_subscribe_on_live_connection():
@@ -246,3 +246,39 @@ def _throwaway_pem() -> str:
         format=serialization.PrivateFormat.PKCS8,
         encryption_algorithm=serialization.NoEncryption(),
     ).decode("ascii")
+
+
+def test_wire_ticks_carry_honest_estimates_only():
+    """The canonical rule rides the wire: consumers fold tick.estimate and never
+    re-derive prices (the operator caught a streamed empty book overwriting an
+    honest 12% with a fabricated 50% client-side)."""
+    from forecasting.pm.stream_wire import parse_kalshi, parse_polymarket
+
+    # Polymarket full book, sane spread -> mid.
+    [t] = parse_polymarket({"event_type": "book", "asset_id": "tok",
+                            "bids": [{"price": "0.11", "size": "100"}],
+                            "asks": [{"price": "0.12", "size": "90"}]})
+    assert t.estimate is not None and abs(t.estimate - 0.115) < 1e-9
+
+    # Degenerate/empty streamed book -> NO estimate (the Putin 50% bug).
+    [t2] = parse_polymarket({"event_type": "book", "asset_id": "tok", "bids": [], "asks": []})
+    assert t2.estimate is None
+    [t3] = parse_polymarket({"event_type": "book", "asset_id": "tok",
+                             "bids": [{"price": "0.0", "size": "1"}],
+                             "asks": [{"price": "1.0", "size": "1"}]})
+    assert t3.estimate is None
+
+    # price_change level deltas carry no estimate-grade information.
+    [t4] = parse_polymarket({"event_type": "price_change", "asset_id": "tok",
+                             "changes": [{"price": "0.5", "side": "BUY", "size": "10"}]})
+    assert t4.estimate is None
+
+    # Kalshi ticker: cents -> dollars, 0 last = no trade, degenerate book voided.
+    [k] = parse_kalshi({"type": "ticker", "msg": {"market_ticker": "KX-1",
+                                                  "yes_bid": 11, "yes_ask": 13, "last_price": 12}})
+    assert k.estimate is not None and abs(k.estimate - 0.12) < 1e-9
+    [k2] = parse_kalshi({"type": "ticker", "msg": {"market_ticker": "KX-1",
+                                                   "yes_bid": 0, "yes_ask": 100, "last_price": 0}})
+    assert k2.estimate is None
+    [k3] = parse_kalshi({"type": "trade", "msg": {"market_ticker": "KX-1", "yes_price": 4}})
+    assert k3.estimate is not None and abs(k3.estimate - 0.04) < 1e-9
