@@ -3320,7 +3320,20 @@ def _(rid, params: dict) -> dict:
 
         def _run():
             try:
+                # THROTTLE the per-warning stream: the dispatcher emits one event
+                # per alert, and a 1,300-alert free pass fired ~1,300 events in
+                # seconds — every consumer re-rendered per event (the operator saw
+                # the backlog strobe). Time-gate the noisy 'alert' phase to ~8/s;
+                # phase changes and the first/last events always pass through.
+                _last_emit = [0.0]
+
                 def _progress(ev: dict) -> None:
+                    now_s = time.monotonic()
+                    phase = ev.get("phase")
+                    is_edge = phase != "alert" or ev.get("done") in (1, ev.get("total"))
+                    if not is_edge and (now_s - _last_emit[0]) < 0.125:
+                        return
+                    _last_emit[0] = now_s
                     _emit("forecast.warnings.automode.progress", sid, {"job_id": job_id, **ev})
 
                 summary = run_warning_resolution(

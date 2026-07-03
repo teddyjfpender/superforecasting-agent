@@ -345,17 +345,52 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   }, [clampedSel])
 
   // ── Automode lifecycle (streamed gateway events) ──────────────────────────
+  // COALESCE the progress stream: the dispatcher emits one event per alert
+  // (a 1,300-alert free pass = ~1,300 events) and re-rendering per event made
+  // the whole backlog strobe (the operator's flash bug). The server now
+  // throttles too, but the view defends itself: paint at most ~6/s, with a
+  // trailing timer so the LAST done-count always lands.
+  const progressPendingRef = useRef<ForecastWarningsAutomodeProgress | null>(null)
+  const progressPaintedAtRef = useRef(0)
+  const progressTimerRef = useRef<null | ReturnType<typeof setTimeout>>(null)
   useEffect(() => {
-    const onProgress = (p: ForecastWarningsAutomodeProgress) => {
-      if (!p || p.job_id !== automodeIdRef.current) {
-        return
-      }
-
+    const paint = (p: ForecastWarningsAutomodeProgress) => {
+      progressPaintedAtRef.current = Date.now()
+      progressPendingRef.current = null
       setAutomode(prev =>
         prev
           ? { ...prev, done: p.done ?? prev.done, total: p.total ?? prev.total, phase: p.phase ?? prev.phase, reason: p.reason ?? prev.reason }
           : prev
       )
+    }
+
+    const onProgress = (p: ForecastWarningsAutomodeProgress) => {
+      if (!p || p.job_id !== automodeIdRef.current) {
+        return
+      }
+
+      const since = Date.now() - progressPaintedAtRef.current
+
+      if (since >= 160) {
+        paint(p)
+
+        return
+      }
+
+      // Too soon: stash the newest event and arm ONE trailing paint so the
+      // final value of a burst is never dropped.
+      progressPendingRef.current = p
+
+      if (progressTimerRef.current === null) {
+        progressTimerRef.current = setTimeout(() => {
+          progressTimerRef.current = null
+          const pending = progressPendingRef.current
+
+          if (pending) {
+            paint(pending)
+          }
+        }, 170 - since)
+      }
     }
 
     const onComplete = (p: ForecastWarningsAutomodeComplete) => {
@@ -386,6 +421,10 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     gw.on('forecast.warnings.automode.error', onError)
 
     return () => {
+      if (progressTimerRef.current !== null) {
+        clearTimeout(progressTimerRef.current)
+        progressTimerRef.current = null
+      }
       gw.off?.('forecast.warnings.automode.progress', onProgress)
       gw.off?.('forecast.warnings.automode.complete', onComplete)
       gw.off?.('forecast.warnings.automode.error', onError)
