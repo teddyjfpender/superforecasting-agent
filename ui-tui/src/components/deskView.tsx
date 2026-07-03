@@ -1952,7 +1952,7 @@ export function DeskSummary({
       <Box marginTop={1}>
         <Text wrap="truncate-end">
           <Text bold color={t.color.primary}>
-            {headlineCompact(selected)}
+            {headlineCompact(selected, 2)}
           </Text>
           <Text color={t.color.muted}>{'  '}</Text>
           <Text bold color={deltaColor}>
@@ -2563,7 +2563,7 @@ export const deskCellText = (
     }
 
     case 'prob':
-      return { color: t.color.text, text: headlineCompact(item) }
+      return { color: t.color.text, text: headlineCompact(item, 2) }
 
     case 'q':
       return { color: t.color.label, text: item.title ?? item.id ?? 'untitled' }

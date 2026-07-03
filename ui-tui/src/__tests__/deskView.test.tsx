@@ -359,7 +359,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('───')
     // A binary row carries its compact probability + an evidence count; a
     // distribution row shows its μ headline and never a fake percent in CHG.
-    expect(text).toContain('52%')
+    expect(text).toContain('52.00%')
     expect(text).toContain('μ4.23%')
     desk.cleanup()
   })
@@ -638,7 +638,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('54%')
     expect(text).toContain('54/100')
     // The selected forecast's compact headline + counts.
-    expect(text).toContain('52%')
+    expect(text).toContain('52.00%')
     expect(text).toContain('panel')
     expect(text).toContain('ev 1')
     // The 1-line analyst teaser.

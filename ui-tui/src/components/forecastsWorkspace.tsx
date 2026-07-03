@@ -143,7 +143,7 @@ export const headlineLabel = (item: ForecastWorkspaceItem): string => {
 }
 
 /** Compact one-token headline for the master list (e.g. "59%" or "μ4.23%"). */
-export const headlineCompact = (item: ForecastWorkspaceItem): string => {
+export const headlineCompact = (item: ForecastWorkspaceItem, probDigits = 0): string => {
   if (item.headline_kind === 'distribution' && item.distribution && finite(item.distribution.mean)) {
     return `μ${trimNum(item.distribution.mean)}${unitSuffix(item.units)}`
   }
@@ -151,7 +151,7 @@ export const headlineCompact = (item: ForecastWorkspaceItem): string => {
   const headline = item.headline_probability
 
   if (finite(headline) && headline >= 0 && headline <= 1) {
-    return pct(headline)
+    return pct(headline, probDigits)
   }
 
   return finite(headline) ? String(headline) : '—'
