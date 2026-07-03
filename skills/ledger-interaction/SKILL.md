@@ -54,6 +54,16 @@ The one legitimate write-script is a **rare, one-off migration** (e.g. a schema
 back-fill). Even then it calls the gated ledger methods, never raw SQL, and you say
 plainly that it's a migration.
 
+## Watch management is tool-native
+
+Watched sources (the refresh/autopilot/alert fuel) are WRITES: use the
+`forecast` tool's `add_watched_source` — and for anything bulk, ONE
+`add_watched_sources` call takes up to 400 `{question_id, source, ...}`
+entries with per-row results (a whole thesis in one call — never a script
+loop). `list_watched_sources` / `check_watched_sources` cover the reads.
+Raw `INSERT INTO watched_sources` from a script is refused by the
+connection-level gate, same as scripted forecasts.
+
 ## Bulk work without templating
 
 Bulk is fine — many primaries, a whole tracker. The discipline is per-item, not

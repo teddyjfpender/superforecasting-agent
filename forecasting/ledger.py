@@ -129,7 +129,16 @@ GATED_LEDGER_WRITES = ("create_question", "create_snapshot", "record_panel_run")
 # re-aggregation), and those must keep working with the gate ON. Reads are never
 # touched (audits/migrations script the ledger freely).
 GATED_LEDGER_TABLES = frozenset(
-    {"forecast_questions", "forecast_snapshots", "panel_runs"}
+    {
+        "forecast_questions",
+        "forecast_snapshots",
+        "panel_runs",
+        # Watch config drives every automated data flow (refresh, autopilot,
+        # alerts): a script mass-inserting watches is the same bypass class as
+        # a scripted forecast. The tool exposes add_watched_source and the bulk
+        # add_watched_sources for the legitimate path.
+        "watched_sources",
+    }
 )
 
 
@@ -9308,7 +9317,12 @@ class ForecastLedger:
         watch_id = f"ws_{uuid.uuid4().hex[:12]}"
         created_at = utc_now_iso()
         signature = self._source_signature(source, inferred_type, metadata=metadata)
-        with self._connect() as conn:
+        # The METHOD is the blessed write path (validation above earns it), so it
+        # opens the commit context itself: every legitimate caller (tool, CLI,
+        # auto-watch, cron, gateway) keeps working with zero call-site churn,
+        # while a raw `sqlite3 ... INSERT INTO watched_sources` from an ad-hoc
+        # script — the observed bypass — is refused by the authorizer.
+        with allow_ledger_writes("add_watched_source"), self._connect() as conn:
             conn.execute(
                 """
                 INSERT INTO watched_sources (

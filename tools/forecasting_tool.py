@@ -172,6 +172,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "forecast_complementarity",
                     "thesis_dashboard",
                     "add_watched_source",
+                    "add_watched_sources",
                     "list_watched_sources",
                     "check_watched_sources",
                     "autopilot_readiness",
@@ -682,6 +683,17 @@ FORECAST_LEDGER_SCHEMA = {
             "toolset_version": {"type": "string"},
             "source_or_note": {"type": "string"},
             "source": {"type": "string"},
+            "watches": {
+                "type": "array",
+                "description": (
+                    "For add_watched_sources (BULK): one entry per watch — "
+                    "{question_id (or scope_type+scope_ref), source, source_type?, "
+                    "role?, label?}. ONE call covers a whole thesis (e.g. 35 races "
+                    "x 7 sources); prefer this over scripting loops."
+                ),
+                "items": {"type": "object"},
+                "maxItems": 400,
+            },
             "query": {"type": "string"},
             "sources": {"type": "array", "items": {"type": "string"}},
             "required_source": {"type": "string"},
@@ -2541,6 +2553,41 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 metadata=_tool_watch_metadata(args),
             )
             return tool_result(success=True, watched_source=watch)
+
+        if action == "add_watched_sources":
+            entries = args.get("watches")
+            if not isinstance(entries, list) or not entries:
+                raise ValueError("add_watched_sources requires a non-empty watches array")
+            if len(entries) > 400:
+                raise ValueError("add_watched_sources caps at 400 watches per call")
+            results: list[dict[str, Any]] = []
+            added = 0
+            for index, entry in enumerate(entries):
+                if not isinstance(entry, dict):
+                    results.append({"index": index, "success": False, "error": "entry must be an object"})
+                    continue
+                try:
+                    watch = ledger.add_watched_source(
+                        scope_type=entry.get("scope_type") or ("question" if entry.get("question_id") else ""),
+                        scope_ref=entry.get("scope_ref") or entry.get("question_id"),
+                        source=str(entry.get("source") or "").strip(),
+                        source_type=entry.get("source_type"),
+                        metadata=_tool_watch_metadata(entry),
+                    )
+                    added += 1
+                    results.append({"index": index, "success": True, "watched_source": watch})
+                except Exception as exc:  # per-row isolation: one bad row never kills the batch
+                    results.append({"index": index, "success": False, "error": str(exc)})
+            return tool_result(
+                success=added > 0,
+                added=added,
+                failed=len(results) - added,
+                results=results,
+                note=(
+                    "bulk watch add: per-row results above; failed rows carry their "
+                    "error and can be resubmitted alone"
+                ),
+            )
 
         if action == "list_watched_sources":
             watches = ledger.list_watched_sources(
