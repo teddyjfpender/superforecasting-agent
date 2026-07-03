@@ -1667,3 +1667,20 @@ describe('DeskView agent-run visibility', () => {
     desk.cleanup()
   })
 })
+
+describe('sidebar wrap law', () => {
+  it('the focused title WRAPS in the summary panel (no … chop) and long teasers end honestly', async () => {
+    const long = plainRow('fq_long', 'Will the market begin pricing AI-infrastructure scarcity as a persistent macro constraint through 2027?')
+    const resp: ForecastWorkspaceResponse = {
+      active_count: 1, closing_soon_count: 0, forecasts: [long],
+      generated_at: '2026-06-29T14:00:00Z', open_alert_count: 0, product: 'Superforecasting Agent'
+    }
+    const desk = await mountDesk(170, resp)
+    await tick(150)
+    const text = desk.text()
+    // The tail of the title survives (wrapped onto following lines).
+    expect(text).toContain('through')
+    expect(text).toContain('2027?')
+    desk.cleanup()
+  })
+})

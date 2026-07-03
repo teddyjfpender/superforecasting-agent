@@ -29,7 +29,7 @@ import {
   tabRefFactor,
   tabRefThesis
 } from '../lib/deskGroups.js'
-import { bandChart, deltaGlyph, levelSparkline, pct, shortDate, windowDelta } from '../lib/forecastCharts.js'
+import { bandChart, deltaGlyph, levelSparkline, pct, shortDate, windowDelta, wrapLines } from '../lib/forecastCharts.js'
 import { packetTailAudit } from '../lib/forecastTail.js'
 import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { spinnerFrame } from '../lib/icons.js'
@@ -1929,7 +1929,10 @@ export function DeskSummary({
     ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin })
     : null
 
-  const teaser = latestNote?.headline || (latestNote?.body ?? '').slice(0, 120) || ''
+  // The teaser must READ COMPLETE or end honestly: the old silent
+  // body.slice(0,120) chopped mid-thought with no ellipsis (the operator:
+  // "some text at the bottom trails off, it doesn't seem to finish").
+  const teaser = latestNote?.headline || (latestNote?.body ?? '') || ''
   const sources = new Set((selected.evidence ?? []).map(e => e.source).filter(Boolean)).size
   const panelCount = selected.panel?.estimates?.length ?? 0
 
@@ -1937,8 +1940,8 @@ export function DeskSummary({
     <Box flexDirection="column" flexShrink={0} width={width}>
       <LensHeader refFactor={refFactor} refThesis={refThesis} t={t} width={inner} />
 
-      <Text bold color={t.color.primary} wrap="truncate-end">
-        {truncate(selected.title ?? selected.id ?? 'untitled', inner)}
+      <Text bold color={t.color.primary} wrap="wrap">
+        {wrapLines(selected.title ?? selected.id ?? 'untitled', inner, 3).join('\n')}
       </Text>
       <Text wrap="truncate-end">
         {selected.domain ? <Text color={t.color.label}>{selected.domain}</Text> : null}
@@ -2028,7 +2031,7 @@ export function DeskSummary({
       {teaser ? (
         <Box marginTop={1}>
           <Text color={t.color.text} wrap="wrap">
-            {truncate(teaser, inner * 2)}
+            {wrapLines(teaser, inner, 4).join('\n')}
           </Text>
         </Box>
       ) : null}
@@ -2082,12 +2085,12 @@ function LensSummary({
   const asOf = refThesis?.as_of ?? refFactor?.as_of
   const freshness = refThesis?.freshness ?? refFactor?.freshness
   const note = refThesis?.analyst_note ?? refFactor?.analyst_note
-  const teaser = note?.headline || (note?.body ?? '').slice(0, 120) || ''
+  const teaser = note?.headline || (note?.body ?? '') || ''
 
   return (
     <Box flexDirection="column" flexShrink={0} width={width}>
-      <Text bold color={t.color.accent} wrap="truncate-end">
-        {`${refThesis ? '◆' : '▣'} ${truncate(title, inner - 2)}`}
+      <Text bold color={t.color.accent} wrap="wrap">
+        {`${refThesis ? '◆' : '▣'} ${wrapLines(title, inner - 2, 2).join('\n  ')}`}
       </Text>
       <Text color={t.color.muted} wrap="truncate-end">{refThesis ? 'thesis lens' : 'factor lens'}</Text>
 
@@ -2141,7 +2144,7 @@ function LensSummary({
       {teaser ? (
         <Box marginTop={1}>
           <Text color={t.color.text} wrap="wrap">
-            {truncate(teaser, inner * 2)}
+            {wrapLines(teaser, inner, 4).join('\n')}
           </Text>
         </Box>
       ) : null}
