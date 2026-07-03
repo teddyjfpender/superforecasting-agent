@@ -42,6 +42,78 @@ export function flattenPMRows(items: readonly PMListItem[], expanded: ReadonlySe
 export const pmExpandable = (item: PMListItem): boolean =>
   !item.distribution.binary && (item.distribution.outcomes?.length ?? 0) > 1
 
+// ── column packing (2-space gutters enforced; priority-drop on narrow) ────────
+// Two aligned schemas so every value sits under a header that NAMES it (the old
+// tape let bid/ask fall under VOL and volume under CLOSE). The pack machinery
+// guarantees a minimum 2-space gutter between every column, so compact cells
+// ("$2.3M" + "Oct 31") can never merge into "$2.3MOct 31".
+
+export interface PmCol {
+  align: 'left' | 'right'
+  key: string
+  label: string
+  w: number
+}
+
+const PM_GUTTER = 2
+const PM_MARKER = 2 // the leading '▸ '/'  ' cursor gutter
+const PM_MARKET_MIN = 12
+
+// Headline schema fixed columns (MARKET absorbs the leftover). Priority to KEEP
+// under pressure: PROB + CLOSE are sacred (with MARKET); VOL outranks VENUE, so
+// the narrow-terminal drop order is VENUE first, then VOL.
+const PM_HEAD_FIXED: PmCol[] = [
+  { align: 'right', key: 'prob', label: 'PROB', w: 6 },
+  { align: 'right', key: 'vol', label: 'VOL', w: 7 },
+  { align: 'right', key: 'close', label: 'CLOSE', w: 7 },
+  { align: 'left', key: 'venue', label: 'VENUE', w: 6 }
+]
+
+const PM_HEAD_DROP_ORDER = ['venue', 'vol'] as const
+
+// Pack the headline row into `avail` columns: choose which fixed columns survive
+// (dropping VENUE then VOL until MARKET clears its minimum), then give MARKET the
+// remaining width. Returns MARKET width + the surviving fixed columns in display
+// order. Pure + deterministic so the layout is unit-testable.
+export function packPmHead(avail: number): { cols: PmCol[]; marketW: number } {
+  const budget = Math.max(PM_MARKET_MIN, avail - PM_MARKER)
+  const keep = new Set(PM_HEAD_FIXED.map(c => c.key))
+
+  const fixedWidth = () =>
+    PM_HEAD_FIXED.filter(c => keep.has(c.key)).reduce((acc, c) => acc + PM_GUTTER + c.w, 0)
+
+  for (const drop of PM_HEAD_DROP_ORDER) {
+    if (budget - fixedWidth() >= PM_MARKET_MIN) {
+      break
+    }
+
+    keep.delete(drop)
+  }
+
+  const cols = PM_HEAD_FIXED.filter(c => keep.has(c.key))
+
+  return { cols, marketW: Math.max(PM_MARKET_MIN, budget - cols.reduce((a, c) => a + PM_GUTTER + c.w, 0)) }
+}
+
+// Outcome sub-row schema: OUTCOME (flex) | PROB | BID·ASK | VOL. Rendered under
+// its own dim header so the bid/ask + volume cells are named correctly. The
+// outcome rows are indented under the expand tree, so the label budget subtracts
+// that indent on top of the cursor marker.
+export const PM_OUTCOME_INDENT = 3 // the '└ ' tree glyph run
+
+const PM_OUTCOME_FIXED: PmCol[] = [
+  { align: 'right', key: 'prob', label: 'PROB', w: 6 },
+  { align: 'right', key: 'ba', label: 'BID·ASK', w: 7 },
+  { align: 'right', key: 'vol', label: 'VOL', w: 7 }
+]
+
+export function packPmOutcome(avail: number): { cols: PmCol[]; labelW: number } {
+  const fixed = PM_OUTCOME_FIXED.reduce((a, c) => a + PM_GUTTER + c.w, 0)
+  const budget = avail - PM_MARKER - PM_OUTCOME_INDENT
+
+  return { cols: PM_OUTCOME_FIXED, labelW: Math.max(6, budget - fixed) }
+}
+
 // ── sort (headline rows only; sub-rows stay attached under their parent) ─────
 
 export const PM_SORT_KEYS = ['title', 'prob', 'vol', 'close'] as const

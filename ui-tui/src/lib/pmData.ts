@@ -359,3 +359,24 @@ export const fmtClose = (iso: null | string | undefined): string => {
 
 export const venueLabel = (venue: string): string =>
   venue.toLowerCase() === 'kalshi' ? 'Kalshi' : venue.toLowerCase() === 'polymarket' ? 'Polymarket' : venue
+
+// A short, consistent venue chip for the dense tape ('poly' / 'kalshi') — always
+// whole (never truncated mid-word), themed dim by the caller.
+export const venueChip = (venue: string): string =>
+  venue.toLowerCase() === 'kalshi' ? 'kalshi' : venue.toLowerCase() === 'polymarket' ? 'poly' : venue.toLowerCase()
+
+// The YES bid/ask pair as integer cents ("40/42"), a single '—' when neither
+// side is quoted (a degenerate/empty book — never a fabricated 0/0). A missing
+// single side reads as '·' so the present side is still legible.
+export const fmtBidAsk = (bid: null | number | undefined, ask: null | number | undefined): string => {
+  const b = bid === null || bid === undefined ? null : bid
+  const a = ask === null || ask === undefined ? null : ask
+
+  if (b === null && a === null) {
+    return '—'
+  }
+
+  const side = (v: null | number): string => (v === null ? '·' : String(Math.round(v * 100)))
+
+  return `${side(b)}/${side(a)}`
+}

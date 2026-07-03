@@ -170,25 +170,38 @@ describe('MarketsView', () => {
     expect(text).toContain('CATEGORIES')
   })
 
-  it('lists Prediction Markets in add-data and enabling it jumps into the PM pane', async () => {
+  it('lists Prediction Markets in add-data and enabling it lands on the Data tape Prediction section', async () => {
     const m = await renderMarkets()
     await m.press('d')
+
     // The PM entry sits at the catalog tail: walk the provider list down to it,
     // toggle it on, save. The operator's discovery path is the add-data flow, so
-    // enabling must land them IN the pane, not silently save a no-op.
+    // enabling must land them ON the Prediction section of the Data tape, not
+    // silently save a no-op — and NOT a separate '[Prediction]' mode chip.
     // The PM entry is the catalog TAIL and the cursor clamps at the last row,
     // so a fixed run of downs deterministically lands on it (the cumulative
     // stdout buffer makes visibility checks unreliable for cursor position).
     for (let i = 0; i < 30; i += 1) {
       await m.press('\u001b[B')
     }
+
     expect(m.text()).toContain('Prediction Mar')
     await m.press('\r') // ⏎ toggles the highlighted provider on
     await m.press('\u001b') // Esc = save & close (the modal's commit key)
     const text = m.text()
     m.cleanup()
 
-    expect(text).toContain('[Prediction]')
+    // Native integration: the header keeps the two-mode strip (no Prediction
+    // mode chip); the tape gains a Prediction category tab and its PM-shaped
+    // header row. (VOL/VENUE priority-drop at this headless ~80-col width; the
+    // full 5-column contract is covered in pmSection.test.tsx.)
+    expect(text).not.toContain('[Prediction]')
+    expect(text).toContain('[Data]')
+    expect(text).toContain('Prediction')
+    expect(text).toContain('MARKET')
+    expect(text).toContain('PROB')
+    // Keyless, no gateway wired in this smoke test → the honest empty line.
+    expect(text).toContain('Prediction markets need the gateway')
   })
 })
 

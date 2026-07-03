@@ -1,8 +1,7 @@
 import { Box, Text } from '@hermes/ink'
 
-import { fmtClose, fmtPMVol, fmtProb, venueLabel } from '../lib/pmData.js'
-import { type PMDisplayRow } from '../lib/pmRows.js'
-import { pmExpandable } from '../lib/pmRows.js'
+import { fmtBidAsk, fmtClose, fmtPMVol, fmtProb, venueChip } from '../lib/pmData.js'
+import { packPmHead, packPmOutcome, type PMDisplayRow, pmExpandable } from '../lib/pmRows.js'
 import { sortIndicator, type TableSortState } from '../lib/tableSort.js'
 import { pad, type Semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
@@ -14,7 +13,6 @@ interface PMTableProps {
   emptyText: string
   expanded: ReadonlySet<string>
   height: number
-  labelCol: number
   listStart: number
   livePrices: Record<string, number>
   onSelect: (idx: number) => void
@@ -27,12 +25,14 @@ interface PMTableProps {
   windowed: PMDisplayRow[]
 }
 
-const sortHead = (label: string, key: string, state: TableSortState, w: number): string =>
-  pad(`${label}${state.key === key ? ` ${sortIndicator(state, key)}` : ''}`, w, key === 'title' ? 'left' : 'right')
+// The gutter every non-first column leads with — kept in sync with the pack
+// machinery (lib/pmRows) so header + rows line up cell-for-cell.
+const GUT = '  '
 
-// The dense tape: event HEADLINE rows (title + top outcome, de-vigged prob,
-// volume, close, venue chip) with ▸ expand revealing INDENTED outcome sub-rows
-// (label, prob, bid/ask, volume) — the discretised distribution.
+// The dense Prediction Markets section: event HEADLINE rows (title + top
+// outcome, de-vigged prob, volume, close, venue chip) with ▸ expand revealing
+// INDENTED outcome sub-rows (label, prob, bid·ask, volume). Two aligned column
+// schemas — every value sits under a header that NAMES it.
 export function PredictionMarketsTable({
   active,
   avail,
@@ -40,7 +40,6 @@ export function PredictionMarketsTable({
   emptyText,
   expanded,
   height,
-  labelCol,
   listStart,
   livePrices,
   onSelect,
@@ -52,24 +51,32 @@ export function PredictionMarketsTable({
   tableWidth,
   windowed
 }: PMTableProps) {
+  const head = packPmHead(avail)
+  const outcome = packPmOutcome(avail)
   const headColor = (key: string) => (sortState.key === key ? t.color.accent : sem.heading)
+
+  const headText = (label: string, key: string, w: number, align: 'left' | 'right') =>
+    pad(`${label}${sortState.key === key ? ` ${sortIndicator(sortState, key)}` : ''}`, w, align)
 
   return (
     <Box flexDirection="column" flexShrink={0} height={height} overflow="hidden" paddingRight={1} width={tableWidth}>
+      {/* Headline header row — MARKET | PROB | VOL | CLOSE | VENUE. Each named
+          column (except the non-sortable venue chip) is a click target. */}
       <Box>
         <Text bold color={sem.heading}>{'  '}</Text>
         <Text bold color={headColor('title')} onClick={active ? () => onSortByKey('title') : undefined}>
-          {sortHead('MARKET', 'title', sortState, labelCol)}
+          {headText('MARKET', 'title', head.marketW, 'left')}
         </Text>
-        <Text bold color={headColor('prob')} onClick={active ? () => onSortByKey('prob') : undefined}>
-          {sortHead('PROB', 'prob', sortState, 7)}
-        </Text>
-        <Text bold color={headColor('vol')} onClick={active ? () => onSortByKey('vol') : undefined}>
-          {sortHead('VOL', 'vol', sortState, 8)}
-        </Text>
-        <Text bold color={headColor('close')} onClick={active ? () => onSortByKey('close') : undefined}>
-          {sortHead('CLOSE', 'close', sortState, 7)}
-        </Text>
+        {head.cols.map(c => (
+          <Text
+            bold
+            color={headColor(c.key)}
+            key={c.key}
+            onClick={active && c.key !== 'venue' ? () => onSortByKey(c.key) : undefined}
+          >
+            {`${GUT}${headText(c.label, c.key, c.w, c.align)}`}
+          </Text>
+        ))}
       </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       <Box flexDirection="column">
@@ -90,6 +97,8 @@ export function PredictionMarketsTable({
               // sum-to-1 and mix scales — keep the de-vigged prob.
               const rawOk = row.item.distribution.binary || !row.item.distribution.normalized
               const live = rawOk ? livePrices[row.item.distribution.outcomes?.[0]?.market_id ?? ''] : undefined
+              // A degenerate/empty book yields a null top prob — render '—',
+              // NEVER a fabricated 50%.
               const prob = live ?? h.top_prob
               const canExpand = pmExpandable(row.item)
               const caret = canExpand ? (expanded.has(row.id) ? '▾ ' : '▸ ') : '  '
@@ -98,18 +107,38 @@ export function PredictionMarketsTable({
                 ? row.item.distribution.title
                 : `${row.item.distribution.title}${h.top_label ? ` — ${h.top_label}` : ''}`
 
+              const cell = (key: string): string => {
+                switch (key) {
+                  case 'close':
+                    return fmtClose(h.close_time)
+
+                  case 'prob':
+                    return fmtProb(prob)
+
+                  case 'venue':
+                    return venueChip(row.item.event.venue)
+
+                  case 'vol':
+                    return fmtPMVol(h.total_volume)
+
+                  default:
+                    return ''
+                }
+              }
+
               return (
                 <Box key={row.id} onClick={active ? () => onSelect(idx) : undefined} width="100%">
                   <Text wrap="truncate-end">
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                     <Text color={canExpand ? sem.subtle : sem.faint}>{caret}</Text>
                     <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
-                      {pad(title, labelCol - 2, 'left')}
+                      {pad(title, head.marketW - 2, 'left')}
                     </Text>
-                    <Text color={t.color.text}>{pad(fmtProb(prob), 7, 'right')}</Text>
-                    <Text color={sem.subtle}>{pad(fmtPMVol(h.total_volume), 8, 'right')}</Text>
-                    <Text color={sem.subtle}>{pad(fmtClose(h.close_time), 6, 'right')}</Text>
-                    <Text color={sem.faint}>{` ${venueLabel(row.item.event.venue).slice(0, 4)}`}</Text>
+                    {head.cols.map(c => (
+                      <Text color={c.key === 'venue' ? sem.faint : c.key === 'prob' ? t.color.text : sem.subtle} key={c.key}>
+                        {`${GUT}${pad(cell(c.key), c.w, c.align)}`}
+                      </Text>
+                    ))}
                   </Text>
                 </Box>
               )
@@ -121,18 +150,52 @@ export function PredictionMarketsTable({
             const rawOk = row.parent.distribution.binary || !row.parent.distribution.normalized
             const live = rawOk ? livePrices[o.market_id] : undefined
             const prob = live ?? o.prob
-            const quote = o.yes_bid !== null || o.yes_ask !== null ? `${Math.round((o.yes_bid ?? 0) * 100)}/${Math.round((o.yes_ask ?? 0) * 100)}` : '—'
+            // First outcome of an expanded group gets a dim OUTCOME | PROB |
+            // BID·ASK | VOL header line above it, so every sub-cell is named.
+            const prev = windowed[i - 1]
+            const firstOfGroup = !prev || prev.kind !== 'outcome' || prev.parentId !== row.parentId
+
+            const outCell = (key: string): string => {
+              switch (key) {
+                case 'ba':
+                  return fmtBidAsk(o.yes_bid, o.yes_ask)
+
+                case 'prob':
+                  return fmtProb(prob)
+
+                case 'vol':
+                  return fmtPMVol(o.volume)
+
+                default:
+                  return ''
+              }
+            }
 
             return (
-              <Box key={row.id} onClick={active ? () => onSelect(idx) : undefined} width="100%">
-                <Text wrap="truncate-end">
-                  <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
-                  <Text color={sem.faint}>{'   └ '}</Text>
-                  <Text color={on ? sem.selectionFg : sem.subtle}>{pad(o.label, labelCol - 5, 'left')}</Text>
-                  <Text color={t.color.text}>{pad(fmtProb(prob), 7, 'right')}</Text>
-                  <Text color={sem.faint}>{pad(quote, 8, 'right')}</Text>
-                  <Text color={sem.subtle}>{pad(fmtPMVol(o.volume), 6, 'right')}</Text>
-                </Text>
+              <Box flexDirection="column" key={row.id} width="100%">
+                {firstOfGroup ? (
+                  <Text wrap="truncate-end">
+                    <Text color={sem.faint}>{'     '}</Text>
+                    <Text color={sem.subtle}>{pad('OUTCOME', outcome.labelW, 'left')}</Text>
+                    {outcome.cols.map(c => (
+                      <Text color={sem.subtle} key={c.key}>
+                        {`${GUT}${pad(c.label, c.w, c.align)}`}
+                      </Text>
+                    ))}
+                  </Text>
+                ) : null}
+                <Box onClick={active ? () => onSelect(idx) : undefined} width="100%">
+                  <Text wrap="truncate-end">
+                    <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
+                    <Text color={sem.faint}>{'└ '}</Text>
+                    <Text color={on ? sem.selectionFg : sem.subtle}>{pad(o.label, outcome.labelW, 'left')}</Text>
+                    {outcome.cols.map(c => (
+                      <Text color={c.key === 'prob' ? t.color.text : c.key === 'ba' ? sem.faint : sem.subtle} key={c.key}>
+                        {`${GUT}${pad(outCell(c.key), c.w, c.align)}`}
+                      </Text>
+                    ))}
+                  </Text>
+                </Box>
               </Box>
             )
           })

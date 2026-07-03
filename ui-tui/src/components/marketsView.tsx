@@ -21,10 +21,12 @@ import {
 } from '../lib/marketStore.js'
 import { loadModelCatalog, saveModelCatalog } from '../lib/modelStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
+import { venueLabel } from '../lib/pmData.js'
 import { type MarketModelListItem, normalizeModelList, normalizePresentation, type Presentation } from '../lib/presentation.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
-import { sortIndicator, sortRows, type SortDir, type SortValue, useTableSort } from '../lib/tableSort.js'
+import { sortIndicator, sortRows, type SortValue, useTableSort } from '../lib/tableSort.js'
+import { usePmSection } from '../lib/usePmSection.js'
 import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -35,11 +37,17 @@ import { MarketSearchModal } from './marketSearchModal.js'
 import { type ChatMessage, ModelChat } from './modelChat.js'
 import { ModelsList } from './modelsList.js'
 import { NewModelModal, type NewModelParams } from './newModelModal.js'
-import { PredictionMarketsView } from './predictionMarketsView.js'
+import { PredictionMarketDetail } from './predictionMarketDetail.js'
+import { PredictionMarketsTable } from './predictionMarketsTable.js'
 import { PresentationView } from './presentationView.js'
 
 export const openMarketsView = () => patchOverlayState({ markets: true })
 export const closeMarketsView = () => patchOverlayState({ markets: false })
+
+// The Prediction Markets pseudo-category. It rides the Data-mode tab strip
+// alongside the quote categories (Indices, FX, …) — NOT a separate mode — and
+// its section renders PM-shaped rows + a PM detail pane in the same tape.
+const PREDICTION = 'Prediction'
 
 // Markets — a live tape backed by user-chosen providers, with a searchable
 // universe and a rich per-line-item detail pane (sparkline + day/52-week ranges
@@ -211,7 +219,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const [searchInput, setSearchInput] = useState('')
 
   // ── Market Models mode ──────────────────────────────────────────────────
-  const [mode, setMode] = useState<'data' | 'models' | 'pm'>('data')
+  // Two modes only — Prediction is a Data-mode tab (native, like Stocks/FX), not
+  // a mode of its own.
+  const [mode, setMode] = useState<'data' | 'models'>('data')
   const [models, setModels] = useState<MarketModelListItem[]>(() => loadModelCatalog().models)
   const [modelSel, setModelSel] = useState(0)
   const [openModelId, setOpenModelId] = useState<null | string>(null)
@@ -277,6 +287,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   }, [])
 
   const providers = useMemo(() => new Set(config.providers), [config])
+  const pmEnabled = providers.has('predictionmarkets')
 
   // Enabled providers that require (or strongly need) an API key but don't have
   // one set — these fetch nothing, so warn instead of showing a silent blank.
@@ -547,14 +558,41 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const watchlist = config.watchlist
   const custom = config.custom
 
-  // Tabs: a Watchlist tab (if any) plus the selected provider categories.
+  // Tabs: a Watchlist tab (if any), the selected provider categories, then the
+  // Prediction section (last) when the predictionmarkets provider is enabled.
   const categories = useMemo(() => {
     const base = MARKET_CATEGORIES.filter(c => config.categories.includes(c))
 
-    return [...(watchlist.length ? [WATCHLIST] : []), ...base]
-  }, [config, watchlist])
+    return [...(watchlist.length ? [WATCHLIST] : []), ...base, ...(pmEnabled ? [PREDICTION] : [])]
+  }, [config, watchlist, pmEnabled])
 
   const activeCategory = categories[Math.min(active, Math.max(0, categories.length - 1))]
+  const pmTabActive = mode === 'data' && activeCategory === PREDICTION
+
+  // The Prediction section's data + row model + key handler. Always called
+  // (hooks rule); it no-ops until its tab is active. It rides the parent's
+  // single useInput + `/` filter, so the focus trap holds across PM rows too.
+  const pm = usePmSection(gw, pmTabActive, searchInput, setFlash)
+
+  // The index the Prediction tab occupies for a given category set. It is always
+  // appended LAST (after the optional Watchlist tab + the enabled quote
+  // categories), so enabling the provider never shifts it — the index computed
+  // from the CURRENT categories is already correct, no post-enable render hop.
+  const predictionTabIndex = (cats: string[]) =>
+    (watchlist.length ? 1 : 0) + MARKET_CATEGORIES.filter(c => cats.includes(c)).length
+
+  // Jump to (and, if needed, enable) the Prediction section. `p` from any mode,
+  // and the add-data flow when the provider is newly turned on.
+  const jumpToPrediction = () => {
+    setSel(0)
+    setMode('data')
+
+    if (!pmEnabled) {
+      persist({ ...config, providers: [...config.providers, 'predictionmarkets'] })
+    }
+
+    setActive(predictionTabIndex(config.categories))
+  }
 
   const seriesFor = (category: string | undefined): MarketSeries[] => {
     if (!category) {
@@ -641,17 +679,24 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     setModal('')
     persist({ ...next, custom, watchlist })
     setActive(0)
-    // Enabling the Prediction Markets entry in Add-data jumps straight into the
-    // PM pane — the operator's discovery path is the provider list, and a saved
-    // provider that changed nothing visible would read as a no-op.
+
+    // Enabling the Prediction Markets entry in Add-data jumps straight to the
+    // Prediction section of the Data tape — the operator's discovery path is the
+    // provider list, and a saved provider that changed nothing visible would read
+    // as a no-op. Landing on the section (once its tab exists) IS the feedback.
     const pmNewlyEnabled =
       next.providers.includes('predictionmarkets') && !config.providers.includes('predictionmarkets')
+
     if (pmNewlyEnabled) {
-      // Landing in the pane IS the feedback — the PM pane owns the whole
-      // surface in this mode, so a marketsView flash would never paint.
-      setMode('pm')
+      setSel(0)
+      setMode('data')
+      // `next` may also have flipped on quote categories — land on the Prediction
+      // tab, which the memo appends after them.
+      setActive(predictionTabIndex(next.categories))
+
       return
     }
+
     setFlash('saved')
   }
 
@@ -708,6 +753,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // the `/` filter: sort the already-filtered `visibleRows`. Default = unsorted →
   // the loaded tape order is preserved.
   const marketSort = useTableSort(MARKET_SORT_KEYS)
+
   const sortedRows = useMemo(
     () => sortRows(visibleRows, marketSort.state.key, marketSort.state.dir, marketSortValue),
     [visibleRows, marketSort.state.key, marketSort.state.dir]
@@ -723,23 +769,28 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const pendingReselect = useRef<null | string>(null)
   useEffect(() => {
     const key = pendingReselect.current
-    if (key == null) return
+
+    if (key == null) {return}
     pendingReselect.current = null
     const idx = sortedRows.findIndex(r => quoteKey(r.series.provider, r.series.symbol) === key)
-    if (idx >= 0) setSel(idx)
+
+    if (idx >= 0) {setSel(idx)}
   }, [sortedRows])
 
   const armReselect = () => {
     pendingReselect.current = selectedRow ? quoteKey(selectedRow.series.provider, selectedRow.series.symbol) : null
   }
+
   const onSortCycle = () => {
     armReselect()
     marketSort.cycle()
   }
+
   const onSortToggle = () => {
     armReselect()
     marketSort.toggle()
   }
+
   const onSortByKey = (key: string) => {
     armReselect()
     marketSort.sortByKey(key)
@@ -892,12 +943,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       return
     }
 
-    // `p` toggles the Prediction Markets pane; `m` toggles Data | Models; `h`
-    // opens Help — all three are available in every mode.
+    // `p` jumps to the Prediction section (enabling the provider if it's off);
+    // `m` toggles Data | Models; `h` opens Help — all available in every mode.
     if (ch === 'p') {
-      setSel(0)
-
-      return setMode(prev => (prev === 'pm' ? 'data' : 'pm'))
+      return jumpToPrediction()
     }
 
     if (ch === 'm') {
@@ -909,12 +958,6 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
     if (ch === 'h') {
       return setModal('help')
-    }
-
-    // The Prediction Markets pane owns its own input (its useInput is active in
-    // this mode); marketsView only keeps the mode-toggle + help keys above.
-    if (mode === 'pm') {
-      return
     }
 
     if (mode === 'models') {
@@ -1043,6 +1086,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     // ── Data mode ──────────────────────────────────────────────────────────
+    // On the Prediction tab, the section owns its keys (open / expand / venue /
+    // range / sort / select). It returns false for the shared keys (q/Esc, d,
+    // /, m, h, Tab) so they still fall through to the handlers below.
+    if (pmTabActive && pm.handleKey(ch, key)) {
+      return
+    }
+
     if (ch === 'q' || key.escape) {
       // Esc backs out of an active `/` filter first, then leaves the view.
       if (key.escape && searchActive) {
@@ -1136,7 +1186,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             </Text>
           ) : null}
           <Text color={t.color.muted}>
-            {`   ${searchActive ? `${visibleRows.length} matches · ` : ''}${searchMode ? '⏎ done · Esc clear' : '/ refine · Esc clear'}`}
+            {`   ${searchActive ? `${pmTabActive ? pm.matchCount : visibleRows.length} matches · ` : ''}${searchMode ? '⏎ done · Esc clear' : '/ refine · Esc clear'}`}
           </Text>
         </Text>
       ) : (
@@ -1152,28 +1202,20 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         <Text bold={mode === 'models'} color={mode === 'models' ? t.color.primary : t.color.muted}>
           {mode === 'models' ? '[Models]' : 'Models'}
         </Text>
-        <Text color={t.color.muted}>{'  '}</Text>
-        <Text bold={mode === 'pm'} color={mode === 'pm' ? t.color.primary : t.color.muted}>
-          {mode === 'pm' ? '[Prediction]' : 'Prediction'}
-        </Text>
         <Text color={t.color.muted}>{'   ·   '}</Text>
-        {mode === 'pm' ? (
-          <Text color={t.color.muted}>Polymarket + Kalshi · press p to exit</Text>
+        <Text color={fetching ? sem.star : hasContent ? sem.up : sem.subtle}>
+          {statusGlyph(fetching ? 'busy' : hasContent ? 'live' : 'idle', tick)}
+        </Text>
+        {mode === 'models' ? (
+          <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
+        ) : pmTabActive ? (
+          <Text color={t.color.muted}> {`Polymarket + Kalshi · ${pm.itemsCount} events${pm.streaming ? ' · ● live' : ''}`}</Text>
         ) : (
           <>
-            <Text color={fetching ? sem.star : hasContent ? sem.up : sem.subtle}>
-              {statusGlyph(fetching ? 'busy' : hasContent ? 'live' : 'idle', tick)}
+            <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
+            <Text color={t.color.text}>
+              {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
             </Text>
-            {mode === 'models' ? (
-              <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
-            ) : (
-              <>
-                <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
-                <Text color={t.color.text}>
-                  {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
-                </Text>
-              </>
-            )}
           </>
         )}
         {providersMissingKey.length ? (
@@ -1539,6 +1581,60 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     </Box>
   )
 
+  // ── the Prediction section (Data-mode tab): PM-shaped table + detail, rendered
+  // in place of the quote table/detail when the Prediction tab is active. Its own
+  // layout budget (a slightly wider detail pane for the book + distribution). ──
+  const pmDetailWidth = Math.max(34, Math.min(48, width - 52))
+  const pmTableWidth = Math.max(30, width - pmDetailWidth - 2)
+  const pmAvail = Math.max(24, pmTableWidth - 2)
+  const pmListRows = Math.max(3, contentHeight - 2)
+  const pmListStart = Math.max(0, Math.min(pm.clampedSel - Math.floor(pmListRows / 2), pm.rowCount - pmListRows))
+  const pmWindowed = pm.rows.slice(Math.max(0, pmListStart), Math.max(0, pmListStart) + pmListRows)
+
+  const pmEmptyText = pm.loading
+    ? 'Loading prediction markets…'
+    : searchActive
+      ? `No markets match “${searchInput}”.`
+      : gw
+        ? 'No open markets right now. Press r to refresh or v to switch venue.'
+        : 'Prediction markets need the gateway. Polymarket + Kalshi headlines and books load read-only, no key. Press v to filter venue.'
+
+  const pmTable = (
+    <PredictionMarketsTable
+      active={!modal && !globalModal}
+      avail={pmAvail}
+      clampedSel={pm.clampedSel}
+      emptyText={pmEmptyText}
+      expanded={pm.expanded}
+      height={contentHeight}
+      listStart={pmListStart}
+      livePrices={pm.livePrices}
+      onSelect={idx => pm.setSel(() => idx)}
+      onSortByKey={pm.sortByKey}
+      rowsLength={pm.rowCount}
+      sem={sem}
+      sortState={pm.sortState}
+      t={t}
+      tableWidth={pmTableWidth}
+      windowed={pmWindowed}
+    />
+  )
+
+  const pmDetail = (
+    <PredictionMarketDetail
+      book={pm.book}
+      bookLabel={pm.activeOutcome?.label ?? '—'}
+      history={pm.history}
+      historyRange={pm.historyRange}
+      item={pm.detailItem}
+      keyHint={pm.keyHint}
+      selectedMarketId={pm.activeOutcome?.market_id ?? null}
+      streaming={pm.streaming}
+      t={t}
+      width={pmDetailWidth}
+    />
+  )
+
   const dataChips: FooterChip[] = [
     { k: '↑↓', label: 'Select' },
     { k: '⇥', label: 'Category', run: () => { setSel(0); setActive(i => (i + 1) % Math.max(1, categories.length)) } },
@@ -1578,7 +1674,30 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'q', label: 'Close', run: onClose }
   ]
 
-  const chips = isEmpty ? emptyChips : mode === 'data' ? dataChips : openModelId ? modelOpenChips : modelsListChips
+  // The Prediction section's own chip row (it owns venue/range/expand where the
+  // quote tape has none), still sharing Filter / Models / Help / Close.
+  const pmChips: FooterChip[] = [
+    { k: '↑↓', label: 'Select' },
+    { k: '→', label: 'Expand' },
+    { k: '⏎', label: 'Open', run: pm.openMarket },
+    { k: 'v', label: `Venue: ${pm.venue === 'all' ? 'All' : venueLabel(pm.venue)}`, run: pm.cycleVenue },
+    { k: 'o', label: 'Sort', run: pm.cycleSort },
+    { k: '1/2/3', label: 'Range' },
+    { k: '/', label: 'Filter', run: () => { pm.setSel(() => 0); setSearchMode(true) } },
+    { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
+    { k: 'h', label: 'Help', run: () => setModal('help') },
+    { k: 'q', label: 'Close', run: onClose }
+  ]
+
+  const chips = isEmpty
+    ? emptyChips
+    : mode === 'data'
+      ? pmTabActive
+        ? pmChips
+        : dataChips
+      : openModelId
+        ? modelOpenChips
+        : modelsListChips
 
   // The FooterChips are the ONE canonical shortcuts row (the old always-on prose
   // duplicate below them was removed). The only surviving prose is a CONTEXTUAL
@@ -1590,7 +1709,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       ? chatFocus === 'input'
         ? '⏎ send · Tab focus reader · wheel scrolls · Esc close chat'
         : '↑↓/jk/PgUp/PgDn/g/G scroll · Tab focus chat · Esc close chat'
-      : ''
+      : pmTabActive
+        ? pm.streamNote
+        : ''
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -1652,26 +1773,14 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         <>
           {tabs}
           <Box flexDirection="row" flexShrink={0} height={contentHeight}>
-            {table}
-            {detail}
+            {pmTabActive ? pmTable : table}
+            {pmTabActive ? pmDetail : detail}
           </Box>
         </>
-      ) : mode === 'pm' ? (
-        <PredictionMarketsView
-          active={!modal && !globalModal}
-          gw={gw}
-          height={contentHeight}
-          onLeave={() => {
-            setSel(0)
-            setMode('data')
-          }}
-          t={t}
-          width={width}
-        />
       ) : (
         modelsBody
       )}
-      {mode === 'pm' ? null : footer}
+      {footer}
       {/* The body stays mounted; the modal paints ABOVE it as an absolute overlay.
           Body clicks are gated while the modal is open (tab/row onClick early-
           return) so the still-visible tabs/rows can't leak interaction — the

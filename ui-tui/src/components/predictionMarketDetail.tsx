@@ -1,5 +1,6 @@
 import { Box, Text } from '@hermes/ink'
 
+import { levelSparkline } from '../lib/forecastCharts.js'
 import {
   fmtCents,
   fmtClose,
@@ -12,7 +13,6 @@ import {
   type PMOrderBookDTO,
   venueLabel
 } from '../lib/pmData.js'
-import { levelSparkline } from '../lib/forecastCharts.js'
 import { hbar } from '../lib/sparkline.js'
 import { pad, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
@@ -30,12 +30,72 @@ interface PMDetailProps {
   width: number
 }
 
-const RANGE_LABEL: Record<PMHistoryRange, string> = { '1d': '1D', '1w': '1W', all: 'ALL' }
+const RANGES: { key: PMHistoryRange; label: string }[] = [
+  { key: '1d', label: '1D' },
+  { key: '1w', label: '1W' },
+  { key: 'all', label: 'ALL' }
+]
 
-// The selection detail: de-vigged distribution as horizontal bars, the order
-// book as compact bid/ask ladders (top 5), a history sparkline with a range
-// toggle, and the market URL. Raw-vs-devig is labelled honestly and no
-// liquidity is fabricated — a zero-liquidity outcome reads "no quote".
+// Greedy word-wrap to at most `max` lines; a title that overflows gets a
+// trailing ellipsis on the last line rather than the whole thing truncating to
+// a single '…'-clipped row.
+const wrapLines = (text: string, width: number, max: number): string[] => {
+  const words = (text || '').split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let cur = ''
+
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w
+
+    if (next.length > width && cur) {
+      lines.push(cur)
+      cur = w
+
+      if (lines.length === max) {
+        break
+      }
+    } else {
+      cur = next
+    }
+  }
+
+  if (lines.length < max && cur) {
+    lines.push(cur)
+  }
+
+  const consumed = lines.join(' ').length
+
+  if (consumed < (text || '').trim().length && lines.length) {
+    const last = lines[lines.length - 1]
+    lines[lines.length - 1] = last.length >= width ? `${last.slice(0, Math.max(0, width - 1))}…` : `${last}…`
+  }
+
+  return lines
+}
+
+// Middle-ellipsize a URL so the host AND the tail (event slug) both stay legible:
+// "https://polymarket.com/…/nba-champion-2026".
+const midEllipsis = (s: string, width: number): string => {
+  if (s.length <= width) {
+    return s
+  }
+
+  if (width <= 1) {
+    return '…'
+  }
+
+  const keep = width - 1
+  const head = Math.ceil(keep / 2)
+  const tail = Math.floor(keep / 2)
+
+  return `${s.slice(0, head)}…${s.slice(s.length - tail)}`
+}
+
+// The selection detail (a right side pane, matching the quote-instrument detail
+// surface): de-vigged distribution as horizontal bars, the order book as compact
+// bid/ask ladders (top 5), a history sparkline with a range toggle, and the
+// market URL. Raw-vs-devig is labelled honestly and no liquidity is fabricated —
+// a zero-liquidity outcome reads "no quote", never a percentage.
 export function PredictionMarketDetail({
   book,
   bookLabel,
@@ -61,8 +121,11 @@ export function PredictionMarketDetail({
 
   const dist = item.distribution
   const outcomes = dist.outcomes ?? []
+  // Fixed label + value columns; the bar absorbs the slack. The value column is
+  // wide enough for "no quote" (8) so a percentage NEVER truncates to "5…".
+  const valueW = 8
   const labelW = Math.max(8, Math.min(18, Math.floor(inner * 0.4)))
-  const barW = Math.max(6, inner - labelW - 6)
+  const barW = Math.max(6, inner - 2 - labelW - 1 - 1 - valueW)
   // The raw YES mids sum to (1 + overround); state it honestly next to the bars.
   const rawSum = outcomes.reduce((acc, o) => acc + (o.raw_prob ?? 0), 0)
 
@@ -78,12 +141,23 @@ export function PredictionMarketDetail({
 
   const lastP = history.length ? history[history.length - 1].p : null
   const url = dist.url || item.event.url
+  const titleLines = wrapLines(dist.title, inner, 2)
+
+  // The honest raw-vs-devig note, as ONE muted line.
+  const note =
+    outcomes.length > 1
+      ? dist.normalized
+        ? `raw YES mids sum ${fmtProb(rawSum)} · overround ${(dist.overround * 100).toFixed(1)}pp`
+        : dist.notes?.[0] ?? `raw prices — book sums to ${fmtProb(rawSum)} (not de-vigged)`
+      : ''
 
   return (
     <Box flexDirection="column" flexShrink={0} marginLeft={1} overflow="hidden" width={width}>
-      <Text bold color={t.color.text} wrap="truncate-end">
-        {dist.title}
-      </Text>
+      {titleLines.map((line, i) => (
+        <Text bold color={t.color.text} key={i} wrap="truncate-end">
+          {line}
+        </Text>
+      ))}
       <Text color={sem.subtle} wrap="truncate-end">
         {venueLabel(dist.venue)}
         {item.event.category ? ` · ${item.event.category}` : ''} · closes {fmtClose(dist.close_time)}
@@ -110,23 +184,17 @@ export function PredictionMarketDetail({
                 <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
                   {pad(o.label, labelW, 'left')}
                 </Text>
-                <Text color={noQuote ? sem.faint : sem.up}>{` ${pad(hbar(o.prob, barW), barW, 'left')}`}</Text>
-                <Text color={noQuote ? sem.subtle : t.color.text}>{` ${pad(noQuote ? 'no quote' : fmtProb(o.prob), 5, 'right')}`}</Text>
+                <Text color={noQuote ? sem.faint : sem.up}>{` ${pad(hbar(o.prob, barW), barW, 'left')} `}</Text>
+                <Text color={noQuote ? sem.subtle : t.color.text}>{pad(noQuote ? 'no quote' : fmtProb(o.prob), valueW, 'right')}</Text>
               </Text>
             )
           })
         )}
       </Box>
-      {outcomes.length > 1 ? (
-        dist.normalized ? (
-          <Text color={sem.subtle} wrap="truncate-end">
-            {`raw YES mids sum ${fmtProb(rawSum)} · overround ${(dist.overround * 100).toFixed(1)}pp`}
-          </Text>
-        ) : (
-          <Text color={sem.star} wrap="truncate-end">
-            {dist.notes?.[0] ?? `raw prices — book sums to ${fmtProb(rawSum)} (not de-vigged)`}
-          </Text>
-        )
+      {note ? (
+        <Text color={dist.normalized ? sem.subtle : sem.star} wrap="truncate-end">
+          {note}
+        </Text>
       ) : null}
 
       {/* ── order book ── */}
@@ -166,14 +234,18 @@ export function PredictionMarketDetail({
         </Box>
       )}
 
-      {/* ── history sparkline ── */}
+      {/* ── history sparkline · range chips rendered like the app's other toggles ── */}
       <Box marginTop={1}>
         <Text color={sem.rule}>{'─'.repeat(inner)}</Text>
       </Box>
-      <Text color={sem.heading} wrap="truncate-end">
-        {'History '}
-        <Text color={t.color.accent}>{RANGE_LABEL[historyRange]}</Text>
-        <Text color={sem.subtle}>{'  (1/2/3 · 1D 1W ALL)'}</Text>
+      <Text wrap="truncate-end">
+        <Text color={sem.heading}>{'History  '}</Text>
+        {RANGES.map((r, i) => (
+          <Text color={r.key === historyRange ? t.color.accent : sem.subtle} key={r.key}>
+            {i > 0 ? ' ' : ''}
+            {r.key === historyRange ? `[${r.label}]` : ` ${r.label} `}
+          </Text>
+        ))}
       </Text>
       {spark ? (
         <Text color={sem.up} wrap="truncate-end">
@@ -188,7 +260,7 @@ export function PredictionMarketDetail({
         <Box marginTop={1}>
           <Text color={sem.subtle} wrap="truncate-end">
             {'⏎ open · '}
-            <Text color={t.color.accent}>{url}</Text>
+            <Text color={t.color.accent}>{midEllipsis(url, Math.max(12, inner - 9))}</Text>
           </Text>
         </Box>
       ) : null}
