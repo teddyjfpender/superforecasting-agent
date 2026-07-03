@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'stream'
@@ -297,11 +297,13 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 // Mount MarketsView in its own temp home, seeded so the predictionmarkets
 // provider is the ONLY one enabled → the Prediction tab is the active Data tab
 // on first paint (no `p` keypress needed for the common case).
-const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<typeof fakeGw>) => {
+const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<typeof fakeGw>, homeOverride?: string) => {
   process.env.FORECAST_TUI_INLINE = '1'
-  const home = mkdtempSync(join(tmpdir(), 'pm-section-'))
+  const home = homeOverride ?? mkdtempSync(join(tmpdir(), 'pm-section-'))
   process.env.SUPERFORECASTING_AGENT_HOME = home
-  writeFileSync(join(home, 'markets.json'), JSON.stringify({ categories: [], custom: [], providers, watchlist: [] }))
+  if (!homeOverride) {
+    writeFileSync(join(home, 'markets.json'), JSON.stringify({ categories: [], custom: [], providers, watchlist: [] }))
+  }
 
   const calls: Call[] = []
   const gw = gwOverride ?? fakeGw(calls)
@@ -325,11 +327,14 @@ const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<
 
   return {
     calls,
-    cleanup: () => {
+    cleanup: (keepHome = false) => {
       instance.unmount?.()
       instance.cleanup?.()
-      rmSync(home, { force: true, recursive: true })
+      if (!keepHome) {
+        rmSync(home, { force: true, recursive: true })
+      }
     },
+    home,
     clear: () => stdout.reset(),
     emit: (event: string, payload: unknown) => gw.emit(event, payload),
     press: async (keys: string) => {
@@ -681,5 +686,59 @@ describe('deep venue search via /', () => {
     expect(calls.some(c => c.method === 'pm.list' && c.params.query === 'weather')).toBe(true)
     expect(text).toContain('Max weather')
     m.cleanup()
+  })
+})
+
+describe('discovered markets persist', () => {
+  it('search results stay in the tape after the query clears and survive a remount', async () => {
+    const calls: Call[] = []
+    const gw = fakeGw(calls)
+    const base = gw.request.bind(gw)
+    const wxItem = () => {
+      const wx = fedItem()
+      wx.distribution.event_id = 'WX'
+      wx.distribution.title = 'Max weather temperature above 90F on Jul 4?'
+      wx.event.event_id = 'WX'
+      wx.event.title = 'Max weather temperature above 90F on Jul 4?'
+
+      return wx
+    }
+    gw.request = (method: string, params: Record<string, unknown> = {}) => {
+      if (method === 'pm.list' && typeof params.query === 'string') {
+        calls.push({ method, params })
+
+        return Promise.resolve({ count: 1, events: [wxItem()] })
+      }
+      if (method === 'pm.detail' && params.event_id === 'WX') {
+        calls.push({ method, params })
+        const it = wxItem()
+
+        return Promise.resolve({ distribution: it.distribution, event: it.event })
+      }
+
+      return base(method, params)
+    }
+    const m = await mount(['predictionmarkets'], gw)
+    await m.press('/')
+    await m.press('weather')
+    await tick(750)
+    expect(m.text()).toContain('Max weather')
+    // Clear the query: the discovery STAYS (coverage compounds).
+    m.clear()
+    await m.press(ESC)
+    await tick(120)
+    expect(m.text()).toContain('Max weather')
+    // And the ref persisted to markets.json for the next session.
+    const home = m.home
+    const cfg = JSON.parse(readFileSync(join(home, 'markets.json'), 'utf8'))
+    expect(cfg.pmSaved).toEqual([{ event_id: 'WX', venue: 'kalshi' }])
+    m.cleanup(true) // keep the home: the remount below is the same operator's next session
+
+    // Remount on the SAME home (fresh session): hydration via pm.detail
+    // re-adds the discovery.
+    const m2 = await mount(['predictionmarkets'], gw, home)
+    await tick(250)
+    expect(m2.text()).toContain('Max weather')
+    m2.cleanup()
   })
 })

@@ -5,13 +5,15 @@
 // useInput here: the section rides the parent's keyboard so the `/` focus trap
 // and the shared selection hold across both quote sections and PM rows.
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRef, useCallback, useEffect, useMemo, useState } from 'react'
 
 import { openExternalUrl } from './openExternalUrl.js'
 import { type PMHistoryRange, type PMOutcomeDTO, type PMVenue,
   fetchPMList,
-  type PMListItem
+  type PMListItem,
+  fetchPMDetail
 } from './pmData.js'
+import { loadMarketConfig, PM_SAVED_CAP, saveMarketConfig } from './marketStore.js'
 import {
   DEFAULT_PM_FILTER,
   filterPMItems,
@@ -117,6 +119,80 @@ export function usePmSection(
   // merge (deduped) into the pool and vanish when the query clears.
   const [searchItems, setSearchItems] = useState<null | PMListItem[]>(null)
   const [searching, setSearching] = useState(false)
+  // DISCOVERED events persist: searches COMPOUND the tape's coverage instead
+  // of evaporating when the query clears (the operator: "the searched markets
+  // should persist... so we maximally cover the markets"). Session state here;
+  // refs saved to markets.json (cap 100 LRU) + re-hydrated via pm.detail on
+  // mount, with dead/gone events pruning themselves on failed hydration.
+  const [discovered, setDiscovered] = useState<ReadonlyMap<string, PMListItem>>(() => new Map())
+  const persistDiscovered = (next: ReadonlyMap<string, PMListItem>) => {
+    const cfg = loadMarketConfig()
+    const refs = [...next.values()].map(i => ({ event_id: i.event.event_id, venue: i.event.venue }))
+    saveMarketConfig({ ...cfg, pmSaved: refs.slice(-PM_SAVED_CAP) })
+  }
+  const foldDiscovered = (found: PMListItem[]) => {
+    setDiscovered(prev => {
+      const next = new Map(prev)
+      for (const item of found) {
+        next.set(item.event.event_id, item)
+      }
+      if (next.size === prev.size) {
+        return prev
+      }
+      persistDiscovered(next)
+
+      return next
+    })
+  }
+
+  // Re-hydrate persisted discoveries once per mount (server-cached + cheap);
+  // events that no longer resolve are pruned from the store.
+  const hydratedRef = useRef(false)
+  useEffect(() => {
+    if (!gw || !tabActive || hydratedRef.current) {
+      return
+    }
+
+    hydratedRef.current = true
+    const refs = loadMarketConfig().pmSaved ?? []
+    if (!refs.length) {
+      return
+    }
+
+    let cancelled = false
+    Promise.allSettled(
+      refs.map(r =>
+        fetchPMDetail(gw, r.venue as PMVenue, r.event_id).then(item => ({ item, ref: r }))
+      )
+    ).then(results => {
+      if (cancelled) {
+        return
+      }
+
+      const ok: PMListItem[] = []
+      const live = new Set<string>()
+      for (const res of results) {
+        if (res.status === 'fulfilled' && res.value.item) {
+          ok.push(res.value.item)
+          live.add(res.value.ref.event_id)
+        }
+      }
+      if (ok.length) {
+        foldDiscovered(ok)
+      }
+      // Prune refs that failed to hydrate (closed/gone) from the store.
+      if (live.size < refs.length) {
+        const cfg = loadMarketConfig()
+        saveMarketConfig({ ...cfg, pmSaved: (cfg.pmSaved ?? []).filter(r => live.has(r.event_id)) })
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gw, tabActive])
+
   const query = searchInput.trim()
   useEffect(() => {
     if (!gw || !tabActive || query.length < 3) {
@@ -134,6 +210,7 @@ export function usePmSection(
           if (!cancelled) {
             setSearchItems(found)
             setSearching(false)
+            foldDiscovered(found)
           }
         })
         .catch(() => {
@@ -151,14 +228,23 @@ export function usePmSection(
   }, [gw, tabActive, query, venue])
 
   const pool = useMemo(() => {
-    if (!searchItems?.length) {
-      return items
+    const seen = new Set(items.map(i => i.event.event_id))
+    const merged = [...items]
+    for (const item of discovered.values()) {
+      if (!seen.has(item.event.event_id)) {
+        seen.add(item.event.event_id)
+        merged.push(item)
+      }
+    }
+    for (const item of searchItems ?? []) {
+      if (!seen.has(item.event.event_id)) {
+        seen.add(item.event.event_id)
+        merged.push(item)
+      }
     }
 
-    const seen = new Set(items.map(i => i.event.event_id))
-
-    return [...items, ...searchItems.filter(s => !seen.has(s.event.event_id))]
-  }, [items, searchItems])
+    return merged
+  }, [items, discovered, searchItems])
 
   // Structured filter first (venue · topic · vol · prob · sports), then rank by
   // the `/` text query — the two compose, and sort rides on top of both.

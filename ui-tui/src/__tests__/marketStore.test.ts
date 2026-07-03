@@ -72,7 +72,7 @@ describe('market config', () => {
   })
 
   it('returns empty config when the file is missing', () => {
-    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], custom: [], providers: [], watchlist: [] })
+    expect(loadMarketConfig(join(tmp, 'nope.json'))).toEqual({ categories: [], custom: [], pmSaved: [], providers: [], watchlist: [] })
   })
 
   it('sanitizes a malformed agent-written config so it can never crash the renderer', () => {

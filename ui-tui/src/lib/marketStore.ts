@@ -16,9 +16,15 @@ export interface MarketConfig {
   // User-added line items that live in their own category (the default when you
   // add a searched ticker), distinct from the explicit watchlist.
   custom: MarketSeries[]
+  // Prediction-market events DISCOVERED via deep '/' search: they persist so
+  // the tape's coverage COMPOUNDS across sessions (re-hydrated by pm.detail on
+  // mount; dead/closed ones prune themselves). Capped LRU, newest last.
+  pmSaved?: { event_id: string; venue: string }[]
   providers: string[]
   watchlist: MarketSeries[]
 }
+
+export const PM_SAVED_CAP = 100
 
 export const marketConfigFile = (dir = forecastHomeDir()) => join(dir, 'markets.json')
 
@@ -35,7 +41,7 @@ export const loadMarketConfig = (file = marketConfigFile()): MarketConfig => {
     const seriesList = (v: unknown): MarketSeries[] =>
       Array.isArray(v)
         ? v
-            .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object')
+            .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object' && !Array.isArray(x))
             .map(x => {
               const symbol = str(x.symbol)
 
@@ -50,14 +56,23 @@ export const loadMarketConfig = (file = marketConfigFile()): MarketConfig => {
             .filter(s => s.symbol.length > 0 && s.provider.length > 0)
         : []
 
+    const pmSaved = Array.isArray(data.pmSaved)
+      ? (data.pmSaved as unknown[])
+          .filter((x): x is Record<string, unknown> => Boolean(x) && typeof x === 'object' && !Array.isArray(x))
+          .map(x => ({ event_id: str(x.event_id), venue: str(x.venue) }))
+          .filter(x => x.event_id.length > 0 && x.venue.length > 0)
+          .slice(-PM_SAVED_CAP)
+      : []
+
     return {
       categories: Array.isArray(data.categories) ? data.categories.filter(c => typeof c === 'string') : [],
       custom: seriesList(data.custom),
+      pmSaved,
       providers: Array.isArray(data.providers) ? data.providers.filter(p => typeof p === 'string') : [],
       watchlist: seriesList(data.watchlist)
     }
   } catch {
-    return { categories: [], custom: [], providers: [], watchlist: [] }
+    return { categories: [], custom: [], pmSaved: [], providers: [], watchlist: [] }
   }
 }
 
