@@ -379,6 +379,15 @@ def build_dashboard_summary(
     }
 
 
+def _top_event_sensitivities(event_detail: dict[str, Any] | None, k: int = 5) -> list[dict[str, Any]] | None:
+    """The k members whose ±2pp move swings P(event) most (by |Δ|), or None."""
+
+    if not event_detail:
+        return None
+    rows = event_detail.get("sensitivities") or []
+    return sorted(rows, key=lambda s: -abs(s.get("delta_p_event") or 0.0))[:k]
+
+
 def build_thesis_summary(
     *, ledger: ForecastLedger | None = None, limit: int | None = None
 ) -> list[dict[str, Any]]:
@@ -400,6 +409,18 @@ def build_thesis_summary(
         previous = snapshots[-2].probability_or_distribution if len(snapshots) >= 2 else None
         previous_health = previous.get("health") if isinstance(previous, dict) else None
         health = payload.get("health")
+        # A thesis configured as a JOINT THRESHOLD EVENT reports P(event) as its
+        # headline (the question it actually asks); the mean-index health/score
+        # stay as diagnostics. Fall back to health when no event is configured.
+        # Only the numeric event_probability rides in the payload; the structured
+        # detail (spec / count distribution / sensitivities) is in the metadata.
+        event_probability = payload.get("event_probability")
+        prev_event = previous.get("event_probability") if isinstance(previous, dict) else None
+        headline = event_probability if event_probability is not None else health
+        prev_headline = prev_event if event_probability is not None else previous_health
+        cur_meta = current.metadata if current else {}
+        cur_meta = cur_meta if isinstance(cur_meta, dict) else {}
+        event_detail = cur_meta.get("event") if isinstance(cur_meta.get("event"), dict) else None
         out.append(
             {
                 "id": question.id,
@@ -408,14 +429,20 @@ def build_thesis_summary(
                 "health_probability": health,
                 "health_display": f"{health:.0%}" if health is not None else "-",
                 "thesis_score": payload.get("thesis_score"),
+                "event_probability": event_probability,
+                "event": event_detail.get("event") if event_detail else None,
+                "count_distribution": event_detail.get("count_distribution") if event_detail else None,
+                "top_sensitivities": _top_event_sensitivities(event_detail),
+                "headline_probability": headline,
+                "headline_display": f"{headline:.0%}" if headline is not None else "-",
                 "coverage": payload.get("coverage"),
                 "n_eff": payload.get("n_eff"),
-                "delta": (health - previous_health)
-                if (health is not None and previous_health is not None)
+                "delta": (headline - prev_headline)
+                if (headline is not None and prev_headline is not None)
                 else None,
                 "member_count": len(ledger.list_thesis_members(question.id)),
                 "as_of": current.as_of if current else None,
-                "status": "withheld" if health is None else "ok",
+                "status": "withheld" if headline is None else "ok",
             }
         )
     return out
@@ -1008,12 +1035,15 @@ def _thesis_history_point(snapshot: Any) -> dict[str, Any]:
 
     payload = snapshot.probability_or_distribution
     payload = payload if isinstance(payload, dict) else {}
+    # When the thesis is a joint-event, P(event) is the headline series; else the
+    # mean-index health. Both are 0..1 so the trend chart never mixes scales.
+    event_probability = payload.get("event_probability")
     return {
         "as_of": snapshot.as_of,
         "created_at": snapshot.created_at,
-        # The health probability is the headline series; the score band is in
-        # score units (0-100) and is carried separately so a chart never mixes scales.
-        "headline_probability": payload.get("health"),
+        "headline_probability": event_probability if event_probability is not None else payload.get("health"),
+        "health_probability": payload.get("health"),
+        "event_probability": event_probability,
         "thesis_score": payload.get("thesis_score"),
         "score_low": payload.get("q05"),
         "score_high": payload.get("q95"),
@@ -1086,7 +1116,17 @@ def _workspace_thesis(
     health = payload.get("health")
     previous_payload = previous.probability_or_distribution if previous else None
     previous_health = previous_payload.get("health") if isinstance(previous_payload, dict) else None
-    delta = (health - previous_health) if (health is not None and previous_health is not None) else None
+
+    # Joint-event thesis: P(event) is the headline (the question it actually asks);
+    # health/score remain diagnostics. Delta tracks whichever is the headline.
+    event_probability = payload.get("event_probability")
+    prev_event = previous_payload.get("event_probability") if isinstance(previous_payload, dict) else None
+    headline = event_probability if event_probability is not None else health
+    prev_headline = prev_event if event_probability is not None else previous_health
+    delta = (headline - prev_headline) if (headline is not None and prev_headline is not None) else None
+    # Full event read (count distribution + per-member sensitivities + excluded)
+    # is written into the snapshot metadata by ledger.aggregate_thesis.
+    event_meta = meta.get("event") if isinstance(meta.get("event"), dict) else None
 
     band = None
     if payload.get("q05") is not None and payload.get("q95") is not None:
@@ -1140,6 +1180,17 @@ def _workspace_thesis(
         "health_probability": health,
         "health_display": f"{health:.0%}" if health is not None else "-",
         "thesis_score": payload.get("thesis_score"),
+        # Joint-event headline (P(#member successes ≥ K)) when configured, plus the
+        # count distribution + "which race matters" sensitivities for the desk.
+        # Only event_probability rides in the payload; the structured detail is in
+        # the snapshot metadata (event_meta).
+        "event_probability": event_probability,
+        "event": event_meta.get("event") if event_meta else None,
+        "count_distribution": event_meta.get("count_distribution") if event_meta else None,
+        "top_sensitivities": _top_event_sensitivities(event_meta),
+        "event_detail": event_meta,
+        "headline_probability": headline,
+        "headline_display": f"{headline:.0%}" if headline is not None else "-",
         "score_band": band,
         "coverage": payload.get("coverage"),
         "n_eff": payload.get("n_eff"),

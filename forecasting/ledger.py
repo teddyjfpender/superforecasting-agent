@@ -695,12 +695,24 @@ def _thesis_reason_lines(agg: Any, kind: str) -> list[str]:
     return lines
 
 
-def _thesis_narrative(thesis: Any, agg: Any) -> tuple[str, str, str, str, str]:
+def _thesis_narrative(thesis: Any, agg: Any, event: Any = None) -> tuple[str, str, str, str, str]:
     """Build the rolling analyst note (headline, how_it_thinks, looking_for, be_aware, body)."""
 
     health = agg.health
     score = agg.thesis_score or 0.0
-    headline = f"{thesis.title} — health {health:.0%}" if health is not None else f"{thesis.title} — withheld"
+    # When a joint-event probability exists it is THE headline (the question the
+    # thesis actually asks); the mean-index health becomes a diagnostic.
+    has_event = event is not None and getattr(event, "event_probability", None) is not None
+    if has_event:
+        ev = event.event_probability
+        kind = event.event.get("kind")
+        k = event.event.get("threshold")
+        label = f"≥{k} of {event.participants}" if kind == "count_threshold" else str(kind)
+        headline = f"{thesis.title} — P(event) {ev:.0%} ({label})"
+    elif health is not None:
+        headline = f"{thesis.title} — health {health:.0%}"
+    else:
+        headline = f"{thesis.title} — withheld"
 
     usable = [c for c in agg.components if c.get("status") not in _THESIS_DEAD_STATUS]
     top = sorted(usable, key=lambda c: -(float(c.get("contribution_pts") or 0)))[:3]
@@ -709,6 +721,25 @@ def _thesis_narrative(thesis: Any, agg: Any) -> tuple[str, str, str, str, str]:
         f"Weighted across {len(usable)} fresh member(s); score {score:.0f}/100."
         + (f" Top drivers: {drivers}." if drivers else "")
     )
+    if has_event:
+        cd = event.count_distribution or {}
+        mean_ct = cd.get("mean")
+        movers = event.top_sensitivities(1)
+        biggest = movers[0] if movers else None
+        parts_ev = [
+            f"Event P={event.event_probability:.0%} via Gaussian-copula MC "
+            f"({event.n_draws} draws, rho {event.rho:.2f})"
+        ]
+        if mean_ct is not None:
+            parts_ev.append(
+                f"expected count ~{mean_ct:.1f} (p10-p90 {cd.get('p10', 0):.0f}-{cd.get('p90', 0):.0f})"
+            )
+        if biggest is not None:
+            parts_ev.append(
+                f"biggest swing: {biggest.get('title') or biggest.get('member_id')} "
+                f"(±2pp ⇒ {biggest.get('delta_p_event', 0.0):+.1%} on P)"
+            )
+        how_it_thinks += " " + "; ".join(parts_ev) + "."
 
     contested = [c for c in usable if abs(float(c.get("s_i") or 0.5) - 0.5) < 0.2]
     contested.sort(key=lambda c: abs(float(c.get("s_i") or 0.5) - 0.5))
@@ -10378,6 +10409,79 @@ class ForecastLedger:
                     continue
         return out or None
 
+    def set_thesis_event(
+        self,
+        thesis_id: str,
+        *,
+        kind: str = "count_threshold",
+        threshold: int | None = None,
+    ) -> dict[str, Any]:
+        """Configure a thesis as a JOINT THRESHOLD EVENT — P(#member successes ≥ K).
+
+        A thesis headline is otherwise a mean index (damped, threshold-insensitive).
+        With an event spec, ``aggregate_thesis`` ALSO runs a Gaussian-copula Monte
+        Carlo (seeded deterministically) and stamps ``event_probability`` — the way
+        a "Democrats take back the Senate" question is really scored. Stored on the
+        thesis metadata beside ``thesis_correlations``; pass ``threshold=None`` (any
+        kind) to CLEAR it. Returns the stored spec.
+        """
+        thesis = self.get_question(thesis_id)
+        if not self.is_thesis(thesis):
+            raise ValidationError("set_thesis_event requires a question with outcome type 'thesis'")
+        kind = str(kind).lower()
+        if kind not in {"count_threshold", "all", "any"}:
+            raise ValidationError("event kind must be 'count_threshold', 'all' or 'any'")
+        spec: dict[str, Any] | None
+        if kind == "count_threshold":
+            if threshold is None:
+                raise ValidationError("count_threshold event requires an integer 'threshold'")
+            k = int(threshold)
+            if k < 0:
+                raise ValidationError("threshold must be non-negative")
+            spec = {"kind": kind, "threshold": k}
+        else:
+            spec = {"kind": kind}
+        meta = dict(thesis.metadata) if isinstance(thesis.metadata, dict) else {}
+        meta["thesis_event"] = spec
+        with self._connect() as conn:
+            conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), thesis_id))
+        return spec
+
+    def clear_thesis_event(self, thesis_id: str) -> bool:
+        """Remove a thesis's event spec (reverts to the mean-index headline). True if one was set."""
+        thesis = self.get_question(thesis_id)
+        if not self.is_thesis(thesis):
+            raise ValidationError("clear_thesis_event requires a question with outcome type 'thesis'")
+        meta = dict(thesis.metadata) if isinstance(thesis.metadata, dict) else {}
+        had = meta.pop("thesis_event", None) is not None
+        if had:
+            with self._connect() as conn:
+                conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), thesis_id))
+        return had
+
+    def _thesis_event_spec(self, thesis: Any) -> dict[str, Any] | None:
+        """Load the stored event spec ({kind, threshold?}) the MC consumes, or None."""
+        meta = thesis.metadata if isinstance(thesis.metadata, dict) else {}
+        raw = meta.get("thesis_event")
+        if not isinstance(raw, dict):
+            return None
+        kind = str(raw.get("kind", "")).lower()
+        if kind not in {"count_threshold", "all", "any"}:
+            return None
+        spec: dict[str, Any] = {"kind": kind}
+        if kind == "count_threshold":
+            try:
+                spec["threshold"] = int(raw.get("threshold"))
+            except (TypeError, ValueError):
+                return None
+        return spec
+
+    @staticmethod
+    def _thesis_event_seed(thesis_id: str, as_of: str | None) -> int:
+        """Deterministic MC seed from (thesis_id, as_of) — no Date.now / global RNG."""
+        digest = hashlib.sha256(f"{thesis_id}|{as_of or ''}".encode("utf-8")).hexdigest()
+        return int(digest[:16], 16)
+
     def aggregate_thesis(
         self,
         thesis_id: str,
@@ -10407,10 +10511,39 @@ class ForecastLedger:
         members = self.list_thesis_members(thesis_id)
         beliefs = [self._thesis_member_belief(m) for m in members]
         as_of = now or utc_now_iso()
+        correlation = self._thesis_correlation_matrix(thesis)
         agg = thesis_math.aggregate_thesis(
             beliefs, rho=rho, now=as_of,
-            correlation_matrix=self._thesis_correlation_matrix(thesis),
+            correlation_matrix=correlation,
         )
+
+        # ── Event-probability layer ─────────────────────────────────────────
+        # When the thesis is configured as a JOINT THRESHOLD EVENT (e.g. "Dems
+        # take back the Senate" = P(#seats ≥ K)), run a Gaussian-copula MC over
+        # the SAME binary member beliefs. The mean index is damped and
+        # threshold-insensitive; the event probability is the number the
+        # question actually asks. Seeded deterministically from (thesis_id,
+        # as_of) so re-aggregation is reproducible. Stamped ALONGSIDE the mean
+        # index (health/score/band stay as diagnostics; nothing removed).
+        event_spec = self._thesis_event_spec(thesis)
+        event_result = None
+        # The snapshot's probability_or_distribution is validated to a FLAT numeric
+        # dict, so only the numeric event_probability rides in the payload (it is
+        # the headline). The structured detail (spec / count distribution / per-
+        # member sensitivities) is stamped into the snapshot metadata below.
+        event_payload: dict[str, Any] = {}
+        if event_spec is not None:
+            event_result = thesis_math.simulate_thesis_event(
+                beliefs, event_spec,
+                rho=rho,
+                correlation_matrix=correlation,
+                seed=self._thesis_event_seed(thesis_id, as_of),
+            )
+            if event_result.event_probability is not None:
+                event_payload = {"event_probability": event_result.event_probability}
+
+        def _thesis_payload() -> dict[str, Any]:
+            return {**agg.to_payload(), **event_payload}
 
         # Entity suitability + trade triggers. Read the PRIOR snapshot first
         # (get_current_snapshot returns the latest before the new commit) so the
@@ -10438,7 +10571,8 @@ class ForecastLedger:
             "thesis_id": thesis_id,
             "title": thesis.title,
             "aggregate": agg,
-            "payload": agg.to_payload(),
+            "payload": _thesis_payload(),
+            "event": event_result,
             "member_count": len(members),
             "entities": entities,
             "triggers": triggers,
@@ -10447,7 +10581,7 @@ class ForecastLedger:
         if not commit:
             return result
 
-        payload = agg.to_payload()
+        payload = _thesis_payload()
         if payload.get("health") is None:
             # No usable member signal: do not fabricate a number. Record the
             # withholding as an analyst note and skip the snapshot.
@@ -10488,17 +10622,32 @@ class ForecastLedger:
             forecast_origin="live",
             calibration_eligible=False,
             metadata={
-                "thesis_notes": agg.notes,
+                "thesis_notes": agg.notes + ((event_result.notes if event_result else [])),
                 "thesis_spread": agg.spread,
                 "entities": entities,
                 "triggers": triggers,
+                # Full event read (count distribution + per-member sensitivities +
+                # excluded members) for the desk; the compact headline fields live
+                # in the snapshot payload alongside the mean index.
+                "event": {
+                    "event_probability": event_result.event_probability,
+                    "event": event_result.event,
+                    "count_distribution": event_result.count_distribution,
+                    "sensitivities": event_result.sensitivities,
+                    "excluded": event_result.excluded,
+                    "participants": event_result.participants,
+                    "backend": event_result.backend,
+                    "n_draws": event_result.n_draws,
+                    "rho": event_result.rho,
+                    "seed": event_result.seed,
+                } if (event_result and event_result.event_probability is not None) else None,
             },
             reasons_up=_thesis_reason_lines(agg, "support"),
             reasons_down=_thesis_reason_lines(agg, "drag"),
         )
         result["snapshot_id"] = snapshot.forecast_id
         if analyst_note:
-            headline, how_it_thinks, looking_for, be_aware, body = _thesis_narrative(thesis, agg)
+            headline, how_it_thinks, looking_for, be_aware, body = _thesis_narrative(thesis, agg, event_result)
             note = self.add_analyst_note(
                 question_id=thesis_id,
                 body=body,

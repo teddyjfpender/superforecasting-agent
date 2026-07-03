@@ -27,6 +27,7 @@ they reach this module — this module never reduces a raw distribution itself.
 from __future__ import annotations
 
 import math
+import random
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -36,10 +37,19 @@ from typing import Any, Mapping, Sequence
 # ``logit`` / ``inv_logit`` power the log-odds health pool (§2.4) and the
 # leave-one-out marginals (§2.7). ``normal_cdf(x, mean, sd) == Phi((x-mean)/sd)``
 # gives the threshold-on-normal signal (§2.1.2): ``Phi((mean-target)/sd)`` is
-# ``normal_cdf(mean, target, sd)``.
-from forecasting.bayes_toolkit import inv_logit, logit, normal_cdf
+# ``normal_cdf(mean, target, sd)``. ``normal_ppf`` inverts the copula draw into
+# a per-member latent threshold (§event: ``u_i < p_i ⇔ z_i < Phi⁻¹(p_i)``).
+from forecasting.bayes_toolkit import inv_logit, logit, normal_cdf, normal_ppf
 
-__all__ = ["ThesisAggregate", "aggregate_thesis"]
+# NumPy is the fast path for the Gaussian-copula Monte Carlo (§event). It is
+# optional — the module keeps a deterministic pure-python fallback so the event
+# layer works offline, just at a lower draw count. Mirrors bayes_toolkit's guard.
+try:  # pragma: no cover - numpy optional
+    import numpy as _np
+except Exception:  # pragma: no cover - numpy optional
+    _np = None
+
+__all__ = ["ThesisAggregate", "aggregate_thesis", "ThesisEventResult", "simulate_thesis_event"]
 
 # Default staleness horizon when a member omits ``max_age_days``.
 _DEFAULT_MAX_AGE_DAYS = 45.0
@@ -630,3 +640,493 @@ def _component_row(
         "status": row.status,
         "flags": list(row.flags),
     }
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# EVENT-PROBABILITY LAYER — a thesis as a JOINT THRESHOLD EVENT, not a mean index
+# ════════════════════════════════════════════════════════════════════════════
+#
+# ``aggregate_thesis`` above returns a *mean index* (a weighted-mean health/score
+# with a correlated band). But a thesis like "Democrats take back the Senate" is
+# a **joint threshold event**: P(number of member successes ≥ K). A mean is
+# damped and threshold-insensitive — it moves ~linearly with each member and can
+# barely twitch when a battleground crosses 50%, even though the *event* pivots
+# there. And correlation, which only ever entered the mean's BAND, is first-class
+# for the event: co-moving races collapse toward all-or-nothing.
+#
+# This layer answers the operator's exact complaint — "I'd have thought it would
+# use some kind of monte carlo... it isn't treated equally to the underlying
+# questions" — with a Gaussian-copula Monte Carlo over the SAME binary member
+# beliefs the mean consumes, seeded deterministically by the caller.
+
+# Finite-difference bump for the per-member P(event) sensitivity ("which race
+# matters"): re-score with p_i ± 2pp on the SAME latent draws.
+_EVENT_DELTA = 0.02
+# Keep member probabilities strictly interior so ``normal_ppf`` stays finite.
+_PPF_EPS = 1e-6
+# Draw counts: numpy fast path vs the pure-python fallback (kept small so it
+# stays snappy offline). Explicit ``n_draws`` overrides the numpy default.
+_EVENT_DRAWS_NUMPY = 20_000
+_EVENT_DRAWS_PYTHON = 2_000
+# Cholesky jitter ladder — pairwise correlation overrides can make Σ indefinite;
+# nudging the diagonal recovers the nearest usable PD matrix (with a note).
+_CHOL_JITTER = (0.0, 1e-9, 1e-7, 1e-5, 1e-3)
+
+
+@dataclass
+class ThesisEventResult:
+    """P(joint threshold event) for a thesis, from a Gaussian-copula MC.
+
+    ``event_probability`` is ``None`` (withheld, not fabricated) when no binary
+    member participates. The count distribution + per-member sensitivities are
+    the readouts a mean index can never give: the shape of the seat count and
+    *which* member most moves the event.
+    """
+
+    event_probability: float | None
+    event: dict[str, Any]                     # echoed spec incl. resolved threshold K
+    count_distribution: dict[str, float]      # {p10, p50, p90, mean} of #successes
+    sensitivities: list[dict[str, Any]]       # per participating member: ∂P/∂p_i
+    participants: int                         # binary members in the event
+    excluded: list[dict[str, Any]]            # non-binary / unusable members + why
+    backend: str                              # "numpy" | "python"
+    n_draws: int
+    rho: float
+    seed: int
+    notes: list[str] = field(default_factory=list)
+
+    def top_sensitivities(self, k: int = 5) -> list[dict[str, Any]]:
+        """The ``k`` members whose ±2pp move swings P(event) most (by |Δ|)."""
+
+        return sorted(
+            self.sensitivities,
+            key=lambda s: -abs(s.get("delta_p_event") or 0.0),
+        )[:k]
+
+    def to_payload(self) -> dict[str, Any]:
+        """Compact dict stamped into the thesis snapshot alongside the mean index."""
+
+        return {
+            "event_probability": self.event_probability,
+            "event": self.event,
+            "count_distribution": self.count_distribution,
+            "top_sensitivities": self.top_sensitivities(5),
+        }
+
+
+def _normalize_event_corr(
+    correlation_matrix: Mapping[Any, float] | None
+) -> dict[frozenset[str], float]:
+    """Parse a pairwise correlation map into {member_a, member_b} -> rho.
+
+    Same key-shape resolution as :func:`aggregate_thesis` ({a,b} / (a,b) /
+    "a:b" / "a|b"), clamped to the honest ``[0, 0.95]`` band.
+    """
+
+    norm: dict[frozenset[str], float] = {}
+    if not correlation_matrix:
+        return norm
+    for key, value in correlation_matrix.items():
+        if isinstance(key, (frozenset, set, tuple, list)):
+            ids = frozenset(str(k) for k in key)
+        elif isinstance(key, str) and ("|" in key or ":" in key):
+            ids = frozenset(key.split("|" if "|" in key else ":", 1))
+        else:
+            ids = frozenset()
+        if len(ids) == 2:
+            coerced = _coerce_float(value)
+            if coerced is not None:
+                norm[ids] = _clamp(coerced, 0.0, 0.95)
+    return norm
+
+
+def _build_corr_matrix(
+    ids: Sequence[str], rho_val: float, pairwise: Mapping[frozenset[str], float]
+) -> list[list[float]]:
+    """n×n correlation matrix: unit diagonal, scalar ``rho_val`` off-diagonal,
+    with per-pair overrides (members co-move UNEQUALLY)."""
+
+    n = len(ids)
+    matrix = [[1.0 if i == j else rho_val for j in range(n)] for i in range(n)]
+    if pairwise:
+        for i in range(n):
+            for j in range(i + 1, n):
+                override = pairwise.get(frozenset({ids[i], ids[j]}))
+                if override is not None:
+                    matrix[i][j] = matrix[j][i] = override
+    return matrix
+
+
+def _cholesky_py(matrix: Sequence[Sequence[float]]) -> list[list[float]] | None:
+    """Lower-triangular Cholesky factor L (Σ = L Lᵀ); None if not PD."""
+
+    n = len(matrix)
+    L = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1):
+            s = sum(L[i][k] * L[j][k] for k in range(j))
+            if i == j:
+                d = matrix[i][i] - s
+                if d <= 0:
+                    return None
+                L[i][j] = math.sqrt(d)
+            else:
+                L[i][j] = (matrix[i][j] - s) / L[j][j]
+    return L
+
+
+def _cholesky_with_jitter(
+    matrix: list[list[float]], *, use_numpy: bool
+) -> tuple[Any, str | None]:
+    """Cholesky with a jitter ladder for near-singular Σ from pair overrides.
+
+    Returns (L, note) where L is a numpy array (fast path) or list-of-lists
+    (fallback). ``note`` flags when the diagonal was nudged to recover PD-ness.
+    """
+
+    n = len(matrix)
+    for jitter in _CHOL_JITTER:
+        trial = matrix
+        if jitter > 0:
+            trial = [
+                [matrix[i][j] + (jitter if i == j else 0.0) for j in range(n)]
+                for i in range(n)
+            ]
+        if use_numpy:
+            try:
+                L = _np.linalg.cholesky(_np.asarray(trial, dtype=float))
+            except Exception:
+                continue
+        else:
+            L = _cholesky_py(trial)
+            if L is None:
+                continue
+        note = None if jitter == 0 else f"correlation matrix jittered ({jitter:g}) to nearest PD"
+        return L, note
+    # Total fallback: independence (identity). Should be unreachable for rho∈[0,0.95].
+    if use_numpy:
+        return _np.eye(n), "correlation matrix not PD; fell back to independence"
+    return [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)], (
+        "correlation matrix not PD; fell back to independence"
+    )
+
+
+def _quantile(sorted_vals: Sequence[float], q: float) -> float:
+    """Linear-interpolation quantile over a pre-sorted sequence."""
+
+    if not sorted_vals:
+        return 0.0
+    if len(sorted_vals) == 1:
+        return float(sorted_vals[0])
+    pos = q * (len(sorted_vals) - 1)
+    lo = math.floor(pos)
+    hi = math.ceil(pos)
+    if lo == hi:
+        return float(sorted_vals[lo])
+    frac = pos - lo
+    return sorted_vals[lo] * (1.0 - frac) + sorted_vals[hi] * frac
+
+
+def _sensitivity_rows(
+    parts: Sequence[dict[str, Any]],
+    p_event: float,
+    plus: Sequence[float],
+    minus: Sequence[float],
+    deltas: Sequence[float],
+) -> list[dict[str, Any]]:
+    """Assemble the per-member ∂P/∂p_i readout from the re-scored MC estimates."""
+
+    rows: list[dict[str, Any]] = []
+    for part, pe_plus, pe_minus, denom in zip(parts, plus, minus, deltas):
+        swing = pe_plus - pe_minus
+        rows.append({
+            "member_id": part["member_id"],
+            "title": part["title"],
+            "direction": part["direction"],
+            "p": part["p"],
+            # ∂P(event)/∂p_i on the SAME draws (the honest "which race matters").
+            "sensitivity": (swing / denom) if denom else 0.0,
+            # Total P(event) swing across the ±2pp bump (already event-scaled).
+            "delta_p_event": swing,
+            "p_event_at_plus": pe_plus,
+            "p_event_at_minus": pe_minus,
+        })
+    return rows
+
+
+def _simulate_numpy(
+    p_vec: Sequence[float], counter: Sequence[bool], matrix: list[list[float]],
+    K: int, n_draws: int, seed: int,
+) -> tuple[float, dict[str, float], list[float], list[float], list[float], str | None]:
+    """Vectorised Gaussian-copula MC. success_i = (z_i < Φ⁻¹(p_i)) XOR counter_i."""
+
+    np = _np
+    n = len(p_vec)
+    L, note = _cholesky_with_jitter(matrix, use_numpy=True)
+    rng = np.random.default_rng(seed)
+    Z = rng.standard_normal((n_draws, n)) @ L.T            # correlated latents
+    thresholds = np.array([normal_ppf(_clamp(p, _PPF_EPS, 1.0 - _PPF_EPS)) for p in p_vec])
+    counter_arr = np.asarray(counter, dtype=bool)
+    raw = Z < thresholds                                   # (draws, n) underlying-yes
+    success = raw ^ counter_arr                            # counter → NOT the event
+    succ_int = success.astype(np.int64)
+    counts = succ_int.sum(axis=1)
+    p_event = float(np.mean(counts >= K))
+    dist = {
+        "p10": float(np.percentile(counts, 10)),
+        "p50": float(np.percentile(counts, 50)),
+        "p90": float(np.percentile(counts, 90)),
+        "mean": float(np.mean(counts)),
+    }
+
+    plus: list[float] = []
+    minus: list[float] = []
+    deltas: list[float] = []
+    for i in range(n):
+        zc = Z[:, i]
+        base = counts - succ_int[:, i]                     # drop member i's contribution
+        p_plus = min(1.0 - _PPF_EPS, p_vec[i] + _EVENT_DELTA)
+        p_minus = max(_PPF_EPS, p_vec[i] - _EVENT_DELTA)
+        raw_p = zc < normal_ppf(p_plus)
+        raw_m = zc < normal_ppf(p_minus)
+        s_p = (raw_p ^ counter[i]).astype(np.int64)
+        s_m = (raw_m ^ counter[i]).astype(np.int64)
+        plus.append(float(np.mean((base + s_p) >= K)))
+        minus.append(float(np.mean((base + s_m) >= K)))
+        deltas.append(p_plus - p_minus)
+    return p_event, dist, plus, minus, deltas, note
+
+
+def _simulate_python(
+    p_vec: Sequence[float], counter: Sequence[bool], matrix: list[list[float]],
+    K: int, n_draws: int, seed: int,
+) -> tuple[float, dict[str, float], list[float], list[float], list[float], str | None]:
+    """Pure-stdlib Gaussian-copula MC (deterministic via ``random.Random(seed)``)."""
+
+    n = len(p_vec)
+    L, note = _cholesky_with_jitter(matrix, use_numpy=False)
+    rng = random.Random(seed)
+    thresholds = [normal_ppf(_clamp(p, _PPF_EPS, 1.0 - _PPF_EPS)) for p in p_vec]
+
+    z_cols: list[list[float]] = [[0.0] * n_draws for _ in range(n)]
+    succ_cols: list[list[int]] = [[0] * n_draws for _ in range(n)]
+    counts = [0] * n_draws
+    for d in range(n_draws):
+        x = [rng.gauss(0.0, 1.0) for _ in range(n)]
+        cnt = 0
+        for i in range(n):
+            Li = L[i]
+            zi = 0.0
+            for k in range(i + 1):
+                zi += Li[k] * x[k]
+            z_cols[i][d] = zi
+            raw = zi < thresholds[i]
+            success = (not raw) if counter[i] else raw
+            si = 1 if success else 0
+            succ_cols[i][d] = si
+            cnt += si
+        counts[d] = cnt
+    ge = sum(1 for c in counts if c >= K)
+    p_event = ge / n_draws
+    ordered = sorted(counts)
+    dist = {
+        "p10": _quantile(ordered, 0.10),
+        "p50": _quantile(ordered, 0.50),
+        "p90": _quantile(ordered, 0.90),
+        "mean": sum(counts) / n_draws,
+    }
+
+    plus: list[float] = []
+    minus: list[float] = []
+    deltas: list[float] = []
+    for i in range(n):
+        p_plus = min(1.0 - _PPF_EPS, p_vec[i] + _EVENT_DELTA)
+        p_minus = max(_PPF_EPS, p_vec[i] - _EVENT_DELTA)
+        t_plus = normal_ppf(p_plus)
+        t_minus = normal_ppf(p_minus)
+        zc = z_cols[i]
+        sc = succ_cols[i]
+        ge_p = 0
+        ge_m = 0
+        for d in range(n_draws):
+            base = counts[d] - sc[d]
+            raw_p = zc[d] < t_plus
+            raw_m = zc[d] < t_minus
+            s_p = (not raw_p) if counter[i] else raw_p
+            s_m = (not raw_m) if counter[i] else raw_m
+            if base + (1 if s_p else 0) >= K:
+                ge_p += 1
+            if base + (1 if s_m else 0) >= K:
+                ge_m += 1
+        plus.append(ge_p / n_draws)
+        minus.append(ge_m / n_draws)
+        deltas.append(p_plus - p_minus)
+    return p_event, dist, plus, minus, deltas, note
+
+
+def simulate_thesis_event(
+    members: Sequence[Mapping[str, Any]],
+    event: Mapping[str, Any],
+    *,
+    rho: float | str = 0.4,
+    correlation_matrix: Mapping[Any, float] | None = None,
+    n_draws: int | None = None,
+    seed: int = 0,
+) -> ThesisEventResult:
+    """Monte-Carlo P(joint threshold event) over a thesis's binary members.
+
+    The thesis headline that ``aggregate_thesis`` reports is a mean index —
+    damped and threshold-insensitive. This treats the thesis as the event it
+    actually is: P(#member successes ≥ K), via a **Gaussian copula** so that
+    correlation (which only ever entered the mean's band) drives the headline.
+
+    Args:
+        members: the SAME belief rows ``aggregate_thesis`` consumes. Only binary
+            members participate; distribution members are excluded (with a note).
+        event: ``{"kind": "count_threshold", "threshold": K}`` | ``{"kind": "all"}``
+            | ``{"kind": "any"}``. ``all`` → K = #participants; ``any`` → K = 1.
+        rho: scalar pairwise correlation (float in ``[0, 0.95]``) or ``"estimate"``
+            (derived from the spread of the participating probabilities), resolved
+            exactly as in :func:`aggregate_thesis`.
+        correlation_matrix: optional per-pair overrides (members co-move
+            unequally), same key-shapes as :func:`aggregate_thesis`.
+        n_draws: MC draws. Defaults to 20k on the numpy fast path, 2k on the
+            pure-python fallback. Determinism is per-path: the same ``seed``
+            reproduces the same result on the same backend.
+        seed: deterministic RNG seed. The CALLER derives it from (thesis_id,
+            as_of) — this function never touches ``Date.now`` or a global RNG.
+
+    Returns:
+        A :class:`ThesisEventResult`. ``event_probability`` is ``None`` (withheld,
+        not fabricated) when no binary member participates.
+    """
+
+    kind = str(event.get("kind", "")).lower()
+    if kind not in {"count_threshold", "all", "any"}:
+        raise ValueError(
+            f"event kind must be 'count_threshold', 'all' or 'any', got {kind!r}"
+        )
+
+    # ── Participants: binary members only; everything else is excluded (honest) ─
+    parts: list[dict[str, Any]] = []
+    excluded: list[dict[str, Any]] = []
+    for member in members:
+        member_id = str(member.get("member_id", ""))
+        title = member.get("title")
+        mkind = str(member.get("kind", "")).lower()
+        if mkind != "binary":
+            excluded.append({
+                "member_id": member_id, "title": title, "kind": mkind or "unknown",
+                "reason": "non-binary member excluded from the count event",
+            })
+            continue
+        p = _coerce_float(member.get("probability"))
+        if p is None:
+            excluded.append({
+                "member_id": member_id, "title": title, "kind": "binary",
+                "reason": "no usable probability",
+            })
+            continue
+        direction = str(member.get("direction", "support")).lower()
+        parts.append({
+            "member_id": member_id,
+            "title": title,
+            "direction": direction,
+            "p": _clamp(p, 0.0, 1.0),
+            "counter": direction == "inverted",
+        })
+
+    notes: list[str] = []
+    if excluded:
+        n_dist = sum(1 for e in excluded if e["kind"] not in {"binary", "unknown"})
+        if n_dist:
+            notes.append(
+                f"{n_dist} distribution member(s) excluded from the event "
+                "(a count threshold is defined over binary members only)"
+            )
+        n_bad = sum(1 for e in excluded if e["reason"] == "no usable probability")
+        if n_bad:
+            notes.append(f"{n_bad} binary member(s) had no usable probability")
+
+    n = len(parts)
+
+    # ── Resolve the threshold K from the event kind ──────────────────────────
+    if kind == "all":
+        K = n
+    elif kind == "any":
+        K = 1
+    else:
+        raw_k = event.get("threshold")
+        if raw_k is None:
+            raise ValueError("count_threshold event requires an integer 'threshold'")
+        try:
+            K = int(raw_k)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"threshold must be an integer, got {raw_k!r}") from exc
+    event_echo = {"kind": kind, "threshold": K, "participants": n}
+
+    # Withhold rather than fabricate when nothing participates.
+    if n == 0:
+        notes.append("withheld: no binary member participates in the event")
+        return ThesisEventResult(
+            event_probability=None, event=event_echo,
+            count_distribution={}, sensitivities=[], participants=0,
+            excluded=excluded, backend="none", n_draws=0,
+            rho=(0.4 if rho == "estimate" else float(rho) if isinstance(rho, (int, float)) else 0.4),
+            seed=seed, notes=notes,
+        )
+
+    # ── rho resolution (mirrors aggregate_thesis) ────────────────────────────
+    if isinstance(rho, str):
+        if rho == "estimate":
+            ps = [part["p"] for part in parts]
+            spread = (max(ps) - min(ps)) if len(ps) > 1 else 0.0
+            rho_val = _clamp(0.6 - 0.25 * spread, 0.0, 0.95)
+        else:
+            raise ValueError(f"rho must be a float or 'estimate', got {rho!r}")
+    else:
+        rho_val = _clamp(float(rho), 0.0, 0.95)
+
+    pairwise = _normalize_event_corr(correlation_matrix)
+    if pairwise:
+        notes.append(f"pairwise correlation matrix applied ({len(pairwise)} pair(s))")
+    ids = [part["member_id"] for part in parts]
+    matrix = _build_corr_matrix(ids, rho_val, pairwise)
+
+    p_vec = [part["p"] for part in parts]
+    counter = [part["counter"] for part in parts]
+
+    # ── Backend selection + draw count ───────────────────────────────────────
+    use_numpy = _np is not None
+    if n_draws is None:
+        draws = _EVENT_DRAWS_NUMPY if use_numpy else _EVENT_DRAWS_PYTHON
+    else:
+        draws = max(int(n_draws), 1)
+        if not use_numpy and draws > _EVENT_DRAWS_PYTHON:
+            # Keep the stdlib fallback snappy; note the honest cap.
+            draws = _EVENT_DRAWS_PYTHON
+            notes.append(f"pure-python fallback: n_draws capped to {_EVENT_DRAWS_PYTHON}")
+    backend = "numpy" if use_numpy else "python"
+
+    simulate = _simulate_numpy if use_numpy else _simulate_python
+    p_event, dist, plus, minus, deltas, chol_note = simulate(
+        p_vec, counter, matrix, K, draws, seed
+    )
+    if chol_note:
+        notes.append(chol_note)
+
+    sensitivities = _sensitivity_rows(parts, p_event, plus, minus, deltas)
+
+    return ThesisEventResult(
+        event_probability=p_event,
+        event=event_echo,
+        count_distribution=dist,
+        sensitivities=sensitivities,
+        participants=n,
+        excluded=excluded,
+        backend=backend,
+        n_draws=draws,
+        rho=rho_val,
+        seed=seed,
+        notes=notes,
+    )

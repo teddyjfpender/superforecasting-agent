@@ -2952,6 +2952,23 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     thesis_corr.add_argument("member_b", help="member question id")
     thesis_corr.add_argument("rho", type=float, help="pairwise correlation in [0, 0.95]")
     thesis_corr.set_defaults(_forecast_handler=_cmd_thesis_set_correlation)
+    thesis_event = thesis_sub.add_parser(
+        "set-event",
+        help="Configure the thesis as a JOINT THRESHOLD EVENT — P(#member successes >= K) via copula MC",
+    )
+    thesis_event.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_event.add_argument(
+        "--kind", choices=["count_threshold", "all", "any"], default="count_threshold",
+        help="count_threshold (needs --threshold), all (=every member), or any (>=1 member)",
+    )
+    thesis_event.add_argument(
+        "--threshold", type=int, default=None,
+        help="K for count_threshold: P(at least K member successes)",
+    )
+    thesis_event.add_argument(
+        "--clear", action="store_true", help="remove the event spec (revert to the mean-index headline)",
+    )
+    thesis_event.set_defaults(_forecast_handler=_cmd_thesis_set_event)
     thesis_show = thesis_sub.add_parser("show", help="Show thesis health + per-member contributions (no commit)")
     thesis_show.add_argument("thesis", help="row number, id, or search words for the thesis")
     thesis_show.add_argument("--rho", type=float, default=0.4)
@@ -12914,6 +12931,18 @@ def _cmd_thesis_set_correlation(args: argparse.Namespace) -> None:
     print("(applied on the next aggregate; unspecified pairs fall back to the scalar rho)")
 
 
+def _cmd_thesis_set_event(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    if args.clear:
+        removed = ledger.clear_thesis_event(thesis_id)
+        print(f"cleared event spec for thesis {thesis_id}" if removed else "no event spec was set")
+        return
+    spec = ledger.set_thesis_event(thesis_id, kind=args.kind, threshold=args.threshold)
+    print(f"thesis {thesis_id} configured as a joint threshold event: {spec}")
+    print("(P(#member successes >= K) is stamped as event_probability on the next aggregate)")
+
+
 def _cmd_thesis_aggregate(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     thesis_id = _resolve_question_id(ledger, args.thesis)
@@ -12928,7 +12957,24 @@ def _cmd_thesis_aggregate(args: argparse.Namespace) -> None:
         if result.get("analyst_note_id"):
             print(f"analyst_note: {result['analyst_note_id']}")
         return
-    print(f"health: {agg.health * 100:.1f}%")
+    event = result.get("event")
+    if event is not None and getattr(event, "event_probability", None) is not None:
+        kind = event.event.get("kind")
+        k = event.event.get("threshold")
+        label = f">={k} of {event.participants}" if kind == "count_threshold" else str(kind)
+        cd = event.count_distribution or {}
+        print(
+            f"EVENT P({label}): {event.event_probability * 100:.1f}%  "
+            f"(copula MC, {event.n_draws} draws, rho {event.rho:.2f})"
+        )
+        if cd:
+            print(f"  count: mean {cd.get('mean', 0):.1f}  p10-p90 {cd.get('p10', 0):.0f}-{cd.get('p90', 0):.0f}")
+        for sens in event.top_sensitivities(3):
+            print(
+                f"  swing: {sens.get('title') or sens.get('member_id')} "
+                f"±2pp => {sens.get('delta_p_event', 0.0):+.1%} on P(event)"
+            )
+    print(f"health: {agg.health * 100:.1f}% (mean-index diagnostic)")
     print(f"score: {agg.thesis_score:.1f}  band: {_format_thesis_band(agg.band)}")
     print(f"coverage: {agg.coverage:.0%}  n_eff: {agg.n_eff:.1f}  rho: {agg.rho:.2f}")
     if result.get("snapshot_id"):
