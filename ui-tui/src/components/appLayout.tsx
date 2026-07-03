@@ -2,13 +2,15 @@ import { AlternateScreen, Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, 
 import { useStore } from '@nanostores/react'
 import { Fragment, memo, type RefObject, useCallback, useEffect, useMemo, useRef } from 'react'
 
+import { $agentsActive } from '../app/agentsActiveStore.js'
 import { $chordPending } from '../app/chordStore.js'
 import { useGateway } from '../app/gatewayContext.js'
 import { $homeFocus, setHomePane } from '../app/homeFocusStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
-import { activeNavKey, canOpenGlobalOverlay } from '../app/navRoutes.js'
-import { $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
+import { activeNavKey, canOpenGlobalOverlay, selectNavView } from '../app/navRoutes.js'
+import { $globalModal, $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
 import { $uiSessionId, $uiState, $uiTheme } from '../app/uiStore.js'
+import { useAgentsActivePoll } from '../app/useAgentsActivePoll.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { VIEW_CHORDS } from '../content/keymaps.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
@@ -27,7 +29,7 @@ import { resolveSignalConfig } from '../lib/signalStore.js'
 
 import { AgentsOverlay } from './agentsOverlay.js'
 import { AlertsView } from './alertsView.js'
-import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
+import { ForecastPulse, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
@@ -621,12 +623,21 @@ const DocsViewPane = memo(function DocsViewPane({ onDraft }: { onDraft: (command
   )
 })
 
+// The active-conversation status rule is now the SAME slim three-item bar the Home
+// landing pins (HomeStatusBar) — one source of truth, no second bespoke bar. The
+// dense desk inventory (forecasts · theses · factors · entities · alerts · closing)
+// is dropped from the chat surface entirely — that detail lives in the Desk — so
+// the operator sees only ready-state · the single actionable "N to review" count ·
+// model, plus the "✦ N agents running" chip (this is exactly where the operator
+// launches batches, so the heuristic matters most here) and the dim path far right.
 const StatusRulePane = memo(function StatusRulePane({
   at,
   composer,
   status
 }: Pick<AppLayoutProps, 'composer' | 'status'> & { at: 'bottom' | 'top' }) {
   const ui = useStore($uiState)
+  const agents = useStore($agentsActive)
+  const globalModal = useStore($globalModal)
 
   if (ui.statusBar !== at) {
     return null
@@ -634,23 +645,19 @@ const StatusRulePane = memo(function StatusRulePane({
 
   return (
     <Box marginTop={at === 'top' ? 1 : 0}>
-      <StatusRule
-        bgCount={ui.bgTasks.size}
-        busy={ui.busy}
+      <HomeStatusBar
+        agents={agents}
+        agentsGated={globalModal}
         cols={composer.cols}
         cwdLabel={status.cwdLabel}
         deskStatus={ui.forecastDeskStatus}
         model={ui.info?.model ?? ''}
         modelFast={ui.info?.fast || ui.info?.service_tier === 'priority'}
         modelReasoningEffort={ui.info?.reasoning_effort}
-        sessionStartedAt={status.sessionStartedAt}
-        showCost={ui.showCost}
+        onOpenAgents={() => selectNavView('agents')}
         status={ui.status}
         statusColor={status.statusColor}
         t={ui.theme}
-        turnStartedAt={status.turnStartedAt}
-        usage={ui.usage}
-        voiceLabel={status.voiceLabel}
       />
     </Box>
   )
@@ -668,6 +675,8 @@ export const AppLayout = memo(function AppLayout({
   const overlay = useStore($overlayState)
   const ui = useStore($uiState)
   const homeFocus = useStore($homeFocus)
+  const agentsActive = useStore($agentsActive)
+  const { gw } = useGateway()
   const { stdout } = useStdout()
   const rows = stdout?.rows ?? 24
 
@@ -703,6 +712,13 @@ export const AppLayout = memo(function AppLayout({
     overlay.messaging ||
     overlay.obsidian ||
     overlay.onboard
+
+  // Poll the live-agents aggregate (agents.active.summary) while a status bar is
+  // visible — i.e. on the landing OR the active-conversation surface, but NOT while
+  // a fullscreen overlay hides both bars. Bounded + torn down on unmount / overlay
+  // open; the detached jobs keep running server-side regardless. Both bars read the
+  // shared $agentsActive store this feeds, so the chip is a single source of truth.
+  useAgentsActivePoll(gw, !fullscreen)
 
   // Single owner of the hardware cursor: hide it while any fullscreen view is
   // mounted (no view writes ?25l/?25h itself now), restore it on the way back to
@@ -920,12 +936,15 @@ export const AppLayout = memo(function AppLayout({
 
       <Box flexShrink={0} paddingX={1}>
         <HomeStatusBar
+          agents={agentsActive}
+          agentsGated={globalModal}
           cols={Math.max(20, heroCols - 2)}
           cwdLabel={status.cwdLabel}
           deskStatus={ui.forecastDeskStatus}
           model={ui.info?.model ?? ''}
           modelFast={ui.info?.fast || ui.info?.service_tier === 'priority'}
           modelReasoningEffort={ui.info?.reasoning_effort}
+          onOpenAgents={() => selectNavView('agents')}
           status={ui.status}
           statusColor={status.statusColor}
           t={ui.theme}

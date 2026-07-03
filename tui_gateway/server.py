@@ -9563,6 +9563,106 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5033, str(e))
 
 
+@method("agents.active.summary")
+def _(rid, params: dict) -> dict:
+    """ONE cheap glanceable aggregate: how many agent-ish jobs are live RIGHT NOW.
+
+    The operator's ask: "when the chat invoked an agent run across all those
+    systems, there is no visual that the agents are running." This sums the three
+    detached job stores the desk runs — background processes (proc_ batches / agent
+    runs), mass reforecast + desk-task jobs, and quorum forecasts — into a Claude-
+    Code-style ``{count, kinds, headline}`` the TUI status bar renders as
+    "✦ N agents running · <label>". The headline is labelled from the NEWEST live
+    item across the stores (proc command trimmed, or reforecast mode + question
+    count, or quorum question).
+
+    FAIL-SAFE by construction: each store is read under its own guard, so any store
+    that errors contributes 0 and NEVER breaks the RPC — a status bar polling this
+    every few seconds must never take the gateway down. No network, no ledger read;
+    just the job files + the in-memory process registry.
+    """
+    import time as _time
+    from datetime import datetime as _dt
+
+    def _epoch(iso: Any) -> float:
+        # Parse an ISO ``created_at`` into epoch seconds so items from all three
+        # stores sort on one axis; an unparseable value sorts oldest (0.0).
+        try:
+            return _dt.fromisoformat(str(iso)).timestamp()
+        except Exception:  # noqa: BLE001
+            return 0.0
+
+    # (started_epoch, label) per live item; the newest wins the headline label.
+    candidates: list[tuple[float, str]] = []
+    procs = reforecast = quorum = 0
+
+    try:
+        # 1) Background processes — only those still RUNNING (a proc_ batch / agent
+        #    run). list_sessions() also returns recently-EXITED ones; skip those.
+        try:
+            from tools.process_registry import process_registry
+
+            now = _time.time()
+            for p in process_registry.list_sessions():
+                if p.get("status") != "running":
+                    continue
+                procs += 1
+                cmd = str(p.get("command") or "").strip()
+                label = (cmd[:44] + "…") if len(cmd) > 45 else (cmd or "process")
+                candidates.append((now - float(p.get("uptime_seconds") or 0), label))
+        except Exception:  # noqa: BLE001 — a store failure contributes 0, never breaks the RPC
+            pass
+
+        try:
+            # 2) Mass reforecast / desk-task jobs — queued|running only.
+            from forecasting.reforecast_jobs import list_jobs as _rf_jobs
+
+            for job in _rf_jobs(limit=20):
+                if job.get("status") not in ("queued", "running"):
+                    continue
+                reforecast += 1
+                spec = job.get("spec") or {}
+                mode = str(spec.get("mode") or "reforecast").strip()
+                n = int(job.get("total") or len(spec.get("question_ids") or []) or 0)
+                kind = "desk task" if mode == "task" else "reforecast"
+                label = f"{kind} · {n} question{'' if n == 1 else 's'}" if n else kind
+                candidates.append((_epoch(job.get("created_at")), label))
+        except Exception:  # noqa: BLE001
+            pass
+
+        try:
+            # 3) Quorum forecasts — queued|running only (one question per job).
+            from forecasting.quorum_jobs import list_jobs as _qr_jobs
+
+            for job in _qr_jobs(limit=20):
+                if job.get("status") not in ("queued", "running"):
+                    continue
+                quorum += 1
+                qid = str(job.get("question_id") or "").strip()
+                candidates.append((_epoch(job.get("created_at")), f"quorum · {qid}" if qid else "quorum"))
+        except Exception:  # noqa: BLE001
+            pass
+
+        count = procs + reforecast + quorum
+        if count == 0:
+            return _ok(rid, {"count": 0, "kinds": {"procs": 0, "reforecast": 0, "quorum": 0}, "headline": ""})
+
+        # Label the headline from the NEWEST live item across all three stores.
+        newest_label = max(candidates, key=lambda c: c[0])[1] if candidates else ""
+        noun = "agent" if count == 1 else "agents"
+        headline = f"{count} {noun} running" + (f" · {newest_label}" if newest_label else "")
+        return _ok(
+            rid,
+            {
+                "count": count,
+                "kinds": {"procs": procs, "reforecast": reforecast, "quorum": quorum},
+                "headline": headline,
+            },
+        )
+    except Exception:  # noqa: BLE001 — belt-and-suspenders: degrade to an empty summary, never _err
+        return _ok(rid, {"count": 0, "kinds": {"procs": 0, "reforecast": 0, "quorum": 0}, "headline": ""})
+
+
 @method("cron.manage")
 def _(rid, params: dict) -> dict:
     action, jid = params.get("action", "list"), params.get("name", "")

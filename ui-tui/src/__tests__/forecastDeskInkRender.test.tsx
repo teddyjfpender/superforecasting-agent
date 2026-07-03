@@ -356,8 +356,12 @@ describe('forecast desk Ink render', () => {
     // that generic surface is retained, only the always-on chrome was removed.
     expect(compact).toContain('Triage')
     expect(compact).toContain('63%↑8pt')
-    // The status footer still summarises desk state in one slim line.
-    expect(compact).toContain('2forecasts·1toreview·1alert')
+    // The conversation status footer is now the SAME slim three-item bar the
+    // landing pins — ready-state · the single actionable review count · model —
+    // so the dense desk inventory ("2 forecasts · 1 to review · 1 alert · …") is
+    // dropped from the chat surface entirely (it lives in the Desk).
+    expect(compact).toContain('ready·1toreview·forecastmodel')
+    expect(compact).not.toContain('2forecasts·1toreview')
   })
 
   it('on the empty landing shows only the centred hero (no transcript panel)', async () => {

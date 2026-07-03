@@ -38,3 +38,45 @@ describe('reviewCountFromDeskStatus', () => {
     expect(reviewCountFromDeskStatus('')).toBe(0)
   })
 })
+
+describe('session vitals on the conversation bar', () => {
+  it('renders context% / voice / bg conditionally; the landing (no vitals) stays bare', async () => {
+    const { render } = await import('@hermes/ink')
+    const React = (await import('react')).default
+    const { HomeStatusBar } = await import('../components/homeLanding.js')
+    const { DARK_THEME } = await import('../theme.js')
+    const { PassThrough } = await import('stream')
+
+    const frame = (vitals?: object): Promise<string> => {
+      const stream = new PassThrough() as never as PassThrough & { columns: number; isTTY: boolean; rows: number }
+      stream.columns = 120
+      stream.rows = 6
+      stream.isTTY = false
+      let out = ''
+      stream.on('data', (c: Buffer) => (out += c.toString()))
+      const inst = render(
+        React.createElement(HomeStatusBar, {
+          agents: null, cols: 120, cwdLabel: '~/x', deskStatus: null,
+          model: 'gpt-5.5', onOpenAgents: () => undefined,
+          status: 'ready', statusColor: '#0f0', t: DARK_THEME,
+          ...(vitals ? { vitals } : {})
+        } as never),
+        { exitOnCtrlC: false, patchConsole: false, stdout: stream as never }
+      )
+      return new Promise(res => setTimeout(() => { inst.unmount?.(); res(out) }, 80))
+    }
+
+    const bare = await frame()
+    expect(bare).not.toContain('%')
+    expect(bare).not.toContain(' bg')
+
+    const full = await frame({ bgCount: 2, contextPct: 84, voiceLabel: '◉ rec' })
+    expect(full).toContain('84%')
+    expect(full).toContain('◉ rec')
+    expect(full).toContain('2 bg')
+
+    const quiet = await frame({ bgCount: 0, contextPct: null, voiceLabel: null })
+    expect(quiet).not.toContain('%')
+    expect(quiet).not.toContain(' bg')
+  })
+})

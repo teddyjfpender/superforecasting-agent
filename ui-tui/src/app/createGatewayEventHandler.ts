@@ -13,11 +13,12 @@ import type {
 } from '../gatewayTypes.js'
 import { rpcErrorMessage } from '../lib/rpc.js'
 import { topLevelSubagents } from '../lib/subagentTree.js'
-import { resolveVoiceSubmission } from '../lib/voiceIntent.js'
 import { formatToolCall, stripAnsi } from '../lib/text.js'
+import { resolveVoiceSubmission } from '../lib/voiceIntent.js'
 import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
+import { agentsActiveFromResult, setAgentsActive } from './agentsActiveStore.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
@@ -237,8 +238,20 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       .then(r => {
         const count =
           typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
+
         patchUiState({ forecastContestedCount: Math.max(0, count) })
       })
+      .catch(() => {})
+  }
+
+  // Refresh the live-agents aggregate ($agentsActive) immediately on an event that
+  // can change the running-job count, so the status-bar "✦ N agents running" chip
+  // reacts at once instead of waiting up to a full ~7s poll cycle. Cheap: one
+  // aggregate over three local job stores, no network. Best-effort — a failed read
+  // leaves the last summary in place (the interval poll will reconcile it).
+  const pullAgentsActive = () => {
+    rpc<{ count?: number; headline?: string }>('agents.active.summary', {})
+      .then(r => setAgentsActive(agentsActiveFromResult(r)))
       .catch(() => {})
   }
 
@@ -656,6 +669,9 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case 'background.complete':
         dropBgTask(ev.payload.task_id)
         sys(`[bg ${ev.payload.task_id}] ${ev.payload.text}`)
+        // A background process just finished → the live-agent count likely dropped;
+        // refresh the chip now rather than waiting for the next poll tick.
+        pullAgentsActive()
 
         return
       case 'cron.fired': {
@@ -672,6 +688,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           turnController.pushActivity(label, 'info')
           restoreStatusAfter(6000)
           pullForecastDeskRail()
+          // Cron can fire reforecast sweeps → new detached jobs; refresh the chip.
+          pullAgentsActive()
         }
 
         return
@@ -703,6 +721,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           turnController.pushActivity(label, 'info')
           restoreStatusAfter(6000)
           pullForecastDeskRail()
+          // A sweep can auto-start reforecast/quorum jobs → refresh the chip now.
+          pullAgentsActive()
         }
 
         return
