@@ -1668,19 +1668,37 @@ describe('DeskView agent-run visibility', () => {
   })
 })
 
+
 describe('sidebar wrap law', () => {
   it('the focused title WRAPS in the summary panel (no … chop) and long teasers end honestly', async () => {
-    const long = plainRow('fq_long', 'Will the market begin pricing AI-infrastructure scarcity as a persistent macro constraint through 2027?')
-    const resp: ForecastWorkspaceResponse = {
-      active_count: 1, closing_soon_count: 0, forecasts: [long],
-      generated_at: '2026-06-29T14:00:00Z', open_alert_count: 0, product: 'Superforecasting Agent'
-    }
-    const desk = await mountDesk(170, resp)
-    await tick(150)
-    const text = desk.text()
-    // The tail of the title survives (wrapped onto following lines).
+    // useStdout reports nothing in the inline harness (the desk falls back to
+    // 80 cols and never mounts the two-pane panel), so pin the contract at the
+    // COMPONENT level with a deterministic width — the pmSection pattern.
+    const { render } = await import('@hermes/ink')
+    const { DeskSummary } = await import('../components/deskView.js')
+    const { DARK_THEME } = await import('../theme.js')
+    const item = plainRow('fq_long', 'Will the market begin pricing AI-infrastructure scarcity as a persistent macro constraint through 2027?')
+    const stdout = writeStream(60, 40)
+    const inst = render(
+      React.createElement(DeskSummary as never, {
+        latestNote: {
+          body: 'Still a lean no at 37 percent, with overbuild risk reading as more of a 2027 tail scenario than the base case for the year ahead.',
+          headline: null
+        },
+        refFactor: undefined, refThesis: undefined,
+        selected: item, t: DARK_THEME, width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream }
+    )
+    await tick(80)
+    inst.unmount?.()
+    const text = stripAnsiLocal(stdout.text())
     expect(text).toContain('through')
     expect(text).toContain('2027?')
-    desk.cleanup()
+    expect(text).not.toContain('AI-infrastr…')
+    // The teaser reads to its END (the old silent slice(0,120) chopped it).
+    expect(text).toContain('year ahead')
   })
 })
+
+const stripAnsiLocal = (s: string): string => s.replace(new RegExp(String.fromCharCode(27) + '\\[[0-9;]*m', 'g'), '')
