@@ -83,21 +83,56 @@ export const parseYahoo = (chart: unknown, series: MarketSeries): MarketQuote =>
 }
 
 export const parseFrankfurter = (json: unknown, seriesList: MarketSeries[]): MarketQuote[] => {
+  // A DATE-RANGE payload ({rates: {"2026-06-02": {EUR: ..}, ...}}): daily
+  // closes give the change columns + the 1MO sparkline that /latest starved
+  // (the operator: FX "missing fundamental information"). A /latest-shaped
+  // payload (rates: {EUR: number}) still parses as a value-only quote.
   const data = json as { date?: string; rates?: Record<string, unknown> }
   const rates = data?.rates ?? {}
-  const asOf = data?.date ? Date.parse(data.date) : 0
+  const dateKeys = Object.keys(rates)
+    .filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k))
+    .sort()
 
-  return seriesList.map(s => ({
-    asOf: Number.isFinite(asOf) ? asOf : 0,
-    category: s.category,
-    change: null,
-    changePct: null,
-    name: s.name,
-    provider: 'frankfurter',
-    symbol: s.symbol,
-    unit: s.unit,
-    value: num(rates[s.symbol])
-  }))
+  if (dateKeys.length === 0) {
+    const asOf = data?.date ? Date.parse(data.date) : 0
+
+    return seriesList.map(s => ({
+      asOf: Number.isFinite(asOf) ? asOf : 0,
+      category: s.category,
+      change: null,
+      changePct: null,
+      name: s.name,
+      provider: 'frankfurter',
+      symbol: s.symbol,
+      unit: s.unit,
+      value: num(rates[s.symbol])
+    }))
+  }
+
+  const asOf = Date.parse(dateKeys[dateKeys.length - 1]!)
+
+  return seriesList.map(s => {
+    const closes = dateKeys
+      .map(d => num((rates[d] as Record<string, unknown> | undefined)?.[s.symbol]))
+      .filter((v): v is number => v !== null)
+    const value = closes.length ? closes[closes.length - 1]! : null
+    const prevClose = closes.length > 1 ? closes[closes.length - 2]! : null
+    const change = value !== null && prevClose !== null ? value - prevClose : null
+
+    return {
+      asOf: Number.isFinite(asOf) ? asOf : 0,
+      category: s.category,
+      change,
+      changePct: change !== null && prevClose ? (change / prevClose) * 100 : null,
+      history: closes,
+      name: s.name,
+      prevClose,
+      provider: 'frankfurter',
+      symbol: s.symbol,
+      unit: s.unit,
+      value
+    }
+  })
 }
 
 export const parseCoingecko = (json: unknown, seriesList: MarketSeries[]): MarketQuote[] => {
@@ -197,11 +232,25 @@ export const parseBls = (json: unknown, series: MarketSeries): MarketQuote => {
 }
 
 export const parseBea = (json: unknown, series: MarketSeries): MarketQuote => {
-  const rows = (json as { BEAAPI?: { Results?: { Data?: { DataValue?: string; TimePeriod?: string }[] } } })
+  // NIPA responses carry EVERY LINE of the table (31 lines for T20305): the
+  // old rows[last] read an arbitrary line's value, and an API error payload
+  // (e.g. the invalid Year=LAST5 we used to send) yielded num('') === 0 — a
+  // FABRICATED 0.0000 on every BEA row (the operator's catch). Filter to the
+  // headline line, keep periods sorted, and let absence be null ('—').
+  const rows = (json as { BEAAPI?: { Results?: { Data?: { DataValue?: string; LineNumber?: string; TimePeriod?: string }[] } } })
     ?.BEAAPI?.Results?.Data ?? []
+  const line = (series as { line?: string }).line ?? '1'
+  const lineRows = rows
+    .filter(r => (r.LineNumber ?? '1') === line && r.TimePeriod)
+    .sort((a, b) => String(a.TimePeriod).localeCompare(String(b.TimePeriod)))
 
-  const last = rows[rows.length - 1]
-  const value = num((last?.DataValue || '').replace(/,/g, ''))
+  const last = lineRows[lineRows.length - 1]
+  const prev = lineRows[lineRows.length - 2]
+  const parseVal = (r?: { DataValue?: string }): null | number =>
+    r?.DataValue ? num(String(r.DataValue).replace(/,/g, '')) : null
+  const value = parseVal(last)
+  const prevValue = parseVal(prev)
+  const change = value !== null && prevValue !== null ? value - prevValue : null
 
   // BEA TimePeriod is "2024Q3" (quarterly) or "2024" (annual) — map to a date so
   // the detail pane shows a real "updated" instead of "—".
@@ -217,9 +266,11 @@ export const parseBea = (json: unknown, series: MarketSeries): MarketQuote => {
   return {
     asOf: Number.isFinite(asOf) ? asOf : 0,
     category: series.category,
-    change: null,
-    changePct: null,
+    change,
+    changePct: change !== null && prevValue ? (change / prevValue) * 100 : null,
+    history: lineRows.map(parseVal).filter((v): v is number => v !== null).slice(-12),
     name: series.name,
+    prevClose: prevValue,
     provider: 'bea',
     symbol: series.symbol,
     unit: series.unit,
@@ -328,7 +379,10 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
     jobs.push(
       (async () => {
         const symbols = fx.map(s => s.symbol).join(',')
-        const json = await getJson(`https://api.frankfurter.app/latest?base=USD&symbols=${symbols}`)
+        // ~35 calendar days of daily closes in ONE call: value + day change +
+        // the 1MO sparkline (FX has no volume — that column stays honestly '—').
+        const from = new Date(Date.now() - 35 * 86_400_000).toISOString().slice(0, 10)
+        const json = await getJson(`https://api.frankfurter.app/${from}..?base=USD&symbols=${symbols}`)
 
         if (json) {
           opts.onBatch(parseFrankfurter(json, fx))
@@ -418,7 +472,10 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
     jobs.push(
       pool(bea, 3, async s => {
         const json = await getJson(
-          `https://apps.bea.gov/api/data/?UserID=${beaKey}&method=GetData&datasetname=NIPA&TableName=${s.symbol}&Frequency=Q&Year=LAST5&ResultFormat=JSON`
+          // Year=LAST5 is INVALID for NIPA (API error 201 -> empty Data ->
+          // the fabricated 0.0000). Two explicit years cover latest + prior
+          // quarters for the change columns.
+          `https://apps.bea.gov/api/data/?UserID=${beaKey}&method=GetData&datasetname=NIPA&TableName=${s.symbol}&Frequency=Q&Year=${new Date().getFullYear() - 1},${new Date().getFullYear()}&ResultFormat=JSON`
         )
 
         if (json) {

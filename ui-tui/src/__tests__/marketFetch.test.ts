@@ -114,3 +114,54 @@ describe('parseBea', () => {
     expect(q.asOf).toBe(Date.parse('2026-04-01'))
   })
 })
+
+describe('FX range + BEA honesty (the operator screenshots)', () => {
+  const series = (over: object) => ({ category: 'FX', name: 'EUR per USD', provider: 'frankfurter', symbol: 'EUR', ...over })
+
+  it('a Frankfurter date-range payload yields value, day change, and the 1MO history', () => {
+    const json = {
+      base: 'USD',
+      rates: {
+        '2026-06-02': { EUR: 0.86 },
+        '2026-06-16': { EUR: 0.865 },
+        '2026-07-02': { EUR: 0.871 },
+        '2026-07-03': { EUR: 0.8735 }
+      }
+    }
+    const [q] = parseFrankfurter(json, [series({}) as never])
+    expect(q!.value).toBeCloseTo(0.8735)
+    expect(q!.prevClose).toBeCloseTo(0.871)
+    expect(q!.change).toBeCloseTo(0.0025, 6)
+    expect(q!.changePct).toBeCloseTo(0.287, 2)
+    expect(q!.history).toEqual([0.86, 0.865, 0.871, 0.8735])
+  })
+
+  it('a /latest-shaped payload still parses value-only (backward compatible)', () => {
+    const [q] = parseFrankfurter({ date: '2026-07-03', rates: { EUR: 0.8735 } }, [series({}) as never])
+    expect(q!.value).toBeCloseTo(0.8735)
+    expect(q!.change).toBeNull()
+  })
+
+  it('BEA reads the HEADLINE line, computes the quarter change, and never fabricates 0', () => {
+    const bea = { category: 'US Macro', name: 'BEA NIPA: PCE', provider: 'bea', symbol: 'T20305' }
+    const json = {
+      BEAAPI: { Results: { Data: [
+        { DataValue: '99', LineNumber: '31', TimePeriod: '2026Q1' },
+        { DataValue: '21,363,352', LineNumber: '1', TimePeriod: '2025Q4' },
+        { DataValue: '21,634,948', LineNumber: '1', TimePeriod: '2026Q1' },
+        { DataValue: '88', LineNumber: '31', TimePeriod: '2025Q4' }
+      ] } }
+    }
+    const q = parseBea(json, bea as never)
+    expect(q.value).toBe(21_634_948)
+    expect(q.prevClose).toBe(21_363_352)
+    expect(q.change).toBe(271_596)
+    expect(q.changePct).toBeCloseTo(1.271, 2)
+
+    // The operator's 0.0000 wall: an API-error payload (empty Data) must be
+    // NULL — absence renders '—', never a fabricated zero.
+    const err = parseBea({ BEAAPI: { Error: { APIErrorCode: '201' } } }, bea as never)
+    expect(err.value).toBeNull()
+    expect(err.change).toBeNull()
+  })
+})
