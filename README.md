@@ -98,6 +98,14 @@ What you get without asking for it:
 - **Reading is triaged, not hoarded** — watched-source items are labeled
   keep/skim/skip by a cheap model; auto-import only unlocks after the labeler
   earns ≥80% agreement with your own adjudications (`forecast triage trust`).
+- **Prediction markets are first-class** — a Prediction Markets surface in the
+  Markets view browses Polymarket + Kalshi as event headline rows with indented,
+  de-vigged outcome sub-rows (the discretized distribution), order-book depth,
+  and price history, streaming live where it pays.
+- **The agent pulls market priors structurally** — the `forecast_ledger`
+  `pm_query` action (`pm_mode` search/event/book/history) returns the same
+  de-vigged distributions and books as structured data, so a market component
+  comes from real numbers rather than a scraped page.
 
 In chat, the same journey is one tool call: ask the agent to forecast something
 and it uses `full_forecast`. Every gate still applies — autonomy never buys a

@@ -9680,3 +9680,11 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5002, "command timed out (30s)")
     except Exception as e:
         return _err(rid, 5003, str(e))
+
+
+# ── Prediction-markets RPCs (Arc 4) — registered from a dedicated module so
+# server.py only wires them; every pm.* handler lives in tui_gateway/pm_rpc.py.
+from tui_gateway import pm_rpc as _pm_rpc  # noqa: E402
+
+_pm_rpc.register(sys.modules[__name__])
+atexit.register(_pm_rpc.shutdown)

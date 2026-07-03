@@ -36,7 +36,10 @@ parse -> research -> base_rate -> [model] -> update -> resolve -> postmortem
    sources. Do not re-interrogate; pick up at **research** and drive straight to
    the first live `update`.
 2. **research** — Collect *timestamped* evidence; separate facts, estimates,
-   rumors, opinions, assumptions. Do not move the probability yet.
+   rumors, opinions, assumptions. Do not move the probability yet. For a market
+   prior, pull it through the `forecast_ledger` `pm_query` action (`pm_mode`
+   search/event/book/history) — structured, de-vigged Polymarket + Kalshi
+   distributions and order-book depth — instead of scraping or a fuzzy import.
 3. **base_rate** — Establish the outside view first: reference classes with
    inclusion/exclusion criteria and base rates. Blend competing classes; for
    rare events decompose into a conditional chain with an unconditional

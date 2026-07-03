@@ -23,6 +23,7 @@ from forecasting.ensembles import linear_trend_projection, weighted_binary_proba
 from forecasting.hooks import SaturationBlocked, saturation_summary
 from forecasting.learning import apply_active_lesson_adjustments, should_apply_active_lessons
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
+from forecasting.pm import PMService
 from forecasting.protocol import build_protocol_messages
 from forecasting.search import match_to_dict, search_forecasts
 from forecasting.source_planner import SourceRecommendation, plan_sources_for_question
@@ -214,6 +215,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "component_track_record",
                     "tail_audit",
                     "market_quality",
+                    "pm_query",
                     "research_plan",
                     "research_audit",
                     "link_forecasts",
@@ -1130,6 +1132,42 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "integer",
                 "description": "triage_trust: minimum adjudicated labels before the labeler can be trusted to auto-filter (default 20 / $FORECAST_TRIAGE_TRUST_MIN_SAMPLE).",
             },
+            "pm_mode": {
+                "type": "string",
+                "enum": ["search", "event", "book", "history"],
+                "description": (
+                    "pm_query: which read to run. 'search' → list live events + de-vigged "
+                    "distributions across Polymarket+Kalshi (market priors); 'event' → one "
+                    "event's full outcome distribution (categorical buckets, de-vigged to sum "
+                    "to ~1); 'book' → an outcome market's YES order book (bid/ask depth as a "
+                    "liquidity signal); 'history' → the price-probability time series."
+                ),
+            },
+            "venue": {
+                "type": "string",
+                "enum": ["polymarket", "kalshi"],
+                "description": "pm_query: which prediction-market venue. Omit on mode='search' to query both.",
+            },
+            "event_id": {
+                "type": "string",
+                "description": "pm_query mode='event': the venue event id (Polymarket Gamma event id or Kalshi event ticker).",
+            },
+            "market_id": {
+                "type": "string",
+                "description": "pm_query mode='book'|'history': the outcome-market id (Polymarket clobTokenId or Kalshi market ticker).",
+            },
+            "range": {
+                "type": "string",
+                "description": "pm_query mode='history': lookback window (e.g. '1d', '1w', '1m'). Default '1w'.",
+            },
+            "series_ticker": {
+                "type": "string",
+                "description": "pm_query mode='history' on Kalshi: the parent series ticker (required by Kalshi's candlesticks endpoint).",
+            },
+            "tag": {
+                "type": "string",
+                "description": "pm_query mode='search': optional Polymarket tag/category filter.",
+            },
         },
         "required": ["action"],
     },
@@ -1167,6 +1205,22 @@ def _find_possible_duplicates(ledger: Any, title: str, *, limit: int = 5) -> lis
             "status": match.question.status,
         })
     return out
+
+
+# One process-wide PMService so its TTL caches persist across pm_query calls
+# within a session. Injectable for tests via set_pm_service().
+_PM_SERVICE_HOLDER: dict[str, Any] = {"svc": None}
+
+
+def _pm_service() -> PMService:
+    if _PM_SERVICE_HOLDER["svc"] is None:
+        _PM_SERVICE_HOLDER["svc"] = PMService()
+    return _PM_SERVICE_HOLDER["svc"]
+
+
+def set_pm_service(service) -> None:
+    """Test seam: inject a stub PMService for pm_query without touching network."""
+    _PM_SERVICE_HOLDER["svc"] = service
 
 
 @allow_ledger_writes_decorator("forecast_ledger_tool")
@@ -2868,6 +2922,103 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                     "(e.g. a liquid market weight 2 stays 2; a stale one at 0.25 becomes 0.5). Never "
                     "drop a market silently — record the discounted weight."
                 ),
+            )
+
+        if action == "pm_query":
+            # First-class structured pull of prediction-market data (Polymarket +
+            # Kalshi) through the one PMService — de-vigged distributions, order
+            # books, price history. Use this INSTEAD of scraping market pages or
+            # fuzzy source imports when you want a market prior: it returns
+            # normalized, honestly raw-vs-devig-labelled numbers. Cite the venue +
+            # market id in the market component's source slug.
+            pm_mode = str(args.get("pm_mode") or args.get("mode") or "").strip().lower()
+            venue = args.get("venue") or None
+            svc = _pm_service()
+            if pm_mode == "search":
+                try:
+                    pm_limit = int(args.get("limit") or 20)
+                except (TypeError, ValueError):
+                    pm_limit = 20
+                pm_limit = max(1, min(pm_limit, 100))
+                pairs = svc.list_events(
+                    venue=str(venue) if venue else None,
+                    query=args.get("query") or None,
+                    tag=args.get("tag") or None,
+                    limit=pm_limit,
+                )
+                events = [
+                    {"event": ev.to_dict(), "distribution": dist.to_dict()}
+                    for ev, dist in pairs
+                ]
+                return tool_result(
+                    success=True,
+                    mode="search",
+                    count=len(events),
+                    events=events,
+                    note=(
+                        "Market priors across Polymarket + Kalshi. Each distribution is "
+                        "de-vigged (normalized=true) or left raw when the outcome set isn't a "
+                        "guaranteed mutually-exclusive partition — read `normalized` before "
+                        "trusting sum-to-1. Drill into one with mode='event'."
+                    ),
+                )
+            if pm_mode == "event":
+                if not venue or not args.get("event_id"):
+                    return tool_error(
+                        "pm_query mode='event' requires venue and event_id", success=False
+                    )
+                event, dist = svc.event_detail(str(venue), str(args.get("event_id")))
+                return tool_result(
+                    success=True,
+                    mode="event",
+                    event=event.to_dict(),
+                    distribution=dist.to_dict(),
+                    note=(
+                        "Full de-vigged outcome distribution. `outcomes[].raw_prob` is the "
+                        "pre-devig YES mid; `outcomes[].prob` is normalized. Feed prob into a "
+                        "market component; discount thin/zero-liquidity outcomes (liquid=false)."
+                    ),
+                )
+            if pm_mode == "book":
+                if not venue or not args.get("market_id"):
+                    return tool_error(
+                        "pm_query mode='book' requires venue and market_id", success=False
+                    )
+                book = svc.orderbook(str(venue), str(args.get("market_id")))
+                return tool_result(
+                    success=True,
+                    mode="book",
+                    book=book.to_dict(),
+                    note=(
+                        "YES-oriented order book. Bid/ask depth is a liquidity signal: a wide "
+                        "spread or thin size means the mid is weakly defended — discount the "
+                        "market prior's weight accordingly (see market_quality)."
+                    ),
+                )
+            if pm_mode == "history":
+                if not venue or not args.get("market_id"):
+                    return tool_error(
+                        "pm_query mode='history' requires venue and market_id", success=False
+                    )
+                series_ticker = args.get("series_ticker") or None
+                points = svc.history(
+                    str(venue),
+                    str(args.get("market_id")),
+                    series_ticker=str(series_ticker) if series_ticker else None,
+                    interval=str(args.get("range") or args.get("interval") or "1w"),
+                )
+                return tool_result(
+                    success=True,
+                    mode="history",
+                    count=len(points),
+                    points=[p.to_dict() for p in points],
+                    note=(
+                        "Price-probability time series on a [0,1] scale. Use it for the market's "
+                        "trajectory/status-quo anchor, not just the latest mid."
+                    ),
+                )
+            return tool_error(
+                "pm_query requires pm_mode in {search, event, book, history}", success=False
             )
 
         if action == "research_plan":

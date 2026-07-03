@@ -22,6 +22,29 @@ export const sparkline = (values: number[], maxPoints = 0): string => {
     .join('')
 }
 
+// A horizontal bar of `width` cells filling to `fraction` (0..1), using the
+// eighth-block glyphs so a partial final cell renders sub-character precision.
+// Pure + tested — used by the distribution bars in the Prediction Markets pane.
+const HBLOCKS = '▏▎▍▌▋▊▉█'
+
+export const hbar = (fraction: number, width: number): string => {
+  if (!Number.isFinite(fraction) || width <= 0) {
+    return ''
+  }
+
+  const clamped = Math.max(0, Math.min(1, fraction))
+  const eighths = Math.round(clamped * width * 8)
+  const full = Math.floor(eighths / 8)
+  const rem = eighths % 8
+  const body = '█'.repeat(Math.min(full, width))
+
+  if (full >= width || rem === 0) {
+    return body.slice(0, width)
+  }
+
+  return `${body}${HBLOCKS[rem - 1]}`
+}
+
 // A filled block area-chart, `height` rows tall × up to `width` columns, oldest
 // → newest. Each column rises to its normalized value; partial top cells use
 // the eighth-blocks. Returns lines top→bottom (use a fixed-width font).

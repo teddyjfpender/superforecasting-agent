@@ -127,6 +127,13 @@ API_KEY_PROVIDERS: tuple[ApiKeyProvider, ...] = (
         description="US Census Bureau — required for census.gov data imports (api.census.gov rejects keyless requests).",
         signup_url="https://api.census.gov/data/key_signup.html",
     ),
+    ApiKeyProvider(
+        name="kalshi",
+        env_var="KALSHI_ACCESS_KEY_ID",
+        description="Kalshi — needed ONLY for websocket streaming (REST market data is public/keyless). Capture BOTH the access key id and the RSA private key PEM: `forecast api-key set kalshi <key-id> --pem-file key.pem`. The PEM is written 0600 into the workspace; its path is recorded in KALSHI_PRIVATE_KEY_PATH.",
+        signup_url="https://kalshi.com/account/profile",
+        aliases=("kalshi-ws",),
+    ),
 )
 
 
@@ -287,6 +294,93 @@ def list_api_keys(*, include_unset: bool = True) -> list[dict[str, object]]:
     return rows
 
 
+# ── Kalshi: key id + RSA private-key PEM (websocket streaming only) ───────────
+#
+# Kalshi's REST market data is public, so the default keyless desk works. The
+# websocket handshake, though, needs an RSA-PSS signature — which needs a key
+# id AND a private key. We store the key id like any other env-var provider,
+# write the PEM 0600 into the workspace, and record its path in
+# ``KALSHI_PRIVATE_KEY_PATH`` so the streamer can load it. Absence → the stream
+# degrades to REST polling (never an error).
+
+KALSHI_KEY_ID_VAR = "KALSHI_ACCESS_KEY_ID"
+KALSHI_PEM_PATH_VAR = "KALSHI_PRIVATE_KEY_PATH"
+_KALSHI_PEM_FILENAME = "kalshi_private_key.pem"
+
+
+def default_kalshi_pem_path() -> Path:
+    """Where the Kalshi PEM is written — inside the workspace, beside .env."""
+
+    return default_env_path().parent / _KALSHI_PEM_FILENAME
+
+
+def set_kalshi_key(
+    key_id: str,
+    private_key_pem: str,
+    *,
+    env_path: Path | None = None,
+    pem_path: Path | None = None,
+) -> dict[str, str]:
+    """Persist the Kalshi key id + PEM and activate both in this process.
+
+    The PEM is written 0600; its path (plus the key id) is recorded in ``.env``
+    exactly like the single-value providers, so a fresh runtime picks it up.
+    """
+
+    key_id = (key_id or "").strip()
+    pem = (private_key_pem or "").strip()
+    if not key_id:
+        raise ValidationError("kalshi key id cannot be empty")
+    if "BEGIN" not in pem or "PRIVATE KEY" not in pem:
+        raise ValidationError(
+            "kalshi private key must be a PEM (-----BEGIN ... PRIVATE KEY-----)"
+        )
+    target = pem_path or default_kalshi_pem_path()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    text = pem if pem.endswith("\n") else pem + "\n"
+    target.write_text(text, encoding="utf-8")
+    try:
+        os.chmod(target, 0o600)
+    except OSError:  # pragma: no cover - some filesystems reject chmod
+        pass
+    set_api_key(KALSHI_KEY_ID_VAR, key_id, env_path=env_path)
+    set_api_key(KALSHI_PEM_PATH_VAR, str(target), env_path=env_path)
+    return {"key_id_var": KALSHI_KEY_ID_VAR, "pem_path": str(target)}
+
+
+def unset_kalshi_key(*, env_path: Path | None = None, remove_pem: bool = True) -> None:
+    """Clear the Kalshi key id + PEM path (and optionally delete the PEM)."""
+
+    pem = os.environ.get(KALSHI_PEM_PATH_VAR)
+    unset_api_key(KALSHI_KEY_ID_VAR, env_path=env_path)
+    unset_api_key(KALSHI_PEM_PATH_VAR, env_path=env_path)
+    if remove_pem and pem:
+        try:  # pragma: no cover - best effort
+            Path(pem).unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def load_kalshi_credentials() -> tuple[str, str] | None:
+    """Return ``(key_id, pem_text)`` when both are present, else ``None``.
+
+    ``None`` is the polite-degradation signal the streamer checks — no key means
+    REST polling, never a crash.
+    """
+
+    key_id = (os.environ.get(KALSHI_KEY_ID_VAR) or "").strip()
+    pem_path = (os.environ.get(KALSHI_PEM_PATH_VAR) or "").strip()
+    if not key_id or not pem_path:
+        return None
+    try:
+        pem = Path(pem_path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if "PRIVATE KEY" not in pem:
+        return None
+    return key_id, pem
+
+
 __all__ = [
     "ApiKeyProvider",
     "API_KEY_PROVIDERS",
@@ -297,4 +391,10 @@ __all__ = [
     "redact",
     "set_api_key",
     "unset_api_key",
+    "KALSHI_KEY_ID_VAR",
+    "KALSHI_PEM_PATH_VAR",
+    "default_kalshi_pem_path",
+    "set_kalshi_key",
+    "unset_kalshi_key",
+    "load_kalshi_credentials",
 ]

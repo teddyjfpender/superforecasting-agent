@@ -35,6 +35,7 @@ import { MarketSearchModal } from './marketSearchModal.js'
 import { type ChatMessage, ModelChat } from './modelChat.js'
 import { ModelsList } from './modelsList.js'
 import { NewModelModal, type NewModelParams } from './newModelModal.js'
+import { PredictionMarketsView } from './predictionMarketsView.js'
 import { PresentationView } from './presentationView.js'
 
 export const openMarketsView = () => patchOverlayState({ markets: true })
@@ -210,7 +211,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const [searchInput, setSearchInput] = useState('')
 
   // ── Market Models mode ──────────────────────────────────────────────────
-  const [mode, setMode] = useState<'data' | 'models'>('data')
+  const [mode, setMode] = useState<'data' | 'models' | 'pm'>('data')
   const [models, setModels] = useState<MarketModelListItem[]>(() => loadModelCatalog().models)
   const [modelSel, setModelSel] = useState(0)
   const [openModelId, setOpenModelId] = useState<null | string>(null)
@@ -880,16 +881,29 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       return
     }
 
-    // `m` toggles Data | Models; `h` opens Help — both available everywhere.
+    // `p` toggles the Prediction Markets pane; `m` toggles Data | Models; `h`
+    // opens Help — all three are available in every mode.
+    if (ch === 'p') {
+      setSel(0)
+
+      return setMode(prev => (prev === 'pm' ? 'data' : 'pm'))
+    }
+
     if (ch === 'm') {
       setSel(0)
       setModelSel(0)
 
-      return setMode(p => (p === 'data' ? 'models' : 'data'))
+      return setMode(prev => (prev === 'models' ? 'data' : 'models'))
     }
 
     if (ch === 'h') {
       return setModal('help')
+    }
+
+    // The Prediction Markets pane owns its own input (its useInput is active in
+    // this mode); marketsView only keeps the mode-toggle + help keys above.
+    if (mode === 'pm') {
+      return
     }
 
     if (mode === 'models') {
@@ -1127,18 +1141,28 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         <Text bold={mode === 'models'} color={mode === 'models' ? t.color.primary : t.color.muted}>
           {mode === 'models' ? '[Models]' : 'Models'}
         </Text>
-        <Text color={t.color.muted}>{'   ·   '}</Text>
-        <Text color={fetching ? sem.star : hasContent ? sem.up : sem.subtle}>
-          {statusGlyph(fetching ? 'busy' : hasContent ? 'live' : 'idle', tick)}
+        <Text color={t.color.muted}>{'  '}</Text>
+        <Text bold={mode === 'pm'} color={mode === 'pm' ? t.color.primary : t.color.muted}>
+          {mode === 'pm' ? '[Prediction]' : 'Prediction'}
         </Text>
-        {mode === 'models' ? (
-          <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
+        <Text color={t.color.muted}>{'   ·   '}</Text>
+        {mode === 'pm' ? (
+          <Text color={t.color.muted}>Polymarket + Kalshi · press p to exit</Text>
         ) : (
           <>
-            <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
-            <Text color={t.color.text}>
-              {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
+            <Text color={fetching ? sem.star : hasContent ? sem.up : sem.subtle}>
+              {statusGlyph(fetching ? 'busy' : hasContent ? 'live' : 'idle', tick)}
             </Text>
+            {mode === 'models' ? (
+              <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
+            ) : (
+              <>
+                <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
+                <Text color={t.color.text}>
+                  {hasContent ? `${config.providers.length} providers · ${watchlist.length} watched` : 'press a to add data'}
+                </Text>
+              </>
+            )}
           </>
         )}
         {providersMissingKey.length ? (
@@ -1621,10 +1645,22 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             {detail}
           </Box>
         </>
+      ) : mode === 'pm' ? (
+        <PredictionMarketsView
+          active={!modal && !globalModal}
+          gw={gw}
+          height={contentHeight}
+          onLeave={() => {
+            setSel(0)
+            setMode('data')
+          }}
+          t={t}
+          width={width}
+        />
       ) : (
         modelsBody
       )}
-      {footer}
+      {mode === 'pm' ? null : footer}
       {/* The body stays mounted; the modal paints ABOVE it as an absolute overlay.
           Body clicks are gated while the modal is open (tab/row onClick early-
           return) so the still-visible tabs/rows can't leak interaction — the

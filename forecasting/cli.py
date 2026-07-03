@@ -1933,10 +1933,18 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     apikey_show.set_defaults(_forecast_handler=_cmd_apikey_show)
     apikey_set = apikey_sub.add_parser("set", help="Persist a key to the user .env and activate it (`forecast api-key set fred <key>`).")
     apikey_set.add_argument("provider")
-    apikey_set.add_argument("value", nargs="?")
+    apikey_set.add_argument("value", nargs="?", help="The key value (or, for kalshi, the access key id).")
     apikey_set.add_argument(
         "--from-stdin", action="store_true",
         help="Read the key value from stdin (recommended in shared terminals — keeps the key out of shell history).",
+    )
+    apikey_set.add_argument(
+        "--pem-file",
+        help="Kalshi only: path to the RSA private key PEM (streaming handshake). The PEM is copied 0600 into the workspace.",
+    )
+    apikey_set.add_argument(
+        "--pem-stdin", action="store_true",
+        help="Kalshi only: read the PEM body from stdin instead of --pem-file.",
     )
     apikey_set.set_defaults(_forecast_handler=_cmd_apikey_set)
     apikey_unset = apikey_sub.add_parser("unset", help="Remove a provider's key from .env and the current process.")
@@ -3802,6 +3810,16 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         review_sweeper = None
 
+    # Prediction-markets sibling (Arc 4): streaming readiness (ws lib +
+    # cryptography + Kalshi key) and per-venue market-data availability. Read-
+    # only + fail-safe, like every probe above; no network unless asked.
+    try:
+        from forecasting.pm.health import build_pm_doctor
+
+        prediction_markets = build_pm_doctor()
+    except Exception:
+        prediction_markets = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3813,6 +3831,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "cron_health": cron_health,
         "free_tier_drain": free_tier_drain,
         "review_sweeper": review_sweeper,
+        "prediction_markets": prediction_markets,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
@@ -9000,8 +9019,51 @@ def _cmd_apikey_show(args: argparse.Namespace) -> None:
         print(f"get key:  {row['signup_url']}")
 
 
+def _cmd_apikey_set_kalshi(args: argparse.Namespace) -> None:
+    """`forecast api-key set kalshi <key-id> --pem-file key.pem` — key id + PEM."""
+
+    from forecasting.api_keys import default_env_path, redact, set_kalshi_key
+
+    key_id = args.value
+    pem: str | None = None
+    if getattr(args, "pem_stdin", False):
+        pem = sys.stdin.read()
+    elif getattr(args, "pem_file", None):
+        try:
+            pem = Path(args.pem_file).expanduser().read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"forecast api-key set kalshi: cannot read PEM: {exc}", file=sys.stderr)
+            raise SystemExit(2)
+    if not key_id or not pem:
+        print(
+            "forecast api-key set kalshi: needs the access key id and a PEM.\n"
+            "  forecast api-key set kalshi <key-id> --pem-file /path/to/key.pem\n"
+            "  forecast api-key set kalshi <key-id> --pem-stdin  < key.pem",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    try:
+        info = set_kalshi_key(key_id, pem)
+    except ForecastingError as exc:
+        print(f"forecast api-key: {exc}", file=sys.stderr)
+        raise SystemExit(2)
+    print(f"set {info['key_id_var']} ({redact(key_id)}) in {default_env_path()}")
+    print(f"wrote Kalshi private key (0600) to {info['pem_path']}")
+    print("activated for this process; Kalshi websocket streaming is now available")
+
+
 def _cmd_apikey_set(args: argparse.Namespace) -> None:
-    from forecasting.api_keys import set_api_key
+    from forecasting.api_keys import lookup_provider, set_api_key
+
+    # Kalshi captures TWO secrets — the access key id AND an RSA private key PEM
+    # (websocket streaming only; REST market data stays keyless). Route it to the
+    # dedicated storage that writes the PEM 0600 and records both in .env.
+    try:
+        if lookup_provider(args.provider).name == "kalshi":
+            _cmd_apikey_set_kalshi(args)
+            return
+    except ForecastingError:
+        pass  # fall through to the generic path / normal error below
 
     value = args.value
     if args.from_stdin:

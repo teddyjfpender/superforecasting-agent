@@ -1877,6 +1877,15 @@ export type GatewayEvent =
       type: 'message.complete'
     }
   | { payload?: { message?: string }; session_id?: string; type: 'error' }
+  | {
+      // A prediction-market websocket delta re-emitted by tui_gateway/pm_rpc.py
+      // (one shared connection per venue). `kind` is the venue frame type
+      // (book / price_change / …); `payload` is the raw delta the PM view
+      // folds into the touched row/book in place. Sessionless (mirrors cron.fired).
+      payload: { kind: string; market_id: string; payload?: Record<string, unknown>; venue: string }
+      session_id?: string
+      type: 'pm.tick'
+    }
 
 // ── obsidian.status (the Obsidian vault view) ───────────────────────────────
 export interface ObsidianNote {
