@@ -142,3 +142,34 @@ def test_service_detail_builds_distribution():
     ev, dist = svc.event_detail("polymarket", "evt-1")
     assert ev.venue == "polymarket" and len(dist.outcomes) >= 3
     assert any("/events/evt-1" in c for c in poly_fetch.calls)
+
+
+def test_list_events_rank_interleaves_venues():
+    """Cross-venue volumes are NOT comparable (Polymarket lifetime $ dwarfs
+    Kalshi): ranking is per-venue, then rank-interleaved, so the second venue
+    survives every list prefix instead of being volume-evicted."""
+    clock = FakeClock()
+    poly_big = dict(load_fixture("polymarket_event_categorical.json"))
+    poly_big["volume"] = 9_000_000.0
+    poly_small = dict(load_fixture("polymarket_event_binary.json"))
+    poly_small["volume"] = 8_000_000.0
+    kal_tiny = dict(load_fixture("kalshi_event_categorical.json"))
+    kal_tiny["volume"] = 500.0  # tiny in raw terms — must still make the page
+    poly_fetch = RecordedFetch({"/events?": [poly_small, poly_big]})
+    kal_fetch = RecordedFetch({"/events?": {"events": [kal_tiny]}})
+    svc = PMService(
+        polymarket=poly.PolymarketClient(fetch=poly_fetch),
+        kalshi=kal.KalshiClient(fetch=kal_fetch),
+        clock=clock,
+        spawn=_inline_spawn,
+    )
+    rows = svc.list_events(limit=2)
+    assert len(rows) == 2
+    assert rows[0][0].volume == 9_000_000.0, "each venue's top event leads its lane"
+    assert rows[1][0].venue == "kalshi", "rank-interleave: kalshi present at prefix 2"
+    # And within a venue, higher volume outranks lower.
+    rows3 = svc.list_events(limit=3)
+    # Venue pattern is the contract (kalshi derives event volume from its
+    # nested markets, so the exact number is the fixture's, not ours).
+    assert [e.venue for e, _ in rows3] == ["polymarket", "kalshi", "polymarket"]
+    assert rows3[0][0].volume == 9_000_000.0 and rows3[2][0].volume == 8_000_000.0

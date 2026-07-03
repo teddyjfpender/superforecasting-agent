@@ -78,6 +78,11 @@ class PMOrderBook:
         }
 
 
+# A quote spread at/above this is a degenerate book (nobody is really quoting
+# both sides): its midpoint is noise, not a probability.
+_DEGENERATE_SPREAD = 0.90
+
+
 @dataclass(frozen=True)
 class PMMarket:
     """One outcome-market. On Polymarket a categorical event's child market; on
@@ -100,12 +105,21 @@ class PMMarket:
 
     @property
     def yes_mid(self) -> float | None:
-        """Best-available YES probability estimate: quote mid, else last trade."""
+        """Best-available YES probability estimate: quote mid, else last trade.
+
+        A DEGENERATE book (spread ~the whole 0..1 range, e.g. Gamma's
+        bestBid=0/bestAsk=1 for an outcome nobody has quoted) carries no
+        information — its "mid" would fabricate a 50% for every dead outcome
+        (the operator saw a 12-outcome event render 50% across the board and
+        "book sums to 5.95"). Fall through to last trade, else honest None.
+        """
         if self.yes_bid is not None and self.yes_ask is not None:
-            return (self.yes_bid + self.yes_ask) / 2.0
-        if self.yes_bid is not None:
+            if (self.yes_ask - self.yes_bid) < _DEGENERATE_SPREAD:
+                return (self.yes_bid + self.yes_ask) / 2.0
+            return self.last_price
+        if self.yes_bid is not None and self.yes_bid > 0.0:
             return self.yes_bid
-        if self.yes_ask is not None:
+        if self.yes_ask is not None and self.yes_ask < 1.0:
             return self.yes_ask
         return self.last_price
 

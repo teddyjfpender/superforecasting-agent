@@ -129,6 +129,14 @@ class TTLCache:
         self._spawn(_run)
 
 
+
+def _event_volume(event: PMEvent) -> float:
+    """Event liquidity for ranking: the event-level volume when the venue
+    provides one, else the sum of its markets' volumes."""
+    if event.volume is not None:
+        return float(event.volume)
+    return float(sum((m.volume or 0.0) for m in event.markets))
+
 class PMService:
     """Search/list/detail/book/history across Polymarket + Kalshi."""
 
@@ -166,12 +174,26 @@ class PMService:
         key = f"list:{venue or 'all'}:{query or ''}:{tag or ''}:{limit}"
 
         def _load() -> list[PMEvent]:
-            events: list[PMEvent] = []
+            per_venue: list[list[PMEvent]] = []
             if venue is None or venue.lower() != "kalshi":
-                events.extend(self._poly.list_events(query=query, tag=tag, limit=limit))
+                per_venue.append(self._poly.list_events(query=query, tag=tag, limit=limit))
             if venue is None or venue.lower() in ("kalshi",):
-                events.extend(self._kalshi.list_events(query=query, limit=limit))
-            return events
+                per_venue.append(self._kalshi.list_events(query=query, limit=limit))
+            # Liquidity ranking WITHIN each venue (volume is the honest relevance
+            # proxy — raw API order surfaces whatever a venue promotes), then
+            # rank-INTERLEAVE across venues. Raw volumes are not comparable
+            # across venues (Polymarket lifetime $ dwarfs Kalshi contract
+            # volume), so a raw merge silently evicts one venue entirely;
+            # interleaving keeps both represented at every list prefix.
+            for lane in per_venue:
+                lane.sort(key=lambda e: (-_event_volume(e), e.close_time or "9999"))
+            merged: list[PMEvent] = []
+            depth = max((len(lane) for lane in per_venue), default=0)
+            for i in range(depth):
+                for lane in per_venue:
+                    if i < len(lane):
+                        merged.append(lane[i])
+            return merged[:limit]
 
         events, _ = self._cache.get(key, LIST_TTL, _load)
         return [(e, build_distribution(e)) for e in events]
