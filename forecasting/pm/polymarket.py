@@ -201,6 +201,20 @@ class PolymarketClient:
         ]
         if tag:
             params.append(("tag_slug", tag))
+        if query and query.strip():
+            # A text query searches the FULL catalog via Gamma's dedicated
+            # search endpoint — filtering the one top-volume page (the old
+            # behaviour) silently missed everything below the fold (the
+            # operator: "i cant seem to search through all markets").
+            # Fail-open to the page-filter path if search errors.
+            try:
+                q = urlencode({"q": query.strip(), "limit_per_type": max(1, min(int(limit), 50)), "events_status": "active"})
+                raw = self._fetch(f"{self._gamma}/public-search?{q}")
+                found = parse_events(raw.get("events") if isinstance(raw, dict) else raw)
+                if found:
+                    return found[: int(limit)]
+            except Exception:
+                pass
         url = f"{self._gamma}/events?{urlencode(params)}"
         events = parse_events(self._fetch(url))
         if query:

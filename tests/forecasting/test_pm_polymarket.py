@@ -66,3 +66,30 @@ def test_client_builds_urls_and_parses():
     # one call per endpoint — no hidden fan-out
     assert sum("/events?" in c for c in fetch.calls) == 1
     assert any("token_id=tok123" in c for c in fetch.calls)
+
+
+def test_text_query_uses_full_catalog_search():
+    """A query hits Gamma's /public-search (full catalog), not a filter over
+    the one top-volume page — with fail-open fallback to the page filter."""
+    from tests.forecasting.pm_helpers import RecordedFetch, load_fixture
+    from forecasting.pm.polymarket import PolymarketClient
+
+    ev = load_fixture("polymarket_event_categorical.json")
+    fetch = RecordedFetch({
+        "/public-search?": {"events": [ev], "pagination": {}},
+        "/events?": [],  # the page path would return NOTHING for this query
+    })
+    client = PolymarketClient(fetch=fetch)
+    found = client.list_events(query="israel", limit=10)
+    assert len(found) == 1, "search must come from the search endpoint"
+    assert any("/public-search?" in url for url in fetch.calls)
+
+    # Fail-open: search endpoint erroring falls back to the page filter.
+    def _failing(url, **kw):
+        if "/public-search" in url:
+            raise OSError("search down")
+        return [ev]
+
+    client2 = PolymarketClient(fetch=_failing)
+    found2 = client2.list_events(query=ev["title"][:8].lower(), limit=10)
+    assert len(found2) == 1

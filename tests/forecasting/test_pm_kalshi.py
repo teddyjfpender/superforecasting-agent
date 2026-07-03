@@ -93,3 +93,25 @@ def test_signer_absent_dependency_is_polite(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", _blocked)
     with pytest.raises(kal.KalshiSignerUnavailable):
         kal.sign_kalshi_message("-----BEGIN PRIVATE KEY-----\n", "msg")
+
+
+def test_text_query_paginates_the_catalog():
+    """Kalshi search scans cursor pages (bounded) instead of one top page."""
+    from tests.forecasting.pm_helpers import load_fixture
+    from forecasting.pm.kalshi import KalshiClient
+
+    target = load_fixture("kalshi_event_categorical.json")
+    filler = dict(target)
+    filler = {**target, "title": "Something else entirely", "event_ticker": "KXFILLER-1"}
+    calls: list[str] = []
+
+    def fetch(url, **kw):
+        calls.append(url)
+        if "cursor=page2" in url:
+            return {"events": [target], "cursor": None}
+        return {"events": [filler], "cursor": "page2"}
+
+    client = KalshiClient(fetch=fetch)
+    found = client.list_events(query=target["title"][:10].lower(), limit=5)
+    assert len(found) == 1 and found[0].title == target["title"]
+    assert len(calls) == 2, "must have followed the cursor to page 2"

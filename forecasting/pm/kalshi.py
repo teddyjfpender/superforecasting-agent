@@ -75,6 +75,11 @@ def parse_market(raw: dict, *, event_id: str | None = None) -> PMMarket:
     )
 
 
+# Bounded catalog scan for text search (Kalshi has no search endpoint):
+# up to 5 cursor pages x 200 events per query.
+_SEARCH_MAX_PAGES = 5
+
+
 def parse_event(raw: dict) -> PMEvent:
     event_id = str(raw.get("event_ticker") or "")
     markets = tuple(
@@ -251,13 +256,33 @@ class KalshiClient:
         self._fetch = fetch or (lambda url: http_get_json(url, label="kalshi"))
 
     def list_events(self, *, query: str | None = None, limit: int = 60) -> list[PMEvent]:
+        if query and query.strip():
+            # Kalshi has no text-search endpoint: scan the open-events catalog
+            # via cursor pagination (bounded — up to _SEARCH_MAX_PAGES x 200)
+            # and filter client-side, early-exiting once `limit` matches land.
+            # One top page (the old behaviour) missed everything below it.
+            needle = query.strip().lower()
+            matches: list[PMEvent] = []
+            cursor: str | None = None
+            for _ in range(_SEARCH_MAX_PAGES):
+                page_params: dict[str, str] = {
+                    "with_nested_markets": "true", "status": "open", "limit": "200",
+                }
+                if cursor:
+                    page_params["cursor"] = cursor
+                raw = self._fetch(f"{self._base}/events?{urlencode(page_params)}")
+                page = parse_events(raw)
+                matches.extend(e for e in page if needle in e.title.lower())
+                if len(matches) >= int(limit):
+                    break
+                cursor = raw.get("cursor") if isinstance(raw, dict) else None
+                if not cursor or not page:
+                    break
+            return matches[: int(limit)]
         params = urlencode(
             {"with_nested_markets": "true", "status": "open", "limit": max(1, min(int(limit), 200))}
         )
         events = parse_events(self._fetch(f"{self._base}/events?{params}"))
-        if query:
-            needle = query.strip().lower()
-            events = [e for e in events if needle in e.title.lower()]
         return events
 
     def event(self, event_ticker: str) -> PMEvent:
