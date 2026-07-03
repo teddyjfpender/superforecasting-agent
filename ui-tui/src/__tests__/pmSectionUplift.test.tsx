@@ -1,6 +1,7 @@
 // MUST be first: forces truecolor so the render emits theme-token SGR under the
 // non-TTY test stream (chalk reads FORCE_COLOR at import time).
-import { PRIOR_FORCE_COLOR } from './pmForceColor.js'
+import {
+  PRIOR_FORCE_COLOR } from './pmForceColor.js'
 
 import { PassThrough } from 'stream'
 
@@ -16,6 +17,7 @@ import { renderSync } from '../../packages/hermes-ink/src/ink/root.js'
 import { PredictionMarketsTable } from '../components/predictionMarketsTable.js'
 import { semantics } from '../lib/visualSemantics.js'
 import {
+  DEFAULT_PM_FILTER,
   EMPTY_PM_FILTER,
   filterPMSection,
   flattenPMRows,
@@ -182,7 +184,12 @@ describe('filterPMSection + parsers', () => {
   })
 
   it('pmFilterActive + pmFilterSummary reflect the active fields', () => {
-    expect(pmFilterActive(EMPTY_PM_FILTER)).toBe(false)
+    // "Active" = differs from the out-of-the-box DEFAULT (hideDead on): the
+    // default lights nothing, while turning dead-row hiding OFF is itself an
+    // active choice the chips + summary must surface.
+    expect(pmFilterActive(DEFAULT_PM_FILTER)).toBe(false)
+    expect(pmFilterActive(EMPTY_PM_FILTER)).toBe(true)
+    expect(pmFilterSummary(EMPTY_PM_FILTER)).toContain('showing dead/closed')
     const f = { ...EMPTY_PM_FILTER, venue: 'kalshi' as const, minVolume: 1_000_000, minProb: 0.05, maxProb: 0.95, hideSports: true }
     expect(pmFilterActive(f)).toBe(true)
     const s = pmFilterSummary(f)

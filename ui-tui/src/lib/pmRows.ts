@@ -253,6 +253,10 @@ export function pmWindow(
 // harmlessly — here and at the gateway.
 
 export interface PmFilter {
+  // Default ON: drop dead rows (no estimate, zero volume) and already-closed
+  // events — the operator: "don't spam the TUI with useless rows". Toggle off
+  // in the f modal to audit the raw feed.
+  hideDead: boolean
   hideSports: boolean
   maxProb: null | number // 0..1 inclusive
   minProb: null | number // 0..1 inclusive
@@ -262,12 +266,19 @@ export interface PmFilter {
 }
 
 export const EMPTY_PM_FILTER: PmFilter = {
+  hideDead: false,
   hideSports: false,
   maxProb: null,
   minProb: null,
   minVolume: null,
   topic: '',
   venue: 'all'
+}
+
+// The out-of-the-box filter: everything off EXCEPT dead/closed hiding.
+export const DEFAULT_PM_FILTER: PmFilter = {
+  ...EMPTY_PM_FILTER,
+  hideDead: true
 }
 
 // Parse a money shorthand ("1m" → 1_000_000, "500k" → 500_000, "2.3m", "1000",
@@ -330,12 +341,13 @@ export const pmFilterActive = (f: PmFilter): boolean =>
   f.minVolume !== null ||
   f.minProb !== null ||
   f.maxProb !== null ||
-  f.hideSports
+  f.hideSports ||
+  f.hideDead !== DEFAULT_PM_FILTER.hideDead
 
 // Apply the structured filter (pure). Prob bounds are INCLUSIVE; an item with no
 // headline prob is excluded once any prob bound is set (a bound can't be met by a
 // missing value — never fabricate one).
-export function filterPMSection(items: readonly PMListItem[], f: PmFilter): PMListItem[] {
+export function filterPMSection(items: readonly PMListItem[], f: PmFilter, now: number = Date.now()): PMListItem[] {
   return items.filter(item => {
     if (f.venue !== 'all' && item.event.venue.toLowerCase() !== f.venue) {
       return false
@@ -379,8 +391,41 @@ export function filterPMSection(items: readonly PMListItem[], f: PmFilter): PMLi
       return false
     }
 
+    if (f.hideDead && isDeadItem(item, now)) {
+      return false
+    }
+
     return true
   })
+}
+
+// A DEAD row wastes the tape: no headline estimate at all, zero total volume,
+// or an event already past its close time. "0%" here means NO estimate — a
+// real 0.85% market with volume (the RFK case) is very much alive.
+export function isDeadItem(item: PMListItem, now: number = Date.now()): boolean {
+  const p = item.distribution.headline.top_prob
+
+  if (p === null || p === undefined) {
+    return true
+  }
+
+  const vol = item.distribution.total_volume ?? item.event.volume ?? 0
+
+  if (!(vol > 0)) {
+    return true
+  }
+
+  const close = item.event.close_time ?? item.distribution.close_time
+
+  if (close) {
+    const t = Date.parse(close)
+
+    if (Number.isFinite(t) && t < now) {
+      return true
+    }
+  }
+
+  return false
 }
 
 // A muted one-line summary of the active filter for the section header
@@ -408,6 +453,10 @@ export function pmFilterSummary(f: PmFilter): string {
 
   if (f.hideSports) {
     parts.push('no sports')
+  }
+
+  if (!f.hideDead) {
+    parts.push('showing dead/closed')
   }
 
   return parts.join(' · ')

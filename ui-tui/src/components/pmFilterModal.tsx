@@ -17,7 +17,7 @@ import { ModalOverlay } from './modalOverlay.js'
 // standing rule) — the parent early-returns from its useInput while a modal is up.
 
 type FieldKind = 'text' | 'toggle' | 'venue'
-type FieldKey = 'hideSports' | 'maxProb' | 'minProb' | 'minVolume' | 'topic' | 'venue'
+type FieldKey = 'hideDead' | 'hideSports' | 'maxProb' | 'minProb' | 'minVolume' | 'topic' | 'venue'
 
 const FIELDS: { key: FieldKey; kind: FieldKind; label: string; placeholder?: string }[] = [
   { key: 'venue', kind: 'venue', label: 'Venue' },
@@ -25,7 +25,8 @@ const FIELDS: { key: FieldKey; kind: FieldKind; label: string; placeholder?: str
   { key: 'minVolume', kind: 'text', label: 'Min volume', placeholder: 'e.g. 1m, 500k, 250000' },
   { key: 'minProb', kind: 'text', label: 'Prob min %', placeholder: 'e.g. 5' },
   { key: 'maxProb', kind: 'text', label: 'Prob max %', placeholder: 'e.g. 95' },
-  { key: 'hideSports', kind: 'toggle', label: 'Hide sports', placeholder: 'heuristic — leagues + sports categories' }
+  { key: 'hideSports', kind: 'toggle', label: 'Hide sports', placeholder: 'heuristic — leagues + sports categories' },
+  { key: 'hideDead', kind: 'toggle', label: 'Hide dead/closed', placeholder: 'no estimate, $0 volume, or past close (default on)' }
 ]
 
 const VENUE_CYCLE: PmFilter['venue'][] = ['all', 'polymarket', 'kalshi']
@@ -52,6 +53,7 @@ export function PmFilterModal({
   const [minProb, setMinProb] = useState(filter.minProb === null ? '' : String(Math.round(filter.minProb * 100)))
   const [maxProb, setMaxProb] = useState(filter.maxProb === null ? '' : String(Math.round(filter.maxProb * 100)))
   const [hideSports, setHideSports] = useState(filter.hideSports)
+  const [hideDead, setHideDead] = useState(filter.hideDead)
   const [sel, setSel] = useState(0)
   const [blink, setBlink] = useState(true)
 
@@ -61,7 +63,11 @@ export function PmFilterModal({
     return () => clearInterval(id)
   }, [])
 
-  const values: Record<FieldKey, string> = { hideSports: '', maxProb, minProb, minVolume, topic, venue }
+  const values: Record<FieldKey, string> = { hideDead: '', hideSports: '', maxProb, minProb, minVolume, topic, venue }
+  const toggles: Partial<Record<FieldKey, [boolean, (v: (b: boolean) => boolean) => void]>> = {
+    hideDead: [hideDead, setHideDead],
+    hideSports: [hideSports, setHideSports]
+  }
   const setText = (key: FieldKey, updater: (s: string) => string) => {
     if (key === 'topic') return setTopic(updater)
     if (key === 'minVolume') return setMinVolume(updater)
@@ -71,6 +77,7 @@ export function PmFilterModal({
 
   const apply = () => {
     onApply({
+      hideDead,
       hideSports,
       maxProb: parseProbPercent(maxProb),
       minProb: parseProbPercent(minProb),
@@ -116,7 +123,7 @@ export function PmFilterModal({
 
       if (field.kind === 'toggle') {
         if (ch === ' ' || key.leftArrow || key.rightArrow) {
-          return setHideSports(v => !v)
+          return toggles[field.key]?.[1]?.(v => !v)
         }
 
         return
@@ -176,8 +183,8 @@ export function PmFilterModal({
                   {' ›'}
                 </Text>
               ) : f.kind === 'toggle' ? (
-                <Text color={hideSports ? t.color.primary : t.color.muted}>
-                  {hideSports ? '[x] on' : '[ ] off'}
+                <Text color={toggles[f.key]?.[0] ? t.color.primary : t.color.muted}>
+                  {toggles[f.key]?.[0] ? '[x] on' : '[ ] off'}
                   <Text color={t.color.muted}>{`  — ${f.placeholder}`}</Text>
                 </Text>
               ) : (

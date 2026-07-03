@@ -398,22 +398,17 @@ describe('Prediction section inside the Data tape', () => {
     m.cleanup()
   })
 
-  it('a degenerate book renders "—", never a fabricated 50%', async () => {
+  it('dead events (no estimate, $0 volume) are HIDDEN by default', async () => {
     const m = await mount()
-    // Isolate the zombie (null-prob) event so PROB is the only percent column.
+    // The zombie event has no estimate and zero volume: the default hideDead
+    // filter drops it from the tape entirely (the operator: "don't spam the
+    // TUI with useless rows") — searching for it finds nothing.
+    expect(m.text()).not.toContain('Zombie Ballo')
     await m.press('/')
     await m.press('zombi')
     m.clear()
     await m.press('e')
-    const text = m.text()
-    // The dense MARKET column truncates the long title at the ~80-col harness
-    // width (the 2dp + YES-reading PROB column is wider now), so assert the
-    // visible prefix — the point is that the zombie row IS the shown match.
-    expect(text).toContain('Zombie Ballo')
-    expect(text).toContain(DASH)
-    expect(text).not.toContain('50%')
-    // The PM match count is honest (the section's own filter, not the quote tape).
-    expect(text).toContain('1 matches')
+    expect(m.text()).toContain('0 matches')
     m.cleanup()
   })
 

@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { openExternalUrl } from './openExternalUrl.js'
 import { type PMHistoryRange, type PMOutcomeDTO, type PMVenue } from './pmData.js'
 import {
-  EMPTY_PM_FILTER,
+  DEFAULT_PM_FILTER,
   filterPMItems,
   filterPMSection,
   flattenPMRows,
@@ -97,7 +97,7 @@ export function usePmSection(
   // The structured `f` filter is the single source of truth for venue (it also
   // drives the per-venue fetch), so the `v` chip and the modal's venue field
   // never diverge.
-  const [filter, setFilterState] = useState<PmFilter>(EMPTY_PM_FILTER)
+  const [filter, setFilterState] = useState<PmFilter>(DEFAULT_PM_FILTER)
   const venue = filter.venue
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [sel, setSelState] = useState(0)
