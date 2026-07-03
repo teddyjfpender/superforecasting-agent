@@ -90,6 +90,7 @@ def parse_market(raw: dict, *, event_id: str | None = None) -> PMMarket:
 _SEARCH_MAX_PAGES = 5
 _SERIES_MAX_PAGES = 2
 _SERIES_EVENT_FETCHES = 4
+_SERIES_CATALOG_TTL = 3600.0  # seconds
 
 
 def parse_event(raw: dict) -> PMEvent:
@@ -267,6 +268,32 @@ class KalshiClient:
         self._base = base_url.rstrip("/")
         self._fetch = fetch or (lambda url: http_get_json(url, label="kalshi"))
 
+    def _series_catalog(self) -> list[tuple[str, str]]:
+        """(ticker, searchable-haystack) for every series — cached for an hour:
+        the catalog changes rarely, and re-fetching 2x200 rows per keystroke-
+        debounced query was the dominant search cost (measured seconds)."""
+        now = time.monotonic()
+        cached = getattr(self, "_series_cache", None)
+        if cached and now - cached[0] < _SERIES_CATALOG_TTL:
+            return cached[1]
+        catalog: list[tuple[str, str]] = []
+        cursor: str | None = None
+        for _ in range(_SERIES_MAX_PAGES):
+            sp: dict[str, str] = {"limit": "200"}
+            if cursor:
+                sp["cursor"] = cursor
+            raw = self._fetch(f"{self._base}/series?{urlencode(sp)}")
+            page = raw.get("series") if isinstance(raw, dict) else []
+            for s in page or []:
+                ticker = str(s.get("ticker") or "")
+                if ticker:
+                    catalog.append((ticker, f"{s.get('title') or ''} {ticker}".lower()))
+            cursor = raw.get("cursor") if isinstance(raw, dict) else None
+            if not cursor or not page:
+                break
+        self._series_cache = (now, catalog)
+        return catalog
+
     def list_events(self, *, query: str | None = None, limit: int = 60) -> list[PMEvent]:
         if query and query.strip():
             # Kalshi has no text-search endpoint: scan the open-events catalog
@@ -289,48 +316,68 @@ class KalshiClient:
             # title/ticker reaches them directly (the operator: "i can't see
             # any max temperature markets").
             try:
-                series_hits: list[str] = []
-                cursor: str | None = None
-                for _ in range(_SERIES_MAX_PAGES):
-                    sp: dict[str, str] = {"limit": "200"}
-                    if cursor:
-                        sp["cursor"] = cursor
-                    raw = self._fetch(f"{self._base}/series?{urlencode(sp)}")
-                    page = raw.get("series") if isinstance(raw, dict) else []
-                    for s in page or []:
-                        hay = f"{s.get('title') or ''} {s.get('ticker') or ''}".lower()
-                        if needle in hay:
-                            series_hits.append(str(s.get("ticker")))
-                    cursor = raw.get("cursor") if isinstance(raw, dict) else None
-                    if not cursor or not page:
-                        break
-                for ticker in series_hits[:_SERIES_EVENT_FETCHES]:
-                    ep = urlencode({
-                        "series_ticker": ticker, "status": "open",
-                        "with_nested_markets": "true", "limit": "50",
-                    })
-                    _add(parse_events(self._fetch(f"{self._base}/events?{ep}")))
+                series_hits = [
+                    t for t, hay in self._series_catalog() if needle in hay
+                ][:_SERIES_EVENT_FETCHES]
+                if series_hits:
+                    # Parallel per-series event fetches (serial cost = seconds).
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    def _events_for(ticker: str) -> list[PMEvent]:
+                        ep = urlencode({
+                            "series_ticker": ticker, "status": "open",
+                            "with_nested_markets": "true", "limit": "50",
+                        })
+                        return parse_events(self._fetch(f"{self._base}/events?{ep}"))
+
+                    with ThreadPoolExecutor(max_workers=min(4, len(series_hits))) as pool:
+                        for fut in [pool.submit(_events_for, t) for t in series_hits]:
+                            try:
+                                _add(fut.result())
+                            except Exception:
+                                continue
                     if len(matches) >= int(limit):
                         return matches[: int(limit)]
             except Exception:
                 pass  # fail-open: the event scan below still runs
 
             # PHASE 2 — bounded cursor scan of open events, filtered by title.
+            # LIGHT pages (no nested markets — the scan only reads titles; the
+            # heavy payloads were the dominant search cost), then matches are
+            # hydrated in parallel. When the series phase already found precise
+            # hits, the fuzzy net shrinks to 2 pages.
+            scan_pages = _SEARCH_MAX_PAGES if not matches else 2
+            hit_tickers: list[str] = []
             cursor = None
-            for _ in range(_SEARCH_MAX_PAGES):
-                page_params: dict[str, str] = {
-                    "with_nested_markets": "true", "status": "open", "limit": "200",
-                }
+            for _ in range(scan_pages):
+                page_params: dict[str, str] = {"status": "open", "limit": "200"}
                 if cursor:
                     page_params["cursor"] = cursor
                 raw = self._fetch(f"{self._base}/events?{urlencode(page_params)}")
-                page = parse_events(raw)
-                _add([e for e in page if needle in e.title.lower()])
-                if len(matches) >= int(limit):
+                page_raw = raw.get("events") if isinstance(raw, dict) else []
+                for ev in page_raw or []:
+                    title = str(ev.get("title") or "")
+                    ticker = str(ev.get("event_ticker") or "")
+                    if ticker and needle in title.lower():
+                        hit_tickers.append(ticker)
+                if len(matches) + len(hit_tickers) >= int(limit):
                     break
                 cursor = raw.get("cursor") if isinstance(raw, dict) else None
-                if not cursor or not page:
+                if not cursor or not page_raw:
                     break
+            if hit_tickers:
+                from concurrent.futures import ThreadPoolExecutor
+
+                def _hydrate(ticker: str) -> PMEvent | None:
+                    try:
+                        return self.event(ticker)
+                    except Exception:
+                        return None
+
+                budget = max(0, int(limit) - len(matches))
+                with ThreadPoolExecutor(max_workers=4) as pool:
+                    futures = [pool.submit(_hydrate, t) for t in hit_tickers[:budget]]
+                    _add([ev for ev in (f.result() for f in futures) if ev is not None])
             return matches[: int(limit)]
         params = urlencode(
             {"with_nested_markets": "true", "status": "open", "limit": max(1, min(int(limit), 200))}

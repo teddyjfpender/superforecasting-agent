@@ -107,6 +107,10 @@ def test_text_query_paginates_the_catalog():
 
     def fetch(url, **kw):
         calls.append(url)
+        if "/events/" in url:  # per-event hydration of a scan match
+            return {"event": target}
+        if "/series?" in url:
+            return {"series": [], "cursor": None}
         if "cursor=page2" in url:
             return {"events": [target], "cursor": None}
         return {"events": [filler], "cursor": "page2"}
@@ -114,10 +118,11 @@ def test_text_query_paginates_the_catalog():
     client = KalshiClient(fetch=fetch)
     found = client.list_events(query=target["title"][:10].lower(), limit=5)
     assert len(found) == 1 and found[0].title == target["title"]
-    # 3 calls now: the series-catalog probe (finds nothing in this fixture) +
-    # the two cursor pages of the event scan.
+    # The series-catalog probe (empty here) + two LIGHT cursor pages + one
+    # per-event hydration of the match.
     event_calls = [c for c in calls if "/events?" in c]
     assert len(event_calls) == 2, "must have followed the cursor to page 2"
+    assert any("/events/" in c for c in calls), "matches hydrate via the detail path"
 
 
 def test_untraded_market_last_price_zero_is_no_estimate():

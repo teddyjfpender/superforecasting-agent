@@ -9,6 +9,8 @@ tests.
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 import threading
 import time
 from dataclasses import dataclass
@@ -174,11 +176,24 @@ class PMService:
         key = f"list:{venue or 'all'}:{query or ''}:{tag or ''}:{limit}"
 
         def _load() -> list[PMEvent]:
-            per_venue: list[list[PMEvent]] = []
+            # Venues fetch in PARALLEL: serial fetches doubled cold latency and
+            # a text query costs seconds per venue (measured 4-5s serial).
+            tasks: list = []
             if venue is None or venue.lower() != "kalshi":
-                per_venue.append(self._poly.list_events(query=query, tag=tag, limit=limit))
+                tasks.append(lambda: self._poly.list_events(query=query, tag=tag, limit=limit))
             if venue is None or venue.lower() in ("kalshi",):
-                per_venue.append(self._kalshi.list_events(query=query, limit=limit))
+                tasks.append(lambda: self._kalshi.list_events(query=query, limit=limit))
+            per_venue: list[list[PMEvent]] = []
+            if len(tasks) == 1:
+                per_venue.append(tasks[0]())
+            else:
+                with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+                    futures = [pool.submit(t) for t in tasks]
+                    for fut in futures:
+                        try:
+                            per_venue.append(fut.result())
+                        except Exception:
+                            per_venue.append([])  # one venue down never blanks the tape
             # Liquidity ranking WITHIN each venue (volume is the honest relevance
             # proxy — raw API order surfaces whatever a venue promotes), then
             # rank-INTERLEAVE across venues. Raw volumes are not comparable
