@@ -205,8 +205,10 @@ def maybe_autorun_quorum(
         if notify is not None:
             notify(message)
 
-    if has_panel or (forecast_origin or "live") != "live":
-        return None
+    if has_panel:
+        return {"skipped": True, "reason": "panel attached — quorum substitutes only when no panel ran"}
+    if (forecast_origin or "live") != "live":
+        return {"skipped": True, "reason": f"origin {forecast_origin!r} is not live"}
     try:
         from hermes_cli.config import load_config
         from forecasting.panel import should_run_panel
@@ -220,7 +222,7 @@ def maybe_autorun_quorum(
         full_cfg = load_config()
         cfg = full_cfg.get("quorum", {}) or {}
         if not cfg.get("default_enabled"):
-            return None
+            return {"skipped": True, "reason": "quorum.default_enabled is off"}
         question = ledger.get_question(question_id)
         panel_indicated = should_run_panel(
             impact=getattr(question, "impact", None),
@@ -229,7 +231,7 @@ def maybe_autorun_quorum(
         if not quorum_auto_indicated(
             cfg, panel_indicated=panel_indicated, has_prior_snapshot=has_prior_snapshot
         ):
-            return None
+            return {"skipped": True, "reason": "not auto-indicated for this commit (impact/type/prior gate)"}
 
         active_model = resolve_active_model_id(full_cfg.get("model"))
         samples = 3

@@ -2230,6 +2230,14 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 )
                 if _qa is not None:
                     _extra["quorum_autorun"] = {**_qa, "notes": _qa_notes}
+                    # PROVENANCE: persist the started/skipped decision onto the
+                    # snapshot itself so a post-hoc audit reads the full story
+                    # from the record (the operator's Senate-batch review could
+                    # not tell a by-design skip from silent breakage).
+                    try:
+                        ledger.annotate_snapshot(snapshot.forecast_id, {"quorum_autorun": _qa})
+                    except Exception:
+                        pass
             except Exception:
                 pass
             return tool_result(success=True, forecast_snapshot=snapshot.__dict__, **_extra)

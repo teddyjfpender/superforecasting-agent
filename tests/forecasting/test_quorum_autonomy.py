@@ -485,7 +485,11 @@ def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch)
 
     out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))
     assert out["success"] is True
-    assert "quorum_autorun" not in out
+    # The decline is now AUDITABLE (the operator's Senate-batch review could
+    # not tell a by-design skip from silent breakage): a skip record with a
+    # reason replaces the old silent omission — and no job may start.
+    assert out["quorum_autorun"]["skipped"] is True
+    assert out["quorum_autorun"]["reason"]
 
 
 def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monkeypatch):
@@ -509,7 +513,11 @@ def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monk
 
     out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q, panel_run_ref=panel["id"])))
     assert out["success"] is True
-    assert "quorum_autorun" not in out
+    # The decline is now AUDITABLE (the operator's Senate-batch review could
+    # not tell a by-design skip from silent breakage): a skip record with a
+    # reason replaces the old silent omission — and no job may start.
+    assert out["quorum_autorun"]["skipped"] is True
+    assert out["quorum_autorun"]["reason"]
 
 
 def test_tool_update_forecast_autorun_fail_open(tmp_path, monkeypatch):
@@ -526,4 +534,7 @@ def test_tool_update_forecast_autorun_fail_open(tmp_path, monkeypatch):
     out = json.loads(forecast_ledger_tool(_tool_update_args(ledger, q)))
     # the commit stands; the failed auto-run is invisible except for the absence
     assert out["success"] is True
-    assert "quorum_autorun" not in out
+    # Hard failure inside the runner: fail-open swallows it — either the key is
+    # absent (threw before the skip records) or it carries a skipped marker;
+    # it must NEVER claim a started run.
+    assert "quorum_autorun" not in out or out["quorum_autorun"].get("skipped") or out["quorum_autorun"].get("error")

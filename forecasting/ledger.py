@@ -2920,6 +2920,12 @@ class ForecastLedger:
                 # mark the bypass so a later lint/doctor re-read can surface it even
                 # when no reason was given (the WARN state)
                 snapshot_metadata["acknowledge_stale_evidence"] = True
+        if panel_run_ref:
+            # PROVENANCE: the panel that underwrote this commit was previously
+            # consumed by the gates and DISCARDED — a post-hoc audit could not
+            # verify "committed with panel pr_..." from the record itself (the
+            # operator's Senate-batch review hit exactly this). Stamp it.
+            snapshot_metadata["panel_run_ref"] = panel_run_ref
 
         if require_citations and forecast_origin == "live":
             citation_refs = [
@@ -9150,6 +9156,31 @@ class ForecastLedger:
                 "SELECT * FROM scheduled_reviews ORDER BY next_run_at ASC",
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def annotate_snapshot(self, snapshot_id: str, patch: dict[str, Any]) -> None:
+        """Merge a small PROVENANCE patch into a snapshot's metadata.
+
+        For decisions made immediately AFTER the commit (e.g. the auto-quorum
+        started/skipped record) so audits read the full story from the record
+        itself. UPDATE-only — never changes the probability, rationale, or any
+        gated field; the method is the blessed writer (validation + scope)."""
+        if not patch:
+            return
+        with allow_ledger_writes("annotate_snapshot"), self._connect() as conn:
+            row = conn.execute(
+                "SELECT metadata FROM forecast_snapshots WHERE forecast_id = ?", (snapshot_id,)
+            ).fetchone()
+            if row is None:
+                raise LedgerNotFoundError(f"snapshot not found: {snapshot_id}")
+            try:
+                current = json.loads(row["metadata"]) if row["metadata"] else {}
+            except (TypeError, json.JSONDecodeError):
+                current = {}
+            current.update(patch)
+            conn.execute(
+                "UPDATE forecast_snapshots SET metadata = ? WHERE forecast_id = ?",
+                (json.dumps(current), snapshot_id),
+            )
 
     def next_review_by_question(self) -> dict[str, dict[str, Any]]:
         """question_id -> {next_run_at, cadence} from the SOONEST enabled per-question
