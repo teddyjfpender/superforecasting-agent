@@ -742,3 +742,177 @@ describe('discovered markets persist', () => {
     m2.cleanup()
   })
 })
+
+// ── discovered-row marker + `x` remove ────────────────────────────────────────
+// A gw that surfaces a "Max weather" event ONLY behind a '/' query (and can
+// re-hydrate it by id), so a discovery is distinguishable from the browse feed.
+const wxGw = () => {
+  const calls: Call[] = []
+  const gw = fakeGw(calls)
+  const base = gw.request.bind(gw)
+  const wxItem = () => {
+    const wx = fedItem() // kalshi binary base
+    wx.distribution.event_id = 'WX'
+    wx.distribution.title = 'Max weather temperature above 90F on Jul 4?'
+    wx.event.event_id = 'WX'
+    wx.event.title = 'Max weather temperature above 90F on Jul 4?'
+
+    return wx
+  }
+  gw.request = (method: string, params: Record<string, unknown> = {}) => {
+    if (method === 'pm.list' && typeof params.query === 'string') {
+      calls.push({ method, params })
+
+      return Promise.resolve({ count: 1, events: [wxItem()] })
+    }
+    if (method === 'pm.detail' && params.event_id === 'WX') {
+      calls.push({ method, params })
+      const it = wxItem()
+
+      return Promise.resolve({ distribution: it.distribution, event: it.event })
+    }
+
+    return base(method, params)
+  }
+
+  return { calls, gw }
+}
+
+// Search "weather", then Esc to drop the query so browse + discovered rows are
+// visible side by side.
+const withDiscovery = async (gw: ReturnType<typeof fakeGw>) => {
+  const m = await mount(['predictionmarkets'], gw)
+  await m.press('/')
+  await m.press('weather')
+  await tick(750)
+  await m.press(ESC)
+  await tick(120)
+
+  return m
+}
+
+describe('discovered-row marker (+) marks curated finds only', () => {
+  it('the discovered row carries a "+" before its venue chip; browse rows do not', async () => {
+    const m = await withDiscovery(wxGw().gw)
+    const lines = m.text().split('\n')
+    const wx = lines.find(l => l.includes('Max weather')) ?? ''
+    const nba = lines.find(l => l.includes('NBA Champion')) ?? ''
+    const fed = lines.find(l => l.includes('Fed hikes')) ?? ''
+    // The discovered (searched) row is flagged…
+    expect(wx).toContain('+')
+    // …while the browse-page rows are not (zero reflow — a plain gutter).
+    expect(nba).not.toContain('+')
+    expect(fed).not.toContain('+')
+    m.cleanup()
+  })
+})
+
+describe('`x` removes a saved (+) discovery', () => {
+  it('x on the discovered row drops it from the tape AND markets.json pmSaved, and flashes', async () => {
+    const m = await withDiscovery(wxGw().gw)
+    // The saved ref is on disk after the search.
+    expect(JSON.parse(readFileSync(join(m.home, 'markets.json'), 'utf8')).pmSaved).toEqual([
+      { event_id: 'WX', venue: 'kalshi' }
+    ])
+    // Cursor: NBA → Fed → WX (the discovered row).
+    await m.press(`${ESC}[B`)
+    await m.press(`${ESC}[B`)
+    // The Remove chip is live ONLY on the discovered row (live-keys-only rule).
+    expect(m.text()).toContain('x Remove')
+    m.clear()
+    await m.press('x')
+    const text = m.text()
+    expect(text).toContain('removed from saved markets')
+    expect(text).not.toContain('Max weather')
+    // pmSaved is now empty on disk (a mis-search can't pollute the next session).
+    expect(JSON.parse(readFileSync(join(m.home, 'markets.json'), 'utf8')).pmSaved).toEqual([])
+    m.cleanup()
+  })
+
+  it('x on a browse row refuses with a hint, and its Remove chip never shows', async () => {
+    const m = await mount() // plain browse tape; cursor starts on the NBA row
+    // No Remove chip on a browse row (nothing to remove).
+    expect(m.text()).not.toContain('x Remove')
+    m.clear()
+    await m.press('x')
+    const text = m.text()
+    expect(text).toContain('only saved (+) rows can be removed')
+    expect(text).toContain('NBA Champion') // the row is untouched
+    m.cleanup()
+  })
+})
+
+describe('hydration fans out pm.detail in bounded batches', () => {
+  it('never holds more than 8 pm.detail calls in flight for a large saved store', async () => {
+    // Seed 20 saved refs so ≥3 sequential batches of 8 must run.
+    const refs = Array.from({ length: 20 }, (_, i) => ({ event_id: `SV-${i}`, venue: 'kalshi' }))
+    const home = mkdtempSync(join(tmpdir(), 'pm-hydrate-'))
+    writeFileSync(
+      join(home, 'markets.json'),
+      JSON.stringify({ categories: [], custom: [], pmSaved: refs, providers: ['predictionmarkets'], watchlist: [] })
+    )
+
+    let inFlight = 0
+    let maxInFlight = 0
+    const gw = fakeGw([])
+    const base = gw.request.bind(gw)
+    gw.request = (method: string, params: Record<string, unknown> = {}) => {
+      if (method === 'pm.detail' && typeof params.event_id === 'string' && params.event_id.startsWith('SV-')) {
+        inFlight++
+        maxInFlight = Math.max(maxInFlight, inFlight)
+
+        return new Promise(resolve => {
+          setTimeout(() => {
+            inFlight--
+            const it = fedItem()
+            it.distribution.event_id = String(params.event_id)
+            it.event.event_id = String(params.event_id)
+
+            resolve({ distribution: it.distribution, event: it.event })
+          }, 25)
+        })
+      }
+
+      return base(method, params)
+    }
+
+    const m = await mount(['predictionmarkets'], gw, home)
+    await tick(500) // drain every batch (3 × 25ms + scheduling overhead)
+    // Hydration ran, but the fan-out was chunked (the old code fired all 20 at once).
+    expect(maxInFlight).toBeGreaterThan(0)
+    expect(maxInFlight).toBeLessThanOrEqual(8)
+    m.cleanup()
+  })
+})
+
+describe('first-open loading state (no 0-events flash)', () => {
+  it('shows an honest loading line before the first venue list lands', async () => {
+    const gw = fakeGw([])
+    const base = gw.request.bind(gw)
+    let releaseList: ((v: unknown) => void) | null = null
+    gw.request = (method: string, params: Record<string, unknown> = {}) => {
+      if (method === 'pm.list' && !params.query) {
+        return new Promise(resolve => {
+          releaseList = resolve
+        })
+      }
+
+      return base(method, params)
+    }
+
+    const m = await mount(['predictionmarkets'], gw)
+    // Before the (gated) list resolves: a loading line, NEVER "0 events".
+    const before = m.text()
+    expect(before).toContain('loading venues…')
+    expect(before).not.toContain('0 events')
+    // Release the list → the tape fills, the loading line is gone. Clear the
+    // accumulated buffer first so the assertion reads only post-release frames.
+    m.clear()
+    releaseList?.({ count: 1, events: [nbaItem()].map(e => ({ distribution: e.distribution, event: e.event })) })
+    await tick(150)
+    const after = m.text()
+    expect(after).toContain('NBA Champion')
+    expect(after).not.toContain('loading venues…')
+    m.cleanup()
+  })
+})

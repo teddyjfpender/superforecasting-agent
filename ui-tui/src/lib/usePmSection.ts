@@ -5,15 +5,13 @@
 // useInput here: the section rides the parent's keyboard so the `/` focus trap
 // and the shared selection hold across both quote sections and PM rows.
 
-import { useRef, useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { openExternalUrl } from './openExternalUrl.js'
 import { type PMHistoryRange, type PMOutcomeDTO, type PMVenue,
   fetchPMList,
-  type PMListItem,
-  fetchPMDetail
+  type PMListItem
 } from './pmData.js'
-import { loadMarketConfig, PM_SAVED_CAP, saveMarketConfig } from './marketStore.js'
 import {
   DEFAULT_PM_FILTER,
   filterPMItems,
@@ -22,12 +20,14 @@ import {
   PM_SORT_KEYS,
   type PMDisplayRow,
   pmExpandable,
+  pmRowId,
   type PmFilter,
   pmFilterActive,
   pmFilterSummary,
   pmSortValue
 } from './pmRows.js'
 import { sortRows, type TableSortState, useTableSort } from './tableSort.js'
+import { usePmDiscovered } from './usePmDiscovered.js'
 import { type PMHookGateway, usePmList, usePmSelectionData } from './usePmMarkets.js'
 
 export type PmSectionGateway = PMHookGateway
@@ -51,6 +51,10 @@ export interface PmSection {
   cycleSort: () => void
   cycleVenue: () => void
   detailItem: ReturnType<typeof usePmSelectionData>['detailItem']
+  // Row ids (venue:event_id) present in the tape ONLY because the operator
+  // discovered them via '/' search — i.e. not on the browse page. The table
+  // marks them; `x` removes them.
+  discoveredKeys: ReadonlySet<string>
   expanded: ReadonlySet<string>
   filter: PmFilter
   filterActive: boolean
@@ -64,12 +68,18 @@ export interface PmSection {
   loading: boolean
   matchCount: number
   openMarket: () => void
+  // Drop the discovered event under the cursor from the pool + markets.json (or
+  // flash a refusal on a browse row). Wired to `x` and the gated footer chip.
+  removeDiscovered: () => void
   searching: boolean
   reload: () => void
   rowCount: number
   rows: PMDisplayRow[]
   sel: number
   selectedItem: ReturnType<typeof usePmSelectionData>['detailItem']
+  // Whether the selected row is a removable discovered headline (live-keys-only
+  // rule: the `x` chip shows only when this is true).
+  selectedIsDiscovered: boolean
   setFilter: (next: PmFilter) => void
   setHistoryRange: (r: PMHistoryRange) => void
   setSel: (updater: (i: number) => number) => void
@@ -109,7 +119,12 @@ export function usePmSection(
   const [sel, setSelState] = useState(0)
   const [historyRange, setHistoryRange] = useState<PMHistoryRange>('1w')
 
-  const { items, loading, reload } = usePmList(gw, tabActive, venue)
+  const { items, loaded, loading, reload } = usePmList(gw, tabActive, venue)
+
+  // DISCOVERED events persist across sessions (deep '/' search compounds the
+  // tape's coverage): the fold / persist / chunked-hydrate lifecycle lives in
+  // its own hook, so this section stays layout + input.
+  const { discovered, foldDiscovered, removeDiscovered: dropDiscovered } = usePmDiscovered(gw, tabActive)
 
   // DEEP venue search: the browse list is one liquidity-ranked page, so the
   // local '/' filter can only ever match what happens to be loaded — the
@@ -119,79 +134,6 @@ export function usePmSection(
   // merge (deduped) into the pool and vanish when the query clears.
   const [searchItems, setSearchItems] = useState<null | PMListItem[]>(null)
   const [searching, setSearching] = useState(false)
-  // DISCOVERED events persist: searches COMPOUND the tape's coverage instead
-  // of evaporating when the query clears (the operator: "the searched markets
-  // should persist... so we maximally cover the markets"). Session state here;
-  // refs saved to markets.json (cap 100 LRU) + re-hydrated via pm.detail on
-  // mount, with dead/gone events pruning themselves on failed hydration.
-  const [discovered, setDiscovered] = useState<ReadonlyMap<string, PMListItem>>(() => new Map())
-  const persistDiscovered = (next: ReadonlyMap<string, PMListItem>) => {
-    const cfg = loadMarketConfig()
-    const refs = [...next.values()].map(i => ({ event_id: i.event.event_id, venue: i.event.venue }))
-    saveMarketConfig({ ...cfg, pmSaved: refs.slice(-PM_SAVED_CAP) })
-  }
-  const foldDiscovered = (found: PMListItem[]) => {
-    setDiscovered(prev => {
-      const next = new Map(prev)
-      for (const item of found) {
-        next.set(item.event.event_id, item)
-      }
-      if (next.size === prev.size) {
-        return prev
-      }
-      persistDiscovered(next)
-
-      return next
-    })
-  }
-
-  // Re-hydrate persisted discoveries once per mount (server-cached + cheap);
-  // events that no longer resolve are pruned from the store.
-  const hydratedRef = useRef(false)
-  useEffect(() => {
-    if (!gw || !tabActive || hydratedRef.current) {
-      return
-    }
-
-    hydratedRef.current = true
-    const refs = loadMarketConfig().pmSaved ?? []
-    if (!refs.length) {
-      return
-    }
-
-    let cancelled = false
-    Promise.allSettled(
-      refs.map(r =>
-        fetchPMDetail(gw, r.venue as PMVenue, r.event_id).then(item => ({ item, ref: r }))
-      )
-    ).then(results => {
-      if (cancelled) {
-        return
-      }
-
-      const ok: PMListItem[] = []
-      const live = new Set<string>()
-      for (const res of results) {
-        if (res.status === 'fulfilled' && res.value.item) {
-          ok.push(res.value.item)
-          live.add(res.value.ref.event_id)
-        }
-      }
-      if (ok.length) {
-        foldDiscovered(ok)
-      }
-      // Prune refs that failed to hydrate (closed/gone) from the store.
-      if (live.size < refs.length) {
-        const cfg = loadMarketConfig()
-        saveMarketConfig({ ...cfg, pmSaved: (cfg.pmSaved ?? []).filter(r => live.has(r.event_id)) })
-      }
-    })
-
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gw, tabActive])
 
   const query = searchInput.trim()
   useEffect(() => {
@@ -246,6 +188,22 @@ export function usePmSection(
     return merged
   }, [items, discovered, searchItems])
 
+  // Row ids that are in the tape SOLELY because the operator discovered them via
+  // '/' search — a discovered event that ALSO rode in on the browse page is not
+  // marked (it isn't distinct from the browse feed). These get the subtle "+"
+  // marker in the table and are the only rows `x` can remove.
+  const discoveredKeys = useMemo(() => {
+    const browse = new Set(items.map(i => i.event.event_id))
+    const keys = new Set<string>()
+    for (const item of discovered.values()) {
+      if (!browse.has(item.event.event_id)) {
+        keys.add(pmRowId(item))
+      }
+    }
+
+    return keys
+  }, [items, discovered])
+
   // Structured filter first (venue · topic · vol · prob · sports), then rank by
   // the `/` text query — the two compose, and sort rides on top of both.
   const structured = useMemo(() => filterPMSection(pool, filter), [pool, filter])
@@ -262,6 +220,22 @@ export function usePmSection(
   const clampedSel = Math.min(sel, Math.max(0, rows.length - 1))
   const selectedRow = rows[clampedSel]
   const selectedItem = selectedRow ? (selectedRow.kind === 'headline' ? selectedRow.item : selectedRow.parent) : null
+
+  const selectedIsDiscovered = selectedRow?.kind === 'headline' && discoveredKeys.has(selectedRow.id)
+
+  // `x` on a discovered headline drops it from the session pool + markets.json's
+  // pmSaved (a mis-search must not pollute the tape); on any other row it refuses
+  // with a hint that only saved (+) rows are removable.
+  const removeDiscovered = () => {
+    if (!(selectedRow?.kind === 'headline' && selectedIsDiscovered)) {
+      setFlash('only saved (+) rows can be removed')
+
+      return
+    }
+
+    dropDiscovered(selectedRow.item.event.event_id)
+    setFlash('removed from saved markets')
+  }
 
   const activeOutcome =
     selectedRow?.kind === 'outcome' ? selectedRow.outcome : (selectedItem?.distribution.outcomes?.[0] ?? null)
@@ -362,6 +336,14 @@ export function usePmSection(
       return true
     }
 
+    // Remove the saved (+) market under the cursor — consumed on the PM tab
+    // either way (a refusal flash on a browse row) so `x` never leaks elsewhere.
+    if (ch === 'x') {
+      removeDiscovered()
+
+      return true
+    }
+
     if (ch === 'o') {
       sort.cycle()
 
@@ -414,6 +396,7 @@ export function usePmSection(
     cycleSort: sort.cycle,
     cycleVenue,
     detailItem,
+    discoveredKeys,
     expanded,
     filter,
     filterActive: pmFilterActive(filter),
@@ -425,15 +408,20 @@ export function usePmSection(
     itemsCount: items.length,
     keyHint,
     livePrices,
-    loading,
+    // Honest first-open state: stay "loading" until the very first list fetch
+    // settles (with a gateway), so the tape never flashes "0 events" / an empty
+    // frame before any items land. Later refreshes just ride the per-fetch flag.
+    loading: loading || (!loaded && Boolean(gw)),
     matchCount: filtered.length,
     openMarket,
+    removeDiscovered,
     reload,
     searching,
     rowCount: rows.length,
     rows,
     sel: clampedSel,
     selectedItem: detailItem,
+    selectedIsDiscovered: Boolean(selectedIsDiscovered),
     setFilter,
     setHistoryRange,
     setSel,

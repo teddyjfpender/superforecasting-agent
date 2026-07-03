@@ -576,6 +576,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   // single useInput + `/` filter, so the focus trap holds across PM rows too.
   const pm = usePmSection(gw, pmTabActive, searchInput, setFlash)
 
+  // First-open PM fetch (no items yet) drives the header spinner + "loading
+  // venues…" line so the tape never flashes "0 events" before the venues land.
+  const pmBusy = pmTabActive && pm.loading && pm.itemsCount === 0
+
   // The index the Prediction tab occupies for a given category set. It is always
   // appended LAST (after the optional Watchlist tab + the enabled quote
   // categories), so enabling the provider never shifts it — the index computed
@@ -1211,18 +1215,24 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
           {mode === 'models' ? '[Models]' : 'Models'}
         </Text>
         <Text color={t.color.muted}>{'   ·   '}</Text>
-        <Text color={fetching ? sem.star : hasContent ? sem.up : sem.subtle}>
-          {statusGlyph(fetching ? 'busy' : hasContent ? 'live' : 'idle', tick)}
+        <Text color={fetching || pmBusy ? sem.star : hasContent ? sem.up : sem.subtle}>
+          {statusGlyph(fetching || pmBusy ? 'busy' : hasContent ? 'live' : 'idle', tick)}
         </Text>
         {mode === 'models' ? (
           <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
         ) : pmTabActive ? (
-          <Text color={t.color.muted}>
-            {` Polymarket + Kalshi · ${pm.itemsCount} events${pm.streaming ? ' · ● live' : ''}`}
-            {pm.filterActive ? (
-              <Text color={t.color.muted}>{`  ·  ${pm.filterSummary} · ${pm.filteredCount} of ${pm.itemsCount} shown`}</Text>
-            ) : null}
-          </Text>
+          pm.loading && pm.itemsCount === 0 ? (
+            // First open: an honest spinner + "loading venues…" instead of a
+            // "0 events" flash before the first list fetch lands.
+            <Text color={t.color.muted}>{` ${statusGlyph('busy', tick)} loading venues…`}</Text>
+          ) : (
+            <Text color={t.color.muted}>
+              {` Polymarket + Kalshi · ${pm.itemsCount} events${pm.streaming ? ' · ● live' : ''}`}
+              {pm.filterActive ? (
+                <Text color={t.color.muted}>{`  ·  ${pm.filterSummary} · ${pm.filteredCount} of ${pm.itemsCount} shown`}</Text>
+              ) : null}
+            </Text>
+          )
         ) : (
           <>
             <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
@@ -1636,6 +1646,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       active={!modal && !globalModal}
       avail={pmAvail}
       clampedSel={pm.clampedSel}
+      discoveredKeys={pm.discoveredKeys}
       emptyText={pmEmptyText}
       expanded={pm.expanded}
       height={contentHeight}
@@ -1715,6 +1726,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'v', label: `Venue: ${pm.venue === 'all' ? 'All' : venueLabel(pm.venue)}`, run: pm.cycleVenue },
     { k: 'o', label: 'Sort', run: pm.cycleSort },
     { k: 'f', label: pm.filterActive ? 'Filter ●' : 'Filter', run: () => setModal('pmFilter') },
+    // Live-keys-only: the Remove chip appears ONLY when the cursor is on a saved
+    // (+) discovered row — nothing to remove on a browse row.
+    ...(pm.selectedIsDiscovered ? [{ k: 'x', label: 'Remove', run: pm.removeDiscovered }] : []),
     { k: '/', label: 'Search', run: () => { pm.setSel(() => 0); setSearchMode(true) } },
     { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
     { k: 'h', label: 'Help', run: () => setModal('help') },

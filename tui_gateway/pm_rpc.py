@@ -79,7 +79,9 @@ def register(server) -> None:
     def _err(rid, exc):
         return server._err(rid, _err_code(exc), f"pm error: {exc}")
 
-    def _emit_tick(venue: str, market_id: str, kind: str, payload: dict) -> None:
+    def _emit_tick(
+        venue: str, market_id: str, kind: str, payload: dict, estimate: float | None = None
+    ) -> None:
         server.write_json(
             {
                 "jsonrpc": "2.0",
@@ -90,6 +92,10 @@ def register(server) -> None:
                         "venue": venue,
                         "market_id": market_id,
                         "kind": kind,
+                        # The ONLY probability a consumer may fold: the honest
+                        # server-side estimate (canonical honest_yes_mid rule),
+                        # null when this tick carries no estimate-grade info.
+                        "estimate": estimate,
                         "payload": payload,
                     },
                 },

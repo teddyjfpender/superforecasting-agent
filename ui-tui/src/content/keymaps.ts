@@ -62,6 +62,7 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['p', 'jump to the Prediction section (Polymarket + Kalshi)'],
     ['→ / v / 1·2·3', 'expand outcomes · switch venue · history range (Prediction)'],
     ['f', 'filter prediction markets (venue · volume · probability · hide sports)'],
+    ['x', 'remove the saved “+” market under the cursor (a searched find; browse rows stay)'],
     ['Enter', 'open · / search · r refresh'],
     ['o / O', 'sort column · toggle asc/desc (or click a header)'],
     ['m', 'switch Data ↔ Models'],

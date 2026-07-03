@@ -38,6 +38,10 @@ export interface PMHookGateway {
 export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue: 'all' | PMVenue) {
   const [items, setItems] = useState<PMListItem[]>([])
   const [loading, setLoading] = useState(false)
+  // Has the FIRST list fetch settled (either way)? Lets the section show an
+  // honest "loading venues…" line on first open instead of flashing "0 events"
+  // before any items land. Distinct from `loading`, which toggles per refresh.
+  const [loaded, setLoaded] = useState(false)
   const aliveRef = useRef(true)
 
   useEffect(() => {
@@ -59,9 +63,15 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
         if (aliveRef.current) {
           setItems(next)
           setLoading(false)
+          setLoaded(true)
         }
       })
-      .catch(() => aliveRef.current && setLoading(false))
+      .catch(() => {
+        if (aliveRef.current) {
+          setLoading(false)
+          setLoaded(true)
+        }
+      })
   }, [gw, venue])
 
   useEffect(() => {
@@ -70,7 +80,7 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
     }
   }, [active, reload])
 
-  return { items, loading, reload }
+  return { items, loaded, loading, reload }
 }
 
 // ── selection detail + streaming ──────────────────────────────────────────────

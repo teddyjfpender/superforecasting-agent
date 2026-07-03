@@ -10,6 +10,10 @@ interface PMTableProps {
   active: boolean
   avail: number
   clampedSel: number
+  // Row ids (venue:event_id) surfaced via '/' discovery — each gets a subtle
+  // "+" marker before its venue chip so curated finds read apart from the browse
+  // feed. Optional (defaults empty) so the pure column tests need not pass it.
+  discoveredKeys?: ReadonlySet<string>
   emptyText: string
   expanded: ReadonlySet<string>
   height: number
@@ -66,6 +70,7 @@ export function PredictionMarketsTable({
   active,
   avail,
   clampedSel,
+  discoveredKeys,
   emptyText,
   expanded,
   height,
@@ -163,12 +168,23 @@ export function PredictionMarketsTable({
               // they stay a bare number (no double-labelling).
               const binary = row.item.distribution.binary
 
+              // Rows that ride the tape ONLY because the operator discovered them
+              // via '/' search carry a subtle "+" in the second cell of the cursor
+              // gutter — a cell that is otherwise blank, so an absent marker
+              // reflows nothing and it survives every column drop (venue is the
+              // first column shed on a narrow tape).
+              const discovered = discoveredKeys?.has(row.id) ?? false
+
               return (
                 // The selected row highlights across its FULL width (desk-view
                 // parity): the background IS the cursor.
                 <Box key={row.id} onClick={active ? () => onSelect(idx) : undefined} width="100%">
                   <Text backgroundColor={on ? t.color.selectionBg : undefined} wrap="truncate-end">
-                    <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
+                    {/* The 2-cell cursor gutter: [cursor ▸ / space][discovered + /
+                        space]. The marker rides the trailing cell that used to be
+                        a plain space, so browse rows look exactly as before. */}
+                    <Text color={on ? sem.cursor : sem.faint}>{on ? '▸' : ' '}</Text>
+                    <Text color={sem.subtle}>{discovered ? '+' : ' '}</Text>
                     <Text color={canExpand ? sem.subtle : sem.faint}>{caret}</Text>
                     <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
                       {pad(title, head.marketW - 2, 'left')}
