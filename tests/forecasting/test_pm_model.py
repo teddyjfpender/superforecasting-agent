@@ -25,8 +25,16 @@ def test_history_point_to_dict_rounds():
 def test_market_yes_mid_prefers_quote_then_last():
     both = PMMarket(venue="x", market_id="m", label="Yes", question="q", yes_bid=0.4, yes_ask=0.6)
     assert both.yes_mid == 0.5
-    one = PMMarket(venue="x", market_id="m", label="Yes", question="q", yes_bid=0.4)
-    assert one.yes_mid == 0.4
+    # ONE-SIDED books are offers, not probabilities (the RFK 98%-vs-<1% catch):
+    # bid-only / ask-only markets fall through to last trade, else None.
+    bid_only = PMMarket(venue="x", market_id="m", label="Yes", question="q", yes_bid=0.4)
+    assert bid_only.yes_mid is None
+    ask_only = PMMarket(venue="x", market_id="m", label="Yes", question="q", yes_ask=0.98)
+    assert ask_only.yes_mid is None
+    ask_with_trade = PMMarket(
+        venue="x", market_id="m", label="Yes", question="q", yes_ask=0.98, last_price=0.01
+    )
+    assert ask_with_trade.yes_mid == 0.01
     last = PMMarket(venue="x", market_id="m", label="Yes", question="q", last_price=0.7)
     assert last.yes_mid == 0.7
     empty = PMMarket(venue="x", market_id="m", label="Yes", question="q")

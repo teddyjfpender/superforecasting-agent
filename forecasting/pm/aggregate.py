@@ -45,6 +45,22 @@ def devig_yes_mids(mids: dict[str, float]) -> tuple[dict[str, float], float]:
 def build_distribution(event: PMEvent) -> PMDistribution:
     """Turn a :class:`PMEvent` into a :class:`PMDistribution`."""
     markets = list(event.markets)
+    # Venues carry dead DUPLICATE outcome markets (e.g. two "Robert F.
+    # Kennedy Jr." rows — one live, one an untraded placeholder): keep the
+    # most liquid market per label so an outcome appears exactly once.
+    by_label: dict[str, PMMarket] = {}
+    for m in markets:
+        key = (m.label or "").strip().lower()
+        cur = by_label.get(key)
+        if cur is None:
+            by_label[key] = m
+            continue
+        def _liq(x: PMMarket) -> tuple[int, float]:
+            return (1 if x.yes_mid is not None else 0, x.volume or 0.0)
+        if _liq(m) > _liq(cur):
+            by_label[key] = m
+    if len(by_label) < len(markets):
+        markets = list(by_label.values())
     total_volume = sum((m.volume or 0.0) for m in markets)
 
     if len(markets) <= 1:

@@ -117,10 +117,10 @@ class PMMarket:
             if (self.yes_ask - self.yes_bid) < _DEGENERATE_SPREAD:
                 return (self.yes_bid + self.yes_ask) / 2.0
             return self.last_price
-        if self.yes_bid is not None and self.yes_bid > 0.0:
-            return self.yes_bid
-        if self.yes_ask is not None and self.yes_ask < 1.0:
-            return self.yes_ask
+        # ONE-SIDED books produce no estimate: a lone ask is an offer to sell,
+        # not a probability (the operator caught a dead market with no bid, no
+        # trades, and a 98c ask rendering as "98%" against a real <1% twin).
+        # Last trade is the only honest fallback.
         return self.last_price
 
     def to_dict(self) -> dict[str, Any]:

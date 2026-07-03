@@ -117,3 +117,30 @@ def test_normalization_is_earned_not_assumed():
     d3 = build_distribution(sane)
     assert d3.normalized is True
     assert math.isclose(sum(o.prob for o in d3.outcomes), 1.0, abs_tol=1e-9)
+
+
+def test_one_sided_book_and_duplicate_labels_the_rfk_case():
+    """The operator's catch: a dead duplicate market (no bid, no trades, lone
+    98c ask) rendered RFK at 98% while the real twin sat under 1%."""
+    real = PMMarket(
+        venue="polymarket", market_id="rfk-real", label="Robert F. Kennedy Jr.",
+        question="q", yes_bid=0.008, yes_ask=0.009, volume=250_000.0,
+    )
+    dead_twin = PMMarket(
+        venue="polymarket", market_id="rfk-dead", label="Robert F. Kennedy Jr.",
+        question="q", yes_bid=None, yes_ask=0.98, volume=0.0,
+    )
+    other = PMMarket(
+        venue="polymarket", market_id="jdv", label="J.D. Vance",
+        question="q", yes_bid=0.383, yes_ask=0.386, volume=1_000_000.0,
+    )
+    # A lone ask is an offer to sell, never a probability.
+    assert dead_twin.yes_mid is None
+
+    ev = PMEvent(venue="polymarket", event_id="e", title="Nominee 2028",
+                 mutually_exclusive=True, markets=(real, dead_twin, other))
+    dist = build_distribution(ev)
+    labels = [o.label for o in dist.outcomes]
+    assert labels.count("Robert F. Kennedy Jr.") == 1, "dupes must collapse"
+    rfk = next(o for o in dist.outcomes if o.label.startswith("Robert"))
+    assert rfk.raw_prob < 0.02, f"RFK must read <2%, got {rfk.raw_prob}"
