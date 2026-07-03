@@ -69,28 +69,44 @@ def parse_market(raw: dict, *, event_id: str | None = None, event_slug: str | No
     token_ids = tuple(str(t) for t in _json_list(raw.get("clobTokenIds")))
     prices = _json_list(raw.get("outcomePrices"))
     outcomes = [str(o).lower() for o in _json_list(raw.get("outcomes"))]
-    last_price = _to_float(raw.get("lastTradePrice"))
     label = str(raw.get("groupItemTitle") or raw.get("question") or "").strip() or "Yes"
     volume = _to_float(raw.get("volumeNum"))
     if volume is None:
         volume = _to_float(raw.get("volume"))
-    # outcomePrices is only a last-trade PROXY where trading actually happened:
-    # dead placeholder markets carry ~[0.49, 0.51] defaults, and using them as
-    # last_price resurrects the fabricated ~50% the degenerate-book guard just
-    # killed (masked in dedup'd events, live wherever no liquid twin exists).
-    if last_price is None and prices and (volume or 0.0) > 0.0:
+    # The YES-oriented outcome price: outcomePrices is per-outcome BY
+    # CONSTRUCTION (no direction ambiguity), gated on real volume because dead
+    # placeholders carry ~[0.49, 0.51] defaults.
+    yes_outcome_price: float | None = None
+    if prices and (volume or 0.0) > 0.0:
         if "yes" in outcomes:
-            last_price = _to_float(prices[outcomes.index("yes")])
-        else:
-            last_price = _to_float(prices[0])
+            yes_outcome_price = _to_float(prices[outcomes.index("yes")])
+        elif prices:
+            yes_outcome_price = _to_float(prices[0])
+    closed = bool(raw.get("closed"))
+    if closed:
+        # A CLOSED child market is RESOLVED: outcomePrices holds the terminal
+        # truth (YES 0 or 1). lastTradePrice can be the NO-side redemption
+        # print (the operator's catch: Peru winning the World Cup rendered
+        # 100% off lastTradePrice=1 while outcomePrices said YES=0), and any
+        # leftover one-sided asks are junk — void the book entirely.
+        yes_bid = yes_ask = None
+        last_price = yes_outcome_price
+    else:
+        yes_bid = _to_float(raw.get("bestBid"))
+        yes_ask = _to_float(raw.get("bestAsk"))
+        # Prefer the YES-oriented outcome price over the direction-ambiguous
+        # lastTradePrice; keep lastTradePrice only as the final fallback.
+        last_price = yes_outcome_price
+        if last_price is None:
+            last_price = _to_float(raw.get("lastTradePrice"))
     return PMMarket(
         venue=VENUE,
         market_id=str(raw.get("conditionId") or raw.get("id") or (token_ids[0] if token_ids else "")),
         label=label,
         question=str(raw.get("question") or label).strip(),
         event_id=event_id,
-        yes_bid=_to_float(raw.get("bestBid")),
-        yes_ask=_to_float(raw.get("bestAsk")),
+        yes_bid=yes_bid,
+        yes_ask=yes_ask,
         last_price=last_price,
         volume=volume,
         close_time=(str(raw.get("endDate")) if raw.get("endDate") else None),

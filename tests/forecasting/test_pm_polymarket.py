@@ -128,3 +128,43 @@ def test_dead_placeholder_market_yields_no_estimate():
         "volumeNum": 250000,
     })
     assert traded.yes_mid == 0.0085
+
+
+def test_closed_child_market_uses_terminal_outcome_price_never_last_trade():
+    """The Peru case, raw: a CLOSED child (eliminated -> resolved NO) with
+    outcomePrices ["0","1"] but lastTradePrice=1 (the NO-side redemption print)
+    and a junk leftover 0.1c ask. YES must read 0 — never 100%."""
+    from forecasting.pm.polymarket import parse_market
+
+    peru = parse_market({
+        "conditionId": "0xperu",
+        "groupItemTitle": "Peru",
+        "question": "Will Peru win the 2026 FIFA World Cup?",
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0", "1"]',
+        "bestBid": None,
+        "bestAsk": 0.001,
+        "lastTradePrice": 1,
+        "volumeNum": 264589.5,
+        "closed": True,
+    })
+    assert peru.yes_mid == 0.0, f"resolved-NO must read 0, got {peru.yes_mid}"
+    assert peru.yes_bid is None and peru.yes_ask is None, "closed books are void"
+
+    # The mirror: a closed resolved-YES child reads 1.0.
+    winner = parse_market({
+        "conditionId": "0xwin", "groupItemTitle": "Winner", "question": "q",
+        "outcomes": '["Yes", "No"]', "outcomePrices": '["1", "0"]',
+        "bestBid": None, "bestAsk": None, "lastTradePrice": 0,
+        "volumeNum": 1000.0, "closed": True,
+    })
+    assert winner.yes_mid == 1.0
+
+    # OPEN markets: the YES-oriented outcome price beats lastTradePrice.
+    putin = parse_market({
+        "conditionId": "0xputin", "groupItemTitle": "Yes", "question": "q",
+        "outcomes": '["Yes", "No"]', "outcomePrices": '["0.115", "0.885"]',
+        "bestBid": 0.11, "bestAsk": 0.12, "lastTradePrice": 0.12,
+        "volumeNum": 14558380.0, "closed": False,
+    })
+    assert putin.yes_mid is not None and abs(putin.yes_mid - 0.115) < 1e-9
