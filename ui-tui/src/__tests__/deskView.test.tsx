@@ -1607,3 +1607,63 @@ describe('DeskView detached agent jobs (A / T)', () => {
     expect(summarizeAgentJob({ results: [{ committed: true, question_id: 'a' }], status: 'done' }, 'task')).toContain('1 committed')
   })
 })
+
+describe('DeskView agent-run visibility', () => {
+  const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+  it('re-attaches to a live detached job on mount and animates the working row', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    const status = {
+      current: { question_id: 'fq_a', stage: 'research', title: 'A' },
+      done_count: 0,
+      progress: [],
+      results: [],
+      status: 'running',
+      total: 2
+    }
+    const resp = (): ForecastWorkspaceResponse => ({
+      active_count: 3,
+      closing_soon_count: 0,
+      forecasts: [plainRow('fq_a', 'Alpha question'), plainRow('fq_b', 'Beta question'), plainRow('fq_c', 'Gamma question')],
+      generated_at: '2026-06-29T14:00:00Z',
+      open_alert_count: 0,
+      product: 'Superforecasting Agent'
+    })
+    const gw = {
+      request: (method: string, params: Record<string, unknown>) => {
+        calls.push({ method, params })
+        if (method === 'forecast.reforecast.active') {
+          return Promise.resolve({
+            jobs: [{ done_count: 0, mode: 'reforecast', question_ids: ['fq_a', 'fq_b'], run_id: 'run_9', status: 'running', total: 2 }]
+          })
+        }
+        if (method === 'forecast.reforecast.status') {
+          return Promise.resolve(status)
+        }
+        if (method === 'forecast.question') {
+          return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+        }
+        return Promise.resolve(resp())
+      }
+    } as never
+
+    const desk = await mountDesk(120, resp(), gw)
+    // The mount discovery found the live job and the poller attached to it.
+    await tick(300)
+    expect(calls.some(c => c.method === 'forecast.reforecast.active')).toBe(true)
+    expect(calls.some(c => c.method === 'forecast.reforecast.status' && c.params.run_id === 'run_9')).toBe(true)
+    // The working row (fq_a, per status.current) shows an animated braille
+    // spinner frame; the queued row shows the in-flight ⋯ marker.
+    await tick(700)
+    const text = desk.text()
+    expect(SPIN.some(f => text.includes(f))).toBe(true)
+    expect(text).toContain('⋯')
+    // The animation actually MOVES: the cumulative buffer accumulates more
+    // than one distinct frame across further 500ms ticks.
+    await tick(1300)
+    const later = desk.text()
+    const seen = SPIN.filter(f => later.includes(f))
+    expect(seen.length).toBeGreaterThanOrEqual(2)
+    desk.cleanup()
+  })
+})

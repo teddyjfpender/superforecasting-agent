@@ -3809,6 +3809,39 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
+@method("forecast.reforecast.active")
+def _(rid, params: dict) -> dict:
+    """READ-ONLY list of still-in-flight reforecast/task jobs (queued|running).
+
+    The desk uses this ON MOUNT to RE-ATTACH to jobs started earlier (or from
+    another surface): agent runs are detached and keep working when the desk
+    closes, so without this the row indicators and progress line silently
+    vanish on reopen while the job grinds on. Returns the newest first, each
+    with its run_id, mode, status, question_ids, done_count and total."""
+    try:
+        from forecasting.reforecast_jobs import list_jobs
+
+        jobs = []
+        for row in list_jobs(limit=int(params.get("limit") or 10)):
+            if row.get("status") not in ("queued", "running"):
+                continue
+            spec = row.get("spec") or {}
+            jobs.append(
+                {
+                    "run_id": row.get("run_id"),
+                    "mode": spec.get("mode") or "reforecast",
+                    "status": row.get("status"),
+                    "question_ids": list(spec.get("question_ids") or []),
+                    "done_count": row.get("done_count") or 0,
+                    "total": row.get("total") or len(spec.get("question_ids") or []),
+                    "created_at": row.get("created_at"),
+                }
+            )
+        return _ok(rid, {"jobs": jobs})
+    except Exception as exc:  # noqa: BLE001 - surface, never crash the gateway
+        return _ok(rid, {"jobs": [], "error": str(exc)})
+
+
 @method("forecast.reforecast.status")
 def _(rid, params: dict) -> dict:
     """READ-ONLY status/progress for a detached mass-reforecast background job.

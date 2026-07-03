@@ -189,7 +189,7 @@ export interface AgentJob {
   total: number
   done: number
   status: string
-  current: { stage?: string; title?: string } | null
+  current: { question_id?: string; stage?: string; title?: string } | null
   // Task mode: the latest progress[] note (the running commentary of the single
   // agent session). Agent mode drives the line from `current` instead.
   note?: string
@@ -706,6 +706,53 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       return changed ? next : prev
     })
   }, [items])
+
+  // RE-ATTACH on mount: agent jobs are DETACHED — they keep working when the
+  // desk closes or the operator switches views, and without this the row
+  // indicators + progress line silently vanish on reopen while the job grinds
+  // on (the operator: "unclear if those 'A' agent runs persist when we move to
+  // different tabs"). One forecast.reforecast.active call rehydrates the newest
+  // live job; the status poller below then takes over.
+  useEffect(() => {
+    if (agentJob) {
+      return
+    }
+    let cancelled = false
+    gw.request<unknown>('forecast.reforecast.active', {})
+      .then(raw => {
+        if (cancelled) {
+          return
+        }
+        const r = asRpcResult<{ jobs?: {
+          done_count?: number
+          mode?: string
+          question_ids?: string[]
+          run_id?: string
+          status?: string
+          total?: number
+        }[] }>(raw)
+        const live = r?.jobs?.[0]
+        if (!live?.run_id) {
+          return
+        }
+        agentRunningRef.current = true
+        setAgentJob({
+          current: null,
+          done: live.done_count ?? 0,
+          doneIds: new Set(),
+          mode: live.mode === 'task' ? 'task' : 'agent',
+          runId: live.run_id,
+          status: live.status ?? 'running',
+          targetIds: new Set(live.question_ids ?? []),
+          total: live.total ?? (live.question_ids?.length ?? 0)
+        })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gw])
 
   // Poll the detached agent job's status every ~5s while the desk is open (bounded,
   // cleaned up — the quorum-chip poll shape). An immediate poll paints the first
@@ -1379,7 +1426,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         // The header sorts on click, but only while nothing modal is covering the
         // body — matches the row/tab click gating.
         onSort={modalOpen || settingsOpen || taskOpen || globalModal ? undefined : onSortByKey}
+        runningId={agentJob?.current?.question_id ?? null}
         runningIds={agentRemaining}
+        spinTick={agentJob ? now : 0}
         sortDir={sort.state.dir}
         sortKey={sort.state.key}
         sweep={sweepCtx}
@@ -2382,6 +2431,9 @@ export interface DeskSweepCtx {
   nightlyNextAt: number
   nowMs: number
   running: boolean
+  // The agent is working THIS question right now → the gutter animates with
+  // the house accent sweep (same family as the Home chat / review sweep).
+  runningNow?: boolean
   nextTickAt: number
   sweeperEnabled: boolean
 }
@@ -2529,7 +2581,9 @@ export function DeskForecastList({
   nowMs,
   onSelect,
   onSort,
+  runningId = null,
   runningIds,
+  spinTick = 0,
   sortDir,
   sortKey,
   sweep,
@@ -2546,9 +2600,16 @@ export function DeskForecastList({
   onSelect: (i: number) => void
   // Clicking a column header sorts by it; undefined while a modal covers the body.
   onSort?: (key: string) => void
+  // The question the agent is working RIGHT NOW → the animated accent-swept
+  // spinner (the operator: "a nice ascii animation like we have in the home
+  // view chats"). Null when no job runs.
+  runningId?: null | string
   // The ids still in flight in the running detached agent job → a dim ⋯ gutter
   // marker. A stable empty set at rest keeps the memoised rows byte-identical.
   runningIds: ReadonlySet<string>
+  // 500ms animation counter, non-zero ONLY while an agent job runs (the sweep
+  // ctx pattern): drives the working row's spinner without waking idle rows.
+  spinTick?: number
   sortDir: SortDir
   sortKey: null | string
   // Live review-sweep state for the NEXT column (referentially STABLE while idle so
@@ -2662,6 +2723,8 @@ export function DeskForecastList({
               marked={markedIds.has(item.id ?? '')}
               nowMs={nowMs}
               running={runningIds.has(item.id ?? '')}
+              runningNow={runningId !== null && runningId === item.id}
+              spinFrame={runningId !== null && runningId === item.id ? spinTick : 0}
               satGutter={satGutter}
               sem={sem}
               showTrend={showTrend}
@@ -2686,6 +2749,11 @@ export function DeskForecastList({
 // by DeskForecastList's [t, width] memo, a cursor move only flips `active` on 2
 // rows — so only those 2 re-render (recomputing windowDelta×3 + the sparkline);
 // the rest of the viewport bails out. Row work is O(1) per move, not O(viewport).
+// The working-row spinner: braille frames swept through the brand accent family
+// — the same animation language as the Home chat and the review sweep. Driven by
+// the desk's 500ms reflow tick, so it costs nothing extra at rest.
+const AGENT_SPIN_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
 const DeskListRow = memo(function DeskListRow({
   active,
   colWidth,
@@ -2694,6 +2762,8 @@ const DeskListRow = memo(function DeskListRow({
   marked,
   nowMs,
   running,
+  runningNow = false,
+  spinFrame = 0,
   satGutter,
   sem,
   showTrend,
@@ -2713,6 +2783,12 @@ const DeskListRow = memo(function DeskListRow({
   // In the running detached agent job's remaining set → a dim ⋯ gutter marker.
   // Flips only this row (the memo bails on the rest) when the job starts/advances.
   running: boolean
+  // The agent is working THIS question right now → animated accent-swept
+  // spinner. spinFrame advances every 500ms ONLY for the working row (0 at
+  // rest), so the memo still bails everywhere else. nowMs is 60s-bucketed and
+  // cannot drive an animation.
+  runningNow?: boolean
+  spinFrame?: number
   satGutter: number
   sem: Semantics
   showTrend: boolean
@@ -2756,10 +2832,30 @@ const DeskListRow = memo(function DeskListRow({
           cursor, so ▎/⋯ overriding the arrow never hides it. Idle + unmarked is
           byte-identical to before (`▸ `), so the dense table is untouched at rest. */}
       <Text
-        bold={active || marked}
-        color={marked ? t.color.accent : running ? t.color.muted : active ? sem.cursor : sem.faint}
+        bold={active || marked || runningNow}
+        color={
+          runningNow
+            ? sweepColor(sweepStops(t), spinFrame)
+            : marked
+              ? t.color.accent
+              : running
+                ? t.color.accent
+                : active
+                  ? sem.cursor
+                  : sem.faint
+        }
       >
-        {`${marked ? '▎' : running ? '⋯' : active ? '▸' : ' '} `}
+        {`${
+          runningNow
+            ? AGENT_SPIN_FRAMES[spinFrame % AGENT_SPIN_FRAMES.length]
+            : marked
+              ? '▎'
+              : running
+                ? '⋯'
+                : active
+                  ? '▸'
+                  : ' '
+        } `}
       </Text>
       {satGutter ? (
         // The reserved saturation gutter: a dim ◌ for an under-saturated forecast,

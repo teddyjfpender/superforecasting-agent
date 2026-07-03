@@ -581,3 +581,28 @@ def test_python_m_entrypoint_parses():
     )
     assert proc.returncode == 2
     assert "usage: python -m forecasting.reforecast_jobs" in proc.stderr
+
+
+def test_reforecast_active_rpc_lists_live_jobs_only(home):
+    """The desk re-attaches to in-flight jobs on mount: .active returns only
+    queued|running jobs (newest first) with their target question_ids — a
+    done job is terminal and must not resurrect row indicators."""
+    from tui_gateway import server
+
+    rf.write_job({
+        "run_id": "rf_liveact1", "status": "running", "created_at": rf._now_iso(),
+        "spec": {"question_ids": ["q1", "q2"], "mode": "reforecast"},
+        "total": 2, "done_count": 1, "current": {"question_id": "q2"}, "results": [], "error": None,
+    })
+    rf.write_job({
+        "run_id": "rf_doneact1", "status": "done", "created_at": rf._now_iso(),
+        "spec": {"question_ids": ["q9"]},
+        "total": 1, "done_count": 1, "current": None, "results": [], "error": None,
+    })
+
+    resp = server.handle_request({"id": "1", "method": "forecast.reforecast.active", "params": {}})
+    jobs = resp["result"]["jobs"]
+    assert [j["run_id"] for j in jobs] == ["rf_liveact1"]
+    assert jobs[0]["question_ids"] == ["q1", "q2"]
+    assert jobs[0]["mode"] == "reforecast"
+    assert jobs[0]["done_count"] == 1 and jobs[0]["total"] == 2
