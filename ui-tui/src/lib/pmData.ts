@@ -285,12 +285,16 @@ export function tickPrice(tick: PMTickPayload): null | number {
 
 // ── display formatting ───────────────────────────────────────────────────────
 
+// Probabilities ALWAYS render at two decimals ("32.64%", "0.85%", "98.00%") so a
+// sub-1% market (the operator caught RFK Jr. at <1%) can never collapse to "0%".
+// A null / non-finite value is the honest "—", never a fabricated number.
 export const fmtProb = (v: null | number | undefined): string =>
-  v === null || v === undefined || !Number.isFinite(v) ? '—' : `${Math.round(v * 100)}%`
+  v === null || v === undefined || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(2)}%`
 
-// A finer probability for the detail pane (one decimal).
+// Kept as a distinct name for the book mid / history readouts, now at the same
+// 2-decimal precision as fmtProb (probabilities are 2dp everywhere).
 export const fmtProb1 = (v: null | number | undefined): string =>
-  v === null || v === undefined || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(1)}%`
+  v === null || v === undefined || !Number.isFinite(v) ? '—' : `${(v * 100).toFixed(2)}%`
 
 export const fmtCents = (v: null | number | undefined): string =>
   v === null || v === undefined || !Number.isFinite(v) ? '—' : `${Math.round(v * 100)}¢`

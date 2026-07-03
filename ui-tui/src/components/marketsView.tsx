@@ -22,6 +22,7 @@ import {
 import { loadModelCatalog, saveModelCatalog } from '../lib/modelStore.js'
 import { openExternalUrl } from '../lib/openExternalUrl.js'
 import { venueLabel } from '../lib/pmData.js'
+import { pmWindow } from '../lib/pmRows.js'
 import { type MarketModelListItem, normalizeModelList, normalizePresentation, type Presentation } from '../lib/presentation.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
@@ -37,6 +38,7 @@ import { MarketSearchModal } from './marketSearchModal.js'
 import { type ChatMessage, ModelChat } from './modelChat.js'
 import { ModelsList } from './modelsList.js'
 import { NewModelModal, type NewModelParams } from './newModelModal.js'
+import { PmFilterModal } from './pmFilterModal.js'
 import { PredictionMarketDetail } from './predictionMarketDetail.js'
 import { PredictionMarketsTable } from './predictionMarketsTable.js'
 import { PresentationView } from './presentationView.js'
@@ -209,7 +211,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
   const [fetching, setFetching] = useState(false)
-  const [modal, setModal] = useState<'' | 'help' | 'newModel' | 'providers' | 'search'>('')
+  const [modal, setModal] = useState<'' | 'help' | 'newModel' | 'pmFilter' | 'providers' | 'search'>('')
   const [flash, setFlash] = useState('')
 
   // INSTANT inline `/` filter over the loaded tape (separate from `d` Add data,
@@ -1093,6 +1095,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       return
     }
 
+    // `f` opens the structured PM filter (the section owns it; the quote tape has
+    // no equivalent). Trapped here so it never leaks into a category switch.
+    if (pmTabActive && ch === 'f') {
+      return setModal('pmFilter')
+    }
+
     if (ch === 'q' || key.escape) {
       // Esc backs out of an active `/` filter first, then leaves the view.
       if (key.escape && searchActive) {
@@ -1209,7 +1217,12 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         {mode === 'models' ? (
           <Text color={t.color.muted}> {`${models.length} model${models.length === 1 ? '' : 's'}${buildingCount ? ` · ${buildingCount} building` : ''}`}</Text>
         ) : pmTabActive ? (
-          <Text color={t.color.muted}> {`Polymarket + Kalshi · ${pm.itemsCount} events${pm.streaming ? ' · ● live' : ''}`}</Text>
+          <Text color={t.color.muted}>
+            {` Polymarket + Kalshi · ${pm.itemsCount} events${pm.streaming ? ' · ● live' : ''}`}
+            {pm.filterActive ? (
+              <Text color={t.color.muted}>{`  ·  ${pm.filterSummary} · ${pm.filteredCount} of ${pm.itemsCount} shown`}</Text>
+            ) : null}
+          </Text>
         ) : (
           <>
             <Text color={t.color.muted}> {fetching ? 'updating…' : hasContent ? 'live quotes' : 'no providers'} · </Text>
@@ -1307,6 +1320,18 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         onClose={() => setModal('providers')}
         onToggleCategory={toggleCategory}
         onToggleWatch={toggleWatch}
+        rows={termRows}
+        t={t}
+      />
+    ) : modal === 'pmFilter' ? (
+      <PmFilterModal
+        cols={cols}
+        filter={pm.filter}
+        onApply={next => {
+          pm.setFilter(next)
+          setModal('')
+        }}
+        onCancel={() => setModal('')}
         rows={termRows}
         t={t}
       />
@@ -1449,7 +1474,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
             return (
               <Box key={`${series.provider}:${series.symbol}`} onClick={() => { if (!modal && !globalModal) { setSel(idx) } }} width="100%">
-                <Text wrap="truncate-end">
+                {/* Full-row selection highlight (desk-view parity across the whole
+                    Data tape): the background IS the cursor. */}
+                <Text backgroundColor={on ? t.color.selectionBg : undefined} wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   {keptCols.map(c => {
                     const cell = cellText(c.key, quote, series)
@@ -1588,8 +1615,13 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const pmTableWidth = Math.max(30, width - pmDetailWidth - 2)
   const pmAvail = Math.max(24, pmTableWidth - 2)
   const pmListRows = Math.max(3, contentHeight - 2)
-  const pmListStart = Math.max(0, Math.min(pm.clampedSel - Math.floor(pmListRows / 2), pm.rowCount - pmListRows))
-  const pmWindowed = pm.rows.slice(Math.max(0, pmListStart), Math.max(0, pmListStart) + pmListRows)
+  // Variable-height windowing: an expanded outcome's first sub-row draws an extra
+  // header line, so a naive row-count window let the cursor walk off the clipped
+  // viewport. pmWindow scrolls in visual-line space and keeps the selection on
+  // screen (headline OR sub-row) every frame.
+  const pmWin = pmWindow(pm.rows, pm.clampedSel, pmListRows)
+  const pmListStart = pmWin.start
+  const pmWindowed = pm.rows.slice(pmWin.start, pmWin.end)
 
   const pmEmptyText = pm.loading
     ? 'Loading prediction markets…'
@@ -1682,8 +1714,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: '⏎', label: 'Open', run: pm.openMarket },
     { k: 'v', label: `Venue: ${pm.venue === 'all' ? 'All' : venueLabel(pm.venue)}`, run: pm.cycleVenue },
     { k: 'o', label: 'Sort', run: pm.cycleSort },
-    { k: '1/2/3', label: 'Range' },
-    { k: '/', label: 'Filter', run: () => { pm.setSel(() => 0); setSearchMode(true) } },
+    { k: 'f', label: pm.filterActive ? 'Filter ●' : 'Filter', run: () => setModal('pmFilter') },
+    { k: '/', label: 'Search', run: () => { pm.setSel(() => 0); setSearchMode(true) } },
     { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
     { k: 'h', label: 'Help', run: () => setModal('help') },
     { k: 'q', label: 'Close', run: onClose }

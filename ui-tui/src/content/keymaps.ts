@@ -61,7 +61,8 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['Tab / ←→', 'switch category'],
     ['p', 'jump to the Prediction section (Polymarket + Kalshi)'],
     ['→ / v / 1·2·3', 'expand outcomes · switch venue · history range (Prediction)'],
-    ['Enter', 'open · / filter · r refresh'],
+    ['f', 'filter prediction markets (venue · volume · probability · hide sports)'],
+    ['Enter', 'open · / search · r refresh'],
     ['o / O', 'sort column · toggle asc/desc (or click a header)'],
     ['m', 'switch Data ↔ Models'],
     ['q / Esc', 'close the view']

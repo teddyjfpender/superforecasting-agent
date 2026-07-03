@@ -61,21 +61,23 @@ export function PredictionMarketsTable({
   return (
     <Box flexDirection="column" flexShrink={0} height={height} overflow="hidden" paddingRight={1} width={tableWidth}>
       {/* Headline header row — MARKET | PROB | VOL | CLOSE | VENUE. Each named
-          column (except the non-sortable venue chip) is a click target. */}
+          column (except the non-sortable venue chip) is a click target. The
+          click MUST live on a <Box> — <Text onClick> is silently dropped by the
+          ink fork (Text has no onClick prop), which is why header-click sort was
+          dead. This mirrors the quote table's Box-wrapped, working header. */}
       <Box>
         <Text bold color={sem.heading}>{'  '}</Text>
-        <Text bold color={headColor('title')} onClick={active ? () => onSortByKey('title') : undefined}>
-          {headText('MARKET', 'title', head.marketW, 'left')}
-        </Text>
-        {head.cols.map(c => (
-          <Text
-            bold
-            color={headColor(c.key)}
-            key={c.key}
-            onClick={active && c.key !== 'venue' ? () => onSortByKey(c.key) : undefined}
-          >
-            {`${GUT}${headText(c.label, c.key, c.w, c.align)}`}
+        <Box onClick={active ? () => onSortByKey('title') : undefined}>
+          <Text bold color={headColor('title')}>
+            {headText('MARKET', 'title', head.marketW, 'left')}
           </Text>
+        </Box>
+        {head.cols.map(c => (
+          <Box key={c.key} onClick={active && c.key !== 'venue' ? () => onSortByKey(c.key) : undefined}>
+            <Text bold color={headColor(c.key)}>
+              {`${GUT}${headText(c.label, c.key, c.w, c.align)}`}
+            </Text>
+          </Box>
         ))}
       </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
@@ -126,19 +128,47 @@ export function PredictionMarketsTable({
                 }
               }
 
+              // A binary market's headline prob IS a YES reading — contextualise
+              // it with a colour-coded "YES" (success token) prefix. Categorical
+              // headlines already carry their top outcome's label in the title, so
+              // they stay a bare number (no double-labelling).
+              const binary = row.item.distribution.binary
+
               return (
+                // The selected row highlights across its FULL width (desk-view
+                // parity): the background IS the cursor.
                 <Box key={row.id} onClick={active ? () => onSelect(idx) : undefined} width="100%">
-                  <Text wrap="truncate-end">
+                  <Text backgroundColor={on ? t.color.selectionBg : undefined} wrap="truncate-end">
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                     <Text color={canExpand ? sem.subtle : sem.faint}>{caret}</Text>
                     <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
                       {pad(title, head.marketW - 2, 'left')}
                     </Text>
-                    {head.cols.map(c => (
-                      <Text color={c.key === 'venue' ? sem.faint : c.key === 'prob' ? t.color.text : sem.subtle} key={c.key}>
-                        {`${GUT}${pad(cell(c.key), c.w, c.align)}`}
-                      </Text>
-                    ))}
+                    {head.cols.map(c => {
+                      // Only prefix "YES" when it fits the column — a degenerate
+                      // 100.00% would overflow and shove the trailing columns, so
+                      // fall back to the bare number there (keeps the row aligned).
+                      if (c.key === 'prob' && binary && `YES ${fmtProb(prob)}`.length <= c.w) {
+                        const num = fmtProb(prob)
+                        const lead = ' '.repeat(Math.max(0, c.w - `YES ${num}`.length))
+
+                        return (
+                          <Text key={c.key}>
+                            {`${GUT}${lead}`}
+                            <Text bold={on} color={sem.up}>
+                              YES
+                            </Text>
+                            <Text color={t.color.text}>{` ${num}`}</Text>
+                          </Text>
+                        )
+                      }
+
+                      return (
+                        <Text color={c.key === 'venue' ? sem.faint : c.key === 'prob' ? t.color.text : sem.subtle} key={c.key}>
+                          {`${GUT}${pad(cell(c.key), c.w, c.align)}`}
+                        </Text>
+                      )
+                    })}
                   </Text>
                 </Box>
               )
@@ -185,10 +215,13 @@ export function PredictionMarketsTable({
                   </Text>
                 ) : null}
                 <Box onClick={active ? () => onSelect(idx) : undefined} width="100%">
-                  <Text wrap="truncate-end">
+                  {/* Full-row highlight on the selected sub-row too (the cursor
+                      must never disappear on an outcome). The 3-cell '└─ ' tree
+                      run matches the pack's indent so the row fills the width. */}
+                  <Text backgroundColor={on ? t.color.selectionBg : undefined} wrap="truncate-end">
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
-                    <Text color={sem.faint}>{'└ '}</Text>
-                    <Text color={on ? sem.selectionFg : sem.subtle}>{pad(o.label, outcome.labelW, 'left')}</Text>
+                    <Text color={sem.faint}>{'└─ '}</Text>
+                    <Text bold={on} color={on ? sem.selectionFg : sem.subtle}>{pad(o.label, outcome.labelW, 'left')}</Text>
                     {outcome.cols.map(c => (
                       <Text color={c.key === 'prob' ? t.color.text : c.key === 'ba' ? sem.faint : sem.subtle} key={c.key}>
                         {`${GUT}${pad(outCell(c.key), c.w, c.align)}`}

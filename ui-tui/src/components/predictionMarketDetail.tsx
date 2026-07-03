@@ -165,6 +165,33 @@ export function PredictionMarketDetail({
         {fmtPMVol(dist.total_volume)}
       </Text>
 
+      {/* Colour-coded direction reading. A binary market states its YES / NO pair
+          (YES success, NO danger); a categorical event states once that the bars
+          are YES-side prices (each outcome label IS its own direction). yes_mid is
+          honest — a one-sided book yields a null YES, so NO is left blank too. */}
+      {dist.binary ? (
+        (() => {
+          const yesP = dist.headline.top_prob ?? outcomes[0]?.prob ?? null
+          const noP = yesP === null || yesP === undefined ? null : 1 - yesP
+
+          return (
+            <Text wrap="truncate-end">
+              <Text bold color={sem.up}>
+                {'YES '}
+              </Text>
+              <Text color={t.color.text}>{fmtProb(yesP)}</Text>
+              <Text color={sem.subtle}>{'    '}</Text>
+              <Text bold color={sem.down}>
+                {'NO '}
+              </Text>
+              <Text color={t.color.text}>{fmtProb(noP)}</Text>
+            </Text>
+          )
+        })()
+      ) : outcomes.length > 1 ? (
+        <Text color={sem.subtle}>prices are YES-side</Text>
+      ) : null}
+
       {/* ── distribution bars (de-vigged) ── */}
       <Box marginTop={1}>
         <Text color={sem.heading}>Distribution</Text>

@@ -406,7 +406,10 @@ describe('Prediction section inside the Data tape', () => {
     m.clear()
     await m.press('e')
     const text = m.text()
-    expect(text).toContain('Zombie Ballot')
+    // The dense MARKET column truncates the long title at the ~80-col harness
+    // width (the 2dp + YES-reading PROB column is wider now), so assert the
+    // visible prefix — the point is that the zombie row IS the shown match.
+    expect(text).toContain('Zombie Ballo')
     expect(text).toContain(DASH)
     expect(text).not.toContain('50%')
     // The PM match count is honest (the section's own filter, not the quote tape).
@@ -565,8 +568,9 @@ describe('PredictionMarketsTable column contract', () => {
   })
 
   it('narrow priority-drop sheds VENUE first, then VOL', async () => {
-    // Mid width: VENUE gone, VOL survives.
-    const mid = await renderTable(40)
+    // Mid width: VENUE gone, VOL survives (PROB is now 11 wide for the YES reading,
+    // so the thresholds sit a little higher than the old 6-wide PROB).
+    const mid = await renderTable(48)
     expect(mid).toContain('VOL')
     expect(mid).not.toContain('VENUE')
     // Tighter: VOL gone too, PROB + CLOSE remain (the sacred columns).
@@ -582,7 +586,7 @@ describe('packPmHead / packPmOutcome', () => {
   it('keeps all five columns wide, and drops VENUE then VOL as width shrinks', async () => {
     const { packPmHead } = await import('../lib/pmRows.js')
     expect(packPmHead(100).cols.map(c => c.key)).toEqual(['prob', 'vol', 'close', 'venue'])
-    expect(packPmHead(40).cols.map(c => c.key)).toEqual(['prob', 'vol', 'close']) // VENUE first out
+    expect(packPmHead(48).cols.map(c => c.key)).toEqual(['prob', 'vol', 'close']) // VENUE first out
     expect(packPmHead(30).cols.map(c => c.key)).toEqual(['prob', 'close']) // then VOL
     // MARKET never starves below its minimum.
     expect(packPmHead(100).marketW).toBeGreaterThanOrEqual(12)

@@ -9,7 +9,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { openExternalUrl } from './openExternalUrl.js'
 import { type PMHistoryRange, type PMOutcomeDTO, type PMVenue } from './pmData.js'
-import { filterPMItems, flattenPMRows, PM_SORT_KEYS, type PMDisplayRow, pmExpandable, pmSortValue } from './pmRows.js'
+import {
+  EMPTY_PM_FILTER,
+  filterPMItems,
+  filterPMSection,
+  flattenPMRows,
+  PM_SORT_KEYS,
+  type PMDisplayRow,
+  pmExpandable,
+  type PmFilter,
+  pmFilterActive,
+  pmFilterSummary,
+  pmSortValue
+} from './pmRows.js'
 import { sortRows, type TableSortState, useTableSort } from './tableSort.js'
 import { type PMHookGateway, usePmList, usePmSelectionData } from './usePmMarkets.js'
 
@@ -35,6 +47,10 @@ export interface PmSection {
   cycleVenue: () => void
   detailItem: ReturnType<typeof usePmSelectionData>['detailItem']
   expanded: ReadonlySet<string>
+  filter: PmFilter
+  filterActive: boolean
+  filterSummary: string
+  filteredCount: number
   handleKey: (ch: string, key: KeyLike) => boolean
   history: ReturnType<typeof usePmSelectionData>['history']
   itemsCount: number
@@ -48,6 +64,7 @@ export interface PmSection {
   rows: PMDisplayRow[]
   sel: number
   selectedItem: ReturnType<typeof usePmSelectionData>['detailItem']
+  setFilter: (next: PmFilter) => void
   setHistoryRange: (r: PMHistoryRange) => void
   setSel: (updater: (i: number) => number) => void
   sortByKey: (key: string) => void
@@ -77,14 +94,21 @@ export function usePmSection(
   searchInput: string,
   setFlash: (s: string) => void
 ): PmSection {
-  const [venue, setVenue] = useState<'all' | PMVenue>('all')
+  // The structured `f` filter is the single source of truth for venue (it also
+  // drives the per-venue fetch), so the `v` chip and the modal's venue field
+  // never diverge.
+  const [filter, setFilterState] = useState<PmFilter>(EMPTY_PM_FILTER)
+  const venue = filter.venue
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   const [sel, setSelState] = useState(0)
   const [historyRange, setHistoryRange] = useState<PMHistoryRange>('1w')
 
   const { items, loading, reload } = usePmList(gw, tabActive, venue)
 
-  const filtered = useMemo(() => filterPMItems(items, searchInput), [items, searchInput])
+  // Structured filter first (venue · topic · vol · prob · sports), then rank by
+  // the `/` text query — the two compose, and sort rides on top of both.
+  const structured = useMemo(() => filterPMSection(items, filter), [items, filter])
+  const filtered = useMemo(() => filterPMItems(structured, searchInput), [structured, searchInput])
   const sort = useTableSort(PM_SORT_KEYS)
 
   const sorted = useMemo(
@@ -147,7 +171,14 @@ export function usePmSection(
 
   const cycleVenue = useCallback(() => {
     setSelState(0)
-    setVenue(nextVenue)
+    setFilterState(f => ({ ...f, venue: nextVenue(f.venue) }))
+  }, [])
+
+  // Apply a filter from the modal (resets the cursor so the newly-narrowed list
+  // starts at the top).
+  const setFilter = useCallback((next: PmFilter) => {
+    setSelState(0)
+    setFilterState(next)
   }, [])
 
   // Every key the PM section owns. Returns true when consumed so the parent
@@ -243,6 +274,10 @@ export function usePmSection(
     cycleVenue,
     detailItem,
     expanded,
+    filter,
+    filterActive: pmFilterActive(filter),
+    filterSummary: pmFilterSummary(filter),
+    filteredCount: filtered.length,
     handleKey,
     history,
     historyRange,
@@ -257,6 +292,7 @@ export function usePmSection(
     rows,
     sel: clampedSel,
     selectedItem: detailItem,
+    setFilter,
     setHistoryRange,
     setSel,
     sortByKey: sort.sortByKey,

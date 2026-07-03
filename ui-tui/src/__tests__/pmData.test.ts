@@ -90,7 +90,12 @@ const binary = (): PMListItem => ({
 
 describe('pm formatting', () => {
   it('probability, cents, and volume format honestly with an em-dash fallback', () => {
-    expect(fmtProb(0.44)).toBe('44%')
+    // Probabilities are ALWAYS 2dp so a sub-1% market never collapses to "0%".
+    expect(fmtProb(0.44)).toBe('44.00%')
+    expect(fmtProb(0.3264)).toBe('32.64%')
+    expect(fmtProb(0.0085)).toBe('0.85%')
+    expect(fmtProb(0.98)).toBe('98.00%')
+    expect(fmtProb(1)).toBe('100.00%')
     expect(fmtProb(null)).toBe('—')
     expect(fmtCents(0.42)).toBe('42¢')
     expect(fmtCents(null)).toBe('—')
