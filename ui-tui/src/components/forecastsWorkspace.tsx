@@ -35,7 +35,9 @@ import {
   levelSparkline,
   pct,
   pctDelta,
-  shortDate
+  shortDate,
+  timeAxis,
+  wrapLines
 } from '../lib/forecastCharts.js'
 import {
   looksLikeMarketSource,
@@ -1540,6 +1542,19 @@ export function ForecastDetail({
     [bandPoints, hasSeries, scale, width]
   )
 
+  // The x-axis: real tick marks + deduped date labels spread across the actual
+  // snapshot time range (the dates of the finite-headline points, in order, so
+  // they line up with the chart's own column placement).
+  const axis = useMemo(() => {
+    if (!chart) {
+      return null
+    }
+    const dates = (item.history ?? [])
+      .filter(point => finite(point.headline_probability))
+      .map(point => point.as_of ?? null)
+    return timeAxis(dates, { gutterW: chart.gutterW, plotW: chart.plotW })
+  }, [chart, item.history])
+
   // Prefer the server-classified PMF (buckets only, moments/intervals stripped);
   // fall back to the raw dict for plain categorical forecasts.
   const bars = useMemo(() => {
@@ -1565,10 +1580,16 @@ export function ForecastDetail({
 
   return (
     <Box flexDirection="column">
-      <Text bold color={t.color.primary} wrap="truncate-end">
-        {item.title ?? item.id}
-      </Text>
-      <Text wrap="truncate-end">
+      {/* The ONE question title — it WRAPS (a modal has room), up to 3 lines, then
+          tail-truncates. The old duplicate modal-title line was removed. */}
+      {wrapLines(item.title ?? item.id ?? 'untitled', width, 3).map((line, i) => (
+        <Text bold color={t.color.primary} key={`title:${i}`}>
+          {line}
+        </Text>
+      ))}
+      {/* Meta beneath the title — politics · impact · status · tags, wrapping so
+          the tag list never truncates. */}
+      <Text wrap="wrap">
         {item.domain ? <Text color={t.color.label}>{item.domain}</Text> : null}
         {item.impact ? (
           <Text color={t.color.muted}>
@@ -1635,7 +1656,7 @@ export function ForecastDetail({
       {item.resolution_criteria ? (
         <Box marginTop={1}>
           <Text color={t.color.text} wrap="wrap">
-            {truncate(item.resolution_criteria, 220)}
+            {item.resolution_criteria}
           </Text>
         </Box>
       ) : null}
@@ -1648,8 +1669,19 @@ export function ForecastDetail({
               {row}
             </Text>
           ))}
+          {/* Real x-axis: a base rule with tick marks + deduped date labels across
+              the actual snapshot range (a single line "date → date" was degenerate
+              when snapshots spanned little time). */}
+          {axis ? (
+            <>
+              <Text color={t.color.border}>{axis.ticks}</Text>
+              <Text color={t.color.label} wrap="truncate-end">
+                {axis.labels}
+              </Text>
+            </>
+          ) : null}
           <Text color={t.color.label} wrap="truncate-end">
-            {`  ${shortDate(item.history?.[0]?.as_of)} → ${shortDate(item.as_of)}  ${
+            {`  ${
               isDistribution ? '● mean  ░ 90% interval' : item.panel ? '● forecast  ░ panel spread / confidence band' : '● forecast  ░ confidence band'
             }`}
           </Text>
@@ -1706,12 +1738,23 @@ export function ForecastDetail({
                     ? t.color.error
                     : t.color.muted
 
+              // The claim is informational — it WRAPS as a hanging indent (date +
+              // stance keep their own colours in a fixed lead column) instead of
+              // being cut with a trailing '…'.
               return (
-                <Text key={evidence.id ?? i} wrap="truncate-end">
-                  <Text color={t.color.label}>{shortDate(evidence.available_at)} </Text>
-                  <Text bold color={stanceColor}>{(evidence.stance ?? 'context').slice(0, 3)} </Text>
-                  <Text color={t.color.text}>{truncate(evidence.claim || evidence.summary || evidence.source || '—', 64)}</Text>
-                </Text>
+                <Box flexDirection="row" key={evidence.id ?? i}>
+                  <Box flexShrink={0}>
+                    <Text color={t.color.label}>{shortDate(evidence.available_at)} </Text>
+                    <Text bold color={stanceColor}>
+                      {(evidence.stance ?? 'context').slice(0, 3)}{' '}
+                    </Text>
+                  </Box>
+                  <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                    <Text color={t.color.text} wrap="wrap">
+                      {evidence.claim || evidence.summary || evidence.source || '—'}
+                    </Text>
+                  </Box>
+                </Box>
               )
             })}
         </>
@@ -1721,10 +1764,13 @@ export function ForecastDetail({
         <>
           <SectionTitle t={t}>active lessons (structuring this forecast)</SectionTitle>
           {item.relevant_lessons.slice(0, 5).map((lesson, i) => (
-            <Text key={lesson.id ?? i} wrap="truncate-end">
-              <Text color={t.color.label}>{truncate(lesson.scope_ref || lesson.scope_type || 'lesson', 24)} </Text>
-              <Text color={t.color.text}>{truncate(lesson.lesson || '—', 64)}</Text>
-            </Text>
+            <WrapLine
+              body={lesson.lesson || '—'}
+              key={lesson.id ?? i}
+              prefix={`${lesson.scope_ref || lesson.scope_type || 'lesson'}: `}
+              prefixColor={t.color.label}
+              t={t}
+            />
           ))}
         </>
       ) : null}
@@ -1904,31 +1950,56 @@ function EnsembleComponentsSection({
 
   const maxWeight = Math.max(...rows.map(row => row.weight), 0)
   const totalWeight = rows.reduce((sum, row) => sum + row.weight, 0) || 1
-  // marker(2) name(flex) prob(6) gap weight(7) gap source(tail)
-  const nameW = Math.max(10, Math.min(24, width - 30))
+
+  // TWO lines per component: line 1 = full name (wraps) + right-aligned value +
+  // weight; line 2 = the FULL source slug (dim, wrapping). Value + weight sit in
+  // fixed columns sized to the widest so they align across every component.
+  const valueW = 6
+  const weightStrs = rows.map(row => `w ${row.weight.toFixed(2)} (${pct(row.weight / totalWeight)})`)
+  const weightW = Math.max(12, ...weightStrs.map(str => str.length))
 
   return (
     <>
       <SectionTitle t={t}>{`ensemble components (${rows.length})`}</SectionTitle>
       {rows.map((row, i) => {
-        const share = row.weight / totalWeight
-
         // A market component whose weight is a small fraction of the heaviest is
         // flagged: it was likely discounted for being thin/stale.
         const discounted =
           looksLikeMarketSource(row.source) && maxWeight > 0 && row.weight <= maxWeight * 0.5
 
-        const name = truncate(row.name, nameW).padEnd(nameW)
-
         return (
-          <Text key={row.source ?? row.name ?? `c${i}`} wrap="truncate-end">
-            <Text color={discounted ? t.color.warn : t.color.label}>{discounted ? '× ' : '  '}</Text>
-            <Text color={t.color.text}>{name}</Text>
-            <Text color={t.color.text}> {pct(row.probability).padStart(5)}</Text>
-            <Text color={t.color.muted}>{`  w ${row.weight.toFixed(2)} (${pct(share)})`}</Text>
-            {row.source ? <Text color={t.color.muted}>{`  ${truncate(row.source, 20)}`}</Text> : null}
-            {discounted ? <Text color={t.color.warn}>{'  discounted'}</Text> : null}
-          </Text>
+          <Box flexDirection="column" key={row.source ?? row.name ?? `c${i}`}>
+            <Box flexDirection="row">
+              <Box flexGrow={1} flexShrink={1} minWidth={0}>
+                <Text wrap="wrap">
+                  <Text color={discounted ? t.color.warn : t.color.label}>{discounted ? '× ' : '  '}</Text>
+                  <Text color={t.color.text}>{row.name}</Text>
+                </Text>
+              </Box>
+              <Box flexDirection="row" flexShrink={0}>
+                <Box flexShrink={0} width={valueW}>
+                  <Text color={t.color.text}>{pct(row.probability).padStart(valueW)}</Text>
+                </Box>
+                <Box flexShrink={0} width={weightW + 2}>
+                  <Text color={t.color.muted}>{`  ${weightStrs[i]}`}</Text>
+                </Box>
+              </Box>
+            </Box>
+            {row.source ? (
+              <Box paddingLeft={2}>
+                <Text color={t.color.muted} wrap="wrap">
+                  {row.source}
+                  {discounted ? <Text color={t.color.warn}>{'  · discounted'}</Text> : null}
+                </Text>
+              </Box>
+            ) : discounted ? (
+              <Box paddingLeft={2}>
+                <Text color={t.color.warn} wrap="wrap">
+                  discounted
+                </Text>
+              </Box>
+            ) : null}
+          </Box>
         )
       })}
     </>
@@ -2051,7 +2122,6 @@ export function DisagreementMeter({ spread, t }: { spread?: Record<string, numbe
 }
 
 export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePanel; t: Theme; width: number }) {
-  const whisker = boxWhisker(panel.spread ?? {}, { width: Math.max(12, Math.min(width - 18, 28)) })
   const estimates = panel.estimates ?? []
   const aggregate = panel.aggregate_probability
   const isEnsemble = panel.kind === 'ensemble'
@@ -2060,36 +2130,95 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
     ? `ensemble (${estimates.length} components)`
     : `panel (${estimates.length} perspectives)`
 
-  // Per-perspective rail: each estimate (●) positioned on the same 0..1 track
-  // with the aggregate as the reference tick (┊), so the spread reads at a
-  // glance. Budget: marker(2) name(10) value(6) gap(1) rail gap(2) delta(5).
-  const railW = Math.max(0, Math.min(24, width - 28))
-  const nameW = 10
+  // A single aligned grid shared by the header rows (aggregate / range /
+  // disagree) AND every estimate: [name][value][rail][delta][trailing]. Every
+  // strip starts at the SAME column and is the SAME width; values right-align in
+  // their own column; the ±pt outlier markers right-align in a fixed end column.
+  // The name column is sized to the LONGEST perspective (marker + up to ~24 chars
+  // before it wraps to a second line — never a "polls_mar…").
+  const markerW = 2
+  const longest = Math.max(9, ...estimates.map(estimate => (estimate.perspective ?? '—').length))
+  const nameInner = Math.min(24, longest)
+  const nameW = markerW + nameInner
+  const valueW = 6
+  const deltaW = 6
+  const railW = Math.max(0, Math.min(24, width - nameW - valueW - deltaW - 8))
+  const hasRail = railW >= 8
+  const whisker = hasRail ? boxWhisker(panel.spread ?? {}, { width: railW }) : ''
+
   const trimmedCount = estimates.filter(estimate => estimate.trimmed).length
   const weights = estimates.map(estimate => estimate.weight).filter(finite)
   const showWeights = isEnsemble && weights.length > 0 && new Set(weights).size > 1
 
+  const disagreement = panel.spread?.disagreement_index
+  const disBand = finite(disagreement) ? disagreementBand(disagreement) : null
+  const disColor =
+    disBand === 'calm'
+      ? t.color.ok
+      : disBand === 'moderate'
+        ? t.color.accent
+        : disBand === 'high'
+          ? t.color.warn
+          : t.color.error
+  const disFill = finite(disagreement) ? Math.max(0, Math.min(railW, Math.round(disagreement * railW))) : 0
+  const disBar = '█'.repeat(disFill) + '░'.repeat(Math.max(0, railW - disFill))
+
   return (
     <>
       <SectionTitle t={t}>{title}</SectionTitle>
-      <Text wrap="truncate-end">
-        <Text color={t.color.muted}>aggregate </Text>
-        <Text bold color={t.color.primary}>
-          {pct(aggregate)}
-        </Text>
-        <Text color={t.color.muted}>{`  ${panel.aggregation_method ?? 'pool'}${isEnsemble ? '' : ` · trim ${panel.trim ?? 0}`}`}</Text>
-      </Text>
+      <Box flexDirection="row">
+        <Box flexShrink={0} width={nameW}>
+          <Text color={t.color.muted}>aggregate</Text>
+        </Box>
+        <Box flexShrink={0} width={valueW}>
+          <Text bold color={t.color.primary}>
+            {pct(aggregate).padStart(valueW)}
+          </Text>
+        </Box>
+        <Box flexGrow={1} flexShrink={1} minWidth={0}>
+          <Text color={t.color.muted} wrap="truncate-end">
+            {`  ${panel.aggregation_method ?? 'pool'}${isEnsemble ? '' : ` · trim ${panel.trim ?? 0}`}`}
+          </Text>
+        </Box>
+      </Box>
       {whisker ? (
-        <Text wrap="truncate-end">
-          <Text color={t.color.label}>{`${pct(panel.spread?.min)} `}</Text>
-          <Text color={t.color.accent}>{whisker}</Text>
-          <Text color={t.color.label}>{` ${pct(panel.spread?.max)}`}</Text>
-        </Text>
+        <Box flexDirection="row">
+          <Box flexShrink={0} width={nameW}>
+            <Text color={t.color.muted}>range</Text>
+          </Box>
+          <Box flexShrink={0} width={valueW}>
+            <Text color={t.color.label}>{pct(panel.spread?.min).padStart(valueW)}</Text>
+          </Box>
+          <Box flexShrink={0} width={railW + 2}>
+            <Text color={t.color.accent}>{`  ${whisker}`}</Text>
+          </Box>
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text color={t.color.label}>{`  ${pct(panel.spread?.max)}`}</Text>
+          </Box>
+        </Box>
       ) : null}
-      <DisagreementMeter spread={panel.spread} t={t} />
+      {finite(disagreement) ? (
+        <Box flexDirection="row">
+          <Box flexShrink={0} width={nameW}>
+            <Text color={t.color.muted}>disagree</Text>
+          </Box>
+          <Box flexShrink={0} width={valueW}>
+            <Text> </Text>
+          </Box>
+          {hasRail ? (
+            <Box flexShrink={0} width={railW + 2}>
+              <Text color={disColor}>{`  ${disBar}`}</Text>
+            </Box>
+          ) : null}
+          <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Text color={disColor}>{`  ${disBand} (${disagreement.toFixed(2)})`}</Text>
+          </Box>
+        </Box>
+      ) : null}
       {estimates.map((estimate, i) => {
-        const rail = railW >= 8 ? dotTrack(estimate.probability, aggregate, { width: railW }) : ''
+        const rail = hasRail ? dotTrack(estimate.probability, aggregate, { width: railW }) : ''
         const delta = spreadDelta(estimate.probability, aggregate)
+        const nameLines = wrapLines(estimate.perspective ?? '—', nameInner, 2)
 
         const deltaColor =
           !delta || delta === '·'
@@ -2099,19 +2228,43 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
               : t.color.error
 
         return (
-          <Text key={estimate.perspective ?? i} wrap="truncate-end">
-            <Text bold={!estimate.trimmed} color={estimate.trimmed ? t.color.muted : t.color.label}>
-              {estimate.trimmed ? '× ' : '  '}
-              {truncate(estimate.perspective ?? '—', nameW).padEnd(nameW)}
-            </Text>
-            <Text color={estimate.trimmed ? t.color.muted : t.color.text}>{pct(estimate.probability).padStart(5)}</Text>
-            {rail ? <Text color={estimate.trimmed ? t.color.muted : t.color.accent}>{`  ${rail}`}</Text> : null}
-            {delta ? <Text color={deltaColor}>{`  ${delta.padStart(5)}`}</Text> : null}
-            {showWeights && finite(estimate.weight) ? (
-              <Text color={t.color.muted}>{`  w ${estimate.weight.toFixed(1)}`}</Text>
+          <Box flexDirection="row" key={estimate.perspective ?? i}>
+            <Box flexShrink={0} width={nameW}>
+              <Box flexShrink={0} width={markerW}>
+                <Text bold={!estimate.trimmed} color={estimate.trimmed ? t.color.muted : t.color.label}>
+                  {estimate.trimmed ? '× ' : '  '}
+                </Text>
+              </Box>
+              <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+                {nameLines.map((line, li) => (
+                  <Text
+                    bold={!estimate.trimmed && li === 0}
+                    color={estimate.trimmed ? t.color.muted : t.color.label}
+                    key={li}
+                  >
+                    {line}
+                  </Text>
+                ))}
+              </Box>
+            </Box>
+            <Box flexShrink={0} width={valueW}>
+              <Text color={estimate.trimmed ? t.color.muted : t.color.text}>{pct(estimate.probability).padStart(valueW)}</Text>
+            </Box>
+            {hasRail ? (
+              <Box flexShrink={0} width={railW + 2}>
+                <Text color={estimate.trimmed ? t.color.muted : t.color.accent}>{`  ${rail}`}</Text>
+              </Box>
             ) : null}
-            {estimate.crux ? <Text color={t.color.label}>{`  ${truncate(estimate.crux, 32)}`}</Text> : null}
-          </Text>
+            <Box flexShrink={0} width={deltaW + 2}>
+              <Text color={deltaColor}>{delta ? `  ${delta.padStart(deltaW)}` : ''}</Text>
+            </Box>
+            <Box flexGrow={1} flexShrink={1} minWidth={0}>
+              <Text color={t.color.muted} wrap="wrap">
+                {showWeights && finite(estimate.weight) ? `  w ${estimate.weight.toFixed(1)}` : ''}
+                {estimate.crux ? `  ${estimate.crux}` : ''}
+              </Text>
+            </Box>
+          </Box>
         )
       })}
       {(panel.trim ?? 0) > 0 || trimmedCount > 0 ? (

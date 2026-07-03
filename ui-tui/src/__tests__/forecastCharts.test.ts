@@ -13,7 +13,9 @@ import {
   pct,
   pctDelta,
   shortDate,
-  windowDelta
+  timeAxis,
+  windowDelta,
+  wrapLines
 } from '../lib/forecastCharts.js'
 
 describe('format helpers', () => {
@@ -524,5 +526,91 @@ describe('edge cases & defect scenarios', () => {
       const spark = levelSparkline([0.5, Number.NaN])
       expect(spark[1]).toBe(' ')
     })
+  })
+})
+
+describe('bandChart gutter/plot metrics', () => {
+  it('reports the gutter width (label + " │") and the plot width so the x-axis lines up', () => {
+    const chart = bandChart([{ y: 0.5 }], { width: 30, height: 5 })
+    // rows are "<label> │<cells>": the │ sits at gutterW - 1 and cells start at gutterW.
+    const row = chart.rows[0]!
+    expect(row[chart.gutterW - 1]).toBe('│')
+    expect(row.length).toBe(chart.gutterW + chart.plotW)
+    expect(chart.plotW).toBeGreaterThan(0)
+  })
+})
+
+describe('timeAxis', () => {
+  const countOf = (haystack: string, needle: string): number => haystack.split(needle).length - 1
+
+  it('spreads 3-5 deduped date labels across a multi-snapshot range, anchoring both ends', () => {
+    const axis = timeAxis(['2026-05-01T00:00:00Z', '2026-05-15T00:00:00Z', '2026-05-29T00:00:00Z'], {
+      gutterW: 6,
+      plotW: 48
+    })!
+    expect(axis).not.toBeNull()
+    // Both endpoints are labelled...
+    expect(axis.labels).toContain('2026-05-01')
+    expect(axis.labels).toContain('2026-05-29')
+    // ...each date appears exactly once (deduped, non-overlapping).
+    expect(countOf(axis.labels, '2026-05-01')).toBe(1)
+    expect(countOf(axis.labels, '2026-05-29')).toBe(1)
+    // The base rule carries real tick marks + a y-axis corner.
+    expect(axis.ticks).toContain('┬')
+    expect(axis.ticks).toContain('└')
+  })
+
+  it('dedupes when a short range would print the same day twice', () => {
+    // A range under a handful of days: several interpolated ticks collapse to the
+    // same calendar day — each day must still be printed only once.
+    const axis = timeAxis(['2026-06-22T00:00:00Z', '2026-06-23T00:00:00Z'], { gutterW: 6, plotW: 40 })!
+    expect(countOf(axis.labels, '2026-06-22')).toBe(1)
+    expect(countOf(axis.labels, '2026-06-23')).toBe(1)
+  })
+
+  it('labels a degenerate single-date range ONCE, centered', () => {
+    const axis = timeAxis(['2026-06-22T00:00:00Z', '2026-06-22T00:00:00Z'], { gutterW: 6, plotW: 40 })!
+    expect(countOf(axis.labels, '2026-06-22')).toBe(1)
+    // centered: leading run of spaces before the label, trailing run after it.
+    const start = axis.labels.indexOf('2026-06-22')
+    expect(start).toBeGreaterThan(6) // past the gutter, indented into the plot
+  })
+
+  it('gutter-prefixes both lines so they drop under the plot cells', () => {
+    const axis = timeAxis(['2026-05-01T00:00:00Z', '2026-05-29T00:00:00Z'], { gutterW: 8, plotW: 40 })!
+    // corner sits at gutterW - 1; labels begin at gutterW.
+    expect(axis.ticks[7]).toBe('└')
+    expect(axis.labels.slice(0, 8)).toBe(' '.repeat(8))
+  })
+
+  it('returns null when no date parses', () => {
+    expect(timeAxis([null, undefined, 'not-a-date'], { gutterW: 6, plotW: 40 })).toBeNull()
+  })
+})
+
+describe('wrapLines', () => {
+  it('word-wraps within the width', () => {
+    const lines = wrapLines('the quick brown fox jumps', 10, 3)
+    expect(lines.every(line => line.length <= 10)).toBe(true)
+    expect(lines.join(' ')).toBe('the quick brown fox jumps')
+  })
+
+  it('caps at maxLines and tail-truncates the overflow with a single ellipsis', () => {
+    const lines = wrapLines('one two three four five six seven eight nine ten eleven', 8, 3)
+    expect(lines.length).toBe(3)
+    expect(lines[2]!.endsWith('…')).toBe(true)
+    expect(lines[2]!.length).toBeLessThanOrEqual(8)
+    // only the capped last line carries the ellipsis
+    expect(lines.filter(line => line.includes('…')).length).toBe(1)
+  })
+
+  it('hard-breaks a single word longer than the width', () => {
+    const lines = wrapLines('supercalifragilistic', 6, 3)
+    expect(lines[0]!.length).toBe(6)
+  })
+
+  it('returns [] for empty/blank text', () => {
+    expect(wrapLines('', 10)).toEqual([])
+    expect(wrapLines('   ', 10)).toEqual([])
   })
 })

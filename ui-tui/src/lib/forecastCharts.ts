@@ -211,6 +211,10 @@ export interface BandPoint {
 export interface BandChart {
   rows: string[]
   axis: { top: string; bottom: string }
+  /** columns consumed by the y-gutter (label + " │"); the plot cells begin here */
+  gutterW: number
+  /** width of the plot region (cells to the right of the gutter) */
+  plotW: number
 }
 
 const MARKER = '●'
@@ -285,8 +289,160 @@ export const bandChart = (
   const rows = grid.map((cells, row) => `${labelFor(row)} │${cells.join('')}`)
   return {
     rows,
-    axis: { top: topLabel, bottom: bottomLabel }
+    axis: { top: topLabel, bottom: bottomLabel },
+    gutterW,
+    plotW
   }
+}
+
+// ── Time (x) axis ────────────────────────────────────────────────────────────
+
+export interface TimeAxis {
+  /** the tick/base rule aligned under the plot (with the y-axis corner) */
+  ticks: string
+  /** the date labels aligned under their ticks (deduped) */
+  labels: string
+}
+
+const isoDay = (ms: number): string => new Date(ms).toISOString().slice(0, 10)
+
+/**
+ * Build a real x-axis for the band chart: a base rule with tick marks under the
+ * plot and 3–5 date labels spread across the ACTUAL time range (interpolated
+ * between the first and last snapshot). Labels are deduped — a short-lived
+ * series that would print the same day twice prints it once; a single-snapshot
+ * (degenerate) range labels that one date centered. Both returned strings are
+ * gutter-prefixed so they drop straight under `bandChart().rows`.
+ *
+ * Returns `null` when no snapshot carries a parseable date.
+ */
+export const timeAxis = (
+  isoDates: ReadonlyArray<string | null | undefined>,
+  { plotW, gutterW, maxLabels = 5 }: { plotW: number; gutterW: number; maxLabels?: number }
+): null | TimeAxis => {
+  const pw = Math.max(1, Math.floor(plotW))
+  const gw = Math.max(0, Math.floor(gutterW))
+  const times = isoDates
+    .map(value => (value ? Date.parse(value) : Number.NaN))
+    .filter((ms): ms is number => Number.isFinite(ms))
+
+  if (!times.length) {
+    return null
+  }
+
+  const minMs = Math.min(...times)
+  const maxMs = Math.max(...times)
+
+  const tickCells = Array.from({ length: pw }, () => '─')
+  const labelCells = Array.from({ length: pw }, () => ' ')
+  const occupied = Array.from({ length: pw }, () => false)
+  const placed = new Set<string>()
+
+  // Place a date label near `col`, deduped and non-overlapping (a 1-cell gap is
+  // reserved on each side). Returns whether the label landed.
+  const tryPlace = (col: number, label: string, align: 'center' | 'left' | 'right'): boolean => {
+    if (placed.has(label)) {
+      return false // dedup — never print the same date twice
+    }
+    const len = label.length
+    let start = align === 'left' ? col : align === 'right' ? col - len + 1 : col - Math.floor(len / 2)
+    start = Math.max(0, Math.min(pw - len, start))
+    if (start < 0) {
+      return false // label wider than the whole plot
+    }
+    for (let i = Math.max(0, start - 1); i < Math.min(pw, start + len + 1); i += 1) {
+      if (occupied[i]) {
+        return false
+      }
+    }
+    for (let i = 0; i < len; i += 1) {
+      labelCells[start + i] = label[i]!
+      occupied[start + i] = true
+    }
+    tickCells[Math.max(0, Math.min(pw - 1, col))] = '┬'
+    placed.add(label)
+    return true
+  }
+
+  if (maxMs === minMs) {
+    // Degenerate: a single snapshot (or all on one day) — one centered label.
+    tryPlace(Math.floor((pw - 1) / 2), isoDay(minMs), 'center')
+  } else {
+    const total = Math.max(3, Math.min(maxLabels, 5))
+    // Endpoints first so the true range is always anchored, then fill the middle
+    // wherever it fits without colliding.
+    tryPlace(0, isoDay(minMs), 'left')
+    tryPlace(pw - 1, isoDay(maxMs), 'right')
+    for (let i = 1; i < total - 1; i += 1) {
+      const frac = i / (total - 1)
+      tryPlace(Math.round(frac * (pw - 1)), isoDay(minMs + frac * (maxMs - minMs)), 'center')
+    }
+  }
+
+  const corner = gw > 0 ? `${' '.repeat(gw - 1)}└` : ''
+  return {
+    ticks: `${corner}${tickCells.join('')}`,
+    labels: `${' '.repeat(gw)}${labelCells.join('')}`
+  }
+}
+
+// ── Word wrap (paragraph → capped lines) ─────────────────────────────────────
+
+/**
+ * Word-wrap `text` to `width`, capped at `maxLines`. A single word longer than
+ * the width is hard-broken. When the text overflows the cap the final kept line
+ * is tail-truncated with a '…' so it stays within `width` — the ONE place the
+ * modal truncates prose (a title that will not fit three lines), never mid-value.
+ */
+export const wrapLines = (text: string, width: number, maxLines = 3): string[] => {
+  const w = Math.max(1, Math.floor(width))
+  const words = String(text ?? '')
+    .split(/\s+/)
+    .filter(Boolean)
+  if (!words.length) {
+    return []
+  }
+
+  const lines: string[] = []
+  let current = ''
+
+  for (const word of words) {
+    if (word.length > w) {
+      if (current) {
+        lines.push(current)
+        current = ''
+      }
+      let rest = word
+      while (rest.length > w) {
+        lines.push(rest.slice(0, w))
+        rest = rest.slice(w)
+      }
+      current = rest
+      continue
+    }
+    const next = current ? `${current} ${word}` : word
+    if (next.length > w) {
+      lines.push(current)
+      current = word
+    } else {
+      current = next
+    }
+  }
+  if (current) {
+    lines.push(current)
+  }
+
+  if (lines.length <= maxLines) {
+    return lines
+  }
+
+  const kept = lines.slice(0, maxLines)
+  let tail = kept[maxLines - 1]!
+  if (tail.length >= w) {
+    tail = tail.slice(0, Math.max(0, w - 1))
+  }
+  kept[maxLines - 1] = `${tail}…`
+  return kept
 }
 
 // ── Histogram (categorical / distribution outcomes) ──────────────────────────

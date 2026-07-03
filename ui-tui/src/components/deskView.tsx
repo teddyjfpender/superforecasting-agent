@@ -1556,7 +1556,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       scrollRef={modalScrollRef}
       t={t}
       tick={now}
-      title={lensActive ? (refThesis?.title ?? refFactor?.title ?? 'Lens') : (selected?.title ?? selected?.id ?? 'Forecast')}
+      // The question-detail body (ForecastDetail) renders the ONE wrapping title
+      // itself, so the modal chrome must NOT print a second truncated copy — only
+      // the lens read (thesis/factor) needs the overlay's own title line.
+      title={lensActive ? (refThesis?.title ?? refFactor?.title ?? 'Lens') : undefined}
     >
       {refRead ? (
         <Box flexDirection="column" marginBottom={1}>

@@ -1271,3 +1271,88 @@ describe('forecasts workspace tail audit + ensemble', () => {
     expect(text).toContain('owes an explanation') // null-model out-of-tolerance note
   })
 })
+
+// The operator's screenshot critique — the modal has room, so informational text
+// WRAPS; truncation is for dense tables only. These assert the four exhibits.
+describe('question-detail modal formatting law', () => {
+  const countOf = (haystack: string, needle: string): number => haystack.split(needle).length - 1
+
+  it('renders the question title ONCE, wrapping instead of truncating the tail', async () => {
+    const item = texasItem()
+    item.title = 'Will the Republican candidate win the United States Senate election in Mississippi in 2026 ULTRAWRAPTAIL'
+    const text = await renderDetail(item, 60)
+    // The full title survives (tail token present → it wrapped, was not cut with '…')...
+    expect(text).toContain('ULTRAWRAPTAIL')
+    expect(text).toContain('Mississippi')
+    // ...and the body renders the title exactly once (no duplicate header line).
+    expect(countOf(text, 'ULTRAWRAPTAIL')).toBe(1)
+  })
+
+  it('draws a real x-axis with deduped tick labels across the snapshot range', async () => {
+    const text = await renderDetail(texasItem(), 70)
+    expect(text).toContain('probability over time')
+    // Both ends of the real time range are labelled (the axis label line carries
+    // the first snapshot; the deduping itself is covered by the timeAxis unit test).
+    const axisLine = text.split('\n').find(line => line.includes('2026-05-01'))!
+    expect(axisLine).toContain('2026-05-01')
+    expect(axisLine).toContain('2026-05-29')
+    expect(countOf(axisLine, '2026-05-29')).toBe(1)
+    // ...with real tick structure, and NOT the old degenerate "date → date" line.
+    expect(text).toContain('┬')
+    expect(text).not.toContain('2026-05-01 → 2026-05-29')
+  })
+
+  it('labels a single-snapshot chart ONCE (degenerate x-axis)', async () => {
+    const item = texasItem()
+    item.history = [{ as_of: '2026-06-22T00:00:00Z', band_low: null, confidence: 0.6, headline_probability: 0.52 }]
+    const text = await renderDetail(item, 70)
+    expect(countOf(text, '2026-06-22')).toBe(1)
+  })
+
+  it('renders ensemble components on two lines with the FULL source slug (never truncated)', async () => {
+    const rows = [
+      { name: 'partisan_baseline_outside_view_reference', probability: 0.5, source: 'reference_class:2024-baseline', weight: 1.0 },
+      { name: 'kalshi market', probability: 0.58, source: 'kalshi:tx-senate-2026-general-election', weight: 0.2 },
+      { name: 'liquid market', probability: 0.54, source: 'polymarket:tx-senate', weight: 1.0 }
+    ]
+    const text = await renderDetailProps({ ensembleRows: rows, item: texasItem() })
+    expect(text).toContain('ensemble components (3)')
+    // Full slugs, in full — the old truncate(…, 20) would have cut all three.
+    expect(text).toContain('reference_class:2024-baseline')
+    expect(text).toContain('kalshi:tx-senate-2026-general-election')
+    expect(text).toContain('polymarket:tx-senate')
+    // A long component name survives in full (wrapped, not '…').
+    expect(text).toContain('partisan_baseline_outside_view_reference')
+    expect(text).toContain('w 0.20')
+    // No truncation WITHIN the ensemble section (the dense histogram above it may
+    // still abbreviate its own bucket labels — that's the table exception).
+    const lines = text.split('\n')
+    const start = lines.findIndex(line => line.includes('ensemble components (3)'))
+    const end = lines.findIndex((line, i) => i > start && line.includes('panel ('))
+    expect(lines.slice(start, end).join('\n')).not.toContain('…')
+  })
+
+  it('aligns the panel grid — value column and ±pt end column share one column across all rows', async () => {
+    const text = await renderDetail(texasItem(), 70)
+    const lines = text.split('\n')
+    const start = lines.findIndex(line => line.includes('panel (3 perspectives)'))
+    const end = lines.findIndex((line, i) => i > start && line.includes('trimmed mean'))
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    const panelLines = lines.slice(start + 1, end)
+
+    // Every row carrying a percent value (aggregate / range / each perspective)
+    // right-aligns it in the SAME value column.
+    const pctCols = panelLines.filter(line => /\d%/.test(line)).map(line => line.indexOf('%'))
+    expect(pctCols.length).toBeGreaterThanOrEqual(4)
+    expect(new Set(pctCols).size).toBe(1)
+
+    // The ±pt delta markers land in the same fixed end column across perspectives.
+    const deltaCols = panelLines.filter(line => /[+-]\d+pt/.test(line)).map(line => line.indexOf('pt'))
+    expect(deltaCols.length).toBe(3)
+    expect(new Set(deltaCols).size).toBe(1)
+
+    // No perspective name is cut with an ellipsis.
+    expect(panelLines.join('\n')).not.toContain('…')
+  })
+})
