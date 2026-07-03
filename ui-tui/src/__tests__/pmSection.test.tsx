@@ -297,14 +297,14 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 // Mount MarketsView in its own temp home, seeded so the predictionmarkets
 // provider is the ONLY one enabled → the Prediction tab is the active Data tab
 // on first paint (no `p` keypress needed for the common case).
-const mount = async (providers = ['predictionmarkets']) => {
+const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<typeof fakeGw>) => {
   process.env.FORECAST_TUI_INLINE = '1'
   const home = mkdtempSync(join(tmpdir(), 'pm-section-'))
   process.env.SUPERFORECASTING_AGENT_HOME = home
   writeFileSync(join(home, 'markets.json'), JSON.stringify({ categories: [], custom: [], providers, watchlist: [] }))
 
   const calls: Call[] = []
-  const gw = fakeGw(calls)
+  const gw = gwOverride ?? fakeGw(calls)
 
   const [{ render }, { MarketsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
     import('@hermes/ink'),
@@ -647,5 +647,39 @@ describe('packPmHead / packPmOutcome', () => {
     const { packPmOutcome } = await import('../lib/pmRows.js')
     expect(packPmOutcome(100).cols.map(c => c.key)).toEqual(['prob', 'ba', 'vol'])
     expect(packPmOutcome(20).labelW).toBeGreaterThanOrEqual(6)
+  })
+})
+
+describe('deep venue search via /', () => {
+  it('the / query fires pm.list {query} after a debounce and merges full-catalog results', async () => {
+    const calls: Call[] = []
+    const gw = fakeGw(calls)
+    const base = gw.request.bind(gw)
+    // The weather event exists ONLY behind a server query — never in the
+    // browse page (it sits thousands of events deep in the real catalogs).
+    gw.request = (method: string, params: Record<string, unknown> = {}) => {
+      if (method === 'pm.list' && typeof params.query === 'string' && params.query.includes('weather')) {
+        calls.push({ method, params })
+        const wx = fedItem()
+        wx.distribution.event_id = 'WX'
+        wx.distribution.title = 'Max weather temperature above 90F on Jul 4?'
+        wx.event.event_id = 'WX'
+        wx.event.title = 'Max weather temperature above 90F on Jul 4?'
+
+        return Promise.resolve({ count: 1, events: [wx] })
+      }
+
+      return base(method, params)
+    }
+    const m = await mount(['predictionmarkets'], gw)
+    expect(m.text()).not.toContain('Max weather')
+    await m.press('/')
+    await m.press('weather')
+    // Debounce (450ms) then the server search lands and merges into the pool.
+    await tick(750)
+    const text = m.text()
+    expect(calls.some(c => c.method === 'pm.list' && c.params.query === 'weather')).toBe(true)
+    expect(text).toContain('Max weather')
+    m.cleanup()
   })
 })

@@ -1194,7 +1194,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             </Text>
           ) : null}
           <Text color={t.color.muted}>
-            {`   ${searchActive ? `${pmTabActive ? pm.matchCount : visibleRows.length} matches · ` : ''}${searchMode ? '⏎ done · Esc clear' : '/ refine · Esc clear'}`}
+            {`   ${searchActive ? `${pmTabActive ? pm.matchCount : visibleRows.length} matches${pmTabActive && pm.searching ? ' · ⌕ searching venues…' : ''} · ` : ''}${searchMode ? '⏎ done · Esc clear' : '/ refine · Esc clear'}`}
           </Text>
         </Text>
       ) : (

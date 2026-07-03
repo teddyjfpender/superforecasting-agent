@@ -8,7 +8,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { openExternalUrl } from './openExternalUrl.js'
-import { type PMHistoryRange, type PMOutcomeDTO, type PMVenue } from './pmData.js'
+import { type PMHistoryRange, type PMOutcomeDTO, type PMVenue,
+  fetchPMList,
+  type PMListItem
+} from './pmData.js'
 import {
   DEFAULT_PM_FILTER,
   filterPMItems,
@@ -59,6 +62,7 @@ export interface PmSection {
   loading: boolean
   matchCount: number
   openMarket: () => void
+  searching: boolean
   reload: () => void
   rowCount: number
   rows: PMDisplayRow[]
@@ -105,9 +109,60 @@ export function usePmSection(
 
   const { items, loading, reload } = usePmList(gw, tabActive, venue)
 
+  // DEEP venue search: the browse list is one liquidity-ranked page, so the
+  // local '/' filter can only ever match what happens to be loaded — the
+  // operator kept "not seeing the weather markets" even after the server
+  // learned to search the FULL catalogs (Gamma public-search + the Kalshi
+  // series scan). A debounced pm.list {query} makes '/' reach them: results
+  // merge (deduped) into the pool and vanish when the query clears.
+  const [searchItems, setSearchItems] = useState<null | PMListItem[]>(null)
+  const [searching, setSearching] = useState(false)
+  const query = searchInput.trim()
+  useEffect(() => {
+    if (!gw || !tabActive || query.length < 3) {
+      setSearchItems(null)
+      setSearching(false)
+
+      return
+    }
+
+    setSearching(true)
+    let cancelled = false
+    const id = setTimeout(() => {
+      fetchPMList(gw, { limit: 30, query, ...(venue === 'all' ? {} : { venue }) })
+        .then(found => {
+          if (!cancelled) {
+            setSearchItems(found)
+            setSearching(false)
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setSearchItems(null)
+            setSearching(false)
+          }
+        })
+    }, 450)
+
+    return () => {
+      cancelled = true
+      clearTimeout(id)
+    }
+  }, [gw, tabActive, query, venue])
+
+  const pool = useMemo(() => {
+    if (!searchItems?.length) {
+      return items
+    }
+
+    const seen = new Set(items.map(i => i.event.event_id))
+
+    return [...items, ...searchItems.filter(s => !seen.has(s.event.event_id))]
+  }, [items, searchItems])
+
   // Structured filter first (venue · topic · vol · prob · sports), then rank by
   // the `/` text query — the two compose, and sort rides on top of both.
-  const structured = useMemo(() => filterPMSection(items, filter), [items, filter])
+  const structured = useMemo(() => filterPMSection(pool, filter), [pool, filter])
   const filtered = useMemo(() => filterPMItems(structured, searchInput), [structured, searchInput])
   const sort = useTableSort(PM_SORT_KEYS)
 
@@ -288,6 +343,7 @@ export function usePmSection(
     matchCount: filtered.length,
     openMarket,
     reload,
+    searching,
     rowCount: rows.length,
     rows,
     sel: clampedSel,
