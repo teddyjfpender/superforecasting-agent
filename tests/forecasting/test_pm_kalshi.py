@@ -115,3 +115,34 @@ def test_text_query_paginates_the_catalog():
     found = client.list_events(query=target["title"][:10].lower(), limit=5)
     assert len(found) == 1 and found[0].title == target["title"]
     assert len(calls) == 2, "must have followed the cursor to page 2"
+
+
+def test_untraded_market_last_price_zero_is_no_estimate():
+    """Kalshi reports last_price=0 for untraded markets: that is 'no trade',
+    never a 0.00% probability (with a 0/100 book the degenerate guard already
+    voids the mid, so last_price is the live fallback path)."""
+    from forecasting.pm.kalshi import parse_market
+
+    dead = parse_market({
+        "ticker": "KXDEAD-1",
+        "yes_sub_title": "Nobody",
+        "title": "Will nobody win?",
+        "yes_bid": 0,
+        "yes_ask": 100,
+        "last_price": 0,
+        "volume": 0,
+    })
+    assert dead.last_price is None
+    assert dead.yes_mid is None
+
+    traded = parse_market({
+        "ticker": "KXLIVE-1",
+        "yes_sub_title": "Someone",
+        "title": "Will someone win?",
+        "yes_bid": 0,
+        "yes_ask": 100,
+        "last_price": 4,
+        "volume": 1200,
+    })
+    assert traded.last_price == 0.04
+    assert traded.yes_mid == 0.04

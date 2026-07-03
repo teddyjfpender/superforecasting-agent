@@ -51,6 +51,11 @@ def _price(raw: dict, dollar_key: str, cents_key: str) -> float | None:
     return None if cents is None else cents / 100.0
 
 
+def _nonzero_price(raw: dict, dollar_key: str, cents_key: str) -> float | None:
+    value = _price(raw, dollar_key, cents_key)
+    return None if value is None or value <= 0.0 else value
+
+
 def _market_url(ticker: str | None) -> str | None:
     return f"https://kalshi.com/markets/{ticker}" if ticker else None
 
@@ -66,7 +71,10 @@ def parse_market(raw: dict, *, event_id: str | None = None) -> PMMarket:
         event_id=event_id or (str(raw.get("event_ticker")) if raw.get("event_ticker") else None),
         yes_bid=_price(raw, "yes_bid_dollars", "yes_bid"),
         yes_ask=_price(raw, "yes_ask_dollars", "yes_ask"),
-        last_price=_price(raw, "last_price_dollars", "last_price"),
+        # last_price=0 on Kalshi means NO TRADE YET, not a 0% probability —
+        # feeding it through as 0.0 would render dead markets as "0.00%"
+        # (the same fabrication class as the placeholder-outcomePrices bug).
+        last_price=_nonzero_price(raw, "last_price_dollars", "last_price"),
         volume=_to_float(raw.get("volume_fp")) if raw.get("volume_fp") is not None else _to_float(raw.get("volume")),
         open_interest=_to_float(raw.get("open_interest_fp")) if raw.get("open_interest_fp") is not None else _to_float(raw.get("open_interest")),
         close_time=(str(raw.get("close_time")) if raw.get("close_time") else None),

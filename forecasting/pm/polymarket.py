@@ -70,16 +70,19 @@ def parse_market(raw: dict, *, event_id: str | None = None, event_slug: str | No
     prices = _json_list(raw.get("outcomePrices"))
     outcomes = [str(o).lower() for o in _json_list(raw.get("outcomes"))]
     last_price = _to_float(raw.get("lastTradePrice"))
-    # A binary child carries ["Yes","No"] outcomePrices — the YES price is the last
-    # trade proxy when no live quote exists.
-    if last_price is None and prices and "yes" in outcomes:
-        last_price = _to_float(prices[outcomes.index("yes")])
-    elif last_price is None and prices:
-        last_price = _to_float(prices[0])
     label = str(raw.get("groupItemTitle") or raw.get("question") or "").strip() or "Yes"
     volume = _to_float(raw.get("volumeNum"))
     if volume is None:
         volume = _to_float(raw.get("volume"))
+    # outcomePrices is only a last-trade PROXY where trading actually happened:
+    # dead placeholder markets carry ~[0.49, 0.51] defaults, and using them as
+    # last_price resurrects the fabricated ~50% the degenerate-book guard just
+    # killed (masked in dedup'd events, live wherever no liquid twin exists).
+    if last_price is None and prices and (volume or 0.0) > 0.0:
+        if "yes" in outcomes:
+            last_price = _to_float(prices[outcomes.index("yes")])
+        else:
+            last_price = _to_float(prices[0])
     return PMMarket(
         venue=VENUE,
         market_id=str(raw.get("conditionId") or raw.get("id") or (token_ids[0] if token_ids else "")),

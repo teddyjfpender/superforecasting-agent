@@ -93,3 +93,38 @@ def test_text_query_uses_full_catalog_search():
     client2 = PolymarketClient(fetch=_failing)
     found2 = client2.list_events(query=ev["title"][:8].lower(), limit=10)
     assert len(found2) == 1
+
+
+def test_dead_placeholder_market_yields_no_estimate():
+    """The RFK dead-twin RAW shape, straight through the parser: no bid, a lone
+    98c ask, placeholder outcomePrices [0.49, 0.51], zero volume. Without the
+    volume gate the outcomePrices fallback resurrects a fabricated ~49%."""
+    from forecasting.pm.polymarket import parse_market
+
+    dead = parse_market({
+        "conditionId": "0xdead",
+        "groupItemTitle": "Robert F. Kennedy Jr.",
+        "question": "Will RFK Jr. win?",
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0.49", "0.51"]',
+        "bestBid": None,
+        "bestAsk": 0.98,
+        "lastTradePrice": None,
+        "volumeNum": 0,
+    })
+    assert dead.last_price is None
+    assert dead.yes_mid is None, f"dead market must have NO estimate, got {dead.yes_mid}"
+
+    # The same shape WITH real volume keeps the outcomePrices last-trade proxy.
+    traded = parse_market({
+        "conditionId": "0xlive",
+        "groupItemTitle": "X",
+        "question": "q",
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0.0085", "0.9915"]',
+        "bestBid": None,
+        "bestAsk": None,
+        "lastTradePrice": None,
+        "volumeNum": 250000,
+    })
+    assert traded.yes_mid == 0.0085
