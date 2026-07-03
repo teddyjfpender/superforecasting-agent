@@ -424,6 +424,19 @@ FORECAST_LEDGER_SCHEMA = {
                     "forecasts regardless — see the process discipline."
                 ),
             },
+            "preview": {
+                "type": "boolean",
+                "description": (
+                    "update_forecast: PREVIEW FIRST. Run every gate and saturation scoring "
+                    "WITHOUT writing a snapshot — the result carries the saturation score, its "
+                    "advisories, and any blockers a commit would raise. See them, FIX them "
+                    "(add the panel / components / structured reasoning / clean the style), "
+                    "THEN commit ONCE with preview omitted. Never commit-then-remediate: do "
+                    "not save a snapshot just to read its advisories and immediately re-save a "
+                    "cleaned one. A preview starts NO quorum, writes NO brief, and pins the "
+                    "snapshot count. Returns {preview:true, would_commit, saturation, blockers}."
+                ),
+            },
             "panel_run_ref": {
                 "type": "string",
                 "description": (
@@ -2024,6 +2037,11 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
 
         if action == "update_forecast":
             question_id = _required(args, "question_id")
+            # PREVIEW FIRST: when set, run the full gate/saturation pass WITHOUT writing
+            # a snapshot (no brief, no quorum, no annotate, no inline reference-class
+            # write) and return the verdict so the agent fixes advisories/blockers and
+            # commits ONCE — never commit-then-remediate.
+            preview_flag = bool(args.get("preview", False))
             components = args.get("components") or {}
             # Accept the schema-advertised aliases so an agent can pass
             # probability_or_distribution / proposed_probability_or_distribution
@@ -2114,7 +2132,12 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 )
                 if _existing is not None:
                     _rc_refs.append(_existing["id"])
-                else:
+                elif not preview_flag:
+                    # A preview writes nothing: don't create the inline reference class
+                    # (the real commit will). Its would-be link is simply absent from the
+                    # preview's outside-view signal; the advisories that drive the
+                    # commit-then-remediate churn (reasoning/components/panel/style) are
+                    # unaffected.
                     _created_rc = ledger.add_reference_class(
                         question_id=question_id,
                         name=_rc_name,
@@ -2193,7 +2216,21 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 # commit — the evidence floor + profile promotions become real for the
                 # agent path, while direct/programmatic callers stay observe-only.
                 enforce_resolved_hooks=True,
+                preview=preview_flag,
             )
+            if preview_flag:
+                # snapshot is a preview record (dict), NOT a committed snapshot. Nothing
+                # was written: skip the brief, the auto-quorum, and annotate_snapshot —
+                # all post-commit machinery. Surface the saturation summary the same way
+                # the real path does so the agent reads "would commit at 78/100, 2
+                # advisories" (or the blockers) and commits ONCE after fixing them.
+                _pv = snapshot if isinstance(snapshot, dict) else {}
+                _pv_sat = saturation_summary(_pv.get("saturation")) if _pv.get("would_commit") else None
+                return tool_result(
+                    success=True,
+                    preview=_pv,
+                    **({"saturation": _pv_sat} if _pv_sat is not None else {}),
+                )
             try:
                 from forecasting.writeup import write_brief
 

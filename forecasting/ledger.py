@@ -2730,704 +2730,733 @@ class ForecastLedger:
         require_output_structure: bool = True,
         distribution_autofix: bool = False,
         enforce_resolved_hooks: bool = False,
-    ) -> ForecastSnapshot:
-        _enforce_write_gate("create_snapshot")
-        question = self.get_question(question_id)
-        # Forecast hooks: saturation/style gates raise SaturationBlocked (a
-        # ValidationError subclass with a byte-identical message) so the report —
-        # the failing rule + its remediation — propagates to the interactive tool
-        # and the programmatic escalator. Non-saturation ValidationErrors stay plain.
-        from forecasting.hooks import SaturationBlocked, single_block
-        from forecasting.hooks.spec import Category as _HookCategory
+        preview: bool = False,
+    ) -> "ForecastSnapshot | dict[str, Any]":
+        # PREVIEW (preview=True): run every gate + saturation/observe scoring
+        # IDENTICALLY up to the first ledger WRITE, then return a preview record
+        # instead of inserting — the caller SEES the saturation score, advisories,
+        # and blockers WITHOUT committing, so it fixes them and commits ONCE (this
+        # kills the commit-then-remediate churn the Senate-batch audit surfaced). A
+        # gate that would REFUSE the commit surfaces as {would_commit: False,
+        # blockers:[...]} rather than raising. The write gate is skipped (preview
+        # writes nothing; the connection-level authorizer is the backstop for any
+        # accidental INSERT). All pre-insert work here is read-only/in-memory and
+        # all post-insert machinery is naturally skipped by returning before it.
+        if not preview:
+            _enforce_write_gate("create_snapshot")
+        try:
+            question = self.get_question(question_id)
+            # Forecast hooks: saturation/style gates raise SaturationBlocked (a
+            # ValidationError subclass with a byte-identical message) so the report —
+            # the failing rule + its remediation — propagates to the interactive tool
+            # and the programmatic escalator. Non-saturation ValidationErrors stay plain.
+            from forecasting.hooks import SaturationBlocked, single_block
+            from forecasting.hooks.spec import Category as _HookCategory
 
-        if forecast_origin not in FORECAST_ORIGINS:
-            raise ValidationError(f"forecast_origin must be one of {', '.join(sorted(FORECAST_ORIGINS))}")
-        # Exploratory forecasts are scratchpad thinking — never scored, and
-        # exempt from the commit-time formalities below (the gates all key on
-        # forecast_origin == "live"). Commit a live forecast to put it on the
-        # record.
-        if forecast_origin == "exploratory":
-            calibration_eligible = False
-        payload = self._validate_probability_payload(probability_or_distribution, question.outcome_space)
-        if not rationale.strip():
-            raise ValidationError("forecast rationale is required")
-        if confidence is not None and not (0 <= confidence <= 1):
-            raise ValidationError("confidence must be between 0 and 1")
-        if calibration_weight < 0:
-            raise ValidationError("calibration_weight must be non-negative")
-        reasons_up_list = _normalize_reason_list(reasons_up, field="reasons_up")
-        reasons_down_list = _normalize_reason_list(reasons_down, field="reasons_down")
-        change_my_mind_list = _normalize_reason_list(change_my_mind, field="change_my_mind")
-        if require_structured_reasoning and forecast_origin == "live":
-            missing_reasoning = []
-            if not reasons_up_list:
-                missing_reasoning.append("reasons_up")
-            if not reasons_down_list:
-                missing_reasoning.append("reasons_down")
-            if not change_my_mind_list:
-                missing_reasoning.append("change_my_mind")
-            if missing_reasoning:
-                raise single_block(
-                    "require_structured_reasoning",
-                    "live forecast requires structured reasoning fields: "
-                    + ", ".join(missing_reasoning)
-                    + ". Provide reasons_up/reasons_down/change_my_mind, rerun with "
-                    "require_structured_reasoning=false, or record it as "
-                    "forecast_origin='exploratory'.",
-                    action="decompose",
+            if forecast_origin not in FORECAST_ORIGINS:
+                raise ValidationError(f"forecast_origin must be one of {', '.join(sorted(FORECAST_ORIGINS))}")
+            # Exploratory forecasts are scratchpad thinking — never scored, and
+            # exempt from the commit-time formalities below (the gates all key on
+            # forecast_origin == "live"). Commit a live forecast to put it on the
+            # record.
+            if forecast_origin == "exploratory":
+                calibration_eligible = False
+            payload = self._validate_probability_payload(probability_or_distribution, question.outcome_space)
+            if not rationale.strip():
+                raise ValidationError("forecast rationale is required")
+            if confidence is not None and not (0 <= confidence <= 1):
+                raise ValidationError("confidence must be between 0 and 1")
+            if calibration_weight < 0:
+                raise ValidationError("calibration_weight must be non-negative")
+            reasons_up_list = _normalize_reason_list(reasons_up, field="reasons_up")
+            reasons_down_list = _normalize_reason_list(reasons_down, field="reasons_down")
+            change_my_mind_list = _normalize_reason_list(change_my_mind, field="change_my_mind")
+            if require_structured_reasoning and forecast_origin == "live":
+                missing_reasoning = []
+                if not reasons_up_list:
+                    missing_reasoning.append("reasons_up")
+                if not reasons_down_list:
+                    missing_reasoning.append("reasons_down")
+                if not change_my_mind_list:
+                    missing_reasoning.append("change_my_mind")
+                if missing_reasoning:
+                    raise single_block(
+                        "require_structured_reasoning",
+                        "live forecast requires structured reasoning fields: "
+                        + ", ".join(missing_reasoning)
+                        + ". Provide reasons_up/reasons_down/change_my_mind, rerun with "
+                        "require_structured_reasoning=false, or record it as "
+                        "forecast_origin='exploratory'.",
+                        action="decompose",
+                    )
+            if require_components and forecast_origin == "live":
+                # A serious live forecast must show its work: the pooled drivers
+                # (base rate, mechanism, market/crowd, case-specific factors) in the
+                # structured ensemble_components field, not a bare number. This is
+                # the gate that stops snapshots collapsing into an under-specified
+                # point estimate.
+                component_rows = ensemble_components
+                if isinstance(component_rows, dict):
+                    component_rows = component_rows.get("components", component_rows)
+                has_components = bool(component_rows) and (
+                    len(component_rows) > 0 if isinstance(component_rows, (list, dict)) else False
                 )
-        if require_components and forecast_origin == "live":
-            # A serious live forecast must show its work: the pooled drivers
-            # (base rate, mechanism, market/crowd, case-specific factors) in the
-            # structured ensemble_components field, not a bare number. This is
-            # the gate that stops snapshots collapsing into an under-specified
-            # point estimate.
-            component_rows = ensemble_components
-            if isinstance(component_rows, dict):
-                component_rows = component_rows.get("components", component_rows)
-            has_components = bool(component_rows) and (
-                len(component_rows) > 0 if isinstance(component_rows, (list, dict)) else False
-            )
-            if not has_components:
-                raise single_block(
-                    "require_components",
-                    "live forecast requires ensemble_components: decompose the estimate "
-                    "into pooled drivers (base rate, mechanism, market/crowd, case-specific "
-                    "factors), each with a stable source slug. Provide ensemble_components, "
-                    "rerun with require_components=false, or record it as "
-                    "forecast_origin='exploratory'.",
-                    action="decompose",
-                )
+                if not has_components:
+                    raise single_block(
+                        "require_components",
+                        "live forecast requires ensemble_components: decompose the estimate "
+                        "into pooled drivers (base rate, mechanism, market/crowd, case-specific "
+                        "factors), each with a stable source slug. Provide ensemble_components, "
+                        "rerun with require_components=false, or record it as "
+                        "forecast_origin='exploratory'.",
+                        action="decompose",
+                    )
 
-        # Re-run discipline: a re-run is not a retrieval. When asked (the agent's
-        # update path sets this by default), refuse to commit a new live snapshot
-        # if a prior forecast exists and NO fresh evidence was collected since it
-        # — stopping the agent from re-estimating off stale ledger evidence and
-        # perpetuating a hedge. "Fresh" is measured tie-proof by the evidence
-        # count recorded on the prior snapshot (timestamp fallback for snapshots
-        # predating this field). The deterministic `forecast refresh` path imports
-        # fresh readings first and does not set this; a genuine no-change re-run
-        # can acknowledge_stale_evidence or record forecast_origin='exploratory'.
-        evidence_count_at_commit: int | None = None
-        if forecast_origin == "live":
-            # Always count live evidence so the evidence-floor gate (require_evidence)
-            # sees the true count; the fresh-evidence RE-RUN check layers on top of it
-            # and only applies when require_fresh_evidence is set.
-            evidence_now = self.list_evidence(question_id)
-            evidence_count_at_commit = len(evidence_now)
-            if require_fresh_evidence and not acknowledge_stale_evidence:
-                prior = self.get_current_snapshot(question_id)
-                if prior is not None:
-                    prior_count = (prior.metadata or {}).get("evidence_count_at_commit")
-                    if isinstance(prior_count, int):
-                        has_fresh = evidence_count_at_commit > prior_count
-                    else:
-                        prior_ts = prior.created_at or prior.as_of or ""
-                        has_fresh = any((item.captured_at or "") > prior_ts for item in evidence_now)
-                    if not has_fresh:
+            # Re-run discipline: a re-run is not a retrieval. When asked (the agent's
+            # update path sets this by default), refuse to commit a new live snapshot
+            # if a prior forecast exists and NO fresh evidence was collected since it
+            # — stopping the agent from re-estimating off stale ledger evidence and
+            # perpetuating a hedge. "Fresh" is measured tie-proof by the evidence
+            # count recorded on the prior snapshot (timestamp fallback for snapshots
+            # predating this field). The deterministic `forecast refresh` path imports
+            # fresh readings first and does not set this; a genuine no-change re-run
+            # can acknowledge_stale_evidence or record forecast_origin='exploratory'.
+            evidence_count_at_commit: int | None = None
+            if forecast_origin == "live":
+                # Always count live evidence so the evidence-floor gate (require_evidence)
+                # sees the true count; the fresh-evidence RE-RUN check layers on top of it
+                # and only applies when require_fresh_evidence is set.
+                evidence_now = self.list_evidence(question_id)
+                evidence_count_at_commit = len(evidence_now)
+                if require_fresh_evidence and not acknowledge_stale_evidence:
+                    prior = self.get_current_snapshot(question_id)
+                    if prior is not None:
+                        prior_count = (prior.metadata or {}).get("evidence_count_at_commit")
+                        if isinstance(prior_count, int):
+                            has_fresh = evidence_count_at_commit > prior_count
+                        else:
+                            prior_ts = prior.created_at or prior.as_of or ""
+                            has_fresh = any((item.captured_at or "") > prior_ts for item in evidence_now)
+                        if not has_fresh:
+                            raise single_block(
+                                "require_fresh_evidence",
+                                "re-run blocked: no fresh evidence collected since the prior forecast "
+                                f"({prior.forecast_id}, as_of {prior.as_of}). Re-running a forecast must "
+                                "start from fresh readings — run `forecast refresh <id>` (re-fetches "
+                                "watched sources and re-pools) or import_source_evidence for each driver "
+                                "to pull the latest data, THEN update. If you have genuinely checked and "
+                                "nothing has changed, set acknowledge_stale_evidence=true (CLI "
+                                "--ack-stale-evidence), or record it as forecast_origin='exploratory'.",
+                                action="collect_evidence",
+                            )
+
+            if require_decision_readiness and forecast_origin == "live":
+                readiness_issues = question_decision_readiness_issues(question)
+                if readiness_issues:
+                    raise single_block(
+                        "require_decision_readiness",
+                        "forecast update blocked by missing decision context: "
+                        + "; ".join(readiness_issues)
+                        + ". Set decision_owner, action_threshold, and update_triggers "
+                        "on the question, or rerun without require_decision_readiness.",
+                        category=_HookCategory.DECISION,
+                    )
+
+            now = utc_now_iso()
+            as_of_ts = parse_timestamp(as_of, field_name="as_of") or now
+            cutoff_ts = parse_timestamp(evidence_cutoff, field_name="evidence_cutoff")
+            effective_cutoff = cutoff_ts or as_of_ts
+            self._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
+            snapshot_metadata = dict(metadata or {})
+            # Baseline for the next re-run's fresh-evidence gate (tie-proof count).
+            if evidence_count_at_commit is not None:
+                snapshot_metadata.setdefault("evidence_count_at_commit", evidence_count_at_commit)
+
+            # Panel formality. A deliberative panel — independent multi-perspective
+            # estimates aggregated into a spread — is *indicated* for high-impact
+            # questions and for the first forecast on any question (see
+            # should_run_panel). For a high-impact live forecast we hard-require
+            # evidence one ran (a panel run linked via panel_run_ref) OR an explicit
+            # recorded reason for skipping it; the cost of a single-model miss is
+            # highest there. For a non-high-impact first forecast the panel is only
+            # recommended (recorded as a note), so routine and exploratory research
+            # stays unencumbered. Exploratory snapshots are exempt entirely.
+            # Read the linked panel run at most ONCE per commit; reused below for the
+            # terminal-calibration + quorum-participation signals (no N+1).
+            _linked_panel: dict[str, Any] | None = None
+            if forecast_origin == "live":
+                from forecasting.panel import should_run_panel  # local import avoids cycle
+
+                if panel_run_ref:
+                    _linked_panel = self.get_panel_run(panel_run_ref)
+                    if _linked_panel["question_id"] != question_id:
+                        raise ValidationError("panel_run_ref belongs to a different question")
+                panel_skip = (panel_skipped_reason or "").strip()
+                high_impact = (question.impact or "").strip().lower() == "high"
+                has_prior = bool(question.current_forecast_id)
+                panel_indicated = should_run_panel(
+                    impact=question.impact,
+                    has_prior_snapshot=has_prior,
+                )
+                # A re-commitment of an existing live forecast is the highest-risk
+                # path for silently inheriting the prior's biases, so it binds the
+                # panel just like a high-impact forecast — even though should_run_panel
+                # treats a non-high-impact re-run as not-indicated (its rationale is the
+                # first-forecast baseline). Scoped to callers that opt into require_panel
+                # (the agent's update_forecast tool defaults it True); programmatic
+                # re-pools pass a panel_skipped_reason and are exempt below.
+                panel_required_here = require_panel and (high_impact or has_prior)
+                if (panel_indicated or panel_required_here) and not panel_run_ref and not panel_skip:
+                    if panel_required_here:
+                        why = "high-impact" if high_impact else "re-committed (a prior live snapshot exists)"
                         raise single_block(
-                            "require_fresh_evidence",
-                            "re-run blocked: no fresh evidence collected since the prior forecast "
-                            f"({prior.forecast_id}, as_of {prior.as_of}). Re-running a forecast must "
-                            "start from fresh readings — run `forecast refresh <id>` (re-fetches "
-                            "watched sources and re-pools) or import_source_evidence for each driver "
-                            "to pull the latest data, THEN update. If you have genuinely checked and "
-                            "nothing has changed, set acknowledge_stale_evidence=true (CLI "
-                            "--ack-stale-evidence), or record it as forecast_origin='exploratory'.",
-                            action="collect_evidence",
+                            "require_panel",
+                            f"{why} live forecast requires a deliberative panel: run a "
+                            "panel or quorum and pass panel_run_ref, record why you skipped it "
+                            "with panel_skipped_reason, rerun with require_panel=false, or record "
+                            "it as forecast_origin='exploratory'.",
+                            action="run_panel",
                         )
-
-        if require_decision_readiness and forecast_origin == "live":
-            readiness_issues = question_decision_readiness_issues(question)
-            if readiness_issues:
-                raise single_block(
-                    "require_decision_readiness",
-                    "forecast update blocked by missing decision context: "
-                    + "; ".join(readiness_issues)
-                    + ". Set decision_owner, action_threshold, and update_triggers "
-                    "on the question, or rerun without require_decision_readiness.",
-                    category=_HookCategory.DECISION,
-                )
-
-        now = utc_now_iso()
-        as_of_ts = parse_timestamp(as_of, field_name="as_of") or now
-        cutoff_ts = parse_timestamp(evidence_cutoff, field_name="evidence_cutoff")
-        effective_cutoff = cutoff_ts or as_of_ts
-        self._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
-        snapshot_metadata = dict(metadata or {})
-        # Baseline for the next re-run's fresh-evidence gate (tie-proof count).
-        if evidence_count_at_commit is not None:
-            snapshot_metadata.setdefault("evidence_count_at_commit", evidence_count_at_commit)
-
-        # Panel formality. A deliberative panel — independent multi-perspective
-        # estimates aggregated into a spread — is *indicated* for high-impact
-        # questions and for the first forecast on any question (see
-        # should_run_panel). For a high-impact live forecast we hard-require
-        # evidence one ran (a panel run linked via panel_run_ref) OR an explicit
-        # recorded reason for skipping it; the cost of a single-model miss is
-        # highest there. For a non-high-impact first forecast the panel is only
-        # recommended (recorded as a note), so routine and exploratory research
-        # stays unencumbered. Exploratory snapshots are exempt entirely.
-        # Read the linked panel run at most ONCE per commit; reused below for the
-        # terminal-calibration + quorum-participation signals (no N+1).
-        _linked_panel: dict[str, Any] | None = None
-        if forecast_origin == "live":
-            from forecasting.panel import should_run_panel  # local import avoids cycle
-
+                    # First-forecast panels on lower-impact questions are recommended,
+                    # not required — leave a note the agent/guidance can surface.
+                    snapshot_metadata["panel_recommended"] = True
+                if panel_skip:
+                    snapshot_metadata["panel_skipped_reason"] = panel_skip
+                # Mirror the panel-skip escape hatch for the freshness one: if a live
+                # forecast acknowledges stale evidence, record WHY so the bypass is
+                # explained + auditable (the stale_evidence_justified rule WARNs when
+                # acknowledged without a reason).
+                stale_reason = (stale_evidence_reason or "").strip()
+                if stale_reason:
+                    snapshot_metadata["stale_evidence_reason"] = stale_reason
+                if acknowledge_stale_evidence and has_prior:
+                    # mark the bypass so a later lint/doctor re-read can surface it even
+                    # when no reason was given (the WARN state)
+                    snapshot_metadata["acknowledge_stale_evidence"] = True
             if panel_run_ref:
-                _linked_panel = self.get_panel_run(panel_run_ref)
-                if _linked_panel["question_id"] != question_id:
-                    raise ValidationError("panel_run_ref belongs to a different question")
-            panel_skip = (panel_skipped_reason or "").strip()
-            high_impact = (question.impact or "").strip().lower() == "high"
-            has_prior = bool(question.current_forecast_id)
-            panel_indicated = should_run_panel(
-                impact=question.impact,
-                has_prior_snapshot=has_prior,
-            )
-            # A re-commitment of an existing live forecast is the highest-risk
-            # path for silently inheriting the prior's biases, so it binds the
-            # panel just like a high-impact forecast — even though should_run_panel
-            # treats a non-high-impact re-run as not-indicated (its rationale is the
-            # first-forecast baseline). Scoped to callers that opt into require_panel
-            # (the agent's update_forecast tool defaults it True); programmatic
-            # re-pools pass a panel_skipped_reason and are exempt below.
-            panel_required_here = require_panel and (high_impact or has_prior)
-            if (panel_indicated or panel_required_here) and not panel_run_ref and not panel_skip:
-                if panel_required_here:
-                    why = "high-impact" if high_impact else "re-committed (a prior live snapshot exists)"
+                # PROVENANCE: the panel that underwrote this commit was previously
+                # consumed by the gates and DISCARDED — a post-hoc audit could not
+                # verify "committed with panel pr_..." from the record itself (the
+                # operator's Senate-batch review hit exactly this). Stamp it.
+                snapshot_metadata["panel_run_ref"] = panel_run_ref
+
+            if require_citations and forecast_origin == "live":
+                citation_refs = [
+                    *(evidence_refs or []),
+                    *(model_run_refs or []),
+                    *(reference_class_refs or []),
+                    *(source_snapshot_refs or []),
+                    *(assumption_refs or []),
+                    *(calibration_lesson_refs or []),
+                ]
+                if not citation_refs:
                     raise single_block(
-                        "require_panel",
-                        f"{why} live forecast requires a deliberative panel: run a "
-                        "panel or quorum and pass panel_run_ref, record why you skipped it "
-                        "with panel_skipped_reason, rerun with require_panel=false, or record "
+                        "require_citations",
+                        "live forecast requires citations: add evidence/model/reference/source refs, "
+                        "rerun with require_citations=false, or record it as forecast_origin='exploratory'",
+                        action="collect_evidence",
+                    )
+                snapshot_metadata["citation_policy"] = "required"
+            # Probability-mass audit for CATEGORICAL forecasts: route every
+            # material outcome through a named mechanism so mass can't be spread
+            # across answer-choice labels by default (outcome-space anchoring).
+            # Always recorded for auditability; only ENFORCED when the caller opts
+            # in via require_outcome_paths on a live forecast.
+            if question.outcome_space.type == "categorical" and isinstance(payload, dict):
+                from forecasting.tail_audit import audit_outcomes, outcome_paths_from_inputs
+
+                audit = audit_outcomes(outcome_paths_from_inputs(payload, outcome_paths))
+                snapshot_metadata["tail_audit"] = audit.to_dict()
+                if require_outcome_paths and forecast_origin == "live" and not audit.passes:
+                    offenders = [v.name for v in audit.verdicts if v.unearned]
+                    raise single_block(
+                        "require_outcome_paths",
+                        "live categorical forecast has unearned tail mass "
+                        f"({audit.unearned_mass:.1%}) on outcomes with no named path: "
+                        f"{', '.join(offenders)}. Name the mechanism for each (pass "
+                        "outcome_paths / --outcome-path), compress the mass onto outcomes "
+                        "with a live path, rerun with require_outcome_paths=false, or record "
                         "it as forecast_origin='exploratory'.",
-                        action="run_panel",
+                        action="compress_tails",
                     )
-                # First-forecast panels on lower-impact questions are recommended,
-                # not required — leave a note the agent/guidance can surface.
-                snapshot_metadata["panel_recommended"] = True
-            if panel_skip:
-                snapshot_metadata["panel_skipped_reason"] = panel_skip
-            # Mirror the panel-skip escape hatch for the freshness one: if a live
-            # forecast acknowledges stale evidence, record WHY so the bypass is
-            # explained + auditable (the stale_evidence_justified rule WARNs when
-            # acknowledged without a reason).
-            stale_reason = (stale_evidence_reason or "").strip()
-            if stale_reason:
-                snapshot_metadata["stale_evidence_reason"] = stale_reason
-            if acknowledge_stale_evidence and has_prior:
-                # mark the bypass so a later lint/doctor re-read can surface it even
-                # when no reason was given (the WARN state)
-                snapshot_metadata["acknowledge_stale_evidence"] = True
-        if panel_run_ref:
-            # PROVENANCE: the panel that underwrote this commit was previously
-            # consumed by the gates and DISCARDED — a post-hoc audit could not
-            # verify "committed with panel pr_..." from the record itself (the
-            # operator's Senate-batch review hit exactly this). Stamp it.
-            snapshot_metadata["panel_run_ref"] = panel_run_ref
-
-        if require_citations and forecast_origin == "live":
-            citation_refs = [
-                *(evidence_refs or []),
-                *(model_run_refs or []),
-                *(reference_class_refs or []),
-                *(source_snapshot_refs or []),
-                *(assumption_refs or []),
-                *(calibration_lesson_refs or []),
-            ]
-            if not citation_refs:
-                raise single_block(
-                    "require_citations",
-                    "live forecast requires citations: add evidence/model/reference/source refs, "
-                    "rerun with require_citations=false, or record it as forecast_origin='exploratory'",
-                    action="collect_evidence",
+            if stale_evidence_days is not None and evidence_refs:
+                stale_refs = self.find_stale_evidence_refs(
+                    question_id,
+                    evidence_refs,
+                    as_of=as_of_ts,
+                    stale_days=stale_evidence_days,
                 )
-            snapshot_metadata["citation_policy"] = "required"
-        # Probability-mass audit for CATEGORICAL forecasts: route every
-        # material outcome through a named mechanism so mass can't be spread
-        # across answer-choice labels by default (outcome-space anchoring).
-        # Always recorded for auditability; only ENFORCED when the caller opts
-        # in via require_outcome_paths on a live forecast.
-        if question.outcome_space.type == "categorical" and isinstance(payload, dict):
-            from forecasting.tail_audit import audit_outcomes, outcome_paths_from_inputs
-
-            audit = audit_outcomes(outcome_paths_from_inputs(payload, outcome_paths))
-            snapshot_metadata["tail_audit"] = audit.to_dict()
-            if require_outcome_paths and forecast_origin == "live" and not audit.passes:
-                offenders = [v.name for v in audit.verdicts if v.unearned]
-                raise single_block(
-                    "require_outcome_paths",
-                    "live categorical forecast has unearned tail mass "
-                    f"({audit.unearned_mass:.1%}) on outcomes with no named path: "
-                    f"{', '.join(offenders)}. Name the mechanism for each (pass "
-                    "outcome_paths / --outcome-path), compress the mass onto outcomes "
-                    "with a live path, rerun with require_outcome_paths=false, or record "
-                    "it as forecast_origin='exploratory'.",
-                    action="compress_tails",
-                )
-        if stale_evidence_days is not None and evidence_refs:
-            stale_refs = self.find_stale_evidence_refs(
+                if stale_refs and not acknowledge_stale_evidence:
+                    refs = ", ".join(item.id for item in stale_refs)
+                    raise ValidationError(
+                        f"stale evidence requires acknowledgement before update: {refs}"
+                    )
+                if stale_refs:
+                    snapshot_metadata["stale_evidence_acknowledgement"] = {
+                        "acknowledged_at": now,
+                        "stale_evidence_days": stale_evidence_days,
+                        "evidence_refs": [item.id for item in stale_refs],
+                    }
+            self._validate_question_scoped_refs(question_id, assumption_refs or [], self.get_assumption, "assumption")
+            self._validate_question_scoped_refs(
                 question_id,
-                evidence_refs,
-                as_of=as_of_ts,
-                stale_days=stale_evidence_days,
+                reference_class_refs or [],
+                self.get_reference_class,
+                "reference class",
             )
-            if stale_refs and not acknowledge_stale_evidence:
-                refs = ", ".join(item.id for item in stale_refs)
-                raise ValidationError(
-                    f"stale evidence requires acknowledgement before update: {refs}"
-                )
-            if stale_refs:
-                snapshot_metadata["stale_evidence_acknowledgement"] = {
-                    "acknowledged_at": now,
-                    "stale_evidence_days": stale_evidence_days,
-                    "evidence_refs": [item.id for item in stale_refs],
-                }
-        self._validate_question_scoped_refs(question_id, assumption_refs or [], self.get_assumption, "assumption")
-        self._validate_question_scoped_refs(
-            question_id,
-            reference_class_refs or [],
-            self.get_reference_class,
-            "reference class",
-        )
-        self._validate_question_scoped_refs(question_id, model_run_refs or [], self.get_model_run, "model run")
-        for lesson_id in calibration_lesson_refs or []:
-            lesson = self.get_calibration_lesson(lesson_id)
-            if lesson["status"] != "active" or lesson.get("invalidated_by_correction_id"):
-                raise ValidationError("calibration lesson refs must be active and non-invalidated")
+            self._validate_question_scoped_refs(question_id, model_run_refs or [], self.get_model_run, "model run")
+            for lesson_id in calibration_lesson_refs or []:
+                lesson = self.get_calibration_lesson(lesson_id)
+                if lesson["status"] != "active" or lesson.get("invalidated_by_correction_id"):
+                    raise ValidationError("calibration lesson refs must be active and non-invalidated")
 
-        # Style gate (Phase 2): a live forecast's prose must be house-clean (no
-        # em-dashes / formatting). The interactive AGENT path BLOCKS so the agent
-        # rewrites to conform (the user's choice). PROGRAMMATIC system paths
-        # (refresh / autopilot / aggregates) pass style_autofix=True: they have no
-        # agent to rewrite their generated prose, so the hook mechanically cleans
-        # it (the "auto-orchestrate remediation" choice) rather than break
-        # automation. Exploratory/backtest/imported work is exempt (not "live").
-        if forecast_origin == "live":
-            from forecasting.hooks import style_clean_for_rationale, style_message
+            # Style gate (Phase 2): a live forecast's prose must be house-clean (no
+            # em-dashes / formatting). The interactive AGENT path BLOCKS so the agent
+            # rewrites to conform (the user's choice). PROGRAMMATIC system paths
+            # (refresh / autopilot / aggregates) pass style_autofix=True: they have no
+            # agent to rewrite their generated prose, so the hook mechanically cleans
+            # it (the "auto-orchestrate remediation" choice) rather than break
+            # automation. Exploratory/backtest/imported work is exempt (not "live").
+            if forecast_origin == "live":
+                from forecasting.hooks import style_clean_for_rationale, style_message
 
-            _style_ok, _style_offenders = style_clean_for_rationale(rationale)
-            if not _style_ok:
-                if style_autofix:
-                    from forecasting.writeup import sanitize_writeup_text
+                _style_ok, _style_offenders = style_clean_for_rationale(rationale)
+                if not _style_ok:
+                    if style_autofix:
+                        from forecasting.writeup import sanitize_writeup_text
 
-                    rationale = sanitize_writeup_text(rationale)
-                elif require_style:
-                    raise single_block(
-                        "style_clean",
-                        style_message(_style_offenders),
-                        action="sanitize_style",
-                        category=_HookCategory.STYLE,
-                        weight=5.0,
-                    )
-                # else: style downgraded to warn/off via config — leave the prose;
-                # the observe-mode report still records the style verdict.
-
-        # Record the agent's declared reasoning methods (normalized to the taxonomy)
-        # in metadata, so the reasoning-composition hook + lint can read them.
-        if reasoning_methods:
-            from forecasting.hooks.reasoning import normalize_methods as _norm_methods
-
-            _rm, _ = _norm_methods(reasoning_methods)
-            if _rm:
-                snapshot_metadata["reasoning_methods"] = _rm
-
-        # Distribution structure gate (v2): a live distribution/numeric forecast must
-        # be RENDERABLE + WELL-FORMED (ordered / nested / in-bounds), so the Desk chart
-        # never draws absurd bounds. The agent path BLOCKS (fix the distribution); a
-        # programmatic system path AUTO-FIXES (reorder / clamp / nest / derive). Binary
-        # and plain categorical payloads are unaffected (assess returns None).
-        if forecast_origin == "live":
-            from forecasting.hooks.distribution import assess_distribution, autofix_distribution
-
-            _osp = question.outcome_space
-            _bounds = getattr(_osp, "bounds", None)
-            _da = assess_distribution(probability_or_distribution, outcome_type=_osp.type, bounds=_bounds, units=getattr(_osp, "units", None))
-            if _da and (not _da.renderable or not _da.well_formed or not _da.in_range):
-                if distribution_autofix:
-                    _fixed, _fxs = autofix_distribution(probability_or_distribution, bounds=_bounds)
-                    if _fxs:
-                        probability_or_distribution = _fixed
-                        payload = self._validate_probability_payload(_fixed, _osp)
-                        snapshot_metadata["distribution_autofixed"] = _fxs
-                        # Re-assess: a clamp can still leave a degenerate/edge interval.
-                        # Record what the mechanical fix could not resolve (observability)
-                        # rather than silently committing a still-malformed band.
-                        _da2 = assess_distribution(_fixed, outcome_type=_osp.type, bounds=_bounds, units=getattr(_osp, "units", None))
-                        if _da2 and (not _da2.well_formed or not _da2.renderable):
-                            snapshot_metadata["distribution_autofix_incomplete"] = list(_da2.issues)
-                elif require_output_structure:
-                    if not _da.renderable:
+                        rationale = sanitize_writeup_text(rationale)
+                    elif require_style:
                         raise single_block(
-                            "output_renderable",
-                            "distribution forecast is not renderable: it needs a central tendency "
-                            "(median or mean) AND at least one ordered interval (ci90 or quantiles) "
-                            "so the Desk chart can draw a band. Provide them, or record "
-                            "forecast_origin='exploratory'.",
+                            "style_clean",
+                            style_message(_style_offenders),
+                            action="sanitize_style",
+                            category=_HookCategory.STYLE,
+                            weight=5.0,
+                        )
+                    # else: style downgraded to warn/off via config — leave the prose;
+                    # the observe-mode report still records the style verdict.
+
+            # Record the agent's declared reasoning methods (normalized to the taxonomy)
+            # in metadata, so the reasoning-composition hook + lint can read them.
+            if reasoning_methods:
+                from forecasting.hooks.reasoning import normalize_methods as _norm_methods
+
+                _rm, _ = _norm_methods(reasoning_methods)
+                if _rm:
+                    snapshot_metadata["reasoning_methods"] = _rm
+
+            # Distribution structure gate (v2): a live distribution/numeric forecast must
+            # be RENDERABLE + WELL-FORMED (ordered / nested / in-bounds), so the Desk chart
+            # never draws absurd bounds. The agent path BLOCKS (fix the distribution); a
+            # programmatic system path AUTO-FIXES (reorder / clamp / nest / derive). Binary
+            # and plain categorical payloads are unaffected (assess returns None).
+            if forecast_origin == "live":
+                from forecasting.hooks.distribution import assess_distribution, autofix_distribution
+
+                _osp = question.outcome_space
+                _bounds = getattr(_osp, "bounds", None)
+                _da = assess_distribution(probability_or_distribution, outcome_type=_osp.type, bounds=_bounds, units=getattr(_osp, "units", None))
+                if _da and (not _da.renderable or not _da.well_formed or not _da.in_range):
+                    if distribution_autofix:
+                        _fixed, _fxs = autofix_distribution(probability_or_distribution, bounds=_bounds)
+                        if _fxs:
+                            probability_or_distribution = _fixed
+                            payload = self._validate_probability_payload(_fixed, _osp)
+                            snapshot_metadata["distribution_autofixed"] = _fxs
+                            # Re-assess: a clamp can still leave a degenerate/edge interval.
+                            # Record what the mechanical fix could not resolve (observability)
+                            # rather than silently committing a still-malformed band.
+                            _da2 = assess_distribution(_fixed, outcome_type=_osp.type, bounds=_bounds, units=getattr(_osp, "units", None))
+                            if _da2 and (not _da2.well_formed or not _da2.renderable):
+                                snapshot_metadata["distribution_autofix_incomplete"] = list(_da2.issues)
+                    elif require_output_structure:
+                        if not _da.renderable:
+                            raise single_block(
+                                "output_renderable",
+                                "distribution forecast is not renderable: it needs a central tendency "
+                                "(median or mean) AND at least one ordered interval (ci90 or quantiles) "
+                                "so the Desk chart can draw a band. Provide them, or record "
+                                "forecast_origin='exploratory'.",
+                                action="fix_distribution", category=_HookCategory.OUTPUT, weight=12.0,
+                            )
+                        raise single_block(
+                            "uncertainty_well_formed",
+                            "forecast uncertainty bounds are malformed: " + ("; ".join(_da.issues) or "ordering/nesting/range")
+                            + ". Intervals must be ordered (lo<=hi), nested (ci50 inside ci90), finite, "
+                            "non-degenerate, and within the question bounds. Fix the distribution, or "
+                            "record forecast_origin='exploratory'.",
                             action="fix_distribution", category=_HookCategory.OUTPUT, weight=12.0,
                         )
-                    raise single_block(
-                        "uncertainty_well_formed",
-                        "forecast uncertainty bounds are malformed: " + ("; ".join(_da.issues) or "ordering/nesting/range")
-                        + ". Intervals must be ordered (lo<=hi), nested (ci50 inside ci90), finite, "
-                        "non-degenerate, and within the question bounds. Fix the distribution, or "
-                        "record forecast_origin='exploratory'.",
-                        action="fix_distribution", category=_HookCategory.OUTPUT, weight=12.0,
-                    )
 
-        # Lesson-application audit (revives the previously-dead lessons_applied
-        # signal): count active in-scope NUMERIC lessons the committed forecast did
-        # not actually apply (net-movement, not citation-stapling). Fed into BOTH the
-        # user-rule context and the observe-mode score below so the gate can finally
-        # see a non-zero value. Best-effort.
-        try:
-            _active_unapplied = self._audit_unapplied_lessons(
-                question, probability_or_distribution, calibration_adjustment
-            )
-        except Exception:
-            _active_unapplied = 0
-        # Structural-lesson signals (NY-12): the committed winner probability + whether
-        # a derived vote-share child model backs it. Fed into both contexts so a lesson
-        # rule can require ">X% winner -> a vote-share child exists". Best-effort.
-        _winner_prob = self._committed_winner_prob(probability_or_distribution, question.outcome_space.type)
-        try:
-            _has_child = self._derived_child_present(question_id)
-        except Exception:
-            _has_child = False
-        _scoreable = self._machine_scoreable_payload(probability_or_distribution, question.outcome_space)
-
-        # Terminal Platt-calibration signal (AIA P0.1): when this commit LINKS a
-        # panel run, did that run pass through aggregate_panel_estimates' terminal
-        # calibration stage (which records `applied_alpha` on the persisted spread)?
-        # True when no panel is linked (nothing to skip). Best-effort / fail-open.
-        _terminal_calibration_present = True
-        # Quorum / panel participation signals (v2) derived from the SAME linked
-        # panel run, so the quorum rules (participation / judged) evaluate truthfully
-        # at commit instead of defaulting (which false-fired quorum_participation and
-        # left quorum_judged indeterminate). Fail-open: defaults on any error.
-        _quorum_is = False
-        _quorum_persp = 0
-        _quorum_models = 0
-        _quorum_judged = False
-        if panel_run_ref:
+            # Lesson-application audit (revives the previously-dead lessons_applied
+            # signal): count active in-scope NUMERIC lessons the committed forecast did
+            # not actually apply (net-movement, not citation-stapling). Fed into BOTH the
+            # user-rule context and the observe-mode score below so the gate can finally
+            # see a non-zero value. Best-effort.
             try:
-                from forecasting.hooks.signals import quorum_signals_from_panel_run as _quorum_signals
-
-                _pr = _linked_panel if _linked_panel is not None else self.get_panel_run(panel_run_ref)
-                _terminal_calibration_present = "applied_alpha" in (_pr.get("spread_summary") or {})
-                _quorum_is, _quorum_persp, _quorum_models, _quorum_judged = _quorum_signals(_pr)
-            except Exception:
-                _terminal_calibration_present = True
-
-        # Per-question minimum-requirement THRESHOLD overrides (from the settings
-        # modal / forecast.config.set). Fed into both the user-rule context and the
-        # observe-mode score so a gate's floor is per-forecast, not a global constant.
-        try:
-            from forecasting.hooks.thresholds import normalize_thresholds as _norm_thr
-
-            _qthresholds = _norm_thr(((question.metadata or {}).get("forecast_hooks") or {}).get("thresholds"))
-        except Exception:
-            _qthresholds = {}
-
-        # VOI-directed research adequacy (research_audit.py): the DETERMINISTIC checks
-        # only (NO LLM at commit), computed against the current evidence/reference/
-        # watched state + THIS candidate commit's reasons_down + evidence_refs. Feeds
-        # the `research_adequate` hook rule (WARN standard / ERROR strict). Fail-open:
-        # any read error yields adequate=True so a commit is never falsely blocked.
-        _research_adequate = True
-        _research_adequacy_score = None
-        if forecast_origin == "live":
-            try:
-                from forecasting.research_audit import audit_research_for_commit
-
-                _ra = audit_research_for_commit(
-                    self, question,
-                    reasons_down=reasons_down_list, evidence_refs=evidence_refs or [],
-                    stale_evidence_days=stale_evidence_days,
+                _active_unapplied = self._audit_unapplied_lessons(
+                    question, probability_or_distribution, calibration_adjustment
                 )
-                _research_adequate = bool(_ra.get("adequate"))
-                _research_adequacy_score = _ra.get("score")
             except Exception:
-                _research_adequate, _research_adequacy_score = True, None
-
-        # User-defined rule enforcement (Phase 5). Only runs when the desk has
-        # authored custom rules (zero overhead otherwise). A buggy rule engine must
-        # never brick a commit (fail-OPEN on evaluation errors), but a legitimately
-        # failing error-severity user rule DOES block (that is the point).
-        if forecast_origin == "live":
+                _active_unapplied = 0
+            # Structural-lesson signals (NY-12): the committed winner probability + whether
+            # a derived vote-share child model backs it. Fed into both contexts so a lesson
+            # rule can require ">X% winner -> a vote-share child exists". Best-effort.
+            _winner_prob = self._committed_winner_prob(probability_or_distribution, question.outcome_space.type)
             try:
-                import dataclasses as _dc
-
-                from forecasting.hooks import build_commit_context, resolve_severities, run_hooks
-                from forecasting.hooks.engine import load_hook_config
-                from forecasting.hooks.loader import load_user_rules
-
-                _hcfg = load_hook_config()
-                _user_rules = load_user_rules(_hcfg)
+                _has_child = self._derived_child_present(question_id)
             except Exception:
-                _user_rules = []
-                _hcfg = {}
-            # Compile active in-scope calibration lessons that carry a `rule` into
-            # enforceable lesson:* rules — this is how a STRUCTURAL lesson (not just a
-            # numeric bias) bites at commit. Force-stamped scope; broken rules skipped.
-            try:
-                from forecasting.learning import compile_lesson_rules as _compile_lessons
+                _has_child = False
+            _scoreable = self._machine_scoreable_payload(probability_or_distribution, question.outcome_space)
 
-                _lesson_rules = _compile_lessons(self, question)
-            except Exception:
-                _lesson_rules = []
-            if _user_rules or _lesson_rules:
-                _ublocked = None
+            # Terminal Platt-calibration signal (AIA P0.1): when this commit LINKS a
+            # panel run, did that run pass through aggregate_panel_estimates' terminal
+            # calibration stage (which records `applied_alpha` on the persisted spread)?
+            # True when no panel is linked (nothing to skip). Best-effort / fail-open.
+            _terminal_calibration_present = True
+            # Quorum / panel participation signals (v2) derived from the SAME linked
+            # panel run, so the quorum rules (participation / judged) evaluate truthfully
+            # at commit instead of defaulting (which false-fired quorum_participation and
+            # left quorum_judged indeterminate). Fail-open: defaults on any error.
+            _quorum_is = False
+            _quorum_persp = 0
+            _quorum_models = 0
+            _quorum_judged = False
+            if panel_run_ref:
                 try:
-                    _ucomp = ensemble_components
-                    if isinstance(_ucomp, dict):
-                        _ucomp = _ucomp.get("components", _ucomp)
-                    _ctx = build_commit_context(
-                        question_id=question_id, forecast_origin=forecast_origin, event="update",
-                        impact=question.impact, has_prior=bool(question.current_forecast_id),
-                        is_categorical=(question.outcome_space.type == "categorical"),
-                        reasons_up=reasons_up_list, reasons_down=reasons_down_list, change_my_mind=change_my_mind_list,
-                        has_components=bool(_ucomp), component_count=(len(_ucomp) if isinstance(_ucomp, (list, dict)) else 0),
-                        citation_refs=[*(evidence_refs or []), *(model_run_refs or [])],
-                        panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
-                        stale_evidence_reason=stale_evidence_reason,
-                        has_fresh_evidence=True, acknowledge_stale_evidence=acknowledge_stale_evidence,
-                        evidence_count=len(evidence_refs or []), prior_forecast_id=None, prior_as_of=None,
-                        decision_gaps=question_decision_readiness_issues(question),
-                        tail_audit_passes=((snapshot_metadata.get("tail_audit") or {}).get("passes")),
-                        tail_unearned_mass=float((snapshot_metadata.get("tail_audit") or {}).get("unearned_mass") or 0.0),
-                        tail_offenders=[], rationale=rationale,
-                        domain=getattr(question, "domain", None), outcome_type=question.outcome_space.type,
-                        thresholds=_qthresholds,
-                    )
-                    # Augment with the signals user rules may test that the candidate
-                    # context does not carry (only fetched when user rules exist) —
-                    # including the v2 output/uncertainty/confidence/reasoning signals,
-                    # so a user rule that references e.g. bounds.well_formed or
-                    # reasoning.method_count enforces against real values, not defaults.
-                    from forecasting.hooks.distribution import assess_distribution as _u_assess
-                    from forecasting.hooks.profiles import resolve_reasoning_requirement as _u_rrr
+                    from forecasting.hooks.signals import quorum_signals_from_panel_run as _quorum_signals
 
-                    _uosp = question.outcome_space
-                    _uda = _u_assess(probability_or_distribution, outcome_type=_uosp.type, bounds=getattr(_uosp, "bounds", None), units=getattr(_uosp, "units", None))
-                    try:
-                        _ush = self._sharpness(probability_or_distribution)
-                    except Exception:
-                        _ush = None
-                    _uprof = ((question.metadata or {}).get("forecast_hooks") or {}).get("profile") or _hcfg.get("profile") or "standard"
-                    _urq, _umin = _u_rrr(_uprof)
-                    _uuc = False
-                    try:
-                        _ub = self.calibration_bias(domain=getattr(question, "domain", None))
-                        _uuc = (_ub.get("status") not in (None, "insufficient_evidence")) and _ub.get("direction") == "under"
-                    except Exception:
-                        _uuc = False
-                    _utd = snapshot_metadata.get("tail_audit") or {}
-                    _ctx = _dc.replace(
-                        _ctx,
-                        reference_class_count=len(self.list_reference_classes(question_id)),
-                        linked_reference_class_count=len(reference_class_refs or []),
-                        is_thesis_or_factor=self.is_thesis(question),
-                        watched_source_count=len(self.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")),
-                        panel_run_count=len(self.list_panel_runs(question_id)),
-                        reasoning_methods=tuple(snapshot_metadata.get("reasoning_methods") or ()),
-                        required_reasoning_methods=tuple(_urq), min_reasoning_methods=_umin,
-                        is_distribution=bool(_uda and _uda.is_distribution),
-                        distribution_renderable=(_uda.renderable if _uda else True),
-                        bounds_well_formed=(_uda.well_formed if _uda else True),
-                        bounds_in_range=(_uda.in_range if _uda else True),
-                        interval_width_ratio=(_uda.width_ratio if _uda else None),
-                        sharpness=_ush,
-                        is_quorum=_quorum_is,
-                        panel_perspective_count=_quorum_persp,
-                        quorum_model_count=_quorum_models,
-                        quorum_judged=_quorum_judged,
-                        calibration_under_confident=_uuc,
-                        tail_null_excess=float(((_utd.get("null_model") or {}).get("excess_tail")) or 0.0),
-                        active_lessons_unapplied=_active_unapplied,
-                        committed_winner_prob=_winner_prob,
-                        derived_child_present=_has_child,
-                        machine_scoreable=_scoreable,
-                        terminal_calibration_present=_terminal_calibration_present,
-                        research_adequate=_research_adequate,
-                        research_adequacy_score=_research_adequacy_score,
-                    )
-                    _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
-                    _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
-                    if not _ureport.passed:
-                        _ublocked = _ureport
+                    _pr = _linked_panel if _linked_panel is not None else self.get_panel_run(panel_run_ref)
+                    _terminal_calibration_present = "applied_alpha" in (_pr.get("spread_summary") or {})
+                    _quorum_is, _quorum_persp, _quorum_models, _quorum_judged = _quorum_signals(_pr)
                 except Exception:
-                    logger.debug("forecast-hooks user-rule eval failed (non-fatal, fail-open)", exc_info=True)
-                if _ublocked is not None:
-                    raise SaturationBlocked(_ublocked)
+                    _terminal_calibration_present = True
 
-        # Forecast hooks (Wave 3): the shared commit context is assembled ONCE below
-        # and drives two consumers:
-        #   (1) a RESOLVED-POLICY blocking pass (Slice H3) for the built-in rules that
-        #       have NO inline gate above — evaluated under resolve_severities (profile
-        #       + impact/origin scaling + config/per-question overrides, the SAME
-        #       resolution the observe call uses). A failing ERROR-severity rule here
-        #       raises SaturationBlocked with the rule's canonical builtin message +
-        #       remediation. This is what makes require_evidence (ERROR by default) a
-        #       real floor for an agent commit, and lets the strict profile /
-        #       impact-scaling actually block the non-inline rules instead of only
-        #       colouring the observe report.
-        #   (2) the OBSERVE-mode recording (Phase 1): compute the FULL saturation score
-        #       + per-rule report and record it on the snapshot.
-        # The inline gates above stay the byte-identical, first-failing-wins enforcement
-        # for the rules they own; the blocking pass NEVER re-evaluates a rule an inline
-        # gate already owns (de-duplicated by rule_id), so precedence + messages are
-        # preserved.
-        #
-        # SCOPE (all must hold for the blocking pass to fire):
-        #   * forecast_origin == 'live' (exploratory / backtest / imported stay observe-only);
-        #   * enforce_resolved_hooks is True — the OPT-IN the AGENT path (the interactive
-        #     forecast tool's update_forecast) sets. This mirrors the codebase's existing
-        #     require_* opt-in discipline: the ledger stays lenient for direct callers
-        #     (operator seeds, migrations, fixtures, internal recompute) so a raw
-        #     create_snapshot never retroactively hard-blocks, while the agent commit —
-        #     the path this floor is FOR — enforces the resolved policy. Programmatic
-        #     system paths (refresh / aggregate / autopilot / pilot-cohort) commit
-        #     directly with their style_autofix / distribution_autofix leniency and do
-        #     NOT opt in, so they keep observe + autofix (belt-and-braces: the autofix
-        #     flags below are also treated as an exemption);
-        #   * neither style_autofix nor distribution_autofix is set (programmatic exemption);
-        #   * the env kill-switch FORECAST_DISABLE_HOOK_BLOCKING is not set (it disables
-        #     the pass entirely; observe still runs).
-        # Everything is fully guarded and must NEVER break a commit; the block report is
-        # computed inside the fail-open try (run_hooks returns a report, it does not
-        # raise) and RAISED afterwards so SaturationBlocked escapes the fail-open.
-        #
-        # Built-in rule_ids already owned by an inline gate above (excluded from the
-        # blocking pass so nothing is evaluated as blocking twice; their precedence +
-        # exact messages are unchanged).
-        _INLINE_GATE_RULE_IDS = frozenset({
-            "require_structured_reasoning", "require_components", "require_fresh_evidence",
-            "require_decision_readiness", "require_panel", "require_citations",
-            "require_outcome_paths", "style_clean", "output_renderable",
-            "uncertainty_well_formed",
-        })
-        _resolved_block: SaturationReport | None = None
-        try:
-            from forecasting.hooks import build_commit_context, policy_from_require_flags, run_hooks
-
-            _comp = ensemble_components
-            if isinstance(_comp, dict):
-                _comp = _comp.get("components", _comp)
-            _has_comp = bool(_comp) and (len(_comp) > 0 if isinstance(_comp, (list, dict)) else False)
-            _comp_n = len(_comp) if isinstance(_comp, (list, dict)) else 0
-            _cite_refs = [
-                *(evidence_refs or []), *(model_run_refs or []), *(reference_class_refs or []),
-                *(source_snapshot_refs or []), *(assumption_refs or []), *(calibration_lesson_refs or []),
-            ]
-            _td = snapshot_metadata.get("tail_audit") or {}
-            # v2 signals for the observe score
-            from forecasting.hooks.distribution import assess_distribution as _assess_dist
-            from forecasting.hooks.profiles import resolve_reasoning_requirement as _resolve_rr
-
-            _osp2 = question.outcome_space
-            _oda = _assess_dist(probability_or_distribution, outcome_type=_osp2.type, bounds=getattr(_osp2, "bounds", None), units=getattr(_osp2, "units", None))
+            # Per-question minimum-requirement THRESHOLD overrides (from the settings
+            # modal / forecast.config.set). Fed into both the user-rule context and the
+            # observe-mode score so a gate's floor is per-forecast, not a global constant.
             try:
-                _osharp = self._sharpness(probability_or_distribution)
+                from forecasting.hooks.thresholds import normalize_thresholds as _norm_thr
+
+                _qthresholds = _norm_thr(((question.metadata or {}).get("forecast_hooks") or {}).get("thresholds"))
             except Exception:
-                _osharp = None
+                _qthresholds = {}
+
+            # VOI-directed research adequacy (research_audit.py): the DETERMINISTIC checks
+            # only (NO LLM at commit), computed against the current evidence/reference/
+            # watched state + THIS candidate commit's reasons_down + evidence_refs. Feeds
+            # the `research_adequate` hook rule (WARN standard / ERROR strict). Fail-open:
+            # any read error yields adequate=True so a commit is never falsely blocked.
+            _research_adequate = True
+            _research_adequacy_score = None
+            if forecast_origin == "live":
+                try:
+                    from forecasting.research_audit import audit_research_for_commit
+
+                    _ra = audit_research_for_commit(
+                        self, question,
+                        reasons_down=reasons_down_list, evidence_refs=evidence_refs or [],
+                        stale_evidence_days=stale_evidence_days,
+                    )
+                    _research_adequate = bool(_ra.get("adequate"))
+                    _research_adequacy_score = _ra.get("score")
+                except Exception:
+                    _research_adequate, _research_adequacy_score = True, None
+
+            # User-defined rule enforcement (Phase 5). Only runs when the desk has
+            # authored custom rules (zero overhead otherwise). A buggy rule engine must
+            # never brick a commit (fail-OPEN on evaluation errors), but a legitimately
+            # failing error-severity user rule DOES block (that is the point).
+            if forecast_origin == "live":
+                try:
+                    import dataclasses as _dc
+
+                    from forecasting.hooks import build_commit_context, resolve_severities, run_hooks
+                    from forecasting.hooks.engine import load_hook_config
+                    from forecasting.hooks.loader import load_user_rules
+
+                    _hcfg = load_hook_config()
+                    _user_rules = load_user_rules(_hcfg)
+                except Exception:
+                    _user_rules = []
+                    _hcfg = {}
+                # Compile active in-scope calibration lessons that carry a `rule` into
+                # enforceable lesson:* rules — this is how a STRUCTURAL lesson (not just a
+                # numeric bias) bites at commit. Force-stamped scope; broken rules skipped.
+                try:
+                    from forecasting.learning import compile_lesson_rules as _compile_lessons
+
+                    _lesson_rules = _compile_lessons(self, question)
+                except Exception:
+                    _lesson_rules = []
+                if _user_rules or _lesson_rules:
+                    _ublocked = None
+                    try:
+                        _ucomp = ensemble_components
+                        if isinstance(_ucomp, dict):
+                            _ucomp = _ucomp.get("components", _ucomp)
+                        _ctx = build_commit_context(
+                            question_id=question_id, forecast_origin=forecast_origin, event="update",
+                            impact=question.impact, has_prior=bool(question.current_forecast_id),
+                            is_categorical=(question.outcome_space.type == "categorical"),
+                            reasons_up=reasons_up_list, reasons_down=reasons_down_list, change_my_mind=change_my_mind_list,
+                            has_components=bool(_ucomp), component_count=(len(_ucomp) if isinstance(_ucomp, (list, dict)) else 0),
+                            citation_refs=[*(evidence_refs or []), *(model_run_refs or [])],
+                            panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
+                            stale_evidence_reason=stale_evidence_reason,
+                            has_fresh_evidence=True, acknowledge_stale_evidence=acknowledge_stale_evidence,
+                            evidence_count=len(evidence_refs or []), prior_forecast_id=None, prior_as_of=None,
+                            decision_gaps=question_decision_readiness_issues(question),
+                            tail_audit_passes=((snapshot_metadata.get("tail_audit") or {}).get("passes")),
+                            tail_unearned_mass=float((snapshot_metadata.get("tail_audit") or {}).get("unearned_mass") or 0.0),
+                            tail_offenders=[], rationale=rationale,
+                            domain=getattr(question, "domain", None), outcome_type=question.outcome_space.type,
+                            thresholds=_qthresholds,
+                        )
+                        # Augment with the signals user rules may test that the candidate
+                        # context does not carry (only fetched when user rules exist) —
+                        # including the v2 output/uncertainty/confidence/reasoning signals,
+                        # so a user rule that references e.g. bounds.well_formed or
+                        # reasoning.method_count enforces against real values, not defaults.
+                        from forecasting.hooks.distribution import assess_distribution as _u_assess
+                        from forecasting.hooks.profiles import resolve_reasoning_requirement as _u_rrr
+
+                        _uosp = question.outcome_space
+                        _uda = _u_assess(probability_or_distribution, outcome_type=_uosp.type, bounds=getattr(_uosp, "bounds", None), units=getattr(_uosp, "units", None))
+                        try:
+                            _ush = self._sharpness(probability_or_distribution)
+                        except Exception:
+                            _ush = None
+                        _uprof = ((question.metadata or {}).get("forecast_hooks") or {}).get("profile") or _hcfg.get("profile") or "standard"
+                        _urq, _umin = _u_rrr(_uprof)
+                        _uuc = False
+                        try:
+                            _ub = self.calibration_bias(domain=getattr(question, "domain", None))
+                            _uuc = (_ub.get("status") not in (None, "insufficient_evidence")) and _ub.get("direction") == "under"
+                        except Exception:
+                            _uuc = False
+                        _utd = snapshot_metadata.get("tail_audit") or {}
+                        _ctx = _dc.replace(
+                            _ctx,
+                            reference_class_count=len(self.list_reference_classes(question_id)),
+                            linked_reference_class_count=len(reference_class_refs or []),
+                            is_thesis_or_factor=self.is_thesis(question),
+                            watched_source_count=len(self.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")),
+                            panel_run_count=len(self.list_panel_runs(question_id)),
+                            reasoning_methods=tuple(snapshot_metadata.get("reasoning_methods") or ()),
+                            required_reasoning_methods=tuple(_urq), min_reasoning_methods=_umin,
+                            is_distribution=bool(_uda and _uda.is_distribution),
+                            distribution_renderable=(_uda.renderable if _uda else True),
+                            bounds_well_formed=(_uda.well_formed if _uda else True),
+                            bounds_in_range=(_uda.in_range if _uda else True),
+                            interval_width_ratio=(_uda.width_ratio if _uda else None),
+                            sharpness=_ush,
+                            is_quorum=_quorum_is,
+                            panel_perspective_count=_quorum_persp,
+                            quorum_model_count=_quorum_models,
+                            quorum_judged=_quorum_judged,
+                            calibration_under_confident=_uuc,
+                            tail_null_excess=float(((_utd.get("null_model") or {}).get("excess_tail")) or 0.0),
+                            active_lessons_unapplied=_active_unapplied,
+                            committed_winner_prob=_winner_prob,
+                            derived_child_present=_has_child,
+                            machine_scoreable=_scoreable,
+                            terminal_calibration_present=_terminal_calibration_present,
+                            research_adequate=_research_adequate,
+                            research_adequacy_score=_research_adequacy_score,
+                        )
+                        _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
+                        _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
+                        if not _ureport.passed:
+                            _ublocked = _ureport
+                    except Exception:
+                        logger.debug("forecast-hooks user-rule eval failed (non-fatal, fail-open)", exc_info=True)
+                    if _ublocked is not None:
+                        raise SaturationBlocked(_ublocked)
+
+            # Forecast hooks (Wave 3): the shared commit context is assembled ONCE below
+            # and drives two consumers:
+            #   (1) a RESOLVED-POLICY blocking pass (Slice H3) for the built-in rules that
+            #       have NO inline gate above — evaluated under resolve_severities (profile
+            #       + impact/origin scaling + config/per-question overrides, the SAME
+            #       resolution the observe call uses). A failing ERROR-severity rule here
+            #       raises SaturationBlocked with the rule's canonical builtin message +
+            #       remediation. This is what makes require_evidence (ERROR by default) a
+            #       real floor for an agent commit, and lets the strict profile /
+            #       impact-scaling actually block the non-inline rules instead of only
+            #       colouring the observe report.
+            #   (2) the OBSERVE-mode recording (Phase 1): compute the FULL saturation score
+            #       + per-rule report and record it on the snapshot.
+            # The inline gates above stay the byte-identical, first-failing-wins enforcement
+            # for the rules they own; the blocking pass NEVER re-evaluates a rule an inline
+            # gate already owns (de-duplicated by rule_id), so precedence + messages are
+            # preserved.
+            #
+            # SCOPE (all must hold for the blocking pass to fire):
+            #   * forecast_origin == 'live' (exploratory / backtest / imported stay observe-only);
+            #   * enforce_resolved_hooks is True — the OPT-IN the AGENT path (the interactive
+            #     forecast tool's update_forecast) sets. This mirrors the codebase's existing
+            #     require_* opt-in discipline: the ledger stays lenient for direct callers
+            #     (operator seeds, migrations, fixtures, internal recompute) so a raw
+            #     create_snapshot never retroactively hard-blocks, while the agent commit —
+            #     the path this floor is FOR — enforces the resolved policy. Programmatic
+            #     system paths (refresh / aggregate / autopilot / pilot-cohort) commit
+            #     directly with their style_autofix / distribution_autofix leniency and do
+            #     NOT opt in, so they keep observe + autofix (belt-and-braces: the autofix
+            #     flags below are also treated as an exemption);
+            #   * neither style_autofix nor distribution_autofix is set (programmatic exemption);
+            #   * the env kill-switch FORECAST_DISABLE_HOOK_BLOCKING is not set (it disables
+            #     the pass entirely; observe still runs).
+            # Everything is fully guarded and must NEVER break a commit; the block report is
+            # computed inside the fail-open try (run_hooks returns a report, it does not
+            # raise) and RAISED afterwards so SaturationBlocked escapes the fail-open.
+            #
+            # Built-in rule_ids already owned by an inline gate above (excluded from the
+            # blocking pass so nothing is evaluated as blocking twice; their precedence +
+            # exact messages are unchanged).
+            _INLINE_GATE_RULE_IDS = frozenset({
+                "require_structured_reasoning", "require_components", "require_fresh_evidence",
+                "require_decision_readiness", "require_panel", "require_citations",
+                "require_outcome_paths", "style_clean", "output_renderable",
+                "uncertainty_well_formed",
+            })
+            _resolved_block: SaturationReport | None = None
             try:
-                _oprof = ((question.metadata or {}).get("forecast_hooks") or {}).get("profile") or "standard"
-                _orq, _omin = _resolve_rr(_oprof)
-            except Exception:
-                _orq, _omin = (), 0
-            _hook_ctx = build_commit_context(
-                question_id=question_id, forecast_origin=forecast_origin, event="update",
-                impact=question.impact, has_prior=bool(question.current_forecast_id),
-                is_categorical=(question.outcome_space.type == "categorical"),
-                reasons_up=reasons_up_list, reasons_down=reasons_down_list, change_my_mind=change_my_mind_list,
-                has_components=_has_comp, component_count=_comp_n, citation_refs=_cite_refs,
-                panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
-                stale_evidence_reason=stale_evidence_reason,
-                # Freshness is treated as satisfied for the advisory SCORE: when the
-                # fresh-evidence rule is enforced, a stale re-run is blocked by the
-                # gate above and never reaches here; when it is not enforced, the
-                # score should not penalize freshness. So a recorded saturation
-                # score never reflects a freshness failure (the gate owns that).
-                has_fresh_evidence=True, acknowledge_stale_evidence=acknowledge_stale_evidence,
-                evidence_count=(evidence_count_at_commit or 0),
-                prior_forecast_id=None, prior_as_of=None,
-                decision_gaps=question_decision_readiness_issues(question),
-                tail_audit_passes=(_td.get("passes") if _td else None),
-                tail_unearned_mass=float(_td.get("unearned_mass") or 0.0),
-                tail_offenders=[v.get("name") for v in (_td.get("verdicts") or []) if v.get("unearned")],
-                rationale=rationale,
-                domain=getattr(question, "domain", None),
-                outcome_type=question.outcome_space.type,
-                reasoning_methods=snapshot_metadata.get("reasoning_methods") or [],
-                required_reasoning_methods=tuple(_orq), min_reasoning_methods=_omin,
-                reference_class_count=len(self.list_reference_classes(question_id)),
-                linked_reference_class_count=len(reference_class_refs or []),
-                is_thesis_or_factor=self.is_thesis(question),
-                is_distribution=bool(_oda and _oda.is_distribution),
-                distribution_renderable=(_oda.renderable if _oda else True),
-                bounds_well_formed=(_oda.well_formed if _oda else True),
-                bounds_in_range=(_oda.in_range if _oda else True),
-                interval_width_ratio=(_oda.width_ratio if _oda else None),
-                sharpness=_osharp,
-                panel_run_count=len(self.list_panel_runs(question_id)),
-                is_quorum=_quorum_is,
-                panel_perspective_count=_quorum_persp,
-                quorum_model_count=_quorum_models,
-                quorum_judged=_quorum_judged,
-                active_lessons_unapplied=_active_unapplied,
-                committed_winner_prob=_winner_prob,
-                derived_child_present=_has_child,
-                machine_scoreable=_scoreable,
-                terminal_calibration_present=_terminal_calibration_present,
-                research_adequate=_research_adequate,
-                research_adequacy_score=_research_adequacy_score,
-                thresholds=_qthresholds,
-            )
-            # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that
-            # is NOT a programmatic (autofix) path and has not disabled the pass via the
-            # kill-switch. Evaluate ONLY the built-in rules with no inline gate, under the
-            # resolved (profile + scaling + override) severities, and stage the block to be
-            # raised after this fail-open try. run_hooks preserves builtin order, so the
-            # first failing ERROR is the same rule the report's blocking_failures()[0] names.
-            _block_disabled = os.environ.get("FORECAST_DISABLE_HOOK_BLOCKING", "").strip().lower() in {
-                "1", "true", "yes", "on",
+                from forecasting.hooks import build_commit_context, policy_from_require_flags, run_hooks
+
+                _comp = ensemble_components
+                if isinstance(_comp, dict):
+                    _comp = _comp.get("components", _comp)
+                _has_comp = bool(_comp) and (len(_comp) > 0 if isinstance(_comp, (list, dict)) else False)
+                _comp_n = len(_comp) if isinstance(_comp, (list, dict)) else 0
+                _cite_refs = [
+                    *(evidence_refs or []), *(model_run_refs or []), *(reference_class_refs or []),
+                    *(source_snapshot_refs or []), *(assumption_refs or []), *(calibration_lesson_refs or []),
+                ]
+                _td = snapshot_metadata.get("tail_audit") or {}
+                # v2 signals for the observe score
+                from forecasting.hooks.distribution import assess_distribution as _assess_dist
+                from forecasting.hooks.profiles import resolve_reasoning_requirement as _resolve_rr
+
+                _osp2 = question.outcome_space
+                _oda = _assess_dist(probability_or_distribution, outcome_type=_osp2.type, bounds=getattr(_osp2, "bounds", None), units=getattr(_osp2, "units", None))
+                try:
+                    _osharp = self._sharpness(probability_or_distribution)
+                except Exception:
+                    _osharp = None
+                try:
+                    _oprof = ((question.metadata or {}).get("forecast_hooks") or {}).get("profile") or "standard"
+                    _orq, _omin = _resolve_rr(_oprof)
+                except Exception:
+                    _orq, _omin = (), 0
+                _hook_ctx = build_commit_context(
+                    question_id=question_id, forecast_origin=forecast_origin, event="update",
+                    impact=question.impact, has_prior=bool(question.current_forecast_id),
+                    is_categorical=(question.outcome_space.type == "categorical"),
+                    reasons_up=reasons_up_list, reasons_down=reasons_down_list, change_my_mind=change_my_mind_list,
+                    has_components=_has_comp, component_count=_comp_n, citation_refs=_cite_refs,
+                    panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason,
+                    stale_evidence_reason=stale_evidence_reason,
+                    # Freshness is treated as satisfied for the advisory SCORE: when the
+                    # fresh-evidence rule is enforced, a stale re-run is blocked by the
+                    # gate above and never reaches here; when it is not enforced, the
+                    # score should not penalize freshness. So a recorded saturation
+                    # score never reflects a freshness failure (the gate owns that).
+                    has_fresh_evidence=True, acknowledge_stale_evidence=acknowledge_stale_evidence,
+                    evidence_count=(evidence_count_at_commit or 0),
+                    prior_forecast_id=None, prior_as_of=None,
+                    decision_gaps=question_decision_readiness_issues(question),
+                    tail_audit_passes=(_td.get("passes") if _td else None),
+                    tail_unearned_mass=float(_td.get("unearned_mass") or 0.0),
+                    tail_offenders=[v.get("name") for v in (_td.get("verdicts") or []) if v.get("unearned")],
+                    rationale=rationale,
+                    domain=getattr(question, "domain", None),
+                    outcome_type=question.outcome_space.type,
+                    reasoning_methods=snapshot_metadata.get("reasoning_methods") or [],
+                    required_reasoning_methods=tuple(_orq), min_reasoning_methods=_omin,
+                    reference_class_count=len(self.list_reference_classes(question_id)),
+                    linked_reference_class_count=len(reference_class_refs or []),
+                    is_thesis_or_factor=self.is_thesis(question),
+                    is_distribution=bool(_oda and _oda.is_distribution),
+                    distribution_renderable=(_oda.renderable if _oda else True),
+                    bounds_well_formed=(_oda.well_formed if _oda else True),
+                    bounds_in_range=(_oda.in_range if _oda else True),
+                    interval_width_ratio=(_oda.width_ratio if _oda else None),
+                    sharpness=_osharp,
+                    panel_run_count=len(self.list_panel_runs(question_id)),
+                    is_quorum=_quorum_is,
+                    panel_perspective_count=_quorum_persp,
+                    quorum_model_count=_quorum_models,
+                    quorum_judged=_quorum_judged,
+                    active_lessons_unapplied=_active_unapplied,
+                    committed_winner_prob=_winner_prob,
+                    derived_child_present=_has_child,
+                    machine_scoreable=_scoreable,
+                    terminal_calibration_present=_terminal_calibration_present,
+                    research_adequate=_research_adequate,
+                    research_adequacy_score=_research_adequacy_score,
+                    thresholds=_qthresholds,
+                )
+                # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that
+                # is NOT a programmatic (autofix) path and has not disabled the pass via the
+                # kill-switch. Evaluate ONLY the built-in rules with no inline gate, under the
+                # resolved (profile + scaling + override) severities, and stage the block to be
+                # raised after this fail-open try. run_hooks preserves builtin order, so the
+                # first failing ERROR is the same rule the report's blocking_failures()[0] names.
+                _block_disabled = os.environ.get("FORECAST_DISABLE_HOOK_BLOCKING", "").strip().lower() in {
+                    "1", "true", "yes", "on",
+                }
+                if (
+                    forecast_origin == "live"
+                    and enforce_resolved_hooks
+                    and not style_autofix
+                    and not distribution_autofix
+                    and not _block_disabled
+                ):
+                    from forecasting.hooks import resolve_severities as _resolve_sev_block
+                    from forecasting.hooks.builtins import BUILTIN_RULES as _ALL_BUILTIN_RULES
+
+                    _resolved_policy = _resolve_sev_block(
+                        question, forecast_origin=forecast_origin, hooks_config=_hcfg,
+                    )
+                    _noninline_rules = tuple(
+                        r for r in _ALL_BUILTIN_RULES if r.id not in _INLINE_GATE_RULE_IDS
+                    )
+                    _block_report = run_hooks(_hook_ctx, _resolved_policy, rules=_noninline_rules)
+                    if _block_report.blocking_failures():
+                        _resolved_block = _block_report
+
+                _hook_policy = policy_from_require_flags(
+                    forecast_origin=forecast_origin,
+                    require_structured_reasoning=require_structured_reasoning,
+                    require_components=require_components, require_fresh_evidence=require_fresh_evidence,
+                    require_decision_readiness=require_decision_readiness, require_panel=require_panel,
+                    require_citations=require_citations, require_outcome_paths=require_outcome_paths,
+                )
+                snapshot_metadata["saturation"] = run_hooks(_hook_ctx, _hook_policy).to_dict()
+            except Exception:  # observe-mode is best-effort and must NEVER break a commit
+                logger.debug("forecast-hooks observe-mode failed (non-fatal)", exc_info=True)
+            # RAISE the resolved-policy block OUTSIDE the fail-open try so SaturationBlocked
+            # (a ValidationError) is never swallowed by the observe guard above.
+            if _resolved_block is not None:
+                raise SaturationBlocked(_resolved_block)
+        except ValidationError as _preview_err:
+            # A gate refused the commit. In preview, surface the blocker cheaply so
+            # the caller can fix it before writing, instead of paying a real commit.
+            if preview:
+                return {"preview": True, "would_commit": False, "blockers": [str(_preview_err)]}
+            raise
+        if preview:
+            # Every gate passed. Return the SAME saturation score + post-adjustment
+            # value + assembled metadata a real commit would stamp — but no INSERT.
+            return {
+                "preview": True,
+                "would_commit": True,
+                "saturation": snapshot_metadata.get("saturation"),
+                "probability_or_distribution": payload,
+                "metadata": snapshot_metadata,
             }
-            if (
-                forecast_origin == "live"
-                and enforce_resolved_hooks
-                and not style_autofix
-                and not distribution_autofix
-                and not _block_disabled
-            ):
-                from forecasting.hooks import resolve_severities as _resolve_sev_block
-                from forecasting.hooks.builtins import BUILTIN_RULES as _ALL_BUILTIN_RULES
-
-                _resolved_policy = _resolve_sev_block(
-                    question, forecast_origin=forecast_origin, hooks_config=_hcfg,
-                )
-                _noninline_rules = tuple(
-                    r for r in _ALL_BUILTIN_RULES if r.id not in _INLINE_GATE_RULE_IDS
-                )
-                _block_report = run_hooks(_hook_ctx, _resolved_policy, rules=_noninline_rules)
-                if _block_report.blocking_failures():
-                    _resolved_block = _block_report
-
-            _hook_policy = policy_from_require_flags(
-                forecast_origin=forecast_origin,
-                require_structured_reasoning=require_structured_reasoning,
-                require_components=require_components, require_fresh_evidence=require_fresh_evidence,
-                require_decision_readiness=require_decision_readiness, require_panel=require_panel,
-                require_citations=require_citations, require_outcome_paths=require_outcome_paths,
-            )
-            snapshot_metadata["saturation"] = run_hooks(_hook_ctx, _hook_policy).to_dict()
-        except Exception:  # observe-mode is best-effort and must NEVER break a commit
-            logger.debug("forecast-hooks observe-mode failed (non-fatal)", exc_info=True)
-        # RAISE the resolved-policy block OUTSIDE the fail-open try so SaturationBlocked
-        # (a ValidationError) is never swallowed by the observe guard above.
-        if _resolved_block is not None:
-            raise SaturationBlocked(_resolved_block)
 
         forecast_id = f"fs_{uuid.uuid4().hex[:12]}"
         horizon_days = self._forecast_horizon_days(question.close_time, as_of_ts)

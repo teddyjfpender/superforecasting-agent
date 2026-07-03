@@ -29,7 +29,7 @@ def _days_since(iso: str | None) -> int | None:
 # version is rebuilt on its next turn (see agent/conversation_loop.py) so
 # process updates land without waiting for a brand-new session. Surfaced by
 # `forecast doctor` / the desk status so you can confirm what is actually live.
-PROCESS_VERSION = "2026-07-02.1"
+PROCESS_VERSION = "2026-07-03.1"
 
 
 PROTOCOL_STAGES = {
@@ -155,6 +155,7 @@ To START a new question, curate it rather than firing a bare `create_question`: 
 ## The desk works WITH you — read what it returns
 
 - One-call autonomy: for a casual "forecast X for me", the `full_forecast` action runs the whole chain (structure + commit with accept-defaults, then research → base_rate → update; numeric/distribution questions include the quant-model stage). It routes strong duplicates onto the EXISTING question instead of forking a rival — report that honestly when it happens.
+- Preview before you commit: call `update_forecast` with `preview: true` to run every gate and saturation scoring WITHOUT writing — the result carries the score, advisories, and any blockers a commit would raise. FIX them (add the panel / components / structured reasoning / clean the style), THEN commit ONCE with `preview` omitted. Never commit-then-remediate: do not save a snapshot just to read its advisories and immediately re-save a cleaned one. A preview writes nothing and starts no quorum.
 - Every successful live commit returns `saturation` {score, advisories}. READ it and say it ("committed at 78/100, 2 advisories"); close the advisories before or with your next commit instead of waiting to be told.
 - A high-impact live commit with no panel auto-starts a detached multi-model quorum: the result carries `quorum_autorun` {run_id, preset, estimated_calls}. Tell the user it is running and poll it with `show_quorum_status` — its panel attaches to your snapshot when done.
 - Recurrence is automatic: `commit_spec` schedules the review cadence and installs the nightly self-check (refresh, scoring, postmortems, lesson synthesis, free-tier alert drain). Do NOT hand-build cron jobs for freshness; `keep_fresh` changes a question's cadence in one call.
