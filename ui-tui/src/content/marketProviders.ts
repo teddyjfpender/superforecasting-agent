@@ -91,6 +91,14 @@ export const MARKET_PROVIDERS: MarketProvider[] = [
     keyUrl: 'https://apps.bea.gov/API/signup/',
     name: 'BEA',
     needsKey: true
+  },
+  {
+    categories: ['Prediction'],
+    description:
+      'Polymarket + Kalshi event odds, order books & live streams in a dedicated pane (p in Markets — or enable here to jump in). No key to browse; Kalshi live streaming: forecast api-key set kalshi --pem-file <key.pem>',
+    key: 'predictionmarkets',
+    name: 'Prediction Markets (Polymarket + Kalshi)',
+    needsKey: false
   }
 ]
 

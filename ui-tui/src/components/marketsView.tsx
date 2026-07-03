@@ -641,6 +641,17 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     setModal('')
     persist({ ...next, custom, watchlist })
     setActive(0)
+    // Enabling the Prediction Markets entry in Add-data jumps straight into the
+    // PM pane — the operator's discovery path is the provider list, and a saved
+    // provider that changed nothing visible would read as a no-op.
+    const pmNewlyEnabled =
+      next.providers.includes('predictionmarkets') && !config.providers.includes('predictionmarkets')
+    if (pmNewlyEnabled) {
+      // Landing in the pane IS the feedback — the PM pane owns the whole
+      // surface in this mode, so a marketsView flash would never paint.
+      setMode('pm')
+      return
+    }
     setFlash('saved')
   }
 

@@ -169,6 +169,27 @@ describe('MarketsView', () => {
     expect(text).toContain('Yahoo Finance')
     expect(text).toContain('CATEGORIES')
   })
+
+  it('lists Prediction Markets in add-data and enabling it jumps into the PM pane', async () => {
+    const m = await renderMarkets()
+    await m.press('d')
+    // The PM entry sits at the catalog tail: walk the provider list down to it,
+    // toggle it on, save. The operator's discovery path is the add-data flow, so
+    // enabling must land them IN the pane, not silently save a no-op.
+    // The PM entry is the catalog TAIL and the cursor clamps at the last row,
+    // so a fixed run of downs deterministically lands on it (the cumulative
+    // stdout buffer makes visibility checks unreliable for cursor position).
+    for (let i = 0; i < 30; i += 1) {
+      await m.press('\u001b[B')
+    }
+    expect(m.text()).toContain('Prediction Mar')
+    await m.press('\r') // ⏎ toggles the highlighted provider on
+    await m.press('\u001b') // Esc = save & close (the modal's commit key)
+    const text = m.text()
+    m.cleanup()
+
+    expect(text).toContain('[Prediction]')
+  })
 })
 
 describe('AddProviderModal', () => {
