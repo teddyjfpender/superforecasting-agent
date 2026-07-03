@@ -378,6 +378,40 @@ describe('Prediction section inside the Data tape', () => {
     m.cleanup()
   })
 
+  it('a pm.tick repaints a row from the honest server estimate ONLY (folds .estimate)', async () => {
+    const m = await mount()
+    // Fed (binary, Kalshi) shows its honest REST YES at 13.00%.
+    expect(m.text()).toContain('13.00%')
+    // A degenerate/dead tick (estimate null) carries NO estimate-grade info and
+    // triggers no repaint — the honest reading is never overwritten (the
+    // Putin-50% bug). The null → no-fold path is proven in the tickEstimate unit
+    // test; here we clear the frame buffer and prove the positive repaint.
+    m.clear()
+    m.emit('event', {
+      payload: { estimate: 0.2, kind: 'price_change', market_id: 'FED-Y', payload: {}, venue: 'kalshi' },
+      type: 'pm.tick'
+    })
+    await tick(60)
+    const text = m.text()
+    // The server estimate repainted the row IN PLACE; the REST 13.00% is gone.
+    expect(text).toContain('20.00%')
+    expect(text).not.toContain('13.00%')
+    m.cleanup()
+  })
+
+  it('the DETAIL pane for a binary market states BOTH sides: YES + a NO complement', async () => {
+    const m = await mount()
+    await m.press(`${ESC}[B`) // down → Fed (the binary Kalshi row)
+    await tick(150) // let the pm.detail fetch settle
+    const text = m.text()
+    // Both sides, complementary, computed from the same estimate (0.13 → 0.87):
+    // YES in the success token, NO in the danger token. NO 87.00% appears ONLY
+    // in the detail (table rows never carry a NO tag — prices are YES-side).
+    expect(text).toContain('YES 13.00%')
+    expect(text).toContain('NO 87.00%')
+    m.cleanup()
+  })
+
   it('→ expands a categorical event; sub-rows sit under an OUTCOME / BID·ASK header line', async () => {
     const m = await mount()
     // The '└' glyph + the BID·ASK header are unique to the EXPANDED outcome list.
@@ -560,6 +594,20 @@ describe('PredictionMarketsTable column contract', () => {
     expect(text).toContain('Zombie Ballot 2030')
     expect(text).toContain(DASH)
     expect(text).not.toContain('50%')
+  })
+
+  it('the fixed 4-cell direction gutter right-aligns every % under one column edge', async () => {
+    const text = await renderTable(100)
+    const lines = text.split('\n')
+    const nba = lines.find(l => l.includes('NBA Champion')) ?? ''
+    const fed = lines.find(l => l.includes('Fed hikes')) ?? ''
+    // Categorical headline: bare number, no tag (its label lives in the title).
+    expect(nba).toContain('44.00%')
+    // Binary headline: colour-coded YES tag + the value right-aligned after it.
+    expect(fed).toMatch(/YES\s+13\.00%/)
+    // Both %s share the SAME right edge — the whole point of the fixed gutter
+    // (the operator's screenshot showed YES floats at ragged offsets).
+    expect(nba.indexOf('44.00%') + '44.00%'.length).toBe(fed.indexOf('13.00%') + '13.00%'.length)
   })
 
   it('narrow priority-drop sheds VENUE first, then VOL', async () => {

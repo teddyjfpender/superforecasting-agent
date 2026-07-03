@@ -11,7 +11,7 @@ import {
   type PMMarketDTO,
   type PMOrderBookDTO,
   seriesTickerFor,
-  tickPrice,
+  tickEstimate,
   venueLabel
 } from '../lib/pmData.js'
 import { filterPMItems, flattenPMRows, pmExpandable, pmRowId, pmSortValue } from '../lib/pmRows.js'
@@ -159,7 +159,7 @@ describe('bookMarketId + seriesTickerFor', () => {
   })
 })
 
-describe('applyBookTick / tickPrice', () => {
+describe('applyBookTick / tickEstimate', () => {
   const book = (): PMOrderBookDTO => ({
     asks: [{ price: 0.58, size: 90 }],
     best_ask: 0.58,
@@ -172,8 +172,9 @@ describe('applyBookTick / tickPrice', () => {
     venue: 'polymarket'
   })
 
-  it('folds a matching book delta and recomputes best/mid in place', () => {
+  it('folds a matching book delta: ladders update, mid is the server estimate ONLY', () => {
     const next = applyBookTick(book(), {
+      estimate: 0.585,
       kind: 'book',
       market_id: 'tok-yes',
       payload: { asks: [[0.6, 40]], bids: [[0.57, 200]] },
@@ -182,20 +183,43 @@ describe('applyBookTick / tickPrice', () => {
 
     expect(next?.best_bid).toBe(0.57)
     expect(next?.best_ask).toBe(0.6)
+    // The mid is the honest server estimate — NOT re-derived from the ladder.
     expect(next?.mid).toBeCloseTo(0.585, 4)
+  })
+
+  it('a book delta with a NULL estimate folds ladders but keeps the last honest mid', () => {
+    // The raw ladder (0.3, 0.7) would yield a phantom 0.5 mid — the Putin-50%
+    // bug. With a null estimate the mid stays the prior honest 0.565.
+    const next = applyBookTick(book(), {
+      estimate: null,
+      kind: 'book',
+      market_id: 'tok-yes',
+      payload: { asks: [[0.7, 40]], bids: [[0.3, 200]] },
+      venue: 'polymarket'
+    })
+
+    expect(next?.best_bid).toBe(0.3)
+    expect(next?.mid).toBe(0.565)
   })
 
   it('a non-matching market id is a no-op (same reference)', () => {
     const b = book()
-    expect(applyBookTick(b, { kind: 'book', market_id: 'other', venue: 'polymarket' })).toBe(b)
+    expect(applyBookTick(b, { estimate: 0.9, kind: 'book', market_id: 'other', venue: 'polymarket' })).toBe(b)
   })
 
-  it('tickPrice reads a direct price or derives a mid from a book delta', () => {
-    expect(tickPrice({ kind: 'price_change', market_id: 'x', payload: { price: 0.41 }, venue: 'polymarket' })).toBe(0.41)
+  it('tickEstimate folds ONLY the server estimate — never derived from the raw book', () => {
+    // A real estimate passes through untouched…
     expect(
-      tickPrice({ kind: 'book', market_id: 'x', payload: { asks: [[0.6, 1]], bids: [[0.4, 1]] }, venue: 'polymarket' })
-    ).toBeCloseTo(0.5, 4)
-    expect(tickPrice({ kind: 'noise', market_id: 'x', payload: {}, venue: 'polymarket' })).toBeNull()
+      tickEstimate({ estimate: 0.13, kind: 'price_change', market_id: 'x', payload: { price: 0.99 }, venue: 'polymarket' })
+    ).toBe(0.13)
+    // …a null estimate is null EVEN when the raw book could yield a mid (proof
+    // by absence: no code derives a price from the payload, so 50% is impossible).
+    expect(
+      tickEstimate({ estimate: null, kind: 'book', market_id: 'x', payload: { asks: [[0.6, 1]], bids: [[0.4, 1]] }, venue: 'polymarket' })
+    ).toBeNull()
+    // …a missing / NaN estimate is null (defensive).
+    expect(tickEstimate({ kind: 'noise', market_id: 'x', payload: {}, venue: 'polymarket' })).toBeNull()
+    expect(tickEstimate({ estimate: Number.NaN, kind: 'book', market_id: 'x', venue: 'polymarket' })).toBeNull()
   })
 })
 

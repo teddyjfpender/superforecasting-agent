@@ -29,6 +29,35 @@ interface PMTableProps {
 // machinery (lib/pmRows) so header + rows line up cell-for-cell.
 const GUT = '  '
 
+// The FIXED-WIDTH direction gutter at the head of EVERY prob cell: exactly 4
+// cells — "YES " on a binary YES-side reading, 4 spaces otherwise — then the %
+// value right-aligned in the remaining (w - 4) cells. Pinning the gutter keeps
+// the values right-aligned in ONE column whether or not the row carries a tag
+// (the operator's screenshot showed YES floats at ragged offsets). A degenerate
+// value too wide to sit beside the gutter (only a 7-char "100.00%") right-aligns
+// across the FULL cell instead: its right edge stays in the same column, so the
+// alignment holds; the tag is simply dropped for that one pathological row.
+// Prices are YES-side; a NO complement belongs in the detail, never a table row.
+const DIR_GUT = 4
+
+const probCell = (num: string, w: number, tag: boolean, on: boolean, t: Theme, sem: Semantics) => {
+  const fits = num.length <= w - DIR_GUT
+
+  return (
+    <Text key="prob">
+      {GUT}
+      {!fits ? null : tag ? (
+        <Text bold={on} color={sem.up}>
+          {'YES '}
+        </Text>
+      ) : (
+        <Text>{' '.repeat(DIR_GUT)}</Text>
+      )}
+      <Text color={t.color.text}>{pad(num, fits ? w - DIR_GUT : w, 'right')}</Text>
+    </Text>
+  )
+}
+
 // The dense Prediction Markets section: event HEADLINE rows (title + top
 // outcome, de-vigged prob, volume, close, venue chip) with ▸ expand revealing
 // INDENTED outcome sub-rows (label, prob, bid·ask, volume). Two aligned column
@@ -144,31 +173,19 @@ export function PredictionMarketsTable({
                     <Text bold={on} color={on ? sem.selectionFg : t.color.label}>
                       {pad(title, head.marketW - 2, 'left')}
                     </Text>
-                    {head.cols.map(c => {
-                      // Only prefix "YES" when it fits the column — a degenerate
-                      // 100.00% would overflow and shove the trailing columns, so
-                      // fall back to the bare number there (keeps the row aligned).
-                      if (c.key === 'prob' && binary && `YES ${fmtProb(prob)}`.length <= c.w) {
-                        const num = fmtProb(prob)
-                        const lead = ' '.repeat(Math.max(0, c.w - `YES ${num}`.length))
-
-                        return (
-                          <Text key={c.key}>
-                            {`${GUT}${lead}`}
-                            <Text bold={on} color={sem.up}>
-                              YES
-                            </Text>
-                            <Text color={t.color.text}>{` ${num}`}</Text>
-                          </Text>
-                        )
-                      }
-
-                      return (
-                        <Text color={c.key === 'venue' ? sem.faint : c.key === 'prob' ? t.color.text : sem.subtle} key={c.key}>
+                    {head.cols.map(c =>
+                      // PROB leads with the fixed 4-cell direction gutter (binary
+                      // headline → colour-coded "YES ", categorical → 4 spaces,
+                      // since its label already lives in the title) so every % in
+                      // the column right-aligns under one edge.
+                      c.key === 'prob' ? (
+                        probCell(fmtProb(prob), c.w, binary, on, t, sem)
+                      ) : (
+                        <Text color={c.key === 'venue' ? sem.faint : sem.subtle} key={c.key}>
                           {`${GUT}${pad(cell(c.key), c.w, c.align)}`}
                         </Text>
                       )
-                    })}
+                    )}
                   </Text>
                 </Box>
               )
@@ -222,11 +239,17 @@ export function PredictionMarketsTable({
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                     <Text color={sem.faint}>{'└─ '}</Text>
                     <Text bold={on} color={on ? sem.selectionFg : sem.subtle}>{pad(o.label, outcome.labelW, 'left')}</Text>
-                    {outcome.cols.map(c => (
-                      <Text color={c.key === 'prob' ? t.color.text : c.key === 'ba' ? sem.faint : sem.subtle} key={c.key}>
-                        {`${GUT}${pad(outCell(c.key), c.w, c.align)}`}
-                      </Text>
-                    ))}
+                    {outcome.cols.map(c =>
+                      // Same fixed 4-cell prob gutter as the headline (sub-rows
+                      // never tag → 4 spaces) so sub-row %s right-align in-column.
+                      c.key === 'prob' ? (
+                        probCell(fmtProb(prob), c.w, false, on, t, sem)
+                      ) : (
+                        <Text color={c.key === 'ba' ? sem.faint : sem.subtle} key={c.key}>
+                          {`${GUT}${pad(outCell(c.key), c.w, c.align)}`}
+                        </Text>
+                      )
+                    )}
                   </Text>
                 </Box>
               </Box>

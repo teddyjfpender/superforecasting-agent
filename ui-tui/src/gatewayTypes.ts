@@ -1880,9 +1880,11 @@ export type GatewayEvent =
   | {
       // A prediction-market websocket delta re-emitted by tui_gateway/pm_rpc.py
       // (one shared connection per venue). `kind` is the venue frame type
-      // (book / price_change / …); `payload` is the raw delta the PM view
-      // folds into the touched row/book in place. Sessionless (mirrors cron.fired).
-      payload: { kind: string; market_id: string; payload?: Record<string, unknown>; venue: string }
+      // (book / price_change / …); `payload` is the raw delta the PM view folds
+      // into the book ladders in place. `estimate` is the server-side honest YES
+      // probability (canonical honest_yes_mid rule) — the ONLY price a consumer
+      // may fold; null when the tick carries no estimate-grade info. Sessionless.
+      payload: { estimate?: null | number; kind: string; market_id: string; payload?: Record<string, unknown>; venue: string }
       session_id?: string
       type: 'pm.tick'
     }

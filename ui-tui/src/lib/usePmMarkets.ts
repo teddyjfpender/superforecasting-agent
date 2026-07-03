@@ -24,7 +24,7 @@ import {
   seriesTickerFor,
   startPMStream,
   stopPMStream,
-  tickPrice
+  tickEstimate
 } from './pmData.js'
 
 export interface PMHookGateway {
@@ -236,13 +236,16 @@ export function usePmSelectionData(
       const tick = ev.payload
       setBook(prev => applyBookTick(prev, tick))
 
-      const price = tickPrice(tick)
+      // Fold ONLY the server's honest estimate. A null estimate (dead/degenerate
+      // tick) changes NOTHING — the honest REST value on the row is left intact,
+      // never overwritten by a fabricated mid.
+      const estimate = tickEstimate(tick)
 
-      if (price !== null && aliveRef.current) {
+      if (estimate !== null && aliveRef.current) {
         // Ticks are keyed by the subscription id; rows key on the outcome
         // market_id — remap so the Polymarket overlay actually lands.
         const rowId = tickKeyRef.current[tick.market_id] ?? tick.market_id
-        setLivePrices(prev => (prev[rowId] === price ? prev : { ...prev, [rowId]: price }))
+        setLivePrices(prev => (prev[rowId] === estimate ? prev : { ...prev, [rowId]: estimate }))
       }
     }
 

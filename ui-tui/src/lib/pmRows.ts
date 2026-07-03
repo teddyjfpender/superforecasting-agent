@@ -61,8 +61,11 @@ const PM_MARKET_MIN = 12
 
 // Headline schema fixed columns (MARKET absorbs the leftover). Priority to KEEP
 // under pressure: PROB + CLOSE are sacred (with MARKET); VOL outranks VENUE, so
-// the narrow-terminal drop order is VENUE first, then VOL. PROB is wide enough
-// (10) for a binary row's colour-coded direction reading at 2dp — "YES 99.99%".
+// the narrow-terminal drop order is VENUE first, then VOL. PROB is 10 wide: a
+// FIXED 4-cell direction gutter ("YES " / 4 spaces) leads a 2dp value
+// right-aligned in the remaining 6, so every row's % lands in ONE right-aligned
+// column regardless of tag presence (a degenerate 7-char "100.00%" drops the tag
+// and right-aligns across the full cell — same edge, no truncation).
 const PM_HEAD_FIXED: PmCol[] = [
   { align: 'right', key: 'prob', label: 'PROB', w: 10 },
   { align: 'right', key: 'vol', label: 'VOL', w: 7 },
@@ -102,6 +105,9 @@ export function packPmHead(avail: number): { cols: PmCol[]; marketW: number } {
 // that indent on top of the cursor marker.
 export const PM_OUTCOME_INDENT = 3 // the '└ ' tree glyph run
 
+// Sub-rows never carry a direction tag (each outcome label IS its own
+// direction), so PROB stays 6 and the % right-aligns across it — the same
+// probCell renderer falls through to a bare right-aligned value here.
 const PM_OUTCOME_FIXED: PmCol[] = [
   { align: 'right', key: 'prob', label: 'PROB', w: 6 },
   { align: 'right', key: 'ba', label: 'BID·ASK', w: 7 },

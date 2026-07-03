@@ -244,11 +244,13 @@ const renderRaw = async (windowed: PMDisplayRow[], clampedSel: number, sortState
 }
 
 describe('#4 direction labels + #5 precision + #6 full-row highlight', () => {
-  it('a binary headline shows a colour-coded "YES" + a 2dp probability', async () => {
+  it('a binary headline shows a colour-coded "YES" + a right-aligned 2dp probability', async () => {
     const rows = flattenPMRows([binaryEvt()] as any, new Set())
     const raw = await renderRaw(rows, 0)
     const plain = raw.replace(/\x1b\[[0-9;]*m/g, '')
-    expect(plain).toContain('YES 13.00%') // 2dp, contextualised
+    // The "YES" tag sits in a FIXED 4-cell gutter; the % right-aligns after it
+    // (a 6-char value leaves one pad space → "YES  13.00%").
+    expect(plain).toMatch(/YES\s+13\.00%/) // 2dp, contextualised, fixed gutter
     // The YES token paints in the success (ok) foreground token.
     expect(raw).toContain(hexTrue(DARK_THEME.color.ok, 38))
   })

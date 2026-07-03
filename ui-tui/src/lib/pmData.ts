@@ -206,6 +206,11 @@ export function seriesTickerFor(venue: string, event: PMEventDTO | undefined): n
 // ── in-place tick folding (streaming) ────────────────────────────────────────
 
 export interface PMTickPayload {
+  // The ONLY probability a consumer may fold: the server-side honest YES
+  // estimate (canonical honest_yes_mid rule, computed in tui_gateway/pm_rpc.py).
+  // null when this tick carries no estimate-grade info (a degenerate/one-sided
+  // book, a bare level delta) — a dead tick must never move a row.
+  estimate?: null | number
   kind: string
   market_id: string
   payload?: Record<string, unknown>
@@ -232,8 +237,11 @@ const toLevels = (raw: unknown): null | PMOrderLevelDTO[] => {
 }
 
 // Fold a `pm.tick` book delta into the currently-shown book, matched by
-// market_id. A price_change tick with no full book is a no-op on the ladders
-// (the numeric mid is refreshed by the row-price applier below). Returns a new
+// market_id. The order-book LADDERS are honest raw data (real resting orders),
+// so they still fold; the numeric `mid`, however, is set from the server's
+// honest `estimate` ONLY — it is NEVER re-derived from the raw ladder (that
+// derivation was the fabricated-price path: a degenerate book yielded a phantom
+// 50%). A null estimate leaves the last honest mid untouched. Returns a new
 // object when it changed, else the same reference (so React can bail on ===).
 export function applyBookTick(book: null | PMOrderBookDTO, tick: PMTickPayload): null | PMOrderBookDTO {
   if (!book || tick.market_id !== book.market_id) {
@@ -243,8 +251,10 @@ export function applyBookTick(book: null | PMOrderBookDTO, tick: PMTickPayload):
   const p = tick.payload ?? {}
   const bids = toLevels(p.bids ?? p.buys)
   const asks = toLevels(p.asks ?? p.sells)
+  const est = tickEstimate(tick)
 
-  if (!bids && !asks) {
+  // No ladder delta AND no estimate-grade info → leave the book exactly as-is.
+  if (!bids && !asks && est === null) {
     return book
   }
 
@@ -257,31 +267,19 @@ export function applyBookTick(book: null | PMOrderBookDTO, tick: PMTickPayload):
     best_ask: nextAsks[0]?.price ?? null,
     best_bid: nextBids[0]?.price ?? null,
     bids: nextBids,
-    mid: nextBids[0] && nextAsks[0] ? (nextBids[0].price + nextAsks[0].price) / 2 : book.mid,
+    // Honest server estimate only; a null estimate keeps the prior honest mid.
+    mid: est ?? book.mid,
     timestamp: typeof p.timestamp === 'number' ? p.timestamp : book.timestamp
   }
 }
 
-// The refreshed YES price a tick implies for the touched market (for the
-// row-level repaint). Reads a mid/price field if the venue sent one, else
-// derives it from a full book delta.
-export function tickPrice(tick: PMTickPayload): null | number {
-  const p = tick.payload ?? {}
-  const direct = p.price ?? p.mid ?? p.yes_mid ?? p.last_price
-
-  if (typeof direct === 'number' && Number.isFinite(direct)) {
-    return direct
-  }
-
-  const bids = toLevels(p.bids ?? p.buys)
-  const asks = toLevels(p.asks ?? p.sells)
-
-  if (bids?.[0] && asks?.[0]) {
-    return (bids[0].price + asks[0].price) / 2
-  }
-
-  return null
-}
+// The ONE honest probability a tick carries: the server-side `estimate`, passed
+// through untouched (finite numbers only; null/NaN/undefined → null). There is
+// deliberately NO client-side mid/price derivation here — a consumer folds this
+// and nothing else, so a raw book/price_change delta can never manufacture a
+// price (the Putin-50% bug is impossible by absence of the code that caused it).
+export const tickEstimate = (tick: PMTickPayload): null | number =>
+  typeof tick.estimate === 'number' && Number.isFinite(tick.estimate) ? tick.estimate : null
 
 // ── display formatting ───────────────────────────────────────────────────────
 
