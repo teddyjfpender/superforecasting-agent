@@ -244,7 +244,7 @@ const shortModelLabel = (model: string) =>
     .replace(/\b(\d+)\s+(\d+)\b/g, '$1.$2')
     .trim()
 
-const modelLabel = (model: string, effort?: string, fast?: boolean) =>
+export const modelLabel = (model: string, effort?: string, fast?: boolean) =>
   [shortModelLabel(model), effortLabel(effort), fast ? 'fast' : ''].filter(Boolean).join(' ')
 
 export function ForecastPulse({ tick, t }: { tick: number; t: Theme }) {

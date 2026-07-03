@@ -142,6 +142,71 @@ describe('todayFeedItems', () => {
   })
 })
 
+// ── fitTodayRow truncation contract ───────────────────────────────────────────
+// The row-fitting rule the redesigned panel leans on: the TITLE is the only
+// thing ever truncated, and the meta chip (note) is shown WHOLE or dropped —
+// never a dangling half-metadata fragment like "interval_50_high 4.4 · i…".
+
+describe('fitTodayRow', () => {
+  const GAP = 2
+
+  const within = (fitted: { note: string; title: string }, budget: number) =>
+    fitted.title.length + (fitted.note ? GAP + fitted.note.length : 0) <= budget
+
+  it('shows both whole when the title and note fit', async () => {
+    const { fitTodayRow } = await import('../components/todayPanel.js')
+    const fitted = fitTodayRow('Fed decision', '63% · as-of 2026-06-01', 60)
+
+    expect(fitted.title).toBe('Fed decision')
+    expect(fitted.note).toBe('63% · as-of 2026-06-01')
+    expect(within(fitted, 60)).toBe(true)
+  })
+
+  it('truncates the TITLE (never the note) to keep a whole note', async () => {
+    const { fitTodayRow } = await import('../components/todayPanel.js')
+    const title = 'Will the very long forecast question about the economy resolve yes?'
+    const note = 'as-of 2026-06-01'
+    const fitted = fitTodayRow(title, note, 40)
+
+    // The note is intact — never a fragment.
+    expect(fitted.note).toBe(note)
+    // The title carries the ellipsis instead.
+    expect(fitted.title.endsWith('…')).toBe(true)
+    expect(within(fitted, 40)).toBe(true)
+  })
+
+  it('drops the note entirely rather than emit a half-metadata fragment', async () => {
+    const { fitTodayRow } = await import('../components/todayPanel.js')
+
+    // A long note beside a long title with no room for both → note must vanish,
+    // not appear as "interval_50_high 4.4 · i…".
+    const fitted = fitTodayRow(
+      'A reasonably long forecast title that already eats the row',
+      'interval_50_high 4.4 · interval_50_low 2.1 · as-of 2026-06-24',
+      36
+    )
+
+    // Contract: note is the WHOLE input or empty — never a truncated fragment.
+    expect(fitted.note === '' || fitted.note === 'interval_50_high 4.4 · interval_50_low 2.1 · as-of 2026-06-24').toBe(true)
+    expect(fitted.note).toBe('')
+    expect(within(fitted, 36)).toBe(true)
+  })
+
+  it('never returns a note that is a truncated slice of the input, for any budget', async () => {
+    const { fitTodayRow } = await import('../components/todayPanel.js')
+    const title = 'Some forecast question that is moderately long here'
+    const note = 'Andy Burnham 0.80 (+7) · as-of 2026-06-24'
+
+    for (let budget = 4; budget <= 90; budget++) {
+      const fitted = fitTodayRow(title, note, budget)
+
+      // Meta chip is whole-or-absent, and the row always fits its budget.
+      expect(fitted.note === '' || fitted.note === note).toBe(true)
+      expect(within(fitted, budget)).toBe(true)
+    }
+  })
+})
+
 // ── Component render + keyboard ───────────────────────────────────────────────
 
 const writeStream = (columns: number, rows: number, isTTY = false) => {

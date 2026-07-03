@@ -19,8 +19,43 @@ const NARROW_ROWS = 3
 const WIDE_ROWS = 6
 // Row prefix cells before the title: marker "▸ " (2) + hotkey (1) + " glyph " (3).
 const ROW_GLYPH_COLS = 6
-// Only append the muted note when at least this many cols are left after the title.
-const NOTE_MIN_COLS = 12
+// The gap between the title and the note chip ("  ").
+const NOTE_GAP = 2
+// The shortest title we'll leave visible while still spending width on a whole
+// note — below this the note is dropped entirely so the title stays readable.
+const NOTE_MIN_TITLE = 12
+
+// Fit one Today row into `budget` cells honouring a strict contract: the TITLE
+// is the only thing ever truncated (ellipsis), and the meta chip (note) is shown
+// WHOLE or not at all — never a dangling half-metadata fragment. Pure + exported
+// so the truncation contract is unit-testable.
+export const fitTodayRow = (
+  title: string,
+  note: string,
+  budget: number
+): { note: string; title: string } => {
+  const safe = Math.max(1, budget)
+
+  // No note → just clip the title to the whole budget.
+  if (!note) {
+    return { note: '', title: truncate(title, safe) }
+  }
+
+  // The whole title + the whole note already fit — show both untouched.
+  if (title.length + NOTE_GAP + note.length <= safe) {
+    return { note, title }
+  }
+
+  // Keep the WHOLE note only if a readable (>= NOTE_MIN_TITLE) truncated title
+  // still fits beside it; otherwise drop the note and give the title the budget.
+  const titleRoom = safe - NOTE_GAP - note.length
+
+  if (titleRoom >= Math.min(NOTE_MIN_TITLE, title.length)) {
+    return { note, title: truncate(title, titleRoom) }
+  }
+
+  return { note: '', title: truncate(title, safe) }
+}
 
 const glyphFor = (item: TodayItem): string => {
   if (item.kind === 'alerts') {
@@ -39,6 +74,9 @@ interface TodayPanelProps {
   // feed row (a deep-link into the Warnings view's contested lens) when > 0.
   contestedCount?: number
   focused: boolean
+  // Cap the visible rows (the landing passes 5 for a compact, well-formed block).
+  // When absent the panel keeps its width-driven default (narrow 3 / wide 6).
+  maxRows?: number
   onBlur: () => void
   onNewQuestion: () => void
   onOpenAlerts: (focus?: 'contested') => void
@@ -60,6 +98,7 @@ interface TodayPanelProps {
 export function TodayPanel({
   contestedCount = 0,
   focused,
+  maxRows: maxRowsProp,
   onBlur,
   onNewQuestion,
   onOpenAlerts,
@@ -73,7 +112,7 @@ export function TodayPanel({
 }: TodayPanelProps) {
   const items = useMemo(() => todayFeedItems(sections, 9, contestedCount), [sections, contestedCount])
   const narrow = width < NARROW_COLS
-  const maxRows = narrow ? NARROW_ROWS : WIDE_ROWS
+  const maxRows = maxRowsProp ?? (narrow ? NARROW_ROWS : WIDE_ROWS)
   const visible = items.slice(0, maxRows)
   const hidden = Math.max(0, items.length - visible.length)
 
@@ -217,11 +256,11 @@ export function TodayPanel({
         <Text bold color={focused ? t.color.accent : t.color.primary}>
           TODAY
         </Text>
-        <Text color={t.color.muted}>{'   what needs you'}</Text>
+        <Text color={t.color.muted}>{' · what needs you'}</Text>
         {!focused && items.length ? (
           <Text color={t.color.muted}>
-            {'   '}
-            <Text color={t.color.accent}>Ctrl+T</Text> focus
+            {' · '}
+            <Text color={t.color.accent}>Ctrl+T</Text>
           </Text>
         ) : null}
       </Text>
@@ -243,12 +282,14 @@ export function TodayPanel({
             const glyphColor =
               item.kind === 'alerts' ? t.color.statusBad : item.kind === 'question' ? t.color.accent : t.color.muted
 
-            // Give the TITLE priority (mirror how deskView reserves the trailing
-            // trend only once QUESTION is comfortable): append the muted note only
-            // when the title leaves comfortable room on the line, and clip it to the
-            // leftover width so a long title never shares its row with rail status.
-            const noteRoom = inner - ROW_GLYPH_COLS - item.title.length - 2
-            const noteText = item.note && noteRoom >= NOTE_MIN_COLS ? truncate(item.note, noteRoom) : ''
+            // Give the TITLE priority: the title is the only thing ever
+            // truncated, and the note chip is shown WHOLE or dropped — never a
+            // dangling half-metadata fragment (the fitTodayRow contract).
+            const { note: shownNote, title: shownTitle } = fitTodayRow(
+              item.title,
+              item.note,
+              inner - ROW_GLYPH_COLS
+            )
 
             return (
               <Box
@@ -260,9 +301,9 @@ export function TodayPanel({
                   <Text bold color={t.color.accent}>{item.hotkey}</Text>
                   <Text color={glyphColor}>{` ${glyph} `}</Text>
                   <Text bold={active} color={t.color.text}>
-                    {item.title}
+                    {shownTitle}
                   </Text>
-                  {noteText ? <Text color={t.color.muted}>{`  ${noteText}`}</Text> : null}
+                  {shownNote ? <Text color={t.color.muted}>{`  ${shownNote}`}</Text> : null}
                 </Text>
               </Box>
             )

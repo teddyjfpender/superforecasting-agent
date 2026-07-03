@@ -29,7 +29,7 @@ import { AgentsOverlay } from './agentsOverlay.js'
 import { AlertsView } from './alertsView.js'
 import { ForecastPulse, StatusRule, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
 import { FloatingOverlays, PromptZone } from './appOverlays.js'
-import { FirstRunHint, HomeHero, Panel, SessionPanel } from './branding.js'
+import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
 import { CheatSheetOverlay } from './cheatSheetOverlay.js'
@@ -40,6 +40,7 @@ import { DocsView } from './docsView.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
 import { HelpView } from './helpView.js'
+import { HomeStatusBar, HomeTip } from './homeLanding.js'
 import { HooksView } from './hooksView.js'
 import { MarketsView } from './marketsView.js'
 import { MessageLine } from './messageLine.js'
@@ -204,8 +205,9 @@ const ComposerPane = memo(function ComposerPane({
   actions,
   composer,
   confined = false,
+  landing = false,
   status
-}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { confined?: boolean }) {
+}: Pick<AppLayoutProps, 'actions' | 'composer' | 'status'> & { confined?: boolean; landing?: boolean }) {
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
   const chordPending = useStore($chordPending)
@@ -310,9 +312,15 @@ const ComposerPane = memo(function ComposerPane({
         <Box height={1} onMouseDown={captureInputDrag} onMouseDrag={dragFromSpacer} onMouseUp={endInputDrag} />
       )}
 
-      <StatusRulePane at="top" composer={composer} status={status} />
+      {/* On the landing the composer yields its own status rule — a deliberately
+          sparse 3-item bar renders at the very bottom of the Home column instead. */}
+      {landing ? null : <StatusRulePane at="top" composer={composer} status={status} />}
 
-      <Box flexDirection="column" marginTop={ui.statusBar === 'top' ? 0 : 1} position="relative">
+      <Box
+        flexDirection="column"
+        marginTop={landing || ui.statusBar === 'top' ? 0 : 1}
+        position="relative"
+      >
         <FloatingOverlays
           cols={composer.cols}
           compIdx={composer.compIdx}
@@ -383,7 +391,7 @@ const ComposerPane = memo(function ComposerPane({
 
       {!composer.empty && !ui.sid && <Text color={ui.theme.color.muted}>P {ui.status}</Text>}
 
-      <StatusRulePane at="bottom" composer={composer} status={status} />
+      {landing ? null : <StatusRulePane at="bottom" composer={composer} status={status} />}
     </NoSelect>
   )
 })
@@ -801,7 +809,7 @@ export const AppLayout = memo(function AppLayout({
   // The prompt + input + status bar, pinned to the bottom. `confined` narrows it
   // to the Home right pane (two-pane wide layout); otherwise it spans the full
   // terminal width (single-pane / narrow). `bar` carries the matching `cols`.
-  const renderPromptBar = (bar: typeof composer, confined: boolean) => (
+  const renderPromptBar = (bar: typeof composer, confined: boolean, landing = false) => (
     <>
       <PerfPane id="prompt">
         <PromptZone
@@ -814,7 +822,7 @@ export const AppLayout = memo(function AppLayout({
       </PerfPane>
 
       <PerfPane id="composer">
-        <ComposerPane actions={actions} composer={bar} confined={confined} status={status} />
+        <ComposerPane actions={actions} composer={bar} confined={confined} landing={landing} status={status} />
       </PerfPane>
 
       {SHOW_FPS && (
@@ -825,18 +833,36 @@ export const AppLayout = memo(function AppLayout({
     </>
   )
 
-  // The centred Outrider hero (new-chat screen) plus any startup notices, sized
-  // to `heroCols` (the right-pane width when the rail is shown, else full width).
-  const renderHero = (heroCols: number) => (
+  // The centred Home landing column, OpenCode-style top-to-bottom: breathing
+  // room → the Outrider hero → the composer (the focal point, directly beneath
+  // the hero) → the compact TODAY block → the SCHEDULE one-liner → more room →
+  // ONE accent tip → a deliberately sparse 3-item status bar. `heroCols` sizes
+  // the column (the right-pane width when the rail shows, else full width); `bar`
+  // + `confined` carry the composer's matching columns.
+  const renderLanding = (heroCols: number, bar: typeof composer, confined: boolean) => (
     <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
+      {/* Top breathing room — whitespace as structure. */}
+      <Box flexGrow={1} />
+
+      <HomeHero info={ui.info ?? undefined} maxCols={heroCols} t={ui.theme} />
+
+      {/* The composer sits directly under the hero as the obvious focal point.
+          It keeps its landing soft-focus (not focused until typing) — only its
+          own status rule is suppressed here (`landing`), replaced by the slim
+          bar pinned at the bottom of this column. */}
+      <Box flexDirection="column" flexShrink={0} marginTop={1}>
+        {renderPromptBar(bar, confined, true)}
+      </Box>
+
       {/* The landing "Today" attention panel: the desk-rail sections the status
           strip already carries, rendered as an interactive feed of what needs a
-          human. Sits ABOVE the hero; the composer below stays usable (it only
-          yields the keyboard while the panel explicitly holds Home focus). */}
-      <Box flexShrink={0} paddingTop={1} paddingX={1}>
+          human. It keeps its Ctrl+T focus + click-to-Desk behaviour untouched —
+          only capped to a compact 5 rows here. */}
+      <Box flexShrink={0} marginTop={1} paddingX={1}>
         <TodayPanel
           contestedCount={ui.forecastContestedCount}
           focused={homeFocus.pane === 'today'}
+          maxRows={5}
           onBlur={() => setHomePane('conversation')}
           onNewQuestion={() => {
             setHomePane('conversation')
@@ -861,16 +887,15 @@ export const AppLayout = memo(function AppLayout({
           width={Math.max(20, heroCols - 2)}
         />
       </Box>
-      {/* Schedule-health strip: sits just under Today, hidden unless the desk has
-          something scheduled (self-fetches forecast.schedule.status). */}
+
+      {/* Schedule-health one-liner: sits just under Today, hidden unless the desk
+          has something scheduled (self-fetches forecast.schedule.status). */}
       <Box flexShrink={0} paddingX={1}>
         <ScheduleStripPane width={Math.max(20, heroCols - 2)} />
       </Box>
-      <Box flexGrow={1} />
-      <HomeHero info={ui.info ?? undefined} maxCols={heroCols} t={ui.theme} />
-      <FirstRunHint t={ui.theme} />
+
       {landingNotices.length > 0 && (
-        <NoSelect flexDirection="column" marginTop={1} paddingX={1}>
+        <NoSelect flexDirection="column" flexShrink={0} marginTop={1} paddingX={1}>
           {landingNotices.map((msg, index) => (
             <MessageLine
               cols={heroCols}
@@ -885,7 +910,27 @@ export const AppLayout = memo(function AppLayout({
           ))}
         </NoSelect>
       )}
+
+      {/* Bottom breathing room, then the one accent tip + the slim status bar. */}
       <Box flexGrow={1} />
+
+      <Box flexShrink={0} paddingX={1}>
+        <HomeTip t={ui.theme} />
+      </Box>
+
+      <Box flexShrink={0} paddingX={1}>
+        <HomeStatusBar
+          cols={Math.max(20, heroCols - 2)}
+          cwdLabel={status.cwdLabel}
+          deskStatus={ui.forecastDeskStatus}
+          model={ui.info?.model ?? ''}
+          modelFast={ui.info?.fast || ui.info?.service_tier === 'priority'}
+          modelReasoningEffort={ui.info?.reasoning_effort}
+          status={ui.status}
+          statusColor={status.statusColor}
+          t={ui.theme}
+        />
+      </Box>
     </Box>
   )
 
@@ -979,10 +1024,11 @@ export const AppLayout = memo(function AppLayout({
           // Home two-pane (wide terminals): a fixed conversations rail on the
           // left + the conversation on the right. The transcript ScrollBox stays
           // a DIRECT child of this flex-grow row — the proven structure that
-          // scrolls cleanly. The composer rides a footer row below, indented past
-          // the rail (whose border continues full height) so it sits under the
-          // conversation WITHOUT burying the ScrollBox in an extra column (which
-          // collapses its measured viewport and sticks scroll to the top/bottom).
+          // scrolls cleanly. On an ACTIVE conversation the composer rides a
+          // footer row below, indented past the rail (whose border continues full
+          // height) so it sits under the conversation WITHOUT burying the
+          // ScrollBox in an extra column. On the LANDING the composer lives INSIDE
+          // the hero column (renderLanding), so no footer row renders there.
           <>
             <Box flexDirection="row" flexGrow={1} minHeight={0}>
               <ConversationsRailPane
@@ -991,7 +1037,7 @@ export const AppLayout = memo(function AppLayout({
                 scrollRef={transcript.railScrollRef}
               />
               {landing ? (
-                renderHero(contentComposer.cols)
+                renderLanding(contentComposer.cols, contentComposer, true)
               ) : (
                 <PerfPane id="transcript">
                   <TranscriptPane
@@ -1004,21 +1050,23 @@ export const AppLayout = memo(function AppLayout({
                 </PerfPane>
               )}
             </Box>
-            <Box flexDirection="row" flexShrink={0}>
-              <Box
-                borderBottom={false}
-                borderColor={ui.theme.color.border}
-                borderLeft={false}
-                borderRight
-                borderStyle="single"
-                borderTop={false}
-                flexShrink={0}
-                width={RAIL_WIDTH}
-              />
-              <Box flexDirection="column" flexGrow={1} minWidth={0}>
-                {renderPromptBar(contentComposer, true)}
+            {landing ? null : (
+              <Box flexDirection="row" flexShrink={0}>
+                <Box
+                  borderBottom={false}
+                  borderColor={ui.theme.color.border}
+                  borderLeft={false}
+                  borderRight
+                  borderStyle="single"
+                  borderTop={false}
+                  flexShrink={0}
+                  width={RAIL_WIDTH}
+                />
+                <Box flexDirection="column" flexGrow={1} minWidth={0}>
+                  {renderPromptBar(contentComposer, true)}
+                </Box>
               </Box>
-            </Box>
+            )}
             {/* The palette / cheat-sheet stacks LAST as an absolute overlay above
                 the still-mounted home body (ModalOverlay recipe), so the landing
                 Today panel + hints stay visible around it. */}
@@ -1030,18 +1078,20 @@ export const AppLayout = memo(function AppLayout({
           </>
         ) : (
           // Single-pane (rail hidden on narrow terminals): the proven full-width
-          // layout — transcript (or hero) fills the row, prompt spans the bottom.
+          // layout — on an active conversation the transcript fills the row and
+          // the prompt spans the bottom; on the LANDING the whole column
+          // (hero → composer → Today → Schedule → tip → status) is renderLanding.
           <>
             <Box flexDirection="row" flexGrow={1} minHeight={0}>
               {landing ? (
-                renderHero(composer.cols)
+                renderLanding(composer.cols, composer, false)
               ) : (
                 <PerfPane id="transcript">
                   <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
                 </PerfPane>
               )}
             </Box>
-            {renderPromptBar(composer, false)}
+            {landing ? null : renderPromptBar(composer, false)}
             {/* Palette / cheat-sheet stacks LAST above the still-mounted single-
                 pane home body (ModalOverlay recipe). */}
             {globalModal ? (

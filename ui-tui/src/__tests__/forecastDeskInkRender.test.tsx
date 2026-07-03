@@ -225,6 +225,15 @@ const renderForecastDesk = async (
   patchUiState({
     forecastDeskRailSections: forecastDeskRailSections(response),
     forecastDeskStatus: forecastDeskStatusLabel(response),
+    info: {
+      cwd: '~/superforecasting-agent',
+      mcp_servers: [],
+      model: 'local/forecast-model',
+      skills: {},
+      system_prompt: 'Forecasting protocol loaded.',
+      tools: { forecast: ['forecast_ledger'] },
+      version: '0.1.0'
+    },
     sid: 's_forecast_render',
     status: 'ready'
   })
@@ -388,9 +397,75 @@ describe('forecast desk Ink render', () => {
     // in the content-height headless render (see TEST-HARNESS REALITY).
     expect(compact).toContain('Outrider')
     expect(compact).toContain('Askaforecastingquestiontobegin')
-    expect(compact).toContain('2forecasts·1toreview')
-    // The clipped Today-panel header is still present beneath the overlay.
-    expect(compact).toContain('TO╭')
+    // The slim landing status bar carries only the actionable review count now —
+    // the dense forecast inventory ("2 forecasts · … · 1 alert · …") is gone.
+    expect(compact).toContain('ready·1toreview')
+    expect(compact).not.toContain('2forecasts·1toreview')
+    // The Today panel is still mounted beneath the overlay — in the redesigned
+    // column it sits below the composer (clear of the centred overlay's clip
+    // band), so its full header renders rather than a clipped "TO╭" fragment.
+    expect(compact).toContain('TODAY·whatneedsyou')
+  })
+
+  // ── Redesigned Home landing (OpenCode-style centred column) ─────────────────
+  // The landing is a single top-to-bottom column: breathing room → hero →
+  // composer (the focal point, directly under the hero) → the compact TODAY
+  // block → the SCHEDULE one-liner → one accent tip → a sparse 3-item status
+  // bar. These pin the render ORDER and the density guarantees.
+
+  it('stacks the landing column hero → composer → TODAY → SCHEDULE in that order', async () => {
+    const output = await renderForecastDesk(150, { landing: true })
+    const compact = output.replace(/\s+/g, '')
+
+    const hero = compact.indexOf('Askaforecastingquestiontobegin')
+    const hints = compact.indexOf('⏎send')
+    const today = compact.indexOf('TODAY·whatneedsyou')
+    const schedule = compact.indexOf('SCHEDULE')
+
+    expect(hero).toBeGreaterThanOrEqual(0)
+    expect(today).toBeGreaterThanOrEqual(0)
+    // The hero + its composer hint line sit ABOVE the TODAY block, which sits
+    // above the SCHEDULE one-liner.
+    expect(hero).toBeLessThan(today)
+    expect(hints).toBeLessThan(today)
+
+    if (schedule >= 0) {
+      expect(today).toBeLessThan(schedule)
+    }
+  })
+
+  it('shows the compact TODAY block with cleanly truncated rows and a +more tail', async () => {
+    const output = await renderForecastDesk(150, { landing: true })
+    const compact = output.replace(/\s+/g, '')
+
+    expect(compact).toContain('TODAY·whatneedsyou·Ctrl+T')
+    // The meta chip renders WHOLE (never a dangling half-metadata fragment): the
+    // watchlist question keeps its full "as-of" note.
+    expect(compact).toContain('as-of2026-05-25')
+    // Capped at 5 rows → the 6th actionable item folds into the tail.
+    expect(compact).toContain('+1more·/desk')
+  })
+
+  it('renders exactly the 3-item status bar (state · review count · model) and none of the removed counts', async () => {
+    const output = await renderForecastDesk(150, { landing: true })
+    const compact = output.replace(/\s+/g, '')
+
+    // The three items: ready-state · the single most actionable count · model.
+    expect(compact).toContain('ready·1toreview·forecastmodel')
+    // Everything else the old dense bar carried is removed from the landing bar.
+    expect(compact).not.toContain('2forecasts')
+    expect(compact).not.toContain('theses')
+    expect(compact).not.toContain('entities')
+    expect(compact).not.toContain('closing')
+  })
+
+  it('renders one accent tip line at the foot of the landing column', async () => {
+    const output = await renderForecastDesk(150, { landing: true })
+    const compact = output.replace(/\s+/g, '')
+
+    // One of the rotating tips renders (all three lead with the "Tip" label).
+    expect(compact).toContain('Tip')
+    expect(compact).toMatch(/TippresspinMarkets|TipCtrl\+K|TipCtrl\+T/)
   })
 
   it('keeps the landing minimal at narrow width too', async () => {
