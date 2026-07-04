@@ -21,3 +21,5 @@ python -m scripts.docgen --check    # CI gate: fail if stale
 | [Data-plane providers](providers.md) | Market-data quote providers and prediction-market venues. |
 | [CLI reference](cli-reference.md) | The exhaustive `forecast` command tree, introspected from argparse. |
 | [Forecast hooks (built-in rules)](hooks-rules.md) | The commit-gate rules that warn on or block an under-saturated forecast. |
+| [Skills catalogue](skills.md) | Every bundled `SKILL.md`, grouped by category, with its when-to-use triggers. |
+| [Configuration & environment variables](config-and-env.md) | Every environment variable the server, tools, and CLI read — defaults and secrets. |

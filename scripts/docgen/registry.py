@@ -14,10 +14,12 @@ from typing import Callable
 
 from scripts.docgen import (
     cli_reference_doc,
+    config_env_doc,
     hooks_rules_doc,
     job_types_doc,
     protocol_doc,
     providers_doc,
+    skills_doc,
     tool_actions_doc,
 )
 
@@ -70,6 +72,18 @@ GENERATORS: list[Generated] = [
         "Forecast hooks (built-in rules)",
         hooks_rules_doc.render,
         "The commit-gate rules that warn on or block an under-saturated forecast.",
+    ),
+    Generated(
+        "skills.md",
+        "Skills catalogue",
+        skills_doc.render,
+        "Every bundled `SKILL.md`, grouped by category, with its when-to-use triggers.",
+    ),
+    Generated(
+        "config-and-env.md",
+        "Configuration & environment variables",
+        config_env_doc.render,
+        "Every environment variable the server, tools, and CLI read — defaults and secrets.",
     ),
 ]
 
