@@ -1238,7 +1238,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
             <Text color={t.color.muted}>{` ${statusGlyph('busy', tick)} loading venues…`}</Text>
           ) : (
             <Text color={t.color.muted}>
-              {` Polymarket + Kalshi · ${pm.itemsCount} events${pm.streaming ? ' · ● live' : ''}`}
+              {` Polymarket + Kalshi · ${pm.itemsCount} events${pm.stale ? ' · ◌ refreshing' : pm.streaming ? ' · ● live' : ''}`}
               {pm.filterActive ? (
                 <Text color={t.color.muted}>{`  ·  ${pm.filterSummary} · ${pm.filteredCount} of ${pm.itemsCount} shown`}</Text>
               ) : null}

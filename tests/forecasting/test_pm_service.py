@@ -95,6 +95,90 @@ def test_service_list_merges_and_caches():
     assert len(poly_fetch.calls) == n_poly + 1
 
 
+def _payload_service(clock, home, *, spawn=_inline_spawn):
+    poly_fetch = RecordedFetch({"/events?": [load_fixture("polymarket_event_categorical.json")]})
+    kal_fetch = RecordedFetch({"/events?": {"events": [load_fixture("kalshi_event_categorical.json")]}})
+    svc = PMService(
+        polymarket=poly.PolymarketClient(fetch=poly_fetch),
+        kalshi=kal.KalshiClient(fetch=kal_fetch),
+        clock=clock,
+        spawn=spawn,
+        home=home,
+        disk_cache=True,
+    )
+    return svc, poly_fetch, kal_fetch
+
+
+def test_list_events_payload_persists_tape_and_marks_fresh(tmp_path):
+    """A cold browse fetch is a real network round-trip (stale=False) and its
+    rendered rows land on disk for the next cold start."""
+    clock = FakeClock()
+    svc, poly_fetch, _ = _payload_service(clock, tmp_path)
+
+    rows, stale = svc.list_events_payload(limit=10)
+    assert rows and stale is False
+    assert (tmp_path / "pm_cache.json").exists()
+
+    # A warm hit re-serves from memory: not stale, no new fetch.
+    n = len(poly_fetch.calls)
+    _rows2, stale2 = svc.list_events_payload(limit=10)
+    assert stale2 is False and len(poly_fetch.calls) == n
+
+
+def test_cold_start_serves_disk_then_revalidates(tmp_path):
+    """The core paint-then-refresh: a fresh gateway (empty memory) serves the
+    persisted tape INSTANTLY marked stale, without a live fetch on the request
+    path, and queues exactly one background revalidate that refreshes it live."""
+    clock = FakeClock()
+
+    # 1. Warm a service so the tape is persisted to disk.
+    warm, _, _ = _payload_service(clock, tmp_path)
+    warm.list_events_payload(limit=10)
+    assert (tmp_path / "pm_cache.json").exists()
+
+    # 2. A brand-new service (cold memory) with a CAPTURED spawn — so the
+    #    revalidate is queued, not run — serves disk immediately.
+    queued: list = []
+    cold, poly_fetch, kal_fetch = _payload_service(clock, tmp_path, spawn=queued.append)
+    rows, stale = cold.list_events_payload(limit=10)
+    assert stale is True and rows, "painted from the disk cache, never blank"
+    assert poly_fetch.calls == [] and kal_fetch.calls == [], "no live fetch on the request path"
+    assert len(queued) == 1, "exactly one background revalidate queued"
+
+    # 3. Run the queued revalidate: it fetches live, refreshing memory + disk.
+    queued[0]()
+    assert poly_fetch.calls, "the revalidate fetched live, off the request path"
+    _rows2, stale2 = cold.list_events_payload(limit=10)
+    assert stale2 is False, "now served fresh from memory"
+
+
+def test_search_results_are_never_persisted_to_disk(tmp_path):
+    """Only browse tapes seed the cold-start cache — a text query must never
+    write a (soon-wrong) search result to disk."""
+    clock = FakeClock()
+    svc, _, _ = _payload_service(clock, tmp_path)
+    svc.list_events_payload(venue="polymarket", query="zzz-no-such-market", limit=10)
+    assert not (tmp_path / "pm_cache.json").exists()
+
+
+def test_disk_cache_disabled_never_touches_home(tmp_path):
+    """``disk_cache=False`` (the injectable escape hatch) neither reads nor
+    writes the cache file."""
+    clock = FakeClock()
+    poly_fetch = RecordedFetch({"/events?": [load_fixture("polymarket_event_categorical.json")]})
+    svc = PMService(
+        polymarket=poly.PolymarketClient(fetch=poly_fetch),
+        kalshi=kal.KalshiClient(fetch=RecordedFetch({"/events?": {"events": []}})),
+        clock=clock,
+        spawn=_inline_spawn,
+        home=tmp_path,
+        disk_cache=False,
+    )
+    rows, stale = svc.list_events_payload(limit=10)
+    assert rows and stale is False
+    assert not (tmp_path / "pm_cache.json").exists()
+
+
 def test_kalshi_history_supplies_required_window_and_range_drives_fetch():
     clock = FakeClock()
     kal_fetch = RecordedFetch({"/candlesticks?": load_fixture("kalshi_candlesticks.json")})

@@ -95,6 +95,36 @@ def test_signer_absent_dependency_is_polite(monkeypatch):
         kal.sign_kalshi_message("-----BEGIN PRIVATE KEY-----\n", "msg")
 
 
+def test_series_catalog_scans_and_caches_without_nameerror():
+    """Regression: ``_series_catalog`` called ``time.monotonic`` with no
+    module-level ``import time``, so the entire series-search PHASE raised
+    ``NameError`` and was silently swallowed by the fail-open — the operator's
+    "can't see the max-temperature markets" bug. It must now actually scan +
+    cache, and ``warm_catalog`` must be a safe no-throw wrapper."""
+    from forecasting.pm.kalshi import KalshiClient
+
+    calls: list[str] = []
+
+    def fetch(url, **kw):
+        calls.append(url)
+        if "/series?" in url:
+            return {"series": [{"ticker": "KXTEMP", "title": "High temperature"}], "cursor": None}
+        return {"events": [], "cursor": None}
+
+    client = KalshiClient(fetch=fetch)
+    catalog = client._series_catalog()
+    assert catalog == [("KXTEMP", "high temperature kxtemp")]
+
+    # Cached for the hour: a second call does not re-fetch /series.
+    series_calls = len([c for c in calls if "/series?" in c])
+    client._series_catalog()
+    assert len([c for c in calls if "/series?" in c]) == series_calls
+
+    # warm_catalog just primes the cache (already warm here) and never raises.
+    client.warm_catalog()
+    assert len([c for c in calls if "/series?" in c]) == series_calls
+
+
 def test_text_query_paginates_the_catalog():
     """Kalshi search scans cursor pages (bounded) instead of one top page."""
     from tests.forecasting.pm_helpers import load_fixture

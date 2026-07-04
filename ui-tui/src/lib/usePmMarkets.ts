@@ -13,7 +13,7 @@ import {
   fetchPMBook,
   fetchPMDetail,
   fetchPMHistory,
-  fetchPMList,
+  fetchPMListResult,
   type PMHistoryPointDTO,
   type PMHistoryRange,
   type PMListItem,
@@ -39,6 +39,9 @@ export interface PMHookGateway {
 export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue: 'all' | PMVenue) {
   const [items, setItems] = useState<PMListItem[]>([])
   const [loading, setLoading] = useState(false)
+  // Cold-start tape: rows served instantly from the gateway's disk cache while
+  // the live revalidate runs — surfaced so the UI can mark the tape stale.
+  const [stale, setStale] = useState(false)
   // Has the FIRST list fetch settled (either way)? Lets the section show an
   // honest "loading venues…" line on first open instead of flashing "0 events"
   // before any items land. Distinct from `loading`, which toggles per refresh.
@@ -59,10 +62,11 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
     }
 
     setLoading(true)
-    fetchPMList(gw, { limit: 40, ...(venue === 'all' ? {} : { venue }) })
+    fetchPMListResult(gw, { limit: 40, ...(venue === 'all' ? {} : { venue }) })
       .then(next => {
         if (aliveRef.current) {
-          setItems(next)
+          setItems(next.items)
+          setStale(next.stale)
           setLoading(false)
           setLoaded(true)
         }
@@ -81,7 +85,7 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
     }
   }, [active, reload])
 
-  return { items, loaded, loading, reload }
+  return { items, loaded, loading, reload, stale }
 }
 
 // ── selection detail + streaming ──────────────────────────────────────────────

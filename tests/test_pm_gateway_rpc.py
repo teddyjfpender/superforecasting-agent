@@ -86,6 +86,39 @@ def test_pm_list_shapes_event_plus_distribution(wired):
     assert svc.calls[0] == ("list", "polymarket", "cpi", None, 5)
 
 
+def test_pm_list_carries_stale_marker_from_cold_cache():
+    """When the service serves a disk-cached tape on cold start it reports
+    ``stale=True``; the RPC must carry that marker on the wire even though the
+    generated response model doesn't declare it (it is extra='ignore')."""
+
+    class StaleStub:
+        def list_events_payload(self, *, venue=None, query=None, tag=None, limit=40):
+            return [{"event": {"event_id": "E1"}, "distribution": {"outcomes": []}}], True
+
+    pm_rpc.set_service(StaleStub())
+    try:
+        res = _call("pm.list", {})["result"]
+        assert res["count"] == 1 and res["stale"] is True
+    finally:
+        pm_rpc.set_service(None)
+
+
+def test_pm_list_omits_stale_marker_when_fresh():
+    """A warm/fresh tape stays byte-identical to the pre-cache wire — no
+    ``stale`` key at all."""
+
+    class FreshStub:
+        def list_events_payload(self, *, venue=None, query=None, tag=None, limit=40):
+            return [{"event": {"event_id": "E1"}, "distribution": {"outcomes": []}}], False
+
+    pm_rpc.set_service(FreshStub())
+    try:
+        res = _call("pm.list", {})["result"]
+        assert "stale" not in res
+    finally:
+        pm_rpc.set_service(None)
+
+
 def test_pm_list_clamps_and_defaults_limit(wired):
     svc, _ = wired
     _call("pm.list", {"limit": 9999})

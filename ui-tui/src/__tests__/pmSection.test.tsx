@@ -878,9 +878,11 @@ describe('hydration fans out pm.detail in bounded batches', () => {
 
     const m = await mount(['predictionmarkets'], gw, home)
     await tick(500) // drain every batch (3 × 25ms + scheduling overhead)
-    // Hydration ran, but the fan-out was chunked (the old code fired all 20 at once).
+    // Hydration ran, but the fan-out was BOUNDED (the old code fired all 20 at
+    // once). The cap is the hydration pool's concurrency limit (12 in-flight,
+    // perf item #3) — the invariant is "bounded, never unbounded".
     expect(maxInFlight).toBeGreaterThan(0)
-    expect(maxInFlight).toBeLessThanOrEqual(8)
+    expect(maxInFlight).toBeLessThanOrEqual(12)
     m.cleanup()
   })
 })

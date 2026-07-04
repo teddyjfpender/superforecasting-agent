@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   applyBookTick,
   bookMarketId,
+  fetchPMList,
+  fetchPMListResult,
   fmtCents,
   fmtClose,
   fmtPMVol,
@@ -255,5 +257,30 @@ describe('pmRows flatten / sort / filter', () => {
     const fed = filterPMItems(items, 'fed')
     expect(fed).toHaveLength(1)
     expect(fed[0].event.event_id).toBe('FED')
+  })
+})
+
+describe('fetchPMListResult — cold-start staleness', () => {
+  const gwReturning = (result: unknown) => ({ request: async () => result })
+
+  it('surfaces the gateway stale marker on a cold cache hit', async () => {
+    const gw = gwReturning({ count: 1, events: [categorical()], stale: true })
+    const res = await fetchPMListResult(gw)
+    expect(res.stale).toBe(true)
+    expect(res.items).toHaveLength(1)
+  })
+
+  it('defaults stale to false when the marker is absent (warm/fresh tape)', async () => {
+    const gw = gwReturning({ count: 1, events: [categorical()] })
+    const res = await fetchPMListResult(gw)
+    expect(res.stale).toBe(false)
+    expect(res.items).toHaveLength(1)
+  })
+
+  it('fetchPMList still returns just the items array (stale stripped)', async () => {
+    const gw = gwReturning({ count: 1, events: [categorical()], stale: true })
+    const items = await fetchPMList(gw)
+    expect(Array.isArray(items)).toBe(true)
+    expect(items).toHaveLength(1)
   })
 })

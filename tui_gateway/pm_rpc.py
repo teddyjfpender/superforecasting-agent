@@ -30,6 +30,10 @@ from protocol import RPC_BY_METHOD
 
 logger = logging.getLogger(__name__)
 
+# Result keys that ride the wire additively even though the generated response
+# model doesn't declare them (see ``_rpc_model``). Kept tiny + explicit.
+_PASSTHROUGH_RESULT_KEYS = ("stale",)
+
 
 def _field_error(exc: ValidationError) -> ValueError:
     """Turn a pydantic request-validation failure into a ValueError that NAMES
@@ -128,16 +132,28 @@ def register(server) -> None:
             limit = 40
         limit = max(1, min(limit, 200))
         try:
-            pairs = get_service().list_events(
-                venue=venue, query=query, tag=tag, limit=limit
-            )
+            svc = get_service()
+            # Prefer the payload API (serialises server-side + reports whether
+            # the rows were served stale from the disk-persisted tape cache on a
+            # cold start). Fall back to the typed API for stubs/older services.
+            payload = getattr(svc, "list_events_payload", None)
+            if callable(payload):
+                events, stale = payload(venue=venue, query=query, tag=tag, limit=limit)
+            else:
+                pairs = svc.list_events(venue=venue, query=query, tag=tag, limit=limit)
+                events = [
+                    {"event": event.to_dict(), "distribution": dist.to_dict()}
+                    for event, dist in pairs
+                ]
+                stale = False
         except Exception as exc:
             return _err(rid, exc)
-        events = [
-            {"event": event.to_dict(), "distribution": dist.to_dict()}
-            for event, dist in pairs
-        ]
-        return _ok(rid, {"events": events, "count": len(events)})
+        result = {"events": events, "count": len(events)}
+        # Only present when actually stale — a warm/fresh tape stays byte-identical
+        # to the pre-cache wire (and the UI shows the marker only when it's set).
+        if stale:
+            result["stale"] = True
+        return _ok(rid, result)
 
     # ── detail ───────────────────────────────────────────────────────────────
 
@@ -265,6 +281,13 @@ def register(server) -> None:
                     )
                     return resp
                 dumped = model.model_dump(mode="json", exclude_none=spec.exclude_none)
+                # Re-attach whitelisted out-of-model markers the wire is allowed
+                # to carry but the generated response model doesn't declare (it
+                # is extra='ignore', so model_dump silently drops them). pm.list's
+                # cold-start `stale` flag is one such honest, additive signal.
+                for extra in _PASSTHROUGH_RESULT_KEYS:
+                    if extra in resp["result"] and extra not in dumped:
+                        dumped[extra] = resp["result"][extra]
                 return {**resp, "result": dumped}
             return resp
 
@@ -277,6 +300,31 @@ def register(server) -> None:
     server.register_method("pm.history", _rpc_model("pm.history", pm_history))
     server.register_method("pm.stream.start", _rpc_model("pm.stream.start", pm_stream_start))
     server.register_method("pm.stream.stop", _rpc_model("pm.stream.stop", pm_stream_stop))
+
+    _prewarm_service()
+
+
+def _prewarm_service() -> None:
+    """At gateway boot, warm the PM service in a background thread so the first
+    ``pm.list`` (and first '/' search) don't pay the cold fetch/scan on the
+    request path. Skipped under pytest and when a service was injected (a stub),
+    and fully best-effort — a warm failure never blocks boot."""
+    import sys
+
+    if "pytest" in sys.modules or _service_holder["svc"] is not None:
+        return
+
+    def _run() -> None:
+        try:
+            prewarm = getattr(get_service(), "prewarm", None)
+            if callable(prewarm):
+                prewarm()
+        except Exception:  # pragma: no cover - warm is best-effort
+            logger.debug("pm prewarm failed", exc_info=True)
+
+    import threading
+
+    threading.Thread(target=_run, name="pm-prewarm", daemon=True).start()
 
 
 __all__ = ["register", "get_service", "set_service", "get_hub", "set_hub", "shutdown"]

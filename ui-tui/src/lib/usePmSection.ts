@@ -66,6 +66,7 @@ export interface PmSection {
   keyHint: null | string
   livePrices: Record<string, number>
   loading: boolean
+  stale: boolean
   matchCount: number
   openMarket: () => void
   // Drop the discovered event under the cursor from the pool + markets.json (or
@@ -119,7 +120,7 @@ export function usePmSection(
   const [sel, setSelState] = useState(0)
   const [historyRange, setHistoryRange] = useState<PMHistoryRange>('1w')
 
-  const { items, loaded, loading, reload } = usePmList(gw, tabActive, venue)
+  const { items, loaded, loading, reload, stale } = usePmList(gw, tabActive, venue)
 
   // DISCOVERED events persist across sessions (deep '/' search compounds the
   // tape's coverage): the fold / persist / chunked-hydrate lifecycle lives in
@@ -408,6 +409,9 @@ export function usePmSection(
     itemsCount: items.length,
     keyHint,
     livePrices,
+    // Disk-served cold tape awaiting its live revalidate — the UI shows this
+    // subtly rather than pretending the rows are fresh.
+    stale,
     // Honest first-open state: stay "loading" until the very first list fetch
     // settles (with a gateway), so the tape never flashes "0 events" / an empty
     // frame before any items land. Later refreshes just ride the per-fetch flag.

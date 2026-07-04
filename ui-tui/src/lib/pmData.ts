@@ -49,10 +49,19 @@ export type PMHistoryRange = '1d' | '1w' | 'all'
 
 // ── fetchers ────────────────────────────────────────────────────────────────
 
-export async function fetchPMList(
+// A list fetch WITH the cold-start staleness signal: `stale` is true when the
+// gateway served this tape from its disk-persisted cache on a cold start (rows
+// carry their original honest estimates) while a live revalidate is in flight —
+// the UI can show that subtly. `stale` is absent (→ false) on a warm/fresh tape.
+export interface PMListResult {
+  items: PMListItem[]
+  stale: boolean
+}
+
+export async function fetchPMListResult(
   gw: PmGateway,
   opts: { limit?: number; query?: string; tag?: string; venue?: PMVenue } = {}
-): Promise<PMListItem[]> {
+): Promise<PMListResult> {
   const raw = await gw.request('pm.list', {
     ...(opts.venue ? { venue: opts.venue } : {}),
     ...(opts.query ? { query: opts.query } : {}),
@@ -60,9 +69,19 @@ export async function fetchPMList(
     limit: opts.limit ?? 40
   })
 
-  const res = asRpcResult<{ events?: PMListItem[] }>(raw)
+  const res = asRpcResult<{ events?: PMListItem[]; stale?: boolean }>(raw)
 
-  return Array.isArray(res?.events) ? res!.events : []
+  return {
+    items: Array.isArray(res?.events) ? res!.events : [],
+    stale: res?.stale === true
+  }
+}
+
+export async function fetchPMList(
+  gw: PmGateway,
+  opts: { limit?: number; query?: string; tag?: string; venue?: PMVenue } = {}
+): Promise<PMListItem[]> {
+  return (await fetchPMListResult(gw, opts)).items
 }
 
 export async function fetchPMDetail(gw: PmGateway, venue: string, eventId: string): Promise<null | PMListItem> {

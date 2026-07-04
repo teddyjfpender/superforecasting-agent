@@ -12,6 +12,7 @@ REST  https://api.elections.kalshi.com/trade-api/v2
 from __future__ import annotations
 
 import base64
+import time
 from typing import Any, Callable
 from urllib.parse import urlencode
 
@@ -246,8 +247,6 @@ def kalshi_auth_headers(
     ``/trade-api``). ``timestamp_ms`` defaults to now.
     """
     if timestamp_ms is None:
-        import time
-
         timestamp_ms = int(time.time() * 1000)
     ts = str(timestamp_ms)
     message = f"{ts}{method.upper()}{path}"
@@ -293,6 +292,15 @@ class KalshiClient:
                 break
         self._series_cache = (now, catalog)
         return catalog
+
+    def warm_catalog(self) -> None:
+        """Prime the series catalog (used by text search) out of band, e.g. from
+        a gateway-boot background thread — so the FIRST '/' search never pays the
+        cold ~1.8s / 2x200-row scan on the request path."""
+        try:
+            self._series_catalog()
+        except Exception:  # pragma: no cover - best-effort warm never crashes boot
+            pass
 
     def list_events(self, *, query: str | None = None, limit: int = 60) -> list[PMEvent]:
         if query and query.strip():
