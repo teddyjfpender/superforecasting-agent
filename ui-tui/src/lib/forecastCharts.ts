@@ -35,11 +35,13 @@ export const deltaGlyph = (delta: number | null | undefined): string => {
 
 /** `0.031` → `"▲ +3pt"`, `-0.012` → `"▼ -1pt"`, `~0` → `"· flat"`. */
 export const pctDelta = (delta: number | null | undefined): string => {
-  if (!finite(delta) || Math.abs(delta) < 0.005) {
+  // 2dp — matches the desk's window columns; 'flat' only when the rendered
+  // value would read 0.00pt.
+  if (!finite(delta) || Math.abs(delta) < 0.00005) {
     return '· flat'
   }
-  const points = Math.round(delta * 100)
-  const sign = points > 0 ? '+' : ''
+  const points = (delta * 100).toFixed(2)
+  const sign = delta > 0 ? '+' : ''
   return `${deltaGlyph(delta)} ${sign}${points}pt`
 }
 

@@ -467,9 +467,11 @@ describe('forecast desk Ink render', () => {
     const output = await renderForecastDesk(150, { landing: true })
     const compact = output.replace(/\s+/g, '')
 
-    // One of the rotating tips renders (all three lead with the "Tip" label).
+    // One of the rotating tips renders (all lead with the "Tip" label). The
+    // help slice added the h-guide tip to the rotation — keep this alternation
+    // in sync with pickTip's pool.
     expect(compact).toContain('Tip')
-    expect(compact).toMatch(/TippresspinMarkets|TipCtrl\+K|TipCtrl\+T/)
+    expect(compact).toMatch(/TippresspinMarkets|TipCtrl\+K|TipCtrl\+T|Tippressh\(or\?\)/)
   })
 
   it('keeps the landing minimal at narrow width too', async () => {

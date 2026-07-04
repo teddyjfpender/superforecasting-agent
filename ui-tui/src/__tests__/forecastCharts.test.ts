@@ -36,8 +36,8 @@ describe('format helpers', () => {
   })
 
   it('pctDelta renders signed points with a glyph', () => {
-    expect(pctDelta(0.031)).toBe('▲ +3pt')
-    expect(pctDelta(-0.012)).toBe('▼ -1pt')
+    expect(pctDelta(0.031)).toBe('▲ +3.10pt')
+    expect(pctDelta(-0.012)).toBe('▼ -1.20pt')
     expect(pctDelta(0)).toBe('· flat')
     expect(pctDelta(null)).toBe('· flat')
   })

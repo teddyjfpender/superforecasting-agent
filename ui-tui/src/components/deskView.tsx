@@ -2417,9 +2417,9 @@ interface DeskCol {
 const DESK_COLS: DeskCol[] = [
   { align: 'left', key: 'q', label: 'QUESTION', w: 24 },
   { align: 'right', key: 'prob', label: 'PROB', w: 8 },
-  { align: 'right', key: '1d', label: '1D', w: 7 },
-  { align: 'right', key: '1w', label: '1W', w: 7 },
-  { align: 'right', key: '1mo', label: '1MO', w: 8 },
+  { align: 'right', key: '1d', label: '1D', w: 8 },
+  { align: 'right', key: '1w', label: '1W', w: 8 },
+  { align: 'right', key: '1mo', label: '1MO', w: 9 },
   { align: 'right', key: 'ev', label: 'EV', w: 4 },
   // SRC = active watched-source count (0 = "no fuel", warning-coloured); RDY = the
   // 0-100 machine-readiness composite, banded by colour. Both reserve 5 (label 3 +
@@ -2611,11 +2611,14 @@ const windowChgText = (item: ForecastWorkspaceItem, value: number | null): strin
     }
     return `${glyph}${value > 0 ? '+' : ''}${trimNum(value)}`
   }
-  if (!finite(value) || Math.abs(value) < 0.005) {
+  // 2dp point deltas (the operator's precision standard — an integer-only
+  // column hides every sub-point move a fresh commit produces). '·' only when
+  // the rendered value would read 0.00.
+  if (!finite(value) || Math.abs(value) < 0.00005) {
     return '·'
   }
-  const points = Math.round(value * 100)
-  return `${glyph}${points > 0 ? '+' : ''}${points}`
+  const points = (value * 100).toFixed(2)
+  return `${glyph}${value > 0 ? '+' : ''}${points}`
 }
 
 // CHG cell colour + text together, so a flat ('·') or absent ('—') change is
