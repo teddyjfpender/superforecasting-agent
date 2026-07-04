@@ -114,7 +114,10 @@ REAL_RESULTS: dict[str, dict] = {
 
 
 def test_registry_covers_every_pm_rpc():
-    assert {s.method for s in RPC_SPECS} == set(REAL_RESULTS)
+    # The registry also carries non-pm families (jobs.* — Arc B); this suite owns
+    # the pm.* contract, so scope the coverage check to pm.* methods.
+    pm_methods = {s.method for s in RPC_SPECS if s.method.startswith("pm.")}
+    assert pm_methods == set(REAL_RESULTS)
     for spec in RPC_SPECS:
         assert spec.request is not None and spec.response is not None
 

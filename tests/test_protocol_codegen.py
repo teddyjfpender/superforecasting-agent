@@ -30,7 +30,11 @@ def test_render_is_deterministic():
 def test_render_carries_version_and_event_names():
     out = codegen.render()
     assert "export const PROTOCOL_VERSION = 1" in out
-    assert "export type WireEventName = 'pm.tick'" in out
+    # The event-name union is sorted and spans every registered family (pm + jobs).
+    assert (
+        "export type WireEventName = "
+        "'jobs.complete' | 'jobs.error' | 'jobs.progress' | 'pm.tick'" in out
+    )
     # A representative interface with sorted members and a nullable field.
     assert "export interface PMOrderBookDTO {" in out
     assert "  best_bid: null | number" in out

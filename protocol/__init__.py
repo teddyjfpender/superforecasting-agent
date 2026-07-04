@@ -11,7 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from protocol.events import jobs as _events_jobs
 from protocol.events import pm as _events_pm
+from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import pm as _rpc_pm
 from protocol.types import WireModel
 from protocol.version import MIN_SUPPORTED, PROTOCOL_VERSION
@@ -58,10 +60,18 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_pm.PmStreamStopResponse,
         exclude_none=True,
     ),
+    # ── jobs.* — the detached-job runtime (Arc B) ────────────────────────────
+    RpcSpec("jobs.start", _rpc_jobs.JobsStartRequest, _rpc_jobs.JobsStartResponse),
+    RpcSpec("jobs.status", _rpc_jobs.JobsStatusRequest, _rpc_jobs.JobsStatusResponse),
+    RpcSpec("jobs.active", _rpc_jobs.JobsActiveRequest, _rpc_jobs.JobsActiveResponse),
+    RpcSpec("jobs.cancel", _rpc_jobs.JobsCancelRequest, _rpc_jobs.JobsCancelResponse),
 ]
 
 EVENT_SPECS: list[EventSpec] = [
     EventSpec("pm.tick", _events_pm.PmTick),
+    EventSpec("jobs.progress", _events_jobs.JobProgress),
+    EventSpec("jobs.complete", _events_jobs.JobComplete),
+    EventSpec("jobs.error", _events_jobs.JobError),
 ]
 
 RPC_BY_METHOD: dict[str, RpcSpec] = {spec.method: spec for spec in RPC_SPECS}

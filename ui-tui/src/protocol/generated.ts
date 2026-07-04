@@ -5,9 +5,83 @@
 
 export const PROTOCOL_VERSION = 1
 
-export type WireEventName = 'pm.tick'
+export type WireEventName = 'jobs.complete' | 'jobs.error' | 'jobs.progress' | 'pm.tick'
 
-export const WIRE_EVENT_NAMES: readonly WireEventName[] = ['pm.tick']
+export const WIRE_EVENT_NAMES: readonly WireEventName[] = ['jobs.complete', 'jobs.error', 'jobs.progress', 'pm.tick']
+
+export interface JobCompletePayload {
+  job_id: string
+  result: Record<string, unknown>
+  type: string
+}
+
+export interface JobErrorPayload {
+  job_id: string
+  message: string
+  type: string
+}
+
+export interface JobProgressPayload {
+  job_id: string
+  progress: Record<string, unknown>
+  type: string
+}
+
+export interface JobRecordDTO {
+  annotations: Record<string, unknown>
+  cancel_requested: boolean
+  created_at: string
+  current: null | string
+  done_count: number
+  error: null | string
+  job_id: string
+  progress: Record<string, unknown>[]
+  result: null | Record<string, unknown>
+  spec: Record<string, unknown>
+  status: string
+  total: null | number
+  type: string
+  updated_at: null | string
+}
+
+export interface JobsActiveRequest {
+  types: null | string[]
+}
+
+export interface JobsActiveResponse {
+  count: number
+  jobs: JobRecordDTO[]
+}
+
+export interface JobsCancelRequest {
+  job_id: string
+}
+
+export interface JobsCancelResponse {
+  cancelled: boolean
+  found: boolean
+  job_id: string
+}
+
+export interface JobsStartRequest {
+  session_id: null | string
+  spec: null | Record<string, unknown>
+  type: string
+}
+
+export interface JobsStartResponse {
+  job_id: string
+  type: string
+}
+
+export interface JobsStatusRequest {
+  job_id: string
+}
+
+export interface JobsStatusResponse {
+  found: boolean
+  job: null | JobRecordDTO
+}
 
 export interface PMDistributionDTO {
   binary: boolean

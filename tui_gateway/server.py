@@ -3087,17 +3087,13 @@ def _(rid, params: dict) -> dict:
 
 # ── Warning resolution (open alert_events backlog) ────────────────────────────
 # The desk's "drain the open warnings" surface. `list` is read-only; `resolve`
-# resolves ONE alert through the gated dispatcher; `automode.run` spawns a
-# BACKGROUND job (daemon thread, request context snapshotted) that streams
-# progress events and is cooperatively cancellable via `automode.cancel`.
+# resolves ONE alert through the gated dispatcher.
 #
-# Cancel uses a per-job threading.Event (the cooperative `should_cancel` hook the
-# factored phase polls) rather than subagent.interrupt: the gateway path injects
-# NO LLM reforecast runner (the heavy agent pass is opt-in via the CLI `--agent`
-# flag only), so there is no subagent to interrupt — the run is a pure ledger
-# loop and the Event IS the right primitive. The streamed progress events are the
-# heartbeat.
-_warning_jobs: dict[str, threading.Event] = {}
+# `automode.run` / `automode.cancel` are no longer defined here: they moved to the
+# ONE detached-job runtime (Arc B) and are registered as thin ALIASES over it by
+# `tui_gateway/jobs_rpc.py` (see the registration below). The hand-written
+# per-warning throttle + daemon-thread body that used to live here are gone — the
+# coalescing (the 1,300-event storm guard) is now structural in JobContext.
 
 
 @method("forecast.warnings.list")
@@ -3278,98 +3274,15 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.warnings.automode.run")
-def _(rid, params: dict) -> dict:
-    """Spawn a BACKGROUND warning-resolution sweep that streams progress events.
+# The warning-automode background job + the generic jobs.* runtime RPCs live in
+# the ONE detached-job runtime (Arc B). Register them here (thin, pm_rpc-style):
+# jobs.start/status/active/cancel emit jobs.* events, and the warnings aliases
+# (forecast.warnings.automode.run/.cancel) return the byte-compatible shapes and
+# emit the legacy forecast.warnings.automode.* events ALONGSIDE — so the alerts
+# view is unchanged.
+from tui_gateway import jobs_rpc as _jobs_rpc  # noqa: E402
 
-    Returns a ``job_id`` immediately; the worker emits
-    ``forecast.warnings.automode.progress`` events (phase/done/total/current
-    alert), then a terminal ``forecast.warnings.automode.complete`` (or
-    ``.error``). ``dry_run`` previews the plan without writing anything."""
-    try:
-        from forecasting.cron_runner import run_warning_resolution
-
-        sid = str(params.get("session_id") or "")
-        if not sid:
-            # No session_id => the job's progress/complete/error events can't be
-            # session-routed by write_json's session-keyed branch; they fall back
-            # to the request/stdio transport instead. Log it so a no-session_id
-            # caller isn't left wondering why a background job appears to run
-            # blind, while still letting the (durable, real) work proceed.
-            logger.warning(
-                "forecast.warnings.automode.run called without session_id; "
-                "progress events will not be session-routed (falling back to the "
-                "request transport)"
-            )
-        dry_run = bool(params.get("dry_run", False))
-        limit = params.get("limit")
-        reason = params.get("reason") or None
-        scope = params.get("scope") or None
-        # Per-tier bulk filter: a `tier` name ("free"/"reforecast") expands to its
-        # member ResolutionKinds, optionally UNIONed with an explicit `kinds` list
-        # (kind values/names). Both are validated by the dispatcher's
-        # resolve_kind_filter, so a bad name fails the job loudly via the .error
-        # event rather than silently sweeping nothing.
-        tier = params.get("tier") or None
-        kinds = params.get("kinds") or None
-        now = params.get("now")
-        job_id = "wj_" + uuid.uuid4().hex[:12]
-        stop = threading.Event()
-        _warning_jobs[job_id] = stop
-        ctx = contextvars.copy_context()
-
-        def _run():
-            try:
-                # THROTTLE the per-warning stream: the dispatcher emits one event
-                # per alert, and a 1,300-alert free pass fired ~1,300 events in
-                # seconds — every consumer re-rendered per event (the operator saw
-                # the backlog strobe). Time-gate the noisy 'alert' phase to ~8/s;
-                # phase changes and the first/last events always pass through.
-                _last_emit = [0.0]
-
-                def _progress(ev: dict) -> None:
-                    now_s = time.monotonic()
-                    phase = ev.get("phase")
-                    is_edge = phase != "alert" or ev.get("done") in (1, ev.get("total"))
-                    if not is_edge and (now_s - _last_emit[0]) < 0.125:
-                        return
-                    _last_emit[0] = now_s
-                    _emit("forecast.warnings.automode.progress", sid, {"job_id": job_id, **ev})
-
-                summary = run_warning_resolution(
-                    now=now,
-                    limit=int(limit) if limit is not None else None,
-                    reason=reason,
-                    scope=scope,
-                    kinds=kinds,
-                    tier=tier,
-                    dry_run=dry_run,
-                    progress=_progress,
-                    should_cancel=stop.is_set,
-                )
-                _emit("forecast.warnings.automode.complete", sid, {"job_id": job_id, **summary})
-            except Exception as e:  # never lose the job; surface the failure
-                _emit("forecast.warnings.automode.error", sid, {"job_id": job_id, "message": str(e)})
-            finally:
-                _warning_jobs.pop(job_id, None)
-
-        threading.Thread(target=lambda: ctx.run(_run), daemon=True).start()
-        return _ok(rid, {"job_id": job_id, "dry_run": dry_run})
-    except Exception as e:
-        return _err(rid, 5008, str(e))
-
-
-@method("forecast.warnings.automode.cancel")
-def _(rid, params: dict) -> dict:
-    """Cooperatively cancel a running automode job. The worker stops before its
-    next alert and emits a ``cancelled=True`` completion; work already committed
-    stays committed (real resolutions are durable)."""
-    job_id = str(params.get("job_id") or "").strip()
-    stop = _warning_jobs.get(job_id)
-    if stop is None:
-        return _ok(rid, {"job_id": job_id, "found": False})
-    stop.set()
-    return _ok(rid, {"job_id": job_id, "found": True, "cancelled": True})
+_jobs_rpc.register(sys.modules[__name__])
 
 
 @method("news.search")
