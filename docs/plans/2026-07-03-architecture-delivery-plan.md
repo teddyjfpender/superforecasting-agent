@@ -308,6 +308,58 @@ Coupling patterns discovered (advice for D2+):
   moves out (dropped `WATCH_SCOPE_TYPES`/`parse_qsl` from core imports, kept
   `WATCH_SCOPE_TYPES` on the package via an explicit `__init__` re-export).
 
+### D2 findings (questions carve — SHIPPED)
+`core` 17,699 → 17,180; new `questions` 673. Moved: the question CRUD cluster
+(`create/get/list/rename_question`, `update_question_decision`,
+`update_question_config` + its 4 exclusive config helpers, `resolve_question_config`,
+`decision_readiness_issues`) plus `_scoreability_issues`, `_row_to_question`,
+`_question_to_dict`, and the `_GATE_LABELS` map — 15 methods (15 one-line
+delegates) + one constant (~600 relocated lines, well under the 1,200 cap).
+Gates all met: full `tests/forecasting` green before (2,288 pass) AND after
+(2,304 pass, 0 fail — the +16 is date-sensitive cadence/review tests, the session
+date advanced 07-01→07-04; both runs zero failures); repo-wide `--collect-only`
+0 import errors; import-time `import forecasting.cli` 0.10s→0.10s (held);
+`ruff` (PLW1514) clean. Core diff mechanically verified = 15 delegate lines + 2
+import lines + 1 blank added, 537 body/const lines removed — **0 unexpected** by
+difflib categorization AND by grep (the non-delegate/non-import added-line grep is
+empty).
+
+Coupling patterns discovered (advice for D3-evidence):
+- **The domain is NON-CONTIGUOUS.** The CRUD cluster sits at 1825–2344, but
+  three members live deep among foreign neighbors — `_scoreability_issues`
+  (@14474, between scoring methods), `_row_to_question` (@15684, beside the other
+  `_row_to_*`), `_question_to_dict` (@17684, beside the other `_*_to_dict`).
+  AST `end_lineno` carve handles scattered members trivially; judge membership by
+  **caller-exclusivity, not adjacency** — grep each candidate's callers and pull
+  it only when every non-moved caller reaches it via a `ledger.` delegate.
+- **The monkeypatch façade needed NO extension.** No test patches a
+  `forecasting.ledger.<name>` that the questions leaf re-imports (verified: grep
+  for package-level attr-patches of `utc_now_iso`/`parse_timestamp`/`json_dumps`…
+  returned zero). **D3 MUST re-run that grep** for the names `evidence.py` will
+  re-import — a package-level patch that must reach the leaf is the one thing that
+  forces either a façade forward-to-leaf or keeping the name callable via
+  `_core.`/`ledger.`.
+- **Surface parity by NON-pruning is the safe default for model-owned names.**
+  `QUESTION_STATUSES`/`normalize_update_triggers` go unused in `core` post-carve
+  but were KEPT in core's `forecasting.models` import so `from .core import *`
+  still re-exports `forecasting.ledger.QUESTION_STATUSES` byte-for-byte. Ruff
+  enforces only PLW1514 (no F401 gate), so unused imports are harmless; pruning a
+  model-owned constant would have forced an explicit `__init__` re-export for no
+  gain. The leaf owns ONLY its own constant (`_GATE_LABELS`, private, never on the
+  package surface) — the D1 "constants to the leaf" rule applies to leaf-owned
+  names, not to re-exported models constants.
+- **The write gate resolved exactly as D1 predicted.** `create_question` is the
+  domain's ONE gated write; `_core._enforce_write_gate("create_question")` via the
+  module handle is the sole `core` dependency. No gate-leaf extraction was needed
+  here — **D4 (snapshots, the 400-line gate body + `create_snapshot`) is the slice
+  that finally justifies extracting the gate** D1 flagged.
+- **Exclusive helpers travel with the domain even when topically "elsewhere."**
+  The 4 config helpers (`_cadence_is_valid`, `_rearm_question_cadence`, the two
+  `_validate_hook_*`) each had exactly ONE caller (`update_question_config`), so
+  they moved with it despite being "cadence"/"hooks" flavored; they call BACK into
+  core (`ledger.schedule_review`, `ledger._advance_cadence`) — a leaf→delegate→core
+  hop that is correct and mirrors D1's `ledger.` receiver-rename discipline.
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)

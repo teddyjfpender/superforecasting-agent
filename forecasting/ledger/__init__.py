@@ -9,9 +9,10 @@ carved domain modules' shared constants back in).
 
 Carve order (see the delivery plan's Arc D):
 
-* ``core``    — connection, gate/authorizer, migrations, and everything not yet
-  carved out.
-* ``watches`` — D1, the pattern-prover: watched-source lifecycle + constants.
+* ``core``      — connection, gate/authorizer, migrations, and everything not
+  yet carved out.
+* ``watches``   — D1, the pattern-prover: watched-source lifecycle + constants.
+* ``questions`` — D2: question CRUD + spec-quality + per-forecast config.
 
 The façade guarantees ``no caller changed``: `ForecastLedger` stays THE public
 class; each carved method keeps a one-line delegate on the class, so external
@@ -27,6 +28,7 @@ import sys as _sys
 # full public surface (which includes the watch constants core imports back).
 from forecasting.ledger import core as _core
 from forecasting.ledger import watches as _watches  # noqa: F401  (submodule handle)
+from forecasting.ledger import questions as _questions  # noqa: F401  (submodule handle)
 from forecasting.ledger.core import *  # noqa: F401,F403  (re-export public surface)
 
 # ``core`` re-exports the watch constants it still uses (ROLES/TYPES); re-export
