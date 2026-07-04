@@ -68,10 +68,26 @@ class JobRecord:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "JobRecord":
         """Rebuild from a persisted dict, ignoring unknown keys (forward-compat +
-        the read-shim seam for legacy ``rf_*``/``wj_*`` records)."""
+        the read-shim seam for legacy ``rf_*``/``qr_*`` records).
+
+        The LEGACY read-shim (Arc B4): a pre-migration reforecast/quorum record
+        keyed its id as ``run_id`` and (for a reforecast/task run) its kind as
+        ``mode``. Map those onto the canonical ``job_id`` / ``type`` fields when the
+        canonical keys are absent, so a single ``from_dict`` shims BOTH shapes — the
+        per-type read-shims collapse onto this one path. ``type`` may also live in
+        the legacy ``spec.mode`` (the reforecast dir carries both reforecast and task
+        runs); that final fallback is resolved here too so a raw legacy dict rebuilds
+        without the caller pre-injecting a type."""
 
         known = {f.name for f in fields(cls)}
-        filtered = {k: v for k, v in (data or {}).items() if k in known}
+        data = data or {}
+        filtered = {k: v for k, v in data.items() if k in known}
+        if not filtered.get("job_id") and data.get("run_id"):
+            filtered["job_id"] = data["run_id"]
+        if not filtered.get("type"):
+            mode = data.get("mode") or (data.get("spec") or {}).get("mode")
+            if isinstance(mode, str) and mode.strip():
+                filtered["type"] = mode.strip()
         return cls(**filtered)
 
 

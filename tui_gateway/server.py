@@ -9259,25 +9259,27 @@ def _(rid, params: dict) -> dict:
     """ONE cheap glanceable aggregate: how many agent-ish jobs are live RIGHT NOW.
 
     The operator's ask: "when the chat invoked an agent run across all those
-    systems, there is no visual that the agents are running." This sums the three
-    detached job stores the desk runs — background processes (proc_ batches / agent
-    runs), mass reforecast + desk-task jobs, and quorum forecasts — into a Claude-
-    Code-style ``{count, kinds, headline}`` the TUI status bar renders as
-    "✦ N agents running · <label>". The headline is labelled from the NEWEST live
-    item across the stores (proc command trimmed, or reforecast mode + question
-    count, or quorum question).
+    systems, there is no visual that the agents are running." Since Arc B every
+    detached job (reforecast/task/quorum/refresh/…) lives on ONE store, so this
+    reads that ONE store in a single scan — no more tri-store aggregation — plus the
+    in-memory process registry (the one NON-jobs source: proc_ batches / agent runs
+    that never became job records). It returns a Claude-Code-style
+    ``{count, kinds, headline}`` the TUI status bar renders as
+    "✦ N agents running · <label>", labelled from the NEWEST live item (proc command
+    trimmed, or reforecast/task mode + question count, or quorum question).
 
-    FAIL-SAFE by construction: each store is read under its own guard, so any store
+    FAIL-SAFE by construction: each source is read under its own guard, so a source
     that errors contributes 0 and NEVER breaks the RPC — a status bar polling this
     every few seconds must never take the gateway down. No network, no ledger read;
-    just the job files + the in-memory process registry.
+    just the job files (incl. any surviving legacy rf_/qr_ record via the store's
+    read-shim) + the process registry.
     """
     import time as _time
     from datetime import datetime as _dt
 
     def _epoch(iso: Any) -> float:
-        # Parse an ISO ``created_at`` into epoch seconds so items from all three
-        # stores sort on one axis; an unparseable value sorts oldest (0.0).
+        # Parse an ISO ``created_at`` into epoch seconds so every live item sorts on
+        # one axis; an unparseable value sorts oldest (0.0).
         try:
             return _dt.fromisoformat(str(iso)).timestamp()
         except Exception:  # noqa: BLE001
@@ -9290,6 +9292,7 @@ def _(rid, params: dict) -> dict:
     try:
         # 1) Background processes — only those still RUNNING (a proc_ batch / agent
         #    run). list_sessions() also returns recently-EXITED ones; skip those.
+        #    This is the ONE non-jobs source: procs that never became job records.
         try:
             from tools.process_registry import process_registry
 
@@ -9301,36 +9304,29 @@ def _(rid, params: dict) -> dict:
                 cmd = str(p.get("command") or "").strip()
                 label = (cmd[:44] + "…") if len(cmd) > 45 else (cmd or "process")
                 candidates.append((now - float(p.get("uptime_seconds") or 0), label))
-        except Exception:  # noqa: BLE001 — a store failure contributes 0, never breaks the RPC
+        except Exception:  # noqa: BLE001 — a source failure contributes 0, never breaks the RPC
             pass
 
         try:
-            # 2) Mass reforecast / desk-task jobs — queued|running only.
-            from forecasting.jobs.types.reforecast import list_jobs as _rf_jobs
+            # 2) THE ONE job store — every detached "agent" job in a SINGLE scan
+            #    (reforecast + task + quorum), incl. any legacy rf_/qr_ file the
+            #    store's read-shim surfaces. active() already filters to queued|
+            #    running. Deterministic re-pool (refresh) and warning-automode jobs
+            #    are not "agent" work for this chip, so they are not counted.
+            from forecasting.jobs.store import JobStore
 
-            for job in _rf_jobs(limit=20):
-                if job.get("status") not in ("queued", "running"):
-                    continue
-                reforecast += 1
-                spec = job.get("spec") or {}
-                mode = str(spec.get("mode") or "reforecast").strip()
-                n = int(job.get("total") or len(spec.get("question_ids") or []) or 0)
-                kind = "desk task" if mode == "task" else "reforecast"
-                label = f"{kind} · {n} question{'' if n == 1 else 's'}" if n else kind
-                candidates.append((_epoch(job.get("created_at")), label))
-        except Exception:  # noqa: BLE001
-            pass
-
-        try:
-            # 3) Quorum forecasts — queued|running only (one question per job).
-            from forecasting.jobs.types.quorum import list_jobs as _qr_jobs
-
-            for job in _qr_jobs(limit=20):
-                if job.get("status") not in ("queued", "running"):
-                    continue
-                quorum += 1
-                qid = str(job.get("question_id") or "").strip()
-                candidates.append((_epoch(job.get("created_at")), f"quorum · {qid}" if qid else "quorum"))
+            for rec in JobStore().active():
+                spec = rec.spec or {}
+                if rec.type in ("reforecast", "task"):
+                    reforecast += 1
+                    n = int(rec.total or len(spec.get("question_ids") or []) or 0)
+                    kind = "desk task" if rec.type == "task" else "reforecast"
+                    label = f"{kind} · {n} question{'' if n == 1 else 's'}" if n else kind
+                    candidates.append((_epoch(rec.created_at), label))
+                elif rec.type == "quorum":
+                    quorum += 1
+                    qid = str(spec.get("question_id") or "").strip()
+                    candidates.append((_epoch(rec.created_at), f"quorum · {qid}" if qid else "quorum"))
         except Exception:  # noqa: BLE001
             pass
 

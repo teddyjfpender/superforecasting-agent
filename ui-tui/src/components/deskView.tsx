@@ -4,6 +4,7 @@ import { Fragment, memo, type ReactNode, type RefObject, useEffect, useMemo, use
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { ReviewSweepState } from '../app/interfaces.js'
+import { type JobRecordShape, useJobAttach } from '../app/useJobAttach.js'
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { $reviewSweep } from '../app/uiStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -13,6 +14,7 @@ import type {
   ForecastBenchRow,
   ForecastFactor,
   ForecastQuestionPacketResponse,
+  ForecastReforecastResultRow,
   ForecastReforecastStartResponse,
   ForecastReforecastStatusResponse,
   ForecastReviewsNextResponse,
@@ -198,18 +200,74 @@ export interface RefreshJob {
   doneIds: Set<string>
 }
 
-// A partial JobRecord as jobs.status / jobs.active return it (record.to_dict). Only
-// the fields the desk reads are typed; the runtime owns the rest.
-interface JobRecordShape {
-  job_id?: string
-  status?: string
-  total?: null | number
-  done_count?: number
-  current?: null | string
-  spec?: { question_ids?: string[] } | null
-  result?: unknown
-  error?: null | string
-  annotations?: { results?: { question_id?: string }[] } | null
+// The registered job TYPES each attach hook discovers. The A/T agent run enqueues
+// as `reforecast` (bare `A`) or `task` (`T`); `U`/mass-`U` enqueue as `refresh`.
+const AGENT_JOB_TYPES = ['reforecast', 'task']
+const REFRESH_JOB_TYPES = ['refresh']
+
+// Map a generic JobRecord (jobs.status / jobs.active) into the Desk's AgentJob view
+// state — the A/T poll/re-attach mapping, now off the runtime's own record instead
+// of the forecast.reforecast.* legacy projection. `current` is the per-question
+// pointer object the reforecast type annotates; `doneIds` accrues from the record's
+// annotated partial results; task-mode `note` is the latest progress detail.
+export const agentJobFromRecord = (rec: JobRecordShape): AgentJob => {
+  const spec = rec.spec ?? {}
+  const ann = (rec.annotations ?? {}) as {
+    current?: { question_id?: string; stage?: string; title?: string } | null
+    progress?: { detail?: string }[]
+    results?: { question_id?: string }[]
+  }
+  const results = ann.results ?? (rec.result as { results?: { question_id?: string }[] } | null)?.results ?? []
+  const doneIds = new Set(results.map(row => row.question_id).filter(Boolean) as string[])
+  const progress = ann.progress ?? []
+  const lastNote = progress.length ? progress[progress.length - 1]?.detail : undefined
+  return {
+    current: ann.current ?? null,
+    done: rec.done_count ?? results.length,
+    doneIds,
+    mode: rec.type === 'task' ? 'task' : 'agent',
+    note: typeof lastNote === 'string' ? lastNote : undefined,
+    runId: rec.job_id ?? '',
+    status: rec.status ?? 'running',
+    targetIds: new Set((spec.question_ids ?? []).map(String)),
+    total: rec.total ?? spec.question_ids?.length ?? 0
+  }
+}
+
+// Map a generic JobRecord into the Desk's RefreshJob view state — the U/mass-U
+// deterministic re-pool. `current` is the in-flight question id (a plain string on
+// the record); `doneIds` accrues from the record's annotated partial results.
+export const refreshJobFromRecord = (rec: JobRecordShape): RefreshJob => {
+  const spec = rec.spec ?? {}
+  const targetIds = new Set<string>((spec.question_ids ?? []).map(String))
+  const partial = (rec.annotations?.results as { question_id?: string }[] | undefined) ?? []
+  const doneIds = new Set<string>(partial.map(x => x.question_id).filter(Boolean) as string[])
+  return {
+    current: typeof rec.current === 'string' ? rec.current : null,
+    done: rec.done_count ?? doneIds.size,
+    doneIds,
+    jobId: rec.job_id ?? '',
+    status: rec.status ?? 'running',
+    targetIds,
+    total: rec.total ?? targetIds.size
+  }
+}
+
+// Project a TERMINAL JobRecord onto the ForecastReforecastStatusResponse shape
+// summarizeAgentJob reads — the per-question `results` + `task_summary` the type's
+// execute() returns (with the running annotations as the fallback), so the honest
+// completion toast is built off the record the runtime persisted. `quorums_started`
+// is left unset so the summary derives it from the results' quorum_autorun rows.
+export const reforecastStatusFromRecord = (rec: JobRecordShape): ForecastReforecastStatusResponse => {
+  const ann = (rec.annotations ?? {}) as { results?: ForecastReforecastResultRow[]; task_summary?: string }
+  const result = (rec.result ?? {}) as { results?: ForecastReforecastResultRow[]; task_summary?: string }
+  return {
+    error: rec.error ?? null,
+    results: result.results ?? ann.results ?? [],
+    run_id: rec.job_id,
+    status: (rec.status as ForecastReforecastStatusResponse['status']) ?? 'done',
+    task_summary: result.task_summary ?? ann.task_summary
+  }
 }
 
 // The HONEST completion toast for a detached job. Agent mode reports the gated
@@ -731,112 +789,30 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     })
   }, [items])
 
-  // RE-ATTACH on mount: agent jobs are DETACHED — they keep working when the
-  // desk closes or the operator switches views, and without this the row
-  // indicators + progress line silently vanish on reopen while the job grinds
-  // on (the operator: "unclear if those 'A' agent runs persist when we move to
-  // different tabs"). One forecast.reforecast.active call rehydrates the newest
-  // live job; the status poller below then takes over.
-  useEffect(() => {
-    if (agentJob) {
-      return
+  // The A/T detached agent run rides the ONE attach hook: it discovers a live
+  // reforecast/task job on mount (agent jobs are DETACHED — they keep working when
+  // the desk closes; the operator: "unclear if those 'A' agent runs persist when we
+  // move to different tabs"), polls its record every ~5s, and refreshes on the
+  // jobs.* events. onProgress maps the record into AgentJob; onComplete toasts the
+  // HONEST tally, reloads, and clears. `runAgent`/`submitTask` call attach() with
+  // the id the start alias returned.
+  const { attach: attachAgentJob } = useJobAttach(gw, AGENT_JOB_TYPES, {
+    onComplete: rec => {
+      agentRunningRef.current = false
+      setAgentJob(null)
+      const mode = rec.type === 'task' ? 'task' : 'agent'
+      setFlash(
+        rec.status === 'error' && rec.error
+          ? `agent failed: ${truncate(rec.error, 80)}`
+          : summarizeAgentJob(reforecastStatusFromRecord(rec), mode)
+      )
+      load() // reload once so the freshly-committed rows land
+    },
+    onProgress: rec => {
+      agentRunningRef.current = true
+      setAgentJob(agentJobFromRecord(rec))
     }
-    let cancelled = false
-    gw.request<unknown>('forecast.reforecast.active', {})
-      .then(raw => {
-        if (cancelled) {
-          return
-        }
-        const r = asRpcResult<{ jobs?: {
-          done_count?: number
-          mode?: string
-          question_ids?: string[]
-          run_id?: string
-          status?: string
-          total?: number
-        }[] }>(raw)
-        const live = r?.jobs?.[0]
-        if (!live?.run_id) {
-          return
-        }
-        agentRunningRef.current = true
-        setAgentJob({
-          current: null,
-          done: live.done_count ?? 0,
-          doneIds: new Set(),
-          mode: live.mode === 'task' ? 'task' : 'agent',
-          runId: live.run_id,
-          status: live.status ?? 'running',
-          targetIds: new Set(live.question_ids ?? []),
-          total: live.total ?? (live.question_ids?.length ?? 0)
-        })
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gw])
-
-  // Poll the detached agent job's status every ~5s while the desk is open (bounded,
-  // cleaned up — the quorum-chip poll shape). An immediate poll paints the first
-  // progress frame; on done/error it toasts the HONEST tally, reloads the payload,
-  // and clears the job (which tears the interval down). The job keeps running
-  // server-side if the desk closes — the cleanup only stops the POLL, not the work.
-  useEffect(() => {
-    const job = agentJob
-    if (!job?.runId) {
-      return
-    }
-    const { mode, runId } = job
-    let cancelled = false
-    const poll = () => {
-      gw.request<unknown>('forecast.reforecast.status', { run_id: runId })
-        .then(raw => {
-          if (cancelled) {
-            return
-          }
-          const r = asRpcResult<ForecastReforecastStatusResponse>(raw)
-          if (!r) {
-            return
-          }
-          const results = r.results ?? []
-          const doneIds = new Set((results.map(row => row.question_id).filter(Boolean) as string[]))
-          if (r.status === 'done' || r.status === 'error') {
-            agentRunningRef.current = false
-            setAgentJob(null)
-            setFlash(
-              r.status === 'error' && r.error
-                ? `agent failed: ${truncate(r.error, 80)}`
-                : summarizeAgentJob(r, mode)
-            )
-            load() // reload once so the freshly-committed rows land
-            return
-          }
-          const progress = r.progress ?? []
-          setAgentJob(prev =>
-            prev && prev.runId === runId
-              ? {
-                  ...prev,
-                  current: r.current ?? null,
-                  done: r.done_count ?? results.length,
-                  doneIds,
-                  note: progress.length ? progress[progress.length - 1] : prev.note,
-                  status: r.status ?? prev.status
-                }
-              : prev
-          )
-        })
-        .catch(() => {})
-    }
-    poll()
-    const id = setInterval(poll, 5000)
-    return () => {
-      cancelled = true
-      clearInterval(id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [agentJob?.runId, gw])
+  })
 
   // The rows still in flight (targetIds − doneIds) → a dim ⋯ gutter marker. Empty
   // (stable ref) when no job runs, so the list rows are byte-identical at rest.
@@ -853,107 +829,29 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     return rem
   }, [agentJob])
 
-  // RE-ATTACH on mount: a REFRESH job is detached exactly like the agent job — it
-  // keeps re-pooling when the Desk closes, and without this the ⋯ markers + the
-  // progress line silently vanish on reopen (the operator's original U bug). One
-  // jobs.active {types:['refresh']} call rehydrates the newest live refresh job;
-  // the status poller below then takes over. Mirrors the agent re-attach exactly,
-  // pointed at the generic jobs.* runtime RPCs instead of forecast.reforecast.*.
-  useEffect(() => {
-    if (refreshJob) {
-      return
+  // The U/mass-U detached REFRESH job rides the SAME attach hook — detached exactly
+  // like the agent job (it keeps re-pooling when the Desk closes; the operator's
+  // original U bug was the client-side loop's queue vanishing on navigate-away). It
+  // discovers a live refresh job on mount, polls its record, and refreshes on the
+  // jobs.* events. onProgress maps the record into RefreshJob; onComplete toasts the
+  // job-computed tally, reloads, and clears. `runRefresh` calls attach() with the
+  // job_id jobs.start returned.
+  const { attach: attachRefreshJob } = useJobAttach(gw, REFRESH_JOB_TYPES, {
+    onComplete: rec => {
+      refreshRunningRef.current = false
+      setRefreshJob(null)
+      setFlash(
+        rec.status === 'error'
+          ? `update failed: ${truncate((rec.error as string) ?? 'error', 80)}`
+          : summarizeUpdate(refreshTally(rec.result))
+      )
+      load() // reload once so the freshly-committed rows land
+    },
+    onProgress: rec => {
+      refreshRunningRef.current = true
+      setRefreshJob(refreshJobFromRecord(rec))
     }
-    let cancelled = false
-    gw.request<unknown>('jobs.active', { types: ['refresh'] })
-      .then(raw => {
-        if (cancelled) {
-          return
-        }
-        const r = asRpcResult<{ jobs?: JobRecordShape[] }>(raw)
-        const live = r?.jobs?.[0]
-        if (!live?.job_id) {
-          return
-        }
-        refreshRunningRef.current = true
-        const targetIds = new Set<string>((live.spec?.question_ids ?? []).map(String))
-        const doneIds = new Set<string>(
-          (live.annotations?.results ?? []).map(x => x.question_id).filter(Boolean) as string[]
-        )
-        setRefreshJob({
-          current: typeof live.current === 'string' ? live.current : null,
-          done: live.done_count ?? doneIds.size,
-          doneIds,
-          jobId: live.job_id,
-          status: live.status ?? 'running',
-          targetIds,
-          total: live.total ?? targetIds.size
-        })
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gw])
-
-  // Poll the detached refresh job's status every ~5s while the Desk is open (the
-  // same bounded/cleaned-up shape as the agent poll). An immediate poll paints the
-  // first frame; on a terminal status (done/error/cancelled) it toasts the HONEST
-  // tally the job computed, reloads the payload once, and clears the job. The job
-  // keeps running server-side if the Desk closes — the cleanup only stops the POLL.
-  useEffect(() => {
-    const job = refreshJob
-    if (!job?.jobId) {
-      return
-    }
-    const { jobId } = job
-    let cancelled = false
-    const poll = () => {
-      gw.request<unknown>('jobs.status', { job_id: jobId })
-        .then(raw => {
-          if (cancelled) {
-            return
-          }
-          const r = asRpcResult<{ found?: boolean; job?: JobRecordShape }>(raw)
-          const rec = r?.job
-          if (!rec) {
-            return
-          }
-          if (rec.status === 'done' || rec.status === 'error' || rec.status === 'cancelled') {
-            refreshRunningRef.current = false
-            setRefreshJob(null)
-            setFlash(
-              rec.status === 'error'
-                ? `update failed: ${truncate(rec.error ?? 'error', 80)}`
-                : summarizeUpdate(refreshTally(rec.result))
-            )
-            load() // reload once so the freshly-committed rows land
-            return
-          }
-          const partial = rec.annotations?.results ?? []
-          const doneIds = new Set<string>(partial.map(x => x.question_id).filter(Boolean) as string[])
-          setRefreshJob(prev =>
-            prev && prev.jobId === jobId
-              ? {
-                  ...prev,
-                  current: typeof rec.current === 'string' ? rec.current : prev.current,
-                  done: rec.done_count ?? doneIds.size,
-                  doneIds,
-                  status: rec.status ?? prev.status
-                }
-              : prev
-          )
-        })
-        .catch(() => {})
-    }
-    poll()
-    const id = setInterval(poll, 5000)
-    return () => {
-      cancelled = true
-      clearInterval(id)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshJob?.jobId, gw])
+  })
 
   // The refresh job's still-in-flight rows (targetIds − doneIds) → the SAME ⋯ /
   // spinner markers the agent job uses; merged with agentRemaining for the list.
@@ -1166,6 +1064,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           targetIds: new Set(ids),
           total: ids.length
         })
+        attachRefreshJob(r.job_id) // the attach hook polls + event-refreshes this job
         clearSelection()
       })
       .catch(() => {
@@ -1212,6 +1111,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           targetIds: new Set(ids),
           total: r.total ?? ids.length
         })
+        attachAgentJob(r.run_id) // the attach hook polls + event-refreshes this job
         clearSelection()
       })
       .catch(() => {
@@ -1267,6 +1167,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           targetIds: new Set(ids),
           total: r.total ?? ids.length
         })
+        attachAgentJob(r.run_id) // the attach hook polls + event-refreshes this job
         clearSelection()
       })
       .catch(() => {

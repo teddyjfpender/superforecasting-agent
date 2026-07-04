@@ -125,7 +125,10 @@ def read_job(run_id: str) -> dict[str, Any]:
 
     store = JobStore()
     try:
-        return _to_legacy(store.read(run_id))
+        # include_legacy=False: the store's generic read-shim would drop the rich
+        # legacy fields (progress/panel_run_id/result); this alias reads a surviving
+        # qr_ file VERBATIM below to preserve them byte-for-byte.
+        return _to_legacy(store.read(run_id, include_legacy=False))
     except (FileNotFoundError, ValueError):
         pass
     path = jobs_dir() / f"{run_id}.json"
@@ -141,7 +144,9 @@ def list_jobs(limit: int = 20) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen: set[str] = set()
     try:
-        for record in JobStore().list(limit=max(limit * 4, 200)):
+        # include_legacy=False: only the NEW job_ records here; the qr_ glob below
+        # supplies surviving legacy runs VERBATIM (rich legacy shape preserved).
+        for record in JobStore().list(limit=max(limit * 4, 200), include_legacy=False):
             if record.type == "quorum":
                 rows.append(_to_legacy(record))
                 seen.add(record.job_id)

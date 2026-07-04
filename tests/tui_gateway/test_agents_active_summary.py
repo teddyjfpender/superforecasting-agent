@@ -1,13 +1,14 @@
 """Tests for the ``agents.active.summary`` gateway RPC.
 
 The operator wanted a glanceable "N agents running · …" heuristic in the TUI
-status bar. The RPC is ONE cheap aggregate over the three detached job stores —
-background processes (proc_ batches), mass reforecast/desk-task jobs, and quorum
-forecasts. These tests seed real job files + stub the in-memory process registry
-(mirroring tests/forecasting/test_reforecast_jobs.py's RPC pattern, including the
-``_ok`` envelope: ``resp["result"]``) and assert the aggregate count, the
-per-kind breakdown, the newest-item headline label, quiet-at-rest, and the
-fail-safe when a single store errors.
+status bar. Since Arc B the RPC is ONE cheap aggregate over the ONE detached-job
+store (reforecast/task/quorum records in a single scan) plus the in-memory process
+registry (proc_ batches — the one non-jobs source). These tests seed real
+legacy-shaped job files (which the store's read-shim surfaces through the generic
+scan) + stub the process registry (mirroring tests/forecasting/test_reforecast_jobs.py's
+RPC pattern, including the ``_ok`` envelope: ``resp["result"]``) and assert the
+aggregate count, the per-kind breakdown, the newest-item headline label,
+quiet-at-rest, and the fail-safe when the store read errors.
 """
 
 from __future__ import annotations
@@ -142,24 +143,25 @@ def test_terminal_jobs_are_never_counted(home, monkeypatch):
     assert resp["result"]["count"] == 0
 
 
-def test_failsafe_when_one_store_errors(home, monkeypatch):
-    """A store raising must contribute 0 and NEVER break the RPC — the other
-    stores still count."""
+def test_failsafe_when_the_store_errors(home, monkeypatch):
+    """The job-store read raising must contribute 0 and NEVER break the RPC — the
+    process-registry source still counts (each source is guarded independently)."""
     from tui_gateway import server
 
-    _seed_quorum(status="running")  # this store works
     _stub_registry(monkeypatch, [{"session_id": "p", "command": "run", "status": "running", "uptime_seconds": 5}])
 
-    # Break the reforecast store: its list_jobs raises.
-    def _boom(*a, **k):
-        raise RuntimeError("reforecast store exploded")
+    # Break the ONE job store: active() raises.
+    from forecasting.jobs.store import JobStore
 
-    monkeypatch.setattr(rf, "list_jobs", _boom)
+    def _boom(*a, **k):
+        raise RuntimeError("job store exploded")
+
+    monkeypatch.setattr(JobStore, "active", _boom)
 
     resp = server.handle_request({"id": "1", "method": "agents.active.summary", "params": {}})
     result = resp["result"]
 
-    # No error surfaced; the working stores still count (1 proc + 1 quorum).
+    # No error surfaced; the working source (1 proc) still counts.
     assert "error" not in resp
-    assert result["count"] == 2
-    assert result["kinds"] == {"procs": 1, "reforecast": 0, "quorum": 1}
+    assert result["count"] == 1
+    assert result["kinds"] == {"procs": 1, "reforecast": 0, "quorum": 0}

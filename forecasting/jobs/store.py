@@ -19,6 +19,31 @@ from forecasting.jobs.model import JobRecord, _now_iso
 
 _ACTIVE_STATUSES = ("queued", "running")
 
+# Legacy on-disk job stores that predate the unified runtime (Arc B4). A record
+# that was in flight across the migration still lives here; the GENERIC jobs.*
+# path answers for it by scanning these dirs and shimming each file into a
+# JobRecord — so the per-type read-shims (reforecast.list_jobs / quorum.list_jobs
+# each globbing their own dir) collapse onto this ONE store-level path.
+#   (dir, filename prefix, default type)
+# The reforecast dir carries BOTH reforecast and task runs; ``_legacy_type``
+# disambiguates on ``spec.mode`` before falling back to the default.
+_LEGACY_SOURCES = (
+    ("reforecast_runs", "rf_", "reforecast"),
+    ("quorum_runs", "qr_", "quorum"),
+)
+
+
+def _legacy_type(data: dict, default_type: str) -> str:
+    """Resolve a legacy record's TYPE: an explicit ``type``, else ``mode`` /
+    ``spec.mode`` (a task run), else the dir's default."""
+
+    if data.get("type"):
+        return str(data["type"])
+    mode = data.get("mode") or (data.get("spec") or {}).get("mode")
+    if isinstance(mode, str) and mode.strip():
+        return mode.strip()
+    return default_type
+
 
 class JobStore:
     """Read/write/list JobRecords under ``{home}/jobs/``.
@@ -32,9 +57,11 @@ class JobStore:
         self._home = Path(home) if home is not None else None
 
     # ── paths ────────────────────────────────────────────────────────────────
+    def _base(self) -> Path:
+        return self._home if self._home is not None else get_hermes_home()
+
     def jobs_dir(self) -> Path:
-        base = self._home if self._home is not None else get_hermes_home()
-        path = base / "jobs"
+        path = self._base() / "jobs"
         path.mkdir(parents=True, exist_ok=True)
         return path
 
@@ -78,35 +105,103 @@ class JobStore:
         )
         os.replace(tmp, path)
 
-    def read(self, job_id: str) -> JobRecord:
+    def read(self, job_id: str, *, include_legacy: bool = True) -> JobRecord:
         path = self.path(job_id)
-        if not path.exists():
-            raise FileNotFoundError(f"no job '{job_id}' (looked in {self.jobs_dir()})")
-        return JobRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        if path.exists():
+            return JobRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
+        if include_legacy:
+            legacy = self._read_legacy(job_id)
+            if legacy is not None:
+                return legacy
+        raise FileNotFoundError(f"no job '{job_id}' (looked in {self.jobs_dir()})")
 
-    def list(self, *, limit: int = 100) -> list[JobRecord]:
+    def list(self, *, limit: int = 100, include_legacy: bool = True) -> list[JobRecord]:
         rows: list[JobRecord] = []
+        seen: set[str] = set()
         for path in self.jobs_dir().glob("job_*.json"):
             try:
-                rows.append(JobRecord.from_dict(json.loads(path.read_text(encoding="utf-8"))))
+                record = JobRecord.from_dict(json.loads(path.read_text(encoding="utf-8")))
             except (OSError, json.JSONDecodeError, TypeError, ValueError):
                 continue
+            rows.append(record)
+            seen.add(record.job_id)
+        if include_legacy:
+            rows.extend(self._legacy_records(seen))
         rows.sort(key=lambda r: r.created_at or "", reverse=True)
         return rows[:limit]
 
-    def active(self, *, types: list[str] | None = None, limit: int = 100) -> list[JobRecord]:
+    def active(
+        self, *, types: list[str] | None = None, limit: int = 100, include_legacy: bool = True
+    ) -> list[JobRecord]:
         """The still-in-flight jobs (``queued`` | ``running``), newest first,
-        optionally filtered to a set of ``types``."""
+        optionally filtered to a set of ``types``. Legacy ``rf_``/``qr_`` records
+        that were in flight across the migration are included by default."""
 
         wanted = set(types) if types else None
         out: list[JobRecord] = []
-        for record in self.list(limit=limit):
+        for record in self.list(limit=limit, include_legacy=include_legacy):
             if record.status not in _ACTIVE_STATUSES:
                 continue
             if wanted is not None and record.type not in wanted:
                 continue
             out.append(record)
         return out
+
+    # ── legacy read-shim (rf_/qr_ files that predate the runtime) ─────────────
+    def _legacy_records(self, seen: set[str]) -> list[JobRecord]:
+        """Every legacy ``rf_``/``qr_`` file across the pre-migration dirs, shimmed
+        into JobRecords. ``seen`` de-dupes against the new ``job_`` store (a run
+        that already migrated wins) and across the scan itself."""
+
+        base = self._base()
+        out: list[JobRecord] = []
+        for dirname, prefix, default_type in _LEGACY_SOURCES:
+            directory = base / dirname
+            if not directory.is_dir():
+                continue
+            for path in directory.glob(f"{prefix}*.json"):
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                rid = data.get("run_id") or data.get("job_id")
+                if not rid or rid in seen:
+                    continue
+                try:
+                    record = JobRecord.from_dict({**data, "type": _legacy_type(data, default_type)})
+                except (TypeError, ValueError):
+                    continue
+                out.append(record)
+                seen.add(rid)
+        return out
+
+    def _read_legacy(self, job_id: str) -> JobRecord | None:
+        """The one legacy file named ``{job_id}.json`` across the pre-migration dirs
+        (the id prefix effectively pins the dir), shimmed into a JobRecord — or None
+        when no legacy file has it."""
+
+        try:
+            self._validate_id(job_id)
+        except ValueError:
+            return None
+        base = self._base()
+        for dirname, _prefix, default_type in _LEGACY_SOURCES:
+            path = base / dirname / f"{job_id}.json"
+            if not path.exists():
+                continue
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                return None
+            if not isinstance(data, dict):
+                return None
+            try:
+                return JobRecord.from_dict({**data, "type": _legacy_type(data, default_type)})
+            except (TypeError, ValueError):
+                return None
+        return None
 
     # ── cancellation ─────────────────────────────────────────────────────────
     def request_cancel(self, job_id: str) -> bool:

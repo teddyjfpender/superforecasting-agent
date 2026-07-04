@@ -2320,7 +2320,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             # construction (the helper never raises); the notes + run_id land in the
             # result so the agent can report and poll it (show_quorum_status).
             try:
-                from forecasting.quorum_jobs import maybe_autorun_quorum
+                from forecasting.quorum_autorun import maybe_autorun_quorum
 
                 _qa_notes: list[str] = []
                 _qa = maybe_autorun_quorum(
@@ -3417,9 +3417,9 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             # auditable recommendation artifact only — it does NOT commit or mutate
             # any probability. The operator/agent commits explicitly via
             # update_forecast with panel_run_ref.
-            from forecasting.quorum_jobs import read_job, start_job
+            from forecasting.jobs.types.quorum import read_job, start_job
 
-            # Only forward keys the caller actually set: execute_job resolves its
+            # Only forward keys the caller actually set: the quorum execute resolves its
             # own defaults from a MISSING key (e.g. int(spec.get("trim", 1)),
             # pool_method fallback, the supervisor_search config fallback), so
             # writing None here would clobber those defaults / break the run.
@@ -3444,7 +3444,7 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             )
 
         if action == "show_quorum_status":
-            from forecasting.quorum_jobs import read_job
+            from forecasting.jobs.types.quorum import read_job
 
             return tool_result(success=True, job=read_job(_required(args, "run_id")))
 

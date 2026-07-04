@@ -1513,12 +1513,14 @@ describe('AgentProgressLine', () => {
 })
 
 // ── Detached A/T agent jobs (start → poll → tally) ────────────────────────────
-// A gw that answers the detached-job RPCs: start/task return a run_id, and status
-// returns a fixed scripted payload (done/running) so the poll cycle is deterministic.
+// A gw that answers the detached-job RPCs: the start/task ALIASES return a run_id
+// (byte-compatible with the old surface), and the GENERIC jobs.status returns a
+// scripted JobRecord — the desk's A/T job now rides the one useJobAttach hook over
+// jobs.status/jobs.active, so the poll reads the runtime record directly.
 const jobGw = (
   response: ForecastWorkspaceResponse,
   calls: { method: string; params: Record<string, unknown> }[],
-  status: unknown
+  record: unknown
 ) =>
   ({
     request: (method: string, params: Record<string, unknown>) => {
@@ -1533,8 +1535,11 @@ const jobGw = (
           total: Array.isArray(params.question_ids) ? (params.question_ids as unknown[]).length : 0
         })
       }
-      if (method === 'forecast.reforecast.status') {
-        return Promise.resolve(status)
+      if (method === 'jobs.status') {
+        return Promise.resolve({ found: !!record, job: record })
+      }
+      if (method === 'jobs.active') {
+        return Promise.resolve({ count: 0, jobs: [] }) // no pre-existing job; start+attach drives it
       }
       return Promise.resolve(response)
     }
@@ -1543,20 +1548,24 @@ const jobGw = (
 describe('DeskView detached agent jobs (A / T)', () => {
   it('A starts a detached agent run over the marked batch, polls status, and toasts the HONEST tally', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
-    const status = {
-      current: null,
+    // A terminal reforecast JobRecord (jobs.status shape): per-question results ride
+    // the record's `result`; quorums_started is derived from the quorum_autorun rows.
+    const record = {
       done_count: 3,
-      quorums_started: 1,
-      results: [
-        { committed: true, question_id: 'fq_a', quorum_autorun: true },
-        { committed: false, question_id: 'fq_b' },
-        { committed: false, error: 'boom', question_id: 'fq_c' }
-      ],
-      run_id: 'run_1',
+      job_id: 'run_1',
+      result: {
+        results: [
+          { committed: true, question_id: 'fq_a', quorum_autorun: true },
+          { committed: false, question_id: 'fq_b' },
+          { committed: false, error: 'boom', question_id: 'fq_c' }
+        ]
+      },
+      spec: { question_ids: ['fq_a', 'fq_b', 'fq_c'] },
       status: 'done',
-      total: 3
+      total: 3,
+      type: 'reforecast'
     }
-    const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, status))
+    const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, record))
     await desk.press(' ') // mark fq_a
     await desk.press(' ') // mark fq_b
     await desk.press(' ') // mark fq_c
@@ -1565,7 +1574,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
     const start = calls.find(c => c.method === 'forecast.reforecast.start')
     expect(start).toBeDefined()
     expect(start?.params.question_ids).toEqual(['fq_a', 'fq_b', 'fq_c'])
-    expect(calls.some(c => c.method === 'forecast.reforecast.status')).toBe(true)
+    expect(calls.some(c => c.method === 'jobs.status')).toBe(true)
     // 1 committed, 1 blocked (ran, no commit, no error), 1 error, 1 quorum started —
     // the tally never claims a commit it didn't earn.
     const text = desk.text()
@@ -1609,16 +1618,18 @@ describe('DeskView detached agent jobs (A / T)', () => {
 
   it('T opens the task modal, captures typed text, and submits forecast.desk.task with the batch + toast', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
-    const status = {
-      current: null,
+    // A terminal TASK JobRecord: the agent's own task_summary rides `result` and
+    // leads the completion toast (mode resolved from the record's `type`).
+    const record = {
       done_count: 1,
-      results: [{ committed: true, question_id: 'fq_a' }],
-      run_id: 'run_1',
+      job_id: 'run_1',
+      result: { results: [{ committed: true, question_id: 'fq_a' }], task_summary: 'added a watched source and reforecast' },
+      spec: { question_ids: ['fq_a'] },
       status: 'done',
-      task_summary: 'added a watched source and reforecast',
-      total: 1
+      total: 1,
+      type: 'task'
     }
-    const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, status))
+    const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, record))
     await desk.press(' ') // mark fq_a → the task batch is {fq_a}
     await desk.press('T')
     let text = desk.text()
@@ -1684,13 +1695,17 @@ describe('DeskView agent-run visibility', () => {
 
   it('re-attaches to a live detached job on mount and animates the working row', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
-    const status = {
-      current: { question_id: 'fq_a', stage: 'research', title: 'A' },
+    // A live reforecast JobRecord (jobs.status/jobs.active shape): the per-question
+    // pointer rides annotations.current; the target batch rides spec.question_ids.
+    const record = {
+      annotations: { current: { question_id: 'fq_a', stage: 'research', title: 'A' }, results: [] },
       done_count: 0,
+      job_id: 'run_9',
       progress: [],
-      results: [],
+      spec: { question_ids: ['fq_a', 'fq_b'] },
       status: 'running',
-      total: 2
+      total: 2,
+      type: 'reforecast'
     }
     const resp = (): ForecastWorkspaceResponse => ({
       active_count: 3,
@@ -1703,13 +1718,11 @@ describe('DeskView agent-run visibility', () => {
     const gw = {
       request: (method: string, params: Record<string, unknown>) => {
         calls.push({ method, params })
-        if (method === 'forecast.reforecast.active') {
-          return Promise.resolve({
-            jobs: [{ done_count: 0, mode: 'reforecast', question_ids: ['fq_a', 'fq_b'], run_id: 'run_9', status: 'running', total: 2 }]
-          })
+        if (method === 'jobs.active') {
+          return Promise.resolve({ count: 1, jobs: [record] })
         }
-        if (method === 'forecast.reforecast.status') {
-          return Promise.resolve(status)
+        if (method === 'jobs.status') {
+          return Promise.resolve({ found: true, job: record })
         }
         if (method === 'forecast.question') {
           return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
@@ -1721,8 +1734,8 @@ describe('DeskView agent-run visibility', () => {
     const desk = await mountDesk(120, resp(), gw)
     // The mount discovery found the live job and the poller attached to it.
     await tick(300)
-    expect(calls.some(c => c.method === 'forecast.reforecast.active')).toBe(true)
-    expect(calls.some(c => c.method === 'forecast.reforecast.status' && c.params.run_id === 'run_9')).toBe(true)
+    expect(calls.some(c => c.method === 'jobs.active')).toBe(true)
+    expect(calls.some(c => c.method === 'jobs.status' && c.params.job_id === 'run_9')).toBe(true)
     // The working row (fq_a, per status.current) shows an animated braille
     // spinner frame; the queued row shows the in-flight ⋯ marker.
     await tick(700)
