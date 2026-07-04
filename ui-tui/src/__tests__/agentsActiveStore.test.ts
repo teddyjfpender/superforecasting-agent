@@ -29,6 +29,18 @@ describe('agentsActiveStore', () => {
     unsub()
   })
 
+  it('publishes the drop back to zero — the chip clears, no stale last-known summary', () => {
+    // A live job lights the chip.
+    setAgentsActive({ count: 2, headline: '2 agents running · reforecast · 5 questions' })
+    expect($agentsActive.get().count).toBe(2)
+
+    // The job finishes → the poll returns count 0. The store must publish ZERO,
+    // NOT retain the last-known nonzero summary (no `count || previous` fallback);
+    // otherwise the chip would read as running forever.
+    setAgentsActive(agentsActiveFromResult({ count: 0, headline: '' }))
+    expect($agentsActive.get()).toEqual(AGENTS_ACTIVE_EMPTY)
+  })
+
   it('agentsActiveFromResult tolerates null / partial / malformed payloads', () => {
     expect(agentsActiveFromResult(null)).toEqual(AGENTS_ACTIVE_EMPTY)
     expect(agentsActiveFromResult(undefined)).toEqual(AGENTS_ACTIVE_EMPTY)

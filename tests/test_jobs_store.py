@@ -87,6 +87,51 @@ def test_active_filters_terminal_and_by_type(tmp_path):
     assert warnings_active == {"job_run"}
 
 
+def test_active_keeps_a_fresh_running_job(tmp_path):
+    """Regression: a running job with a FRESH heartbeat stays active — the freshness
+    gate must never hide a genuinely live agent (the chip must still light)."""
+    store = _store(tmp_path)
+    store.write(JobRecord(job_id="job_fresh", type="reforecast", status="running"))
+    assert {r.job_id for r in store.active()} == {"job_fresh"}
+
+
+def test_active_excludes_crashed_worker_with_stale_heartbeat(tmp_path):
+    """Reproduces the stuck-chip bug (server layer 1): a worker that CRASHED or was
+    KILLED never reaches the runtime's try/except, so it never writes a terminal
+    ``done``/``error`` status — its record is stuck at ``running`` forever. Once its
+    heartbeat (``updated_at``) goes stale it must drop out of ``active()``; otherwise
+    the "N agents running" chip reads it as live for the whole session.
+
+    Before the fix ``active()`` returned BOTH records (status-only filter); now the
+    stale one is excluded. ``max_stale_s=None`` is the escape hatch that restores the
+    old status-only behaviour."""
+    store = _store(tmp_path)
+    store.write(JobRecord(job_id="job_live", type="reforecast", status="running"))
+    store.write(JobRecord(job_id="job_dead", type="reforecast", status="running"))
+
+    # Simulate job_dead's worker dying long ago: patch the file directly (write()
+    # would restamp updated_at to "now", masking the death).
+    dead = store.path("job_dead")
+    data = json.loads(dead.read_text())
+    data["created_at"] = data["updated_at"] = "2020-01-01T00:00:00+00:00"
+    dead.write_text(json.dumps(data))
+
+    assert {r.job_id for r in store.active()} == {"job_live"}
+    # Disabling the gate returns to the pure status filter (both come back).
+    assert {r.job_id for r in store.active(max_stale_s=None)} == {"job_live", "job_dead"}
+
+
+def test_active_freshness_gate_uses_injected_now(tmp_path):
+    """The cutoff is ``now - max_stale_s``; an injected ``now`` far in the future
+    stales even a just-written record, proving the gate keys off the heartbeat age."""
+    store = _store(tmp_path)
+    store.write(JobRecord(job_id="job_x", type="reforecast", status="running"))
+    assert {r.job_id for r in store.active()} == {"job_x"}
+    # 10 days later, a 30-min window has long since elapsed.
+    future = __import__("time").time() + 10 * 86400
+    assert store.active(now=future) == []
+
+
 def test_request_cancel_sets_flag_and_stop_file(tmp_path):
     store = _store(tmp_path)
     store.write(JobRecord(job_id="job_c", type="warnings", status="running"))
@@ -218,6 +263,34 @@ def test_active_includes_only_in_flight_legacy(legacy_home):
     assert {r.job_id for r in store.active()} == {"rf_run", "qr_run"}
     # The types filter reaches legacy records too.
     assert {r.job_id for r in store.active(types=["quorum"])} == {"qr_run"}
+
+
+def test_active_excludes_statusless_legacy_record(legacy_home):
+    """Reproduces the stuck-chip bug (server layer 2): a pre-migration legacy
+    ``rf_``/``qr_`` file that carries NO ``status`` key rebuilds with the JobRecord
+    DEFAULT ``status='queued'`` (an active status) — so a finished/abandoned legacy
+    run would scan as forever-in-flight. Such files predate the migration, so their
+    ancient ``created_at`` heartbeat stales them out of ``active()``."""
+    from forecasting.jobs.types import reforecast as rf
+
+    (rf.jobs_dir() / "rf_nostatus.json").write_text(
+        json.dumps(
+            {
+                "run_id": "rf_nostatus",
+                # NOTE: no "status" key → JobRecord defaults it to "queued".
+                "created_at": "2020-01-01T00:00:00+00:00",
+                "spec": {"question_ids": ["q0"], "mode": "reforecast"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    store = JobStore()
+
+    # It DOES shim into a (default) queued record on the raw list...
+    listed = {r.job_id: r for r in store.list()}
+    assert listed["rf_nostatus"].status == "queued"
+    # ...but the stale heartbeat keeps it OUT of the live-agents count.
+    assert "rf_nostatus" not in {r.job_id for r in store.active()}
 
 
 def test_read_finds_a_legacy_file(legacy_home):

@@ -45,6 +45,28 @@ describe('pollAgentsActive', () => {
     expect(request).toHaveBeenCalledTimes(3)
   })
 
+  it('keeps polling past a nonzero count and publishes the drop to zero when the job finishes', async () => {
+    // The chip lights on the first poll, then the job finishes and the next tick
+    // reports zero. The poller must NOT stop once count > 0 — it has to keep polling
+    // to observe the completion, and it must publish the zero (the chip clears).
+    const request = vi
+      .fn()
+      .mockResolvedValueOnce({ count: 1, headline: '1 agent running · quorum · fq_x' })
+      .mockResolvedValue({ count: 0, headline: '' })
+    const stop = pollAgentsActive({ request } as never)
+
+    await flush()
+    expect($agentsActive.get()).toEqual({ count: 1, headline: '1 agent running · quorum · fq_x' })
+
+    // Interval keeps firing despite the nonzero count; the next poll sees zero.
+    vi.advanceTimersByTime(AGENTS_POLL_MS)
+    expect(request).toHaveBeenCalledTimes(2)
+    await flush()
+    expect($agentsActive.get()).toEqual(AGENTS_ACTIVE_EMPTY)
+
+    stop()
+  })
+
   it('a poll resolving AFTER teardown never writes the store (cancelled guard)', async () => {
     let resolveLate: (value: unknown) => void = () => {}
 

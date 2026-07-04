@@ -9363,6 +9363,17 @@ def _(rid, params: dict) -> dict:
             for p in process_registry.list_sessions():
                 if p.get("status") != "running":
                     continue
+                # A session can linger in the registry's _running set with a DEAD
+                # child: the reader thread only flips ``exited`` on stdout EOF, so an
+                # orphaned-pipe hang (a descendant holding the pipe open — issue
+                # #17327) leaves it "running" forever. Unlike ``poll()``,
+                # ``list_sessions()`` does NOT reconcile against the real child, so a
+                # finished chat-spawned agent would keep the chip lit. Gate on actual
+                # host-pid liveness: only count a proc whose pid is truly alive. A
+                # missing pid (env/sandbox-backed) can't be proven dead → still count.
+                pid = p.get("pid")
+                if pid and not process_registry._is_host_pid_alive(pid):
+                    continue
                 procs += 1
                 cmd = str(p.get("command") or "").strip()
                 label = (cmd[:44] + "…") if len(cmd) > 45 else (cmd or "process")

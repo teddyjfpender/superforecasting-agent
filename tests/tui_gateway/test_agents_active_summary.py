@@ -143,6 +143,39 @@ def test_terminal_jobs_are_never_counted(home, monkeypatch):
     assert resp["result"]["count"] == 0
 
 
+def test_dead_proc_reported_running_is_not_counted(home, monkeypatch):
+    """Reproduces the stuck-chip bug (server layer 3): a session can linger in the
+    process registry's _running set with a DEAD child — the reader thread only flips
+    ``exited`` on stdout EOF, so an orphaned-pipe hang (issue #17327) leaves it
+    "running" forever, and ``list_sessions()`` (unlike ``poll()``) never reconciles.
+    A finished chat-spawned agent would keep the chip lit. The summary now gates proc
+    counting on real host-pid liveness: a "running" proc whose pid is dead is NOT
+    counted, a live pid IS, and a proc with no pid (env/sandbox-backed, unprovable)
+    still counts."""
+    import os
+
+    from tui_gateway import server
+
+    _stub_registry(
+        monkeypatch,
+        [
+            # pid 999999999 is (virtually) certainly dead → excluded despite "running".
+            {"session_id": "dead", "command": "agent run", "status": "running", "uptime_seconds": 30, "pid": 999999999},
+            # our own pid is alive → counted.
+            {"session_id": "live", "command": "agent run 2", "status": "running", "uptime_seconds": 5, "pid": os.getpid()},
+            # no pid (env-backed) → can't be proven dead → still counted.
+            {"session_id": "nopid", "command": "env task", "status": "running", "uptime_seconds": 3},
+        ],
+    )
+
+    resp = server.handle_request({"id": "1", "method": "agents.active.summary", "params": {}})
+    result = resp["result"]
+
+    # live + nopid = 2 procs; the dead one is gated out.
+    assert result["kinds"]["procs"] == 2
+    assert result["count"] == 2
+
+
 def test_failsafe_when_the_store_errors(home, monkeypatch):
     """The job-store read raising must contribute 0 and NEVER break the RPC — the
     process-registry source still counts (each source is guarded independently)."""

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from hermes_constants import get_hermes_home
@@ -18,6 +20,40 @@ from hermes_constants import get_hermes_home
 from forecasting.jobs.model import JobRecord, _now_iso
 
 _ACTIVE_STATUSES = ("queued", "running")
+
+# A ``queued``/``running`` record only counts as LIVE while its heartbeat is
+# fresh. TWO real records read as forever-running otherwise, keeping the Home
+# "✦ N agents running" chip lit indefinitely:
+#   1. a worker that CRASHED/was killed (OOM, SIGKILL, a segfault in the detached
+#      ``python -m forecasting.jobs run`` child) never reaches the runtime's
+#      try/except, so it never writes a terminal ``done``/``error`` status; the
+#      record is stuck at ``running`` on disk.
+#   2. a pre-migration legacy ``rf_``/``qr_`` file with NO ``status`` key — the
+#      read-shim rebuilds it and :class:`JobRecord` DEFAULTS ``status`` to
+#      ``queued`` (an active status), so a finished/abandoned legacy run scans as
+#      in-flight.
+# The runtime stamps ``updated_at`` on every progress write (reforecast per
+# stage/question, quorum per emit), so a live job's heartbeat advances
+# continuously; a gap past this cutoff means the worker is gone. Generous enough
+# to never stale a legitimately slow single stage, far below a session-long stuck
+# chip. Mirrors the process registry's FINISHED_TTL (30 min).
+ACTIVE_HEARTBEAT_MAX_STALE_S = 1800
+
+
+def _heartbeat_epoch(record: JobRecord) -> float | None:
+    """Epoch seconds of a record's freshest liveness stamp (``updated_at``, else
+    the enqueue ``created_at``), or ``None`` when neither is a parseable ISO time —
+    a record with no usable heartbeat cannot be PROVEN live, so callers treat
+    ``None`` as stale."""
+
+    for stamp in (record.updated_at, record.created_at):
+        if not stamp:
+            continue
+        try:
+            return datetime.fromisoformat(str(stamp)).timestamp()
+        except (ValueError, TypeError):
+            continue
+    return None
 
 # Legacy on-disk job stores that predate the unified runtime (Arc B4). A record
 # that was in flight across the migration still lives here; the GENERIC jobs.*
@@ -131,17 +167,44 @@ class JobStore:
         return rows[:limit]
 
     def active(
-        self, *, types: list[str] | None = None, limit: int = 100, include_legacy: bool = True
+        self,
+        *,
+        types: list[str] | None = None,
+        limit: int = 100,
+        include_legacy: bool = True,
+        max_stale_s: float | None = ACTIVE_HEARTBEAT_MAX_STALE_S,
+        now: float | None = None,
     ) -> list[JobRecord]:
         """The still-in-flight jobs (``queued`` | ``running``), newest first,
         optionally filtered to a set of ``types``. Legacy ``rf_``/``qr_`` records
-        that were in flight across the migration are included by default."""
+        that were in flight across the migration are included by default.
+
+        A record only counts as active while its heartbeat is FRESH: a crashed or
+        killed worker never writes a terminal status (its record is stuck at
+        ``running``), and a status-less legacy file defaults to ``queued`` — both
+        would otherwise read as forever-live. A record whose heartbeat
+        (``updated_at``, else ``created_at``) is older than ``max_stale_s``, or that
+        carries no parseable heartbeat at all, is treated as dead and excluded. Pass
+        ``max_stale_s=None`` to disable the freshness gate (return every
+        queued/running record regardless of age)."""
 
         wanted = set(types) if types else None
+        cutoff = (
+            None
+            if max_stale_s is None
+            else (time.time() if now is None else now) - max_stale_s
+        )
         out: list[JobRecord] = []
         for record in self.list(limit=limit, include_legacy=include_legacy):
             if record.status not in _ACTIVE_STATUSES:
                 continue
+            if cutoff is not None:
+                heartbeat = _heartbeat_epoch(record)
+                # No parseable heartbeat, or one older than the cutoff → the worker
+                # is gone (crash/kill) or the record is a stale legacy shim: a
+                # finished job that never wrote a terminal status is NOT live.
+                if heartbeat is None or heartbeat < cutoff:
+                    continue
             if wanted is not None and record.type not in wanted:
                 continue
             out.append(record)
