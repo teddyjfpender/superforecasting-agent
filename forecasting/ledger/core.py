@@ -95,16 +95,22 @@ from forecasting.ledger import panels as _panels
 # Scheduled-review domain (cadence, schedules, the review sweep) lives in the
 # sibling ``reviews`` module (D6 carve).
 from forecasting.ledger import reviews as _reviews
+# Alerts domain (the doctor self_check engine + alert_events CRUD/lifecycle +
+# the saturation/producer/reconcile glue) lives in the sibling ``alerts`` module
+# (D7 carve).
+from forecasting.ledger import alerts as _alerts
+# Theses domain (thesis/factor member+entity CRUD, correlation/event glue, the
+# aggregation engine + narratives, and the re-aggregate cascade) lives in the
+# sibling ``theses`` module (D8 carve).
+from forecasting.ledger import theses as _theses
+# Scoring domain (resolution scoring, Brier/calibration display, the paired-
+# bootstrap edge test, and lesson-application auditing) lives in the sibling
+# ``scoring`` module (D9 carve).
+from forecasting.ledger import scoring as _scoring
 
 
 logger = logging.getLogger(__name__)
 
-# Thread-local visited-set for the thesis/factor re-aggregate cascade. Module-
-# level + thread-local so concurrent member commits (e.g. a shared ForecastLedger
-# across the gateway's RPC thread pool) each get their OWN cycle guard, while the
-# synchronous recursion within one commit still shares it. Avoids the race a plain
-# instance attribute would have if a ledger were ever shared across threads.
-_CASCADE_TLS = threading.local()
 
 # ---------------------------------------------------------------------------
 # Direct-write gate (carved to the ``gate`` leaf).
@@ -134,16 +140,6 @@ from forecasting.ledger.gate import (  # noqa: F401  (re-export, surface parity)
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
 
-# AIA P0.2 — paired bootstrap significance.
-#
-# The paired Brier edge (per resolved question: baseline_brier - agent_brier,
-# POSITIVE = agent better) is tested for significance with a SEEDED, deterministic
-# paired bootstrap so the p-value and CI reproduce byte-for-byte across runs.
-# PAIRED_BOOTSTRAP_SEED fixes the random.Random stream; PAIRED_BOOTSTRAP_DRAWS
-# is the number of resample-means drawn for both the recenter-at-zero p-value and
-# the uncentered percentile CI.
-PAIRED_BOOTSTRAP_SEED = 0xA1A02
-PAIRED_BOOTSTRAP_DRAWS = 10000
 # Reference anchor: an uninformative p=0.5-everywhere forecaster scores Brier 0.25.
 # Surfaced next to mean Brier so a reader can place the score on the legible scale.
 BRIER_COIN_FLIP_FLOOR = 0.25
@@ -193,16 +189,6 @@ FORECAST_LINK_TYPES = {"related", "component_of"}
 CRUX_MATERIALITY = {"low", "medium", "high"}
 CRUX_STATUS = {"missing", "stale", "current", "contradictory"}
 
-# Semantic roles a thesis member plays in the aggregate — so a thesis reads as
-# decision intelligence (which signal LEADS, which is the BOTTLENECK, which is
-# market VALIDATION) rather than an undifferentiated weighted pool.
-THESIS_MEMBER_ROLES = {
-    "leading_indicator",   # moves early, before the thesis resolves
-    "confirming_signal",   # corroborates the thesis once underway
-    "bottleneck_signal",   # a gating constraint the thesis depends on
-    "market_validation",   # a market/price signal validating the thesis
-    "disconfirming_signal",  # would cut against the thesis if it moves
-}
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
 AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
 
@@ -399,224 +385,6 @@ def _coerce_distribution_number(raw: Any) -> float | None:
         except ValueError:
             return None
     return None
-
-
-_THESIS_DEAD_STATUS = {"stale", "missing", "unusable"}
-
-
-def _thesis_member_label(component: dict[str, Any]) -> str:
-    return str(component.get("title") or component.get("member_id") or "member")
-
-
-def _thesis_reason_lines(agg: Any, kind: str) -> list[str]:
-    """Top member contributions, as 'support' (lifting) or 'drag' (pulling down) lines."""
-
-    usable = [
-        c for c in agg.components
-        if c.get("status") not in _THESIS_DEAD_STATUS and (c.get("w_norm") or 0) > 0
-    ]
-    if kind == "support":
-        rows = sorted(
-            (c for c in usable if float(c.get("s_i") or 0) >= 0.5),
-            key=lambda c: -(float(c.get("contribution_pts") or 0)),
-        )
-    else:
-        rows = sorted(
-            (c for c in usable if float(c.get("s_i") or 0) < 0.5),
-            key=lambda c: float(c.get("s_i") or 0),
-        )
-    lines: list[str] = []
-    for c in rows[:4]:
-        lines.append(
-            f"{_thesis_member_label(c)}: signal {float(c.get('s_i') or 0):.0%}, "
-            f"weight {float(c.get('w_norm') or 0):.0%}"
-        )
-    return lines
-
-
-def _thesis_narrative(thesis: Any, agg: Any, event: Any = None) -> tuple[str, str, str, str, str]:
-    """Build the rolling analyst note (headline, how_it_thinks, looking_for, be_aware, body)."""
-
-    health = agg.health
-    score = agg.thesis_score or 0.0
-    # When a joint-event probability exists it is THE headline (the question the
-    # thesis actually asks); the mean-index health becomes a diagnostic.
-    has_event = event is not None and getattr(event, "event_probability", None) is not None
-    if has_event:
-        ev = event.event_probability
-        kind = event.event.get("kind")
-        k = event.event.get("threshold")
-        label = f"≥{k} of {event.participants}" if kind == "count_threshold" else str(kind)
-        headline = f"{thesis.title} — P(event) {ev:.0%} ({label})"
-    elif health is not None:
-        headline = f"{thesis.title} — health {health:.0%}"
-    else:
-        headline = f"{thesis.title} — withheld"
-
-    usable = [c for c in agg.components if c.get("status") not in _THESIS_DEAD_STATUS]
-    top = sorted(usable, key=lambda c: -(float(c.get("contribution_pts") or 0)))[:3]
-    drivers = ", ".join(f"{_thesis_member_label(c)} ({float(c.get('s_i') or 0):.0%})" for c in top)
-    how_it_thinks = (
-        f"Weighted across {len(usable)} fresh member(s); score {score:.0f}/100."
-        + (f" Top drivers: {drivers}." if drivers else "")
-    )
-    if has_event:
-        cd = event.count_distribution or {}
-        mean_ct = cd.get("mean")
-        movers = event.top_sensitivities(1)
-        biggest = movers[0] if movers else None
-        parts_ev = [
-            f"Event P={event.event_probability:.0%} via Gaussian-copula MC "
-            f"({event.n_draws} draws, rho {event.rho:.2f})"
-        ]
-        if mean_ct is not None:
-            parts_ev.append(
-                f"expected count ~{mean_ct:.1f} (p10-p90 {cd.get('p10', 0):.0f}-{cd.get('p90', 0):.0f})"
-            )
-        if biggest is not None:
-            parts_ev.append(
-                f"biggest swing: {biggest.get('title') or biggest.get('member_id')} "
-                f"(±2pp ⇒ {biggest.get('delta_p_event', 0.0):+.1%} on P)"
-            )
-        how_it_thinks += " " + "; ".join(parts_ev) + "."
-
-    contested = [c for c in usable if abs(float(c.get("s_i") or 0.5) - 0.5) < 0.2]
-    contested.sort(key=lambda c: abs(float(c.get("s_i") or 0.5) - 0.5))
-    looking_for = (
-        "; ".join(f"{_thesis_member_label(c)} is contested ({float(c.get('s_i') or 0):.0%})" for c in contested[:2])
-        or "No single member is decisively contested."
-    )
-
-    stale = [c for c in agg.components if c.get("status") in {"stale", "missing"}]
-    parts = [
-        f"coverage {agg.coverage:.0%}",
-        f"n_eff ~{agg.n_eff:.1f} of {len(agg.components)} (members co-move; rho {agg.rho:.2f})",
-    ]
-    if stale:
-        parts.append(f"{len(stale)} member(s) stale/missing and down-weighted")
-    be_aware = "; ".join(parts) + (("; " + "; ".join(agg.notes)) if agg.notes else "")
-
-    body = f"{headline}. {how_it_thinks} Watching: {looking_for} Caveats: {be_aware}."
-    return headline, how_it_thinks, looking_for, be_aware, body
-
-
-def _entity_stance(
-    suitability: float | None, delta: float | None, threshold: float | None = None
-) -> tuple[str, str]:
-    """Map an entity's 0..1 suitability + its move into a stance + trend.
-
-    Generic across thesis kinds: a stock 'overweight', a candidate 'frontrunner',
-    a currency 'long' all share the same suitability ladder. The optional
-    per-entity ``threshold`` raises the overweight bar.
-    """
-
-    if suitability is None:
-        return ("WITHHELD", "flat")
-    over = threshold if (isinstance(threshold, (int, float)) and threshold > 0) else 0.65
-    if suitability >= over:
-        stance = "OVERWEIGHT"
-    elif suitability >= 0.55:
-        stance = "ADD"
-    elif suitability >= 0.45:
-        stance = "NEUTRAL"
-    elif suitability >= 0.35:
-        stance = "TRIM"
-    else:
-        stance = "UNDERWEIGHT"
-    move = delta or 0.0
-    trend = "rising" if move > 0.01 else "falling" if move < -0.01 else "flat"
-    return (stance, trend)
-
-
-def _thesis_entity_triggers(
-    member_deltas: dict[str, float],
-    entities: list[dict[str, Any]],
-    member_map: dict[str, dict[str, Any]],
-    *,
-    min_move: float = 0.05,
-) -> list[dict[str, Any]]:
-    """The §10 "if signal X moves -> entities Y better/less suited" lines, generic.
-
-    For each member signal that moved at least ``min_move`` since the prior
-    aggregation, ranks the entities weighting it and splits them into helped vs
-    hurt by the move's direction × the entity's weight direction.
-    """
-
-    triggers: list[dict[str, Any]] = []
-    for member_id, delta in member_deltas.items():
-        if abs(delta) < min_move:
-            continue
-        better: list[tuple[float, str]] = []
-        less: list[tuple[float, str]] = []
-        for entity in entities:
-            for weight in entity.get("weights", []):
-                if weight.get("member_id") != member_id or float(weight.get("weight", 0)) <= 0:
-                    continue
-                effect = (1 if delta > 0 else -1) * (1 if weight.get("direction", "support") == "support" else -1)
-                (better if effect > 0 else less).append((float(weight.get("weight", 0)), entity.get("name", "?")))
-                break
-        if not better and not less:
-            continue
-        better.sort(reverse=True)
-        less.sort(reverse=True)
-        better_names = [name for _, name in better][:8]
-        less_names = [name for _, name in less][:8]
-        member = member_map.get(member_id, {})
-        signal = member.get("member_title") or member.get("role") or member_id
-        parts: list[str] = []
-        if better_names:
-            parts.append(f"{', '.join(better_names)} better suited")
-        if less_names:
-            parts.append(f"{', '.join(less_names)} less suited")
-        triggers.append(
-            {
-                "member_id": member_id,
-                "signal": signal,
-                "delta": delta,
-                "direction": "up" if delta > 0 else "down",
-                "note": f"{signal} {'▲' if delta > 0 else '▼'} {delta * 100:+.0f}pp → " + "; ".join(parts),
-                "better": better_names,
-                "less": less_names,
-            }
-        )
-    triggers.sort(key=lambda trigger: -abs(trigger["delta"]))
-    return triggers
-
-
-def _factor_narrative(factor: Any, agg: Any) -> tuple[str, str, str, str, str]:
-    """Rolling note for a factor: basket return + volatility + downside (plain
-    units; the factor question's `units` supply the scale for display)."""
-
-    mean = agg.mean if agg.mean is not None else 0.0
-    sd = agg.sd
-    headline = (
-        f"{factor.title} — μ {mean:.2f} · vol {sd:.2f}" if sd is not None else f"{factor.title} — μ {mean:.2f}"
-    )
-    usable = [c for c in agg.components if c.get("status") not in _THESIS_DEAD_STATUS]
-    top = sorted(usable, key=lambda c: -abs(c.get("contribution") or 0))[:3]
-    drivers = ", ".join(
-        f"{(c.get('title') or c.get('member_id'))} ({(c.get('contribution') or 0):+.2f})" for c in top
-    )
-    how_it_thinks = (
-        f"Weighted basket of {len(usable)} constituent return distribution(s)."
-        + (f" Top contributors: {drivers}." if drivers else "")
-    )
-    looking_for = (
-        f"90% return band {agg.q05:.2f} to {agg.q95:.2f}."
-        if (agg.q05 is not None and agg.q95 is not None)
-        else "Awaiting dispersion."
-    )
-    parts = [
-        f"coverage {agg.coverage:.0%}",
-        f"n_eff ~{agg.n_eff:.1f} of {len(agg.components)} (constituents co-move; rho {agg.rho:.2f})",
-    ]
-    if agg.downside is not None:
-        parts.append(f"downside(5%) {agg.downside:.2f}")
-    if agg.cvar is not None:
-        parts.append(f"CVaR {agg.cvar:.2f}")
-    be_aware = "; ".join(parts) + (("; " + "; ".join(agg.notes)) if agg.notes else "")
-    body = f"{headline}. {how_it_thinks} {looking_for} Caveats: {be_aware}."
-    return headline, how_it_thinks, looking_for, be_aware, body
 
 
 class ForecastLedger:
@@ -1696,51 +1464,7 @@ class ForecastLedger:
         committed_payload: Any,
         calibration_adjustment: dict[str, Any] | None,
     ) -> int:
-        """Count active in-scope NUMERIC calibration lessons the committed forecast
-        did NOT actually apply.
-
-        "Applied" means the committed number net-MOVED from the recorded pre-lesson
-        raw payload (the trusted marker ``apply_active_lesson_adjustments`` writes) —
-        NOT that a lesson ref was stapled on. So citation-stapling no longer satisfies
-        the gate, and an in-scope lesson the agent simply ignored is counted as
-        unapplied. Prose lessons (no numeric key) are not counted here; they are
-        enforced as compiled rules in a later slice. Best-effort: any failure returns
-        0 so the audit can never break a commit."""
-        try:
-            from forecasting.learning import active_lessons_for_question
-
-            active = active_lessons_for_question(self, question)
-        except Exception:
-            return 0
-        if not active:
-            return 0
-        adjustment = calibration_adjustment or {}
-        applied_ids = {
-            item.get("id")
-            for item in (adjustment.get("applied_active_lessons") or [])
-            if isinstance(item, dict)
-        }
-        raw = adjustment.get("raw_probability")
-        committed = (
-            committed_payload
-            if isinstance(committed_payload, (int, float)) and not isinstance(committed_payload, bool)
-            else None
-        )
-        unapplied = 0
-        for lesson in active:
-            recommended = lesson.get("recommended_adjustment") or {}
-            is_numeric = any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale"))
-            if not is_numeric:
-                continue
-            net_moved = (
-                lesson["id"] in applied_ids
-                and isinstance(raw, (int, float))
-                and committed is not None
-                and abs(committed - float(raw)) > 1e-9
-            )
-            if not net_moved:
-                unapplied += 1
-        return unapplied
+        return _scoring._audit_unapplied_lessons(self, question=question, committed_payload=committed_payload, calibration_adjustment=calibration_adjustment)
 
     @staticmethod
     def _committed_winner_prob(payload: Any, outcome_type: str | None = None) -> float | None:
@@ -1760,54 +1484,7 @@ class ForecastLedger:
         committed_payload: Any,
         calibration_adjustment: dict[str, Any] | None,
     ) -> None:
-        """Coverage ledger: one row per active in-scope lesson at a successful commit
-        (kind + whether it was applied). Best-effort — never raises into the commit."""
-        try:
-            from forecasting.learning import active_lessons_for_question
-
-            active = active_lessons_for_question(self, question)
-            if not active:
-                return
-            adjustment = calibration_adjustment or {}
-            applied_ids = {
-                item.get("id")
-                for item in (adjustment.get("applied_active_lessons") or [])
-                if isinstance(item, dict)
-            }
-            raw = adjustment.get("raw_probability")
-            committed = (
-                committed_payload
-                if isinstance(committed_payload, (int, float)) and not isinstance(committed_payload, bool)
-                else None
-            )
-            now = utc_now_iso()
-            rows = []
-            for lesson in active:
-                recommended = lesson.get("recommended_adjustment") or {}
-                if isinstance(recommended.get("rule"), dict):
-                    # The commit SUCCEEDED, so an error-severity lesson rule passed
-                    # (it would otherwise have blocked); recorded as applied.
-                    kind, applied = "rule", 1
-                elif any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale")):
-                    kind = "numeric"
-                    applied = 1 if (
-                        lesson["id"] in applied_ids
-                        and isinstance(raw, (int, float))
-                        and committed is not None
-                        and abs(committed - float(raw)) > 1e-9
-                    ) else 0
-                else:
-                    kind, applied = "advisory", 0
-                rows.append((f"la_{uuid.uuid4().hex[:12]}", lesson["id"], question.id, snapshot_id, kind, applied, now))
-            if rows:
-                with self._connect() as conn:
-                    conn.executemany(
-                        "INSERT INTO lesson_applications (id, lesson_id, question_id, snapshot_id, kind, applied, created_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                        rows,
-                    )
-        except Exception:
-            logger.debug("lesson-application coverage recording failed (non-fatal)", exc_info=True)
+        return _scoring._record_lesson_applications(self, question=question, snapshot_id=snapshot_id, committed_payload=committed_payload, calibration_adjustment=calibration_adjustment)
 
     def lesson_coverage(self) -> list[dict[str, Any]]:
         """Per active lesson: how often it has been IN SCOPE at a commit since it was
@@ -2005,54 +1682,10 @@ class ForecastLedger:
         return _snapshots.create_snapshot(self, question_id=question_id, probability_or_distribution=probability_or_distribution, rationale=rationale, as_of=as_of, confidence=confidence, method=method, ensemble_components=ensemble_components, key_assumptions=key_assumptions, assumption_refs=assumption_refs, reference_class_refs=reference_class_refs, evidence_refs=evidence_refs, model_run_refs=model_run_refs, forecast_origin=forecast_origin, agent_model=agent_model, prompt_version=prompt_version, forecasting_protocol_version=forecasting_protocol_version, toolset_version=toolset_version, source_snapshot_refs=source_snapshot_refs, evidence_cutoff=evidence_cutoff, backtest_run_id=backtest_run_id, calibration_eligible=calibration_eligible, calibration_weight=calibration_weight, calibration_lesson_refs=calibration_lesson_refs, calibration_adjustment=calibration_adjustment, stale_evidence_days=stale_evidence_days, acknowledge_stale_evidence=acknowledge_stale_evidence, stale_evidence_reason=stale_evidence_reason, require_citations=require_citations, metadata=metadata, set_current=set_current, reasons_up=reasons_up, reasons_down=reasons_down, change_my_mind=change_my_mind, require_decision_readiness=require_decision_readiness, require_structured_reasoning=require_structured_reasoning, require_components=require_components, require_fresh_evidence=require_fresh_evidence, require_panel=require_panel, panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason, outcome_paths=outcome_paths, require_outcome_paths=require_outcome_paths, style_autofix=style_autofix, require_style=require_style, reasoning_methods=reasoning_methods, require_output_structure=require_output_structure, distribution_autofix=distribution_autofix, enforce_resolved_hooks=enforce_resolved_hooks, preview=preview)
 
     def _thesis_auto_aggregate_enabled(self, thesis_id: str) -> bool:
-        """Per-thesis opt-out of the member-commit re-aggregate cascade
-        (metadata.forecast_hooks.auto_aggregate = false)."""
-        try:
-            q = self.get_question(thesis_id)
-            meta = (getattr(q, "metadata", None) or {}).get("forecast_hooks") or {}
-            return meta.get("auto_aggregate", True) is not False
-        except Exception:
-            return True
+        return _theses._thesis_auto_aggregate_enabled(self, thesis_id=thesis_id)
 
     def _cascade_reaggregate_parents(self, member_id: str, *, as_of: str | None = None) -> None:
-        """Re-aggregate every parent thesis/factor of a just-committed member so
-        their stored member contributions + health track the live members
-        (``aggregate_thesis`` auto-dispatches to the factor portfolio math, so one
-        call covers both). Each parent's own aggregate commit re-enters this method
-        via ``create_snapshot``, freshening grandparents up the DAG; a
-        per-top-commit visited-set bounds the work and breaks cycles. Fail-open: a
-        cascade error never breaks the member commit. Disable globally with
-        ``FORECAST_DISABLE_THESIS_CASCADE``."""
-        if os.environ.get("FORECAST_DISABLE_THESIS_CASCADE", "").strip().lower() in {"1", "true", "yes", "on"}:
-            return
-        try:
-            parents = self.list_theses_for_member(member_id)
-        except Exception:
-            return
-        if not parents:
-            return
-        visited = getattr(_CASCADE_TLS, "visited", None)
-        top = visited is None
-        if top:
-            visited = set()
-            _CASCADE_TLS.visited = visited
-        try:
-            for parent in parents:
-                pid = parent.get("thesis_id")
-                if not pid or pid == member_id or pid in visited:
-                    continue
-                visited.add(pid)
-                if not self._thesis_auto_aggregate_enabled(pid):
-                    continue
-                try:
-                    # analyst_note=False: a member move must not spam the parent's
-                    # analyst log with a re-aggregation brief on every commit.
-                    self.aggregate_thesis(pid, now=as_of, analyst_note=False)
-                except Exception:
-                    logger.debug("thesis/factor cascade re-aggregate failed for parent %s", pid, exc_info=True)
-        finally:
-            if top:
-                _CASCADE_TLS.visited = None
+        return _theses._cascade_reaggregate_parents(self, member_id=member_id, as_of=as_of)
 
     def get_snapshot(self, forecast_id: str) -> ForecastSnapshot:
         return _snapshots.get_snapshot(self, forecast_id=forecast_id)
@@ -2971,84 +2604,16 @@ class ForecastLedger:
         return self._row_to_resolution(row) if row else None
 
     def score_question(self, question_id: str, *, force: bool = False) -> ScoreRecord:
-        snapshot = self.get_current_snapshot(question_id)
-        if snapshot is None:
-            raise ValidationError("cannot score a question with no forecast snapshot")
-        return self.score_snapshot(snapshot.forecast_id, force=force)
+        return _scoring.score_question(self, question_id=question_id, force=force)
 
     def get_current_score(self, question_id: str) -> ScoreRecord | None:
-        """Return the score for the current snapshot against the confirmed
-        resolution, if one has already been recorded; else None. Read-only —
-        does not trigger scoring."""
-        snapshot = self.get_current_snapshot(question_id)
-        if snapshot is None:
-            return None
-        resolution = self.get_latest_resolution(question_id, confirmed_only=True)
-        if resolution is None:
-            return None
-        return self._existing_score(snapshot.forecast_id, resolution.id)
+        return _scoring.get_current_score(self, question_id=question_id)
 
     def score_snapshot(self, forecast_id: str, *, force: bool = False) -> ScoreRecord:
-        snapshot = self.get_snapshot(forecast_id)
-        question = self.get_question(snapshot.question_id)
-        resolution = self.get_latest_resolution(snapshot.question_id, confirmed_only=True)
-        if resolution is None:
-            raise ValidationError(
-                "cannot score until resolution is confirmed, criteria-satisfied, and scoreable"
-            )
-
-        if not force:
-            existing = self._existing_score(snapshot.forecast_id, resolution.id)
-            if existing is not None:
-                return existing
-
-        scoring = self._score_forecast_payload(
-            snapshot.probability_or_distribution,
-            resolution.outcome,
-            question.outcome_space,
-        )
-        score_id = f"sc_{uuid.uuid4().hex[:12]}"
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO score_records (
-                    id, question_id, forecast_id, resolution_id, scored_at,
-                    brier_score, log_score, proper_score, score_rule, calibration_bucket,
-                    forecast_horizon_days, domain, forecast_origin,
-                    calibration_eligible, calibration_weight, baseline_ref, notes
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-                """,
-                (
-                    score_id,
-                    snapshot.question_id,
-                    snapshot.forecast_id,
-                    resolution.id,
-                    utc_now_iso(),
-                    scoring["brier_score"],
-                    scoring["log_score"],
-                    scoring["proper_score"],
-                    scoring["score_rule"],
-                    scoring["calibration_bucket"],
-                    snapshot.forecast_horizon_days,
-                    question.domain,
-                    snapshot.forecast_origin,
-                    1 if snapshot.calibration_eligible else 0,
-                    snapshot.calibration_weight,
-                    scoring["notes"],
-                ),
-            )
-        score = self.get_score(score_id)
-        if score.calibration_eligible and score.forecast_origin == "live":
-            self.update_domain_error_profile(question)
-        return score
+        return _scoring.score_snapshot(self, forecast_id=forecast_id, force=force)
 
     def get_score(self, score_id: str) -> ScoreRecord:
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM score_records WHERE id = ?", (score_id,)).fetchone()
-        if row is None:
-            raise LedgerNotFoundError(f"score record not found: {score_id}")
-        return self._row_to_score(row)
+        return _scoring.get_score(self, score_id=score_id)
 
     def list_scores(
         self,
@@ -3060,33 +2625,7 @@ class ForecastLedger:
         bucket: str | None = None,
         include_invalidated: bool = False,
     ) -> list[ScoreRecord]:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if domain:
-            clauses.append("domain = ?")
-            params.append(domain)
-        if forecast_origin:
-            clauses.append("forecast_origin = ?")
-            params.append(forecast_origin)
-        if calibration_eligible is not None:
-            clauses.append("calibration_eligible = ?")
-            params.append(1 if calibration_eligible else 0)
-        if bucket:
-            clauses.append("calibration_bucket = ?")
-            params.append(bucket)
-        if not include_invalidated:
-            clauses.append("invalidated_by_correction_id IS NULL")
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        with self._connect() as conn:
-            rows = conn.execute(
-                f"SELECT * FROM score_records {where} ORDER BY scored_at DESC",
-                params,
-            ).fetchall()
-        return [
-            score
-            for score in (self._row_to_score(row) for row in rows)
-            if self._horizon_matches(score.forecast_horizon_days, horizon)
-        ]
+        return _scoring.list_scores(self, domain=domain, forecast_origin=forecast_origin, calibration_eligible=calibration_eligible, horizon=horizon, bucket=bucket, include_invalidated=include_invalidated)
 
     def calibration_summary(
         self,
@@ -3096,243 +2635,7 @@ class ForecastLedger:
         horizon: str | None = None,
         calibration_eligible: bool | None = True,
     ) -> dict[str, Any]:
-        all_scores = self.list_scores(
-            domain=domain,
-            forecast_origin=forecast_origin,
-            calibration_eligible=calibration_eligible,
-        )
-        scores = [
-            score
-            for score in all_scores
-            if self._horizon_matches(score.forecast_horizon_days, horizon)
-        ]
-        buckets: dict[str, list[float]] = defaultdict(list)
-        # Reliability-diagram accumulators, keyed by P(yes) decile (0..9). For
-        # binary questions we record the forecast's P(yes) and the realized
-        # outcome (1.0 yes / 0.0 no) so we can compare predicted vs observed
-        # frequency and compute the Expected Calibration Error.
-        curve_bins: dict[int, dict[str, list[float]]] = defaultdict(
-            lambda: {"predicted": [], "observed": []}
-        )
-        sharpness_values: list[float] = []
-        probability_movements: list[float] = []
-        # Time-bucketed calibration trend points (keyed on scored_at). Each row is
-        # {scored_at, brier, p_yes, outcome} — p_yes/outcome present only for binary
-        # forecasts so the rolling SCE can be computed per window.
-        trend_points: list[dict[str, Any]] = []
-        question_type_stats: dict[str, dict[str, Any]] = defaultdict(
-            lambda: {
-                "brier": [],
-                "log": [],
-                "proper": [],
-                "sharpness": [],
-                "score_rules": set(),
-                "score_count": 0,
-            }
-        )
-        component_stats: dict[str, dict[str, list[float]]] = defaultdict(
-            lambda: {
-                "probability": [],
-                "weight": [],
-                "weight_share": [],
-                "contribution": [],
-                "distance_from_forecast": [],
-            }
-        )
-        for score in scores:
-            outcome_space = None
-            try:
-                outcome_space = self.get_question(score.question_id).outcome_space
-                question_type = outcome_space.type
-            except LedgerNotFoundError:
-                question_type = "unknown"
-            type_stats = question_type_stats[question_type]
-            type_stats["score_count"] += 1
-            if score.brier_score is not None:
-                type_stats["brier"].append(score.brier_score)
-            if score.log_score is not None:
-                type_stats["log"].append(score.log_score)
-            if score.proper_score is not None:
-                type_stats["proper"].append(score.proper_score)
-            if score.score_rule:
-                type_stats["score_rules"].add(score.score_rule)
-            if score.brier_score is not None:
-                buckets[score.calibration_bucket or "unknown"].append(score.brier_score)
-            try:
-                snapshot = self.get_snapshot(score.forecast_id)
-            except LedgerNotFoundError:
-                continue
-            if score.brier_score is None:
-                continue
-            sharpness = self._sharpness(snapshot.probability_or_distribution)
-            if sharpness is not None:
-                sharpness_values.append(sharpness)
-                type_stats["sharpness"].append(sharpness)
-            # Trend point (all scoreable): rolling mean-Brier keyed on scored_at.
-            trend_point: dict[str, Any] = {
-                "scored_at": score.scored_at,
-                "brier": float(score.brier_score),
-                "p_yes": None,
-                "outcome": None,
-            }
-            # Reliability point: bin the binary forecast by P(yes) and record the
-            # realized outcome so observed frequency can be compared to it.
-            if (
-                outcome_space is not None
-                and outcome_space.type == "binary"
-                and isinstance(snapshot.probability_or_distribution, (int, float))
-            ):
-                observed = self._binary_outcome_value(score, outcome_space)
-                if observed is not None:
-                    p_yes = float(snapshot.probability_or_distribution)
-                    decile = min(int(p_yes * 10), 9)
-                    curve_bins[decile]["predicted"].append(p_yes)
-                    curve_bins[decile]["observed"].append(observed)
-                    # p_yes/outcome feed the per-window signed calibration error.
-                    trend_point["p_yes"] = p_yes
-                    trend_point["outcome"] = observed
-            trend_points.append(trend_point)
-            movement = self._score_probability_movement_before_close(score, snapshot)
-            if movement is not None:
-                probability_movements.append(movement)
-            for component in self._snapshot_component_contributions(snapshot):
-                stats = component_stats[component["name"]]
-                stats["probability"].append(component["probability"])
-                stats["weight"].append(component["weight"])
-                stats["weight_share"].append(component["weight_share"])
-                stats["contribution"].append(component["contribution"])
-                if component["distance_from_forecast"] is not None:
-                    stats["distance_from_forecast"].append(component["distance_from_forecast"])
-        bucket_rows = []
-        canonical_buckets = [f"{i / 10:.1f}-{(i + 1) / 10:.1f}" for i in range(10)]
-        ordered_buckets = canonical_buckets + sorted(
-            bucket for bucket in buckets if bucket not in canonical_buckets
-        )
-        for bucket in ordered_buckets:
-            values = buckets.get(bucket, [])
-            bucket_rows.append(
-                {
-                    "bucket": bucket,
-                    "count": len(values),
-                    "mean_brier": sum(values) / len(values) if values else None,
-                    "sample_status": "empty" if not values else ("low_sample" if len(values) < 5 else "ok"),
-                }
-            )
-        all_values = [score.brier_score for score in scores if score.brier_score is not None]
-        log_values = [score.log_score for score in scores if score.log_score is not None]
-        component_rows = [
-            {
-                "name": name,
-                "count": len(stats["contribution"]),
-                "mean_probability": self._mean(stats["probability"]),
-                "mean_weight": self._mean(stats["weight"]),
-                "mean_weight_share": self._mean(stats["weight_share"]),
-                "mean_contribution": self._mean(stats["contribution"]),
-                "mean_abs_distance_from_forecast": self._mean(
-                    [abs(value) for value in stats["distance_from_forecast"]]
-                ),
-            }
-            for name, stats in component_stats.items()
-            if stats["contribution"]
-        ]
-        question_type_rows = [
-            {
-                "question_type": question_type,
-                "count": int(stats["score_count"]),
-                "brier_count": len(stats["brier"]),
-                "mean_brier": self._mean(stats["brier"]),
-                "mean_log_score": self._mean(stats["log"]),
-                "mean_proper_score": self._mean(stats["proper"]),
-                "mean_sharpness": self._mean(stats["sharpness"]),
-                "score_rules": sorted(stats["score_rules"]),
-            }
-            for question_type, stats in question_type_stats.items()
-        ]
-        # Reliability curve on P(yes) + Expected/Max Calibration Error. ECE is the
-        # sample-weighted mean gap between observed frequency and mean predicted
-        # probability across the populated deciles; MCE is the worst single gap.
-        curve_rows = []
-        ece_numerator = 0.0
-        ece_denominator = 0
-        max_calibration_error = 0.0
-        for index in range(10):
-            data = curve_bins.get(index)
-            predicted = data["predicted"] if data else []
-            observed = data["observed"] if data else []
-            count = len(observed)
-            mean_predicted = sum(predicted) / count if count else None
-            observed_frequency = sum(observed) / count if count else None
-            gap = (
-                abs(observed_frequency - mean_predicted)
-                if count and mean_predicted is not None
-                else None
-            )
-            curve_rows.append(
-                {
-                    "bucket": f"{index / 10:.1f}-{(index + 1) / 10:.1f}",
-                    "count": count,
-                    "mean_predicted": mean_predicted,
-                    "observed_frequency": observed_frequency,
-                    "calibration_gap": gap,
-                    "sample_status": "empty"
-                    if not count
-                    else ("low_sample" if count < 5 else "ok"),
-                }
-            )
-            if count and gap is not None:
-                ece_numerator += count * gap
-                ece_denominator += count
-                max_calibration_error = max(max_calibration_error, gap)
-        expected_calibration_error = (
-            ece_numerator / ece_denominator if ece_denominator else None
-        )
-        curve_predicted = [
-            value for data in curve_bins.values() for value in data["predicted"]
-        ]
-        curve_observed = [
-            value for data in curve_bins.values() for value in data["observed"]
-        ]
-        return {
-            "count": len(all_values),
-            "mean_brier": sum(all_values) / len(all_values) if all_values else None,
-            "mean_log_score": sum(log_values) / len(log_values) if log_values else None,
-            "mean_sharpness": sum(sharpness_values) / len(sharpness_values) if sharpness_values else None,
-            "probability_movement_count": len(probability_movements),
-            "mean_probability_movement_before_close": (
-                sum(probability_movements) / len(probability_movements)
-                if probability_movements
-                else None
-            ),
-            "mean_abs_probability_movement_before_close": (
-                sum(abs(value) for value in probability_movements) / len(probability_movements)
-                if probability_movements
-                else None
-            ),
-            "ensemble_component_contributions": sorted(
-                component_rows,
-                key=lambda row: (-row["count"], -(row["mean_contribution"] or 0.0), row["name"]),
-            ),
-            "question_type_breakdown": sorted(
-                question_type_rows,
-                key=lambda row: (-row["count"], row["question_type"]),
-            ),
-            "buckets": bucket_rows,
-            "calibration_curve": curve_rows,
-            "expected_calibration_error": expected_calibration_error,
-            "max_calibration_error": max_calibration_error if ece_denominator else None,
-            "calibration_curve_sample_count": ece_denominator,
-            "mean_predicted": (
-                sum(curve_predicted) / len(curve_predicted) if curve_predicted else None
-            ),
-            "observed_frequency": (
-                sum(curve_observed) / len(curve_observed) if curve_observed else None
-            ),
-            "calibration_trend": self._calibration_trend(trend_points),
-            "domain": domain,
-            "forecast_origin": forecast_origin,
-            "horizon": horizon,
-            "calibration_eligible": calibration_eligible,
-        }
+        return _scoring.calibration_summary(self, domain=domain, forecast_origin=forecast_origin, horizon=horizon, calibration_eligible=calibration_eligible)
 
     def _calibration_trend(
         self,
@@ -3341,73 +2644,7 @@ class ForecastLedger:
         windows: tuple[int, ...] = (30, 90),
         now: str | None = None,
     ) -> dict[str, Any]:
-        """Rolling mean-Brier + signed calibration error over recency windows.
-
-        Each window reports ``{period, n, brier, sce}`` computed over the scored
-        forecasts whose ``scored_at`` falls within the trailing window; ``sce`` is
-        the signed calibration error over the window's binary forecasts (negative
-        ⇒ under-confident, positive ⇒ over-confident), reusing the same estimator
-        as the bias loop. ``direction`` compares the shortest to the longest
-        window's mean Brier (lower Brier = better): ``improving`` when the recent
-        window scores materially better, ``worsening`` when materially worse,
-        ``stable`` within noise, ``insufficient`` when either window is too thin.
-        Emits nothing misleading on thin data by construction."""
-        from forecasting.calibration_bias import Observation, signed_calibration_error
-
-        now_dt = timestamp_to_datetime(now or utc_now_iso())
-        # Pre-parse each point's scored_at once; drop unparseable timestamps.
-        parsed: list[tuple[Any, dict[str, Any]]] = []
-        for point in points:
-            try:
-                dt = timestamp_to_datetime(point["scored_at"])
-            except Exception:  # noqa: BLE001 — a garbage timestamp must not break the summary
-                continue
-            if dt is not None:
-                parsed.append((dt, point))
-
-        window_rows: list[dict[str, Any]] = []
-        means: dict[int, float | None] = {}
-        counts: dict[int, int] = {}
-        for days in windows:
-            cutoff = now_dt - timedelta(days=days)
-            in_window = [p for dt, p in parsed if dt >= cutoff]
-            briers = [p["brier"] for p in in_window if p.get("brier") is not None]
-            observations = [
-                Observation(p_yes=float(p["p_yes"]), outcome=float(p["outcome"]))
-                for p in in_window
-                if p.get("p_yes") is not None and p.get("outcome") is not None
-            ]
-            sce = signed_calibration_error(observations) if observations else None
-            mean_brier = sum(briers) / len(briers) if briers else None
-            means[days] = mean_brier
-            counts[days] = len(briers)
-            window_rows.append(
-                {
-                    "period": f"{days}d",
-                    "n": len(briers),
-                    "brier": mean_brier,
-                    "sce": sce,
-                }
-            )
-
-        # Direction: shortest vs longest window, both needing a floor sample.
-        short, long = min(windows), max(windows)
-        direction = "insufficient"
-        if (
-            short != long
-            and counts.get(short, 0) >= 3
-            and counts.get(long, 0) >= 3
-            and means.get(short) is not None
-            and means.get(long) is not None
-        ):
-            delta = means[short] - means[long]  # negative ⇒ recent Brier lower ⇒ better
-            if delta < -0.01:
-                direction = "improving"
-            elif delta > 0.01:
-                direction = "worsening"
-            else:
-                direction = "stable"
-        return {"windows": window_rows, "direction": direction}
+        return _scoring._calibration_trend(self, points=points, windows=windows, now=now)
 
     # ------------------------------------------------------------------
     # Operator practice loop (R2) — score the HUMAN, not just the system.
@@ -3661,155 +2898,17 @@ class ForecastLedger:
     def _operator_binary_observed(
         self, resolved_outcome: Any, outcome_space: OutcomeSpace
     ) -> float | None:
-        """1.0 yes / 0.0 no / None ambiguous — the realized value of a scored
-        operator estimate, from the stored resolved_outcome."""
-
-        label = str(resolved_outcome).strip().lower()
-        yes_labels = {"yes", "y", "true", "1", "occurred", "success"}
-        no_labels = {"no", "n", "false", "0", "not_occurred", "failed"}
-        choices = [str(choice).lower() for choice in outcome_space.choices]
-        if label in yes_labels or (choices and label == choices[0]):
-            return 1.0
-        if label in no_labels or (len(choices) > 1 and label == choices[1]):
-            return 0.0
-        return None
+        return _scoring._operator_binary_observed(self, resolved_outcome=resolved_outcome, outcome_space=outcome_space)
 
     def _operator_vs_system(
         self, estimates: list[dict[str, Any]]
     ) -> dict[str, Any]:
-        """Pair each question that has a scored operator estimate with the
-        system's own snapshot Brier on the SAME question, and report the shared
-        sample + mean Brier on each side. The operator brier for a question is
-        the mean over its estimates; the system brier is its best-available
-        (calibration-eligible, else latest) non-invalidated snapshot score."""
-
-        operator_by_question: dict[str, list[float]] = defaultdict(list)
-        for estimate in estimates:
-            if estimate["brier"] is not None:
-                operator_by_question[estimate["question_id"]].append(float(estimate["brier"]))
-        operator_shared: list[float] = []
-        system_shared: list[float] = []
-        with self._connect() as conn:
-            for question_id, briers in operator_by_question.items():
-                row = conn.execute(
-                    """
-                    SELECT brier_score FROM score_records
-                    WHERE question_id = ?
-                      AND brier_score IS NOT NULL
-                      AND invalidated_by_correction_id IS NULL
-                    ORDER BY calibration_eligible DESC, scored_at DESC
-                    LIMIT 1
-                    """,
-                    (question_id,),
-                ).fetchone()
-                if row is None or row["brier_score"] is None:
-                    continue
-                operator_shared.append(sum(briers) / len(briers))
-                system_shared.append(float(row["brier_score"]))
-        return {
-            "shared_n": len(operator_shared),
-            "operator_brier": self._mean(operator_shared),
-            "system_brier": self._mean(system_shared),
-        }
+        return _scoring._operator_vs_system(self, estimates=estimates)
 
     def operator_calibration_summary(
         self, window_days: int | None = None
     ) -> dict[str, Any]:
-        """Operator calibration: n, mean Brier, a reliability curve over the
-        operator's binary estimates, a recency trend, and a vs-system pairing.
-
-        Only SCORED estimates with a numeric Brier feed the curve/trend/mean;
-        ``window_days`` (when set) restricts to estimates scored within the
-        trailing window."""
-
-        estimates = [
-            estimate
-            for estimate in self.list_operator_estimates()
-            if estimate["scored_at"] is not None and estimate["brier"] is not None
-        ]
-        if window_days:
-            cutoff = timestamp_to_datetime(utc_now_iso()) - timedelta(days=window_days)
-            windowed: list[dict[str, Any]] = []
-            for estimate in estimates:
-                try:
-                    scored_dt = timestamp_to_datetime(estimate["scored_at"])
-                except Exception:
-                    continue
-                if scored_dt is not None and scored_dt >= cutoff:
-                    windowed.append(estimate)
-            estimates = windowed
-
-        briers = [float(estimate["brier"]) for estimate in estimates]
-        curve_bins: dict[int, dict[str, list[float]]] = defaultdict(
-            lambda: {"predicted": [], "observed": []}
-        )
-        trend_points: list[dict[str, Any]] = []
-        for estimate in estimates:
-            payload = estimate["probability_or_distribution"]
-            trend_point: dict[str, Any] = {
-                "scored_at": estimate["scored_at"],
-                "brier": float(estimate["brier"]),
-                "p_yes": None,
-                "outcome": None,
-            }
-            if isinstance(payload, (int, float)) and estimate["resolved_outcome"] is not None:
-                try:
-                    outcome_space = self.get_question(estimate["question_id"]).outcome_space
-                except LedgerNotFoundError:
-                    # A corpus drill (question_id is a 'fb:<case-id>' ref with no
-                    # forecast_questions row) — do NOT crash the whole summary
-                    # joining it against the desk. Fall back to a binary outcome
-                    # space so its yes/no resolution still maps into the
-                    # reliability curve, exactly like a desk drill.
-                    outcome_space = OutcomeSpace(type="binary", choices=["yes", "no"])
-                observed = (
-                    self._operator_binary_observed(estimate["resolved_outcome"], outcome_space)
-                    if outcome_space is not None
-                    else None
-                )
-                if observed is not None:
-                    p_yes = float(payload)
-                    decile = min(int(p_yes * 10), 9)
-                    curve_bins[decile]["predicted"].append(p_yes)
-                    curve_bins[decile]["observed"].append(observed)
-                    trend_point["p_yes"] = p_yes
-                    trend_point["outcome"] = observed
-            trend_points.append(trend_point)
-
-        curve_rows = []
-        for index in range(10):
-            data = curve_bins.get(index)
-            predicted = data["predicted"] if data else []
-            observed = data["observed"] if data else []
-            count = len(observed)
-            mean_predicted = sum(predicted) / count if count else None
-            observed_frequency = sum(observed) / count if count else None
-            gap = (
-                abs(observed_frequency - mean_predicted)
-                if count and mean_predicted is not None
-                else None
-            )
-            curve_rows.append(
-                {
-                    "bucket": f"{index / 10:.1f}-{(index + 1) / 10:.1f}",
-                    "count": count,
-                    "mean_predicted": mean_predicted,
-                    "observed_frequency": observed_frequency,
-                    "calibration_gap": gap,
-                    "sample_status": "empty"
-                    if not count
-                    else ("low_sample" if count < 5 else "ok"),
-                }
-            )
-
-        return {
-            "n": len(briers),
-            "brier": self._mean(briers),
-            "calibration_curve": curve_rows,
-            "trend": self._calibration_trend(trend_points),
-            "vs_system": self._operator_vs_system(estimates),
-            "window_days": window_days,
-        }
+        return _scoring.operator_calibration_summary(self, window_days=window_days)
 
     def create_postmortem(
         self,
@@ -4994,29 +4093,7 @@ class ForecastLedger:
             conn.close()
 
     def _has_open_alert(self, *, reason: str, scope_type: str, scope_ref: str) -> bool:
-        """True when an unacknowledged alert with the SAME reason+scope already
-        exists — so a re-transition does not stack a duplicate row (mirrors the
-        dedup in :meth:`propose_due_resolutions`)."""
-        for alert in self.list_alerts(unresolved_only=True):
-            if (
-                alert.reason == reason
-                and alert.scope_type == scope_type
-                and alert.scope_ref == scope_ref
-            ):
-                return True
-        return False
-
-    # ── Saturation visibility: under-saturation WARN alerts ──────────────────
-    # The observe-mode saturation score is recorded on every snapshot but changes
-    # no behaviour. These make an under-saturated LIVE forecast VISIBLE + actionable
-    # without ever hard-blocking a commit: the scheduled cron sweep raises a deduped
-    # WARN alert for each active live forecast below the bar, and a programmatic
-    # commit (refresh / aggregate / autopilot — the lenient autofix paths) escalates
-    # the SAME alert the moment it commits under the bar. The alert routes to the
-    # REFORECAST resolution kind (the agent re-saturates it), so `reconcile_alerts`
-    # auto-clears it once a fresh snapshot lands and the next sweep re-raises only if
-    # it is still under-saturated. Never a bare-ack; deduped by reason+scope.
-    _SATURATION_ALERT_REASON = "under_saturated"
+        return _alerts._has_open_alert(self, reason=reason, scope_type=scope_type, scope_ref=scope_ref)
 
     def enqueue_saturation_alert(
         self,
@@ -5025,51 +4102,7 @@ class ForecastLedger:
         *,
         threshold: float | None = None,
     ) -> "AlertEvent | None":
-        """Open a deduped WARN under-saturation alert for a forecast whose STORED
-        saturation report (``snapshot_metadata['saturation']``, passed in — no
-        recompute) scores below ``threshold`` (config
-        ``forecasting.hooks.sweep_alert_threshold``, default 60). The
-        ``recommended_action`` carries the failing rule ids + remediation hints.
-        Deduped against an already-open alert of the same reason+scope (mirrors the
-        triage-graduation + resolver-proposal kinds — never stacks a duplicate).
-        Returns the new AlertEvent, or None (no report / at-or-above the bar /
-        already open). Fail-open callers should still wrap this."""
-        from forecasting.hooks import saturation_summary, sweep_alert_threshold
-
-        summary = saturation_summary(saturation)
-        if summary is None:
-            return None
-        score = summary.get("score")
-        if not isinstance(score, (int, float)):
-            return None
-        bar = threshold if threshold is not None else sweep_alert_threshold()
-        if score >= bar:
-            return None
-        if self._has_open_alert(
-            reason=self._SATURATION_ALERT_REASON,
-            scope_type="question",
-            scope_ref=question_id,
-        ):
-            return None
-        advisories = summary.get("advisories") or []
-        rule_ids = [str(a.get("rule_id")) for a in advisories if a.get("rule_id")]
-        hints = sorted({str(a.get("remediation")) for a in advisories if a.get("remediation")})
-        action = f"forecast saturation {float(score):.0f}/100 is below the {float(bar):.0f} bar — under-saturated. "
-        if rule_ids:
-            action += f"Failing checks: {', '.join(rule_ids)}. "
-        if hints:
-            action += f"Remediate: {', '.join(hints)}. "
-        action += (
-            "Re-run the forecast (collect fresh evidence / run the panel / decompose / "
-            "tag reasoning) to raise saturation, then re-commit."
-        )
-        return self.create_alert(
-            severity="warning",
-            scope_type="question",
-            scope_ref=question_id,
-            reason=self._SATURATION_ALERT_REASON,
-            recommended_action=action,
-        )
+        return _alerts.enqueue_saturation_alert(self, question_id=question_id, saturation=saturation, threshold=threshold)
 
     def sweep_saturation_alerts(
         self,
@@ -5077,40 +4110,7 @@ class ForecastLedger:
         threshold: float | None = None,
         limit: int = 500,
     ) -> dict[str, Any]:
-        """Scan active LIVE forecasts and open a deduped WARN alert for each whose
-        STORED saturation score is below the bar. Read-only over the observe report
-        already on each current snapshot — no hook recompute. Batched
-        (``snapshots_by_question``) to avoid a per-question query. Returns
-        ``{checked, under_saturated, alerted:[question_id]}``."""
-        from forecasting.hooks import saturation_summary, sweep_alert_threshold
-
-        bar = threshold if threshold is not None else sweep_alert_threshold()
-        questions = [
-            q for q in self.list_questions(status="active", limit=limit)
-            if q.outcome_space.type != "thesis"
-        ]
-        snapshots_by_q = self.snapshots_by_question([q.id for q in questions])
-        checked = 0
-        under = 0
-        alerted: list[str] = []
-        for question in questions:
-            snaps = snapshots_by_q.get(question.id) or []
-            current = snaps[-1] if snaps else None
-            if current is None or getattr(current, "forecast_origin", None) != "live":
-                continue
-            metadata = getattr(current, "metadata", None)
-            saturation = metadata.get("saturation") if isinstance(metadata, dict) else None
-            summary = saturation_summary(saturation)
-            if summary is None or not isinstance(summary.get("score"), (int, float)):
-                continue
-            checked += 1
-            if summary["score"] >= bar:
-                continue
-            under += 1
-            alert = self.enqueue_saturation_alert(question.id, saturation, threshold=bar)
-            if alert is not None:
-                alerted.append(question.id)
-        return {"checked": checked, "under_saturated": under, "alerted": alerted}
+        return _alerts.sweep_saturation_alerts(self, threshold=threshold, limit=limit)
 
 
     def check_triage_gate_graduation(
@@ -5141,78 +4141,7 @@ class ForecastLedger:
         forecast_origin: str | None = "live",
         now: str | None = None,
     ) -> list[Any]:
-        """Reduce scored binary forecasts to ``calibration_bias.Observation`` rows.
-
-        Uses the *raw* pre-adjustment probability when a lesson previously moved
-        the number (contamination control), records whether a lesson was in
-        context (``lesson_active`` → kept off the derivation stratum upstream),
-        and attaches a recency weight when a half-life is supplied.
-        """
-
-        from datetime import datetime, timezone
-
-        from forecasting.calibration_bias import Observation
-
-        def _parse(ts: Any) -> "datetime | None":
-            if not ts:
-                return None
-            raw = str(ts).strip().replace("Z", "+00:00")
-            try:
-                parsed = datetime.fromisoformat(raw)
-            except ValueError:
-                return None
-            return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-        now_dt = _parse(now) or datetime.now(timezone.utc)
-        scores = self.list_scores(
-            domain=domain,
-            forecast_origin=forecast_origin,
-            calibration_eligible=True,
-        )
-        observations: list[Any] = []
-        for score in scores:
-            try:
-                question = self.get_question(score.question_id)
-            except LedgerNotFoundError:
-                continue
-            if question.outcome_space.type != "binary":
-                continue
-            try:
-                snapshot = self.get_snapshot(score.forecast_id)
-            except LedgerNotFoundError:
-                continue
-            adjustment = snapshot.calibration_adjustment or {}
-            raw = adjustment.get("raw_probability")
-            committed = snapshot.probability_or_distribution
-            probability = raw if isinstance(raw, (int, float)) and not isinstance(raw, bool) else committed
-            if not isinstance(probability, (int, float)) or isinstance(probability, bool):
-                continue
-            observed = self._binary_outcome_value(score, question.outcome_space)
-            if observed is None:
-                continue
-            resolved_at = None
-            try:
-                resolved_at = self.get_resolution(score.resolution_id).resolved_at
-            except LedgerNotFoundError:
-                pass
-            if since and resolved_at and str(resolved_at) < str(since):
-                continue
-            weight = 1.0
-            if recency_halflife_days and recency_halflife_days > 0:
-                resolved_dt = _parse(resolved_at)
-                if resolved_dt is not None:
-                    age_days = (now_dt - resolved_dt).total_seconds() / 86400.0
-                    weight = recency_halflife_weight(age_days, recency_halflife_days)
-            observations.append(
-                Observation(
-                    p_yes=float(probability),
-                    outcome=float(observed),
-                    weight=weight,
-                    lesson_active=bool(snapshot.calibration_lesson_refs),
-                    horizon_days=score.forecast_horizon_days,
-                )
-            )
-        return observations
+        return _scoring._bias_observations(self, domain=domain, since=since, recency_halflife_days=recency_halflife_days, forecast_origin=forecast_origin, now=now)
 
     def derive_extremize_alpha(
         self,
@@ -5266,69 +4195,13 @@ class ForecastLedger:
         prior_scale: float | None = None,
         now: str | None = None,
     ) -> dict[str, Any]:
-        """Signed calibration-bias report for one scope (global or a domain).
-
-        Returns the ``CalibrationBiasReport`` payload — including ``status``
-        (``insufficient_evidence`` until enough effective sample accrues), the
-        signed/shrunk SCE, its CI and p-value, the curve shape, and advisory
-        text. Emits nothing actionable on thin or noisy data by construction.
-        """
-
-        from forecasting.calibration_bias import assess_bias
-
-        scope = scope_type or ("domain" if domain else "global")
-        observations = self._bias_observations(
-            domain=domain,
-            since=since,
-            recency_halflife_days=recency_halflife_days,
-            forecast_origin=forecast_origin,
-            now=now,
-        )
-        report = assess_bias(
-            observations,
-            scope_type=scope,
-            scope_ref=domain,
-            lesson_free_only=lesson_free_only,
-            enable_mechanical=enable_mechanical,
-            prior_scale=prior_scale,
-            shrink_prior=shrink_prior,
-        )
-        return report.to_payload()
+        return _scoring.calibration_bias(self, domain=domain, scope_type=scope_type, since=since, recency_halflife_days=recency_halflife_days, lesson_free_only=lesson_free_only, forecast_origin=forecast_origin, enable_mechanical=enable_mechanical, shrink_prior=shrink_prior, prior_scale=prior_scale, now=now)
 
     def _live_score_count(self, domain: str | None) -> int:
-        """Fast COUNT of live, calibration-eligible, non-invalidated score records
-        (optionally in one domain). A cheap necessary-condition gate for the
-        resolve-time bias synthesis: ESS <= count, so a count below the ESS floor
-        guarantees the estimator would emit nothing — skip the O(n) scan."""
-        clauses = [
-            "forecast_origin = 'live'",
-            "calibration_eligible = 1",
-            "invalidated_by_correction_id IS NULL",
-        ]
-        params: list[Any] = []
-        if domain:
-            clauses.append("domain = ?")
-            params.append(domain)
-        with self._connect() as conn:
-            row = conn.execute(
-                f"SELECT COUNT(*) FROM score_records WHERE {' AND '.join(clauses)}",
-                params,
-            ).fetchone()
-        return int(row[0]) if row else 0
+        return _scoring._live_score_count(self, domain=domain)
 
     def _domains_with_scores(self, *, forecast_origin: str | None = "live") -> list[str]:
-        clauses = ["domain IS NOT NULL", "invalidated_by_correction_id IS NULL"]
-        params: list[Any] = []
-        if forecast_origin:
-            clauses.append("forecast_origin = ?")
-            params.append(forecast_origin)
-        where = " AND ".join(clauses)
-        with self._connect() as conn:
-            rows = conn.execute(
-                f"SELECT DISTINCT domain FROM score_records WHERE {where} ORDER BY domain",
-                params,
-            ).fetchall()
-        return [str(row[0]) for row in rows if row[0]]
+        return _scoring._domains_with_scores(self, forecast_origin=forecast_origin)
 
     def _prior_bias_lessons(self, scope_type: str, scope_ref: str | None) -> list[dict[str, Any]]:
         """Bias-sourced lessons for a scope, newest first (any status)."""
@@ -6785,37 +5658,13 @@ class ForecastLedger:
     # (support / inverted) + weight + a distributional target.
 
     def is_thesis(self, question: Any) -> bool:
-        """True when ``question`` (object or id) is a thesis question."""
-
-        if isinstance(question, str):
-            try:
-                question = self.get_question(question)
-            except LedgerNotFoundError:
-                return False
-        return getattr(question.outcome_space, "type", None) == "thesis"
+        return _theses.is_thesis(self, question=question)
 
     def is_factor(self, question: Any) -> bool:
-        """True when ``question`` is a FACTOR — a thesis whose members are a
-        weighted basket of return distributions aggregated by portfolio math
-        (mean/vol/downside) rather than the health-signal pool. Marked by
-        ``metadata['aggregation'] == 'factor'`` so it reuses the thesis
-        membership table, run-all, and cron wholesale."""
-
-        if isinstance(question, str):
-            try:
-                question = self.get_question(question)
-            except LedgerNotFoundError:
-                return False
-        if not self.is_thesis(question):
-            return False
-        meta = question.metadata if isinstance(question.metadata, dict) else {}
-        return str(meta.get("aggregation") or "").lower() == "factor"
+        return _theses.is_factor(self, question=question)
 
     def _thesis_member_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        data = dict(row)
-        data["metadata"] = json_loads(data.get("metadata"), {})
-        data["hi_is_good"] = bool(data.get("hi_is_good", 1))
-        return data
+        return _theses._thesis_member_to_dict(self, row=row)
 
     def add_thesis_member(
         self,
@@ -6832,156 +5681,19 @@ class ForecastLedger:
         created_by: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Tag ``member_id`` to the thesis ``thesis_id``. Upsert on (thesis, member)."""
-
-        thesis = self.get_question(thesis_id)
-        self.get_question(member_id)
-        if not self.is_thesis(thesis):
-            raise ValidationError("thesis_id must reference a question with outcome type 'thesis'")
-        if thesis_id == member_id:
-            raise ValidationError("a thesis cannot be a member of itself")
-        if direction not in {"support", "inverted"}:
-            raise ValidationError("direction must be 'support' or 'inverted'")
-        if role is not None and role.strip() and role not in THESIS_MEMBER_ROLES:
-            raise ValidationError("role must be one of: " + ", ".join(sorted(THESIS_MEMBER_ROLES)))
-        if weight < 0:
-            raise ValidationError("weight must be non-negative")
-        with self._connect() as conn:
-            existing = conn.execute(
-                "SELECT id FROM thesis_members WHERE thesis_question_id = ? AND member_question_id = ?",
-                (thesis_id, member_id),
-            ).fetchone()
-            if existing is not None:
-                conn.execute(
-                    """
-                    UPDATE thesis_members SET direction = ?, weight = ?, role = ?, target = ?,
-                        hi_is_good = ?, max_age_days = ?, rationale = ?, metadata = ?
-                    WHERE id = ?
-                    """,
-                    (
-                        direction,
-                        float(weight),
-                        role,
-                        target,
-                        1 if hi_is_good else 0,
-                        max_age_days,
-                        rationale,
-                        json_dumps(metadata or {}),
-                        existing["id"],
-                    ),
-                )
-                member_pk = existing["id"]
-            else:
-                member_pk = f"tm_{uuid.uuid4().hex[:12]}"
-                conn.execute(
-                    """
-                    INSERT INTO thesis_members (
-                        id, thesis_question_id, member_question_id, direction, weight,
-                        role, target, hi_is_good, max_age_days, rationale, created_by,
-                        created_at, metadata
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        member_pk,
-                        thesis_id,
-                        member_id,
-                        direction,
-                        float(weight),
-                        role,
-                        target,
-                        1 if hi_is_good else 0,
-                        max_age_days,
-                        rationale,
-                        created_by,
-                        utc_now_iso(),
-                        json_dumps(metadata or {}),
-                    ),
-                )
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM thesis_members WHERE id = ?", (member_pk,)).fetchone()
-        return self._thesis_member_to_dict(row)
+        return _theses.add_thesis_member(self, thesis_id=thesis_id, member_id=member_id, direction=direction, weight=weight, role=role, target=target, hi_is_good=hi_is_good, max_age_days=max_age_days, rationale=rationale, created_by=created_by, metadata=metadata)
 
     def remove_thesis_member(self, thesis_id: str, member_id: str) -> int:
-        """Untag a member from a thesis. Returns the number of rows removed."""
-
-        with self._connect() as conn:
-            cur = conn.execute(
-                "DELETE FROM thesis_members WHERE thesis_question_id = ? AND member_question_id = ?",
-                (thesis_id, member_id),
-            )
-            return int(cur.rowcount or 0)
+        return _theses.remove_thesis_member(self, thesis_id=thesis_id, member_id=member_id)
 
     def list_thesis_members(self, thesis_id: str) -> list[dict[str, Any]]:
-        """Members of a thesis, joined with each member's title + outcome type."""
-
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT tm.*, q.title AS member_title, q.outcome_space AS member_outcome_space,
-                       q.status AS member_status
-                FROM thesis_members tm
-                JOIN forecast_questions q ON q.id = tm.member_question_id
-                WHERE tm.thesis_question_id = ?
-                ORDER BY tm.weight DESC, tm.created_at ASC
-                """,
-                (thesis_id,),
-            ).fetchall()
-        out: list[dict[str, Any]] = []
-        for row in rows:
-            data = self._thesis_member_to_dict(row)
-            data["member_outcome_type"] = OutcomeSpace.from_json(data.pop("member_outcome_space", None)).type
-            out.append(data)
-        return out
+        return _theses.list_thesis_members(self, thesis_id=thesis_id)
 
     def list_theses_for_member(self, member_id: str) -> list[dict[str, Any]]:
-        """The theses a member belongs to (for the 'member of …' badge)."""
-
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT tm.thesis_question_id AS thesis_id, tm.direction, tm.weight, tm.role,
-                       q.title AS thesis_title
-                FROM thesis_members tm
-                JOIN forecast_questions q ON q.id = tm.thesis_question_id
-                WHERE tm.member_question_id = ?
-                ORDER BY q.title ASC
-                """,
-                (member_id,),
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return _theses.list_theses_for_member(self, member_id=member_id)
 
     def theses_by_member(self, member_ids: list[str]) -> dict[str, list[dict[str, Any]]]:
-        """member_id -> theses it belongs to (batched ``list_theses_for_member``).
-
-        Collapses the per-member N+1 the desk's workspace payload used to fire
-        (one ``list_theses_for_member`` connection per member question) into a
-        single chunked query, mirroring ``snapshots_by_question`` /
-        ``evidence_by_question``. Each absent member defaults to ``[]`` — the
-        exact value the singular method produces for a non-member."""
-        out: dict[str, list[dict[str, Any]]] = {}
-        for chunk in self._chunk_ids(member_ids):
-            if not chunk:
-                continue
-            placeholders = ",".join("?" for _ in chunk)
-            with self._connect() as conn:
-                rows = conn.execute(
-                    f"""
-                    SELECT tm.member_question_id AS member_id,
-                           tm.thesis_question_id AS thesis_id, tm.direction, tm.weight, tm.role,
-                           q.title AS thesis_title
-                    FROM thesis_members tm
-                    JOIN forecast_questions q ON q.id = tm.thesis_question_id
-                    WHERE tm.member_question_id IN ({placeholders})
-                    ORDER BY tm.member_question_id ASC, q.title ASC
-                    """,
-                    chunk,
-                ).fetchall()
-            for row in rows:
-                data = dict(row)
-                mid = data.pop("member_id")
-                out.setdefault(mid, []).append(data)
-        return out
+        return _theses.theses_by_member(self, member_ids=member_ids)
 
     def _belief_record(
         self,
@@ -6995,64 +5707,10 @@ class ForecastLedger:
         title: str | None = None,
         outcome_type: str | None = None,
     ) -> dict[str, Any]:
-        """Resolve one question's current belief into the input dict that
-        :func:`forecasting.thesis.aggregate_thesis` consumes. Shared by thesis
-        membership AND per-entity weight vectors (the suitability layer reuses
-        the exact same 0..1-signal reduction, just with a different weight set)."""
-
-        # Lazy import: dashboard imports the ledger, so importing it at module
-        # scope would be circular.
-        from forecasting.dashboard import _distribution_view
-
-        if outcome_type is None or title is None:
-            try:
-                question = self.get_question(member_id)
-                outcome_type = outcome_type or question.outcome_space.type
-                title = title or question.title
-            except LedgerNotFoundError:
-                outcome_type = outcome_type or "binary"
-        snapshot = self.get_current_snapshot(member_id)
-        belief = snapshot.probability_or_distribution if snapshot else None
-        record: dict[str, Any] = {
-            "member_id": member_id,
-            "title": title,
-            "direction": direction,
-            "weight": float(weight),
-            "as_of": snapshot.as_of if snapshot else None,
-            "max_age_days": max_age_days,
-            "target": target,
-            "hi_is_good": bool(hi_is_good),
-            "probability": None,
-            "dist": None,
-        }
-        if belief is None:
-            record["kind"] = "binary"  # unusable -> flagged missing downstream
-        elif outcome_type == "binary" and isinstance(belief, (int, float)):
-            record["kind"] = "binary"
-            record["probability"] = float(belief)
-        elif isinstance(belief, dict):
-            record["kind"] = "distribution"
-            record["dist"] = _distribution_view(belief) or {"mean": None}
-        elif isinstance(belief, (int, float)):
-            record["kind"] = "distribution"
-            record["dist"] = {"mean": float(belief)}
-        else:
-            record["kind"] = "binary"  # unrecognized -> unusable
-        return record
+        return _theses._belief_record(self, member_id=member_id, direction=direction, weight=weight, target=target, hi_is_good=hi_is_good, max_age_days=max_age_days, title=title, outcome_type=outcome_type)
 
     def _thesis_member_belief(self, member: dict[str, Any]) -> dict[str, Any]:
-        """Resolve a membership row into the input dict that thesis.aggregate_thesis wants."""
-
-        return self._belief_record(
-            member["member_question_id"],
-            direction=member.get("direction", "support"),
-            weight=float(member.get("weight", 1.0)),
-            target=member.get("target"),
-            hi_is_good=bool(member.get("hi_is_good", True)),
-            max_age_days=member.get("max_age_days"),
-            title=member.get("member_title"),
-            outcome_type=member.get("member_outcome_type") or "binary",
-        )
+        return _theses._thesis_member_belief(self, member=member)
 
     # ── Thesis entities (per-name suitability + trade triggers) ─────────────
     #
@@ -7064,35 +5722,10 @@ class ForecastLedger:
     # generically for ANY thesis (elections, FX, manufacturing, ...).
 
     def _thesis_entity_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        data = dict(row)
-        data["weights"] = json_loads(data.get("weights"), [])
-        data["metadata"] = json_loads(data.get("metadata"), {})
-        return data
+        return _theses._thesis_entity_to_dict(self, row=row)
 
     def _normalize_entity_weights(self, weights: Any) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for weight in weights or []:
-            if not isinstance(weight, dict):
-                raise ValidationError("entity weight must be an object")
-            member_id = str(weight.get("member_id") or "").strip()
-            if not member_id:
-                raise ValidationError("entity weight requires a member_id")
-            self.get_question(member_id)  # must reference a real question
-            direction = str(weight.get("direction") or "support")
-            if direction not in {"support", "inverted"}:
-                raise ValidationError("entity weight direction must be 'support' or 'inverted'")
-            value = float(weight.get("weight", 1.0))
-            if value < 0:
-                raise ValidationError("entity weight must be non-negative")
-            entry: dict[str, Any] = {"member_id": member_id, "weight": value, "direction": direction}
-            if weight.get("role"):
-                entry["role"] = str(weight["role"])
-            if weight.get("hi_is_good") is not None:
-                entry["hi_is_good"] = bool(weight["hi_is_good"])
-            if weight.get("target") is not None:
-                entry["target"] = float(weight["target"])
-            out.append(entry)
-        return out
+        return _theses._normalize_entity_weights(self, weights=weights)
 
     def add_thesis_entity(
         self,
@@ -7106,52 +5739,7 @@ class ForecastLedger:
         created_by: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Register an entity under a thesis with a weighted signal vector. Upsert on (thesis, name)."""
-
-        thesis = self.get_question(thesis_id)
-        if not self.is_thesis(thesis):
-            raise ValidationError("thesis_id must reference a question with outcome type 'thesis'")
-        name = (name or "").strip()
-        if not name:
-            raise ValidationError("entity name is required")
-        normalized = self._normalize_entity_weights(weights)
-        with self._connect() as conn:
-            existing = conn.execute(
-                "SELECT id FROM thesis_entities WHERE thesis_question_id = ? AND name = ?",
-                (thesis_id, name),
-            ).fetchone()
-            if existing is not None:
-                conn.execute(
-                    "UPDATE thesis_entities SET label = ?, kind = ?, weights = ?, action_threshold = ?, metadata = ? WHERE id = ?",
-                    (label, kind, json_dumps(normalized), action_threshold, json_dumps(metadata or {}), existing["id"]),
-                )
-                entity_id = existing["id"]
-            else:
-                entity_id = f"te_{uuid.uuid4().hex[:12]}"
-                conn.execute(
-                    """
-                    INSERT INTO thesis_entities (
-                        id, thesis_question_id, name, label, kind, weights,
-                        action_threshold, created_by, created_at, metadata
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        entity_id,
-                        thesis_id,
-                        name,
-                        label,
-                        kind,
-                        json_dumps(normalized),
-                        action_threshold,
-                        created_by,
-                        utc_now_iso(),
-                        json_dumps(metadata or {}),
-                    ),
-                )
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM thesis_entities WHERE id = ?", (entity_id,)).fetchone()
-        return self._thesis_entity_to_dict(row)
+        return _theses.add_thesis_entity(self, thesis_id=thesis_id, name=name, label=label, kind=kind, weights=weights, action_threshold=action_threshold, created_by=created_by, metadata=metadata)
 
     def set_entity_weight(
         self,
@@ -7165,43 +5753,13 @@ class ForecastLedger:
         target: float | None = None,
         role: str | None = None,
     ) -> dict[str, Any]:
-        """Add/replace a single signal weight on an entity (creates the entity if new)."""
-
-        entities = {e["name"]: e for e in self.list_thesis_entities(thesis_id)}
-        existing = entities.get(name)
-        kept = [w for w in (existing["weights"] if existing else []) if w.get("member_id") != member_id]
-        entry: dict[str, Any] = {"member_id": member_id, "weight": float(weight), "direction": direction}
-        if role:
-            entry["role"] = role
-        entry["hi_is_good"] = bool(hi_is_good)
-        if target is not None:
-            entry["target"] = float(target)
-        kept.append(entry)
-        return self.add_thesis_entity(
-            thesis_id,
-            name,
-            label=(existing.get("label") if existing else None),
-            kind=(existing.get("kind") if existing else "entity"),
-            weights=kept,
-            action_threshold=(existing.get("action_threshold") if existing else None),
-            metadata=(existing.get("metadata") if existing else None),
-        )
+        return _theses.set_entity_weight(self, thesis_id=thesis_id, name=name, member_id=member_id, weight=weight, direction=direction, hi_is_good=hi_is_good, target=target, role=role)
 
     def remove_thesis_entity(self, thesis_id: str, name: str) -> int:
-        with self._connect() as conn:
-            cur = conn.execute(
-                "DELETE FROM thesis_entities WHERE thesis_question_id = ? AND name = ?",
-                (thesis_id, name),
-            )
-            return int(cur.rowcount or 0)
+        return _theses.remove_thesis_entity(self, thesis_id=thesis_id, name=name)
 
     def list_thesis_entities(self, thesis_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM thesis_entities WHERE thesis_question_id = ? ORDER BY name ASC",
-                (thesis_id,),
-            ).fetchall()
-        return [self._thesis_entity_to_dict(row) for row in rows]
+        return _theses.list_thesis_entities(self, thesis_id=thesis_id)
 
     def _compute_thesis_entities(
         self,
@@ -7214,79 +5772,7 @@ class ForecastLedger:
         prev_components: list[dict[str, Any]],
         prev_entities: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """Per-entity suitability (reusing the thesis aggregator) + trade triggers."""
-
-        from forecasting import thesis as thesis_math
-
-        entities = self.list_thesis_entities(thesis_id)
-        if not entities:
-            return [], []
-
-        prev_suit = {e.get("name"): e.get("suitability") for e in (prev_entities or [])}
-        out: list[dict[str, Any]] = []
-        for entity in entities:
-            records = []
-            for weight in entity.get("weights", []):
-                member_id = weight["member_id"]
-                member = member_map.get(member_id, {})
-                records.append(
-                    self._belief_record(
-                        member_id,
-                        direction=weight.get("direction", "support"),
-                        weight=float(weight.get("weight", 1.0)),
-                        target=weight["target"] if "target" in weight else member.get("target"),
-                        hi_is_good=weight["hi_is_good"]
-                        if "hi_is_good" in weight
-                        else bool(member.get("hi_is_good", True)),
-                        max_age_days=member.get("max_age_days"),
-                        title=member.get("member_title"),
-                        outcome_type=member.get("member_outcome_type"),
-                    )
-                )
-            agg = thesis_math.aggregate_thesis(records, rho=rho, now=now)
-            suitability = agg.health
-            previous = prev_suit.get(entity["name"])
-            delta = (
-                suitability - previous
-                if (suitability is not None and isinstance(previous, (int, float)))
-                else None
-            )
-            stance, trend = _entity_stance(suitability, delta, entity.get("action_threshold"))
-            usable = [c for c in agg.components if c.get("status") not in _THESIS_DEAD_STATUS]
-            top = max(usable, key=lambda c: abs(c.get("contribution_pts") or 0), default=None)
-            out.append(
-                {
-                    "name": entity["name"],
-                    "label": entity.get("label") or entity["name"],
-                    "kind": entity.get("kind", "entity"),
-                    "suitability": suitability,
-                    "suitability_display": f"{suitability:.0%}" if suitability is not None else "—",
-                    "score": agg.thesis_score,
-                    "band": list(agg.band) if agg.band else None,
-                    "coverage": agg.coverage,
-                    "n_eff": agg.n_eff,
-                    "delta": delta,
-                    "stance": stance,
-                    "trend": trend,
-                    "action": f"{stance} ({trend})" if suitability is not None else "withheld",
-                    "top_driver": top.get("title") if top else None,
-                    "top_driver_id": top.get("member_id") if top else None,
-                    "weight_count": len(entity.get("weights", [])),
-                    "contributions": agg.components,
-                }
-            )
-
-        # Trade triggers: member-signal moves since the prior aggregation, mapped
-        # through each entity's weight vector to "better/less suited" lines.
-        cur_sig = {c.get("member_id"): c.get("s_raw") for c in current_components}
-        prev_sig = {c.get("member_id"): c.get("s_raw") for c in (prev_components or [])}
-        member_deltas: dict[str, float] = {}
-        for member_id, signal in cur_sig.items():
-            previous_signal = prev_sig.get(member_id)
-            if isinstance(signal, (int, float)) and isinstance(previous_signal, (int, float)):
-                member_deltas[member_id] = signal - previous_signal
-        triggers = _thesis_entity_triggers(member_deltas, entities, member_map)
-        return out, triggers
+        return _theses._compute_thesis_entities(self, thesis_id=thesis_id, rho=rho, now=now, member_map=member_map, current_components=current_components, prev_components=prev_components, prev_entities=prev_entities)
 
     def _aggregate_factor(
         self,
@@ -7297,157 +5783,13 @@ class ForecastLedger:
         commit: bool,
         analyst_note: bool = True,
     ) -> dict[str, Any]:
-        """Portfolio-aggregate a factor's constituent return distributions."""
-
-        from forecasting import factor as factor_math
-        from forecasting.dashboard import _distribution_view
-
-        members = self.list_thesis_members(factor.id)
-        as_of = now or utc_now_iso()
-        constituents: list[dict[str, Any]] = []
-        for member in members:
-            member_id = member["member_question_id"]
-            snapshot = self.get_current_snapshot(member_id)
-            belief = snapshot.probability_or_distribution if snapshot else None
-            mean: float | None = None
-            sd: float | None = None
-            if isinstance(belief, dict):
-                view = _distribution_view(belief) or {}
-                mean = view.get("mean")
-                sd = view.get("sd")
-            elif isinstance(belief, (int, float)):
-                mean = float(belief)
-            constituents.append(
-                {
-                    "member_id": member_id,
-                    "title": member.get("member_title"),
-                    "weight": float(member.get("weight", 1.0)),
-                    "direction": "short" if member.get("direction") == "inverted" else "long",
-                    "as_of": snapshot.as_of if snapshot else None,
-                    "max_age_days": member.get("max_age_days"),
-                    "mean": mean,
-                    "sd": sd,
-                }
-            )
-        agg = factor_math.aggregate_factor(constituents, rho=rho, now=as_of)
-        payload = agg.to_payload()
-        result: dict[str, Any] = {
-            "thesis_id": factor.id,
-            "title": factor.title,
-            "aggregate": agg,
-            "payload": payload,
-            "member_count": len(members),
-            "is_factor": True,
-            "entities": [],
-            "triggers": [],
-            "snapshot_id": None,
-        }
-        if not commit:
-            return result
-        if payload.get("factor_mean") is None:
-            if analyst_note:
-                note = self.add_analyst_note(
-                    question_id=factor.id,
-                    body="; ".join(agg.notes) or "withheld: no usable constituent",
-                    kind="brief",
-                    headline=f"{factor.title} — withheld (insufficient fresh constituents)",
-                    be_aware="; ".join(agg.notes),
-                    generator="factor_aggregate",
-                    metadata={"coverage": agg.coverage, "member_count": len(members)},
-                )
-                result["analyst_note_id"] = note.get("id")
-            return result
-        rationale = (
-            f"Portfolio aggregate of {len(members)} constituent return distribution(s) "
-            f"(coverage {agg.coverage:.0%}, vol {agg.sd:.3f}, n_eff {agg.n_eff:.1f}, rho {agg.rho:.2f}). "
-            "Computed after the constituents' latest runs; not LLM-led."
-        )
-        snapshot = self.create_snapshot(
-            question_id=factor.id,
-            probability_or_distribution=payload,
-            rationale=rationale,
-            as_of=as_of,
-            confidence=round(max(0.0, min(1.0, agg.coverage)), 3),
-            method="factor_aggregate",
-            style_autofix=True,  # deterministic fold: mechanically clean generated prose
-            distribution_autofix=True,  # programmatic: auto-fix malformed bounds rather than block
-            ensemble_components={
-                "components": agg.components,
-                "rho": agg.rho,
-                "n_eff": agg.n_eff,
-                "coverage": agg.coverage,
-            },
-            forecast_origin="live",
-            calibration_eligible=False,
-            metadata={"factor_notes": agg.notes, "aggregation": "factor"},
-        )
-        result["snapshot_id"] = snapshot.forecast_id
-        if analyst_note:
-            headline, how_it_thinks, looking_for, be_aware, body = _factor_narrative(factor, agg)
-            note = self.add_analyst_note(
-                question_id=factor.id,
-                body=body,
-                kind="brief",
-                headline=headline,
-                how_it_thinks=how_it_thinks,
-                looking_for=looking_for,
-                be_aware=be_aware,
-                forecast_id=snapshot.forecast_id,
-                probability_at_write=payload,
-                confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
-                generator="factor_aggregate",
-                metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
-            )
-            result["analyst_note_id"] = note.get("id")
-        return result
+        return _theses._aggregate_factor(self, factor=factor, rho=rho, now=now, commit=commit, analyst_note=analyst_note)
 
     def set_thesis_correlation(self, thesis_id: str, member_a: str, member_b: str, rho: float) -> dict[str, float]:
-        """Pin a pairwise correlation between two thesis members so the aggregate's
-        honest band + effective-N use real co-movement PER PAIR rather than one
-        scalar rho (members co-move unequally). Stored on the thesis metadata;
-        both ids must be members. Idempotent on the unordered pair. Returns the
-        full correlation map."""
-        thesis = self.get_question(thesis_id)
-        if not self.is_thesis(thesis):
-            raise ValidationError("set_thesis_correlation requires a question with outcome type 'thesis'")
-        if member_a == member_b:
-            raise ValidationError("a member cannot be correlated with itself")
-        if "|" in member_a or "|" in member_b:
-            # The pair is stored as "a|b"; a literal '|' in an id would corrupt the
-            # key. System ids never contain it, but reject loudly rather than silently
-            # dropping the correlation at load time.
-            raise ValidationError("member ids must not contain '|'")
-        member_ids = {m["member_question_id"] for m in self.list_thesis_members(thesis_id)}
-        for mid in (member_a, member_b):
-            if mid not in member_ids:
-                raise ValidationError(f"{mid} is not a member of this thesis")
-        rho_val = float(rho)
-        if not (0.0 <= rho_val <= 0.95):
-            raise ValidationError("correlation must be within [0, 0.95]")
-        meta = dict(thesis.metadata) if isinstance(thesis.metadata, dict) else {}
-        corr = dict(meta.get("thesis_correlations") or {})
-        corr["|".join(sorted([member_a, member_b]))] = rho_val
-        meta["thesis_correlations"] = corr
-        with self._connect() as conn:
-            conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), thesis_id))
-        return corr
+        return _theses.set_thesis_correlation(self, thesis_id=thesis_id, member_a=member_a, member_b=member_b, rho=rho)
 
     def _thesis_correlation_matrix(self, thesis: Any) -> dict[frozenset[str], float] | None:
-        """Load the stored pairwise correlations into the {member_a, member_b} ->
-        rho map the aggregation math consumes. None when none are pinned."""
-        meta = thesis.metadata if isinstance(thesis.metadata, dict) else {}
-        raw = meta.get("thesis_correlations")
-        if not isinstance(raw, dict) or not raw:
-            return None
-        out: dict[frozenset[str], float] = {}
-        for key, value in raw.items():
-            parts = str(key).split("|")
-            if len(parts) == 2:
-                try:
-                    out[frozenset(parts)] = float(value)
-                except (TypeError, ValueError):
-                    continue
-        return out or None
+        return _theses._thesis_correlation_matrix(self, thesis=thesis)
 
     def set_thesis_event(
         self,
@@ -7456,71 +5798,17 @@ class ForecastLedger:
         kind: str = "count_threshold",
         threshold: int | None = None,
     ) -> dict[str, Any]:
-        """Configure a thesis as a JOINT THRESHOLD EVENT — P(#member successes ≥ K).
-
-        A thesis headline is otherwise a mean index (damped, threshold-insensitive).
-        With an event spec, ``aggregate_thesis`` ALSO runs a Gaussian-copula Monte
-        Carlo (seeded deterministically) and stamps ``event_probability`` — the way
-        a "Democrats take back the Senate" question is really scored. Stored on the
-        thesis metadata beside ``thesis_correlations``; pass ``threshold=None`` (any
-        kind) to CLEAR it. Returns the stored spec.
-        """
-        thesis = self.get_question(thesis_id)
-        if not self.is_thesis(thesis):
-            raise ValidationError("set_thesis_event requires a question with outcome type 'thesis'")
-        kind = str(kind).lower()
-        if kind not in {"count_threshold", "all", "any"}:
-            raise ValidationError("event kind must be 'count_threshold', 'all' or 'any'")
-        spec: dict[str, Any] | None
-        if kind == "count_threshold":
-            if threshold is None:
-                raise ValidationError("count_threshold event requires an integer 'threshold'")
-            k = int(threshold)
-            if k < 0:
-                raise ValidationError("threshold must be non-negative")
-            spec = {"kind": kind, "threshold": k}
-        else:
-            spec = {"kind": kind}
-        meta = dict(thesis.metadata) if isinstance(thesis.metadata, dict) else {}
-        meta["thesis_event"] = spec
-        with self._connect() as conn:
-            conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), thesis_id))
-        return spec
+        return _theses.set_thesis_event(self, thesis_id=thesis_id, kind=kind, threshold=threshold)
 
     def clear_thesis_event(self, thesis_id: str) -> bool:
-        """Remove a thesis's event spec (reverts to the mean-index headline). True if one was set."""
-        thesis = self.get_question(thesis_id)
-        if not self.is_thesis(thesis):
-            raise ValidationError("clear_thesis_event requires a question with outcome type 'thesis'")
-        meta = dict(thesis.metadata) if isinstance(thesis.metadata, dict) else {}
-        had = meta.pop("thesis_event", None) is not None
-        if had:
-            with self._connect() as conn:
-                conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), thesis_id))
-        return had
+        return _theses.clear_thesis_event(self, thesis_id=thesis_id)
 
     def _thesis_event_spec(self, thesis: Any) -> dict[str, Any] | None:
-        """Load the stored event spec ({kind, threshold?}) the MC consumes, or None."""
-        meta = thesis.metadata if isinstance(thesis.metadata, dict) else {}
-        raw = meta.get("thesis_event")
-        if not isinstance(raw, dict):
-            return None
-        kind = str(raw.get("kind", "")).lower()
-        if kind not in {"count_threshold", "all", "any"}:
-            return None
-        spec: dict[str, Any] = {"kind": kind}
-        if kind == "count_threshold":
-            try:
-                spec["threshold"] = int(raw.get("threshold"))
-            except (TypeError, ValueError):
-                return None
-        return spec
+        return _theses._thesis_event_spec(self, thesis=thesis)
 
     @staticmethod
     def _thesis_event_seed(thesis_id: str, as_of: str | None) -> int:
-        """Deterministic MC seed from (thesis_id, as_of) — no Date.now / global RNG."""
-        digest = hashlib.sha256(f"{thesis_id}|{as_of or ''}".encode("utf-8")).hexdigest()
-        return int(digest[:16], 16)
+        return _theses._thesis_event_seed(thesis_id=thesis_id, as_of=as_of)
 
     def aggregate_thesis(
         self,
@@ -7531,179 +5819,7 @@ class ForecastLedger:
         commit: bool = True,
         analyst_note: bool = True,
     ) -> dict[str, Any]:
-        """Deterministically aggregate a thesis's members into a fresh snapshot.
-
-        Reads each member's CURRENT snapshot (so callers must run the members
-        first — the thesis lags them), folds the beliefs via
-        :func:`forecasting.thesis.aggregate_thesis`, and (when ``commit``)
-        writes a thesis snapshot + a rolling analyst note.
-        """
-
-        from forecasting import thesis as thesis_math
-
-        thesis = self.get_question(thesis_id)
-        if not self.is_thesis(thesis):
-            raise ValidationError("aggregate_thesis requires a question with outcome type 'thesis'")
-        if self.is_factor(thesis):
-            # A factor aggregates a weighted basket of return distributions via
-            # portfolio math, not the health-signal pool.
-            return self._aggregate_factor(thesis, rho=rho, now=now, commit=commit, analyst_note=analyst_note)
-        members = self.list_thesis_members(thesis_id)
-        beliefs = [self._thesis_member_belief(m) for m in members]
-        as_of = now or utc_now_iso()
-        correlation = self._thesis_correlation_matrix(thesis)
-        agg = thesis_math.aggregate_thesis(
-            beliefs, rho=rho, now=as_of,
-            correlation_matrix=correlation,
-        )
-
-        # ── Event-probability layer ─────────────────────────────────────────
-        # When the thesis is configured as a JOINT THRESHOLD EVENT (e.g. "Dems
-        # take back the Senate" = P(#seats ≥ K)), run a Gaussian-copula MC over
-        # the SAME binary member beliefs. The mean index is damped and
-        # threshold-insensitive; the event probability is the number the
-        # question actually asks. Seeded deterministically from (thesis_id,
-        # as_of) so re-aggregation is reproducible. Stamped ALONGSIDE the mean
-        # index (health/score/band stay as diagnostics; nothing removed).
-        event_spec = self._thesis_event_spec(thesis)
-        event_result = None
-        # The snapshot's probability_or_distribution is validated to a FLAT numeric
-        # dict, so only the numeric event_probability rides in the payload (it is
-        # the headline). The structured detail (spec / count distribution / per-
-        # member sensitivities) is stamped into the snapshot metadata below.
-        event_payload: dict[str, Any] = {}
-        if event_spec is not None:
-            event_result = thesis_math.simulate_thesis_event(
-                beliefs, event_spec,
-                rho=rho,
-                correlation_matrix=correlation,
-                seed=self._thesis_event_seed(thesis_id, as_of),
-            )
-            if event_result.event_probability is not None:
-                event_payload = {"event_probability": event_result.event_probability}
-
-        def _thesis_payload() -> dict[str, Any]:
-            return {**agg.to_payload(), **event_payload}
-
-        # Entity suitability + trade triggers. Read the PRIOR snapshot first
-        # (get_current_snapshot returns the latest before the new commit) so the
-        # per-entity deltas + signal-move triggers compare against it.
-        previous = self.get_current_snapshot(thesis_id)
-        prev_components: list[dict[str, Any]] = []
-        prev_entities: list[dict[str, Any]] = []
-        if previous is not None:
-            prev_ensemble = previous.ensemble_components if isinstance(previous.ensemble_components, dict) else {}
-            prev_components = prev_ensemble.get("components") or []
-            prev_meta = previous.metadata if isinstance(previous.metadata, dict) else {}
-            prev_entities = prev_meta.get("entities") or []
-        member_map = {m["member_question_id"]: m for m in members}
-        entities, triggers = self._compute_thesis_entities(
-            thesis_id,
-            rho=rho,
-            now=as_of,
-            member_map=member_map,
-            current_components=agg.components,
-            prev_components=prev_components,
-            prev_entities=prev_entities,
-        )
-
-        result: dict[str, Any] = {
-            "thesis_id": thesis_id,
-            "title": thesis.title,
-            "aggregate": agg,
-            "payload": _thesis_payload(),
-            "event": event_result,
-            "member_count": len(members),
-            "entities": entities,
-            "triggers": triggers,
-            "snapshot_id": None,
-        }
-        if not commit:
-            return result
-
-        payload = _thesis_payload()
-        if payload.get("health") is None:
-            # No usable member signal: do not fabricate a number. Record the
-            # withholding as an analyst note and skip the snapshot.
-            if analyst_note:
-                note = self.add_analyst_note(
-                    question_id=thesis_id,
-                    body="; ".join(agg.notes) or "withheld: no usable member signal",
-                    kind="brief",
-                    headline=f"{thesis.title} — withheld (insufficient fresh members)",
-                    be_aware="; ".join(agg.notes),
-                    generator="thesis_aggregate",
-                    metadata={"coverage": agg.coverage, "member_count": len(members)},
-                )
-                result["analyst_note_id"] = note.get("id")
-            return result
-
-        rationale = (
-            f"Deterministic aggregate of {len(members)} member forecast(s) "
-            f"(coverage {agg.coverage:.0%}, n_eff {agg.n_eff:.1f}, rho {agg.rho:.2f}). "
-            "Computed after the members' latest runs; not LLM-led."
-        )
-        snapshot = self.create_snapshot(
-            question_id=thesis_id,
-            probability_or_distribution=payload,
-            rationale=rationale,
-            as_of=as_of,
-            confidence=round(max(0.0, min(1.0, agg.coverage)), 3),
-            method="thesis_aggregate",
-            style_autofix=True,  # deterministic fold: mechanically clean generated prose
-            distribution_autofix=True,  # programmatic: auto-fix malformed bounds rather than block
-            ensemble_components={
-                "components": agg.components,
-                "rho": agg.rho,
-                "n_eff": agg.n_eff,
-                "coverage": agg.coverage,
-                "spread": agg.spread,
-            },
-            forecast_origin="live",
-            calibration_eligible=False,
-            metadata={
-                "thesis_notes": agg.notes + ((event_result.notes if event_result else [])),
-                "thesis_spread": agg.spread,
-                "entities": entities,
-                "triggers": triggers,
-                # Full event read (count distribution + per-member sensitivities +
-                # excluded members) for the desk; the compact headline fields live
-                # in the snapshot payload alongside the mean index.
-                "event": {
-                    "event_probability": event_result.event_probability,
-                    "event": event_result.event,
-                    "count_distribution": event_result.count_distribution,
-                    "sensitivities": event_result.sensitivities,
-                    "excluded": event_result.excluded,
-                    "participants": event_result.participants,
-                    "backend": event_result.backend,
-                    "n_draws": event_result.n_draws,
-                    "rho": event_result.rho,
-                    "seed": event_result.seed,
-                } if (event_result and event_result.event_probability is not None) else None,
-            },
-            reasons_up=_thesis_reason_lines(agg, "support"),
-            reasons_down=_thesis_reason_lines(agg, "drag"),
-        )
-        result["snapshot_id"] = snapshot.forecast_id
-        if analyst_note:
-            headline, how_it_thinks, looking_for, be_aware, body = _thesis_narrative(thesis, agg, event_result)
-            note = self.add_analyst_note(
-                question_id=thesis_id,
-                body=body,
-                kind="brief",
-                headline=headline,
-                how_it_thinks=how_it_thinks,
-                looking_for=looking_for,
-                be_aware=be_aware,
-                forecast_id=snapshot.forecast_id,
-                probability_at_write=payload,
-                confidence_at_write=round(max(0.0, min(1.0, agg.coverage)), 3),
-                generator="thesis_aggregate",
-                metadata={"coverage": agg.coverage, "n_eff": agg.n_eff, "rho": agg.rho},
-            )
-            result["analyst_note_id"] = note.get("id")
-        return result
+        return _theses.aggregate_thesis(self, thesis_id=thesis_id, rho=rho, now=now, commit=commit, analyst_note=analyst_note)
 
     def aggregate_all_theses(
         self,
@@ -7712,43 +5828,7 @@ class ForecastLedger:
         rho: float | str = 0.4,
         limit: int = 500,
     ) -> dict[str, Any]:
-        """Aggregate every active thesis (the trailing lag phase of a sweep).
-
-        Runs nested theses last (a thesis whose members include another thesis
-        re-aggregates after that member). Used by ``run-all`` Phase 2 and the
-        daily cron so theses + their entity suitabilities refresh after the
-        members. Each thesis is isolated: one failing thesis does not abort the rest.
-        """
-
-        now = now or utc_now_iso()
-        theses = [q for q in self.list_questions(status="active", limit=limit) if self.is_thesis(q)]
-
-        def _depends_on_thesis(thesis: Any) -> bool:
-            return any(
-                self.is_thesis(member["member_question_id"])
-                for member in self.list_thesis_members(thesis.id)
-            )
-
-        ordered = [q for q in theses if not _depends_on_thesis(q)] + [q for q in theses if _depends_on_thesis(q)]
-        results: list[dict[str, Any]] = []
-        for thesis in ordered:
-            try:
-                result = self.aggregate_thesis(thesis.id, rho=rho, now=now)
-                results.append(
-                    {
-                        "id": thesis.id,
-                        "title": thesis.title,
-                        "ok": True,
-                        "snapshot_id": result.get("snapshot_id"),
-                        "withheld": result.get("snapshot_id") is None,
-                        "health": (result.get("payload") or {}).get("health"),
-                        "entity_count": len(result.get("entities") or []),
-                        "trigger_count": len(result.get("triggers") or []),
-                    }
-                )
-            except Exception as exc:  # one bad thesis must not abort the sweep
-                results.append({"id": thesis.id, "title": thesis.title, "ok": False, "error": str(exc)})
-        return {"count": len(ordered), "results": results}
+        return _theses.aggregate_all_theses(self, now=now, rho=rho, limit=limit)
 
     def list_source_snapshots(
         self,
@@ -9363,10 +7443,7 @@ class ForecastLedger:
 
     @staticmethod
     def _is_learning_alert_reason(reason: str | None) -> bool:
-        text = str(reason or "")
-        return text in {"calibration_lesson_review", "domain_error_profile_review"} or text.startswith(
-            "domain_error_profile_applies:"
-        )
+        return _alerts._is_learning_alert_reason(reason=reason)
 
     def create_alert(
         self,
@@ -9377,82 +7454,19 @@ class ForecastLedger:
         reason: str,
         recommended_action: str,
     ) -> AlertEvent:
-        alert_id = f"al_{uuid.uuid4().hex[:12]}"
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO alert_events (
-                    id, created_at, severity, scope_type, scope_ref, reason,
-                    recommended_action
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    alert_id,
-                    utc_now_iso(),
-                    severity,
-                    scope_type,
-                    scope_ref,
-                    reason,
-                    recommended_action,
-                ),
-            )
-        return self.get_alert(alert_id)
+        return _alerts.create_alert(self, severity=severity, scope_type=scope_type, scope_ref=scope_ref, reason=reason, recommended_action=recommended_action)
 
     def get_alert(self, alert_id: str) -> AlertEvent:
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM alert_events WHERE id = ?", (alert_id,)).fetchone()
-        if row is None:
-            raise LedgerNotFoundError(f"alert not found: {alert_id}")
-        return self._row_to_alert(row)
+        return _alerts.get_alert(self, alert_id=alert_id)
 
     def list_alerts(self, *, unresolved_only: bool = True) -> list[AlertEvent]:
-        where = "WHERE acknowledged_at IS NULL" if unresolved_only else ""
-        with self._connect() as conn:
-            rows = conn.execute(
-                f"SELECT * FROM alert_events {where} ORDER BY created_at DESC"
-            ).fetchall()
-        return [self._row_to_alert(row) for row in rows]
+        return _alerts.list_alerts(self, unresolved_only=unresolved_only)
 
     def acknowledge_alert(self, alert_id: str, *, acknowledged_at: str | None = None) -> AlertEvent:
-        self.get_alert(alert_id)
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE alert_events SET acknowledged_at = ? WHERE id = ?",
-                (parse_timestamp(acknowledged_at, field_name="acknowledged_at") or utc_now_iso(), alert_id),
-            )
-        return self.get_alert(alert_id)
+        return _alerts.acknowledge_alert(self, alert_id=alert_id, acknowledged_at=acknowledged_at)
 
     def record_alert_attempt(self, alert_id: str, *, now: str | None = None) -> AlertEvent:
-        """Record a FAILED paid-tier resolution attempt: stamp ``last_attempted_at``
-        and increment ``attempt_count`` so the per-alert exponential backoff window
-        opens.
-
-        This is the *opposite* of an acknowledgement — it NEVER sets
-        ``acknowledged_at``. The alert stays OPEN (the underlying condition still
-        holds, so it must re-surface) but is now COOLED DOWN: the continuous paid
-        (LLM) tier will not re-attempt it until the backoff window elapses, so an
-        unattended loop cannot re-spend on the same gated/failing alert every cycle.
-        Each repeated failure (after the window passes and it is retried) bumps
-        ``attempt_count`` again, doubling the next window. Idempotency is NOT a goal
-        here — every real spend that failed should advance the count.
-        """
-        self.get_alert(alert_id)  # raises LedgerNotFoundError on an unknown id
-        stamped = parse_timestamp(now, field_name="now") or utc_now_iso()
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE alert_events "
-                "SET last_attempted_at = ?, attempt_count = COALESCE(attempt_count, 0) + 1 "
-                "WHERE id = ?",
-                (stamped, alert_id),
-            )
-        return self.get_alert(alert_id)
-
-    # Default re-surface window for a dismissed group (the design's TTL). A
-    # dismissal silences a group for this many days; once the window elapses the
-    # group re-surfaces (self_check re-emits the alert IF the condition still
-    # holds). A dismissal is NEVER an indefinite silence.
-    DISMISS_TTL_DAYS_DEFAULT = 7
+        return _alerts.record_alert_attempt(self, alert_id=alert_id, now=now)
 
     def dismiss_alerts(
         self,
@@ -9464,227 +7478,13 @@ class ForecastLedger:
         ttl_days: int | None = None,
         now: str | None = None,
     ) -> list[AlertEvent]:
-        """Explicitly DISMISS (silence) a set of OPEN alerts — a RECORDED human
-        silence, NOT a resolution.
-
-        This is the bulk "ignore-this-group" path. It bulk-sets ``acknowledged_at``
-        on every still-OPEN alert in ``alert_ids`` (so the group drops out of the
-        open backlog) WITHOUT invoking any runner and WITHOUT doing any gated
-        forecast work. Crucially it ALSO stamps the dismissal audit trail
-        (``dismissed_at`` / ``dismiss_note`` / ``dismiss_actor`` / ``dismiss_reason``
-        / ``dismiss_ttl_days``), which is what makes a dismissal auditable and
-        visibly distinct from a runner-resolution (the latter leaves
-        ``dismissed_at`` NULL). The silence is bounded: after ``ttl_days`` the group
-        re-surfaces (``self_check`` respects an active dismissal and re-emits once
-        the window elapses — see :meth:`active_dismissal_keys`).
-
-        A non-empty ``note`` is REQUIRED: a mass-dismiss must always carry a human
-        rationale (no silent bare-ack). Already-acknowledged alerts are skipped (a
-        dismissal never overwrites a real resolution). Returns the alerts that were
-        actually dismissed.
-        """
-        if not (note or "").strip():
-            raise ValueError("dismiss_alerts requires a non-empty note (no silent mass-dismiss)")
-        if not (actor or "").strip():
-            raise ValueError("dismiss_alerts requires a non-empty actor")
-        ttl = self.DISMISS_TTL_DAYS_DEFAULT if ttl_days is None else int(ttl_days)
-        if ttl <= 0:
-            raise ValueError("dismiss_alerts ttl_days must be a positive number of days")
-        now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
-        note_text = note.strip()
-        actor_text = actor.strip()
-        reason_text = (dismiss_reason or "").strip() or None
-
-        dismissed_ids: list[str] = []
-        seen: set[str] = set()
-        with self._connect() as conn:
-            for alert_id in alert_ids:
-                if not alert_id or alert_id in seen:
-                    continue
-                seen.add(alert_id)
-                row = conn.execute(
-                    "SELECT acknowledged_at FROM alert_events WHERE id = ?", (alert_id,)
-                ).fetchone()
-                if row is None:
-                    continue
-                if row["acknowledged_at"] is not None:
-                    # Already resolved/dismissed — never clobber a real resolution.
-                    continue
-                conn.execute(
-                    """
-                    UPDATE alert_events
-                       SET acknowledged_at = ?,
-                           dismissed_at = ?,
-                           dismiss_note = ?,
-                           dismiss_actor = ?,
-                           dismiss_reason = ?,
-                           dismiss_ttl_days = ?
-                     WHERE id = ? AND acknowledged_at IS NULL
-                    """,
-                    (now_ts, now_ts, note_text, actor_text, reason_text, ttl, alert_id),
-                )
-                dismissed_ids.append(alert_id)
-        # Re-read AFTER the write transaction has committed so the returned objects
-        # reflect the persisted dismissal trail (get_alert opens its own connection,
-        # which would not see the still-open transaction's uncommitted rows).
-        return [self.get_alert(alert_id) for alert_id in dismissed_ids]
+        return _alerts.dismiss_alerts(self, alert_ids=alert_ids, note=note, actor=actor, dismiss_reason=dismiss_reason, ttl_days=ttl_days, now=now)
 
     def active_dismissal_keys(self, *, now: str | None = None) -> "set[tuple[str, str]]":
-        """The ``(scope_ref, reason)`` pairs currently inside an UNEXPIRED dismissal
-        window — the silences ``self_check`` must respect so a dismissed group is
-        not immediately re-emitted.
-
-        A dismissal is active while ``dismissed_at + dismiss_ttl_days >= now``. Once
-        the window elapses the pair drops out of this set, so the very next
-        ``self_check`` re-creates the alert IF the underlying condition still holds —
-        i.e. the group RE-SURFACES after the TTL rather than being silenced forever.
-        """
-        now_dt = timestamp_to_datetime(parse_timestamp(now, field_name="now") or utc_now_iso())
-        active: set[tuple[str, str]] = set()
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT scope_ref, reason, dismissed_at, dismiss_ttl_days "
-                "FROM alert_events WHERE dismissed_at IS NOT NULL"
-            ).fetchall()
-        for row in rows:
-            dismissed_dt = timestamp_to_datetime(row["dismissed_at"])
-            if dismissed_dt is None:
-                continue
-            ttl = row["dismiss_ttl_days"]
-            ttl_days = int(ttl) if ttl is not None else self.DISMISS_TTL_DAYS_DEFAULT
-            if dismissed_dt + timedelta(days=ttl_days) >= now_dt:
-                active.add((row["scope_ref"], row["reason"]))
-        return active
+        return _alerts.active_dismissal_keys(self, now=now)
 
     def reconcile_alerts(self, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
-        """Close the loop: source-changed -> evidence-imported -> forecast-updated
-        -> acknowledged. A question-scoped alert that fired BEFORE both fresh
-        evidence was imported AND a new forecast snapshot was committed has already
-        been consumed by the operator/agent — leaving it open is just alert fatigue,
-        so acknowledge it. Alerts still missing evidence or an update stay open with
-        an explicit reason. dry_run reports what WOULD be acknowledged without
-        mutating (so a cautious caller can preview). Idempotent.
-
-        Acking liberally (any fresh evidence + any forecast update after the alert,
-        not necessarily from the alert's exact source) is intentional + safe for
-        source-driven alerts: it clears the backlog the operator already worked
-        past, and if the underlying source is still dirty the next self_check
-        re-raises a fresh alert — so a genuinely-open signal is never lost.
-
-        EXCEPTION — the MANUAL classes (NO_AUTO: domain-error profiles, assumption /
-        reference-class checks, central-in-band, calibration-lesson review; and
-        CONTESTED_LABEL: a triage auto-label the verifier disputes) are explicitly
-        EXCLUDED from auto-ack. These are human-judgment alerts the warning
-        dispatcher deliberately *surfaces* and never auto-resolves, and a new
-        forecast + fresh evidence does NOT address them (an invalidated assumption
-        is still invalidated; a band is still off-centre; a contested label is
-        closed only when the operator records a real expert label via
-        relabel_route). Reconciling one on unrelated forecast activity would
-        silently close a still-valid signal the operator must act on — the same
-        bare-ack the dispatcher forbids — so they always stay OPEN here."""
-        now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
-        # Local import keeps reconcile_alerts free of any module import-order
-        # coupling with the (model-only) warnings dispatcher.
-        from forecasting.warnings import ResolutionKind, classify_warning
-
-        reconciled: list[dict[str, Any]] = []
-        still_open: list[dict[str, Any]] = []
-
-        for alert in self.list_alerts(unresolved_only=True):
-            if alert.scope_type != "question":
-                still_open.append(
-                    {"id": alert.id, "reason": alert.reason, "open_because": "scope is not a single question"}
-                )
-                continue
-
-            if classify_warning(alert.reason) in (
-                ResolutionKind.NO_AUTO,
-                ResolutionKind.CONTESTED_LABEL,
-            ):
-                still_open.append(
-                    {
-                        "id": alert.id,
-                        "reason": alert.reason,
-                        "open_because": "manual class (no-auto / contested-label) — surfaced for human review, never auto-reconciled",
-                    }
-                )
-                continue
-
-            question_id = alert.scope_ref
-
-            # under_saturated is a SCORE-based signal, not an evidence-based one: it
-            # clears when the current snapshot's STORED saturation score is back
-            # at/above the bar, regardless of whether new evidence was imported. A
-            # non-evidence re-saturation (added reasoning tags, a re-run panel, a
-            # fuller decomposition) is a legitimate fix; the score on an immutable
-            # snapshot only rises via a fresh commit, so a current score >= bar
-            # already implies a re-forecast landed. Evidence-gated reconcile would
-            # leave an evidence-free re-saturation stuck open forever (alert fatigue,
-            # since the deduped sweep won't re-raise it).
-            if alert.reason == self._SATURATION_ALERT_REASON:
-                _sat_score: float | None = None
-                _sat_bar: float | None = None
-                try:
-                    from forecasting.hooks import saturation_summary, sweep_alert_threshold
-
-                    _snap = self.get_current_snapshot(question_id)
-                    _meta = getattr(_snap, "metadata", None) if _snap is not None else None
-                    _summary = saturation_summary(_meta.get("saturation") if isinstance(_meta, dict) else None)
-                    _raw = _summary.get("score") if _summary else None
-                    _sat_score = float(_raw) if isinstance(_raw, (int, float)) else None
-                    _sat_bar = float(sweep_alert_threshold())
-                except Exception:
-                    _sat_score, _sat_bar = None, None
-                if _sat_score is not None and _sat_bar is not None and _sat_score >= _sat_bar:
-                    if not dry_run:
-                        self.acknowledge_alert(alert.id, acknowledged_at=now_ts)
-                    reconciled.append({"id": alert.id, "reason": alert.reason, "scope_ref": question_id})
-                else:
-                    still_open.append({
-                        "id": alert.id,
-                        "reason": alert.reason,
-                        "open_because": (
-                            "saturation still below the bar"
-                            if _sat_score is not None
-                            else "no saturation score on the current snapshot"
-                        ),
-                    })
-                continue
-
-            try:
-                evidence_after = any(
-                    (getattr(item, "captured_at", None) or getattr(item, "available_at", None) or "") > alert.created_at
-                    for item in self.list_evidence(question_id)
-                )
-            except Exception:
-                evidence_after = False
-
-            snapshot = None
-            try:
-                snapshot = self.get_current_snapshot(question_id)
-            except Exception:
-                snapshot = None
-            snapshot_ts = (getattr(snapshot, "created_at", None) or getattr(snapshot, "as_of", None) or "") if snapshot else ""
-            update_after = bool(snapshot_ts and snapshot_ts > alert.created_at)
-
-            if evidence_after and update_after:
-                if not dry_run:
-                    self.acknowledge_alert(alert.id, acknowledged_at=now_ts)
-                reconciled.append({"id": alert.id, "reason": alert.reason, "scope_ref": question_id})
-            else:
-                missing = []
-                if not evidence_after:
-                    missing.append("no fresh evidence imported since the alert")
-                if not update_after:
-                    missing.append("no forecast update committed since the alert")
-                still_open.append({"id": alert.id, "reason": alert.reason, "open_because": "; ".join(missing)})
-
-        return {
-            "reconciled": reconciled,
-            "reconciled_count": len(reconciled),
-            "still_open": still_open,
-            "dry_run": dry_run,
-        }
+        return _alerts.reconcile_alerts(self, now=now, dry_run=dry_run)
 
     def self_check(
         self,
@@ -9702,205 +7502,7 @@ class ForecastLedger:
         confidence_above: float | None = None,
         large_delta_threshold: float | None = None,
     ) -> list[AlertEvent]:
-        self._validate_confidence_filters(
-            confidence_below=confidence_below,
-            confidence_above=confidence_above,
-        )
-        self._validate_probability_threshold(
-            large_delta_threshold,
-            field_name="large_delta_threshold",
-        )
-        if question_id:
-            questions = [self.get_question(question_id)]
-        else:
-            questions = self.list_questions(domain=domain)
-            if topic:
-                questions = [q for q in questions if topic in q.topics]
-            if horizon:
-                questions = [
-                    q
-                    for q in questions
-                    if (snapshot := self.get_current_snapshot(q.id)) is not None
-                    and self._horizon_matches(snapshot.forecast_horizon_days, horizon)
-                ]
-            if portfolio:
-                questions = [q for q in questions if self._question_in_portfolio(q, portfolio)]
-        if confidence_below is not None or confidence_above is not None:
-            questions = [
-                q
-                for q in questions
-                if self._question_matches_confidence(
-                    q.id,
-                    confidence_below=confidence_below,
-                    confidence_above=confidence_above,
-                )
-            ]
-
-        # Respect any UNEXPIRED dismissal (Slice 5): a group an operator explicitly
-        # silenced must NOT be re-emitted while its TTL window is live. Once the
-        # window elapses the (scope_ref, reason) pair drops out of this set and the
-        # alert is re-created below — i.e. the group RE-SURFACES after the TTL.
-        active_dismissals = self.active_dismissal_keys(now=now)
-
-        alerts: list[AlertEvent] = []
-        for row in self.review_questions(
-            stale=True,
-            last_days=stale_days,
-            domain=domain,
-            topic=topic,
-            horizon=horizon,
-            confidence_below=confidence_below,
-            confidence_above=confidence_above,
-            large_delta_threshold=large_delta_threshold,
-            now=now,
-        ):
-            question = row["question"]
-            if question_id and question.id != question_id:
-                continue
-            if portfolio and not self._question_in_portfolio(question, portfolio):
-                continue
-            for reason in row["reasons"]:
-                if (question.id, reason) in active_dismissals:
-                    continue  # silenced by an active dismissal — re-surfaces after TTL
-                action = self._recommended_action(reason)
-                alerts.append(
-                    self.create_alert(
-                        severity="warning" if reason != "resolution_check_due" else "high",
-                        scope_type="question",
-                        scope_ref=question.id,
-                        reason=reason,
-                        recommended_action=action,
-                    )
-                )
-        # Dedupe guard (mirrors check_update_triggers' open_reasons set): re-running
-        # self_check before reconcile must NOT accumulate duplicate postmortem_due
-        # alerts for the same question. One open postmortem alert per question until
-        # it is acknowledged. Both severity variants (postmortem_due /
-        # high_impact_postmortem_due) count as "already surfaced" for this question.
-        open_postmortem_questions = {
-            alert.scope_ref
-            for alert in self.list_alerts(unresolved_only=True)
-            if alert.scope_type == "question"
-            and alert.reason in ("postmortem_due", "high_impact_postmortem_due")
-        }
-        for question in questions:
-            if question.status != "resolved":
-                continue
-            if self.get_latest_resolution(question.id, confirmed_only=True) is None:
-                continue
-            current = self.get_current_snapshot(question.id)
-            scores = [score for score in self.list_scores() if score.question_id == question.id]
-            if current is not None and not scores:
-                if auto_score:
-                    try:
-                        score = self.score_question(question.id)
-                    except ForecastingError as exc:
-                        alerts.append(
-                            self.create_alert(
-                                severity="high",
-                                scope_type="question",
-                                scope_ref=question.id,
-                                reason="score_blocked",
-                                recommended_action=f"Inspect resolution and scoring setup: {exc}",
-                            )
-                        )
-                        continue
-                    alerts.append(
-                        self.create_alert(
-                            severity="info",
-                            scope_type="question",
-                            scope_ref=question.id,
-                            reason=f"score_created:{score.id}",
-                            recommended_action="Run `forecast postmortem` so the score can update calibration memory.",
-                        )
-                    )
-                    scores = [score]
-                else:
-                    high_impact = self._is_high_impact_question(question)
-                    alerts.append(
-                        self.create_alert(
-                            severity="high",
-                            scope_type="question",
-                            scope_ref=question.id,
-                            reason="high_impact_score_due" if high_impact else "score_due",
-                            recommended_action=(
-                                "Prioritize scoring this high-impact confirmed resolution before updating calibration memory."
-                                if high_impact
-                                else "Run `forecast score` for the confirmed resolution."
-                            ),
-                        )
-                    )
-                    continue
-            if scores and not self.list_postmortems(question.id):
-                if auto_postmortem:
-                    latest_score = scores[0]
-                    postmortem = self.create_postmortem(
-                        question_id=question.id,
-                        summary="Auto-created by forecast self-check after confirmed resolution and scoring.",
-                        what_happened="The forecast resolved and was scored during a scheduled or manual self-check.",
-                        what_was_expected="See the linked forecast snapshot and score record for the prior probability.",
-                        lesson=self._auto_postmortem_lesson(question, latest_score),
-                        calibration_adjustment=self._auto_postmortem_adjustment(question, latest_score),
-                    )
-                    alerts.append(
-                        self.create_alert(
-                            severity="info",
-                            scope_type="question",
-                            scope_ref=question.id,
-                            reason=f"postmortem_created:{postmortem['id']}",
-                            recommended_action=(
-                                "Review the auto-created postmortem and any tentative calibration lesson "
-                                "before relying on it for future updates."
-                            ),
-                        )
-                    )
-                    continue
-                if question.id in open_postmortem_questions:
-                    continue  # one open postmortem_due alert per question until acked
-                high_impact = self._is_high_impact_question(question)
-                alerts.append(
-                    self.create_alert(
-                        severity="high" if high_impact else "warning",
-                        scope_type="question",
-                        scope_ref=question.id,
-                        reason="high_impact_postmortem_due" if high_impact else "postmortem_due",
-                        recommended_action=(
-                            "Prioritize a postmortem for this high-impact resolution before reusing the lesson."
-                            if high_impact
-                            else "Run `forecast postmortem` so the resolved forecast can update learning artifacts."
-                        ),
-                    )
-                )
-                open_postmortem_questions.add(question.id)
-        alerts.extend(self._domain_error_profile_alerts(domain=domain, topic=topic, questions=questions))
-        alerts.extend(
-            self._calibration_lesson_review_alerts(
-                domain=domain,
-                topic=topic,
-                questions=questions,
-            )
-        )
-        if not any([question_id, domain, topic, horizon, portfolio]):
-            alerts.extend(self._benchmark_evidence_alerts())
-        watch_scope_type, watch_scope_ref = self._self_check_watch_scope(
-            question_id=question_id,
-            domain=domain,
-            topic=topic,
-            portfolio=portfolio,
-        )
-        alerts.extend(
-            self.check_watched_sources(
-                scope_type=watch_scope_type,
-                scope_ref=watch_scope_ref,
-                now=now,
-            )
-        )
-        # Fire executable update_triggers for in-scope questions against their
-        # latest imported values (idempotent — one open alert per source).
-        for question in questions:
-            if any(trigger.get("operator") for trigger in question.update_triggers):
-                alerts.extend(self.check_update_triggers(question_id=question.id, now=now))
-        return alerts
+        return _alerts.self_check(self, question_id=question_id, domain=domain, topic=topic, horizon=horizon, portfolio=portfolio, stale_days=stale_days, now=now, auto_score=auto_score, auto_postmortem=auto_postmortem, confidence_below=confidence_below, confidence_above=confidence_above, large_delta_threshold=large_delta_threshold)
 
     def pilot_report(
         self,
@@ -10696,18 +8298,7 @@ class ForecastLedger:
         summary["imported"][_PACKET_RECORD_LABELS[table]] += 1
 
     def _existing_score(self, forecast_id: str, resolution_id: str) -> ScoreRecord | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT * FROM score_records
-                WHERE forecast_id = ? AND resolution_id = ?
-                  AND invalidated_by_correction_id IS NULL
-                ORDER BY scored_at DESC
-                LIMIT 1
-                """,
-                (forecast_id, resolution_id),
-            ).fetchone()
-        return self._row_to_score(row) if row else None
+        return _scoring._existing_score(self, forecast_id=forecast_id, resolution_id=resolution_id)
 
     def _validate_evidence_refs(
         self,
@@ -11587,25 +9178,10 @@ class ForecastLedger:
         outcome: Any,
         outcome_space: OutcomeSpace,
     ) -> float:
-        if isinstance(probability_or_distribution, (int, float)):
-            probability = float(probability_or_distribution)
-            yes_labels = {"yes", "y", "true", "1", "occurred", "success"}
-            outcome_label = str(outcome).strip().lower()
-            observed = 1.0 if outcome_label in yes_labels or outcome_label == str(outcome_space.choices[0]).lower() else 0.0
-            return (probability - observed) ** 2
-        if isinstance(probability_or_distribution, dict):
-            outcome_label = str(outcome).strip().lower()
-            lowered = {str(key).lower(): float(value) for key, value in probability_or_distribution.items()}
-            labels = {str(choice).lower() for choice in outcome_space.choices}
-            labels.update(lowered.keys())
-            return sum(
-                (lowered.get(label, 0.0) - (1.0 if label == outcome_label else 0.0)) ** 2
-                for label in labels
-            )
-        raise ValidationError("unsupported probability payload")
+        return _scoring._brier_score(self, probability_or_distribution=probability_or_distribution, outcome=outcome, outcome_space=outcome_space)
 
     def _log_score(self, resolved_probability: float) -> float:
-        return -math.log(max(min(resolved_probability, 1.0), 1e-15))
+        return _scoring._log_score(self, resolved_probability=resolved_probability)
 
     def _numeric_forecast_point(self, probability_or_distribution: Any) -> float:
         if isinstance(probability_or_distribution, bool):
@@ -11651,47 +9227,10 @@ class ForecastLedger:
         return error**2, "squared_error"
 
     def _numeric_bucket(self, value: float, outcome_space: OutcomeSpace) -> str:
-        bounds = outcome_space.bounds or []
-        if len(bounds) == 2:
-            low, high = float(bounds[0]), float(bounds[1])
-            if math.isfinite(low) and math.isfinite(high) and high > low:
-                ratio = min(max((value - low) / (high - low), 0.0), 0.999999)
-                return self._probability_bucket(ratio)
-        return "numeric"
+        return _scoring._numeric_bucket(self, value=value, outcome_space=outcome_space)
 
     def _vote_share_vector_score(self, forecast: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any] | None:
-        """Vector MAE/RMSE (percentage points) for a candidate-SHARE forecast scored
-        against a candidate-SHARE outcome. Forecast values may be probabilities (0-1,
-        auto-scaled to pp) or already pp; outcome values are pp (0-100). Returns None
-        when there are no shared numeric candidate keys, so the caller falls through
-        to the existing scorer. This is an ACCURACY metric (100 - MAE), not a strictly
-        proper score — labeled as such; it makes vote-share forecasts machine-scoreable
-        instead of mis-read as categorical labels (lesson cl_ec9059c809ba)."""
-        def _numeric_shares(raw: dict[str, Any]) -> dict[str, float]:
-            out: dict[str, float] = {}
-            for key, value in raw.items():
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    out[str(key).strip().lower()] = float(value)
-            return out
-
-        f_shares = _numeric_shares(forecast)
-        o_shares = _numeric_shares(outcome)
-        shared = sorted(set(f_shares) & set(o_shares))
-        if not shared:
-            return None
-        # Forecast in [0,1] -> scale to pp; if it already looks like pp, leave it.
-        scale = 100.0 if max(f_shares[k] for k in shared) <= 1.5 else 1.0
-        diffs = [abs(f_shares[k] * scale - o_shares[k]) for k in shared]
-        mae = sum(diffs) / len(diffs)
-        rmse = math.sqrt(sum(d * d for d in diffs) / len(diffs))
-        return {
-            "brier_score": None,
-            "log_score": None,
-            "proper_score": max(0.0, 100.0 - mae),
-            "score_rule": "vector_mae_percentage_points",
-            "calibration_bucket": None,
-            "notes": f"Vector accuracy across {len(shared)} candidate share(s): MAE={mae:.2f}pp, RMSE={rmse:.2f}pp (accuracy, not a proper score).",
-        }
+        return _scoring._vote_share_vector_score(self, forecast=forecast, outcome=outcome)
 
     def _normal_distribution_score(
         self,
@@ -11699,31 +9238,10 @@ class ForecastLedger:
         outcome: Any,
         outcome_space: OutcomeSpace,
     ) -> dict[str, Any] | None:
-        mean_key = next((key for key in ("mean", "expected", "value", "point") if key in probability_or_distribution), None)
-        sd_key = next((key for key in ("sd", "std", "sigma", "stdev") if key in probability_or_distribution), None)
-        if mean_key is None or sd_key is None:
-            return None
-        mean = float(probability_or_distribution[mean_key])
-        sd = float(probability_or_distribution[sd_key])
-        outcome_value = self._numeric_outcome(outcome)
-        if not math.isfinite(mean) or not math.isfinite(sd) or sd <= 0:
-            raise ValidationError("normal distribution scoring requires finite mean and positive standard deviation")
-        variance = sd * sd
-        negative_log_likelihood = 0.5 * math.log(2 * math.pi * variance) + ((outcome_value - mean) ** 2) / (2 * variance)
-        mean_error, mean_rule = self._numeric_squared_error(mean, outcome_value, outcome_space)
-        return {
-            "brier_score": None,
-            "log_score": negative_log_likelihood,
-            "proper_score": negative_log_likelihood,
-            "score_rule": "normal_negative_log_likelihood",
-            "calibration_bucket": self._numeric_bucket(mean, outcome_space),
-            "notes": f"Normal-distribution negative log likelihood; mean {mean_rule}={mean_error:.6g}.",
-        }
+        return _scoring._normal_distribution_score(self, probability_or_distribution=probability_or_distribution, outcome=outcome, outcome_space=outcome_space)
 
     def _probability_bucket(self, probability: float) -> str:
-        lower = min(int(probability * 10), 9) / 10
-        upper = lower + 0.1
-        return f"{lower:.1f}-{upper:.1f}"
+        return _scoring._probability_bucket(self, probability=probability)
 
     def _horizon_matches(self, horizon_days: float | None, horizon: str | None) -> bool:
         if horizon is None:
@@ -11900,150 +9418,34 @@ class ForecastLedger:
         return corrections
 
     def _score_summary(self, scores: list[ScoreRecord]) -> dict[str, Any]:
-        return {
-            "count": len(scores),
-            "mean_brier": self._mean([score.brier_score for score in scores]),
-            "mean_log_score": self._mean([score.log_score for score in scores]),
-        }
+        return _scoring._score_summary(self, scores=scores)
 
     def _score_breakdown(
         self,
         scores: list[ScoreRecord],
         key_fn,
     ) -> dict[str, dict[str, Any]]:
-        buckets: dict[str, list[ScoreRecord]] = defaultdict(list)
-        for score in scores:
-            buckets[str(key_fn(score))].append(score)
-        return {key: self._score_summary(bucket_scores) for key, bucket_scores in sorted(buckets.items())}
+        return _scoring._score_breakdown(self, scores=scores, key_fn=key_fn)
 
     def _score_horizon_bucket(self, score: ScoreRecord) -> str:
-        horizon = score.forecast_horizon_days
-        if horizon is None:
-            return "unknown"
-        if horizon <= 7:
-            return "0-7d"
-        if horizon <= 30:
-            return "8-30d"
-        if horizon <= 90:
-            return "31-90d"
-        if horizon <= 365:
-            return "91-365d"
-        return "365d+"
+        return _scoring._score_horizon_bucket(self, score=score)
 
     def _paired_brier_summary(
         self,
         pairs: list[tuple[ScoreRecord, ScoreRecord]],
     ) -> dict[str, Any]:
-        deltas: list[float] = []
-        agent_scores: list[float] = []
-        baseline_scores: list[float] = []
-        agent_wins = baseline_wins = ties = 0
-        for agent, baseline in pairs:
-            if agent.brier_score is None or baseline.brier_score is None:
-                continue
-            agent_brier = float(agent.brier_score)
-            baseline_brier = float(baseline.brier_score)
-            agent_scores.append(agent_brier)
-            baseline_scores.append(baseline_brier)
-            deltas.append(baseline_brier - agent_brier)
-            if agent_brier < baseline_brier:
-                agent_wins += 1
-            elif agent_brier > baseline_brier:
-                baseline_wins += 1
-            else:
-                ties += 1
-
-        count = len(deltas)
-        # Point estimate is UNCHANGED from the prior parametric implementation:
-        # the mean paired Brier edge. Only the significance statistics around it
-        # (CI + p-value) move from the normal approximation to a seeded bootstrap.
-        mean_delta = self._mean(deltas)
-        bootstrap = self._paired_bootstrap(deltas, mean_delta)
-        return {
-            "paired_brier_count": count,
-            "paired_agent_mean_brier": self._mean(agent_scores),
-            "paired_baseline_mean_brier": self._mean(baseline_scores),
-            "paired_agent_edge_mean_brier": mean_delta,
-            "paired_agent_edge_ci95_low": bootstrap["ci_low"],
-            "paired_agent_edge_ci95_high": bootstrap["ci_high"],
-            "paired_p_value": bootstrap["p_value"],
-            "paired_bootstrap_draws": PAIRED_BOOTSTRAP_DRAWS,
-            "paired_brier_coin_flip_floor": BRIER_COIN_FLIP_FLOOR,
-            "paired_agent_wins": agent_wins,
-            "paired_baseline_wins": baseline_wins,
-            "paired_ties": ties,
-        }
+        return _scoring._paired_brier_summary(self, pairs=pairs)
 
     def _paired_bootstrap(
         self,
         deltas: list[float],
         mean_delta: float | None,
     ) -> dict[str, float | None]:
-        """Seeded paired bootstrap over per-question Brier deltas.
-
-        deltas[i] = baseline_brier_i - agent_brier_i (POSITIVE = agent better).
-
-        - Two-sided p-value tests H0: no paired difference. We recenter the deltas
-          at zero (d0 = x - mean_delta), draw PAIRED_BOOTSTRAP_DRAWS resample-means
-          of d0, and report the fraction whose magnitude is >= |mean_delta|.
-        - The 95% CI is the 2.5/97.5 percentiles of the UNCENTERED resample-means.
-        - n < 2, no mean, or a degenerate all-equal-deltas spread -> p=None, ci=None.
-
-        Deterministic: a single seeded random.Random(PAIRED_BOOTSTRAP_SEED) drives
-        every draw, so identical inputs always yield identical p-value and CI.
-        """
-
-        none_result: dict[str, float | None] = {"p_value": None, "ci_low": None, "ci_high": None}
-        count = len(deltas)
-        if count < 2 or mean_delta is None:
-            return none_result
-        # Degenerate: every paired delta identical. The recentered series is all
-        # zeros, so every bootstrap mean is exactly 0. If the edge itself is 0 the
-        # data carry no signal at all (p undefined); if the edge is non-zero but
-        # variance-free, the bootstrap cannot characterize it either.
-        spread = max(deltas) - min(deltas)
-        if spread == 0.0:
-            return none_result
-
-        observed = abs(mean_delta)
-        d0 = [x - mean_delta for x in deltas]
-        rng = random.Random(PAIRED_BOOTSTRAP_SEED)
-        ge_count = 0
-        uncentered_means: list[float] = []
-        for _ in range(PAIRED_BOOTSTRAP_DRAWS):
-            # One shared index draw per iteration keeps the recentered (p-value)
-            # and uncentered (CI) resamples on the same deterministic stream.
-            idx = [rng.randrange(count) for _ in range(count)]
-            boot_centered = statistics.fmean(d0[i] for i in idx)
-            if abs(boot_centered) >= observed:
-                ge_count += 1
-            uncentered_means.append(statistics.fmean(deltas[i] for i in idx))
-
-        # Add-one (plus-one) correction so a Monte-Carlo p-value is never exactly
-        # 0.0 — the true tail is bounded below by ~1/B, not 0.
-        p_value = (ge_count + 1) / (PAIRED_BOOTSTRAP_DRAWS + 1)
-        uncentered_means.sort()
-        return {
-            "p_value": p_value,
-            "ci_low": self._percentile(uncentered_means, 2.5),
-            "ci_high": self._percentile(uncentered_means, 97.5),
-        }
+        return _scoring._paired_bootstrap(self, deltas=deltas, mean_delta=mean_delta)
 
     @staticmethod
     def _percentile(sorted_values: list[float], pct: float) -> float:
-        """Linear-interpolated percentile over an ascending list (pct in 0..100)."""
-
-        if not sorted_values:
-            raise ValueError("percentile of empty sequence")
-        if len(sorted_values) == 1:
-            return sorted_values[0]
-        rank = (pct / 100.0) * (len(sorted_values) - 1)
-        low = math.floor(rank)
-        high = math.ceil(rank)
-        if low == high:
-            return sorted_values[low]
-        frac = rank - low
-        return sorted_values[low] + (sorted_values[high] - sorted_values[low]) * frac
+        return _scoring._percentile(sorted_values=sorted_values, pct=pct)
 
     def _win_rate_vs_best(
         self,
@@ -12090,30 +9492,7 @@ class ForecastLedger:
         return _reviews._review_priority(self, reasons=reasons)
 
     def _recommended_action(self, reason: str) -> str:
-        if reason.startswith("assumption_invalidated:"):
-            return "Update the forecast or replace the invalidated assumption."
-        if reason.startswith("assumption_stale:") or reason.startswith("assumption_check_due:"):
-            return "Re-check the assumption and record fresh evidence or mark it resolved/invalidated."
-        if reason.startswith("reference_class_invalidated:"):
-            return "Replace the reference class or rerun the base-rate estimate before updating probability."
-        if reason.startswith("reference_class_stale:") or reason.startswith("reference_class_check_due:"):
-            return "Refresh the reference class and base-rate evidence."
-        if reason == "no_evidence":
-            return "Run `forecast research` or add evidence before trusting the current probability."
-        if reason.startswith("new_evidence:"):
-            return "Review the new evidence and append a forecast update if it changes the probability."
-        if reason.startswith("evidence_stale_"):
-            return "Refresh evidence and decide whether a new forecast snapshot is warranted."
-        if reason.startswith("large_forecast_delta:"):
-            return "Review the large probability move; record what changed and whether assumptions or calibration lessons need updates."
-        if reason.startswith("close_time_within_"):
-            return "Review evidence and prepare for close/resolution before the question closes."
-        return {
-            "no_forecast_snapshot": "Run `forecast update` to create an explicit probability.",
-            "review_due": "Run a research pass or update the forecast rationale.",
-            "close_time_passed": "Check whether the question should be closed or resolved.",
-            "resolution_check_due": "Confirm resolution criteria and score if resolved.",
-        }.get(reason, "Review the forecast and decide whether a new snapshot is warranted.")
+        return _alerts._recommended_action(self, reason=reason)
 
     def _auto_postmortem_lesson(self, question: ForecastQuestion, score: ScoreRecord) -> str:
         if not score.calibration_eligible or score.forecast_origin not in {"live", "backtest"}:
@@ -12170,19 +9549,7 @@ class ForecastLedger:
         return tags
 
     def _question_in_portfolio(self, question: ForecastQuestion, portfolio: str) -> bool:
-        portfolio = portfolio.strip()
-        if not portfolio:
-            return True
-        expected_tags = {portfolio, f"portfolio:{portfolio}", f"portfolio={portfolio}"}
-        if any(tag in expected_tags for tag in question.tags):
-            return True
-        metadata_portfolio = question.metadata.get("portfolio")
-        if isinstance(metadata_portfolio, str) and metadata_portfolio == portfolio:
-            return True
-        metadata_portfolios = question.metadata.get("portfolios")
-        if isinstance(metadata_portfolios, list) and portfolio in metadata_portfolios:
-            return True
-        return False
+        return _alerts._question_in_portfolio(self, question=question, portfolio=portfolio)
 
     def _question_matches_confidence(
         self,
@@ -12191,16 +9558,7 @@ class ForecastLedger:
         confidence_below: float | None,
         confidence_above: float | None,
     ) -> bool:
-        if confidence_below is None and confidence_above is None:
-            return True
-        snapshot = self.get_current_snapshot(question_id)
-        if snapshot is None or snapshot.confidence is None:
-            return False
-        if confidence_below is not None and snapshot.confidence >= confidence_below:
-            return False
-        if confidence_above is not None and snapshot.confidence <= confidence_above:
-            return False
-        return True
+        return _alerts._question_matches_confidence(self, question_id=question_id, confidence_below=confidence_below, confidence_above=confidence_above)
 
     @staticmethod
     def _validate_confidence_filters(
@@ -12243,36 +9601,7 @@ class ForecastLedger:
         score: ScoreRecord,
         scored_snapshot: ForecastSnapshot,
     ) -> float | None:
-        """Return final-minus-initial probability movement for the scored forecast path."""
-
-        try:
-            question = self.get_question(score.question_id)
-        except LedgerNotFoundError:
-            return None
-        scored_as_of = timestamp_to_datetime(scored_snapshot.as_of)
-        close_time = timestamp_to_datetime(question.close_time) if question.close_time else None
-        cutoff = close_time or scored_as_of
-        numeric_snapshots: list[ForecastSnapshot] = []
-        for snapshot in self.list_snapshots(score.question_id):
-            if snapshot.forecast_origin != scored_snapshot.forecast_origin:
-                continue
-            if snapshot.backtest_run_id != scored_snapshot.backtest_run_id:
-                continue
-            snapshot_as_of = timestamp_to_datetime(snapshot.as_of)
-            if cutoff and snapshot_as_of and snapshot_as_of > cutoff:
-                continue
-            if scored_as_of and snapshot_as_of and snapshot_as_of > scored_as_of:
-                continue
-            if self._numeric_probability(snapshot.probability_or_distribution) is None:
-                continue
-            numeric_snapshots.append(snapshot)
-        if len(numeric_snapshots) < 2:
-            return None
-        first = self._numeric_probability(numeric_snapshots[0].probability_or_distribution)
-        last = self._numeric_probability(numeric_snapshots[-1].probability_or_distribution)
-        if first is None or last is None:
-            return None
-        return last - first
+        return _scoring._score_probability_movement_before_close(self, score=score, scored_snapshot=scored_snapshot)
 
     @staticmethod
     def _numeric_probability(payload: Any) -> float | None:
@@ -12283,31 +9612,7 @@ class ForecastLedger:
         return None
 
     def _snapshot_component_contributions(self, snapshot: ForecastSnapshot) -> list[dict[str, Any]]:
-        forecast_probability = self._numeric_probability(snapshot.probability_or_distribution)
-        rows = self._ensemble_component_rows(snapshot.ensemble_components)
-        total_weight = sum(row["weight"] for row in rows)
-        if total_weight <= 0:
-            return []
-        contributions: list[dict[str, Any]] = []
-        for row in rows:
-            weight_share = row["weight"] / total_weight
-            contribution = row["probability"] * weight_share
-            distance = (
-                row["probability"] - forecast_probability
-                if forecast_probability is not None
-                else None
-            )
-            contributions.append(
-                {
-                    "name": row["name"],
-                    "probability": row["probability"],
-                    "weight": row["weight"],
-                    "weight_share": weight_share,
-                    "contribution": contribution,
-                    "distance_from_forecast": distance,
-                }
-            )
-        return contributions
+        return _scoring._snapshot_component_contributions(self, snapshot=snapshot)
 
     def _ensemble_component_rows(self, components: dict[str, Any]) -> list[dict[str, Any]]:
         raw_rows: list[Any]
@@ -12339,7 +9644,7 @@ class ForecastLedger:
 
     @staticmethod
     def _is_high_impact_question(question: ForecastQuestion) -> bool:
-        return (question.impact or "").strip().lower() in {"high", "critical", "material"}
+        return _alerts._is_high_impact_question(question=question)
 
     def _domain_error_profile_alerts(
         self,
@@ -12348,91 +9653,21 @@ class ForecastLedger:
         topic: str | None,
         questions: list[ForecastQuestion],
     ) -> list[AlertEvent]:
-        profile_filters: set[tuple[str | None, str | None]] = set()
-        if domain or topic:
-            profile_filters.add((domain, topic))
-        for question in questions:
-            if question.domain:
-                profile_filters.add((question.domain, None))
-                for question_topic in question.topics:
-                    profile_filters.add((question.domain, question_topic))
-        alerts: list[AlertEvent] = []
-        seen_profiles: set[str] = set()
-        for profile_domain, profile_topic in profile_filters:
-            for profile in self.list_domain_error_profiles(domain=profile_domain, topic=profile_topic):
-                if profile["id"] in seen_profiles:
-                    continue
-                if not profile["recurring_errors"] and not profile["recommended_adjustments"]:
-                    continue
-                seen_profiles.add(profile["id"])
-                matching_questions = self._active_questions_for_error_profile(profile, questions)
-                matching_ids = [question.id for question in matching_questions[:5]]
-                matching_summary = (
-                    f" Active matching forecasts: {', '.join(matching_ids)}."
-                    if matching_ids
-                    else ""
-                )
-                alerts.append(
-                    self.create_alert(
-                        severity="info",
-                        scope_type="domain_error_profile",
-                        scope_ref=profile["id"],
-                        reason="domain_error_profile_review",
-                        recommended_action=(
-                            "Review active forecasts in this scope against recurring errors: "
-                            + ", ".join(profile["recurring_errors"] or profile["recommended_adjustments"])
-                            + "."
-                            + matching_summary
-                        ),
-                    )
-                )
-                for question in matching_questions:
-                    alerts.append(
-                        self.create_alert(
-                            severity="warning",
-                            scope_type="question",
-                            scope_ref=question.id,
-                            reason=f"domain_error_profile_applies:{profile['id']}",
-                            recommended_action=self._error_profile_question_action(profile, question),
-                        )
-                    )
-        return alerts
+        return _alerts._domain_error_profile_alerts(self, domain=domain, topic=topic, questions=questions)
 
     def _active_questions_for_error_profile(
         self,
         profile: dict[str, Any],
         questions: list[ForecastQuestion],
     ) -> list[ForecastQuestion]:
-        profile_domain = profile.get("domain")
-        profile_topic = profile.get("topic")
-        profile_question_type = profile.get("question_type")
-        result: list[ForecastQuestion] = []
-        seen: set[str] = set()
-        for question in questions:
-            if question.id in seen or question.status != "active":
-                continue
-            if profile_domain and question.domain != profile_domain:
-                continue
-            if profile_topic and profile_topic not in question.topics:
-                continue
-            if profile_question_type and question.outcome_space.type != profile_question_type:
-                continue
-            result.append(question)
-            seen.add(question.id)
-        return result
+        return _alerts._active_questions_for_error_profile(self, profile=profile, questions=questions)
 
     def _error_profile_question_action(
         self,
         profile: dict[str, Any],
         question: ForecastQuestion,
     ) -> str:
-        recurring = list(profile.get("recurring_errors") or profile.get("recommended_adjustments") or [])
-        patterns = ", ".join(str(item) for item in recurring[:4]) or "recent misses"
-        return (
-            "Review this active forecast against learned error patterns "
-            f"({patterns}). Inspect `forecast show {question.id}`, refresh evidence, "
-            "and save any probability change explicitly with `forecast update`."
-        )
+        return _alerts._error_profile_question_action(self, profile=profile, question=question)
 
     def _calibration_lesson_review_alerts(
         self,
@@ -12441,94 +9676,10 @@ class ForecastLedger:
         topic: str | None,
         questions: list[ForecastQuestion],
     ) -> list[AlertEvent]:
-        candidates: dict[str, dict[str, Any]] = {}
-
-        def add_lesson(lesson: dict[str, Any]) -> None:
-            if lesson.get("status") != "tentative":
-                return
-            if lesson.get("invalidated_by_correction_id"):
-                return
-            candidates[lesson["id"]] = lesson
-
-        if domain:
-            for lesson in self.list_calibration_lessons(scope_type="domain", scope_ref=domain):
-                add_lesson(lesson)
-        if topic:
-            for lesson in self.list_calibration_lessons(scope_type="topic", scope_ref=topic):
-                add_lesson(lesson)
-
-        all_scores = self.list_scores()
-        for question in questions:
-            if question.domain:
-                for lesson in self.list_calibration_lessons(scope_type="domain", scope_ref=question.domain):
-                    add_lesson(lesson)
-            for question_topic in question.topics:
-                for lesson in self.list_calibration_lessons(scope_type="topic", scope_ref=question_topic):
-                    add_lesson(lesson)
-            question_scores = [score for score in all_scores if score.question_id == question.id]
-            postmortems = self.list_postmortems(question.id)
-            for lesson in self._calibration_lessons_for_question(question_scores, postmortems):
-                add_lesson(lesson)
-
-        if not any([domain, topic, questions]):
-            for lesson in self.list_calibration_lessons(scope_type="global", scope_ref=None):
-                add_lesson(lesson)
-
-        alerts: list[AlertEvent] = []
-        for lesson in sorted(candidates.values(), key=lambda item: item["updated_at"], reverse=True):
-            alerts.append(
-                self.create_alert(
-                    severity="info",
-                    scope_type="calibration_lesson",
-                    scope_ref=lesson["id"],
-                    reason="calibration_lesson_review",
-                    recommended_action=(
-                        f"Review tentative lesson {lesson['id']} with `forecast lesson status {lesson['id']} "
-                        "--status active` or reject/supersede it before relying on it for future updates."
-                    ),
-                )
-            )
-        return alerts
+        return _alerts._calibration_lesson_review_alerts(self, domain=domain, topic=topic, questions=questions)
 
     def _benchmark_evidence_alerts(self) -> list[AlertEvent]:
-        from forecasting.backtesting import (
-            build_backtest_performance_summaries,
-            build_forecasting_evidence_status,
-        )
-
-        rows = self.list_backtest_runs()[:20]
-        status = build_forecasting_evidence_status(
-            self,
-            build_backtest_performance_summaries(self, rows),
-        )
-        gaps = list(status.get("gaps") or [])
-        if not gaps:
-            return []
-        command_hints = [
-            commands[0]
-            for action in list(status.get("next_actions") or [])[:3]
-            if (commands := list(action.get("commands") or []))
-        ]
-        command_hint = (
-            f" Suggested commands: {'; '.join(command_hints)}."
-            if command_hints
-            else ""
-        )
-        return [
-            self.create_alert(
-                severity="warning",
-                scope_type="global",
-                scope_ref="benchmark_evidence",
-                reason="benchmark_evidence_gaps",
-                recommended_action=(
-                    "Run `forecast performance --json` and close evidence gaps: "
-                    f"{', '.join(gaps[:5])}. Collect live scored forecasts and "
-                    "agent-protocol held-out runs, and include external resolved-question "
-                    "corpora from at least two source families before claiming live "
-                    f"superiority.{command_hint}"
-                ),
-            )
-        ]
+        return _alerts._benchmark_evidence_alerts(self)
 
     def _advance_cadence(
         self, now_ts: str, cadence: str, *, deadlines: list[str | None] | None = None
@@ -12583,48 +9734,10 @@ class ForecastLedger:
         )
 
     def _row_to_score(self, row: sqlite3.Row) -> ScoreRecord:
-        return ScoreRecord(
-            id=row["id"],
-            question_id=row["question_id"],
-            forecast_id=row["forecast_id"],
-            resolution_id=row["resolution_id"],
-            scored_at=row["scored_at"],
-            brier_score=row["brier_score"],
-            log_score=row["log_score"],
-            proper_score=row["proper_score"],
-            score_rule=row["score_rule"],
-            calibration_bucket=row["calibration_bucket"],
-            forecast_horizon_days=row["forecast_horizon_days"],
-            domain=row["domain"],
-            forecast_origin=row["forecast_origin"],
-            calibration_eligible=bool(row["calibration_eligible"]),
-            calibration_weight=row["calibration_weight"],
-            baseline_ref=row["baseline_ref"],
-            invalidated_by_correction_id=row["invalidated_by_correction_id"],
-            notes=row["notes"],
-        )
+        return _scoring._row_to_score(self, row=row)
 
     def _row_to_alert(self, row: sqlite3.Row) -> AlertEvent:
-        keys = set(row.keys())
-        ttl = row["dismiss_ttl_days"] if "dismiss_ttl_days" in keys else None
-        attempts = row["attempt_count"] if "attempt_count" in keys else 0
-        return AlertEvent(
-            id=row["id"],
-            created_at=row["created_at"],
-            severity=row["severity"],
-            scope_type=row["scope_type"],
-            scope_ref=row["scope_ref"],
-            reason=row["reason"],
-            recommended_action=row["recommended_action"],
-            acknowledged_at=row["acknowledged_at"],
-            dismissed_at=row["dismissed_at"] if "dismissed_at" in keys else None,
-            dismiss_note=row["dismiss_note"] if "dismiss_note" in keys else None,
-            dismiss_actor=row["dismiss_actor"] if "dismiss_actor" in keys else None,
-            dismiss_reason=row["dismiss_reason"] if "dismiss_reason" in keys else None,
-            dismiss_ttl_days=int(ttl) if ttl is not None else None,
-            last_attempted_at=row["last_attempted_at"] if "last_attempted_at" in keys else None,
-            attempt_count=int(attempts) if attempts is not None else 0,
-        )
+        return _alerts._row_to_alert(self, row=row)
 
     def _row_to_scheduled_review_run(self, row: sqlite3.Row) -> dict[str, Any]:
         return _reviews._row_to_scheduled_review_run(self, row=row)
@@ -14476,4 +11589,4 @@ class ForecastLedger:
         return resolution.__dict__.copy()
 
     def _score_to_dict(self, score: ScoreRecord) -> dict[str, Any]:
-        return score.__dict__.copy()
+        return _scoring._score_to_dict(self, score=score)

@@ -19,6 +19,12 @@ Carve order (see the delivery plan's Arc D):
   readers/serializers + annotate.
 * ``panels``    — D5: panel-run lifecycle + serializers + track-record weighting.
 * ``reviews``   — D6: scheduled reviews + cadence resolution + the review sweep.
+* ``alerts``    — D7: the doctor ``self_check`` engine + ``alert_events`` CRUD/
+  lifecycle + saturation/producer/reconcile glue.
+* ``theses``    — D8: thesis/factor member+entity CRUD + the aggregation engine +
+  narratives + the re-aggregate cascade.
+* ``scoring``   — D9: resolution scoring + Brier/calibration display + the paired-
+  bootstrap edge test + lesson-application auditing.
 
 The façade guarantees ``no caller changed``: `ForecastLedger` stays THE public
 class; each carved method keeps a one-line delegate on the class, so external
@@ -40,6 +46,9 @@ from forecasting.ledger import evidence as _evidence  # noqa: F401  (submodule h
 from forecasting.ledger import snapshots as _snapshots  # noqa: F401  (submodule handle)
 from forecasting.ledger import panels as _panels  # noqa: F401  (submodule handle)
 from forecasting.ledger import reviews as _reviews  # noqa: F401  (submodule handle)
+from forecasting.ledger import alerts as _alerts  # noqa: F401  (submodule handle)
+from forecasting.ledger import theses as _theses  # noqa: F401  (submodule handle)
+from forecasting.ledger import scoring as _scoring  # noqa: F401  (submodule handle)
 from forecasting.ledger.core import *  # noqa: F401,F403  (re-export public surface)
 
 # ``core`` re-exports the watch constants it still uses (ROLES/TYPES); re-export
@@ -56,6 +65,20 @@ from forecasting.ledger.watches import (  # noqa: F401  (re-export, surface pari
 # ``forecasting.ledger.SCHEDULE_SCOPE_TYPES`` — which the pre-carve module exposed —
 # keeps resolving even though ``core`` no longer defines it (mirrors WATCH_SCOPE_TYPES).
 from forecasting.ledger.reviews import SCHEDULE_SCOPE_TYPES  # noqa: F401  (surface parity)
+
+# ``THESIS_MEMBER_ROLES`` moved to the ``theses`` leaf (D8). Re-export it here so
+# ``forecasting.ledger.THESIS_MEMBER_ROLES`` — which the pre-carve module exposed —
+# keeps resolving even though ``core`` no longer defines it (mirrors WATCH_SCOPE_TYPES).
+from forecasting.ledger.theses import THESIS_MEMBER_ROLES  # noqa: F401  (surface parity)
+
+# The paired-bootstrap constants moved to the ``scoring`` leaf (D9). Re-export them
+# here so ``forecasting.ledger.PAIRED_BOOTSTRAP_SEED`` / ``…_DRAWS`` — which the
+# pre-carve module exposed (tests import them) — keep resolving even though ``core``
+# no longer defines them (mirrors WATCH_SCOPE_TYPES / THESIS_MEMBER_ROLES).
+from forecasting.ledger.scoring import (  # noqa: F401  (surface parity)
+    PAIRED_BOOTSTRAP_DRAWS,
+    PAIRED_BOOTSTRAP_SEED,
+)
 
 
 # ---------------------------------------------------------------------------

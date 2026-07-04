@@ -633,6 +633,178 @@ Coupling patterns discovered (advice for D7-alerts / D8-theses / D9-scoring):
   `ForecastLedger` (test_review_sweeper's `_FakeLedger`), already handled by the D1
   façade and orthogonal to the carve.
 
+### D7 findings (alerts carve — SHIPPED)
+`core` 14,479 → 13,689; new `alerts` 1,015 (891 moved method lines + 2 leaf-owned
+constants). 23 methods = 23 one-line delegates. Moved: the `alert_events` CRUD +
+lifecycle (`create/get/list_alerts`, `acknowledge_alert`, `record_alert_attempt`
+backoff, `dismiss_alerts` + `active_dismissal_keys` TTL window, `_row_to_alert`),
+the fold/dedupe/recenter reconciler (`reconcile_alerts`), the under-saturation
+cluster (`enqueue_saturation_alert`/`sweep_saturation_alerts`/`_has_open_alert`),
+the DOCTOR engine `self_check` (returns `list[AlertEvent]`) + its exclusive
+helpers (`_question_in_portfolio`/`_question_matches_confidence`/
+`_is_high_impact_question`/`_recommended_action`), and the alert PRODUCERS earlier
+slices deferred (`_domain_error_profile_alerts` + `_active_questions_for_error_profile`
+/`_error_profile_question_action`, `_calibration_lesson_review_alerts`,
+`_benchmark_evidence_alerts` [D3], `_is_learning_alert_reason` [D6, a
+`@staticmethod`]). Gates met: full `tests/forecasting` 2,319 pass before AND after;
+`--collect-only` 0 import errors (28,618 collected); import-time held 0.085s; ruff
+(PLW1514+F821) clean; core diff = 23 delegate returns + a 4-line import block,
+**0 unexpected added lines** by difflib (817 removed).
+- **`self_check` IS the alerts domain — a public engine, not a helper.** It returns
+  `list[AlertEvent]` and its whole purpose is to detect problems and emit alerts, so
+  it moved despite reading across calibration/benchmark/evidence — those are
+  instance-reached (`ledger.review_questions` → reviews leaf, `ledger.get_question`,
+  the shared validators). The D4 "judge by what it IS" rule at orchestrator scale.
+- **The closure trap: intra-core `self.X` callers ≠ all callers.** A helper the
+  intra-class analysis calls "exclusive to self_check" can still have EXTERNAL /
+  other-leaf callers (via `ledger.X`) that force it to STAY. Every "exclusive"
+  candidate was re-checked repo-wide: `_self_check_watch_scope` is ALREADY a D1
+  watches DELEGATE (stays, double-delegate avoided); `review_questions`/
+  `snapshots_by_question` are reviews/snapshots delegates; `_validate_*` are shared
+  validators (reviews uses them); `_auto_postmortem_*` have a cron_runner caller
+  (D9's concern); `check_watched_sources`/`create_postmortem`/`list_backtest_runs`
+  are public. Only `_self_check_watch_scope` (dropped — it's watches') and the two
+  genuinely-private question filters moved. **Rule: run the repo-wide + other-leaf
+  grep on EVERY closure-"exclusive" candidate before pulling it.**
+- **Decoy-both-ways on sub-helpers.** `_domain_error_profile_alerts`'s formatters
+  (`_active_questions_for_error_profile`/`_error_profile_question_action`) are
+  alert-exclusive → MOVE; but `_calibration_lessons_for_question` (also `@export_question`)
+  and `list_domain_error_profiles` (public) are D9/shared reads → STAY. Judge each
+  sub-helper by caller-exclusivity, not by the parent's domain.
+- **Two leaf-exclusive `self.`-consts → leaf module scope** (`_SATURATION_ALERT_REASON`,
+  `DISMISS_TTL_DAYS_DEFAULT`): both private, no external reader, all users moved —
+  so post-`self`→`ledger` a targeted `ledger._X`→bare-`_X` rewrite (the D3 rule).
+  Clean leaf: ZERO `_core.` hops, no write-gate import (`alert_events` is ungated).
+- Monkeypatch grep (D2/D3 mandate) EMPTY for every re-imported name; façade untouched.
+
+### D8 findings (theses carve — SHIPPED, the module-level one)
+`core` 13,689 → 12,622; new `theses` 1,330. Moved **1,181 lines** (978 in 28
+`ForecastLedger` methods = 28 delegates + 203 in **6 module-level narrative
+functions** moved OUTRIGHT with no delegate) + 3 relocated module-level names — the
+FULL thesis domain fit under the ~1,200 cap. Moved: member CRUD + belief helpers,
+entity CRUD + weighting (`_compute_thesis_entities`), correlation/event glue +
+`_thesis_event_seed`, the aggregation engine (`aggregate_thesis` with its
+Gaussian-copula event-MC through `forecasting.thesis`, `_aggregate_factor`,
+`aggregate_all_theses`, `is_thesis`/`is_factor`), the re-aggregate cascade
+(`_cascade_reaggregate_parents`/`_thesis_auto_aggregate_enabled`), and the
+module-level narratives (`_thesis_narrative`/`_factor_narrative`/`_thesis_reason_lines`
+/`_thesis_member_label`/`_entity_stance`/`_thesis_entity_triggers`). Gates met: full
+`tests/forecasting` 2,319 pass before AND after; `--collect-only` 0 import errors;
+import-time held 0.082s; ruff clean; core diff = 28 delegate returns + a 4-line
+import block, **0 unexpected added lines** by difflib (1,099 removed).
+- **First carve to move MODULE-LEVEL code (a new pattern beyond D4's single deleted
+  fn).** The 6 thesis narratives are module functions the moved methods call by BARE
+  name (`_thesis_narrative(...)`); leaving them in core would `NameError` the leaf.
+  They're thesis-exclusive (every caller is a moving method) and private, so they
+  move OUTRIGHT — no delegate, deleted from core, bare calls resolve intra-leaf.
+- **`_cascade_reaggregate_parents` gate handling (D4's flagged worry): NO new gate
+  code.** It opens no write context itself — it runs INSIDE `create_snapshot`'s active
+  commit (the gate leaf's contextvar is already set) and re-enters via
+  `ledger.aggregate_thesis`→`ledger.create_snapshot`, which owns the gate. The leaf
+  needs NO write-gate import (thesis tables are ungated). Its only module deps are the
+  leaf-owned `_CASCADE_TLS` thread-local (cascade-exclusive → moved to leaf scope) +
+  `logger`/`os`.
+- **Three module-level names relocate by the D6 partial-init rule.** `_CASCADE_TLS`
+  and `_THESIS_DEAD_STATUS` (used by the moved narratives + `_compute_thesis_entities`)
+  are leaf-exclusive → leaf scope, no re-export. `THESIS_MEMBER_ROLES` is on the
+  package surface (a test imports it) → leaf scope + explicit `__init__` re-export
+  (mirrors WATCH_SCOPE_TYPES/SCHEDULE_SCOPE_TYPES).
+- **Decoy vigilance held:** `add_analyst_note` (closure-"exclusive" to two thesis
+  methods) is a public shared method → STAYS, instance-reached; `_coerce_distribution_number`
+  (a module fn near the narratives) is used by a non-thesis method → STAYS. Clean
+  leaf: no `_core.` hop, no gate. `forecasting.thesis` (the pure math) is imported
+  LOCALLY inside the methods, so it travels with them.
+- Monkeypatch grep EMPTY; façade untouched.
+
+### D9 findings (scoring carve — SHIPPED, the final ledger carve)
+`core` 12,622 → 11,592; new `scoring` 1,318 (1,175 moved method lines + 2 leaf-owned
+constants). 33 methods = 33 delegates (1 `@staticmethod`, `_percentile`). Moved: the
+score compute + readers + serializers, the Brier/distribution helpers + the seeded
+paired-bootstrap edge test (`_paired_brier_summary`/`_paired_bootstrap`/`_percentile`),
+calibration display (`calibration_summary` + `_snapshot_component_contributions`
+[D4's decoy], `_calibration_trend`, `operator_calibration_summary` + its
+`_operator_vs_system`/`_operator_binary_observed`, `calibration_bias`/`_bias_observations`),
+and the two lesson-APPLICATION auditors D4 left (`_audit_unapplied_lessons`/
+`_record_lesson_applications`). Gates met: full `tests/forecasting` 2,319 pass before
+AND after; `--collect-only` 0 import errors; import-time held 0.083s; ruff clean; core
+diff = 33 delegate returns + a 4-line import block, **0 unexpected added lines** by
+difflib (1,067 removed).
+- **A FOCUSED carve of a huge adjacent surface — split honestly.** The full
+  scoring/learning surface (resolutions, corrections, postmortems, error-profiles,
+  calibration-lesson CRUD, `synthesize_bias_lessons`, baseline/backtest/model scoring)
+  is far over the cap. D9 took ONLY the cohesive cluster the task named — scoring +
+  calibration-DISPLAY + brier + lesson-APPLICATION — at 1,175 lines; the rest stays for
+  future "resolutions"/"corrections"/"learning" slices, reached via `ledger.`.
+- **The shared numeric/scoring substrate STAYS in core (D1's rule).** `_score_forecast_payload`
+  (shared with panels' track-record, D5/D6), `_binary_outcome_value` (external
+  market_ensemble/search_ablation callers), `_horizon_matches` (reviews+alerts leaves),
+  and the numeric primitives `_mean`/`_numeric_probability`/`_numeric_outcome`/
+  `_sharpness` are all instance-reached — moving any would strand a cross-domain dep.
+- **One `_core.` hop, chosen by constant-sharing.** `BRIER_COIN_FLIP_FLOOR` is read
+  by the STAYED `rescore_backtest_run` AND on the package surface → STAYS in core,
+  reached as `_core.BRIER_COIN_FLIP_FLOOR` (D4's `_core.FORECASTING_PROTOCOL_VERSION`
+  pattern, a token-rewrite in the one moved body). `PAIRED_BOOTSTRAP_SEED`/`_DRAWS` are
+  leaf-exclusive-in-core but package-surface (tests import them) → leaf scope + `__init__`
+  re-export. No write-gate import (`scores` is ungated).
+- **F821 caught a real leaf import gap:** `dismiss_alerts`' string annotation
+  `"Iterable[str]"` needs `from typing import ... Iterable` in the leaf even though
+  `from __future__ import annotations` never evaluates it — the ruff F821 gate (D5)
+  is what surfaces a missing annotation import in a carved leaf. (Fixed in D7's alerts.py.)
+- Monkeypatch grep EMPTY; façade untouched.
+
+### ARC D COMPLETION (D1–D9 SHIPPED — the megafile is carved)
+`forecasting/ledger.py` (18,562-line single module at Arc-D start) is now the
+package `forecasting/ledger/` with **`core.py` at 11,592 lines** (from 17,699
+post-D1) behind an UNCHANGED `ForecastLedger` façade + the D1 monkeypatch-forwarding
+package. Nine domain leaves + the write-gate leaf now carry ~7k lines out of core:
+`gate` · `watches` (D1) · `questions` (D2) · `evidence` (D3) · `snapshots` (D4) ·
+`panels` (D5) · `reviews` (D6) · `alerts` (D7, 1,015) · `theses` (D8, 1,330) ·
+`scoring` (D9, 1,318). Every slice shipped alone with full `tests/forecasting`
+green before AND after, `--collect-only` 0 import errors, import-time held at the
+~0.083s asset, and **0 unexpected added lines** by difflib on every core diff.
+
+The findings ledger, distilled to the reusable rules the remaining slices inherit:
+1. **Façade + monkeypatch-forwarding package (D1)** makes every carve caller-invisible;
+   no test/caller ever changed. Re-run the package-level-patch grep per domain (it has
+   come back EMPTY every slice since D1).
+2. **AST `end_lineno` extents + tokenize `self`→`ledger` NAME-pass** (never a regex —
+   the D1 string-literal trap); decorator-aware carve for `@staticmethod` (D4), building
+   the delegate range from `min(node.lineno, decorators[0].lineno)`.
+3. **Membership = caller-exclusivity + "is it that domain," NEVER adjacency (D2/D4).**
+   The sharpest failures are decoys (`_snapshot_component_contributions`, `model_skill`,
+   `add_analyst_note`) and closure-"exclusive" helpers that actually have external /
+   other-leaf callers or are ALREADY delegates (D7's `_self_check_watch_scope`) — run
+   the repo-wide grep on every candidate.
+4. **Constants: leaf-exclusive `self.`-const → leaf module scope; shared `self.`-const →
+   stays a core class attr (D5); module-level const → leaf scope + `__init__` re-export
+   if on the package surface (D6/D8/D9), else outright.** Shared-with-stayed → `_core.`
+   call-time hop (D4/D9).
+5. **The gate leaf paid off (D4+):** every gated write imports it directly. But most
+   domains are UNGATED (evidence, panels, reviews, alerts, theses, scoring) — check
+   before importing it.
+6. **Verify mechanically, every slice:** full suite before/after + `--collect-only` +
+   import-time + a difflib categorizer that asserts every ADDED core line is a delegate
+   return or the import block (0 unexpected) + ruff PLW1514/F821.
+
+**Advice for the remaining slices (tool-registry + cli-assembler — NOT ledger carves):**
+- `core.py` is 11,592 lines, still far from the plan's "< 2k" aspiration: the SCORING-
+  ADJACENT domains D9 deliberately left (resolutions, corrections, postmortems,
+  error-profiles, calibration-lesson CRUD, baseline/backtest/model scoring, autopilot,
+  market-models, ingest, forecast-links, reference-classes, assumptions, cruxes,
+  desk-state, analyst-notes) are the obvious future ledger leaves — each is a cohesive
+  caller-exclusive cluster reachable today via `ledger.`, and the shared substrate
+  (`_connect`, `_chunk_ids`, `_ensure_column`, the numeric primitives,
+  `_score_forecast_payload`, migrations, `initialize_schema`) is the permanent core
+  that STAYS. The carve tooling (AST extent + tokenize rename + difflib gate) ports
+  verbatim.
+- **The tool-registry slice** (`tools/forecast_actions/` — one module per domain
+  registering into a dispatch dict) and **the cli-assembler slice** (`forecasting/cli/`
+  subcommand modules composed at import) are the ANALOGUE of this carve one layer out:
+  same façade discipline (external tool name / CLI subcommand byte-for-byte unchanged),
+  same "0 unexpected added lines" difflib gate, same import-time budget. The ledger's
+  9 domain leaves are the natural seam — one tool-action module + one CLI module per
+  ledger domain keeps the dispatcher/assembler thin and the boundaries already proven.
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)
