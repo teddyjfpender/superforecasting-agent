@@ -299,6 +299,21 @@ uv pip install -e ".[all,dev]"
 scripts/run_tests.sh
 ```
 
+### Gateway wire protocol (generated TypeScript)
+
+Every RPC and event crossing the gateway wire is defined once in the `protocol/`
+Python package (pydantic models). The TUI's TypeScript wire types in
+`ui-tui/src/protocol/generated.ts` are GENERATED from it — never edit that file
+by hand. After changing a model, regenerate and commit:
+
+```bash
+python -m protocol.codegen            # rewrite ui-tui/src/protocol/generated.ts
+scripts/check-protocol.sh             # staleness gate (CI runs this): fails if stale
+```
+
+The gate (`python -m protocol.codegen --check`) runs in CI so a stale
+`generated.ts` becomes an unmissable build error instead of a runtime mystery.
+
 ---
 
 ## Community

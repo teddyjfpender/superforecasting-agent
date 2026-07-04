@@ -5,6 +5,17 @@
 // is a pure consumer: the Python service is the one source of truth, so this
 // module only fetches, normalises light-touch, and formats for display.
 
+import type {
+  PMEventDTO,
+  PMHistoryPointDTO,
+  PMListItem,
+  PMMarketDTO,
+  PMOrderBookDTO,
+  PMOrderLevelDTO,
+  PMStreamStart,
+  PMTickPayload
+} from '../protocol/generated.js'
+
 import { asRpcResult } from './rpc.js'
 
 // A gateway that can `request()`. Kept structural so tests can pass a fake.
@@ -14,104 +25,25 @@ export interface PmGateway {
 
 export type PMVenue = 'kalshi' | 'polymarket'
 
-// ── wire shapes (mirror forecasting/pm/model.py to_dict) ────────────────────
-
-export interface PMOutcomeDTO {
-  label: string
-  liquid: boolean
-  market_id: string
-  prob: number // de-vigged, sums to ~1 across a mutually-exclusive event
-  raw_prob: number // pre-devig YES mid (honest raw-vs-devig labelling)
-  volume: null | number
-  yes_ask: null | number
-  yes_bid: null | number
-}
-
-export interface PMDistributionHeadline {
-  close_time: null | string
-  n: number
-  top_label: null | string
-  top_prob: null | number
-  total_volume: null | number
-}
-
-export interface PMDistributionDTO {
-  binary: boolean
-  close_time: null | string
-  event_id: string
-  headline: PMDistributionHeadline
-  // True iff the probs were de-vig normalised (an earned, guaranteed partition).
-  // When false the outcomes carry RAW mids that do NOT sum to 1 — the detail
-  // pane must say so instead of claiming de-vig.
-  normalized: boolean
-  notes: string[]
-  outcomes: PMOutcomeDTO[]
-  overround: number
-  title: string
-  total_volume: number
-  url: null | string
-  venue: string
-}
-
-export interface PMMarketDTO {
-  close_time: null | string
-  event_id: null | string
-  label: string
-  last_price: null | number
-  market_id: string
-  open_interest: null | number
-  question: string
-  status: null | string
-  token_ids: string[]
-  url: null | string
-  venue: string
-  volume: null | number
-  yes_ask: null | number
-  yes_bid: null | number
-  yes_mid: null | number
-}
-
-export interface PMEventDTO {
-  category: null | string
-  close_time: null | string
-  event_id: string
-  is_binary: boolean
-  markets: PMMarketDTO[]
-  mutually_exclusive: boolean
-  slug: null | string
-  title: string
-  url: null | string
-  venue: string
-  volume: null | number
-}
-
-export interface PMOrderLevelDTO {
-  price: number
-  size: number
-}
-
-export interface PMOrderBookDTO {
-  asks: PMOrderLevelDTO[]
-  best_ask: null | number
-  best_bid: null | number
-  bids: PMOrderLevelDTO[]
-  market_id: string
-  mid: null | number
-  tick_size: null | number
-  timestamp: null | number
-  venue: string
-}
-
-export interface PMHistoryPointDTO {
-  p: number
-  ts: number
-}
-
-// A list item pairs the raw event with its de-vigged distribution.
-export interface PMListItem {
-  distribution: PMDistributionDTO
-  event: PMEventDTO
-}
+// ── wire shapes ─────────────────────────────────────────────────────────────
+// GENERATED from the `protocol/` pydantic models (`python -m protocol.codegen`),
+// which mirror `forecasting/pm/model.py` `to_dict`. Re-exported here so existing
+// `import { PM…DTO } from './pmData.js'` call sites keep resolving; the
+// hand-written mirrors that used to live in this file were deleted (the Python
+// package is the single source of truth, and drift is now a build error).
+export type {
+  PMDistributionDTO,
+  PMDistributionHeadline,
+  PMEventDTO,
+  PMHistoryPointDTO,
+  PMListItem,
+  PMMarketDTO,
+  PMOrderBookDTO,
+  PMOrderLevelDTO,
+  PMOutcomeDTO,
+  PMStreamStart,
+  PMTickPayload
+} from '../protocol/generated.js'
 
 export type PMHistoryRange = '1d' | '1w' | 'all'
 
@@ -165,12 +97,6 @@ export async function fetchPMHistory(
   return Array.isArray(res?.points) ? res!.points : []
 }
 
-export interface PMStreamStart {
-  reason?: string
-  streaming: boolean
-  subscribed?: string[]
-}
-
 export async function startPMStream(gw: PmGateway, venue: string, marketIds: string[]): Promise<PMStreamStart> {
   const raw = await gw.request('pm.stream.start', { market_ids: marketIds, venue })
   const res = asRpcResult<PMStreamStart>(raw)
@@ -205,17 +131,11 @@ export function seriesTickerFor(venue: string, event: PMEventDTO | undefined): n
 
 // ── in-place tick folding (streaming) ────────────────────────────────────────
 
-export interface PMTickPayload {
-  // The ONLY probability a consumer may fold: the server-side honest YES
-  // estimate (canonical honest_yes_mid rule, computed in tui_gateway/pm_rpc.py).
-  // null when this tick carries no estimate-grade info (a degenerate/one-sided
-  // book, a bare level delta) — a dead tick must never move a row.
-  estimate?: null | number
-  kind: string
-  market_id: string
-  payload?: Record<string, unknown>
-  venue: string
-}
+// `PMTickPayload` is the generated pm.tick payload (re-exported above): the
+// server-side honest YES `estimate` (canonical honest_yes_mid rule, computed in
+// tui_gateway/pm_rpc.py) is the ONLY probability a consumer may fold — null when
+// the tick carries no estimate-grade info (a degenerate/one-sided book, a bare
+// level delta), so a dead tick never moves a row.
 
 const toLevels = (raw: unknown): null | PMOrderLevelDTO[] => {
   if (!Array.isArray(raw)) {

@@ -274,7 +274,11 @@ generic "replay my subscriptions" path. Lands as B4's follow-on.
 logic becomes testable through real mounts (we hand-rolled component pins 3x).
 (b) Frame snapshot tests for the layout-regression class ('…', alignment) — a
 `expectFrame(name)` helper with golden files, updated via env flag.
-(c) CI gates on EXIT CODES only (the vitest|grep red-test escape).
+(c) CI gates on EXIT CODES only (the vitest|grep red-test escape). SHIPPED with
+    A1: the protocol staleness gate is `scripts/check-protocol.sh`
+    (`python -m protocol.codegen --check`), wired into `.github/workflows/
+    tests.yml` before the pytest run and mirrored by the pytest golden-file test
+    `tests/test_protocol_codegen.py` — both exit-code gated.
 (d) The weekly live-API contract cron (Arc C's check).
 
 ---

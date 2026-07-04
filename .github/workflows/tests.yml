@@ -43,6 +43,13 @@ jobs:
           source .venv/bin/activate
           uv pip install -e ".[all,dev]"
 
+      - name: Protocol codegen staleness gate
+        run: |
+          source .venv/bin/activate
+          # Fails if ui-tui/src/protocol/generated.ts is out of date with the
+          # protocol/ pydantic models. Fix: python -m protocol.codegen
+          scripts/check-protocol.sh
+
       - name: Run tests
         run: |
           source .venv/bin/activate

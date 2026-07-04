@@ -24,7 +24,21 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from pydantic import ValidationError
+
+from protocol import RPC_BY_METHOD
+
 logger = logging.getLogger(__name__)
+
+
+def _field_error(exc: ValidationError) -> ValueError:
+    """Turn a pydantic request-validation failure into a ValueError that NAMES
+    the offending field (so it routes to the -32602 ``_err`` path with the field
+    called out, matching the handlers' explicit ``ValueError("… required")``)."""
+
+    first = exc.errors()[0]
+    loc = ".".join(str(part) for part in first.get("loc", ())) or "params"
+    return ValueError(f"invalid params: field '{loc}' {first.get('msg', 'is invalid')}")
 
 # Lazily-built singletons (injectable in tests via set_service / set_hub).
 _service_holder: dict[str, Any] = {"svc": None}
@@ -216,12 +230,53 @@ def register(server) -> None:
             return _err(rid, exc)
         return _ok(rid, result)
 
-    server.register_method("pm.list", pm_list)
-    server.register_method("pm.detail", pm_detail)
-    server.register_method("pm.book", pm_book)
-    server.register_method("pm.history", pm_history)
-    server.register_method("pm.stream.start", pm_stream_start)
-    server.register_method("pm.stream.stop", pm_stream_stop)
+    def _rpc_model(method: str, handler):
+        """Wrap a handler with protocol-model validation WITHOUT changing the
+        wire.
+
+        * requests are validated against the registered request model — an
+          invalid payload short-circuits to the existing ``_err`` path with the
+          field named (pydantic ``ValidationError`` subclasses ``ValueError`` so
+          the code stays -32602);
+        * a SUCCESS result is round-tripped through the response model and
+          re-serialised via ``model_dump`` — for a well-formed venue payload this
+          is byte-identical to the handler's ``to_dict`` output. A payload that
+          does NOT validate (e.g. a test stub, or genuine latent drift) passes
+          through UNCHANGED and is logged, so the wire can never regress.
+        """
+
+        spec = RPC_BY_METHOD.get(method)
+        if spec is None:  # pragma: no cover - every pm.* method is registered
+            return handler
+
+        def wrapped(rid, params):
+            try:
+                spec.request.model_validate(params if isinstance(params, dict) else {})
+            except ValidationError as exc:
+                return _err(rid, _field_error(exc))
+            resp = handler(rid, params)
+            if isinstance(resp, dict) and isinstance(resp.get("result"), dict):
+                try:
+                    model = spec.response.model_validate(resp["result"])
+                except ValidationError:
+                    logger.debug(
+                        "pm response for %s did not validate; passing through unchanged",
+                        method,
+                    )
+                    return resp
+                dumped = model.model_dump(mode="json", exclude_none=spec.exclude_none)
+                return {**resp, "result": dumped}
+            return resp
+
+        wrapped.__name__ = getattr(handler, "__name__", method)
+        return wrapped
+
+    server.register_method("pm.list", _rpc_model("pm.list", pm_list))
+    server.register_method("pm.detail", _rpc_model("pm.detail", pm_detail))
+    server.register_method("pm.book", _rpc_model("pm.book", pm_book))
+    server.register_method("pm.history", _rpc_model("pm.history", pm_history))
+    server.register_method("pm.stream.start", _rpc_model("pm.stream.start", pm_stream_start))
+    server.register_method("pm.stream.stop", _rpc_model("pm.stream.stop", pm_stream_stop))
 
 
 __all__ = ["register", "get_service", "set_service", "get_hub", "set_hub", "shutdown"]
