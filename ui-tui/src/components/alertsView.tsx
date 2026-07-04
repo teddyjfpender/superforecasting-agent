@@ -4,21 +4,21 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
+import type { ForecastTriageLabel } from '../gatewayTypes.js'
 import type {
+  AutomodeCompletePayload as ForecastWarningsAutomodeComplete,
+  AutomodeErrorPayload as ForecastWarningsAutomodeError,
+  AutomodeProgressPayload as ForecastWarningsAutomodeProgress,
   ForecastDashboardResponse,
   ForecastDashboardReview,
   ForecastTriageContestedResponse,
   ForecastTriageContestedRow,
-  ForecastTriageLabel,
   ForecastTriageRelabelResponse,
   ForecastWarningGroup,
   ForecastWarningsAggregateResponse,
-  ForecastWarningsAutomodeComplete,
-  ForecastWarningsAutomodeError,
-  ForecastWarningsAutomodeProgress,
   ForecastWarningsAutomodeRunResponse,
   ForecastWarningsDismissResponse
-} from '../gatewayTypes.js'
+} from '../protocol/generated.js'
 import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'

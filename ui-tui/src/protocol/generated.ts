@@ -115,6 +115,1537 @@ export interface ErrorPayload {
   message: string
 }
 
+export interface ForecastAnalystNote {
+  as_of?: string
+  be_aware?: string
+  body?: string
+  created_at?: string
+  forecast_id?: null | string
+  generator?: string
+  headline?: string
+  how_it_feels?: string
+  how_it_thinks?: string
+  kind?: string
+  looking_for?: string
+  stance?: null | string
+  verdict?: null | string
+}
+
+export interface ForecastBenchAggregate {
+  mean_agent_brier?: null | number
+  mean_brier_edge?: null | number
+  mean_market_brier?: null | number
+  n?: number
+}
+
+export interface ForecastBenchRequest {
+  limit: null | number
+}
+
+export interface ForecastBenchResponse {
+  aggregate?: ForecastBenchAggregate
+  count?: number
+  generated_at?: string
+  output?: string
+  product?: string
+  resolved_count?: number
+  rows?: ForecastBenchRow[]
+}
+
+export interface ForecastBenchRow {
+  agent_brier?: null | number
+  agent_probability?: null | number
+  agent_probability_display?: string
+  as_of?: null | string
+  brier_edge?: null | number
+  domain?: null | string
+  id: string
+  market_brier?: null | number
+  market_probability?: null | number
+  market_probability_display?: string
+  outcome?: null | number
+  outcome_label?: null | string
+  resolved?: boolean
+  resolved_at?: null | string
+  source?: null | string
+  title?: string
+  topics?: string[]
+}
+
+export interface ForecastCalibrationBias {
+  advisory_text?: null | string
+  ci_high?: null | number
+  ci_low?: null | number
+  curve_shape?: Record<string, unknown>[]
+  direction?: null | string
+  ece?: null | number
+  ess?: number
+  ess_min?: number
+  horizon_label?: null | string
+  n?: number
+  notes?: string[]
+  pvalue?: null | number
+  sce_raw?: null | number
+  sce_shrunk?: null | number
+  scope_ref?: null | string
+  scope_type?: string
+  status?: string
+}
+
+export interface ForecastCalibrationBreakdownRow {
+  bias?: null | ForecastCalibrationBias
+  calibration_curve_sample_count?: number
+  count?: number
+  domain?: string
+  expected_calibration_error?: null | number
+  mean_brier?: null | number
+  mean_predicted?: null | number
+  observed_frequency?: null | number
+  origin?: string
+}
+
+export interface ForecastCalibrationBucketRow {
+  bucket?: string
+  count?: number
+  mean_brier?: null | number
+  sample_status?: string
+}
+
+export interface ForecastCalibrationCurveRow {
+  bucket?: string
+  calibration_gap?: null | number
+  count?: number
+  mean_predicted?: null | number
+  observed_frequency?: null | number
+  sample_status?: string
+}
+
+export interface ForecastCalibrationLesson {
+  coverage?: ForecastCalibrationLessonCoverage
+  dormant?: boolean
+  lesson?: null | string
+  lesson_id?: string
+  recommended_adjustment?: Record<string, unknown>
+  scope?: string
+  scope_ref?: null | string
+  scope_type?: string
+}
+
+export interface ForecastCalibrationLessonCoverage {
+  application_rate?: number
+  applied_count?: number
+  in_scope_count?: number
+  last_seen?: null | string
+}
+
+export interface ForecastCalibrationRequest {
+  domain: null | string
+  origin: null | string
+}
+
+export interface ForecastCalibrationResponse {
+  bias?: null | ForecastCalibrationBias
+  domain?: null | string
+  domains?: ForecastCalibrationBreakdownRow[]
+  lessons?: ForecastCalibrationLesson[]
+  origin?: null | string
+  origins?: ForecastCalibrationBreakdownRow[]
+  summary?: ForecastCalibrationSummary
+}
+
+export interface ForecastCalibrationSummary {
+  buckets?: ForecastCalibrationBucketRow[]
+  calibration_curve?: ForecastCalibrationCurveRow[]
+  calibration_curve_sample_count?: number
+  calibration_eligible?: null | boolean
+  calibration_trend?: ForecastCalibrationTrend
+  count?: number
+  domain?: null | string
+  ensemble_component_contributions?: ForecastDashboardCalibrationComponent[]
+  expected_calibration_error?: null | number
+  forecast_origin?: null | string
+  horizon?: null | string
+  max_calibration_error?: null | number
+  mean_abs_probability_movement_before_close?: null | number
+  mean_brier?: null | number
+  mean_log_score?: null | number
+  mean_predicted?: null | number
+  mean_probability_movement_before_close?: null | number
+  mean_sharpness?: null | number
+  observed_frequency?: null | number
+  probability_movement_count?: number
+  question_type_breakdown?: ForecastDashboardQuestionTypeCalibration[]
+}
+
+export interface ForecastCalibrationTrend {
+  direction?: string
+  windows?: ForecastCalibrationTrendWindow[]
+}
+
+export interface ForecastCalibrationTrendWindow {
+  brier?: null | number
+  n?: number
+  period?: string
+  sce?: null | number
+}
+
+export interface ForecastCandidateInterval {
+  hi: number
+  lo: number
+  mid?: number
+}
+
+export interface ForecastCommandRequest {
+  arg: null | string
+  argv: null | string[]
+}
+
+export interface ForecastCommandResponse {
+  code?: number
+  output?: string
+}
+
+export interface ForecastConfigDecision {
+  action_threshold?: null | string
+  decision_deadline?: null | string
+  decision_owner?: null | string
+  update_triggers?: unknown[]
+}
+
+export interface ForecastConfigGate {
+  category?: string
+  default?: string
+  doc?: string
+  id: string
+  label: string
+  looser?: boolean
+  severity: string
+  source: string
+}
+
+export interface ForecastConfigRequest {
+  id: null | string
+  question_id: null | string
+}
+
+export interface ForecastConfigResponse {
+  cadence?: null | string
+  decision?: ForecastConfigDecision
+  gates?: ForecastConfigGate[]
+  impact?: null | string
+  next_run_at?: null | string
+  profile?: string
+  question_id?: string
+  thresholds?: ForecastConfigThreshold[]
+  title?: string
+}
+
+export interface ForecastConfigSetRequest {
+  decision: null | Record<string, unknown>
+  hooks: null | Record<string, unknown>
+  id: null | string
+  question_id: null | string
+  review_cadence: null | string
+}
+
+export interface ForecastConfigThreshold {
+  default: number
+  direction?: string
+  help?: string
+  integer?: boolean
+  key: string
+  label: string
+  looser?: boolean
+  maximum: number
+  minimum: number
+  rule_ids?: string[]
+  source: string
+  value: number
+}
+
+export interface ForecastDashboardAlert {
+  acknowledged_at?: null | string
+  created_at?: string
+  id?: string
+  reason?: string
+  recommended_action?: string
+  scope_ref?: string
+  scope_type?: string
+  severity?: string
+}
+
+export interface ForecastDashboardBacktest {
+  agent_edge?: null | number
+  agent_mean_brier?: null | number
+  best_baseline?: null | string
+  best_baseline_brier?: null | number
+  case_count?: number
+  claim_status?: ForecastDashboardClaimStatus
+  dataset?: string
+  id?: string
+  leakage_checks_passed?: boolean
+  paired_agent_edge?: null | number
+  paired_agent_edge_ci95_high?: null | number
+  paired_agent_edge_ci95_low?: null | number
+  paired_agent_wins?: number
+  paired_baseline_wins?: number
+  paired_count?: number
+  paired_ties?: number
+  probability_sources?: string[]
+}
+
+export interface ForecastDashboardCalibration {
+  calibration_eligible?: null | boolean
+  count?: number
+  domain?: null | string
+  ensemble_component_contributions?: ForecastDashboardCalibrationComponent[]
+  forecast_origin?: null | string
+  horizon?: null | string
+  mean_abs_probability_movement_before_close?: null | number
+  mean_brier?: null | number
+  mean_log_score?: null | number
+  mean_probability_movement_before_close?: null | number
+  mean_sharpness?: null | number
+  probability_movement_count?: number
+  question_type_breakdown?: ForecastDashboardQuestionTypeCalibration[]
+}
+
+export interface ForecastDashboardCalibrationComponent {
+  count?: number
+  mean_abs_distance_from_forecast?: null | number
+  mean_contribution?: null | number
+  mean_probability?: null | number
+  mean_weight?: null | number
+  mean_weight_share?: null | number
+  name?: string
+}
+
+export interface ForecastDashboardClaimStatus {
+  can_claim_live_superforecasting?: boolean
+  case_count?: number
+  evidence_type?: string
+  leakage_checks_passed?: boolean
+  message?: string
+  scored_count?: number
+  verdict?: string
+}
+
+export interface ForecastDashboardDoctor {
+  claim_live_superforecasting?: boolean
+  doctor_status?: string
+  next_action?: string
+  next_actions?: ForecastDoctorNextAction[]
+  next_requirement?: string
+  pilot_gap_count?: number
+  pilot_passed_checks?: number
+  pilot_status?: string
+  pilot_total_checks?: number
+  readiness_gap_count?: number
+  readiness_verdict?: string
+  scheduled_review_run_count?: number
+  tester_handoff_ready?: boolean
+}
+
+export interface ForecastDashboardErrorProfile {
+  domain?: null | string
+  id?: string
+  mean_brier?: null | number
+  question_type?: null | string
+  recommended_adjustments?: string[]
+  recurring_errors?: string[]
+  sample_count?: number
+  topic?: null | string
+  updated_at?: null | string
+}
+
+export interface ForecastDashboardEvidenceStatus {
+  backtests?: ForecastEvidenceBacktests
+  can_claim_live_superforecasting?: boolean
+  gaps?: string[]
+  message?: string
+  next_actions?: ForecastEvidenceNextAction[]
+  requirements?: ForecastEvidenceRequirement[]
+  score_counts?: ForecastEvidenceScoreCounts
+  verdict?: string
+}
+
+export interface ForecastDashboardFactor {
+  coverage?: null | number
+  cvar?: null | number
+  delta?: null | number
+  domain?: null | string
+  downside?: null | number
+  id?: string
+  mean?: null | number
+  member_count?: number
+  q05?: null | number
+  q95?: null | number
+  sd?: null | number
+  status?: string
+  title?: string
+  units?: null | string
+}
+
+export interface ForecastDashboardLearning {
+  active_lessons?: number
+  invalidated_lessons?: number
+  recent_lessons?: ForecastDashboardLesson[]
+  tentative_lessons?: number
+  top_error_profiles?: ForecastDashboardErrorProfile[]
+  total_lessons?: number
+}
+
+export interface ForecastDashboardLesson {
+  confidence?: null | number
+  id?: string
+  lesson?: string
+  recommended_adjustment?: Record<string, unknown>
+  scope_ref?: null | string
+  scope_type?: null | string
+  source_postmortem_count?: number
+  source_score_count?: number
+  status?: string
+  updated_at?: null | string
+}
+
+export interface ForecastDashboardLiveBaseline {
+  baseline_type?: string
+  mean_brier?: null | number
+  mean_brier_improvement_vs_baseline?: null | number
+  paired_agent_edge_ci95_high?: null | number
+  paired_agent_edge_ci95_low?: null | number
+  paired_agent_edge_mean_brier?: null | number
+  paired_agent_mean_brier?: null | number
+  paired_agent_wins?: number
+  paired_baseline_mean_brier?: null | number
+  paired_baseline_wins?: number
+  paired_count?: number
+  paired_ties?: number
+  source?: string
+}
+
+export interface ForecastDashboardLivePerformance {
+  agent?: ForecastLivePerformanceAgent
+  baselines?: ForecastDashboardLiveBaseline[]
+  claim_status?: ForecastDashboardClaimStatus
+  score_count?: number
+}
+
+export interface ForecastDashboardQuestion {
+  as_of?: null | string
+  baseline_count?: number
+  close_time?: null | string
+  confidence?: null | number
+  delta?: null | number
+  domain?: null | string
+  evidence_count?: number
+  id?: string
+  latest_evidence_at?: null | string
+  latest_evidence_claim?: null | string
+  latest_evidence_summary?: null | string
+  latest_rationale?: null | string
+  open_alert_count?: number
+  open_assumption_count?: number
+  open_reference_class_count?: number
+  probability?: null | Record<string, unknown> | number | string
+  resolution_time?: null | string
+  stale_assumption_count?: number
+  stale_reference_class_count?: number
+  status?: string
+  tail_audit?: null | ForecastTailAudit
+  title?: string
+  topics?: string[]
+}
+
+export interface ForecastDashboardQuestionTypeCalibration {
+  brier_count?: number
+  count?: number
+  mean_brier?: null | number
+  mean_log_score?: null | number
+  mean_proper_score?: null | number
+  mean_sharpness?: null | number
+  question_type?: string
+  score_rules?: string[]
+}
+
+export interface ForecastDashboardRequest {
+  fast: null | boolean
+  limit: null | number
+  summary_only: null | boolean
+}
+
+export interface ForecastDashboardResponse {
+  output?: string
+  summary?: ForecastDashboardSummary
+}
+
+export interface ForecastDashboardReview {
+  as_of?: null | string
+  close_time?: null | string
+  domain?: null | string
+  id?: string
+  latest_evidence_at?: null | string
+  latest_evidence_claim?: null | string
+  latest_evidence_summary?: null | string
+  latest_rationale?: null | string
+  next_action?: string
+  priority?: number
+  probability?: null | Record<string, unknown> | number | string
+  reasons?: string[]
+  resolution_time?: null | string
+  title?: string
+}
+
+export interface ForecastDashboardScheduleRun {
+  alert_count?: number
+  alert_reasons?: string[]
+  auto_postmortem?: boolean
+  auto_score?: boolean
+  cadence?: null | string
+  id?: string
+  learning_review_count?: number
+  next_run_at?: string
+  postmortem_count?: number
+  run_at?: string
+  scheduled_review_id?: string
+  scope_ref?: null | string
+  scope_type?: null | string
+  score_count?: number
+  status?: string
+}
+
+export interface ForecastDashboardSummary {
+  active_count?: number
+  alerts?: ForecastDashboardAlert[]
+  calibration?: ForecastDashboardCalibration
+  closing_soon_count?: number
+  doctor?: ForecastDashboardDoctor
+  entity_count?: number
+  evidence_status?: ForecastDashboardEvidenceStatus
+  factor_count?: number
+  factors?: ForecastDashboardFactor[]
+  learning?: ForecastDashboardLearning
+  live_performance?: ForecastDashboardLivePerformance
+  open_alert_count?: number
+  open_assumption_count?: number
+  open_reference_class_count?: number
+  product?: string
+  question_total?: number
+  questions?: ForecastDashboardQuestion[]
+  recent_backtests?: ForecastDashboardBacktest[]
+  review_queue?: ForecastDashboardReview[]
+  review_queue_count?: number
+  scheduled_review_run_count?: number
+  scheduled_review_runs?: ForecastDashboardScheduleRun[]
+  stale_assumption_count?: number
+  stale_reference_class_count?: number
+  theses?: ForecastDashboardThesis[]
+  thesis_count?: number
+}
+
+export interface ForecastDashboardThesis {
+  coverage?: null | number
+  delta?: null | number
+  domain?: null | string
+  health_display?: string
+  health_probability?: null | number
+  id?: string
+  member_count?: number
+  n_eff?: null | number
+  status?: string
+  thesis_score?: null | number
+  title?: string
+}
+
+export interface ForecastDeskTaskRequest {
+  instruction: null | string
+  question_ids: null | string[]
+  session_id: null | string
+}
+
+export interface ForecastDoctorNextAction {
+  action?: string
+  requirement_id?: string
+  source?: string
+}
+
+export interface ForecastEvidenceBacktests {
+  agent_protocol_scored_count?: number
+  distinct_dataset_count?: number
+  external_dataset_count?: number
+  external_source_family_count?: number
+  leakage_free_run_count?: number
+  positive_best_baseline_edge_run_count?: number
+  run_count?: number
+  source_families?: string[]
+}
+
+export interface ForecastEvidenceNextAction {
+  action?: string
+  requirement_id?: string
+}
+
+export interface ForecastEvidenceRequirement {
+  description?: string
+  id?: string
+  observed?: number
+  passed?: boolean
+  recommended_action?: string
+  required?: number
+}
+
+export interface ForecastEvidenceScoreCounts {
+  backtest?: number
+  imported_baseline?: number
+  live?: number
+}
+
+export interface ForecastFactor {
+  aggregate_stale?: boolean
+  analyst_note?: null | ForecastAnalystNote
+  as_of?: null | string
+  constituents?: ForecastFactorConstituent[]
+  coverage?: null | number
+  cvar?: null | number
+  delta?: null | number
+  domain?: null | string
+  downside?: null | number
+  freshness?: string
+  history?: ForecastFactorHistoryPoint[]
+  id?: string
+  mean?: null | number
+  member_count?: number
+  n_eff?: null | number
+  q05?: null | number
+  q50?: null | number
+  q95?: null | number
+  question_ids?: string[]
+  rationale?: null | string
+  sd?: null | number
+  snapshot_count?: number
+  title?: string
+  topics?: string[]
+  units?: null | string
+  volatility?: null | number
+}
+
+export interface ForecastFactorConstituent {
+  contribution?: null | number
+  direction?: string
+  flags?: string[]
+  id?: string
+  mean?: null | number
+  sd?: null | number
+  status?: string
+  title?: null | string
+  w_norm?: null | number
+  weight?: null | number
+}
+
+export interface ForecastFactorHistoryPoint {
+  as_of?: string
+  band_high?: null | number
+  band_low?: null | number
+  created_at?: string
+  headline_probability?: null | number
+  volatility?: null | number
+}
+
+export interface ForecastHooksPreviewRequest {
+  max_scan: null | number
+  rule: null | Record<string, unknown>
+}
+
+export interface ForecastHooksPreviewResponse {
+  applies?: number
+  capped_at?: number
+  failing?: string[]
+  issues?: Record<string, unknown>[]
+  valid?: boolean
+  would_block?: number
+}
+
+export interface ForecastHooksRemoveRuleRequest {
+  id: null | string
+}
+
+export interface ForecastHooksRemoveRuleResponse {
+  ok?: boolean
+}
+
+export interface ForecastHooksRequest {
+  question_id: null | string
+}
+
+export interface ForecastHooksResponse {
+  enabled?: boolean
+  glossary?: Record<string, unknown>[]
+  operators?: string[]
+  overrides?: Record<string, unknown>
+  profile?: string
+  profiles?: string[]
+  reasoning_methods?: Record<string, unknown>[]
+  resolved?: Record<string, unknown>
+  rules?: Record<string, unknown>[]
+  user_rules?: Record<string, unknown>[]
+}
+
+export interface ForecastHooksSaveRuleRequest {
+  edit_id: null | string
+  rule: null | Record<string, unknown>
+}
+
+export interface ForecastHooksSaveRuleResponse {
+  error?: string
+  issues?: Record<string, unknown>[]
+  ok?: boolean
+}
+
+export interface ForecastHooksSetRequest {
+  rule_id: null | string
+  target: null | string
+  value: null | unknown
+}
+
+export interface ForecastHooksSetResponse {
+  enabled?: boolean
+  profile?: string
+}
+
+export interface ForecastLivePerformanceAgent {
+  mean_brier?: null | number
+  mean_log_score?: null | number
+}
+
+export interface ForecastOnboardCommitRequest {
+  spec: null | Record<string, unknown>
+}
+
+export interface ForecastOnboardCommitResponse {
+  committed?: boolean
+  issues?: Record<string, unknown>[]
+  question_id?: string
+}
+
+export interface ForecastOnboardProposeRequest {
+  prompt: null | string
+  spec: null | Record<string, unknown>
+}
+
+export interface ForecastOnboardProposeResponse {
+  committable?: boolean
+  errors?: Record<string, unknown>[]
+  issues?: Record<string, unknown>[]
+  readiness_gaps?: Record<string, unknown>[]
+  recommended_clarifications?: Record<string, unknown>[]
+  spec?: Record<string, unknown>
+}
+
+export interface ForecastOutcomeSpace {
+  choices?: unknown[]
+  type?: string
+}
+
+export interface ForecastQuestionPacket {
+  analyst_note?: null | ForecastAnalystNote
+  analyst_notes?: ForecastAnalystNote[]
+  assumptions?: ForecastQuestionPacketAssumption[]
+  baseline_comparisons?: Record<string, unknown>[]
+  calibration_lessons?: ForecastDashboardLesson[]
+  corrections?: Record<string, unknown>[]
+  domain_error_profiles?: ForecastDashboardErrorProfile[]
+  evidence?: ForecastQuestionPacketEvidence[]
+  forecast_history?: ForecastQuestionPacketSnapshot[]
+  informed_by?: string[]
+  model_runs?: Record<string, unknown>[]
+  panel_runs?: ForecastQuestionPacketPanelRun[]
+  postmortems?: Record<string, unknown>[]
+  question?: ForecastQuestionPacketQuestion
+  reference_classes?: ForecastQuestionPacketReferenceClass[]
+  related_forecasts?: ForecastRelatedView[]
+  related_shared_sources?: ForecastSharedSource[]
+  resolution?: null | Record<string, unknown>
+  retrospective?: null | ForecastAnalystNote
+  scores?: Record<string, unknown>[]
+  watched_sources?: Record<string, unknown>[]
+}
+
+export interface ForecastQuestionPacketAssumption {
+  id?: string
+  status?: string
+  text?: string
+}
+
+export interface ForecastQuestionPacketEvidence {
+  available_at?: string
+  claim?: string
+  claim_type?: string
+  id?: string
+  published_at?: null | string
+  relevance_rating?: null | number
+  reliability_rating?: null | number
+  source_name?: null | string
+  source_type?: string
+  source_url?: null | string
+  stance?: string
+  summary?: string
+}
+
+export interface ForecastQuestionPacketPanelRun {
+  aggregate_probability?: null | number
+  aggregation_method?: string
+  created_at?: string
+  estimates?: ForecastWorkspacePanelEstimate[]
+  id?: string
+  spread_summary?: Record<string, number>
+  trim?: number
+}
+
+export interface ForecastQuestionPacketQuestion {
+  close_time?: null | string
+  created_at?: string
+  description?: string
+  domain?: null | string
+  id?: string
+  impact?: null | string
+  next_review_at?: null | string
+  outcome_space?: ForecastOutcomeSpace
+  resolution_criteria?: string
+  resolution_source?: null | string
+  resolution_time?: null | string
+  review_cadence?: null | string
+  status?: string
+  tags?: string[]
+  title?: string
+  topics?: string[]
+}
+
+export interface ForecastQuestionPacketReferenceClass {
+  base_rate?: null | number
+  id?: string
+  name?: string
+  status?: string
+}
+
+export interface ForecastQuestionPacketResponse {
+  packet?: ForecastQuestionPacket
+  related?: null | ForecastRelated
+  relevant_lessons?: ForecastDashboardLesson[]
+}
+
+export interface ForecastQuestionPacketSnapshot {
+  as_of?: string
+  change_my_mind?: string[]
+  confidence?: null | number
+  ensemble_components?: null | Record<string, unknown>
+  evidence_refs?: string[]
+  forecast_id?: string
+  forecast_origin?: string
+  metadata?: null | ForecastSnapshotMetadata
+  method?: null | string
+  probability_or_distribution?: null | Record<string, unknown> | number | string
+  rationale?: string
+  reasons_down?: string[]
+  reasons_up?: string[]
+}
+
+export interface ForecastQuestionReadinessRequest {
+  question_id: null | string
+}
+
+export interface ForecastQuestionReadinessResponse {
+  gaps: ForecastReadinessGap[]
+  question_id?: string
+  score: number
+  src_count?: number
+  title?: string
+}
+
+export interface ForecastQuestionRequest {
+  id: null | string
+}
+
+export interface ForecastQuorumProgressStep {
+  at?: string
+  detail?: string
+  stage?: string
+}
+
+export interface ForecastQuorumRunRef {
+  created_at?: null | string
+  run_id?: string
+  status?: string
+}
+
+export interface ForecastQuorumStatusRequest {
+  run_id: null | string
+}
+
+export interface ForecastQuorumStatusResponse {
+  degraded?: boolean
+  error?: null | string
+  panel_run_id?: null | string
+  progress?: ForecastQuorumProgressStep[]
+  question_id?: null | string
+  result?: ForecastQuorumStatusResult
+  run_id?: string
+  status?: string
+}
+
+export interface ForecastQuorumStatusResult {
+  aggregate_probability?: null | number
+  committed_probability?: null | number
+  degraded?: boolean
+  disagreement?: null | number
+}
+
+export interface ForecastReadiness {
+  gaps: ForecastReadinessGap[]
+  score: number
+}
+
+export interface ForecastReadinessGap {
+  fix_hint: string
+  key: string
+  label: string
+}
+
+export interface ForecastReforecastActiveJob {
+  created_at?: null | string
+  done_count?: number
+  mode?: string
+  question_ids?: string[]
+  run_id?: string
+  status?: string
+  total?: number
+}
+
+export interface ForecastReforecastActiveRequest {
+  limit: null | number
+}
+
+export interface ForecastReforecastActiveResponse {
+  error?: string
+  jobs?: ForecastReforecastActiveJob[]
+}
+
+export interface ForecastReforecastCurrent {
+  question_id?: string
+  stage?: string
+  title?: string
+}
+
+export interface ForecastReforecastMarkResponse {
+  next_run_at?: string
+  queued?: boolean
+  scheduled?: string
+}
+
+export interface ForecastReforecastRequest {
+  id: null | string
+}
+
+export interface ForecastReforecastResultRow {
+  committed?: boolean
+  error?: null | string
+  forecast_id?: null | string
+  question_id: string
+  quorum_autorun?: null | boolean
+  saturation?: null | number
+  title?: string
+}
+
+export interface ForecastReforecastStartRequest {
+  question_ids: null | string[]
+  session_id: null | string
+}
+
+export interface ForecastReforecastStartResponse {
+  note?: string
+  run_id: string
+  total: number
+}
+
+export interface ForecastReforecastStatusRequest {
+  run_id: null | string
+}
+
+export interface ForecastReforecastStatusResponse {
+  current?: null | ForecastReforecastCurrent
+  done_count?: number
+  error?: null | string
+  progress?: string[]
+  quorums_started?: number
+  results?: ForecastReforecastResultRow[]
+  run_id?: string
+  status: string
+  task_summary?: string
+  total?: number
+}
+
+export interface ForecastRelated {
+  forecasts?: ForecastRelatedView[]
+  informed_by?: string[]
+  shared_sources?: ForecastSharedSource[]
+}
+
+export interface ForecastRelatedView {
+  as_of?: null | string
+  be_aware?: null | string
+  headline_kind?: string
+  headline_probability?: null | number
+  id?: string
+  link_label?: null | string
+  link_type?: string
+  note_headline?: null | string
+  probability_display?: string
+  reasons_down?: string[]
+  reasons_up?: string[]
+  relationship?: string
+  stance?: null | string
+  title?: string
+  verdict?: null | string
+}
+
+export interface ForecastReviewsNextRequest {
+}
+
+export interface ForecastReviewsNextResponse {
+  due_count?: number
+  next_due_at?: null | string
+  nightly?: ForecastReviewsNightly
+  sweeper?: ForecastReviewsSweeper
+}
+
+export interface ForecastReviewsNightly {
+  installed?: boolean
+  last_run_at?: null | string
+  next_run_at?: null | string
+}
+
+export interface ForecastReviewsSweeper {
+  enabled?: boolean
+  interval_minutes?: number
+  next_tick_at?: null | string
+  running?: boolean
+}
+
+export interface ForecastScheduleCronHealth {
+  errored?: string[]
+  healthy?: boolean
+  installed?: number
+  jobs?: ForecastScheduleCronJob[]
+  missed?: string[]
+}
+
+export interface ForecastScheduleCronJob {
+  enabled?: boolean
+  errored?: boolean
+  id?: null | string
+  last_error?: null | string
+  last_run_at?: null | string
+  last_status?: null | string
+  missed?: boolean
+  name?: null | string
+  next_run_at?: null | string
+  schedule?: null | string
+  script?: null | string
+}
+
+export interface ForecastScheduleReviewRow {
+  cadence?: null | string
+  id?: string
+  last_run_at?: null | string
+  next_run_at?: null | string
+  scope_ref?: null | string
+  scope_type?: null | string
+  trigger_reason?: null | string
+}
+
+export interface ForecastScheduleStatusRequest {
+  limit: null | number
+}
+
+export interface ForecastScheduleStatusResponse {
+  cron?: ForecastScheduleCronHealth
+  healthy?: boolean
+  scheduled_review_count?: number
+  scheduled_reviews?: ForecastScheduleReviewRow[]
+}
+
+export interface ForecastSharedSource {
+  kind?: string
+  shared_with?: string[]
+  source?: string
+}
+
+export interface ForecastSnapshotMetadata {
+  tail_audit?: null | ForecastTailAudit
+}
+
+export interface ForecastTailAudit {
+  issues?: string[]
+  null_model?: null | ForecastTailNullModel
+  outcomes?: ForecastTailOutcome[]
+  passes?: boolean
+  residual_cap?: number
+  threshold?: number
+  total_mass?: number
+  unearned_mass?: number
+}
+
+export interface ForecastTailNullModel {
+  agent_tail?: number
+  excess_tail?: number
+  floor?: number
+  null_distribution?: Record<string, number>
+  null_tail?: number
+  ratio?: number
+  within_tolerance?: boolean
+}
+
+export interface ForecastTailOutcome {
+  classification?: null | string
+  evidence_strength?: string
+  has_path?: boolean
+  name?: string
+  note?: string
+  path?: string
+  probability?: number
+  unearned?: boolean
+}
+
+export interface ForecastThesesRequest {
+}
+
+export interface ForecastThesesResponse {
+  factors?: ForecastFactor[]
+  theses?: ForecastThesis[]
+}
+
+export interface ForecastThesis {
+  aggregate_stale?: boolean
+  analyst_note?: null | ForecastAnalystNote
+  as_of?: null | string
+  components?: ForecastThesisComponent[]
+  coverage?: null | number
+  delta?: null | number
+  domain?: null | string
+  entities?: ForecastThesisEntity[]
+  freshness?: string
+  health_display?: string
+  health_probability?: null | number
+  history?: ForecastThesisHistoryPoint[]
+  id?: string
+  member_count?: number
+  n_eff?: null | number
+  question_ids?: string[]
+  rationale?: null | string
+  rho?: null | number
+  score_band?: null | ForecastThesisScoreBand
+  snapshot_count?: number
+  spread?: null | Record<string, unknown>
+  status?: string
+  thesis_score?: null | number
+  title?: string
+  topics?: string[]
+  triggers?: ForecastThesisTrigger[]
+}
+
+export interface ForecastThesisBadge {
+  direction?: string
+  role?: null | string
+  thesis_id: string
+  thesis_title?: string
+  weight?: null | number
+}
+
+export interface ForecastThesisComponent {
+  as_of?: null | string
+  contribution_pts?: null | number
+  direction?: string
+  flags?: string[]
+  id?: string
+  latest_belief_display?: string
+  latest_headline?: null | number
+  marginal_health_delta?: null | number
+  outcome_type?: null | string
+  role?: null | string
+  s_i?: null | number
+  s_raw?: null | number
+  sigma?: null | number
+  status?: string
+  title?: null | string
+  w_norm?: null | number
+  weight?: null | number
+}
+
+export interface ForecastThesisEntity {
+  action?: string
+  band?: null | number[]
+  contributions?: ForecastThesisComponent[]
+  coverage?: null | number
+  delta?: null | number
+  kind?: string
+  label?: string
+  n_eff?: null | number
+  name?: string
+  score?: null | number
+  stance?: string
+  suitability?: null | number
+  suitability_display?: string
+  top_driver?: null | string
+  top_driver_id?: null | string
+  trend?: string
+  weight_count?: number
+}
+
+export interface ForecastThesisHistoryPoint {
+  as_of?: string
+  created_at?: string
+  headline_probability?: null | number
+  score_high?: null | number
+  score_low?: null | number
+  thesis_score?: null | number
+}
+
+export interface ForecastThesisScoreBand {
+  q05?: null | number
+  q50?: null | number
+  q95?: null | number
+}
+
+export interface ForecastThesisTrigger {
+  better?: string[]
+  delta?: null | number
+  direction?: string
+  less?: string[]
+  member_id?: string
+  note?: string
+  signal?: string
+}
+
+export interface ForecastTriageContestedRequest {
+  limit: null | number
+  question: null | string
+  question_id: null | string
+}
+
+export interface ForecastTriageContestedResponse {
+  contested?: ForecastTriageContestedRow[]
+  count?: number
+}
+
+export interface ForecastTriageContestedRow {
+  alert_id?: null | string
+  auto_label?: null | string
+  candidate_ref?: null | string
+  created_at?: null | string
+  id?: string
+  materiality?: null | string
+  question_id?: null | string
+  rationale?: string
+  relevance?: null | number
+  source?: null | string
+  summary?: string
+  title?: string
+  url?: null | string
+}
+
+export interface ForecastTriageRelabelRequest {
+  adjudications: null | Record<string, unknown>[]
+  label: null | string
+  label_id: null | string
+}
+
+export interface ForecastTriageRelabelResponse {
+  count?: number
+  relabeled?: Record<string, unknown>[]
+  success?: boolean
+}
+
+export interface ForecastWarningDismissedItem {
+  alert_id?: string
+  dismiss_actor?: string
+  dismiss_note?: string
+  dismiss_reason?: string
+  dismiss_ttl_days?: number
+  dismissed_at?: string
+  reason?: string
+  scope_ref?: string
+}
+
+export interface ForecastWarningGroup {
+  auto_resolvable?: boolean
+  count?: number
+  kind?: string
+  reason?: string
+  recommended_action?: string
+  scope_refs?: string[]
+  severity?: string
+}
+
+export interface ForecastWarningResolveResult {
+  acknowledged?: boolean
+  alert_id?: string
+  detail?: string
+  kind?: string
+  reason?: string
+  scope_ref?: string
+  status?: string
+}
+
+export interface ForecastWarningsAgentTier {
+  reasons?: ForecastWarningGroup[]
+  stale?: ForecastWarningsTier
+  total?: number
+}
+
+export interface ForecastWarningsAggregateRequest {
+  reason: null | string
+  scope: null | string
+}
+
+export interface ForecastWarningsAggregateResponse {
+  agent?: ForecastWarningsAgentTier
+  free?: ForecastWarningsTier
+  headline?: ForecastWarningsHeadline
+  manual?: ForecastWarningsTier
+}
+
+export interface ForecastWarningsAutomodeRunRequest {
+  dry_run: null | boolean
+  limit: null | number
+  reason: null | string
+  scope: null | string
+  session_id: null | string
+}
+
+export interface ForecastWarningsAutomodeRunResponse {
+  dry_run?: boolean
+  job_id?: string
+}
+
+export interface ForecastWarningsDismissRequest {
+  actor: null | string
+  alert_id: null | string
+  alert_ids: null | string[]
+  kind: null | unknown
+  kinds: null | unknown
+  note: null | string
+  now: null | string
+  reason: null | string
+  scope: null | string
+  ttl_days: null | number
+}
+
+export interface ForecastWarningsDismissResponse {
+  count?: number
+  dismissed?: ForecastWarningDismissedItem[]
+  matched?: number
+}
+
+export interface ForecastWarningsHeadline {
+  agent?: number
+  free?: number
+  manual?: number
+  total?: number
+}
+
+export interface ForecastWarningsListRequest {
+  limit: null | number
+  reason: null | string
+  scope: null | string
+}
+
+export interface ForecastWarningsListResponse {
+  group_count?: number
+  groups?: ForecastWarningGroup[]
+  open_total?: number
+}
+
+export interface ForecastWarningsResolveRequest {
+  alert_id: null | string
+  now: null | string
+}
+
+export interface ForecastWarningsResolveResponse {
+  count?: number
+  results?: ForecastWarningResolveResult[]
+}
+
+export interface ForecastWarningsTier {
+  reasons?: ForecastWarningGroup[]
+  total?: number
+}
+
+export interface ForecastWorkspaceDistribution {
+  ci50?: null | number[]
+  ci90?: null | number[]
+  mean?: null | number
+  median?: null | number
+  pmf?: null | ForecastWorkspacePmfPoint[]
+  sd?: null | number
+}
+
+export interface ForecastWorkspaceEvidence {
+  available_at?: string
+  claim?: string
+  claim_type?: string
+  id?: string
+  published_at?: null | string
+  relevance_rating?: null | number
+  reliability_rating?: null | number
+  source?: string
+  source_type?: string
+  stance?: string
+  summary?: string
+}
+
+export interface ForecastWorkspaceHistoryPoint {
+  as_of?: string
+  band_high?: null | number
+  band_low?: null | number
+  confidence?: null | number
+  created_at?: string
+  forecast_id?: string
+  forecast_origin?: string
+  headline_probability?: null | number
+  method?: null | string
+  probability?: null | Record<string, unknown> | number | string
+  rationale?: string
+  reasons_down_count?: number
+  reasons_up_count?: number
+}
+
+export interface ForecastWorkspaceItem {
+  action_threshold?: null | string
+  analyst_note?: null | ForecastAnalystNote
+  analyst_notes?: ForecastAnalystNote[]
+  as_of?: null | string
+  candidate_intervals?: null | Record<string, ForecastCandidateInterval>
+  change_my_mind?: string[]
+  close_time?: null | string
+  closing_soon?: boolean
+  confidence?: null | number
+  decision_deadline?: null | string
+  decision_owner?: null | string
+  decision_readiness_issues?: string[]
+  delta?: null | number
+  distribution?: null | ForecastWorkspaceDistribution
+  domain?: null | string
+  evidence?: ForecastWorkspaceEvidence[]
+  evidence_count?: number
+  freshness?: string
+  headline_kind?: string
+  headline_probability?: null | number
+  history?: ForecastWorkspaceHistoryPoint[]
+  id?: string
+  impact?: null | string
+  lessons_count?: number
+  method?: null | string
+  next_review_at?: null | string
+  open_alert_count?: number
+  outcome_choices?: unknown[]
+  outcome_type?: string
+  panel?: null | ForecastWorkspacePanel
+  probability?: null | Record<string, unknown> | number | string
+  probability_display?: string
+  quorum_run?: null | ForecastQuorumRunRef
+  rationale?: null | string
+  readiness?: null | ForecastReadiness
+  reasons_down?: string[]
+  reasons_up?: string[]
+  related?: null | ForecastRelated
+  relevant_lessons?: ForecastDashboardLesson[]
+  resolution?: null | ForecastWorkspaceResolution
+  resolution_criteria?: string
+  resolution_time?: null | string
+  retrospective?: null | ForecastAnalystNote
+  review_cadence?: null | string
+  saturation_below_threshold?: boolean
+  saturation_score?: null | number
+  scores?: null | ForecastWorkspaceScores
+  snapshot_count?: number
+  src_count?: number
+  status?: string
+  tail_audit?: null | ForecastTailAudit
+  thesis_ids?: ForecastThesisBadge[]
+  title?: string
+  topics?: string[]
+  units?: null | string
+  update_triggers?: ForecastWorkspaceTrigger[]
+}
+
+export interface ForecastWorkspacePanel {
+  aggregate_probability?: null | number
+  aggregation_method?: string
+  created_at?: string
+  estimates?: ForecastWorkspacePanelEstimate[]
+  id?: string
+  kind?: string
+  spread?: Record<string, number>
+  trim?: number
+}
+
+export interface ForecastWorkspacePanelEstimate {
+  confidence_high?: null | number
+  confidence_low?: null | number
+  crux?: null | string
+  perspective?: string
+  probability?: null | number
+  trimmed?: boolean
+  weight?: null | number
+}
+
+export interface ForecastWorkspacePmfPoint {
+  label: string
+  probability: number
+}
+
+export interface ForecastWorkspaceRequest {
+  limit: null | number
+}
+
+export interface ForecastWorkspaceResolution {
+  outcome?: unknown
+  resolution_status?: string
+  resolved_at?: string
+  scoreable?: boolean
+}
+
+export interface ForecastWorkspaceResponse {
+  active_count?: number
+  bench_count?: number
+  closing_soon_count?: number
+  factor_count?: number
+  factors?: ForecastFactor[]
+  forecasts?: ForecastWorkspaceItem[]
+  generated_at?: string
+  open_alert_count?: number
+  output?: string
+  product?: string
+  theses?: ForecastThesis[]
+  thesis_count?: number
+}
+
+export interface ForecastWorkspaceScores {
+  count?: number
+  last_bucket?: null | string
+  last_scored_at?: null | string
+  mean_brier?: null | number
+  mean_log_score?: null | number
+}
+
+export interface ForecastWorkspaceTrigger {
+  action?: string
+  mechanism?: string
+  notes?: string
+  source_ref?: string
+  threshold?: string
+  window?: string
+}
+
 export interface GatewayProtocolErrorPayload {
   preview?: string
 }

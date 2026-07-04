@@ -22,7 +22,7 @@ import type {
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
   ForecastWorkspaceResponse
-} from '../gatewayTypes.js'
+} from '../protocol/generated.js'
 import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import {
   buildDeskTabs,

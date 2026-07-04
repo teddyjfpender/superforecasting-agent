@@ -51,17 +51,32 @@ def _event_const_name(wire_name: str) -> str:
 
 
 def _split_optional(annotation: Any) -> tuple[Any, bool]:
-    """Return ``(inner, nullable)`` — strips a trailing ``| None`` union."""
+    """Return ``(inner, nullable)`` — strips a trailing ``| None`` union.
+
+    ``inner`` is the single remaining type, or a TUPLE of them for a genuine
+    multi-member union (``float | dict | str | None`` → ``((float, dict, str),
+    True)``) so the emitter can render ``null | number | Record<…> | string``.
+    A plain ``X | None`` still returns the single ``X`` — existing output is
+    byte-identical.
+    """
 
     if get_origin(annotation) in (Union, UnionType):
         args = get_args(annotation)
         non_none = [a for a in args if a is not _NONE]
-        return non_none[0], len(non_none) != len(args)
+        nullable = len(non_none) != len(args)
+        if len(non_none) == 1:
+            return non_none[0], nullable
+        return tuple(non_none), nullable
     return annotation, False
 
 
 def _ts_scalar(annotation: Any) -> str:
     """Map a (non-optional) python annotation to a TypeScript type."""
+
+    if isinstance(annotation, tuple):
+        # A multi-member union — render each member and join, sorted for a
+        # deterministic diff-stable line (TS unions are order-independent).
+        return " | ".join(sorted(_ts_scalar(member) for member in annotation))
 
     if isinstance(annotation, type) and issubclass(annotation, WireModel):
         return _ts_name(annotation)
@@ -71,6 +86,11 @@ def _ts_scalar(annotation: Any) -> str:
         (inner,) = get_args(annotation)
         return f"{_ts_scalar(inner)}[]"
     if origin in (dict,) or annotation is dict:
+        args = get_args(annotation)
+        # A typed value (``dict[str, int]`` → ``Record<string, number>``); a bare
+        # ``dict`` or ``dict[str, Any]`` stays ``Record<string, unknown>``.
+        if len(args) == 2:
+            return f"Record<string, {_ts_scalar(args[1])}>"
         return "Record<string, unknown>"
 
     if annotation is str:
@@ -92,6 +112,10 @@ def _field_line(name: str, field: Any) -> str:
     if extra.get("wireOptional"):
         # Conditionally emitted: the key is DROPPED (absent) when None, never
         # sent as null — so the TS is `name?: T`, not `name?: null | T`.
+        # ``wireNullable`` opts a field back INTO the null union: `name?: null | T`
+        # for a key the server may omit OR emit as null (the forecast mirrors).
+        if extra.get("wireNullable") and nullable:
+            return f"  {name}?: null | {ts}"
         return f"  {name}?: {ts}"
     if nullable:
         ts = f"null | {ts}"
@@ -120,10 +144,19 @@ def _collect(models: list[type[WireModel]]) -> list[type[WireModel]]:
         seen[name] = model
         for field in model.model_fields.values():
             inner, _ = _split_optional(field.annotation)
-            if get_origin(inner) in (list,):
-                (inner,) = get_args(inner)
-            if isinstance(inner, type) and issubclass(inner, WireModel):
-                stack.append(inner)
+            # A multi-member union yields a tuple; walk every member so nested
+            # models referenced only inside a union still get collected.
+            for candidate in inner if isinstance(inner, tuple) else (inner,):
+                # Unwrap a container to the referenced element/value type: a model
+                # nested only inside ``list[Model]`` or ``dict[str, Model]`` must
+                # still be discovered and emitted.
+                if get_origin(candidate) in (list,):
+                    (candidate,) = get_args(candidate)
+                elif get_origin(candidate) in (dict,):
+                    args = get_args(candidate)
+                    candidate = args[1] if len(args) == 2 else Any
+                if isinstance(candidate, type) and issubclass(candidate, WireModel):
+                    stack.append(candidate)
     return [seen[name] for name in sorted(seen)]
 
 

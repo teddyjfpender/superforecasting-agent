@@ -905,6 +905,61 @@ def method(name: str):
     return dec
 
 
+def rpc_validated(name: str):
+    """``@method`` + Arc-A protocol-model validation for the ``forecast.*`` family.
+
+    VALIDATE-ONLY semantics — deliberately safer than the pm/market re-dump path:
+    the request is checked against the registered request model and the SUCCESS
+    result against the response model, but the handler's ORIGINAL result is ALWAYS
+    returned UNCHANGED. This family's responses are big, partial builder payloads;
+    re-serialising them would risk dropping/adding keys, so we validate for DRIFT
+    only (a genuine handler/model disagreement is logged) and the wire can never
+    regress — the JSON on the wire is byte-for-byte what the handler emitted.
+
+    The request is validated-and-LOGGED but NEVER short-circuits: the forecast
+    handlers own a richer error taxonomy (4003 / 4004 / 5008 / 5009) than pm/market's
+    uniform -32602, so the handler's own field checks stay the sole gate and no error
+    code changes. Falls back to a plain ``@method`` registration if the method has no
+    registered spec (it always does — every wrapped method is in ``RPC_SPECS``)."""
+
+    try:
+        from pydantic import ValidationError
+
+        from protocol import RPC_BY_METHOD
+    except Exception:  # pragma: no cover - the protocol package is always importable
+        return method(name)
+
+    spec = RPC_BY_METHOD.get(name)
+    if spec is None:  # pragma: no cover - every wrapped method is registered
+        return method(name)
+
+    def dec(fn):
+        def wrapped(rid, params):
+            data = params if isinstance(params, dict) else {}
+            try:
+                spec.request.model_validate(data)
+            except ValidationError as exc:
+                logger.debug(
+                    "rpc %s request did not validate (passing to handler unchanged): %s",
+                    name, exc,
+                )
+            resp = fn(rid, params)
+            if isinstance(resp, dict) and isinstance(resp.get("result"), dict):
+                try:
+                    spec.response.model_validate(resp["result"])
+                except ValidationError as exc:
+                    logger.debug(
+                        "rpc %s response did not validate (wire returned UNCHANGED): %s",
+                        name, exc,
+                    )
+            return resp
+
+        wrapped.__name__ = getattr(fn, "__name__", "rpc_" + name.replace(".", "_"))
+        return register_method(name, wrapped)
+
+    return dec
+
+
 def _normalize_request(req: Any) -> tuple[Any, str, dict] | dict:
     """Validate a JSON-RPC request enough for safe local dispatch."""
     if not isinstance(req, dict):
@@ -3072,7 +3127,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"output": "\n".join(lines)})
 
 
-@method("forecast.dashboard")
+@rpc_validated("forecast.dashboard")
 def _(rid, params: dict) -> dict:
     try:
         from forecasting.dashboard import build_dashboard_summary, render_dashboard_text
@@ -3096,7 +3151,7 @@ def _(rid, params: dict) -> dict:
 # coalescing (the 1,300-event storm guard) is now structural in JobContext.
 
 
-@method("forecast.warnings.list")
+@rpc_validated("forecast.warnings.list")
 def _(rid, params: dict) -> dict:
     """Group the open warning backlog by reason (counts + priority + recommended
     action). Read-only — mirrors `forecast warnings list`."""
@@ -3118,7 +3173,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.warnings.aggregate")
+@rpc_validated("forecast.warnings.aggregate")
 def _(rid, params: dict) -> dict:
     """Fold the FULL open warning backlog into the 4 operator tiers (free / agent /
     manual + the agent-tier ``stale`` sub-bucket) with per-tier + per-reason totals
@@ -3141,7 +3196,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.warnings.resolve")
+@rpc_validated("forecast.warnings.resolve")
 def _(rid, params: dict) -> dict:
     """Resolve ONE open alert through the gated dispatcher and ack ONLY on real
     work. ``alert_id`` may be an ``al_*`` id (resolve that one) or a scope ref
@@ -3176,7 +3231,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.warnings.dismiss")
+@rpc_validated("forecast.warnings.dismiss")
 def _(rid, params: dict) -> dict:
     """DISMISS (silence) a matching group of OPEN alerts — a RECORDED human silence,
     NOT a resolution.
@@ -3566,7 +3621,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.workspace")
+@rpc_validated("forecast.workspace")
 def _(rid, params: dict) -> dict:
     try:
         from forecasting.dashboard import build_workspace_payload
@@ -3590,7 +3645,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.theses")
+@rpc_validated("forecast.theses")
 def _(rid, params: dict) -> dict:
     # Standalone thesis master list (health / score / delta / coverage / members) for a
     # dedicated thesis dashboard — without shipping the whole forecast workspace.
@@ -3604,7 +3659,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.bench")
+@rpc_validated("forecast.bench")
 def _(rid, params: dict) -> dict:
     # READ-ONLY ForecastBench backtest scoreboard: per-question agent vs de-vigged
     # market-freeze Brier + the paired aggregate. Never mutates the ledger; backs
@@ -3619,7 +3674,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.quorum.status")
+@rpc_validated("forecast.quorum.status")
 def _(rid, params: dict) -> dict:
     """READ-ONLY status/progress for a detached quorum background job.
 
@@ -3658,7 +3713,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.question.readiness")
+@rpc_validated("forecast.question.readiness")
 def _(rid, params: dict) -> dict:
     """READ-ONLY machine-readiness composite for ONE question (the settings modal).
 
@@ -3684,7 +3739,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.triage.contested")
+@rpc_validated("forecast.triage.contested")
 def _(rid, params: dict) -> dict:
     """READ-ONLY list of CONTESTED triage staging rows awaiting an operator label.
 
@@ -3733,7 +3788,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.triage.relabel")
+@rpc_validated("forecast.triage.relabel")
 def _(rid, params: dict) -> dict:
     """Record an operator expert label for a contested triage row + ACK its alert.
 
@@ -3767,7 +3822,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.schedule.status")
+@rpc_validated("forecast.schedule.status")
 def _(rid, params: dict) -> dict:
     """READ-ONLY schedule health: the forecast cron jobs' liveness joined with the
     per-question scheduled reviews (the live, self-advancing schedule).
@@ -3822,7 +3877,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("forecast.reviews.next")
+@rpc_validated("forecast.reviews.next")
 def _(rid, params: dict) -> dict:
     """READ-ONLY: everything the TUI needs to render the review-sweep countdown +
     a running indicator, without re-deriving scheduler state.
@@ -3876,7 +3931,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("forecast.onboard_propose")
+@rpc_validated("forecast.onboard_propose")
 def _(rid, params: dict) -> dict:
     """Validate a draft QuestionSpec and return issues + the clarifications to ask.
 
@@ -3908,7 +3963,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.onboard_commit")
+@rpc_validated("forecast.onboard_commit")
 def _(rid, params: dict) -> dict:
     """Validate a finalized QuestionSpec and commit the full fan-out.
 
@@ -4270,7 +4325,7 @@ def _calibration_bias_or_none(ledger, *, domain: str | None = None):
         return None
 
 
-@method("forecast.calibration")
+@rpc_validated("forecast.calibration")
 def _(rid, params: dict) -> dict:
     domain = params.get("domain") or None
     origin = params.get("origin") or None
@@ -4350,7 +4405,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.hooks")
+@rpc_validated("forecast.hooks")
 def _(rid, params: dict) -> dict:
     """Forecast saturation/style hooks summary for the TUI Hooks view: the
     resolved rule severities, the signal glossary, the curated profiles, and the
@@ -4429,7 +4484,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4003, str(e))
 
 
-@method("forecast.hooks.set")
+@rpc_validated("forecast.hooks.set")
 def _(rid, params: dict) -> dict:
     """Write a hook policy change: target=profile|enabled|severity|enable|disable."""
     try:
@@ -4451,7 +4506,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4004, str(e))
 
 
-@method("forecast.hooks.save_rule")
+@rpc_validated("forecast.hooks.save_rule")
 def _(rid, params: dict) -> dict:
     """Validate + save a user rule. params.rule is the spec; params.edit_id edits
     an existing rule instead of adding. Returns issues on a validation refusal."""
@@ -4471,7 +4526,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4005, str(e))
 
 
-@method("forecast.hooks.remove_rule")
+@rpc_validated("forecast.hooks.remove_rule")
 def _(rid, params: dict) -> dict:
     try:
         from forecasting.hooks import store
@@ -4481,7 +4536,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4006, str(e))
 
 
-@method("forecast.hooks.preview")
+@rpc_validated("forecast.hooks.preview")
 def _(rid, params: dict) -> dict:
     """Dry-run a candidate rule spec against the active questions: how many it
     applies to, how many it would block, and a few failing ids. Validates first."""
@@ -4550,7 +4605,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4007, str(e))
 
 
-@method("forecast.command")
+@rpc_validated("forecast.command")
 def _(rid, params: dict) -> dict:
     raw_arg = params.get("arg", "")
     if not isinstance(raw_arg, str):
@@ -4592,7 +4647,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.reforecast")
+@rpc_validated("forecast.reforecast")
 def _(rid, params: dict) -> dict:
     # The desk's "run update" shortcut: re-arm the question's review to fire on the
     # next cron tick (the in-process autonomous cycle then reforecasts it). Returns
@@ -4609,7 +4664,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("forecast.config")
+@rpc_validated("forecast.config")
 def _(rid, params: dict) -> dict:
     """Resolve the full per-forecast settings for the Desk settings modal: review
     cadence + the live next-run, the decision card, every hook gate (severity +
@@ -4627,7 +4682,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5009, str(e))
 
 
-@method("forecast.config.set")
+@rpc_validated("forecast.config.set")
 def _(rid, params: dict) -> dict:
     """Write the per-forecast settings the modal owns, atomically: review_cadence
     (re-arms the live schedule), decision card fields, and hook gates/thresholds.
@@ -4653,7 +4708,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5009, str(e))
 
 
-@method("forecast.question")
+@rpc_validated("forecast.question")
 def _(rid, params: dict) -> dict:
     question_id = params.get("id", "")
     if not isinstance(question_id, str) or not question_id.strip():
