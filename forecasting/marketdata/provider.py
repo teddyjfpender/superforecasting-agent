@@ -21,18 +21,56 @@ from typing import Callable, Protocol, runtime_checkable
 
 from forecasting.marketdata.model import Quote, SeriesRef
 
-# A JSON getter: (url) -> parsed JSON, or ``None`` on any HTTP / parse failure
-# (mirrors the client's ``getJson`` — a non-OK response or timeout is null, and
-# the parser turns null into honest "—" quotes).
-JsonGetter = Callable[[str], object]
+# A JSON getter: (url, *, data?, headers?) -> parsed JSON, or ``None`` on any
+# HTTP / parse failure (mirrors the client's ``getJson`` — a non-OK response or
+# timeout is null, and the parser turns null into honest "—" quotes). ``data``
+# present makes it a POST (the BLS timeseries endpoint); GET otherwise.
+JsonGetter = Callable[..., object]
+# A text getter: (url) -> body text, or ``None`` on any HTTP / parse failure
+# (mirrors the client's ``getText`` — the keyless FRED CSV + Stooq daily CSV).
+TextGetter = Callable[[str], "str | None"]
 
 
-def default_get_json(url: str, *, timeout: float = 12.0) -> object:
+def default_get_json(
+    url: str,
+    *,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 12.0,
+) -> object:
     """Fetch + parse JSON, returning ``None`` on ANY failure (never raising).
 
     Matches the client contract: a non-2xx status, a network error, or invalid
     JSON all collapse to ``None`` so the caller's parser produces null-valued
-    (honest) quotes instead of throwing.
+    (honest) quotes instead of throwing. When ``data`` is supplied the request
+    is a POST with that body (mirrors the client's ``getJson(url, init)`` for the
+    BLS POST); otherwise a GET.
+    """
+
+    req_headers = {"User-Agent": "Outrider/1.0"}
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(url, data=data, headers=req_headers)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - https only
+            if resp.status and resp.status >= 400:
+                return None
+            raw = resp.read()
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def default_get_text(url: str, *, timeout: float = 12.0) -> str | None:
+    """Fetch + decode a text body, returning ``None`` on ANY failure.
+
+    The keyless FRED CSV (``fredgraph.csv``) and the Stooq daily CSV are plain
+    text; this mirrors the client's ``getText`` — a non-2xx status, a network
+    error, or a decode failure collapse to ``None`` so the parser yields honest
+    "—" quotes instead of throwing.
     """
 
     req = urllib.request.Request(url, headers={"User-Agent": "Outrider/1.0"})
@@ -44,8 +82,8 @@ def default_get_json(url: str, *, timeout: float = 12.0) -> object:
     except (urllib.error.URLError, OSError, ValueError):
         return None
     try:
-        return json.loads(raw.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
         return None
 
 
@@ -69,4 +107,10 @@ class Provider(Protocol):
     ) -> list[Quote]: ...
 
 
-__all__ = ["Provider", "JsonGetter", "default_get_json"]
+__all__ = [
+    "Provider",
+    "JsonGetter",
+    "TextGetter",
+    "default_get_json",
+    "default_get_text",
+]

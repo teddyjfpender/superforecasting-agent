@@ -119,3 +119,65 @@ def test_keyed_provider_without_key_is_skipped_not_errored():
 def test_unknown_provider_yields_no_quotes():
     svc = MarketDataService(providers={}, clock=lambda: 0.0)
     assert svc.quotes([_ref("nope", "X")]) == []
+
+
+# ── C2 service integration: the four new providers wired end-to-end ───────────
+
+
+def test_default_providers_include_all_six():
+    from forecasting.marketdata.service import _default_providers
+
+    assert set(_default_providers()) == {"frankfurter", "bea", "coingecko", "fred", "bls", "stooq"}
+
+
+def test_service_routes_the_four_new_providers_with_real_parsers_no_network():
+    """The service groups by provider and runs each REAL provider's parser off an
+    injected getter — no network — proving the C2 wiring end-to-end."""
+
+    from forecasting.marketdata.providers.bls import BlsProvider
+    from forecasting.marketdata.providers.coingecko import CoingeckoProvider
+    from forecasting.marketdata.providers.fred import FredProvider
+    from forecasting.marketdata.providers.stooq import StooqProvider
+
+    cg = CoingeckoProvider(get_json=lambda url, **kw: {"bitcoin": {"usd": 64239, "usd_24h_change": -1.05}})
+    # No key resolved → FRED takes the keyless CSV path (get_text).
+    fred = FredProvider(
+        get_json=lambda url, **kw: {"observations": []},
+        get_text=lambda url: "DATE,X\n2026-05-01,5.10\n2026-06-01,4.90\n",
+    )
+    bls = BlsProvider(
+        get_json=lambda url, **kw: {"Results": {"series": [{"data": [{"period": "M05", "value": "320.1", "year": "2026"}]}]}}
+    )
+    stooq = StooqProvider(get_text=lambda url: "Date,Open,High,Low,Close,Volume\n2026-07-01,1,1,1,10.4,5\n2026-07-02,1,1,1,10.8,5\n")
+
+    svc = MarketDataService(
+        providers={"coingecko": cg, "fred": fred, "bls": bls, "stooq": stooq},
+        key_resolver=lambda name: None,
+        clock=lambda: 0.0,
+    )
+    quotes = svc.quotes(
+        [_ref("coingecko", "bitcoin"), _ref("fred", "FEDFUNDS"), _ref("bls", "CUUR0000SA0"), _ref("stooq", "aapl.us")]
+    )
+    by = {q.provider: q for q in quotes}
+    assert set(by) == {"coingecko", "fred", "bls", "stooq"}
+    assert by["coingecko"].value == pytest.approx(64239)
+    assert by["fred"].value == pytest.approx(4.90)  # keyless CSV path taken
+    assert by["bls"].value == pytest.approx(320.1)
+    assert by["stooq"].value == pytest.approx(10.8)
+
+
+def test_service_isolates_a_new_provider_error_payload_as_null_never_zero():
+    """An error/empty payload from a new provider is honest-null (THE LAW), and a
+    healthy provider still paints — the tape never blanks."""
+
+    from forecasting.marketdata.providers.coingecko import CoingeckoProvider
+    from forecasting.marketdata.providers.stooq import StooqProvider
+
+    cg = CoingeckoProvider(get_json=lambda url, **kw: {"status": {"error_code": 429}})  # error payload
+    stooq = StooqProvider(get_text=lambda url: "Date,Open,High,Low,Close,Volume\n2026-07-02,1,1,1,10.8,5\n")
+    svc = MarketDataService(
+        providers={"coingecko": cg, "stooq": stooq}, key_resolver=lambda name: None, clock=lambda: 0.0
+    )
+    by = {q.provider: q for q in svc.quotes([_ref("coingecko", "bitcoin"), _ref("stooq", "aapl.us")])}
+    assert by["coingecko"].value is None  # NEVER a fabricated 0
+    assert by["stooq"].value == pytest.approx(10.8)  # healthy provider still paints

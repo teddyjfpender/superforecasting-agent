@@ -26,7 +26,11 @@ from forecasting.marketdata.keys import resolve_key as _resolve_key
 from forecasting.marketdata.model import Quote, SeriesRef
 from forecasting.marketdata.provider import Provider
 from forecasting.marketdata.providers.bea import BeaProvider
+from forecasting.marketdata.providers.bls import BlsProvider
+from forecasting.marketdata.providers.coingecko import CoingeckoProvider
 from forecasting.marketdata.providers.frankfurter import FrankfurterProvider
+from forecasting.marketdata.providers.fred import FredProvider
+from forecasting.marketdata.providers.stooq import StooqProvider
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +96,14 @@ class TTLCache:
 
 
 def _default_providers() -> dict[str, Provider]:
-    return {"frankfurter": FrankfurterProvider(), "bea": BeaProvider()}
+    return {
+        "frankfurter": FrankfurterProvider(),
+        "bea": BeaProvider(),
+        "coingecko": CoingeckoProvider(),
+        "fred": FredProvider(),
+        "bls": BlsProvider(),
+        "stooq": StooqProvider(),
+    }
 
 
 class MarketDataService:
@@ -130,9 +141,12 @@ class MarketDataService:
             provider = self._providers.get(provider_name)
             if provider is None:
                 return []
-            api_key = self._resolve_key(provider_name) if provider.needs_key else None
+            # Resolve the key for EVERY provider: required-key providers (bea) are
+            # gated below, but optionally-keyed ones (fred JSON path, bls
+            # registrationkey) must receive the key when present — client parity.
+            api_key = self._resolve_key(provider_name)
             if provider.needs_key and not api_key:
-                return []  # keyed provider without a key → skipped (client parity)
+                return []  # required-key provider without a key → skipped
 
             def _load() -> list[Quote]:
                 return provider.fetch(group, api_key=api_key)

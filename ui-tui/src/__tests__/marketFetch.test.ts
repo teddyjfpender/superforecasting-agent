@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { MarketSeries } from '../content/marketProviders.js'
-// NOTE (Arc C): frankfurter + bea are now parsed SERVER-SIDE — their parsers and
-// contract tests moved to Python (tests/forecasting/test_marketdata_providers.py).
-// This file keeps the still-client parsers + the routing seam test.
-import { fetchQuotes, parseBls, parseCoingecko, parseFred, parseFredCsv, parseYahoo } from '../lib/marketFetch.js'
+// NOTE (Arc C): frankfurter + bea (C1) and coingecko + fred + bls + stooq (C2)
+// are now parsed SERVER-SIDE — their parsers and contract tests moved to Python
+// (tests/forecasting/test_marketdata_providers.py). This file keeps the only
+// still-client parser (yahoo, C3) + the routing seam test.
+import { fetchQuotes, parseYahoo } from '../lib/marketFetch.js'
 
 const s = (over: Partial<MarketSeries>): MarketSeries => ({
   category: 'Indices',
@@ -46,65 +47,10 @@ describe('parseYahoo', () => {
   })
 })
 
-describe('parseCoingecko', () => {
-  it('reads usd price + 24h change', () => {
-    const json = { bitcoin: { usd: 64239, usd_24h_change: -1.05 } }
-    const q = parseCoingecko(json, [s({ category: 'Crypto', provider: 'coingecko', symbol: 'bitcoin' })])[0]
-    expect(q.value).toBe(64239)
-    expect(q.changePct).toBeCloseTo(-1.05)
-    expect(q.change).toBeCloseTo(64239 * -0.0105, 0)
-  })
-})
-
-describe('parseFred', () => {
-  it('takes the latest observation and change vs the prior one', () => {
-    const json = { observations: [{ date: '2026-05-01', value: '4.2' }, { date: '2026-04-01', value: '4.0' }] }
-    const q = parseFred(json, s({ category: 'Employment', provider: 'fred', symbol: 'UNRATE', unit: '%' }))
-    expect(q.value).toBeCloseTo(4.2)
-    expect(q.change).toBeCloseTo(0.2, 5)
-    expect(q.asOf).toBe(Date.parse('2026-05-01'))
-  })
-
-  it('handles FRED missing values ("." ) as null', () => {
-    const json = { observations: [{ date: '2026-05-01', value: '.' }] }
-    expect(parseFred(json, s({ provider: 'fred' })).value).toBeNull()
-  })
-})
-
-describe('parseBls', () => {
-  it('reads the latest data point and change', () => {
-    const json = {
-      Results: { series: [{ data: [{ period: 'M05', value: '320.1', year: '2026' }, { period: 'M04', value: '319.0', year: '2026' }] }] }
-    }
-
-    const q = parseBls(json, s({ category: 'Inflation', provider: 'bls', symbol: 'CUUR0000SA0' }))
-    expect(q.value).toBeCloseTo(320.1)
-    expect(q.change).toBeCloseTo(1.1, 5)
-  })
-})
-
-describe('parseFredCsv', () => {
-  it('takes the last two real rows from the keyless CSV (oldest→newest)', () => {
-    const csv = 'DATE,FEDFUNDS\n2026-03-01,5.30\n2026-04-01,.\n2026-05-01,5.10\n2026-06-01,4.90\n'
-    const q = parseFredCsv(csv, s({ category: 'Rates', provider: 'fred', symbol: 'FEDFUNDS', unit: '%' }))
-    expect(q.value).toBeCloseTo(4.9)
-    // prior real value is 5.10 (the "." row is skipped)
-    expect(q.change).toBeCloseTo(-0.2, 5)
-    expect(q.asOf).toBe(Date.parse('2026-06-01'))
-  })
-
-  it('returns null for an empty/headers-only CSV', () => {
-    expect(parseFredCsv('DATE,X\n', s({ provider: 'fred' })).value).toBeNull()
-  })
-})
-
-// The FX-range + BEA-honesty contract now lives in Python (server-side): see
-// tests/forecasting/test_marketdata_providers.py. Here we assert the ROUTING
-// seam that replaced the client parsers.
-// The FX-range + BEA-honesty contract now lives in Python (server-side): see
-// tests/forecasting/test_marketdata_providers.py. Here we assert the ROUTING
-// seam that replaced the client parsers.
-describe('fetchQuotes routing (Arc C: FX + BEA go server-side)', () => {
+// The coingecko / fred / bls / stooq contracts (like FX + BEA) now live in
+// Python (server-side): see tests/forecasting/test_marketdata_providers.py. Here
+// we assert the ROUTING seam that replaced the client parsers.
+describe('fetchQuotes routing (Arc C2: FX + BEA + coingecko/fred/bls/stooq go server-side)', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
@@ -151,6 +97,28 @@ describe('fetchQuotes routing (Arc C: FX + BEA go server-side)', () => {
     const sent = (request.mock.calls[0][1] as { series: { line?: string; provider: string }[] }).series
     expect(sent.map(r => r.provider)).toEqual(['frankfurter', 'bea'])
     expect(sent.find(r => r.provider === 'bea')?.line).toBe('31')
+  })
+
+  it('routes coingecko/fred/bls/stooq through ONE market.quotes call, never fetch (C2)', async () => {
+    const fetchFn = vi.fn()
+    vi.stubGlobal('fetch', fetchFn)
+    const request = vi.fn().mockResolvedValue({ quotes: [] })
+
+    await fetchQuotes(
+      [
+        s({ category: 'Crypto', name: 'Bitcoin', provider: 'coingecko', symbol: 'bitcoin' }),
+        s({ category: 'Rates', name: 'Fed Funds', provider: 'fred', symbol: 'FEDFUNDS', unit: '%' }),
+        s({ category: 'Inflation', name: 'CPI-U', provider: 'bls', symbol: 'CUUR0000SA0' }),
+        s({ category: 'Stocks', name: 'Apple', provider: 'stooq', symbol: 'aapl.us' })
+      ],
+      opts({ gw: { request } })
+    )
+
+    // ONE batched RPC carries all four; none of them touch the network client-side.
+    expect(request).toHaveBeenCalledTimes(1)
+    const sent = (request.mock.calls[0][1] as { series: { provider: string }[] }).series
+    expect(sent.map(r => r.provider)).toEqual(['coingecko', 'fred', 'bls', 'stooq'])
+    expect(fetchFn).not.toHaveBeenCalled()
   })
 
   it('skips server-side providers when no gateway is present (no fetch, no throw)', async () => {
