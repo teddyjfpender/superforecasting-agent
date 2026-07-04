@@ -17,7 +17,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from types import UnionType
-from typing import Any, Union, get_args, get_origin
+from typing import Any, Literal, Union, get_args, get_origin
 
 from protocol import EVENT_SPECS, PROTOCOL_VERSION, registered_models
 from protocol.types import WireModel
@@ -82,6 +82,19 @@ def _ts_scalar(annotation: Any) -> str:
         return _ts_name(annotation)
 
     origin = get_origin(annotation)
+    if origin is Literal:
+        # A ``Literal['a', 'b']`` becomes a TS string-literal union — sorted for a
+        # deterministic diff-stable line (TS unions are order-independent). String
+        # members are quoted; bool/int members render as their TS scalar.
+        members = [
+            f"'{arg}'" if isinstance(arg, str) else _ts_scalar(type(arg))
+            for arg in get_args(annotation)
+        ]
+        return " | ".join(sorted(members))
+    if origin in (tuple,):
+        # A fixed-length ``tuple[str, str]`` → ``[string, string]`` (POSITIONAL —
+        # never sorted; a TS tuple's order is significant).
+        return "[" + ", ".join(_ts_scalar(a) for a in get_args(annotation)) + "]"
     if origin in (list,):
         (inner,) = get_args(annotation)
         return f"{_ts_scalar(inner)}[]"

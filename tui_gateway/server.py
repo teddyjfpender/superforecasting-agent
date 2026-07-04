@@ -2009,6 +2009,14 @@ def _session_info(agent) -> dict:
         "profile_name": _current_profile_name(),
     }
     try:
+        # A4 version handshake — echo the wire version on session.info too, so a
+        # resume/steer path that never re-saw gateway.ready can still revalidate.
+        from protocol.version import PROTOCOL_VERSION
+
+        info["protocol_version"] = PROTOCOL_VERSION
+    except Exception:
+        pass
+    try:
         from hermes_cli import __version__, __release_date__
 
         info["version"] = __version__
@@ -2757,7 +2765,7 @@ def _history_to_messages(history: list[dict]) -> list[dict]:
 # ── Methods: session ─────────────────────────────────────────────────
 
 
-@method("session.create")
+@rpc_validated("session.create")
 def _(rid, params: dict) -> dict:
     sid = uuid.uuid4().hex[:8]
     key = _new_session_key()
@@ -2816,7 +2824,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("session.list")
+@rpc_validated("session.list")
 def _(rid, params: dict) -> dict:
     db = _get_db()
     if db is None:
@@ -2862,7 +2870,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5006, str(e))
 
 
-@method("session.most_recent")
+@rpc_validated("session.most_recent")
 def _(rid, params: dict) -> dict:
     """Return the most recent human-facing session id, or ``None``.
 
@@ -2906,7 +2914,7 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"session_id": None})
 
 
-@method("session.resume")
+@rpc_validated("session.resume")
 def _(rid, params: dict) -> dict:
     target = params.get("session_id", "")
     if not target:
@@ -2950,7 +2958,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("session.delete")
+@rpc_validated("session.delete")
 def _(rid, params: dict) -> dict:
     """Delete a stored session and its on-disk transcript files.
 
@@ -2991,7 +2999,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"deleted": target})
 
 
-@method("session.title")
+@rpc_validated("session.title")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
@@ -3054,7 +3062,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5007, str(e))
 
 
-@method("session.usage")
+@rpc_validated("session.usage")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
@@ -3070,7 +3078,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("session.status")
+@rpc_validated("session.status")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
@@ -3985,7 +3993,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("obsidian.status")
+@rpc_validated("obsidian.status")
 def _(rid, params: dict) -> dict:
     """Vault status + a list of the desk's notes for the Obsidian view.
 
@@ -4101,7 +4109,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5010, str(e))
 
 
-@method("obsidian.note")
+@rpc_validated("obsidian.note")
 def _(rid, params: dict) -> dict:
     """Read one vault note's content for the Obsidian view's reading pane."""
     try:
@@ -4198,7 +4206,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5014, str(e))
 
 
-@method("obsidian.search")
+@rpc_validated("obsidian.search")
 def _(rid, params: dict) -> dict:
     """Ranked full-text search across the vault for the TUI search modal.
 
@@ -4752,7 +4760,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5008, str(e))
 
 
-@method("session.history")
+@rpc_validated("session.history")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
@@ -4775,7 +4783,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("session.undo")
+@rpc_validated("session.undo")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -4803,7 +4811,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"removed": removed})
 
 
-@method("session.compress")
+@rpc_validated("session.compress")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -4899,7 +4907,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5005, str(e))
 
 
-@method("session.save")
+@rpc_validated("session.save")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -4927,7 +4935,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5011, str(e))
 
 
-@method("session.close")
+@rpc_validated("session.close")
 def _(rid, params: dict) -> dict:
     sid = params.get("session_id", "")
     session = _sessions.pop(sid, None)
@@ -4955,7 +4963,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"closed": True})
 
 
-@method("session.branch")
+@rpc_validated("session.branch")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -5007,7 +5015,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"session_id": new_sid, "title": title, "parent": old_key})
 
 
-@method("session.interrupt")
+@rpc_validated("session.interrupt")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -5034,7 +5042,7 @@ def _(rid, params: dict) -> dict:
 # translators between JSON-RPC and the Python API.
 
 
-@method("delegation.status")
+@rpc_validated("delegation.status")
 def _(rid, params: dict) -> dict:
     from tools.delegate_tool import (
         is_spawn_paused,
@@ -5066,7 +5074,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("delegation.pause")
+@rpc_validated("delegation.pause")
 def _(rid, params: dict) -> dict:
     from tools.delegate_tool import set_spawn_paused
 
@@ -5074,7 +5082,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"paused": set_spawn_paused(paused)})
 
 
-@method("subagent.interrupt")
+@rpc_validated("subagent.interrupt")
 def _(rid, params: dict) -> dict:
     from tools.delegate_tool import interrupt_subagent
 
@@ -5191,7 +5199,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"path": str(path), "session_id": session_id})
 
 
-@method("spawn_tree.list")
+@rpc_validated("spawn_tree.list")
 def _(rid, params: dict) -> dict:
     session_id = str(params.get("session_id") or "").strip()
     limit = int(params.get("limit") or 50)
@@ -5242,7 +5250,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"entries": entries[:limit]})
 
 
-@method("spawn_tree.load")
+@rpc_validated("spawn_tree.load")
 def _(rid, params: dict) -> dict:
     from pathlib import Path
 
@@ -5266,7 +5274,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, payload)
 
 
-@method("session.steer")
+@rpc_validated("session.steer")
 def _(rid, params: dict) -> dict:
     """Inject a user message into the next tool result without interrupting.
 
@@ -5291,7 +5299,7 @@ def _(rid, params: dict) -> dict:
     return _ok(rid, {"status": "queued" if accepted else "rejected", "text": text})
 
 
-@method("terminal.resize")
+@rpc_validated("terminal.resize")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
@@ -5303,7 +5311,7 @@ def _(rid, params: dict) -> dict:
 # ── Methods: prompt ──────────────────────────────────────────────────
 
 
-@method("prompt.submit")
+@rpc_validated("prompt.submit")
 def _(rid, params: dict) -> dict:
     sid, text = params.get("session_id", ""), params.get("text", "")
     session, err = _sess_nowait(params, rid)
@@ -5860,7 +5868,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
     threading.Thread(target=run, daemon=True).start()
 
 
-@method("clipboard.paste")
+@rpc_validated("clipboard.paste")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -5900,7 +5908,7 @@ def _(rid, params: dict) -> dict:
     )
 
 
-@method("image.attach")
+@rpc_validated("image.attach")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -5943,7 +5951,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5027, str(e))
 
 
-@method("input.detect_drop")
+@rpc_validated("input.detect_drop")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
     if err:
@@ -5994,7 +6002,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5027, str(e))
 
 
-@method("prompt.background")
+@rpc_validated("prompt.background")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -6054,22 +6062,22 @@ def _respond(rid, params, key):
     return _ok(rid, {"status": "ok"})
 
 
-@method("clarify.respond")
+@rpc_validated("clarify.respond")
 def _(rid, params: dict) -> dict:
     return _respond(rid, params, "answer")
 
 
-@method("sudo.respond")
+@rpc_validated("sudo.respond")
 def _(rid, params: dict) -> dict:
     return _respond(rid, params, "password")
 
 
-@method("secret.respond")
+@rpc_validated("secret.respond")
 def _(rid, params: dict) -> dict:
     return _respond(rid, params, "value")
 
 
-@method("approval.respond")
+@rpc_validated("approval.respond")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -6172,7 +6180,7 @@ def _(rid, params: dict) -> dict:
 # ── Methods: config ──────────────────────────────────────────────────
 
 
-@method("config.set")
+@rpc_validated("config.set")
 def _(rid, params: dict) -> dict:
     key, value = params.get("key", ""), params.get("value", "")
     session = _sessions.get(params.get("session_id", ""))
@@ -6694,7 +6702,7 @@ def _(rid, params: dict) -> dict:
     return _err(rid, 4002, f"unknown config key: {key}")
 
 
-@method("setup.status")
+@rpc_validated("setup.status")
 def _(rid, params: dict) -> dict:
     try:
         from hermes_cli.main import _has_any_provider_configured
@@ -6707,7 +6715,7 @@ def _(rid, params: dict) -> dict:
 # ── Methods: tools & system ──────────────────────────────────────────
 
 
-@method("process.stop")
+@rpc_validated("process.stop")
 def _(rid, params: dict) -> dict:
     try:
         from tools.process_registry import process_registry
@@ -6717,7 +6725,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5010, str(e))
 
 
-@method("reload.mcp")
+@rpc_validated("reload.mcp")
 def _(rid, params: dict) -> dict:
     session = _sessions.get(params.get("session_id", ""))
     try:
@@ -6783,7 +6791,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5015, str(e))
 
 
-@method("reload.env")
+@rpc_validated("reload.env")
 def _(rid, params: dict) -> dict:
     """Re-read the active agent-home ``.env`` into the gateway process via
     ``hermes_cli.config.reload_env``, matching classic CLI's ``/reload``
@@ -6837,7 +6845,7 @@ _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
 _WORKER_BLOCKED_COMMANDS: frozenset[str] = frozenset({"snapshot", "snap"})
 
 
-@method("commands.catalog")
+@rpc_validated("commands.catalog")
 def _(rid, params: dict) -> dict:
     """Registry-backed slash metadata for the TUI — categorized, no aliases."""
     try:
@@ -7445,7 +7453,7 @@ def _fuzzy_basename_rank(name: str, query: str) -> tuple[int, int] | None:
     return None
 
 
-@method("complete.path")
+@rpc_validated("complete.path")
 def _(rid, params: dict) -> dict:
     word = params.get("word", "")
     if not word:
@@ -7657,7 +7665,7 @@ def _details_completions(text: str) -> list[dict] | None:
     return []
 
 
-@method("complete.slash")
+@rpc_validated("complete.slash")
 def _(rid, params: dict) -> dict:
     text = params.get("text", "")
     if not text.startswith("/"):
@@ -7759,7 +7767,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5020, str(e))
 
 
-@method("theme.list")
+@rpc_validated("theme.list")
 def _(rid, params: dict) -> dict:
     """List every available theme (built-in skins + user skins) with its
     resolved color map and branding, so the TUI's /theme picker can render a
@@ -7802,7 +7810,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5036, str(e))
 
 
-@method("model.options")
+@rpc_validated("model.options")
 def _(rid, params: dict) -> dict:
     try:
         from hermes_cli.inventory import build_models_payload, load_picker_context
@@ -8263,7 +8271,7 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
     return ""
 
 
-@method("slash.exec")
+@rpc_validated("slash.exec")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -8459,7 +8467,7 @@ def _voice_record_key() -> str:
     return str(record_key) if isinstance(record_key, str) and record_key else "ctrl+b"
 
 
-@method("voice.toggle")
+@rpc_validated("voice.toggle")
 def _(rid, params: dict) -> dict:
     """CLI parity for the ``/voice`` slash command.
 
@@ -8557,7 +8565,7 @@ def _(rid, params: dict) -> dict:
     return _err(rid, 4013, f"unknown voice action: {action}")
 
 
-@method("voice.record")
+@rpc_validated("voice.record")
 def _(rid, params: dict) -> dict:
     """VAD-bounded push-to-talk capture, CLI-parity.
 
@@ -8660,7 +8668,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5026, str(e))
 
 
-@method("voice.stop")
+@rpc_validated("voice.stop")
 def _(rid, params: dict) -> dict:
     """Stop any in-flight TTS playback immediately (the stop/skip hotkey). Terminates the
     audio player and clears the speaking indicator; safe to call when nothing is playing."""
@@ -8712,7 +8720,7 @@ def _(rid, params: dict) -> dict:
 # ── Methods: rollback ────────────────────────────────────────────────
 
 
-@method("rollback.list")
+@rpc_validated("rollback.list")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -8742,7 +8750,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5020, str(e))
 
 
-@method("rollback.restore")
+@rpc_validated("rollback.restore")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -8789,7 +8797,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5021, str(e))
 
 
-@method("rollback.diff")
+@rpc_validated("rollback.diff")
 def _(rid, params: dict) -> dict:
     session, err = _sess(params, rid)
     if err:
@@ -8914,7 +8922,7 @@ def _failure_messages(url: str, port: int, system: str) -> list[str]:
     ]
 
 
-@method("browser.manage")
+@rpc_validated("browser.manage")
 def _(rid, params: dict) -> dict:
     action = params.get("action", "status")
 
@@ -9186,7 +9194,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5034, str(e))
 
 
-@method("tools.configure")
+@rpc_validated("tools.configure")
 def _(rid, params: dict) -> dict:
     action = str(params.get("action", "") or "").strip().lower()
     targets = [
@@ -9285,7 +9293,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5032, str(e))
 
 
-@method("agents.list")
+@rpc_validated("agents.list")
 def _(rid, params: dict) -> dict:
     try:
         from tools.process_registry import process_registry
@@ -9309,7 +9317,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5033, str(e))
 
 
-@method("agents.active.summary")
+@rpc_validated("agents.active.summary")
 def _(rid, params: dict) -> dict:
     """ONE cheap glanceable aggregate: how many agent-ish jobs are live RIGHT NOW.
 
@@ -9519,7 +9527,7 @@ def _(rid, params: dict) -> dict:
 # ── Methods: shell ───────────────────────────────────────────────────
 
 
-@method("shell.exec")
+@rpc_validated("shell.exec")
 def _(rid, params: dict) -> dict:
     cmd = params.get("command", "")
     if not cmd:

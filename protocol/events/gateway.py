@@ -34,11 +34,15 @@ class Skin(WireModel):
 
 
 class GatewayReady(WireModel):
-    """``gateway.ready`` — first frame after connect; carries the initial skin."""
+    """``gateway.ready`` — first frame after connect; carries the initial skin and
+    the wire ``protocol_version`` (the A4 version handshake — the TUI compares it
+    against its generated ``PROTOCOL_VERSION`` and warns, never hard-fails, on a
+    mismatch). Optional so an older gateway that omits it is tolerated."""
 
     TS_NAME = "GatewayReadyPayload"
 
     skin: Skin | None = wire_optional()
+    protocol_version: int | None = wire_optional()
 
 
 class SessionInfo(WireModel):
@@ -65,6 +69,10 @@ class SessionInfo(WireModel):
     usage: dict[str, Any]
     tools: dict[str, Any]
     skills: dict[str, Any]
+    # A4 version handshake — the same wire version gateway.ready advertises,
+    # echoed on session.info so a resumed/steered path can revalidate. Optional
+    # (an older gateway omits it).
+    protocol_version: int | None = wire_optional()
 
 
 class GatewayStderr(WireModel):

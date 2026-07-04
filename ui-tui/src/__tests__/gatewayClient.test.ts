@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { GatewayClient } from '../gatewayClient.js'
+import { PROTOCOL_VERSION } from '../protocol/generated.js'
 
 interface ListenerEntry {
   callback: (event: any) => void
@@ -168,6 +169,46 @@ describe('GatewayClient websocket attach mode', () => {
     const frame = JSON.parse(gatewaySocket.sent[0] ?? '{}') as { id: string }
     gatewaySocket.message(JSON.stringify({ id: frame.id, jsonrpc: '2.0', result: { ok: true } }))
     await expect(req).resolves.toEqual({ ok: true })
+
+    gw.kill()
+  })
+
+  // ── A4 version handshake ─────────────────────────────────────────────────
+  const ready = (payload: unknown): string =>
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready', payload } })
+
+  it('warns (once, never throws) when gateway.ready advertises a mismatched protocol_version', () => {
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
+    const gw = new GatewayClient()
+
+    gw.start()
+    const sock = FakeWebSocket.instances[0]!
+    sock.open()
+
+    sock.message(ready({ protocol_version: 999 }))
+    sock.message(ready({ protocol_version: 999 })) // second frame must NOT re-warn
+
+    const tail = gw.getLogTail(50)
+    expect(tail).toContain('[protocol]')
+    expect(tail).toContain('gateway wire version 999')
+    // warn-once: exactly one occurrence
+    expect(tail.split('gateway wire version 999').length - 1).toBe(1)
+
+    gw.kill()
+  })
+
+  it('does not warn when the advertised protocol_version matches or is absent', () => {
+    process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
+    const gw = new GatewayClient()
+
+    gw.start()
+    const sock = FakeWebSocket.instances[0]!
+    sock.open()
+
+    sock.message(ready({})) // older gateway: no protocol_version → tolerated
+    sock.message(ready({ protocol_version: PROTOCOL_VERSION })) // matching → silent
+
+    expect(gw.getLogTail(50)).not.toContain('gateway wire version')
 
     gw.kill()
   })

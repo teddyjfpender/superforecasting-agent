@@ -276,10 +276,18 @@ def main():
         except Exception:
             pass
 
+    # A4 version handshake: advertise the wire PROTOCOL_VERSION on the hello frame.
+    # The TUI compares it against its generated const and WARNS (never hard-fails)
+    # on a mismatch — see ui-tui/src/gatewayClient.ts.
+    from protocol.version import PROTOCOL_VERSION
+
     if not write_json({
         "jsonrpc": "2.0",
         "method": "event",
-        "params": {"type": "gateway.ready", "payload": {"skin": resolve_skin()}},
+        "params": {
+            "type": "gateway.ready",
+            "payload": {"skin": resolve_skin(), "protocol_version": PROTOCOL_VERSION},
+        },
     }):
         _log_exit("startup write failed (broken stdout pipe before first event)")
         sys.exit(0)

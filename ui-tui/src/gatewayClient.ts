@@ -8,7 +8,7 @@ import type { GatewayEvent } from './gatewayTypes.js'
 import { CircularBuffer } from './lib/circularBuffer.js'
 import { tuiEnvValue } from './lib/envAlias.js'
 import { runtimeEnvValue } from './lib/runtimeEnv.js'
-import { WireEvent } from './protocol/generated.js'
+import { PROTOCOL_VERSION, WireEvent } from './protocol/generated.js'
 
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096
@@ -152,6 +152,7 @@ export class GatewayClient extends EventEmitter {
   private publish(ev: GatewayEvent) {
     if (ev.type === WireEvent.GATEWAY_READY) {
       this.ready = true
+      this.checkProtocolVersion(ev.payload?.protocol_version)
 
       if (this.readyTimer) {
         clearTimeout(this.readyTimer)
@@ -538,6 +539,26 @@ export class GatewayClient extends EventEmitter {
 
   private pushLog(line: string) {
     this.logs.push(truncateLine(line))
+  }
+
+  // A4 version handshake — the gateway advertises its wire PROTOCOL_VERSION on
+  // gateway.ready. We WARN (once, never hard-fail) when it disagrees with the
+  // version baked into our generated protocol. A missing field (an older gateway
+  // that predates the handshake) is silently tolerated. The warning surfaces via
+  // the same startup-log channel the status line drains, so a mismatched build
+  // pair is diagnosable instead of a silent shape-drift mystery.
+  private versionWarned = false
+
+  private checkProtocolVersion(advertised?: number) {
+    if (this.versionWarned || advertised == null || advertised === PROTOCOL_VERSION) {
+      return
+    }
+
+    this.versionWarned = true
+    this.pushLog(
+      `[protocol] gateway wire version ${advertised} != TUI ${PROTOCOL_VERSION} — ` +
+        'RPC/event shapes may have drifted; rebuild the TUI (npm run build) to match the gateway.',
+    )
   }
 
   private rejectPending(err: Error) {

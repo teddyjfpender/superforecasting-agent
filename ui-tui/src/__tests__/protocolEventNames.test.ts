@@ -66,3 +66,37 @@ describe('protocol event names (A2 grep-proof)', () => {
     }
   })
 })
+
+// ── the A4 grep-proof (the arc ENDGAME) ───────────────────────────────────────
+// Goal gate: gatewayTypes.ts is thinned to a PURE re-export shim + the two
+// irreducibly-TS-only aliases. NO hand-written wire-shape `interface` survives
+// there — every RPC/event shape is generated from protocol/. If anyone
+// reintroduces an `export interface XResponse {}` mirror instead of adding a
+// pydantic model, it fails here.
+describe('gatewayTypes.ts is a thin re-export shim (A4 grep-proof)', () => {
+  const shim = readFileSync(join(SRC, 'gatewayTypes.ts'), 'utf8')
+
+  it('declares NO hand-written wire-shape interface (all generated)', () => {
+    const interfaces = [...shim.matchAll(/^export interface (\w+)/gm)].map(m => m[1])
+
+    expect(interfaces, `hand-written wire interface(s) in gatewayTypes.ts — model them in protocol/`).toEqual([])
+  })
+
+  it('keeps EXACTLY the two TS-only type aliases that have no single pydantic-model form', () => {
+    const aliases = [...shim.matchAll(/^export type (\w+) =/gm)].map(m => m[1]).sort()
+
+    expect(aliases).toEqual(['CommandDispatchResponse', 'GatewayEvent'])
+  })
+
+  it('imports every re-exported wire shape from the generated protocol', () => {
+    // The only value/type import sources are the generated protocol + ./types.js
+    // (the app-internal composites). No sibling hand-written mirror module.
+    // Match real import/export module specifiers only (a line beginning with
+    // `import` / `export` / a closing `}` of a multi-line re-export) — never a
+    // `from '...'` mention inside a comment.
+    const froms = [...shim.matchAll(/^\s*(?:import|export|})[^\n]*from '([^']+)'/gm)].map(m => m[1])
+    const external = froms.filter(f => f !== './protocol/generated.js' && f !== './types.js')
+
+    expect(external, `gatewayTypes.ts should source shapes only from generated.js / types.js`).toEqual([])
+  })
+})

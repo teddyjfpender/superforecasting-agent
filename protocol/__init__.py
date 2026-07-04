@@ -22,10 +22,20 @@ from protocol.events import tools as _events_tools
 from protocol.events import turn as _events_turn
 from protocol.events import voice as _events_voice
 from protocol.events import warnings as _events_warnings
+from protocol.rpc import agents as _rpc_agents
+from protocol.rpc import commands as _rpc_commands
+from protocol.rpc import config as _rpc_config
 from protocol.rpc import forecast as _rpc_forecast
+from protocol.rpc import interact as _rpc_interact
 from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import markets as _rpc_markets
+from protocol.rpc import model as _rpc_model
+from protocol.rpc import obsidian as _rpc_obsidian
 from protocol.rpc import pm as _rpc_pm
+from protocol.rpc import rollback as _rpc_rollback
+from protocol.rpc import session as _rpc_session
+from protocol.rpc import theme as _rpc_theme
+from protocol.rpc import voice as _rpc_voice
 from protocol.rpc import warnings as _rpc_warnings
 from protocol.types import WireModel
 from protocol.version import MIN_SUPPORTED, PROTOCOL_VERSION
@@ -127,6 +137,88 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("forecast.reforecast.status", _rpc_forecast.ForecastReforecastStatusRequest, _rpc_forecast.ForecastReforecastStatusResponse),
     RpcSpec("forecast.reforecast.active", _rpc_forecast.ForecastReforecastActiveRequest, _rpc_forecast.ForecastReforecastActiveResponse),
     RpcSpec("forecast.desk.task", _rpc_forecast.ForecastDeskTaskRequest, _rpc_forecast.ForecastReforecastStartResponse),
+    # ── ARC A4 — the arc closer: session / config / agents / everything left ──
+    # ── session.* — the session lifecycle family ─────────────────────────────
+    RpcSpec("session.create", _rpc_session.SessionCreateRequest, _rpc_session.SessionCreateResponse),
+    RpcSpec("session.resume", _rpc_session.SessionResumeRequest, _rpc_session.SessionResumeResponse),
+    RpcSpec("session.list", _rpc_session.SessionListRequest, _rpc_session.SessionListResponse),
+    RpcSpec("session.delete", _rpc_session.SessionDeleteRequest, _rpc_session.SessionDeleteResponse),
+    RpcSpec("session.most_recent", _rpc_session.SessionMostRecentRequest, _rpc_session.SessionMostRecentResponse),
+    RpcSpec("session.title", _rpc_session.SessionTitleRequest, _rpc_session.SessionTitleResponse),
+    RpcSpec("session.save", _rpc_session.SessionSaveRequest, _rpc_session.SessionSaveResponse),
+    RpcSpec("session.undo", _rpc_session.SessionUndoRequest, _rpc_session.SessionUndoResponse),
+    RpcSpec("session.usage", _rpc_session.SessionUsageRequest, _rpc_session.SessionUsageResponse),
+    RpcSpec("session.status", _rpc_session.SessionStatusRequest, _rpc_session.SessionStatusResponse),
+    RpcSpec("session.compress", _rpc_session.SessionCompressRequest, _rpc_session.SessionCompressResponse),
+    RpcSpec("session.branch", _rpc_session.SessionBranchRequest, _rpc_session.SessionBranchResponse),
+    RpcSpec("session.close", _rpc_session.SessionCloseRequest, _rpc_session.SessionCloseResponse),
+    RpcSpec("session.interrupt", _rpc_session.SessionInterruptRequest, _rpc_session.SessionInterruptResponse),
+    RpcSpec("session.steer", _rpc_session.SessionSteerRequest, _rpc_session.SessionSteerResponse),
+    RpcSpec("session.history", _rpc_session.SessionHistoryRequest, _rpc_session.SessionHistoryResponse),
+    # ── config.* + setup.status ──────────────────────────────────────────────
+    # config.get is POLYMORPHIC (its shape depends on the `key` param) so it is
+    # registered for TS types only (handler stays @method, unwrapped); its two
+    # alternate shapes ride EXTRA_MODELS below.
+    RpcSpec("config.get", _rpc_config.ConfigGetValueRequest, _rpc_config.ConfigFullResponse),
+    RpcSpec("config.set", _rpc_config.ConfigSetRequest, _rpc_config.ConfigSetResponse),
+    RpcSpec("setup.status", _rpc_config.SetupStatusRequest, _rpc_config.SetupStatusResponse),
+    # ── theme / model / voice ────────────────────────────────────────────────
+    RpcSpec("theme.list", _rpc_theme.ThemeListRequest, _rpc_theme.ThemeListResponse),
+    RpcSpec("model.options", _rpc_model.ModelOptionsRequest, _rpc_model.ModelOptionsResponse),
+    RpcSpec("voice.toggle", _rpc_voice.VoiceToggleRequest, _rpc_voice.VoiceToggleResponse),
+    RpcSpec("voice.record", _rpc_voice.VoiceRecordRequest, _rpc_voice.VoiceRecordResponse),
+    RpcSpec("voice.stop", _rpc_voice.VoiceRecordRequest, _rpc_voice.VoiceRecordResponse),
+    # ── obsidian.* ───────────────────────────────────────────────────────────
+    RpcSpec("obsidian.status", _rpc_obsidian.ObsidianStatusRequest, _rpc_obsidian.ObsidianStatusResponse),
+    RpcSpec("obsidian.note", _rpc_obsidian.ObsidianNoteRequest, _rpc_obsidian.ObsidianNoteResponse),
+    RpcSpec("obsidian.search", _rpc_obsidian.ObsidianSearchRequest, _rpc_obsidian.ObsidianSearchResponse),
+    # ── agents.* / delegation.* / subagent.* / spawn_tree.* ──────────────────
+    RpcSpec("agents.list", _rpc_agents.AgentsListRequest, _rpc_agents.AgentsListResponse),
+    RpcSpec("agents.active.summary", _rpc_agents.AgentsActiveSummaryRequest, _rpc_agents.AgentsActiveSummaryResponse),
+    RpcSpec("delegation.status", _rpc_agents.DelegationStatusRequest, _rpc_agents.DelegationStatusResponse),
+    RpcSpec("delegation.pause", _rpc_agents.DelegationPauseRequest, _rpc_agents.DelegationPauseResponse),
+    RpcSpec("subagent.interrupt", _rpc_agents.SubagentInterruptRequest, _rpc_agents.SubagentInterruptResponse),
+    RpcSpec("spawn_tree.list", _rpc_agents.SpawnTreeListRequest, _rpc_agents.SpawnTreeListResponse),
+    RpcSpec("spawn_tree.load", _rpc_agents.SpawnTreeLoadRequest, _rpc_agents.SpawnTreeLoadResponse),
+    # ── commands / completion / slash ────────────────────────────────────────
+    RpcSpec("commands.catalog", _rpc_commands.CommandsCatalogRequest, _rpc_commands.CommandsCatalogResponse),
+    RpcSpec("complete.slash", _rpc_commands.CompletionRequest, _rpc_commands.CompletionResponse),
+    RpcSpec("complete.path", _rpc_commands.CompletionRequest, _rpc_commands.CompletionResponse),
+    RpcSpec("slash.exec", _rpc_commands.SlashExecRequest, _rpc_commands.SlashExecResponse),
+    # ── rollback.* ───────────────────────────────────────────────────────────
+    RpcSpec("rollback.list", _rpc_rollback.RollbackListRequest, _rpc_rollback.RollbackListResponse),
+    RpcSpec("rollback.diff", _rpc_rollback.RollbackDiffRequest, _rpc_rollback.RollbackDiffResponse),
+    RpcSpec("rollback.restore", _rpc_rollback.RollbackRestoreRequest, _rpc_rollback.RollbackRestoreResponse),
+    # ── interaction / utility RPCs ───────────────────────────────────────────
+    RpcSpec("prompt.submit", _rpc_interact.PromptSubmitRequest, _rpc_interact.PromptSubmitResponse),
+    RpcSpec("prompt.background", _rpc_interact.PromptBackgroundRequest, _rpc_interact.BackgroundStartResponse),
+    RpcSpec("clarify.respond", _rpc_interact.ClarifyRespondRequest, _rpc_interact.ClarifyRespondResponse),
+    RpcSpec("approval.respond", _rpc_interact.RespondRequest, _rpc_interact.ApprovalRespondResponse),
+    RpcSpec("sudo.respond", _rpc_interact.RespondRequest, _rpc_interact.SudoRespondResponse),
+    RpcSpec("secret.respond", _rpc_interact.RespondRequest, _rpc_interact.SecretRespondResponse),
+    RpcSpec("shell.exec", _rpc_interact.ShellExecRequest, _rpc_interact.ShellExecResponse),
+    RpcSpec("clipboard.paste", _rpc_interact.ClipboardPasteRequest, _rpc_interact.ClipboardPasteResponse),
+    RpcSpec("input.detect_drop", _rpc_interact.InputDetectDropRequest, _rpc_interact.InputDetectDropResponse),
+    RpcSpec("terminal.resize", _rpc_interact.TerminalResizeRequest, _rpc_interact.TerminalResizeResponse),
+    RpcSpec("image.attach", _rpc_interact.ImageAttachRequest, _rpc_interact.ImageAttachResponse),
+    RpcSpec("tools.configure", _rpc_interact.ToolsConfigureRequest, _rpc_interact.ToolsConfigureResponse),
+    RpcSpec("reload.mcp", _rpc_interact.ReloadMcpRequest, _rpc_interact.ReloadMcpResponse),
+    RpcSpec("reload.env", _rpc_interact.ReloadEnvRequest, _rpc_interact.ReloadEnvResponse),
+    RpcSpec("process.stop", _rpc_interact.ProcessStopRequest, _rpc_interact.ProcessStopResponse),
+    RpcSpec("browser.manage", _rpc_interact.BrowserManageRequest, _rpc_interact.BrowserManageResponse),
+]
+
+# Models that MUST be emitted to TS but are not a single RPC's primary
+# request/response: config.get's polymorphic alternates, and the two shapes the
+# TS-only ``GatewayEvent`` union nests (``SubagentEventPayload``/``GatewaySkin``,
+# which the server emits under the ``subagent.*``/``skin.changed`` events using
+# their own leaner event models). Listed here so the codegen collector reaches
+# them.
+EXTRA_MODELS: list[type[WireModel]] = [
+    _rpc_config.ConfigMtimeResponse,
+    _rpc_config.ConfigGetValueResponse,
+    _rpc_agents.SubagentEventPayload,
+    _rpc_interact.GatewaySkin,
 ]
 
 EVENT_SPECS: list[EventSpec] = [
@@ -201,6 +293,7 @@ def registered_models() -> list[type[WireModel]]:
         models.append(spec.response)
     for event in EVENT_SPECS:
         models.append(event.model)
+    models.extend(EXTRA_MODELS)
     return models
 
 
@@ -211,6 +304,7 @@ __all__ = [
     "EventSpec",
     "RPC_SPECS",
     "EVENT_SPECS",
+    "EXTRA_MODELS",
     "RPC_BY_METHOD",
     "registered_models",
 ]

@@ -58,10 +58,43 @@ export const WireEvent = {
   VOICE_TRANSCRIPT: 'voice.transcript',
 } as const
 
+export interface AgentProcess {
+  command: string
+  session_id: string
+  status: string
+  uptime: number
+}
+
+export interface AgentsActiveKinds {
+  procs: number
+  quorum: number
+  reforecast: number
+}
+
+export interface AgentsActiveSummaryRequest {
+}
+
+export interface AgentsActiveSummaryResponse {
+  count: number
+  headline: string
+  kinds: AgentsActiveKinds
+}
+
+export interface AgentsListRequest {
+}
+
+export interface AgentsListResponse {
+  processes: AgentProcess[]
+}
+
 export interface ApprovalRequestPayload {
   command: string
   description: string
   request_id?: string
+}
+
+export interface ApprovalRespondResponse {
+  ok?: boolean
 }
 
 export interface AutomodeCompletePayload {
@@ -96,6 +129,20 @@ export interface BackgroundCompletePayload {
   text: string
 }
 
+export interface BackgroundStartResponse {
+  task_id?: string
+}
+
+export interface BrowserManageRequest {
+  action: null | string
+}
+
+export interface BrowserManageResponse {
+  connected?: boolean
+  messages?: string[]
+  url?: string
+}
+
 export interface BrowserProgressPayload {
   level?: string
   message?: string
@@ -107,8 +154,139 @@ export interface ClarifyRequestPayload {
   request_id: string
 }
 
+export interface ClarifyRespondRequest {
+  request_id: null | string
+  session_id: null | string
+}
+
+export interface ClarifyRespondResponse {
+  ok?: boolean
+}
+
+export interface ClipboardPasteRequest {
+  session_id: null | string
+}
+
+export interface ClipboardPasteResponse {
+  attached?: boolean
+  count?: number
+  height?: number
+  message?: string
+  token_estimate?: number
+  width?: number
+}
+
+export interface CommandsCatalogRequest {
+}
+
+export interface CommandsCatalogResponse {
+  canon?: Record<string, string>
+  categories?: SlashCategory[]
+  pairs?: [string, string][]
+  skill_count?: number
+  sub?: Record<string, string[]>
+  warning?: string
+}
+
+export interface CompletionRequest {
+  text: null | string
+}
+
+export interface CompletionResponse {
+  items?: GatewayCompletionItem[]
+  replace_from?: number
+}
+
+export interface ConfigDisplayConfig {
+  bell_on_complete?: boolean
+  busy_input_mode?: string
+  details_mode?: string
+  inline_diffs?: boolean
+  mouse_tracking?: null | boolean | number | string
+  sections?: Record<string, string>
+  show_cost?: boolean
+  show_reasoning?: boolean
+  streaming?: boolean
+  thinking_mode?: string
+  tui_auto_resume_recent?: boolean
+  tui_compact?: boolean
+  tui_mouse?: null | boolean | number | string
+  tui_status_indicator?: string
+  tui_statusbar?: 'bottom' | 'off' | 'on' | 'top' | boolean
+}
+
+export interface ConfigFullConfig {
+  display?: ConfigDisplayConfig
+  voice?: ConfigVoiceConfig
+}
+
+export interface ConfigFullResponse {
+  config?: ConfigFullConfig
+}
+
+export interface ConfigGetValueRequest {
+  key: null | string
+}
+
+export interface ConfigGetValueResponse {
+  display?: string
+  home?: string
+  value?: string
+}
+
+export interface ConfigMtimeResponse {
+  mtime?: number
+}
+
+export interface ConfigSetRequest {
+  key: null | string
+  session_id: null | string
+  value: null | string
+}
+
+export interface ConfigSetResponse {
+  credential_warning?: string
+  history_reset?: boolean
+  info?: SessionInfo
+  value?: string
+  warning?: string
+}
+
+export interface ConfigVoiceConfig {
+  record_key?: unknown
+}
+
 export interface CronFiredPayload {
   count?: number
+}
+
+export interface DelegationActiveEntry {
+  depth?: number
+  goal?: string
+  model?: null | string
+  parent_id?: null | string
+  started_at?: number
+  status?: string
+  subagent_id?: string
+  tool_count?: number
+}
+
+export interface DelegationPauseRequest {
+  paused: null | boolean
+}
+
+export interface DelegationPauseResponse {
+  paused?: boolean
+}
+
+export interface DelegationStatusRequest {
+}
+
+export interface DelegationStatusResponse {
+  active?: DelegationActiveEntry[]
+  max_concurrent_children?: number
+  max_spawn_depth?: number
+  paused?: boolean
 }
 
 export interface ErrorPayload {
@@ -1646,12 +1824,29 @@ export interface ForecastWorkspaceTrigger {
   window?: string
 }
 
+export interface GatewayCompletionItem {
+  display: string
+  meta?: string
+  text: string
+}
+
 export interface GatewayProtocolErrorPayload {
   preview?: string
 }
 
 export interface GatewayReadyPayload {
+  protocol_version?: number
   skin?: SkinPayload
+}
+
+export interface GatewaySkin {
+  appearance?: string
+  banner_hero?: string
+  banner_logo?: string
+  branding?: Record<string, string>
+  colors?: Record<string, string>
+  help_header?: string
+  tool_prefix?: string
 }
 
 export interface GatewayStartTimeoutPayload {
@@ -1662,6 +1857,39 @@ export interface GatewayStartTimeoutPayload {
 
 export interface GatewayStderrPayload {
   line: string
+}
+
+export interface GatewayTranscriptMessage {
+  context?: string
+  name?: string
+  role: 'assistant' | 'system' | 'tool' | 'user'
+  text?: string
+}
+
+export interface ImageAttachRequest {
+  session_id: null | string
+}
+
+export interface ImageAttachResponse {
+  height?: number
+  name?: string
+  remainder?: string
+  token_estimate?: number
+  width?: number
+}
+
+export interface InputDetectDropRequest {
+  text: null | string
+}
+
+export interface InputDetectDropResponse {
+  height?: number
+  is_image?: boolean
+  matched?: boolean
+  name?: string
+  text?: string
+  token_estimate?: number
+  width?: number
 }
 
 export interface JobCompletePayload {
@@ -1792,6 +2020,13 @@ export interface MarketSeriesRef {
   unit?: string
 }
 
+export interface McpServerStatus {
+  connected: boolean
+  name: string
+  tools: number
+  transport: string
+}
+
 export interface MessageCompletePayload {
   reasoning?: string
   rendered?: string
@@ -1807,6 +2042,81 @@ export interface MessageDeltaPayload {
 }
 
 export interface MessageStartPayload {
+}
+
+export interface ModelOptionProvider {
+  auth_type?: string
+  authenticated?: boolean
+  is_current?: boolean
+  key_env?: string
+  models?: string[]
+  name: string
+  reasoning_effort_models?: string[]
+  reasoning_efforts?: string[]
+  slug: string
+  supports_reasoning_effort?: boolean
+  total_models?: number
+  warning?: string
+}
+
+export interface ModelOptionsRequest {
+}
+
+export interface ModelOptionsResponse {
+  model?: string
+  provider?: string
+  providers?: ModelOptionProvider[]
+  reasoning_effort?: string
+}
+
+export interface ObsidianNote {
+  excerpt?: string
+  folder?: string
+  links?: string[]
+  modified?: string
+  rel_path?: string
+  size?: number
+  title?: string
+}
+
+export interface ObsidianNoteRequest {
+  rel_path: null | string
+}
+
+export interface ObsidianNoteResponse {
+  content?: string
+  rel_path?: string
+  size?: number
+  truncated?: boolean
+}
+
+export interface ObsidianSearchRequest {
+  query: null | string
+}
+
+export interface ObsidianSearchResponse {
+  count?: number
+  query?: string
+  results?: ObsidianSearchResult[]
+}
+
+export interface ObsidianSearchResult {
+  line?: number
+  matched_terms?: number
+  rel_path?: string
+  score?: number
+  snippet?: string
+  title?: string
+}
+
+export interface ObsidianStatusRequest {
+}
+
+export interface ObsidianStatusResponse {
+  count?: number
+  exists?: boolean
+  notes?: ObsidianNote[]
+  vault?: null | string
 }
 
 export interface PMDistributionDTO {
@@ -1979,6 +2289,27 @@ export interface PmStreamStopResponse {
   venue: string
 }
 
+export interface ProcessStopRequest {
+}
+
+export interface ProcessStopResponse {
+  killed?: number
+}
+
+export interface PromptBackgroundRequest {
+  session_id: null | string
+  text: null | string
+}
+
+export interface PromptSubmitRequest {
+  session_id: null | string
+  text: null | string
+}
+
+export interface PromptSubmitResponse {
+  ok?: boolean
+}
+
 export interface Quote {
   asOf: number
   category: string
@@ -2008,6 +2339,26 @@ export interface ReasoningDeltaPayload {
   text?: string
 }
 
+export interface ReloadEnvRequest {
+}
+
+export interface ReloadEnvResponse {
+  updated?: number
+}
+
+export interface ReloadMcpRequest {
+}
+
+export interface ReloadMcpResponse {
+  message?: string
+  status?: string
+}
+
+export interface RespondRequest {
+  request_id: null | string
+  session_id: null | string
+}
+
 export interface ReviewSummaryPayload {
   text?: string
 }
@@ -2020,6 +2371,43 @@ export interface ReviewSweepPayload {
   refreshed?: number
 }
 
+export interface RollbackCheckpoint {
+  hash: string
+  message?: string
+  timestamp?: string
+}
+
+export interface RollbackDiffRequest {
+  hash: null | string
+}
+
+export interface RollbackDiffResponse {
+  diff?: string
+  rendered?: string
+  stat?: string
+}
+
+export interface RollbackListRequest {
+}
+
+export interface RollbackListResponse {
+  checkpoints?: RollbackCheckpoint[]
+  enabled?: boolean
+}
+
+export interface RollbackRestoreRequest {
+  hash: null | string
+}
+
+export interface RollbackRestoreResponse {
+  error?: string
+  history_removed?: number
+  message?: string
+  reason?: string
+  restored_to?: string
+  success?: boolean
+}
+
 export interface SecretRequestPayload {
   env_var: string
   metadata?: Record<string, unknown>
@@ -2027,11 +2415,123 @@ export interface SecretRequestPayload {
   request_id: string
 }
 
+export interface SecretRespondResponse {
+  ok?: boolean
+}
+
+export interface SessionBranchRequest {
+  session_id: null | string
+}
+
+export interface SessionBranchResponse {
+  session_id?: string
+  title?: string
+}
+
+export interface SessionCloseRequest {
+  session_id: null | string
+}
+
+export interface SessionCloseResponse {
+  ok?: boolean
+}
+
+export interface SessionCompressRequest {
+  session_id: null | string
+}
+
+export interface SessionCompressResponse {
+  after_messages?: number
+  after_tokens?: number
+  before_messages?: number
+  before_tokens?: number
+  info?: SessionInfo
+  messages?: GatewayTranscriptMessage[]
+  removed?: number
+  summary?: SessionCompressSummary
+  usage?: Usage
+}
+
+export interface SessionCompressSummary {
+  headline?: string
+  noop?: boolean
+  note?: null | string
+  token_line?: string
+}
+
+export interface SessionCreateInfo {
+  config_warning?: string
+  credential_warning?: string
+  cwd?: string
+  fast?: boolean
+  lazy?: boolean
+  mcp_servers?: McpServerStatus[]
+  model: string
+  profile_name?: string
+  protocol_version?: number
+  reasoning_effort?: string
+  release_date?: string
+  service_tier?: string
+  skills: Record<string, string[]>
+  system_prompt?: string
+  tools: Record<string, string[]>
+  update_behind?: null | number
+  update_command?: string
+  usage?: Usage
+  version?: string
+}
+
+export interface SessionCreateRequest {
+  cols: null | number
+}
+
+export interface SessionCreateResponse {
+  info?: SessionCreateInfo
+  session_id: string
+}
+
+export interface SessionDeleteRequest {
+  session_id: string
+}
+
+export interface SessionDeleteResponse {
+  deleted: string
+}
+
+export interface SessionHistoryRequest {
+  session_id: null | string
+}
+
+export interface SessionHistoryResponse {
+  messages?: GatewayTranscriptMessage[]
+}
+
+export interface SessionInfo {
+  cwd?: string
+  fast?: boolean
+  lazy?: boolean
+  mcp_servers?: McpServerStatus[]
+  model: string
+  profile_name?: string
+  protocol_version?: number
+  reasoning_effort?: string
+  release_date?: string
+  service_tier?: string
+  skills: Record<string, string[]>
+  system_prompt?: string
+  tools: Record<string, string[]>
+  update_behind?: null | number
+  update_command?: string
+  usage?: Usage
+  version?: string
+}
+
 export interface SessionInfoPayload {
   cwd: string
   fast: boolean
   model: string
   profile_name: string
+  protocol_version?: number
   reasoning_effort: string
   release_date: string
   service_tier: string
@@ -2043,6 +2543,134 @@ export interface SessionInfoPayload {
   version: string
 }
 
+export interface SessionInterruptRequest {
+  session_id: null | string
+}
+
+export interface SessionInterruptResponse {
+  ok?: boolean
+}
+
+export interface SessionListItem {
+  id: string
+  message_count: number
+  preview: string
+  source?: string
+  started_at: number
+  title: string
+}
+
+export interface SessionListRequest {
+}
+
+export interface SessionListResponse {
+  sessions?: SessionListItem[]
+}
+
+export interface SessionMostRecentRequest {
+}
+
+export interface SessionMostRecentResponse {
+  session_id?: null | string
+  source?: string
+  started_at?: number
+  title?: string
+}
+
+export interface SessionResumeRequest {
+  cols: null | number
+  session_id: string
+}
+
+export interface SessionResumeResponse {
+  info?: SessionInfo
+  message_count?: number
+  messages: GatewayTranscriptMessage[]
+  resumed?: string
+  session_id: string
+}
+
+export interface SessionSaveRequest {
+  session_id: null | string
+}
+
+export interface SessionSaveResponse {
+  file?: string
+}
+
+export interface SessionStatusRequest {
+  session_id: null | string
+}
+
+export interface SessionStatusResponse {
+  output?: string
+}
+
+export interface SessionSteerRequest {
+  session_id: null | string
+  text: null | string
+}
+
+export interface SessionSteerResponse {
+  status?: 'queued' | 'rejected'
+  text?: string
+}
+
+export interface SessionTitleRequest {
+  session_id: null | string
+}
+
+export interface SessionTitleResponse {
+  pending?: boolean
+  session_key?: string
+  title?: string
+}
+
+export interface SessionUndoRequest {
+  session_id: null | string
+}
+
+export interface SessionUndoResponse {
+  removed?: number
+}
+
+export interface SessionUsageRequest {
+  session_id: null | string
+}
+
+export interface SessionUsageResponse {
+  cache_read?: number
+  cache_write?: number
+  calls?: number
+  compressions?: number
+  context_max?: number
+  context_percent?: number
+  context_used?: number
+  cost_status?: 'estimated' | 'exact'
+  cost_usd?: number
+  input?: number
+  model?: string
+  output?: number
+  total?: number
+}
+
+export interface SetupStatusRequest {
+}
+
+export interface SetupStatusResponse {
+  provider_configured?: boolean
+}
+
+export interface ShellExecRequest {
+  command: null | string
+}
+
+export interface ShellExecResponse {
+  code: number
+  stderr?: string
+  stdout?: string
+}
+
 export interface SkinPayload {
   appearance?: string
   banner_hero?: string
@@ -2052,6 +2680,49 @@ export interface SkinPayload {
   help_header?: string
   name?: string
   tool_prefix?: string
+}
+
+export interface SlashCategory {
+  name: string
+  pairs: [string, string][]
+}
+
+export interface SlashExecRequest {
+  command: null | string
+  session_id: null | string
+}
+
+export interface SlashExecResponse {
+  output?: string
+  warning?: string
+}
+
+export interface SpawnTreeListEntry {
+  count: number
+  finished_at?: number
+  label?: string
+  path: string
+  session_id?: string
+  started_at?: null | number
+}
+
+export interface SpawnTreeListRequest {
+}
+
+export interface SpawnTreeListResponse {
+  entries?: SpawnTreeListEntry[]
+}
+
+export interface SpawnTreeLoadRequest {
+  path: null | string
+}
+
+export interface SpawnTreeLoadResponse {
+  finished_at?: number
+  label?: string
+  session_id?: string
+  started_at?: null | number
+  subagents?: unknown[]
 }
 
 export interface StatusUpdatePayload {
@@ -2085,8 +2756,81 @@ export interface SubagentEventDTO {
   toolsets?: string[]
 }
 
+export interface SubagentEventPayload {
+  api_calls?: number
+  cost_usd?: number
+  depth?: number
+  duration_seconds?: number
+  files_read?: string[]
+  files_written?: string[]
+  goal: string
+  input_tokens?: number
+  iteration?: number
+  model?: string
+  output_tail?: SubagentOutputTailItem[]
+  output_tokens?: number
+  parent_id?: null | string
+  reasoning_tokens?: number
+  status?: 'completed' | 'error' | 'failed' | 'interrupted' | 'queued' | 'running' | 'timeout'
+  subagent_id?: string
+  summary?: string
+  task_count?: number
+  task_index: number
+  text?: string
+  tool_count?: number
+  tool_name?: string
+  tool_preview?: string
+  toolsets?: string[]
+}
+
+export interface SubagentInterruptRequest {
+  subagent_id: null | string
+}
+
+export interface SubagentInterruptResponse {
+  found?: boolean
+  subagent_id?: string
+}
+
+export interface SubagentOutputTailItem {
+  is_error?: boolean
+  preview?: string
+  tool?: string
+}
+
 export interface SudoRequestPayload {
   request_id: string
+}
+
+export interface SudoRespondResponse {
+  ok?: boolean
+}
+
+export interface TerminalResizeRequest {
+  cols: null | number
+  rows: null | number
+  session_id: null | string
+}
+
+export interface TerminalResizeResponse {
+  ok?: boolean
+}
+
+export interface ThemeListRequest {
+}
+
+export interface ThemeListResponse {
+  active?: string
+  appearance?: string
+  themes?: ThemeOption[]
+}
+
+export interface ThemeOption {
+  branding?: Record<string, string>
+  colors?: Record<string, string>
+  description?: string
+  name: string
+  source?: string
 }
 
 export interface ThinkingDeltaPayload {
@@ -2118,8 +2862,60 @@ export interface ToolStartPayload {
   tool_id: string
 }
 
+export interface ToolsConfigureRequest {
+  action: null | string
+  names: null | string[]
+  session_id: null | string
+}
+
+export interface ToolsConfigureResponse {
+  changed?: string[]
+  enabled_toolsets?: string[]
+  info?: SessionInfo
+  missing_servers?: string[]
+  reset?: boolean
+  unknown?: string[]
+}
+
+export interface Usage {
+  calls: number
+  compressions?: number
+  context_max?: number
+  context_percent?: number
+  context_used?: number
+  cost_status?: string
+  cost_usd?: number
+  input: number
+  output: number
+  reasoning?: number
+  total: number
+}
+
+export interface VoiceRecordRequest {
+  session_id: null | string
+}
+
+export interface VoiceRecordResponse {
+  status?: 'busy' | 'recording' | 'stopped'
+  text?: string
+}
+
 export interface VoiceStatusPayload {
   state?: string
+}
+
+export interface VoiceToggleRequest {
+  session_id: null | string
+}
+
+export interface VoiceToggleResponse {
+  audio_available?: boolean
+  available?: boolean
+  details?: string
+  enabled?: boolean
+  record_key?: string
+  stt_available?: boolean
+  tts?: boolean
 }
 
 export interface VoiceTranscriptPayload {

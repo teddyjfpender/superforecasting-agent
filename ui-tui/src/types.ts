@@ -1,3 +1,32 @@
+// ── protocol-generated wire shapes (single source of truth, Arc A4) ──────────
+// SessionInfo / Usage / McpServerStatus / SlashCategory are GENERATED from the
+// `protocol/` pydantic models. Imported here for local use (Msg.info,
+// SlashCatalog.categories) AND re-exported so the whole app's historical
+// `import { SessionInfo } from './types.js'` sites keep one stable import.
+import type {
+  McpServerStatus,
+  SessionInfo,
+  SlashCategory,
+  Usage,
+} from './protocol/generated.js'
+
+export type { McpServerStatus, SessionInfo, SlashCategory, Usage }
+
+// ── forecast-desk value enums (TS-only; the generated interfaces widen these to
+// `string`, so the precise unions live here for consumers that switch on them).
+export type ForecastTriageLabel =
+  | 'irrelevant'
+  | 'relevant_interesting'
+  | 'relevant_uninteresting'
+
+export type ForecastTailClassification =
+  | 'edge_case'
+  | 'live'
+  | 'live_ish'
+  | 'remote_tail'
+  | 'residual'
+  | 'unpriced'
+
 export interface ActiveTool {
   context?: string
   id: string
@@ -135,46 +164,6 @@ export type ThinkingMode = 'collapsed' | 'truncated' | 'full'
 export type SectionName = 'thinking' | 'tools' | 'subagents' | 'activity'
 export type SectionVisibility = Partial<Record<SectionName, DetailsMode>>
 
-export interface McpServerStatus {
-  connected: boolean
-  name: string
-  tools: number
-  transport: string
-}
-
-export interface SessionInfo {
-  cwd?: string
-  fast?: boolean
-  lazy?: boolean
-  mcp_servers?: McpServerStatus[]
-  model: string
-  profile_name?: string
-  reasoning_effort?: string
-  release_date?: string
-  service_tier?: string
-  skills: Record<string, string[]>
-  system_prompt?: string
-  tools: Record<string, string[]>
-  update_behind?: number | null
-  update_command?: string
-  usage?: Usage
-  version?: string
-}
-
-export interface Usage {
-  calls: number
-  compressions?: number
-  context_max?: number
-  context_percent?: number
-  context_used?: number
-  cost_status?: string
-  cost_usd?: number
-  input: number
-  output: number
-  reasoning?: number
-  total: number
-}
-
 export interface SudoReq {
   requestId: string
 }
@@ -205,9 +194,4 @@ export interface SlashCatalog {
   pairs: [string, string][]
   skillCount: number
   sub: Record<string, string[]>
-}
-
-export interface SlashCategory {
-  name: string
-  pairs: [string, string][]
 }

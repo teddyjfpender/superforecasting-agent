@@ -119,13 +119,18 @@ async def handle_ws(ws: Any) -> None:
 
     transport = WSTransport(ws, asyncio.get_running_loop())
 
+    from protocol.version import PROTOCOL_VERSION
+
     await transport.write_async(
         {
             "jsonrpc": "2.0",
             "method": "event",
             "params": {
                 "type": "gateway.ready",
-                "payload": {"skin": server.resolve_skin()},
+                "payload": {
+                    "skin": server.resolve_skin(),
+                    "protocol_version": PROTOCOL_VERSION,
+                },
             },
         }
     )
