@@ -258,6 +258,56 @@ Background, one slice per work session alongside feature work — D1 first as th
 pattern-prover, snapshots.py (D4) only after five clean slices. Done = ledger/core
 under 2k lines, tool dispatch under 500, cli.py an assembler.
 
+### D1 findings (watches carve — SHIPPED, the pattern-prover)
+`forecasting/ledger.py` (18,562 lines) is now the package `forecasting/ledger/`
+(`__init__` 69 · `watches` 989 · `core` 17,699). Gates all met: full
+`tests/forecasting` green before (2,271 pass + 1 pre-existing flaky
+`test_smoke_script` 60s-subprocess timeout) AND after (2,272 pass, 0 fail — the
+flake passed on the after-run); import-time `import forecasting.cli` 0.11s→0.10s
+(no regression); ~928 lines relocated (well under the 1,200 cap); core diff
+mechanically verified = only moved-out bodies + 11 one-line delegates + import
+edits (0 unexpected added/removed lines by difflib categorization).
+
+Coupling patterns discovered (advice for D2+):
+- **Module-global monkeypatch reach is THE trap.** Tests patch
+  `forecasting.ledger.urlopen` (and `.ForecastLedger`) and expect the patch to
+  reach call sites. Post-carve the bodies live in `core`, a distinct namespace,
+  so a plain re-export breaks those tests. Fix: `__init__` installs a tiny
+  façade (`_LedgerPackage.__setattr__/__delattr__` forwarding writes to `core`
+  when `core` has the attr). This reproduces the old single-module semantics
+  EXACTLY, zero test/caller edits. **D2+ must keep this façade** — every future
+  slice inherits monkeypatch-safety for free.
+- **Dependency direction is forced by partial-init.** Domain constants
+  (`WATCH_*`) MUST live in the leaf (`watches`) and be imported BACK by `core`;
+  the reverse deadlocks (core hasn't defined them when the leaf loads). The leaf
+  imports `core` only as a module handle (`from forecasting.ledger import core
+  as _core`) and touches `_core.<attr>` only at call time — binding a partial
+  module object at load is safe.
+- **Shared low-level deps stay in core, reached via the instance or `_core`.**
+  Only ONE core name (`allow_ledger_writes`, the write gate) was needed by the
+  watch domain (one write method) — reached via `_core.`. Everything else the
+  moved code needs (`ValidationError`, `json_dumps/loads`, `parse_timestamp`,
+  `utc_now_iso`, `AlertEvent`, `Any`) comes from `forecasting.models`/`typing`,
+  so the leaf has no load-time core dependency. D4 (snapshots, 400-line gate
+  body) will need MORE of core's gate machinery — consider extracting the gate
+  (`allow_ledger_writes` + `GATED_LEDGER_TABLES` + authorizer) into its own leaf
+  module first so multiple domains share it without the `_core.` hop.
+- **`self.`→`ledger.` is the only body edit** (receiver rename; domain fns take
+  the instance first). Watch for string literals containing the word (`forecast
+  self-check`) — a blind `\bself\b` replace corrupts them; only `self.` +
+  signature params are safe to rewrite.
+- **Use AST `end_lineno`, not "next `def`", for extents.** A class attribute
+  (`_TRIGGER_VALUE_KEYS`) sat between a method's `return` and the next `def`;
+  the naïve boundary swallowed it and tests caught the `AttributeError`.
+- **Re-export scope:** 20 distinct names are actually imported by callers
+  across the repo (`ForecastLedger`, `allow_ledger_writes`,
+  `GATED_LEDGER_TABLES`, the WATCH_*/CRUX_*/THESIS_* constants, the gate
+  helpers, the bootstrap/leak thresholds, `ValidationError`,
+  `LedgerNotFoundError`); `from .core import *` re-exports the full 96-name
+  public surface. Prune-then-re-export a constant only when its LAST core user
+  moves out (dropped `WATCH_SCOPE_TYPES`/`parse_qsl` from core imports, kept
+  `WATCH_SCOPE_TYPES` on the package via an explicit `__init__` re-export).
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)
