@@ -5300,7 +5300,7 @@ def _start_completed_quorum(monkeypatch):
 
 
 def test_forecast_ledger_tool_start_quorum_returns_run_id(monkeypatch):
-    from forecasting import quorum_jobs as qj
+    from forecasting.jobs.types import quorum as qj
 
     captured: dict = {}
 

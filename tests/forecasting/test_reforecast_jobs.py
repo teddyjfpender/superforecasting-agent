@@ -23,7 +23,7 @@ import sys
 import pytest
 
 import forecasting.cli as cli
-from forecasting import quorum_jobs
+from forecasting.jobs.types import quorum as quorum_jobs
 from forecasting.jobs.types import reforecast as rf
 from forecasting.jobs.types import task as tk
 from forecasting.ledger import ForecastLedger

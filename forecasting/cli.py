@@ -5120,14 +5120,14 @@ def _maybe_autorun_quorum(
 ) -> None:
     """AUTO-RUN a quorum (detached) when one is auto-indicated but none attached.
 
-    Thin CLI wrapper over :func:`forecasting.quorum_jobs.maybe_autorun_quorum` —
+    Thin CLI wrapper over :func:`forecasting.quorum_autorun.maybe_autorun_quorum` —
     the shared seam every commit surface uses (the agent tool's
     ``update_forecast`` calls the same function, so the autonomous paths get the
     same multi-model fusion a hand-typed ``forecast update`` does) — printing its
     progress lines. Fail-open by construction: the shared helper never raises.
     """
 
-    from forecasting.quorum_jobs import maybe_autorun_quorum
+    from forecasting.quorum_autorun import maybe_autorun_quorum
 
     maybe_autorun_quorum(
         ledger,
@@ -10246,19 +10246,19 @@ def _quorum_overview() -> None:
 
 
 def _resolve_active_model_id(model_cfg: Any) -> str | None:
-    """Canonical implementation lives in :mod:`forecasting.quorum_jobs` (single
+    """Canonical implementation lives in :mod:`forecasting.quorum_autorun` (single
     source of truth for every commit surface — the agent tool's auto-quorum uses
     the same resolver); this lazy alias keeps cli-internal callers and the
     module import weight unchanged."""
 
-    from forecasting.quorum_jobs import resolve_active_model_id
+    from forecasting.quorum_autorun import resolve_active_model_id
 
     return resolve_active_model_id(model_cfg)
 
 
 def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
     from hermes_cli.config import load_config
-    from forecasting.quorum_jobs import read_job, start_job
+    from forecasting.jobs.types.quorum import read_job, start_job
 
     cfg = load_config().get("quorum", {})
     active_model = _resolve_active_model_id(load_config().get("model"))
@@ -10403,7 +10403,7 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
 
 
 def _quorum_status(args: argparse.Namespace, rest: list[str]) -> None:
-    from forecasting.quorum_jobs import list_jobs, read_job
+    from forecasting.jobs.types.quorum import list_jobs, read_job
 
     if not rest:
         jobs = list_jobs()

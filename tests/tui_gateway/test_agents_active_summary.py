@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import pytest
 
-from forecasting import quorum_jobs as qr
+from forecasting.jobs.types import quorum as qr
 from forecasting.jobs.types import reforecast as rf
 
 

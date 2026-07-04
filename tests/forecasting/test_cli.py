@@ -15755,7 +15755,7 @@ def test_forecast_onboard_propose_and_commit(tmp_path, capsys):
 #
 # These exercise the CLI-level delphi_rounds resolution + conflict guard in
 # `_quorum_run` without spawning a real background job or calling any model:
-# `forecasting.quorum_jobs.start_job` (re-imported inside `_quorum_run` at call
+# `forecasting.jobs.types.quorum.start_job` (re-imported inside `_quorum_run` at call
 # time) is monkeypatched to capture the enqueued spec.
 
 
@@ -15771,7 +15771,7 @@ def _seed_quorum_question(db: str) -> str:
 
 
 def test_quorum_delphi_flag_passes_delphi_rounds_one(tmp_path, monkeypatch, capsys):
-    from forecasting import quorum_jobs as qj
+    from forecasting.jobs.types import quorum as qj
 
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
@@ -15808,7 +15808,7 @@ def test_quorum_delphi_flag_passes_delphi_rounds_one(tmp_path, monkeypatch, caps
 
 
 def test_quorum_delphi_rounds_zero_passes_zero(tmp_path, monkeypatch, capsys):
-    from forecasting import quorum_jobs as qj
+    from forecasting.jobs.types import quorum as qj
 
     parser = _parser()
     db = str(tmp_path / "forecasting.db")
@@ -15831,7 +15831,7 @@ def test_quorum_delphi_rounds_zero_passes_zero(tmp_path, monkeypatch, capsys):
 
 
 def test_quorum_delphi_conflicts_with_delphi_rounds_zero(tmp_path, monkeypatch):
-    from forecasting import quorum_jobs as qj
+    from forecasting.jobs.types import quorum as qj
 
     parser = _parser()
     db = str(tmp_path / "forecasting.db")

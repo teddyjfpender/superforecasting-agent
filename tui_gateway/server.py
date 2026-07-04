@@ -3626,11 +3626,12 @@ def _(rid, params: dict) -> dict:
     Given a ``run_id``, returns the job's ``status`` (queued|running|done|error),
     the ordered ``progress`` steps, the ``panel_run_id`` once recorded, and the
     ``result`` summary (aggregate/committed probability, disagreement, per-model
-    forecasts, degraded flag). Reuses :func:`forecasting.quorum_jobs.read_job`;
-    never runs a quorum or mutates the ledger. Backs a later TUI surface.
+    forecasts, degraded flag). Reuses :func:`forecasting.jobs.types.quorum.read_job`
+    (the JobStore record + the legacy ``qr_`` read-shim); never runs a quorum or
+    mutates the ledger. Backs a later TUI surface.
     """
     try:
-        from forecasting.quorum_jobs import read_job
+        from forecasting.jobs.types.quorum import read_job
 
         run_id = str(params.get("run_id") or "").strip()
         if not run_id:
@@ -9322,7 +9323,7 @@ def _(rid, params: dict) -> dict:
 
         try:
             # 3) Quorum forecasts — queued|running only (one question per job).
-            from forecasting.quorum_jobs import list_jobs as _qr_jobs
+            from forecasting.jobs.types.quorum import list_jobs as _qr_jobs
 
             for job in _qr_jobs(limit=20):
                 if job.get("status") not in ("queued", "running"):

@@ -241,7 +241,7 @@ def _on_config():
 
 def test_autorun_fires_start_job_on_high_impact_live(tmp_path, monkeypatch):
     from forecasting import cli as fcli
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
     import hermes_cli.config as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -273,7 +273,7 @@ def test_autorun_fires_start_job_on_high_impact_live(tmp_path, monkeypatch):
 
 def test_autorun_respects_config_off(tmp_path, monkeypatch):
     from forecasting import cli as fcli
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
     import hermes_cli.config as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -292,7 +292,7 @@ def test_autorun_respects_config_off(tmp_path, monkeypatch):
 
 def test_autorun_is_fail_open_when_start_job_raises(tmp_path, monkeypatch, capsys):
     from forecasting import cli as fcli
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
     import hermes_cli.config as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -315,7 +315,7 @@ def test_autorun_is_fail_open_when_start_job_raises(tmp_path, monkeypatch, capsy
 
 def test_autorun_skips_non_live(tmp_path, monkeypatch):
     from forecasting import cli as fcli
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
 
     ledger, q = _high_impact_ledger(tmp_path)
     monkeypatch.setattr(qj, "start_job", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no")))
@@ -331,7 +331,7 @@ def test_autorun_skips_non_live(tmp_path, monkeypatch):
 
 def test_quorum_status_rpc_returns_job(tmp_path, monkeypatch):
     from tui_gateway import server
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
 
     job = {
         "run_id": "qr_rpc1", "question_id": "fq_1", "status": "done",
@@ -388,14 +388,14 @@ def test_derive_alpha_cold_start_is_identity(tmp_path):
 
 
 def test_derive_alpha_disabled_by_default(monkeypatch):
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
 
     # The config flag defaults OFF, so the derivation never runs uninvited.
     assert qj._derive_alpha_enabled() is False
 
 
 def test_explicit_alpha_override_blocks_derivation():
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
 
     assert qj._has_explicit_alpha_override(
         {"forecast_hooks": {"thresholds": {"alpha_extremize": 1.5}}}
@@ -449,7 +449,7 @@ def _seed_commit_prereqs(ledger, q):
 
 
 def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
     import hermes_cli.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
@@ -474,7 +474,7 @@ def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
 
 
 def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch):
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
     import hermes_cli.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
@@ -493,7 +493,7 @@ def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch)
 
 
 def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monkeypatch):
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
     import hermes_cli.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
@@ -521,7 +521,7 @@ def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monk
 
 
 def test_tool_update_forecast_autorun_fail_open(tmp_path, monkeypatch):
-    import forecasting.quorum_jobs as qj
+    import forecasting.jobs.types.quorum as qj
     import hermes_cli.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 

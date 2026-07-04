@@ -441,7 +441,7 @@ def test_resolve_panelist_toolsets_live_is_research_only():
 
 
 def test_make_aiagent_runner_threads_cutoff_into_panelist_toolset(monkeypatch):
-    # The QUORUM call path (quorum_jobs.execute_job) builds the runner with
+    # The QUORUM call path (jobs.types.quorum.execute) builds the runner with
     # evidence_cutoff; assert that flows into the build_agent enabled_toolsets so the
     # leak guard is actually in force on the constructed panelist.
     from forecasting.quorum import make_aiagent_runner

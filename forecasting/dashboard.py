@@ -618,7 +618,7 @@ def build_workspace_payload(
     # page) so the desk can badge a "quorum running" chip on the row whose commit
     # just kicked one off + poll forecast.quorum.status by the surfaced run_id.
     try:
-        from forecasting.quorum_jobs import active_jobs_by_question
+        from forecasting.jobs.types.quorum import active_jobs_by_question
 
         active_quorum_by_q = active_jobs_by_question()
     except Exception:

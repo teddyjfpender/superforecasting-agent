@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from forecasting.ledger import ForecastLedger, allow_ledger_writes
-from forecasting.quorum_jobs import maybe_autorun_quorum
+from forecasting.quorum_autorun import maybe_autorun_quorum
 
 
 @pytest.fixture()

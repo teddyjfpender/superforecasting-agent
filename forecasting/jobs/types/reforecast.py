@@ -345,11 +345,11 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     ledger = ForecastLedger(spec.get("db"))  # a bad db → runtime marks the job error
 
     # Detect a NEWLY-started auto-quorum per question: a high-impact live commit
-    # detaches a quorum via the tool hook, keyed by question_id in quorum_jobs. We
-    # diff the live quorum run-id before vs after the chain so we only attribute a
-    # quorum THIS chain started (not a pre-existing one).
+    # detaches a quorum via the tool hook, keyed by question_id in the QUORUM type's
+    # store query. We diff the live quorum run-id before vs after the chain so we only
+    # attribute a quorum THIS chain started (not a pre-existing one).
     try:
-        from forecasting.quorum_jobs import active_jobs_by_question as _quorum_active
+        from forecasting.jobs.types.quorum import active_jobs_by_question as _quorum_active
     except Exception:  # noqa: BLE001 — quorum surfacing is best-effort
         _quorum_active = None
 

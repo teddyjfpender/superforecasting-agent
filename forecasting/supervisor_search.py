@@ -4,9 +4,9 @@
 judge flags an UNRESOLVED CRUX (``information_gap`` + ``clarifying_queries``) the
 loop hands those queries to ``search_runner``, folds the returned evidence into
 the working context, and RE-SYNTHESISES once (bounded by ``max_research_rounds``).
-P1.1 built that loop but the live caller (:func:`forecasting.quorum_jobs.execute_job`)
-never passed a ``search_runner``, so it could never fire. This module is the
-backend that wires it.
+P1.1 built that loop but the live caller (the QUORUM type's
+:func:`forecasting.jobs.types.quorum.execute`) never passed a ``search_runner``, so
+it could never fire. This module is the backend that wires it.
 
 WHY this is the only path to a real edge: the market-hidden ForecastBench
 experiment showed the closed-book LLM has NO intrinsic edge over the market

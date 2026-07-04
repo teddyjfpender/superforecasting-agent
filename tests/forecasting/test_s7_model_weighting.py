@@ -15,7 +15,7 @@ import json
 
 from forecasting.ledger import ForecastLedger
 from forecasting.quorum import run_quorum
-from forecasting.quorum_jobs import _track_record_weights_enabled
+from forecasting.jobs.types.quorum import _track_record_weights_enabled
 
 CRITERIA = "Resolves YES if the named official source reports the condition on the close date."
 

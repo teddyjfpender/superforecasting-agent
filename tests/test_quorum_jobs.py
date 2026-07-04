@@ -7,7 +7,7 @@ import json
 import pytest
 
 import forecasting.quorum as quorum
-from forecasting import quorum_jobs as qj
+from forecasting.jobs.types import quorum as qj
 from forecasting.ledger import ForecastLedger
 
 
@@ -15,7 +15,7 @@ from forecasting.ledger import ForecastLedger
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
-    # quorum_jobs caches nothing; jobs_dir() re-reads the env each call.
+    # the quorum type caches nothing; jobs_dir() re-reads the env each call.
     return tmp_path
 
 

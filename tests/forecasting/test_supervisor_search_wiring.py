@@ -8,7 +8,7 @@ Two layers are pinned here:
      (caps queries/results, dedups), and is ROBUST (a failing backend yields
      ``[]`` and never throws).
 
-  2. ``forecasting.quorum_jobs.execute_job`` — the live caller. With the gate OFF
+  2. ``forecasting.jobs.types.quorum.execute`` — the live caller. With the gate OFF
      (the default) it passes NO search_runner so the run is byte-identical
      (research_rounds 0, supervisor_evidence empty). With the gate ON + a MOCK
      backend + a judge that flags an information gap, the supervisor loop runs
@@ -24,7 +24,7 @@ import pytest
 
 import forecasting.quorum as quorum
 import forecasting.supervisor_search as ss
-from forecasting import quorum_jobs as qj
+from forecasting.jobs.types import quorum as qj
 from forecasting.ledger import ForecastLedger
 from forecasting.supervisor_search import build_supervisor_search_runner
 

@@ -1640,8 +1640,8 @@ def resolve_panelist_toolsets(evidence_cutoff: Any) -> tuple[str, ...]:
     ``forecast_ledger.import_source_evidence`` — a fetch of the LIVE current
     manifold/metaculus/polymarket value, i.e. the potentially now-known answer) is
     DROPPED in every case. What remains is gated on whether the forecast is LIVE,
-    using the SAME :func:`forecasting.quorum_jobs._cutoff_is_live` predicate that
-    guards the supervisor search:
+    using the SAME :func:`forecasting.jobs.types.quorum._cutoff_is_live` predicate
+    that guards the supervisor search:
 
       * HISTORICAL cutoff (a backtest / replay snapshot): EMPTY toolset ``()`` —
         closed-book, NO web, NO import_source_evidence. The panelist reasons only
@@ -1657,7 +1657,7 @@ def resolve_panelist_toolsets(evidence_cutoff: Any) -> tuple[str, ...]:
         ledger-write surface.
     """
 
-    from forecasting.quorum_jobs import _cutoff_is_live
+    from forecasting.jobs.types.quorum import _cutoff_is_live
 
     return ("web",) if _cutoff_is_live(evidence_cutoff) else ()
 
