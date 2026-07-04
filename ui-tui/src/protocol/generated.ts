@@ -1410,7 +1410,10 @@ export interface ForecastThesis {
   delta?: null | number
   domain?: null | string
   entities?: ForecastThesisEntity[]
+  event_probability?: null | number
   freshness?: string
+  headline_display?: string
+  headline_probability?: null | number
   health_display?: string
   health_probability?: null | number
   history?: ForecastThesisHistoryPoint[]

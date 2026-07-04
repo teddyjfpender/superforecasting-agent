@@ -935,6 +935,12 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         }
         return next
       })
+    } else if (lensActive && refThesis) {
+      // The pinned thesis row is the AGGREGATE, not a per-question job target — U/A
+      // fan out over its MEMBERS, so marking the thesis itself would be meaningless.
+      // Refuse with a brief note (the mark set never picks it up), then advance like
+      // a normal Space so the cursor lands on the first markable member below.
+      setFlash('thesis row runs its members — mark member questions instead')
     }
     setSel(i => Math.min(Math.max(0, rowCount - 1), i + 1))
   }
@@ -1500,9 +1506,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const visibleRows = Math.max(3, termRows - 12)
 
   const listW = wide ? listWidth : cols - 2
+  // A THESIS lens now renders the thesis AS the first table row (pinned, columned,
+  // accent-highlighted) so the operator reads it in the same visual language as the
+  // member forecasts below it — the old banner is gone. A FACTOR lens keeps its
+  // DeskLensRow banner (non-thesis lenses are unaffected). So the banner only leads
+  // a factor tab, and refThesis is threaded into DeskForecastList as its pinned row.
+  const showBanner = hasLens && !refThesis
   const list = (
     <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
-      {hasLens ? (
+      {showBanner ? (
         <DeskLensRow
           active={lensActive}
           onOpen={() => {
@@ -1522,10 +1534,18 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         items={sortedVisible}
         markedIds={selectedIds}
         nowMs={Math.floor(Date.now() / 60_000) * 60_000}
+        // Clicking the pinned thesis row selects it (row 0 / lensActive), the same
+        // as an arrow-key landing — Enter then opens the thesis read.
+        onPinnedSelect={() => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) setSel(0) }}
         onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) setSel(i + lensOffset) }}
         // The header sorts on click, but only while nothing modal is covering the
         // body — matches the row/tab click gating.
         onSort={modalOpen || settingsOpen || taskOpen || globalModal ? undefined : onSortByKey}
+        // On a thesis tab the thesis is pinned as row 0 (never sorted with the
+        // members); pinnedActive tracks whether the cursor is on it. Undefined on
+        // every non-thesis tab, so those tables are unchanged.
+        pinnedActive={lensActive}
+        pinnedThesis={refThesis}
         runningId={agentJob?.current?.question_id ?? refreshJob?.current ?? null}
         runningIds={runningRemaining}
         spinTick={agentJob || refreshJob ? now : 0}
@@ -1533,7 +1553,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         sortKey={sort.state.key}
         sweep={sweepCtx}
         t={t}
-        visibleRows={Math.max(3, visibleRows - (hasLens ? 2 : 0))}
+        visibleRows={Math.max(3, visibleRows - (showBanner ? 2 : 0))}
         width={listW}
       />
     </Box>
@@ -2721,8 +2741,11 @@ export function DeskForecastList({
   items,
   markedIds,
   nowMs,
+  onPinnedSelect,
   onSelect,
   onSort,
+  pinnedActive = false,
+  pinnedThesis,
   runningId = null,
   runningIds,
   spinTick = 0,
@@ -2739,9 +2762,18 @@ export function DeskForecastList({
   // The marked (mass-selected) question ids; a leading ▎ paints each marked row.
   markedIds: Set<string>
   nowMs: number
+  // Click handler for the pinned thesis row (thesis lens only) → select row 0.
+  onPinnedSelect?: () => void
   onSelect: (i: number) => void
   // Clicking a column header sorts by it; undefined while a modal covers the body.
   onSort?: (key: string) => void
+  // Whether the cursor is on the pinned thesis row (composes the selection highlight
+  // with the accent thesis treatment). Only meaningful when pinnedThesis is set.
+  pinnedActive?: boolean
+  // On a THESIS lens, the thesis rendered as the pinned first table row (row 0),
+  // never sorted with the members below it. Undefined on every other tab, so those
+  // tables are byte-identical to before.
+  pinnedThesis?: ForecastThesis
   // The question the agent is working RIGHT NOW → the animated accent-swept
   // spinner (the operator: "a nice ascii animation like we have in the home
   // view chats"). Null when no job runs.
@@ -2816,7 +2848,9 @@ export function DeskForecastList({
   }, [t, width, hasUnderSaturated])
   const { avail, colWidth, keptCols, satGutter, sem, showTrend, trendW } = layout
 
-  if (!items.length) {
+  // With a pinned thesis row the table is never truly empty — the thesis leads it —
+  // so only short-circuit to the empty state when there is ALSO no pinned row.
+  if (!items.length && !pinnedThesis) {
     return (
       <Box flexDirection="column" flexGrow={1}>
         <Text color={t.color.muted} wrap="wrap">
@@ -2826,9 +2860,12 @@ export function DeskForecastList({
     )
   }
 
-  // cursor may be -1 (the lead lens row is selected, no forecast highlighted);
-  // clamp for windowing so the list still shows from the top.
-  const { items: windowed, offset } = windowItems(items, Math.max(0, cursor), visibleRows)
+  // cursor may be -1 (the pinned thesis / lens row is selected, no member
+  // highlighted); clamp for windowing so the members still show from the top. The
+  // pinned thesis row (when present) consumes one body line, so the member window
+  // reserves it.
+  const bodyRows = pinnedThesis ? Math.max(2, visibleRows - 1) : visibleRows
+  const { items: windowed, offset } = windowItems(items, Math.max(0, cursor), bodyRows)
 
   return (
     <Box flexDirection="column" flexGrow={0} flexShrink={0} minHeight={0} overflow="hidden">
@@ -2852,6 +2889,25 @@ export function DeskForecastList({
         {showTrend ? <Text bold color={sem.heading}>{pad('1MO', trendW, 'left')}</Text> : null}
       </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
+      {pinnedThesis ? (
+        // Row 0 on a thesis lens: the thesis itself, pinned above the sortable
+        // members and accent-highlighted so it reads unmistakably as the thesis
+        // level. Its click selects row 0 (the cursor CAN land on it).
+        <Box onClick={onPinnedSelect} width={width}>
+          <DeskThesisRow
+            active={pinnedActive}
+            colWidth={colWidth}
+            cols={keptCols}
+            nowMs={nowMs}
+            satGutter={satGutter}
+            sem={sem}
+            showTrend={showTrend}
+            t={t}
+            thesis={pinnedThesis}
+            trendW={trendW}
+          />
+        </Box>
+      ) : null}
       {windowed.map((item, i) => {
         const index = offset + i
 
@@ -2877,6 +2933,11 @@ export function DeskForecastList({
           </Box>
         )
       })}
+      {!items.length && pinnedThesis ? (
+        // A thesis with no member questions yet still leads with its pinned row; the
+        // empty note sits below it (never the whole-table empty short-circuit).
+        <Text color={t.color.muted} wrap="wrap">{`  ${empty}`}</Text>
+      ) : null}
       {items.length > windowed.length ? (
         <Text color={t.color.muted}>
           {'  '}
@@ -3017,6 +3078,146 @@ const DeskListRow = memo(function DeskListRow({
       })}
       {showTrend ? <Text color={trendColor}>{trend}</Text> : null}
       {alertBadge ? <Text color={t.color.statusBad}> {alertBadge}</Text> : null}
+    </Text>
+  )
+})
+
+// ── Pinned thesis row (thesis-lens leader) ───────────────────────────────────
+// On a THESIS lens the thesis IS the first table row — pinned (never sorted with the
+// members below it), columned like a forecast, and accent-stamped so it reads
+// unmistakably as the thesis level. It reuses the member row's exact formatters via
+// a thin ForecastWorkspaceItem projection, so PROB/1D/1W/1MO/AGE render byte-
+// identically to a real forecast; the columns the thesis has no analogue for
+// (EV/SRC/RDY/NEXT) render an honest '—' (absence as absence, never a fabricated 0).
+
+// The thesis EVENT probability the desk pins into the PROB column. The workspace
+// payload carries it top-level as `headline_probability` (dashboard.py: the current
+// event probability, health as the fallback) — now declared on the generated
+// ForecastThesis model. Fall back to the newest finite history headline (the same
+// value the series ends on). Absent both → null → '—'.
+const thesisHeadline = (thesis: ForecastThesis): null | number => {
+  const direct = thesis.headline_probability
+  if (finite(direct)) {
+    return direct
+  }
+  const hist = thesis.history ?? []
+  for (let i = hist.length - 1; i >= 0; i -= 1) {
+    const y = hist[i]?.headline_probability
+    if (finite(y)) {
+      return y
+    }
+  }
+  return null
+}
+
+// Project the thesis onto the ForecastWorkspaceItem shape the cell formatters read:
+// its EVENT probability drives PROB, its history drives the window deltas + spark,
+// its as_of drives AGE. Nothing else is invented (headline_kind pinned to
+// 'probability' so PROB renders the same pct as a binary forecast, never a fake μ).
+const thesisAsItem = (thesis: ForecastThesis): ForecastWorkspaceItem => ({
+  as_of: thesis.as_of ?? undefined,
+  freshness: thesis.freshness,
+  headline_kind: 'probability',
+  headline_probability: thesisHeadline(thesis),
+  history: (thesis.history ?? []).map(point => ({
+    as_of: point.as_of,
+    headline_probability: point.headline_probability
+  })),
+  id: thesis.id,
+  title: thesis.title
+})
+
+// One pinned-thesis cell's colour + text. PROB/1D/1W/1MO/AGE reuse deskCellText via
+// the projection (identical rendering to a member row); QUESTION + PROB wear the
+// thesis accent; EV/SRC/RDY/NEXT — which the aggregate has no per-question analogue
+// for — render an honest '—'. Exported so the honest-absence + 2dp-prob contract is
+// unit-testable in isolation (the deskCellText / dueNowCell pattern).
+export const thesisCellText = (
+  key: string,
+  thesis: ForecastThesis,
+  sem: Semantics,
+  t: Theme,
+  windows: { '1d': number | null; '1mo': number | null; '1w': number | null },
+  nowMs: number
+): { color: string; text: string } => {
+  const item = thesisAsItem(thesis)
+  switch (key) {
+    case 'q':
+      return { color: t.color.accent, text: item.title ?? item.id ?? 'thesis' }
+
+    case 'prob':
+      return { color: t.color.accent, text: headlineCompact(item, 2) }
+
+    case '1d':
+    case '1mo':
+    case '1w':
+    case 'age':
+      return deskCellText(key, item, sem, t, windows, nowMs, undefined)
+
+    default:
+      // EV / SRC / RDY / NEXT: the thesis aggregate has no per-question analogue —
+      // render an honest '—' rather than a fabricated 0 / warning colour.
+      return { color: sem.subtle, text: '—' }
+  }
+}
+
+const DeskThesisRow = memo(function DeskThesisRow({
+  active,
+  colWidth,
+  cols,
+  nowMs,
+  satGutter,
+  sem,
+  showTrend,
+  t,
+  thesis,
+  trendW
+}: {
+  active: boolean
+  colWidth: (c: DeskCol) => number
+  cols: DeskCol[]
+  nowMs: number
+  satGutter: number
+  sem: Semantics
+  showTrend: boolean
+  t: Theme
+  thesis: ForecastThesis
+  trendW: number
+}) {
+  const item = thesisAsItem(thesis)
+  const windows = {
+    '1d': windowDelta(item.history, nowMs, 1),
+    '1mo': windowDelta(item.history, nowMs, 30),
+    '1w': windowDelta(item.history, nowMs, 7)
+  }
+  // The 1-month level trend spark, on the same fixed 0..1 scale a binary member row
+  // uses (the thesis event probability is a 0..1 quantity).
+  const sparkValues = (item.history ?? []).slice(-trendW).map(point => point.headline_probability ?? null)
+  const trend = showTrend ? levelSparkline(sparkValues) : ''
+  const trendColor = dirColor(sem, thesis.delta ?? windows['1mo'])
+
+  return (
+    <Text backgroundColor={active ? t.color.selectionBg : undefined} bold wrap="truncate-end">
+      {/* The ◆ thesis marker ALWAYS leads the gutter (not the member ▸): the pinned
+          row's identity is the diamond, and the selection background — not an arrow —
+          signals the cursor, so the two compose without hiding each other. */}
+      <Text color={active ? sem.cursor : t.color.accent}>{'◆ '}</Text>
+      {satGutter ? <Text color={t.color.muted}>{'  '}</Text> : null}
+      {cols.map(c => {
+        const cell = thesisCellText(c.key, thesis, sem, t, windows, nowMs)
+        // QUESTION + PROB carry the thesis accent (or the high-contrast selection fg
+        // when the cursor is on the row); the rest keep their column semantics. The
+        // whole row is bold, so it reads as the aggregate even where colour is muted.
+        const stamp = c.key === 'q' || c.key === 'prob'
+        const color = active && stamp ? sem.selectionFg : cell.color
+
+        return (
+          <Text color={color} key={c.key}>
+            {`${pad(cell.text, colWidth(c), c.align)} `}
+          </Text>
+        )
+      })}
+      {showTrend ? <Text color={active ? sem.selectionFg : trendColor}>{trend}</Text> : null}
     </Text>
   )
 })

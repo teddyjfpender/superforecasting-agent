@@ -136,6 +136,16 @@ const inflationThesis = (): ForecastThesis => ({
   domain: 'macro',
   health_display: '54%',
   health_probability: 0.54,
+  // A short history whose NEWEST point is the thesis event probability (0.53) — this
+  // drives the pinned row's PROB column at 2dp AND the window deltas, via the same
+  // windowDelta path the member rows use. Dates are relative to now so the deltas
+  // stay deterministic. (The workspace payload also carries this top-level as
+  // headline_probability; the generated ForecastThesis type predates that field, so
+  // the desk reads the newest history headline, which equals it.)
+  history: [
+    { as_of: inDays(-10), headline_probability: 0.5 },
+    { as_of: inDays(0), headline_probability: 0.53 }
+  ],
   id: 'th_inflation',
   member_count: 1,
   question_ids: ['fq_cpi'],
@@ -433,29 +443,58 @@ describe('DeskView (redesigned forecast desk)', () => {
     desk.cleanup()
   })
 
-  it('leads a thesis tab with a clickable lens row that opens the aggregate read', async () => {
+  it('pins the thesis as row 0 of the table (◆ + real 2dp PROB) — not a banner — and opens its read on Enter', async () => {
     const desk = await mountDesk(120, fixture())
-    // The thesis tab is active by default → a lens row leads the section with the
-    // thesis glyph + its aggregate (health/score) + the open affordance.
+    // The thesis tab is active by default → the thesis now IS the first table row:
+    // an accent ◆ row carrying its EVENT probability at 2dp (same pct rendering as a
+    // member forecast), read in the same visual language as the members below it.
     let text = desk.text()
     expect(text).toContain('◆')
-    // Health and score must read as DIFFERENT KINDS of number even though their
-    // values are close: health carries "%", score carries "/100".
-    expect(text).toContain('health 54%')
-    expect(text).toContain('score 54/100')
-    expect(text).toContain('⏎ lens')
-    // The cursor starts on the lens row → Enter opens the thesis aggregate modal,
-    // which paints ABOVE the body (overlay): the full thesis title appears in the
-    // modal (the lens row truncates it) while the desk header stays visible behind.
+    expect(text).toContain('53.00%') // the thesis headline_probability, 2dp — row-unique
+    // The OLD banner is gone: its "⏎ lens" affordance + "health X% · score Y/100"
+    // aggregate line no longer print on a thesis tab (that read lives in the modal).
+    expect(text).not.toContain('⏎ lens')
+    expect(text).not.toContain('score 54/100')
+    // The cursor starts on the pinned thesis row → Enter opens the SAME thesis
+    // aggregate read the banner used to open, painted ABOVE the still-visible body.
     await desk.press('\r')
     text = desk.text()
     expect(text).toContain('FORECASTS') // body still rendered behind the overlay
     expect(text).toContain('Inflation stays sticky through 2026')
-    // The INSPECTED item IS the thesis → the modal leads with the full thesis read.
-    // Its domain·status·members header line is emitted ONLY by ThesisDeskRead (the
-    // list/panel/tab-strip never print it), so it proves the thesis read is present
-    // and ABOVE the modal fold.
+    // ThesisDeskRead's domain·status·members header line is emitted ONLY by that read
+    // (never the list/panel/tab-strip), so it proves the thesis read is present.
     expect(text).toContain('macro · active · 1 member · inflation, macro')
+    desk.cleanup()
+  })
+
+  it('keeps the thesis pinned at row 0 under sorting and includes it in j/k navigation', async () => {
+    const desk = await mountDesk(120, twoMemberFixture())
+    // Sort by QUESTION — this reorders the MEMBER rows, never the pinned thesis.
+    await desk.press('o')
+    // The cursor is still on row 0 = the pinned thesis (sorting can't move it) →
+    // Enter opens the thesis read (its domain·status·members header line is emitted
+    // ONLY by ThesisDeskRead — the list/panel/tab-strip never print it).
+    await desk.press('\r')
+    expect(desk.text()).toContain('macro · active · 2 members · inflation, macro')
+    await desk.press('\x1b') // close the modal
+    // j moves the cursor OFF the pinned thesis onto the first MEMBER row (sorted
+    // below it) → Enter opens that member's OWN detail (a CPI question), proving the
+    // pinned row participates in j/k navigation and the members sort below it.
+    await desk.press('j')
+    await desk.press('\r')
+    expect(desk.text()).toContain('CPI-U YoY')
+    desk.cleanup()
+  })
+
+  it('Space on the pinned thesis row refuses to mark it and flashes why (jobs are per-question)', async () => {
+    const desk = await mountDesk(120, fixture())
+    // The cursor starts on the pinned thesis row → Space can't mark it (U/A fan out
+    // over its members instead), so it flashes an explanatory refusal and marks
+    // nothing.
+    await desk.press(' ')
+    const text = desk.text()
+    expect(text).toContain('thesis row runs its members')
+    expect(text).not.toContain('1 selected') // nothing entered the mark set
     desk.cleanup()
   })
 
@@ -1415,6 +1454,67 @@ describe('DeskView SRC / RDY readiness columns', () => {
     // No job running → no ⋯ (byte-identical-at-rest gutter).
     const idle = await renderList(112, readinessItems())
     expect(idle).not.toContain('⋯')
+  })
+})
+
+describe('DeskView pinned thesis row (thesis-lens leader)', () => {
+  // inflationThesis' newest history point (0.53) IS the thesis event probability the
+  // desk reads into PROB (the workspace payload also carries it top-level as
+  // headline_probability; the generated type predates that field, so the newest
+  // history headline — which equals it — is the typed source).
+  it('thesisCellText: PROB is the event probability at 2dp; EV/SRC/RDY/NEXT are an honest —', async () => {
+    const [{ thesisCellText }, { DARK_THEME }, { semantics }] = await Promise.all([
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/visualSemantics.js')
+    ])
+    const sem = semantics(DARK_THEME)
+    const win = { '1d': null, '1mo': null, '1w': null }
+    const cell = (key: string) => thesisCellText(key, inflationThesis(), sem, DARK_THEME, win, 0)
+    // PROB reuses the member headline formatter at 2dp (0.53 → "53.00%"), accent-stamped.
+    expect(cell('prob').text).toBe('53.00%')
+    expect(cell('prob').color).toBe(DARK_THEME.color.accent)
+    // QUESTION is the thesis title.
+    expect(cell('q').text).toBe('Inflation stays sticky through 2026')
+    // The columns a thesis has no per-question analogue for render an honest '—'
+    // (absence as absence — never a fabricated 0, unlike a member SRC 0 warning).
+    for (const key of ['ev', 'src', 'rdy', 'next']) {
+      expect(cell(key)).toEqual({ color: sem.subtle, text: '—' })
+    }
+    // A thesis with no history/event probability stays an honest '—', never a fake number.
+    expect(
+      thesisCellText('prob', { ...inflationThesis(), history: [] }, sem, DARK_THEME, win, 0).text
+    ).toBe('—')
+  })
+
+  it('thesisCellText: 1D/1W/1MO run through the same window-delta formatter (2dp point deltas)', async () => {
+    const [{ thesisCellText }, { DARK_THEME }, { semantics }] = await Promise.all([
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/visualSemantics.js')
+    ])
+    const sem = semantics(DARK_THEME)
+    // A +3pt 1W move formats exactly like a member row's window column.
+    expect(
+      thesisCellText('1w', inflationThesis(), sem, DARK_THEME, { '1d': null, '1mo': null, '1w': 0.03 }, 0).text
+    ).toContain('3.00')
+    // A missing window (too little history) is an honest '—'.
+    expect(
+      thesisCellText('1d', inflationThesis(), sem, DARK_THEME, { '1d': null, '1mo': null, '1w': null }, 0).text
+    ).toBe('—')
+  })
+
+  it('renders the ◆ pinned thesis row above the members with its real 2dp PROB (component width)', async () => {
+    const text = await renderList(112, [cpiItem()], {
+      cursor: -1,
+      pinnedActive: true,
+      pinnedThesis: inflationThesis()
+    })
+    // The pinned thesis leads the table: the ◆ marker + its 2dp event probability,
+    // with the member forecast (CPI) rendering below it.
+    expect(text).toContain('◆')
+    expect(text).toContain('53.00%')
+    expect(text).toContain('CPI-U YoY')
   })
 })
 

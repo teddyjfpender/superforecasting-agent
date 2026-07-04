@@ -963,9 +963,11 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders the thesis as the leading lens tab with its member forecasts listed', async () => {
     const text = await renderWorkspace(120, thesisFixture())
-    // The thesis is the first (active) lens tab (label truncated by the strip),
-    // ahead of the tag tabs and the catch-all All tab.
-    expect(text).toContain('Inflation stays stick')
+    // The thesis is the first (active) lens tab (label truncated by the strip) AND
+    // now the pinned ◆ leading table row — both truncate the title, so assert the
+    // shared visible prefix — ahead of the tag tabs and the catch-all All tab.
+    expect(text).toContain('Inflation stays')
+    expect(text).toContain('◆')
     expect(text).toContain('All')
     // Its member forecast (CPI) renders in the active-tab list with its μ label.
     // The dense QUESTION column truncates the title, so assert the visible prefix.

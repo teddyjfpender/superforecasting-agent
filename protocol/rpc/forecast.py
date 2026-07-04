@@ -1040,6 +1040,12 @@ class ForecastThesis(WireModel):
     freshness: str | None = wire_optional()
     health_probability: float | None = wire_optional(nullable=True)
     health_display: str | None = wire_optional()
+    # The desk headline: event_probability when an event is configured, else the
+    # health pool — the server emits these for thesis rows (the pinned thesis
+    # table row reads PROB from here).
+    headline_probability: float | None = wire_optional(nullable=True)
+    headline_display: str | None = wire_optional()
+    event_probability: float | None = wire_optional(nullable=True)
     thesis_score: float | None = wire_optional(nullable=True)
     score_band: ForecastThesisScoreBand | None = wire_optional(nullable=True)
     coverage: float | None = wire_optional(nullable=True)
