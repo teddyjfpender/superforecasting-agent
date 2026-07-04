@@ -126,4 +126,11 @@ class TestApiServerAdapterToolset:
             mock_agent_cls.assert_called_once()
             call_kwargs = mock_agent_cls.call_args
             toolsets = call_kwargs.kwargs.get("enabled_toolsets")
-            assert sorted(toolsets) == ["terminal", "web"]
+            # Bundled plugin toolsets (e.g. obsidian) default-on regardless of
+            # the override — the override governs the *configurable* toolsets.
+            # Filter the always-on plugin keys so the pin still proves the
+            # override was respected without over-fitting to which plugins ship.
+            from hermes_cli.tools_config import _get_plugin_toolset_keys
+            plugin_keys = _get_plugin_toolset_keys()
+            configured = sorted(ts for ts in toolsets if ts not in plugin_keys)
+            assert configured == ["terminal", "web"]

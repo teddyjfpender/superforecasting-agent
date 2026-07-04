@@ -103,7 +103,7 @@ class TestHandleBackgroundCommand:
             result = await runner._handle_background_command(event)
 
         assert "🔄" in result
-        assert "Background task started" in result
+        assert "Background research task started" in result
         assert "bg_" in result  # task ID starts with bg_
         assert "Summarize the top HN stories" in result
         assert len(created_tasks) == 1  # background task was created
@@ -136,7 +136,7 @@ class TestHandleBackgroundCommand:
         with patch("gateway.run.asyncio.create_task", side_effect=capture_task):
             result = await runner._handle_background_command(event)
 
-        assert "Background task started" in result
+        assert "Background research task started" in result
         runner._run_background_task.assert_called_once()
         assert runner._run_background_task.call_args.kwargs["event_message_id"] == "463"
 
@@ -183,7 +183,7 @@ class TestHandleBackgroundCommand:
                     platform=platform,
                 )
                 result = await runner._handle_background_command(event)
-                assert "Background task started" in result
+                assert "Background research task started" in result
 
 
 # ---------------------------------------------------------------------------

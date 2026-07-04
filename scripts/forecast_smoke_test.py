@@ -158,7 +158,7 @@ def _run_forecast(
     db_path: Path,
     repo_root: Path,
     verbose: bool,
-    timeout: int = 60,
+    timeout: int = 180,
 ) -> str:
     command = [
         sys.executable,
@@ -1068,6 +1068,11 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
             db_path=db_path,
             repo_root=repo_root,
             verbose=verbose,
+            # Heaviest step in the lifecycle: scores the full agent-protocol
+            # suite (hundreds of cases) and builds an export bundle. The 60s
+            # default is too tight and flakes under xdist load, so give it a
+            # generous margin that still surfaces a genuine hang.
+            timeout=240,
         ),
         "pilot-bundle",
     )

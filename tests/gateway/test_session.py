@@ -250,11 +250,19 @@ class TestBuildSessionContextPrompt:
             chat_type="group",
             user_name="bob",
         )
-        ctx = build_session_context(source, config)
-        prompt = build_session_context_prompt(ctx)
+        # Pin the no-Slack-API branch deterministically: the disclaimer flips
+        # when the `slack` tool is available (commit e2295139a wired the Slack
+        # toolset), so force the "no bot token" path regardless of ambient env.
+        with patch(
+            "tools.slack_tool.check_slack_tool_requirements", return_value=False
+        ):
+            ctx = build_session_context(source, config)
+            prompt = build_session_context_prompt(ctx)
 
         assert "Slack" in prompt
-        assert "cannot search" in prompt.lower()
+        # Code truth: the honest no-API disclaimer names the missing capabilities.
+        assert "cannot call slack apis" in prompt.lower()
+        assert "search history" in prompt.lower()
         assert "pin" in prompt.lower()
         assert "current message's slack block/attachment payload" in prompt.lower()
 
