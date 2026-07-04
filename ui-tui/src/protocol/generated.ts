@@ -237,6 +237,21 @@ export interface MarketQuotesResponse {
   quotes: Quote[]
 }
 
+export interface MarketSearchRequest {
+  query: string
+}
+
+export interface MarketSearchResponse {
+  results: MarketSearchResult[]
+}
+
+export interface MarketSearchResult {
+  category: string
+  name: string
+  provider: string
+  symbol: string
+}
+
 export interface MarketSeriesRef {
   category?: string
   line?: string
@@ -438,6 +453,10 @@ export interface Quote {
   category: string
   change: null | number
   changePct: null | number
+  currency: null | string
+  dayHigh: null | number
+  dayLow: null | number
+  exchange: null | string
   history: number[]
   name: string
   prevClose: null | number
@@ -445,6 +464,9 @@ export interface Quote {
   symbol: string
   unit: string
   value: null | number
+  volume: null | number
+  week52High: null | number
+  week52Low: null | number
 }
 
 export interface ReasoningAvailablePayload {

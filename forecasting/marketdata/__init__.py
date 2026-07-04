@@ -13,11 +13,18 @@ THE LAW lives in :mod:`forecasting.marketdata.model`: ``None`` NEVER ``0``.
 from forecasting.marketdata.keys import resolve_key
 from forecasting.marketdata.model import Quote, SeriesRef, change_columns, epoch_ms, num
 from forecasting.marketdata.provider import Provider
-from forecasting.marketdata.service import MarketDataService, QUOTES_TTL, TTLCache
+from forecasting.marketdata.providers.yahoo import SearchResult
+from forecasting.marketdata.service import (
+    MarketDataService,
+    QUOTES_TTL,
+    SEARCH_TTL,
+    TTLCache,
+)
 
 __all__ = [
     "Quote",
     "SeriesRef",
+    "SearchResult",
     "num",
     "epoch_ms",
     "change_columns",
@@ -25,5 +32,6 @@ __all__ = [
     "MarketDataService",
     "TTLCache",
     "QUOTES_TTL",
+    "SEARCH_TTL",
     "resolve_key",
 ]

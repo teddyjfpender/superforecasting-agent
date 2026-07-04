@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 import { $globalModal } from '../app/overlayStore.js'
 import type { MarketSeries } from '../content/marketProviders.js'
 import { ICON, spinnerFrame } from '../lib/icons.js'
+import type { QuotesTransport } from '../lib/marketFetch.js'
 import { searchCatalog, searchYahoo } from '../lib/marketSearch.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
@@ -36,6 +37,9 @@ const dedupe = (items: MarketSeries[]): MarketSeries[] => {
 
 interface MarketSearchModalProps {
   cols: number
+  // The gateway handle: the live Yahoo symbol lookup routes through
+  // `market.search` (Arc C3). Absent → catalog-only results.
+  gw?: QuotesTransport
   isAdded: (s: MarketSeries) => boolean
   isWatched: (s: MarketSeries) => boolean
   onClose: () => void
@@ -47,6 +51,7 @@ interface MarketSearchModalProps {
 
 export function MarketSearchModal({
   cols,
+  gw,
   isAdded,
   isWatched,
   onClose,
@@ -95,7 +100,7 @@ export function MarketSearchModal({
 
     const id = setTimeout(() => {
       void (async () => {
-        const remote = await searchYahoo(q)
+        const remote = await searchYahoo(q, gw)
 
         if (!aliveRef.current || seq !== seqRef.current) {
           return

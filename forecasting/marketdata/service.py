@@ -31,6 +31,7 @@ from forecasting.marketdata.providers.coingecko import CoingeckoProvider
 from forecasting.marketdata.providers.frankfurter import FrankfurterProvider
 from forecasting.marketdata.providers.fred import FredProvider
 from forecasting.marketdata.providers.stooq import StooqProvider
+from forecasting.marketdata.providers.yahoo import SearchResult, YahooProvider
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +96,9 @@ class TTLCache:
         self._spawn(_run)
 
 
+SEARCH_TTL = 300.0  # symbol lookups change rarely; 5-minute cache keeps them cheap
+
+
 def _default_providers() -> dict[str, Provider]:
     return {
         "frankfurter": FrankfurterProvider(),
@@ -103,6 +107,7 @@ def _default_providers() -> dict[str, Provider]:
         "fred": FredProvider(),
         "bls": BlsProvider(),
         "stooq": StooqProvider(),
+        "yahoo": YahooProvider(),
     }
 
 
@@ -169,5 +174,31 @@ class MarketDataService:
                 out.extend(fut.result())
         return out
 
+    def search(self, query: str) -> list[SearchResult]:
+        """Symbol lookup (Yahoo), TTL-cached and failure-isolated.
 
-__all__ = ["MarketDataService", "TTLCache", "QUOTES_TTL"]
+        Powers ``market.search``: an empty query is no hits, a provider outage
+        yields an empty list (never raises) so the TUI's search box degrades to
+        "no matches" rather than an error.
+        """
+
+        q = (query or "").strip()
+        if not q:
+            return []
+        provider = self._providers.get("yahoo")
+        searcher = getattr(provider, "search", None)
+        if searcher is None:
+            return []
+
+        def _load() -> list[SearchResult]:
+            try:
+                return list(searcher(q))
+            except Exception:  # a provider outage → empty, never blanks with an error
+                logger.debug("marketdata search failed", exc_info=True)
+                return []
+
+        value, _ = self._cache.get(f"search:{q.lower()}", SEARCH_TTL, _load)
+        return list(value or [])
+
+
+__all__ = ["MarketDataService", "TTLCache", "QUOTES_TTL", "SEARCH_TTL"]

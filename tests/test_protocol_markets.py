@@ -50,7 +50,31 @@ def _bea_null_quote() -> dict:
     ).to_dict()
 
 
-@pytest.mark.parametrize("frame", [_fx_quote(), _bea_null_quote()])
+def _yahoo_rich_quote() -> dict:
+    # Yahoo carries the richer columns; they must survive the wire round-trip.
+    return Quote(
+        symbol="AAPL",
+        provider="yahoo",
+        name="Apple Inc.",
+        category="Stocks",
+        value=189.5,
+        change=1.5,
+        changePct=0.8,
+        prevClose=188.0,
+        asOf=1_781_729_434_000,
+        unit="",
+        history=[186.0, 188.0, 189.5],
+        currency="USD",
+        exchange="NasdaqGS",
+        dayHigh=190.1,
+        dayLow=187.2,
+        volume=53_000_000,
+        week52High=199.0,
+        week52Low=164.0,
+    ).to_dict()
+
+
+@pytest.mark.parametrize("frame", [_fx_quote(), _bea_null_quote(), _yahoo_rich_quote()])
 def test_quote_frame_is_wire_identical(frame):
     spec = RPC_BY_METHOD["market.quotes"]
     result = {"quotes": [frame]}
@@ -96,3 +120,21 @@ def test_gateway_wrapper_names_field_on_invalid_payload():
     resp = server.handle_request({"id": "1", "method": "market.quotes", "params": {}})
     assert resp["error"]["code"] == -32602
     assert "series" in resp["error"]["message"]
+
+
+# ── market.search conformance ─────────────────────────────────────────────────
+
+
+def test_market_search_registered_and_round_trips():
+    spec = RPC_BY_METHOD["market.search"]
+    spec.request.model_validate({"query": "apple"})  # must not raise
+    result = {"results": [{"symbol": "AAPL", "provider": "yahoo", "name": "Apple Inc.", "category": "Stocks"}]}
+    model = spec.response.model_validate(result)
+    assert model.model_dump(mode="json", exclude_none=spec.exclude_none) == result
+
+
+def test_market_search_invalid_request_names_query_field():
+    with pytest.raises(ValidationError) as excinfo:
+        RPC_BY_METHOD["market.search"].request.model_validate({})
+    locs = {str(part) for err in excinfo.value.errors() for part in err["loc"]}
+    assert "query" in locs

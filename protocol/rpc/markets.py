@@ -44,6 +44,15 @@ class Quote(WireModel):
     asOf: int  # epoch ms, 0 when unknown
     unit: str
     history: list[float]
+    # Richer columns Yahoo publishes; null (never 0 / "") for providers that do
+    # not — a day / 52-week range, volume, and the listing currency + exchange.
+    currency: str | None
+    exchange: str | None
+    dayHigh: float | None
+    dayLow: float | None
+    volume: float | None
+    week52High: float | None
+    week52Low: float | None
 
 
 class MarketQuotesRequest(WireModel):
@@ -58,9 +67,34 @@ class MarketQuotesResponse(WireModel):
     quotes: list[Quote]
 
 
+class MarketSearchRequest(WireModel):
+    TS_NAME = "MarketSearchRequest"
+
+    query: str
+
+
+class MarketSearchResult(WireModel):
+    TS_NAME = "MarketSearchResult"
+
+    # One symbol-search hit — the curated-series shape the TUI's watchlist adds.
+    symbol: str
+    provider: str
+    name: str
+    category: str
+
+
+class MarketSearchResponse(WireModel):
+    TS_NAME = "MarketSearchResponse"
+
+    results: list[MarketSearchResult]
+
+
 __all__ = [
     "MarketSeriesRef",
     "Quote",
     "MarketQuotesRequest",
     "MarketQuotesResponse",
+    "MarketSearchRequest",
+    "MarketSearchResult",
+    "MarketSearchResponse",
 ]

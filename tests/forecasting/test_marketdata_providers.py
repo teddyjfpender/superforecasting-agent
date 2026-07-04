@@ -19,6 +19,12 @@ from forecasting.marketdata.providers.coingecko import parse_coingecko
 from forecasting.marketdata.providers.frankfurter import parse_frankfurter
 from forecasting.marketdata.providers.fred import parse_fred, parse_fred_csv
 from forecasting.marketdata.providers.stooq import parse_stooq
+from forecasting.marketdata.providers.yahoo import (
+    YahooProvider,
+    parse_yahoo,
+    parse_yahoo_search,
+    yahoo_type_to_category,
+)
 
 
 def _fx(symbol: str = "EUR", name: str = "X", unit: str = "") -> SeriesRef:
@@ -295,3 +301,135 @@ def test_stooq_error_or_empty_is_null_never_zero():
     assert parse_stooq("", _stq()).value is None
     # A header row with no data rows is honest-null.
     assert parse_stooq("Date,Open,High,Low,Close,Volume\n", _stq()).value is None
+
+
+# ── Yahoo (chart quote — the C3 port) ─────────────────────────────────────────
+
+
+def _yh(symbol: str = "^GSPC", name: str = "X", unit: str = "") -> SeriesRef:
+    return SeriesRef(provider="yahoo", symbol=symbol, name=name, category="Indices", unit=unit)
+
+
+def test_yahoo_reads_price_change_vs_prev_close_volume_and_time():
+    # Ported ONE-TO-ONE from marketFetch.test.ts parseYahoo.
+    chart = {
+        "chart": {
+            "result": [
+                {
+                    "meta": {
+                        "chartPreviousClose": 7511.35,
+                        "regularMarketPrice": 7420.1,
+                        "regularMarketTime": 1781729434,
+                        "regularMarketVolume": 3339473000,
+                        "shortName": "S&P 500",
+                    }
+                }
+            ]
+        }
+    }
+    q = parse_yahoo(chart, _yh(name="idx"))
+    assert q.value == pytest.approx(7420.1)
+    assert q.change == pytest.approx(-91.25, abs=0.01)
+    assert q.changePct == pytest.approx(-1.215, abs=0.01)
+    assert q.prevClose == pytest.approx(7511.35)
+    assert q.volume == 3339473000
+    assert q.asOf == 1781729434000
+    assert q.name == "S&P 500"  # meta overrides the series name
+
+
+def test_yahoo_malformed_response_is_null_never_zero():
+    q = parse_yahoo({}, _yh())
+    assert q.value is None
+    assert q.change is None and q.prevClose is None
+    assert q.asOf == 0  # no regularMarketTime → 0, never a fabricated instant
+    assert q.name == "X"  # falls back to the series name
+
+
+def test_yahoo_reads_day_and_52week_ranges_currency_and_exchange():
+    chart = {
+        "chart": {
+            "result": [
+                {
+                    "meta": {
+                        "regularMarketPrice": 189.5,
+                        "chartPreviousClose": 188.0,
+                        "regularMarketDayHigh": 190.1,
+                        "regularMarketDayLow": 187.2,
+                        "fiftyTwoWeekHigh": 199.0,
+                        "fiftyTwoWeekLow": 164.0,
+                        "currency": "USD",
+                        "fullExchangeName": "NasdaqGS",
+                        "longName": "Apple Inc.",
+                    }
+                }
+            ]
+        }
+    }
+    q = parse_yahoo(chart, _yh("AAPL", name="Apple"))
+    assert q.dayHigh == pytest.approx(190.1)
+    assert q.dayLow == pytest.approx(187.2)
+    assert q.week52High == pytest.approx(199.0)
+    assert q.week52Low == pytest.approx(164.0)
+    assert q.currency == "USD"
+    assert q.exchange == "NasdaqGS"
+    assert q.name == "Apple Inc."  # shortName absent → longName
+
+
+def test_yahoo_builds_history_from_daily_closes_dropping_nulls():
+    chart = {
+        "chart": {
+            "result": [
+                {
+                    "meta": {"regularMarketPrice": 12.0, "chartPreviousClose": 11.0},
+                    "indicators": {"quote": [{"close": [10.0, None, 11.0, 12.0]}]},
+                }
+            ]
+        }
+    }
+    q = parse_yahoo(chart, _yh())
+    assert q.history == [pytest.approx(10.0), pytest.approx(11.0), pytest.approx(12.0)]
+
+
+def test_yahoo_provider_fetch_skips_failed_symbols_keeps_the_rest():
+    # A None payload (network / non-2xx) drops the symbol entirely (client parity);
+    # a healthy symbol still resolves. The batch never blanks the tape.
+    payloads = {
+        "GOOD": {"chart": {"result": [{"meta": {"regularMarketPrice": 5.0}}]}},
+        "BAD": None,
+    }
+    prov = YahooProvider(get_json=lambda url, **kw: payloads["GOOD"] if "GOOD" in url else payloads["BAD"])
+    out = prov.fetch([_yh("GOOD"), _yh("BAD")])
+    assert [q.symbol for q in out] == ["GOOD"]  # BAD skipped, GOOD painted
+    assert out[0].value == pytest.approx(5.0)
+
+
+# ── Yahoo search (the market.search port) ─────────────────────────────────────
+
+
+def test_yahoo_type_to_category_maps_each_quote_type():
+    assert yahoo_type_to_category("EQUITY") == "Stocks"
+    assert yahoo_type_to_category("CRYPTOCURRENCY") == "Crypto"
+    assert yahoo_type_to_category("INDEX") == "Indices"
+    assert yahoo_type_to_category("FUTURE") == "Commodities"
+    assert yahoo_type_to_category("CURRENCY") == "FX"
+
+
+def test_parse_yahoo_search_maps_hits_and_drops_symbol_less_rows():
+    # Ported ONE-TO-ONE from marketSearch.test.ts parseYahooSearch.
+    payload = {
+        "quotes": [
+            {"exchange": "NMS", "quoteType": "EQUITY", "shortname": "Apple Inc.", "symbol": "AAPL"},
+            {"quoteType": "CRYPTOCURRENCY", "shortname": "Bitcoin USD", "symbol": "BTC-USD"},
+            {"nope": True},
+        ]
+    }
+    out = parse_yahoo_search(payload)
+    assert len(out) == 2
+    assert out[0].to_dict() == {"category": "Stocks", "name": "Apple Inc.", "provider": "yahoo", "symbol": "AAPL"}
+    assert out[1].category == "Crypto"
+
+
+def test_yahoo_provider_search_empty_query_and_error_payload_are_empty():
+    prov = YahooProvider(get_json=lambda url, **kw: {"quotes": []})
+    assert prov.search("   ") == []  # empty query → never even fetched
+    assert prov.search("apple") == []  # empty result set

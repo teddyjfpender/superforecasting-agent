@@ -81,6 +81,11 @@ RPC_SPECS: list[RpcSpec] = [
         _rpc_markets.MarketQuotesRequest,
         _rpc_markets.MarketQuotesResponse,
     ),
+    RpcSpec(
+        "market.search",
+        _rpc_markets.MarketSearchRequest,
+        _rpc_markets.MarketSearchResponse,
+    ),
 ]
 
 EVENT_SPECS: list[EventSpec] = [

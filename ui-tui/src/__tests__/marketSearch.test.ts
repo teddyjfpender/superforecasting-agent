@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { parseYahooSearch, searchCatalog, yahooTypeToCategory } from '../lib/marketSearch.js'
+import { searchCatalog, searchYahoo } from '../lib/marketSearch.js'
 import { blockChart, sparkline } from '../lib/sparkline.js'
 
 describe('sparkline', () => {
@@ -50,27 +50,28 @@ describe('searchCatalog', () => {
   })
 })
 
-describe('yahoo search parsing', () => {
-  it('maps quote types to categories', () => {
-    expect(yahooTypeToCategory('EQUITY')).toBe('Stocks')
-    expect(yahooTypeToCategory('CRYPTOCURRENCY')).toBe('Crypto')
-    expect(yahooTypeToCategory('INDEX')).toBe('Indices')
-    expect(yahooTypeToCategory('FUTURE')).toBe('Commodities')
-    expect(yahooTypeToCategory('CURRENCY')).toBe('FX')
+// The Yahoo search PARSER + quoteType→category mapping moved SERVER-SIDE (Arc
+// C3): see tests/forecasting/test_marketdata_providers.py. Here we assert the
+// transport seam — searchYahoo routes through the gateway's market.search RPC.
+describe('searchYahoo routing (Arc C3: server-side via market.search)', () => {
+  it('routes the query through gw.request(market.search) and maps the results', async () => {
+    const request = vi.fn().mockResolvedValue({
+      results: [{ category: 'Stocks', name: 'Apple Inc.', provider: 'yahoo', symbol: 'AAPL' }]
+    })
+
+    const out = await searchYahoo('apple', { request })
+
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls[0][0]).toBe('market.search')
+    expect(request.mock.calls[0][1]).toEqual({ query: 'apple' })
+    expect(out).toEqual([{ category: 'Stocks', name: 'Apple Inc.', provider: 'yahoo', symbol: 'AAPL' }])
   })
 
-  it('parses the search response into series', () => {
-    const json = {
-      quotes: [
-        { exchange: 'NMS', quoteType: 'EQUITY', shortname: 'Apple Inc.', symbol: 'AAPL' },
-        { quoteType: 'CRYPTOCURRENCY', shortname: 'Bitcoin USD', symbol: 'BTC-USD' },
-        { nope: true }
-      ]
-    }
+  it('returns [] with no gateway and never throws on a failed RPC', async () => {
+    expect(await searchYahoo('apple')).toEqual([])
+    expect(await searchYahoo('   ', { request: vi.fn() })).toEqual([])
 
-    const out = parseYahooSearch(json)
-    expect(out).toHaveLength(2)
-    expect(out[0]).toEqual({ category: 'Stocks', name: 'Apple Inc.', provider: 'yahoo', symbol: 'AAPL' })
-    expect(out[1].category).toBe('Crypto')
+    const request = vi.fn().mockRejectedValue(new Error('down'))
+    expect(await searchYahoo('apple', { request })).toEqual([])
   })
 })

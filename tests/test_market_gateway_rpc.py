@@ -7,12 +7,18 @@ isolation surfacing through the wire.
 from __future__ import annotations
 
 from forecasting.marketdata.model import Quote
+from forecasting.marketdata.providers.yahoo import SearchResult
 from tui_gateway import market_rpc, server
 
 
 class StubService:
     def __init__(self):
         self.calls = []
+        self.search_calls = []
+
+    def search(self, query):
+        self.search_calls.append(query)
+        return [SearchResult(symbol="AAPL", provider="yahoo", name="Apple Inc.", category="Stocks")]
 
     def quotes(self, refs):
         self.calls.append(list(refs))
@@ -100,5 +106,27 @@ def test_market_service_error_becomes_rpc_error(monkeypatch):
     try:
         err = _call("market.quotes", {"series": [{"provider": "frankfurter", "symbol": "EUR"}]})["error"]
         assert err["code"] == -32000 and "provider network down" in err["message"]
+    finally:
+        market_rpc.set_service(None)
+
+
+def test_market_search_returns_results(monkeypatch):
+    svc = _wire(monkeypatch)
+    try:
+        res = _call("market.search", {"query": "apple"})["result"]
+        assert res["results"] == [
+            {"category": "Stocks", "name": "Apple Inc.", "provider": "yahoo", "symbol": "AAPL"}
+        ]
+        assert svc.search_calls == ["apple"]
+    finally:
+        market_rpc.set_service(None)
+
+
+def test_market_search_missing_query_is_field_error(monkeypatch):
+    _wire(monkeypatch)
+    try:
+        err = _call("market.search", {})["error"]
+        assert err["code"] == -32602
+        assert "query" in err["message"]
     finally:
         market_rpc.set_service(None)

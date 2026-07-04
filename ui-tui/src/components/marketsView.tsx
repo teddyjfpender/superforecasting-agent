@@ -1332,6 +1332,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     ) : modal === 'search' ? (
       <MarketSearchModal
         cols={cols}
+        gw={gw}
         isAdded={isAdded}
         isWatched={isWatched}
         onClose={() => setModal('providers')}

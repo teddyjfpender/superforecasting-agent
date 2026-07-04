@@ -9,6 +9,8 @@ Methods
 -------
 * ``market.quotes`` ``{series: [{provider, symbol, name?, category?, unit?, line?}]}``
   → ``{quotes: [Quote]}`` — every measurement honest-null (THE LAW: None ≠ 0).
+* ``market.search`` ``{query}`` → ``{results: [MarketSearchResult]}`` — the Yahoo
+  symbol lookup moved server-side (the TUI's search box stops hitting Yahoo).
 
 Follows the ``pm_rpc`` pattern exactly: a lazily-built, injectable service
 singleton and a protocol-model validation wrapper that NEVER changes the wire.
@@ -77,6 +79,16 @@ def register(server) -> None:
             return _err(rid, exc)
         return _ok(rid, {"quotes": [q.to_dict() for q in quotes]})
 
+    def market_search(rid, params):
+        query = params.get("query")
+        if not isinstance(query, str):
+            return _err(rid, ValueError("query must be a string"))
+        try:
+            results = get_service().search(query)
+        except Exception as exc:
+            return _err(rid, exc)
+        return _ok(rid, {"results": [r.to_dict() for r in results]})
+
     def _rpc_model(method: str, handler):
         spec = RPC_BY_METHOD.get(method)
         if spec is None:  # pragma: no cover - market.quotes is registered
@@ -105,6 +117,7 @@ def register(server) -> None:
         return wrapped
 
     server.register_method("market.quotes", _rpc_model("market.quotes", market_quotes))
+    server.register_method("market.search", _rpc_model("market.search", market_search))
 
 
 __all__ = ["register", "get_service", "set_service"]

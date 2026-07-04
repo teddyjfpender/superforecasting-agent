@@ -16,6 +16,13 @@ from forecasting.marketdata.providers.fred import (
     parse_fred_csv,
 )
 from forecasting.marketdata.providers.stooq import StooqProvider, parse_stooq
+from forecasting.marketdata.providers.yahoo import (
+    SearchResult,
+    YahooProvider,
+    parse_yahoo,
+    parse_yahoo_search,
+    yahoo_type_to_category,
+)
 
 __all__ = [
     "FrankfurterProvider",
@@ -31,4 +38,9 @@ __all__ = [
     "parse_bls",
     "StooqProvider",
     "parse_stooq",
+    "YahooProvider",
+    "SearchResult",
+    "parse_yahoo",
+    "parse_yahoo_search",
+    "yahoo_type_to_category",
 ]

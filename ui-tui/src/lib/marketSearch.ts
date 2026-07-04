@@ -1,9 +1,15 @@
 import { DEFAULT_SERIES, type MarketSeries } from '../content/marketProviders.js'
+import type { MarketSearchResponse } from '../protocol/generated.js'
+
+import type { QuotesTransport } from './marketFetch.js'
 
 // Find market line items two ways: a ranked search over the curated catalog
 // (with intent synonyms — "gold"→commodities, "sp500"→^GSPC), and a live Yahoo
 // symbol lookup so users can pull up ANY ticker. The catalog scorer is pure +
-// tested; the Yahoo lookup is a thin network call.
+// tested; the Yahoo lookup now routes SERVER-SIDE through the gateway's
+// `market.search` RPC (Arc C3) — the parser + quoteType→category mapping moved
+// to Python (forecasting/marketdata/providers/yahoo.py), so no Yahoo fetch/parse
+// runs client-side anymore.
 
 const SYNONYMS: Record<string, string[]> = {
   bitcoin: ['btc', 'crypto'],
@@ -96,63 +102,27 @@ export const searchCatalog = (query: string): MarketSeries[] => {
     .map(x => x.s)
 }
 
-// Map a Yahoo quoteType to one of our categories.
-export const yahooTypeToCategory = (quoteType: string): string => {
-  switch ((quoteType || '').toUpperCase()) {
-    case 'CRYPTOCURRENCY':
-      return 'Crypto'
-
-    case 'CURRENCY':
-      return 'FX'
-
-    case 'FUTURE':
-      return 'Commodities'
-
-    case 'INDEX':
-      return 'Indices'
-
-    default:
-      return 'Stocks'
-  }
-}
-
-export const parseYahooSearch = (json: unknown): MarketSeries[] => {
-  const quotes = (json as { quotes?: Record<string, unknown>[] })?.quotes ?? []
-
-  return quotes
-    .filter(q => typeof q.symbol === 'string')
-    .map(q => ({
-      category: yahooTypeToCategory(String(q.quoteType ?? '')),
-      name: String(q.shortname || q.longname || q.symbol),
-      provider: 'yahoo',
-      symbol: String(q.symbol)
-    }))
-}
-
-export const searchYahoo = async (query: string, timeoutMs = 8000): Promise<MarketSeries[]> => {
+// The live symbol lookup, routed through the gateway's `market.search` RPC (the
+// Yahoo endpoint + parser live server-side now). Without a gateway there is no
+// client fallback — the catalog results still show; the remote merge is simply
+// empty (parity with fetchQuotes degrading when no gw is present).
+export const searchYahoo = async (query: string, gw?: QuotesTransport): Promise<MarketSeries[]> => {
   const q = query.trim()
 
-  if (!q) {
+  if (!q || !gw) {
     return []
   }
 
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-
   try {
-    const r = await fetch(
-      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`,
-      { headers: { 'User-Agent': 'Outrider/1.0' }, signal: controller.signal }
-    )
+    const res = await gw.request<MarketSearchResponse>('market.search', { query: q })
 
-    if (!r.ok) {
-      return []
-    }
-
-    return parseYahooSearch(await r.json())
+    return (res?.results ?? []).map(r => ({
+      category: r.category,
+      name: r.name,
+      provider: r.provider,
+      symbol: r.symbol
+    }))
   } catch {
     return []
-  } finally {
-    clearTimeout(timer)
   }
 }

@@ -98,7 +98,15 @@ class SeriesRef:
 
 @dataclass(frozen=True)
 class Quote:
-    """A normalized market reading. ``None`` NEVER ``0`` (see the module law)."""
+    """A normalized market reading. ``None`` NEVER ``0`` (see the module law).
+
+    The trailing fields (``currency`` … ``week52Low``) are the richer columns
+    Yahoo (the highest-volume provider) carries — a day range, 52-week band,
+    volume, and the listing's currency / exchange. Every non-Yahoo provider
+    leaves them ``None`` (absent measurement → null, never a fabricated ``0``),
+    so the tape shows "—" for a column the source does not publish. They mirror
+    the TUI's ``MarketQuote`` field-for-field so a server quote stays a drop-in.
+    """
 
     symbol: str
     provider: str
@@ -111,6 +119,14 @@ class Quote:
     asOf: int  # epoch ms, 0 when unknown
     unit: str
     history: list[float] = field(default_factory=list)
+    # ── richer columns (Yahoo; None for providers that do not publish them) ──
+    currency: str | None = None
+    exchange: str | None = None
+    dayHigh: float | None = None
+    dayLow: float | None = None
+    volume: float | None = None
+    week52High: float | None = None
+    week52Low: float | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -125,6 +141,13 @@ class Quote:
             "asOf": self.asOf,
             "unit": self.unit,
             "history": list(self.history),
+            "currency": self.currency,
+            "exchange": self.exchange,
+            "dayHigh": self.dayHigh,
+            "dayLow": self.dayLow,
+            "volume": self.volume,
+            "week52High": self.week52High,
+            "week52Low": self.week52Low,
         }
 
 

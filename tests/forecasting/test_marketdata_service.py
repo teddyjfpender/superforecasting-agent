@@ -124,10 +124,18 @@ def test_unknown_provider_yields_no_quotes():
 # ── C2 service integration: the four new providers wired end-to-end ───────────
 
 
-def test_default_providers_include_all_six():
+def test_default_providers_include_all_seven():
     from forecasting.marketdata.service import _default_providers
 
-    assert set(_default_providers()) == {"frankfurter", "bea", "coingecko", "fred", "bls", "stooq"}
+    assert set(_default_providers()) == {
+        "frankfurter",
+        "bea",
+        "coingecko",
+        "fred",
+        "bls",
+        "stooq",
+        "yahoo",
+    }
 
 
 def test_service_routes_the_four_new_providers_with_real_parsers_no_network():
@@ -181,3 +189,54 @@ def test_service_isolates_a_new_provider_error_payload_as_null_never_zero():
     by = {q.provider: q for q in svc.quotes([_ref("coingecko", "bitcoin"), _ref("stooq", "aapl.us")])}
     assert by["coingecko"].value is None  # NEVER a fabricated 0
     assert by["stooq"].value == pytest.approx(10.8)  # healthy provider still paints
+
+
+# ── C3 service: yahoo quotes + search wired end-to-end ────────────────────────
+
+
+def test_service_routes_yahoo_quotes_off_the_chart_getter_no_network():
+    from forecasting.marketdata.providers.yahoo import YahooProvider
+
+    yahoo = YahooProvider(
+        get_json=lambda url, **kw: {"chart": {"result": [{"meta": {"regularMarketPrice": 189.5}}]}}
+    )
+    svc = MarketDataService(providers={"yahoo": yahoo}, key_resolver=lambda name: None, clock=lambda: 0.0)
+    (q,) = svc.quotes([_ref("yahoo", "AAPL")])
+    assert q.provider == "yahoo" and q.value == pytest.approx(189.5)
+
+
+def test_service_search_round_trips_through_yahoo_and_caches():
+    from forecasting.marketdata.providers.yahoo import YahooProvider
+
+    calls = {"n": 0}
+
+    def _get(url, **kw):
+        calls["n"] += 1
+        return {"quotes": [{"quoteType": "EQUITY", "shortname": "Apple Inc.", "symbol": "AAPL"}]}
+
+    svc = MarketDataService(
+        providers={"yahoo": YahooProvider(get_json=_get)},
+        key_resolver=lambda name: None,
+        clock=lambda: 0.0,
+        spawn=lambda fn: None,
+    )
+    out = svc.search("apple")
+    assert [r.to_dict() for r in out] == [
+        {"category": "Stocks", "name": "Apple Inc.", "provider": "yahoo", "symbol": "AAPL"}
+    ]
+    svc.search("apple")  # within TTL → served from cache, no second fetch
+    assert calls["n"] == 1
+
+
+def test_service_search_empty_query_is_empty_and_never_fetches():
+    from forecasting.marketdata.providers.yahoo import YahooProvider
+
+    called = {"hit": False}
+
+    def _get(url, **kw):
+        called["hit"] = True
+        return {"quotes": []}
+
+    svc = MarketDataService(providers={"yahoo": YahooProvider(get_json=_get)}, clock=lambda: 0.0)
+    assert svc.search("   ") == []
+    assert called["hit"] is False
