@@ -487,15 +487,28 @@ class QuestionSpec:
         # forecasting.cron.auto_install (default TRUE) and cheap+silent when already
         # installed. Fail-open: a cron hiccup must never block the commit.
         default_routines = None
+        db_path = getattr(ledger, "db_path", None)
         try:
             from forecasting.scheduler import ensure_default_routines
 
-            db_path = getattr(ledger, "db_path", None)
             default_routines = ensure_default_routines(
                 db_path=str(db_path) if db_path else None
             )
         except Exception:
             default_routines = None
+
+        # Durability on the same lazy path: the ledger is the whole asset, so a
+        # committed forecast should also arm the daily online-backup cron without
+        # the operator remembering to. Same auto_install gate, same fail-open.
+        default_backup_routine = None
+        try:
+            from forecasting.scheduler import ensure_default_backup_routine
+
+            default_backup_routine = ensure_default_backup_routine(
+                db_path=str(db_path) if db_path else None
+            )
+        except Exception:
+            default_backup_routine = None
 
         question_dict = dict(question.__dict__) if hasattr(question, "__dict__") else dict(question)
         # OutcomeSpace is the one non-JSON-serializable field on the question.
@@ -512,6 +525,7 @@ class QuestionSpec:
             "scheduled_review": scheduled_review,
             "scheduled_review_error": scheduled_review_error,
             "default_routines": default_routines,
+            "default_backup_routine": default_backup_routine,
             "readiness_gaps": [g.to_dict() for g in gaps],
         }
 

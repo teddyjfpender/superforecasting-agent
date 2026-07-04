@@ -20,7 +20,7 @@ import time
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Iterable
@@ -460,6 +460,269 @@ class ForecastLedger:
         except Exception:  # pragma: no cover - defensive only
             logger.debug("could not install ledger write authorizer", exc_info=True)
         return conn
+
+    # ── durability: online backup + integrity (the ledger IS the asset) ─────────
+    #
+    # The forecast ledger is months of irreplaceable judgment. These methods give
+    # it a backup + integrity spine with ZERO risk to the live file: backups use
+    # SQLite's ONLINE backup API (``sqlite3.Connection.backup``) — a page-level
+    # copy that is safe under concurrent readers/writers — NEVER an OS file-copy of
+    # a live WAL database (which can capture a torn, unrecoverable image).
+
+    # Retention (deterministic, applied after each backup): always keep the newest
+    # ``BACKUP_KEEP_RECENT`` snapshots, PLUS the newest snapshot in each of the most
+    # recent ``BACKUP_WEEKLY_WEEKS`` ISO weeks (one-per-week long tail). Everything
+    # else is pruned.
+    BACKUP_KEEP_RECENT = 14
+    BACKUP_WEEKLY_WEEKS = 8
+    _BACKUP_PREFIX = "forecast-"
+    _BACKUP_SUFFIX = ".db"
+    _BACKUP_TS_FORMAT = "%Y%m%d-%H%M%S"  # forecast-YYYYMMDD-HHMMSS.db
+    _BACKUP_TS_LEN = 15  # len("YYYYMMDD-HHMMSS")
+
+    # A small, meaningful row-count snapshot (friendly name -> table). A count that
+    # holds across a backup+restore is the cheapest end-to-end integrity signal.
+    _BACKUP_COUNT_TABLES = (
+        ("questions", "forecast_questions"),
+        ("snapshots", "forecast_snapshots"),
+        ("evidence", "evidence_items"),
+        ("resolutions", "resolutions"),
+        ("scores", "score_records"),
+        ("panel_runs", "panel_runs"),
+        ("alerts", "alert_events"),
+        ("watched_sources", "watched_sources"),
+    )
+
+    def default_backup_dir(self) -> Path:
+        """Where backups land when no ``dest_dir`` is given: ``<ledger dir>/backups``.
+
+        Co-located with the ledger file (rather than a fixed ``{home}/backups``) so a
+        custom ``--db`` / ``FORECAST_LEDGER_DB`` ledger keeps its backups beside it —
+        and a scratch/test ledger never writes anywhere near the operator's live
+        home."""
+
+        return self.db_path.parent / "backups"
+
+    def row_counts(self) -> dict[str, int]:
+        """A best-effort ``{questions, snapshots, evidence, …}`` row-count snapshot.
+
+        Fail-soft per table: a table absent on an older schema is skipped, never
+        fatal — this is a sanity signal, not a schema assertion."""
+
+        counts: dict[str, int] = {}
+        with self._connect() as conn:
+            for friendly, table in self._BACKUP_COUNT_TABLES:
+                try:
+                    row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
+                except sqlite3.Error:
+                    continue
+                counts[friendly] = int(row[0]) if row else 0
+        return counts
+
+    def integrity_check(self) -> dict[str, Any]:
+        """Run ``PRAGMA integrity_check`` + ``PRAGMA quick_check`` plus a row-count
+        snapshot, returned as a dict.
+
+        ``ok`` is True only when BOTH pragmas report the single ``ok`` row and the
+        connection did not raise. A severely corrupt database can make the PRAGMA
+        itself raise ``sqlite3.DatabaseError`` — that is caught and reported as a
+        violation (``ok=False``) rather than propagated, so this method is always a
+        safe read."""
+
+        checked_at = utc_now_iso()
+        integrity: list[str] = []
+        quick: list[str] = []
+        error: str | None = None
+        try:
+            with self._connect() as conn:
+                integrity = [str(r[0]) for r in conn.execute("PRAGMA integrity_check").fetchall()]
+                quick = [str(r[0]) for r in conn.execute("PRAGMA quick_check").fetchall()]
+        except sqlite3.DatabaseError as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        try:
+            counts = self.row_counts()
+        except sqlite3.DatabaseError:
+            counts = {}
+
+        violations: list[str] = []
+        if error:
+            violations.append(error)
+        violations.extend(v for v in integrity if v != "ok")
+        violations.extend(v for v in quick if v != "ok")
+        ok = not violations and integrity == ["ok"] and quick == ["ok"]
+        return {
+            "ok": ok,
+            "integrity_check": integrity,
+            "quick_check": quick,
+            "violations": violations,
+            "counts": counts,
+            "checked_at": checked_at,
+            "db_path": str(self.db_path),
+        }
+
+    def backup(
+        self,
+        dest_dir: str | Path | None = None,
+        *,
+        retention: bool = True,
+        keep_recent: int | None = None,
+        weekly_weeks: int | None = None,
+        now: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Take an ONLINE backup of the ledger and prune old snapshots.
+
+        Uses ``sqlite3.Connection.backup`` (page-level, concurrency-safe) to copy the
+        live database into ``<dest_dir>/forecast-YYYYMMDD-HHMMSS.db`` (``dest_dir``
+        defaults to :meth:`default_backup_dir`). Returns ``{path, bytes, created_at,
+        retention}``. Retention (unless ``retention=False``) keeps the newest
+        ``keep_recent`` (default :data:`BACKUP_KEEP_RECENT`) plus one-per-week for
+        ``weekly_weeks`` (default :data:`BACKUP_WEEKLY_WEEKS`) ISO weeks."""
+
+        moment = now or datetime.now(timezone.utc)
+        target_dir = Path(dest_dir).expanduser() if dest_dir else self.default_backup_dir()
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        stamp = moment.strftime(self._BACKUP_TS_FORMAT)
+        dest = target_dir / f"{self._BACKUP_PREFIX}{stamp}{self._BACKUP_SUFFIX}"
+        # Collision guard: two backups in the same wall-clock second get a numeric
+        # suffix so neither is clobbered. The timestamp parser reads only the leading
+        # 15 chars, so a suffixed file still buckets into the right second/week.
+        counter = 1
+        while dest.exists():
+            dest = target_dir / f"{self._BACKUP_PREFIX}{stamp}-{counter}{self._BACKUP_SUFFIX}"
+            counter += 1
+
+        # A plain connection reads the fully-committed logical state (WAL frames
+        # included). The online backup restarts internally if a writer commits
+        # mid-copy, so it is safe to run against the live ledger.
+        src = sqlite3.connect(self.db_path)
+        try:
+            dst = sqlite3.connect(dest)
+            try:
+                with dst:
+                    src.backup(dst)
+            finally:
+                dst.close()
+        finally:
+            src.close()
+
+        result: dict[str, Any] = {
+            "path": str(dest),
+            "bytes": dest.stat().st_size,
+            "created_at": moment.astimezone(timezone.utc).isoformat(),
+        }
+        if retention:
+            result["retention"] = self._prune_backups(
+                target_dir,
+                keep_recent=self.BACKUP_KEEP_RECENT if keep_recent is None else int(keep_recent),
+                weekly_weeks=self.BACKUP_WEEKLY_WEEKS if weekly_weeks is None else int(weekly_weeks),
+            )
+        return result
+
+    def _parse_backup_ts(self, path: Path) -> datetime | None:
+        """The UTC timestamp encoded in a backup filename, or None if it does not
+        match the ``forecast-YYYYMMDD-HHMMSS[.…].db`` shape."""
+
+        name = path.name
+        if not name.startswith(self._BACKUP_PREFIX) or not name.endswith(self._BACKUP_SUFFIX):
+            return None
+        core = name[len(self._BACKUP_PREFIX) : -len(self._BACKUP_SUFFIX)]
+        try:
+            return datetime.strptime(core[: self._BACKUP_TS_LEN], self._BACKUP_TS_FORMAT).replace(
+                tzinfo=timezone.utc
+            )
+        except ValueError:
+            return None
+
+    def list_backups(self, dest_dir: str | Path | None = None) -> list[dict[str, Any]]:
+        """Existing backups as ``[{path, created_at, bytes}]``, newest first."""
+
+        target_dir = Path(dest_dir).expanduser() if dest_dir else self.default_backup_dir()
+        rows: list[dict[str, Any]] = []
+        if not target_dir.is_dir():
+            return rows
+        for path in target_dir.glob(f"{self._BACKUP_PREFIX}*{self._BACKUP_SUFFIX}"):
+            ts = self._parse_backup_ts(path)
+            if ts is None:
+                continue
+            try:
+                size = path.stat().st_size
+            except OSError:
+                continue
+            rows.append(
+                {"path": str(path), "created_at": ts.isoformat(), "bytes": size, "_ts": ts, "_name": path.name}
+            )
+        rows.sort(key=lambda r: (r["_ts"], r["_name"]), reverse=True)
+        for r in rows:
+            r.pop("_ts", None)
+            r.pop("_name", None)
+        return rows
+
+    def latest_backup(
+        self, dest_dir: str | Path | None = None, *, now: datetime | None = None
+    ) -> dict[str, Any] | None:
+        """The most recent backup with its ``age_hours`` (and total ``count``), or
+        None when no backup exists yet — the seam the doctor's WARN reads."""
+
+        rows = self.list_backups(dest_dir)
+        if not rows:
+            return None
+        latest = dict(rows[0])
+        moment = now or datetime.now(timezone.utc)
+        age_hours: float | None
+        try:
+            created = datetime.fromisoformat(latest["created_at"])
+            age_hours = (moment - created).total_seconds() / 3600.0
+        except (ValueError, TypeError):
+            age_hours = None
+        latest["age_hours"] = age_hours
+        latest["count"] = len(rows)
+        return latest
+
+    def _prune_backups(
+        self, dest_dir: str | Path, *, keep_recent: int, weekly_weeks: int
+    ) -> dict[str, Any]:
+        """Delete backups outside the retention window, deterministically.
+
+        Keep set = the newest ``keep_recent`` snapshots ∪ the newest snapshot in each
+        of the most recent ``weekly_weeks`` ISO weeks. Given a fixed set of files this
+        always produces the same keep/prune partition (ordering ties broken by
+        filename)."""
+
+        target_dir = Path(dest_dir)
+        entries: list[tuple[datetime, Path]] = []
+        for path in target_dir.glob(f"{self._BACKUP_PREFIX}*{self._BACKUP_SUFFIX}"):
+            ts = self._parse_backup_ts(path)
+            if ts is not None:
+                entries.append((ts, path))
+        # Newest first; filename breaks ties so the partition is fully deterministic.
+        entries.sort(key=lambda e: (e[0], e[1].name), reverse=True)
+
+        keep: set[Path] = set()
+        for _ts, path in entries[: max(0, keep_recent)]:
+            keep.add(path)
+        by_week: dict[tuple[int, int], Path] = {}
+        for ts, path in entries:  # descending → first seen per week is the newest
+            iso = ts.isocalendar()
+            key = (iso[0], iso[1])
+            by_week.setdefault(key, path)
+        for key in sorted(by_week, reverse=True)[: max(0, weekly_weeks)]:
+            keep.add(by_week[key])
+
+        pruned: list[str] = []
+        for _ts, path in entries:
+            if path in keep:
+                continue
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            pruned.append(str(path))
+        return {
+            "kept": len(entries) - len(pruned),
+            "pruned": pruned,
+            "pruned_count": len(pruned),
+        }
 
     def initialize_schema(self) -> None:
         with self._connect() as conn:
@@ -7455,6 +7718,9 @@ class ForecastLedger:
         recommended_action: str,
     ) -> AlertEvent:
         return _alerts.create_alert(self, severity=severity, scope_type=scope_type, scope_ref=scope_ref, reason=reason, recommended_action=recommended_action)
+
+    def enqueue_resolution_proposal(self, *, question_id: str, outcome: Any, rationale: str, confirm_command: str | None = None) -> AlertEvent:
+        return _alerts.enqueue_resolution_proposal(self, question_id=question_id, outcome=outcome, rationale=rationale, confirm_command=confirm_command)
 
     def get_alert(self, alert_id: str) -> AlertEvent:
         return _alerts.get_alert(self, alert_id=alert_id)

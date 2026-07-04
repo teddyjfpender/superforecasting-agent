@@ -146,3 +146,34 @@ aggregate. Click it (or `Ctrl+G a`) to open the **Agents** view
 status, history, and sort/filter modes. This is where delegated and background
 work (the detached jobs the Desk tiers launch, plus any subagents the agent
 spawns) is visible and interruptible.
+
+## Maintenance: ledger backups + integrity
+
+The forecast ledger (`{home}/forecasting/forecasting.db`) is the entire asset —
+months of judgment. Back it up and check its integrity from the CLI:
+
+- **`forecast backup run`** — takes an **online** backup (SQLite's page-level
+  backup API, safe while the gateway and cron are writing — never a raw file-copy
+  of the live WAL db) into `{home}/forecasting/backups/forecast-YYYYMMDD-HHMMSS.db`,
+  runs `PRAGMA integrity_check` + `quick_check`, and prunes old snapshots. It runs
+  as a durable job, so it also shows on the Agents view and in `forecast backup list`.
+- **`forecast backup list`** — the existing backups, newest first.
+- **Retention** is automatic and deterministic: the newest **14** snapshots are
+  always kept, plus one-per-week for the most recent **8** ISO weeks; everything
+  else is pruned after each run.
+
+**Daily cadence.** The first committed forecast auto-arms a daily backup cron
+(07:30, half an hour before the 08:00 self-check), gated behind
+`forecasting.cron.auto_install` — the same mechanism that arms the nightly
+self-check. To arm it explicitly (or on a host where you manage cron by hand),
+install the one routine:
+
+```python
+from forecasting.scheduler import install_backup_cron
+install_backup_cron()  # daily "30 7 * * *"; pass schedule=... to change cadence
+```
+
+**`forecast doctor`** reports a **durability** line: the last-backup age (it
+**WARNs when the newest backup is over 48h old, or missing entirely**), the
+integrity verdict, and a row-count snapshot — so the gap surfaces on the lazy path
+even if no cron is installed.

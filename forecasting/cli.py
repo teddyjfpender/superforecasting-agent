@@ -536,6 +536,34 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     doctor_parser.add_argument("--json", action="store_true", help="Emit machine-readable doctor JSON")
     doctor_parser.set_defaults(_forecast_handler=_cmd_doctor)
 
+    backup_parser = forecast_sub.add_parser(
+        "backup",
+        help="Back up the forecast ledger (online snapshot + integrity check) and manage retention",
+    )
+    backup_sub = backup_parser.add_subparsers(dest="backup_command")
+    backup_run = backup_sub.add_parser(
+        "run", help="Create an online backup + integrity check now (runs as a durable job)"
+    )
+    backup_run.add_argument(
+        "--dest-dir", help="Override the backup directory (default: <ledger dir>/backups)"
+    )
+    backup_run.add_argument(
+        "--keep-recent", type=int, help="Retention override: newest N backups always kept (default 14)"
+    )
+    backup_run.add_argument(
+        "--weekly-weeks", type=int, help="Retention override: one-per-week for W weeks (default 8)"
+    )
+    backup_run.add_argument("--json", action="store_true", help="Emit the machine-readable job record")
+    backup_run.set_defaults(_forecast_handler=_cmd_backup_run)
+    backup_list = backup_sub.add_parser("list", help="List existing ledger backups (newest first)")
+    backup_list.add_argument(
+        "--dest-dir", help="Override the backup directory (default: <ledger dir>/backups)"
+    )
+    backup_list.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    backup_list.set_defaults(_forecast_handler=_cmd_backup_list)
+    # Bare `forecast backup` runs a backup now.
+    backup_parser.set_defaults(_forecast_handler=_cmd_backup_run)
+
     lint_parser = forecast_sub.add_parser(
         "lint", help="Saturation report for a forecast: 0-100 score + per-rule verdicts (style + completeness)"
     )
@@ -723,6 +751,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     list_parser.add_argument("--domain")
     list_parser.add_argument("--limit", type=int)
     list_parser.set_defaults(_forecast_handler=_cmd_list)
+
+    next_parser = forecast_sub.add_parser(
+        "next",
+        help="Rank the book by value-of-information — what should I touch next?",
+    )
+    next_parser.add_argument("--limit", type=int, default=5, help="How many actions to print (default: 5)")
+    next_parser.add_argument("--json", action="store_true", help="Emit the machine-readable ranked actions")
+    next_parser.set_defaults(_forecast_handler=_cmd_next)
 
     search_parser = forecast_sub.add_parser(
         "search",
@@ -3706,6 +3742,39 @@ def _cmd_bench(args: argparse.Namespace) -> None:
     )
 
 
+#: The doctor flags a backup as STALE once the newest one is older than this.
+DOCTOR_BACKUP_STALE_HOURS = 48.0
+
+
+def _build_durability_section(
+    ledger: ForecastLedger, *, stale_hours: float = DOCTOR_BACKUP_STALE_HOURS
+) -> dict[str, Any]:
+    """The doctor's integrity+backup section: last-backup age (``ok`` / ``stale`` /
+    ``missing``), the integrity verdict, and the row-count snapshot.
+
+    ``missing`` (no backup at all) and ``stale`` (>``stale_hours`` old) are the two
+    WARN states — the surface that keeps the durability gap on the lazy path even
+    when the backup cadence is operator-created."""
+
+    latest = ledger.latest_backup()
+    integ = ledger.integrity_check()
+    if latest is None:
+        backup_status = "missing"
+    elif isinstance(latest.get("age_hours"), (int, float)) and latest["age_hours"] > stale_hours:
+        backup_status = "stale"
+    else:
+        backup_status = "ok"
+    return {
+        "backup_status": backup_status,  # ok | stale | missing
+        "stale_after_hours": stale_hours,
+        "last_backup": latest,
+        "backup_dir": str(ledger.default_backup_dir()),
+        "integrity_ok": bool(integ.get("ok")),
+        "violations": integ.get("violations") or [],
+        "counts": integ.get("counts") or {},
+    }
+
+
 def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     ledger = _ledger(args)
     status = _forecast_status_payload(ledger)
@@ -3837,6 +3906,15 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         prediction_markets = None
 
+    # DURABILITY: the ledger IS the asset (months of judgment). Surface the last
+    # backup age (WARN when >48h / none), the integrity verdict, and a row-count
+    # snapshot so the lazy path can never silently lose the book. Read-only +
+    # fail-safe, like every probe above.
+    try:
+        durability = _build_durability_section(ledger)
+    except Exception:
+        durability = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3849,6 +3927,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "free_tier_drain": free_tier_drain,
         "review_sweeper": review_sweeper,
         "prediction_markets": prediction_markets,
+        "durability": durability,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
@@ -4227,6 +4306,27 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
                 f"review_sweeper: every {interval}m; {due_now} due now; {tail}"
             )
 
+    # Durability: last-backup age (WARN >48h/none) + integrity verdict + counts —
+    # the ledger is the whole asset, so this is the line that can't go missing.
+    dur = report.get("durability") or {}
+    if dur:
+        integ_ok = dur.get("integrity_ok")
+        integ_txt = "ok" if integ_ok else f"VIOLATIONS ({len(dur.get('violations') or [])})"
+        status = dur.get("backup_status")
+        last = dur.get("last_backup") or {}
+        if status == "missing":
+            btxt = "NO BACKUP YET — run `forecast backup run`"
+        else:
+            age = last.get("age_hours")
+            age_txt = f"{age:.1f}h ago" if isinstance(age, (int, float)) else "age unknown"
+            warn = "  WARN>48h" if status == "stale" else ""
+            btxt = f"last {age_txt} ({last.get('bytes', 0)} bytes){warn}"
+        counts = dur.get("counts") or {}
+        counts_txt = " ".join(f"{k}={v}" for k, v in counts.items())
+        print(f"durability: backup {btxt}; integrity {integ_txt}; {counts_txt}".rstrip("; "))
+        for v in (dur.get("violations") or [])[:3]:
+            print(f"  - integrity: {v[:80]}")
+
     batches = report.get("templated_batches") or []
     if batches:
         flagged = sum(b["count"] for b in batches)
@@ -4254,6 +4354,67 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
 
     if should_fail:
         raise SystemExit(1)
+
+
+def _cmd_backup_run(args: argparse.Namespace) -> None:
+    """`forecast backup run` — take an online backup + integrity check now.
+
+    Thin over the BACKUP job type: enqueues a durable job, waits for it, and prints
+    the ``{path, integrity, counts}`` result. Exits nonzero when the backup failed
+    or reported integrity violations."""
+
+    from forecasting.jobs.types.backup import read_job, start_job
+
+    spec = {
+        "db": getattr(args, "db", None),
+        "dest_dir": getattr(args, "dest_dir", None),
+        "keep_recent": getattr(args, "keep_recent", None),
+        "weekly_weeks": getattr(args, "weekly_weeks", None),
+    }
+    job_id = start_job(spec, wait=True)
+    job = read_job(job_id)
+    result = job.get("result") or {}
+    integrity = result.get("integrity")
+    failed = job.get("status") != "done" or integrity != "ok"
+
+    if getattr(args, "json", False):
+        print(json.dumps(job, indent=2, sort_keys=True))
+        if failed:
+            raise SystemExit(1)
+        return
+
+    if job.get("status") != "done":
+        print(f"backup failed: {job.get('error') or 'unknown error'}")
+        raise SystemExit(1)
+
+    print(f"backup {result.get('path')}  ({result.get('bytes')} bytes)")
+    print(f"integrity: {integrity}")
+    counts = result.get("counts") or {}
+    if counts:
+        print("counts: " + " ".join(f"{k}={v}" for k, v in counts.items()))
+    retention = result.get("retention") or {}
+    if retention.get("pruned_count"):
+        print(f"retention: pruned {retention['pruned_count']} old backup(s), {retention.get('kept')} kept")
+    if integrity != "ok":
+        for v in (result.get("violations") or [])[:5]:
+            print(f"  violation: {v}")
+        raise SystemExit(1)
+
+
+def _cmd_backup_list(args: argparse.Namespace) -> None:
+    """`forecast backup list` — the existing ledger backups, newest first."""
+
+    ledger = _ledger(args)
+    rows = ledger.list_backups(getattr(args, "dest_dir", None))
+    if getattr(args, "json", False):
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    if not rows:
+        print(f"no backups yet in {ledger.default_backup_dir()} — run `forecast backup run`")
+        return
+    print(f"{len(rows)} backup(s) in {ledger.default_backup_dir()}:")
+    for r in rows:
+        print(f"  {r['created_at']}  {r['bytes']:>10} bytes  {r['path']}")
 
 
 def _cmd_dashboard(args: argparse.Namespace) -> None:
@@ -4690,6 +4851,52 @@ def _cmd_list(args: argparse.Namespace) -> None:
             f"{question.id:<14} {question.status:<10} {probability:<9} {as_of:<20} "
             f"{delta:<8} {close:<20} {domain:<10} {question.title}"
         )
+
+
+def _cmd_next(args: argparse.Namespace) -> None:
+    """Print the desk's VOI ranking — "what should I touch next?". Reads the SAME
+    server-side voi scores/reasons the TUI Desk shows (build_workspace_payload), so
+    the CLI, the agent, and the surface never disagree on the priority order."""
+
+    from forecasting.dashboard import build_workspace_payload
+
+    ledger = _ledger(args)
+    payload = build_workspace_payload(ledger=ledger, include_related=False, include_lessons=False)
+    limit = max(1, getattr(args, "limit", None) or 5)
+    # The canonical desk-level top-5 rides in the payload; for a deeper --limit we
+    # walk the same server-assigned voi.rank over the actionable book (identical
+    # ordering, just not truncated to 5).
+    forecasts = payload.get("forecasts") or []
+    ranked = sorted(
+        (f for f in forecasts if (f.get("voi") or {}).get("action") not in (None, "none")),
+        key=lambda f: (f.get("voi") or {}).get("rank") or 10**9,
+    )[:limit]
+    rows = [
+        {
+            "question_id": f.get("id"),
+            "title": f.get("title"),
+            "action": (f.get("voi") or {}).get("action"),
+            "reason": (f.get("voi") or {}).get("reason"),
+            "score": (f.get("voi") or {}).get("score"),
+            "rank": (f.get("voi") or {}).get("rank"),
+        }
+        for f in ranked
+    ]
+    if getattr(args, "json", False):
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    print(PRODUCT_NAME)
+    print("next best actions — value of information (what to touch next)")
+    if not rows:
+        print("nothing pressing: the book is fresh, sourced, and away from resolution.")
+        return
+    for index, row in enumerate(rows, start=1):
+        score = row.get("score")
+        score_text = f"{float(score):.2f}" if isinstance(score, (int, float)) else "-"
+        print(f"{index}. [{row.get('action') or '-'}] {row.get('title') or row.get('question_id') or '-'}  (voi {score_text})")
+        if row.get("reason"):
+            print(f"   {row['reason']}")
+        print(f"   forecast show {row.get('question_id')}")
 
 
 def _cmd_search(args: argparse.Namespace) -> None:

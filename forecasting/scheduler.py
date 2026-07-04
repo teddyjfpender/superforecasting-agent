@@ -18,6 +18,12 @@ FORECAST_CRON_NAME = "Forecast self-check"
 DEFAULT_FORECAST_CRON_SCHEDULE = "0 8 * * *"
 WARNING_AUTOMODE_CRON_SCRIPT = "forecast_warning_automode.py"
 WARNING_AUTOMODE_CRON_NAME = "Forecast warning automode"
+BACKUP_CRON_SCRIPT = "forecast_backup.py"
+BACKUP_CRON_NAME = "Forecast ledger backup"
+# Daily at 07:30 — half an hour BEFORE the 08:00 self-check refresh, so the backup
+# captures the book as it stood before the nightly reforecast mutates it. The
+# ledger is the whole asset, so the backup runs even when nothing else is due.
+DEFAULT_BACKUP_CRON_SCHEDULE = "30 7 * * *"
 
 
 def remove_forecast_cron(*, name: str = FORECAST_CRON_NAME, match_script: bool = False) -> int:
@@ -379,3 +385,133 @@ def warning_automode_cron_status(*, name: str = WARNING_AUTOMODE_CRON_NAME) -> d
         "job": job,
         "last_paid_run_at": state.get("last_paid_run_at"),
     }
+
+
+# ── ledger backup cron (durability) ───────────────────────────────────────────
+#
+# The forecast ledger is the ENTIRE asset — months of judgment — so a daily online
+# backup is the one routine that should always be armed. This mirrors
+# ``install_forecast_cron`` / ``install_warning_automode_cron`` exactly: a no-agent
+# job whose small script drives ``run_backup_cron`` (online backup + integrity +
+# retention) on every tick.
+
+
+def _install_backup_script(script_path: "Path", *, db_path: str | None = None) -> None:
+    """Write the tiny no-agent script the daily backup cron runs — it calls the
+    BACKUP job type's ``main`` (a durable job on the shared runtime)."""
+
+    from pathlib import Path as _Path
+
+    _Path(script_path).parent.mkdir(parents=True, exist_ok=True)
+    args: list[str] = []
+    if db_path:
+        args.extend(["--db", db_path])
+    _Path(script_path).write_text(
+        "\n".join(
+            [
+                "from forecasting.jobs.types.backup import main",
+                "",
+                "if __name__ == '__main__':",
+                f"    raise SystemExit(main({args!r}))",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def install_backup_cron(
+    *,
+    schedule: str = DEFAULT_BACKUP_CRON_SCHEDULE,
+    name: str = BACKUP_CRON_NAME,
+    deliver: str = "local",
+    profile: str | None = None,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Install the daily no-agent ledger-backup cron job.
+
+    Idempotent START: any prior backup job (same name OR script) is removed first so
+    re-installing re-arms cleanly instead of stacking duplicates.
+    """
+
+    remove_backup_cron(name=name)
+
+    scripts_dir = get_hermes_home() / "scripts"
+    script_path = scripts_dir / BACKUP_CRON_SCRIPT
+    _install_backup_script(script_path, db_path=db_path)
+
+    from cron.jobs import create_job
+
+    return create_job(
+        prompt="Back up the forecast ledger (online snapshot + integrity + retention).",
+        schedule=schedule,
+        name=name,
+        deliver=deliver,
+        script=BACKUP_CRON_SCRIPT,
+        profile=profile,
+        no_agent=True,
+    )
+
+
+def remove_backup_cron(*, name: str = BACKUP_CRON_NAME) -> int:
+    """STOP (uninstall) the daily ledger-backup cron job(s). Returns the count
+    removed. Matches the backup name OR script so a clean stop leaves no duplicate."""
+
+    from cron.jobs import list_jobs, remove_job
+
+    removed = 0
+    for job in list_jobs(include_disabled=True):
+        if (job.get("name") or "") == name or job.get("script") == BACKUP_CRON_SCRIPT:
+            if remove_job(job["id"]):
+                removed += 1
+    return removed
+
+
+def backup_cron_installed(*, name: str = BACKUP_CRON_NAME) -> bool:
+    """True when the daily backup cron is already installed (by name OR script)."""
+
+    from cron.jobs import list_jobs
+
+    for job in list_jobs(include_disabled=True):
+        if (job.get("name") or "") == name or job.get("script") == BACKUP_CRON_SCRIPT:
+            return True
+    return False
+
+
+def backup_cron_status(*, name: str = BACKUP_CRON_NAME) -> dict[str, Any]:
+    """STATUS of the daily ledger-backup cron job: ``{installed, job}``."""
+
+    from cron.jobs import list_jobs
+
+    job = None
+    for candidate in list_jobs(include_disabled=True):
+        if (candidate.get("name") or "") == name or candidate.get("script") == BACKUP_CRON_SCRIPT:
+            job = candidate
+            break
+    return {"installed": job is not None, "job": job}
+
+
+def ensure_default_backup_routine(
+    *,
+    db_path: str | None = None,
+    schedule: str = DEFAULT_BACKUP_CRON_SCHEDULE,
+    name: str = BACKUP_CRON_NAME,
+    deliver: str = "local",
+    profile: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Idempotently install the daily ledger-backup cron.
+
+    Mirrors :func:`ensure_default_routines`: cheap + silent when already installed,
+    gated behind the same ``forecasting.cron.auto_install`` flag (default TRUE);
+    pass ``force=True`` for explicit operator intent. Fail-open callers wrap this so
+    a cron hiccup never blocks a forecast commit."""
+
+    if not force and not _auto_install_enabled():
+        return {"installed": False, "created": False, "job": None, "reason": "auto_install disabled"}
+    if backup_cron_installed(name=name):
+        return {"installed": True, "created": False, "job": None, "reason": "already installed"}
+    job = install_backup_cron(
+        schedule=schedule, name=name, deliver=deliver, profile=profile, db_path=db_path
+    )
+    return {"installed": True, "created": True, "job": job, "reason": "installed"}

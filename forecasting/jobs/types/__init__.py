@@ -51,5 +51,6 @@ from forecasting.jobs.types import reforecast as _reforecast  # noqa: E402,F401
 from forecasting.jobs.types import task as _task  # noqa: E402,F401
 from forecasting.jobs.types import refresh as _refresh  # noqa: E402,F401
 from forecasting.jobs.types import quorum as _quorum  # noqa: E402,F401
+from forecasting.jobs.types import backup as _backup  # noqa: E402,F401
 
 __all__ = ["JobType", "register", "resolve", "registered_types"]
