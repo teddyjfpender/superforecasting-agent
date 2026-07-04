@@ -9747,3 +9747,8 @@ from tui_gateway import pm_rpc as _pm_rpc  # noqa: E402
 
 _pm_rpc.register(sys.modules[__name__])
 atexit.register(_pm_rpc.shutdown)
+
+# ── Market-data plane RPC (Arc C) — server-side quotes behind one service. ──
+from tui_gateway import market_rpc as _market_rpc  # noqa: E402
+
+_market_rpc.register(sys.modules[__name__])

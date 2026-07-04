@@ -22,6 +22,7 @@ from forecasting.backtesting import (
 from forecasting.ensembles import linear_trend_projection, weighted_binary_probability
 from forecasting.hooks import SaturationBlocked, saturation_summary
 from forecasting.learning import apply_active_lesson_adjustments, should_apply_active_lessons
+from forecasting.marketdata import MarketDataService, SeriesRef
 from forecasting.models import ForecastingError, OutcomeSpace, utc_now_iso
 from forecasting.pm import PMService
 from forecasting.protocol import build_protocol_messages
@@ -217,6 +218,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "tail_audit",
                     "market_quality",
                     "pm_query",
+                    "market_query",
                     "research_plan",
                     "research_audit",
                     "link_forecasts",
@@ -638,6 +640,26 @@ FORECAST_LEDGER_SCHEMA = {
             "output": {"type": "object"},
             "diagnostics": {"type": "object"},
             "series": {"type": "array", "items": {}},
+            "market_series": {
+                "type": "array",
+                "items": {"type": "object"},
+                "description": (
+                    "market_query: explicit series refs to read, each "
+                    "{provider, symbol, name?, category?, unit?, line?} "
+                    "(e.g. {'provider':'frankfurter','symbol':'EUR'} or "
+                    "{'provider':'bea','symbol':'T20305','line':'1'})."
+                ),
+            },
+            "symbols": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "market_query shorthand: symbols paired with `provider`/`providers`.",
+            },
+            "providers": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "market_query shorthand: one provider applies to all `symbols`, else zipped.",
+            },
             "target_date": {"type": "string"},
             "target_x": {"type": "number"},
             "date_field": {"type": "string"},
@@ -1246,6 +1268,51 @@ def _pm_service() -> PMService:
 def set_pm_service(service) -> None:
     """Test seam: inject a stub PMService for pm_query without touching network."""
     _PM_SERVICE_HOLDER["svc"] = service
+
+
+_MARKET_DATA_HOLDER: dict[str, Any] = {"svc": None}
+
+
+def _market_data_service() -> MarketDataService:
+    if _MARKET_DATA_HOLDER["svc"] is None:
+        _MARKET_DATA_HOLDER["svc"] = MarketDataService()
+    return _MARKET_DATA_HOLDER["svc"]
+
+
+def set_market_data_service(service) -> None:
+    """Test seam: inject a stub MarketDataService for market_query (no network)."""
+    _MARKET_DATA_HOLDER["svc"] = service
+
+
+def _market_query_refs(args: dict[str, Any]) -> list[SeriesRef]:
+    """Build the requested :class:`SeriesRef` list from ``series`` (full refs)
+    or ``symbols`` + ``provider(s)`` (a shorthand: one provider → all symbols,
+    else zipped)."""
+
+    raw = args.get("market_series") or args.get("series")
+    refs: list[SeriesRef] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                try:
+                    refs.append(SeriesRef.from_dict(item))
+                except ValueError:
+                    continue
+    if refs:
+        return refs
+
+    symbols = args.get("symbols")
+    symbols = [str(s) for s in symbols] if isinstance(symbols, list) else []
+    provs = args.get("providers")
+    provs = [str(p) for p in provs] if isinstance(provs, list) else []
+    single = args.get("provider")
+    if single and not provs:
+        provs = [str(single)]
+    if not symbols or not provs:
+        return []
+    if len(provs) == 1:
+        return [SeriesRef(provider=provs[0], symbol=sym, name=sym) for sym in symbols]
+    return [SeriesRef(provider=p, symbol=sym, name=sym) for p, sym in zip(provs, symbols)]
 
 
 @allow_ledger_writes_decorator("forecast_ledger_tool")
@@ -3111,6 +3178,39 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
                 )
             return tool_error(
                 "pm_query requires pm_mode in {search, event, book, history}", success=False
+            )
+
+        if action == "market_query":
+            # First-class structured pull of MACRO / FX market readings (FX via
+            # Frankfurter, US macro via BEA NIPA) through the ONE server-side
+            # MarketDataService — the same tape the operator's Markets view shows,
+            # with the same honesty guarantees. Use this for a macro/FX prior or
+            # a status-quo anchor (a rate, a currency level, a GDP/PCE reading) as
+            # EVIDENCE: every measurement is honest-null (absence renders as null,
+            # NEVER a fabricated 0) and carries value + day/quarter change +
+            # recent history. Pass `market_series` for full control, or `symbols`
+            # + `provider(s)` as a shorthand. Cite provider:symbol in the source
+            # slug when you feed a reading into a component.
+            refs = _market_query_refs(args)
+            if not refs:
+                return tool_error(
+                    "market_query requires `market_series` (refs) or `symbols` + `provider(s)`; "
+                    "e.g. providers=['frankfurter'], symbols=['EUR','JPY'] or "
+                    "market_series=[{'provider':'bea','symbol':'T20305'}]",
+                    success=False,
+                )
+            quotes = _market_data_service().quotes(refs)
+            return tool_result(
+                success=True,
+                count=len(quotes),
+                quotes=[q.to_dict() for q in quotes],
+                note=(
+                    "Server-side market readings with the honesty law enforced: a missing "
+                    "value is null ('—'), never 0. `change`/`changePct` are the day (FX) or "
+                    "quarter (BEA) delta vs the prior close; `history` is the recent series for "
+                    "a trend/status-quo anchor. Keyed providers (BEA) return nothing without a "
+                    "key — set it with `forecast api-key set bea <key>`."
+                ),
             )
 
         if action == "research_plan":

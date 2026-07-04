@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from protocol.events import jobs as _events_jobs
 from protocol.events import pm as _events_pm
 from protocol.rpc import jobs as _rpc_jobs
+from protocol.rpc import markets as _rpc_markets
 from protocol.rpc import pm as _rpc_pm
 from protocol.types import WireModel
 from protocol.version import MIN_SUPPORTED, PROTOCOL_VERSION
@@ -65,6 +66,12 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("jobs.status", _rpc_jobs.JobsStatusRequest, _rpc_jobs.JobsStatusResponse),
     RpcSpec("jobs.active", _rpc_jobs.JobsActiveRequest, _rpc_jobs.JobsActiveResponse),
     RpcSpec("jobs.cancel", _rpc_jobs.JobsCancelRequest, _rpc_jobs.JobsCancelResponse),
+    # ── market.* — the server-side data plane (Arc C) ────────────────────────
+    RpcSpec(
+        "market.quotes",
+        _rpc_markets.MarketQuotesRequest,
+        _rpc_markets.MarketQuotesResponse,
+    ),
 ]
 
 EVENT_SPECS: list[EventSpec] = [

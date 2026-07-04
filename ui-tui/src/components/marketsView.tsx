@@ -653,6 +653,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
 
     await fetchQuotes(targets, {
       getKey: getProviderKey,
+      // Server-side providers (FX + BEA) route through the gateway; the flag is
+      // config.serverSide (undefined → marketFetch's DEFAULT_SERVER_SIDE).
+      gw,
+      serverSide: config.serverSide,
       onBatch: quotes => {
         for (const q of quotes) {
           cacheRef.current[quoteKey(q.provider, q.symbol)] = q

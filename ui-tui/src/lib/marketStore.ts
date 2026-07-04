@@ -21,6 +21,10 @@ export interface MarketConfig {
   // mount; dead/closed ones prune themselves). Capped LRU, newest last.
   pmSaved?: { event_id: string; venue: string }[]
   providers: string[]
+  // Providers whose quotes are fetched SERVER-SIDE via the gateway's
+  // market.quotes RPC (Arc C). Undefined → the marketFetch default
+  // (DEFAULT_SERVER_SIDE = frankfurter + bea). A per-provider release flag.
+  serverSide?: string[]
   watchlist: MarketSeries[]
 }
 
@@ -69,6 +73,11 @@ export const loadMarketConfig = (file = marketConfigFile()): MarketConfig => {
       custom: seriesList(data.custom),
       pmSaved,
       providers: Array.isArray(data.providers) ? data.providers.filter(p => typeof p === 'string') : [],
+      // Preserve an explicit override; leave undefined so marketFetch applies
+      // its default (a hand-edited file can pin the list per-provider).
+      ...(Array.isArray(data.serverSide)
+        ? { serverSide: data.serverSide.filter(p => typeof p === 'string') }
+        : {}),
       watchlist: seriesList(data.watchlist)
     }
   } catch {

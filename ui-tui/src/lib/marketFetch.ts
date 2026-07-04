@@ -1,4 +1,11 @@
 import type { MarketSeries } from '../content/marketProviders.js'
+import type { MarketQuotesResponse, MarketSeriesRef } from '../protocol/generated.js'
+
+// Providers parsed SERVER-SIDE (Arc C): their series route through the gateway's
+// market.quotes RPC (one shared key store + honesty tests) instead of a client
+// parser. FX (frankfurter) + BEA first; the list is the plan's per-provider
+// `marketdata.server_side` flag. Anything NOT here keeps its client parser.
+export const DEFAULT_SERVER_SIDE = ['frankfurter', 'bea'] as const
 
 // Fetch + normalize quotes from each market provider. Pure parsers (one per
 // provider response shape) are unit-tested; the network functions run in the
@@ -82,58 +89,9 @@ export const parseYahoo = (chart: unknown, series: MarketSeries): MarketQuote =>
   }
 }
 
-export const parseFrankfurter = (json: unknown, seriesList: MarketSeries[]): MarketQuote[] => {
-  // A DATE-RANGE payload ({rates: {"2026-06-02": {EUR: ..}, ...}}): daily
-  // closes give the change columns + the 1MO sparkline that /latest starved
-  // (the operator: FX "missing fundamental information"). A /latest-shaped
-  // payload (rates: {EUR: number}) still parses as a value-only quote.
-  const data = json as { date?: string; rates?: Record<string, unknown> }
-  const rates = data?.rates ?? {}
-  const dateKeys = Object.keys(rates)
-    .filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k))
-    .sort()
-
-  if (dateKeys.length === 0) {
-    const asOf = data?.date ? Date.parse(data.date) : 0
-
-    return seriesList.map(s => ({
-      asOf: Number.isFinite(asOf) ? asOf : 0,
-      category: s.category,
-      change: null,
-      changePct: null,
-      name: s.name,
-      provider: 'frankfurter',
-      symbol: s.symbol,
-      unit: s.unit,
-      value: num(rates[s.symbol])
-    }))
-  }
-
-  const asOf = Date.parse(dateKeys[dateKeys.length - 1]!)
-
-  return seriesList.map(s => {
-    const closes = dateKeys
-      .map(d => num((rates[d] as Record<string, unknown> | undefined)?.[s.symbol]))
-      .filter((v): v is number => v !== null)
-    const value = closes.length ? closes[closes.length - 1]! : null
-    const prevClose = closes.length > 1 ? closes[closes.length - 2]! : null
-    const change = value !== null && prevClose !== null ? value - prevClose : null
-
-    return {
-      asOf: Number.isFinite(asOf) ? asOf : 0,
-      category: s.category,
-      change,
-      changePct: change !== null && prevClose ? (change / prevClose) * 100 : null,
-      history: closes,
-      name: s.name,
-      prevClose,
-      provider: 'frankfurter',
-      symbol: s.symbol,
-      unit: s.unit,
-      value
-    }
-  })
-}
+// Frankfurter (FX) is now parsed SERVER-SIDE (forecasting/marketdata) — its
+// client parser + tests moved to Python (Arc C). Series route through
+// gw.request('market.quotes'); see fetchQuotes below.
 
 export const parseCoingecko = (json: unknown, seriesList: MarketSeries[]): MarketQuote[] => {
   const data = (json && typeof json === 'object' ? json : {}) as Record<string, Record<string, unknown>>
@@ -231,52 +189,10 @@ export const parseBls = (json: unknown, series: MarketSeries): MarketQuote => {
   }
 }
 
-export const parseBea = (json: unknown, series: MarketSeries): MarketQuote => {
-  // NIPA responses carry EVERY LINE of the table (31 lines for T20305): the
-  // old rows[last] read an arbitrary line's value, and an API error payload
-  // (e.g. the invalid Year=LAST5 we used to send) yielded num('') === 0 — a
-  // FABRICATED 0.0000 on every BEA row (the operator's catch). Filter to the
-  // headline line, keep periods sorted, and let absence be null ('—').
-  const rows = (json as { BEAAPI?: { Results?: { Data?: { DataValue?: string; LineNumber?: string; TimePeriod?: string }[] } } })
-    ?.BEAAPI?.Results?.Data ?? []
-  const line = (series as { line?: string }).line ?? '1'
-  const lineRows = rows
-    .filter(r => (r.LineNumber ?? '1') === line && r.TimePeriod)
-    .sort((a, b) => String(a.TimePeriod).localeCompare(String(b.TimePeriod)))
-
-  const last = lineRows[lineRows.length - 1]
-  const prev = lineRows[lineRows.length - 2]
-  const parseVal = (r?: { DataValue?: string }): null | number =>
-    r?.DataValue ? num(String(r.DataValue).replace(/,/g, '')) : null
-  const value = parseVal(last)
-  const prevValue = parseVal(prev)
-  const change = value !== null && prevValue !== null ? value - prevValue : null
-
-  // BEA TimePeriod is "2024Q3" (quarterly) or "2024" (annual) — map to a date so
-  // the detail pane shows a real "updated" instead of "—".
-  const period = last?.TimePeriod || ''
-  const quarter = /^(\d{4})Q([1-4])$/.exec(period)
-
-  const asOf = quarter
-    ? Date.parse(`${quarter[1]}-${String((Number(quarter[2]) - 1) * 3 + 1).padStart(2, '0')}-01`)
-    : /^\d{4}$/.test(period)
-      ? Date.parse(`${period}-01-01`)
-      : 0
-
-  return {
-    asOf: Number.isFinite(asOf) ? asOf : 0,
-    category: series.category,
-    change,
-    changePct: change !== null && prevValue ? (change / prevValue) * 100 : null,
-    history: lineRows.map(parseVal).filter((v): v is number => v !== null).slice(-12),
-    name: series.name,
-    prevClose: prevValue,
-    provider: 'bea',
-    symbol: series.symbol,
-    unit: series.unit,
-    value
-  }
-}
+// BEA (NIPA) is now parsed SERVER-SIDE (forecasting/marketdata) — its client
+// parser + tests moved to Python (Arc C), where the estimator-honesty taxonomy
+// can finally SEE the quote math (the fabricated-0.0000 bug lived here in TS
+// precisely because they could not). Series route through market.quotes.
 
 // ---- network -------------------------------------------------------------
 
@@ -340,10 +256,33 @@ const pool = async <T>(items: T[], n: number, fn: (item: T) => Promise<void>): P
   await Promise.all(Array.from({ length: Math.max(1, Math.min(n, items.length)) }, worker))
 }
 
+// The minimal gateway surface fetchQuotes needs — just `request`. Kept
+// structural (not the full GatewayClient) so the lib stays decoupled and is
+// trivially stubbable in tests; GatewayClient satisfies it by shape.
+export interface QuotesTransport {
+  request: <T = unknown>(method: string, params?: Record<string, unknown>) => Promise<T>
+}
+
 export interface FetchOpts {
   getKey: (envVar: string) => string
+  // The gateway handle for SERVER-SIDE providers. Absent (no gateway) → those
+  // providers are skipped, exactly as the PM section degrades without a gateway.
+  gw?: QuotesTransport
   onBatch: (quotes: MarketQuote[]) => void
+  // Providers to route through market.quotes; defaults to DEFAULT_SERVER_SIDE.
+  serverSide?: readonly string[]
 }
+
+// Map a curated series to the RPC's ref shape (echoing display metadata + the
+// BEA `line` override when present).
+const toSeriesRef = (s: MarketSeries): MarketSeriesRef => ({
+  category: s.category,
+  ...((s as { line?: string }).line ? { line: (s as { line?: string }).line } : {}),
+  name: s.name,
+  provider: s.provider,
+  symbol: s.symbol,
+  ...(s.unit ? { unit: s.unit } : {})
+})
 
 // Fetch all the given series, grouped by provider, emitting quotes per group as
 // they arrive. Missing API keys for keyed providers are skipped (the caller
@@ -355,9 +294,38 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
     byProvider.set(s.provider, [...(byProvider.get(s.provider) ?? []), s])
   }
 
+  const serverSide = new Set(opts.serverSide ?? DEFAULT_SERVER_SIDE)
+  // A provider still handled client-side: not routed server-side (a provider in
+  // `serverSide` with no gateway is simply skipped — no client parser remains).
+  const client = (provider: string): MarketSeries[] | undefined =>
+    serverSide.has(provider) ? undefined : byProvider.get(provider)
+
   const jobs: Promise<void>[] = []
 
-  const yahoo = byProvider.get('yahoo')
+  // ── SERVER-SIDE providers (FX + BEA in C1): one market.quotes RPC for all ──
+  const serverSeries = seriesList.filter(s => serverSide.has(s.provider))
+
+  if (serverSeries.length && opts.gw) {
+    jobs.push(
+      (async () => {
+        try {
+          const res = await opts.gw!.request<MarketQuotesResponse>('market.quotes', {
+            series: serverSeries.map(toSeriesRef)
+          })
+
+          if (res?.quotes?.length) {
+            // A server Quote is a structural drop-in for MarketQuote (same
+            // field-for-field shape, honest nulls preserved).
+            opts.onBatch(res.quotes as MarketQuote[])
+          }
+        } catch {
+          // One provider down never blanks the tape (parity with getJson→null).
+        }
+      })()
+    )
+  }
+
+  const yahoo = client('yahoo')
 
   if (yahoo?.length) {
     jobs.push(
@@ -373,25 +341,7 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
     )
   }
 
-  const fx = byProvider.get('frankfurter')
-
-  if (fx?.length) {
-    jobs.push(
-      (async () => {
-        const symbols = fx.map(s => s.symbol).join(',')
-        // ~35 calendar days of daily closes in ONE call: value + day change +
-        // the 1MO sparkline (FX has no volume — that column stays honestly '—').
-        const from = new Date(Date.now() - 35 * 86_400_000).toISOString().slice(0, 10)
-        const json = await getJson(`https://api.frankfurter.app/${from}..?base=USD&symbols=${symbols}`)
-
-        if (json) {
-          opts.onBatch(parseFrankfurter(json, fx))
-        }
-      })()
-    )
-  }
-
-  const crypto = byProvider.get('coingecko')
+  const crypto = client('coingecko')
 
   if (crypto?.length) {
     jobs.push(
@@ -409,7 +359,7 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
     )
   }
 
-  const fred = byProvider.get('fred')
+  const fred = client('fred')
   const fredKey = opts.getKey('FRED_API_KEY')
 
   if (fred?.length) {
@@ -437,7 +387,7 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
     )
   }
 
-  const bls = byProvider.get('bls')
+  const bls = client('bls')
 
   if (bls?.length) {
     jobs.push(
@@ -462,26 +412,6 @@ export const fetchQuotes = async (seriesList: MarketSeries[], opts: FetchOpts): 
           }
         })
       })()
-    )
-  }
-
-  const bea = byProvider.get('bea')
-  const beaKey = opts.getKey('BEA_API_KEY')
-
-  if (bea?.length && beaKey) {
-    jobs.push(
-      pool(bea, 3, async s => {
-        const json = await getJson(
-          // Year=LAST5 is INVALID for NIPA (API error 201 -> empty Data ->
-          // the fabricated 0.0000). Two explicit years cover latest + prior
-          // quarters for the change columns.
-          `https://apps.bea.gov/api/data/?UserID=${beaKey}&method=GetData&datasetname=NIPA&TableName=${s.symbol}&Frequency=Q&Year=${new Date().getFullYear() - 1},${new Date().getFullYear()}&ResultFormat=JSON`
-        )
-
-        if (json) {
-          opts.onBatch([parseBea(json, s)])
-        }
-      })
     )
   }
 

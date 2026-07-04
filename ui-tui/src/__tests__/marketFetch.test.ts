@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { MarketSeries } from '../content/marketProviders.js'
-import { parseBea, parseBls, parseCoingecko, parseFrankfurter, parseFred, parseFredCsv, parseYahoo } from '../lib/marketFetch.js'
+// NOTE (Arc C): frankfurter + bea are now parsed SERVER-SIDE — their parsers and
+// contract tests moved to Python (tests/forecasting/test_marketdata_providers.py).
+// This file keeps the still-client parsers + the routing seam test.
+import { fetchQuotes, parseBls, parseCoingecko, parseFred, parseFredCsv, parseYahoo } from '../lib/marketFetch.js'
 
 const s = (over: Partial<MarketSeries>): MarketSeries => ({
   category: 'Indices',
@@ -40,16 +43,6 @@ describe('parseYahoo', () => {
 
   it('returns null value for a malformed response', () => {
     expect(parseYahoo({}, s({})).value).toBeNull()
-  })
-})
-
-describe('parseFrankfurter', () => {
-  it('maps each currency rate to a quote (USD base)', () => {
-    const json = { base: 'USD', date: '2026-06-17', rates: { EUR: 0.86274, JPY: 160.31 } }
-    const out = parseFrankfurter(json, [s({ category: 'FX', provider: 'frankfurter', symbol: 'EUR' }), s({ category: 'FX', provider: 'frankfurter', symbol: 'JPY' })])
-    expect(out[0].value).toBeCloseTo(0.86274)
-    expect(out[1].value).toBeCloseTo(160.31)
-    expect(out[0].asOf).toBe(Date.parse('2026-06-17'))
   })
 })
 
@@ -105,63 +98,84 @@ describe('parseFredCsv', () => {
   })
 })
 
-describe('parseBea', () => {
-  it('reads the last DataValue and maps a quarterly TimePeriod to a date', () => {
-    const json = { BEAAPI: { Results: { Data: [{ DataValue: '1,000.0', TimePeriod: '2026Q1' }, { DataValue: '28,500.5', TimePeriod: '2026Q2' }] } } }
-    const q = parseBea(json, s({ category: 'GDP', provider: 'bea', symbol: 'T10105', unit: '$B' }))
-    expect(q.value).toBeCloseTo(28500.5)
-    // 2026Q2 → April 1 (no longer the hardcoded 0)
-    expect(q.asOf).toBe(Date.parse('2026-04-01'))
-  })
-})
-
-describe('FX range + BEA honesty (the operator screenshots)', () => {
-  const series = (over: object) => ({ category: 'FX', name: 'EUR per USD', provider: 'frankfurter', symbol: 'EUR', ...over })
-
-  it('a Frankfurter date-range payload yields value, day change, and the 1MO history', () => {
-    const json = {
-      base: 'USD',
-      rates: {
-        '2026-06-02': { EUR: 0.86 },
-        '2026-06-16': { EUR: 0.865 },
-        '2026-07-02': { EUR: 0.871 },
-        '2026-07-03': { EUR: 0.8735 }
-      }
-    }
-    const [q] = parseFrankfurter(json, [series({}) as never])
-    expect(q!.value).toBeCloseTo(0.8735)
-    expect(q!.prevClose).toBeCloseTo(0.871)
-    expect(q!.change).toBeCloseTo(0.0025, 6)
-    expect(q!.changePct).toBeCloseTo(0.287, 2)
-    expect(q!.history).toEqual([0.86, 0.865, 0.871, 0.8735])
+// The FX-range + BEA-honesty contract now lives in Python (server-side): see
+// tests/forecasting/test_marketdata_providers.py. Here we assert the ROUTING
+// seam that replaced the client parsers.
+// The FX-range + BEA-honesty contract now lives in Python (server-side): see
+// tests/forecasting/test_marketdata_providers.py. Here we assert the ROUTING
+// seam that replaced the client parsers.
+describe('fetchQuotes routing (Arc C: FX + BEA go server-side)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
   })
 
-  it('a /latest-shaped payload still parses value-only (backward compatible)', () => {
-    const [q] = parseFrankfurter({ date: '2026-07-03', rates: { EUR: 0.8735 } }, [series({}) as never])
-    expect(q!.value).toBeCloseTo(0.8735)
-    expect(q!.change).toBeNull()
+  const opts = (over: Partial<Parameters<typeof fetchQuotes>[1]>) => ({
+    getKey: () => '',
+    onBatch: () => undefined,
+    ...over
   })
 
-  it('BEA reads the HEADLINE line, computes the quarter change, and never fabricates 0', () => {
-    const bea = { category: 'US Macro', name: 'BEA NIPA: PCE', provider: 'bea', symbol: 'T20305' }
-    const json = {
-      BEAAPI: { Results: { Data: [
-        { DataValue: '99', LineNumber: '31', TimePeriod: '2026Q1' },
-        { DataValue: '21,363,352', LineNumber: '1', TimePeriod: '2025Q4' },
-        { DataValue: '21,634,948', LineNumber: '1', TimePeriod: '2026Q1' },
-        { DataValue: '88', LineNumber: '31', TimePeriod: '2025Q4' }
-      ] } }
-    }
-    const q = parseBea(json, bea as never)
-    expect(q.value).toBe(21_634_948)
-    expect(q.prevClose).toBe(21_363_352)
-    expect(q.change).toBe(271_596)
-    expect(q.changePct).toBeCloseTo(1.271, 2)
+  it('routes frankfurter series through gw.request(market.quotes), not fetch', async () => {
+    const fetchFn = vi.fn()
+    vi.stubGlobal('fetch', fetchFn)
+    const request = vi.fn().mockResolvedValue({
+      quotes: [
+        { asOf: 0, category: 'FX', change: null, changePct: null, history: [], name: 'EUR per USD', prevClose: null, provider: 'frankfurter', symbol: 'EUR', unit: '', value: 0.8735 }
+      ]
+    })
+    const batches: unknown[] = []
 
-    // The operator's 0.0000 wall: an API-error payload (empty Data) must be
-    // NULL — absence renders '—', never a fabricated zero.
-    const err = parseBea({ BEAAPI: { Error: { APIErrorCode: '201' } } }, bea as never)
-    expect(err.value).toBeNull()
-    expect(err.change).toBeNull()
+    await fetchQuotes([s({ category: 'FX', name: 'EUR per USD', provider: 'frankfurter', symbol: 'EUR' })], opts({ gw: { request }, onBatch: q => batches.push(...q) }))
+
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls[0][0]).toBe('market.quotes')
+    expect(request.mock.calls[0][1]).toEqual({ series: [{ category: 'FX', name: 'EUR per USD', provider: 'frankfurter', symbol: 'EUR' }] })
+    expect(batches).toHaveLength(1)
+    expect((batches[0] as { value: number }).value).toBeCloseTo(0.8735)
+    expect(fetchFn).not.toHaveBeenCalled() // FX never hits the network client-side
+  })
+
+  it('batches frankfurter + bea into ONE market.quotes call and passes the BEA line override', async () => {
+    const request = vi.fn().mockResolvedValue({ quotes: [] })
+
+    await fetchQuotes(
+      [
+        s({ category: 'FX', name: 'EUR', provider: 'frankfurter', symbol: 'EUR' }),
+        { category: 'US Macro', line: '31', name: 'PCE', provider: 'bea', symbol: 'T20305', unit: '$B' } as never
+      ],
+      opts({ gw: { request } })
+    )
+
+    expect(request).toHaveBeenCalledTimes(1)
+    const sent = (request.mock.calls[0][1] as { series: { line?: string; provider: string }[] }).series
+    expect(sent.map(r => r.provider)).toEqual(['frankfurter', 'bea'])
+    expect(sent.find(r => r.provider === 'bea')?.line).toBe('31')
+  })
+
+  it('skips server-side providers when no gateway is present (no fetch, no throw)', async () => {
+    const fetchFn = vi.fn()
+    vi.stubGlobal('fetch', fetchFn)
+    const batches: unknown[] = []
+
+    await fetchQuotes([s({ category: 'FX', provider: 'frankfurter', symbol: 'EUR' })], opts({ onBatch: q => batches.push(...q) }))
+
+    expect(batches).toHaveLength(0)
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('leaves yahoo on the client path (fetch), NOT the gateway', async () => {
+    const request = vi.fn().mockResolvedValue({ quotes: [] })
+    const fetchFn = vi.fn().mockResolvedValue({
+      json: async () => ({ chart: { result: [{ meta: { regularMarketPrice: 100 } }] } }),
+      ok: true
+    })
+    vi.stubGlobal('fetch', fetchFn)
+
+    await fetchQuotes([s({ category: 'Indices', provider: 'yahoo', symbol: '^GSPC' })], opts({ gw: { request } }))
+
+    expect(request).not.toHaveBeenCalled() // yahoo is not server-side in C1
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(String(fetchFn.mock.calls[0][0])).toContain('finance.yahoo.com')
   })
 })

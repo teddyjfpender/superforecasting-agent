@@ -1,0 +1,121 @@
+"""MarketDataService: TTL + stale-while-revalidate cache and per-provider
+failure isolation (Arc C1). No network — providers are stubs, clock/spawn
+injected for determinism."""
+
+from __future__ import annotations
+
+import pytest
+
+from forecasting.marketdata.model import Quote, SeriesRef
+from forecasting.marketdata.service import MarketDataService
+
+
+class _StubProvider:
+    def __init__(self, name: str, *, needs_key: bool = False, raises: bool = False):
+        self.name = name
+        self.needs_key = needs_key
+        self._raises = raises
+        self.calls = 0
+        self.last_key: str | None = None
+
+    def fetch(self, series, *, api_key=None):
+        self.calls += 1
+        self.last_key = api_key
+        if self._raises:
+            raise RuntimeError(f"{self.name} down")
+        return [
+            Quote(
+                symbol=s.symbol,
+                provider=self.name,
+                name=s.name,
+                category=s.category,
+                value=float(self.calls),  # value tracks fetch count → observe caching
+                change=None,
+                changePct=None,
+                prevClose=None,
+                asOf=0,
+                unit=s.unit,
+                history=[],
+            )
+            for s in series
+        ]
+
+
+def _ref(provider: str, symbol: str) -> SeriesRef:
+    return SeriesRef(provider=provider, symbol=symbol, name=symbol)
+
+
+def test_quotes_returns_one_per_series_across_providers():
+    fx = _StubProvider("frankfurter")
+    bea = _StubProvider("bea", needs_key=True)
+    svc = MarketDataService(
+        providers={"frankfurter": fx, "bea": bea},
+        key_resolver=lambda name: "KEY" if name == "bea" else None,
+        clock=lambda: 0.0,
+    )
+    quotes = svc.quotes([_ref("frankfurter", "EUR"), _ref("bea", "T20305")])
+    by_provider = {q.provider for q in quotes}
+    assert by_provider == {"frankfurter", "bea"}
+    assert bea.last_key == "KEY"  # keyed provider got its key
+
+
+def test_ttl_cache_serves_a_hit_without_refetching():
+    now = {"t": 0.0}
+    fx = _StubProvider("frankfurter")
+    svc = MarketDataService(
+        providers={"frankfurter": fx}, clock=lambda: now["t"], ttl=60.0, spawn=lambda fn: None
+    )
+    refs = [_ref("frankfurter", "EUR")]
+    (q1,) = svc.quotes(refs)
+    (q2,) = svc.quotes(refs)  # within TTL → cache hit, no second fetch
+    assert fx.calls == 1
+    assert q1.value == q2.value == 1.0
+
+
+def test_stale_while_revalidate_serves_old_value_and_refreshes_in_band():
+    now = {"t": 0.0}
+    fx = _StubProvider("frankfurter")
+    spawned: list = []
+    svc = MarketDataService(
+        providers={"frankfurter": fx},
+        clock=lambda: now["t"],
+        ttl=60.0,
+        spawn=lambda fn: spawned.append(fn),  # capture, don't run
+    )
+    refs = [_ref("frankfurter", "EUR")]
+    (first,) = svc.quotes(refs)
+    assert first.value == 1.0
+    now["t"] = 120.0  # past the TTL → stale
+    (stale,) = svc.quotes(refs)
+    assert stale.value == 1.0  # old value served immediately
+    assert len(spawned) == 1  # a background refresh was scheduled
+    spawned[0]()  # run it
+    (fresh,) = svc.quotes(refs)
+    assert fresh.value == 2.0  # refreshed value now served
+
+
+def test_one_provider_down_never_blanks_the_tape():
+    good = _StubProvider("frankfurter")
+    bad = _StubProvider("bea", needs_key=True, raises=True)
+    svc = MarketDataService(
+        providers={"frankfurter": good, "bea": bad},
+        key_resolver=lambda name: "KEY",
+        clock=lambda: 0.0,
+    )
+    quotes = svc.quotes([_ref("frankfurter", "EUR"), _ref("bea", "T20305")])
+    # The failing provider drops only ITS series; the healthy one still paints.
+    assert [q.provider for q in quotes] == ["frankfurter"]
+
+
+def test_keyed_provider_without_key_is_skipped_not_errored():
+    bea = _StubProvider("bea", needs_key=True)
+    svc = MarketDataService(
+        providers={"bea": bea}, key_resolver=lambda name: None, clock=lambda: 0.0
+    )
+    assert svc.quotes([_ref("bea", "T20305")]) == []
+    assert bea.calls == 0  # never even called without a key
+
+
+def test_unknown_provider_yields_no_quotes():
+    svc = MarketDataService(providers={}, clock=lambda: 0.0)
+    assert svc.quotes([_ref("nope", "X")]) == []

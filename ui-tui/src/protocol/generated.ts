@@ -83,6 +83,23 @@ export interface JobsStatusResponse {
   job: null | JobRecordDTO
 }
 
+export interface MarketQuotesRequest {
+  series: MarketSeriesRef[]
+}
+
+export interface MarketQuotesResponse {
+  quotes: Quote[]
+}
+
+export interface MarketSeriesRef {
+  category?: string
+  line?: string
+  name?: string
+  provider: string
+  symbol: string
+  unit?: string
+}
+
 export interface PMDistributionDTO {
   binary: boolean
   close_time: null | string
@@ -251,4 +268,18 @@ export interface PmStreamStopResponse {
   remaining?: string[]
   stopped: boolean
   venue: string
+}
+
+export interface Quote {
+  asOf: number
+  category: string
+  change: null | number
+  changePct: null | number
+  history: number[]
+  name: string
+  prevClose: null | number
+  provider: string
+  symbol: string
+  unit: string
+  value: null | number
 }
