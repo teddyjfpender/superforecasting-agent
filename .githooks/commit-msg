@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Enforces the commit-message shape (type(scope): subject + a WHY body for
+# feat/refactor) and the oversize / MOVES-ONLY marker rule (the message is the
+# only place the marker can live, and the staged diff is still visible here).
+# See CONTRIBUTING.md -> "Commit provenance" and "The Laws".
+set -o pipefail
+_DIR="$(cd "$(dirname "$0")" && pwd)"
+. "$_DIR/lib/common.sh"
+. "$_DIR/lib/checks.sh"
+
+if hook_honor_global_skip "commit-msg"; then exit 0; fi
+
+MSGFILE="$1"
+rc=0
+
+if ! check_commit_msg "$MSGFILE"; then rc=1; fi
+
+# Oversize + MOVES-ONLY marker: staged size vs the message being written.
+if ! check_oversize cached "$MSGFILE"; then rc=1; fi
+
+exit "$rc"

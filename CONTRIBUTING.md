@@ -2,6 +2,157 @@
 
 Thank you for contributing to Superforecasting Agent. This guide covers the local development workflow, the inherited runtime architecture, and the extra bar for forecast-first changes.
 
+**New to the repo? Install the local gates once:** `scripts/install-hooks.sh` (git
+hooks cannot self-install). They enforce the laws below on every commit and push.
+
+---
+
+## The Laws
+
+These are not style preferences. They are the invariants this codebase has paid for
+in real debugging sessions, and they are the reason its quality has compounded rather
+than decayed. Every one is enforced — by a git hook, by CI, or by review — and every
+one is quoted back to you by name when a gate blocks. The [architecture delivery
+plan](docs/plans/2026-07-03-architecture-delivery-plan.md) and the commit history are
+the evidence; this section is the codification.
+
+### The honesty law
+
+**`None` is never `0`. Absence renders as `—`. The system never fabricates a number
+it does not have.** A missing price is not a zero price; an unknown change is not a
+flat change. Model quotes carry `value | None`, and `None` means "we do not know" all
+the way to the glyph on screen. This law was written in blood: `BEA stops fabricating
+0.0000`, `FX gets real change columns`, `BEA stops fabricating 0.0` — each a commit
+that undid a fake zero. The estimator-honesty test discipline exists to keep every
+quote-math path honest; new numeric surfaces ship with the tests that prove they say
+`—` when they should.
+
+### The wrap law
+
+**Modals and sidebars wrap; they never truncate a value the user needs.** Titles wrap,
+teasers end honestly, values are never cut with a `…` that hides information. See the
+"modal law" and "sidebar wrap-law" commits. A wrap-law change ships with a
+component-level test that asserts the wrap.
+
+### Byte-identical wire compatibility
+
+**A wire change never breaks a live caller.** When an RPC or event shape evolves, the
+old name keeps working via a thin alias returning the exact prior response shape — the
+JSON on the wire is unchanged, only now validated. A half-migrated system is fully
+functional at every commit. This is how the entire jobs runtime and data plane were
+migrated with zero breaking changes mid-arc.
+
+### Moves-only refactor slices
+
+**A refactor that relocates code changes nothing else.** A carve is method bodies moved
+out plus one-line delegates — and it is verified *mechanically*: a difflib categorizer
+asserts that every added line in the shrinking file is a delegate return or an import,
+**zero unexpected added lines**. The full domain test suite is green *before and after*
+the slice; import-time is held; `--collect-only` reports zero new import errors. If a
+domain resists a clean move, the slice stops and splits smaller — a move is never
+forced. A single file adding **more than 1,200 lines** is presumed to be a refactor
+masquerading as a feature: the pre-push/commit gate blocks it unless the commit body
+carries the literal marker **`MOVES-ONLY`**, your attestation (and the reviewer's cue)
+that the diff is moves plus delegates only.
+
+### The size rules
+
+**New modules stay under ~400 lines; no refactor slice moves more than ~1,200 lines.**
+Small modules are reviewable modules. The megafile decomposition (an 18,562-line
+`ledger.py` carved into ten leaves behind an unchanged façade) is the proof that even
+the largest surfaces submit to this discipline one bounded slice at a time.
+
+### Protocol-first
+
+**Every RPC and event crossing the gateway wire is defined once, in `protocol/`
+(pydantic models). The TypeScript wire types in `ui-tui/src/protocol/generated.ts` are
+GENERATED from it — never hand-written, never hand-edited.** New wire shapes get a
+model and a regenerated `generated.ts`; hand-written mirrors are deleted, not added
+(the migration deleted hundreds of them). Regenerate and stage with:
+
+```bash
+python -m protocol.codegen            # rewrite generated.ts from the models
+scripts/check-protocol.sh             # the staleness gate CI + the hooks run
+```
+
+A stale `generated.ts` is a build error, not a runtime mystery.
+
+### Exit-code test gates
+
+**A test gate passes or fails by exit code, never by grepping output.** `vitest | grep`
+and friends are banned: a red test that prints the wrong word must still fail the gate.
+CI and the hooks propagate the real exit code, always.
+
+### Commit provenance
+
+**Tests are green BEFORE you commit, and the commit message tells the truth.** The
+record itself carries the full story: what changed, why, and — honestly — what failed
+or flaked (name the flake; do not hide it). Message shape is
+[Conventional Commits](https://www.conventionalcommits.org/): `type(scope): subject`,
+with a body that explains the **why** for every `feat` and `refactor`. The `commit-msg`
+hook enforces the shape and the non-empty body.
+
+### No staging by agents or scripts
+
+**Automation never runs `git add`, `git mv`, or `git commit`.** Staging is a human
+decision. Agents and scripts prepare changes and make them visible; a person stages and
+commits them. The hooks themselves obey this — they block a commit but never stage or
+unstage a thing.
+
+### Cross-layer halves land together
+
+**A contract and its consumers commit together.** A `protocol/` model change lands in
+the same commit as the regenerated `generated.ts` and the TUI code that reads it. You
+never commit half a contract. The wire-drift gate enforces the most common case:
+`generated.ts` (or `ui-tui/dist`) may not change without a `protocol/` change beside it.
+
+### Process discipline
+
+- **Slice discipline** — one reviewable logical change per commit/PR. Don't mix a fix,
+  a refactor, and a feature.
+- **Test-first for bug fixes** — reproduce the bug in a failing test, *then* fix it, so
+  the test proves the fix and guards the regression.
+- **Findings notes for refactor arcs** — a multi-slice carve keeps a findings ledger
+  (see the Arc-D notes in the delivery plan): the coupling patterns discovered become
+  the advice the next slice inherits.
+
+---
+
+## Local Gates: Git Hooks
+
+The laws above are enforced locally by git hooks in [`.githooks/`](.githooks), installed
+once per clone. **Git hooks cannot install themselves**, so after cloning run:
+
+```bash
+scripts/install-hooks.sh      # points git at .githooks/ (core.hooksPath)
+```
+
+The same check functions ([`.githooks/lib/checks.sh`](.githooks/lib/checks.sh)) run in
+CI ([`.github/workflows/contributing-gates.yml`](.github/workflows/contributing-gates.yml)),
+so a green local run and a green CI run mean the same thing — one implementation, two
+callers, no drift.
+
+| Hook | Speed | Gates |
+|------|-------|-------|
+| **pre-commit** | fast (<10s) | ruff on changed `.py` files; protocol codegen staleness; wire-drift (generated.ts/dist without a `protocol/` change); `tsc --noEmit` when `ui-tui/` is staged |
+| **commit-msg** | instant | message shape `type(scope): subject`; a WHY-body for `feat`/`refactor`; the oversize / `MOVES-ONLY` gate |
+| **pre-push** | bounded (~2-3min) | targeted `pytest` for the changed python domains; `vitest --changed` when `ui-tui/` is touched; codegen staleness again |
+
+### The escape hatch (visible, never silent)
+
+Sometimes you must bypass a gate — a WIP commit on a scratch branch, a rebase. The hatch
+is deliberate and **logged**, so a bypass is always visible to reviewers:
+
+```bash
+HERMES_HOOKS_SKIP="rebasing a WIP branch" git commit ...   # skips + logs a reason
+HERMES_HOOKS_SKIP_TSC=1 git commit ...                     # skip only the WIP tsc check
+```
+
+Every skip appends a timestamped line to `.githooks/skips.log` (hook, author, HEAD,
+reason). `HERMES_HOOKS_SKIP` **requires a reason** — set it empty and the hook refuses
+to skip rather than let a silent bypass through. `git commit --no-verify` still works as
+git's own escape, but it leaves no trail; prefer the logged hatch.
+
 ---
 
 ## Contribution Priorities

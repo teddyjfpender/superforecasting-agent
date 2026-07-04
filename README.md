@@ -286,8 +286,14 @@ Quick start for contributors:
 uv venv .venv --python 3.11
 source .venv/bin/activate
 uv pip install -e ".[all,dev]"
+scripts/install-hooks.sh          # install the local gates (git hooks) — once per clone
 scripts/run_tests.sh tests/forecasting -q
 ```
+
+The repository is strictly gated: `scripts/install-hooks.sh` wires up the
+[`.githooks/`](.githooks) that enforce **The Laws** (honesty, wrap, protocol-first,
+moves-only refactors, commit provenance, …) on every commit and push. Read
+[CONTRIBUTING.md → The Laws / Local Gates](CONTRIBUTING.md#the-laws) before your first PR.
 
 Manual path (equivalent to the above):
 

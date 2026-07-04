@@ -1,0 +1,3 @@
+# The escape-hatch audit trail is local (per-developer). The mechanism is
+# tracked; the log of skips is not.
+skips.log

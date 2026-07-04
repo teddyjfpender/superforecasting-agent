@@ -1,0 +1,68 @@
+name: Contributing gates
+
+# The git-hook laws, enforced in CI on every PR. These jobs SOURCE the exact
+# same functions the local hooks run (.githooks/lib/checks.sh), so a green local
+# commit and a green CI run can never disagree — one implementation, two callers.
+#
+# The ruff and protocol-codegen staleness laws already have dedicated blocking
+# jobs (lint.yml -> ruff enforcement, tests.yml -> protocol staleness gate); this
+# workflow adds the three gates that only make sense across a range of commits:
+# oversize / MOVES-ONLY, wire-drift, and commit-message shape.
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: contributing-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: oversize / drift / commit-shape
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0 # need the merge base and the full PR commit range
+
+      - name: Compute base
+        id: base
+        run: |
+          set -euo pipefail
+          BASE="$(git merge-base "origin/${{ github.base_ref }}" HEAD)"
+          echo "sha=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "Base: ${BASE}"
+
+      - name: Oversize / MOVES-ONLY gate
+        run: |
+          set -euo pipefail
+          source .githooks/lib/common.sh
+          source .githooks/lib/checks.sh
+          check_oversize range "${{ steps.base.outputs.sha }}" HEAD
+
+      - name: Wire-drift gate (generated.ts / dist need a protocol/ change)
+        run: |
+          set -euo pipefail
+          source .githooks/lib/common.sh
+          source .githooks/lib/checks.sh
+          check_drift range "${{ steps.base.outputs.sha }}" HEAD
+
+      - name: Commit message shape (every commit in the PR)
+        run: |
+          set -euo pipefail
+          source .githooks/lib/common.sh
+          source .githooks/lib/checks.sh
+          rc=0
+          for sha in $(git rev-list "${{ steps.base.outputs.sha }}..HEAD"); do
+            msg="$(mktemp)"
+            git log -1 --format=%B "$sha" > "$msg"
+            echo "-- $(git log -1 --format='%h %s' "$sha")"
+            check_commit_msg "$msg" || rc=1
+          done
+          exit "$rc"
