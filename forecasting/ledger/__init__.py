@@ -17,6 +17,8 @@ Carve order (see the delivery plan's Arc D):
 * ``evidence``  — D3: evidence lifecycle + freshness helpers + triage glue.
 * ``snapshots`` — D4: create_snapshot (the gated commit body) + snapshot
   readers/serializers + annotate.
+* ``panels``    — D5: panel-run lifecycle + serializers + track-record weighting.
+* ``reviews``   — D6: scheduled reviews + cadence resolution + the review sweep.
 
 The façade guarantees ``no caller changed``: `ForecastLedger` stays THE public
 class; each carved method keeps a one-line delegate on the class, so external
@@ -36,6 +38,8 @@ from forecasting.ledger import watches as _watches  # noqa: F401  (submodule han
 from forecasting.ledger import questions as _questions  # noqa: F401  (submodule handle)
 from forecasting.ledger import evidence as _evidence  # noqa: F401  (submodule handle)
 from forecasting.ledger import snapshots as _snapshots  # noqa: F401  (submodule handle)
+from forecasting.ledger import panels as _panels  # noqa: F401  (submodule handle)
+from forecasting.ledger import reviews as _reviews  # noqa: F401  (submodule handle)
 from forecasting.ledger.core import *  # noqa: F401,F403  (re-export public surface)
 
 # ``core`` re-exports the watch constants it still uses (ROLES/TYPES); re-export
@@ -47,6 +51,11 @@ from forecasting.ledger.watches import (  # noqa: F401  (re-export, surface pari
     WATCH_SOURCE_ROLES,
     WATCH_SOURCE_TYPES,
 )
+
+# ``SCHEDULE_SCOPE_TYPES`` moved to the ``reviews`` leaf (D6). Re-export it here so
+# ``forecasting.ledger.SCHEDULE_SCOPE_TYPES`` — which the pre-carve module exposed —
+# keeps resolving even though ``core`` no longer defines it (mirrors WATCH_SCOPE_TYPES).
+from forecasting.ledger.reviews import SCHEDULE_SCOPE_TYPES  # noqa: F401  (surface parity)
 
 
 # ---------------------------------------------------------------------------

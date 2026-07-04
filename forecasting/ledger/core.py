@@ -89,6 +89,12 @@ from forecasting.ledger import evidence as _evidence
 # Snapshot domain (create_snapshot + readers/serializers) lives in the
 # sibling ``snapshots`` module (D4 carve).
 from forecasting.ledger import snapshots as _snapshots
+# Forecast-panel domain (panel runs + track-record weighting) lives in the
+# sibling ``panels`` module (D5 carve).
+from forecasting.ledger import panels as _panels
+# Scheduled-review domain (cadence, schedules, the review sweep) lives in the
+# sibling ``reviews`` module (D6 carve).
+from forecasting.ledger import reviews as _reviews
 
 
 logger = logging.getLogger(__name__)
@@ -127,21 +133,6 @@ from forecasting.ledger.gate import (  # noqa: F401  (re-export, surface parity)
 
 
 FORECASTING_PROTOCOL_VERSION = "forecasting-ledger-v1"
-
-# Auto-review eligibility — default-weekly-review gate for create_question.
-#
-# A LIVE organic forecast question created without an explicit review cadence
-# should DEFAULT to a weekly scheduled review so it is auto-re-forecast and shows
-# a "NEXT" column on the desk. But two classes of question are forecast-once-then-
-# scored and must STAY cadence-less:
-#   - market_nightly: foreknowledge-proof live benchmark snapshots — re-forecasting
-#     them later would break the foreknowledge lock (the agent must not revisit a
-#     question after the market it was pinned against has moved).
-#   - forecastbench: historical replay / closed-book backtest cases — re-forecasting
-#     them with today's information would contaminate the replay.
-# Membership is checked against the lowercased domain OR any lowercased tag.
-_AUTO_REVIEW_INELIGIBLE_DOMAINS = frozenset({"forecastbench", "market_nightly"})
-_AUTO_REVIEW_INELIGIBLE_TAGS = frozenset({"bench", "forecastbench", "market_nightly"})
 
 # AIA P0.2 — paired bootstrap significance.
 #
@@ -193,7 +184,6 @@ ANALYST_NOTE_VERDICTS = {"right", "wrong", "close", "far"}
 # edge (sibling <-> sibling); `component_of` is directed (from=child, to=parent)
 # so a higher-level question and its granular children inform each other.
 FORECAST_LINK_TYPES = {"related", "component_of"}
-SCHEDULE_SCOPE_TYPES = {"question", "domain", "topic", "domain_topic", "portfolio", "horizon"}
 
 
 
@@ -1618,20 +1608,7 @@ class ForecastLedger:
         domain: str | None,
         tags: list[str] | None,
     ) -> bool:
-        """Whether a newly-created question should DEFAULT to a weekly review.
-
-        INELIGIBLE (returns False — must stay cadence-less) when the question is a
-        forecast-once-then-scored benchmark/foreknowledge-proof case, identified by
-        a benchmark domain OR a benchmark tag (case-insensitive). See
-        ``_AUTO_REVIEW_INELIGIBLE_DOMAINS`` / ``_AUTO_REVIEW_INELIGIBLE_TAGS``.
-        Everything else is eligible.
-        """
-        if (domain or "").strip().lower() in _AUTO_REVIEW_INELIGIBLE_DOMAINS:
-            return False
-        for tag in tags or []:
-            if str(tag).strip().lower() in _AUTO_REVIEW_INELIGIBLE_TAGS:
-                return False
-        return True
+        return _reviews._is_auto_review_eligible(self, domain=domain, tags=tags)
 
     def create_question(
         self,
@@ -3969,179 +3946,10 @@ class ForecastLedger:
         delphi_rounds: int = 0,
         delphi_audit: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Aggregate a panel of perspective estimates and persist the artifact.
-
-        ``judge`` (a JudgeSynthesis dict: consensus / contradictions / blind_spots /
-        judge_model / directional_confidence) is stored so a quorum's judge synthesis
-        has a durable home and the quorum-judged gate can see it — instead of being
-        dropped on the floor.
-
-        ``final_probability`` / ``final_source`` (AIA P0.3): the ALREADY-resolved
-        committed number and the branch that produced it (``'pool'`` or
-        ``'judge_high'``). When supplied, the persisted ``aggregate_probability`` is
-        this exact number — NOT a freshly re-pooled one — so the in-memory
-        :class:`~forecasting.quorum.QuorumResult` and the durable panel_run can never
-        diverge (the P0.1 divergence: this method used to silently re-pool the
-        estimates WITH the per-question alpha while the QuorumResult showed the bare
-        pool). The terminal Platt calibration has therefore already been applied
-        upstream exactly once; we must NOT re-apply it here. When ``final_probability``
-        is ``None`` (the perspective-panel path), we fall back to pooling-with-alpha as
-        before so non-quorum callers are unchanged.
-
-        Returns the panel-run record dict (including aggregate_probability,
-        spread_summary, trimmed flags, and per-estimate ids). The caller
-        typically passes the resulting ``aggregate_probability`` into
-        :meth:`create_snapshot` and the panel run id into the snapshot's
-        ``ensemble_components`` or ``metadata``.
-        """
-
-        _enforce_write_gate("record_panel_run")
-
-        from forecasting.hooks.thresholds import resolve_alpha_extremize
-        from forecasting.panel import aggregate_panel_estimates  # local import to avoid cycle
-
-        question = self.get_question(question_id)
-        if snapshot_id is not None:
-            self.get_snapshot(snapshot_id)
-        # Terminal Platt calibration (AIA P0.1): resolve the per-question slope
-        # from the question's forecast-hooks config (default 1.0 = byte-identical
-        # no-op for an un-configured question).
-        alpha_extremize = resolve_alpha_extremize(
-            question.metadata if isinstance(question.metadata, dict) else None
-        )
-        # Always aggregate WITH the real per-question slope so the persisted
-        # calibration markers (applied_alpha, pre_extremize, terminal_calibration_
-        # applied) and pool_probability are accurate on the quorum path too. Platt
-        # is still applied EXACTLY ONCE to the committed number: when the caller
-        # supplies an already-resolved value (the quorum path — run_quorum has
-        # already applied alpha + the P0.3 override), we overwrite the committed
-        # scalar with it below and never re-derive it from the aggregation, so the
-        # aggregation's calibrated scalar is used only for the audit markers / the
-        # pool the override beat — never double-Platt'd.
-        resolved = final_probability is not None
-        aggregation = aggregate_panel_estimates(
-            estimates,
-            method=aggregation_method,
-            trim=trim,
-            alpha_extremize=alpha_extremize,
-        )
-        committed_probability = (
-            float(final_probability)
-            if resolved
-            else float(aggregation.aggregate_probability)
-        )
-        # Constrain to the known source domain (defensive against a future caller).
-        committed_source = final_source if final_source in {"pool", "judge_high"} else "pool"
-        # AIA P1.1 — agentic-supervisor fresh-search loop. Default to the no-loop
-        # state so the perspective-panel path and any pre-P1.1 quorum caller
-        # persist unchanged (0 rounds, no fresh evidence).
-        research_rounds = max(0, int(research_rounds or 0))
-        supervisor_evidence = list(supervisor_evidence or [])
-        # Delphi v1 — additive audit fields. Default to the no-Delphi state so the
-        # delphi_rounds==0 path (and every pre-Delphi caller) persists unchanged.
-        delphi_rounds = max(0, int(delphi_rounds or 0))
-        delphi_audit = dict(delphi_audit or {})
-        now = utc_now_iso()
-        run_id = f"pr_{uuid.uuid4().hex[:12]}"
-        requested = perspectives if perspectives is not None else [
-            row["perspective"] for row in aggregation.estimates
-        ]
-        # Fold the P0.3 override outcome into the persisted spread so it is
-        # observable alongside the P0.1 calibration markers without a second
-        # schema migration. ``final_source`` is also a first-class column.
-        spread = dict(aggregation.spread)
-        spread["final_source"] = committed_source
-        if resolved:
-            # The committed number is the resolved one; surface the CALIBRATED pool
-            # (the value a high-confidence judge actually overrode) for audit.
-            spread["pool_probability"] = round(
-                float(aggregation.aggregate_probability), 6
-            )
-        estimate_records: list[dict[str, Any]] = []
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO panel_runs (
-                    id, question_id, created_at, snapshot_id,
-                    aggregation_method, trim, aggregate_probability,
-                    perspectives, spread_summary, notes, triggered_by, judge,
-                    final_source, research_rounds, supervisor_evidence,
-                    delphi_rounds, delphi_audit
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    question_id,
-                    now,
-                    snapshot_id,
-                    aggregation.method,
-                    aggregation.trim,
-                    committed_probability,
-                    json_dumps(list(requested)),
-                    json_dumps(spread),
-                    json_dumps(aggregation.notes),
-                    triggered_by,
-                    json_dumps(judge) if judge is not None else None,
-                    committed_source,
-                    research_rounds,
-                    json_dumps(supervisor_evidence),
-                    delphi_rounds,
-                    json_dumps(delphi_audit),
-                ),
-            )
-            for row in aggregation.estimates:
-                estimate_id = f"pe_{uuid.uuid4().hex[:12]}"
-                conn.execute(
-                    """
-                    INSERT INTO panel_estimates (
-                        id, panel_run_id, question_id, created_at, perspective,
-                        probability, weight, trimmed, confidence_low, confidence_high,
-                        rationale, reasons_up, reasons_down, change_my_mind, crux,
-                        agent_model, metadata
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        estimate_id,
-                        run_id,
-                        question_id,
-                        now,
-                        row["perspective"],
-                        float(row["probability"]),
-                        float(row["weight"]),
-                        1 if row.get("trimmed") else 0,
-                        row.get("confidence_low"),
-                        row.get("confidence_high"),
-                        row.get("rationale") or "",
-                        json_dumps(row.get("reasons_up") or []),
-                        json_dumps(row.get("reasons_down") or []),
-                        json_dumps(row.get("change_my_mind") or []),
-                        row.get("crux"),
-                        row.get("agent_model"),
-                        json_dumps(row.get("metadata") or {}),
-                    ),
-                )
-                estimate_records.append({"id": estimate_id, **row})
-        return self.get_panel_run(run_id)
+        return _panels.record_panel_run(self, question_id=question_id, estimates=estimates, aggregation_method=aggregation_method, trim=trim, snapshot_id=snapshot_id, triggered_by=triggered_by, perspectives=perspectives, judge=judge, final_probability=final_probability, final_source=final_source, research_rounds=research_rounds, supervisor_evidence=supervisor_evidence, delphi_rounds=delphi_rounds, delphi_audit=delphi_audit)
 
     def get_panel_run(self, run_id: str) -> dict[str, Any]:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM panel_runs WHERE id = ?",
-                (run_id,),
-            ).fetchone()
-            if row is None:
-                raise LedgerNotFoundError(f"panel run not found: {run_id}")
-            estimates = conn.execute(
-                """
-                SELECT * FROM panel_estimates
-                WHERE panel_run_id = ?
-                ORDER BY perspective ASC
-                """,
-                (run_id,),
-            ).fetchall()
-        return self._panel_run_dict(row, estimates)
+        return _panels.get_panel_run(self, run_id=run_id)
 
     def list_panel_runs(
         self,
@@ -4149,65 +3957,20 @@ class ForecastLedger:
         *,
         limit: int | None = None,
     ) -> list[dict[str, Any]]:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if question_id:
-            clauses.append("question_id = ?")
-            params.append(question_id)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        sql = f"SELECT * FROM panel_runs {where} ORDER BY created_at DESC"
-        if limit is not None:
-            sql += " LIMIT ?"
-            params.append(int(limit))
-        with self._connect() as conn:
-            rows = conn.execute(sql, params).fetchall()
-            results: list[dict[str, Any]] = []
-            for row in rows:
-                estimates = conn.execute(
-                    """
-                    SELECT * FROM panel_estimates
-                    WHERE panel_run_id = ?
-                    ORDER BY perspective ASC
-                    """,
-                    (row["id"],),
-                ).fetchall()
-                results.append(self._panel_run_dict(row, estimates))
-        return results
+        return _panels.list_panel_runs(self, question_id=question_id, limit=limit)
 
     def attach_panel_to_snapshot(self, panel_run_id: str, snapshot_id: str) -> dict[str, Any]:
-        self.get_panel_run(panel_run_id)
-        self.get_snapshot(snapshot_id)
-        with self._connect() as conn:
-            conn.execute(
-                "UPDATE panel_runs SET snapshot_id = ? WHERE id = ?",
-                (snapshot_id, panel_run_id),
-            )
-        return self.get_panel_run(panel_run_id)
+        return _panels.attach_panel_to_snapshot(self, panel_run_id=panel_run_id, snapshot_id=snapshot_id)
 
     def _panel_run_dict(
         self,
         row: sqlite3.Row,
         estimates_rows: list[sqlite3.Row],
     ) -> dict[str, Any]:
-        data = dict(row)
-        data["perspectives"] = json_loads(data["perspectives"], [])
-        data["spread_summary"] = json_loads(data["spread_summary"], {})
-        data["notes"] = json_loads(data["notes"], [])
-        if "supervisor_evidence" in data:
-            data["supervisor_evidence"] = json_loads(data["supervisor_evidence"], [])
-        if "delphi_audit" in data:
-            data["delphi_audit"] = json_loads(data.get("delphi_audit"), {})
-        data["estimates"] = [self._panel_estimate_dict(e) for e in estimates_rows]
-        return data
+        return _panels._panel_run_dict(self, row=row, estimates_rows=estimates_rows)
 
     def _panel_estimate_dict(self, row: sqlite3.Row) -> dict[str, Any]:
-        data = dict(row)
-        data["trimmed"] = bool(data["trimmed"])
-        data["reasons_up"] = json_loads(data["reasons_up"], [])
-        data["reasons_down"] = json_loads(data["reasons_down"], [])
-        data["change_my_mind"] = json_loads(data["change_my_mind"], [])
-        data["metadata"] = json_loads(data["metadata"], {})
-        return data
+        return _panels._panel_estimate_dict(self, row=row)
 
     # ── Component track record (measured "weight by track record") ──────
     def component_track_record(
@@ -4218,107 +3981,7 @@ class ForecastLedger:
         shrink_n0: float | None = None,
         edge_scale: float | None = None,
     ) -> list[dict[str, Any]]:
-        """Measure each ensemble component's and panel perspective's Brier edge
-        over the committed aggregate across resolved binary questions, and map
-        it to an ADVISORY recommended weight (see :mod:`forecasting.track_record`
-        for the shrinkage/clipping gates).
-
-        Pairing rule — one observation per (question, component): the latest
-        matching-origin snapshot that carries ``ensemble_components`` supplies
-        the ensemble pairs (component probability vs that snapshot's committed
-        probability); the latest panel run supplies the perspective pairs
-        (estimate probability vs that run's aggregate). Non-binary questions
-        and non-numeric payloads are skipped — the math is only proper for
-        binary Brier.
-        """
-        from forecasting.ensembles import _component_rows
-        from forecasting.track_record import (
-            DEFAULT_EDGE_SCALE,
-            DEFAULT_MIN_COUNT,
-            DEFAULT_SHRINK_N0,
-            ComponentObservation,
-            summarize_components,
-        )
-
-        observations: list[ComponentObservation] = []
-        for question in self.list_questions(status="resolved"):
-            if question.outcome_space.type != "binary":
-                continue
-            resolution = self.get_latest_resolution(question.id, confirmed_only=True)
-            if resolution is None:
-                continue
-
-            def _brier(probability: Any) -> float | None:
-                try:
-                    payload = self._score_forecast_payload(
-                        float(probability), resolution.outcome, question.outcome_space
-                    )
-                except (TypeError, ValueError, ValidationError):
-                    return None
-                value = payload.get("brier_score")
-                return float(value) if isinstance(value, (int, float)) else None
-
-            # Ensemble components: latest matching-origin snapshot that has them.
-            snapshots = [
-                snap
-                for snap in self.list_snapshots(question.id)
-                if forecast_origin is None or snap.forecast_origin == forecast_origin
-            ]
-            for snapshot in reversed(snapshots):
-                rows = _component_rows(
-                    snapshot.ensemble_components
-                    if isinstance(snapshot.ensemble_components, dict)
-                    else {}
-                )
-                if not rows:
-                    continue
-                aggregate_brier = _brier(snapshot.probability_or_distribution)
-                if aggregate_brier is None:
-                    continue
-                for row in rows:
-                    name = str(row.get("name") or "").strip()
-                    component_brier = _brier(row.get("probability"))
-                    if not name or component_brier is None:
-                        continue
-                    observations.append(
-                        ComponentObservation(
-                            name=name,
-                            kind="ensemble",
-                            question_id=question.id,
-                            component_brier=component_brier,
-                            aggregate_brier=aggregate_brier,
-                        )
-                    )
-                break  # one snapshot per question — newest with components
-
-            # Panel perspectives: latest run, paired against its own aggregate.
-            runs = self.list_panel_runs(question.id, limit=1)
-            if runs:
-                run = runs[0]
-                aggregate_brier = _brier(run.get("aggregate_probability"))
-                if aggregate_brier is not None:
-                    for estimate in run.get("estimates", []):
-                        perspective = str(estimate.get("perspective") or "").strip()
-                        component_brier = _brier(estimate.get("probability"))
-                        if not perspective or component_brier is None:
-                            continue
-                        observations.append(
-                            ComponentObservation(
-                                name=perspective,
-                                kind="panel",
-                                question_id=question.id,
-                                component_brier=component_brier,
-                                aggregate_brier=aggregate_brier,
-                            )
-                        )
-
-        records = summarize_components(
-            observations,
-            min_count=min_count if min_count is not None else DEFAULT_MIN_COUNT,
-            shrink_n0=shrink_n0 if shrink_n0 is not None else DEFAULT_SHRINK_N0,
-            edge_scale=edge_scale if edge_scale is not None else DEFAULT_EDGE_SCALE,
-        )
-        return [record.to_dict() for record in records]
+        return _panels.component_track_record(self, forecast_origin=forecast_origin, min_count=min_count, shrink_n0=shrink_n0, edge_scale=edge_scale)
 
     def recommended_component_weights(
         self,
@@ -4327,17 +3990,7 @@ class ForecastLedger:
         forecast_origin: str | None = "live",
         min_count: int | None = None,
     ) -> dict[str, float]:
-        """``{name: weight}`` for measured components only — advisory, never
-        silently applied; callers opt in (e.g. ``forecast panel record
-        --track-record-weights``)."""
-        records = self.component_track_record(
-            forecast_origin=forecast_origin, min_count=min_count
-        )
-        return {
-            row["name"]: float(row["recommended_weight"])
-            for row in records
-            if row["kind"] == kind and row["status"] == "measured"
-        }
+        return _panels.recommended_component_weights(self, kind=kind, forecast_origin=forecast_origin, min_count=min_count)
 
     # ── Per-panelist-model track record (quorum weighting) ──────────────
     # Default sample gate for a MODEL's recommended weight. Distinct from the
@@ -4354,113 +4007,14 @@ class ForecastLedger:
         shrink_n0: float | None = None,
         edge_scale: float | None = None,
     ) -> list[dict[str, Any]]:
-        """Measure each PANELIST MODEL's Brier edge over the cross-model panel
-        average across resolved binary questions, and map it to a shrunk,
-        clipped weight (reuses :mod:`forecasting.track_record` — the same math
-        as :meth:`component_track_record`, but keyed on the panelist ``model``
-        and scored against the OUTCOME with the per-question cross-model mean as
-        the reference).
-
-        One observation per (question, model): the latest panel run supplies
-        each panelist's probability; its Brier vs the confirmed outcome is paired
-        against the mean panelist Brier on that same question (positive edge ⇒
-        the model beat the pack). Non-binary questions and non-numeric payloads
-        are skipped — binary Brier only. A model that repeats within one run (the
-        ``self`` preset) is averaged to a single per-question observation so it
-        cannot double-count.
-
-        There is deliberately no ``forecast_origin`` filter: quorum ``panel_runs``
-        are not origin-tagged per estimate (a run's ``snapshot_id`` is often unset
-        at record time), so an origin argument could not honestly restrict pairing
-        and would silently mix backtest+live panelist performance. Strata-aware
-        weighting is a schema change (tag panel runs with an origin) — not a
-        parameter — and is left for when that need is real.
-        """
-        from forecasting.track_record import (
-            DEFAULT_EDGE_SCALE,
-            DEFAULT_SHRINK_N0,
-            ComponentObservation,
-            summarize_components,
-        )
-
-        observations: list[ComponentObservation] = []
-        for question in self.list_questions(status="resolved"):
-            if question.outcome_space.type != "binary":
-                continue
-            resolution = self.get_latest_resolution(question.id, confirmed_only=True)
-            if resolution is None:
-                continue
-
-            def _brier(probability: Any) -> float | None:
-                try:
-                    payload = self._score_forecast_payload(
-                        float(probability), resolution.outcome, question.outcome_space
-                    )
-                except (TypeError, ValueError, ValidationError):
-                    return None
-                value = payload.get("brier_score")
-                return float(value) if isinstance(value, (int, float)) else None
-
-            runs = self.list_panel_runs(question.id, limit=1)
-            if not runs:
-                continue
-            run = runs[0]
-            # Group each panelist model's Brier(s) on THIS question, then average
-            # within model so a repeated model (self preset) is one observation.
-            per_model: dict[str, list[float]] = {}
-            for estimate in run.get("estimates", []):
-                model = str(estimate.get("agent_model") or estimate.get("perspective") or "").strip()
-                brier = _brier(estimate.get("probability"))
-                if not model or brier is None:
-                    continue
-                per_model.setdefault(model, []).append(brier)
-            model_briers = {
-                model: sum(values) / len(values)
-                for model, values in per_model.items()
-                if values
-            }
-            if not model_briers:
-                continue
-            # Reference: the cross-model mean Brier on this question (difficulty-
-            # normalised — a model is rewarded/penalised only relative to the pack).
-            reference_brier = sum(model_briers.values()) / len(model_briers)
-            for model, brier in model_briers.items():
-                observations.append(
-                    ComponentObservation(
-                        name=model,
-                        kind="model",
-                        question_id=question.id,
-                        component_brier=brier,
-                        aggregate_brier=reference_brier,
-                    )
-                )
-
-        records = summarize_components(
-            observations,
-            min_count=min_count if min_count is not None else self.MODEL_WEIGHT_MIN_SAMPLE,
-            shrink_n0=shrink_n0 if shrink_n0 is not None else DEFAULT_SHRINK_N0,
-            edge_scale=edge_scale if edge_scale is not None else DEFAULT_EDGE_SCALE,
-        )
-        return [record.to_dict() for record in records]
+        return _panels.model_track_record(self, min_count=min_count, shrink_n0=shrink_n0, edge_scale=edge_scale)
 
     def recommended_model_weights(
         self,
         *,
         min_sample: int | None = None,
     ) -> dict[str, float]:
-        """``{model: weight}`` for MEASURED panelist models only (those clearing
-        the resolved-sample gate). A model below the gate is absent — the quorum
-        dispatcher defaults it to weight 1.0, so a cold-start panel is equal-
-        weighted by construction and no model can dominate early. Shrinkage
-        toward 1.0 lives in :func:`forecasting.track_record.edge_to_weight`."""
-        records = self.model_track_record(
-            min_count=min_sample if min_sample is not None else self.MODEL_WEIGHT_MIN_SAMPLE,
-        )
-        return {
-            row["name"]: float(row["recommended_weight"])
-            for row in records
-            if row["status"] == "measured"
-        }
+        return _panels.recommended_model_weights(self, min_sample=min_sample)
 
     # ── R4 Living Models: per-model skill from scored model_runs ─────────
     # Uninformative binary reference: a p=0.5 forecast scores Brier 0.25, so a
@@ -4763,36 +4317,7 @@ class ForecastLedger:
         return _evidence.evidence_by_question(self, question_ids=question_ids)
 
     def latest_panel_run_by_question(self, question_ids: list[str]) -> dict[str, dict[str, Any]]:
-        """question_id -> its most-recent panel run dict (mirrors
-        list_panel_runs(qid, limit=1)[0]); absent when a question has no panel."""
-        out: dict[str, dict[str, Any]] = {}
-        for chunk in self._chunk_ids(question_ids):
-            if not chunk:
-                continue
-            placeholders = ",".join("?" for _ in chunk)
-            with self._connect() as conn:
-                rows = conn.execute(
-                    f"SELECT * FROM panel_runs WHERE question_id IN ({placeholders}) "
-                    "ORDER BY question_id ASC, created_at DESC",
-                    chunk,
-                ).fetchall()
-                # Keep only the latest run per question (first row per id, since
-                # created_at DESC), then fetch each run's estimates.
-                latest_rows: list[sqlite3.Row] = []
-                seen: set[str] = set()
-                for row in rows:
-                    qid = row["question_id"]
-                    if qid not in seen:
-                        seen.add(qid)
-                        latest_rows.append(row)
-                for row in latest_rows:
-                    estimates = conn.execute(
-                        "SELECT * FROM panel_estimates WHERE panel_run_id = ? "
-                        "ORDER BY perspective ASC",
-                        (row["id"],),
-                    ).fetchall()
-                    out[row["question_id"]] = self._panel_run_dict(row, estimates)
-        return out
+        return _panels.latest_panel_run_by_question(self, question_ids=question_ids)
 
     def latest_resolution_by_question(self, question_ids: list[str]) -> dict[str, Resolution]:
         """question_id -> latest resolution by resolved_at (mirrors
@@ -6910,118 +6435,7 @@ class ForecastLedger:
         large_delta_threshold: float | None = None,
         now: str | None = None,
     ) -> list[dict[str, Any]]:
-        self._validate_confidence_filters(
-            confidence_below=confidence_below,
-            confidence_above=confidence_above,
-        )
-        self._validate_probability_threshold(
-            large_delta_threshold,
-            field_name="large_delta_threshold",
-        )
-        questions = self.list_questions(status="active", domain=domain)
-        if topic:
-            questions = [question for question in questions if topic in question.topics]
-        now_dt = timestamp_to_datetime(parse_timestamp(now, field_name="now") or utc_now_iso())
-        assert now_dt is not None
-        rows: list[dict[str, Any]] = []
-        for question in questions:
-            snapshot = self.get_current_snapshot(question.id)
-            if horizon and (
-                snapshot is None
-                or not self._horizon_matches(snapshot.forecast_horizon_days, horizon)
-            ):
-                continue
-            if confidence_below is not None or confidence_above is not None:
-                if snapshot is None or snapshot.confidence is None:
-                    continue
-                if confidence_below is not None and snapshot.confidence >= confidence_below:
-                    continue
-                if confidence_above is not None and snapshot.confidence <= confidence_above:
-                    continue
-            reasons: list[str] = []
-            evidence_items = self.list_evidence(question.id)
-            if snapshot is None:
-                reasons.append("no_forecast_snapshot")
-            else:
-                snapshot_as_of = timestamp_to_datetime(snapshot.as_of)
-                for item in evidence_items:
-                    available_dt = timestamp_to_datetime(item.available_at)
-                    if snapshot_as_of and available_dt and available_dt > snapshot_as_of:
-                        reasons.append(f"new_evidence:{item.id}")
-            if question.next_review_at:
-                next_review = timestamp_to_datetime(question.next_review_at)
-                if next_review and next_review <= now_dt:
-                    reasons.append("review_due")
-            if question.close_time:
-                close_time = timestamp_to_datetime(question.close_time)
-                if close_time and close_time <= now_dt:
-                    reasons.append("close_time_passed")
-                elif stale and last_days is not None and close_time and close_time <= now_dt + timedelta(days=last_days):
-                    reasons.append(f"close_time_within_{last_days}d")
-            if question.resolution_time:
-                resolution_time = timestamp_to_datetime(question.resolution_time)
-                if resolution_time and resolution_time <= now_dt:
-                    reasons.append("resolution_check_due")
-            if stale and snapshot is not None and last_days is not None:
-                as_of = timestamp_to_datetime(snapshot.as_of)
-                if as_of and (now_dt - as_of).days >= last_days:
-                    reasons.append(f"last_update_{last_days}d_plus")
-                if not evidence_items:
-                    reasons.append("no_evidence")
-                else:
-                    latest_available = max(
-                        (
-                            timestamp_to_datetime(item.available_at)
-                            for item in evidence_items
-                            if timestamp_to_datetime(item.available_at) is not None
-                        ),
-                        default=None,
-                    )
-                    if latest_available and (now_dt - latest_available).days >= last_days:
-                        reasons.append(f"evidence_stale_{last_days}d_plus")
-            for assumption in self.list_assumptions(question.id):
-                if assumption["status"] == "invalidated":
-                    reasons.append(f"assumption_invalidated:{assumption['id']}")
-                elif assumption["status"] == "stale":
-                    reasons.append(f"assumption_stale:{assumption['id']}")
-                elif self._cadence_due(
-                    assumption.get("last_checked_at") or assumption.get("created_at"),
-                    assumption.get("check_cadence"),
-                    now_dt,
-                ):
-                    reasons.append(f"assumption_check_due:{assumption['id']}")
-            for reference_class in self.list_reference_classes(question.id):
-                if reference_class["status"] == "invalidated":
-                    reasons.append(f"reference_class_invalidated:{reference_class['id']}")
-                elif reference_class["status"] in {"stale", "superseded"}:
-                    reasons.append(f"reference_class_stale:{reference_class['id']}")
-                elif self._cadence_due(
-                    reference_class.get("last_checked_at") or reference_class.get("created_at"),
-                    reference_class.get("check_cadence"),
-                    now_dt,
-                ):
-                    reasons.append(f"reference_class_check_due:{reference_class['id']}")
-            if large_delta_threshold is not None:
-                delta = self._latest_forecast_delta(question.id)
-                if delta is not None and abs(delta) >= large_delta_threshold:
-                    reasons.append(f"large_forecast_delta:{delta:+.3f}")
-            if reasons or not stale:
-                rows.append(
-                    {
-                        "question": question,
-                        "current_snapshot": snapshot,
-                        "reasons": reasons,
-                        "priority": self._review_priority(reasons),
-                    }
-                )
-        return sorted(
-            rows,
-            key=lambda row: (
-                row["priority"],
-                row["question"].close_time or row["question"].resolution_time or "9999-12-31T00:00:00Z",
-                row["question"].title.lower(),
-            ),
-        )
+        return _reviews.review_questions(self, stale=stale, last_days=last_days, domain=domain, topic=topic, horizon=horizon, confidence_below=confidence_below, confidence_above=confidence_above, large_delta_threshold=large_delta_threshold, now=now)
 
     def schedule_review(
         self,
@@ -7039,233 +6453,31 @@ class ForecastLedger:
         confidence_above: float | None = None,
         large_delta_threshold: float | None = None,
     ) -> dict[str, Any]:
-        if scope_type not in SCHEDULE_SCOPE_TYPES:
-            raise ValidationError(
-                "scope_type must be question, domain, topic, domain_topic, portfolio, or horizon"
-            )
-        if scope_type == "horizon":
-            if not scope_ref:
-                raise ValidationError("horizon scheduled reviews require scope_ref")
-            self._horizon_matches(0.0, scope_ref)
-        if not cadence.strip():
-            raise ValidationError("cadence is required")
-        if stale_days < 0:
-            raise ValidationError("stale_days must be non-negative")
-        self._validate_confidence_filters(
-            confidence_below=confidence_below,
-            confidence_above=confidence_above,
-        )
-        self._validate_probability_threshold(
-            large_delta_threshold,
-            field_name="large_delta_threshold",
-        )
-        review_id = f"sr_{uuid.uuid4().hex[:12]}"
-        with self._connect() as conn:
-            # Idempotent by (scope_type, scope_ref, cadence, trigger_reason): a
-            # schedule for the same scope + cadence + reason already covers this, so
-            # re-scheduling re-activates the existing row instead of spawning a
-            # duplicate. Without this, a lazy prompter (or the agent re-running an
-            # onboarding step) silently accumulates duplicate weekly reviews that
-            # each fire independently. scope_ref may be NULL, so match it explicitly.
-            existing = conn.execute(
-                """
-                SELECT id FROM scheduled_reviews
-                WHERE scope_type = ? AND cadence = ? AND trigger_reason = ?
-                  AND ((scope_ref IS NULL AND ? IS NULL) OR scope_ref = ?)
-                ORDER BY enabled DESC, next_run_at ASC
-                LIMIT 1
-                """,
-                (scope_type, cadence, trigger_reason, scope_ref, scope_ref),
-            ).fetchone()
-            if existing is not None:
-                # Idempotent UPSERT: a re-schedule for the same scope+cadence+reason
-                # must APPLY its new settings (stale_days, auto_*, filters), not be
-                # silently dropped — only the duplicate ROW is avoided. next_run_at is
-                # reset only when the caller passed one explicitly, so a plain
-                # re-schedule preserves the existing cadence position (no re-trigger).
-                set_clauses = [
-                    "enabled = ?",
-                    "stale_days = ?",
-                    "auto_score = ?",
-                    "auto_postmortem = ?",
-                    "confidence_below = ?",
-                    "confidence_above = ?",
-                    "large_delta_threshold = ?",
-                ]
-                params: list[Any] = [
-                    1 if enabled else 0,
-                    int(stale_days),
-                    1 if auto_score else 0,
-                    1 if auto_postmortem else 0,
-                    confidence_below,
-                    confidence_above,
-                    large_delta_threshold,
-                ]
-                if next_run_at is not None:
-                    set_clauses.append("next_run_at = ?")
-                    params.append(parse_timestamp(next_run_at, field_name="next_run_at") or utc_now_iso())
-                params.append(existing["id"])
-                conn.execute(f"UPDATE scheduled_reviews SET {', '.join(set_clauses)} WHERE id = ?", params)
-                # Return the upserted row's id and read it AFTER this `with` commits:
-                # get_scheduled_review opens its own connection, so reading it inside
-                # this still-open transaction would return the pre-UPDATE row (the
-                # upserted auto_*/stale_days/filters would be invisible).
-                result_id = existing["id"]
-            else:
-                conn.execute(
-                    """
-                    INSERT INTO scheduled_reviews (
-                        id, scope_type, scope_ref, cadence, stale_days, next_run_at,
-                        trigger_reason, enabled, auto_score, auto_postmortem,
-                        confidence_below, confidence_above, large_delta_threshold
-                    )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        review_id,
-                        scope_type,
-                        scope_ref,
-                        cadence,
-                        int(stale_days),
-                        parse_timestamp(next_run_at, field_name="next_run_at") or utc_now_iso(),
-                        trigger_reason,
-                        1 if enabled else 0,
-                        1 if auto_score else 0,
-                        1 if auto_postmortem else 0,
-                        confidence_below,
-                        confidence_above,
-                        large_delta_threshold,
-                    ),
-                )
-                result_id = review_id
-        return self.get_scheduled_review(result_id)
+        return _reviews.schedule_review(self, scope_type=scope_type, scope_ref=scope_ref, cadence=cadence, next_run_at=next_run_at, trigger_reason=trigger_reason, enabled=enabled, auto_score=auto_score, auto_postmortem=auto_postmortem, stale_days=stale_days, confidence_below=confidence_below, confidence_above=confidence_above, large_delta_threshold=large_delta_threshold)
 
     def get_scheduled_review(self, review_id: str) -> dict[str, Any]:
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM scheduled_reviews WHERE id = ?", (review_id,)).fetchone()
-        if row is None:
-            raise LedgerNotFoundError(f"scheduled review not found: {review_id}")
-        return dict(row)
+        return _reviews.get_scheduled_review(self, review_id=review_id)
 
     def list_scheduled_reviews(self) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM scheduled_reviews ORDER BY next_run_at ASC",
-            ).fetchall()
-        return [dict(row) for row in rows]
+        return _reviews.list_scheduled_reviews(self)
 
     def annotate_snapshot(self, snapshot_id: str, patch: dict[str, Any]) -> None:
         return _snapshots.annotate_snapshot(self, snapshot_id=snapshot_id, patch=patch)
 
     def next_review_by_question(self) -> dict[str, dict[str, Any]]:
-        """question_id -> {next_run_at, cadence} from the SOONEST enabled per-question
-        scheduled review (the live, self-advancing schedule, not the stale question
-        column). One batched query for the desk's "next update" column."""
-        out: dict[str, dict[str, Any]] = {}
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT scope_ref, next_run_at, cadence FROM scheduled_reviews "
-                "WHERE scope_type = 'question' AND enabled = 1 AND next_run_at IS NOT NULL "
-                "ORDER BY next_run_at ASC",
-            ).fetchall()
-        for row in rows:
-            ref = row["scope_ref"]
-            # ORDER BY next_run_at ASC → the first row per question is the soonest.
-            if ref and ref not in out:
-                out[ref] = {"cadence": row["cadence"], "next_run_at": row["next_run_at"]}
-        return out
+        return _reviews.next_review_by_question(self)
 
     def count_due_scheduled_reviews(self, *, now: str | None = None) -> int:
-        """Cheap COUNT of enabled scheduled-review rows already DUE (next_run_at <= now).
-
-        The gateway due-sweeper reads this every tick to decide whether to run the
-        deterministic sweep at all — one indexed COUNT, no row materialization, so
-        the common "nothing due" case is nearly free."""
-        now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT COUNT(*) AS n FROM scheduled_reviews "
-                "WHERE enabled = 1 AND next_run_at <= ?",
-                (now_ts,),
-            ).fetchone()
-        return int(row["n"]) if row else 0
+        return _reviews.count_due_scheduled_reviews(self, now=now)
 
     def next_scheduled_review_at(self) -> str | None:
-        """The SOONEST enabled scheduled-review ``next_run_at`` (a past value means
-        already due; a future value is the next time something becomes due), or
-        None when nothing is scheduled. Backs the TUI review-sweep countdown."""
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT MIN(next_run_at) AS soonest FROM scheduled_reviews "
-                "WHERE enabled = 1 AND next_run_at IS NOT NULL",
-            ).fetchone()
-        return (row["soonest"] if row else None) or None
+        return _reviews.next_scheduled_review_at(self)
 
     def mark_question_review_due(self, question_id: str, *, now: str | None = None) -> dict[str, Any]:
-        """Re-arm a question's review to fire on the next cron tick — the desk's
-        "run update" shortcut. Sets the enabled per-question schedule's next_run_at
-        to now; if no schedule row exists, creates one at the question's cadence
-        (default weekly). The autonomous cycle then reforecasts it on its next tick."""
-        when = now or utc_now_iso()
-        with self._connect() as conn:
-            cur = conn.execute(
-                "UPDATE scheduled_reviews SET next_run_at = ? "
-                "WHERE scope_type = 'question' AND scope_ref = ? AND enabled = 1",
-                (when, question_id),
-            )
-            rearmed = cur.rowcount
-        if rearmed:
-            return {"next_run_at": when, "queued": True, "scheduled": "rearmed"}
-        cadence = "weekly"
-        try:
-            question = self.get_question(question_id)
-            cadence = question.review_cadence or "weekly"
-        except Exception:
-            pass
-        self.schedule_review(
-            scope_type="question", scope_ref=question_id, cadence=cadence,
-            next_run_at=when, trigger_reason="manual",
-        )
-        return {"next_run_at": when, "queued": True, "scheduled": "created"}
+        return _reviews.mark_question_review_due(self, question_id=question_id, now=now)
 
     def dedupe_scheduled_reviews(self) -> dict[str, Any]:
-        """Collapse pre-existing duplicate ENABLED schedules that share
-        (scope_type, scope_ref, cadence, trigger_reason). Keeps the most-established
-        one — the one that has run most recently, else the soonest next_run_at —
-        and disables the rest (so its run history is preserved, not deleted).
-        Idempotent: a deduped ledger is a no-op. Pairs with the idempotency guard
-        in schedule_review() which prevents NEW duplicates."""
-        groups: dict[tuple[Any, ...], list[dict[str, Any]]] = {}
-        for review in self.list_scheduled_reviews():
-            if not review.get("enabled"):
-                continue
-            key = (review["scope_type"], review["scope_ref"], review["cadence"], review["trigger_reason"])
-            groups.setdefault(key, []).append(review)
-
-        disabled: list[str] = []
-        kept: list[str] = []
-        for members in groups.values():
-            if len(members) < 2:
-                continue
-            ran = [m for m in members if m.get("last_run_at")]
-            keep = (
-                max(ran, key=lambda m: (m["last_run_at"], m["id"]))
-                if ran
-                else min(members, key=lambda m: (m.get("next_run_at") or "", m["id"]))
-            )
-            kept.append(keep["id"])
-            with self._connect() as conn:
-                for member in members:
-                    if member["id"] != keep["id"]:
-                        conn.execute("UPDATE scheduled_reviews SET enabled = 0 WHERE id = ?", (member["id"],))
-                        disabled.append(member["id"])
-
-        return {
-            "groups_collapsed": len(kept),
-            "kept": kept,
-            "disabled": disabled,
-            "disabled_count": len(disabled),
-        }
+        return _reviews.dedupe_scheduled_reviews(self)
 
     def list_scheduled_review_runs(
         self,
@@ -7273,25 +6485,7 @@ class ForecastLedger:
         scheduled_review_id: str | None = None,
         limit: int = 20,
     ) -> list[dict[str, Any]]:
-        limit = max(int(limit), 1)
-        clauses: list[str] = []
-        params: list[Any] = []
-        if scheduled_review_id:
-            clauses.append("scheduled_review_id = ?")
-            params.append(scheduled_review_id)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(limit)
-        with self._connect() as conn:
-            rows = conn.execute(
-                f"""
-                SELECT * FROM scheduled_review_runs
-                {where}
-                ORDER BY run_at DESC, id DESC
-                LIMIT ?
-                """,
-                params,
-            ).fetchall()
-        return [self._row_to_scheduled_review_run(row) for row in rows]
+        return _reviews.list_scheduled_review_runs(self, scheduled_review_id=scheduled_review_id, limit=limit)
 
     def add_watched_source(
         self,
@@ -9996,184 +9190,12 @@ class ForecastLedger:
         auto_postmortem: bool = False,
         refresh_fetcher: Any = None,
     ) -> list[dict[str, Any]]:
-        """Run every due scheduled-review row, advancing each row's cadence.
-
-        ``refresh_fetcher`` (injected by the cron layer — the ledger never imports
-        the tool/adapter layer) turns the sweep into a DETERMINISTIC self-refresh:
-        for each due QUESTION-scoped review that is refreshable (has a baseline
-        snapshot with structured ensemble_components AND active watched sources) we
-        re-pull the sources, re-pool, and auto-commit a fresh snapshot — no LLM.
-        Fail-open per question: one broken source records an error in the row's
-        result and never aborts the sweep. The cadence is also DEADLINE-AWARE — a
-        question's next run is escalated (never slowed) as its close/resolution/
-        decision deadline nears."""
-        now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT * FROM scheduled_reviews
-                WHERE enabled = 1 AND next_run_at <= ?
-                ORDER BY next_run_at ASC
-                """,
-                (now_ts,),
-            ).fetchall()
-
-        results: list[dict[str, Any]] = []
-        for row in rows:
-            review = dict(row)
-            scope_type = review["scope_type"]
-            scope_ref = review["scope_ref"]
-            stale_days = int(review.get("stale_days") or 7)
-            confidence_below = review.get("confidence_below")
-            confidence_above = review.get("confidence_above")
-            large_delta_threshold = review.get("large_delta_threshold")
-            refresh_result: dict[str, Any] | None = None
-            refresh_error: str | None = None
-            deadlines: list[str | None] | None = None
-            if scope_type == "question":
-                alerts = self.self_check(
-                    question_id=scope_ref,
-                    stale_days=stale_days,
-                    now=now_ts,
-                    auto_score=auto_score or bool(review.get("auto_score")),
-                    auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
-                    confidence_below=confidence_below,
-                    confidence_above=confidence_above,
-                    large_delta_threshold=large_delta_threshold,
-                )
-                # Deadline-aware cadence input: read the question's live deadlines so
-                # the next run can be escalated as close/resolution/decision nears.
-                try:
-                    question = self.get_question(scope_ref)
-                    deadlines = [
-                        getattr(question, "close_time", None),
-                        getattr(question, "resolution_time", None),
-                        getattr(question, "decision_deadline", None),
-                    ]
-                except Exception:
-                    deadlines = None
-                # Deterministic self-refresh (no LLM) for a refreshable question.
-                if refresh_fetcher is not None:
-                    try:
-                        refresh_result = self._refresh_due_question(
-                            scope_ref, fetcher=refresh_fetcher, now=now_ts
-                        )
-                    except Exception as exc:  # never abort the sweep on one question
-                        refresh_error = str(exc)
-            elif scope_type == "domain":
-                alerts = self.self_check(
-                    domain=scope_ref,
-                    stale_days=stale_days,
-                    now=now_ts,
-                    auto_score=auto_score or bool(review.get("auto_score")),
-                    auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
-                    confidence_below=confidence_below,
-                    confidence_above=confidence_above,
-                    large_delta_threshold=large_delta_threshold,
-                )
-            elif scope_type == "topic":
-                alerts = self.self_check(
-                    topic=scope_ref,
-                    stale_days=stale_days,
-                    now=now_ts,
-                    auto_score=auto_score or bool(review.get("auto_score")),
-                    auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
-                    confidence_below=confidence_below,
-                    confidence_above=confidence_above,
-                    large_delta_threshold=large_delta_threshold,
-                )
-            elif scope_type == "domain_topic":
-                scope_filter = json_loads(scope_ref, {})
-                alerts = self.self_check(
-                    domain=scope_filter.get("domain"),
-                    topic=scope_filter.get("topic"),
-                    stale_days=stale_days,
-                    now=now_ts,
-                    auto_score=auto_score or bool(review.get("auto_score")),
-                    auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
-                    confidence_below=confidence_below,
-                    confidence_above=confidence_above,
-                    large_delta_threshold=large_delta_threshold,
-                )
-            elif scope_type == "portfolio":
-                alerts = self.self_check(
-                    portfolio=scope_ref,
-                    stale_days=stale_days,
-                    now=now_ts,
-                    auto_score=auto_score or bool(review.get("auto_score")),
-                    auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
-                    confidence_below=confidence_below,
-                    confidence_above=confidence_above,
-                    large_delta_threshold=large_delta_threshold,
-                )
-            else:
-                alerts = self.self_check(
-                    horizon=scope_ref,
-                    stale_days=stale_days,
-                    now=now_ts,
-                    auto_score=auto_score or bool(review.get("auto_score")),
-                    auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
-                    confidence_below=confidence_below,
-                    confidence_above=confidence_above,
-                    large_delta_threshold=large_delta_threshold,
-                )
-            next_run_at = self._advance_cadence(
-                now_ts, review["cadence"], deadlines=deadlines
-            )
-            with self._connect() as conn:
-                conn.execute(
-                    """
-                    UPDATE scheduled_reviews
-                    SET last_run_at = ?, next_run_at = ?
-                    WHERE id = ?
-                    """,
-                    (now_ts, next_run_at, review["id"]),
-                )
-            run = self._record_scheduled_review_run(
-                review=review,
-                run_at=now_ts,
-                next_run_at=next_run_at,
-                alerts=alerts,
-            )
-            results.append(
-                {
-                    "review": self.get_scheduled_review(review["id"]),
-                    "run": run,
-                    "alerts": alerts,
-                    "refresh": refresh_result,
-                    "refresh_error": refresh_error,
-                }
-            )
-        return results
+        return _reviews.run_due_scheduled_reviews(self, now=now, auto_score=auto_score, auto_postmortem=auto_postmortem, refresh_fetcher=refresh_fetcher)
 
     def _refresh_due_question(
         self, question_id: str, *, fetcher: Any, now: str | None
     ) -> dict[str, Any] | None:
-        """Deterministically self-refresh a due question when it is refreshable.
-
-        Refreshable = a baseline snapshot with structured ensemble_components AND
-        at least one active watched source. Returns ``None`` (skipped) otherwise,
-        so a bare/no-source question is quietly left for the agent-tier re-reason.
-        Opens its own write context so the commit is permitted even when the caller
-        did not (e.g. the tool's direct ``run_scheduled_reviews``)."""
-        current = self.get_current_snapshot(question_id)
-        if current is None:
-            return None
-        components = current.ensemble_components
-        if not isinstance(components, dict) or not components:
-            return None
-        watches = self.list_watched_sources(
-            scope_type="question", scope_ref=question_id, status="active"
-        )
-        if not watches:
-            return None
-        with allow_ledger_writes(reason="scheduled_refresh"):
-            return self.refresh_forecast(
-                question_id,
-                fetcher=fetcher,
-                now=now,
-                trigger_reason="scheduled_refresh",
-            )
+        return _reviews._refresh_due_question(self, question_id=question_id, fetcher=fetcher, now=now)
 
     def _record_scheduled_review_run(
         self,
@@ -10183,44 +9205,7 @@ class ForecastLedger:
         next_run_at: str,
         alerts: list[AlertEvent],
     ) -> dict[str, Any]:
-        score_count = sum(1 for alert in alerts if alert.reason.startswith("score_created:"))
-        postmortem_count = sum(1 for alert in alerts if alert.reason.startswith("postmortem_created:"))
-        learning_review_count = sum(1 for alert in alerts if self._is_learning_alert_reason(alert.reason))
-        run_id = f"srr_{uuid.uuid4().hex[:12]}"
-        metadata = {
-            "scope_type": review.get("scope_type"),
-            "scope_ref": review.get("scope_ref"),
-            "cadence": review.get("cadence"),
-            "trigger_reason": review.get("trigger_reason"),
-            "auto_score": bool(review.get("auto_score")),
-            "auto_postmortem": bool(review.get("auto_postmortem")),
-            "alert_reasons": [alert.reason for alert in alerts],
-            "alert_ids": [alert.id for alert in alerts],
-        }
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO scheduled_review_runs (
-                    id, scheduled_review_id, run_at, next_run_at, alert_count,
-                    score_count, postmortem_count, learning_review_count,
-                    status, metadata
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run_id,
-                    review["id"],
-                    run_at,
-                    next_run_at,
-                    len(alerts),
-                    score_count,
-                    postmortem_count,
-                    learning_review_count,
-                    "completed",
-                    json_dumps(metadata),
-                ),
-            )
-        return self.list_scheduled_review_runs(scheduled_review_id=review["id"], limit=1)[0]
+        return _reviews._record_scheduled_review_run(self, review=review, run_at=run_at, next_run_at=next_run_at, alerts=alerts)
 
     def _record_source_snapshot(
         self,
@@ -13102,25 +12087,7 @@ class ForecastLedger:
         return _snapshots._forecast_horizon_days(self, close_time=close_time, as_of=as_of)
 
     def _review_priority(self, reasons: list[str]) -> int:
-        if any(reason.startswith("new_evidence:") for reason in reasons):
-            return 0
-        if any(
-            reason in {"resolution_check_due", "close_time_passed"}
-            or reason.startswith("close_time_within_")
-            for reason in reasons
-        ):
-            return 1
-        if any(reason.startswith(("assumption_invalidated:", "reference_class_invalidated:")) for reason in reasons):
-            return 2
-        if any(
-            reason in {"review_due", "no_forecast_snapshot", "no_evidence"}
-            or reason.startswith(("large_forecast_delta:", "assumption_check_due:", "reference_class_check_due:", "assumption_stale:", "reference_class_stale:"))
-            for reason in reasons
-        ):
-            return 3
-        if any(reason.startswith(("last_update_", "evidence_stale_")) for reason in reasons):
-            return 4
-        return 9
+        return _reviews._review_priority(self, reasons=reasons)
 
     def _recommended_action(self, reason: str) -> str:
         if reason.startswith("assumption_invalidated:"):
@@ -13566,77 +12533,18 @@ class ForecastLedger:
     def _advance_cadence(
         self, now_ts: str, cadence: str, *, deadlines: list[str | None] | None = None
     ) -> str:
-        now_dt = timestamp_to_datetime(now_ts)
-        assert now_dt is not None
-        delta = self._cadence_delta(cadence)
-        delta = self._clamp_cadence_to_deadline(now_dt, delta, deadlines)
-        return (now_dt + delta).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        return _reviews._advance_cadence(self, now_ts=now_ts, cadence=cadence, deadlines=deadlines)
 
     def _clamp_cadence_to_deadline(
         self, now_dt, delta: timedelta, deadlines: list[str | None] | None
     ) -> timedelta:
-        """Escalate (never slow) the cadence as the nearest deadline nears.
-
-        Within 7 days of the nearest of close/resolution/decision deadline -> at
-        most daily; within 48h -> at most twice-daily. Only SHORTENS the interval
-        (``min`` with the base cadence), so a slow base cadence still speeds up near
-        the wire but a fast one is never slowed. Past deadlines are ignored."""
-        if not deadlines:
-            return delta
-        nearest = None
-        for ts in deadlines:
-            dt = timestamp_to_datetime(ts) if ts else None
-            if dt is None or dt <= now_dt:
-                continue
-            if nearest is None or dt < nearest:
-                nearest = dt
-        if nearest is None:
-            return delta
-        horizon = nearest - now_dt
-        if horizon <= timedelta(hours=48):
-            cap = timedelta(hours=12)
-        elif horizon <= timedelta(days=7):
-            cap = timedelta(days=1)
-        else:
-            return delta
-        return min(delta, cap)
+        return _reviews._clamp_cadence_to_deadline(self, now_dt=now_dt, delta=delta, deadlines=deadlines)
 
     def _cadence_due(self, last_checked_at: str | None, cadence: str | None, now_dt) -> bool:
-        if not last_checked_at or not cadence:
-            return False
-        last_dt = timestamp_to_datetime(last_checked_at)
-        if last_dt is None:
-            return False
-        return last_dt + self._cadence_delta(cadence) <= now_dt
+        return _reviews._cadence_due(self, last_checked_at=last_checked_at, cadence=cadence, now_dt=now_dt)
 
     def _cadence_delta(self, cadence: str) -> timedelta:
-        raw = re.sub(r"\s+", " ", cadence.strip().lower())
-        if raw.startswith("every "):
-            raw = raw[len("every "):].strip()
-        if raw in {"daily", "1d"}:
-            return timedelta(days=1)
-        elif raw in {"weekly", "1w"}:
-            return timedelta(days=7)
-        elif raw == "hourly":
-            return timedelta(hours=1)
-        elif raw == "minutely":
-            return timedelta(minutes=1)
-
-        match = re.fullmatch(
-            r"(?P<count>\d*)\s*(?P<unit>w|week|weeks|d|day|days|h|hr|hrs|hour|hours|m|min|mins|minute|minutes)",
-            raw,
-        )
-        if match:
-            count = max(int(match.group("count") or "1"), 1)
-            unit = match.group("unit")
-            if unit in {"w", "week", "weeks"}:
-                return timedelta(days=count * 7)
-            if unit in {"d", "day", "days"}:
-                return timedelta(days=count)
-            if unit in {"h", "hr", "hrs", "hour", "hours"}:
-                return timedelta(hours=count)
-            return timedelta(minutes=count)
-        return timedelta(days=1)
+        return _reviews._cadence_delta(self, cadence=cadence)
 
     def _row_to_question(self, row: sqlite3.Row) -> ForecastQuestion:
         return _questions._row_to_question(self, row=row)
@@ -13719,9 +12627,7 @@ class ForecastLedger:
         )
 
     def _row_to_scheduled_review_run(self, row: sqlite3.Row) -> dict[str, Any]:
-        data = dict(row)
-        data["metadata"] = json_loads(data["metadata"], {})
-        return data
+        return _reviews._row_to_scheduled_review_run(self, row=row)
 
     def _row_to_model_run(self, row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)

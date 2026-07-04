@@ -522,6 +522,117 @@ Coupling patterns discovered (advice for D5-panels / D6-reviews):
   caller is `calibration_summary`, so it is a calibration-display helper (D9), left
   in core. Judge every `*_snapshot*`-named helper by its caller, not its name.
 
+### D5 findings (panels carve — SHIPPED)
+`core` 15,573 → 15,124; new `panels` 587 (523 moved body lines). 11 methods = 11
+one-line delegates, NO constant moved. Moved: the panel-run lifecycle
+(`record_panel_run` — the third gated write — `get_panel_run`, `list_panel_runs`,
+`attach_panel_to_snapshot`, batched `latest_panel_run_by_question`), the
+serializers (`_panel_run_dict`/`_panel_estimate_dict`), and the advisory
+track-record weighting cluster (`component_track_record` /
+`recommended_component_weights`, `model_track_record` / `recommended_model_weights`).
+Gates all met: full `tests/forecasting` 2,319 pass before AND after (0 fail);
+repo-wide `--collect-only` 0 import errors (28,551 collected); import-time
+`import forecasting.cli` 0.082s→0.082s (held); `ruff` F821 + PLW1514 clean; core
+diff = 11 delegate returns + a 3-line import block, **0 unexpected added lines**
+by difflib (463 body lines removed).
+
+Coupling patterns discovered (advice for D7/D8/D9):
+- **`model_skill` is a "model"-named DECOY, not panel domain** (the D4 decoy rule,
+  again). `model_skill` + its `_MODEL_SKILL_BASELINE_BRIER` read `model_runs` (the
+  R4 living-models path), NOT `panel_runs` — so they STAYED in core. The
+  track-record cluster that DOES read `panel_runs` (`*_track_record` +
+  `recommended_*`) is the "panelist weighting" the task flagged, and moved. Judge
+  every `model_*`/`*_track_record` helper by which TABLE it reads.
+- **A SHARED `self.`-accessed class constant stays as a core class attr — do NOT
+  move it to the leaf** (the sharpening of D3's `_TRIAGE_*` rule). `MODEL_WEIGHT_MIN_SAMPLE`
+  is read by the moved `model_track_record`/`recommended_model_weights`, the stayed
+  `model_skill`, a stayed core method, AND a test (`ledger.MODEL_WEIGHT_MIN_SAMPLE`).
+  D3 moved `_TRIAGE_*` to leaf module scope because they were leaf-EXCLUSIVE self-attrs;
+  here the constant is SHARED, so it stays a `ForecastLedger` class attribute in core
+  and the leaf reaches it via `ledger.MODEL_WEIGHT_MIN_SAMPLE` (instance) — no move, no
+  `_core.` hop, no `__init__` re-export. Rule: leaf-exclusive `self.`-const → leaf
+  module scope; shared `self.`-const → stays a core class attr, instance-reached.
+- **The gate leaf gave the CLEANEST leaf yet: ZERO `_core.` hops.** `record_panel_run`
+  imports `_enforce_write_gate` straight from `forecasting.ledger.gate`; every other
+  dep (`_score_forecast_payload`, `_chunk_ids`, `get_question`/`get_snapshot`/
+  `list_snapshots`/`list_model_runs`/`get_latest_resolution`) is instance-reached.
+  Unlike snapshots (which needed one `_core.FORECASTING_PROTOCOL_VERSION`), panels
+  touches nothing in `core`'s module namespace at all.
+- **The "quorum signal glue may need to stay" worry did NOT materialize.** Every
+  external panel reader — `hooks/signals.py`, `snapshots.py`, `dashboard.py`, the
+  quorum job, `quorum_analysis.py` — goes through the ledger INSTANCE
+  (`ledger.get_panel_run`/`list_panel_runs`/`attach_panel_to_snapshot`) → class
+  delegate → leaf, and the one stayed core reporting method that calls
+  `self.list_panel_runs` is served transparently by its delegate. Nothing reads a
+  panel method via a bare core name or a `self.` from a snapshot/core GATE, so all 11
+  moved cleanly. (`_score_forecast_payload`, the scoring GATE the track-record math
+  uses, stays in core per D9 — reached via `ledger.`.)
+- Monkeypatch grep (D2/D3 mandate) came back EMPTY for every name the panels leaf
+  re-imports — the façade needed no extension.
+
+### D6 findings (reviews carve — SHIPPED)
+`core` 15,124 → 14,479; new `reviews` 842 (728 moved body lines + 3 relocated
+constants). 20 methods = 20 delegates; 2 constant blocks moved to the leaf
+(`_AUTO_REVIEW_INELIGIBLE_DOMAINS`/`_TAGS` + `SCHEDULE_SCOPE_TYPES`). Moved: the
+review-queue builder (`review_questions`), the scheduled-review CRUD/lifecycle
+(`schedule_review` + `get`/`list`/`next_review_by_question`/`count_due`/
+`next_scheduled_review_at`/`mark_question_review_due`/`dedupe`/`list_..._runs`),
+the deterministic SWEEP (`run_due_scheduled_reviews` + `_refresh_due_question` +
+`_record_scheduled_review_run`), the cadence helpers (`_advance_cadence`/
+`_clamp_cadence_to_deadline`/`_cadence_due`/`_cadence_delta`), the eligibility gate
+(`_is_auto_review_eligible`), the ranker (`_review_priority`), and the run
+serializer (`_row_to_scheduled_review_run`). Gates all met: full `tests/forecasting`
+2,319 pass before AND after; `--collect-only` 0 import errors; import-time held
+0.083s; `ruff` clean; core diff = 20 delegate returns + a 3-line import block,
+**0 unexpected added lines** by difflib (668 removed = bodies + constants).
+
+Coupling patterns discovered (advice for D7-alerts / D8-theses / D9-scoring):
+- **Partial-init FORCES the review constants to the leaf (D1's rule, at scale).**
+  `core` imports the `reviews` leaf near the top of the file; the review constants
+  are defined ~60 lines LOWER, so a leaf `from core import <const>` would hit a
+  not-yet-defined name. Because NO stayed core method uses them, they move to the
+  leaf OUTRIGHT (no import-back). The PUBLIC `SCHEDULE_SCOPE_TYPES` got an explicit
+  `__init__` re-export (mirrors D1's `WATCH_SCOPE_TYPES`); the PRIVATE `_AUTO_*`
+  needed none — underscore names were never on the `from .core import *` surface.
+- **Cadence helpers are review-domain by caller-exclusivity, not shared-core.**
+  `_advance_cadence`/`_clamp_cadence_to_deadline`/`_cadence_due`/`_cadence_delta` —
+  every non-`ledger.` caller is a moving review method; the two external reach-ins
+  (questions leaf's `_rearm_question_cadence`, the scheduler tests) already go
+  through `ledger._advance_cadence`, so the delegate serves them. D2's
+  `_cadence_is_valid` (in `questions`) has its OWN inline grammar and does NOT call
+  `_cadence_delta`, so there is no cross-leaf cadence coupling to sever.
+- **The D4 "exclusive-but-future-domain → LEAVE in core" rule fired the OTHER way.**
+  `_is_learning_alert_reason` (a `@staticmethod`) is called ONLY by the moved
+  `_record_scheduled_review_run`, yet was LEFT in core because it classifies ALERT
+  reasons — D7's concern, not reviews'. `_record_scheduled_review_run` reaches it via
+  `ledger._is_learning_alert_reason`. The MIRROR judgment kept `_refresh_due_question`
+  (sole caller `run_due_scheduled_reviews`) as a MOVE — it IS the review sweep's
+  deterministic self-refresh path — even though it leans on `refresh_forecast`
+  (stays in core, reached via `ledger.refresh_forecast`). The sweep is the review
+  domain; the alert engine (`self_check`) and refresh engine it DRIVES are not, and
+  both are instance-reached.
+- **Advice for D7 (alerts):** the alert-PRODUCING methods reviews/self-check drive
+  are all still in core and reviews reaches them ONLY via `ledger.` today — so D7
+  inherits them cleanly: `_is_learning_alert_reason` (pull with the D4 decorator-aware
+  carve — it is a staticmethod), `_calibration_lesson_review_alerts`,
+  `_benchmark_evidence_alerts`, `create_alert`, `sweep_saturation_alerts`,
+  `_row_to_alert`. `_recommended_action` (the review-reason→action prose map) is read
+  by the alert UI — judge by caller when D7 lands.
+- **Advice for D9 (scoring) / a future "models" domain:** `model_skill` +
+  `_MODEL_SKILL_BASELINE_BRIER` (R4 living-models, `model_runs`) sit in core awaiting
+  their claim; but `MODEL_WEIGHT_MIN_SAMPLE` is SHARED (D5) and MUST stay a core class
+  attr regardless of which domain takes `model_skill` — a mover reads it via
+  `ledger.MODEL_WEIGHT_MIN_SAMPLE`. `_score_forecast_payload` (shared by panels'
+  track-record AND scoring) stays in core, instance-reached.
+- **Advice for D8 (theses):** untouched by D5/D6; the review sweep's cascade is
+  `self_check`→core, and `_cascade_reaggregate_parents` (left in core by D4) remains
+  the D8 anchor.
+- Monkeypatch grep (D2/D3 mandate) EMPTY for every name the reviews leaf re-imports
+  (incl. `allow_ledger_writes`, verified read live via the gate leaf) — façade
+  needed no extension. The only `forecasting.ledger.*` test patch is
+  `ForecastLedger` (test_review_sweeper's `_FakeLedger`), already handled by the D1
+  façade and orthogonal to the carve.
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)
