@@ -117,38 +117,21 @@ interface MassProgress {
   verb: 're-arming' | 'updating'
 }
 
-// Classify one `forecast refresh <id> --json` result. The forecast.command RPC
-// returns `{ code, output }`: a non-zero exit is an error; otherwise the --json
-// payload's `status` distinguishes a committed update from a no-op (`no_change`)
-// or a sourceless question (`no_watched_sources`). Anything unrecognised (or a
-// non-JSON body) is treated as a real refresh — the conservative default only
-// down-grades to unchanged/no-sources on an explicit honest signal.
-export const classifyRefresh = (raw: unknown): MassOutcome => {
-  const env = raw as { code?: unknown; output?: unknown } | null | undefined
-  if (env && typeof env.code === 'number' && env.code !== 0) {
-    return 'error'
-  }
-  const out = env && typeof env.output === 'string' ? env.output : ''
-  let status: null | string = null
-  if (out) {
-    try {
-      const parsed = JSON.parse(out) as { status?: unknown }
-      status = typeof parsed.status === 'string' ? parsed.status : null
-    } catch {
-      // Non-JSON (or JSON with log-line noise) — scan for the status token.
-      const m = /"status"\s*:\s*"([a-z_]+)"/i.exec(out)
-      status = m ? m[1]! : null
-    }
-  }
-  switch (status) {
-    case 'no_watched_sources':
-      return 'noSources'
-
-    case 'no_change':
-      return 'unchanged'
-
-    default:
-      return 'refreshed'
+// Read the honest tally the REFRESH job computed server-side into the desk's
+// MassTally shape. The per-question status classification (committed → refreshed,
+// no_change → unchanged, no_watched_sources → no_sources, exception → error) now
+// lives in `forecasting/jobs/types/refresh.py::classify_refresh_status` — the desk
+// renders the tally the job produced instead of classifying each response itself
+// (the old client-side classifyRefresh moved server-side). None-safe: a missing or
+// malformed tally reads as all zeros so a summary never invents counts.
+export const refreshTally = (result: unknown): MassTally => {
+  const t = (result as { tally?: Record<string, unknown> } | null | undefined)?.tally ?? {}
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+  return {
+    error: n(t.error),
+    noSources: n(t.no_sources),
+    refreshed: n(t.refreshed),
+    unchanged: n(t.unchanged)
   }
 }
 
@@ -195,6 +178,38 @@ export interface AgentJob {
   note?: string
   targetIds: Set<string>
   doneIds: Set<string>
+}
+
+// ── Detached Desk REFRESH job (U / mass-U "Update now") ──────────────────────
+// The deterministic mass re-pool, now ONE durable job on the shared runtime (Arc
+// B) instead of a client-side loop in component state. It survives navigating away
+// from the Desk: the mount re-attach (jobs.active {types:['refresh']}) rediscovers a
+// live job and resumes the ⋯ markers + spinner exactly where the job is. `current`
+// is the in-flight question id (a JobRecord.current string, not the agent's nested
+// object); `doneIds` accrues from the job record's annotated partial results so a
+// finished row drops its ⋯ marker mid-run.
+export interface RefreshJob {
+  jobId: string
+  total: number
+  done: number
+  status: string
+  current: null | string
+  targetIds: Set<string>
+  doneIds: Set<string>
+}
+
+// A partial JobRecord as jobs.status / jobs.active return it (record.to_dict). Only
+// the fields the desk reads are typed; the runtime owns the rest.
+interface JobRecordShape {
+  job_id?: string
+  status?: string
+  total?: null | number
+  done_count?: number
+  current?: null | string
+  spec?: { question_ids?: string[] } | null
+  result?: unknown
+  error?: null | string
+  annotations?: { results?: { question_id?: string }[] } | null
 }
 
 // The HONEST completion toast for a detached job. Agent mode reports the gated
@@ -300,6 +315,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // pasted multiline chunk) and hands it back on submit.
   const [taskOpen, setTaskOpen] = useState(false)
   const [taskTargetIds, setTaskTargetIds] = useState<string[]>([])
+
+  // ── Detached Desk REFRESH job (U / mass-U "Update now") ─────────────────────
+  // The deterministic mass re-pool as ONE runtime job. refreshRunningRef is the
+  // SYNC guard that gates re-triggers; the job runs server-side and is polled by
+  // job_id, so closing/leaving the Desk stops the poll but NOT the work — and the
+  // mount re-attach below picks it back up on return (the operator's bug: the old
+  // client-side loop's remaining queue vanished on navigate-away).
+  const [refreshJob, setRefreshJob] = useState<RefreshJob | null>(null)
+  const refreshRunningRef = useRef(false)
 
   // The detail packet (tail audit, ensemble, packet-tail sections) loads ASYNC
   // per selection and is rendered inside the modal only.
@@ -829,6 +853,139 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     return rem
   }, [agentJob])
 
+  // RE-ATTACH on mount: a REFRESH job is detached exactly like the agent job — it
+  // keeps re-pooling when the Desk closes, and without this the ⋯ markers + the
+  // progress line silently vanish on reopen (the operator's original U bug). One
+  // jobs.active {types:['refresh']} call rehydrates the newest live refresh job;
+  // the status poller below then takes over. Mirrors the agent re-attach exactly,
+  // pointed at the generic jobs.* runtime RPCs instead of forecast.reforecast.*.
+  useEffect(() => {
+    if (refreshJob) {
+      return
+    }
+    let cancelled = false
+    gw.request<unknown>('jobs.active', { types: ['refresh'] })
+      .then(raw => {
+        if (cancelled) {
+          return
+        }
+        const r = asRpcResult<{ jobs?: JobRecordShape[] }>(raw)
+        const live = r?.jobs?.[0]
+        if (!live?.job_id) {
+          return
+        }
+        refreshRunningRef.current = true
+        const targetIds = new Set<string>((live.spec?.question_ids ?? []).map(String))
+        const doneIds = new Set<string>(
+          (live.annotations?.results ?? []).map(x => x.question_id).filter(Boolean) as string[]
+        )
+        setRefreshJob({
+          current: typeof live.current === 'string' ? live.current : null,
+          done: live.done_count ?? doneIds.size,
+          doneIds,
+          jobId: live.job_id,
+          status: live.status ?? 'running',
+          targetIds,
+          total: live.total ?? targetIds.size
+        })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gw])
+
+  // Poll the detached refresh job's status every ~5s while the Desk is open (the
+  // same bounded/cleaned-up shape as the agent poll). An immediate poll paints the
+  // first frame; on a terminal status (done/error/cancelled) it toasts the HONEST
+  // tally the job computed, reloads the payload once, and clears the job. The job
+  // keeps running server-side if the Desk closes — the cleanup only stops the POLL.
+  useEffect(() => {
+    const job = refreshJob
+    if (!job?.jobId) {
+      return
+    }
+    const { jobId } = job
+    let cancelled = false
+    const poll = () => {
+      gw.request<unknown>('jobs.status', { job_id: jobId })
+        .then(raw => {
+          if (cancelled) {
+            return
+          }
+          const r = asRpcResult<{ found?: boolean; job?: JobRecordShape }>(raw)
+          const rec = r?.job
+          if (!rec) {
+            return
+          }
+          if (rec.status === 'done' || rec.status === 'error' || rec.status === 'cancelled') {
+            refreshRunningRef.current = false
+            setRefreshJob(null)
+            setFlash(
+              rec.status === 'error'
+                ? `update failed: ${truncate(rec.error ?? 'error', 80)}`
+                : summarizeUpdate(refreshTally(rec.result))
+            )
+            load() // reload once so the freshly-committed rows land
+            return
+          }
+          const partial = rec.annotations?.results ?? []
+          const doneIds = new Set<string>(partial.map(x => x.question_id).filter(Boolean) as string[])
+          setRefreshJob(prev =>
+            prev && prev.jobId === jobId
+              ? {
+                  ...prev,
+                  current: typeof rec.current === 'string' ? rec.current : prev.current,
+                  done: rec.done_count ?? doneIds.size,
+                  doneIds,
+                  status: rec.status ?? prev.status
+                }
+              : prev
+          )
+        })
+        .catch(() => {})
+    }
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => {
+      cancelled = true
+      clearInterval(id)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshJob?.jobId, gw])
+
+  // The refresh job's still-in-flight rows (targetIds − doneIds) → the SAME ⋯ /
+  // spinner markers the agent job uses; merged with agentRemaining for the list.
+  const refreshRemaining = useMemo<ReadonlySet<string>>(() => {
+    if (!refreshJob) {
+      return EMPTY_ID_SET
+    }
+    const rem = new Set<string>()
+    for (const id of refreshJob.targetIds) {
+      if (!refreshJob.doneIds.has(id)) {
+        rem.add(id)
+      }
+    }
+    return rem
+  }, [refreshJob])
+
+  // The union of the two detached jobs' in-flight rows (only one runs at a time in
+  // practice, so a merge is cheap and usually returns one side unchanged).
+  const runningRemaining = useMemo<ReadonlySet<string>>(() => {
+    if (refreshRemaining.size === 0) {
+      return agentRemaining
+    }
+    if (agentRemaining.size === 0) {
+      return refreshRemaining
+    }
+    const merged = new Set<string>(agentRemaining)
+    for (const id of refreshRemaining) {
+      merged.add(id)
+    }
+    return merged
+  }, [agentRemaining, refreshRemaining])
+
   // Switch tabs reset the selection to row 0 (locked decision). The mark set is
   // per-lens, so a lens switch also clears it.
   const switchTab = (next: number) => {
@@ -924,27 +1081,27 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     return []
   }
 
-  // `U` — REAL UPDATE NOW (`forecast refresh <id> --json`, per row) — or `u`'s
-  // cheap re-arm (`forecast.reforecast`), fanned SEQUENTIALLY over every target
-  // with a live swept progress flash. On completion it reloads once and flashes an
-  // HONEST tally parsed per row (refreshed / unchanged / no-sources / failed),
-  // then clears the marks. Re-triggers while a run is in flight are ignored; an
-  // unmount cancels the loop cleanly.
-  const runMass = (kind: 'rearm' | 'update') => {
+  // `u` with a selection — the cheap RE-ARM (`forecast.reforecast`) fanned
+  // SEQUENTIALLY over every marked target with a live swept progress flash. This
+  // stays request-based (instant, no job needed): re-arming only marks the schedule
+  // due, so there is no durable work to survive a navigate-away. On completion it
+  // reloads once and flashes the honest re-armed count, then clears the marks.
+  // (`U` / mass-`U` — the REAL deterministic update — is `runRefresh` below: ONE
+  // detached runtime job, so its progress + remaining queue survive the Desk.)
+  const runMass = () => {
     if (massRunningRef.current) {
       const p = massProgress
-      setFlash(p ? `already ${p.verb} ${p.total}…` : 'already updating…')
+      setFlash(p ? `already ${p.verb} ${p.total}…` : 're-arming…')
       return
     }
-    const targets = massTargets(kind)
+    const targets = massTargets('rearm')
     if (!targets.length) {
-      setFlash(kind === 'update' ? 'select a forecast to update now' : 'select a forecast to re-arm')
+      setFlash('select a forecast to re-arm')
       return
     }
     massRunningRef.current = true
     setFlash('') // clear any stale flash so only the live progress shows during the run
     const total = targets.length
-    const verb: MassProgress['verb'] = kind === 'update' ? 'updating' : 're-arming'
     const tally: MassTally = { error: 0, noSources: 0, refreshed: 0, unchanged: 0 }
 
     const step = (i: number) => {
@@ -954,18 +1111,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         setMassProgress(null)
         clearSelection()
         load() // one reload after the whole fan-out
-        setFlash(kind === 'update' ? summarizeUpdate(tally) : summarizeRearm(tally))
+        setFlash(summarizeRearm(tally))
         return
       }
       const { id, title } = targets[i]!
-      setMassProgress({ current: i + 1, title: truncate(title, 32), total, verb })
-      const req =
-        kind === 'update'
-          ? gw.request('forecast.command', { arg: `refresh ${id} --json`, argv: ['refresh', id, '--json'] })
-          : gw.request('forecast.reforecast', { id })
-      req
-        .then((raw: unknown) => {
-          tally[kind === 'update' ? classifyRefresh(raw) : 'refreshed'] += 1
+      setMassProgress({ current: i + 1, title: truncate(title, 32), total, verb: 're-arming' })
+      gw.request('forecast.reforecast', { id })
+        .then(() => {
+          tally.refreshed += 1
         })
         .catch(() => {
           tally.error += 1
@@ -973,6 +1126,52 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         .finally(() => step(i + 1))
     }
     step(0)
+  }
+
+  // `U` / mass-`U` — REAL UPDATE NOW: the deterministic re-pool over the selection
+  // (marked set, or a lens row → all its members, reusing massTargets) as ONE
+  // detached runtime job (`jobs.start {type:'refresh'}`), replacing the old
+  // client-side per-row `forecast refresh` loop that lived in component state. The
+  // job is durable + re-attachable, so leaving the Desk no longer kills the progress
+  // heuristic or strands mass-U's un-run tail (the operator's bug). The poll effect
+  // drives the ⋯ markers + spinner + the honest tally toast; one job at a time — a
+  // re-press while it runs just parks a guard note.
+  const runRefresh = () => {
+    if (refreshRunningRef.current) {
+      setFlash(refreshJob ? `already updating ${refreshJob.done}/${refreshJob.total}…` : 'already updating…')
+      return
+    }
+    const targets = massTargets('update')
+    if (!targets.length) {
+      setFlash('select a forecast to update now')
+      return
+    }
+    const ids = targets.map(target => target.id)
+    refreshRunningRef.current = true
+    setFlash('') // the re-attach-backed progress line below is the sole feedback
+    gw.request<unknown>('jobs.start', { spec: { question_ids: ids }, type: 'refresh' })
+      .then(raw => {
+        const r = asRpcResult<{ job_id?: string }>(raw)
+        if (!r?.job_id) {
+          refreshRunningRef.current = false
+          setFlash('update start failed')
+          return
+        }
+        setRefreshJob({
+          current: null,
+          done: 0,
+          doneIds: new Set(),
+          jobId: r.job_id,
+          status: 'queued',
+          targetIds: new Set(ids),
+          total: ids.length
+        })
+        clearSelection()
+      })
+      .catch(() => {
+        refreshRunningRef.current = false
+        setFlash('update start failed')
+      })
   }
 
   // `A` — AGENT RUN: fan the FULL formal reforecast flow over the selection (marked
@@ -1232,11 +1431,11 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     if (ch === 'u') {
-      return selectedIds.size > 0 ? runMass('rearm') : runRearm()
+      return selectedIds.size > 0 ? runMass() : runRearm()
     }
 
     if (ch === 'U') {
-      return runMass('update')
+      return runRefresh()
     }
 
     // `A` — AGENT RUN (detached full reforecast flow); `T` — free-text TASK modal.
@@ -1426,9 +1625,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         // The header sorts on click, but only while nothing modal is covering the
         // body — matches the row/tab click gating.
         onSort={modalOpen || settingsOpen || taskOpen || globalModal ? undefined : onSortByKey}
-        runningId={agentJob?.current?.question_id ?? null}
-        runningIds={agentRemaining}
-        spinTick={agentJob ? now : 0}
+        runningId={agentJob?.current?.question_id ?? refreshJob?.current ?? null}
+        runningIds={runningRemaining}
+        spinTick={agentJob || refreshJob ? now : 0}
         sortDir={sort.state.dir}
         sortKey={sort.state.key}
         sweep={sweepCtx}
@@ -1590,8 +1789,8 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         ? // With a selection the footer focuses on the mass actions (live-keys-only):
           // Update/Re-arm carry the live count, plus Mark/extend and the Esc clear.
           [
-            { k: 'U', label: `Update (${selectedIds.size})`, run: () => runMass('update') },
-            { k: 'u', label: `Re-arm (${selectedIds.size})`, run: () => runMass('rearm') },
+            { k: 'U', label: `Update (${selectedIds.size})`, run: () => runRefresh() },
+            { k: 'u', label: `Re-arm (${selectedIds.size})`, run: () => runMass() },
             { k: 'A', label: `Agent (${selectedIds.size})`, run: () => runAgent() },
             { k: 'T', label: `Task (${selectedIds.size})`, run: () => openTask() },
             { k: 'Spc', label: 'Mark', run: () => toggleMark() },
@@ -1604,7 +1803,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             { k: '↑↓', label: 'Select' },
             { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
             { k: '⏎', label: 'Open', run: () => (lensActive || selected) && setModalOpen(true) },
-            { k: 'U', label: 'Update', run: () => runMass('update') },
+            { k: 'U', label: 'Update', run: () => runRefresh() },
             { k: 'u', label: 'Re-arm', run: () => runRearm() },
             { k: 'R', label: 'Resolve', run: () => openResolve() },
             { k: 'n', label: 'New', run: () => openNewQuestion() },
@@ -1622,6 +1821,13 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const selectedDue = !onBench && !lensActive && selected ? dueText(selected, Math.floor(Date.now() / 60_000) * 60_000) : null
   const selectedStale = selectedDue?.status === 'now'
   const showStaleNote = !flash && !filtering && !modalOpen && !onBench && selectedStale
+
+  // The in-flight REFRESH job's current question title (looked up from the live
+  // book by its id). Powers the footer progress line; null when the job is between
+  // questions or the row already left the book.
+  const refreshTitle = refreshJob?.current
+    ? (items.find(it => it.id === refreshJob.current)?.title ?? refreshJob.current)
+    : null
 
   const footer = (
     <Box flexDirection="column" flexShrink={0} marginTop={1}>
@@ -1641,6 +1847,17 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           </Text>
           {/* A re-trigger while the run is in flight parks its "already updating N…"
               guard note here (the run keeps going) rather than a duplicate fan-out. */}
+          {flash ? <Text color={t.color.warn}>{`  ${flash}`}</Text> : null}
+        </Text>
+      ) : refreshJob ? (
+        // The detached REFRESH job's live progress — re-attach-backed, so it PERSISTS
+        // across leaving/returning to the Desk (the operator's original U bug). Same
+        // accent sweep as the mass re-arm line; a re-press guard note ("already
+        // updating N/N…") parks alongside it.
+        <Text wrap="truncate-end">
+          <Text color={sweepColor(sweepStops(t), now)}>
+            {`↻ updating ${refreshJob.done}/${refreshJob.total}${refreshTitle ? ` · ${truncate(refreshTitle, 32)}` : ''}…`}
+          </Text>
           {flash ? <Text color={t.color.warn}>{`  ${flash}`}</Text> : null}
         </Text>
       ) : flash || showStaleNote ? (

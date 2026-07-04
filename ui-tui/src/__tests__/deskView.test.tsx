@@ -254,7 +254,7 @@ const fakeGw = (response: ForecastWorkspaceResponse) =>
   }) as never
 
 // A gw that RECORDS every request so tests can assert the RPC the desk fired
-// (e.g. `U` → forecast.command refresh). Still resolves like fakeGw otherwise.
+// (e.g. `U` → jobs.start refresh). Still resolves like fakeGw otherwise.
 const recordingGw = (response: ForecastWorkspaceResponse, calls: { method: string; params: Record<string, unknown> }[]) =>
   ({
     request: (method: string, params: Record<string, unknown>) => {
@@ -264,6 +264,51 @@ const recordingGw = (response: ForecastWorkspaceResponse, calls: { method: strin
         return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
       }
 
+      // The detached-job runtime RPCs: jobs.start mints a job_id (so a U press
+      // records the start), jobs.status/active answer benignly (no live job) so the
+      // poll + mount re-attach are no-ops. Tests needing a completing/running job
+      // script jobs.status themselves (see refreshGw).
+      if (method === 'jobs.start') {
+        return Promise.resolve({ job_id: 'job_rec', type: params.type })
+      }
+
+      if (method === 'jobs.active') {
+        return Promise.resolve({ count: 0, jobs: [] })
+      }
+
+      if (method === 'jobs.status') {
+        return Promise.resolve({ found: false, job: null })
+      }
+
+      return Promise.resolve(response)
+    }
+  }) as never
+
+// A gw that answers the detached REFRESH job RPCs (jobs.*): jobs.start mints a
+// job_id, jobs.status returns a scripted JobRecord (done / running), and jobs.active
+// returns a scripted live-job list (for the mount re-attach). Everything else
+// resolves like fakeGw — the deterministic mass-U job flow end to end.
+const refreshGw = (
+  response: ForecastWorkspaceResponse,
+  calls: { method: string; params: Record<string, unknown> }[],
+  job: unknown,
+  active: unknown[] = []
+) =>
+  ({
+    request: (method: string, params: Record<string, unknown>) => {
+      calls.push({ method, params })
+      if (method === 'forecast.question') {
+        return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
+      }
+      if (method === 'jobs.start') {
+        return Promise.resolve({ job_id: 'job_1', type: params.type })
+      }
+      if (method === 'jobs.status') {
+        return Promise.resolve({ found: !!job, job })
+      }
+      if (method === 'jobs.active') {
+        return Promise.resolve({ count: active.length, jobs: active })
+      }
       return Promise.resolve(response)
     }
   }) as never
@@ -475,17 +520,21 @@ describe('DeskView (redesigned forecast desk)', () => {
     desk.cleanup()
   })
 
-  it('U runs a REAL update via forecast refresh (records the RPC + shows the updating flash)', async () => {
+  it('U starts ONE detached REFRESH job (jobs.start) over the selected row — not a client-side loop', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
     // plainFixture has no thesis/factor lens → the first tab's row 0 is a concrete
     // forecast, so U targets a real question id.
     const desk = await mountDesk(120, plainFixture(), recordingGw(plainFixture(), calls))
     await desk.press('U')
-    // The in-process update runs `forecast refresh <id> --json` — the honest "real
-    // update", distinct from `u`/re-arm which only marks the schedule due.
-    const refresh = calls.find(c => c.method === 'forecast.command')
-    expect(refresh).toBeDefined()
-    expect(refresh?.params.argv).toEqual(['refresh', 'fq_undersat', '--json'])
+    // The deterministic re-pool now runs as ONE detached runtime job (durable +
+    // re-attachable), NOT the old per-row forecast.command loop that died on
+    // navigate-away. `u`/re-arm stays request-based (forecast.reforecast).
+    const start = calls.find(c => c.method === 'jobs.start')
+    expect(start).toBeDefined()
+    expect(start?.params.type).toBe('refresh')
+    expect((start?.params.spec as { question_ids?: string[] })?.question_ids).toEqual(['fq_undersat'])
+    // No client-side per-row forecast.command refresh is fired anymore.
+    expect(calls.some(c => c.method === 'forecast.command')).toBe(false)
     expect(desk.text()).toMatch(/updating|updated/)
     desk.cleanup()
   })
@@ -1066,16 +1115,19 @@ const twoMemberFixture = (): ForecastWorkspaceResponse => ({
 })
 
 describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
-  it('classifyRefresh maps the --json status honestly (committed / no_change / no_watched_sources / error)', async () => {
-    const { classifyRefresh } = await import('../components/deskView.js')
-    const out = (status: string) => ({ code: 0, output: JSON.stringify({ status }) })
-    expect(classifyRefresh(out('committed'))).toBe('refreshed')
-    expect(classifyRefresh(out('no_change'))).toBe('unchanged')
-    expect(classifyRefresh(out('no_watched_sources'))).toBe('noSources')
-    expect(classifyRefresh({ code: 2, output: '' })).toBe('error')
-    // An unrecognised / non-JSON body defaults to a real refresh (conservative).
-    expect(classifyRefresh({ code: 0, output: 'not json' })).toBe('refreshed')
-    expect(classifyRefresh(undefined)).toBe('refreshed')
+  it('refreshTally reads the job-computed server tally into the MassTally shape (None-safe)', async () => {
+    const { refreshTally } = await import('../components/deskView.js')
+    // The status classification now lives server-side (refresh.py); the desk just
+    // reads the tally the REFRESH job produced.
+    expect(refreshTally({ tally: { error: 1, no_sources: 2, refreshed: 3, unchanged: 4 } })).toEqual({
+      error: 1,
+      noSources: 2,
+      refreshed: 3,
+      unchanged: 4
+    })
+    // A missing / malformed tally reads as all zeros — a summary never invents counts.
+    expect(refreshTally(undefined)).toEqual({ error: 0, noSources: 0, refreshed: 0, unchanged: 0 })
+    expect(refreshTally({ tally: { refreshed: 'nope' } })).toEqual({ error: 0, noSources: 0, refreshed: 0, unchanged: 0 })
   })
 
   it('Space marks the cursor row and advances; marks stack + the header and chips show the count', async () => {
@@ -1102,9 +1154,9 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     await desk.press('k') // cursor back to fq_b
     await desk.press(' ') // UN-mark fq_b → cursor fq_c
     await desk.press('U') // only fq_a remains marked
-    const refreshes = calls.filter(c => c.method === 'forecast.command')
-    expect(refreshes).toHaveLength(1)
-    expect(refreshes[0]?.params.argv).toEqual(['refresh', 'fq_a', '--json'])
+    const starts = calls.filter(c => c.method === 'jobs.start')
+    expect(starts).toHaveLength(1)
+    expect((starts[0]?.params.spec as { question_ids?: string[] }).question_ids).toEqual(['fq_a'])
     desk.cleanup()
   })
 
@@ -1129,63 +1181,67 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     await desk.press(' ') // mark fq_a
     await desk.press(' ') // mark fq_b
     // Esc must eat the MARKS, not the query: U then hits the single cursor row →
-    // exactly ONE refresh (it would be two if the marks had survived the Esc).
+    // ONE job over just that row (its question_ids would be two if the marks had
+    // survived the Esc).
     await desk.press('\x1b')
     await desk.press('U')
-    const refreshes = calls.filter(c => c.method === 'forecast.command')
-    expect(refreshes).toHaveLength(1)
+    const starts = calls.filter(c => c.method === 'jobs.start')
+    expect(starts).toHaveLength(1)
+    expect((starts[0]?.params.spec as { question_ids?: string[] }).question_ids).toHaveLength(1)
     desk.cleanup()
   })
 
-  it('U fans the real update over EVERY marked id and flashes an honest tally', async () => {
+  it('U starts ONE detached REFRESH job over EVERY marked id and toasts the job-computed honest tally', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
-    const gw = {
-      request: (method: string, params: Record<string, unknown>) => {
-        calls.push({ method, params })
-        if (method === 'forecast.question') {
-          return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
-        }
-        if (method === 'forecast.command') {
-          const id = (params.argv as string[])?.[1]
-          const status = id === 'fq_a' ? 'committed' : id === 'fq_b' ? 'no_change' : 'no_watched_sources'
-          return Promise.resolve({ code: 0, output: JSON.stringify({ status }) })
-        }
-        return Promise.resolve(multiFixture())
-      }
+    // The job runs the whole batch server-side and reports back a done JobRecord
+    // carrying the honest tally it computed (1 refreshed, 1 unchanged, 1 no-sources).
+    const doneJob = {
+      done_count: 3,
+      result: { tally: { error: 0, no_sources: 1, refreshed: 1, unchanged: 1 } },
+      status: 'done',
+      total: 3
     }
-    const desk = await mountDesk(120, multiFixture(), gw as never)
+    const desk = await mountDesk(120, multiFixture(), refreshGw(multiFixture(), calls, doneJob))
     await desk.press(' ') // mark fq_a
     await desk.press(' ') // mark fq_b
     await desk.press(' ') // mark fq_c
     await desk.press('U')
-    const refreshes = calls.filter(c => c.method === 'forecast.command')
-    // One forecast.command per selected id, in visible order.
-    expect(refreshes.map(c => (c.params.argv as string[])[1])).toEqual(['fq_a', 'fq_b', 'fq_c'])
-    // Only fq_a truly refreshed; fq_b was a no-op; fq_c had no sources — the summary
-    // must NOT claim three updates.
+    await tick(120)
+    const starts = calls.filter(c => c.method === 'jobs.start')
+    // ONE job over the whole batch — not a per-row client loop.
+    expect(starts).toHaveLength(1)
+    expect(starts[0]!.params.type).toBe('refresh')
+    expect((starts[0]!.params.spec as { question_ids?: string[] }).question_ids).toEqual(['fq_a', 'fq_b', 'fq_c'])
+    expect(calls.some(c => c.method === 'jobs.status')).toBe(true)
+    // The tally the JOB computed — the toast must NOT claim three updates.
     expect(desk.text()).toContain('✓ 1 updated · 1 unchanged · 1 no sources')
     desk.cleanup()
   })
 
-  it('U on a thesis LENS row fans the update over ALL its member questions', async () => {
+  it('U on a thesis LENS row starts ONE refresh job over ALL its member questions', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
     const desk = await mountDesk(120, twoMemberFixture(), recordingGw(twoMemberFixture(), calls))
     // Default thesis tab, cursor on the lens row (no marks) → U selects all members.
     await desk.press('U')
-    const refreshes = calls.filter(c => c.method === 'forecast.command')
-    expect(refreshes.map(c => (c.params.argv as string[])[1]).sort()).toEqual(['fq_cpi', 'fq_cpi2'])
+    const starts = calls.filter(c => c.method === 'jobs.start')
+    expect(starts).toHaveLength(1)
+    expect(((starts[0]!.params.spec as { question_ids?: string[] }).question_ids ?? []).slice().sort()).toEqual([
+      'fq_cpi',
+      'fq_cpi2'
+    ])
     desk.cleanup()
   })
 
-  it('the marked selection survives a payload reload (keyed by id, not index)', async () => {
+  it('the marked selection survives a payload reload → U starts one job over both (keyed by id, not index)', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
     const desk = await mountDesk(120, multiFixture(), recordingGw(multiFixture(), calls))
     await desk.press(' ') // mark fq_a
     await desk.press(' ') // mark fq_b
     await desk.press('r') // force a workspace reload
-    await desk.press('U') // marks persist → both fan out
-    const refreshes = calls.filter(c => c.method === 'forecast.command')
-    expect(refreshes.map(c => (c.params.argv as string[])[1])).toEqual(['fq_a', 'fq_b'])
+    await desk.press('U') // marks persist → one job over both
+    const starts = calls.filter(c => c.method === 'jobs.start')
+    expect(starts).toHaveLength(1)
+    expect((starts[0]!.params.spec as { question_ids?: string[] }).question_ids).toEqual(['fq_a', 'fq_b'])
     desk.cleanup()
   })
 
@@ -1201,30 +1257,21 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     desk.cleanup()
   })
 
-  it('ignores a re-triggered U while a mass run is in flight (no duplicate fan-out)', async () => {
+  it('ignores a re-triggered U while a REFRESH job is in flight (no duplicate start)', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
-    const gw = {
-      request: (method: string, params: Record<string, unknown>) => {
-        calls.push({ method, params })
-        if (method === 'forecast.question') {
-          return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
-        }
-        if (method === 'forecast.command') {
-          return new Promise(res => setTimeout(() => res({ code: 0, output: '{"status":"committed"}' }), 120))
-        }
-        return Promise.resolve(multiFixture())
-      }
-    }
-    const desk = await mountDesk(120, multiFixture(), gw as never)
+    // A still-running JobRecord: the poll keeps refreshRunningRef latched so a second
+    // U is guarded.
+    const runningJob = { current: 'fq_a', done_count: 1, status: 'running', total: 2 }
+    const desk = await mountDesk(120, multiFixture(), refreshGw(multiFixture(), calls, runningJob))
     await desk.press(' ') // mark fq_a
     await desk.press(' ') // mark fq_b
-    await desk.press('U') // starts the run; first refresh is pending (120ms)
-    await desk.press('U') // in-flight → guarded (parks "already updating", no 2nd run)
+    await desk.press('U') // starts job_1 (status stays 'running')
+    await tick(120)
+    await desk.press('U') // in-flight → guarded (parks "already updating", no 2nd start)
     expect(desk.text()).toContain('already updating')
-    await tick(400) // let the single fan-out drain both refreshes
-    const refreshes = calls.filter(c => c.method === 'forecast.command')
-    // Exactly ONE fan-out of the two ids — the guarded re-trigger enqueued nothing.
-    expect(refreshes).toHaveLength(2)
+    const starts = calls.filter(c => c.method === 'jobs.start')
+    // Exactly ONE job — the guarded re-trigger started nothing.
+    expect(starts).toHaveLength(1)
     desk.cleanup()
   })
 })
@@ -1692,6 +1739,64 @@ describe('DeskView agent-run visibility', () => {
   })
 })
 
+describe('DeskView detached REFRESH jobs (U / mass-U)', () => {
+  const SPIN = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+
+  it('re-attaches to a live REFRESH job on mount (jobs.active) and resumes the spinner + ⋯ markers', async () => {
+    const calls: { method: string; params: Record<string, unknown> }[] = []
+    // A live job the operator started before leaving the Desk: fq_a is in flight
+    // (current), fq_b is still queued. jobs.active discovers it on mount; the poller
+    // then resumes the visuals — the whole point of moving the loop onto the runtime.
+    const liveJob = {
+      annotations: { results: [] },
+      current: 'fq_a',
+      done_count: 0,
+      job_id: 'job_9',
+      spec: { question_ids: ['fq_a', 'fq_b'] },
+      status: 'running',
+      total: 2
+    }
+    const runningStatus = {
+      annotations: { results: [] },
+      current: 'fq_a',
+      done_count: 0,
+      job_id: 'job_9',
+      spec: { question_ids: ['fq_a', 'fq_b'] },
+      status: 'running',
+      total: 2
+    }
+    const resp = (): ForecastWorkspaceResponse => ({
+      active_count: 3,
+      closing_soon_count: 0,
+      forecasts: [plainRow('fq_a', 'Alpha question'), plainRow('fq_b', 'Beta question'), plainRow('fq_c', 'Gamma question')],
+      generated_at: '2026-06-29T14:00:00Z',
+      open_alert_count: 0,
+      product: 'Superforecasting Agent'
+    })
+    const desk = await mountDesk(120, resp(), refreshGw(resp(), calls, runningStatus, [liveJob]))
+    await tick(300)
+    // The mount discovery found the live job and the poller attached to it by id.
+    expect(calls.some(c => c.method === 'jobs.active')).toBe(true)
+    expect(calls.some(c => c.method === 'jobs.status' && c.params.job_id === 'job_9')).toBe(true)
+    // fq_a (current) animates a braille spinner; the queued fq_b shows the ⋯ marker.
+    await tick(700)
+    const text = desk.text()
+    expect(SPIN.some(f => text.includes(f))).toBe(true)
+    expect(text).toContain('⋯')
+    desk.cleanup()
+  })
+
+  it('the completion toast matches the old client-side wording exactly (summarizeUpdate parity)', async () => {
+    const { summarizeUpdate } = await import('../components/deskView.js')
+    // The wording the desk used to build client-side, now fed by the job's tally.
+    expect(summarizeUpdate({ error: 0, noSources: 0, refreshed: 7, unchanged: 0 })).toBe('✓ 7 updated')
+    expect(summarizeUpdate({ error: 2, noSources: 7, refreshed: 7, unchanged: 3 })).toBe(
+      '✓ 7 updated · 3 unchanged · 7 no sources · 2 failed'
+    )
+    // A run that refreshed nothing still says so honestly (updated always shown).
+    expect(summarizeUpdate({ error: 0, noSources: 4, refreshed: 0, unchanged: 0 })).toBe('✓ 0 updated · 4 no sources')
+  })
+})
 
 describe('sidebar wrap law', () => {
   it('the focused title WRAPS in the summary panel (no … chop) and long teasers end honestly', async () => {
