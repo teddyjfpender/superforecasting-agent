@@ -44,8 +44,10 @@ def registered_types() -> list[str]:
 
 
 # Register the built-in types on package import. ``JobType``/``register`` are
-# defined above, so this bottom-of-module import resolves cleanly despite the
-# submodule importing back from here.
+# defined above, so these bottom-of-module imports resolve cleanly despite the
+# submodules importing back from here.
 from forecasting.jobs.types import warnings as _warnings  # noqa: E402,F401
+from forecasting.jobs.types import reforecast as _reforecast  # noqa: E402,F401
+from forecasting.jobs.types import task as _task  # noqa: E402,F401
 
 __all__ = ["JobType", "register", "resolve", "registered_types"]

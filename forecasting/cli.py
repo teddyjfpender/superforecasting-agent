@@ -10137,7 +10137,7 @@ def _cmd_rerun(args: argparse.Namespace) -> None:
         print("  forecast rerun status <run-id>")
         return
 
-    from forecasting.reforecast_jobs import (
+    from forecasting.jobs.types.reforecast import (
         DEFAULT_MAX_BATCH,
         read_job,
         start_job,
@@ -10179,7 +10179,7 @@ def _cmd_rerun(args: argparse.Namespace) -> None:
 
 
 def _rerun_status(args: argparse.Namespace, rest: list[str]) -> None:
-    from forecasting.reforecast_jobs import list_jobs, read_job
+    from forecasting.jobs.types.reforecast import list_jobs, read_job
 
     if not rest:
         jobs = list_jobs()

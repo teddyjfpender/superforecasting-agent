@@ -18,6 +18,13 @@ the exact current ``forecast.warnings.automode.*`` event names ALONGSIDE the new
 ``jobs.*`` events — the alerts view works unchanged. Any job whose TYPE declares
 an ``alias_namespace`` emits that legacy event family too, regardless of which
 entry point started it.
+
+``forecast.reforecast.start`` / ``.status`` / ``.active`` and ``forecast.desk.task``
+are the same kind of alias over the REFORECAST/TASK types (Arc B2): they enqueue a
+detached job on the shared JobStore + runtime and return the byte-compatible
+response shapes the desk already speaks. NEW runs carry ``job_`` ids; a legacy
+``rf_`` run still on disk is answered by the type module's read-shim, so the
+``run_id`` in a response is simply whatever id the record has.
 """
 
 from __future__ import annotations
@@ -220,6 +227,201 @@ def register(server) -> None:
 
     server.register_method("forecast.warnings.automode.run", automode_run)
     server.register_method("forecast.warnings.automode.cancel", automode_cancel)
+
+    # ── ALIASES: forecast.reforecast.* / forecast.desk.task ──────────────────
+    # Byte-compatible responses over the REFORECAST/TASK types on the runtime. The
+    # per-question chain loop + the one-shot task session moved to
+    # forecasting.jobs.types.{reforecast,task}; these handlers only validate, cap,
+    # enqueue, and report — the exact shapes the old server.py handlers returned.
+    # The reforecast/task modules are looked up at call time so tests can stub
+    # start_job/validate exactly as before.
+
+    def _reforecast_module():
+        from forecasting.jobs.types import reforecast
+
+        return reforecast
+
+    def _max_batch(default: int) -> int:
+        from hermes_cli.config import cfg_get, load_config_readonly
+
+        try:
+            return int(
+                cfg_get(
+                    load_config_readonly(),
+                    "forecasting", "reforecast", "max_batch",
+                    default=default,
+                )
+                or default
+            )
+        except (TypeError, ValueError):
+            return default
+
+    def reforecast_start(rid, params):
+        try:
+            from forecasting.ledger import ForecastLedger
+
+            reforecast = _reforecast_module()
+            raw_ids = params.get("question_ids")
+            if not isinstance(raw_ids, list) or not raw_ids:
+                return server._err(
+                    rid, 5008,
+                    "forecast.reforecast.start requires a non-empty question_ids list",
+                )
+            model = (params.get("model") or "").strip() or None
+            provider = (params.get("provider") or "").strip() or None
+            try:
+                max_iterations = int(
+                    params.get("max_iterations") or reforecast.DEFAULT_MAX_ITERATIONS
+                )
+            except (TypeError, ValueError):
+                max_iterations = reforecast.DEFAULT_MAX_ITERATIONS
+
+            ledger = ForecastLedger()
+            max_batch = _max_batch(reforecast.DEFAULT_MAX_BATCH)
+            accepted, errors = reforecast.validate_reforecast_ids(
+                ledger, raw_ids, max_batch=max_batch
+            )
+            if errors:
+                return server._err(rid, 5008, "; ".join(errors))
+
+            spec = {
+                "question_ids": accepted,
+                "db": str(ledger.db_path) if getattr(ledger, "db_path", None) else None,
+                "model": model,
+                "provider": provider,
+                "max_iterations": max_iterations,
+                "triggered_by": "desk_mass_agent",
+            }
+            run_id = reforecast.start_job(spec, wait=False)
+            return server._ok(
+                rid,
+                {
+                    "run_id": run_id,
+                    "total": len(accepted),
+                    "note": (
+                        f"reforecasting {len(accepted)} question(s) — the full formal "
+                        f"flow runs one at a time; poll forecast.reforecast.status"
+                    ),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            return server._err(rid, 5008, str(exc))
+
+    def reforecast_active(rid, params):
+        try:
+            reforecast = _reforecast_module()
+            jobs = []
+            for row in reforecast.list_jobs(limit=int(params.get("limit") or 10)):
+                if row.get("status") not in ("queued", "running"):
+                    continue
+                spec = row.get("spec") or {}
+                jobs.append(
+                    {
+                        "run_id": row.get("run_id"),
+                        "mode": spec.get("mode") or "reforecast",
+                        "status": row.get("status"),
+                        "question_ids": list(spec.get("question_ids") or []),
+                        "done_count": row.get("done_count") or 0,
+                        "total": row.get("total") or len(spec.get("question_ids") or []),
+                        "created_at": row.get("created_at"),
+                    }
+                )
+            return server._ok(rid, {"jobs": jobs})
+        except Exception as exc:  # noqa: BLE001 — surface, never crash the gateway
+            return server._ok(rid, {"jobs": [], "error": str(exc)})
+
+    def reforecast_status(rid, params):
+        try:
+            reforecast = _reforecast_module()
+            run_id = str(params.get("run_id") or "").strip()
+            if not run_id:
+                return server._err(
+                    rid, 5008, "forecast.reforecast.status requires a run_id"
+                )
+            try:
+                job = reforecast.read_job(run_id)
+            except FileNotFoundError as exc:
+                return server._err(rid, 5008, str(exc))
+            results = job.get("results") or []
+            return server._ok(
+                rid,
+                {
+                    "run_id": job.get("run_id"),
+                    "status": job.get("status"),
+                    "total": job.get("total"),
+                    "done_count": job.get("done_count"),
+                    "current": job.get("current"),
+                    "results": results,
+                    "error": job.get("error"),
+                    "quorums_started": sum(1 for r in results if r.get("quorum_autorun")),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            return server._err(rid, 5008, str(exc))
+
+    def desk_task(rid, params):
+        try:
+            from forecasting.ledger import ForecastLedger
+            from forecasting.jobs.types import task as task_type
+
+            reforecast = _reforecast_module()
+            instruction = str(params.get("instruction") or "").strip()
+            if not instruction:
+                return server._err(
+                    rid, 5008, "forecast.desk.task requires a non-empty instruction"
+                )
+            raw_ids = params.get("question_ids")
+            if not isinstance(raw_ids, list) or not raw_ids:
+                return server._err(
+                    rid, 5008,
+                    "forecast.desk.task requires a non-empty question_ids list",
+                )
+            model = (params.get("model") or "").strip() or None
+            provider = (params.get("provider") or "").strip() or None
+            try:
+                max_iterations = int(
+                    params.get("max_iterations") or task_type.DEFAULT_TASK_MAX_ITERATIONS
+                )
+            except (TypeError, ValueError):
+                max_iterations = task_type.DEFAULT_TASK_MAX_ITERATIONS
+
+            ledger = ForecastLedger()
+            max_batch = _max_batch(reforecast.DEFAULT_MAX_BATCH)
+            accepted, errors = reforecast.validate_reforecast_ids(
+                ledger, raw_ids, max_batch=max_batch
+            )
+            if errors:
+                return server._err(rid, 5008, "; ".join(errors))
+
+            spec = {
+                "mode": "task",
+                "instruction": instruction,
+                "question_ids": accepted,
+                "db": str(ledger.db_path) if getattr(ledger, "db_path", None) else None,
+                "model": model,
+                "provider": provider,
+                "max_iterations": max_iterations,
+                "triggered_by": "desk_task",
+            }
+            run_id = reforecast.start_job(spec, wait=False)
+            return server._ok(
+                rid,
+                {
+                    "run_id": run_id,
+                    "total": len(accepted),
+                    "note": (
+                        f"task over {len(accepted)} question(s) — one agent session; "
+                        f"poll forecast.reforecast.status"
+                    ),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            return server._err(rid, 5008, str(exc))
+
+    server.register_method("forecast.reforecast.start", reforecast_start)
+    server.register_method("forecast.reforecast.active", reforecast_active)
+    server.register_method("forecast.reforecast.status", reforecast_status)
+    server.register_method("forecast.desk.task", desk_task)
 
 
 __all__ = ["register", "active_jobs"]

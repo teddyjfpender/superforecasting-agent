@@ -1,16 +1,21 @@
-"""Tests for the Desk "mass LLM re-run" background job runner + its gateway RPCs.
+"""Tests for the Desk "mass LLM re-run" + task jobs — now the REFORECAST / TASK
+TYPES on the one detached-job runtime (Arc B2), reached through the byte-compatible
+``forecast.reforecast.*`` / ``forecast.desk.task`` aliases.
 
-The operator multi-selects Desk questions and wants the FULL formal forecast flow
-per question, detached, with a pollable status contract. The LLM stages can't run
-in a test, so we stub ``forecasting.cli._run_update_agent`` (the module-level seam
-``run_forecast_chain`` drives every stage through) exactly as
-``tests/forecasting/test_full_forecast_chain.py`` does, and assert the wiring:
-the job runs the chain per question sequentially, records honest per-question
-results, isolates a single failing question, and validates/caps the batch.
+The chain that runs per question is unchanged (``forecasting.cli.run_forecast_chain``
+through the gated ``_run_update_agent``); the LLM stages can't run in a test, so we
+stub ``forecasting.cli._run_update_agent`` (the module-level seam every stage drives
+through) exactly as ``tests/forecasting/test_full_forecast_chain.py`` does, and the
+task session's ``forecasting.jobs.types.task._run_task_agent``. We assert: the type
+runs the chain per question sequentially, records honest per-question results,
+isolates a single failing question, validates/caps the batch, the aliases return the
+current shapes, a legacy ``rf_`` file on disk still answers, and the ``forecast
+rerun`` CLI verbs enqueue + poll.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -18,15 +23,17 @@ import sys
 import pytest
 
 import forecasting.cli as cli
-from forecasting import reforecast_jobs as rf
 from forecasting import quorum_jobs
+from forecasting.jobs.types import reforecast as rf
+from forecasting.jobs.types import task as tk
 from forecasting.ledger import ForecastLedger
 
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     # get_hermes_home() checks SUPERFORECASTING_AGENT_HOME first, then HERMES_HOME;
-    # pin both so jobs_dir() AND the default ForecastLedger() land in the tempdir.
+    # pin both so the JobStore, the legacy jobs_dir() AND the default ForecastLedger()
+    # land in the tempdir.
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))
     monkeypatch.delenv("FORECAST_LEDGER_DB", raising=False)
@@ -69,7 +76,7 @@ def _commit_agent(monkeypatch, seen=None):
     monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
 
 
-# ── job lifecycle ─────────────────────────────────────────────────────────────
+# ── REFORECAST type lifecycle (runtime + monkeypatched agent stages) ──────────
 
 
 def test_start_job_runs_full_chain_per_question_and_records_honest_results(home, tmp_path, monkeypatch):
@@ -83,7 +90,7 @@ def test_start_job_runs_full_chain_per_question_and_records_honest_results(home,
         {"question_ids": [q1.id, q2.id], "db": db, "triggered_by": "desk_mass_agent"},
         wait=True,
     )
-    assert run_id.startswith("rf_")
+    assert run_id.startswith("job_")  # new runs live on the shared JobStore
     job = rf.read_job(run_id)
 
     assert job["status"] == "done", job.get("error")
@@ -227,7 +234,7 @@ def test_validate_reforecast_ids(home, tmp_path):
     assert any("exceeds the reforecast cap of 2" in e for e in errors)
 
 
-# ── gateway RPCs ──────────────────────────────────────────────────────────────
+# ── gateway alias parity: forecast.reforecast.* over the runtime ──────────────
 
 
 def test_reforecast_start_rpc_enqueues(home, tmp_path, monkeypatch):
@@ -325,6 +332,70 @@ def test_reforecast_status_rpc_unknown_run(home):
     assert "no reforecast run" in resp["error"]["message"]
 
 
+def test_reforecast_active_rpc_lists_live_jobs_only(home):
+    """The desk re-attaches to in-flight jobs on mount: .active returns only
+    queued|running jobs (newest first) with their target question_ids — a
+    done job is terminal and must not resurrect row indicators."""
+    from tui_gateway import server
+
+    rf.write_job({
+        "run_id": "rf_liveact1", "status": "running", "created_at": rf._now_iso(),
+        "spec": {"question_ids": ["q1", "q2"], "mode": "reforecast"},
+        "total": 2, "done_count": 1, "current": {"question_id": "q2"}, "results": [], "error": None,
+    })
+    rf.write_job({
+        "run_id": "rf_doneact1", "status": "done", "created_at": rf._now_iso(),
+        "spec": {"question_ids": ["q9"]},
+        "total": 1, "done_count": 1, "current": None, "results": [], "error": None,
+    })
+
+    resp = server.handle_request({"id": "1", "method": "forecast.reforecast.active", "params": {}})
+    jobs = resp["result"]["jobs"]
+    assert [j["run_id"] for j in jobs] == ["rf_liveact1"]
+    assert jobs[0]["question_ids"] == ["q1", "q2"]
+    assert jobs[0]["mode"] == "reforecast"
+    assert jobs[0]["done_count"] == 1 and jobs[0]["total"] == 2
+
+
+# ── legacy rf_ read-shim (a run in flight across the migration) ───────────────
+
+
+def test_legacy_rf_file_on_disk_still_answers(home):
+    """A real pre-migration rf_ job file (old shape, no job_id/type, living in the
+    legacy reforecast_runs dir) must still answer status + active queries — a run in
+    flight when the runtime was upgraded must not vanish."""
+    from tui_gateway import server
+
+    legacy_dir = rf.jobs_dir()  # {home}/reforecast_runs
+    (legacy_dir / "rf_legacy01.json").write_text(
+        json.dumps({
+            "run_id": "rf_legacy01",
+            "status": "running",
+            "created_at": rf._now_iso(),
+            "spec": {"question_ids": ["qa", "qb"], "mode": "reforecast"},
+            "total": 2,
+            "done_count": 1,
+            "current": {"question_id": "qb", "stage": "research"},
+            "results": [{"question_id": "qa", "committed": True}],
+            "error": None,
+        }),
+        encoding="utf-8",
+    )
+
+    status = server.handle_request({
+        "id": "1", "method": "forecast.reforecast.status", "params": {"run_id": "rf_legacy01"},
+    })["result"]
+    assert status["run_id"] == "rf_legacy01"
+    assert status["status"] == "running"
+    assert status["done_count"] == 1 and status["total"] == 2
+    assert status["current"]["question_id"] == "qb"
+
+    active = server.handle_request({
+        "id": "2", "method": "forecast.reforecast.active", "params": {},
+    })["result"]["jobs"]
+    assert "rf_legacy01" in [j["run_id"] for j in active]
+
+
 # ── desk-chip helper ──────────────────────────────────────────────────────────
 
 
@@ -351,7 +422,7 @@ def test_active_jobs_by_question_maps_every_member(home):
     assert "qc" not in mapping  # terminal job never chipped
 
 
-# ── desk task jobs (the operator's free-text fix loop) ────────────────────────
+# ── TASK type (the operator's free-text fix loop) ─────────────────────────────
 
 
 def _capture_task_agent(monkeypatch, response=None, raises=None):
@@ -367,7 +438,7 @@ def _capture_task_agent(monkeypatch, response=None, raises=None):
             raise raises
         return response if response is not None else {"final_response": "task summary"}
 
-    monkeypatch.setattr(rf, "_run_task_agent", fake)
+    monkeypatch.setattr(tk, "_run_task_agent", fake)
     return captured
 
 
@@ -416,7 +487,7 @@ def test_task_job_runs_one_session_with_gaps_in_prompt_and_writes_progress(home,
     assert q1.id in user and q2.id in user
     assert "MISSING watched sources" in user  # q1 has no watch -> the gap is surfaced
     assert "machine-readiness" in user
-    assert captured["max_iterations"] == rf.DEFAULT_TASK_MAX_ITERATIONS
+    assert captured["max_iterations"] == tk.DEFAULT_TASK_MAX_ITERATIONS
 
 
 def test_task_job_empty_instruction_errors_before_agent(home, tmp_path, monkeypatch):
@@ -424,7 +495,7 @@ def test_task_job_empty_instruction_errors_before_agent(home, tmp_path, monkeypa
     ledger = ForecastLedger(db)
     q1 = _make_question(ledger, 1)
     called = {"n": 0}
-    monkeypatch.setattr(rf, "_run_task_agent", lambda *a, **k: called.__setitem__("n", called["n"] + 1) or {})
+    monkeypatch.setattr(tk, "_run_task_agent", lambda *a, **k: called.__setitem__("n", called["n"] + 1) or {})
 
     run_id = rf.start_job(
         {"mode": "task", "instruction": "   ", "question_ids": [q1.id], "db": db},
@@ -452,7 +523,7 @@ def test_task_job_agent_failure_is_honest(home, tmp_path, monkeypatch):
     assert job["progress"][-1]["stage"] == "error"
 
 
-# ── forecast.desk.task RPC ────────────────────────────────────────────────────
+# ── forecast.desk.task alias ──────────────────────────────────────────────────
 
 
 def test_desk_task_rpc_enqueues(home, tmp_path, monkeypatch):
@@ -526,7 +597,7 @@ def test_desk_task_rpc_validates_ids_via_shared_validator(home, monkeypatch):
     assert called["n"] == 0  # refused before any job was enqueued
 
 
-# ── forecast.question.readiness RPC ───────────────────────────────────────────
+# ── forecast.question.readiness RPC (unchanged — still in server.py) ──────────
 
 
 def test_question_readiness_rpc_roundtrip(home, tmp_path):
@@ -571,38 +642,58 @@ def test_question_readiness_rpc_unknown_id(home):
     assert "error" in resp
 
 
-# ── detached-worker entrypoint ────────────────────────────────────────────────
+# ── forecast rerun CLI verbs ──────────────────────────────────────────────────
+
+
+def _rerun_args(**over):
+    base = dict(
+        ids=[], model=None, provider=None, max_iterations=None, wait=False, json=False, db=None,
+    )
+    base.update(over)
+    return argparse.Namespace(**base)
+
+
+def test_cli_rerun_no_ids_prints_usage(home, capsys):
+    cli._cmd_rerun(_rerun_args(ids=[]))
+    out = capsys.readouterr().out
+    assert "mass LLM re-run" in out
+    assert "forecast rerun status" in out
+
+
+def test_cli_rerun_wait_runs_chain_and_prints(home, tmp_path, monkeypatch, capsys):
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q1 = _make_question(ledger, 1)
+    _commit_agent(monkeypatch)
+
+    cli._cmd_rerun(_rerun_args(ids=[q1.id], wait=True, db=db))
+    out = capsys.readouterr().out
+    assert "reforecast run job_" in out  # new job_ id echoed
+    assert "done" in out
+    assert "committed" in out  # the per-question result line
+
+
+def test_cli_rerun_status_lists_runs(home, tmp_path, monkeypatch, capsys):
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q1 = _make_question(ledger, 1)
+    _commit_agent(monkeypatch)
+    cli._cmd_rerun(_rerun_args(ids=[q1.id], wait=True, db=db))
+    capsys.readouterr()  # drain the run output
+
+    cli._cmd_rerun(_rerun_args(ids=["status"], db=db))
+    out = capsys.readouterr().out
+    assert "Status" in out  # the table header
+    assert "job_" in out  # the run listed
+
+
+# ── detached-worker entrypoint (the runtime's `python -m forecasting.jobs`) ────
 
 
 def test_python_m_entrypoint_parses():
     proc = subprocess.run(
-        [sys.executable, "-m", "forecasting.reforecast_jobs"],
+        [sys.executable, "-m", "forecasting.jobs"],
         capture_output=True, text=True, cwd=str(rf._repo_root()),
     )
     assert proc.returncode == 2
-    assert "usage: python -m forecasting.reforecast_jobs" in proc.stderr
-
-
-def test_reforecast_active_rpc_lists_live_jobs_only(home):
-    """The desk re-attaches to in-flight jobs on mount: .active returns only
-    queued|running jobs (newest first) with their target question_ids — a
-    done job is terminal and must not resurrect row indicators."""
-    from tui_gateway import server
-
-    rf.write_job({
-        "run_id": "rf_liveact1", "status": "running", "created_at": rf._now_iso(),
-        "spec": {"question_ids": ["q1", "q2"], "mode": "reforecast"},
-        "total": 2, "done_count": 1, "current": {"question_id": "q2"}, "results": [], "error": None,
-    })
-    rf.write_job({
-        "run_id": "rf_doneact1", "status": "done", "created_at": rf._now_iso(),
-        "spec": {"question_ids": ["q9"]},
-        "total": 1, "done_count": 1, "current": None, "results": [], "error": None,
-    })
-
-    resp = server.handle_request({"id": "1", "method": "forecast.reforecast.active", "params": {}})
-    jobs = resp["result"]["jobs"]
-    assert [j["run_id"] for j in jobs] == ["rf_liveact1"]
-    assert jobs[0]["question_ids"] == ["q1", "q2"]
-    assert jobs[0]["mode"] == "reforecast"
-    assert jobs[0]["done_count"] == 1 and jobs[0]["total"] == 2
+    assert "usage: python -m forecasting.jobs run <job_id>" in proc.stderr
