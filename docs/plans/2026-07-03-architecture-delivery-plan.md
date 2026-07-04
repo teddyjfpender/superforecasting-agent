@@ -360,6 +360,78 @@ Coupling patterns discovered (advice for D3-evidence):
   core (`ledger.schedule_review`, `ledger._advance_cadence`) — a leaf→delegate→core
   hop that is correct and mirrors D1's `ledger.` receiver-rename discipline.
 
+### D3 findings (evidence + triage carve — SHIPPED)
+`core` 17,180 → 16,711; new `evidence` 689. The FULL domain fit under the cap so
+no triage-half split was needed. Moved the evidence lifecycle (`add_evidence`,
+`get_evidence`, `list_evidence`, `existing_evidence_keys`, `find_stale_evidence_refs`,
+`evidence_by_question`, `evidence_map`, `_row_to_evidence`, `_evidence_to_dict`)
+and the information-triage glue (`set/get/list_triage_rubric(s)`,
+`record_triage_labels`, `get/list/update_triage_label`, the two `_row_to_triage_*`
+readers, `check_triage_gate_graduation`) — 19 methods (19 one-line delegates) + 2
+leaf-owned private consts (`_TRIAGE_RUBRIC_SCOPES`, `_TRIAGE_GATE_MODE_KEY`) — 584
+moved method/const body lines (well under the 1,200 cap). Gates all met: full
+`tests/forecasting` green before (2,319 pass) AND after (2,319 pass on a clean
+re-run; one interleaved run flaked 3 *jobs/gateway* RPC tests
+— `test_quorum_status_rpc_returns_job` fails on PRISTINE-isolated too, a
+pre-existing `panel_run_id=None` gateway-serialization bug that only passes under
+full-suite xdist ordering — none touch evidence/ledger); repo-wide
+`--collect-only` 0 import errors (28,494 collected, unchanged); import-time
+`import forecasting.cli` 0.083s→0.082s (held); `ruff` (PLW1514) clean. Core diff
+mechanically verified = 19 delegate lines + the 4-line evidence-import block, 492
+body/const lines removed — **0 unexpected** by difflib categorization.
+
+Coupling patterns discovered (advice for the gate-leaf extraction + D4-snapshots):
+- **The `urlopen` monkeypatch trap is resolved by KEEPING the coupled helpers in
+  core, NOT by extending the façade.** `add_evidence`'s snapshot-archival helpers
+  (`_archive_file/url_evidence_snapshot`) use the module-global `urlopen` that tests
+  patch at `forecasting.ledger.urlopen` (test_ledger CF/block cases, test_tool). But
+  `urlopen` is a SHARED low-level dep (watch-fetch @15697, resolution-source @15453
+  also use it), so its call sites belong in core anyway — keeping them there
+  preserves the monkeypatch surface with ZERO façade work. `add_evidence` moved to
+  the leaf and reaches the archivers via `ledger._archive_*` delegates. The D2-
+  mandated grep for package-level patches of EVERY OTHER name the leaf re-imports
+  (`leak_reason`, `EvidenceItem`, `json_*`, `parse_timestamp`, `detect_block_page`…)
+  came back EMPTY, so those are direct imports and the façade needed no extension.
+- **No gated write in the domain → the leaf needs NO `_core` handle at all** (cleaner
+  than D1/D2). `evidence_items` + the `triage_*` tables are NOT in
+  `GATED_LEDGER_TABLES`; every core dependency (`_connect`, `get_question`, the
+  `_archive_*`, `list_cruxes`/`list_watched_sources`, `get_desk_state`/
+  `transition_desk_state`/`_has_open_alert`/`create_alert`, `build_triage_trust_gate`)
+  is reached through the `ledger` INSTANCE at call time. The leaf imports only
+  `forecasting.models`/`forecasting.leak_domains`/stdlib and touches nothing in core
+  at load — zero load-time coupling, no cycle, no `_core` import.
+- **Membership by caller-exclusivity over a NON-contiguous domain (D2's rule held).**
+  The 19 methods scatter (evidence CRUD @3133, `evidence_map` @3775,
+  `evidence_by_question` @6002, triage cluster @6599, `check_triage_gate_graduation`
+  @7009 wedged between desk-state + saturation-alert methods, `_row_to_evidence`
+  @15236 beside the other `_row_to_*`, `_evidence_to_dict` @17173 beside the other
+  `_*_to_dict`). AST `end_lineno` handles scatter trivially; `check_triage_gate_
+  graduation` moved despite non-triage neighbors because its callers are triage-
+  exclusive.
+- **Leaf-owned consts were `self.`-ACCESSED class attributes** (unlike D2's
+  module-level `_GATE_LABELS`). Moving `_TRIAGE_RUBRIC_SCOPES`/`_TRIAGE_GATE_MODE_KEY`
+  to leaf module scope required post-fixing the tokenize `self.`→`ledger.` rename back
+  to a BARE `_X` reference (they're module globals now, not instance attrs). Verified
+  exclusive callers first.
+- **The `self`→`ledger` rewrite used a tokenize NAME-token pass, not a regex** — the
+  D1 string-literal trap (`forecast self-check`) plus comment words like "itself"
+  never matched; the one bare-`self` arg (`build_triage_trust_gate(self, …)`) renamed
+  correctly to `ledger`.
+- **Advice for D4 (snapshots — the big one) + the gate-leaf.** Deliberately LEFT in
+  core: `_validate_evidence_refs` (the create_snapshot evidence GATE — D4's slice)
+  and `_benchmark_evidence_alerts` (alerts domain — D7). D4 pulls `create_snapshot`
+  (~700 lines incl the ~400-line gate body) + preview/annotate and is the FIRST slice
+  whose domain has a GATED write, so the `_core.`-hop for `_enforce_write_gate` /
+  `allow_ledger_writes` / `GATED_LEDGER_TABLES` / the authorizer finally returns (D1/
+  D2 both flagged this). Extract the write gate into its own leaf (or keep in core,
+  reached via `_core.`) BEFORE D4 so snapshots + future gated domains share it. D4
+  reaches this slice's evidence helpers via `ledger.` (`find_stale_evidence_refs`
+  moved; `_validate_evidence_refs` stayed), and its snapshot archival (`_archive_
+  resolution_source_snapshot` sits beside the two evidence archivers this slice kept
+  in core) can finally co-locate as a "snapshot archival" cluster — but WHEREVER those
+  land, the `urlopen` call sites must stay reachable by the `forecasting.ledger.
+  urlopen` monkeypatch (core, or a leaf that references `_core.urlopen`).
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)

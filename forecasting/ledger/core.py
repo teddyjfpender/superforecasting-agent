@@ -83,6 +83,10 @@ from forecasting.ledger.watches import (
 # Question domain lives in the sibling ``questions`` module (D2 carve).
 from forecasting.ledger import questions as _questions
 
+# Evidence + information-triage domain lives in the sibling ``evidence`` module
+# (D3 carve).
+from forecasting.ledger import evidence as _evidence
+
 
 logger = logging.getLogger(__name__)
 
@@ -3152,159 +3156,16 @@ class ForecastLedger:
         archive_url_snapshot: bool = True,
         extra_leak_denylist: object = None,
     ) -> EvidenceItem:
-        self.get_question(question_id)
-        source_or_note = source_or_note.strip()
-        if not source_or_note and not source_url:
-            raise ValidationError("evidence requires a URL or note")
-        if reliability_rating is not None and not (0 <= reliability_rating <= 1):
-            raise ValidationError("reliability_rating must be between 0 and 1")
-        if relevance_rating is not None and not (0 <= relevance_rating <= 1):
-            raise ValidationError("relevance_rating must be between 0 and 1")
-        if claim_type not in EVIDENCE_CLAIM_TYPES:
-            raise ValidationError(f"claim_type must be one of {', '.join(sorted(EVIDENCE_CLAIM_TYPES))}")
-
-        inferred_url = source_url
-        inferred_summary = summary
-        inferred_type = source_type
-        source_file_path: Path | None = None
-        if source_or_note.startswith(("http://", "https://")):
-            inferred_url = inferred_url or source_or_note
-            inferred_type = inferred_type or "url"
-        elif Path(source_or_note).expanduser().is_file():
-            evidence_path = Path(source_or_note).expanduser()
-            source_file_path = evidence_path
-            inferred_type = inferred_type or "file"
-            source_name = source_name or str(evidence_path)
-            inferred_summary = inferred_summary or f"File evidence: {evidence_path.name}"
-        else:
-            inferred_summary = inferred_summary or source_or_note
-            inferred_type = inferred_type or "manual_note"
-
-        now = utc_now_iso()
-        available = (
-            parse_timestamp(available_at, field_name="available_at")
-            or parse_timestamp(published_at, field_name="published_at")
-            or now
-        )
-        evidence_id = f"ev_{uuid.uuid4().hex[:12]}"
-        evidence_metadata = dict(metadata or {})
-        if source_file_path is not None and snapshot_path is None:
-            snapshot_path = self._archive_file_evidence_snapshot(
-                question_id=question_id,
-                evidence_id=evidence_id,
-                source_file_path=source_file_path,
-            )
-            evidence_metadata.setdefault("source_file_path", str(source_file_path))
-        elif (
-            inferred_url
-            and snapshot_path is None
-            and archive_url_snapshot
-            # Structured source adapters (source_type="adapter:fred", etc.) already
-            # capture the authoritative observation in metadata; fetching the
-            # source's HTML page to archive a snapshot adds ~5s/row of latency and
-            # no data value (and on batch imports surfaced as "FRED refresh timed
-            # out"). Skip archival for adapter-sourced evidence.
-            and not str(inferred_type or "").startswith("adapter:")
-        ):
-            archived_url_snapshot = self._archive_url_evidence_snapshot(
-                question_id=question_id,
-                evidence_id=evidence_id,
-                source_url=inferred_url,
-            )
-            if archived_url_snapshot is not None:
-                snapshot_path = archived_url_snapshot["snapshot_path"]
-                evidence_metadata.setdefault("source_snapshot", archived_url_snapshot)
-                if archived_url_snapshot.get("blocked"):
-                    # Surface at top-level so list_evidence / show_question can
-                    # see "blocked" without opening the snapshot file. The
-                    # nested source_snapshot keeps the full diagnostic.
-                    evidence_metadata.setdefault("blocked", True)
-                    evidence_metadata.setdefault(
-                        "block_reason", archived_url_snapshot.get("block_reason")
-                    )
-                    evidence_metadata.setdefault(
-                        "block_signal", archived_url_snapshot.get("block_signal")
-                    )
-        # AIA P2.4 — leak-domain choke point. A live-widget / live-quote / live-
-        # ranking source serves TODAY's value regardless of any historical query,
-        # so it silently time-travels. We TAG such items and mark them
-        # inadmissible for backtest scoring (a HARD exclusion only on the
-        # admissibility path) but NEVER drop them from the live ledger. For non-
-        # leak URLs `is_leak_domain` returns False and this block is a no-op,
-        # keeping the default add path byte-identical.
-        if inferred_url:
-            reason = leak_reason(inferred_url, extra_denylist=extra_leak_denylist)
-            if reason is not None:
-                evidence_metadata["leak_domain"] = True
-                evidence_metadata["leak_reason"] = reason
-                if admissible_for_backtests:
-                    admissible_for_backtests = False
-                logger.warning(
-                    "evidence source flagged as leak domain (inadmissible for backtests): %s — %s",
-                    inferred_url,
-                    reason,
-                )
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO evidence_items (
-                    id, question_id, captured_at, available_at, source_url,
-                    source_name, source_type, published_at, claim, summary,
-                    reliability_rating, relevance_rating, stance, claim_type, snapshot_path,
-                    admissible_for_backtests, metadata
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    evidence_id,
-                    question_id,
-                    now,
-                    available,
-                    inferred_url,
-                    source_name,
-                    inferred_type or "manual_note",
-                    parse_timestamp(published_at, field_name="published_at"),
-                    claim,
-                    inferred_summary,
-                    reliability_rating,
-                    relevance_rating,
-                    stance,
-                    claim_type,
-                    snapshot_path,
-                    1 if admissible_for_backtests else 0,
-                    json_dumps(evidence_metadata),
-                ),
-            )
-        return self.get_evidence(evidence_id)
+        return _evidence.add_evidence(self, question_id=question_id, source_or_note=source_or_note, claim=claim, summary=summary, source_url=source_url, source_name=source_name, source_type=source_type, published_at=published_at, available_at=available_at, reliability_rating=reliability_rating, relevance_rating=relevance_rating, stance=stance, claim_type=claim_type, snapshot_path=snapshot_path, admissible_for_backtests=admissible_for_backtests, metadata=metadata, archive_url_snapshot=archive_url_snapshot, extra_leak_denylist=extra_leak_denylist)
 
     def get_evidence(self, evidence_id: str) -> EvidenceItem:
-        with self._connect() as conn:
-            row = conn.execute("SELECT * FROM evidence_items WHERE id = ?", (evidence_id,)).fetchone()
-        if row is None:
-            raise LedgerNotFoundError(f"evidence item not found: {evidence_id}")
-        return self._row_to_evidence(row)
+        return _evidence.get_evidence(self, evidence_id=evidence_id)
 
     def list_evidence(self, question_id: str) -> list[EvidenceItem]:
-        self.get_question(question_id)
-        with self._connect() as conn:
-            rows = conn.execute(
-                "SELECT * FROM evidence_items WHERE question_id = ? ORDER BY available_at ASC",
-                (question_id,),
-            ).fetchall()
-        return [self._row_to_evidence(row) for row in rows]
+        return _evidence.list_evidence(self, question_id=question_id)
 
     def existing_evidence_keys(self, question_id: str) -> set[tuple[str, str]]:
-        """Return ``{(source_type, entry_id)}`` for evidence already imported for
-        the question. Used to skip re-importing identical structured readings
-        (e.g. the same FRED observation) on every refresh, which otherwise bloats
-        the evidence table. Items without an ``entry_id`` (e.g. free-form notes)
-        are never deduped."""
-        keys: set[tuple[str, str]] = set()
-        for item in self.list_evidence(question_id):
-            entry_id = (item.metadata or {}).get("entry_id")
-            if entry_id:
-                keys.add((item.source_type or "", str(entry_id)))
-        return keys
+        return _evidence.existing_evidence_keys(self, question_id=question_id)
 
     def find_stale_evidence_refs(
         self,
@@ -3314,20 +3175,7 @@ class ForecastLedger:
         as_of: str | None = None,
         stale_days: int = 30,
     ) -> list[EvidenceItem]:
-        if stale_days < 0:
-            raise ValidationError("stale_days must be non-negative")
-        as_of_ts = parse_timestamp(as_of, field_name="as_of") or utc_now_iso()
-        as_of_dt = timestamp_to_datetime(as_of_ts)
-        assert as_of_dt is not None
-        stale: list[EvidenceItem] = []
-        for evidence_id in evidence_refs:
-            evidence = self.get_evidence(evidence_id)
-            if evidence.question_id != question_id:
-                raise ValidationError(f"evidence item {evidence_id} does not belong to question {question_id}")
-            available_dt = timestamp_to_datetime(evidence.available_at)
-            if available_dt and (as_of_dt - available_dt).days >= stale_days:
-                stale.append(evidence)
-        return stale
+        return _evidence.find_stale_evidence_refs(self, question_id=question_id, evidence_refs=evidence_refs, as_of=as_of, stale_days=stale_days)
 
     def create_ingest_candidate(
         self,
@@ -3773,32 +3621,7 @@ class ForecastLedger:
         return self.get_crux(crux_id)
 
     def evidence_map(self, question_id: str) -> dict[str, Any]:
-        """Assemble the crux evidence map: each decisive variable, its materiality +
-        status, and whether the question actually watches a source in a role that
-        could satisfy it. Surfaces 'lots of evidence but the crux is missing' —
-        high-materiality cruxes that are missing/stale with no matching source."""
-        self.get_question(question_id)
-        cruxes = self.list_cruxes(question_id)
-        watched = self.list_watched_sources(scope_type="question", scope_ref=question_id, status=None)
-        watched_roles = {w.get("role") for w in watched if w.get("role")}
-
-        rank = {"high": 0, "medium": 1, "low": 2}
-        status_rank = {"missing": 0, "contradictory": 1, "stale": 2, "current": 3}
-        rows = []
-        for crux in cruxes:
-            preferred = crux.get("preferred_roles") or []
-            has_source = bool(set(preferred) & watched_roles) if preferred else bool(watched)
-            rows.append({
-                "id": crux["id"],
-                "crux_variable": crux["crux_variable"],
-                "materiality": crux["materiality"],
-                "status": crux["status"],
-                "preferred_roles": preferred,
-                "has_matching_source": has_source,
-            })
-        rows.sort(key=lambda r: (rank.get(r["materiality"], 1), status_rank.get(r["status"], 0)))
-        gaps = [r for r in rows if r["materiality"] == "high" and r["status"] in {"missing", "stale", "contradictory"}]
-        return {"question_id": question_id, "cruxes": rows, "high_materiality_gaps": gaps, "gap_count": len(gaps)}
+        return _evidence.evidence_map(self, question_id=question_id)
 
     def record_model_run(
         self,
@@ -6000,21 +5823,7 @@ class ForecastLedger:
         return out
 
     def evidence_by_question(self, question_ids: list[str]) -> dict[str, list[EvidenceItem]]:
-        """question_id -> evidence oldest-first by available_at (mirrors list_evidence)."""
-        out: dict[str, list[EvidenceItem]] = {}
-        for chunk in self._chunk_ids(question_ids):
-            if not chunk:
-                continue
-            placeholders = ",".join("?" for _ in chunk)
-            with self._connect() as conn:
-                rows = conn.execute(
-                    f"SELECT * FROM evidence_items WHERE question_id IN ({placeholders}) "
-                    "ORDER BY question_id ASC, available_at ASC",
-                    chunk,
-                ).fetchall()
-            for row in rows:
-                out.setdefault(row["question_id"], []).append(self._row_to_evidence(row))
-        return out
+        return _evidence.evidence_by_question(self, question_ids=question_ids)
 
     def latest_panel_run_by_question(self, question_ids: list[str]) -> dict[str, dict[str, Any]]:
         """question_id -> its most-recent panel run dict (mirrors
@@ -6602,19 +6411,12 @@ class ForecastLedger:
     # OFF the evidence table. The labeler itself lives in forecasting/triage.py;
     # the held-out trust gate scores auto_label vs expert_label.
 
-    _TRIAGE_RUBRIC_SCOPES = {"global", "domain", "topic", "domain_topic", "question_type"}
 
     def _row_to_triage_rubric(self, row: sqlite3.Row) -> dict[str, Any]:
-        d = dict(row)
-        d["examples"] = json_loads(d.get("examples"), [])
-        d["metadata"] = json_loads(d.get("metadata"), {})
-        return d
+        return _evidence._row_to_triage_rubric(self, row=row)
 
     def _row_to_triage_label(self, row: sqlite3.Row) -> dict[str, Any]:
-        d = dict(row)
-        d["contested"] = bool(d.get("contested"))
-        d["metadata"] = json_loads(d.get("metadata"), {})
-        return d
+        return _evidence._row_to_triage_label(self, row=row)
 
     def set_triage_rubric(
         self,
@@ -6628,59 +6430,10 @@ class ForecastLedger:
         notes: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Upsert the active rubric for a scope (mirrors calibration-lesson scoping)."""
-        if scope_type not in self._TRIAGE_RUBRIC_SCOPES:
-            raise ValidationError(
-                "invalid triage rubric scope_type: must be one of "
-                + ", ".join(sorted(self._TRIAGE_RUBRIC_SCOPES))
-            )
-        if scope_type == "global":
-            scope_ref = None
-        elif not (scope_ref or "").strip():
-            raise ValidationError(f"triage rubric scope_type={scope_type} requires a scope_ref")
-        if scope_type == "domain_topic" and ":" not in (scope_ref or ""):
-            raise ValidationError("domain_topic triage rubric requires a 'domain:topic' scope_ref")
-        now = utc_now_iso()
-        examples_json = json_dumps(list(examples or []))
-        metadata_json = json_dumps(dict(metadata or {}))
-        with self._connect() as conn:
-            existing = conn.execute(
-                "SELECT id FROM triage_rubrics WHERE scope_type = ? "
-                "AND IFNULL(scope_ref, '') = IFNULL(?, '') AND status = 'active'",
-                (scope_type, scope_ref),
-            ).fetchone()
-            if existing:
-                rubric_id = existing["id"]
-                conn.execute(
-                    "UPDATE triage_rubrics SET updated_at=?, interesting_criteria=?, "
-                    "uninteresting_criteria=?, irrelevant_criteria=?, examples=?, notes=?, "
-                    "metadata=? WHERE id=?",
-                    (
-                        now, interesting_criteria, uninteresting_criteria, irrelevant_criteria,
-                        examples_json, notes, metadata_json, rubric_id,
-                    ),
-                )
-            else:
-                rubric_id = f"tr_{uuid.uuid4().hex[:12]}"
-                conn.execute(
-                    "INSERT INTO triage_rubrics (id, scope_type, scope_ref, created_at, "
-                    "updated_at, status, interesting_criteria, uninteresting_criteria, "
-                    "irrelevant_criteria, examples, notes, metadata) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        rubric_id, scope_type, scope_ref, now, now, "active",
-                        interesting_criteria, uninteresting_criteria, irrelevant_criteria,
-                        examples_json, notes, metadata_json,
-                    ),
-                )
-        return self.get_triage_rubric(rubric_id)
+        return _evidence.set_triage_rubric(self, scope_type=scope_type, scope_ref=scope_ref, interesting_criteria=interesting_criteria, uninteresting_criteria=uninteresting_criteria, irrelevant_criteria=irrelevant_criteria, examples=examples, notes=notes, metadata=metadata)
 
     def get_triage_rubric(self, rubric_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM triage_rubrics WHERE id = ?", (rubric_id,)
-            ).fetchone()
-        return self._row_to_triage_rubric(row) if row else None
+        return _evidence.get_triage_rubric(self, rubric_id=rubric_id)
 
     def list_triage_rubrics(
         self,
@@ -6689,67 +6442,15 @@ class ForecastLedger:
         scope_ref: str | None = None,
         active_only: bool = True,
     ) -> list[dict[str, Any]]:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if scope_type:
-            clauses.append("scope_type = ?")
-            params.append(scope_type)
-        if scope_ref:
-            clauses.append("scope_ref = ?")
-            params.append(scope_ref)
-        if active_only:
-            clauses.append("status = 'active'")
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        with self._connect() as conn:
-            rows = conn.execute(
-                f"SELECT * FROM triage_rubrics {where} ORDER BY updated_at DESC", params
-            ).fetchall()
-        return [self._row_to_triage_rubric(row) for row in rows]
+        return _evidence.list_triage_rubrics(self, scope_type=scope_type, scope_ref=scope_ref, active_only=active_only)
 
     def record_triage_labels(
         self, *, question_id: str | None = None, verdicts: list[dict[str, Any]]
     ) -> list[dict[str, Any]]:
-        """Persist the cheap auto-labeler's three-way calls as staging rows."""
-        now = utc_now_iso()
-        stored: list[str] = []
-        with self._connect() as conn:
-            for verdict in verdicts:
-                if not isinstance(verdict, dict):
-                    continue
-                label_id = f"tl_{uuid.uuid4().hex[:12]}"
-                auto = verdict.get("triage_label") or verdict.get("auto_label")
-                rel_raw = verdict.get("relevance")
-                try:
-                    relevance = float(rel_raw) if rel_raw is not None else None
-                except (TypeError, ValueError):
-                    relevance = None
-                conn.execute(
-                    "INSERT INTO triage_labels (id, question_id, created_at, candidate_ref, "
-                    "title, summary, source_type, source, url, auto_label, expert_label, "
-                    "triage_label, label_source, materiality, verdict, relevance, rationale, "
-                    "rubric_id, model, contested, alert_id, adjudicated_at, metadata) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        label_id, question_id, now, verdict.get("candidate_ref"),
-                        verdict.get("title") or "", verdict.get("summary") or "",
-                        verdict.get("source_type"), verdict.get("source"), verdict.get("url"),
-                        auto, None, auto, "auto",
-                        verdict.get("materiality") or "medium",
-                        verdict.get("verdict") or "skim", relevance,
-                        verdict.get("rationale") or "", verdict.get("rubric_id"),
-                        verdict.get("model"), 0, None, None,
-                        json_dumps(dict(verdict.get("metadata") or {})),
-                    ),
-                )
-                stored.append(label_id)
-        return [r for r in (self.get_triage_label(i) for i in stored) if r is not None]
+        return _evidence.record_triage_labels(self, question_id=question_id, verdicts=verdicts)
 
     def get_triage_label(self, label_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                "SELECT * FROM triage_labels WHERE id = ?", (label_id,)
-            ).fetchone()
-        return self._row_to_triage_label(row) if row else None
+        return _evidence.get_triage_label(self, label_id=label_id)
 
     def list_triage_labels(
         self,
@@ -6760,28 +6461,7 @@ class ForecastLedger:
         adjudicated: bool | None = None,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if question_id:
-            clauses.append("question_id = ?")
-            params.append(question_id)
-        if label_source:
-            clauses.append("label_source = ?")
-            params.append(label_source)
-        if contested is not None:
-            clauses.append("contested = ?")
-            params.append(1 if contested else 0)
-        if adjudicated is True:
-            clauses.append("adjudicated_at IS NOT NULL")
-        elif adjudicated is False:
-            clauses.append("adjudicated_at IS NULL")
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        with self._connect() as conn:
-            rows = conn.execute(
-                f"SELECT * FROM triage_labels {where} ORDER BY created_at DESC LIMIT ?",
-                params + [int(limit)],
-            ).fetchall()
-        return [self._row_to_triage_label(row) for row in rows]
+        return _evidence.list_triage_labels(self, question_id=question_id, label_source=label_source, contested=contested, adjudicated=adjudicated, limit=limit)
 
     def update_triage_label(
         self,
@@ -6796,40 +6476,7 @@ class ForecastLedger:
         verdict: str | None = None,
         materiality: str | None = None,
     ) -> dict[str, Any] | None:
-        sets: list[str] = []
-        params: list[Any] = []
-        if expert_label is not None:
-            sets.append("expert_label = ?")
-            params.append(expert_label)
-        if triage_label is not None:
-            sets.append("triage_label = ?")
-            params.append(triage_label)
-        if label_source is not None:
-            sets.append("label_source = ?")
-            params.append(label_source)
-        if contested is not None:
-            sets.append("contested = ?")
-            params.append(1 if contested else 0)
-        if alert_id is not None:
-            sets.append("alert_id = ?")
-            params.append(alert_id)
-        if adjudicated_at is not None:
-            sets.append("adjudicated_at = ?")
-            params.append(adjudicated_at)
-        if verdict is not None:
-            sets.append("verdict = ?")
-            params.append(verdict)
-        if materiality is not None:
-            sets.append("materiality = ?")
-            params.append(materiality)
-        if not sets:
-            return self.get_triage_label(label_id)
-        with self._connect() as conn:
-            conn.execute(
-                f"UPDATE triage_labels SET {', '.join(sets)} WHERE id = ?",
-                params + [label_id],
-            )
-        return self.get_triage_label(label_id)
+        return _evidence.update_triage_label(self, label_id=label_id, expert_label=expert_label, triage_label=triage_label, label_source=label_source, contested=contested, alert_id=alert_id, adjudicated_at=adjudicated_at, verdict=verdict, materiality=materiality)
 
     # ── Desk key/value state ─────────────────────────────────────────────────
     def get_desk_state(self, key: str) -> str | None:
@@ -7003,8 +6650,6 @@ class ForecastLedger:
                 alerted.append(question.id)
         return {"checked": checked, "under_saturated": under, "alerted": alerted}
 
-    # Desk-state key for the last-observed triage trust-gate mode.
-    _TRIAGE_GATE_MODE_KEY = "triage_gate_mode"
 
     def check_triage_gate_graduation(
         self,
@@ -7014,103 +6659,7 @@ class ForecastLedger:
         demote_margin: float = 0.05,
         now: str | None = None,
     ) -> dict[str, Any] | None:
-        """Detect a triage trust-gate MODE TRANSITION and alert on it once.
-
-        Builds the held-out trust gate, compares its mode ("auto" | "suggest_only")
-        to the last-persisted mode in ``desk_state``, and:
-
-        * persists the new mode whenever it changed (ATOMICALLY — see below);
-        * opens an INFO "triage labeler graduated" alert the first time the mode
-          flips to ``auto`` (auto-filter enabled), and a symmetric demotion alert if
-          it later drops back to ``suggest_only`` after having been ``auto``;
-        * fires NOTHING on the initial baseline observation of ``suggest_only`` (the
-          cold-start default — a labeler that has never cleared the bar is not news).
-
-        HYSTERESIS (anti-flap): once graduated to ``auto``, a dip that is merely
-        below the graduate bar but still within ``demote_margin`` of it does NOT
-        demote — demotion needs a real drop below ``threshold - demote_margin`` (the
-        auto-filter mode itself is decided live by :func:`build_triage_trust_gate`;
-        this band governs only the ALERT transition, so a small-sample accuracy
-        oscillation across the bar no longer spams graduated/demoted alerts).
-
-        Race- and dedup-safe: the mode is moved with an atomic compare-and-set
-        (:meth:`transition_desk_state`) so overlapping sweeps cannot both fire, and
-        alert creation is deduped against an already-open alert of the same
-        reason/scope. Deterministic + cheap (reads adjudicated labels, no model
-        call). Returns the transition dict (or ``None`` when nothing changed).
-        """
-        from forecasting.triage import build_triage_trust_gate
-
-        gate = build_triage_trust_gate(self, threshold=threshold, min_sample=min_sample)
-        raw_mode = gate["mode"]
-        accuracy = gate.get("observed_accuracy")
-
-        prev_observed = self.get_desk_state(self._TRIAGE_GATE_MODE_KEY)
-        # Hysteresis on the DEMOTE edge only: hold "auto" through a shallow dip.
-        demote_threshold = threshold - max(0.0, float(demote_margin))
-        if prev_observed == "auto" and raw_mode != "auto":
-            holds = isinstance(accuracy, (int, float)) and accuracy >= demote_threshold
-            mode = "auto" if holds else "suggest_only"
-        else:
-            mode = raw_mode
-
-        # Atomic compare-and-set: only the sweep that actually performs the
-        # transition proceeds; a concurrent sweep (or a steady state) is silent.
-        changed, prev = self.transition_desk_state(
-            self._TRIAGE_GATE_MODE_KEY, mode, now=now
-        )
-        if not changed:
-            return None
-
-        pct = f"{accuracy:.0%}" if isinstance(accuracy, (int, float)) else "n/a"
-        alert: AlertEvent | None = None
-        transition: str
-        if mode == "auto":
-            transition = "graduated"
-            reason = "triage_labeler_graduated"
-            if not self._has_open_alert(
-                reason=reason, scope_type="global", scope_ref="triage_labeler"
-            ):
-                alert = self.create_alert(
-                    severity="info",
-                    scope_type="global",
-                    scope_ref="triage_labeler",
-                    reason=reason,
-                    recommended_action=(
-                        f"triage labeler graduated: {gate['n']} adjudications at {pct} — "
-                        "auto-filter enabled. The autopilot may now auto-capture keep/skim "
-                        "candidates on a material change (previously suggest-only)."
-                    ),
-                )
-        elif prev == "auto":
-            # Only a DEMOTION from a previously-graduated state is worth an alert; a
-            # first-time suggest_only baseline (prev is None) is the cold start.
-            transition = "demoted"
-            reason = "triage_labeler_demoted"
-            if not self._has_open_alert(
-                reason=reason, scope_type="global", scope_ref="triage_labeler"
-            ):
-                alert = self.create_alert(
-                    severity="warning",
-                    scope_type="global",
-                    scope_ref="triage_labeler",
-                    reason=reason,
-                    recommended_action=(
-                        f"triage labeler demoted: accuracy {pct} over n={gate['n']} dropped below "
-                        f"the {threshold:.0%} bar — auto-filter disabled, back to suggest-only. "
-                        "Route disagreements to operator review (relabel_route) to rebuild trust."
-                    ),
-                )
-        else:
-            transition = "baseline"
-
-        return {
-            "transition": transition,
-            "mode": mode,
-            "previous_mode": prev,
-            "gate": gate,
-            "alert": alert,
-        }
+        return _evidence.check_triage_gate_graduation(self, threshold=threshold, min_sample=min_sample, demote_margin=demote_margin, now=now)
 
     # ── Signed calibration-bias loop ─────────────────────────────────────────
     # Measure whether committed binary forecasts run systematically over- or
@@ -15234,25 +14783,7 @@ class ForecastLedger:
         )
 
     def _row_to_evidence(self, row: sqlite3.Row) -> EvidenceItem:
-        return EvidenceItem(
-            id=row["id"],
-            question_id=row["question_id"],
-            captured_at=row["captured_at"],
-            available_at=row["available_at"],
-            source_url=row["source_url"],
-            source_name=row["source_name"],
-            source_type=row["source_type"],
-            published_at=row["published_at"],
-            claim=row["claim"],
-            summary=row["summary"],
-            reliability_rating=row["reliability_rating"],
-            relevance_rating=row["relevance_rating"],
-            stance=row["stance"],
-            claim_type=row["claim_type"],
-            snapshot_path=row["snapshot_path"],
-            admissible_for_backtests=bool(row["admissible_for_backtests"]),
-            metadata=json_loads(row["metadata"], {}),
-        )
+        return _evidence._row_to_evidence(self, row=row)
 
     def _row_to_ingest_candidate(self, row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)
@@ -17171,7 +16702,7 @@ class ForecastLedger:
         return snapshot.__dict__.copy()
 
     def _evidence_to_dict(self, item: EvidenceItem) -> dict[str, Any]:
-        return item.__dict__.copy()
+        return _evidence._evidence_to_dict(self, item=item)
 
     def _resolution_to_dict(self, resolution: Resolution) -> dict[str, Any]:
         return resolution.__dict__.copy()

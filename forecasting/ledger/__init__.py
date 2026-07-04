@@ -13,6 +13,7 @@ Carve order (see the delivery plan's Arc D):
   yet carved out.
 * ``watches``   — D1, the pattern-prover: watched-source lifecycle + constants.
 * ``questions`` — D2: question CRUD + spec-quality + per-forecast config.
+* ``evidence``  — D3: evidence lifecycle + freshness helpers + triage glue.
 
 The façade guarantees ``no caller changed``: `ForecastLedger` stays THE public
 class; each carved method keeps a one-line delegate on the class, so external
@@ -29,6 +30,7 @@ import sys as _sys
 from forecasting.ledger import core as _core
 from forecasting.ledger import watches as _watches  # noqa: F401  (submodule handle)
 from forecasting.ledger import questions as _questions  # noqa: F401  (submodule handle)
+from forecasting.ledger import evidence as _evidence  # noqa: F401  (submodule handle)
 from forecasting.ledger.core import *  # noqa: F401,F403  (re-export public surface)
 
 # ``core`` re-exports the watch constants it still uses (ROLES/TYPES); re-export
