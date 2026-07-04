@@ -8,6 +8,7 @@ import type { GatewayEvent } from './gatewayTypes.js'
 import { CircularBuffer } from './lib/circularBuffer.js'
 import { tuiEnvValue } from './lib/envAlias.js'
 import { runtimeEnvValue } from './lib/runtimeEnv.js'
+import { WireEvent } from './protocol/generated.js'
 
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096
@@ -149,7 +150,7 @@ export class GatewayClient extends EventEmitter {
   }
 
   private publish(ev: GatewayEvent) {
-    if (ev.type === 'gateway.ready') {
+    if (ev.type === WireEvent.GATEWAY_READY) {
       this.ready = true
 
       if (this.readyTimer) {
@@ -232,7 +233,7 @@ export class GatewayClient extends EventEmitter {
 
       this.pushLog(`[startup] timed out waiting for gateway.ready (python=${python}, cwd=${cwd})`)
       this.publish({
-        type: 'gateway.start_timeout',
+        type: WireEvent.GATEWAY_START_TIMEOUT,
         payload: { cwd, python, stderr_tail: stderrTail }
       })
     }, STARTUP_TIMEOUT_MS)
@@ -313,7 +314,7 @@ export class GatewayClient extends EventEmitter {
       const preview = text.trim().slice(0, MAX_LOG_PREVIEW) || '(empty frame)'
 
       this.pushLog(`[protocol] malformed websocket frame: ${preview}`)
-      this.publish({ type: 'gateway.protocol_error', payload: { preview } })
+      this.publish({ type: WireEvent.GATEWAY_PROTOCOL_ERROR, payload: { preview } })
     }
   }
 
@@ -335,7 +336,7 @@ export class GatewayClient extends EventEmitter {
         const preview = raw.trim().slice(0, MAX_LOG_PREVIEW) || '(empty line)'
 
         this.pushLog(`[protocol] malformed stdout: ${preview}`)
-        this.publish({ type: 'gateway.protocol_error', payload: { preview } })
+        this.publish({ type: WireEvent.GATEWAY_PROTOCOL_ERROR, payload: { preview } })
       }
     })
 
@@ -348,7 +349,7 @@ export class GatewayClient extends EventEmitter {
       }
 
       this.pushLog(line)
-      this.publish({ type: 'gateway.stderr', payload: { line } })
+      this.publish({ type: WireEvent.GATEWAY_STDERR, payload: { line } })
     })
 
     const ownedProc = this.proc
@@ -361,7 +362,7 @@ export class GatewayClient extends EventEmitter {
       const line = `[spawn] ${err.message}`
 
       this.pushLog(line)
-      this.publish({ type: 'gateway.stderr', payload: { line } })
+      this.publish({ type: WireEvent.GATEWAY_STDERR, payload: { line } })
       // Detach the reference up front so the late `exit` event for
       // this same child is identity-skipped (we don't want to emit
       // 'exit' twice). Then run the full teardown — clears the
@@ -391,7 +392,7 @@ export class GatewayClient extends EventEmitter {
       const line = `[startup] WebSocket API unavailable; cannot attach to ${safeAttachUrl}`
 
       this.pushLog(line)
-      this.publish({ type: 'gateway.stderr', payload: { line } })
+      this.publish({ type: WireEvent.GATEWAY_STDERR, payload: { line } })
       this.handleTransportExit(1, 'gateway websocket unavailable')
 
       return
@@ -467,7 +468,7 @@ export class GatewayClient extends EventEmitter {
         const line = '[gateway] websocket transport error'
 
         this.pushLog(line)
-        this.publish({ type: 'gateway.stderr', payload: { line } })
+        this.publish({ type: WireEvent.GATEWAY_STDERR, payload: { line } })
       })
     } catch (err) {
       this.pushLog(`[startup] failed to connect websocket gateway ${safeAttachUrl} (constructor error)`)

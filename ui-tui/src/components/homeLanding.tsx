@@ -23,7 +23,8 @@ import { modelLabel } from './appChrome.js'
 export const HOME_TIPS: readonly string[] = [
   'press p in Markets for prediction markets',
   'Ctrl+K opens the command palette — every action, one search',
-  'Ctrl+T focuses Today so you can act without leaving Home'
+  'Ctrl+T focuses Today so you can act without leaving Home',
+  'press h (or ?) on any view for its guide + shortcuts'
 ]
 
 // Rotate the tips deterministically by index, wrapping (and tolerating a

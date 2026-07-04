@@ -34,13 +34,13 @@ import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
-import { CheatSheetOverlay } from './cheatSheetOverlay.js'
 import { ConversationsRail } from './conversationsRail.js'
 import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
 import { FpsOverlay } from './fpsOverlay.js'
 import { HelpHint } from './helpHint.js'
+import { HelpOverlay } from './helpOverlay.js'
 import { HelpView } from './helpView.js'
 import { HomeStatusBar, HomeTip } from './homeLanding.js'
 import { HooksView } from './hooksView.js'
@@ -507,7 +507,7 @@ const GlobalChromePane = memo(function GlobalChromePane({
   }
 
   return (
-    <CheatSheetOverlay
+    <HelpOverlay
       activeView={activeNavKey(overlay)}
       cols={cols}
       onClose={() => patchOverlayState({ cheatSheet: false })}

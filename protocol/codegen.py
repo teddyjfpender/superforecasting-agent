@@ -42,6 +42,14 @@ def _ts_name(model: type[WireModel]) -> str:
     return model.TS_NAME or model.__name__
 
 
+def _event_const_name(wire_name: str) -> str:
+    """``'gateway.ready'`` -> ``'GATEWAY_READY'`` — a TS-safe SCREAMING_SNAKE key
+    for the ``WireEvent`` constant object (used as switch/case labels so no raw
+    event-name string literal survives in the TUI)."""
+
+    return "".join(ch if ch.isalnum() else "_" for ch in wire_name).upper()
+
+
 def _split_optional(annotation: Any) -> tuple[Any, bool]:
     """Return ``(inner, nullable)`` — strips a trailing ``| None`` union."""
 
@@ -132,6 +140,15 @@ def render() -> str:
     blocks.append(f"export type WireEventName = {union}")
     literal = ", ".join(f"'{name}'" for name in event_names)
     blocks.append(f"export const WIRE_EVENT_NAMES: readonly WireEventName[] = [{literal}]")
+
+    # Named constants — the ONLY place a raw event-name literal is allowed to
+    # live. Every gw.on/emit/switch-case in the TUI references `WireEvent.X`, so
+    # a renamed/removed event is a compile error, never a silent miss.
+    const_entries = sorted(
+        (_event_const_name(name), name) for name in event_names
+    )
+    const_lines = "\n".join(f"  {key}: '{name}'," for key, name in const_entries)
+    blocks.append(f"export const WireEvent = {{\n{const_lines}\n}} as const")
 
     for model in models:
         blocks.append(_interface(model))

@@ -8,7 +8,7 @@ import {
   applyDelegationStatus,
   toggleOverlaySection
 } from '../app/delegationStore.js'
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { $spawnDiff, $spawnHistory, clearDiffPair, type SpawnSnapshot } from '../app/spawnHistoryStore.js'
 import { useTurnSelector } from '../app/turnStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -870,8 +870,9 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
       return mode === 'detail' ? setMode('list') : closeWithCleanup()
     }
 
-    if (ch === '?') {
-      return patchOverlayState({ cheatSheet: true })
+    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+    if (ch === 'h' || ch === '?') {
+      return openHelpOverlay()
     }
 
     // Shared actions (both modes).
@@ -896,7 +897,8 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     }
 
     if (mode === 'detail') {
-      if (key.leftArrow || ch === 'h') {
+      // ← steps back to the list; `h` is now Help (handled above).
+      if (key.leftArrow) {
         return setMode('list')
       }
 
@@ -1015,6 +1017,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     { k: 'f', label: `Filter: ${FILTER_LABEL[filter]}`, run: () => setFilter(m => cycle(FILTER_ORDER, m)) },
     ...controlChips,
     ...(history.length > 0 ? [{ k: '[/]', label: `History ${historyIndex}/${history.length}` }] : []),
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: () => closeWithCleanup() }
   ]
 
@@ -1024,6 +1027,7 @@ export function AgentsOverlay({ gw, initialHistoryIndex = 0, onClose, t }: Agent
     { k: 'g/G', label: 'Top/Bot' },
     { k: '⎋', label: 'Back', run: () => setMode('list') },
     ...controlChips,
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: () => closeWithCleanup() }
   ]
 

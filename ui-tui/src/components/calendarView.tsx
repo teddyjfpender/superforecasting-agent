@@ -2,7 +2,7 @@ import { Box, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/in
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
 import { pct } from '../lib/forecastCharts.js'
@@ -552,8 +552,9 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
       return load(true)
     }
 
-    if (ch === '?') {
-      return patchOverlayState({ cheatSheet: true })
+    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+    if (ch === 'h' || ch === '?') {
+      return openHelpOverlay()
     }
 
     // Tab toggles modes — but ONLY when the grid is available (wide).
@@ -562,7 +563,9 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
     }
 
     if (effectiveMode === 'grid') {
-      if (key.leftArrow || ch === 'h') {
+      // ← moves the day focus left; `h` is now Help (handled above), so the vim
+      // alias is retired. `l` still moves right.
+      if (key.leftArrow) {
         return moveFocus(-1)
       }
 
@@ -744,6 +747,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
         { k: '⏎', label: 'Day', run: () => { if (focusEvents.length) {setPopoverOpen(true)} } },
         ...(wide ? [{ k: '⇥', label: 'Agenda', run: () => toggleMode() }] : []),
         { k: 'r', label: 'Refresh', run: () => load(true) },
+        { k: 'h', label: 'Help', run: openHelpOverlay },
         { k: 'q', label: 'Close', run: onClose }
       ]
     : [
@@ -753,6 +757,7 @@ export function CalendarView({ gw, onClose, t }: CalendarViewProps) {
         { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
         ...(wide ? [{ k: '⇥', label: 'Grid', run: () => toggleMode() }] : []),
         { k: 'r', label: 'Refresh', run: () => load(true) },
+        { k: 'h', label: 'Help', run: openHelpOverlay },
         { k: 'q', label: 'Close', run: onClose }
       ]
 

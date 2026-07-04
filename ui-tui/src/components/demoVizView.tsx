@@ -2,7 +2,7 @@ import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdo
 import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
-import { $globalModal } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay } from '../app/overlayStore.js'
 import type { ChartKind } from '../lib/viz/index.js'
 import type { Theme } from '../theme.js'
 
@@ -135,6 +135,11 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
       return onClose()
     }
 
+    // `h` opens the unified Help modal — consistent on every view.
+    if (ch === 'h') {
+      return openHelpOverlay()
+    }
+
     if (key.upArrow || ch === 'k' || key.wheelUp) {
       return scrollRef.current?.scrollBy?.(-2)
     }
@@ -196,6 +201,7 @@ export function DemoVizView({ onClose, t }: { onClose: () => void; t: Theme }) {
           { k: '↑↓', label: 'Scroll' },
           { k: 'PgUp/Dn', label: 'Page' },
           { k: 'g/G', label: 'Top/Bot' },
+          { k: 'h', label: 'Help', run: openHelpOverlay },
           { k: '⎋', label: 'Back', run: onClose }
         ]}
         disabled={globalModal}

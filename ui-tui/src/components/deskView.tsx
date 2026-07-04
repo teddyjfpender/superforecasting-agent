@@ -4,7 +4,7 @@ import { Fragment, memo, type ReactNode, type RefObject, useEffect, useMemo, use
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { ReviewSweepState } from '../app/interfaces.js'
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { $reviewSweep } from '../app/uiStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
@@ -1214,15 +1214,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       return switchTab(tab + 1)
     }
 
-    // `h` / `←` steps to the previous lens — `h` is back/left everywhere now
-    // (Alerts/Agents use it the same way); the `?` cheat-sheet replaced the old
-    // `h`-for-help so navigation stays consistent across views.
-    if (key.leftArrow || ch === 'h') {
+    // `←` steps to the previous lens (Tab/→ go forward). `h` is now Help on every
+    // view, so the old `h`-for-previous-lens alias is retired — ← still does it.
+    if (key.leftArrow) {
       return switchTab(tab - 1)
     }
 
-    if (ch === '?') {
-      return patchOverlayState({ cheatSheet: true })
+    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+    if (ch === 'h' || ch === '?') {
+      return openHelpOverlay()
     }
 
     // The Bench lens is a read-only scoreboard: no per-row selection, modal, update,
@@ -1583,6 +1583,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       ? [
           { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
           { k: 'r', label: 'Refresh', run: () => { setBenchLoading(true); gw.request<unknown>('forecast.bench', {}).then(raw => { const r = asRpcResult<ForecastBenchResponse>(raw); if (r) { setOverlayCache('forecast.bench', r); setBench(r) } setBenchLoading(false) }).catch(() => setBenchLoading(false)) } },
+          { k: 'h', label: 'Help', run: openHelpOverlay },
           { k: 'q', label: 'Close', run: onClose }
         ]
       : selectedIds.size > 0
@@ -1596,6 +1597,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             { k: 'Spc', label: 'Mark', run: () => toggleMark() },
             { k: '⇧↑↓', label: 'Extend' },
             { k: 'Esc', label: 'Clear', run: () => clearSelection() },
+            { k: 'h', label: 'Help', run: openHelpOverlay },
             { k: 'q', label: 'Close', run: onClose }
           ]
         : [
@@ -1609,6 +1611,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
             { k: 's', label: 'Settings', run: () => openSettings() },
             { k: 'o', label: 'Sort', run: () => onSortCycle() },
             { k: '/', label: 'Filter', run: () => { setSel(0); setQuery(''); setFiltering(true) } },
+            { k: 'h', label: 'Help', run: openHelpOverlay },
             { k: 'q', label: 'Close', run: onClose }
           ]
 

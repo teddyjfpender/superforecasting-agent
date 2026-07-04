@@ -4,6 +4,7 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import type {
   ForecastDashboardResponse,
   ForecastTriageContestedRow,
@@ -218,7 +219,21 @@ const mount = async (opts: MountOpts = {}) => {
 
 describe('AlertsView warning resolution', () => {
   afterEach(() => {
+    resetOverlayState()
     delete process.env.FORECAST_TUI_INLINE
+  })
+
+  it('h opens the unified Help modal — tree-nav keys do not', async () => {
+    resetOverlayState()
+    const m = await mount()
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // A tree-nav key ([ = previous tier) must NOT open Help.
+    await m.press('[')
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // h opens the unified Help modal.
+    await m.press('h')
+    expect(getOverlayState().cheatSheet).toBe(true)
+    m.cleanup()
   })
 
   it('renders the aggregate headline and the 4 tier nodes from forecast.warnings.aggregate', async () => {

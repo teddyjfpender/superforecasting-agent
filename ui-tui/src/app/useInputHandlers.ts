@@ -23,7 +23,7 @@ import { $chordPending, armChord, clearChord } from './chordStore.js'
 import { getHomeFocus, type HomePane, setHomePane } from './homeFocusStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
-import { canOpenGlobalOverlay, selectNavView } from './navRoutes.js'
+import { activeNavKey, canOpenGlobalOverlay, selectNavView } from './navRoutes.js'
 import { $isBlocked, $overlayState, patchOverlayState } from './overlayStore.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
@@ -80,6 +80,16 @@ export function shouldFallThroughForScroll(key: {
  */
 export const shouldSoftFocusToday = (chromeArmable: boolean, pane: HomePane, todayCount: number): boolean =>
   chromeArmable && pane === 'conversation' && todayCount > 0
+
+/**
+ * `h` is the unified Help key on every view. Over a fullscreen VIEW the view's
+ * own useInput raises Help; on the Home route the GLOBAL handler does — but ONLY
+ * when the composer is NOT focused (soft-focus sits on the Today/rail pane), so a
+ * message that starts with `h` (the common case) is never hijacked. `onHome` is
+ * `activeNavKey(overlay) === 'home'`; `canOpenOverlay` is `canOpenGlobalOverlay`.
+ */
+export const shouldOpenHomeHelp = (onHome: boolean, canOpenOverlay: boolean, pane: HomePane): boolean =>
+  onHome && canOpenOverlay && pane !== 'conversation'
 
 export function applyVoiceRecordResponse(
   response: null | VoiceRecordResponse,
@@ -334,6 +344,23 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     ) {
       cActions.clearIn()
       // Opening the cheat-sheet is itself the discovery act — retire the hint.
+      dismissFirstRunHint()
+
+      return patchOverlayState({ cheatSheet: true })
+    }
+
+    // `h` opens the SAME unified Help modal — the primary, consistent help key.
+    // Over a fullscreen VIEW the view's own useInput raises it (so `h` yields to
+    // that view's chat/filter text modes first); HERE we cover ONLY the Home
+    // route, and only when the composer is NOT focused (soft-focus sits on the
+    // Today / rail pane). That keeps a message that starts with `h` — the common
+    // case — from ever being hijacked, while `h` still summons help off-composer.
+    if (
+      ch === 'h' &&
+      !key.ctrl &&
+      !key.meta &&
+      shouldOpenHomeHelp(activeNavKey(overlay) === 'home', canOpenGlobalOverlay(overlay), getHomeFocus().pane)
+    ) {
       dismissFirstRunHint()
 
       return patchOverlayState({ cheatSheet: true })

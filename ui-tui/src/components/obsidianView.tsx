@@ -2,7 +2,7 @@ import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdo
 import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ObsidianNote,
@@ -15,6 +15,7 @@ import { highlightMarkdownLine } from '../lib/markdownEditorHighlight.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { sortIndicator, sortRows, useTableSort } from '../lib/tableSort.js'
+import { WireEvent } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
@@ -982,7 +983,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       const p = ev.payload ?? {}
 
       switch (ev.type as string) {
-        case 'error':
+        case WireEvent.ERROR:
           setChat(c =>
             c
               ? { ...c, busy: false, status: '', turns: [...c.turns, { role: 'system', text: `error: ${p.message ?? 'unknown error'}` }] }
@@ -991,7 +992,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
           return
 
-        case 'message.complete':
+        case WireEvent.MESSAGE_COMPLETE:
           setChat(c => {
             if (!c) {
               return c
@@ -1011,44 +1012,44 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
 
           return
 
-        case 'message.delta':
+        case WireEvent.MESSAGE_DELTA:
           setChat(c => (c ? { ...c, status: 'writing', stream: c.stream + String(p.text ?? '') } : c))
 
           return
 
-        case 'message.start':
+        case WireEvent.MESSAGE_START:
           setChat(c => (c ? { ...c, status: 'writing', stream: '' } : c))
 
           return
 
-        case 'reasoning.available':
+        case WireEvent.REASONING_AVAILABLE:
 
-        case 'reasoning.delta':
+        case WireEvent.REASONING_DELTA:
           setChat(c => (c ? { ...c, status: 'reasoning' } : c))
 
           return
 
-        case 'status.update':
+        case WireEvent.STATUS_UPDATE:
           setChat(c => (c ? { ...c, status: String(p.text || p.kind || c.status) } : c))
 
           return
 
-        case 'thinking.delta':
+        case WireEvent.THINKING_DELTA:
           setChat(c => (c ? { ...c, status: 'thinking' } : c))
 
           return
 
-        case 'tool.complete':
+        case WireEvent.TOOL_COMPLETE:
           setChat(c => (c ? { ...c, status: `${p.name ?? 'tool'} ✓`, todos: parseTodos(p.todos) ?? c.todos } : c))
 
           return
 
-        case 'tool.generating':
+        case WireEvent.TOOL_GENERATING:
           setChat(c => (c ? { ...c, status: `drafting ${p.name ?? 'tool'}` } : c))
 
           return
 
-        case 'tool.start':
+        case WireEvent.TOOL_START:
           setChat(c => (c ? { ...c, status: `running ${p.name ?? 'tool'}`, todos: parseTodos(p.todos) ?? c.todos } : c))
 
           return
@@ -1303,6 +1304,12 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       return onClose()
     }
 
+    // `h` opens the unified Help modal — consistent on every view. Nav mode only
+    // (the edit/chat/search/prompt guards above already returned).
+    if (ch === 'h') {
+      return openHelpOverlay()
+    }
+
     // Docs kind tabs: 1 Markdown (this view) · 2 LaTeX. Only in nav mode (the
     // edit/chat/search/prompt guards above already returned).
     if (onSelectKind && (ch === '1' || ch === '2')) {
@@ -1396,8 +1403,9 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
       return focus === 'list' ? listActivate() : openFocusedLink()
     }
 
-    // ←/→ move focus across panes: notes ↔ outline ↔ doc.
-    if (key.leftArrow || ch === 'h') {
+    // ←/→ move focus across panes: notes ↔ outline ↔ doc. `h` is now Help
+    // (handled above), so ← is the sole "move left"; `l` still moves right.
+    if (key.leftArrow) {
       return moveFocus(-1)
     }
 
@@ -2263,6 +2271,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
             { k: 'r', label: 'Refresh', run: () => load(true) }
           ]
 
+  actions.push({ k: 'h', label: 'Help', run: openHelpOverlay })
   actions.push({ k: 'q', label: 'Close', run: onClose })
 
   // The pane-nav keys now ride in the ONE chips row (the separate prose nav row

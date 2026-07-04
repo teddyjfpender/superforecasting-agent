@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { applyVoiceRecordResponse, shouldFallThroughForScroll, shouldSoftFocusToday } from '../app/useInputHandlers.js'
+import { applyVoiceRecordResponse, shouldFallThroughForScroll, shouldOpenHomeHelp, shouldSoftFocusToday } from '../app/useInputHandlers.js'
 
 const baseKey = {
   downArrow: false,
@@ -58,6 +58,25 @@ describe('shouldSoftFocusToday — the landing Today panel borrows ↑↓/⏎ on
   it('is INACTIVE when the rail or full Ctrl+T Today pane owns the keyboard', () => {
     expect(shouldSoftFocusToday(true, 'rail', 3)).toBe(false)
     expect(shouldSoftFocusToday(true, 'today', 3)).toBe(false)
+  })
+})
+
+describe('shouldOpenHomeHelp — `h` opens Help on Home ONLY off the composer (soft-focus rules)', () => {
+  it('does NOT open while the composer is focused — so a message starting with `h` types normally', () => {
+    expect(shouldOpenHomeHelp(true, true, 'conversation')).toBe(false)
+  })
+
+  it('opens when soft-focus sits on the Today or rail pane (composer deactivated)', () => {
+    expect(shouldOpenHomeHelp(true, true, 'today')).toBe(true)
+    expect(shouldOpenHomeHelp(true, true, 'rail')).toBe(true)
+  })
+
+  it('does NOT open when off the Home route — a fullscreen view raises Help itself', () => {
+    expect(shouldOpenHomeHelp(false, true, 'today')).toBe(false)
+  })
+
+  it('does NOT open while a blocking prompt/picker owns the keyboard (canOpenOverlay false)', () => {
+    expect(shouldOpenHomeHelp(true, false, 'today')).toBe(false)
   })
 })
 

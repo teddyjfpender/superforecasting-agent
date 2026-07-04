@@ -30,11 +30,31 @@ def test_render_is_deterministic():
 def test_render_carries_version_and_event_names():
     out = codegen.render()
     assert "export const PROTOCOL_VERSION = 1" in out
-    # The event-name union is sorted and spans every registered family (pm + jobs).
-    assert (
-        "export type WireEventName = "
-        "'jobs.complete' | 'jobs.error' | 'jobs.progress' | 'pm.tick'" in out
-    )
+    # The event-name union is sorted and spans every registered family (A2 added
+    # the gateway/turn/tool/prompt/subagent/voice/desk/markets/warnings families).
+    assert "export type WireEventName = 'approval.request' | " in out
+    for name in ("'pm.tick'", "'review.sweep'", "'markets.model.progress'",
+                 "'forecast.warnings.automode.progress'", "'error'"):
+        assert name in out
     # A representative interface with sorted members and a nullable field.
     assert "export interface PMOrderBookDTO {" in out
     assert "  best_bid: null | number" in out
+
+
+def test_render_emits_wire_event_const_object():
+    """Every event name is a `WireEvent.<KEY>` constant — the ONLY place a raw
+    event-name literal is allowed. The TUI references these constants so a
+    renamed/removed event is a compile error, never a silent miss."""
+
+    out = codegen.render()
+    assert "export const WireEvent = {" in out
+    assert "} as const" in out
+    # SCREAMING_SNAKE keys map to the exact wire names.
+    for key, name in (
+        ("GATEWAY_READY", "gateway.ready"),
+        ("REVIEW_SWEEP", "review.sweep"),
+        ("MARKETS_MODEL_PROGRESS", "markets.model.progress"),
+        ("FORECAST_WARNINGS_AUTOMODE_ERROR", "forecast.warnings.automode.error"),
+        ("ERROR", "error"),
+    ):
+        assert f"  {key}: '{name}'," in out

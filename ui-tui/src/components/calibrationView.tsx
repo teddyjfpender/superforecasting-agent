@@ -2,7 +2,7 @@ import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdo
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastCalibrationBias,
@@ -244,6 +244,11 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
       return onClose()
     }
 
+    // `h` opens the unified Help modal — consistent on every view.
+    if (ch === 'h') {
+      return openHelpOverlay()
+    }
+
     if (ch === 'r') {
       return load(true)
     }
@@ -337,6 +342,7 @@ export function CalibrationView({ gw, onClose, t }: CalibrationViewProps) {
     { k: 'PgUp/Dn', label: 'Page' },
     { k: 'g/G', label: 'Top/Bot' },
     { k: 'r', label: 'Refresh', run: () => load(true) },
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
 

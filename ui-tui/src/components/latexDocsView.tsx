@@ -2,7 +2,7 @@ import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay } from '../app/overlayStore.js'
 import {
   commandExists,
   ghAuthStatus,
@@ -463,6 +463,12 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
       return onClose()
     }
 
+    // `h` opens the unified Help modal — consistent on every view. Nav mode only
+    // (the new-doc / git prompt guards above already returned).
+    if (ch === 'h') {
+      return openHelpOverlay()
+    }
+
     // Docs kind tabs: 1 Markdown · 2 LaTeX (this view).
     if (onSelectKind && (ch === '1' || ch === '2')) {
       return onSelectKind(ch === '2' ? 'latex' : 'markdown')
@@ -535,7 +541,8 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     }
 
     if (focus === 'reader') {
-      if (key.escape || key.leftArrow || ch === 'h') {
+      // ← / Esc return to the list; `h` is now Help (handled above).
+      if (key.escape || key.leftArrow) {
         return setFocus('list')
       }
 
@@ -635,6 +642,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     ...(tools.gh ? [{ k: 'G', label: 'GitHub repo', run: () => setPrompt({ mode: 'github', value: dir.split('/').filter(Boolean).pop() || 'docs' }) }] : []),
     ...(tools.git ? [{ k: 'c', label: 'Connect remote', run: () => setPrompt({ mode: 'remote', value: '' }) }] : []),
     { k: 'r', label: 'Refresh', run: () => { reload(); void refreshGit(); setFlash('refreshed') } },
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
 
@@ -882,6 +890,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
               { k: 'n', label: 'New', run: () => setPrompt({ mode: 'newdoc', value: '' }) },
               ...(tools.git ? [{ k: 'P', label: 'Push', run: () => runSync('commit + push', () => gitCommitPush(dir, 'LaTeX docs sync from Outrider')) }] : [])
             ]),
+        { k: 'h', label: 'Help', run: openHelpOverlay },
         { k: 'q', label: 'Close', run: onClose }
       ]
 

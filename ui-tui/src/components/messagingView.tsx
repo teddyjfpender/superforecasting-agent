@@ -2,7 +2,7 @@ import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { ICON, statusGlyph, type StatusKind } from '../lib/icons.js'
 import { openAttachment } from '../lib/openAttachment.js'
 import {
@@ -763,6 +763,12 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
       return onClose()
     }
 
+    // `h` opens the unified Help modal — consistent on every view (list focus;
+    // the setup / new-chat / contact / composer guards above already returned).
+    if (ch === 'h') {
+      return openHelpOverlay()
+    }
+
     // Setup is only reachable when not connected — so an accidental 's' can't
     // relaunch onboarding mid-session.
     if (ch === 's' && !connected) {
@@ -1013,7 +1019,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
           </Box>
         </Box>
         <Box flexDirection="column" flexShrink={0} marginTop={1}>
-          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'q', label: 'Close', run: onClose }]} disabled={setup || globalModal} t={t} />
+          <FooterChips chips={[{ k: 's', label: 'Set up', run: () => setSetup(true) }, { k: 'h', label: 'Help', run: openHelpOverlay }, { k: 'q', label: 'Close', run: onClose }]} disabled={setup || globalModal} t={t} />
           {flash ? (
             <Text color={t.color.accent} wrap="truncate-end">
               {flash}
@@ -1193,6 +1199,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
         { k: 'r', label: 'Reconnect', run: reconnect },
         { k: 'R', label: 'Restart', run: restartDaemonAndReconnect },
         ...(connected ? [] : [{ k: 's', label: 'Set up', run: () => setSetup(true) }]),
+        { k: 'h', label: 'Help', run: openHelpOverlay },
         { k: 'q', label: 'Close', run: onClose }
       ]
 

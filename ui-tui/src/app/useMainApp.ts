@@ -27,6 +27,7 @@ import { runtimeEnvValue } from '../lib/runtimeEnv.js'
 import { terminalParityHints } from '../lib/terminalParity.js'
 import { buildToolTrailLine, sameToolTrailGroup, toolTrailLabel } from '../lib/text.js'
 import { estimatedMsgHeight, messageHeightKey } from '../lib/virtualHeights.js'
+import { WireEvent } from '../protocol/generated.js'
 import type { Msg, PanelSection, SlashCatalog } from '../types.js'
 
 import { createGatewayEventHandler } from './createGatewayEventHandler.js'
@@ -724,18 +725,18 @@ export function useMainApp(gw: GatewayClient) {
 
     gw.on('event', handler)
     gw.on('exit', exitHandler)
-    gw.on('markets.model.progress', onMarketProgress)
-    gw.on('markets.model.complete', onMarketComplete)
-    gw.on('markets.model.error', onMarketError)
+    gw.on(WireEvent.MARKETS_MODEL_PROGRESS, onMarketProgress)
+    gw.on(WireEvent.MARKETS_MODEL_COMPLETE, onMarketComplete)
+    gw.on(WireEvent.MARKETS_MODEL_ERROR, onMarketError)
     gw.drain()
 
     // entry.tsx's setupGracefulExit handles process cleanup on real exit.
     return () => {
       gw.off('event', handler)
       gw.off('exit', exitHandler)
-      gw.off?.('markets.model.progress', onMarketProgress)
-      gw.off?.('markets.model.complete', onMarketComplete)
-      gw.off?.('markets.model.error', onMarketError)
+      gw.off?.(WireEvent.MARKETS_MODEL_PROGRESS, onMarketProgress)
+      gw.off?.(WireEvent.MARKETS_MODEL_COMPLETE, onMarketComplete)
+      gw.off?.(WireEvent.MARKETS_MODEL_ERROR, onMarketError)
     }
   }, [gw, sys])
 

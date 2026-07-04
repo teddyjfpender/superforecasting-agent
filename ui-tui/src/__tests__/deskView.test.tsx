@@ -332,10 +332,34 @@ describe('DeskView (redesigned forecast desk)', () => {
     // The first (thesis) tab is active → its member forecast renders in the list.
     // The dense QUESTION column truncates the title, so assert the visible prefix.
     expect(text).toContain('May 2026')
-    // Footer chips.
+    // Footer chips — including the always-present Help chip (right before Close).
     expect(text).toContain('Lens')
     expect(text).toContain('Open')
     expect(text).toContain('Filter')
+    expect(text).toContain('Help')
+    desk.cleanup()
+  })
+
+  it('h (and ? alias) open the unified Help modal — and ← still switches lens', async () => {
+    resetOverlayState()
+    const desk = await mountDesk(120, fixture())
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // ← is the remapped incumbent (previous lens). It must NOT open Help.
+    await desk.press('[D')
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // h opens the unified Help modal.
+    await desk.press('h')
+    expect(getOverlayState().cheatSheet).toBe(true)
+    resetOverlayState()
+    desk.cleanup()
+  })
+
+  it('? aliases to the same Help modal on the desk', async () => {
+    resetOverlayState()
+    const desk = await mountDesk(120, fixture())
+    await desk.press('?')
+    expect(getOverlayState().cheatSheet).toBe(true)
+    resetOverlayState()
     desk.cleanup()
   })
 

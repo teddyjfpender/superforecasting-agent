@@ -2,7 +2,7 @@ import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'
 import { FEED_CATEGORIES } from '../content/newsFeedCatalog.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -482,6 +482,12 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
       return onClose()
     }
 
+    // `h` opens the unified Help modal — consistent on every view. Nav mode only
+    // (the `adding` + `searchMode` text guards above already returned).
+    if (ch === 'h') {
+      return openHelpOverlay()
+    }
+
     if (key.escape) {
       // Esc backs out of an active search first, then leaves the view.
       if (searchActive) {
@@ -795,6 +801,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
     { k: '⏎', label: 'Open' },
     { k: 'a', label: 'Add feed', run: openModal },
     { k: 'r', label: 'Refresh', run: () => { setFlash('refreshing…'); void refresh(true) } },
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
 

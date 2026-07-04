@@ -2,7 +2,7 @@ import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdo
 import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
-import { $globalModal } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
@@ -173,6 +173,11 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
       }
 
       return onClose()
+    }
+
+    // `h` opens the unified Help modal — consistent on every view.
+    if (ch === 'h') {
+      return openHelpOverlay()
     }
 
     if (key.tab) {
@@ -400,6 +405,7 @@ export function HooksView({ gw, onClose, t }: { gw?: GatewayClient; onClose: () 
     { k: 'n', label: 'New rule' },
     ...(current?.is_user ? [{ k: 'E', label: 'Edit' }, { k: 'x', label: 'Remove' }] : []),
     { k: 'r', label: reference ? 'Rules' : 'Reference' },
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'Esc', label: 'Back' },
   ]
 

@@ -3,6 +3,8 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
+import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
+
 // Smoke tests for the three "serious product" views — Markets, News, and
 // Messaging. They ship without a live data source wired yet, so these assert
 // the SCAFFOLD: each renders its title, a connection-status hint, the column /
@@ -168,6 +170,20 @@ describe('MarketsView', () => {
     expect(text).toContain('PROVIDERS')
     expect(text).toContain('Yahoo Finance')
     expect(text).toContain('CATEGORIES')
+  })
+
+  it('h opens the unified Help modal — and ← (venue/expand nav) does not', async () => {
+    resetOverlayState()
+    const m = await renderMarkets()
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // A left-arrow is view navigation, never Help.
+    await m.press(`${ESC}[D`)
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // h opens the unified Help modal (Markets already routed h here; now shared).
+    await m.press('h')
+    expect(getOverlayState().cheatSheet).toBe(true)
+    resetOverlayState()
+    m.cleanup()
   })
 
   it('lists Prediction Markets in add-data and enabling it lands on the Data tape Prediction section', async () => {

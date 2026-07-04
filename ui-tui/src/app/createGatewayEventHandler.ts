@@ -15,6 +15,7 @@ import { rpcErrorMessage } from '../lib/rpc.js'
 import { topLevelSubagents } from '../lib/subagentTree.js'
 import { formatToolCall, stripAnsi } from '../lib/text.js'
 import { resolveVoiceSubmission } from '../lib/voiceIntent.js'
+import { WireEvent } from '../protocol/generated.js'
 import { fromSkin } from '../theme.js'
 import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 
@@ -359,18 +360,18 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
 
     switch (ev.type) {
-      case 'gateway.ready':
+      case WireEvent.GATEWAY_READY:
         handleReady(ev.payload?.skin)
 
         return
 
-      case 'skin.changed':
+      case WireEvent.SKIN_CHANGED:
         if (ev.payload) {
           applySkin(ev.payload)
         }
 
         return
-      case 'session.info': {
+      case WireEvent.SESSION_INFO: {
         const info = ev.payload
 
         patchUiState(state => ({
@@ -385,7 +386,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'thinking.delta': {
+      case WireEvent.THINKING_DELTA: {
         const text = ev.payload?.text
 
         if (text !== undefined) {
@@ -400,11 +401,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'message.start':
+      case WireEvent.MESSAGE_START:
         turnController.startMessage()
 
         return
-      case 'status.update': {
+      case WireEvent.STATUS_UPDATE: {
         const p = ev.payload
 
         if (!p?.text) {
@@ -453,7 +454,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'gateway.stderr': {
+      case WireEvent.GATEWAY_STDERR: {
         const line = String(ev.payload.line).slice(0, 120)
 
         turnController.pushActivity(line, 'info')
@@ -461,7 +462,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'browser.progress': {
+      case WireEvent.BROWSER_PROGRESS: {
         const message = String(ev.payload?.message ?? '').trim()
 
         if (message) {
@@ -471,7 +472,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'voice.status': {
+      case WireEvent.VOICE_STATUS: {
         // Continuous VAD loop reports its internal state so the status bar
         // can show listening / transcribing / idle without polling.
         const state = String(ev.payload?.state ?? '')
@@ -499,7 +500,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'voice.transcript': {
+      case WireEvent.VOICE_TRANSCRIPT: {
         // CLI parity: the 3-strikes silence detector flipped off automatically.
         // Mirror that on the UI side and tell the user why the mode is off.
         if (ev.payload?.no_speech_limit) {
@@ -535,7 +536,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'gateway.start_timeout': {
+      case WireEvent.GATEWAY_START_TIMEOUT: {
         const { cwd, python, stderr_tail: stderrTail } = ev.payload ?? {}
         const trace = python || cwd ? ` · ${String(python || '')} ${String(cwd || '')}`.trim() : ''
 
@@ -564,7 +565,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'gateway.protocol_error':
+      case WireEvent.GATEWAY_PROTOCOL_ERROR:
         setStatus('protocol warning')
         restoreStatusAfter(4000)
 
@@ -579,38 +580,38 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
 
-      case 'reasoning.delta':
+      case WireEvent.REASONING_DELTA:
         if (ev.payload?.text) {
           turnController.recordReasoningDelta(ev.payload.text)
         }
 
         return
 
-      case 'reasoning.available':
+      case WireEvent.REASONING_AVAILABLE:
         turnController.recordReasoningAvailable(String(ev.payload?.text ?? ''))
 
         return
 
-      case 'tool.progress':
+      case WireEvent.TOOL_PROGRESS:
         if (ev.payload?.preview && ev.payload.name) {
           turnController.recordToolProgress(ev.payload.name, ev.payload.preview)
         }
 
         return
 
-      case 'tool.generating':
+      case WireEvent.TOOL_GENERATING:
         if (ev.payload?.name) {
           turnController.pushTrail(`drafting ${ev.payload.name}…`)
         }
 
         return
 
-      case 'tool.start':
+      case WireEvent.TOOL_START:
         turnController.recordTodos(ev.payload.todos)
         turnController.recordToolStart(ev.payload.tool_id, ev.payload.name ?? 'tool', ev.payload.context ?? '')
 
         return
-      case 'tool.complete': {
+      case WireEvent.TOOL_COMPLETE: {
         const inlineDiffText =
           ev.payload.inline_diff && getUiState().inlineDiffs ? stripAnsi(String(ev.payload.inline_diff)).trim() : ''
 
@@ -636,14 +637,14 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'clarify.request':
+      case WireEvent.CLARIFY_REQUEST:
         raisePrompt({
           clarify: { choices: ev.payload.choices, question: ev.payload.question, requestId: ev.payload.request_id }
         })
         setStatus('waiting for input…')
 
         return
-      case 'approval.request': {
+      case WireEvent.APPROVAL_REQUEST: {
         const description = String(ev.payload.description ?? 'dangerous command')
 
         raisePrompt({ approval: { command: String(ev.payload.command ?? ''), description } })
@@ -652,13 +653,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'sudo.request':
+      case WireEvent.SUDO_REQUEST:
         raisePrompt({ sudo: { requestId: ev.payload.request_id } })
         setStatus('sudo password needed')
 
         return
 
-      case 'secret.request':
+      case WireEvent.SECRET_REQUEST:
         raisePrompt({
           secret: { envVar: ev.payload.env_var, prompt: ev.payload.prompt, requestId: ev.payload.request_id }
         })
@@ -666,7 +667,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
 
-      case 'background.complete':
+      case WireEvent.BACKGROUND_COMPLETE:
         dropBgTask(ev.payload.task_id)
         sys(`[bg ${ev.payload.task_id}] ${ev.payload.text}`)
         // A background process just finished → the live-agent count likely dropped;
@@ -674,7 +675,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         pullAgentsActive()
 
         return
-      case 'cron.fired': {
+      case WireEvent.CRON_FIRED: {
         // The gateway's background cron ticker ran and fired N scheduled jobs
         // (nightly self-checks / reforecast sweeps). Surface it as a one-line
         // transient toast — the status line flashes it, then falls back to
@@ -695,7 +696,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'review.sweep': {
+      case WireEvent.REVIEW_SWEEP: {
         // The gateway due-sweeper acted on due-ness (mirrors cron.fired). 'started'
         // arms a running marker (with the due count) that the Desk turns into a
         // spinner; 'done' clears it, flashes a transient toast built from the REAL
@@ -728,7 +729,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'review.summary': {
+      case WireEvent.REVIEW_SUMMARY: {
         // Self-improvement background review emitted a persistent summary
         // of what it saved to memory/skills. Surface it as a system line
         // in the transcript so it never gets lost to a transient status
@@ -743,7 +744,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'subagent.spawn_requested':
+      case WireEvent.SUBAGENT_SPAWN_REQUESTED:
         // Child built but not yet running (waiting on ThreadPoolExecutor slot).
         // Preserve completed state if a later event races in before this one.
         turnController.upsertSubagent(ev.payload, c => (isTerminalStatus(c.status) ? {} : { status: 'queued' }))
@@ -758,11 +759,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
 
-      case 'subagent.start':
+      case WireEvent.SUBAGENT_START:
         turnController.upsertSubagent(ev.payload, c => (isTerminalStatus(c.status) ? {} : { status: 'running' }))
 
         return
-      case 'subagent.thinking': {
+      case WireEvent.SUBAGENT_THINKING: {
         const text = String(ev.payload.text ?? '').trim()
 
         if (!text) {
@@ -783,7 +784,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'subagent.tool': {
+      case WireEvent.SUBAGENT_TOOL: {
         const line = formatToolCall(
           ev.payload.tool_name ?? 'delegate_task',
           ev.payload.tool_preview ?? ev.payload.text ?? ''
@@ -801,7 +802,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'subagent.progress': {
+      case WireEvent.SUBAGENT_PROGRESS: {
         const text = String(ev.payload.text ?? '').trim()
 
         if (!text) {
@@ -820,7 +821,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'subagent.complete':
+      case WireEvent.SUBAGENT_COMPLETE:
         turnController.upsertSubagent(
           ev.payload,
           c => ({
@@ -833,11 +834,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
 
-      case 'message.delta':
+      case WireEvent.MESSAGE_DELTA:
         turnController.recordMessageDelta(ev.payload ?? {})
 
         return
-      case 'message.complete': {
+      case WireEvent.MESSAGE_COMPLETE: {
         const { finalMessages, finalText, wasInterrupted } = turnController.recordMessageComplete(ev.payload ?? {})
 
         if (!wasInterrupted) {
@@ -858,7 +859,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       }
 
-      case 'error':
+      case WireEvent.ERROR:
         turnController.recordError()
 
         {

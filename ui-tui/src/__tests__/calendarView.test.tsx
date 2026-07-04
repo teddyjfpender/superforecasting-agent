@@ -255,6 +255,18 @@ describe('CalendarView (grid + agenda redesign)', () => {
     cal.cleanup()
   })
 
+  it('h opens the unified Help modal — and ← still moves the day focus (remap kept)', async () => {
+    const cal = await mount(140, liveFixture())
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // ← is the remapped incumbent (grid day-focus). It must NOT open Help.
+    await cal.press('[D')
+    expect(getOverlayState().cheatSheet).toBe(false)
+    // h opens the unified Help modal.
+    await cal.press('h')
+    expect(getOverlayState().cheatSheet).toBe(true)
+    cal.cleanup()
+  })
+
   it('forces AGENDA on a narrow terminal (grid never renders)', async () => {
     const cal = await mount(80, liveFixture())
     const text = cal.text()

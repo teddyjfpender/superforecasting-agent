@@ -1,3 +1,4 @@
+import { WireEvent } from './protocol/generated.js'
 import type { SessionInfo, SlashCategory, SubagentStatus, Usage } from './types.js'
 
 export interface GatewaySkin {
@@ -1802,33 +1803,33 @@ export interface SpawnTreeLoadResponse {
 }
 
 export type GatewayEvent =
-  | { payload?: { skin?: GatewaySkin }; session_id?: string; type: 'gateway.ready' }
-  | { payload?: GatewaySkin; session_id?: string; type: 'skin.changed' }
-  | { payload: SessionInfo; session_id?: string; type: 'session.info' }
-  | { payload?: { text?: string }; session_id?: string; type: 'thinking.delta' }
-  | { payload?: undefined; session_id?: string; type: 'message.start' }
-  | { payload?: { kind?: string; text?: string }; session_id?: string; type: 'status.update' }
-  | { payload?: { state?: 'idle' | 'listening' | 'transcribing' }; session_id?: string; type: 'voice.status' }
-  | { payload?: { no_speech_limit?: boolean; text?: string }; session_id?: string; type: 'voice.transcript' }
-  | { payload: { line: string }; session_id?: string; type: 'gateway.stderr' }
+  | { payload?: { skin?: GatewaySkin }; session_id?: string; type: typeof WireEvent.GATEWAY_READY }
+  | { payload?: GatewaySkin; session_id?: string; type: typeof WireEvent.SKIN_CHANGED }
+  | { payload: SessionInfo; session_id?: string; type: typeof WireEvent.SESSION_INFO }
+  | { payload?: { text?: string }; session_id?: string; type: typeof WireEvent.THINKING_DELTA }
+  | { payload?: undefined; session_id?: string; type: typeof WireEvent.MESSAGE_START }
+  | { payload?: { kind?: string; text?: string }; session_id?: string; type: typeof WireEvent.STATUS_UPDATE }
+  | { payload?: { state?: 'idle' | 'listening' | 'transcribing' }; session_id?: string; type: typeof WireEvent.VOICE_STATUS }
+  | { payload?: { no_speech_limit?: boolean; text?: string }; session_id?: string; type: typeof WireEvent.VOICE_TRANSCRIPT }
+  | { payload: { line: string }; session_id?: string; type: typeof WireEvent.GATEWAY_STDERR }
   | {
-      payload?: { level?: 'info' | 'warn' | 'error'; message?: string }
+      payload?: { level?: 'error' | 'info' | 'warn'; message?: string }
       session_id?: string
-      type: 'browser.progress'
+      type: typeof WireEvent.BROWSER_PROGRESS
     }
   | {
       payload?: { cwd?: string; python?: string; stderr_tail?: string }
       session_id?: string
-      type: 'gateway.start_timeout'
+      type: typeof WireEvent.GATEWAY_START_TIMEOUT
     }
-  | { payload?: { preview?: string }; session_id?: string; type: 'gateway.protocol_error' }
-  | { payload?: { text?: string }; session_id?: string; type: 'reasoning.delta' | 'reasoning.available' }
-  | { payload: { name?: string; preview?: string }; session_id?: string; type: 'tool.progress' }
-  | { payload: { name?: string }; session_id?: string; type: 'tool.generating' }
+  | { payload?: { preview?: string }; session_id?: string; type: typeof WireEvent.GATEWAY_PROTOCOL_ERROR }
+  | { payload?: { text?: string }; session_id?: string; type: typeof WireEvent.REASONING_DELTA | typeof WireEvent.REASONING_AVAILABLE }
+  | { payload: { name?: string; preview?: string }; session_id?: string; type: typeof WireEvent.TOOL_PROGRESS }
+  | { payload: { name?: string }; session_id?: string; type: typeof WireEvent.TOOL_GENERATING }
   | {
       payload: { context?: string; name?: string; tool_id: string; todos?: unknown[] }
       session_id?: string
-      type: 'tool.start'
+      type: typeof WireEvent.TOOL_START
     }
   | {
       payload: {
@@ -1841,19 +1842,19 @@ export type GatewayEvent =
         todos?: unknown[]
       }
       session_id?: string
-      type: 'tool.complete'
+      type: typeof WireEvent.TOOL_COMPLETE
     }
   | {
       payload: { choices: string[] | null; question: string; request_id: string }
       session_id?: string
-      type: 'clarify.request'
+      type: typeof WireEvent.CLARIFY_REQUEST
     }
-  | { payload: { command: string; description: string }; session_id?: string; type: 'approval.request' }
-  | { payload: { request_id: string }; session_id?: string; type: 'sudo.request' }
-  | { payload: { env_var: string; prompt: string; request_id: string }; session_id?: string; type: 'secret.request' }
-  | { payload: { task_id: string; text: string }; session_id?: string; type: 'background.complete' }
-  | { payload?: { text?: string }; session_id?: string; type: 'review.summary' }
-  | { payload?: { count?: number }; session_id?: string; type: 'cron.fired' }
+  | { payload: { command: string; description: string }; session_id?: string; type: typeof WireEvent.APPROVAL_REQUEST }
+  | { payload: { request_id: string }; session_id?: string; type: typeof WireEvent.SUDO_REQUEST }
+  | { payload: { env_var: string; prompt: string; request_id: string }; session_id?: string; type: typeof WireEvent.SECRET_REQUEST }
+  | { payload: { task_id: string; text: string }; session_id?: string; type: typeof WireEvent.BACKGROUND_COMPLETE }
+  | { payload?: { text?: string }; session_id?: string; type: typeof WireEvent.REVIEW_SUMMARY }
+  | { payload?: { count?: number }; session_id?: string; type: typeof WireEvent.CRON_FIRED }
   | {
       // The gateway due-sweeper acting on due-ness (mirrors cron.fired). 'started'
       // carries how many reviews are due; 'done' carries the deterministic sweep's
@@ -1862,21 +1863,21 @@ export type GatewayEvent =
         | { due_count?: number; phase: 'started' }
         | { alerts?: number; duration_ms?: number; phase: 'done'; refreshed?: number }
       session_id?: string
-      type: 'review.sweep'
+      type: typeof WireEvent.REVIEW_SWEEP
     }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.spawn_requested' }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.start' }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.thinking' }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.tool' }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.progress' }
-  | { payload: SubagentEventPayload; session_id?: string; type: 'subagent.complete' }
-  | { payload: { rendered?: string; text?: string }; session_id?: string; type: 'message.delta' }
+  | { payload: SubagentEventPayload; session_id?: string; type: typeof WireEvent.SUBAGENT_SPAWN_REQUESTED }
+  | { payload: SubagentEventPayload; session_id?: string; type: typeof WireEvent.SUBAGENT_START }
+  | { payload: SubagentEventPayload; session_id?: string; type: typeof WireEvent.SUBAGENT_THINKING }
+  | { payload: SubagentEventPayload; session_id?: string; type: typeof WireEvent.SUBAGENT_TOOL }
+  | { payload: SubagentEventPayload; session_id?: string; type: typeof WireEvent.SUBAGENT_PROGRESS }
+  | { payload: SubagentEventPayload; session_id?: string; type: typeof WireEvent.SUBAGENT_COMPLETE }
+  | { payload: { rendered?: string; text?: string }; session_id?: string; type: typeof WireEvent.MESSAGE_DELTA }
   | {
       payload?: { reasoning?: string; rendered?: string; text?: string; usage?: Usage }
       session_id?: string
-      type: 'message.complete'
+      type: typeof WireEvent.MESSAGE_COMPLETE
     }
-  | { payload?: { message?: string }; session_id?: string; type: 'error' }
+  | { payload?: { message?: string }; session_id?: string; type: typeof WireEvent.ERROR }
   | {
       // A prediction-market websocket delta re-emitted by tui_gateway/pm_rpc.py
       // (one shared connection per venue). `kind` is the venue frame type
@@ -1886,7 +1887,7 @@ export type GatewayEvent =
       // may fold; null when the tick carries no estimate-grade info. Sessionless.
       payload: { estimate?: null | number; kind: string; market_id: string; payload?: Record<string, unknown>; venue: string }
       session_id?: string
-      type: 'pm.tick'
+      type: typeof WireEvent.PM_TICK
     }
 
 // ── obsidian.status (the Obsidian vault view) ───────────────────────────────

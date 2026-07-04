@@ -7,7 +7,7 @@ import { $chordPending, armChord, clearChord } from '../app/chordStore.js'
 import { activeNavKey, canOpenGlobalOverlay, navPatchFor, selectNavView } from '../app/navRoutes.js'
 import { $overlayState, resetOverlayState } from '../app/overlayStore.js'
 import { rankSlashCommands } from '../components/paletteOverlay.js'
-import { PER_VIEW_KEYS, resolveViewChord, VIEW_CHORDS } from '../content/keymaps.js'
+import { PER_VIEW_GUIDE, PER_VIEW_KEYS, resolveViewChord, VIEW_CHORDS } from '../content/keymaps.js'
 
 const writeStream = (columns: number, rows: number, isTTY = false) => {
   const stream = new PassThrough() as PassThrough & {
@@ -162,14 +162,14 @@ describe('view chords', () => {
 })
 
 // ─────────────────────────────────────────────────────────────────────────
-// 3. Cheat-sheet — global keys + the ACTIVE view's rows, on 2+ views
+// 3. Help overlay — per-view guide + global keys + the ACTIVE view's rows
 // ─────────────────────────────────────────────────────────────────────────
 
-describe('cheat-sheet overlay', () => {
-  const renderCheat = async (activeView: string) => {
-    const [{ Box, renderSync, Text }, { CheatSheetOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+describe('help overlay', () => {
+  const renderHelp = async (activeView: string) => {
+    const [{ Box, renderSync, Text }, { HelpOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
       import('@hermes/ink'),
-      import('../components/cheatSheetOverlay.js'),
+      import('../components/helpOverlay.js'),
       import('../theme.js'),
       import('../lib/text.js')
     ])
@@ -180,7 +180,7 @@ describe('cheat-sheet overlay', () => {
       Box as never,
       { flexDirection: 'column', height: 40, width: 120 } as never,
       React.createElement(Text as never, { key: 'b' } as never, 'BODY'),
-      React.createElement(CheatSheetOverlay as never, {
+      React.createElement(HelpOverlay as never, {
         activeView,
         cols: 120,
         key: 'm',
@@ -195,35 +195,59 @@ describe('cheat-sheet overlay', () => {
     return stripAnsi(sink.text())
   }
 
-  it('shows the global keys + the Desk view rows on the Desk view', async () => {
-    const text = await renderCheat('desk')
+  it('titles the modal for the active view and shows its guide prose + global + view keys', async () => {
+    const text = await renderHelp('desk')
 
-    expect(text).toContain('Keyboard cheat sheet')
+    expect(text).toContain('Desk · Help')
+    // Guide prose (spot phrases from the Desk guide).
+    expect(text).toContain('Lenses')
+    expect(text).toContain('three tiers')
+    // Grouped shortcut table.
+    expect(text).toContain('Global keys')
     expect(text).toContain('Ctrl+K')
     expect(text).toContain('This view — Desk')
     expect(text).toContain('switch lens')
   })
 
-  it('shows the Warnings view rows on the Warnings view (a second view)', async () => {
-    const text = await renderCheat('warnings')
+  it('shows the Warnings guide + rows on the Warnings view (a second view)', async () => {
+    const text = await renderHelp('warnings')
 
+    expect(text).toContain('Warnings · Help')
+    // Guide prose spot phrase.
+    expect(text).toContain('review queue')
     expect(text).toContain('This view — Warnings')
     expect(text).toContain('collapse-all')
-    // The contested hand-label keys are registered so the cheat sheet stays truthful.
+    // The contested hand-label keys are registered so the shortcut table stays truthful.
     expect(text).toContain('label contested row')
   })
 
-  it('has a per-view key table for every NAV route the chords reach', () => {
+  it('renders the Markets guide (folded in from the old InfoModal helpItems)', async () => {
+    const text = await renderHelp('markets')
+
+    expect(text).toContain('Markets · Help')
+    expect(text).toContain('Market Models')
+    expect(text).toContain('missing API key')
+  })
+
+  it('renders a guide + title for the Calendar view (fourth representative view)', async () => {
+    const text = await renderHelp('calendar')
+
+    expect(text).toContain('Calendar · Help')
+    expect(text).toContain('market closes')
+  })
+
+  it('has a per-view key table AND a guide for every NAV route the chords reach', () => {
     for (const chord of VIEW_CHORDS) {
       expect(PER_VIEW_KEYS[chord.nav]).toBeDefined()
+      expect(PER_VIEW_GUIDE[chord.nav]?.length).toBeGreaterThan(0)
     }
   })
 
-  it('defaults to two sections and Tab expands to the full registry', async () => {
+  it('defaults to the active view and Tab expands to the full registry', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
-    const [{ Box, render }, { CheatSheetOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+    const [{ Box, render }, { HelpOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
       import('@hermes/ink'),
-      import('../components/cheatSheetOverlay.js'),
+      import('../components/helpOverlay.js'),
       import('../theme.js'),
       import('../lib/text.js')
     ])
@@ -235,7 +259,7 @@ describe('cheat-sheet overlay', () => {
       React.createElement(
         Box,
         { flexDirection: 'column', height: 40, width: 120 },
-        React.createElement(CheatSheetOverlay, {
+        React.createElement(HelpOverlay, {
           activeView: 'desk',
           cols: 120,
           onClose: () => undefined,
@@ -262,6 +286,50 @@ describe('cheat-sheet overlay', () => {
     expect(after).toContain('Tab this view')
 
     instance.unmount?.()
+    delete process.env.FORECAST_TUI_INLINE
+  })
+
+  it('closes on Esc, h, ? and q — but not on an unrelated key', async () => {
+    process.env.FORECAST_TUI_INLINE = '1'
+    const [{ Box, render }, { HelpOverlay }, { DARK_THEME }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/helpOverlay.js'),
+      import('../theme.js')
+    ])
+
+    for (const closeKey of ['', 'h', '?', 'q']) {
+      let closed = 0
+      const stdout = writeStream(120, 40)
+      const stdin = writeStream(120, 40, true)
+      const instance = render(
+        React.createElement(
+          Box,
+          { flexDirection: 'column', height: 40, width: 120 },
+          React.createElement(HelpOverlay, {
+            activeView: 'desk',
+            cols: 120,
+            onClose: () => { closed += 1 },
+            rows: 40,
+            t: DARK_THEME
+          })
+        ),
+        { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
+      )
+
+      await tick(40)
+      // A benign key does NOT close (the modal traps the keyboard).
+      stdin.stream.write('z')
+      await tick(30)
+      expect(closed).toBe(0)
+      // The close key does. A lone Esc ('') is disambiguated from an escape
+      // SEQUENCE by Ink, so allow a longer settle than the plain glyph keys.
+      stdin.stream.write(closeKey)
+      await tick(160)
+      expect(closed).toBe(1)
+
+      instance.unmount?.()
+    }
+
     delete process.env.FORECAST_TUI_INLINE
   })
 })

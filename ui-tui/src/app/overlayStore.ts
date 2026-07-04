@@ -141,6 +141,15 @@ export const $globalModal = computed($overlayState, ({ cheatSheet, palette }) =>
 
 export const getOverlayState = () => $overlayState.get()
 
+/**
+ * The single seam that raises the unified Help modal (the `cheatSheet` overlay
+ * flag now renders HelpOverlay).  Every view's `h` key, the `?` alias, and each
+ * footer "h Help" chip route through here so they land on identical state.  It
+ * lives in the store (not in helpOverlay.tsx) so views can import it without a
+ * component ↔ overlay import cycle.
+ */
+export const openHelpOverlay = () => patchOverlayState({ cheatSheet: true })
+
 export const patchOverlayState = (next: Partial<OverlayState> | ((state: OverlayState) => OverlayState)) => {
   const prev = $overlayState.get()
   let resolved = typeof next === 'function' ? next(prev) : { ...prev, ...next }

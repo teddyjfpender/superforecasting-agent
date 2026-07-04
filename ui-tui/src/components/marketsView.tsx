@@ -3,7 +3,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { DEFAULT_SERIES, MARKET_CATEGORIES, type MarketSeries, providerByKey } from '../content/marketProviders.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import { type FieldSpec, rankItems } from '../lib/fuzzyRank.js'
@@ -29,6 +29,7 @@ import { blockChart, sparkline } from '../lib/sparkline.js'
 import { sortIndicator, sortRows, type SortValue, useTableSort } from '../lib/tableSort.js'
 import { usePmSection } from '../lib/usePmSection.js'
 import { dirColor, dirGlyph, pad, semantics } from '../lib/visualSemantics.js'
+import { WireEvent } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { AddProviderModal } from './addProviderModal.js'
@@ -211,7 +212,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const [sel, setSel] = useState(0)
   const [tick, setTick] = useState(0)
   const [fetching, setFetching] = useState(false)
-  const [modal, setModal] = useState<'' | 'help' | 'newModel' | 'pmFilter' | 'providers' | 'search'>('')
+  const [modal, setModal] = useState<'' | 'info' | 'newModel' | 'pmFilter' | 'providers' | 'search'>('')
   const [flash, setFlash] = useState('')
 
   // INSTANT inline `/` filter over the loaded tape (separate from `d` Add data,
@@ -472,16 +473,16 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
       refreshModels()
     }
 
-    gw.on('markets.model.progress', onProgress)
-    gw.on('markets.model.complete', onComplete)
-    gw.on('markets.model.refreshed', onRefreshed)
-    gw.on('markets.model.error', onError)
+    gw.on(WireEvent.MARKETS_MODEL_PROGRESS, onProgress)
+    gw.on(WireEvent.MARKETS_MODEL_COMPLETE, onComplete)
+    gw.on(WireEvent.MARKETS_MODEL_REFRESHED, onRefreshed)
+    gw.on(WireEvent.MARKETS_MODEL_ERROR, onError)
 
     return () => {
-      gw.off?.('markets.model.progress', onProgress)
-      gw.off?.('markets.model.complete', onComplete)
-      gw.off?.('markets.model.refreshed', onRefreshed)
-      gw.off?.('markets.model.error', onError)
+      gw.off?.(WireEvent.MARKETS_MODEL_PROGRESS, onProgress)
+      gw.off?.(WireEvent.MARKETS_MODEL_COMPLETE, onComplete)
+      gw.off?.(WireEvent.MARKETS_MODEL_REFRESHED, onRefreshed)
+      gw.off?.(WireEvent.MARKETS_MODEL_ERROR, onError)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw, openModelId])
@@ -954,7 +955,9 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     // `p` jumps to the Prediction section (enabling the provider if it's off);
-    // `m` toggles Data | Models; `h` opens Help — all available in every mode.
+    // `m` toggles Data | Models; `h` opens the unified Help modal (consistent on
+    // every view); `i` opens the Data-warnings modal (the header [!] detail) —
+    // all available in every mode.
     if (ch === 'p') {
       return jumpToPrediction()
     }
@@ -967,7 +970,11 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     }
 
     if (ch === 'h') {
-      return setModal('help')
+      return openHelpOverlay()
+    }
+
+    if (ch === 'i') {
+      return setModal('info')
     }
 
     if (mode === 'models') {
@@ -1288,14 +1295,10 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     </Box>
   ) : null
 
-  // The four modals paint THROUGH the shared overlay, stacked as the LAST child of
-  // the view root so the body stays mounted beneath them (deskView pattern).
-  const helpItems: InfoItem[] = [
-    { detail: 'Two modes: Data (live quotes by category) and Models (agentic quant-research). Press m to switch.', label: 'Markets', tone: 'info' },
-    { detail: 'Define a quant question (n). The desk researches data + the web, computes a real model, and presents findings. Open one to read it; c to chat/refine; w to rewrite the writeup on fresh data; e to export the data as JSON; ←/→ for versions; F to spin off a Desk forecast.', label: 'Market Models', tone: 'info' },
-    ...infoItems,
-  ]
-
+  // The modals paint THROUGH the shared overlay, stacked as the LAST child of the
+  // view root so the body stays mounted beneath them (deskView pattern). The old
+  // `h` help modal folded into the unified Help overlay (its prose now lives in
+  // the Markets guide); `i` keeps the dynamic Data-warnings surface behind [!].
   const modalOverlay =
     modal === 'providers' ? (
       <AddProviderModal
@@ -1307,15 +1310,15 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
         rows={termRows}
         t={t}
       />
-    ) : modal === 'help' ? (
+    ) : modal === 'info' ? (
       <InfoModal
         cols={cols}
-        items={helpItems}
+        items={infoItems}
         onClose={() => setModal('')}
         rows={termRows}
-        subtitle="What this view does, the keys, and how to fix anything that's blank."
+        subtitle="Blank series usually mean a missing API key. Press h for the full Markets guide + shortcuts."
         t={t}
-        title="Markets · Help"
+        title="Markets · Data warnings"
       />
     ) : modal === 'newModel' ? (
       <NewModelModal
@@ -1690,7 +1693,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
     { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } },
     { k: 'd', label: 'Add data', run: () => setModal('providers') },
-    { k: 'h', label: 'Help', run: () => setModal('help') },
+    ...(infoItems.length ? [{ k: 'i', label: 'Warnings', run: () => setModal('info') }] : []),
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
 
@@ -1701,7 +1705,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     { k: 'R', label: 'Retry', run: () => retryModel(models[modelSel]?.id ?? null) },
     { k: 'x', label: 'Delete' },
     { k: 'm', label: 'Data', run: () => setMode('data') },
-    { k: 'h', label: 'Help', run: () => setModal('help') },
+    ...(infoItems.length ? [{ k: 'i', label: 'Warnings', run: () => setModal('info') }] : []),
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
 
@@ -1718,6 +1723,7 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
   const emptyChips: FooterChip[] = [
     { k: 'd', label: 'Add data', run: () => setModal('providers') },
     { k: '/', label: 'Filter', run: () => { setSel(0); setSearchMode(true) } },
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
 
@@ -1735,7 +1741,8 @@ export function MarketsView({ gw, onAsk, onClose, sessionId = '', t }: MarketsVi
     ...(pm.selectedIsDiscovered ? [{ k: 'x', label: 'Remove', run: pm.removeDiscovered }] : []),
     { k: '/', label: 'Search', run: () => { pm.setSel(() => 0); setSearchMode(true) } },
     { k: 'm', label: 'Models', run: () => { setSel(0); setMode('models') } },
-    { k: 'h', label: 'Help', run: () => setModal('help') },
+    ...(infoItems.length ? [{ k: 'i', label: 'Warnings', run: () => setModal('info') }] : []),
+    { k: 'h', label: 'Help', run: openHelpOverlay },
     { k: 'q', label: 'Close', run: onClose }
   ]
 

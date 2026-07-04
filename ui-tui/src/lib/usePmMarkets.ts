@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { WireEvent } from '../protocol/generated.js'
 import {
   applyBookTick,
   bookMarketId,
@@ -239,7 +240,7 @@ export function usePmSelectionData(
     const onEvent = (raw: unknown) => {
       const ev = raw as { payload?: PMTickPayload; type?: string }
 
-      if (ev?.type !== 'pm.tick' || !ev.payload) {
+      if (ev?.type !== WireEvent.PM_TICK || !ev.payload) {
         return
       }
 

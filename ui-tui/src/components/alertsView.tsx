@@ -2,7 +2,7 @@ import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdo
 import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
-import { $globalModal, patchOverlayState } from '../app/overlayStore.js'
+import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
   ForecastDashboardResponse,
@@ -23,6 +23,7 @@ import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import { semantics } from '../lib/visualSemantics.js'
+import { WireEvent } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
@@ -416,18 +417,18 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       setFlash(`automode error: ${p.message ?? 'failed'}`)
     }
 
-    gw.on('forecast.warnings.automode.progress', onProgress)
-    gw.on('forecast.warnings.automode.complete', onComplete)
-    gw.on('forecast.warnings.automode.error', onError)
+    gw.on(WireEvent.FORECAST_WARNINGS_AUTOMODE_PROGRESS, onProgress)
+    gw.on(WireEvent.FORECAST_WARNINGS_AUTOMODE_COMPLETE, onComplete)
+    gw.on(WireEvent.FORECAST_WARNINGS_AUTOMODE_ERROR, onError)
 
     return () => {
       if (progressTimerRef.current !== null) {
         clearTimeout(progressTimerRef.current)
         progressTimerRef.current = null
       }
-      gw.off?.('forecast.warnings.automode.progress', onProgress)
-      gw.off?.('forecast.warnings.automode.complete', onComplete)
-      gw.off?.('forecast.warnings.automode.error', onError)
+      gw.off?.(WireEvent.FORECAST_WARNINGS_AUTOMODE_PROGRESS, onProgress)
+      gw.off?.(WireEvent.FORECAST_WARNINGS_AUTOMODE_COMPLETE, onComplete)
+      gw.off?.(WireEvent.FORECAST_WARNINGS_AUTOMODE_ERROR, onError)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
@@ -708,8 +709,9 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       return onClose()
     }
 
-    if (ch === '?') {
-      return patchOverlayState({ cheatSheet: true })
+    // `h` (and the `?` alias) open the unified Help modal — consistent everywhere.
+    if (ch === 'h' || ch === '?') {
+      return openHelpOverlay()
     }
 
     // Bulk passes on the focused tier/reason. Shift-A = AGENT (reforecast) pass /
@@ -766,13 +768,14 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       return move(1)
     }
 
-    // Tree collapse/expand. Enter/Space toggles; ←/h collapses (and homes the
-    // cursor on the tier header), →/l expands.
+    // Tree collapse/expand. Enter/Space toggles; ← collapses (and homes the
+    // cursor on the tier header), →/l expands. `h` is now Help (handled above),
+    // so ← is the sole collapse key.
     if (key.return || ch === ' ') {
       return toggleSelected()
     }
 
-    if (key.leftArrow || ch === 'h') {
+    if (key.leftArrow) {
       if (selectedKey) {
         setCollapse(selectedKey, true)
 
@@ -1138,6 +1141,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     ? [
         // Empty backlog: only the keys that still do something.
         { k: 'r', label: 'Refresh', run: () => load(true) },
+        { k: 'h', label: 'Help', run: openHelpOverlay },
         { k: 'q', label: 'Close', run: onClose }
       ]
     : onContested
@@ -1147,6 +1151,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
           { k: '3', label: 'Irrelevant', run: () => relabelContested(CONTESTED_LABELS['3']) },
           { k: '↑↓', label: 'Move' },
           { k: 'r', label: 'Refresh', run: () => load(true) },
+          { k: 'h', label: 'Help', run: openHelpOverlay },
           { k: 'q', label: 'Close', run: onClose }
         ]
       : [
@@ -1158,6 +1163,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
           { k: '⇧A', label: 'Agent', run: () => agentPassOrCancel() },
           { k: 'x', label: 'Dismiss', run: () => openDismiss() },
           { k: 'r', label: 'Refresh', run: () => load(true) },
+          { k: 'h', label: 'Help', run: openHelpOverlay },
           { k: 'q', label: 'Close', run: onClose }
         ]
 
