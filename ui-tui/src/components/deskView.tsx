@@ -2492,16 +2492,28 @@ export const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: n
   }
 }
 
-// Short freshness for the AGE column: "3d old" → "3d", "fresh today" → "now".
-const shortAge = (freshness: string | undefined): string => {
+// AGE from the snapshot's real as_of: "now" (<60s), "5m", "3h", "2d", "4mo" —
+// the server's coarse freshness string ("fresh today") collapsed everything from
+// the last 24h into an ambiguous "now". Minutes use bare "m"; months always "mo"
+// (the repo-wide convention so 2mo never reads as 2 minutes). Falls back to the
+// freshness string only when as_of is unparseable.
+const shortAge = (nowMs: number, asOf: string | undefined, freshness: string | undefined): string => {
+  const at = Date.parse(asOf ?? '')
+  if (Number.isFinite(at)) {
+    const ms = Math.max(0, nowMs - at)
+    if (ms < 60_000) return 'now'
+    const mins = ms / 60_000
+    if (mins < 60) return `${Math.round(mins)}m`
+    const hours = mins / 60
+    if (hours < 24) return `${Math.round(hours)}h`
+    const days = hours / 24
+    if (days < 52) return `${Math.round(days)}d`
+    return `${Math.max(2, Math.round(days / 30))}mo`
+  }
   if (!freshness) {
     return '—'
   }
-  if (/fresh|today|now/i.test(freshness)) {
-    return 'now'
-  }
   const m = /(\d+)\s*([a-z]+)/i.exec(freshness)
-  // Keep the full unit (up to 2 chars) so months read "2mo", not "2m" (minutes).
   return m ? `${m[1]}${m[2].toLowerCase().slice(0, 2)}` : truncate(freshness, 6)
 }
 
@@ -2656,7 +2668,7 @@ export const deskCellText = (
       return windowChgCell(item, windows['1w'], sem)
 
     case 'age':
-      return { color: sem.subtle, text: shortAge(item.freshness) }
+      return { color: sem.subtle, text: shortAge(nowMs, item.as_of ?? undefined, item.freshness ?? undefined) }
 
     case 'next': {
       const due = dueText(item, nowMs)
