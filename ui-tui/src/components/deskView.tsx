@@ -13,6 +13,7 @@ import type {
   ForecastBenchResponse,
   ForecastBenchRow,
   ForecastFactor,
+  ForecastNextAction,
   ForecastQuestionPacketResponse,
   ForecastReforecastResultRow,
   ForecastReforecastStartResponse,
@@ -37,7 +38,7 @@ import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
-import { sortIndicator, sortRows, type SortDir, type SortValue, useTableSort } from '../lib/tableSort.js'
+import { nextCycleState, sortIndicator, sortRows, type SortDir, type SortValue, type TableSortState, useTableSort } from '../lib/tableSort.js'
 import { dirColor, pad, readinessColor, type Semantics, semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
@@ -603,12 +604,26 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const armReselect = () => {
     pendingReselectId.current = selectedId
   }
+  // Flash the mode a sort action lands on — the ONLY on-screen signal for the
+  // keyless 'voi' mode (it has no column header to carry the ▲/▼ indicator).
+  const flashSort = (state: TableSortState) => {
+    if (!state.key) {
+      setFlash('sort: book order')
+      return
+    }
+    const label = SORT_MODE_LABELS[state.key] ?? state.key
+    setFlash(`sort: ${label}${state.key === 'voi' ? '' : ` ${state.dir === 'asc' ? '↑' : '↓'}`}`)
+  }
   const onSortCycle = () => {
     armReselect()
+    flashSort(nextCycleState(sort.state, DESK_SORT_KEYS))
     sort.cycle()
   }
   const onSortToggle = () => {
     armReselect()
+    if (sort.state.key) {
+      flashSort({ dir: sort.state.dir === 'asc' ? 'desc' : 'asc', key: sort.state.key })
+    }
     sort.toggle()
   }
   const onSortByKey = (key: string) => {
@@ -1569,6 +1584,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       <AgentProgressLine agent={agentJob} now={now} t={t} width={panelWidth} />
       <DeskSummary
         latestNote={latestNote}
+        nextActions={payload?.next_actions ?? []}
         refFactor={refFactor}
         refThesis={refThesis}
         rows={termRows}
@@ -2017,8 +2033,53 @@ export function DeskTaskModal({
 // status/impact + counts (panel/evidence/sources) + last-updated + a 1-line
 // analyst teaser.
 
+// The desk-level "what should I touch next?" block: the server's top VOI actions,
+// each a keystroke-hinting badge (U update · +src add sources · R resolve) + the
+// forecast title + its one-sentence reason, wrapped (never truncated mid-reason).
+// Returns null on a quiet book so the panel stays clean when nothing is pressing.
+const NEXT_ACTION_BADGE: Record<string, string> = {
+  add_sources: '+src',
+  review_due: 'R',
+  update: 'U'
+}
+
+export function NextBestActions({ actions, t, width }: { actions: ForecastNextAction[]; t: Theme; width: number }) {
+  const top = (actions ?? []).slice(0, 3)
+  if (!top.length) {
+    return null
+  }
+  const badgeColor = (action: string | undefined): string =>
+    action === 'add_sources' ? t.color.warn : action === 'review_due' ? t.color.ok : t.color.accent
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold color={t.color.label} wrap="truncate-end">
+        Next best actions
+      </Text>
+      {top.map((action, index) => {
+        const badge = NEXT_ACTION_BADGE[action.action ?? ''] ?? '·'
+
+        return (
+          <Box flexDirection="column" key={action.question_id ?? `na:${index}`}>
+            <Text wrap="truncate-end">
+              <Text bold color={badgeColor(action.action)}>{`${index + 1}. ${badge} `}</Text>
+              <Text color={t.color.text}>{truncate(action.title ?? action.question_id ?? '—', Math.max(8, width - 8))}</Text>
+            </Text>
+            {action.reason ? (
+              <Text color={t.color.muted} wrap="wrap">
+                {wrapLines(action.reason, width, 2).map(line => `   ${line}`).join('\n')}
+              </Text>
+            ) : null}
+          </Box>
+        )
+      })}
+    </Box>
+  )
+}
+
 export function DeskSummary({
   latestNote,
+  nextActions = [],
   refFactor,
   refThesis,
   rows,
@@ -2027,6 +2088,10 @@ export function DeskSummary({
   width
 }: {
   latestNote: ForecastAnalystNote | null
+  // Desk-level VOI ranking (the server's top-5 "touch next" actions). Rendered as
+  // a compact top-3 block so the panel answers "what should I touch next?" without
+  // the operator hunting the book — the same list the CLI `forecast next` prints.
+  nextActions?: ForecastNextAction[]
   refFactor: ForecastFactor | undefined
   refThesis: ForecastThesis | undefined
   rows?: number
@@ -2035,16 +2100,25 @@ export function DeskSummary({
   width: number
 }) {
   const inner = Math.max(16, width - 2)
+  const actionsBlock = <NextBestActions actions={nextActions} t={t} width={inner} />
 
   if (!selected) {
     // The lens row is selected → give the panel the same rich treatment as a
-    // forecast: the lens's own aggregate + history graph + counts + teaser.
+    // forecast: the lens's own aggregate + history graph + counts + teaser. The
+    // desk-level Next-best-actions block leads either way (it is book-wide, not
+    // per-selection), so it shows on the lens row too.
     if (refThesis || refFactor) {
-      return <LensSummary refFactor={refFactor} refThesis={refThesis} rows={rows} t={t} width={width} />
+      return (
+        <Box flexDirection="column" flexShrink={0} width={width}>
+          {actionsBlock}
+          <LensSummary refFactor={refFactor} refThesis={refThesis} rows={rows} t={t} width={width} />
+        </Box>
+      )
     }
 
     return (
       <Box flexDirection="column" flexShrink={0} width={width}>
+        {actionsBlock}
         <LensHeader refFactor={refFactor} refThesis={refThesis} t={t} width={inner} />
         <Text color={t.color.muted}>Select a forecast to see its summary.</Text>
       </Box>
@@ -2079,6 +2153,7 @@ export function DeskSummary({
 
   return (
     <Box flexDirection="column" flexShrink={0} width={width}>
+      {actionsBlock}
       <LensHeader refFactor={refFactor} refThesis={refThesis} t={t} width={inner} />
 
       <Text bold color={t.color.primary} wrap="wrap">
@@ -2462,8 +2537,26 @@ const DESK_COLS: DeskCol[] = [
 const DESK_PRIORITY = ['prob', 'src', 'rdy', 'next', '1w', 'ev', '1d', '1mo', 'age']
 
 // Every desk column is sortable except the trailing trend spark (which is not a
-// column). `o` cycles through them in header (display) order.
-const DESK_SORT_KEYS = DESK_COLS.map(c => c.key)
+// column). `o` cycles through them in header (display) order, then one keyless
+// mode — 'voi' — which reorders the book by the server's value-of-information
+// score (highest-value "touch next" first) even though it has no dedicated column.
+const DESK_SORT_KEYS = [...DESK_COLS.map(c => c.key), 'voi']
+
+// Human labels for the sort modes (flashed on cycle so the keyless 'voi' mode is
+// discoverable; column modes echo their header). Missing → the raw key.
+export const SORT_MODE_LABELS: Record<string, string> = {
+  '1d': '1D change',
+  '1mo': '1MO change',
+  '1w': '1W change',
+  age: 'age',
+  ev: 'evidence',
+  next: 'next review',
+  prob: 'probability',
+  q: 'question',
+  rdy: 'readiness',
+  src: 'sources',
+  voi: 'VOI (value of information)'
+}
 
 // The comparable value a desk row contributes for a given sort key. Text for
 // QUESTION; the raw signed window Δ for 1D/1W/1MO; the probability/μ for PROB; a
@@ -2506,6 +2599,12 @@ export const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: n
 
     case 'src':
       return item.src_count ?? 0
+
+    case 'voi':
+      // Negate so ASCENDING surfaces the HIGHEST value-of-information first (the
+      // 'age' inversion pattern) — cycling to voi lands the most urgent touch on
+      // top without needing a direction toggle. No score → sorts last.
+      return finite(item.voi?.score) ? -item.voi!.score : null
 
     default:
       return null
@@ -2820,6 +2919,11 @@ export function DeskForecastList({
     // QUESTION column so a column is dropped (priority-drop) rather than QUESTION
     // overflowing + clipping the rightmost numerics on a tight terminal.
     const QMIN = 14
+    // On a thesis lens each member row carries a dim ⇅±pp "which race moves the
+    // event" marker in a RESERVED trailing slot (never the trend/QUESTION space),
+    // so it fits the width budget exactly and never truncates. 0 off the thesis
+    // lens → every other table is byte-identical to before.
+    const sensSlot = pinnedThesis ? 8 : 0
     const keep = new Set<string>(['q'])
     let usedW = 2 + satGutter // cursor marker + optional saturation gutter
     for (const key of DESK_PRIORITY) {
@@ -2830,10 +2934,10 @@ export function DeskForecastList({
       }
     }
 
-    // Split the leftover: a capped slice feeds the trailing 1MO trend sparkline
-    // (so it actually renders — QUESTION no longer eats 100% of the slack), and
-    // QUESTION takes the rest with at least QMIN.
-    const leftover = Math.max(QMIN, avail - usedW)
+    // Split the leftover: the reserved sensitivity slot comes off the top, then a
+    // capped slice feeds the trailing 1MO trend sparkline (so it actually renders —
+    // QUESTION no longer eats 100% of the slack), and QUESTION takes the rest.
+    const leftover = Math.max(QMIN, avail - usedW - sensSlot)
     // The QUESTION column wins the slack — titles matter more than the trend — so the
     // trailing trend sparkline only claims width once QUESTION is comfortable; short
     // titles never truncate to make room for it.
@@ -2844,9 +2948,22 @@ export function DeskForecastList({
     const colWidth = (c: DeskCol): number => (c.key === 'q' ? questionW : c.w)
     const keptCols = DESK_COLS.filter(c => keep.has(c.key))
 
-    return { avail, colWidth, keptCols, satGutter, sem, showTrend, trendW }
-  }, [t, width, hasUnderSaturated])
-  const { avail, colWidth, keptCols, satGutter, sem, showTrend, trendW } = layout
+    return { avail, colWidth, keptCols, satGutter, sem, sensSlot, showTrend, trendW }
+  }, [t, width, hasUnderSaturated, pinnedThesis])
+  const { avail, colWidth, keptCols, satGutter, sem, sensSlot, showTrend, trendW } = layout
+
+  // Thesis lens only: member_id → its ∂P(event)/∂p_i swing (as a signed pp), read
+  // from the pinned thesis's stored event sensitivities. Drives the dim "which race
+  // matters" marker each member row shows. Empty on every other lens (no marker).
+  const sensByMember = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const s of pinnedThesis?.top_sensitivities ?? []) {
+      if (s.member_id != null && finite(s.delta_p_event)) {
+        map.set(s.member_id, s.delta_p_event! * 100)
+      }
+    }
+    return map
+  }, [pinnedThesis])
 
   // With a pinned thesis row the table is never truly empty — the thesis leads it —
   // so only short-circuit to the empty state when there is ALSO no pinned row.
@@ -2887,6 +3004,7 @@ export function DeskForecastList({
           )
         })}
         {showTrend ? <Text bold color={sem.heading}>{pad('1MO', trendW, 'left')}</Text> : null}
+        {sensSlot ? <Text bold color={sem.heading}>{pad('ΔPP', sensSlot, 'left')}</Text> : null}
       </Box>
       <Text color={sem.rule}>{'─'.repeat(avail)}</Text>
       {pinnedThesis ? (
@@ -2901,6 +3019,7 @@ export function DeskForecastList({
             nowMs={nowMs}
             satGutter={satGutter}
             sem={sem}
+            sensSlot={sensSlot}
             showTrend={showTrend}
             t={t}
             thesis={pinnedThesis}
@@ -2922,6 +3041,8 @@ export function DeskForecastList({
               nowMs={nowMs}
               running={runningIds.has(item.id ?? '')}
               runningNow={runningId !== null && runningId === item.id}
+              sensSlot={sensSlot}
+              sensitivityPp={sensByMember.size ? sensByMember.get(item.id ?? '') ?? null : null}
               spinFrame={runningId !== null && runningId === item.id ? spinTick : 0}
               satGutter={satGutter}
               sem={sem}
@@ -2966,6 +3087,8 @@ const DeskListRow = memo(function DeskListRow({
   nowMs,
   running,
   runningNow = false,
+  sensSlot = 0,
+  sensitivityPp = null,
   spinFrame = 0,
   satGutter,
   sem,
@@ -2991,6 +3114,13 @@ const DeskListRow = memo(function DeskListRow({
   // rest), so the memo still bails everywhere else. nowMs is 60s-bucketed and
   // cannot drive an animation.
   runningNow?: boolean
+  // The reserved trailing width for the thesis-lens sensitivity marker (0 off a
+  // thesis lens → nothing rendered, row byte-identical to before).
+  sensSlot?: number
+  // Thesis lens only: this member's signed ∂P(event) swing in pp (how much its
+  // ±2pp move shifts the thesis event). Rendered in the reserved sensSlot as a dim
+  // "⇅±X.XX"; null / negligible → the slot stays blank (alignment preserved).
+  sensitivityPp?: number | null
   spinFrame?: number
   satGutter: number
   sem: Semantics
@@ -3026,6 +3156,16 @@ const DeskListRow = memo(function DeskListRow({
   // A dim trailing marker for an under-saturated forecast (Wave 3). Appended like
   // the alert badge so the healthy case never widens the dense table.
   const underSaturated = item.saturation_below_threshold === true
+  // Thesis lens: the member's signed ∂P(event) swing (in pp), shown IN the trend
+  // slot (its reserved width, so it never truncates) IN PLACE of the 1MO spark —
+  // on a thesis lens "which race moves the event" outranks the member's own spark.
+  // Kept compact (no "pp" suffix; ⇅ + the h-help entry carry the unit) so even a
+  // double-digit swing fits the 8-wide minimum trend budget. Non-movers keep their
+  // spark; null off the thesis lens → the row is byte-identical to before.
+  const sensMarker =
+    finite(sensitivityPp) && Math.abs(sensitivityPp!) >= 0.005
+      ? `⇅${sensitivityPp! >= 0 ? '+' : ''}${sensitivityPp!.toFixed(2)}`
+      : ''
 
   return (
     <Text backgroundColor={active ? t.color.selectionBg : undefined} wrap="truncate-end">
@@ -3077,6 +3217,7 @@ const DeskListRow = memo(function DeskListRow({
         )
       })}
       {showTrend ? <Text color={trendColor}>{trend}</Text> : null}
+      {sensSlot ? <Text color={sem.subtle}>{pad(sensMarker, sensSlot, 'left')}</Text> : null}
       {alertBadge ? <Text color={t.color.statusBad}> {alertBadge}</Text> : null}
     </Text>
   )
@@ -3168,6 +3309,7 @@ const DeskThesisRow = memo(function DeskThesisRow({
   nowMs,
   satGutter,
   sem,
+  sensSlot = 0,
   showTrend,
   t,
   thesis,
@@ -3179,6 +3321,9 @@ const DeskThesisRow = memo(function DeskThesisRow({
   nowMs: number
   satGutter: number
   sem: Semantics
+  // Reserved trailing sensitivity-marker width (the members carry the markers; the
+  // pinned thesis row keeps the slot BLANK so the columns line up beneath it).
+  sensSlot?: number
   showTrend: boolean
   t: Theme
   thesis: ForecastThesis
@@ -3218,6 +3363,7 @@ const DeskThesisRow = memo(function DeskThesisRow({
         )
       })}
       {showTrend ? <Text color={active ? sem.selectionFg : trendColor}>{trend}</Text> : null}
+      {sensSlot ? <Text>{pad('', sensSlot, 'left')}</Text> : null}
     </Text>
   )
 })

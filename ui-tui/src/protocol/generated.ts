@@ -995,6 +995,14 @@ export interface ForecastLivePerformanceAgent {
   mean_log_score?: null | number
 }
 
+export interface ForecastNextAction {
+  action?: string
+  question_id?: string
+  reason?: string
+  score?: number
+  title?: null | string
+}
+
 export interface ForecastOnboardCommitRequest {
   spec: null | Record<string, unknown>
 }
@@ -1429,6 +1437,7 @@ export interface ForecastThesis {
   status?: string
   thesis_score?: null | number
   title?: string
+  top_sensitivities?: ForecastThesisSensitivity[]
   topics?: string[]
   triggers?: ForecastThesisTrigger[]
 }
@@ -1496,6 +1505,17 @@ export interface ForecastThesisScoreBand {
   q95?: null | number
 }
 
+export interface ForecastThesisSensitivity {
+  delta_p_event?: null | number
+  direction?: string
+  member_id?: string
+  p?: null | number
+  p_event_at_minus?: null | number
+  p_event_at_plus?: null | number
+  sensitivity?: null | number
+  title?: null | string
+}
+
 export interface ForecastThesisTrigger {
   better?: string[]
   delta?: null | number
@@ -1543,6 +1563,59 @@ export interface ForecastTriageRelabelResponse {
   count?: number
   relabeled?: Record<string, unknown>[]
   success?: boolean
+}
+
+export interface ForecastVoi {
+  action?: string
+  components?: ForecastVoiComponents
+  rank?: number
+  reason?: string
+  score?: number
+}
+
+export interface ForecastVoiAlerts {
+  count?: number
+  norm?: number
+  weighted?: number
+}
+
+export interface ForecastVoiComponents {
+  alerts?: ForecastVoiAlerts
+  amplifier?: number
+  base?: number
+  proximity?: ForecastVoiProximity
+  readiness?: ForecastVoiReadiness
+  sensitivity?: ForecastVoiSensitivity
+  staleness?: ForecastVoiStaleness
+}
+
+export interface ForecastVoiProximity {
+  days_until?: null | number
+  horizon_days?: number
+  norm?: number
+  resolve_days?: null | number
+  weighted?: number
+}
+
+export interface ForecastVoiReadiness {
+  dampen?: number
+  has_sources?: boolean
+  src_count?: number
+}
+
+export interface ForecastVoiSensitivity {
+  abs_pp?: number
+  delta_p_event?: null | number
+  thesis_id?: null | string
+  thesis_title?: null | string
+}
+
+export interface ForecastVoiStaleness {
+  age_days?: null | number
+  cadence_days?: number
+  norm?: number
+  ratio?: number
+  weighted?: number
 }
 
 export interface ForecastWarningDismissedItem {
@@ -1756,6 +1829,7 @@ export interface ForecastWorkspaceItem {
   topics?: string[]
   units?: null | string
   update_triggers?: ForecastWorkspaceTrigger[]
+  voi?: null | ForecastVoi
 }
 
 export interface ForecastWorkspacePanel {
@@ -1803,6 +1877,7 @@ export interface ForecastWorkspaceResponse {
   factors?: ForecastFactor[]
   forecasts?: ForecastWorkspaceItem[]
   generated_at?: string
+  next_actions?: ForecastNextAction[]
   open_alert_count?: number
   output?: string
   product?: string

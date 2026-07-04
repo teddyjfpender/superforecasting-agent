@@ -52,7 +52,8 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['Enter', 'open the selected forecast'],
     ['U / u', 'update now / re-arm — marked rows (or a lens → all its questions)'],
     ['A / T', 'agent run · task over the selection (or a lens → all its questions)'],
-    ['o / O', 'sort column · toggle asc/desc (or click a header)'],
+    ['o / O', 'sort column · toggle asc/desc — cycles past the columns to VOI (value-of-information order)'],
+    ['VOI', 'Next best actions panel = what to touch next (U update · +src add sources · R resolve); thesis lens shows each member\'s ⇅±pp swing'],
     ['s / / / r', 'settings · filter · refresh'],
     ['q / Esc', 'clear selection / filter, then close the view']
   ],
@@ -144,7 +145,7 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
   desk: [
     'The Desk is your forecasts workspace. Lenses (Tab, or ←→) regroup the same book: Book, Review, Thesis, Factor, and a read-only Bench scoreboard. Move with ↑↓ and press Enter to open a forecast in detail.',
     'Updating has three tiers: u re-arms the review schedule, U runs a real update now, and A hands the question to an agent for autonomous reforecasting. Mark rows with Space (⇧↑↓ extends the selection) to run a tier across many at once — with nothing marked, a lens applies the action to all of its questions.',
-    'T opens a task over the selection; n creates a new question; R resolves one; s opens settings. The SRC / RDY columns flag readiness (evidence sourced, ready to score). Press / to filter, o to sort, and r to refresh.'
+    'T opens a task over the selection; n creates a new question; R resolves one; s opens settings. The SRC / RDY columns flag readiness (evidence sourced, ready to score). Next best actions (top of the summary panel) ranks the book by value-of-information — what to touch next. Press / to filter, o to sort, and r to refresh.'
   ],
   markets: [
     'Markets has two modes, toggled with m: Data (live quotes by category) and Models (agentic quant-research). Press p to jump to the Prediction section — Polymarket and Kalshi — where v cycles venue, 1·2·3 set the history range, and → expands outcomes.',

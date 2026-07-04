@@ -1028,6 +1028,23 @@ class ForecastThesisScoreBand(WireModel):
     q95: float | None = wire_optional(nullable=True)
 
 
+class ForecastThesisSensitivity(WireModel):
+    """Per-member ∂P(event)/∂p_i from the thesis event MC — "which race matters".
+    ``delta_p_event`` is the P(event) swing across the member's ±2pp bump (already
+    event-scaled); the desk reads it as the thesis-lens sensitivity marker."""
+
+    TS_NAME = "ForecastThesisSensitivity"
+
+    member_id: str | None = wire_optional()
+    title: str | None = wire_optional(nullable=True)
+    direction: str | None = wire_optional()
+    p: float | None = wire_optional(nullable=True)
+    sensitivity: float | None = wire_optional(nullable=True)
+    delta_p_event: float | None = wire_optional(nullable=True)
+    p_event_at_plus: float | None = wire_optional(nullable=True)
+    p_event_at_minus: float | None = wire_optional(nullable=True)
+
+
 class ForecastThesis(WireModel):
     TS_NAME = "ForecastThesis"
 
@@ -1055,6 +1072,9 @@ class ForecastThesis(WireModel):
     member_count: int | None = wire_optional()
     aggregate_stale: bool | None = wire_optional()
     components: list[ForecastThesisComponent] | None = wire_optional()
+    # The top members whose ±2pp move most swings P(event) — the desk's thesis-lens
+    # sensitivity markers (dashboard.py emits these on every thesis payload).
+    top_sensitivities: list[ForecastThesisSensitivity] | None = wire_optional()
     spread: dict[str, Any] | None = wire_optional(nullable=True)
     history: list[ForecastThesisHistoryPoint] | None = wire_optional()
     analyst_note: ForecastAnalystNote | None = wire_optional(nullable=True)
@@ -1237,6 +1257,91 @@ class ForecastCandidateInterval(WireModel):
     mid: float | None = wire_optional()
 
 
+class ForecastVoiStaleness(WireModel):
+    TS_NAME = "ForecastVoiStaleness"
+
+    age_days: float | None = wire_optional(nullable=True)
+    cadence_days: float | None = wire_optional()
+    ratio: float | None = wire_optional()
+    norm: float | None = wire_optional()
+    weighted: float | None = wire_optional()
+
+
+class ForecastVoiProximity(WireModel):
+    TS_NAME = "ForecastVoiProximity"
+
+    days_until: float | None = wire_optional(nullable=True)
+    resolve_days: float | None = wire_optional(nullable=True)
+    horizon_days: float | None = wire_optional()
+    norm: float | None = wire_optional()
+    weighted: float | None = wire_optional()
+
+
+class ForecastVoiAlerts(WireModel):
+    TS_NAME = "ForecastVoiAlerts"
+
+    count: int | None = wire_optional()
+    norm: float | None = wire_optional()
+    weighted: float | None = wire_optional()
+
+
+class ForecastVoiSensitivity(WireModel):
+    TS_NAME = "ForecastVoiSensitivity"
+
+    abs_pp: float | None = wire_optional()
+    delta_p_event: float | None = wire_optional(nullable=True)
+    thesis_id: str | None = wire_optional(nullable=True)
+    thesis_title: str | None = wire_optional(nullable=True)
+
+
+class ForecastVoiReadiness(WireModel):
+    TS_NAME = "ForecastVoiReadiness"
+
+    src_count: int | None = wire_optional()
+    has_sources: bool | None = wire_optional()
+    dampen: float | None = wire_optional()
+
+
+class ForecastVoiComponents(WireModel):
+    TS_NAME = "ForecastVoiComponents"
+
+    base: float | None = wire_optional()
+    amplifier: float | None = wire_optional()
+    staleness: ForecastVoiStaleness | None = wire_optional()
+    proximity: ForecastVoiProximity | None = wire_optional()
+    alerts: ForecastVoiAlerts | None = wire_optional()
+    sensitivity: ForecastVoiSensitivity | None = wire_optional()
+    readiness: ForecastVoiReadiness | None = wire_optional()
+
+
+class ForecastVoi(WireModel):
+    """VOI-driven desk attention: an explainable "touch this next" priority. The
+    score is an additive base (cadence-relative staleness + resolution/review
+    proximity + open-alert pressure) times a thesis-sensitivity amplifier, dampened
+    when the question has no watched sources. ``action`` is the honest next verb."""
+
+    TS_NAME = "ForecastVoi"
+
+    score: float | None = wire_optional()
+    rank: int | None = wire_optional()
+    action: str | None = wire_optional()
+    reason: str | None = wire_optional()
+    components: ForecastVoiComponents | None = wire_optional()
+
+
+class ForecastNextAction(WireModel):
+    """One desk-level "next best action" — the workspace payload carries the top-5
+    ranked across the whole book so the CLI/agent and the TUI read the SAME list."""
+
+    TS_NAME = "ForecastNextAction"
+
+    question_id: str | None = wire_optional()
+    title: str | None = wire_optional(nullable=True)
+    action: str | None = wire_optional()
+    reason: str | None = wire_optional()
+    score: float | None = wire_optional()
+
+
 class ForecastWorkspaceItem(WireModel):
     TS_NAME = "ForecastWorkspaceItem"
 
@@ -1296,6 +1401,9 @@ class ForecastWorkspaceItem(WireModel):
     units: str | None = wire_optional(nullable=True)
     update_triggers: list[ForecastWorkspaceTrigger] | None = wire_optional()
     thesis_ids: list[ForecastThesisBadge] | None = wire_optional()
+    # VOI-driven desk attention: this forecast's explainable "touch next" priority
+    # (score + rank + per-component breakdown + the honest next action).
+    voi: ForecastVoi | None = wire_optional(nullable=True)
 
 
 class ForecastWorkspaceRequest(WireModel):
@@ -1314,6 +1422,9 @@ class ForecastWorkspaceResponse(WireModel):
     factors: list[ForecastFactor] | None = wire_optional()
     forecasts: list[ForecastWorkspaceItem] | None = wire_optional()
     generated_at: str | None = wire_optional()
+    # The desk-level VOI ranking: the top-5 highest-value next actions across the
+    # whole book (each {question_id, title, action, reason, score}).
+    next_actions: list[ForecastNextAction] | None = wire_optional()
     open_alert_count: int | None = wire_optional()
     output: str | None = wire_optional()
     product: str | None = wire_optional()

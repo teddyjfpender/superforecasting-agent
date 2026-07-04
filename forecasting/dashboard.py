@@ -529,6 +529,301 @@ def _candidate_intervals(snapshot: Any) -> dict[str, dict[str, float]] | None:
     return out or None
 
 
+# ── VOI-driven desk attention ────────────────────────────────────────────────
+# "What should I touch next?" — a transparent, explainable priority per forecast.
+# The score answers value-of-information, NOT thesis membership: it is an ADDITIVE
+# BASE every question earns (cadence-relative staleness + resolution/review
+# proximity + open-alert pressure) times a thesis-sensitivity AMPLIFIER for the
+# members whose ±2pp move swings a thesis event. So a stale, near-resolution
+# NON-thesis question outranks a fresh, low-value thesis member (a naive product
+# would zero out the two-thirds of the book that are not thesis members). Every
+# component rides in the payload so the UI can EXPLAIN the rank ("stale 6d ×
+# moves the AI-infra thesis 4.20pp").
+#
+# Base weights (sum to 1.0) — staleness is the primary VOI driver (a forecast
+# only earns re-touch value by going stale relative to ITS OWN cadence), then the
+# deadline pull of an approaching resolution/review, then open-alert pressure.
+VOI_W_STALE = 0.55
+VOI_W_PROX = 0.30
+VOI_W_ALERT = 0.15
+# Sensitivity amplifier: score = base · (1 + min(k·|Δpp|, cap)). A member whose
+# ±2pp move swings P(event) by 10pp (k=0.05) amplifies its base by 0.50; the cap
+# bounds the boost at 2× so sensitivity tilts the ranking without dominating it.
+VOI_SENS_K = 0.05
+VOI_SENS_AMP_CAP = 1.0
+# Normalization anchors (each raw base component maps to [0, 1] against these):
+VOI_DEFAULT_CADENCE_DAYS = 7.0   # cadence assumed when a question has none set
+VOI_PROX_HORIZON_DAYS = 30.0     # an event >30d out contributes no proximity pull
+VOI_ALERT_FULL = 3.0             # 3+ open alerts on a question = full alert pressure
+VOI_RESOLVE_SOON_DAYS = 3.0      # resolution/close within 3d (or passed) → review_due
+VOI_NO_SOURCE_DAMPEN = 0.5       # zero watched sources → an update re-pools nothing
+VOI_ACTION_FLOOR = 0.12          # base below this → action 'none' (nothing pressing)
+
+
+def _cadence_days(cadence: str | None) -> float:
+    """A review cadence approximated as a day count (self-contained; mirrors the
+    ledger's cadence vocabulary). Unknown / missing → :data:`VOI_DEFAULT_CADENCE_DAYS`.
+    Bare ``m`` is minutes (the ledger convention); months are ``mo``/``month``."""
+
+    if not cadence:
+        return VOI_DEFAULT_CADENCE_DAYS
+    raw = re.sub(r"\s+", " ", str(cadence).strip().lower())
+    if raw.startswith("every "):
+        raw = raw[len("every "):].strip()
+    named = {
+        "minutely": 1.0 / 1440.0, "hourly": 1.0 / 24.0,
+        "daily": 1.0, "1d": 1.0, "weekly": 7.0, "1w": 7.0,
+        "monthly": 30.0, "1mo": 30.0, "quarterly": 90.0, "yearly": 365.0,
+    }
+    if raw in named:
+        return named[raw]
+    match = re.fullmatch(
+        r"(?P<count>\d*)\s*(?P<unit>w|week|weeks|d|day|days|h|hr|hrs|hour|hours"
+        r"|mo|month|months|m|min|mins|minute|minutes)",
+        raw,
+    )
+    if match:
+        count = max(int(match.group("count") or "1"), 1)
+        unit = match.group("unit")
+        if unit in {"w", "week", "weeks"}:
+            return count * 7.0
+        if unit in {"d", "day", "days"}:
+            return float(count)
+        if unit in {"mo", "month", "months"}:
+            return count * 30.0
+        if unit in {"h", "hr", "hrs", "hour", "hours"}:
+            return count / 24.0
+        return count / 1440.0  # minutes
+    return VOI_DEFAULT_CADENCE_DAYS
+
+
+def _days_until(now_dt: datetime, iso: str | None) -> float | None:
+    """Days from ``now_dt`` to the ISO instant (negative when already passed), or
+    None when unparseable / absent."""
+
+    ts = _parse_datetime(iso)
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return (ts - now_dt).total_seconds() / 86400.0
+
+
+def _voi_sensitivity_map(theses: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Per-member the BIGGEST thesis it moves: member_id → {abs_delta, delta_p_event,
+    thesis_id, thesis_title}. Reads each thesis's stored event sensitivities (the
+    finite-difference ∂P(event)/∂p_i already computed by the event MC)."""
+
+    out: dict[str, dict[str, Any]] = {}
+    for thesis in theses:
+        detail = thesis.get("event_detail") if isinstance(thesis.get("event_detail"), dict) else None
+        rows = (detail.get("sensitivities") if detail else None) or thesis.get("top_sensitivities") or []
+        for row in rows:
+            member_id = row.get("member_id")
+            delta = row.get("delta_p_event")
+            if not member_id or not isinstance(delta, (int, float)) or isinstance(delta, bool):
+                continue
+            abs_delta = abs(float(delta))
+            prev = out.get(member_id)
+            if prev is None or abs_delta > prev["abs_delta"]:
+                out[member_id] = {
+                    "abs_delta": abs_delta,
+                    "delta_p_event": float(delta),
+                    "thesis_id": thesis.get("id"),
+                    "thesis_title": thesis.get("title"),
+                }
+    return out
+
+
+def _voi_for_forecast(
+    forecast: dict[str, Any], sens_map: dict[str, dict[str, Any]], now_dt: datetime
+) -> dict[str, Any]:
+    """The VOI block for one forecast: base·amplifier·readiness score + the honest
+    action split, with every component carried so the UI can explain the rank."""
+
+    # (a) staleness — cadence-relative (a weekly question 6d old is due; a monthly
+    # one is not). A never-forecast question is maximally stale (a first forecast is
+    # high value). Overdue saturates the normalized component at 1.0.
+    cadence_days = _cadence_days(forecast.get("review_cadence"))
+    age_days: float | None = None
+    parsed = _parse_datetime(forecast.get("as_of"))
+    if parsed is not None:
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        age_days = max(0.0, (now_dt - parsed).total_seconds() / 86400.0)
+    if age_days is None:
+        stale_ratio, stale_norm = 1.0, 1.0
+    else:
+        stale_ratio = age_days / cadence_days if cadence_days > 0 else 0.0
+        stale_norm = min(1.0, stale_ratio)
+
+    # (c in the spec: event/resolution proximity) — the soonest approaching pull of
+    # resolution_time / close_time / next_review_at. resolve_days (resolution/close
+    # only) drives the review_due action; days_until (incl. the review) drives prox.
+    d_res = _days_until(now_dt, forecast.get("resolution_time"))
+    d_close = _days_until(now_dt, forecast.get("close_time"))
+    d_review = _days_until(now_dt, forecast.get("next_review_at"))
+    resolve_candidates = [d for d in (d_res, d_close) if d is not None]
+    resolve_days = min(resolve_candidates) if resolve_candidates else None
+    upcoming = [d for d in (d_res, d_close, d_review) if d is not None]
+    days_until = min(upcoming) if upcoming else None
+    prox_norm = 0.0 if days_until is None else max(0.0, min(1.0, 1.0 - days_until / VOI_PROX_HORIZON_DAYS))
+
+    # open-alert pressure — an unresolved alert is a standing "look at me".
+    alert_count = int(forecast.get("open_alert_count") or 0)
+    alert_norm = min(1.0, alert_count / VOI_ALERT_FULL) if VOI_ALERT_FULL else 0.0
+
+    base = VOI_W_STALE * stale_norm + VOI_W_PROX * prox_norm + VOI_W_ALERT * alert_norm
+
+    # (b) thesis sensitivity — the AMPLIFIER, not a base term: it multiplies the
+    # value of touching a STALE mover, never manufactures value for a fresh one.
+    sens = sens_map.get(forecast.get("id"))
+    sens_pp = (sens["abs_delta"] * 100.0) if sens else 0.0
+    amplifier = 1.0 + min(VOI_SENS_K * sens_pp, VOI_SENS_AMP_CAP)
+
+    # (d) readiness — zero watched sources means an update just re-pools the same
+    # priors (no fuel), so we dampen the update value and route to add_sources.
+    src_count = int(forecast.get("src_count") or 0)
+    has_sources = src_count > 0
+    dampen = 1.0 if has_sources else VOI_NO_SOURCE_DAMPEN
+    score = base * amplifier * dampen
+
+    # Action split (uses the PRE-dampen base so a stale no-source question still
+    # earns add_sources): a pending resolution wins (it needs no sources); else a
+    # no-source question routes to add_sources; else an in-play question updates.
+    resolve_due = resolve_days is not None and resolve_days <= VOI_RESOLVE_SOON_DAYS
+    if base < VOI_ACTION_FLOOR and not resolve_due:
+        action = "none"
+    elif resolve_due:
+        action = "review_due"
+    elif not has_sources:
+        action = "add_sources"
+    else:
+        action = "update"
+
+    voi = {
+        "score": round(score, 4),
+        "action": action,
+        "components": {
+            "base": round(base, 4),
+            "amplifier": round(amplifier, 4),
+            "staleness": {
+                "age_days": round(age_days, 2) if age_days is not None else None,
+                "cadence_days": round(cadence_days, 3),
+                "ratio": round(stale_ratio, 3),
+                "norm": round(stale_norm, 3),
+                "weighted": round(VOI_W_STALE * stale_norm, 4),
+            },
+            "proximity": {
+                "days_until": round(days_until, 2) if days_until is not None else None,
+                "resolve_days": round(resolve_days, 2) if resolve_days is not None else None,
+                "horizon_days": VOI_PROX_HORIZON_DAYS,
+                "norm": round(prox_norm, 3),
+                "weighted": round(VOI_W_PROX * prox_norm, 4),
+            },
+            "alerts": {
+                "count": alert_count,
+                "norm": round(alert_norm, 3),
+                "weighted": round(VOI_W_ALERT * alert_norm, 4),
+            },
+            "sensitivity": {
+                "abs_pp": round(sens_pp, 2),
+                "delta_p_event": sens["delta_p_event"] if sens else None,
+                "thesis_id": sens["thesis_id"] if sens else None,
+                "thesis_title": sens["thesis_title"] if sens else None,
+            },
+            "readiness": {
+                "src_count": src_count,
+                "has_sources": has_sources,
+                "dampen": dampen,
+            },
+        },
+    }
+    voi["reason"] = _voi_reason(forecast, voi)
+    return voi
+
+
+def _cap_first(text: str) -> str:
+    return text[:1].upper() + text[1:] if text else text
+
+
+def _voi_reason(forecast: dict[str, Any], voi: dict[str, Any]) -> str:
+    """One human sentence explaining the rank, led by the chosen action. The
+    add_sources reason states the honest no-op plainly ("U would re-pool nothing")."""
+
+    comp = voi["components"]
+    action = voi["action"]
+    stale, sens, prox = comp["staleness"], comp["sensitivity"], comp["proximity"]
+
+    age = stale.get("age_days")
+    if age is None:
+        stale_clause = "never forecast"
+    elif stale["norm"] >= 0.5:
+        stale_clause = f"stale {int(round(age))}d ({stale['ratio']:.2f}× cadence)"
+    else:
+        stale_clause = None
+
+    sens_clause = (
+        f"moves “{sens['thesis_title']}” {sens['abs_pp']:.2f}pp"
+        if sens.get("thesis_title") and sens["abs_pp"] >= 0.5
+        else None
+    )
+
+    days_until = prox.get("days_until")
+    prox_clause = None
+    if days_until is not None:
+        prox_clause = "event due now" if days_until <= 0 else f"event in {int(round(days_until))}d"
+
+    if action == "add_sources":
+        lead = stale_clause or sens_clause or "on the desk"
+        return f"{_cap_first(lead)}, but no watched sources — U would re-pool nothing; add a source first"
+    if action == "review_due":
+        resolve_days = prox.get("resolve_days")
+        when = "now" if (resolve_days is None or resolve_days <= 0) else f"in {int(round(resolve_days))}d"
+        return f"Resolves {when} — verify the outcome"
+
+    # update: lead with staleness/sensitivity, add proximity only when it's a real pull.
+    parts = [p for p in (stale_clause, sens_clause) if p]
+    if prox_clause and (not parts or prox["norm"] >= 0.5):
+        parts.append(prox_clause)
+    if not parts:
+        parts = ["due for a refresh"]
+    sentence = _cap_first(parts[0])
+    if len(parts) > 1:
+        sentence += " and " + ", ".join(parts[1:])
+    return sentence
+
+
+def _attach_voi(
+    forecasts: list[dict[str, Any]], theses: list[dict[str, Any]], now_dt: datetime, *, k: int = 5
+) -> list[dict[str, Any]]:
+    """Stamp a ``voi`` block onto every forecast (in place), rank them by score, and
+    return the desk-level top-``k`` next_actions (server-side, so the CLI/agent and
+    the TUI read the SAME ranking)."""
+
+    sens_map = _voi_sensitivity_map(theses)
+    for forecast in forecasts:
+        forecast["voi"] = _voi_for_forecast(forecast, sens_map, now_dt)
+    # Rank by score desc; ties keep book order (stable). Rank spans the whole book.
+    order = sorted(range(len(forecasts)), key=lambda i: -forecasts[i]["voi"]["score"])
+    for rank, idx in enumerate(order, start=1):
+        forecasts[idx]["voi"]["rank"] = rank
+    actionable = sorted(
+        (f for f in forecasts if f["voi"]["action"] != "none"),
+        key=lambda f: -f["voi"]["score"],
+    )
+    return [
+        {
+            "question_id": f.get("id"),
+            "title": f.get("title"),
+            "action": f["voi"]["action"],
+            "reason": f["voi"]["reason"],
+            "score": f["voi"]["score"],
+        }
+        for f in actionable[:k]
+    ]
+
+
 def build_workspace_payload(
     *,
     ledger: ForecastLedger | None = None,
@@ -796,6 +1091,15 @@ def build_workspace_payload(
         for question in factor_questions
     ]
 
+    # VOI-driven desk attention: stamp a per-forecast voi block (rank + explainable
+    # components + action) and build the desk-level next_actions, once the forecasts
+    # AND theses are in memory (the sensitivity amplifier reads the thesis event MC).
+    now_dt = _parse_datetime(now) if isinstance(now, str) else None
+    now_dt = now_dt or datetime.now(timezone.utc)
+    if now_dt.tzinfo is None:
+        now_dt = now_dt.replace(tzinfo=timezone.utc)
+    next_actions = _attach_voi(forecasts, theses, now_dt)
+
     return {
         "product": PRODUCT_NAME,
         "generated_at": utc_now_iso(),
@@ -803,6 +1107,9 @@ def build_workspace_payload(
         "open_alert_count": len(alerts),
         "closing_soon_count": closing_soon,
         "forecasts": forecasts,
+        # VOI-driven "what should I touch next?": the top-5 highest-value actions
+        # across the book, each with a one-sentence reason + its action verb.
+        "next_actions": next_actions,
         # Thesis layer: macro forecasts that aggregate the weighted beliefs of
         # their tagged members (computed after the members' latest runs).
         "thesis_count": len(thesis_questions),
