@@ -51,7 +51,7 @@ reference regenerates.
 <tr><td><b>Gated commits</b></td><td>A snapshot commits only when it passes the hook gate — structured reasoning, fresh evidence, decomposition, panel where required, well-formed uncertainty, applied calibration lessons.</td></tr>
 <tr><td><b>Quorum & Delphi</b></td><td>High-impact calls run a multi-model panel that forecasts independently, runs a Delphi revision round, and attaches a judged synthesis to the snapshot.</td></tr>
 <tr><td><b>Calibration loop</b></td><td>Resolutions auto-score (Brier/log/calibration buckets), synthesize calibration lessons, and apply the measured bias correction to future commits. The desk scores you too.</td></tr>
-<tr><td><b>Prediction-market data plane</b></td><td>Browse and pull de-vigged Polymarket + Kalshi distributions, order books, and price history as structured data, plus a market-data provider fan-out.</td></tr>
+<tr><td><b>Prediction Markets data plane</b></td><td>Browse and pull de-vigged Polymarket + Kalshi distributions, order books, and price history as structured data (the <code>pm_query</code> agent action + the TUI Markets view), plus a market-data provider fan-out (<code>market_query</code>).</td></tr>
 <tr><td><b>Autonomy</b></td><td>One sentence in, a committed forecast out; nightly self-checks re-pull watched sources without an LLM; reading is triaged keep/skim/skip before it is hoarded.</td></tr>
 </table>
 
