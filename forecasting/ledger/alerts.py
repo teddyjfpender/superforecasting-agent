@@ -77,6 +77,62 @@ _SATURATION_ALERT_REASON = "under_saturated"
 # dismissal is NEVER an indefinite silence.
 DISMISS_TTL_DAYS_DEFAULT = 7
 
+# Canonical reason prefix for a resolution PROPOSAL alert (guide-and-make-visible,
+# never an auto-resolution). Both the metric-threshold resolver
+# (``propose_due_resolutions``) and the auto-resolution DETECTOR
+# (``forecasting.resolution_detector``) raise this SAME reason so their proposals
+# dedupe outcome-aware against each other and surface / reconcile identically — a
+# question never carries two competing proposal alerts for the same outcome. The
+# reason falls through ``classify_warning`` to NO_AUTO (surfaced for the human,
+# never auto-reconciled), so the proposal stays OPEN until the operator confirms
+# via the EXISTING ``forecast resolve`` flow (which auto-scores + synthesizes the
+# lesson) or dismisses it.
+_RESOLUTION_PROPOSAL_REASON_PREFIX = "resolution proposed:"
+
+
+def resolution_proposal_outcome(reason: str | None) -> str | None:
+    """Parse the proposed outcome token out of a ``resolution proposed:`` reason
+    (the first word after the prefix, lower-cased) — the outcome-aware dedup key.
+    Returns None for any non-proposal reason. Mirrors the inline parse in
+    :meth:`propose_due_resolutions` so both proposal producers dedupe on the SAME
+    key space."""
+    text = (reason or "").strip().lower()
+    if _RESOLUTION_PROPOSAL_REASON_PREFIX not in text:
+        return None
+    tail = text.split(_RESOLUTION_PROPOSAL_REASON_PREFIX, 1)[1].strip()
+    if not tail:
+        return None
+    token = tail.split()[0].strip().strip("—-").strip()
+    return token or None
+
+
+def enqueue_resolution_proposal(
+    ledger,
+    *,
+    question_id: str,
+    outcome: Any,
+    rationale: str,
+    confirm_command: str | None = None,
+) -> AlertEvent:
+    """Raise the canonical confirm-me PROPOSAL alert for a detected/derived
+    resolution. Propose-only: this writes an ``alert_events`` row, NEVER a
+    resolution. The ``recommended_action`` is the exact one-key confirm path
+    through the EXISTING resolve flow (``forecast resolve <id> --outcome <o>``),
+    which auto-scores + synthesizes the lesson. Callers own dedup (outcome-aware,
+    via :func:`resolution_proposal_outcome`) — this always writes."""
+    outcome_label = str(outcome).strip()
+    reason = f"{_RESOLUTION_PROPOSAL_REASON_PREFIX} {outcome_label.upper()} — {rationale}"
+    action = confirm_command or (
+        f"confirm with: forecast resolve {question_id} --outcome {outcome_label}"
+    )
+    return ledger.create_alert(
+        severity="warning",
+        scope_type="question",
+        scope_ref=question_id,
+        reason=reason,
+        recommended_action=action,
+    )
+
 
 def _has_open_alert(ledger, *, reason: str, scope_type: str, scope_ref: str) -> bool:
     """True when an unacknowledged alert with the SAME reason+scope already

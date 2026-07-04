@@ -153,3 +153,36 @@ const KIND_LABEL: Record<WarningKind, string> = {
 }
 
 export const warningKindLabel = (kind: WarningKind): string => KIND_LABEL[kind] ?? kind
+
+// ── Resolution proposals ────────────────────────────────────────────────────
+// A resolution PROPOSAL alert (raised by the auto-resolution detector OR the
+// metric-threshold resolver) rides the generic NO_AUTO class in classifyWarning
+// (it is human-judgment: surfaced, never auto-reconciled). But unlike other
+// NO_AUTO alerts it has a concrete, ONE-KEY confirm path — routing through the
+// EXISTING `forecast resolve` flow, which auto-scores + synthesizes the lesson.
+// These helpers let the alerts view recognise a proposal and extract its outcome
+// so it can bind that confirm without a round-trip. Keep the prefix + parse in
+// lockstep with forecasting/ledger/alerts.py:resolution_proposal_outcome.
+export const RESOLUTION_PROPOSAL_PREFIX = 'resolution proposed:'
+
+export const isResolutionProposal = (reason: string | undefined): boolean =>
+  (reason ?? '').trim().toLowerCase().startsWith(RESOLUTION_PROPOSAL_PREFIX)
+
+// The proposed outcome token (first word after the prefix, lower-cased), or null.
+export const resolutionProposalOutcome = (reason: string | undefined): null | string => {
+  const text = (reason ?? '').trim().toLowerCase()
+
+  if (!text.startsWith(RESOLUTION_PROPOSAL_PREFIX)) {
+    return null
+  }
+
+  const tail = text.slice(RESOLUTION_PROPOSAL_PREFIX.length).trim()
+
+  if (!tail) {
+    return null
+  }
+
+  const token = tail.split(/\s+/)[0].replace(/[—-]+$/, '').trim()
+
+  return token || null
+}

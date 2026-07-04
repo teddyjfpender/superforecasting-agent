@@ -28,7 +28,13 @@ def test_forecast_smoke_required_source_catalog_includes_fiscal_adapter():
     assert "fema" in EXPECTED_SOURCE_ADAPTERS
 
 
-@pytest.mark.timeout(300)
+# The subprocess drives the full forecast lifecycle (~160s in isolation) and
+# spawns its own CPU-heavy child commands. Under xdist load those children
+# compete with the worker pool, so the budget must be generous enough that a
+# legitimate run never trips it while a genuine hang still surfaces. The pytest
+# cap must exceed the subprocess timeout so the subprocess deadline wins first
+# with a captured-output assertion instead of an opaque signal kill.
+@pytest.mark.timeout(480)
 def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     repo_root = Path(__file__).resolve().parents[2]
     db_path = tmp_path / "forecast-smoke.db"
@@ -43,7 +49,7 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
         cwd=repo_root,
         capture_output=True,
         text=True,
-        timeout=240,
+        timeout=420,
     )
 
     output = result.stdout + result.stderr

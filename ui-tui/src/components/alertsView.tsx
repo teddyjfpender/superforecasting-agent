@@ -9,6 +9,7 @@ import type {
   AutomodeCompletePayload as ForecastWarningsAutomodeComplete,
   AutomodeErrorPayload as ForecastWarningsAutomodeError,
   AutomodeProgressPayload as ForecastWarningsAutomodeProgress,
+  ForecastCommandResponse,
   ForecastDashboardResponse,
   ForecastDashboardReview,
   ForecastTriageContestedResponse,
@@ -19,6 +20,7 @@ import type {
   ForecastWarningsAutomodeRunResponse,
   ForecastWarningsDismissResponse
 } from '../protocol/generated.js'
+import { isResolutionProposal, resolutionProposalOutcome } from '../lib/warningKind.js'
 import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
@@ -533,6 +535,53 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       })
   }
 
+  // C — confirm a focused RESOLUTION PROPOSAL reason row. Routes through the
+  // EXISTING resolve flow (forecast resolve <qid> --outcome <outcome>), which
+  // auto-scores + synthesizes the lesson — one key from proposal to scored
+  // resolution. Requires a single scope_ref (a specific question) and a parseable
+  // outcome; a multi-question proposal group is refused (confirm them individually)
+  // so a stray key never mass-resolves. Optimistic flash, then reload so the
+  // proposal alert clears (the resolve closes it) and any new score/postmortem
+  // alert surfaces.
+  const confirmResolution = () => {
+    if (selectedNode?.kind !== 'reason') {
+      return
+    }
+
+    const { reason, scope_refs: rawRefs } = selectedNode.group
+
+    if (!isResolutionProposal(reason)) {
+      setFlash('not a resolution proposal — nothing to confirm')
+
+      return
+    }
+
+    const refs = rawRefs ?? []
+    const outcome = resolutionProposalOutcome(reason)
+
+    if (refs.length !== 1 || !outcome) {
+      setFlash(refs.length === 1 ? 'no outcome parsed from the proposal' : 'open one question to confirm it')
+
+      return
+    }
+
+    const qid = refs[0]
+    setFlash(`resolving ${truncate(qid, 14)} → ${outcome}…`)
+    gw.request<unknown>('forecast.command', { argv: ['resolve', qid, '--outcome', outcome] })
+      .then(raw => {
+        const res = asRpcResult<ForecastCommandResponse>(raw)
+        setFlash(
+          res?.code === 0
+            ? `resolved ${truncate(qid, 14)} → ${outcome} — scored`
+            : `resolve failed (code ${res?.code ?? '?'})`
+        )
+        load()
+      })
+      .catch((err: unknown) => {
+        setFlash(`resolve error: ${err instanceof Error ? err.message : String(err)}`)
+      })
+  }
+
   // x — open the dismiss modal for the focused group: a reason row dismisses that
   // exact reason; a tier header dismisses the distinct kinds it folds (so we never
   // re-derive the tier→kind map client-side — we read it off the aggregate).
@@ -734,6 +783,12 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     // contested node, so the digits never steal input over the backlog tree.
     if ((ch === '1' || ch === '2' || ch === '3') && selectedNode?.kind === 'contested') {
       return relabelContested(CONTESTED_LABELS[ch])
+    }
+
+    // C — confirm the focused resolution proposal via the existing resolve flow.
+    // No-op unless the cursor is on a resolution-proposal reason row.
+    if (ch === 'C' && selectedNode?.kind === 'reason' && isResolutionProposal(selectedNode.group.reason)) {
+      return confirmResolution()
     }
 
     if (ch === 'r') {
@@ -979,6 +1034,11 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
                     {refs.length ? (
                       <Text color={t.color.border} wrap="truncate-end">
                         {`        ${refs.map(r => truncate(r, 18)).join(' · ')}${moreRefs > 0 ? `  +${nf(moreRefs)} more` : ''}`}
+                      </Text>
+                    ) : null}
+                    {active && isResolutionProposal(g.reason) && (g.scope_refs ?? []).length === 1 ? (
+                      <Text color={sem.cursor} wrap="truncate-end">
+                        {`        C confirm → forecast resolve (auto-scores + synthesizes the lesson)`}
                       </Text>
                     ) : null}
                   </Box>

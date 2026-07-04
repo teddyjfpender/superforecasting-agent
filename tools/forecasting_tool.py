@@ -129,6 +129,8 @@ FORECAST_LEDGER_SCHEMA = {
                     "full_forecast",
                     "set_resolution_rule",
                     "propose_resolution",
+                    "propose_resolutions",
+                    "list_resolution_proposals",
                     "set_decision",
                     "configure",
                     "keep_fresh",
@@ -1583,6 +1585,76 @@ def forecast_ledger_tool(args: dict[str, Any]) -> str:
             question_id = _required(args, "question_id")
             proposal = ledger.propose_resolution(question_id)
             return tool_result(success=True, question_id=question_id, resolution_proposal=proposal)
+
+        if action == "propose_resolutions":
+            # Auto-resolution DETECTION sweep: detect past-due / near-due questions
+            # whose outcome is now readable (settled market via the structured
+            # metadata.market_id, or an ingested terminal signal) and raise the
+            # canonical confirm-me proposal alert for each. Propose-only — NEVER
+            # resolves. The deterministic tier is always on; the LLM tier is OPT-IN
+            # (use_llm=true) and gated like other paid work — off by default so an
+            # unattended call never spends. dry_run previews (read-only) with a
+            # coverage breakdown.
+            from forecasting import resolution_detector as _rd
+
+            dry_run = bool(args.get("dry_run"))
+            horizon_days = int(args.get("horizon_days") or _rd.DEFAULT_HORIZON_DAYS)
+            limit = args.get("limit")
+            market_reader = None
+            try:
+                market_reader = _rd.build_market_outcome_reader()
+            except Exception:
+                market_reader = None
+
+            classifier = None
+            runner = None
+            model = ""
+            if args.get("use_llm"):
+                # Opt-in paid tier: wire the bounded cheap-model runner (mirrors the
+                # triage labeler) + the reference classifier. Only reached on an
+                # explicit use_llm=true, so the default path spends nothing.
+                from forecasting.quorum import DEFAULT_JUDGE_MODEL, make_aiagent_runner
+
+                model = args.get("model") or os.getenv("FORECAST_RESOLUTION_MODEL") or DEFAULT_JUDGE_MODEL
+                runner = make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)
+                classifier = _rd.classify_resolution
+
+            summary = _rd.propose_detected_resolutions(
+                ledger,
+                now=args.get("now"),
+                horizon_days=horizon_days,
+                market_reader=market_reader,
+                classifier=classifier,
+                runner=runner,
+                model=model,
+                limit=int(limit) if limit is not None else None,
+                dry_run=dry_run,
+            )
+            return tool_result(success=True, **summary)
+
+        if action == "list_resolution_proposals":
+            # List the OPEN resolution-proposal alerts (from either producer — the
+            # detector or the metric-threshold resolver), each parsed into its
+            # question, proposed outcome, and the one-key confirm command that routes
+            # through the EXISTING resolve flow (auto-scores + synthesizes the lesson).
+            from forecasting.ledger import alerts as _alerts
+
+            proposals = []
+            for alert in ledger.list_alerts(unresolved_only=True):
+                if getattr(alert, "scope_type", None) != "question":
+                    continue
+                outcome = _alerts.resolution_proposal_outcome(getattr(alert, "reason", ""))
+                if not outcome:
+                    continue
+                proposals.append({
+                    "alert_id": alert.id,
+                    "question_id": alert.scope_ref,
+                    "outcome": outcome,
+                    "reason": alert.reason,
+                    "confirm_command": alert.recommended_action,
+                    "created_at": alert.created_at,
+                })
+            return tool_result(success=True, count=len(proposals), proposals=proposals)
 
         if action == "set_decision":
             question_id = _required(args, "question_id")

@@ -254,6 +254,10 @@ def run_due_reviews(
     obsidian_sync: bool = False,
     reconcile_alerts: bool = True,
     propose_resolutions: bool = True,
+    detect_resolutions: bool = True,
+    resolution_horizon_days: int = 3,
+    resolution_market_reader: Callable[[str, "str | None"], Any] | None = None,
+    resolution_classifier: Callable[..., dict] | None = None,
     score_market_nightly: bool = True,
     refresh: bool = True,
     check_triage_graduation: bool = True,
@@ -522,6 +526,46 @@ def run_due_reviews(
                 sections.append(
                     "Resolution proposals\n"
                     f"proposed {len(raised)} resolution(s) for confirmation\n"
+                )
+
+    # Trailing auto-resolution DETECTION phase: unblock the learning loop's
+    # throughput (no resolution → no score → no lesson) by DETECTING past-due /
+    # near-due questions whose outcome is now readable from a settled market (the
+    # structured `metadata.market_id` ref) or an ingested terminal signal, and
+    # raising the SAME confirm-me proposal alert the resolver framework uses. The
+    # deterministic tier is always on; the LLM tier stays OFF unless a classifier
+    # is injected (paid-tier convention). The market reader is built HERE (guarded
+    # import — ledger/cron never import the network adapters); a missing import
+    # degrades to the ingested-signal path, never an error. Best-effort: a hiccup
+    # must never break the cycle, and detection is propose-only (never resolves).
+    if detect_resolutions:
+        try:
+            from forecasting import resolution_detector as _rd
+
+            market_reader = resolution_market_reader
+            if market_reader is None:
+                try:
+                    market_reader = _rd.build_market_outcome_reader()
+                except Exception:
+                    market_reader = None
+            detected = _rd.propose_detected_resolutions(
+                ledger,
+                now=now,
+                horizon_days=resolution_horizon_days,
+                market_reader=market_reader,
+                classifier=resolution_classifier,
+            )
+        except Exception as exc:  # never break the sweep on detection
+            sections.append(f"Resolution detection\nERROR: {exc}\n")
+        else:
+            if detected.get("alerted"):
+                by_trigger = detected.get("by_trigger") or {}
+                trigger_txt = ", ".join(f"{k} {v}" for k, v in sorted(by_trigger.items()))
+                sections.append(
+                    "Resolution detection\n"
+                    f"detected {detected['alerted']} resolvable question(s) "
+                    f"across {detected.get('candidates', 0)} candidate(s) "
+                    f"({detected.get('past_due', 0)} past due){' — ' + trigger_txt if trigger_txt else ''}\n"
                 )
 
     # Trailing market-nightly scoring phase (AIA P2.1): score any pending
