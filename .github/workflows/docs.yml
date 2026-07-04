@@ -1,0 +1,50 @@
+name: Docs
+
+# The living-reference staleness gate. The pages under docs/reference/ are
+# GENERATED from code (the protocol registry, the forecast-tool schema, the jobs
+# registry, the provider registries, the CLI argparse tree, and the built-in
+# hooks) by `python -m scripts.docgen`. This job fails if any of them is out of
+# date with its source — "generated reference docs are stale" becomes an
+# unmissable build error instead of prose that quietly drifts from the system.
+#
+# Fix on failure:  python -m scripts.docgen   (then commit docs/reference/*.md)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reference-staleness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86  # v5
+
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python 3.11
+          source .venv/bin/activate
+          uv pip install -e ".[all,dev]"
+
+      - name: Reference-docs staleness gate
+        run: |
+          source .venv/bin/activate
+          # Fails if any docs/reference/*.md is out of date with its code source.
+          # Fix: python -m scripts.docgen  (then commit the regenerated files)
+          python -m scripts.docgen --check

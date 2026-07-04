@@ -112,6 +112,13 @@ check_oversize() {
   while IFS='	' read -r _add _del _path; do
     [ -z "$_path" ] && continue
     [ "$_add" = "-" ] && continue           # binary
+    # Generated artifacts are exempt: they are legitimately large and carry a
+    # STRONGER control than line counts — their own deterministic --check
+    # staleness gates (protocol.codegen, scripts.docgen) fail CI when they
+    # drift from their sources. Hand-written code stays under the limit.
+    case "$_path" in
+      docs/reference/*|ui-tui/src/protocol/generated.ts) continue ;;
+    esac
     if [ "$_add" -gt "$_limit" ] 2>/dev/null; then
       _offenders="${_offenders}    $_path (+$_add lines)
 "
