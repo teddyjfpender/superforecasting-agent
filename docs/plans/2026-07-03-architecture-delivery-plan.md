@@ -432,6 +432,96 @@ Coupling patterns discovered (advice for the gate-leaf extraction + D4-snapshots
   land, the `urlopen` call sites must stay reachable by the `forecasting.ledger.
   urlopen` monkeypatch (core, or a leaf that references `_core.urlopen`).
 
+### Gate-leaf extraction (SHIPPED — D1's named prerequisite for D4)
+Before D4, the write-gate machinery D1/D2/D3 all flagged was carved to its own
+leaf `forecasting/ledger/gate.py` (200 lines; 166 moved out of core): the
+commit-active contextvar `_FORECAST_COMMIT_ACTIVE`, `allow_ledger_writes`
+(+`_decorator`), `forecast_commit_active`, `ledger_write_gate_mode`, the SQLite
+`_ledger_write_authorizer`, `_enforce_write_gate`, and the `GATED_LEDGER_TABLES`/
+`GATED_LEDGER_WRITES` constants. `core` imports all nine names BACK (`from
+forecasting.ledger.gate import …`) so its call sites keep bare-name references
+AND `from .core import *` re-exports the pre-carve public surface byte-for-byte;
+`__init__` gained a `_gate` submodule handle. Gates met: import-time held
+(0.083s→0.083s); the soul suites (`test_commit_preview`, `test_watch_gate_and_bulk`,
+`test_ledger_write_gate`) green; full `tests/forecasting` 2318 pass + the D1
+`test_smoke_script` flake (a 60s subprocess timeout under xdist load — passes
+isolated in 104s, never touches the gate); core diff = 166 body lines out + a
+21-line import block, **0 unexpected added lines** by difflib.
+- **The one finding that mattered: NO test patches a gate name at package level.**
+  The D1/D2/D3-mandated grep (`forecasting.ledger.<gatename>` and
+  `setattr(...gate name...)`) came back EMPTY — the gate is exercised via
+  `monkeypatch.setenv("FORECAST_GATE_DIRECT_WRITES", …)` (env is read live inside
+  `ledger_write_gate_mode`, module-independent) and via the public
+  `allow_ledger_writes` context, never via attribute-patching. So the monkeypatch
+  façade needed **no extension** and the gate could move to a true leaf with zero
+  `_core.` hop. **A leaf is the right home for the write gate**: it imports only
+  stdlib + `forecasting.models` (`ForecastingError`), owns its own `logger`, and
+  every gated write domain (D4 snapshots, D5 panels) now imports the gate directly
+  instead of reaching through `_core.`.
+- `LedgerWriteRefusedError` does not exist — the gate raises `ForecastingError`
+  from `forecasting.models`; `record_panel_run`'s `_enforce_write_gate("record_panel_run")`
+  (D5's domain) already resolves against the leaf via core's import-back.
+
+### D4 findings (snapshots carve — SHIPPED, the big one)
+`core` 16,566 → 15,573; new `snapshots` 1,161. Moved **1,079 body lines** (13
+`ForecastLedger` methods = 1,053 + the module fn `_normalize_reason_list` = 26),
+under the ~1,200 cap — the FULL clean domain fit, no read/commit split needed.
+Moved: the commit body `create_snapshot` (872 lines — every gate, the
+saturation/observe scoring, the preview plumbing), its commit-exclusive helpers
+(`_validate_evidence_refs`, `_committed_winner_prob`, `_machine_scoreable_payload`,
+`_derived_child_present`, `_forecast_horizon_days`), the readers
+(`get_snapshot`/`get_current_snapshot`/`list_snapshots`/`snapshots_by_question`),
+`annotate_snapshot`, and the serializers (`_row_to_snapshot`/`_snapshot_to_dict`)
+— 13 one-line delegates + `_normalize_reason_list` deleted (no delegate; module
+fn with no external caller). Gates met: full `tests/forecasting` 2,319 pass before
+AND after (0 fail — smoke flake passed this run); repo-wide `--collect-only` 0
+import errors (28,501 collected); import-time held (0.083s); `ruff` (PLW1514)
+clean; core diff = 13 delegate returns + a 3-line import block, **0 unexpected
+added non-blank lines** / 973 body lines removed by difflib.
+
+Coupling patterns discovered (advice for D5-panels / D6-reviews):
+- **Caller-exclusivity ≠ domain membership — the sharpest cut yet.** Three helpers
+  are called ONLY by `create_snapshot` yet were deliberately LEFT in core because
+  they belong to FUTURE domains: `_cascade_reaggregate_parents` (thesis
+  re-aggregation → D8), `_audit_unapplied_lessons` + `_record_lesson_applications`
+  (calibration lessons → D9). The task's "parent cascade **trigger points**" read
+  as the CALL SITES inside `create_snapshot` (which move with it), NOT the cascade
+  engine. `create_snapshot` fires all three via `ledger.<name>` — the leaf→delegate→
+  core hop. Pulling them would have hit 1,224 lines (over cap) AND stranded D8/D9
+  work in the snapshots module. **D5/D6 rule: an exclusive helper travels with the
+  domain only if it IS that domain; when it's a future domain's concern, leave it
+  in core and reach it via `ledger.` — the delegate makes the hop free and the
+  future slice inherits it cleanly.** (`calibration_bias`, `calibration_summary`'s
+  `_snapshot_component_contributions` likewise stayed — calibration, D9.)
+- **The gate leaf paid off immediately.** `create_snapshot` reaches the write gate
+  by importing `_enforce_write_gate`/`allow_ledger_writes` straight from
+  `forecasting.ledger.gate` — no `_core.` hop for the gate. D5's `record_panel_run`
+  (the third gated write) does the same. The ONLY `_core.`-hop the snapshots leaf
+  needs is one SHARED core constant, `FORECASTING_PROTOCOL_VERSION` (used by both
+  `create_snapshot` and a non-snapshot core method @~10.7k, so it stays in core and
+  is reached as `_core.FORECASTING_PROTOCOL_VERSION` — one NAME-token rewrite in the
+  moved body). Everything else the leaf needs is `forecasting.models`/stdlib/gate.
+- **`@staticmethod` needs decorator-aware carve.** Two moved helpers are
+  staticmethods; AST `node.lineno` points at `def` (the decorator sits above in
+  `decorator_list`). The delegate must re-emit `@staticmethod` and forward WITHOUT
+  `self`; the module fn drops the decorator and takes no `ledger`. A naïve carve
+  that skipped the decorator line or force-passed `self` broke the categorical/
+  binary path — build the delegate's replacement range from
+  `min(node.lineno, decorators[0].lineno)`.
+- **The delegate forwards `self` positionally + the rest by keyword** (D2 style):
+  `_snapshots.create_snapshot(self, question_id=question_id, …)`. Forwarding `self`
+  BOTH positionally and as `self=self` (an off-by-one in the arg-skip) is the trap —
+  `TypeError: got an unexpected keyword argument 'self'`. Skip the leading `self`
+  from the keyword set; static fns skip nothing.
+- **Line-based dedent is safe even over the 872-line body** with its triple-quoted
+  INSERT SQL and dozens of implicit-concat message strings: SQL is whitespace-
+  insensitive, docstring/message dedent is cosmetic, and the pre-scan confirmed
+  **no `self` inside any f-string/string literal** (the 3.11 single-STRING-token
+  f-string trap), so the tokenize NAME-token `self`→`ledger` pass is complete.
+- **`_snapshot_component_contributions` is a decoy** — named "snapshot" but its ONLY
+  caller is `calibration_summary`, so it is a calibration-display helper (D9), left
+  in core. Judge every `*_snapshot*`-named helper by its caller, not its name.
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)
