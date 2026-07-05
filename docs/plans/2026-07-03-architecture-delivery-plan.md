@@ -873,6 +873,95 @@ PLW1514 clean.
   items` re-export at cli.py:4702-style call sites) to force the same stayed-in-façade
   discipline for `load_*`-touching helpers.
 
+### CLI-assembler slice (`forecasting/cli/` — the last megafile begins its carve)
+`forecasting/cli.py` (16,661 lines: `register_cli` a ~3,015-line argparse monolith
+registering 167 `set_defaults(_forecast_handler=…)` leaves; dispatch via a single
+`cmd_forecast` reading `args._forecast_handler`; 166 `_cmd_*` handlers + a deep
+helper/constant web) is now the package `forecasting/cli/` behind an UNCHANGED
+façade. Shipped this session:
+
+- **CHUNK 1 — the module→package move (the D1 pattern), GREEN.** `forecasting/cli.py`
+  → `forecasting/cli/core.py` (plain `mv`) + a façade `__init__` (64 lines). The CLI
+  needs a STRONGER façade than the ledger: tests import PRIVATE handler names
+  (`from forecasting.cli import _cmd_lint`) and read them off the module
+  (`import forecasting.cli as cli; cli._resolve_active_model_id`), so `__init__`
+  installs a `_CliPackage(ModuleType)` with **`__getattr__` forwarding reads of any
+  name not in the package namespace to `core`** (the ledger only needed `__setattr__`
+  read-write forwarding for its public surface) PLUS `__setattr__`/`__delattr__`
+  forwarding writes to `core` (the D1 monkeypatch façade). Gates: `forecast --help` +
+  a full recursive walk of all 252 subcommand help nodes **byte-identical** before/
+  after (difflib EMPTY); import-time `import forecasting.cli` ~0.091s→~0.095s
+  cumulative (held at the ~0.1s budget); `tests/forecasting`+`tests/cli` = the SAME 5
+  pre-existing `tests/cli` failures (approval-ui/status/resume-display/forecast-command
+  — all the hermes chat CLI, orthogonal to this carve) + the documented rotating
+  `test_ledger` xdist-ordering flake (passes isolated) — **0 regressions**;
+  `--collect-only` 0 import errors (3,185→3,188).
+- **`forecast jobs approve <job_id>`** — the policy slice's named follow-up, a thin
+  wrapper over `forecasting.jobs.policy.approve_job` (records the grant, acks the
+  approval alert, flips `awaiting_approval`→`queued`, resumes; `--no-resume`/`--json`).
+  3 CLI tests (`tests/forecasting/test_jobs_approve_cli.py`) drive the real parser.
+  Adds the only intended help-node delta (a new `jobs`/`jobs approve` pair — 252→254);
+  everything else stays byte-identical against the re-baselined help tree.
+- **CHUNK 2 — the register-hook pattern, PROVEN on two domains (the CLI's D1+D2).**
+  The assembler mechanism: each domain module exposes `register(forecast_sub)`;
+  `core.register_cli` calls each at the domain's original position so `--help` stays
+  byte-identical (registration ORDER is the only thing that matters for help output).
+  * **`jobs_admin.py`** (69 ln) — the new verb, carved out of core into the domain
+    module (zero legacy coupling; the clean pattern-prover). `register_cli` calls
+    `_jobs_admin.register(forecast_sub)` via a call-time import (no load-time edge).
+  * **`thesis.py`** (732 ln) — the real legacy domain: 20 `_cmd_thesis*`/`_cmd_factor*`
+    handlers + 2 domain-private printers (`_print_factor_distribution`,
+    `_format_thesis_band`), moved with a defensive AST-extent/line-slice carve
+    (contiguous block 13087–13615) + the contiguous registration slice (2957–3115,
+    kept at its 4-space indent as the body of `register`). Core diff by difflib =
+    692 removed, **15 added — 0 unexpected** (all comment/blank/hook-call/import).
+    Findings that are NEW at this layer (advice for the remaining 8 domains):
+    - **Cycle-free by bottom-import.** The domain reaches shared core helpers by
+      `from forecasting.cli.core import …`; `core` imports the domain **at its very
+      bottom** (after every helper is defined), so the domain's load-time
+      `from …core import _resolve_question_id` resolves against a fully-populated core.
+      No `register_cli`-time import needed for `thesis` (the bottom import binds
+      `_thesis_domain`; `register_cli` references it at call time).
+    - **Surface parity by re-import-back.** `_cmd_thesis_dashboard` is imported by a
+      test as `forecasting.cli._cmd_thesis_dashboard`; core re-binds it at the bottom
+      (`_cmd_thesis_dashboard = _thesis_domain._cmd_thesis_dashboard`) so the façade's
+      `__getattr__`→`core` still resolves it (the ledger "import the names BACK" rule).
+    - **`_ledger` is the CLI's `_core.`-hop name — and EVERY future domain inherits
+      it.** `_ledger` is patched at `forecasting.cli._ledger` (test_cli.py) AND used by
+      nearly every handler; a bare `from core import _ledger` would bind the domain to
+      core's real `_ledger` and MISS a façade patch (which forwards to `core._ledger`).
+      `thesis` therefore defines a 1-line local `_ledger(args)` that returns
+      `_core._ledger(args)` (call-time), so `patch("forecasting.cli._ledger")` reaches
+      the carved call sites — proven live. `_resolve_question_id` (never patched) stays
+      a bare import. The CLI monkeypatch surface to respect: `_ledger`,
+      `_load_backtest_cases`, `list_builtin_benchmarks`, and ~40 `load_*` source
+      adapters (all patched as `forecasting.cli.<name>`) — these + their touching
+      helpers STAY in core (the tool-registry `load_*` discipline); the benchmarks/
+      backtest and refresh/ingest domains will need the `_core.` hop for them.
+  Gate on the thesis carve: full `tests/forecasting`+`tests/cli` GREEN (only the 5
+  pre-existing `tests/cli` failures; 3,183 passed); `--help` byte-identical (all 254
+  nodes); import-time held (~0.092s); ruff PLW1514+F821 clean.
+
+**Remaining (staged, one-domain-per-session per the ledger cadence):** the other 8
+task-named domains — questions/show/update, refresh/rerun/cycle, reviews/schedule,
+quorum/panel, markets/pm, triage/calibration/lessons, doctor/backup/config,
+benchmarks/backtest. Each is a `register(forecast_sub)` module + its handlers,
+reusing the AST-extent/line-slice carve + the difflib "0 unexpected" gate + the
+`_ledger`/`load_*` `_core.`-hop discipline proven here. `core.py` is 15,992 lines
+today; the seam is proven and mechanical from here.
+
+### ARC D CODA — the megafiles, carved (final line counts)
+The three megafiles Arc D targeted are all decomposed behind unchanged façades:
+- **`forecasting/ledger.py`** (18,562 at Arc-D start) → package `forecasting/ledger/`,
+  `core.py` **11,863** + 10 domain leaves + the gate leaf (D1–D9 SHIPPED).
+- **`tools/forecasting_tool.py`** (5,435; a 2,561-line 112-action `if`-chain) → a
+  **2,890-line** thin façade + `tools/forecast_actions/` (13 domain modules).
+- **`forecasting/cli.py`** (16,661) → package `forecasting/cli/`: `core.py` **15,992**
+  + `__init__` 64 (façade) + `jobs_admin` 69 + `thesis` 732 (CHUNK 1 + 2 domains
+  SHIPPED; the assembler seam proven, the remaining 8 domains staged).
+Every slice across Arc D held the ~0.1s cold-start budget and shipped with the full
+suite green before AND after and a difflib gate asserting 0 unexpected façade lines.
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)

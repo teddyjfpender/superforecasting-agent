@@ -325,6 +325,170 @@ def _ack_approval_alerts(record: Any) -> None:
             continue
 
 
+# ── the COLLAB share/accept governed classes + counterparty allowlist (M3) ────
+#
+# Design pillar 5 ("Sharing is a governed action class"): cross-instance exchange
+# grows its OWN axis on top of the (run_mode × action_class) matrix — a DIRECTION
+# (share = this desk hands an artifact to peers; accept = this desk imports a
+# peer's) × an ARTIFACT CLASS ({evidence, forecast, lesson, document}) → the same
+# auto|ask|never Decision. It is a SEPARATE axis (not a RunMode row) because the
+# governing question is "what artifact, to/from whom", not "how was the job
+# started"; the outbound M2 share still rides the NETWORK cell of the base matrix
+# (posting is a network side effect), while this axis governs WHICH artifact may
+# cross the org boundary and — the hard gate — WHETHER the counterparty is
+# authorised at all.
+#
+# The counterparty ALLOWLIST is closed by default: an instance_id absent from the
+# allowlist is REFUSED before any auto/ask cell is consulted (an empty allowlist
+# accepts NO one). Names are spoofable, so authorisation is by stable instance_id,
+# never display name (the plan's "authorization" note).
+
+
+class ShareClass(str, Enum):
+    """The artifact classes that can cross the org boundary."""
+
+    EVIDENCE = "evidence"
+    FORECAST = "forecast"
+    LESSON = "lesson"
+    DOCUMENT = "document"
+
+
+class ShareDirection(str, Enum):
+    """The direction a governed collab action runs."""
+
+    SHARE = "share"    # outbound — hand an artifact to peers
+    ACCEPT = "accept"  # inbound — import a peer's artifact
+
+
+# Per the plan (pillar 5 / "Trust, safety"): share.evidence auto, share.forecast
+# auto, share.lesson ask; accept.* MIRROR share. ``document`` defaults to ``ask``
+# (an opaque artifact the operator should eyeball before it lands). Every default
+# here is behaviour-visible ONLY once an operator adds a counterparty to the
+# allowlist — with an empty allowlist nothing is accepted regardless of the cell.
+_COLLAB_SHARE_DEFAULTS: dict[ShareClass, Decision] = {
+    ShareClass.EVIDENCE: Decision.AUTO,
+    ShareClass.FORECAST: Decision.AUTO,
+    ShareClass.LESSON: Decision.ASK,
+    ShareClass.DOCUMENT: Decision.ASK,
+}
+COLLAB_DEFAULTS: dict[ShareDirection, dict[ShareClass, Decision]] = {
+    ShareDirection.SHARE: dict(_COLLAB_SHARE_DEFAULTS),
+    ShareDirection.ACCEPT: dict(_COLLAB_SHARE_DEFAULTS),  # accept mirrors share
+}
+
+# The sfp/1 message kind → the governed ShareClass it imports under.
+_COLLAB_CLASS_BY_KIND: dict[str, ShareClass] = {
+    "forecast.card": ShareClass.FORECAST,
+    "evidence.share": ShareClass.EVIDENCE,
+    "lesson.share": ShareClass.LESSON,
+}
+
+# The appconfig key holding the comma-separated counterparty allowlist (stable
+# instance_ids). Empty / unset ⇒ closed (accept none). Lives here so the ONE
+# authorisation gate names the ONE knob that opens it.
+COLLAB_ALLOWLIST_CONFIG_KEY = "COLLAB_ALLOWED_INSTANCES"
+
+
+class CollabPolicyRefused(Exception):
+    """A collab share/accept was refused because the counterparty is not on the
+    allowlist. A teaching error that NAMES the knob to authorise it — the closed-
+    by-default org-boundary gate, distinct from a ``never`` cell (:class:`PolicyRefused`)."""
+
+    def __init__(
+        self,
+        *,
+        instance_id: str | None,
+        direction: ShareDirection,
+        share_class: ShareClass,
+        reason: str = "not on the counterparty allowlist",
+    ) -> None:
+        self.instance_id = instance_id
+        self.direction = direction
+        self.share_class = share_class
+        self.reason = reason
+        super().__init__(
+            f"collab {direction.value}.{share_class.value} refused: counterparty "
+            f"{instance_id!r} {reason} — authorise it by adding its instance_id to "
+            f"{COLLAB_ALLOWLIST_CONFIG_KEY} (comma-separated) in the config.yaml env: "
+            f"section or the environment (empty = accept none)."
+        )
+
+
+def collab_config_key(direction: ShareDirection, share_class: ShareClass) -> str:
+    """The appconfig/ENV name for a ``policy.<direction>.<class>`` collab cell."""
+
+    return f"FORECAST_POLICY_{direction.value.upper()}_{share_class.value.upper()}"
+
+
+def share_class_for_kind(kind: str) -> ShareClass | None:
+    """Map an sfp/1 message ``kind`` to its governed :class:`ShareClass` (or None
+    for a kind that is not a governed artifact import, e.g. ``ack``/``request``)."""
+
+    return _COLLAB_CLASS_BY_KIND.get(str(kind or "").strip().lower())
+
+
+def resolve_collab_decision(direction: ShareDirection, share_class: ShareClass) -> Decision:
+    """The effective auto|ask|never for a collab cell: the matrix default overlaid
+    by ``FORECAST_POLICY_<DIRECTION>_<CLASS>``. An unrecognised override falls SAFE
+    to the default (logged once) — a config typo never crashes an import."""
+
+    default = COLLAB_DEFAULTS[direction][share_class]
+    try:
+        from forecasting import appconfig
+
+        raw = appconfig.get_str(collab_config_key(direction, share_class), None)
+    except Exception:  # noqa: BLE001 — config is best-effort; default governs
+        return default
+    if not raw or not str(raw).strip():
+        return default
+    token = str(raw).strip().lower()
+    try:
+        return Decision(token)
+    except ValueError:
+        logger.warning(
+            "policy: %s=%r is not one of auto|ask|never; using the default %s",
+            collab_config_key(direction, share_class),
+            raw,
+            default.value,
+        )
+        return default
+
+
+def resolve_collab_action(
+    direction: ShareDirection,
+    share_class: ShareClass,
+    *,
+    counterparty_instance_id: str | None,
+    allowlist: Any,
+) -> Decision:
+    """The governed decision for a collab share/accept.
+
+    REFUSES (raises :class:`CollabPolicyRefused`) when *counterparty_instance_id*
+    is not in *allowlist* — authorisation is the FIRST gate and it is closed by
+    default (an empty allowlist accepts no one). Only an authorised counterparty
+    reaches the auto|ask|never cell (:func:`resolve_collab_decision`)."""
+
+    allowed = {str(x).strip() for x in (allowlist or ()) if str(x).strip()}
+    ident = str(counterparty_instance_id or "").strip()
+    if not ident or ident not in allowed:
+        raise CollabPolicyRefused(
+            instance_id=counterparty_instance_id, direction=direction, share_class=share_class
+        )
+    return resolve_collab_decision(direction, share_class)
+
+
+def resolve_collab_policy(direction: ShareDirection) -> dict[str, Any]:
+    """The full resolved collab matrix for a direction — for logging onto the
+    collab event trail so a decision is auditable exactly like a JobRecord's."""
+
+    return {
+        "direction": direction.value,
+        "decisions": {
+            c.value: resolve_collab_decision(direction, c).value for c in ShareClass
+        },
+    }
+
+
 __all__ = [
     "ActionClass",
     "Decision",
@@ -339,4 +503,15 @@ __all__ = [
     "is_bounded",
     "request_approval",
     "approve_job",
+    # collab share/accept axis (M3)
+    "ShareClass",
+    "ShareDirection",
+    "COLLAB_DEFAULTS",
+    "COLLAB_ALLOWLIST_CONFIG_KEY",
+    "CollabPolicyRefused",
+    "collab_config_key",
+    "share_class_for_kind",
+    "resolve_collab_decision",
+    "resolve_collab_action",
+    "resolve_collab_policy",
 ]

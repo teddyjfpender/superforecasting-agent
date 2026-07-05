@@ -1771,6 +1771,30 @@ class SlackAdapter(BasePlatformAdapter):
         if event_ts and self._dedup.is_duplicate(event_ts):
             return
 
+        # Multiplayer collab seam (M3): a message carrying sfp/1 metadata is a peer
+        # AGENT's machine-truth card, NOT a human turn — hand it to the collab
+        # router (import pipeline) instead of the chat loop. This runs BEFORE the
+        # bot-message gate below (which drops all bots when allow_bots=="none", the
+        # default) so peer cards are never silently dropped. Our OWN posts also
+        # carry sfp metadata, so skip them (never import our own card). Fail-open:
+        # any routing hiccup is swallowed and the peer message is dropped — it must
+        # never crash the adapter or fall through to the human loop.
+        _sfp_md = event.get("metadata") or (event.get("message") or {}).get("metadata")
+        if (
+            isinstance(_sfp_md, dict)
+            and str(_sfp_md.get("event_type") or "").startswith("sfp.")
+            and isinstance(_sfp_md.get("event_payload"), dict)
+        ):
+            _own_ids = set(getattr(self, "_team_bot_user_ids", {}).values()) | {self._bot_user_id}
+            if event.get("user") not in _own_ids:
+                try:
+                    from forecasting.collab.router import route_slack_metadata_event
+
+                    await asyncio.to_thread(route_slack_metadata_event, event)
+                except Exception:  # noqa: BLE001 — a peer message must never crash the adapter
+                    logger.warning("collab sfp routing failed (fail-open)", exc_info=True)
+            return
+
         # Bot message filtering (SLACK_ALLOW_BOTS / config allow_bots):
         #   "none"     — ignore all bot messages (default, backward-compatible)
         #   "mentions" — accept bot messages only when they @mention us

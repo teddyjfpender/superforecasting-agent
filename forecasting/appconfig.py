@@ -122,6 +122,15 @@ _KEYS: tuple[ConfigKey, ...] = (
     ConfigKey("AGENT_PERSONA", "str", None, False,
               "Optional persona notes for this named agent (free text, surfaced in whoami).",
               category="identity"),
+    # ── Multiplayer collab authorisation + rate limit (M3 import pipeline) ────
+    ConfigKey("COLLAB_ALLOWED_INSTANCES", "str", None, False,
+              "Comma-separated list of authorised counterparty instance_ids. CLOSED BY "
+              "DEFAULT — empty/unset accepts no peer imports. Authorises by stable id, "
+              "never display name.", category="identity"),
+    ConfigKey("COLLAB_RATE_LIMIT_PER_HOUR", "int", 240, False,
+              "Max peer sfp/1 messages the collab router accepts per channel per hour "
+              "(a malicious channel can't drain the desk via inbound messages).",
+              category="identity"),
     # ── HERMES_* runtime ─────────────────────────────────────────────────────
     ConfigKey("HERMES_HOME_MODE", "str", None, False,
               "Permission mode for the agent-home directory (managed installs).", category="runtime"),
