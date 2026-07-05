@@ -87,6 +87,22 @@ def _install_sidecar_publisher() -> None:
     )
 
 
+def _install_event_log() -> None:
+    """Tee every dispatcher emit into the append-only per-session event log.
+
+    The stdio path's convergence point is ``server._stdio_transport`` (both
+    per-session async events — session["transport"] falls back to it — and
+    sessionless events land here), so Tee'ing the log on top of it is the whole
+    wiring: sessions become forensically replayable via ``events.replay`` with no
+    change to the stdio contract. Fail-open (see EventLog); disable via
+    ``*_TUI_EVENT_LOG=0``."""
+    if _tui_env("EVENT_LOG").strip().lower() in {"0", "false", "off", "no"}:
+        return
+    from tui_gateway.event_log import EventLog
+
+    server._stdio_transport = TeeTransport(server._stdio_transport, EventLog())
+
+
 # How long to wait for orderly shutdown (atexit + finalisers) before
 # falling back to ``os._exit(0)`` so a wedged worker mid-flush can't
 # strand the process.  1s covers the gateway's own shutdown work
@@ -326,6 +342,7 @@ def main():
         return
 
     _install_sidecar_publisher()
+    _install_event_log()
 
     # MCP tool discovery — inline is safe here: TUI entry is a plain
     # sync loop with no asyncio event loop to block.  Previously ran as

@@ -59,6 +59,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
 from tui_gateway import server
+from tui_gateway.event_log import _EID_KEY, EventLog
 from tui_gateway.transport import TeeTransport, Transport
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,11 @@ def _is_loopback(host: str) -> bool:
     return (host or "").strip().lower() in _LOOPBACK_HOSTS
 
 
+def _event_log_enabled() -> bool:
+    """The per-session event log is on by default; opt out with *_TUI_EVENT_LOG=0."""
+    return _tui_env("EVENT_LOG").strip().lower() not in {"0", "false", "off", "no"}
+
+
 # ── Event fanout ──────────────────────────────────────────────────────────
 
 
@@ -116,6 +122,19 @@ class BroadcastHub:
         self._closed = False
         self._seq = 0
         self._seq_lock = threading.Lock()
+        # The append-only event log. When attached it is the id AUTHORITY (it
+        # stamps the canonical monotonic id on each frame, which the SSE sender
+        # emits as `id:` and `Last-Event-ID` resume resolves against) AND the
+        # resume buffer (recent_since). Left None, the hub falls back to its own
+        # `next_id` counter and offers no resume — matching the pre-log HTTP slice.
+        self._log: Optional[EventLog] = None
+
+    def attach_log(self, log: Optional[EventLog]) -> None:
+        self._log = log
+
+    @property
+    def log(self) -> Optional[EventLog]:
+        return self._log
 
     def subscribe(self) -> "queue.Queue[object]":
         q: "queue.Queue[object]" = queue.Queue(maxsize=_SUB_QUEUE_MAX)
@@ -136,6 +155,15 @@ class BroadcastHub:
             return self._seq
 
     def publish(self, frame: dict) -> None:
+        # Assign + stamp the canonical event id BEFORE fan-out so every
+        # subscriber (and the `id:` line each emits) shares one authority. The
+        # log both stamps the frame (via record) and persists/rings it; without
+        # a log we stamp our own counter so the SSE `id:` line still increments.
+        if isinstance(frame, dict) and frame.get(_EID_KEY) is None:
+            if self._log is not None:
+                self._log.record(frame)
+            else:
+                frame[_EID_KEY] = self.next_id()
         with self._lock:
             if self._closed:
                 return
@@ -451,6 +479,8 @@ class _GatewayHandler(BaseHTTPRequestHandler):
         self._send_json(200, resp)
 
     def _handle_events(self) -> None:
+        # Subscribe FIRST so no live frame is lost between the resume replay and
+        # the live loop; the sent_max dedup below drops any overlap.
         q = self._hub.subscribe()
         try:
             self.send_response(200)
@@ -465,6 +495,23 @@ class _GatewayHandler(BaseHTTPRequestHandler):
             self._sse_raw("retry: 3000\n\n")
             self._sse_raw(": connected\n\n")
 
+            # ── resume ──────────────────────────────────────────────────────
+            # Honour Last-Event-ID (the EventSource reconnect header; also
+            # accepted as a `?lastEventId=`/`?last_event_id=` query param). Replay
+            # the frames the client missed straight from the log's resume ring,
+            # then fall through to the live loop. THIS is the event-log payoff:
+            # the HTTP slice emitted monotonic ids but had nothing to resolve a
+            # resume against; now it does.
+            sent_max = self._resume_since_id()
+            log = self._hub.log
+            if sent_max > 0 and log is not None:
+                for eid, frame in log.recent_since(sent_max):
+                    if not self._sse_send(eid, frame):
+                        return
+                    if eid > sent_max:
+                        sent_max = eid
+
+            # ── live ────────────────────────────────────────────────────────
             while True:
                 try:
                     item = q.get(timeout=_SSE_HEARTBEAT_S)
@@ -476,12 +523,38 @@ class _GatewayHandler(BaseHTTPRequestHandler):
                     break
                 if not isinstance(item, dict):
                     continue
-                data = json.dumps(item, ensure_ascii=False)
-                frame = f"id: {self._hub.next_id()}\ndata: {data}\n\n"
-                if not self._sse_raw(frame):
+                eid = item.get(_EID_KEY)
+                if not isinstance(eid, int):
+                    eid = self._hub.next_id()
+                # Drop any frame already handed out during the resume replay.
+                if eid <= sent_max:
+                    continue
+                if not self._sse_send(eid, item):
                     break
+                sent_max = eid
         finally:
             self._hub.unsubscribe(q)
+
+    def _resume_since_id(self) -> int:
+        """The client's last-seen event id from the `Last-Event-ID` header or a
+        `lastEventId` / `last_event_id` query param; 0 (no resume) if absent."""
+        raw = (self.headers.get("Last-Event-ID") or "").strip()
+        if not raw:
+            from urllib.parse import parse_qs, urlsplit
+
+            qs = parse_qs(urlsplit(self.path).query)
+            raw = (qs.get("lastEventId") or qs.get("last_event_id") or [""])[0].strip()
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return 0
+
+    def _sse_send(self, eid: int, frame: dict) -> bool:
+        """Write one SSE event, stripping the private id annotation from `data:`
+        (it rides the `id:` line instead, keeping the wire frame pristine)."""
+        payload = {k: v for k, v in frame.items() if k != _EID_KEY} if _EID_KEY in frame else frame
+        data = json.dumps(payload, ensure_ascii=False)
+        return self._sse_raw(f"id: {eid}\ndata: {data}\n\n")
 
     def _sse_raw(self, text: str) -> bool:
         """Write raw SSE bytes; return False when the client is gone."""
@@ -518,6 +591,13 @@ def make_server(
     resolved_token = _resolve_token(host, token, generate_token)
 
     hub = BroadcastHub()
+    # Attach the append-only per-session event log. The hub is the convergence
+    # point for the HTTP path (sessionless events via _HubTransport, per-session
+    # async events via each _RpcSink), so hooking the log here captures every
+    # frame the SSE stream carries — the resume ring stays in lockstep with the
+    # ids clients see. Fail-open (see EventLog); disable via *_TUI_EVENT_LOG=0.
+    if _event_log_enabled():
+        hub.attach_log(EventLog())
     hub_transport = _HubTransport(hub)
     prev = server._stdio_transport
     if alongside_stdio:

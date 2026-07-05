@@ -3347,6 +3347,12 @@ from tui_gateway import jobs_rpc as _jobs_rpc  # noqa: E402
 
 _jobs_rpc.register(sys.modules[__name__])
 
+# events.replay {session_id, since_id?, types?, limit?} — the logged frames from
+# a session's append-only event log (Task #230(c)). Thin, pm_rpc-style register.
+from tui_gateway import event_log as _event_log  # noqa: E402
+
+_event_log.register(sys.modules[__name__])
+
 
 @method("news.search")
 def _(rid, params: dict) -> dict:
