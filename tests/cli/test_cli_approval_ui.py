@@ -50,6 +50,10 @@ def _make_background_cli_stub():
     cli.enabled_toolsets = []
     cli._session_db = None
     cli.reasoning_config = {}
+    # 0fe2c51ed threads reasoning_summary through the background AIAgent
+    # construction; without it the bg thread dies on AttributeError before
+    # run_conversation registers the callbacks under test.
+    cli.reasoning_summary = None
     cli.service_tier = None
     cli._providers_only = None
     cli._providers_ignore = None

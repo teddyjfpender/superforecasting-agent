@@ -771,6 +771,10 @@ def test_make_tui_argv_forecast_quiet_alias_suppresses_install_message(
 
     monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
     monkeypatch.setattr(main_mod, "_tui_need_npm_install", lambda _tui_dir: True)
+    # b2bf65844 short-circuits to the wheel-bundled hermes_cli/tui_dist/entry.js
+    # when present (it is tracked in-tree). Pin it off so this test keeps
+    # exercising the npm-install branch whose quiet behavior it verifies.
+    monkeypatch.setattr(main_mod, "_find_bundled_tui", lambda *a, **k: None)
     monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
     monkeypatch.setenv("FORECAST_QUIET", "1")
     monkeypatch.delenv("SUPERFORECASTING_AGENT_QUIET", raising=False)

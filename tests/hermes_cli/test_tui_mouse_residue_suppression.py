@@ -23,6 +23,10 @@ from hermes_cli.main import _suppress_mouse_residue_early
 EXPECTED = (
     b"\x1b[?1003l\x1b[?1002l\x1b[?1001l\x1b[?1000l\x1b[?9l"
     b"\x1b[?1006l\x1b[?1005l\x1b[?1015l\x1b[?1016l\x1b[?2029l"
+    # Screen clear + cursor home appended in 571a0a87d: wipes the user's
+    # shell content immediately so it doesn't flash during the pre-mount
+    # import window (entry.tsx clears the alt buffer again later).
+    b"\x1b[H\x1b[2J"
 )
 
 

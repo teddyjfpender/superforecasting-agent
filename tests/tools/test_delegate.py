@@ -1762,20 +1762,21 @@ class TestDelegateHeartbeat(unittest.TestCase):
         }
 
         def slow_run(**kwargs):
-            # Long enough to exceed the OLD idle threshold (5 cycles) at
-            # the patched interval, but shorter than the new in-tool
-            # threshold.
-            time.sleep(0.4)
+            # Long enough to exceed the (patched) idle threshold at the
+            # patched interval, but shorter than the in-tool threshold.
+            time.sleep(0.8)
             return {"final_response": "done", "completed": True, "api_calls": 1}
 
         child.run_conversation.side_effect = slow_run
 
-        # Patch both the interval AND the idle ceiling so the test proves
-        # the in-tool branch takes effect: with a 0.05s interval and the
-        # default _HEARTBEAT_STALE_CYCLES_IDLE=5, the old behavior would
-        # trip after 0.25s and stop firing. We should see heartbeats
-        # continuing through the full 0.4s run.
-        with patch("tools.delegate_tool._HEARTBEAT_INTERVAL", 0.05):
+        # Patch the interval AND pin the idle ceiling to 5 (0cc63043e raised
+        # the shipped default to 15, which this run could never reach — the
+        # explicit pin restores the discriminator): if the in-tool branch
+        # regressed to the idle threshold, the heartbeat would stop at 5
+        # cycles (0.25s); the in-tool threshold (40 cycles = 2.0s) lets it
+        # run through the full 0.8s sleep.
+        with patch("tools.delegate_tool._HEARTBEAT_INTERVAL", 0.05), \
+             patch("tools.delegate_tool._HEARTBEAT_STALE_CYCLES_IDLE", 5):
             _run_single_child(
                 task_index=0,
                 goal="Test long-running tool",
@@ -1783,13 +1784,14 @@ class TestDelegateHeartbeat(unittest.TestCase):
                 parent_agent=parent,
             )
 
-        # With the old idle threshold (5 cycles = 0.25s), touch_calls
-        # would cap at ~5. With the in-tool threshold (20 cycles = 1.0s),
-        # we should see substantially more heartbeats over 0.4s.
+        # Idle-threshold regression caps touch_calls at ~5. Healthy in-tool
+        # behavior over 0.8s at 0.05s/cycle ideally yields ~16 touches;
+        # requiring >6 keeps a wide deterministic margin against scheduler
+        # jitter under a loaded xdist run (observed ~25% cycle overhead).
         self.assertGreater(
             len(touch_calls), 6,
             f"Heartbeat stopped too early while child was inside a tool; "
-            f"got {len(touch_calls)} touches over 0.4s at 0.05s interval",
+            f"got {len(touch_calls)} touches over 0.8s at 0.05s interval",
         )
 
 

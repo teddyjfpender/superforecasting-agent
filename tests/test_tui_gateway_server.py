@@ -1600,6 +1600,12 @@ def test_init_session_fires_reset_hook(monkeypatch):
 
     monkeypatch.setattr(_approval, "register_gateway_notify", lambda key, cb: None)
     monkeypatch.setattr(_approval, "load_permanent_allowlist", lambda: None)
+    # Don't start the real notification poller: this test doesn't exercise
+    # it, and a leaked poller daemon consumes the process-global
+    # completion_queue, starving later async-delegation tests on the worker.
+    monkeypatch.setattr(
+        server, "_start_notification_poller", lambda _sid, _session: threading.Event()
+    )
 
     sid = "sid"
     try:
@@ -1612,7 +1618,16 @@ def test_init_session_fires_reset_hook(monkeypatch):
         )
         assert ("on_session_reset", "session-key") in hooks
     finally:
-        server._sessions.pop(sid, None)
+        # _init_session starts the notification-poller daemon thread. Stop it,
+        # or it outlives this test consuming the process-global
+        # process_registry.completion_queue and starves any later
+        # async-delegation test on the same xdist worker.
+        _sess = server._sessions.pop(sid, None)
+        if _sess is not None:
+            _sess["_finalized"] = True
+            _stop = _sess.get("_notif_stop")
+            if _stop is not None:
+                _stop.set()
 
 
 def test_session_title_queues_when_db_row_not_ready(monkeypatch):

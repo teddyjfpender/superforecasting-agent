@@ -143,9 +143,14 @@ def test_forecast_lookup_shortcuts_resolve_words_before_ledger_actions(tmp_path,
     assert len(evidence) == 1
     assert evidence[0].summary == "BLS release mentioned gasoline pressure"
 
+    # --no-require-structured-reasoning / --no-require-panel: those live-commit
+    # gates now default ON (superforecasting adherence audit); this test pins
+    # word-shortcut resolution, not the gates, so it uses the documented
+    # opt-outs.
     HermesCLI._handle_forecast_update_for_command(
         cli,
-        '/revise inflation -- --probability 0.64 --rationale "energy evidence moved up"',
+        '/revise inflation -- --probability 0.64 --no-require-structured-reasoning '
+        '--no-require-panel --rationale "energy evidence moved up"',
     )
     snapshot = ledger.get_current_snapshot(question.id)
     assert snapshot is not None
@@ -154,7 +159,8 @@ def test_forecast_lookup_shortcuts_resolve_words_before_ledger_actions(tmp_path,
 
     HermesCLI._handle_forecast_update_for_command(
         cli,
-        "/update-for inflation -- --probability 0.66 "
+        "/update-for inflation -- --probability 0.66 --no-require-structured-reasoning "
+        "--no-require-panel "
         "--rationale May CPI (all-items) and BLS's release shifted higher",
     )
     snapshot = ledger.get_current_snapshot(question.id)

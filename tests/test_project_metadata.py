@@ -1261,10 +1261,11 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "FORECAST_PULSE_RE" in text
     assert "ForecastPulse" in text
     assert "panelDraftTarget(target)" in text
-    assert "runTargetFromClick(action.target ?? action.command" in text
-    assert "runTargetFromClick(commandCandidate ?? key" in text
+    # runTargetFromClick / runCommand={actions.runCommand} pins removed:
+    # a88aa0789 replaced the dashboard-heavy landing (desk chrome, action
+    # strip, orb rail) with the minimal opencode-style landing, deleting
+    # those click handlers along with the chrome they served.
     assert "row.id ? `/questions ${row.id}`" in text
-    assert "runCommand={actions.runCommand}" in text
     assert "LONG_RUN_NOTICES" in text
     assert "switch forecast style for this forecast session" in text
     assert "starting forecast session…" in text
@@ -1280,7 +1281,9 @@ def test_tui_visible_affordances_are_forecast_native():
     assert "forecast session usage" in text
     assert "style:" in text
     assert "postmortems are part of the model" in text
-    assert "Superforecasting Agent · forecast ledger online" in text
+    # "Superforecasting Agent · forecast ledger online" pin removed: 522f78056
+    # deleted the orphaned Banner (and its FORECAST_LEDGER_STATUS line) when
+    # /info took over the session panel. The negative Nous pin stays.
     assert "undo last forecast exchange" in text
     assert "Nous Research · forecast ledger online" not in text
     assert " · Nous Research" not in text
@@ -1642,7 +1645,9 @@ def test_high_attention_identity_copy_is_forecast_desk_native():
         root / "website" / "docs" / "getting-started" / "nix-setup.md"
     ).read_text(encoding="utf-8")
 
-    assert "SOUL.md** — forecast-desk identity and style file" in readme
+    # The README SOUL.md bullet was culled by the bb1971f1d docs revamp (the
+    # README no longer carries a config-file tour); the anti-"persona" pin
+    # below still guards against upstream copy reappearing.
     assert "Forecast-support `desk` sessions" in tips
     assert "forecast-session titles" in tips
     assert "simple forecast-support queries" in tips
@@ -4533,31 +4538,34 @@ def test_codex_migration_report_copy_is_forecast_native():
 
 
 def test_readme_primary_links_are_fork_native():
+    # Pins retargeted after the bb1971f1d docs revamp: the README's upstream
+    # doc table, "Legacy Hermes Documentation" section, community links, and
+    # transition copy were deliberately culled; primary links now point at the
+    # in-repo docs/ tree. The anti-upstream negative pins are kept verbatim.
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
     zh_readme = (root / "README.zh-CN.md").read_text(encoding="utf-8")
-    before_legacy_docs = readme.split("## Legacy Hermes Documentation", 1)[0]
 
-    assert "docs/plans/2026-05-20-superforecasting-agent-fork-prd.md" in before_legacy_docs
-    assert "github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" in before_legacy_docs
-    assert "github.com/teddyjfpender/superforecasting-agent/issues" in readme
-    assert "github.com/teddyjfpender/superforecasting-agent/discussions" in readme
-    assert "Inherited runtime community" in readme
-    assert "Upstream-Hermes%20Agent" in before_legacy_docs
-    assert '<a href="LICENSE">' in before_legacy_docs
-    assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in before_legacy_docs
+    assert "## Legacy Hermes Documentation" not in readme
+    assert "docs/index.md" in readme
+    assert "[docs/cli.md](docs/cli.md)" in readme
+    assert "docs/reference/cli-reference.md" in readme
+    assert "github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" in readme
+    assert "github.com/teddyjfpender/superforecasting-agent.git" in readme
+    # Upstream attribution stays a single honest fork line, not a doc table.
+    assert "This is a fork of [Hermes Agent](https://github.com/NousResearch/hermes-agent)" in readme
+    assert '<a href="LICENSE">' in readme
+    assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in readme
     assert "hermes              # also opens the forecast desk during the fork transition" not in readme
-    assert "new workflows should use `forecast` or `superforecasting-agent`" in readme
+    assert "fork-native command; forecast workflows are shorthand" in readme
     assert "github.com/NousResearch/hermes-agent/issues" not in readme
-    assert 'href="https://discord.gg/NousResearch"><img' not in before_legacy_docs
+    assert 'href="https://discord.gg/NousResearch"><img' not in readme
     assert "Built by [Nous Research]" not in readme
     assert "Built by [Nous Research]" not in zh_readme
     assert "github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" in zh_readme
     assert "Upstream-Hermes%20Agent" in zh_readme
     assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in readme
     assert "upstream Hermes contributing guide" not in readme
-    assert "for Hermes and other MCP hosts" not in readme
-    assert "for upstream Hermes and other MCP hosts" in readme
 
 
 def test_high_attention_help_docs_are_fork_local():
@@ -5342,7 +5350,9 @@ def test_tester_pilot_docs_cover_scheduled_learning_loop():
     tester_pilot = (root / "website" / "docs" / "getting-started" / "tester-pilot.md").read_text(
         encoding="utf-8"
     )
-    forecast_cli = (root / "forecasting" / "cli.py").read_text(encoding="utf-8")
+    # 8ce9630d9 split the forecasting/cli.py megafile into a package; the
+    # schedule-run surface now lives in forecasting/cli/core.py.
+    forecast_cli = (root / "forecasting" / "cli" / "core.py").read_text(encoding="utf-8")
 
     assert 'schedule_run.add_argument("--due"' in forecast_cli
     assert "forecast --db \"$FORECAST_DB\" schedule run --due --auto-score --auto-postmortem" in tester_pilot

@@ -360,6 +360,8 @@ def test_register_wires_tools_cli_and_hook_on_linux():
 
     assert set(calls["tools"]) == {
         "meet_join", "meet_status", "meet_transcript", "meet_leave", "meet_say",
+        # 5513078f2: post-call TODO loop registers meet_followup.
+        "meet_followup",
     }
     assert calls["cli"] == ["meet"]
     assert calls["hooks"] == ["on_session_end"]

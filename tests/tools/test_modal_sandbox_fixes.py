@@ -144,11 +144,28 @@ class TestCwdHandling:
         assert config["host_cwd"] == "/home/user/project"
 
     def test_local_backend_uses_getcwd(self, monkeypatch):
-        """Local backend should use os.getcwd(), not /root."""
+        """Local backend should use os.getcwd(), not /root.
+
+        e22390600 added the harness wall: when the process cwd sits inside
+        the harness source tree (as it does under pytest), the local default
+        cwd relocates to the sanctioned workspace. Pin the wall off for the
+        base behavior, then pin the relocation branch explicitly.
+        """
+        from unittest.mock import patch as _patch
+
         monkeypatch.setenv("TERMINAL_ENV", "local")
         monkeypatch.delenv("TERMINAL_CWD", raising=False)
-        config = _tt_mod._get_env_config()
+
+        with _patch("agent.harness_wall.is_harness_wall_enabled", return_value=False):
+            config = _tt_mod._get_env_config()
         assert config["cwd"] == os.getcwd()
+
+        # Wall on + cwd inside the harness tree → relocate to the workspace.
+        from hermes_constants import ensure_workspace_dir
+
+        with _patch("agent.harness_wall.is_harness_wall_enabled", return_value=True):
+            config = _tt_mod._get_env_config()
+        assert config["cwd"] == str(ensure_workspace_dir())
 
     def test_create_environment_passes_docker_host_cwd_and_flag(self, monkeypatch):
         """Docker host cwd and mount flag should reach DockerEnvironment."""

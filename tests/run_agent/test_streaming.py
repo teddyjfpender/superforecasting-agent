@@ -4,6 +4,7 @@ Tests the unified streaming API call, delta callbacks, tool-call
 suppression, provider fallback, and CLI streaming display.
 """
 import json
+import os
 import threading
 import uuid
 from types import SimpleNamespace
@@ -580,10 +581,14 @@ class TestStreamingFallback:
         agent.api_mode = "chat_completions"
         agent._interrupt_requested = False
 
-        with pytest.raises(httpx.ConnectError, match="socket closed"):
-            agent._interruptible_streaming_api_call({})
+        # Pin the retry budget explicitly: bdb607fa7 made the default
+        # TTY-dependent (interactive 2, unattended 5), and pytest's captured
+        # stdout is not a TTY. The env override wins over both.
+        with patch.dict(os.environ, {"HERMES_STREAM_RETRIES": "2"}):
+            with pytest.raises(httpx.ConnectError, match="socket closed"):
+                agent._interruptible_streaming_api_call({})
 
-        # Should have retried 3 times (default HERMES_STREAM_RETRIES=2 → 3 attempts)
+        # HERMES_STREAM_RETRIES=2 → 3 attempts
         assert mock_client.chat.completions.create.call_count == 3
         assert mock_close.call_count >= 1
 
@@ -624,10 +629,14 @@ class TestStreamingFallback:
         agent.api_mode = "chat_completions"
         agent._interrupt_requested = False
 
-        with pytest.raises(OAIAPIError):
-            agent._interruptible_streaming_api_call({})
+        # Pin the retry budget explicitly: bdb607fa7 made the default
+        # TTY-dependent (interactive 2, unattended 5), and pytest's captured
+        # stdout is not a TTY. The env override wins over both.
+        with patch.dict(os.environ, {"HERMES_STREAM_RETRIES": "2"}):
+            with pytest.raises(OAIAPIError):
+                agent._interruptible_streaming_api_call({})
 
-        # Should retry 3 times (default HERMES_STREAM_RETRIES=2 → 3 attempts)
+        # HERMES_STREAM_RETRIES=2 → 3 attempts
         assert mock_client.chat.completions.create.call_count == 3
         # Connection cleanup should happen for each failed retry
         assert mock_close.call_count >= 2

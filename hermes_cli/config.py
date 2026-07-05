@@ -1622,7 +1622,7 @@ DEFAULT_CONFIG = {
         # the parent's context window and trigger a compression/429 death
         # spiral. delegate_task sizes each summary against the parent's
         # remaining context headroom (split across the batch); when it must
-        # trim, the full text is spilled to ~/.hermes/cache/delegation/
+        # trim, the full text is spilled to the agent home's cache/delegation/
         # (mounted into remote backends) and the in-context summary becomes a
         # head+tail window plus a footer with the exact read_file offset to
         # page the omitted middle — the same convention web_extract uses for

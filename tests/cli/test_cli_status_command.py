@@ -54,8 +54,12 @@ def test_statusbar_still_toggles_visibility():
 def test_status_prefix_prefers_status_command_over_statusbar_toggle():
     cli_obj = _make_cli()
 
+    # "/statu" (not "/sta"): ce5ad3d88 added "state" as a /ledger alias, so
+    # "/sta" now shortest-unique-resolves to /state per the documented prefix
+    # rule. "/statu" still discriminates status (7) vs statusbar (10) — the
+    # behavior this test pins.
     with patch.object(cli_obj, "_show_session_status") as mock_status:
-        assert cli_obj.process_command("/sta") is True
+        assert cli_obj.process_command("/statu") is True
 
     mock_status.assert_called_once_with()
     assert cli_obj._status_bar_visible is True

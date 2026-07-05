@@ -15404,7 +15404,14 @@ def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatc
     db_path = tmp_path / "pilot.db"
     token = set_hermes_home_override(hermes_home)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
-    sys.modules.pop("cron.jobs", None)
+    # Pop cron.jobs so the install-cron path re-imports it bound to this
+    # test's home — but RESTORE the original module object afterwards.
+    # Leaving the pop in place orphans the module identity that earlier
+    # importers (e.g. tools.cronjob_tools' from-imports) still hold, so any
+    # later test that monkeypatches cron.jobs.* patches a different module
+    # than the tool actually uses (this poisoned test_cronjob_tools on the
+    # same xdist worker).
+    _orig_cron_jobs = sys.modules.pop("cron.jobs", None)
     try:
         _run(
             parser,
@@ -15424,6 +15431,17 @@ def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatc
         )
     finally:
         reset_hermes_home_override(token)
+        if _orig_cron_jobs is not None:
+            sys.modules["cron.jobs"] = _orig_cron_jobs
+            # The re-import also rebound the `cron` package's `jobs`
+            # attribute to the fresh module; monkeypatch.setattr(
+            # "cron.jobs.X") resolves through that attribute, so restore
+            # it too or later tests patch the wrong module object.
+            _cron_pkg = sys.modules.get("cron")
+            if _cron_pkg is not None:
+                _cron_pkg.jobs = _orig_cron_jobs
+        else:
+            sys.modules.pop("cron.jobs", None)
 
     output = capsys.readouterr().out
     jobs = json.loads((hermes_home / "cron" / "jobs.json").read_text(encoding="utf-8"))["jobs"]
