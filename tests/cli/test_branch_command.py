@@ -136,7 +136,7 @@ class TestBranchCommandCLI:
         # session_id should not have changed
         assert cli_instance.session_id == "20260403_120000_abc123"
         rendered = "\n".join(str(call) for call in mock_print.call_args_list)
-        assert "No research session to branch" in rendered
+        assert "No forecast session to branch" in rendered
         assert "No conversation to branch" not in rendered
 
     def test_branch_no_session_db(self, cli_instance):

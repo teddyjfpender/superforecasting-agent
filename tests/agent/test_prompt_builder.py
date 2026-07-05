@@ -61,7 +61,7 @@ class TestGuidanceConstants:
 
         guidance = get_agent_help_guidance()
 
-        assert "Superforecasting Agent" in guidance
+        assert "superforecasting agent" in guidance.lower()
         assert "Use internal runbook A." in guidance
         assert "Use internal runbook B." not in guidance
         assert "Use legacy runbook." not in guidance
@@ -525,7 +525,7 @@ class TestBuildContextFilesPrompt:
         with patch("pathlib.Path.home", return_value=fake_home):
             result = build_context_files_prompt(cwd=str(tmp_path))
         assert "Project Context" in result
-        assert "Superforecasting Agent" in result
+        assert "superforecasting agent" in result.lower()
 
     def test_loads_agents_md(self, tmp_path):
         (tmp_path / "AGENTS.md").write_text("Use Ruff for linting.")
@@ -952,7 +952,7 @@ class TestEnvironmentHints:
         assert "PowerShell" not in result
         # Backend info must appear instead.
         assert "Terminal backend: docker" in result
-        assert "Superforecasting Agent" in result
+        assert "superforecasting agent" in result.lower()
         assert "where Hermes" not in result
         assert "inside" in result.lower()
 

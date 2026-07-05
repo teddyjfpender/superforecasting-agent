@@ -418,7 +418,7 @@ class TestHistoryDisplay:
         cli._handle_resume_command("/resume")
         output = capsys.readouterr().out
 
-        assert "Recent research sessions" in output
+        assert "Recent forecast sessions" in output
         assert "Checking Forecast Agent" in output
         assert "Use /resume <session id or title> to continue" in output
 
@@ -448,7 +448,7 @@ class TestHistoryDisplay:
         output = capsys.readouterr().out
 
         assert "Unknown command" not in output
-        assert "Recent research sessions" in output
+        assert "Recent forecast sessions" in output
         assert "Checking Forecast Agent" in output
         assert "20260401_201329_d85961" in output
 
@@ -470,7 +470,7 @@ class TestHistoryDisplay:
         output = capsys.readouterr().out
 
         assert "Unknown command" not in output
-        assert "Recent research sessions" in output
+        assert "Recent forecast sessions" in output
         assert "Checking Forecast Agent" in output
 
     def test_sessions_with_target_delegates_to_resume(self):
