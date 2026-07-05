@@ -48,6 +48,7 @@ from forecasting.models import (
     utc_now_iso,
 )
 
+from forecasting import appconfig
 from forecasting.ledger import core as _core
 from forecasting.ledger.gate import _enforce_write_gate, allow_ledger_writes
 
@@ -1012,9 +1013,7 @@ def create_snapshot(
             # resolved (profile + scaling + override) severities, and stage the block to be
             # raised after this fail-open try. run_hooks preserves builtin order, so the
             # first failing ERROR is the same rule the report's blocking_failures()[0] names.
-            _block_disabled = os.environ.get("FORECAST_DISABLE_HOOK_BLOCKING", "").strip().lower() in {
-                "1", "true", "yes", "on",
-            }
+            _block_disabled = appconfig.get_bool("FORECAST_DISABLE_HOOK_BLOCKING")
             if (
                 forecast_origin == "live"
                 and enforce_resolved_hooks
@@ -1151,8 +1150,7 @@ def create_snapshot(
         set_current
         and forecast_origin == "live"
         and (style_autofix or distribution_autofix)
-        and os.environ.get("FORECAST_DISABLE_SATURATION_ESCALATION", "").strip().lower()
-        not in {"1", "true", "yes", "on"}
+        and not appconfig.get_bool("FORECAST_DISABLE_SATURATION_ESCALATION")
     ):
         try:
             ledger.enqueue_saturation_alert(question_id, snapshot_metadata.get("saturation"))

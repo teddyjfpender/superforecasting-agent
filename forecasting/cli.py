@@ -1988,6 +1988,20 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     apikey_unset.set_defaults(_forecast_handler=_cmd_apikey_unset)
     apikey_parser.set_defaults(_forecast_handler=_cmd_apikey_default)
 
+    config_parser = forecast_sub.add_parser(
+        "config",
+        help="Inspect the layered runtime configuration (typed loader + config doctor).",
+    )
+    config_sub = config_parser.add_subparsers(dest="config_command")
+    config_doctor = config_sub.add_parser(
+        "doctor",
+        help="Report unknown/typo vars, defaults in effect, secret presence, "
+        "file-vs-env conflicts, and the Kalshi two-var trap (read-only).",
+    )
+    config_doctor.add_argument("--json", action="store_true", help="Emit the machine-readable report JSON.")
+    config_doctor.set_defaults(_forecast_handler=_cmd_config_doctor)
+    config_parser.set_defaults(_forecast_handler=_cmd_config_doctor)
+
     protocol_parser = forecast_sub.add_parser("protocol", help="Render a forecast-stage agent protocol prompt")
     protocol_parser.add_argument("id")
     protocol_parser.add_argument("--stage", choices=sorted(PROTOCOL_STAGES), default="update")
@@ -9317,6 +9331,22 @@ def _cmd_apikey_unset(args: argparse.Namespace) -> None:
     print(f"unset {provider.env_var} in {default_env_path()}")
 
 
+def _cmd_config_doctor(args: argparse.Namespace) -> None:
+    """`forecast config doctor` — read-only report over the layered config loader.
+
+    Surfaces set-but-unknown (typo) vars, known-but-unset defaults in effect,
+    secret presence (never values), file-vs-env precedence conflicts, and the
+    Kalshi two-var trap. Delegates to :mod:`forecasting.appconfig` so the report
+    logic stays pure and testable."""
+    from forecasting import appconfig
+
+    report = appconfig.build_doctor_report(appconfig.get_config())
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2, sort_keys=True, default=str))
+        return
+    print(appconfig.render_doctor_report(report))
+
+
 def _cmd_model_build(args: argparse.Namespace) -> None:
     """`forecast model build <ref>` — build a deterministic Market Model as a
     forecast leg and link it to the question. ``<ref>`` may be an existing forecast
@@ -12629,11 +12659,9 @@ def build_triage_runner(*, model: str | None = None):
     the ``quorum`` module (not a ``from`` import) so tests can monkeypatch
     ``forecasting.quorum.make_aiagent_runner`` like ``tests/forecasting/test_triage.py``.
     """
-    import os
+    from forecasting import appconfig, quorum
 
-    from forecasting import quorum
-
-    resolved = model or os.getenv("FORECAST_TRIAGE_MODEL") or quorum.DEFAULT_JUDGE_MODEL
+    resolved = model or appconfig.get_str("FORECAST_TRIAGE_MODEL") or quorum.DEFAULT_JUDGE_MODEL
     runner = quorum.make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)
     return runner, resolved
 

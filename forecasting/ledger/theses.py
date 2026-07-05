@@ -316,7 +316,9 @@ def _cascade_reaggregate_parents(ledger, member_id: str, *, as_of: str | None = 
     per-top-commit visited-set bounds the work and breaks cycles. Fail-open: a
     cascade error never breaks the member commit. Disable globally with
     ``FORECAST_DISABLE_THESIS_CASCADE``."""
-    if os.environ.get("FORECAST_DISABLE_THESIS_CASCADE", "").strip().lower() in {"1", "true", "yes", "on"}:
+    from forecasting import appconfig
+
+    if appconfig.get_bool("FORECAST_DISABLE_THESIS_CASCADE"):
         return
     try:
         parents = ledger.list_theses_for_member(member_id)

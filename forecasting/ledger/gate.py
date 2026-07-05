@@ -128,7 +128,9 @@ def ledger_write_gate_mode() -> str:
     Read live from the environment each call so the flag is tunable at runtime
     (tests / doctor / an operator override) without re-importing the module.
     """
-    raw = os.getenv("FORECAST_GATE_DIRECT_WRITES", "on").strip().lower()
+    from forecasting import appconfig
+
+    raw = (appconfig.get_str("FORECAST_GATE_DIRECT_WRITES", "on") or "").strip().lower()
     if raw in ("", "1", "true", "on", "enforce", "refuse"):
         return "on"
     if raw in ("warn", "warning", "audit", "log"):

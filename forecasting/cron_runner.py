@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from forecasting import appconfig
 from forecasting.learning import is_learning_review_reason
 from forecasting.ledger import ForecastLedger, allow_ledger_writes_decorator
 
@@ -1584,7 +1585,7 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider")
     parser.add_argument("--max-iterations", type=int)
     args = parser.parse_args(argv)
-    db_path = args.db or os.getenv("FORECAST_LEDGER_DB") or None
+    db_path = args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None
 
     reforecast_runner = None
     evidence_search = None
@@ -1813,7 +1814,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Re-pull + recompute Market Models linked to open questions; alert on a material projection move",
     )
     args = parser.parse_args(argv)
-    db_path = args.db or os.getenv("FORECAST_LEDGER_DB") or None
+    db_path = args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None
     synthesize: bool | None = None
     if args.no_synthesize_lessons or _env_flag("FORECAST_NO_LESSON_SYNTHESIS"):
         synthesize = False

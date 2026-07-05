@@ -397,7 +397,9 @@ class ForecastLedger:
     _BIAS_SYNTH_DEBOUNCE_SECONDS = 30.0
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        configured_db = os.getenv("FORECAST_LEDGER_DB", "").strip()
+        from forecasting import appconfig
+
+        configured_db = (appconfig.get_str("FORECAST_LEDGER_DB", "") or "").strip()
         self.db_path = (
             Path(db_path).expanduser()
             if db_path

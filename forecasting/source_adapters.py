@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 from typing import Any
 from xml.etree import ElementTree
 
+from forecasting import appconfig
 from forecasting.models import OutcomeSpace, ValidationError, parse_timestamp, timestamp_to_datetime
 
 logger = logging.getLogger(__name__)
@@ -1597,7 +1598,7 @@ def load_fred_observations(
         raise ValidationError("fred import --limit must be positive")
     since_date = _fred_date(since, field_name="since") if since else None
     timeout = _fred_fetch_timeout()
-    key = (api_key or os.environ.get("FRED_API_KEY") or "").strip()
+    key = (api_key or appconfig.secret("FRED_API_KEY") or "").strip()
 
     attempts: list[tuple[str, Any]] = []
     if key:
@@ -1646,7 +1647,7 @@ def load_eia_observations(
         raise ValidationError("eia import series id or API URL is required")
     if limit <= 0:
         raise ValidationError("eia import --limit must be positive")
-    resolved_key = (api_key or os.environ.get("EIA_API_KEY") or "").strip()
+    resolved_key = (api_key or appconfig.secret("EIA_API_KEY") or "").strip()
     if resolved_key and "api_key=" not in endpoint:
         separator = "&" if "?" in endpoint else "?"
         endpoint = f"{endpoint}{separator}{urlencode({'api_key': resolved_key})}"
@@ -1726,7 +1727,7 @@ def load_bls_observations(
     if start_year is not None and end_year is not None and start_year > end_year:
         raise ValidationError("bls import --start-year cannot be after --end-year")
     since_date = _fred_date(since, field_name="since") if since else None
-    api_key = os.environ.get("BLS_API_KEY", "").strip() or None
+    api_key = (appconfig.secret("BLS_API_KEY", "") or "").strip() or None
     endpoint = _bls_endpoint(
         normalized_series,
         api_base_url=api_base_url,
@@ -4143,7 +4144,7 @@ def load_reliefweb_reports(
         normalized_query,
         limit=limit,
         since_ts=since_ts,
-        appname=appname or os.getenv("RELIEFWEB_APPNAME") or "superforecasting-agent",
+        appname=appname or appconfig.get_str("RELIEFWEB_APPNAME") or "superforecasting-agent",
         api_base_url=api_base_url,
     )
     payload = _read_json_endpoint(endpoint, "reliefweb reports")
@@ -6716,7 +6717,7 @@ def _census_endpoint(source: str, *, api_base_url: str, api_key: str | None) -> 
     if not raw:
         return "", ""
 
-    effective_key = api_key or os.getenv("CENSUS_API_KEY")
+    effective_key = api_key or appconfig.secret("CENSUS_API_KEY")
     parsed = urlparse(raw)
     if parsed.scheme in {"http", "https"} and parsed.netloc:
         dataset = _census_dataset_from_path(unquote(parsed.path))

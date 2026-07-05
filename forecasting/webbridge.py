@@ -45,7 +45,9 @@ logger = logging.getLogger("forecasting.webbridge")
 
 def _resolve_port() -> int:
     """Return the bridge port from ``FORECAST_BRIDGE_PORT`` or the default."""
-    raw = os.getenv("FORECAST_BRIDGE_PORT", "").strip()
+    from forecasting import appconfig
+
+    raw = (appconfig.get_str("FORECAST_BRIDGE_PORT", "") or "").strip()
     if not raw:
         return DEFAULT_PORT
     try:
