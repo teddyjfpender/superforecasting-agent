@@ -1040,14 +1040,20 @@ export const AppLayout = memo(function AppLayout({
           ) : null}
           </>
         ) : showRail ? (
-          // Home two-pane (wide terminals): a fixed conversations rail on the
-          // left + the conversation on the right. The transcript ScrollBox stays
-          // a DIRECT child of this flex-grow row — the proven structure that
-          // scrolls cleanly. On an ACTIVE conversation the composer rides a
-          // footer row below, indented past the rail (whose border continues full
-          // height) so it sits under the conversation WITHOUT burying the
-          // ScrollBox in an extra column. On the LANDING the composer lives INSIDE
-          // the hero column (renderLanding), so no footer row renders there.
+          // Home two-pane (wide terminals): a full-height conversations rail on
+          // the left + the conversation on the right. On an ACTIVE conversation
+          // the RIGHT SIDE is its own flex column — the transcript grows to fill,
+          // the composer is pinned beneath it (flexShrink 0). The composer grows
+          // into the TRANSCRIPT's space, never the rail: the rail is a sibling of
+          // this whole column, so its measured height depends only on the terminal
+          // — NOT on how tall the composer is. (Previously the composer rode a
+          // separate footer row below the rail+transcript row, so every composer
+          // line shrank that row and stole a line from the rail's ScrollBox, which
+          // then scrolled the Recents list.) The rail's own borderRight spans the
+          // full height, so it still visually continues past the composer with no
+          // decorative filler needed. The transcript ScrollBox stays a DIRECT child
+          // of a bounded flex-grow row (the inner row here) so it scrolls cleanly.
+          // On the LANDING the composer lives INSIDE the hero column (renderLanding).
           <>
             <Box flexDirection="row" flexGrow={1} minHeight={0}>
               <ConversationsRailPane
@@ -1058,34 +1064,22 @@ export const AppLayout = memo(function AppLayout({
               {landing ? (
                 renderLanding(contentComposer.cols, contentComposer, true)
               ) : (
-                <PerfPane id="transcript">
-                  <TranscriptPane
-                    actions={actions}
-                    composer={contentComposer}
-                    decstbm={false}
-                    progress={progress}
-                    transcript={transcript}
-                  />
-                </PerfPane>
-              )}
-            </Box>
-            {landing ? null : (
-              <Box flexDirection="row" flexShrink={0}>
-                <Box
-                  borderBottom={false}
-                  borderColor={ui.theme.color.border}
-                  borderLeft={false}
-                  borderRight
-                  borderStyle="single"
-                  borderTop={false}
-                  flexShrink={0}
-                  width={RAIL_WIDTH}
-                />
-                <Box flexDirection="column" flexGrow={1} minWidth={0}>
+                <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
+                  <Box flexDirection="row" flexGrow={1} minHeight={0}>
+                    <PerfPane id="transcript">
+                      <TranscriptPane
+                        actions={actions}
+                        composer={contentComposer}
+                        decstbm={false}
+                        progress={progress}
+                        transcript={transcript}
+                      />
+                    </PerfPane>
+                  </Box>
                   {renderPromptBar(contentComposer, true)}
                 </Box>
-              </Box>
-            )}
+              )}
+            </Box>
             {/* The palette / cheat-sheet stacks LAST as an absolute overlay above
                 the still-mounted home body (ModalOverlay recipe), so the landing
                 Today panel + hints stay visible around it. */}
