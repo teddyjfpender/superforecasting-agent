@@ -7724,6 +7724,9 @@ class ForecastLedger:
     def enqueue_resolution_proposal(self, *, question_id: str, outcome: Any, rationale: str, confirm_command: str | None = None) -> AlertEvent:
         return _alerts.enqueue_resolution_proposal(self, question_id=question_id, outcome=outcome, rationale=rationale, confirm_command=confirm_command)
 
+    def enqueue_approval_request(self, *, job_id: str, job_type: str, action_class: str, detail: str, run_mode: str, confirm_command: str | None = None) -> AlertEvent:
+        return _alerts.enqueue_approval_request(self, job_id=job_id, job_type=job_type, action_class=action_class, detail=detail, run_mode=run_mode, confirm_command=confirm_command)
+
     def get_alert(self, alert_id: str) -> AlertEvent:
         return _alerts.get_alert(self, alert_id=alert_id)
 

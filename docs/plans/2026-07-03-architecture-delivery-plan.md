@@ -805,6 +805,74 @@ The findings ledger, distilled to the reusable rules the remaining slices inheri
   9 domain leaves are the natural seam — one tool-action module + one CLI module per
   ledger domain keeps the dispatcher/assembler thin and the boundaries already proven.
 
+### Tool-registry slice (`tools/forecast_actions/` — SHIPPED, the one-layer-out carve)
+`tools/forecasting_tool.py` (5,435 lines; `forecast_ledger_tool` was a 2,561-line
+`if action == …` chain of **112 actions**) is now a thin façade: the dispatch is a
+`from tools.forecast_actions import ACTIONS` lazy import + `handler = ACTIONS.get(action)`
+lookup (façade diff = **8 insertions / 2,553 deletions**; the moved bodies live in a
+new package). The `FORECAST_LEDGER_SCHEMA` static dict, every module-level import, and
+all ~40 helper functions (`_required`, `_question_dict`, `_load_source_adapter_items`,
+`fetch_watched_source_payloads`, the `_tool_*`/`_adapter_*` cluster, …) STAY in the
+façade — that preserves the import-time contract AND the `load_*` monkeypatch surface
+(no dispatch body calls a `load_*` directly; they go through the stayed helpers).
+13 domain modules (aim was 8–12; erred smaller/cohesive per "well under 400"):
+`questions` 12 · `resolution` 7 · `forecast_update` 2 · `models` 5 · `evidence` 14 ·
+`sources` 6 · `panels` 7 · `reviews` 10 · `calibration` 13 · `autopilot` 11 ·
+`markets` 5 · `triage` 7 · `diagnostics` 13 = 112. Each exposes `HANDLERS = {action:
+fn}`; `__init__` aggregates into `ACTIONS`. Gates: `tests/forecasting` 2,406 pass
+before AND after (one xdist-ordering flake, `test_self_check_applies_domain_error_
+profiles_…`, passes isolated + never imports the tool); `tests/tools` 5,466 pass /
+2 PRE-EXISTING unrelated fails (`test_delegate` heartbeat, `test_modal_sandbox` cwd)
+identical before/after; schema before/after diff **EMPTY** (byte-identical);
+`--collect-only` 0 import errors (7,932); import-time `import tools.forecasting_tool`
+0.089s→0.095s held (lazy import → façade never pulls the package at load); ruff
+PLW1514 clean.
+- **The dispatch → registry mechanics differ from a ledger method-carve but reuse the
+  same tooling.** Handlers are `def <action>(args, ledger) -> str:` — the `if action
+  == "X":` block body, dedented by 8 (AST `end_lineno` extents; a pre-scan proved zero
+  body line sits below 12-space indent, so line-based dedent is loss-free), verbatim.
+  Every one of the 112 blocks provably `always_returns` (AST check), so the registry
+  lookup `if handler: return handler(...)` is exactly equivalent to the fall-through
+  chain. The difflib gate: un-`_ft`-rewrite + re-indent +8 == original block body,
+  **0 mismatches** across all 112.
+- **The cycle is broken by a LAZY dispatcher import, which makes bodies byte-identical.**
+  Because `forecast_ledger_tool` imports `forecast_actions` only at CALL time, the façade
+  has NO load-time dependency on the package; the domain modules can therefore do
+  `from tools.forecasting_tool import <helper>` at their top and keep bare-name bodies
+  (no `_core.`-style prefix for the ~40 stayed helpers). This is the key divergence from
+  the ledger carve — there the leaf needed `_core.`; here a lazy edge at the façade lets
+  helper names stay bare.
+- **The monkeypatch trap is REAL here too and the string-grep MISSES it.** The D2/D3
+  grep must cover the module-OBJECT form: tests do `import tools.forecasting_tool as ft`
+  then `monkeypatch.setattr(ft, "plan_sources_for_question", boom)` — invisible to a
+  `setattr("tools.forecasting_tool.<name>"` string search. Grep BOTH forms +
+  `patch.object`. Exactly 4 names are patched-on-the-module AND referenced in a moved
+  body (`plan_sources_for_question`, `saturation_summary`, `fetch_watched_source_
+  payloads`, `_load_source_adapter_items`); those 4 (and only those) are reached via a
+  `from tools import forecasting_tool as _ft` handle (`_ft.<name>`, call-time lookup —
+  the `_core.` pattern). A tokenize NAME-pass does the rewrite (never a regex: skips the
+  4 names inside strings/attrs). `load_*` are patched too but no body calls them (they
+  run inside the stayed `_load_source_adapter_items`), so its callers reaching it via
+  `_ft.` is what keeps the whole `load_*` patch surface live. **The CLI assembler MUST
+  run the module-object-form grep** — the CLI has the same `import … as` patch idiom.
+- **Chunk boundaries (≤1,200 moved body lines each, for separate commits):**
+  CHUNK 1 = questions+resolution+forecast_update+models (**825** lines, 26 actions);
+  CHUNK 2 = evidence+sources+panels+reviews+calibration+autopilot (**712**, 61);
+  CHUNK 3 = markets+triage+diagnostics (**720**, 25). NOTE: the façade↔registry swap +
+  `__init__` aggregation is delivered as ONE green migration (the swap is indivisible —
+  a partially-populated `ACTIONS` cannot serve unmigrated actions without an inline
+  fallback). For 3 truly-independent green commits, retain the inline `if`-chain as a
+  registry-miss fallback and delete blocks chunk-by-chunk; the module files + per-chunk
+  `__init__` imports are otherwise additive.
+- **Advice for the cli-assembler slice:** the 13 tool-domain seam maps ~1:1 onto the
+  `forecasting/cli/` subcommand modules; reuse the AST-extent + tokenize-rewrite + difflib
+  gate verbatim. The CLI's argparse `set_defaults(func=…)` handlers are the analogue of
+  the `HANDLERS` dict — compose them at import via a `SUBCOMMANDS` registry. Watch the
+  same monkeypatch-object grep, keep the schema/`--help` output byte-identical (capture
+  before/after), and expect the cli's helper web (it has its OWN `_load_source_adapter_
+  items` re-export at cli.py:4702-style call sites) to force the same stayed-in-façade
+  discipline for `load_*`-touching helpers.
+
 ---
 
 ## SUPPORT ARCS (sequenced with the spine)
