@@ -244,7 +244,87 @@ def _log_exit(reason: str) -> None:
     print(f"[gateway-exit] {reason}", file=sys.stderr, flush=True)
 
 
+def _split_host_port(spec: str, default_host: str, default_port: int) -> tuple[str, int]:
+    """Parse a ``host:port`` / ``:port`` / bare-``port`` / bare-``host`` spec."""
+    spec = (spec or "").strip()
+    if ":" in spec:
+        h, _, p = spec.rpartition(":")
+        host = h or default_host
+        try:
+            port = int(p)
+        except ValueError:
+            port = default_port
+        return host, port
+    if spec.isdigit():
+        return default_host, int(spec)
+    if spec:
+        return spec, default_port
+    return default_host, default_port
+
+
+def _parse_http_args(argv: list[str]) -> dict | None:
+    """Return HTTP serve config when ``--http`` is present, else ``None``.
+
+    ``--http [host:port]`` selects HTTP+SSE serve mode (instead of the stdio
+    loop). ``--http-token <tok>`` / ``--http-gen-token`` supply or generate the
+    bearer token required for non-loopback binds; ``--http-alongside-stdio``
+    Tees events onto BOTH stdio and SSE (the fanout seam) rather than replacing
+    the stdio sink.
+    """
+    if "--http" not in argv:
+        return None
+    host, port = "127.0.0.1", 8765
+    token: str | None = None
+    generate = False
+    alongside = False
+    i = 0
+    while i < len(argv):
+        a = argv[i]
+        if a == "--http":
+            nxt = argv[i + 1] if i + 1 < len(argv) else None
+            if nxt and not nxt.startswith("-"):
+                host, port = _split_host_port(nxt, host, port)
+                i += 1
+        elif a == "--http-token":
+            if i + 1 < len(argv):
+                token = argv[i + 1]
+                i += 1
+        elif a == "--http-gen-token":
+            generate = True
+        elif a == "--http-alongside-stdio":
+            alongside = True
+        i += 1
+    return {
+        "host": host,
+        "port": port,
+        "token": token,
+        "generate_token": generate,
+        "alongside_stdio": alongside,
+    }
+
+
+def _run_http(cfg: dict) -> None:
+    # HTTP serve mode has no Ink parent to own Ctrl+C, so restore the default
+    # SIGINT disposition (module import set it to SIG_IGN for the stdio TUI).
+    if hasattr(signal, "SIGINT"):
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+    from tui_gateway.http_server import serve
+
+    serve(
+        cfg["host"],
+        cfg["port"],
+        token=cfg.get("token"),
+        generate_token=cfg.get("generate_token", False),
+        alongside_stdio=cfg.get("alongside_stdio", False),
+    )
+
+
 def main():
+    http_cfg = _parse_http_args(sys.argv[1:])
+    if http_cfg is not None:
+        _run_http(http_cfg)
+        return
+
     _install_sidecar_publisher()
 
     # MCP tool discovery — inline is safe here: TUI entry is a plain
