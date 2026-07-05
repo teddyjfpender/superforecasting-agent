@@ -419,3 +419,40 @@ class TestCliBrandingHelpers:
         overrides = get_prompt_toolkit_style_overrides()
         assert overrides["status-bar"] == f"bg:{skin.get_color('status_bar_bg')} {skin.get_color('banner_text')}"
         assert overrides["voice-status"] == f"bg:{skin.get_color('voice_status_bg')} {skin.get_color('ui_label')}"
+
+
+class TestAgentNameBranding:
+    """Multiplayer identity: a configured AGENT_NAME overrides the product-default
+    banner name (the branding.agent_name bridge that feeds the TUI header)."""
+
+    def _build(self, environ):
+        from hermes_cli import skin_engine as se
+        from forecasting import appconfig
+        from forecasting.appconfig import AppConfig
+
+        appconfig._config = AppConfig(environ=environ, config_file={})
+        try:
+            return se._build_skin_config(se._BUILTIN_SKINS["default"])
+        finally:
+            appconfig._config = AppConfig()
+
+    def test_unset_name_keeps_product_default(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+        assert self._build({}).branding["agent_name"] == "Superforecasting Agent"
+
+    def test_configured_name_overrides_product_default(self, tmp_path, monkeypatch):
+        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+        assert self._build({"AGENT_NAME": "Ada"}).branding["agent_name"] == "Ada"
+
+    def test_custom_skin_theme_name_is_respected(self, tmp_path, monkeypatch):
+        from hermes_cli import skin_engine as se
+        from forecasting import appconfig
+        from forecasting.appconfig import AppConfig
+
+        monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+        appconfig._config = AppConfig(environ={"AGENT_NAME": "Ada"}, config_file={})
+        try:
+            custom = {"name": "custom", "branding": {"agent_name": "Nyx"}}
+            assert se._build_skin_config(custom).branding["agent_name"] == "Nyx"
+        finally:
+            appconfig._config = AppConfig()

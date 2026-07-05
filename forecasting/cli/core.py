@@ -3326,6 +3326,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
 
     _jobs_admin.register(forecast_sub)
 
+    # slack/admin domain — same per-domain register hook (M1 of the multiplayer
+    # harness): `forecast slack provision` + `forecast slack whoami`.
+    from forecasting.cli import slack_admin as _slack_admin
+
+    _slack_admin.register(forecast_sub)
+
     return parser
 
 

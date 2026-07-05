@@ -1366,6 +1366,15 @@ def load_soul_md() -> Optional[str]:
             return None
         content = _scan_context_content(content, "SOUL.md")
         content = _truncate_content(content, "SOUL.md")
+        # Multiplayer identity: rewrite the soul's opener to the configured
+        # AGENT_NAME ("You are <name>, …"). Byte-identical when the name is
+        # unset or Bernard, so a default install is unchanged. Best-effort.
+        try:
+            from forecasting.identity import apply_agent_name
+
+            content = apply_agent_name(content)
+        except Exception as e:  # pragma: no cover — name injection never fatal
+            logger.debug("Agent-name injection skipped: %s", e)
         return content
     except Exception as e:
         logger.debug("Could not read SOUL.md from %s: %s", soul_path, e)

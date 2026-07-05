@@ -126,6 +126,10 @@ from hermes_constants import get_hermes_home
 
 logger = logging.getLogger(__name__)
 
+# Banner names treated as "the product default" rather than a deliberate custom
+# skin theme — a configured AGENT_NAME overrides these (see _build_skin_config).
+_PRODUCT_DEFAULT_AGENT_NAMES = {"Superforecasting Agent"}
+
 
 # =============================================================================
 # Skin data structure
@@ -867,6 +871,21 @@ def _build_skin_config(data: Dict[str, Any]) -> SkinConfig:
     spinner.update(spinner_overrides)
     branding = dict(default.get("branding", {}))
     branding.update(branding_overrides)
+    # Multiplayer identity: an explicitly-configured AGENT_NAME is the desk's
+    # identity and overrides the *product-default* banner name (feeds both the
+    # CLI banner and the TUI header via the branding.agent_name bridge). Unset →
+    # the skin's value stays, so default installs are unchanged; a skin that
+    # themes agent_name to something other than the product default keeps it.
+    _current_name = branding.get("agent_name", "")
+    if not _current_name or _current_name in _PRODUCT_DEFAULT_AGENT_NAMES:
+        try:
+            from forecasting.identity import configured_agent_name
+
+            _name = configured_agent_name()
+            if _name:
+                branding["agent_name"] = _name
+        except Exception:  # pragma: no cover — never block skin construction
+            pass
     banner_logo = data.get("banner_logo", "")
     banner_hero = data.get("banner_hero", "")
     if _BUILTIN_SKINS.get(skin_name) is data and skin_name in _FORECAST_NATIVE_BUILTIN_THEMES:

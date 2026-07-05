@@ -1017,6 +1017,42 @@ class TestRuntimeIdentityHint:
 
 
 # =========================================================================
+# Agent-name injection into the soul (M1 identity)
+# =========================================================================
+
+class TestSoulNameInjection:
+    def test_load_soul_md_injects_configured_name(self, monkeypatch, tmp_path):
+        """A configured AGENT_NAME rewrites the soul's 'You are Bernard, …'
+        opener at the identity slot; the default install is unchanged."""
+        import agent.prompt_builder as pb
+        from forecasting import appconfig
+        from forecasting.appconfig import AppConfig
+        from hermes_cli.default_soul import DEFAULT_SOUL_MD
+
+        (tmp_path / "SOUL.md").write_text(DEFAULT_SOUL_MD, encoding="utf-8")
+        monkeypatch.setattr(pb, "get_hermes_home", lambda: tmp_path)
+        monkeypatch.setattr(appconfig, "_config", AppConfig(environ={"AGENT_NAME": "Ada"}, config_file={}))
+
+        content = pb.load_soul_md()
+        assert content is not None
+        assert "You are Ada," in content
+        assert "You are Bernard," not in content
+
+    def test_load_soul_md_default_name_is_unchanged(self, monkeypatch, tmp_path):
+        import agent.prompt_builder as pb
+        from forecasting import appconfig
+        from forecasting.appconfig import AppConfig
+        from hermes_cli.default_soul import DEFAULT_SOUL_MD
+
+        (tmp_path / "SOUL.md").write_text(DEFAULT_SOUL_MD, encoding="utf-8")
+        monkeypatch.setattr(pb, "get_hermes_home", lambda: tmp_path)
+        monkeypatch.setattr(appconfig, "_config", AppConfig(environ={}, config_file={}))
+
+        content = pb.load_soul_md()
+        assert content == DEFAULT_SOUL_MD.strip()  # Bernard stays the default
+
+
+# =========================================================================
 # Conditional skill activation
 # =========================================================================
 

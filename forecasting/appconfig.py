@@ -108,6 +108,20 @@ _KEYS: tuple[ConfigKey, ...] = (
     ConfigKey("SUPERFORECASTING_AGENT_REDACT_SECRETS", "bool", False, False,
               "Redact secret values in runtime logs/plugin migration.",
               aliases=("FORECAST_REDACT_SECRETS", "HERMES_REDACT_SECRETS"), category="runtime"),
+    # ── Multiplayer identity (M1 of the Slack harness plan) ──────────────────
+    # The name + stable instance id that make this desk a distinct, @-taggable
+    # collaborator in a shared Slack channel. See ``forecasting/identity.py``.
+    ConfigKey("AGENT_NAME", "str", None, False,
+              "Agent display name for multiplayer collab (default 'Bernard' when unset). "
+              "Flows into the soul, the TUI banner, and the sfp/1 wire sender.",
+              category="identity"),
+    ConfigKey("AGENT_INSTANCE_ID", "str", None, False,
+              "Stable uuid identifying this instance across restarts. Minted once and "
+              "persisted to {home}/identity.json when unset; an operator may pin it here.",
+              category="identity"),
+    ConfigKey("AGENT_PERSONA", "str", None, False,
+              "Optional persona notes for this named agent (free text, surfaced in whoami).",
+              category="identity"),
     # ── HERMES_* runtime ─────────────────────────────────────────────────────
     ConfigKey("HERMES_HOME_MODE", "str", None, False,
               "Permission mode for the agent-home directory (managed installs).", category="runtime"),

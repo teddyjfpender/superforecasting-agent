@@ -76,3 +76,67 @@ def test_resolve_token_from_file(monkeypatch, tmp_path):
     monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
     assert st._resolve_bot_token("T1") == "xoxb-file"
     assert st._resolve_bot_token() == "xoxb-file"  # first entry when no team_id
+
+
+# ── M1 collab verbs ──────────────────────────────────────────────────────────
+
+def test_post_blocks_serializes_blocks_and_keeps_text_fallback(monkeypatch):
+    calls = _stub(monkeypatch)
+    blocks = [{"type": "section", "text": {"type": "mrkdwn", "text": "hi"}}]
+    st.slack_tool({"action": "post_blocks", "channel": "C1", "blocks": blocks, "text": "hi", "thread_ts": "9"})
+    assert calls["method"] == "chat.postMessage"
+    assert json.loads(calls["params"]["blocks"]) == blocks  # blocks JSON-encoded
+    assert calls["params"]["text"] == "hi" and calls["params"]["thread_ts"] == "9"
+
+
+def test_post_blocks_requires_blocks(monkeypatch):
+    _stub(monkeypatch)
+    out = json.loads(st.slack_tool({"action": "post_blocks", "channel": "C1"}))
+    assert out["success"] is False and "blocks" in out["error"]
+
+
+def test_post_with_metadata_round_trips_payload(monkeypatch):
+    calls = _stub(monkeypatch)
+    payload = {"v": 1, "kind": "forecast.card", "p": 0.34}
+    st.slack_tool({
+        "action": "post_with_metadata", "channel": "C1",
+        "event_type": "sfp_forecast_card", "event_payload": payload, "text": "34%",
+    })
+    assert calls["method"] == "chat.postMessage"
+    meta = json.loads(calls["params"]["metadata"])
+    assert meta["event_type"] == "sfp_forecast_card"
+    assert meta["event_payload"] == payload  # byte-equal round-trip through metadata
+
+
+def test_post_with_metadata_requires_event_payload(monkeypatch):
+    _stub(monkeypatch)
+    out = json.loads(st.slack_tool({"action": "post_with_metadata", "channel": "C1", "event_type": "e"}))
+    assert out["success"] is False and "event_payload" in out["error"]
+
+
+def test_upload_file_uses_content_and_maps_channel(monkeypatch):
+    calls = _stub(monkeypatch)
+    st.slack_tool({"action": "upload_file", "channel": "C1", "content": "hello", "filename": "e.txt"})
+    assert calls["method"] == "files.upload"
+    assert calls["params"]["channels"] == "C1"  # channel → channels
+    assert calls["params"]["content"] == "hello" and calls["params"]["filename"] == "e.txt"
+
+
+def test_upload_file_requires_content(monkeypatch):
+    _stub(monkeypatch)
+    out = json.loads(st.slack_tool({"action": "upload_file", "channel": "C1"}))
+    assert out["success"] is False and "content" in out["error"]
+
+
+def test_read_thread_calls_conversations_replies(monkeypatch):
+    calls = _stub(monkeypatch)
+    st.slack_tool({"action": "read_thread", "channel": "C1", "thread_ts": "1.2"})
+    assert calls["method"] == "conversations.replies"
+    assert calls["params"]["channel"] == "C1" and calls["params"]["ts"] == "1.2"
+    assert calls["params"]["include_all_metadata"] is True
+
+
+def test_read_thread_requires_a_ts(monkeypatch):
+    _stub(monkeypatch)
+    out = json.loads(st.slack_tool({"action": "read_thread", "channel": "C1"}))
+    assert out["success"] is False and "thread_ts" in out["error"]
