@@ -623,7 +623,9 @@ def test_forecast_cli_can_store_and_score_distribution_forecast(tmp_path, capsys
     assert "brier_score: -" in score_output
     assert "log_score:" in score_output
     assert "proper_score:" in score_output
-    assert "score_rule: normal_negative_log_likelihood" in score_output
+    # A Gaussian distribution is now scored by the closed-form CRPS (the NLL is
+    # retained in log_score); CRPS is the proper score for the whole distribution.
+    assert "score_rule: crps_gaussian" in score_output
 
 
 def test_forecast_cli_model_can_compute_bayesian_update(tmp_path, capsys):

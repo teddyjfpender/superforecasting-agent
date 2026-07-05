@@ -28,11 +28,14 @@ living-models path), so it and ``_MODEL_SKILL_BASELINE_BRIER`` stay in ``core``.
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import uuid
 from typing import Any
 
 from forecasting.ledger.gate import _enforce_write_gate
+
+logger = logging.getLogger(__name__)
 from forecasting.models import (
     LedgerNotFoundError,
     ValidationError,
@@ -214,6 +217,21 @@ def record_panel_run(
                 ),
             )
             estimate_records.append({"id": estimate_id, **row})
+
+    # CRUX PROMOTION (finding #4): lift each panelist's free-text crux into the
+    # first-class question_cruxes table so it is queryable + re-checkable across
+    # updates, instead of dying inside this panel blob. Runs inside the same commit
+    # gate as record_panel_run; best-effort — a promotion hiccup never fails the
+    # panel write.
+    try:
+        ledger.promote_panel_cruxes(
+            question_id=question_id,
+            panel_run_id=run_id,
+            estimates=[dict(r) for r in aggregation.estimates],
+        )
+    except Exception as exc:  # noqa: BLE001 — promotion is additive, never blocks the panel
+        logger.debug("crux promotion skipped for panel %s: %r", run_id, exc)
+
     return ledger.get_panel_run(run_id)
 
 

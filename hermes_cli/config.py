@@ -698,12 +698,15 @@ DEFAULT_CONFIG = {
         # and the judge flags an unresolved crux (information_gap +
         # clarifying_queries), the supervisor runs a bounded real web/news search
         # and re-synthesises once on the fresh evidence — the only path to BEATING
-        # the market (the closed-book LLM has no intrinsic edge). DEFAULT OFF so the
-        # live default is byte-identical. Flip on here as a fleet-wide default for
-        # every quorum run, or per-run with `forecast quorum --supervisor-search`.
-        # (Governs the run_quorum/quorum-jobs path only; it is gated off automatically
-        # for a historical evidence_cutoff so fresh search can never leak.)
-        "supervisor_search": False,
+        # the market (the closed-book LLM has no intrinsic edge). DEFAULT ON for LIVE
+        # quorum runs (the audit's finding #1: it had fired 0/223 times while OFF).
+        # It is BOUNDED (max_research_rounds clamped to 3, per-round query/result
+        # caps) and LEAK-SAFE: the run_quorum/quorum-jobs path gates it OFF
+        # AUTOMATICALLY for a historical evidence_cutoff (backtest/replay), so fresh
+        # present-day search can never leak into a past-pinned forecast. Set to False
+        # here to disable it fleet-wide, or per-run with
+        # `forecast quorum --supervisor-search`/`--no-supervisor-search`.
+        "supervisor_search": True,
         # TRACK-RECORD PANELIST WEIGHTING (S7). Weight each panelist by its measured
         # Brier edge over past resolved binaries (shrunk toward 1.0, clipped). DEFAULT
         # ON but HARMLESS-BY-CONSTRUCTION on cold start: a model must clear the

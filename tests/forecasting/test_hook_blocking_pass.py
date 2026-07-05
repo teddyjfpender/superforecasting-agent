@@ -28,12 +28,13 @@ def _ledger(tmp_path) -> ForecastLedger:
     return lg
 
 
-def _q(lg, *, profile=None):
+def _q(lg, *, profile=None, impact=None):
     meta = {"forecast_hooks": {"profile": profile}} if profile else None
     return lg.create_question(
         title="Will the indicator exceed target by close?",
         resolution_criteria="Resolves yes if the indicator exceeds target by close; otherwise no.",
         metadata=meta,
+        impact=impact,
     )
 
 
@@ -64,9 +65,10 @@ def test_standard_agent_commit_passes_evidence_floor_with_one_record(tmp_path):
 # ── (b) STRICT profile actually blocks a rule it PROMOTES (was observe-only) ─────
 def test_strict_profile_blocks_promoted_outside_view_anchor(tmp_path):
     lg = _ledger(tmp_path)
-    q = _q(lg, profile="strict")
-    # Clear the evidence floor so the FIRST strict-only promotion (require_outside_view_anchor,
-    # WARN in standard -> ERROR in strict) is what blocks — proving the strict severity is real.
+    # impact="high" makes it a SERIOUS forecast so the (serious-scoped) anchor rule fires.
+    q = _q(lg, profile="strict", impact="high")
+    # Clear the evidence floor so the strict-only promotion (require_outside_view_anchor,
+    # ERROR) is what blocks — proving the strict severity is real.
     lg.add_evidence(question_id=q.id, source_or_note="report", claim="rates rose")
     with pytest.raises(SaturationBlocked) as ei:
         lg.create_snapshot(

@@ -189,6 +189,22 @@ FORECAST_LINK_TYPES = {"related", "component_of"}
 CRUX_MATERIALITY = {"low", "medium", "high"}
 CRUX_STATUS = {"missing", "stale", "current", "contradictory"}
 
+# Longest crux sentence promoted verbatim into a crux_variable — a panelist crux is
+# "one sentence naming the single biggest uncertainty", so a generous but finite cap.
+_MAX_CRUX_VARIABLE_LEN = 240
+
+
+def _crux_text_hash(text: str) -> str:
+    """Stable dedupe key for a free-text crux: casefold, strip surrounding
+    punctuation/whitespace, collapse internal whitespace, then SHA-256.
+
+    Two panelists phrasing the SAME uncertainty with different casing / trailing
+    punctuation collapse to one promoted crux (finding #4: dedupe by text-hash)."""
+
+    norm = re.sub(r"\s+", " ", str(text or "").strip().casefold())
+    norm = norm.strip(" \t\r\n.,;:!?-—\"'`()[]")
+    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
+
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
 AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
 
@@ -2001,6 +2017,12 @@ class ForecastLedger:
     def list_evidence(self, question_id: str) -> list[EvidenceItem]:
         return _evidence.list_evidence(self, question_id=question_id)
 
+    def question_source_diversity(self, question_id: str) -> dict[str, Any]:
+        return _evidence.question_source_diversity(self, question_id=question_id)
+
+    def source_diversity_summary(self) -> dict[str, Any]:
+        return _evidence.source_diversity_summary(self)
+
     def existing_evidence_keys(self, question_id: str) -> set[tuple[str, str]]:
         return _evidence.existing_evidence_keys(self, question_id=question_id)
 
@@ -2457,6 +2479,161 @@ class ForecastLedger:
             )
         return self.get_crux(crux_id)
 
+    def promote_panel_cruxes(
+        self,
+        *,
+        question_id: str,
+        panel_run_id: str,
+        estimates: list[dict[str, Any]] | None = None,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Promote the free-text ``crux`` each panelist named into the first-class,
+        queryable ``question_cruxes`` table (finding #4: 271 cruxes died inside panel
+        blobs while ``question_cruxes`` had 0 rows).
+
+        Deduped by text-hash BOTH within the panel (many panelists name the same
+        uncertainty) AND against cruxes already on the question — an EXISTING crux is
+        left untouched (never re-stamped back to ``status='missing'``, so an operator's
+        hand-set status/materiality survives a re-run). New cruxes are inserted via the
+        idempotent :meth:`add_crux`, linked to the panel run in ``notes``. ``dry_run``
+        counts what WOULD be promoted without writing.
+
+        Returns ``{"promoted", "skipped_existing", "candidates", "dry_run",
+        "promoted_variables", "panel_run_id"}``.
+        """
+
+        if estimates is None:
+            estimates = self.get_panel_run(panel_run_id).get("estimates") or []
+
+        # 1) distinct candidate cruxes within this panel (text-hash dedupe).
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for est in estimates:
+            raw = str((est or {}).get("crux") or "").strip()
+            if not raw:
+                continue
+            key = _crux_text_hash(raw)
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(raw[:_MAX_CRUX_VARIABLE_LEN])
+
+        # 2) skip any already-promoted crux (by text-hash) so a re-run is a no-op.
+        try:
+            existing_hashes = {
+                _crux_text_hash(c["crux_variable"]) for c in self.list_cruxes(question_id)
+            }
+        except LedgerNotFoundError:
+            existing_hashes = set()
+
+        promoted: list[str] = []
+        skipped = 0
+        for raw in candidates:
+            if _crux_text_hash(raw) in existing_hashes:
+                skipped += 1
+                continue
+            if not dry_run:
+                self.add_crux(
+                    question_id=question_id,
+                    crux_variable=raw,
+                    materiality="medium",
+                    status="missing",
+                    notes=f"promoted from panel {panel_run_id}",
+                )
+            existing_hashes.add(_crux_text_hash(raw))
+            promoted.append(raw)
+
+        return {
+            "question_id": question_id,
+            "panel_run_id": panel_run_id,
+            "candidates": len(candidates),
+            "promoted": len(promoted),
+            "skipped_existing": skipped,
+            "dry_run": dry_run,
+            "promoted_variables": promoted,
+        }
+
+    def backfill_panel_cruxes(self, *, dry_run: bool = True) -> dict[str, Any]:
+        """One-shot promotion of EVERY existing panel run's cruxes into
+        ``question_cruxes`` (finding #4 backfill of the 271 pre-existing cruxes).
+
+        DRY-RUN by default: it reports the counts that WOULD be promoted without
+        writing. Pass ``dry_run=False`` to apply. Idempotent — a second apply run
+        promotes nothing new (every crux is already present, so it is counted as
+        ``skipped_existing``). Fail-soft per panel: a single bad run is skipped, never
+        aborting the whole backfill.
+        """
+
+        runs_scanned = 0
+        panels_with_cruxes = 0
+        promoted = 0
+        skipped_existing = 0
+        candidates = 0
+        for run in self.list_panel_runs():
+            runs_scanned += 1
+            try:
+                res = self.promote_panel_cruxes(
+                    question_id=run["question_id"],
+                    panel_run_id=run["id"],
+                    estimates=run.get("estimates"),
+                    dry_run=dry_run,
+                )
+            except Exception as exc:  # noqa: BLE001 — one bad run never aborts backfill
+                logger.debug("crux backfill skipped panel %s: %r", run.get("id"), exc)
+                continue
+            candidates += res["candidates"]
+            promoted += res["promoted"]
+            skipped_existing += res["skipped_existing"]
+            if res["candidates"]:
+                panels_with_cruxes += 1
+        return {
+            "dry_run": dry_run,
+            "runs_scanned": runs_scanned,
+            "panels_with_cruxes": panels_with_cruxes,
+            "candidate_cruxes": candidates,
+            "promoted": promoted,
+            "skipped_existing": skipped_existing,
+        }
+
+    def crux_promotion_stats(self) -> dict[str, Any]:
+        """Coverage of the crux-promotion path for the doctor/readiness surface:
+        promoted rows (``question_cruxes``), how many came from a panel promotion,
+        and how many DISTINCT panel-embedded cruxes are still un-promoted."""
+
+        with self._connect() as conn:
+            promoted_total = int(
+                conn.execute("SELECT COUNT(*) FROM question_cruxes").fetchone()[0]
+            )
+            from_panels = int(
+                conn.execute(
+                    "SELECT COUNT(*) FROM question_cruxes WHERE notes LIKE 'promoted from panel %'"
+                ).fetchone()[0]
+            )
+            panel_crux_rows = conn.execute(
+                "SELECT question_id, crux FROM panel_estimates "
+                "WHERE crux IS NOT NULL AND TRIM(crux) != ''"
+            ).fetchall()
+            existing = conn.execute(
+                "SELECT question_id, crux_variable FROM question_cruxes"
+            ).fetchall()
+
+        existing_by_q: dict[str, set[str]] = defaultdict(set)
+        for row in existing:
+            existing_by_q[row[0]].add(_crux_text_hash(row[1]))
+        distinct_panel: dict[str, set[str]] = defaultdict(set)
+        for row in panel_crux_rows:
+            distinct_panel[row[0]].add(_crux_text_hash(row[1]))
+        unpromoted = sum(
+            len(hashes - existing_by_q.get(qid, set()))
+            for qid, hashes in distinct_panel.items()
+        )
+        return {
+            "promoted_total": promoted_total,
+            "promoted_from_panels": from_panels,
+            "panel_embedded_distinct": sum(len(h) for h in distinct_panel.values()),
+            "unpromoted_panel_cruxes": unpromoted,
+        }
+
     def evidence_map(self, question_id: str) -> dict[str, Any]:
         return _evidence.evidence_map(self, question_id=question_id)
 
@@ -2886,6 +3063,9 @@ class ForecastLedger:
 
     def score_snapshot(self, forecast_id: str, *, force: bool = False) -> ScoreRecord:
         return _scoring.score_snapshot(self, forecast_id=forecast_id, force=force)
+
+    def backfill_crps_scores(self, *, dry_run: bool = True) -> dict[str, Any]:
+        return _scoring.backfill_crps_scores(self, dry_run=dry_run)
 
     def get_score(self, score_id: str) -> ScoreRecord:
         return _scoring.get_score(self, score_id=score_id)
@@ -9499,6 +9679,13 @@ class ForecastLedger:
             }
 
         if outcome_space.type == "numeric":
+            # A dict payload with real distributional shape (quantiles / CDF
+            # thresholds / mean+sd) is scored with CRPS — a proper score for the
+            # whole predictive distribution, not just its mean point.
+            if isinstance(probability_or_distribution, dict):
+                crps = self._crps_score(probability_or_distribution, outcome, outcome_space)
+                if crps is not None:
+                    return crps
             forecast_value = self._numeric_forecast_point(probability_or_distribution)
             outcome_value = self._numeric_outcome(outcome)
             score, rule = self._numeric_squared_error(forecast_value, outcome_value, outcome_space)
@@ -9525,6 +9712,12 @@ class ForecastLedger:
                     "notes": f"{rule} for distributional point summary against confirmed resolution.",
                 }
             if isinstance(probability_or_distribution, dict):
+                # CRPS is the proper score for a continuous predictive
+                # distribution; it REFUSES (None) a candidate-share vote dict,
+                # which falls through to the vote-share vector scorer below.
+                crps = self._crps_score(probability_or_distribution, outcome, outcome_space)
+                if crps is not None:
+                    return crps
                 normal = self._normal_distribution_score(probability_or_distribution, outcome, outcome_space)
                 if normal is not None:
                     return normal
@@ -9628,6 +9821,14 @@ class ForecastLedger:
         outcome_space: OutcomeSpace,
     ) -> dict[str, Any] | None:
         return _scoring._normal_distribution_score(self, probability_or_distribution=probability_or_distribution, outcome=outcome, outcome_space=outcome_space)
+
+    def _crps_score(
+        self,
+        probability_or_distribution: Any,
+        outcome: Any,
+        outcome_space: OutcomeSpace,
+    ) -> dict[str, Any] | None:
+        return _scoring._crps_score(self, probability_or_distribution=probability_or_distribution, outcome=outcome, outcome_space=outcome_space)
 
     def _probability_bucket(self, probability: float) -> str:
         return _scoring._probability_bucket(self, probability=probability)

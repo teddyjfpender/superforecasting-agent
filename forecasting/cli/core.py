@@ -1878,12 +1878,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     quorum_parser.add_argument(
         "--supervisor-search",
         dest="supervisor_search",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=None,
-        help="Activate the live agentic-supervisor fresh-search loop (AIA P1.1): "
-        "when the judge flags an unresolved crux it runs a real bounded web/news "
-        "search and re-synthesises once on the fresh evidence. Default OFF "
-        "(byte-identical baseline); also settable via quorum.supervisor_search.",
+        help="Live agentic-supervisor fresh-search loop (AIA P1.1): when the judge "
+        "flags an unresolved crux it runs a real bounded web/news search and "
+        "re-synthesises once on the fresh evidence. DEFAULT ON for live runs "
+        "(leak-guarded off for a historical evidence_cutoff); pass "
+        "--no-supervisor-search to disable this run, or set quorum.supervisor_search "
+        "= false fleet-wide.",
     )
     quorum_parser.add_argument(
         "--scope",
@@ -2097,6 +2099,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     crux_status_p.add_argument("crux_id")
     crux_status_p.add_argument("status", choices=sorted(CRUX_STATUS))
     crux_status_p.set_defaults(_forecast_handler=_cmd_crux_status)
+    crux_backfill = crux_sub.add_parser(
+        "backfill",
+        help="Promote cruxes trapped in existing panel runs into question_cruxes (dry-run by default)",
+    )
+    crux_backfill.add_argument(
+        "--apply",
+        action="store_true",
+        help="Actually write the promoted cruxes (default is a dry-run preview).",
+    )
+    crux_backfill.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    crux_backfill.set_defaults(_forecast_handler=_cmd_crux_backfill)
 
     evidence_map_parser = forecast_sub.add_parser("evidence-map", help="Show the crux evidence map for a forecast")
     evidence_map_parser.add_argument("question", help="row number, id, or search words for the question")
@@ -2961,6 +2974,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     # `forecast --help` stays byte-identical.
     _thesis_domain.register(forecast_sub)
 
+    # Question curation — propose short-horizon contested binaries from the
+    # prediction-market data plane as calibration fuel. Carved to
+    # forecasting/cli/curate.py, registered via the shared per-domain hook.
+    from forecasting.cli import curate as _curate_domain
+
+    _curate_domain.register(forecast_sub)
+
     # Two-phase batch: run members first, then aggregate theses (lag ordering).
     run_all_parser = forecast_sub.add_parser(
         "run-all",
@@ -3498,7 +3518,22 @@ def _forecast_status_payload(ledger: ForecastLedger) -> dict[str, Any]:
         "builtin_benchmark_count": len(benchmarks),
         "imported_benchmark_count": len(imported_benchmarks),
         "extension_count": len(extensions),
+        # Crux-promotion coverage (finding #4): promoted first-class cruxes + the
+        # count still trapped inside panel blobs. Fail-safe — never take down status.
+        "crux_promotion": _crux_promotion_stats_safe(ledger),
     }
+
+
+def _crux_promotion_stats_safe(ledger: ForecastLedger) -> dict[str, Any]:
+    try:
+        return ledger.crux_promotion_stats()
+    except Exception:  # noqa: BLE001 — a read probe must never take down status/doctor
+        return {
+            "promoted_total": 0,
+            "promoted_from_panels": 0,
+            "panel_embedded_distinct": 0,
+            "unpromoted_panel_cruxes": 0,
+        }
 
 
 def _cmd_status(args: argparse.Namespace) -> None:
@@ -3790,6 +3825,27 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         durability = None
 
+    # SOURCE DIVERSITY (the monoculture guard): median distinct sources/question
+    # + the single-source share across the book. The edge rests on ORTHOGONAL
+    # signal, so a ledger collapsed to one source per question has nothing to
+    # pool. Read-only + fail-safe, like every probe above.
+    try:
+        source_diversity = ledger.source_diversity_summary()
+    except Exception:
+        source_diversity = None
+
+    # PANEL-vs-SOLO ABLATION: does the 5-role panel + judge machinery actually
+    # beat a lone panelist on the resolved book? A paired recenter-at-zero
+    # bootstrap over resolved Brier-scoreable panels. Read-only + fail-safe;
+    # honest n (a tiny/empty sample is reported as such). A weekly cron can
+    # persist/surface this — the doctor is its read-only window.
+    try:
+        from forecasting.ablation_study import run_panel_vs_solo_ablation
+
+        ablation = run_panel_vs_solo_ablation(ledger)
+    except Exception:
+        ablation = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3803,6 +3859,8 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "review_sweeper": review_sweeper,
         "prediction_markets": prediction_markets,
         "durability": durability,
+        "source_diversity": source_diversity,
+        "panel_vs_solo_ablation": ablation,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
@@ -4117,6 +4175,18 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         f"lessons={status['active_calibration_lesson_count']}/{status['calibration_lesson_count']} "
         f"mean_brier={_format_metric(status['calibration_mean_brier'])}"
     )
+    crux = status.get("crux_promotion") or {}
+    print(
+        "cruxes: "
+        f"promoted={crux.get('promoted_total', 0)} "
+        f"(from_panels={crux.get('promoted_from_panels', 0)}) "
+        f"unpromoted_panel_cruxes={crux.get('unpromoted_panel_cruxes', 0)}"
+        + (
+            "  — run `forecast crux backfill --apply`"
+            if crux.get("unpromoted_panel_cruxes", 0)
+            else ""
+        )
+    )
     print(f"claim_live_superforecasting: {report['claim_live_superforecasting']}")
 
     # SLICE 5 fold: one unified "warnings" line that folds all three models —
@@ -4201,6 +4271,28 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         print(f"durability: backup {btxt}; integrity {integ_txt}; {counts_txt}".rstrip("; "))
         for v in (dur.get("violations") or [])[:3]:
             print(f"  - integrity: {v[:80]}")
+
+    # Source diversity (monoculture guard): median distinct sources/question +
+    # the single-source share. A median of 1.0 = the whole book reads one source.
+    div = report.get("source_diversity") or {}
+    if div and div.get("questions_with_evidence"):
+        median = div.get("median_sources_per_question")
+        pct = div.get("single_source_pct")
+        median_txt = f"{median:.1f}" if isinstance(median, (int, float)) else "-"
+        pct_txt = f"{pct * 100:.0f}%" if isinstance(pct, (int, float)) else "-"
+        warn = "  WARN monoculture" if isinstance(median, (int, float)) and median <= 1.0 else ""
+        print(
+            f"source_diversity: median {median_txt} sources/question; "
+            f"{div.get('single_source_question_count', 0)}/{div['questions_with_evidence']} "
+            f"single-source ({pct_txt}){warn}"
+        )
+
+    # Panel-vs-solo ablation: is the panel machinery earning its cost?
+    ablation = report.get("panel_vs_solo_ablation")
+    if ablation is not None:
+        from forecasting.ablation_study import format_ablation_line
+
+        print(format_ablation_line(ablation))
 
     batches = report.get("templated_batches") or []
     if batches:
@@ -13050,6 +13142,33 @@ def _cmd_crux_list(args: argparse.Namespace) -> None:
 def _cmd_crux_status(args: argparse.Namespace) -> None:
     crux = _ledger(args).set_crux_status(args.crux_id, args.status)
     print(f"crux {crux['id']} -> {crux['status']}")
+
+
+def _cmd_crux_backfill(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    apply = bool(getattr(args, "apply", False))
+    if apply:
+        from forecasting.ledger import allow_ledger_writes
+
+        with allow_ledger_writes(reason="forecast crux backfill --apply"):
+            result = ledger.backfill_panel_cruxes(dry_run=False)
+    else:
+        result = ledger.backfill_panel_cruxes(dry_run=True)
+    if getattr(args, "json", False):
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    mode = "APPLIED" if apply else "DRY-RUN (pass --apply to write)"
+    print(f"crux backfill {mode}")
+    print(
+        f"  scanned {result['runs_scanned']} panel run(s); "
+        f"{result['panels_with_cruxes']} carried a crux; "
+        f"{result['candidate_cruxes']} candidate crux(es)"
+    )
+    verb = "promoted" if apply else "would promote"
+    print(
+        f"  {verb} {result['promoted']} new crux(es); "
+        f"skipped {result['skipped_existing']} already present"
+    )
 
 
 def _cmd_evidence_map(args: argparse.Namespace) -> None:

@@ -77,7 +77,14 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "calibration_bias_applied": _W,
         "confidence_committed": _W,
         "reasoning_composition": _W,
-        "require_outside_view_anchor": _W,
+        # Outside-view anchoring is the single most reliable superforecasting
+        # technique, so a HIGH-IMPACT live forecast must carry a reference-class
+        # anchor — ERROR, not an ignored WARN (the audit's finding #4: the rule was
+        # advisory and skipped ~96% of the time). The rule's own check scopes the
+        # block to high-impact forecasts, so lower-impact commits and routine
+        # re-forecasts are NOT hard-blocked (scoped to avoid bricking the re-forecast
+        # flow — see _check_outside_view_anchor).
+        "require_outside_view_anchor": _E,
         "thesis_aggregate_fresh": _W,
         "research_adequate": _W,
         "readiness_floor": _W,

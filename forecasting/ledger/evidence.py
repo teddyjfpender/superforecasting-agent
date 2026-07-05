@@ -229,6 +229,96 @@ def list_evidence(ledger, question_id: str) -> list[EvidenceItem]:
     return [ledger._row_to_evidence(row) for row in rows]
 
 
+# ── Source diversity (the monoculture guard) ─────────────────────────────────
+#
+# The whole edge rests on ORTHOGONAL signal (beating-the-market-strategy.md:
+# 164-172, "Diversity must be engineered and MEASURED, not assumed"). A question
+# read off a single source reproduces that source's consensus and has nothing to
+# pool; if diversity silently collapses, so does the edge, invisibly. These two
+# read-only aggregates make it visible: per-question distinct sources/types (into
+# the readiness payload) and a ledger-level monoculture metric (into doctor).
+
+
+def _source_domain(url: Any) -> str | None:
+    """The registrable-ish host of an evidence URL (``www.`` stripped), or None."""
+    if not url or not isinstance(url, str):
+        return None
+    from urllib.parse import urlparse
+
+    try:
+        netloc = urlparse(url).netloc.strip().lower()
+    except Exception:  # noqa: BLE001 — a malformed URL just yields no domain
+        return None
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    return netloc or None
+
+
+def _evidence_source_key(item: EvidenceItem) -> str | None:
+    """The distinct-source identity of one evidence item: its ``source_name``
+    when set, else the URL host, else the ``source_type`` — so a single-adapter
+    firehose (all FRED, all Yahoo) still counts as ONE source, not many rows."""
+    name = (item.source_name or "").strip().lower()
+    if name:
+        return name
+    domain = _source_domain(item.source_url)
+    if domain:
+        return domain
+    stype = (item.source_type or "").strip().lower()
+    return stype or None
+
+
+def question_source_diversity(ledger, question_id: str) -> dict[str, Any]:
+    """Per-question source diversity: distinct source domains + distinct source
+    TYPES over the question's evidence, plus the single-source flag. Read-only;
+    feeds the readiness payload."""
+    items = ledger.list_evidence(question_id)
+    domains: set[str] = set()
+    types: set[str] = set()
+    for item in items:
+        key = _evidence_source_key(item)
+        if key:
+            domains.add(key)
+        stype = (item.source_type or "").strip().lower()
+        if stype:
+            types.add(stype)
+    return {
+        "evidence_count": len(items),
+        "distinct_sources": len(domains),
+        "distinct_source_types": len(types),
+        "single_source": len(items) > 0 and len(domains) <= 1,
+    }
+
+
+def source_diversity_summary(ledger) -> dict[str, Any]:
+    """Ledger-level monoculture metric: the median distinct sources/question and
+    the single-source share, over every question carrying ≥1 evidence item. One
+    pass over ``evidence_items``; read-only. Feeds doctor."""
+    import statistics
+    from collections import defaultdict
+
+    with ledger._connect() as conn:
+        rows = conn.execute(
+            "SELECT question_id, source_name, source_type, source_url FROM evidence_items"
+        ).fetchall()
+    per_question: dict[str, set[str]] = defaultdict(set)
+    for row in rows:
+        name = (row["source_name"] or "").strip().lower()
+        key = name or _source_domain(row["source_url"]) or (row["source_type"] or "").strip().lower()
+        if key:
+            per_question[row["question_id"]].add(key)
+    counts = sorted(len(sources) for sources in per_question.values())
+    n = len(counts)
+    single = sum(1 for count in counts if count <= 1)
+    return {
+        "questions_with_evidence": n,
+        "median_sources_per_question": (statistics.median(counts) if counts else None),
+        "mean_sources_per_question": (sum(counts) / n if n else None),
+        "single_source_question_count": single,
+        "single_source_pct": (single / n if n else None),
+    }
+
+
 def existing_evidence_keys(ledger, question_id: str) -> set[tuple[str, str]]:
     """Return ``{(source_type, entry_id)}`` for evidence already imported for
     the question. Used to skip re-importing identical structured readings

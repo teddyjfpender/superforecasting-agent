@@ -261,12 +261,19 @@ def _truthy(value: Any) -> bool:
 def _supervisor_search_enabled(spec: dict[str, Any]) -> bool:
     """Whether to wire the live fresh-search supervisor loop for this run.
 
-    OPT-IN, DEFAULT OFF. Turned on by the per-run spec ``supervisor_search`` (set by
-    ``forecast quorum --supervisor-search``), which the CLI already resolves from the
-    fleet-wide config flag ``quorum.supervisor_search`` at enqueue time. This
-    config fallback is the safety net for a spec that omits the key entirely (e.g. a
-    programmatic enqueue). It governs ONLY the run_quorum/execute path; the
-    market-nightly path uses an injected agent_forecaster seam and is unaffected.
+    DEFAULT ON (the audit's finding #1: the proven edge had fired 0/223 times while
+    this was default-OFF). The per-run spec ``supervisor_search`` wins (set by
+    ``forecast quorum --supervisor-search``/``--no-supervisor-search``); otherwise
+    the fleet-wide config flag ``quorum.supervisor_search`` (default True) governs,
+    and a missing key / config-load failure ALSO defaults ON — so a bare
+    programmatic enqueue still gets the edge.
+
+    This ON default is LIVE-only-safe by construction: enabling it here only
+    CONSTRUCTS a search_runner; :func:`execute` still gates the actual fresh search
+    behind :func:`_cutoff_is_live`, so a historical evidence_cutoff
+    (backtest/replay) disables it and no post-cutoff information can leak. It governs
+    ONLY the run_quorum/execute path; the market-nightly path uses an injected
+    agent_forecaster seam and is unaffected.
     """
 
     if "supervisor_search" in spec:
@@ -275,9 +282,11 @@ def _supervisor_search_enabled(spec: dict[str, Any]) -> bool:
         from hermes_cli.config import load_config
 
         cfg = load_config().get("quorum", {})
-    except Exception:  # noqa: BLE001 — config is optional; default OFF without it
-        return False
-    return _truthy(cfg.get("supervisor_search")) if isinstance(cfg, dict) else False
+    except Exception:  # noqa: BLE001 — config optional; harmless default ON
+        return True
+    if not isinstance(cfg, dict) or "supervisor_search" not in cfg:
+        return True
+    return _truthy(cfg.get("supervisor_search"))
 
 
 def _track_record_weights_enabled(spec: dict[str, Any]) -> bool:

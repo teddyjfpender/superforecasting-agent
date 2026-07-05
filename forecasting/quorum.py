@@ -1096,14 +1096,24 @@ def resolve_quorum_defaults(
 
       * ``high`` impact (or a contested type) → ``frontier`` panel, one Delphi
         revision round, trim the extreme — the widest independent read.
-      * ``medium`` impact → ``budget`` panel, no revision, trim.
+      * ``medium`` impact → ``budget`` panel, one Delphi revision round, trim.
       * routine / low / unset → ``self`` fusion, no revision, no trim — cheap.
+
+    DELPHI TRIGGER (the audit's finding #1: Delphi had fired 0/223 while gated to
+    high/contested only): the anonymous revision round is defaulted ON for every
+    LIVE **multi-model** panel (``frontier`` + ``budget``), because a genuine second
+    read of independent panelists is where an anonymous revision earns its extra
+    round. It stays OFF for single-model ``self`` fusion (N samples of ONE model —
+    a revision among clones of the same model buys little and doubles cost) and is
+    still cost-capped: ``cap_preset_by_calls`` drops the Delphi round FIRST when a
+    run would overrun ``max_calls``.
 
     Then the SINGLE-KEY REALITY GUARD (item 3): when the resolved multi-provider
     preset spans a provider that is not reachable (only one provider key present,
     no OpenRouter), it falls back to ``self`` (the active model sampled) with a
     note — a panel that would silently error every non-local panelist is worse
-    than an honest self-fusion.
+    than an honest self-fusion. Because that fallback makes the run single-model,
+    the Delphi round is dropped with it (Delphi is a multi-model default).
 
     Returns ``{"preset", "delphi_rounds", "trim", "reason"}``. Does NOT apply the
     max_calls cap — the caller composes :func:`cap_preset_by_calls` after (so the
@@ -1121,7 +1131,9 @@ def resolve_quorum_defaults(
         preset, delphi_rounds, trim = "frontier", 1, 1
         tier = "high-impact" if impact == "high" else f"contested ({qtype})"
     elif impact == "medium":
-        preset, delphi_rounds, trim = "budget", 0, 1
+        # Multi-model budget panel → Delphi ON (a real second read of independent
+        # panelists earns the anonymous revision round; the cap drops it if over budget).
+        preset, delphi_rounds, trim = "budget", 1, 1
         tier = "medium-impact"
     else:
         preset, delphi_rounds, trim = "self", 0, 0
@@ -1134,6 +1146,9 @@ def resolve_quorum_defaults(
         if not models_reachable(preset_models, available_providers):
             if active_model:
                 preset = "self"
+                # A self-fusion run is single-model, so drop the Delphi revision that
+                # only makes sense across independent panelists.
+                delphi_rounds = 0
                 reason_parts.append(
                     "single provider key reachable → self-fusion fallback"
                 )

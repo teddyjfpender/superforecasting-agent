@@ -190,10 +190,11 @@ def test_build_commit_context_detects_em_dash_style():
 
 
 def test_outside_view_anchor_is_snapshot_honest():
-    """A serious forecast with a reference class on the QUESTION but NOT linked to this
-    snapshot now WARNs (snapshot-honest), pointing at the link path. WARN, so it costs
-    saturation but does not block (guide + make-visible)."""
-    report = run_hooks(_saturated_live(linked_reference_class_count=0), ALL_ERROR)
+    """A high-impact forecast with a reference class on the QUESTION but NOT linked to
+    this snapshot flags (snapshot-honest), pointing at the link path. ALL_ERROR omits
+    the rule, so it uses the rule's default WARN severity here — costs saturation but
+    does not block in this map."""
+    report = run_hooks(_saturated_live(impact="high", linked_reference_class_count=0), ALL_ERROR)
     anchor = [w for w in report.warnings() if w.rule_id == "require_outside_view_anchor"]
     assert anchor and "links NO reference class" in anchor[0].message
     assert report.score < 100.0

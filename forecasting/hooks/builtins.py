@@ -546,6 +546,15 @@ def _rem_research(_ctx: HookContext) -> RemediationDescriptor:
 
 # ── outside-view anchor (reference class) ─────────────────────────────────────
 def _check_outside_view_anchor(ctx: HookContext):
+    # HIGH-IMPACT-ONLY scoping (finding #4): the anchor is ENFORCED (ERROR in the
+    # standard profile) for a high-impact live forecast — the forecasts that most need
+    # an outside view. It is deliberately NOT gated on has_prior: gating re-commits too
+    # would demand a freshly-linked reference class on EVERY routine re-forecast, which
+    # bricks the re-forecast flow. A non-high-impact forecast self-passes here (no
+    # verdict fires), so promoting the severity to ERROR does not block the ~96% of live
+    # commits that never link a reference class — only the high-impact tier is gated.
+    if not ctx.high_impact:
+        return _OK
     # Snapshot-honest: a serious forecast must LINK its outside-view anchor to THIS
     # snapshot, not merely have one somewhere on the question (linked_reference_class_count
     # falls back to the question count on non-commit lint, so re-reads don't over-fire).
