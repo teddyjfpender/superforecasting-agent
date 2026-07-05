@@ -27,7 +27,9 @@ def main(argv: list[str] | None = None) -> int:
     from forecasting.jobs.runtime import run
 
     record = run(argv[1])
-    return 0 if record.status in ("done", "cancelled") else 1
+    # ``awaiting_approval`` is a clean PARK (a policy `ask` cell stopped it before any
+    # spend), not a crash — exit 0 so a supervising harness does not flag it failed.
+    return 0 if record.status in ("done", "cancelled", "awaiting_approval") else 1
 
 
 if __name__ == "__main__":

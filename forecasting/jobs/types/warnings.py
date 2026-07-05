@@ -18,6 +18,16 @@ from forecasting.jobs.types import JobType, register
 def _execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     from forecasting.cron_runner import run_warning_resolution
 
+    # Arc-9 approval gate. The warnings job is FREE-TIER by contract (spend_class=free):
+    # the current wiring runs the deterministic backlog sweep with NO agent runner, so
+    # it authorizes nothing and stays byte-identical. The SEAM is here for a future
+    # PAID warnings job (an injected LLM reforecast/evidence runner) — such a spec would
+    # carry a paid marker, and only then does the LLM-spend cell govern it.
+    if spec.get("paid") or spec.get("agent") or spec.get("reforecast_runner"):
+        from forecasting.jobs.policy import ActionClass
+
+        ctx.authorize(ActionClass.LLM_SPEND, "paid warning-automode resolution tier")
+
     limit = spec.get("limit")
     return run_warning_resolution(
         now=spec.get("now"),

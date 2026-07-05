@@ -134,6 +134,70 @@ def enqueue_resolution_proposal(
     )
 
 
+# Canonical reason prefix for a job APPROVAL request (Arc-9 approval/spend matrix).
+# A background job whose ``policy.<mode>.<class>`` cell resolved to ``ask`` parks and
+# raises this alert — the SAME guide-and-make-visible seam a resolution PROPOSAL rides.
+# There is no metadata column on ``alert_events``, so the job_id rides ``scope_ref``,
+# the action class rides the ``reason`` (after this prefix), and the operator
+# how-to + the parked detail ride ``recommended_action`` — exactly as a proposal's
+# outcome rides its reason. It surfaces in the open backlog until the operator
+# approves (``forecast jobs approve <id>`` — a documented follow-up surface) or loosens
+# the policy key, at which point the parked job resumes.
+_APPROVAL_REQUEST_REASON_PREFIX = "approval required:"
+
+
+def approval_request_action_class(reason: str | None) -> str | None:
+    """Parse the action-class token out of an ``approval required:`` reason (the first
+    word after the prefix). Returns None for any non-approval reason — the dedup key
+    space, mirroring :func:`resolution_proposal_outcome`."""
+    text = (reason or "").strip().lower()
+    if _APPROVAL_REQUEST_REASON_PREFIX not in text:
+        return None
+    tail = text.split(_APPROVAL_REQUEST_REASON_PREFIX, 1)[1].strip()
+    if not tail:
+        return None
+    token = tail.split()[0].strip()
+    return token or None
+
+
+def enqueue_approval_request(
+    ledger,
+    *,
+    job_id: str,
+    job_type: str,
+    action_class: str,
+    detail: str,
+    run_mode: str,
+    confirm_command: str | None = None,
+) -> AlertEvent:
+    """Raise (or reuse) the confirm-me APPROVAL alert for a job parked by an ``ask``
+    policy cell. Propose-only: writes an ``alert_events`` row, never authorizes the
+    action. Deduped against an already-open request for the SAME ``(job, class)`` (the
+    reason encodes both), so a re-run before approval never stacks a duplicate — it
+    returns the existing alert."""
+    reason = f"{_APPROVAL_REQUEST_REASON_PREFIX} {action_class} for {job_type} job {job_id}"
+    for alert in ledger.list_alerts(unresolved_only=True):
+        if (
+            alert.reason == reason
+            and alert.scope_type == "job"
+            and alert.scope_ref == job_id
+        ):
+            return alert  # dedup: the request is already open
+    action = confirm_command or (
+        f"approve with: forecast jobs approve {job_id}  "
+        f"(or loosen policy.{run_mode}.{action_class} — set "
+        f"FORECAST_POLICY_{run_mode.upper()}_{action_class.upper()}=auto). "
+        f"Parked action: {detail}"
+    )
+    return ledger.create_alert(
+        severity="warning",
+        scope_type="job",
+        scope_ref=job_id,
+        reason=reason,
+        recommended_action=action,
+    )
+
+
 def _has_open_alert(ledger, *, reason: str, scope_type: str, scope_ref: str) -> bool:
     """True when an unacknowledged alert with the SAME reason+scope already
     exists — so a re-transition does not stack a duplicate row (mirrors the

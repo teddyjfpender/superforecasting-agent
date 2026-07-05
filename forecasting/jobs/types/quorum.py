@@ -398,6 +398,7 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     every one lands (the audit trail is coarse, not a storm)."""
 
     from forecasting.hooks.thresholds import resolve_alpha_extremize
+    from forecasting.jobs.policy import ActionClass
     from forecasting.ledger import ForecastLedger
     from forecasting.protocol import build_context_packet
     from forecasting.quorum import (
@@ -406,6 +407,14 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         resolve_models,
         run_quorum,
     )
+
+    # Arc-9 approval gate: a quorum SPENDS (several panelists each researching + a
+    # judge synthesis) and WRITES a sibling panel run through the ledger gate. It
+    # authorizes both ONCE up front — before resolving the panel — so an ask/never
+    # cell parks or refuses before any model is dispatched. AUTO under every default
+    # (llm_spend in ``cycle``/``cron`` is auto-but-BOUNDED by ``cap_preset_by_calls``).
+    ctx.authorize(ActionClass.LLM_SPEND, "multi-model Delphi panel + judge synthesis")
+    ctx.authorize(ActionClass.LEDGER_WRITES, "record the quorum as a sibling panel run")
 
     # Panelists run concurrently, so run_quorum's on_progress fires from worker
     # threads — serialise the coalescer's append + file write behind one lock. The

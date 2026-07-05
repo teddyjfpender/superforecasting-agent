@@ -10,7 +10,7 @@ coalescing, cancellation, persistence, and desk re-attach.
 
 from __future__ import annotations
 
-from forecasting.jobs import runtime
+from forecasting.jobs import policy, runtime
 from forecasting.jobs.context import JobContext
 from forecasting.jobs.model import JobRecord
 from forecasting.jobs.store import JobStore
@@ -27,6 +27,7 @@ __all__ = [
     "JobContext",
     "JobType",
     "runtime",
+    "policy",
     "register",
     "resolve",
     "registered_types",

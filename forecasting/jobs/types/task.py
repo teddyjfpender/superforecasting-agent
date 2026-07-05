@@ -146,6 +146,15 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         _note("error", "task job requires a non-empty instruction")
         raise ValueError("task job requires a non-empty instruction")
 
+    # Arc-9 approval gate: a task session SPENDS (one bounded agent run) and may WRITE
+    # (every change goes through the gated forecast_ledger_tool). Authorize both up
+    # front — before the compose + session — so an ask/never cell parks or refuses
+    # before any spend. AUTO under every default.
+    from forecasting.jobs.policy import ActionClass
+
+    ctx.authorize(ActionClass.LLM_SPEND, f"one task session over {len(question_ids)} question(s)")
+    ctx.authorize(ActionClass.LEDGER_WRITES, "gated forecast_ledger_tool commits")
+
     _note("start", f"composing task over {len(question_ids)} question(s)")
 
     ledger = ForecastLedger(spec.get("db"))  # a bad db → runtime marks the job error

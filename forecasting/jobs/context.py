@@ -174,5 +174,82 @@ class JobContext:
         if self._persist:
             self._store.write(self._record)
 
+    # ── approval / spend policy (Arc-9) ──────────────────────────────────────
+    def authorize(self, action_class: Any, detail: str = "") -> bool:
+        """Gate one side-effecting action through the approval/spend matrix, keyed on
+        the job's resolved :class:`~forecasting.jobs.policy.RunMode`. A job body calls
+        this at its REAL action points (before spending / before writing).
+
+        Resolves the cell's :class:`~forecasting.jobs.policy.Decision` and LOGS it into
+        the JobRecord (``resolved_policy`` stamped once + a ``policy_decisions`` entry —
+        auditability is the point), then:
+
+        * ``auto`` (the default everywhere today) → return ``True`` (proceed);
+        * ``never`` → raise :class:`~forecasting.jobs.policy.PolicyRefused` (a teaching
+          error naming the config key);
+        * ``ask``  → surface an approval request on ``alert_events``, PARK the job
+          (status ``awaiting_approval``), and raise
+          :class:`~forecasting.jobs.policy.ApprovalRequired` for the runtime to catch.
+
+        An operator GRANT (from ``policy.approve_job``) flips a previously-parked class
+        to proceed on the resumed run."""
+
+        from forecasting.jobs import policy
+
+        action = policy._coerce_action_class(action_class)
+        run_mode = policy.resolve_run_mode(self._record.spec or {})
+
+        # Stamp the resolved matrix once — the run-level audit header.
+        if self._record.resolved_policy is None:
+            self._record.resolved_policy = policy.resolve_policy(run_mode)
+
+        decision = policy.resolve_decision(run_mode, action)
+        bounded = policy.is_bounded(run_mode, action)
+        granted = action.value in (self._record.policy_grants or [])
+        entry: dict[str, Any] = {
+            "class": action.value,
+            "detail": str(detail),
+            "run_mode": run_mode.value,
+            "decision": decision.value,
+            "bounded": bounded,
+            "at": policy._now_iso(),
+        }
+
+        # An operator approval overrides an `ask` cell for the resumed run.
+        if granted and decision is policy.Decision.ASK:
+            entry["decision"] = policy.Decision.AUTO.value
+            entry["granted"] = True
+            entry["outcome"] = "granted"
+            self._log_decision(entry)
+            return True
+
+        if decision is policy.Decision.AUTO:
+            entry["outcome"] = "auto"
+            self._log_decision(entry)
+            return True
+
+        if decision is policy.Decision.NEVER:
+            entry["outcome"] = "refused"
+            self._log_decision(entry)
+            raise policy.PolicyRefused(run_mode, action)
+
+        # ASK — surface + park + raise for the runtime.
+        alert_id = policy.request_approval(self._record, action, str(detail))
+        entry["outcome"] = "awaiting_approval"
+        entry["alert_id"] = alert_id
+        self._record.status = "awaiting_approval"
+        self._log_decision(entry)
+        raise policy.ApprovalRequired(
+            job_id=self._record.job_id,
+            action_class=action.value,
+            detail=str(detail),
+            alert_id=alert_id,
+        )
+
+    def _log_decision(self, entry: dict[str, Any]) -> None:
+        self._record.policy_decisions.append(entry)
+        if self._persist:
+            self._store.write(self._record)
+
 
 __all__ = ["JobContext"]

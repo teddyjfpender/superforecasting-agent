@@ -158,6 +158,36 @@ _KEYS: tuple[ConfigKey, ...] = (
     ConfigKey("ANTHROPIC_API_KEY", "str", None, True, "Anthropic (Claude) provider key.", category="secret"),
     ConfigKey("OPENROUTER_API_KEY", "str", None, True, "OpenRouter multi-model gateway key.", category="secret"),
     ConfigKey("XAI_API_KEY", "str", None, True, "xAI (Grok) provider key.", category="secret"),
+    # ── Approval / spend policy matrix (architecture review item #9) ─────────
+    # One knob per (run_mode × action_class) cell of the job-runtime approval matrix
+    # — the ENV/registry spelling of the logical ``policy.<mode>.<class>`` key. Value:
+    # auto | ask | never. UNSET (the default) means "use the matrix default", which is
+    # ``auto`` for every cell today (zero behaviour change until an operator tightens
+    # one). See ``forecasting/jobs/policy.py``.
+    ConfigKey("FORECAST_POLICY_INTERACTIVE_LEDGER_WRITES", "str", None, False,
+              "policy.interactive.ledger_writes = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_INTERACTIVE_NETWORK", "str", None, False,
+              "policy.interactive.network = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_INTERACTIVE_LLM_SPEND", "str", None, False,
+              "policy.interactive.llm_spend = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_INTERACTIVE_SUBPROCESS", "str", None, False,
+              "policy.interactive.subprocess = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CYCLE_LEDGER_WRITES", "str", None, False,
+              "policy.cycle.ledger_writes = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CYCLE_NETWORK", "str", None, False,
+              "policy.cycle.network = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CYCLE_LLM_SPEND", "str", None, False,
+              "policy.cycle.llm_spend = auto|ask|never (default auto, bounded by the reforecast cap).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CYCLE_SUBPROCESS", "str", None, False,
+              "policy.cycle.subprocess = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CRON_LEDGER_WRITES", "str", None, False,
+              "policy.cron.ledger_writes = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CRON_NETWORK", "str", None, False,
+              "policy.cron.network = auto|ask|never (default auto).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CRON_LLM_SPEND", "str", None, False,
+              "policy.cron.llm_spend = auto|ask|never (default auto, bounded by the paid-tier budget + interval).", category="policy"),
+    ConfigKey("FORECAST_POLICY_CRON_SUBPROCESS", "str", None, False,
+              "policy.cron.subprocess = auto|ask|never (default auto).", category="policy"),
 )
 
 REGISTRY: dict[str, ConfigKey] = {k.name: k for k in _KEYS}

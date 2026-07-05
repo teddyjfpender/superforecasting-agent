@@ -34,6 +34,12 @@ class JobRecordDTO(WireModel):
     error: str | None
     cancel_requested: bool
     annotations: dict[str, Any]
+    # Arc-9 approval/spend policy audit trail (surfaced via jobs.status — the
+    # resolved matrix that governed the run + one entry per authorize call + any
+    # operator grants). Optional/defaulted so a pre-Arc-9 frame still validates.
+    resolved_policy: dict[str, Any] | None = None
+    policy_decisions: list[dict[str, Any]] = []
+    policy_grants: list[str] = []
 
 
 # ── jobs.start ────────────────────────────────────────────────────────────────

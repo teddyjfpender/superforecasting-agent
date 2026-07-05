@@ -1996,7 +1996,10 @@ export interface JobRecordDTO {
   done_count: number
   error: null | string
   job_id: string
+  policy_decisions: Record<string, unknown>[]
+  policy_grants: string[]
   progress: Record<string, unknown>[]
+  resolved_policy: null | Record<string, unknown>
   result: null | Record<string, unknown>
   spec: Record<string, unknown>
   status: string

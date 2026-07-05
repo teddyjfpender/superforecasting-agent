@@ -51,6 +51,8 @@ def run(
         min_interval_s=job_type.min_interval_s,
     )
 
+    from forecasting.jobs.policy import ApprovalRequired, PolicyRefused
+
     try:
         raw = job_type.execute(record.spec or {}, ctx)
         ctx.flush()
@@ -68,6 +70,23 @@ def run(
         store.write(record)
         if on_complete is not None:
             on_complete(result)
+    except ApprovalRequired:
+        # A `policy.<mode>.<class> = ask` cell PARKED the job before it spent. This is
+        # NOT a crash and NOT a completion — leave it at ``awaiting_approval`` (already
+        # stamped by ctx.authorize, with the surfacing alert raised) for the operator
+        # to approve via ``policy.approve_job``. No on_complete / on_error fires.
+        ctx.flush()
+        record.status = "awaiting_approval"
+        store.write(record)
+    except PolicyRefused as exc:
+        # A `never` cell refused. Terminal ``error`` carrying the TEACHING message
+        # verbatim (it names the config key to loosen) — no ``PolicyRefused:`` prefix.
+        ctx.flush()
+        record.status = "error"
+        record.error = str(exc)
+        store.write(record)
+        if on_error is not None:
+            on_error(record.error)
     except Exception as exc:  # noqa: BLE001 — a background worker records, never crashes
         ctx.flush()
         record.status = "error"

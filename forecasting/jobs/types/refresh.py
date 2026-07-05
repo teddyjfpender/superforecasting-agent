@@ -93,11 +93,19 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     # Lazily imported: the write gate + the fetcher live in the heavy ledger/tool
     # layers, and keeping the import here avoids any import cycle.
     from forecasting.ledger import ForecastLedger, allow_ledger_writes
+    from forecasting.jobs.policy import ActionClass
     from tools.forecasting_tool import fetch_watched_source_payloads
 
     question_ids = [
         str(q).strip() for q in (spec.get("question_ids") or []) if str(q).strip()
     ]
+
+    # Arc-9 approval gate: the ONLY side effect of the deterministic re-pool is the
+    # gated ledger commit (no LLM spend — this is the LLM-free arm by contract), so it
+    # authorizes ``ledger_writes`` ONCE up front, before the loop. AUTO under every
+    # default; an operator who sets ``policy.<mode>.ledger_writes`` to ask/never parks
+    # or refuses the whole batch before anything is written.
+    ctx.authorize(ActionClass.LEDGER_WRITES, f"deterministic re-pool of {len(question_ids)} question(s)")
     try:
         concurrency = int(spec.get("concurrency") or DEFAULT_CONCURRENCY)
     except (TypeError, ValueError):

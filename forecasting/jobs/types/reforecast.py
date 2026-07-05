@@ -334,11 +334,21 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     # jobs package lazily too).
     from forecasting.cli import run_forecast_chain
     from forecasting.hooks.sweep import saturation_summary
+    from forecasting.jobs.policy import ActionClass
     from forecasting.ledger import ForecastLedger
 
     question_ids = [
         str(q).strip() for q in (spec.get("question_ids") or []) if str(q).strip()
     ]
+
+    # Arc-9 approval gate: the mass LLM re-run's two side effects are model SPEND and a
+    # gated ledger COMMIT per question. It authorizes both ONCE up front — before the
+    # first (multi-minute, real-spend) session — so an ask/never cell parks or refuses
+    # the batch before any money is spent. AUTO under every default (in ``cycle``/``cron``
+    # llm_spend is auto-but-BOUNDED by the batch cap + any auto-quorum's cap).
+    ctx.authorize(ActionClass.LLM_SPEND, f"full forecast chain over {len(question_ids)} question(s)")
+    ctx.authorize(ActionClass.LEDGER_WRITES, "gated commit per question")
+
     model = spec.get("model") or None
     provider = spec.get("provider") or None
     try:

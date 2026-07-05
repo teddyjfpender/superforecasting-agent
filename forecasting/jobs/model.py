@@ -14,8 +14,13 @@ from typing import Any
 
 # The lifecycle state machine. ``cancelled`` is a graceful terminal (the run
 # finished after a cooperative cancel — its partial work is durable); ``error``
-# is a crash.
-STATUSES = ("queued", "running", "done", "error", "cancelled")
+# is a crash. ``awaiting_approval`` is a PARKED state (Arc-9 approval matrix): the
+# job stopped BEFORE spending because a ``policy.<mode>.<class>`` cell resolved to
+# ``ask``, and it resumes once an operator approves. It is deliberately neither
+# ACTIVE (it must not light the "N agents running" chip — nothing is running) nor
+# TERMINAL (the work is not finished) — the store's ``_ACTIVE_STATUSES`` excludes
+# it, and the desk surfaces it via the approval alert it raised, not the job list.
+STATUSES = ("queued", "running", "done", "error", "cancelled", "awaiting_approval")
 
 
 def _now_iso() -> str:
@@ -46,6 +51,18 @@ class JobRecord:
     error: str | None = None
     cancel_requested: bool = False
     annotations: dict[str, Any] = field(default_factory=dict)
+    # ── Arc-9 approval/spend policy audit trail ──────────────────────────────
+    # ``resolved_policy`` — the full matrix that governed this run (run_mode + the
+    # per-class decisions), stamped once at the first ``authorize`` call.
+    # ``policy_decisions`` — one entry per ``authorize`` call (class/detail/decision/
+    # bounded/outcome), so a status poll can audit exactly what was allowed, parked,
+    # or refused. ``policy_grants`` — action classes an operator APPROVED for a resumed
+    # run, so a re-run's ``authorize`` proceeds instead of re-parking. All default
+    # empty/None → a run that never authorizes (backup, free-tier warnings) is
+    # byte-identical to before.
+    resolved_policy: dict[str, Any] | None = None
+    policy_decisions: list[dict[str, Any]] = field(default_factory=list)
+    policy_grants: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -63,6 +80,9 @@ class JobRecord:
             "error": self.error,
             "cancel_requested": self.cancel_requested,
             "annotations": self.annotations,
+            "resolved_policy": self.resolved_policy,
+            "policy_decisions": self.policy_decisions,
+            "policy_grants": self.policy_grants,
         }
 
     @classmethod
