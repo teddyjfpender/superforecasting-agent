@@ -26,6 +26,13 @@ def best_baseline(baselines: list[dict[str, Any]]) -> dict[str, Any] | None:
 
 # ── AIA P2.3: OPT-IN read-only Platt-alpha sweep (never moves a default) ─────
 
+# The historical default floor is 1.0 — the sweep measured EXTREMIZATION only
+# (α≥1 sharpens away from 0.5). The shrinkage study (docs/research/shrinkage-study.md)
+# widens the floor to 0.5 to also measure SHRINKAGE (α<1 flattens toward 0.5); it is
+# opt-in via ``min_alpha`` so the default range — and every existing caller — is
+# byte-for-byte unchanged.
+DEFAULT_ALPHA_SWEEP_MIN = 1.0
+SHRINKAGE_ALPHA_SWEEP_MIN = 0.5
 DEFAULT_ALPHA_SWEEP_MAX = 2.5
 DEFAULT_ALPHA_SWEEP_STEPS = 16
 
@@ -53,13 +60,15 @@ def sweep_platt_alpha(
     observations: Sequence[tuple[float, float]] | Sequence[Any],
     alphas: Sequence[float] | None = None,
     *,
+    min_alpha: float = DEFAULT_ALPHA_SWEEP_MIN,
     max_alpha: float = DEFAULT_ALPHA_SWEEP_MAX,
     steps: int = DEFAULT_ALPHA_SWEEP_STEPS,
 ) -> dict[str, Any]:
     """READ-ONLY sweep of the terminal Platt slope over the resolved set.
 
-    For each ``alpha`` in ``linspace(1.0, max_alpha)`` (default, or the caller's
-    explicit list) recompute the mean Brier after applying :func:`platt_scale`
+    For each ``alpha`` in ``linspace(min_alpha, max_alpha)`` (default
+    ``min_alpha=1.0`` — extremization only — or the caller's explicit list)
+    recompute the mean Brier after applying :func:`platt_scale`
     to every raw forecast ``p``, and report:
 
     * ``best_alpha`` / ``best_brier`` — the Brier-minimizing slope on this set;
@@ -75,7 +84,10 @@ def sweep_platt_alpha(
     * the full ``curve``.
 
     ``observations`` may be ``(raw_p, outcome)`` pairs OR objects exposing
-    ``p_yes``/``outcome`` (e.g. calibration :class:`Observation`s). This NEVER
+    ``p_yes``/``outcome`` (e.g. calibration :class:`Observation`s). Passing
+    ``min_alpha=SHRINKAGE_ALPHA_SWEEP_MIN`` (0.5) widens the grid below 1.0 to
+    also measure SHRINKAGE (α<1 flattens toward 0.5); the default keeps the
+    extremization-only floor of 1.0 so no existing caller changes. This NEVER
     mutates a forecast or a default — it is a diagnostic the caller reads.
     """
 
@@ -97,7 +109,7 @@ def sweep_platt_alpha(
             continue
         pairs.append((rp, oc))
 
-    grid = list(alphas) if alphas is not None else _linspace(1.0, max_alpha, steps)
+    grid = list(alphas) if alphas is not None else _linspace(min_alpha, max_alpha, steps)
     grid = [float(a) for a in grid if float(a) > 0.0]
     if not grid:
         grid = [1.0]
