@@ -981,6 +981,11 @@ class ForecastThesisHistoryPoint(WireModel):
     as_of: str | None = wire_optional()
     created_at: str | None = wire_optional()
     headline_probability: float | None = wire_optional(nullable=True)
+    # The regime the headline point belongs to: "event" once a joint-threshold
+    # event is configured (P(event) is the series), else "health" (the mean-index
+    # health). The desk restricts window deltas to a single regime so a delta
+    # never straddles the series switch.
+    headline_regime: str | None = wire_optional()
     thesis_score: float | None = wire_optional(nullable=True)
     score_low: float | None = wire_optional(nullable=True)
     score_high: float | None = wire_optional(nullable=True)

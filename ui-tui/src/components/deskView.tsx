@@ -32,7 +32,7 @@ import {
   tabRefFactor,
   tabRefThesis
 } from '../lib/deskGroups.js'
-import { bandChart, deltaGlyph, levelSparkline, pct, shortDate, windowDelta, wrapLines } from '../lib/forecastCharts.js'
+import { bandChart, deltaGlyph, levelSparkline, pct, shortDate, windowDelta, windowDeltaDetail, wrapLines } from '../lib/forecastCharts.js'
 import { packetTailAudit } from '../lib/forecastTail.js'
 import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { spinnerFrame } from '../lib/icons.js'
@@ -3268,6 +3268,20 @@ const thesisAsItem = (thesis: ForecastThesis): ForecastWorkspaceItem => ({
   title: thesis.title
 })
 
+// The thesis's REGIME-AWARE window deltas. Computed off `thesis.history` (not the
+// projected item.history) because the history points carry `headline_regime`, and
+// a window must only compare WITHIN the current regime — a baseline that predates
+// the event-config switch (health → event series) is an honest '—' (new series),
+// never a cross-regime lie. Members carry no regime so this never fires for them.
+const thesisWindows = (
+  thesis: ForecastThesis,
+  nowMs: number
+): { '1d': number | null; '1mo': number | null; '1w': number | null } => ({
+  '1d': windowDelta(thesis.history, nowMs, 1),
+  '1mo': windowDelta(thesis.history, nowMs, 30),
+  '1w': windowDelta(thesis.history, nowMs, 7)
+})
+
 // One pinned-thesis cell's colour + text. PROB/1D/1W/1MO/AGE reuse deskCellText via
 // the projection (identical rendering to a member row); QUESTION + PROB wear the
 // thesis accent; EV/SRC/RDY/NEXT — which the aggregate has no per-question analogue
@@ -3291,7 +3305,22 @@ export const thesisCellText = (
 
     case '1d':
     case '1mo':
-    case '1w':
+    case '1w': {
+      // The number/colour comes from the precomputed regime-aware window. When it
+      // is null we distinguish two honest absences: a bare '—' (no in-window
+      // anchor) vs '—ⁿ' — a "new series" hint painted the SAME subtle colour —
+      // when the only in-window baseline predates the event-config regime switch,
+      // so there is no same-regime comparison yet (never a cross-regime lie).
+      const value = windows[key]
+      if (value === null) {
+        const days = key === '1d' ? 1 : key === '1w' ? 7 : 30
+        if (windowDeltaDetail(thesis.history, nowMs, days).newSeries) {
+          return { color: sem.subtle, text: '—ⁿ' }
+        }
+      }
+      return deskCellText(key, item, sem, t, windows, nowMs, undefined)
+    }
+
     case 'age':
       return deskCellText(key, item, sem, t, windows, nowMs, undefined)
 
@@ -3330,16 +3359,18 @@ const DeskThesisRow = memo(function DeskThesisRow({
   trendW: number
 }) {
   const item = thesisAsItem(thesis)
-  const windows = {
-    '1d': windowDelta(item.history, nowMs, 1),
-    '1mo': windowDelta(item.history, nowMs, 30),
-    '1w': windowDelta(item.history, nowMs, 7)
-  }
+  // Regime-aware window deltas (off thesis.history, which carries headline_regime):
+  // a delta never straddles the health→event series switch.
+  const windows = thesisWindows(thesis, nowMs)
   // The 1-month level trend spark, on the same fixed 0..1 scale a binary member row
   // uses (the thesis event probability is a 0..1 quantity).
   const sparkValues = (item.history ?? []).slice(-trendW).map(point => point.headline_probability ?? null)
   const trend = showTrend ? levelSparkline(sparkValues) : ''
-  const trendColor = dirColor(sem, thesis.delta ?? windows['1mo'])
+  // Colour the "1MO" trend by the SAME regime-honest 1MO window the 1MO cell reads
+  // — so when that cell is an honest '—' (no same-regime move / new series) the
+  // spark is subtle too, never a coloured cross-regime `thesis.delta` that
+  // contradicts the '—' cells beside it.
+  const trendColor = windows['1mo'] !== null ? dirColor(sem, windows['1mo']) : sem.subtle
 
   return (
     <Text backgroundColor={active ? t.color.selectionBg : undefined} bold wrap="truncate-end">

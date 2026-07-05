@@ -41,6 +41,7 @@ _SIGNALS: dict[str, tuple[Callable[[HookContext], Any], str, str]] = {
     "panel.run_count": (lambda c: c.panel_run_count, "number", "Historical panel runs for the question."),
     "evidence.stale_acknowledged_unexplained": (lambda c: c.stale_evidence_acknowledged, "bool", "Stale evidence was acknowledged to skip the freshness gate WITHOUT a recorded reason."),
     "watched_sources.count": (lambda c: c.watched_source_count, "number", "Active watched sources on the question."),
+    "readiness.score": (lambda c: c.readiness_score if c.readiness_score is not None else 100.0, "number", "Machine-readiness (Desk RDY) composite 0..100; 100 when not computed so a null score never trips a floor."),
     "decision.ready": (lambda c: not c.decision_gaps, "bool", "Whether the decision card has no missing fields."),
     "decision.gap_count": (lambda c: len(c.decision_gaps), "number", "Count of missing decision-card fields."),
     "tail.unearned_mass": (lambda c: c.tail_unearned_mass, "number", "Categorical: fraction of mass on outcomes with no named path (0..1)."),

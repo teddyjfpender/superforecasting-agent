@@ -15,6 +15,7 @@ import {
   shortDate,
   timeAxis,
   windowDelta,
+  windowDeltaDetail,
   wrapLines
 } from '../lib/forecastCharts.js'
 
@@ -112,6 +113,50 @@ describe('windowDelta', () => {
     ]
     // 4.232 − 4.3 = −0.068 (raw outcome units; caller renders as Δμ)
     expect(windowDelta(history, NOW, 7)).toBeCloseTo(-0.068, 6)
+  })
+
+  // ── Regime-aware deltas (thesis health→event series switch) ────────────────
+  it('compares WITHIN the current regime — a same-regime anchor renders', () => {
+    // Current point is the "event" series; the in-window anchor is also "event".
+    const history = [
+      { as_of: day(30), headline_probability: 0.51, headline_regime: 'health' },
+      { as_of: day(10), headline_probability: 0.35, headline_regime: 'event' }, // 1W anchor (same regime)
+      { as_of: day(1), headline_probability: 0.38, headline_regime: 'event' } // current
+    ]
+    // +0.03 vs the same-regime event point, NOT −0.13 vs the health baseline.
+    expect(windowDelta(history, NOW, 7)).toBeCloseTo(0.03, 6)
+    expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: expect.closeTo(0.03, 6), newSeries: false })
+  })
+
+  it('returns null (new series) when the only in-window baseline predates the regime switch', () => {
+    // Every event point is recent; the sole in-window (≤ now−7d) anchor is health.
+    const history = [
+      { as_of: day(30), headline_probability: 0.51, headline_regime: 'health' }, // in 1W window but wrong regime
+      { as_of: day(2), headline_probability: 0.35, headline_regime: 'event' },
+      { as_of: day(1), headline_probability: 0.36, headline_regime: 'event' } // current (event)
+    ]
+    // A delta across the health→event switch is a lie → null, flagged newSeries.
+    expect(windowDelta(history, NOW, 7)).toBeNull()
+    expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: null, newSeries: true })
+  })
+
+  it('plain null (not newSeries) when there is simply no in-window anchor at all', () => {
+    const history = [
+      { as_of: day(2), headline_probability: 0.35, headline_regime: 'event' },
+      { as_of: day(1), headline_probability: 0.36, headline_regime: 'event' }
+    ]
+    // No point ≤ now−7d → a bare absence, not a regime boundary.
+    expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: null, newSeries: false })
+  })
+
+  it('regime gate is inert for series without a regime (member rows unchanged)', () => {
+    const history = [
+      { as_of: day(30), headline_probability: 0.4 },
+      { as_of: day(10), headline_probability: 0.5 },
+      { as_of: day(2), headline_probability: 0.58 }
+    ]
+    // Byte-identical to the non-regime path: +0.08, never flagged newSeries.
+    expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: expect.closeTo(0.08, 6), newSeries: false })
   })
 })
 

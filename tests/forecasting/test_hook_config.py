@@ -76,6 +76,21 @@ def test_master_switch_off_makes_everything_advisory():
     assert all(v is Severity.WARN for v in sev.values())
 
 
+def test_readiness_floor_profile_severities():
+    # ON BY DEFAULT: WARN in standard, OFF in exploratory-lenient, ERROR in strict.
+    # Also pins the profiles.py gotcha — lenient/strict must NOT inherit the standard
+    # WARN (profile_severities seeds from the standard dict then updates).
+    assert resolve_severities(_q(), forecast_origin="live", hooks_config={"profile": "standard"})["readiness_floor"] is Severity.WARN
+    assert resolve_severities(_q(), forecast_origin="live", hooks_config={"profile": "exploratory-lenient"})["readiness_floor"] is Severity.OFF
+    assert resolve_severities(_q(), forecast_origin="live", hooks_config={"profile": "strict"})["readiness_floor"] is Severity.ERROR
+
+
+def test_no_watched_sources_profile_severities():
+    assert resolve_severities(_q(), forecast_origin="live", hooks_config={"profile": "standard"})["no_watched_sources"] is Severity.WARN
+    assert resolve_severities(_q(), forecast_origin="live", hooks_config={"profile": "exploratory-lenient"})["no_watched_sources"] is Severity.OFF
+    assert resolve_severities(_q(), forecast_origin="live", hooks_config={"profile": "strict"})["no_watched_sources"] is Severity.ERROR
+
+
 def test_default_config_block_is_present_and_standard():
     # The shipped DEFAULT_CONFIG must carry forecasting.hooks at the standard
     # profile with no auto-bump, so adopting hooks is a no-op on upgrade.

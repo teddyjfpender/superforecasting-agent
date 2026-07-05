@@ -1,17 +1,23 @@
-"""FRED (St. Louis Fed) provider — ported one-to-one from ``marketFetch.ts``.
+"""FRED (St. Louis Fed) provider.
 
-FRED has TWO client paths, both carried over verbatim (``needs_key`` is False —
-the provider degrades to the keyless CSV rather than being skipped):
+FRED has TWO client paths (``needs_key`` is False — the provider degrades to the
+keyless CSV rather than being skipped):
 * WITH a key — the official JSON observations API
-  (``/fred/series/observations?...&sort_order=desc&limit=2``), most reliable.
-  ``parse_fred`` reads the two DESC observations: latest value + change vs prior.
+  (``/fred/series/observations?...&sort_order=desc&limit=30``), most reliable.
+  ``parse_fred`` reads the DESC window, reverses it, and keeps the newest value +
+  a ``history`` sparkline.
 * WITHOUT a key — the keyless public CSV (``fredgraph.csv``), rows oldest→newest
-  with ``"."`` for missing values. ``parse_fred_csv`` takes the last two REAL
-  values (the ``"."`` rows dropped as null).
+  with ``"."`` for missing values. ``parse_fred_csv`` keeps the trailing REAL
+  rows (the ``"."`` rows dropped as null).
 
-Neither path carries a ``prevClose`` or ``history`` (the client omitted both —
-``change`` is computed, ``prevClose`` stays absent). An error / empty payload
-yields ``value = None`` (THE LAW) — absence renders "—", never a fabricated ``0``.
+Both paths now carry a ``history`` sparkline (the trailing ~30 REAL observations,
+oldest→newest) and compute ``change`` against the prior DISTINCT observation date
+— duplicate ``observation_date`` vintages are collapsed so the delta is never a
+fabricated ``0`` measured against the newest reading itself. A genuinely flat
+series (e.g. FEDFUNDS 3.63 → 3.63) still reports a MEASURED ``0.0`` — that is
+honest, and distinct from ``None``. An error / empty payload yields
+``value = None`` (THE LAW) — absence renders "—", never a fabricated ``0``.
+``prevClose`` stays absent (the source does not publish a distinct prior close).
 """
 
 from __future__ import annotations
@@ -29,8 +35,36 @@ from forecasting.marketdata.provider import (
 
 _LINE_RE = re.compile(r"\r?\n")
 
+# Trailing window kept for the sparkline (and fetched from the JSON API).
+_HISTORY_LIMIT = 30
 
-def _quote(symbol: str, series: SeriesRef, value, change, change_pct, as_of: int) -> Quote:
+
+def _finalize(rows: list[tuple[str, float]], series: SeriesRef) -> Quote:
+    """Build a Quote from REAL ``(date, value)`` rows in oldest→newest order.
+
+    Duplicate ``observation_date`` vintages are collapsed (last wins) so the
+    ``change`` reaches back to the prior DISTINCT date instead of the newest
+    reading itself; ``history`` is the trailing ``_HISTORY_LIMIT`` values.
+    """
+
+    # Collapse duplicate observation dates (revision vintages), keeping the last
+    # value seen for each date while preserving chronological order.
+    deduped: list[tuple[str, float]] = []
+    for date, value in rows:
+        if deduped and deduped[-1][0] == date:
+            deduped[-1] = (date, value)
+        else:
+            deduped.append((date, value))
+
+    window = deduped[-_HISTORY_LIMIT:]
+    history = [v for _, v in window]
+
+    last = deduped[-1] if deduped else None
+    prev = deduped[-2] if len(deduped) > 1 else None  # prior DISTINCT date
+    value = last[1] if last else None
+    change, change_pct = change_columns(value, prev[1] if prev else None)
+    as_of = epoch_ms(last[0]) if last and last[0] else 0
+
     return Quote(
         symbol=series.symbol,
         provider="fred",
@@ -39,33 +73,36 @@ def _quote(symbol: str, series: SeriesRef, value, change, change_pct, as_of: int
         value=value,
         change=change,
         changePct=change_pct,
-        prevClose=None,  # client omitted prevClose for FRED
+        prevClose=None,  # FRED publishes no distinct prior close
         asOf=as_of,
         unit=series.unit,
-        history=[],  # client omitted history for FRED
+        history=history,
     )
 
 
 def parse_fred(payload: object, series: SeriesRef) -> Quote:
-    """Parse the keyed JSON observations (DESC, limit 2): latest + change vs prior."""
+    """Parse the keyed JSON observations (DESC window): newest value + history."""
 
     obs = payload.get("observations") if isinstance(payload, dict) else None
     obs = obs if isinstance(obs, list) else []
-    first = obs[0] if len(obs) > 0 and isinstance(obs[0], dict) else {}
-    second = obs[1] if len(obs) > 1 and isinstance(obs[1], dict) else {}
-    value = num(first.get("value"))
-    prev = num(second.get("value"))
-    change, change_pct = change_columns(value, prev)
-    date = first.get("date")
-    as_of = epoch_ms(date) if isinstance(date, str) and date else 0
-    return _quote(series.symbol, series, value, change, change_pct, as_of)
+    rows: list[tuple[str, float]] = []
+    for entry in obs:  # arrives newest→oldest (sort_order=desc)
+        if not isinstance(entry, dict):
+            continue
+        value = num(entry.get("value"))
+        if value is None:  # "." missing observations drop as null
+            continue
+        date = entry.get("date")
+        rows.append((date if isinstance(date, str) else "", value))
+    rows.reverse()  # → oldest→newest for history + prior-date change
+    return _finalize(rows, series)
 
 
 def parse_fred_csv(csv_text: str, series: SeriesRef) -> Quote:
     """Parse the keyless ``fredgraph.csv`` (oldest→newest, ``"."`` = missing).
 
-    Takes the last two REAL rows (``"."`` values dropped as null), exactly as the
-    client's ``parseFredCsv``.
+    Keeps the trailing REAL rows (``"."`` values dropped as null) and builds a
+    ``history`` sparkline + change vs the prior distinct observation date.
     """
 
     text = csv_text if isinstance(csv_text, str) else ""
@@ -73,17 +110,13 @@ def parse_fred_csv(csv_text: str, series: SeriesRef) -> Quote:
     rows: list[tuple[str, float]] = []
     for line in lines:
         comma = line.find(",")
+        if comma < 0:
+            continue
         date = line[:comma]
         value = num(line[comma + 1 :])
         if value is not None:
             rows.append((date, value))
-
-    last = rows[-1] if rows else None
-    prev = rows[-2] if len(rows) > 1 else None
-    value = last[1] if last else None
-    change, change_pct = change_columns(value, prev[1] if prev else None)
-    as_of = epoch_ms(last[0]) if last and last[0] else 0
-    return _quote(series.symbol, series, value, change, change_pct, as_of)
+    return _finalize(rows, series)
 
 
 class FredProvider:
@@ -100,7 +133,7 @@ class FredProvider:
         return (
             "https://api.stlouisfed.org/fred/series/observations"
             f"?series_id={_urlquote(symbol, safe='')}&api_key={api_key}"
-            "&file_type=json&sort_order=desc&limit=2"
+            f"&file_type=json&sort_order=desc&limit={_HISTORY_LIMIT}"
         )
 
     def _csv_url(self, symbol: str) -> str:

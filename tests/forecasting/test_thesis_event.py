@@ -376,3 +376,30 @@ def test_workspace_thesis_surfaces_event(tmp_path):
     assert ws["event"]["threshold"] == 3
     assert ws["count_distribution"] is not None
     assert ws["event_detail"]["participants"] == 5
+
+
+def test_thesis_history_stamps_regime_across_the_event_switch(tmp_path):
+    # A thesis's headline series SWITCHES when a joint-event is configured: the
+    # health mean-index (~0.5) gives way to P(event). Each history point is stamped
+    # with its regime so the desk only compares within one series (a delta straddling
+    # the switch is a lie). Pre-config point → "health"; post-config point → "event".
+    ledger, thesis, _ = _senate(tmp_path)
+    ledger.aggregate_thesis(thesis.id, rho=0.4)  # health regime (no event yet)
+    ledger.set_thesis_event(thesis.id, kind="count_threshold", threshold=3)
+    ledger.aggregate_thesis(thesis.id, rho=0.4)  # event regime
+
+    ws = _workspace_thesis(ledger, ledger.get_question(thesis.id))
+    history = ws["history"]
+    assert len(history) >= 2
+
+    first, last = history[0], history[-1]
+    # Pre-config point: the health value under the "health" regime, no event prob.
+    assert first["headline_regime"] == "health"
+    assert first["event_probability"] is None
+    assert first["headline_probability"] == first["health_probability"]
+    # Post-config point: P(event) under the "event" regime.
+    assert last["headline_regime"] == "event"
+    assert last["event_probability"] is not None
+    assert last["headline_probability"] == last["event_probability"]
+    # The two regimes carry genuinely different headline series → the switch is real.
+    assert first["headline_probability"] != last["headline_probability"]

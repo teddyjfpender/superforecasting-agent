@@ -113,6 +113,55 @@ def _check_stale_evidence_justified(ctx: HookContext):
     return False, msg, {}
 
 
+# ── machine-readiness floor (the Desk "RDY" score — previously UN-enforced) ────
+# The autonomous desk keeps a forecast alive from its machine-workability inputs
+# (watched sources, structured components, reference classes, an executable update
+# trigger, an enabled review schedule, resolution scaffolding). readiness_lens
+# scores that 0-100. Below the floor the loop is literally missing inputs — this
+# rule surfaces that at commit. Tunable via FORECAST_HOOK_READINESS_FLOOR (or the
+# per-question ``readiness_floor`` threshold override).
+DEFAULT_READINESS_FLOOR = 60.0
+
+
+def _check_readiness_floor(ctx: HookContext):
+    # A benchmark/market commit with no composite carries readiness_score=None -> PASS.
+    if ctx.readiness_score is None:
+        return _OK
+    floor = ctx.threshold("readiness_floor")
+    if floor is None:
+        try:
+            from forecasting import appconfig
+            floor = appconfig.get_float("FORECAST_HOOK_READINESS_FLOOR")
+        except Exception:
+            floor = None
+    if floor is None:
+        floor = DEFAULT_READINESS_FLOOR
+    if ctx.readiness_score >= floor:
+        return _OK
+    msg = (
+        f"machine-readiness for this forecast is {ctx.readiness_score:.0f}/100, below the "
+        f"floor of {floor:.0f}. The autonomous desk is missing inputs it needs to keep this "
+        "forecast alive (watched sources, structured components, reference classes, an "
+        "executable update trigger, an enabled review schedule). Close the readiness gaps "
+        "(Desk RDY / `forecast readiness`) before committing, or record it as "
+        "forecast_origin='exploratory'."
+    )
+    return False, msg, {"readiness_score": ctx.readiness_score, "floor": floor}
+
+
+# ── watched sources present (the desk can only refresh what it watches) ────────
+def _check_no_watched_sources(ctx: HookContext):
+    if ctx.watched_source_count > 0:
+        return _OK
+    msg = (
+        "live forecast has NO active watched sources: the autonomous desk cannot refresh "
+        "this forecast without a source to watch, so it will silently go stale. Add at "
+        "least one watched source (`forecast watch add <source> --question <id>`), or "
+        "record it as forecast_origin='exploratory'."
+    )
+    return False, msg, {"watched_source_count": ctx.watched_source_count}
+
+
 # ── decision readiness ────────────────────────────────────────────────────────
 def _check_decision_readiness(ctx: HookContext):
     if not ctx.decision_gaps:
@@ -593,6 +642,11 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
     # v3 — VOI-directed research adequacy (research_audit.py deterministic checks)
     SimpleRule("research_adequate", Category.SATURATION, Severity.WARN, 10.0,
                _check_research_adequate, _modeled, _rem_research),
+    # v3 — machine-readiness enforcement (the Desk "RDY" score, previously un-hooked)
+    SimpleRule("readiness_floor", Category.DECISION, Severity.WARN, 10.0,
+               _check_readiness_floor, _live),
+    SimpleRule("no_watched_sources", Category.DECISION, Severity.WARN, 8.0,
+               _check_no_watched_sources, _live, _rem_collect),
 )
 
 BUILTIN_RULE_IDS: tuple[str, ...] = tuple(r.id for r in BUILTIN_RULES)
@@ -624,6 +678,8 @@ RULE_DOCS: dict[str, str] = {
     "reasoning_composition": "Declare a sufficient set + count of reasoning methods.",
     "thesis_aggregate_fresh": "A thesis/factor must re-aggregate after its members move (no stale health).",
     "research_adequate": "Research must cover the levers that would move the forecast (reference class, evidence floor, independent + disconfirming + fresh evidence, watched triggers).",
+    "readiness_floor": "A live forecast's machine-readiness (Desk RDY) score must clear the floor so the autonomous desk has the inputs to keep it alive.",
+    "no_watched_sources": "A live forecast must have at least one active watched source the desk can refresh.",
 }
 
 _RULE_BY_ID = {r.id: r for r in BUILTIN_RULES}

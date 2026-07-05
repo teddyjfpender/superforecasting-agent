@@ -31,8 +31,15 @@ def server():
         },
     ):
         import importlib
+        import threading
 
         mod = importlib.import_module("tui_gateway.server")
+        # Don't start the real notification poller: these tests only check
+        # callback wiring, and a leaked poller daemon consumes the
+        # process-global completion_queue, starving later async-delegation
+        # tests on the same xdist worker. The teardown reload below restores
+        # the real function.
+        mod._start_notification_poller = lambda _sid, _session: threading.Event()
         yield mod
         mod._sessions.clear()
         mod._pending.clear()

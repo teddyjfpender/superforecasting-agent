@@ -117,6 +117,10 @@ class HookContext:
     linked_reference_class_count: int = 0
     watched_source_count: int = 0
     decision_gaps: tuple[str, ...] = ()
+    # machine-readiness composite (0-100) from readiness_lens (the Desk "RDY" score);
+    # None when not computed (a benchmark/market question with no composite) — the
+    # readiness_floor rule PASSES on None so a missing score never false-fires.
+    readiness_score: float | None = None
     active_lessons_unapplied: int = 0
     calibration_bias_status: str | None = None
     # committed winner probability (binary p / leading categorical mass) + whether a

@@ -1304,4 +1304,73 @@ describe('createGatewayEventHandler', () => {
       expect(getUiState().status).not.toContain('alert')
     })
   })
+
+  describe('gateway.stderr coalescer (repaint-loop fix)', () => {
+    const stderr = (line: string) => ({ payload: { line }, type: 'gateway.stderr' }) as any
+
+    it('paints a lone stderr line immediately (leading edge)', () => {
+      const onEvent = createGatewayEventHandler(buildCtx([]))
+      const spy = vi.spyOn(turnController, 'pushActivity')
+      vi.useFakeTimers()
+      try {
+        onEvent(stderr('gateway ready'))
+        expect(spy).toHaveBeenCalledTimes(1)
+        expect(spy).toHaveBeenCalledWith('gateway ready', 'info')
+        // No further lines → the window closes with nothing to flush.
+        vi.advanceTimersByTime(500)
+        expect(spy).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+        spy.mockRestore()
+      }
+    })
+
+    it('collapses a 100-line stderr storm into a bounded 2 re-renders (not 100)', () => {
+      const onEvent = createGatewayEventHandler(buildCtx([]))
+      const spy = vi.spyOn(turnController, 'pushActivity')
+      vi.useFakeTimers()
+      try {
+        // A free-tier failure storm: 130 alerts fail loudly, each a distinct line
+        // (varying id/provider) so the consecutive-identical dedup can't collapse them.
+        for (let i = 0; i < 100; i += 1) {
+          onEvent(stderr(`aux provider unavailable #${i}`))
+        }
+        // Only the FIRST line rendered synchronously — the other 99 are coalesced,
+        // so the terminal does NOT repaint 100 times.
+        expect(spy).toHaveBeenCalledTimes(1)
+        expect(spy).toHaveBeenLastCalledWith('aux provider unavailable #0', 'info')
+
+        // When the window closes the NEWEST buffered line flushes exactly once.
+        vi.advanceTimersByTime(200)
+        expect(spy).toHaveBeenCalledTimes(2)
+        expect(spy).toHaveBeenLastCalledWith('aux provider unavailable #99', 'info')
+
+        // Idle → the pump stops; no runaway timer keeps re-rendering.
+        vi.advanceTimersByTime(2000)
+        expect(spy).toHaveBeenCalledTimes(2)
+      } finally {
+        vi.useRealTimers()
+        spy.mockRestore()
+      }
+    })
+
+    it('re-arms for a second burst after an idle gap (leading edge each time)', () => {
+      const onEvent = createGatewayEventHandler(buildCtx([]))
+      const spy = vi.spyOn(turnController, 'pushActivity')
+      vi.useFakeTimers()
+      try {
+        onEvent(stderr('burst-1 line'))
+        expect(spy).toHaveBeenCalledTimes(1)
+        // Let the coalescer go fully idle.
+        vi.advanceTimersByTime(500)
+        // A new burst after the gap paints its first line immediately again.
+        onEvent(stderr('burst-2 line'))
+        expect(spy).toHaveBeenCalledTimes(2)
+        expect(spy).toHaveBeenLastCalledWith('burst-2 line', 'info')
+      } finally {
+        vi.useRealTimers()
+        spy.mockRestore()
+      }
+    })
+  })
 })

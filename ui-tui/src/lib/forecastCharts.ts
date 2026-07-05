@@ -116,65 +116,112 @@ export const shortDate = (value: string | null | undefined): string =>
 
 // ── Windowed change (1D / 1W / 1MO list columns) ─────────────────────────────
 
-/** Minimal shape windowDelta needs from a history point. */
+/**
+ * Minimal shape windowDelta needs from a history point.
+ *
+ * `headline_regime` (thesis series only) marks which series the headline point
+ * belongs to — "event" once a joint-threshold event is configured, else
+ * "health". A delta must never straddle that switch, so the window comparison is
+ * restricted to the current regime. Member/forecast rows carry no regime
+ * (`undefined`), which disables the gate entirely — their behaviour is unchanged.
+ */
 export interface WindowPoint {
   as_of?: string
   headline_probability?: number | null
+  headline_regime?: string | null
 }
 
 const DAY_MS = 86_400_000
 
 /**
- * Change in the headline value over the trailing `days` window.
+ * The regime-aware result of a window comparison.
  *
- * Returns `current − headline(last point whose as_of ≤ nowMs − days·86_400_000)`.
+ * `delta` is the change in the headline over the trailing `days` window (null
+ * when there is no honest same-regime anchor). `newSeries` is true ONLY when the
+ * delta is null *because* the only in-window baseline belongs to a PRIOR regime
+ * (the headline series switched — e.g. health → event) — so the desk renders a
+ * subtle "new series" hint instead of a bare "—", and never a cross-regime lie.
+ */
+export interface WindowDeltaDetail {
+  delta: number | null
+  newSeries: boolean
+}
+
+/**
+ * Regime-aware change in the headline value over the trailing `days` window.
+ *
  * Compares against `as_of` (the economic effective date the snapshot speaks to),
  * NOT `created_at`, so a back-dated re-forecast lands in the right window. The
- * "current" value is the newest finite headline in the series.
- *
- * Returns `null` when there is no in-window anchor (the series is too short, or
- * every prior point is non-finite) — callers render that as "—", never a 0.
- * This is a POINT delta; for distribution forecasts the headline is μ in outcome
- * units, so the caller interprets the number as Δμ, never a fake percent.
+ * "current" value is the newest finite headline; the baseline is the newest
+ * finite point at or before `nowMs − days·86_400_000`. When the current point
+ * carries a `headline_regime`, only baselines of the SAME regime are eligible —
+ * a cross-regime point is skipped (and, if it was the only in-window candidate,
+ * flagged as `newSeries`). Points without a regime never gate (member rows).
  */
-export const windowDelta = (
+export const windowDeltaDetail = (
   history: ReadonlyArray<WindowPoint> | null | undefined,
   nowMs: number,
   days: number
-): number | null => {
+): WindowDeltaDetail => {
   const points = history ?? []
   if (points.length < 2) {
-    return null
+    return { delta: null, newSeries: false }
   }
 
-  // Current = the newest point carrying a finite headline.
+  // Current = the newest point carrying a finite headline (+ its regime).
   let current: number | null = null
+  let currentRegime: string | null | undefined
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const y = points[i]!.headline_probability
     if (finite(y)) {
       current = y
+      currentRegime = points[i]!.headline_regime
       break
     }
   }
   if (current === null) {
-    return null
+    return { delta: null, newSeries: false }
   }
 
   const cutoff = nowMs - days * DAY_MS
 
   // The LAST (newest) point at or before the cutoff — i.e. the value as it stood
   // a window ago. Points are oldest→newest, so scan backward and take the first
-  // in-window, finite point.
+  // in-window, finite, SAME-regime point. A cross-regime in-window point is
+  // skipped but remembered so the null is reported as a "new series" boundary.
+  let sawCrossRegime = false
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const point = points[i]!
     const ms = point.as_of ? Date.parse(point.as_of) : Number.NaN
     if (Number.isFinite(ms) && ms <= cutoff && finite(point.headline_probability)) {
-      return current - point.headline_probability
+      if (
+        currentRegime != null &&
+        point.headline_regime != null &&
+        point.headline_regime !== currentRegime
+      ) {
+        sawCrossRegime = true
+        continue
+      }
+      return { delta: current - point.headline_probability, newSeries: false }
     }
   }
 
-  return null
+  return { delta: null, newSeries: sawCrossRegime }
 }
+
+/**
+ * Change in the headline value over the trailing `days` window (regime-aware).
+ *
+ * Returns `null` when there is no honest same-regime in-window anchor — callers
+ * render that as "—", never a 0. This is a POINT delta; for distribution
+ * forecasts the headline is μ in outcome units, so the caller interprets the
+ * number as Δμ, never a fake percent. Thin wrapper over {@link windowDeltaDetail}.
+ */
+export const windowDelta = (
+  history: ReadonlyArray<WindowPoint> | null | undefined,
+  nowMs: number,
+  days: number
+): number | null => windowDeltaDetail(history, nowMs, days).delta
 
 // ── Level sparkline (fixed 0..1 scale) ───────────────────────────────────────
 

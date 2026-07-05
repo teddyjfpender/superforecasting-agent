@@ -247,6 +247,47 @@ def test_dsl_v2_signals_validate_and_evaluate():
     assert evaluate_predicate({"signal": "confidence.sharpness", "op": "<", "value": 0.1}, _ctx(sharpness=0.0)) is True
 
 
+# ── RDY machine-readiness rules ───────────────────────────────────────────────
+def test_readiness_floor_fires_below_passes_at_or_above_and_on_none():
+    # below the default floor (60) -> fires
+    assert _verdict(_ctx(readiness_score=40.0), "readiness_floor").passed is False
+    # exactly at / above the floor -> passes
+    assert _verdict(_ctx(readiness_score=60.0), "readiness_floor").passed is True
+    assert _verdict(_ctx(readiness_score=85.0), "readiness_floor").passed is True
+    # no composite (benchmark/market) -> PASSES (never fires on None)
+    assert _verdict(_ctx(readiness_score=None), "readiness_floor").passed is True
+    # non-live never applies (not even evaluated -> no verdict)
+    assert _verdict(_ctx(forecast_origin="exploratory", readiness_score=5.0), "readiness_floor") is None
+
+
+def test_no_watched_sources_fires_on_zero_live_only():
+    assert _verdict(_ctx(watched_source_count=0), "no_watched_sources").passed is False
+    assert _verdict(_ctx(watched_source_count=3), "no_watched_sources").passed is True
+    # non-live never applies
+    assert _verdict(_ctx(forecast_origin="exploratory", watched_source_count=0), "no_watched_sources") is None
+
+
+def test_readiness_floor_appconfig_tunable():
+    # The fire boundary tracks FORECAST_HOOK_READINESS_FLOOR: score 55 passes at
+    # floor=50 and fires at floor=60. set_override has the highest precedence and is
+    # robust to a reconfigured appconfig singleton in the test session.
+    from forecasting import appconfig
+
+    try:
+        appconfig.set_override("FORECAST_HOOK_READINESS_FLOOR", "50")
+        assert _verdict(_ctx(readiness_score=55.0), "readiness_floor").passed is True
+        appconfig.set_override("FORECAST_HOOK_READINESS_FLOOR", "60")
+        assert _verdict(_ctx(readiness_score=55.0), "readiness_floor").passed is False
+    finally:
+        appconfig.get_config().clear_override("FORECAST_HOOK_READINESS_FLOOR")
+
+
+def test_readiness_floor_per_question_threshold_beats_appconfig():
+    # A per-question ctx.threshold('readiness_floor') override wins over the appconfig floor.
+    assert _verdict(_ctx(readiness_score=55.0, thresholds={"readiness_floor": 50.0}), "readiness_floor").passed is True
+    assert _verdict(_ctx(readiness_score=55.0, thresholds={"readiness_floor": 70.0}), "readiness_floor").passed is False
+
+
 def test_strict_profile_promotes_v2_warns_to_error():
     from forecasting.hooks import resolve_severities
     from types import SimpleNamespace

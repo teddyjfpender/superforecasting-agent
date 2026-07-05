@@ -846,12 +846,19 @@ def create_snapshot(
                     except Exception:
                         _uuc = False
                     _utd = snapshot_metadata.get("tail_audit") or {}
+                    try:
+                        from forecasting.readiness_lens import build_question_readiness as _u_bqr
+
+                        _u_readiness = _u_bqr(ledger, question_id).get("score")
+                    except Exception:
+                        _u_readiness = None
                     _ctx = _dc.replace(
                         _ctx,
                         reference_class_count=len(ledger.list_reference_classes(question_id)),
                         linked_reference_class_count=len(reference_class_refs or []),
                         is_thesis_or_factor=ledger.is_thesis(question),
                         watched_source_count=len(ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")),
+                        readiness_score=_u_readiness,
                         panel_run_count=len(ledger.list_panel_runs(question_id)),
                         reasoning_methods=tuple(snapshot_metadata.get("reasoning_methods") or ()),
                         required_reasoning_methods=tuple(_urq), min_reasoning_methods=_umin,
@@ -959,6 +966,20 @@ def create_snapshot(
                 _orq, _omin = _resolve_rr(_oprof)
             except Exception:
                 _orq, _omin = (), 0
+            # RDY machine-readiness enforcement: the new readiness_floor / no_watched_sources
+            # builtins read these off the context. Without them the context would carry the
+            # defaults (0 / None) and no_watched_sources would false-fire on EVERY live
+            # commit — so compute the real values from the ledger available here.
+            try:
+                _watched_count = len(ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status="active"))
+            except Exception:
+                _watched_count = 0
+            try:
+                from forecasting.readiness_lens import build_question_readiness as _bqr
+
+                _readiness_score = _bqr(ledger, question_id).get("score")
+            except Exception:
+                _readiness_score = None
             _hook_ctx = build_commit_context(
                 question_id=question_id, forecast_origin=forecast_origin, event="update",
                 impact=question.impact, has_prior=bool(question.current_forecast_id),
@@ -987,6 +1008,8 @@ def create_snapshot(
                 reference_class_count=len(ledger.list_reference_classes(question_id)),
                 linked_reference_class_count=len(reference_class_refs or []),
                 is_thesis_or_factor=ledger.is_thesis(question),
+                watched_source_count=_watched_count,
+                readiness_score=_readiness_score,
                 is_distribution=bool(_oda and _oda.is_distribution),
                 distribution_renderable=(_oda.renderable if _oda else True),
                 bounds_well_formed=(_oda.well_formed if _oda else True),

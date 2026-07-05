@@ -1981,6 +1981,7 @@ _(no fields)_
 | `as_of` | `string?` |
 | `created_at` | `string?` |
 | `headline_probability` | `number? | null` |
+| `headline_regime` | `string?` |
 | `score_high` | `number? | null` |
 | `score_low` | `number? | null` |
 | `thesis_score` | `number? | null` |

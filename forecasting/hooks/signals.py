@@ -195,6 +195,15 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     except Exception:
         research_adequate, research_adequacy_score = True, None
 
+    # machine-readiness composite (the Desk "RDY" score) — drives readiness_floor.
+    # Fail-open to None so a question whose composite cannot be computed never fires.
+    try:
+        from forecasting.readiness_lens import build_question_readiness
+
+        readiness_score = build_question_readiness(ledger, question_id).get("score")
+    except Exception:
+        readiness_score = None
+
     return HookContext(
         question_id=question_id,
         forecast_origin=_g("forecast_origin", "live") or "live",
@@ -220,6 +229,7 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         # re-reading old snapshots never spuriously fires the snapshot-honest anchor warn
         linked_reference_class_count=reference_class_count,
         watched_source_count=watched_source_count,
+        readiness_score=readiness_score,
         decision_gaps=decision_gaps,
         tail_audit_passes=(td.get("passes") if td else None),
         tail_unearned_mass=float(td.get("unearned_mass") or 0.0),
@@ -304,6 +314,8 @@ def build_commit_context(
     quorum_model_count: int = 0,
     quorum_judged: bool = False,
     calibration_under_confident: bool = False,
+    watched_source_count: int = 0,
+    readiness_score: float | None = None,
     reference_class_count: int = 0,
     linked_reference_class_count: int = 0,
     is_thesis_or_factor: bool = False,
@@ -364,6 +376,8 @@ def build_commit_context(
         quorum_model_count=quorum_model_count,
         quorum_judged=quorum_judged,
         calibration_under_confident=calibration_under_confident,
+        watched_source_count=watched_source_count,
+        readiness_score=readiness_score,
         reference_class_count=reference_class_count,
         linked_reference_class_count=linked_reference_class_count,
         is_thesis_or_factor=is_thesis_or_factor,

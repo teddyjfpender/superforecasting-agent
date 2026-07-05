@@ -17,7 +17,7 @@ from forecasting.marketdata.providers.bea import parse_bea
 from forecasting.marketdata.providers.bls import parse_bls
 from forecasting.marketdata.providers.coingecko import parse_coingecko
 from forecasting.marketdata.providers.frankfurter import parse_frankfurter
-from forecasting.marketdata.providers.fred import parse_fred, parse_fred_csv
+from forecasting.marketdata.providers.fred import FredProvider, parse_fred, parse_fred_csv
 from forecasting.marketdata.providers.stooq import parse_stooq
 from forecasting.marketdata.providers.yahoo import (
     YahooProvider,
@@ -204,7 +204,7 @@ def _fred(symbol: str = "UNRATE", name: str = "X", unit: str = "") -> SeriesRef:
 
 
 def test_fred_json_takes_latest_observation_and_change_vs_prior():
-    # Ported from marketFetch.test.ts parseFred.
+    # Ported from marketFetch.test.ts parseFred (observations arrive DESC).
     payload = {"observations": [{"date": "2026-05-01", "value": "4.2"}, {"date": "2026-04-01", "value": "4.0"}]}
     q = parse_fred(payload, _fred("UNRATE", unit="%"))
     assert q.value == pytest.approx(4.2)
@@ -212,9 +212,51 @@ def test_fred_json_takes_latest_observation_and_change_vs_prior():
     assert q.asOf == _epoch_ms(2026, 5, 1)
 
 
+def test_fred_json_builds_history_oldest_to_newest():
+    # Observations arrive DESC; history[] is the sparkline series oldest→newest.
+    payload = {
+        "observations": [
+            {"date": "2026-06-01", "value": "4.4"},
+            {"date": "2026-05-01", "value": "4.2"},
+            {"date": "2026-04-01", "value": "4.0"},
+        ]
+    }
+    q = parse_fred(payload, _fred("UNRATE", unit="%"))
+    assert q.history == [pytest.approx(4.0), pytest.approx(4.2), pytest.approx(4.4)]
+    assert q.value == pytest.approx(4.4)
+
+
+def test_fred_json_change_vs_prior_distinct_date_collapses_vintages():
+    # Two vintages carry the SAME observation date — change must reach back to the
+    # prior DISTINCT date (else the delta is a fabricated 0.000 against itself).
+    payload = {
+        "observations": [
+            {"date": "2026-06-01", "value": "3.70"},
+            {"date": "2026-06-01", "value": "3.70"},
+            {"date": "2026-05-01", "value": "3.50"},
+        ]
+    }
+    q = parse_fred(payload, _fred("FEDFUNDS", unit="%"))
+    assert q.value == pytest.approx(3.70)
+    assert q.change == pytest.approx(0.20, abs=1e-5)
+    # the duplicate observation_date is collapsed in the sparkline
+    assert q.history == [pytest.approx(3.50), pytest.approx(3.70)]
+
+
+def test_fred_json_flat_monthly_series_change_is_real_zero_not_null():
+    # A genuinely flat rate (FEDFUNDS 3.63 → 3.63) is a MEASURED 0.0, not absence.
+    payload = {"observations": [{"date": "2026-06-01", "value": "3.63"}, {"date": "2026-05-01", "value": "3.63"}]}
+    q = parse_fred(payload, _fred("FEDFUNDS", unit="%"))
+    assert q.value == pytest.approx(3.63)
+    assert q.change == 0.0  # a real measured zero — honest, distinct from None
+    assert q.change is not None
+
+
 def test_fred_json_missing_value_dot_is_null():
     payload = {"observations": [{"date": "2026-05-01", "value": "."}]}
-    assert parse_fred(payload, _fred()).value is None
+    q = parse_fred(payload, _fred())
+    assert q.value is None
+    assert q.history == []
 
 
 def test_fred_json_error_payload_is_null_never_zero():
@@ -232,9 +274,30 @@ def test_fred_csv_takes_last_two_real_rows_skipping_dot():
     assert q.asOf == _epoch_ms(2026, 6, 1)
 
 
+def test_fred_csv_builds_history_and_skips_dot_rows():
+    csv = "DATE,FEDFUNDS\n2026-03-01,5.30\n2026-04-01,.\n2026-05-01,5.10\n2026-06-01,4.90\n"
+    q = parse_fred_csv(csv, _fred("FEDFUNDS", unit="%"))
+    # the "." row is dropped; history is oldest→newest of the REAL rows only.
+    assert q.history == [pytest.approx(5.30), pytest.approx(5.10), pytest.approx(4.90)]
+
+
+def test_fred_csv_history_caps_at_thirty_most_recent():
+    rows = "\n".join(f"2026-{(i % 12) + 1:02d}-01,{100 + i}" for i in range(50))
+    q = parse_fred_csv("DATE,X\n" + rows + "\n", _fred())
+    assert len(q.history) == 30
+    assert q.history[-1] == pytest.approx(149.0)  # newest of 50
+
+
 def test_fred_csv_empty_or_headers_only_is_null_never_zero():
     assert parse_fred_csv("DATE,X\n", _fred()).value is None
     assert parse_fred_csv("", _fred()).value is None
+    assert parse_fred_csv("DATE,X\n", _fred()).history == []
+
+
+def test_fred_json_url_requests_thirty_observations():
+    prov = FredProvider(get_json=lambda url: {"observations": []})
+    assert "limit=30" in prov._json_url("DGS10", "KEY")
+    assert "limit=2" not in prov._json_url("DGS10", "KEY")
 
 
 # ── BLS ───────────────────────────────────────────────────────────────────────

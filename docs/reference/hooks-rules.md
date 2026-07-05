@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/hooks/builtins.py (BUILTIN_RULES, RULE_DOCS)`
 
-Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **25 built-in rules**; operators can add their own with the hooks DSL.
+Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **27 built-in rules**; operators can add their own with the hooks DSL.
 
 
 Severities shown are the **defaults** — the shipped profile or an operator override can raise or lower any of them (`forecast hooks list` shows the resolved severity).
@@ -33,6 +33,8 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
+| `no_watched_sources` | `warn` | 8.0 | A live forecast must have at least one active watched source the desk can refresh. |
+| `readiness_floor` | `warn` | 10.0 | A live forecast's machine-readiness (Desk RDY) score must clear the floor so the autonomous desk has the inputs to keep it alive. |
 | `require_decision_readiness` | `warn` | 6.0 | The decision card should have no missing fields. |
 
 ## output

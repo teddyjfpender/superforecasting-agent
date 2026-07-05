@@ -1532,6 +1532,7 @@ export interface ForecastThesisHistoryPoint {
   as_of?: string
   created_at?: string
   headline_probability?: null | number
+  headline_regime?: string
   score_high?: null | number
   score_low?: null | number
   thesis_score?: null | number

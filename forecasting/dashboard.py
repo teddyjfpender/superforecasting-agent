@@ -1343,12 +1343,18 @@ def _thesis_history_point(snapshot: Any) -> dict[str, Any]:
     payload = snapshot.probability_or_distribution
     payload = payload if isinstance(payload, dict) else {}
     # When the thesis is a joint-event, P(event) is the headline series; else the
-    # mean-index health. Both are 0..1 so the trend chart never mixes scales.
+    # mean-index health. Both are 0..1 so the trend chart never mixes scales — but
+    # the SERIES SWITCHES the day an event is configured (health ~0.51 → event
+    # ~0.35). A window delta straddling that switch is a lie, so each point is
+    # STAMPED with its regime ("event" | "health") and the desk only compares
+    # within the current regime (a baseline that predates the switch → honest '—').
     event_probability = payload.get("event_probability")
+    headline_regime = "event" if event_probability is not None else "health"
     return {
         "as_of": snapshot.as_of,
         "created_at": snapshot.created_at,
         "headline_probability": event_probability if event_probability is not None else payload.get("health"),
+        "headline_regime": headline_regime,
         "health_probability": payload.get("health"),
         "event_probability": event_probability,
         "thesis_score": payload.get("thesis_score"),

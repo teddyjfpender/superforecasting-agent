@@ -142,6 +142,80 @@ def test_kill_switch_disables_blocking(tmp_path, monkeypatch):
     assert snap is not None
 
 
+# ── RDY machine-readiness enforcement (readiness_floor + no_watched_sources) ─────
+def _well_provisioned_q(lg, *, profile=None):
+    """A question whose machine-readiness clears the floor and carries a watched
+    source, so neither new rule fires. (watches 20 + ref_class 12 + trigger 12 +
+    close_time 6 + impact 6 + resolution 6 = 62 >= 60 floor.)"""
+    meta = {"forecast_hooks": {"profile": profile}} if profile else None
+    q = lg.create_question(
+        title="Will the indicator exceed target by close?",
+        resolution_criteria="Resolves yes if the indicator exceeds target by close; otherwise no.",
+        close_time="2030-01-01T00:00:00Z",
+        impact="medium",
+        update_triggers=[{"mechanism": "CPI print", "source_ref": "fred:CPIAUCSL", "operator": ">", "threshold": 3.0}],
+        review_cadence="weekly",
+        next_review_at="2030-01-01T00:00:00Z",
+        metadata=meta,
+    )
+    lg.add_watched_source(scope_type="question", scope_ref=q.id, source="fred:CPIAUCSL")
+    lg.add_reference_class(question_id=q.id, name="hist", inclusion_criteria="prior indicator cases", base_rate=0.4)
+    lg.add_evidence(question_id=q.id, source_or_note="quarterly report", claim="rates rose")
+    return q
+
+
+def test_strict_bare_commit_blocks_on_new_readiness_rules(tmp_path):
+    """A live STRICT commit on a bare, zero-watched-source question raises
+    SaturationBlocked citing BOTH new rules — proving the resolved-policy blocking
+    pass evaluates them at ERROR and that their signals reach the commit context."""
+    lg = _ledger(tmp_path)
+    q = _q(lg, profile="strict")  # no watches, readiness far below floor, no evidence
+    with pytest.raises(SaturationBlocked) as ei:
+        lg.create_snapshot(
+            question_id=q.id, probability_or_distribution=0.5, rationale="clean prose",
+            method="m", require_panel=False, enforce_resolved_hooks=True,
+        )
+    blocking = {v.rule_id for v in ei.value.report.blocking_failures()}
+    assert "no_watched_sources" in blocking
+    assert "readiness_floor" in blocking
+
+
+def test_standard_well_provisioned_commit_does_not_fire_new_rules(tmp_path):
+    """THE PLUMBING PROOF: a well-provisioned question commits under standard and
+    NEITHER new rule fires. If snapshots.py did not thread watched_source_count /
+    readiness_score into the blocking-pass context, no_watched_sources would false-fire
+    (count defaults to 0) — this pins that the real values arrive."""
+    lg = _ledger(tmp_path)
+    q = _well_provisioned_q(lg)  # standard profile, watches>0, readiness>=60
+    snap = lg.create_snapshot(
+        question_id=q.id, probability_or_distribution=0.5, rationale="clean prose",
+        method="m", require_panel=False, enforce_resolved_hooks=True,
+    )
+    assert snap is not None
+    sat = (snap.metadata or {}).get("saturation") or {}
+    assert "no_watched_sources" not in sat.get("warnings", [])
+    assert "no_watched_sources" not in sat.get("blocking", [])
+    assert "readiness_floor" not in sat.get("warnings", [])
+    assert "readiness_floor" not in sat.get("blocking", [])
+
+
+def test_standard_bare_commit_warns_new_rules_without_blocking(tmp_path):
+    """Contrast case: a bare question under standard commits (both rules are WARN,
+    non-blocking) but BOTH new rules surface as observe-mode warnings — proving the
+    signals reach the context and the rules are wired ON by default."""
+    lg = _ledger(tmp_path)
+    q = _q(lg)  # standard, no watches, low readiness
+    lg.add_evidence(question_id=q.id, source_or_note="report", claim="x")  # clear the evidence floor
+    snap = lg.create_snapshot(
+        question_id=q.id, probability_or_distribution=0.5, rationale="clean prose",
+        method="m", require_panel=False, enforce_resolved_hooks=True,
+    )
+    assert snap is not None
+    warns = ((snap.metadata or {}).get("saturation") or {}).get("warnings", [])
+    assert "no_watched_sources" in warns
+    assert "readiness_floor" in warns
+
+
 # ── the agent tool opts in: the block flows through the structured directive ─────
 def test_agent_tool_evidence_floor_returns_saturation_block(tmp_path):
     db = str(tmp_path / "tool.db")

@@ -1504,6 +1504,70 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
     ).toBe('—')
   })
 
+  // A thesis whose headline series SWITCHED regime (health index → P(event)): the
+  // only in-window baseline predates the switch, so the delta must be '—', flagged
+  // as a "new series" — never a cross-regime lie.
+  const regimeSwitchThesis = (): ForecastThesis => ({
+    ...inflationThesis(),
+    // 0.51 health baseline 30d ago, then the event series (0.35 → 0.36) in the last
+    // two days. The 1W/1MO windows can only reach the health baseline (wrong regime).
+    history: [
+      { as_of: inDays(-30), headline_probability: 0.51, headline_regime: 'health' },
+      { as_of: inDays(-2), headline_probability: 0.35, headline_regime: 'event' },
+      { as_of: inDays(-1), headline_probability: 0.36, headline_regime: 'event' }
+    ]
+  })
+
+  it('thesisCellText: a cross-regime baseline renders the "—ⁿ" new-series hint, not a cross-regime number', async () => {
+    const [{ thesisCellText }, { DARK_THEME }, { semantics }] = await Promise.all([
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/visualSemantics.js')
+    ])
+    const sem = semantics(DARK_THEME)
+    const now = Date.now()
+    // The precomputed window is null (no same-regime anchor ≤ now−7d); the cell adds
+    // the subtle 'new series' hint because the only in-window baseline is health.
+    const cell = thesisCellText('1w', regimeSwitchThesis(), sem, DARK_THEME, { '1d': null, '1mo': null, '1w': null }, now)
+    expect(cell.text).toBe('—ⁿ')
+    expect(cell.color).toBe(sem.subtle)
+  })
+
+  it('thesisCellText: a same-regime delta renders a real number (no cross-regime lie)', async () => {
+    const [{ thesisCellText }, { DARK_THEME }, { semantics }] = await Promise.all([
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/visualSemantics.js')
+    ])
+    const sem = semantics(DARK_THEME)
+    // A +1pt same-regime (event) move → a real number cell, colour by direction.
+    const cell = thesisCellText('1w', regimeSwitchThesis(), sem, DARK_THEME, { '1d': null, '1mo': null, '1w': 0.01 }, 0)
+    expect(cell.text).toContain('1.00')
+    expect(cell.color).not.toBe(sem.subtle)
+  })
+
+  it('thesisCellText: every "—" cell shares the one subtle colour (delta + EV/SRC/RDY/NEXT consistency)', async () => {
+    const [{ thesisCellText }, { DARK_THEME }, { semantics }] = await Promise.all([
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/visualSemantics.js')
+    ])
+    const sem = semantics(DARK_THEME)
+    // All windows absent AND no regime boundary (nowMs=0 → nothing is in-window) →
+    // 1D/1W/1MO are bare '—'. Together with the always-'—' EV/SRC/RDY/NEXT columns,
+    // EVERY '—' cell must paint the identical subtle colour (no '1MO uncolored' drift).
+    const win = { '1d': null, '1mo': null, '1w': null }
+    const cells = ['1d', '1w', '1mo', 'ev', 'src', 'rdy', 'next'].map(k =>
+      thesisCellText(k, inflationThesis(), sem, DARK_THEME, win, 0)
+    )
+    for (const cell of cells) {
+      expect(cell.text).toBe('—')
+      expect(cell.color).toBe(sem.subtle)
+    }
+    // one distinct colour across every absent cell
+    expect(new Set(cells.map(c => c.color)).size).toBe(1)
+  })
+
   it('renders the ◆ pinned thesis row above the members with its real 2dp PROB (component width)', async () => {
     const text = await renderList(112, [cpiItem()], {
       cursor: -1,

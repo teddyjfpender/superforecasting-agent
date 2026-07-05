@@ -1,5 +1,5 @@
 import { STARTUP_IMAGE, STARTUP_QUERY } from '../config/env.js'
-import { STREAM_BATCH_MS } from '../config/timing.js'
+import { GATEWAY_STDERR_COALESCE_MS, STREAM_BATCH_MS } from '../config/timing.js'
 import { AUTH_EXPIRED_RE, AUTH_EXPIRED_TITLE, buildAuthExpiredSections } from '../content/auth.js'
 import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import type {
@@ -100,6 +100,33 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   let thinkingStatusTimer: null | ReturnType<typeof setTimeout> = null
   let startupPromptSubmitted = false
   let startupForecastDashboardShown = false
+
+  // ── gateway.stderr coalescer ────────────────────────────────────────────────
+  // A throttle over the diagnostic-noise channel: the FIRST line of a burst paints
+  // immediately (leading edge), then further lines within the window are collapsed
+  // to the latest one, flushed once when the window closes (trailing edge). A storm
+  // of N lines therefore costs O(N / window) re-renders, not N — killing the "keeps
+  // repainting to the bottom like log spam" loop while still surfacing the newest
+  // line. The full stream is untouched in the gateway-client log buffer.
+  let stderrPending: null | string = null
+  let stderrTimer: null | ReturnType<typeof setTimeout> = null
+  const flushStderr = () => {
+    stderrTimer = null
+    if (stderrPending !== null) {
+      const line = stderrPending
+      stderrPending = null
+      turnController.pushActivity(line, 'info')
+      // A line arrived during this window → keep the pump running so a sustained
+      // storm still flushes at the bounded rate instead of stalling.
+      stderrTimer = setTimeout(flushStderr, GATEWAY_STDERR_COALESCE_MS)
+    }
+  }
+  const pushStderrCoalesced = (line: string) => {
+    stderrPending = line
+    if (stderrTimer === null) {
+      flushStderr() // leading edge: paint now, then open the coalescing window
+    }
+  }
 
   // Inject the disk-save callback into turnController so recordMessageComplete
   // can fire-and-forget a persist without having to plumb a gateway ref around.
@@ -457,7 +484,7 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       case WireEvent.GATEWAY_STDERR: {
         const line = String(ev.payload.line).slice(0, 120)
 
-        turnController.pushActivity(line, 'info')
+        pushStderrCoalesced(line)
 
         return
       }
