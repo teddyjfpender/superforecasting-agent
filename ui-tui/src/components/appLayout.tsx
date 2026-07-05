@@ -85,11 +85,11 @@ const PromptPrefix = memo(function PromptPrefix({
 
 const TranscriptPane = memo(function TranscriptPane({
   actions,
-  composer,
+  cols,
   decstbm = true,
   progress,
   transcript
-}: Pick<AppLayoutProps, 'actions' | 'composer' | 'progress' | 'transcript'> & { decstbm?: boolean }) {
+}: Pick<AppLayoutProps, 'actions' | 'progress' | 'transcript'> & { cols: number; decstbm?: boolean }) {
   const ui = useStore($uiState)
 
   // LiveTodoPanel rides as a child of the latest user-message row so it
@@ -149,7 +149,7 @@ const TranscriptPane = memo(function TranscriptPane({
               )}
 
               {row.msg.kind === 'intro' ? (
-                <HomeHero info={row.msg.info} maxCols={composer.cols} t={ui.theme} />
+                <HomeHero info={row.msg.info} maxCols={cols} t={ui.theme} />
               ) : row.msg.kind === 'session' && row.msg.info ? (
                 <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
@@ -162,7 +162,7 @@ const TranscriptPane = memo(function TranscriptPane({
                 />
               ) : (
                 <MessageLine
-                  cols={composer.cols}
+                  cols={cols}
                   compact={ui.compact}
                   detailsMode={ui.detailsMode}
                   detailsModeCommandOverride={ui.detailsModeCommandOverride}
@@ -179,7 +179,7 @@ const TranscriptPane = memo(function TranscriptPane({
           {transcript.virtualHistory.bottomSpacer > 0 ? <Box height={transcript.virtualHistory.bottomSpacer} /> : null}
 
           <StreamingAssistant
-            cols={composer.cols}
+            cols={cols}
             compact={ui.compact}
             detailsMode={ui.detailsMode}
             detailsModeCommandOverride={ui.detailsModeCommandOverride}
@@ -1069,7 +1069,7 @@ export const AppLayout = memo(function AppLayout({
                     <PerfPane id="transcript">
                       <TranscriptPane
                         actions={actions}
-                        composer={contentComposer}
+                        cols={contentComposer.cols}
                         decstbm={false}
                         progress={progress}
                         transcript={transcript}
@@ -1100,7 +1100,7 @@ export const AppLayout = memo(function AppLayout({
                 renderLanding(composer.cols, composer, false)
               ) : (
                 <PerfPane id="transcript">
-                  <TranscriptPane actions={actions} composer={composer} progress={progress} transcript={transcript} />
+                  <TranscriptPane actions={actions} cols={composer.cols} progress={progress} transcript={transcript} />
                 </PerfPane>
               )}
             </Box>
