@@ -176,6 +176,17 @@ The gateway speaks **protocol version 1**. Every request, response, and event be
 
 Every model reachable from the registry, sorted by name. Types mirror the generated TypeScript (`list[X]` → `X[]`, `X | None` → nullable, `?` marks a conditionally-emitted key).
 
+### AckRequestBody
+
+| field | type |
+| --- | --- |
+| `correlation_id` | `string` |
+| `intent` | `string` |
+| `note` | `string | null` |
+| `question_ref` | `SfpQuestionRef | null` |
+| `request_kind` | `string | null` |
+| `signal` | `string | null` |
+
 ### AgentProcess
 
 | field | type |
@@ -489,6 +500,23 @@ _(no fields)_
 | --- | --- |
 | `message` | `string` |
 
+### EvidenceShareBody
+
+| field | type |
+| --- | --- |
+| `available_at` | `string | null` |
+| `captured_at` | `string` |
+| `claim` | `string` |
+| `evidence_id` | `string | null` |
+| `excerpt` | `string | null` |
+| `published_at` | `string | null` |
+| `sha256` | `string` |
+| `source_name` | `string | null` |
+| `source_type` | `string` |
+| `source_url` | `string | null` |
+| `stance` | `string | null` |
+| `triage_label` | `string | null` |
+
 ### ForecastAnalystNote
 
 | field | type |
@@ -702,6 +730,22 @@ _(no fields)_
 | `hi` | `number` |
 | `lo` | `number` |
 | `mid` | `number?` |
+
+### ForecastCardBody
+
+| field | type |
+| --- | --- |
+| `as_of` | `string` |
+| `band` | `SfpBand | null` |
+| `criteria_hash` | `string` |
+| `distribution` | `Record<string, unknown> | null` |
+| `evidence_refs` | `SfpEvidenceRef[]` |
+| `horizon_days` | `number | null` |
+| `outcome_type` | `string` |
+| `probability` | `number | null` |
+| `question_id` | `string | null` |
+| `question_title` | `string` |
+| `rationale_bullets` | `string[]` |
 
 ### ForecastCommandRequest
 
@@ -1323,6 +1367,16 @@ _(no fields)_
 | `mean_brier` | `number? | null` |
 | `mean_log_score` | `number? | null` |
 
+### ForecastNextAction
+
+| field | type |
+| --- | --- |
+| `action` | `string?` |
+| `question_id` | `string?` |
+| `reason` | `string?` |
+| `score` | `number?` |
+| `title` | `string? | null` |
+
 ### ForecastOnboardCommitRequest
 
 | field | type |
@@ -1843,7 +1897,10 @@ _(no fields)_
 | `delta` | `number? | null` |
 | `domain` | `string? | null` |
 | `entities` | `ForecastThesisEntity[]?` |
+| `event_probability` | `number? | null` |
 | `freshness` | `string?` |
+| `headline_display` | `string?` |
+| `headline_probability` | `number? | null` |
 | `health_display` | `string?` |
 | `health_probability` | `number? | null` |
 | `history` | `ForecastThesisHistoryPoint[]?` |
@@ -1859,6 +1916,7 @@ _(no fields)_
 | `status` | `string?` |
 | `thesis_score` | `number? | null` |
 | `title` | `string?` |
+| `top_sensitivities` | `ForecastThesisSensitivity[]?` |
 | `topics` | `string[]?` |
 | `triggers` | `ForecastThesisTrigger[]?` |
 
@@ -1935,6 +1993,19 @@ _(no fields)_
 | `q50` | `number? | null` |
 | `q95` | `number? | null` |
 
+### ForecastThesisSensitivity
+
+| field | type |
+| --- | --- |
+| `delta_p_event` | `number? | null` |
+| `direction` | `string?` |
+| `member_id` | `string?` |
+| `p` | `number? | null` |
+| `p_event_at_minus` | `number? | null` |
+| `p_event_at_plus` | `number? | null` |
+| `sensitivity` | `number? | null` |
+| `title` | `string? | null` |
+
 ### ForecastThesisTrigger
 
 | field | type |
@@ -1995,6 +2066,73 @@ _(no fields)_
 | `count` | `number?` |
 | `relabeled` | `Record<string, unknown>[]?` |
 | `success` | `boolean?` |
+
+### ForecastVoi
+
+| field | type |
+| --- | --- |
+| `action` | `string?` |
+| `components` | `ForecastVoiComponents?` |
+| `rank` | `number?` |
+| `reason` | `string?` |
+| `score` | `number?` |
+
+### ForecastVoiAlerts
+
+| field | type |
+| --- | --- |
+| `count` | `number?` |
+| `norm` | `number?` |
+| `weighted` | `number?` |
+
+### ForecastVoiComponents
+
+| field | type |
+| --- | --- |
+| `alerts` | `ForecastVoiAlerts?` |
+| `amplifier` | `number?` |
+| `base` | `number?` |
+| `proximity` | `ForecastVoiProximity?` |
+| `readiness` | `ForecastVoiReadiness?` |
+| `sensitivity` | `ForecastVoiSensitivity?` |
+| `staleness` | `ForecastVoiStaleness?` |
+
+### ForecastVoiProximity
+
+| field | type |
+| --- | --- |
+| `days_until` | `number? | null` |
+| `horizon_days` | `number?` |
+| `norm` | `number?` |
+| `resolve_days` | `number? | null` |
+| `weighted` | `number?` |
+
+### ForecastVoiReadiness
+
+| field | type |
+| --- | --- |
+| `dampen` | `number?` |
+| `has_sources` | `boolean?` |
+| `src_count` | `number?` |
+
+### ForecastVoiSensitivity
+
+| field | type |
+| --- | --- |
+| `abs_pp` | `number?` |
+| `delta_p_event` | `number? | null` |
+| `thesis_id` | `string? | null` |
+| `thesis_title` | `string? | null` |
+
+### ForecastVoiStaleness
+
+| field | type |
+| --- | --- |
+| `age_days` | `number? | null` |
+| `cadence_days` | `number?` |
+| `norm` | `number?` |
+| `ratio` | `number?` |
+| `weighted` | `number?` |
 
 ### ForecastWarningDismissedItem
 
@@ -2248,6 +2386,7 @@ _(no fields)_
 | `topics` | `string[]?` |
 | `units` | `string? | null` |
 | `update_triggers` | `ForecastWorkspaceTrigger[]?` |
+| `voi` | `ForecastVoi? | null` |
 
 ### ForecastWorkspacePanel
 
@@ -2307,6 +2446,7 @@ _(no fields)_
 | `factors` | `ForecastFactor[]?` |
 | `forecasts` | `ForecastWorkspaceItem[]?` |
 | `generated_at` | `string?` |
+| `next_actions` | `ForecastNextAction[]?` |
 | `open_alert_count` | `number?` |
 | `output` | `string?` |
 | `product` | `string?` |
@@ -2459,7 +2599,10 @@ _(no fields)_
 | `done_count` | `number` |
 | `error` | `string | null` |
 | `job_id` | `string` |
+| `policy_decisions` | `Record<string, unknown>[]` |
+| `policy_grants` | `string[]` |
 | `progress` | `Record<string, unknown>[]` |
+| `resolved_policy` | `Record<string, unknown> | null` |
 | `result` | `Record<string, unknown> | null` |
 | `spec` | `Record<string, unknown>` |
 | `status` | `string` |
@@ -2521,6 +2664,20 @@ _(no fields)_
 | --- | --- |
 | `found` | `boolean` |
 | `job` | `JobRecordDTO | null` |
+
+### LessonShareBody
+
+| field | type |
+| --- | --- |
+| `compiled_rule_preview` | `string | null` |
+| `confidence` | `number | null` |
+| `effect_size` | `number | null` |
+| `lesson` | `string` |
+| `lesson_id` | `string | null` |
+| `origin_n` | `number | null` |
+| `scope_ref` | `string | null` |
+| `scope_type` | `string` |
+| `status` | `string | null` |
 
 ### MarketModelCompletePayload
 
@@ -3427,6 +3584,65 @@ _(no fields)_
 | --- | --- |
 | `provider_configured` | `boolean?` |
 
+### SfpBand
+
+| field | type |
+| --- | --- |
+| `high` | `number` |
+| `label` | `string | null` |
+| `low` | `number` |
+
+### SfpEnvelope
+
+| field | type |
+| --- | --- |
+| `body` | `Record<string, unknown>` |
+| `kind` | `string` |
+| `sender` | `SfpSender` |
+| `ts` | `string` |
+| `v` | `number` |
+
+### SfpEvidenceRef
+
+| field | type |
+| --- | --- |
+| `id` | `string` |
+| `title` | `string | null` |
+
+### SfpFilePointer
+
+| field | type |
+| --- | --- |
+| `bytes` | `number` |
+| `encoding` | `string` |
+| `filename` | `string | null` |
+| `kind` | `string` |
+| `sha256` | `string` |
+
+### SfpMemberEstimate
+
+| field | type |
+| --- | --- |
+| `agent` | `string` |
+| `instance_id` | `string | null` |
+| `probability` | `number | null` |
+
+### SfpQuestionRef
+
+| field | type |
+| --- | --- |
+| `criteria_hash` | `string` |
+| `question_id` | `string | null` |
+| `title` | `string` |
+
+### SfpSender
+
+| field | type |
+| --- | --- |
+| `agent` | `string` |
+| `instance_id` | `string` |
+| `team` | `string | null` |
+
 ### ShellExecRequest
 
 | field | type |
@@ -3644,6 +3860,30 @@ _(no fields)_
 | `description` | `string?` |
 | `name` | `string` |
 | `source` | `string?` |
+
+### ThesisAggregateBody
+
+| field | type |
+| --- | --- |
+| `aggregate` | `number | null` |
+| `aggregate_distribution` | `Record<string, unknown> | null` |
+| `disagreement` | `Record<string, unknown> | null` |
+| `member_estimates` | `SfpMemberEstimate[]` |
+| `method` | `string` |
+| `question_ref` | `SfpQuestionRef` |
+| `round` | `number` |
+| `spread` | `number | null` |
+
+### ThesisRoundBody
+
+| field | type |
+| --- | --- |
+| `deadline` | `string | null` |
+| `facilitator` | `string | null` |
+| `note` | `string | null` |
+| `participants` | `string[]` |
+| `question_refs` | `SfpQuestionRef[]` |
+| `round` | `number` |
 
 ### ThinkingDeltaPayload
 

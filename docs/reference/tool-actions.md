@@ -9,7 +9,7 @@
 
 > **Source of truth:** `tools/forecasting_tool.py (FORECAST_LEDGER_SCHEMA)`
 
-The agent operates the forecast desk through a single tool, **`forecast_ledger`**. Its `action` parameter selects one of **110 operations**; the remaining parameters form a shared bag (each operation reads the subset it needs). The only globally-required parameter is `action`; per-action requirements are enforced in the handler.
+The agent operates the forecast desk through a single tool, **`forecast_ledger`**. Its `action` parameter selects one of **114 operations**; the remaining parameters form a shared bag (each operation reads the subset it needs). The only globally-required parameter is `action`; per-action requirements are enforced in the handler.
 
 
 ## Actions
@@ -30,6 +30,7 @@ Operate on the forecast ledger: create questions, add evidence, append forecast 
 | `approve_forecast_update_proposal` |
 | `autopilot_readiness` |
 | `autopilot_status` |
+| `backfill_market_ids` |
 | `backtest_performance_report` |
 | `bayes` |
 | `build_model` |
@@ -74,6 +75,7 @@ Operate on the forecast ledger: create questions, add evidence, append forecast 
 | `list_postmortems` |
 | `list_questions` |
 | `list_reference_classes` |
+| `list_resolution_proposals` |
 | `list_scheduled_reviews` |
 | `list_scores` |
 | `list_trusted_resolver_policies` |
@@ -87,6 +89,7 @@ Operate on the forecast ledger: create questions, add evidence, append forecast 
 | `pm_query` |
 | `postmortem` |
 | `propose_resolution` |
+| `propose_resolutions` |
 | `propose_spec` |
 | `protocol` |
 | `record_model_run` |
@@ -112,6 +115,7 @@ Operate on the forecast ledger: create questions, add evidence, append forecast 
 | `set_decision` |
 | `set_label_rubric` |
 | `set_resolution_rule` |
+| `share_forecast` |
 | `show_panel` |
 | `show_question` |
 | `show_quorum_status` |
@@ -150,7 +154,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `access` | string |  |  |
 | `ack_stale_evidence` | boolean |  |  |
 | `acknowledged_at` | string |  |  |
-| `action` | string | 110 values (see source) |  |
+| `action` | string | 114 values (see source) |  |
 | `action_threshold` | string |  | Probability/threshold that triggers an action (e.g. 'evacuate if P > 0.05'). |
 | `active_only` | boolean |  |  |
 | `actor` | string |  | Who is making the change (recorded in audit trails, e.g. rename_question). |
@@ -197,6 +201,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `capture_candidates` | boolean |  |  |
 | `cases` | array<object> |  |  |
 | `change_my_mind` | array<string> |  | Specific observations that would force a material update. |
+| `channel` | string |  | For share_forecast: the Slack channel id to post the forecast card into. |
 | `check_cadence` | string |  |  |
 | `choices` | array<string> |  |  |
 | `claim` | string |  |  |
@@ -475,7 +480,9 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `target_x` | number |  |  |
 | `task_type` | string | `relevance`, `truncation` | label_score: 'relevance' (multi-class classification, headline=accuracy) or 'truncation' (cut-point extraction, headline=exact-match). |
 | `taxonomy` | string |  |  |
+| `team_id` | string |  | For share_forecast: the Slack workspace to post in (defaults to the only/first installed). |
 | `text` | string |  |  |
+| `thread_ts` | string |  | For share_forecast: post the card as a reply in this thread (thread = question/round). |
 | `threshold` | number |  | For set_resolution_rule: the numeric threshold the observed value is compared against. |
 | `tier` | string | `free`, `reforecast` | run_warning_automode: per-tier bulk pass. 'free' = non-LLM kinds {bookkeeping,score,postmortem,material_change}; 'reforecast' = the opt-in LLM reforecast/evidence tier. |
 | `timespan` | string |  |  |

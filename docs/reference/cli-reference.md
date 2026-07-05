@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **79 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **84 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -25,11 +25,13 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | [`forecast assumption`](#forecast-assumption) | Manage durable forecast assumptions |
 | [`forecast autopilot`](#forecast-autopilot) | Wire watched sources, schedules, materiality, and update proposals |
 | [`forecast backtest`](#forecast-backtest) | Run or inspect time-aware historical replay datasets |
+| [`forecast backup`](#forecast-backup) | Back up the forecast ledger (online snapshot + integrity check) and manage retention |
 | [`forecast base-rate`](#forecast-base-rate) | Store a reference-class base-rate estimate |
 | [`forecast bayes`](#forecast-bayes) | Bayesian scratchpad: LR updates, log-odds pooling, polls→prob, de-vig, sensitivity, forecast-diff |
 | [`forecast bench`](#forecast-bench) | Show the read-only ForecastBench backtest scoreboard (agent vs market Brier) |
 | [`forecast calibration`](#forecast-calibration) | Show calibration summary (add `status` for the readiness cockpit) |
 | [`forecast complementarity`](#forecast-complementarity) | AIA P1.3 — fitted convex market+LLM Brier-minimizing blend + LOO additive value (read-only) |
+| [`forecast config`](#forecast-config) | Inspect the layered runtime configuration (typed loader + config doctor). |
 | [`forecast correction`](#forecast-correction) | Record non-mutating corrections |
 | [`forecast crux`](#forecast-crux) | Manage per-forecast crux variables (the decisive inputs) |
 | [`forecast cycle`](#forecast-cycle) | Run the closed-loop forecast cycle |
@@ -44,6 +46,7 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | [`forecast hooks`](#forecast-hooks) | Inspect / tune / author the saturation + style hook rules |
 | [`forecast import`](#forecast-import) | Run an optional source adapter without making it the core workflow |
 | [`forecast ingest`](#forecast-ingest) | Capture a URL, file, or note as external forecast context |
+| [`forecast jobs`](#forecast-jobs) | Administer detached background forecast jobs |
 | [`forecast lesson`](#forecast-lesson) | Review and promote calibration lessons |
 | [`forecast lessons`](#forecast-lessons) | List calibration lessons |
 | [`forecast link`](#forecast-link) | Link related forecasts so they cross-pollinate context |
@@ -54,6 +57,7 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | [`forecast market-quality`](#forecast-market-quality) | Stratify market readings by liquidity + recency into an advisory pooling weight, so a thin/stale market can't inflate a tail |
 | [`forecast model`](#forecast-model) | Record a probabilistic model run (or `model build <ref>` to build a Market Model as a forecast leg) |
 | [`forecast new`](#forecast-new) | Create a scoreable forecast question |
+| [`forecast next`](#forecast-next) | Rank the book by value-of-information — what should I touch next? |
 | [`forecast onboard`](#forecast-onboard) | Curate a new question as a typed QuestionSpec — propose + validate, then commit the full fan-out |
 | [`forecast panel`](#forecast-panel) | Run / aggregate / inspect a multi-perspective forecast panel (outside, inside, market, red-team, sanity) |
 | [`forecast performance`](#forecast-performance) | Summarize recent backtest performance against available baselines |
@@ -83,6 +87,7 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | [`forecast self-check`](#forecast-self-check) | Create alerts for review work |
 | [`forecast set-decision`](#forecast-set-decision) | Set or revise decision_owner / decision_deadline / action_threshold / update_triggers |
 | [`forecast show`](#forecast-show) | Show a forecast question |
+| [`forecast slack`](#forecast-slack) | Provision this agent's Slack identity and report who it is |
 | [`forecast source`](#forecast-source) |  |
 | [`forecast sources`](#forecast-sources) | List forecast evidence source adapters |
 | [`forecast status`](#forecast-status) | Show forecast desk operational status |
@@ -299,6 +304,27 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | `--list` |  |
 | `--show` |  |
 
+## `forecast backup`
+
+- **`forecast backup list`** — List existing ledger backups (newest first)
+- **`forecast backup run`** — Create an online backup + integrity check now (runs as a durable job)
+
+### `forecast backup list`
+
+| argument | help |
+| --- | --- |
+| `--dest-dir` | Override the backup directory (default: <ledger dir>/backups) |
+| `--json` | Emit machine-readable JSON |
+
+### `forecast backup run`
+
+| argument | help |
+| --- | --- |
+| `--dest-dir` | Override the backup directory (default: <ledger dir>/backups) |
+| `--keep-recent` | Retention override: newest N backups always kept (default 14) |
+| `--weekly-weeks` | Retention override: one-per-week for W weeks (default 8) |
+| `--json` | Emit the machine-readable job record |
+
 ## `forecast base-rate`
 
 | argument | help |
@@ -352,6 +378,16 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | `--origin` | Which resolved score_records to fit the LLM/agent side from (default: live) |
 | `--min-sample` | Minimum resolved market+LLM pairs before a weight is fitted (default: 30) |
 | `--json` | Emit the raw report as JSON |
+
+## `forecast config`
+
+- **`forecast config doctor`** — Report unknown/typo vars, defaults in effect, secret presence, file-vs-env conflicts, and the Kalshi two-var trap (read-only).
+
+### `forecast config doctor`
+
+| argument | help |
+| --- | --- |
+| `--json` | Emit the machine-readable report JSON. |
 
 ## `forecast correction`
 
@@ -1935,6 +1971,18 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | `--source-type` |  |
 | `--dry-run` |  |
 
+## `forecast jobs`
+
+- **`forecast jobs approve`** — Approve a parked job awaiting operator sign-off and (by default) resume it
+
+### `forecast jobs approve`
+
+| argument | help |
+| --- | --- |
+| `job_id` | The parked job id (status awaiting_approval) |
+| `--no-resume` | Record the approval grant but do not re-run the job |
+| `--json` | Emit the job record as JSON |
+
 ## `forecast lesson`
 
 - **`forecast lesson list`** — List calibration lessons
@@ -2153,6 +2201,13 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | `--decision-deadline` | ISO-8601 timestamp by which the decision must be made |
 | `--action-threshold` | Probability/threshold that triggers an action (e.g. 'evacuate if P > 0.05') |
 | `--update-trigger` | Repeatable. Each value is either a free-form trigger ('PCE release within 24h') or a JSON object with mechanism/threshold/action keys |
+
+## `forecast next`
+
+| argument | help |
+| --- | --- |
+| `--limit` | How many actions to print (default: 5) |
+| `--json` | Emit the machine-readable ranked actions |
 
 ## `forecast onboard`
 
@@ -2706,6 +2761,39 @@ The full `forecast` command tree — **79 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `id` |  |
+
+## `forecast slack`
+
+- **`forecast slack provision`** — Emit a Slack app manifest (this agent's name baked in) + guided setup steps
+- **`forecast slack share`** — Post a question's current forecast as an sfp/1 card into a channel
+- **`forecast slack whoami`** — Report this agent's name, instance id, and Slack team
+
+### `forecast slack provision`
+
+| argument | help |
+| --- | --- |
+| `--format` | Manifest format (default yaml — Slack's paste format) |
+| `--name` | Override the agent name for this manifest (defaults to AGENT_NAME) |
+| `--description` | Override the app description |
+| `--out` | Write the manifest to this file instead of stdout |
+| `--quiet` | Emit only the manifest (suppress the guided-setup notes) |
+
+### `forecast slack share`
+
+| argument | help |
+| --- | --- |
+| `question` | Question id whose CURRENT snapshot to share |
+| `--channel` | Slack channel id to post the card into |
+| `--thread-ts` | Post the card as a reply in this thread (thread = question/round) |
+| `--team-id` | Workspace to post in (defaults to first installed) |
+| `--json` | Emit the share result as JSON |
+
+### `forecast slack whoami`
+
+| argument | help |
+| --- | --- |
+| `--team-id` | Workspace to check (defaults to first installed) |
+| `--json` | Emit the identity as JSON |
 
 ## `forecast source`
 

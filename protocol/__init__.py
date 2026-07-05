@@ -37,6 +37,7 @@ from protocol.rpc import session as _rpc_session
 from protocol.rpc import theme as _rpc_theme
 from protocol.rpc import voice as _rpc_voice
 from protocol.rpc import warnings as _rpc_warnings
+from protocol import collab as _collab
 from protocol.types import WireModel
 from protocol.version import MIN_SUPPORTED, PROTOCOL_VERSION
 
@@ -219,6 +220,12 @@ EXTRA_MODELS: list[type[WireModel]] = [
     _rpc_config.ConfigGetValueResponse,
     _rpc_agents.SubagentEventPayload,
     _rpc_interact.GatewaySkin,
+    # ── sfp/1 collab wire (multiplayer M2) ───────────────────────────────────
+    # The peer-to-peer protocol rides Slack message metadata, not the gateway
+    # wire, so its models are not RPCs/events — but the TUI + docs still want the
+    # typed shapes, so they ride EXTRA_MODELS (the codegen collector reaches the
+    # nested value objects from the top-level models listed in COLLAB_MODELS).
+    *_collab.COLLAB_MODELS,
 ]
 
 EVENT_SPECS: list[EventSpec] = [

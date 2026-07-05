@@ -58,6 +58,15 @@ export const WireEvent = {
   VOICE_TRANSCRIPT: 'voice.transcript',
 } as const
 
+export interface AckRequestBody {
+  correlation_id: string
+  intent: string
+  note: null | string
+  question_ref: null | SfpQuestionRef
+  request_kind: null | string
+  signal: null | string
+}
+
 export interface AgentProcess {
   command: string
   session_id: string
@@ -293,6 +302,21 @@ export interface ErrorPayload {
   message: string
 }
 
+export interface EvidenceShareBody {
+  available_at: null | string
+  captured_at: string
+  claim: string
+  evidence_id: null | string
+  excerpt: null | string
+  published_at: null | string
+  sha256: string
+  source_name: null | string
+  source_type: string
+  source_url: null | string
+  stance: null | string
+  triage_label: null | string
+}
+
 export interface ForecastAnalystNote {
   as_of?: string
   be_aware?: string
@@ -471,6 +495,20 @@ export interface ForecastCandidateInterval {
   hi: number
   lo: number
   mid?: number
+}
+
+export interface ForecastCardBody {
+  as_of: string
+  band: null | SfpBand
+  criteria_hash: string
+  distribution: null | Record<string, unknown>
+  evidence_refs: SfpEvidenceRef[]
+  horizon_days: null | number
+  outcome_type: string
+  probability: null | number
+  question_id: null | string
+  question_title: string
+  rationale_bullets: string[]
 }
 
 export interface ForecastCommandRequest {
@@ -2047,6 +2085,18 @@ export interface JobsStatusResponse {
   job: null | JobRecordDTO
 }
 
+export interface LessonShareBody {
+  compiled_rule_preview: null | string
+  confidence: null | number
+  effect_size: null | number
+  lesson: string
+  lesson_id: null | string
+  origin_n: null | number
+  scope_ref: null | string
+  scope_type: string
+  status: null | string
+}
+
 export interface MarketModelCompletePayload {
   id: string
   status?: string
@@ -2742,6 +2792,51 @@ export interface SetupStatusResponse {
   provider_configured?: boolean
 }
 
+export interface SfpBand {
+  high: number
+  label: null | string
+  low: number
+}
+
+export interface SfpEnvelope {
+  body: Record<string, unknown>
+  kind: string
+  sender: SfpSender
+  ts: string
+  v: number
+}
+
+export interface SfpEvidenceRef {
+  id: string
+  title: null | string
+}
+
+export interface SfpFilePointer {
+  bytes: number
+  encoding: string
+  filename: null | string
+  kind: string
+  sha256: string
+}
+
+export interface SfpMemberEstimate {
+  agent: string
+  instance_id: null | string
+  probability: null | number
+}
+
+export interface SfpQuestionRef {
+  criteria_hash: string
+  question_id: null | string
+  title: string
+}
+
+export interface SfpSender {
+  agent: string
+  instance_id: string
+  team: null | string
+}
+
 export interface ShellExecRequest {
   command: null | string
 }
@@ -2912,6 +3007,26 @@ export interface ThemeOption {
   description?: string
   name: string
   source?: string
+}
+
+export interface ThesisAggregateBody {
+  aggregate: null | number
+  aggregate_distribution: null | Record<string, unknown>
+  disagreement: null | Record<string, unknown>
+  member_estimates: SfpMemberEstimate[]
+  method: string
+  question_ref: SfpQuestionRef
+  round: number
+  spread: null | number
+}
+
+export interface ThesisRoundBody {
+  deadline: null | string
+  facilitator: null | string
+  note: null | string
+  participants: string[]
+  question_refs: SfpQuestionRef[]
+  round: number
 }
 
 export interface ThinkingDeltaPayload {

@@ -9,7 +9,7 @@
 
 > **Source of truth:** `os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, hermes_cli/`
 
-Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **218 variables** (49 flagged as secrets, 169 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
+Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **209 variables** (46 flagged as secrets, 163 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
 
 
 > **Secrets** are classified by name (any variable whose name contains `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`). This is a conservative naming heuristic, not a data-flow analysis — treat the list as "never log or commit these", and audit the source before assuming a variable *not* listed here is safe to print.
@@ -17,7 +17,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Secrets & credentials
 
 
-**49 variables** carry a credential-shaped name. Provide them via the environment or the credential store; never commit them.
+**46 variables** carry a credential-shaped name. Provide them via the environment or the credential store; never commit them.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -29,19 +29,16 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `AWS_SECRET_ACCESS_KEY` | `''` | `hermes_cli.model_switch` |
 | `AZURE_ANTHROPIC_KEY` | `''` | `hermes_cli.runtime_provider` |
 | `AZURE_FOUNDRY_API_KEY` | `''` | `hermes_cli.auth`, `hermes_cli.runtime_provider` |
-| `BLS_API_KEY` | `''` | `forecasting.source_adapters` |
 | `CAMOFOX_SESSION_KEY` | `''` | `tools.browser_camofox` |
-| `CENSUS_API_KEY` | `None` | `forecasting.source_adapters` |
 | `CLAUDE_CODE_OAUTH_TOKEN` | `None` | `hermes_cli.web_server` |
 | `CUSTOM_API_KEY` | `''` | `hermes_cli.models` |
 | `DAYTONA_API_KEY` | `None` | `hermes_cli.doctor`, `tools.terminal_tool` |
 | `DISCORD_BOT_TOKEN` | `''` | `tools.discord_tool` |
-| `EIA_API_KEY` | `None` | `forecasting.source_adapters` |
 | `EMAIL_PASSWORD` | `''` | `tools.send_message_tool` |
 | `FAL_KEY` | `None` | `tools.tool_backend_helpers` |
 | `FIRECRAWL_API_KEY` | `''` | `tools.web_tools` |
 | `FORECAST_REDACT_SECRETS` | `None` | `hermes_cli.codex_runtime_plugin_migration` |
-| `FRED_API_KEY` | `None` | `forecasting.source_adapters`, `tools.forecasting_tool` |
+| `FRED_API_KEY` | `None` | `tools.forecasting_tool` |
 | `GH_TOKEN` | `None` | `tools.skills_hub` |
 | `GITHUB_APP_PRIVATE_KEY_PATH` | `None` | `tools.skills_hub` |
 | `GITHUB_TOKEN` | `None` | `tools.skills_hub`, `tools.tirith_security` |
@@ -74,7 +71,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Configuration & runtime
 
 
-**169 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
+**163 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -109,17 +106,12 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `FAL_IMAGE_MODEL` | `''` | `tools.image_generation_tool` |
 | `FIRECRAWL_API_URL` | `''`, `None` | `tools.web_tools` |
 | `FORECAST_BIN` | `''` | `hermes_cli.kanban_db` |
-| `FORECAST_BRIDGE_PORT` | `''` | `forecasting.webbridge` |
-| `FORECAST_DISABLE_HOOK_BLOCKING` | `''` | `forecasting.ledger.snapshots` |
-| `FORECAST_DISABLE_SATURATION_ESCALATION` | `''` | `forecasting.ledger.snapshots` |
-| `FORECAST_DISABLE_THESIS_CASCADE` | `''` | `forecasting.ledger.theses` |
-| `FORECAST_GATE_DIRECT_WRITES` | `'on'` | `forecasting.ledger.gate` |
 | `FORECAST_HOME` | `''` | `hermes_cli.main` |
-| `FORECAST_LEDGER_DB` | `''`, `None` | `forecasting.cron_runner`, `forecasting.ledger.core` |
+| `FORECAST_RESOLUTION_MODEL` | `None` | `tools.forecast_actions.resolution` |
 | `FORECAST_TIMEZONE` | `''` | `hermes_cli.config` |
-| `FORECAST_TRIAGE_MODEL` | `None` | `forecasting.cli`, `tools.forecasting_tool` |
-| `FORECAST_TRIAGE_TRUST_MIN_SAMPLE` | `'20'` | `tools.forecasting_tool` |
-| `FORECAST_TRIAGE_TRUST_THRESHOLD` | `'0.8'` | `tools.forecasting_tool` |
+| `FORECAST_TRIAGE_MODEL` | `None` | `tools.forecast_actions.triage` |
+| `FORECAST_TRIAGE_TRUST_MIN_SAMPLE` | `'20'` | `tools.forecast_actions.triage` |
+| `FORECAST_TRIAGE_TRUST_THRESHOLD` | `'0.8'` | `tools.forecast_actions.triage` |
 | `GATEWAY_HEALTH_TIMEOUT` | `'3'`, `None` | `hermes_cli.web_server` |
 | `GATEWAY_HEALTH_URL` | `None` | `hermes_cli.web_server` |
 | `GITHUB_APP_ID` | `None` | `tools.skills_hub` |
@@ -187,7 +179,6 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `ProgramFiles(x86)` | `'C:\\Program Files (x86)'`, `None` | `hermes_cli.browser_connect`, `hermes_cli.plugins_cmd`, `tools.environments.local` |
 | `QQ_APP_ID` | `''` | `tools.send_message_tool` |
 | `QQ_HOME_CHANNEL` | `''` | `hermes_cli.status` |
-| `RELIEFWEB_APPNAME` | `None` | `forecasting.source_adapters` |
 | `REQUESTS_CA_BUNDLE` | `None` | `hermes_cli.auth` |
 | `SEARXNG_URL` | `''` | `tools.web_tools` |
 | `SHELL` | `None` | `tools.environments.local` |

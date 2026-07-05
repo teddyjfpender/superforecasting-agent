@@ -9,11 +9,12 @@
 
 > **Source of truth:** `forecasting/jobs/types/ (registered_types + resolve)`
 
-Long-running desk work runs as a **detached job** on one runtime (`forecasting/jobs/runtime.py`) with shared progress coalescing, cancellation, persistence, and desk re-attach. Each capability is a registered `JobType`. There are **5 types**. `spend_class` `agent` means the job spends model budget (it drives the agent); `free` means it does not.
+Long-running desk work runs as a **detached job** on one runtime (`forecasting/jobs/runtime.py`) with shared progress coalescing, cancellation, persistence, and desk re-attach. Each capability is a registered `JobType`. There are **6 types**. `spend_class` `agent` means the job spends model budget (it drives the agent); `free` means it does not.
 
 
 | type | spend class | min interval (s) | legacy alias namespace | what it does |
 | --- | --- | --- | --- | --- |
+| `backup` | `free` | 0.0 | `—` | The BACKUP job type: a durable, online SQLite backup + integrity check of the |
 | `quorum` | `agent` | 0.0 | `—` | The QUORUM job type: the multi-model Delphi forecast on the one detached-job |
 | `reforecast` | `agent` | 0.0 | `forecast.reforecast` | The REFORECAST job type: the operator's Desk "mass LLM re-run" on the one |
 | `refresh` | `free` | 0.0 | `—` | The REFRESH job type: the operator's Desk "Update now" (``U`` / mass-``U``) on |

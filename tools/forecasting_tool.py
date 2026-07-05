@@ -236,9 +236,13 @@ FORECAST_LEDGER_SCHEMA = {
                     "triage_trust",
                     "record_operator_estimate",
                     "operator_calibration",
+                    "share_forecast",
                 ],
             },
             "question_id": {"type": "string"},
+            "channel": {"type": "string", "description": "For share_forecast: the Slack channel id to post the forecast card into."},
+            "thread_ts": {"type": "string", "description": "For share_forecast: post the card as a reply in this thread (thread = question/round)."},
+            "team_id": {"type": "string", "description": "For share_forecast: the Slack workspace to post in (defaults to the only/first installed)."},
             "from_question_id": {"type": "string", "description": "For link/unlink: the source forecast id."},
             "to_question_id": {"type": "string", "description": "For link/unlink: the target forecast id."},
             "link_type": {

@@ -195,6 +195,19 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     whoami.add_argument("--json", action="store_true", help="Emit the identity as JSON")
     whoami.set_defaults(_forecast_handler=_cmd_slack_whoami)
 
+    share = slack_sub.add_parser(
+        "share",
+        help="Post a question's current forecast as an sfp/1 card into a channel",
+    )
+    share.add_argument("question", help="Question id whose CURRENT snapshot to share")
+    share.add_argument("--channel", required=True, help="Slack channel id to post the card into")
+    share.add_argument("--thread-ts", dest="thread_ts", default=None,
+                       help="Post the card as a reply in this thread (thread = question/round)")
+    share.add_argument("--team-id", dest="team_id", default=None,
+                       help="Workspace to post in (defaults to first installed)")
+    share.add_argument("--json", action="store_true", help="Emit the share result as JSON")
+    share.set_defaults(_forecast_handler=_cmd_slack_share)
+
 
 def _cmd_slack_provision(args: argparse.Namespace) -> None:
     """`forecast slack provision` — emit the app manifest + guided instructions."""
@@ -246,3 +259,35 @@ def _cmd_slack_whoami(args: argparse.Namespace) -> None:
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
         print(render_whoami(payload))
+
+
+def _cmd_slack_share(args: argparse.Namespace) -> None:
+    """`forecast slack share <question> --channel` — render + post the current
+    forecast card over the same path as the ``share_forecast`` tool action."""
+    from forecasting.ledger import ForecastLedger
+    from tools.forecast_actions.share import execute_share
+
+    ledger = ForecastLedger(getattr(args, "db", None))
+    outcome = execute_share(
+        ledger,
+        str(getattr(args, "question", "") or ""),
+        str(getattr(args, "channel", "") or ""),
+        thread_ts=getattr(args, "thread_ts", None),
+        team_id=getattr(args, "team_id", None),
+    )
+
+    if getattr(args, "json", False):
+        print(json.dumps(outcome, indent=2, sort_keys=True))
+    else:
+        if outcome.get("shared"):
+            where = f" in thread {outcome['thread_ts']}" if outcome.get("thread_ts") else ""
+            print(f"shared {outcome['event_type']} for {outcome['question_id']} to {outcome['channel']}{where}")
+            print(f"  criteria hash: {outcome.get('criteria_hash')}")
+            if outcome.get("slack_ts"):
+                print(f"  slack ts:      {outcome['slack_ts']}")
+        else:
+            reason = outcome.get("error") or outcome.get("reason") or "not shared"
+            print(f"not shared: {reason}", file=sys.stderr)
+
+    if not outcome.get("success"):
+        raise SystemExit(1)
