@@ -392,6 +392,107 @@ def _cutoff_is_live(evidence_cutoff: Any, *, tolerance_hours: float = 48.0) -> b
         return False
 
 
+# ── FIX B: market-anchor discipline config + extraction ───────────────────────
+
+
+def _market_anchor_enabled(spec: dict[str, Any]) -> bool:
+    """Whether to inject the current market price as the outside-view anchor.
+
+    DEFAULT ON. The per-run spec ``market_anchor`` wins; otherwise the fleet-wide
+    ``quorum.market_anchor`` config (default True) governs. Any config/import
+    failure defaults ON — the market-as-prior doctrine is the safe default.
+    """
+
+    if "market_anchor" in spec:
+        return _truthy(spec.get("market_anchor"))
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config().get("quorum", {})
+    except Exception:  # noqa: BLE001 — config optional; doctrine default ON
+        return True
+    if not isinstance(cfg, dict) or "market_anchor" not in cfg:
+        return True
+    return _truthy(cfg.get("market_anchor"))
+
+
+def _market_anchor_threshold_pp(spec: dict[str, Any]) -> float:
+    """The unjustified-deviation threshold in percentage points (default 10pp).
+
+    Per-run spec ``market_anchor_deviation_pp`` wins, else the fleet-wide
+    ``quorum.market_anchor_deviation_pp``. Fails safe to 10.0 on any parse error.
+    """
+
+    if "market_anchor_deviation_pp" in spec:
+        try:
+            return max(0.0, float(spec.get("market_anchor_deviation_pp")))
+        except (TypeError, ValueError):
+            return 10.0
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config().get("quorum", {})
+        if isinstance(cfg, dict) and "market_anchor_deviation_pp" in cfg:
+            return max(0.0, float(cfg.get("market_anchor_deviation_pp")))
+    except Exception:  # noqa: BLE001 — config optional
+        pass
+    return 10.0
+
+
+_MARKET_SOURCE_PREFIXES = ("polymarket", "kalshi", "manifold", "metaculus", "market")
+
+
+def extract_market_anchor(ledger: Any, question: Any, snapshot: Any) -> float | None:
+    """Pull the current de-vigged market price for a market-linked BINARY question.
+
+    Prefers a market-typed component on the current snapshot's
+    ``ensemble_components`` (source slug like ``polymarket:…``); falls back to the
+    first market-typed ``baseline_comparison`` (de-vigged through the same helper
+    :mod:`forecasting.market_ensemble` uses). Returns ``None`` when the question is
+    not binary or carries no market data — so a non-market question keeps the pre-FIX
+    behaviour exactly (no anchor, no pull).
+    """
+
+    try:
+        if getattr(question.outcome_space, "type", None) != "binary":
+            return None
+    except Exception:  # noqa: BLE001 — a malformed question carries no anchor
+        return None
+
+    from forecasting.market_ensemble import _coerce_prob, _devig_market_baseline
+
+    # 1) A market/crowd component on the current snapshot.
+    components = getattr(snapshot, "ensemble_components", None) if snapshot else None
+    if isinstance(components, dict) and components:
+        try:
+            from forecasting.ensembles import _component_rows
+
+            for row in _component_rows(components):
+                source = str(row.get("source") or "").strip().lower()
+                if any(source.startswith(pfx) for pfx in _MARKET_SOURCE_PREFIXES):
+                    prob = _coerce_prob(row.get("probability"))
+                    if prob is not None:
+                        return prob
+        except Exception:  # noqa: BLE001 — component read is best-effort
+            pass
+
+    # 2) First market-typed baseline comparison (de-vigged).
+    try:
+        from forecasting import bayes_toolkit
+
+        market_types = {"market_price", "market", "imported_market"}
+        for baseline in ledger.list_baseline_comparisons(question.id):
+            if str(baseline.get("baseline_type") or "").lower() not in market_types:
+                continue
+            raw = ledger._baseline_probability_value(baseline)
+            devigged = _devig_market_baseline(raw, baseline, bayes_toolkit)
+            if devigged is not None:
+                return devigged
+    except Exception:  # noqa: BLE001 — baseline read is best-effort
+        pass
+    return None
+
+
 # ── the QUORUM type: one multi-model Delphi run per job ───────────────────────
 
 
@@ -413,6 +514,7 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     from forecasting.quorum import (
         DEFAULT_JUDGE_MODEL,
         make_aiagent_runner,
+        resolve_connected_panel,
         resolve_models,
         run_quorum,
     )
@@ -452,6 +554,32 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     # default.
     judge_model = spec.get("judge") or preset_judge or DEFAULT_JUDGE_MODEL
     self_fusion = bool(spec.get("self_fusion")) or spec.get("preset") == "self"
+
+    # FIX A — resolve a multi-provider preset to the user's ACTUALLY-authed providers.
+    # The built-in presets name OpenRouter-format ids; on a host with no OpenRouter
+    # key every panelist would fail ("agent protocol response is empty"). Rebuild the
+    # panel from connected providers (their native default models, routed via the
+    # provider:model split) or fall back to an honestly-labeled self-fusion. Only runs
+    # for a preset-shaped run (no explicit --models, not already self-fusion); an
+    # unknown provider picture fails open and keeps the preset verbatim.
+    panel_resolution_note: str | None = None
+    a_preset = spec.get("preset")
+    if not spec.get("models") and a_preset not in (None, "self") and not self_fusion:
+        panel = resolve_connected_panel(
+            a_preset,
+            active_model=spec.get("active_model"),
+            active_provider=spec.get("active_provider"),
+            samples=int(spec.get("samples", 3) or 3),
+        )
+        if panel.get("rebuilt"):
+            models = panel["models"]
+            # Only override the judge when the caller did not pin one — a rebuilt
+            # panel's native/self judge is callable where the OpenRouter default is not.
+            if not spec.get("judge") and panel.get("judge"):
+                judge_model = panel["judge"]
+            self_fusion = bool(panel.get("self_fusion")) or self_fusion
+            panel_resolution_note = panel.get("label")
+            emit("panel_resolution", panel_resolution_note or "")
 
     # Delphi v1 — optional single anonymous revision round. Resolved to a plain int
     # here and threaded into run_quorum (which validates {0, 1}). ``0`` is the DEFAULT
@@ -547,6 +675,22 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
                 + ", ".join(f"{m}={w:.2f}" for m, w in sorted(model_weights.items())),
             )
 
+    # MARKET-ANCHOR DISCIPLINE (FIX B). For a market-linked binary question pull the
+    # current de-vigged price in as the outside-view anchor: shown to panelists, the
+    # judge must justify deviating more than the threshold, and an unjustified
+    # over-deviation is pulled back toward the market. DEFAULT ON; a non-market
+    # question yields None and the path is byte-identical to before.
+    market_anchor: float | None = None
+    market_anchor_threshold = _market_anchor_threshold_pp(spec)
+    if _market_anchor_enabled(spec):
+        market_anchor = extract_market_anchor(ledger, question, snapshot)
+        if market_anchor is not None:
+            emit(
+                "market_anchor",
+                f"outside-view anchor {market_anchor:.3f} "
+                f"(deviation discipline >{market_anchor_threshold:.0f}pp needs justification)",
+            )
+
     result = run_quorum(
         question_title=question.title,
         resolution_criteria=question.resolution_criteria,
@@ -565,6 +709,8 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         max_research_rounds=max_research_rounds or 1,
         delphi_rounds=delphi_rounds,
         model_weights=model_weights or None,
+        market_anchor=market_anchor,
+        market_anchor_threshold_pp=market_anchor_threshold,
     )
 
     # Persist the quorum as a sibling panel run. The spread_summary already carries
@@ -574,6 +720,23 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     emit("record", "recording quorum panel run")
     from forecasting.ledger import allow_ledger_writes
 
+    # ARTIFACT STAMPING: carry the run's process provenance (research/delphi rounds,
+    # whether supervisor search was wired), the market-anchor outcome, the self-fusion
+    # caveat, and the connected-provider panel label into the persisted panel run so
+    # the artifact the desk reads is honest — not just the raw columns.
+    market_anchor_record: dict[str, Any] | None = None
+    if result.market_price is not None:
+        market_anchor_record = {
+            "market_price": round(float(result.market_price), 6),
+            "threshold_pp": round(float(market_anchor_threshold), 3),
+            "deviation_pp": (
+                round(float(result.market_deviation_pp), 3)
+                if result.market_deviation_pp is not None
+                else None
+            ),
+            "justification": result.market_justification,
+            "pull_applied": bool(result.market_pull_applied),
+        }
     with allow_ledger_writes(reason="quorum_jobs.execute_job"):
         panel_run = ledger.record_panel_run(
             question_id=question.id,
@@ -589,6 +752,10 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
             supervisor_evidence=result.supervisor_evidence,
             delphi_rounds=result.delphi_rounds,
             delphi_audit=result.delphi_audit,
+            supervisor_search_enabled=search_runner is not None,
+            market_anchor=market_anchor_record,
+            pseudo_diversity_caveat=result.pseudo_diversity_caveat,
+            panel_resolution_note=panel_resolution_note,
         )
 
     # Carry the panel_run_id + aggregate on the record's annotations too, so a

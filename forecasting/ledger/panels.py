@@ -62,6 +62,10 @@ def record_panel_run(
     supervisor_evidence: list[dict[str, Any]] | None = None,
     delphi_rounds: int = 0,
     delphi_audit: dict[str, Any] | None = None,
+    supervisor_search_enabled: bool = False,
+    market_anchor: dict[str, Any] | None = None,
+    pseudo_diversity_caveat: str | None = None,
+    panel_resolution_note: str | None = None,
 ) -> dict[str, Any]:
     """Aggregate a panel of perspective estimates and persist the artifact.
 
@@ -151,6 +155,35 @@ def record_panel_run(
         spread["pool_probability"] = round(
             float(aggregation.aggregate_probability), 6
         )
+    # ARTIFACT STAMPING: the columns store research_rounds/delphi_rounds/supervisor
+    # evidence, but the human-facing spread_summary (and notes) lost them — stamp
+    # them here so a quorum's process provenance travels with the artifact the desk
+    # reads, not just the raw columns. Additive keys; a perspective panel with no
+    # quorum machinery stamps the no-op defaults.
+    spread["research_rounds"] = research_rounds
+    spread["delphi_rounds"] = delphi_rounds
+    spread["supervisor_search"] = bool(supervisor_search_enabled) or research_rounds > 0
+    if market_anchor:
+        spread["market_anchor"] = dict(market_anchor)
+    if pseudo_diversity_caveat:
+        spread["pseudo_diversity_caveat"] = pseudo_diversity_caveat
+    if panel_resolution_note:
+        spread["panel_resolution"] = panel_resolution_note
+    # Mirror the process provenance into the readable notes list too.
+    notes_out = list(aggregation.notes)
+    provenance = [f"research_rounds={research_rounds}", f"delphi_rounds={delphi_rounds}"]
+    if spread["supervisor_search"]:
+        provenance.append("supervisor_search=on")
+    notes_out.append("quorum provenance: " + ", ".join(provenance))
+    if panel_resolution_note:
+        notes_out.append(f"panel resolution: {panel_resolution_note}")
+    if pseudo_diversity_caveat:
+        notes_out.append(pseudo_diversity_caveat)
+    if market_anchor and market_anchor.get("pull_applied"):
+        notes_out.append(
+            "market-anchor discipline: "
+            + str(market_anchor.get("justification") or "verdict pulled toward market")
+        )
     estimate_records: list[dict[str, Any]] = []
     with ledger._connect() as conn:
         conn.execute(
@@ -174,7 +207,7 @@ def record_panel_run(
                 committed_probability,
                 json_dumps(list(requested)),
                 json_dumps(spread),
-                json_dumps(aggregation.notes),
+                json_dumps(notes_out),
                 triggered_by,
                 json_dumps(judge) if judge is not None else None,
                 committed_source,

@@ -208,6 +208,12 @@ class JudgeSynthesis:
     directional_confidence: DirectionalConfidence = "medium"
     information_gap: bool = False
     clarifying_queries: list[str] = field(default_factory=list)
+    # FIX B — market-anchor discipline. The judge's stated NAMED edge (private
+    # information / market-unpriced signal) that justifies deviating more than the
+    # threshold from the outside-view market prior. Empty/None ⇒ no justification, so
+    # a large deviation is pulled back toward the market. Defaults to None so every
+    # non-market-linked and pre-FIX-B construction is unchanged.
+    market_deviation_justification: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -223,6 +229,7 @@ class JudgeSynthesis:
             "directional_confidence": self.directional_confidence,
             "information_gap": self.information_gap,
             "clarifying_queries": self.clarifying_queries,
+            "market_deviation_justification": self.market_deviation_justification,
         }
 
 
@@ -276,6 +283,24 @@ class QuorumResult:
     # byte-compatible with pre-S7 readers). Echoed so the operator SEES why a
     # weighted pool moved off the bare mean.
     model_weights_used: dict[str, float] = field(default_factory=dict)
+    # FIX B — market-anchor discipline. On a market-linked question the current
+    # de-vigged market price is injected as the outside-view anchor; these record the
+    # verdict's relationship to it. ``market_price`` is the anchor (None on a
+    # non-market question — every field then stays in its no-anchor default so the
+    # committed number is byte-identical to before). ``market_deviation_pp`` is the
+    # final |verdict − market| in percentage points; ``market_justification`` is the
+    # judge's named edge (or the 'insufficient justification — verdict pulled toward
+    # market' note when the pull fired); ``market_pull_applied`` flags that the
+    # committed number was pulled back toward the market via the log-odds pool.
+    market_price: float | None = None
+    market_deviation_pp: float | None = None
+    market_justification: str | None = None
+    market_pull_applied: bool = False
+    # Self-fusion pseudo-diversity caveat (FIX B). A prominent, honest label set when
+    # the panel is N samples of ONE model (not independent multi-model fusion), so a
+    # reader never mistakes resample spread for genuine model diversity. None on a
+    # real multi-model panel.
+    pseudo_diversity_caveat: str | None = None
 
     @property
     def aggregate_probability(self) -> float:
@@ -324,6 +349,19 @@ class QuorumResult:
             # Track-record weighting (S7): the applied {model: weight} map (empty on
             # the default equal-weight path so the payload stays byte-compatible).
             "model_weights_used": self.model_weights_used,
+            # FIX B — market-anchor discipline (all in their no-anchor default on a
+            # non-market question, so the payload stays byte-compatible there).
+            "market_price": (
+                round(self.market_price, 6) if self.market_price is not None else None
+            ),
+            "market_deviation_pp": (
+                round(self.market_deviation_pp, 3)
+                if self.market_deviation_pp is not None
+                else None
+            ),
+            "market_justification": self.market_justification,
+            "market_pull_applied": self.market_pull_applied,
+            "pseudo_diversity_caveat": self.pseudo_diversity_caveat,
             "judge": self.judge.to_dict() if self.judge else None,
             "forecasts": [
                 {
@@ -378,8 +416,15 @@ def build_panelist_prompt(
     context_packet: str,
     evidence_cutoff: str | None = None,
     sample_hint: int | None = None,
+    market_anchor: float | None = None,
 ) -> dict[str, str]:
-    """System + user prompts for one panelist model."""
+    """System + user prompts for one panelist model.
+
+    ``market_anchor`` (FIX B — market-anchor discipline) is the current de-vigged
+    market price for a market-linked question. When supplied it is SHOWN to the
+    panelist as the outside-view prior (the market-as-prior doctrine): deviate only
+    for a NAMED reason, never vibes.
+    """
 
     user = _PANELIST_USER_TEMPLATE.format(
         title=question_title,
@@ -387,6 +432,14 @@ def build_panelist_prompt(
         cutoff=evidence_cutoff or "now (live forecast)",
         context=context_packet or "(no shared context supplied)",
     )
+    if market_anchor is not None:
+        user += (
+            "\n\n## Outside-View Anchor (current market)\n"
+            f"The market currently prices YES at {market_anchor:.3f}. Treat this as the "
+            "OUTSIDE-VIEW PRIOR to interrogate, not an answer to copy. You may deviate, "
+            "but only for a NAMED reason — specific private information or an edge the "
+            "market has not yet priced — never on unsupported intuition."
+        )
     if sample_hint is not None:
         # For self-fusion: nudge independent reasoning paths across samples
         # without leaking that it is the same model.
@@ -417,8 +470,18 @@ def build_judge_prompt(
     forecasts: Sequence[ModelForecast],
     aggregation: PanelAggregation,
     disagreement: Mapping[str, Any],
+    market_anchor: float | None = None,
+    market_anchor_threshold_pp: float = 10.0,
 ) -> dict[str, str]:
-    """System + user prompts for the judge synthesis pass."""
+    """System + user prompts for the judge synthesis pass.
+
+    ``market_anchor`` (FIX B — market-anchor discipline) makes the judge accountable
+    to the outside view: when a de-vigged market price is supplied, the judge is told
+    that deviating more than ``market_anchor_threshold_pp`` from it REQUIRES an explicit
+    named edge (private information the market has not priced), returned in the
+    ``market_deviation_justification`` field — otherwise the committed verdict is pulled
+    back toward the market. This inverts the failure mode where the judge discounted the
+    market with no justification (the Alaska run) — the doctrine is market-as-prior."""
 
     lines: list[str] = []
     for f in forecasts:
@@ -441,9 +504,29 @@ def build_judge_prompt(
         )
     panel_block = "\n\n".join(lines) or "(no successful panelist forecasts)"
     spread = aggregation.spread
+    anchor_block = ""
+    anchor_key = ""
+    if market_anchor is not None:
+        anchor_block = (
+            f"## Outside-View Anchor (current market)\n"
+            f"- de-vigged market price (YES): {market_anchor:.4f}\n"
+            f"- deviation discipline: the committed verdict may deviate more than "
+            f"{market_anchor_threshold_pp:.0f}pp from this price ONLY with a specific, "
+            f"named edge the market has not priced. Absent that, your number will be "
+            f"pulled back toward the market. Treat the price as the prior to beat, "
+            f"not a number to discount.\n\n"
+        )
+        anchor_key = (
+            "- market_deviation_justification: if your probability deviates more than "
+            f"{market_anchor_threshold_pp:.0f}pp from the market price "
+            f"({market_anchor:.4f}), you MUST name the specific private information or "
+            "market-unpriced edge that justifies the deviation; otherwise return an empty "
+            'string "" and your number will be pulled toward the market\n'
+        )
     user = (
         f"## Forecast Question\n{question_title}\n\n"
         f"## Resolution Criteria\n{resolution_criteria}\n\n"
+        f"{anchor_block}"
         f"## Pooled Aggregate\n"
         f"- method: {aggregation.method} (trim={aggregation.trim})\n"
         f"- aggregate_probability: {aggregation.aggregate_probability:.4f}\n"
@@ -457,6 +540,7 @@ def build_judge_prompt(
         "Return ONLY a JSON object with keys:\n"
         "- probability: your final number in [0, 1] (may differ from the pool "
         "if the panel shares a blind spot — justify any divergence)\n"
+        f"{anchor_key}"
         "- directional_confidence: one of \"high\", \"medium\", \"low\" — how "
         "confident you are in YOUR REVISED probability above. Answer \"high\" "
         "ONLY when you have a specific, well-supported reason your number beats "
@@ -724,7 +808,24 @@ def parse_judge_response(response: Any, judge_model: str | None) -> JudgeSynthes
         ),
         information_gap=_coerce_bool(payload.get("information_gap")),
         clarifying_queries=_str_list(payload.get("clarifying_queries")),
+        market_deviation_justification=_opt_justification(
+            payload.get("market_deviation_justification")
+        ),
     )
+
+
+def _opt_justification(value: Any) -> str | None:
+    """Coerce the judge's market-deviation justification to a clean string or None.
+
+    An empty/whitespace/garbage value collapses to ``None`` (the no-justification
+    state) so a blank field can never be read as a real named edge — a large
+    deviation with an empty justification is pulled toward the market.
+    """
+
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -946,6 +1047,196 @@ def models_reachable(models: Sequence[str], available: set[str] | None) -> bool:
     if len(available) >= 2:
         return True
     return all(_model_reachable(m, available) for m in models)
+
+
+# ── FIX A: resolve presets to ACTUALLY-connected providers ───────────────────
+#
+# The built-in budget/frontier/wide presets name OpenRouter-format model ids
+# (``anthropic/claude-opus-4-8`` …). On a host with no OpenRouter key those ids
+# route to nothing and EVERY panelist fails ("agent protocol response is empty").
+# resolve_connected_panel rebuilds a preset's panel from the user's ACTUALLY-authed
+# providers — each provider's own default model, dispatched natively via the
+# ``provider:model`` runner split — and falls back to an HONESTLY-labeled
+# single-provider self-fusion when only one provider is reachable. It NEVER names a
+# model the user cannot call.
+
+# Aggregator providers serve many vendors' models under one key, so the hardcoded
+# preset ids ARE callable when one is authed — no rebuild needed (OpenRouter/Nous/
+# Vercel become "just another provider IF a key exists").
+_AGGREGATOR_PROVIDER_SLUGS = frozenset({"openrouter", "nous", "ai-gateway"})
+# Provider slugs that are not a distinct model source for panel diversity.
+_NON_PANEL_PROVIDER_SLUGS = frozenset({"custom"})
+
+
+def available_providers_detail() -> list[dict[str, Any]] | None:
+    """Authenticated-provider detail rows, or ``None`` when detection is unavailable.
+
+    Reuses the same :func:`hermes_cli.models.list_available_providers` seam as
+    :func:`available_provider_slugs` but keeps the ORDER + labels (so the panel is
+    built deterministically from the canonical provider order). ``None`` on any
+    failure is the FAIL-OPEN signal — an unknown provider picture must never
+    rebuild a panel; the caller keeps the preset verbatim.
+    """
+
+    try:
+        from hermes_cli.models import list_available_providers
+
+        rows = [
+            dict(p) for p in list_available_providers() if p.get("authenticated")
+        ]
+    except Exception:  # noqa: BLE001 — detection is best-effort; unknown ⇒ fail-open
+        return None
+    return rows or None
+
+
+def _provider_default_model(slug: str) -> str | None:
+    """The provider's own default/best model id (native form), or ``None``."""
+
+    try:
+        from hermes_cli.models import get_default_model_for_provider
+
+        model = (get_default_model_for_provider(slug) or "").strip()
+    except Exception:  # noqa: BLE001 — best-effort; a provider with no default is skipped
+        return None
+    return model or None
+
+
+def _split_provider_model(model_id: str) -> tuple[str | None, str]:
+    """Split a ``provider:model`` panel id into ``(provider, model)``.
+
+    Only splits when the token before the FIRST colon is a KNOWN provider name —
+    so a native/OpenRouter id that merely contains a colon (e.g.
+    ``anthropic/claude-3.5-sonnet:beta``) is left intact and routed by
+    auto-resolution. Returns ``(None, model_id)`` when there is no provider prefix.
+    """
+
+    if ":" not in model_id:
+        return None, model_id
+    head, rest = model_id.split(":", 1)
+    head_n = head.strip().lower()
+    rest = rest.strip()
+    if not rest:
+        return None, model_id
+    try:
+        from hermes_cli.models import _KNOWN_PROVIDER_NAMES
+
+        known = head_n in _KNOWN_PROVIDER_NAMES
+    except Exception:  # noqa: BLE001 — without the catalog, never split
+        known = False
+    return (head_n, rest) if known else (None, model_id)
+
+
+def resolve_connected_panel(
+    preset: str,
+    *,
+    active_model: str | None,
+    active_provider: str | None = None,
+    providers: Sequence[Mapping[str, Any]] | None = None,
+    samples: int = 3,
+) -> dict[str, Any]:
+    """Rebuild a multi-provider preset panel from the user's ACTUALLY-authed providers.
+
+    Returns ``{"rebuilt", "self_fusion", "models", "judge", "label", "providers_used"}``.
+
+      * ``rebuilt=False`` — keep the preset's own model ids verbatim. Happens when
+        detection is unavailable (fail-open), an AGGREGATOR key is present (the
+        preset ids are callable), or nothing usable was found.
+      * multi-provider (``rebuilt=True``, ``self_fusion=False``) — >=2 distinct
+        native providers, each contributing its own default model as a
+        ``provider:model`` id; ``label`` names them.
+      * self-fusion (``rebuilt=True``, ``self_fusion=True``) — exactly one provider
+        reachable: ``active_model`` sampled ``samples`` times, with the HONEST label
+        "1 provider connected -> self-fusion; multi-model needs a second provider".
+
+    Never names a model the user cannot call: a rebuilt multi-provider panel uses
+    each provider's OWN default model, and the self-fusion fallback uses the active
+    model routed through its active provider.
+    """
+
+    detail = (
+        [dict(p) for p in providers]
+        if providers is not None
+        else available_providers_detail()
+    )
+    base = {
+        "rebuilt": False,
+        "self_fusion": False,
+        "models": None,
+        "judge": None,
+        "label": None,
+        "providers_used": [],
+    }
+    if detail is None:
+        # Unknown provider picture — fail open, keep the preset verbatim.
+        return base
+
+    authed = {str(p.get("id")) for p in detail}
+    base["providers_used"] = sorted(authed)
+    # An aggregator key serves the hardcoded preset ids as-is — no rebuild.
+    if authed & _AGGREGATOR_PROVIDER_SLUGS:
+        return base
+
+    # Distinct native providers, canonical order, each with its own default model.
+    pairs: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for row in detail:
+        slug = str(row.get("id"))
+        if slug in _NON_PANEL_PROVIDER_SLUGS or slug in _AGGREGATOR_PROVIDER_SLUGS:
+            continue
+        if slug in seen:
+            continue
+        model = _provider_default_model(slug)
+        if not model:
+            continue
+        seen.add(slug)
+        pairs.append((slug, f"{slug}:{model}"))
+
+    if len(pairs) >= 2:
+        want = max(2, min(preset_model_count(preset, samples=samples), len(pairs)))
+        chosen = pairs[:want]
+        models = [qm for _, qm in chosen]
+        active_norm = (active_provider or "").strip().lower()
+        judge = next(
+            (qm for slug, qm in chosen if slug == active_norm), models[0]
+        )
+        label = (
+            f"{len(chosen)} providers connected -> multi-model panel: "
+            + ", ".join(slug for slug, _ in chosen)
+        )
+        return {
+            "rebuilt": True,
+            "self_fusion": False,
+            "models": models,
+            "judge": judge,
+            "label": label,
+            "providers_used": [slug for slug, _ in chosen],
+        }
+
+    # ZERO usable providers: the docstring's contract — nothing usable was
+    # found -> rebuilt=False (fail-open, preset verbatim). Claiming
+    # "1 provider connected" here would be a lie, and self-fusing an active
+    # model with no live provider behind it reproduces the empty-response
+    # failure this function exists to prevent.
+    if not pairs and not authed:
+        return base
+
+    # Exactly 1 native provider reachable — honest single-provider self-fusion.
+    if active_model:
+        n = max(1, int(samples))
+        label = (
+            "1 provider connected -> self-fusion; multi-model needs a second provider"
+        )
+        return {
+            "rebuilt": True,
+            "self_fusion": True,
+            "models": [active_model] * n,
+            "judge": active_model,
+            "label": label,
+            "providers_used": [pairs[0][0]] if pairs else sorted(authed),
+        }
+
+    # Nothing usable to rebuild with (no aggregator, <2 providers, no active model).
+    return base
 
 
 def preset_model_count(preset: str | None, *, samples: int = 3) -> int:
@@ -1199,6 +1490,58 @@ def resolve_final_probability(
     return float(pool_probability), "pool"
 
 
+def apply_market_anchor_discipline(
+    committed: float,
+    *,
+    market_anchor: float | None,
+    justification: str | None,
+    threshold_pp: float = 10.0,
+) -> dict[str, Any]:
+    """FIX B — enforce the market-as-prior doctrine on the committed verdict.
+
+    The market price is the OUTSIDE-VIEW anchor. When the verdict deviates more than
+    ``threshold_pp`` (default 10pp) from it WITHOUT a named edge (``justification``),
+    the deviation is unjustified and the verdict is PULLED back toward the market —
+    via the same honest weighted machinery :mod:`forecasting.market_ensemble` uses to
+    pool a forecast with a de-vigged market: the equal-weight LOG-ODDS pool
+    (:func:`forecasting.bayes_toolkit.log_odds_pool`), the KL-optimal, externally-
+    Bayesian pooling operator. A justified deviation (a non-empty named edge) is
+    LEFT ALONE — the discipline requires a reason, it does not forbid an edge.
+
+    Returns ``{"probability", "deviation_pp", "justification", "pull_applied"}``.
+    With no anchor the committed number passes through untouched.
+    """
+
+    if market_anchor is None:
+        return {
+            "probability": float(committed),
+            "deviation_pp": None,
+            "justification": None,
+            "pull_applied": False,
+        }
+    anchor = float(market_anchor)
+    deviation_pp = abs(float(committed) - anchor) * 100.0
+    named_edge = bool((justification or "").strip())
+    if deviation_pp <= float(threshold_pp) or named_edge:
+        # Within discipline, or a genuine named edge justifies the deviation.
+        return {
+            "probability": float(committed),
+            "deviation_pp": deviation_pp,
+            "justification": (justification or "").strip() or None,
+            "pull_applied": False,
+        }
+    # Unjustified over-deviation: pull toward the market in log-odds space.
+    from forecasting.bayes_toolkit import log_odds_pool
+
+    pulled = float(log_odds_pool([anchor, float(committed)]))
+    return {
+        "probability": pulled,
+        "deviation_pp": abs(pulled - anchor) * 100.0,
+        "justification": "insufficient justification — verdict pulled toward market",
+        "pull_applied": True,
+    }
+
+
 def should_research(
     judge: JudgeSynthesis | None,
     *,
@@ -1244,6 +1587,8 @@ def run_quorum(
     max_research_rounds: int = 1,
     delphi_rounds: int = 0,
     model_weights: Mapping[str, float] | None = None,
+    market_anchor: float | None = None,
+    market_anchor_threshold_pp: float = 10.0,
 ) -> QuorumResult:
     """Run the full quorum: dispatch panelists, aggregate, judge-synthesise.
 
@@ -1344,6 +1689,7 @@ def run_quorum(
                 context_packet=working_context,
                 evidence_cutoff=evidence_cutoff,
                 sample_hint=index + 1 if self_fusion else None,
+                market_anchor=market_anchor,
             )
             user = prompt["user"]
             if delphi_summary is not None:
@@ -1441,6 +1787,8 @@ def run_quorum(
                 forecasts=pass_forecasts,
                 aggregation=pass_aggregation,
                 disagreement=pass_disagreement,
+                market_anchor=market_anchor,
+                market_anchor_threshold_pp=market_anchor_threshold_pp,
             )
             try:
                 jraw = judge_runner(judge_model, jp["system"], jp["user"])
@@ -1576,6 +1924,27 @@ def run_quorum(
 
             final_probability = float(platt_scale(final_probability, alpha=alpha, d=1.0))
 
+    # ── market-anchor discipline (FIX B) ───────────────────────────────────────
+    # On a market-linked question the current de-vigged market price is the outside-
+    # view anchor. A verdict that deviates more than the threshold from it WITHOUT a
+    # named edge is pulled back toward the market via the log-odds pool — applied to
+    # the ALREADY-committed (override-resolved, Platt'd) number exactly once.
+    anchor_result = apply_market_anchor_discipline(
+        final_probability,
+        market_anchor=market_anchor,
+        justification=(
+            judge.market_deviation_justification if judge is not None else None
+        ),
+        threshold_pp=market_anchor_threshold_pp,
+    )
+    final_probability = anchor_result["probability"]
+    if anchor_result["pull_applied"] and on_progress:
+        on_progress(
+            "market_anchor_pull",
+            f"deviation {anchor_result['deviation_pp']:.1f}pp unjustified — "
+            f"pulled toward market {float(market_anchor):.3f}",
+        )
+
     # Panel-integrity labeling (item 3): a genuine quorum needs >=2 surviving
     # panelist forecasts. When fewer survive, the aggregate is a lone survivor —
     # we keep the (unchanged) number but flag it degraded so no downstream reader
@@ -1590,6 +1959,16 @@ def run_quorum(
     )
     if degraded and on_progress:
         on_progress("degraded", degraded_reason or "")
+
+    # Self-fusion pseudo-diversity caveat (FIX B): N samples of ONE model is not
+    # independent multi-model fusion, so label the spread honestly.
+    pseudo_diversity_caveat: str | None = None
+    if self_fusion:
+        pseudo_diversity_caveat = (
+            f"self-fusion: {ok_count} sample(s) of ONE model — pseudo-diversity, "
+            "not independent multi-model fusion; the spread reflects resampling, "
+            "not model disagreement"
+        )
 
     return QuorumResult(
         question_id=question_id,
@@ -1614,6 +1993,11 @@ def run_quorum(
             for f in forecasts
             if f.error is None and model_weights and f.model in model_weights
         },
+        market_price=float(market_anchor) if market_anchor is not None else None,
+        market_deviation_pp=anchor_result["deviation_pp"],
+        market_justification=anchor_result["justification"],
+        market_pull_applied=anchor_result["pull_applied"],
+        pseudo_diversity_caveat=pseudo_diversity_caveat,
     )
 
 
@@ -1718,9 +2102,14 @@ def make_aiagent_runner(
     def _call(model: str, system: str, user: str) -> str:
         from agent.agent_factory import build_agent
 
+        # FIX A: a rebuilt connected panel dispatches ``provider:model`` ids so each
+        # panelist runs on ITS provider's native model. Split the leading known-
+        # provider token and route it explicitly; a bare/OpenRouter id (no known
+        # prefix) keeps ``requested_provider`` and auto-resolves as before.
+        provider_prefix, bare_model = _split_provider_model(model)
         agent = build_agent(
-            model=model,
-            requested_provider=requested_provider,
+            model=bare_model,
+            requested_provider=provider_prefix or requested_provider,
             enabled_toolsets=list(toolsets),
             max_iterations=max_iterations,
             quiet_mode=quiet,
@@ -1776,7 +2165,10 @@ __all__ = [
     "resolve_models",
     "resolve_final_probability",
     "resolve_quorum_defaults",
+    "apply_market_anchor_discipline",
     "available_provider_slugs",
+    "available_providers_detail",
+    "resolve_connected_panel",
     "models_reachable",
     "preset_model_count",
     "estimate_quorum_calls",

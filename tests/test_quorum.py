@@ -9,9 +9,12 @@ import pytest
 from forecasting.models import ValidationError
 from forecasting.quorum import (
     QUORUM_PRESETS,
+    _split_provider_model,
+    apply_market_anchor_discipline,
     disagreement_signal,
     parse_judge_response,
     parse_panelist_response,
+    resolve_connected_panel,
     resolve_models,
     run_quorum,
 )
@@ -696,3 +699,207 @@ def test_delphi_rounds_rejects_more_than_one_for_v1():
             judge_model=None,
             delphi_rounds=2,
         )
+
+
+# ── FIX A: preset resolution to ACTUALLY-connected providers ──────────────────
+
+
+def _providers(*slugs, authed=True):
+    return [{"id": s, "authenticated": authed} for s in slugs]
+
+
+def test_resolve_connected_panel_multi_provider():
+    # Two authed native providers with no OpenRouter -> a multi-model panel built
+    # from each provider's own default model, addressed as provider:model.
+    panel = resolve_connected_panel(
+        "frontier",
+        active_model="anthropic:claude-opus-4-7",
+        active_provider="anthropic",
+        providers=_providers("anthropic", "gemini"),
+    )
+    assert panel["rebuilt"] is True and panel["self_fusion"] is False
+    assert len(panel["models"]) == 2
+    # Every model is provider-qualified and callable — never a bare OpenRouter id.
+    for m in panel["models"]:
+        prov, bare = _split_provider_model(m)
+        assert prov is not None and bare
+    assert "anthropic" in panel["label"] and "gemini" in panel["label"]
+    # The active provider seats the judge.
+    assert panel["judge"].startswith("anthropic:")
+
+
+def test_resolve_connected_panel_single_provider_self_fusion():
+    # Exactly one native provider -> honest self-fusion labeling, never a fake panel.
+    panel = resolve_connected_panel(
+        "frontier",
+        active_model="anthropic:claude-opus-4-7",
+        active_provider="anthropic",
+        providers=_providers("anthropic"),
+        samples=3,
+    )
+    assert panel["rebuilt"] is True and panel["self_fusion"] is True
+    assert panel["models"] == ["anthropic:claude-opus-4-7"] * 3
+    assert "self-fusion" in panel["label"] and "second provider" in panel["label"]
+
+
+def test_resolve_connected_panel_aggregator_keeps_preset():
+    # An OpenRouter key can serve the hardcoded preset ids -> no rebuild.
+    panel = resolve_connected_panel(
+        "frontier",
+        active_model="x/y",
+        providers=_providers("openrouter", "anthropic"),
+    )
+    assert panel["rebuilt"] is False and panel["models"] is None
+    # Detection unavailable (None) fails OPEN -> keep the preset verbatim.
+    none_panel = resolve_connected_panel(
+        "frontier", active_model="x/y", providers=None
+    )
+    # providers=None triggers live detection; in a sandbox that returns None or a
+    # real picture. Either way the shape is well-formed and never crashes.
+    assert "rebuilt" in none_panel
+
+
+def test_resolve_connected_panel_no_key_failure_mode_impossible():
+    # The reproduced live bug: 2 native providers, no OpenRouter, preset ids all
+    # unreachable. After the fix every panelist id is provider-routable.
+    panel = resolve_connected_panel(
+        "budget",
+        active_model="anthropic:claude-opus-4-7",
+        providers=_providers("anthropic", "gemini", "deepseek"),
+    )
+    assert panel["rebuilt"] is True and panel["self_fusion"] is False
+    assert len(panel["models"]) >= 2
+    for m in panel["models"] + [panel["judge"]]:
+        prov, _bare = _split_provider_model(m)
+        assert prov is not None, f"{m} must resolve to a connected provider"
+
+
+def test_split_provider_model():
+    assert _split_provider_model("anthropic:claude-opus-4-7") == (
+        "anthropic",
+        "claude-opus-4-7",
+    )
+    # A bare id, or one whose colon is inside the model name, is NOT split.
+    assert _split_provider_model("gpt-5.4") == (None, "gpt-5.4")
+    assert _split_provider_model("anthropic/claude-3.5-sonnet:beta") == (
+        None,
+        "anthropic/claude-3.5-sonnet:beta",
+    )
+
+
+# ── FIX B: market-anchor discipline ───────────────────────────────────────────
+
+
+def test_apply_market_anchor_discipline_pull_and_justify():
+    # Unjustified over-deviation is pulled toward the market via the log-odds pool.
+    pulled = apply_market_anchor_discipline(
+        0.55, market_anchor=0.20, justification=None, threshold_pp=10.0
+    )
+    assert pulled["pull_applied"] is True
+    assert 0.20 < pulled["probability"] < 0.55  # pulled toward the market
+    assert "pulled toward market" in pulled["justification"]
+    # A named edge justifies the deviation — no pull.
+    kept = apply_market_anchor_discipline(
+        0.55, market_anchor=0.20, justification="private supply-shock signal", threshold_pp=10.0
+    )
+    assert kept["pull_applied"] is False and kept["probability"] == 0.55
+    # Within the threshold — no pull, no justification needed.
+    small = apply_market_anchor_discipline(
+        0.27, market_anchor=0.20, justification=None, threshold_pp=10.0
+    )
+    assert small["pull_applied"] is False and small["probability"] == 0.27
+    # No anchor -> pass through untouched.
+    none = apply_market_anchor_discipline(
+        0.55, market_anchor=None, justification=None
+    )
+    assert none["probability"] == 0.55 and none["deviation_pp"] is None
+
+
+def _anchor_runner(panel_prob, *, justification=None):
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            payload = {"probability": 0.5, "rationale": "j", "directional_confidence": "medium"}
+            if justification is not None:
+                payload["market_deviation_justification"] = justification
+            return json.dumps(payload)
+        return _panelist_json(panel_prob)
+
+    return runner
+
+
+def test_run_quorum_market_anchor_pull_unjustified():
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b", "c/d", "e/f"],
+        runner=_anchor_runner(0.55),  # panel ~0.55, market 0.20 -> 35pp, no justification
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=0.20,
+        market_anchor_threshold_pp=10.0,
+    )
+    assert res.market_price == 0.20
+    assert res.market_pull_applied is True
+    assert res.committed_probability < 0.55  # verdict pulled back toward the market
+    assert "pulled toward market" in (res.market_justification or "")
+    json.dumps(res.to_dict())
+
+
+def test_run_quorum_market_anchor_justified_no_pull():
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b", "c/d", "e/f"],
+        runner=_anchor_runner(0.55, justification="named edge the market has not priced"),
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=0.20,
+        market_anchor_threshold_pp=10.0,
+    )
+    assert res.market_pull_applied is False
+    assert res.market_justification == "named edge the market has not priced"
+
+
+def test_run_quorum_self_fusion_pseudo_diversity_caveat():
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["x/y", "x/y", "x/y"],
+        runner=_stub_runner({"x/y": 0.4}),
+        judge_model=None,
+        self_fusion=True,
+    )
+    assert res.pseudo_diversity_caveat and "pseudo-diversity" in res.pseudo_diversity_caveat
+    assert res.to_dict()["pseudo_diversity_caveat"] == res.pseudo_diversity_caveat
+
+
+def test_judge_prompt_carries_market_anchor_requirement():
+    # The judge prompt names the market and requires an explicit justification key.
+    captured = {}
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            captured["user"] = user
+            return json.dumps({"probability": 0.5, "rationale": "j"})
+        return _panelist_json(0.5)
+
+    run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b", "c/d"],
+        runner=runner,
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=0.30,
+        market_anchor_threshold_pp=10.0,
+    )
+    assert "market_deviation_justification" in captured["user"]
+    assert "0.30" in captured["user"] or "0.3000" in captured["user"]
+
+
+def test_resolve_connected_panel_zero_providers_fails_open():
+    """Zero usable providers -> rebuilt=False (preset verbatim), never a
+    self-fusion claiming '1 provider connected' (the deep-review catch)."""
+    from forecasting.quorum import resolve_connected_panel
+
+    res = resolve_connected_panel("budget", active_model="gpt-5.5", providers=[])
+    assert res["rebuilt"] is False
+    assert res["label"] is None
+    assert res["models"] is None
