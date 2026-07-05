@@ -7186,6 +7186,94 @@ class ForecastLedger:
             head += f" Unmatched fresh readings (not wired to a component): {', '.join(unmatched_sources)}."
         return head
 
+    def _autopilot_recheck_without_policy(
+        self,
+        question_id: str,
+        *,
+        now: str | None = None,
+        trigger_reason: str = "manual",
+    ) -> dict[str, Any]:
+        """Deterministic, zero-spend watched-source re-check for a question with NO
+        active autopilot policy — the conservative default the free-tier drain uses
+        so a `watched_source_changed` alert can resolve WITHOUT an opt-in policy.
+
+        Re-reads every active watched source, records a source-snapshot audit row
+        (so the drift is captured in the ledger) and updates ``last_seen_signature``.
+        It proposes / commits NOTHING and records NO ``autopilot_run`` (there is no
+        policy to attribute one to). This is genuine gated work (a persisted
+        source_snapshot), so the dispatcher MAY ack — but it is never a bare ack: a
+        question whose watched source has been removed records no snapshot and the
+        returned result carries an empty ``source_snapshots``, which the free-drain
+        runner treats as falsy (the alert stays OPEN). The shape mirrors the
+        policy-backed :meth:`run_autopilot` result (with ``policy=None``,
+        ``run=None``) so existing consumers stay total.
+        """
+        run_at = parse_timestamp(now, field_name="now") or utc_now_iso()
+        watches = self.list_watched_sources(
+            scope_type="question", scope_ref=question_id, status="active"
+        )
+        source_snapshots: list[dict[str, Any]] = []
+        changed: list[dict[str, Any]] = []
+        for watch in watches:
+            previous_signature = watch.get("last_seen_signature")
+            current_signature = self._source_signature(
+                watch["source"], watch["source_type"], metadata=watch.get("metadata"),
+            )
+            status = "success"
+            error_message = None
+            if current_signature is None or str(current_signature).startswith("missing:"):
+                status = "failed"
+                error_message = str(current_signature or "source unavailable")
+            did_change = (
+                status == "success"
+                and previous_signature is not None
+                and current_signature is not None
+                and current_signature != previous_signature
+            )
+            source_snapshot = self._record_source_snapshot(
+                question_id=question_id,
+                watch=watch,
+                retrieved_at=run_at,
+                signature=current_signature,
+                previous_signature=previous_signature,
+                changed=did_change,
+                status=status,
+                error_message=error_message,
+            )
+            source_snapshots.append(source_snapshot)
+            if did_change:
+                changed.append(source_snapshot)
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    UPDATE watched_sources
+                    SET last_checked_at = ?, last_seen_signature = ?
+                    WHERE id = ?
+                    """,
+                    (run_at, current_signature, watch["id"]),
+                )
+        source_failures = [row["id"] for row in source_snapshots if row["status"] == "failed"]
+        if not source_snapshots:
+            run_status = "skipped"
+        elif source_failures:
+            run_status = "partial"
+        else:
+            run_status = "success"
+        return {
+            "policy": None,
+            "policy_source": "none",
+            "run": None,
+            "status": run_status,
+            "recheck_only": True,
+            "trigger_reason": trigger_reason,
+            "source_snapshots": source_snapshots,
+            "changed_source_snapshots": changed,
+            "proposal": None,
+            "forecast_snapshot": None,
+            "model_run": None,
+            "alerts": [],
+        }
+
     def run_autopilot(
         self,
         question_id: str,
@@ -7194,8 +7282,28 @@ class ForecastLedger:
         trigger_reason: str = "manual",
         proposed_probability_or_distribution: Any | None = None,
         rationale: str | None = None,
+        require_policy: bool = True,
     ) -> dict[str, Any]:
-        policy = self.get_active_autopilot_policy(question_id)
+        # The autopilot POLICY governs only the MATERIALITY threshold and the
+        # auto-commit MODE (whether a watched-source change becomes a proposal /
+        # auto-commit). Watched sources + update-triggers are attached to a question
+        # at spec/import time WITHOUT the operator ever enabling autopilot (autopilot
+        # is a deliberate per-question opt-in), yet they still emit
+        # `watched_source_changed` alerts that land in the FREE resolution tier. So a
+        # missing policy must NOT hard-fail the free-tier drain: with
+        # ``require_policy=False`` we degrade to a conservative, zero-spend,
+        # deterministic source RE-CHECK (record a source-snapshot audit row, propose
+        # /commit nothing). The explicit `forecast autopilot run` path keeps the
+        # default ``require_policy=True`` so an operator asking to autopilot a
+        # policy-less question still gets a loud, actionable error.
+        try:
+            policy = self.get_active_autopilot_policy(question_id)
+        except LedgerNotFoundError:
+            if require_policy:
+                raise
+            return self._autopilot_recheck_without_policy(
+                question_id, now=now, trigger_reason=trigger_reason
+            )
         current = self.get_current_snapshot(question_id)
         if current is None:
             raise ValidationError("autopilot requires a baseline forecast snapshot")

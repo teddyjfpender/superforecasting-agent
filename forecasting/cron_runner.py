@@ -949,15 +949,28 @@ def build_warning_runners(
     def autopilot_runner(led, warning):  # MATERIAL_CHANGE
         if warning.scope_type != "question" or not warning.scope_ref:
             return None
+        # ``require_policy=False``: a watched source / update-trigger can be attached
+        # to a question WITHOUT the operator ever enabling autopilot (a deliberate
+        # per-question opt-in), so its `watched_source_changed` alert must NOT hard
+        # fail the free drain. With no active policy `run_autopilot` degrades to a
+        # conservative, zero-spend source RE-CHECK (records a source-snapshot audit
+        # row, proposes/commits nothing) instead of raising LedgerNotFoundError.
         result = led.run_autopilot(
             warning.scope_ref,
             now=now,
             trigger_reason=f"warnings:{warning.reason}"[:120],
+            require_policy=False,
         )
         # Real gated work = autopilot re-checked the watched source(s), recorded a
         # source snapshot, and possibly proposed/committed an update. A hard
         # "failed" status (required source down) leaves the alert OPEN to resurface.
         if not result or result.get("status") == "failed":
+            return None
+        # No-bare-ack guard for the policy-less re-check: it counts as real work ONLY
+        # when it recorded >= 1 source snapshot. A question whose watched source has
+        # been removed records nothing -> leave the alert OPEN rather than drop the
+        # count with an empty ack.
+        if result.get("recheck_only") and not result.get("source_snapshots"):
             return None
         # PAID evidence-autopilot (S6.1): only when a cheap-model labeler is wired
         # (opt-in --agent tier — the free continuous tick leaves triage_runner None,
