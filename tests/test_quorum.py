@@ -12,11 +12,14 @@ from forecasting.quorum import (
     _split_provider_model,
     apply_market_anchor_discipline,
     disagreement_signal,
+    make_aiagent_runner,
     parse_judge_response,
     parse_panelist_response,
+    resolve_configured_panel,
     resolve_connected_panel,
     resolve_models,
     run_quorum,
+    validate_panel_models,
 )
 
 
@@ -67,6 +70,115 @@ def test_parse_panelist_handles_fenced_json():
     assert f.probability == 0.37
     assert f.crux and f.reasons_up == ["a path up"]
     assert f.error is None
+
+
+# ── adapter fixes: honest error surfacing + reasoning-trace salvage ───────────
+
+
+class _FakeAgent:
+    def __init__(self, result):
+        self._result = result
+
+    def run_conversation(self, user, system_message=None):
+        return self._result
+
+
+def _install_fake_agent(monkeypatch, result):
+    import agent.agent_factory as af
+
+    monkeypatch.setattr(af, "build_agent", lambda **_kw: _FakeAgent(result))
+
+
+def test_runner_surfaces_real_agent_error(monkeypatch):
+    # A non-retryable API failure (copilot 400 / gemini 429) sets failed/error and
+    # leaves final_response empty; the runner must raise the REAL reason, not let it
+    # be masked downstream as "agent protocol response is empty".
+    _install_fake_agent(
+        monkeypatch,
+        {"final_response": None, "failed": True, "error": "HTTP 400: The requested model is not supported."},
+    )
+    runner = make_aiagent_runner(toolsets=())
+    with pytest.raises(RuntimeError) as exc:
+        runner("copilot:gpt-5.4", "sys", "user")
+    assert "400" in str(exc.value) and "not supported" in str(exc.value)
+
+
+def test_runner_salvages_json_from_reasoning_trace(monkeypatch):
+    # A reasoning model emits the structured answer inside its thinking trace and
+    # leaves the visible message as prose; the runner falls back to last_reasoning.
+    _install_fake_agent(
+        monkeypatch,
+        {
+            "final_response": "On balance I judge it fairly likely.",
+            "last_reasoning": 'weighing paths… {"probability": 0.61, "crux": "turnout"}',
+        },
+    )
+    runner = make_aiagent_runner(toolsets=())
+    text = runner("gemini:gemini-2.5-flash", "sys", "user")
+    forecast = parse_panelist_response(text, "gemini:gemini-2.5-flash")
+    assert abs(forecast.probability - 0.61) < 1e-9
+
+
+def test_runner_genuinely_empty_still_errors_honestly(monkeypatch):
+    # No visible content AND no reasoning JSON → the runner returns "" and the parse
+    # errors honestly. It must NEVER fabricate a number.
+    _install_fake_agent(monkeypatch, {"final_response": "", "last_reasoning": ""})
+    runner = make_aiagent_runner(toolsets=())
+    text = runner("x:y", "sys", "user")
+    assert text == ""
+    with pytest.raises(ValidationError):
+        parse_panelist_response(text, "x:y")
+
+
+# ── configurable panel (QUORUM_PANEL_MODELS / QUORUM_JUDGE_MODEL) ─────────────
+
+
+def test_configured_panel_resolves_and_validates():
+    provs = [{"id": "openai-codex"}, {"id": "gemini"}]
+    got = resolve_configured_panel(
+        providers=provs,
+        panel_models="openai-codex:gpt-5.5, gemini:gemini-2.5-flash",
+        judge_model="openai-codex:gpt-5.5",
+    )
+    assert got == {
+        "models": ["openai-codex:gpt-5.5", "gemini:gemini-2.5-flash"],
+        "judge": "openai-codex:gpt-5.5",
+    }
+    # Unset key → None so the caller falls through to preset/connected resolution.
+    assert resolve_configured_panel(providers=provs, panel_models=None, judge_model=None) is None
+
+
+def test_configured_panel_names_non_callable_entry():
+    provs = [{"id": "openai-codex"}]
+    with pytest.raises(ValidationError) as exc:
+        resolve_configured_panel(
+            providers=provs,
+            panel_models="openai-codex:gpt-5.5, copilot:gpt-5.4",
+            judge_model=None,
+        )
+    assert "copilot:gpt-5.4" in str(exc.value)
+
+
+def test_configured_panel_validates_the_judge_too():
+    provs = [{"id": "openai-codex"}]
+    with pytest.raises(ValidationError) as exc:
+        resolve_configured_panel(
+            providers=provs, panel_models="openai-codex:gpt-5.5", judge_model="copilot:gpt-5.4"
+        )
+    assert "copilot:gpt-5.4" in str(exc.value)
+
+
+def test_configured_panel_fail_open_on_unknown_providers():
+    # Detection unavailable → cannot prove non-callability → accept (fail open).
+    got = resolve_configured_panel(providers=None, panel_models="anything:x", judge_model=None)
+    assert got is not None and got["models"] == ["anything:x"]
+
+
+def test_validate_panel_models_aggregator_serves_all():
+    # An OpenRouter key serves any id, so every pinned entry passes.
+    validate_panel_models(
+        ["anthropic:claude-opus-4-8", "foo:bar"], providers=[{"id": "openrouter"}]
+    )
 
 
 def test_parse_judge_response():

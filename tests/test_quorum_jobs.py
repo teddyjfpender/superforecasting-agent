@@ -148,3 +148,86 @@ def test_quorum_auto_indicated_respects_scope():
 
     always = {"default_enabled": True, "default_scope": "always"}
     assert quorum_auto_indicated(always, panel_indicated=False, has_prior_snapshot=True) is True
+
+
+def test_execute_job_stamps_process_provenance_in_artifact(home, tmp_path, monkeypatch):
+    # ARTIFACT STAMPING: research/delphi rounds + supervisor flag must travel in the
+    # panel_run's spread_summary + notes, not only the raw columns.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = ledger.create_question(
+        title="Will the index close above 5000 by 2027?",
+        resolution_criteria="Resolves YES if close > 5000 before 2027-01-01.",
+        impact="high",
+    )
+    table = {"a/m1": 0.3, "b/m2": 0.5}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _stub_runner_factory(table))
+
+    spec = {"question_id": q.id, "db": db, "models": list(table), "trim": 0}
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+    assert job["status"] == "done", job.get("error")
+
+    panel = ledger.get_panel_run(job["panel_run_id"])
+    spread = panel["spread_summary"]
+    assert spread["research_rounds"] == 0
+    assert spread["delphi_rounds"] == 0
+    assert "supervisor_search" in spread
+    assert any("quorum provenance" in n for n in panel["notes"])
+
+
+def test_extract_market_anchor_from_snapshot_component():
+    from types import SimpleNamespace
+
+    from forecasting.jobs.types.quorum import extract_market_anchor
+
+    binary_q = SimpleNamespace(id="q1", outcome_space=SimpleNamespace(type="binary"))
+    snap = SimpleNamespace(
+        ensemble_components={
+            "components": [
+                {"name": "market", "source": "polymarket:abc", "probability": 0.22},
+                {"name": "base", "source": "reference_class", "probability": 0.5},
+            ]
+        }
+    )
+    assert extract_market_anchor(None, binary_q, snap) == 0.22
+
+    # Non-binary carries no anchor.
+    mc_q = SimpleNamespace(id="q2", outcome_space=SimpleNamespace(type="multiple_choice"))
+    assert extract_market_anchor(None, mc_q, snap) is None
+
+    # No market component + no ledger baselines -> no anchor.
+    plain = SimpleNamespace(ensemble_components={"components": [{"source": "fred:x", "probability": 0.4}]})
+    ledger = SimpleNamespace(list_baseline_comparisons=lambda _qid: [])
+    assert extract_market_anchor(ledger, binary_q, plain) is None
+
+
+def test_execute_job_pulls_verdict_toward_market_anchor(home, tmp_path, monkeypatch):
+    # A market-linked question with an unjustified over-deviation is pulled back
+    # toward the market, and the artifact records the pull.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = ledger.create_question(
+        title="Will the bill pass by Q2 2027?",
+        resolution_criteria="Resolves YES if enacted before 2027-07-01.",
+        impact="high",
+    )
+    # Panel + judge both sit near 0.55; market anchor is 0.20 (35pp away), and the
+    # judge supplies NO justification -> the verdict is pulled toward the market.
+    table = {"a/m1": 0.55, "b/m2": 0.56}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _stub_runner_factory(table))
+    monkeypatch.setattr(qj, "extract_market_anchor", lambda *a, **k: 0.20)
+
+    spec = {"question_id": q.id, "db": db, "models": list(table), "trim": 0}
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+    assert job["status"] == "done", job.get("error")
+
+    result = job["result"]
+    assert result["market_price"] == 0.20
+    assert result["market_pull_applied"] is True
+    assert result["final_probability"] < 0.55  # pulled toward the market
+
+    panel = ledger.get_panel_run(job["panel_run_id"])
+    anchor = panel["spread_summary"]["market_anchor"]
+    assert anchor["pull_applied"] is True and anchor["market_price"] == 0.20

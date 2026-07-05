@@ -15878,3 +15878,83 @@ def test_quorum_config_lists_delphi_rounds(capsys):
 
     out = capsys.readouterr().out
     assert "delphi_rounds" in out
+
+
+def test_quorum_panel_models_pins_spec(tmp_path, monkeypatch, capsys):
+    """QUORUM_PANEL_MODELS pins the panel into the enqueued spec, overriding the
+    connected-provider resolution, and threads QUORUM_JUDGE_MODEL as the judge."""
+    from forecasting import appconfig
+    from forecasting import quorum as qmod
+    from forecasting.jobs.types import quorum as qj
+
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    question_id = _seed_quorum_question(db)
+
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        qj, "start_job", lambda spec, *, wait=False: (captured.append(dict(spec)), "qr_pin")[1]
+    )
+    monkeypatch.setattr(
+        qmod, "available_providers_detail", lambda: [{"id": "openai-codex"}, {"id": "gemini"}]
+    )
+    appconfig.configure(
+        environ={
+            "QUORUM_PANEL_MODELS": "openai-codex:gpt-5.5, gemini:gemini-2.5-flash",
+            "QUORUM_JUDGE_MODEL": "openai-codex:gpt-5.5",
+        },
+        config_file={},
+    )
+    try:
+        _run(parser, ["forecast", "--db", db, "quorum", question_id])
+    finally:
+        appconfig.configure(environ=None, config_file=None)
+
+    assert captured, "start_job should have been enqueued"
+    assert captured[0]["models"] == ["openai-codex:gpt-5.5", "gemini:gemini-2.5-flash"]
+    assert captured[0]["judge"] == "openai-codex:gpt-5.5"
+
+
+def test_quorum_panel_models_bad_entry_fails_fast(tmp_path, monkeypatch):
+    """A non-callable pinned entry aborts BEFORE any job is enqueued, naming it."""
+    from forecasting import appconfig
+    from forecasting import quorum as qmod
+    from forecasting.jobs.types import quorum as qj
+
+    parser = _parser()
+    db = str(tmp_path / "forecasting.db")
+    question_id = _seed_quorum_question(db)
+
+    def _must_not_run(*_a, **_k):
+        raise AssertionError("start_job must not run when a pinned entry is non-callable")
+
+    monkeypatch.setattr(qj, "start_job", _must_not_run)
+    monkeypatch.setattr(qmod, "available_providers_detail", lambda: [{"id": "openai-codex"}])
+    appconfig.configure(
+        environ={"QUORUM_PANEL_MODELS": "openai-codex:gpt-5.5, copilot:gpt-5.4"}, config_file={}
+    )
+    try:
+        with pytest.raises(SystemExit) as exc:
+            _run(parser, ["forecast", "--db", db, "quorum", question_id])
+    finally:
+        appconfig.configure(environ=None, config_file=None)
+
+    assert "copilot:gpt-5.4" in str(exc.value)
+
+
+def test_quorum_config_shows_panel_keys(capsys):
+    """`quorum config` (show) reports the resolved operator-pinned panel + source."""
+    from forecasting import appconfig
+
+    appconfig.configure(
+        environ={"QUORUM_PANEL_MODELS": "openai-codex:gpt-5.5"}, config_file={}
+    )
+    try:
+        _run(_parser(), ["forecast", "quorum", "config"])
+    finally:
+        appconfig.configure(environ=None, config_file=None)
+
+    out = capsys.readouterr().out
+    assert "QUORUM_PANEL_MODELS" in out
+    assert "openai-codex:gpt-5.5" in out
+    assert "QUORUM_JUDGE_MODEL" in out

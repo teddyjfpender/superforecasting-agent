@@ -64,6 +64,10 @@ QuorumRunner = Callable[[str, str, str], str]
 
 DEFAULT_JUDGE_MODEL = "anthropic/claude-opus-4-8"
 
+# Sentinel: "caller passed no value → read the layered appconfig loader" (distinct
+# from an explicit None/"" injected by a test or an operator clearing the key).
+_UNSET_CONFIG: Any = object()
+
 # When ``run_quorum`` is called without an explicit ``max_concurrency`` the whole
 # panel is dispatched in one wave, bounded by this cap so a very wide panel does
 # not spawn an unreasonable number of concurrent LLM calls.
@@ -873,6 +877,40 @@ def _reparse_full(response: Any) -> dict[str, Any]:
         return {}
 
 
+def _text_has_json_object(text: str) -> bool:
+    """True when ``text`` carries a parseable JSON object (fenced/prose-embedded)."""
+
+    if not text:
+        return False
+    from forecasting.agent_protocol import _coerce_json_response
+
+    try:
+        _coerce_json_response(text)
+        return True
+    except ValueError:
+        return False
+
+
+def _assemble_response_text(result: Mapping[str, Any]) -> str:
+    """Best text to parse from a successful agent result.
+
+    A reasoning model sometimes emits the structured answer INSIDE its thinking
+    trace and leaves the visible final message empty (or as prose), so when the
+    visible ``final_response`` carries no parseable JSON object we fall back to the
+    ``last_reasoning`` trace. This NEVER fabricates: if neither the visible message
+    nor the reasoning carries a JSON object, the visible text is returned verbatim
+    so the downstream parser still errors honestly (empty vs prose).
+    """
+
+    final = str(result.get("final_response") or "").strip()
+    if _text_has_json_object(final):
+        return final
+    reasoning = str(result.get("last_reasoning") or "").strip()
+    if reasoning and _text_has_json_object(reasoning):
+        return reasoning
+    return final or reasoning
+
+
 def _opt_prob(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
@@ -1237,6 +1275,109 @@ def resolve_connected_panel(
 
     # Nothing usable to rebuild with (no aggregator, <2 providers, no active model).
     return base
+
+
+# ── Operator-pinned panel (QUORUM_PANEL_MODELS) ──────────────────────────────
+#
+# The connected-provider rebuild picks each provider's OWN default model, which is
+# right for a hands-off desk but wrong when an operator KNOWS a provider's default
+# is unreachable (a dead token, a zero-quota preview model) or simply wants a
+# specific line-up. QUORUM_PANEL_MODELS / QUORUM_JUDGE_MODEL let the operator pin
+# exactly which ``provider:model`` seats sit in the panel; it takes PRECEDENCE over
+# both the preset expansion and the connected-provider rebuild. Every pinned entry
+# is validated against the actually-callable providers so a non-callable entry
+# ERRORS NAMING ITSELF rather than silently dropping out at dispatch time.
+
+# Config keys (mirrored in forecasting.appconfig's registry so the doctor knows them).
+QUORUM_PANEL_MODELS_KEY = "QUORUM_PANEL_MODELS"
+QUORUM_JUDGE_MODEL_KEY = "QUORUM_JUDGE_MODEL"
+
+
+def parse_panel_models_config(raw: str | None) -> list[str]:
+    """Parse a ``QUORUM_PANEL_MODELS`` comma list into clean ``provider:model`` entries."""
+
+    if not raw:
+        return []
+    return [entry.strip() for entry in str(raw).split(",") if entry.strip()]
+
+
+def validate_panel_models(
+    models: Sequence[str],
+    *,
+    providers: Sequence[Mapping[str, Any]] | None = None,
+) -> None:
+    """Validate pinned panel entries against the ACTUALLY-callable providers.
+
+    Raises :class:`ValidationError` naming EVERY entry whose ``provider:`` prefix is
+    not a connected/callable provider — never silently drops one. A bare id (no
+    known provider prefix) routes through the active provider, so it is accepted
+    (its reachability cannot be judged here). When the provider picture is UNKNOWN
+    (detection unavailable) validation fails OPEN — the same fail-open contract the
+    rest of the module keeps — so a sandboxed/headless host is never blocked. An
+    aggregator key (OpenRouter/Nous/AI-Gateway) serves any id, so all entries pass.
+    """
+
+    detail = (
+        [dict(p) for p in providers]
+        if providers is not None
+        else available_providers_detail()
+    )
+    if detail is None:
+        return  # unknown provider picture — cannot prove non-callability, fail open
+    authed = {str(p.get("id")) for p in detail}
+    if authed & _AGGREGATOR_PROVIDER_SLUGS:
+        return  # a universal aggregator serves every pinned id
+    bad: list[str] = []
+    for entry in models:
+        prefix, _bare = _split_provider_model(entry)
+        if prefix is None:
+            continue  # bare id → active provider; reachability not decidable here
+        if prefix not in authed:
+            bad.append(entry)
+    if bad:
+        raise ValidationError(
+            f"{QUORUM_PANEL_MODELS_KEY} names entr"
+            + ("ies" if len(bad) > 1 else "y")
+            + " whose provider is not connected/callable: "
+            + ", ".join(bad)
+            + ". Connected providers: "
+            + (", ".join(sorted(authed)) or "(none)")
+            + f". Fix {QUORUM_PANEL_MODELS_KEY} or connect the provider."
+        )
+
+
+def resolve_configured_panel(
+    *,
+    providers: Sequence[Mapping[str, Any]] | None = None,
+    panel_models: str | None = _UNSET_CONFIG,
+    judge_model: str | None = _UNSET_CONFIG,
+) -> dict[str, Any] | None:
+    """The operator-pinned panel from ``QUORUM_PANEL_MODELS`` / ``QUORUM_JUDGE_MODEL``.
+
+    Returns ``{"models": [...], "judge": str | None}`` when ``QUORUM_PANEL_MODELS``
+    is set (validated — a non-callable entry raises :class:`ValidationError`), or
+    ``None`` when it is unset so the caller falls through to the preset / connected
+    resolution. ``panel_models`` / ``judge_model`` are injectable for tests; unset
+    (the default) reads them from the layered appconfig loader (registry default <
+    config-file ``env:`` section < ``os.environ`` < override).
+    """
+
+    if panel_models is _UNSET_CONFIG:
+        from forecasting import appconfig
+
+        panel_models = appconfig.get_str(QUORUM_PANEL_MODELS_KEY, None)
+    models = parse_panel_models_config(panel_models)
+    if not models:
+        return None
+    validate_panel_models(models, providers=providers)
+    if judge_model is _UNSET_CONFIG:
+        from forecasting import appconfig
+
+        judge_model = appconfig.get_str(QUORUM_JUDGE_MODEL_KEY, None)
+    judge = (str(judge_model).strip() if judge_model else "") or None
+    if judge:
+        validate_panel_models([judge], providers=providers)
+    return {"models": models, "judge": judge}
 
 
 def preset_model_count(preset: str | None, *, samples: int = 3) -> int:
@@ -2119,9 +2260,19 @@ def make_aiagent_runner(
             platform="cli",
         )
         result = agent.run_conversation(user, system_message=system)
-        if isinstance(result, dict):
-            return str(result.get("final_response") or "")
-        return str(result or "")
+        if not isinstance(result, dict):
+            return str(result or "")
+        # HONEST ERROR SURFACING. When the agent run FAILED (a non-retryable 400
+        # model-not-supported, a 429 quota-exhaustion, etc.) the loop sets
+        # ``failed``/``error`` and leaves ``final_response`` either None or an error
+        # BANNER carrying no JSON. Passing that straight to the JSON parser masks the
+        # real cause behind a misleading "response is empty" / "did not contain a JSON
+        # object" — the exact two symptoms the live quorum surfaced. Raise the REAL
+        # error so run_quorum records the panelist's honest, actionable failure reason.
+        if result.get("failed") or result.get("error"):
+            detail = str(result.get("error") or "").strip()
+            raise RuntimeError(detail or "model call failed with no response")
+        return _assemble_response_text(result)
 
     def _runner(model: str, system: str, user: str) -> str:
         if not timeout or timeout <= 0:
@@ -2169,6 +2320,11 @@ __all__ = [
     "available_provider_slugs",
     "available_providers_detail",
     "resolve_connected_panel",
+    "parse_panel_models_config",
+    "validate_panel_models",
+    "resolve_configured_panel",
+    "QUORUM_PANEL_MODELS_KEY",
+    "QUORUM_JUDGE_MODEL_KEY",
     "models_reachable",
     "preset_model_count",
     "estimate_quorum_calls",

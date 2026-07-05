@@ -235,3 +235,32 @@ def test_module_singleton_configure(monkeypatch):
         assert appconfig.get_str("FORECAST_TRIAGE_MODEL") == "singleton-model"
     finally:
         appconfig.configure(environ=None, config_file=None)  # restore live layers
+
+
+# ── quorum panel keys (config `env:` section + doctor awareness) ──────────────
+
+
+def test_quorum_panel_models_resolves_from_config_env_section():
+    # config.yaml `env:` section (the B5 loader layer) supplies the pin…
+    c = AppConfig(
+        environ={},
+        config_file={"QUORUM_PANEL_MODELS": "openai-codex:gpt-5.5, gemini:gemini-2.5-flash"},
+    )
+    assert c.get_str("QUORUM_PANEL_MODELS") == "openai-codex:gpt-5.5, gemini:gemini-2.5-flash"
+    assert c.source_of("QUORUM_PANEL_MODELS") == "config"
+    # …and a shell env var overrides it.
+    c2 = AppConfig(
+        environ={"QUORUM_PANEL_MODELS": "openai-codex:gpt-5.5"},
+        config_file={"QUORUM_PANEL_MODELS": "gemini:gemini-2.5-flash"},
+    )
+    assert c2.get_str("QUORUM_PANEL_MODELS") == "openai-codex:gpt-5.5"
+    assert c2.source_of("QUORUM_PANEL_MODELS") == "env"
+
+
+def test_doctor_knows_quorum_panel_keys():
+    c = AppConfig(environ={}, config_file={"QUORUM_PANEL_MODELS": "openai-codex:gpt-5.5"})
+    report = appconfig.build_doctor_report(c, inventory=set())
+    known_set = {r["name"] for r in report["known_set"]}
+    known_unset = {r["name"] for r in report["known_unset"]}
+    assert "QUORUM_PANEL_MODELS" in known_set  # set via config env: section
+    assert "QUORUM_JUDGE_MODEL" in known_unset  # registered but unset

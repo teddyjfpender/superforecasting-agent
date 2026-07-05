@@ -10458,19 +10458,34 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
     ledger = _ledger(args)
     question = ledger.get_question(question_id)
 
-    models = None
-    if args.models:
-        models = [m.strip() for m in args.models.split(",") if m.strip()]
-    elif cfg.get("models"):
-        models = [str(m).strip() for m in cfg["models"] if str(m).strip()]
-
+    from forecasting.models import ValidationError as _QuorumValidationError
     from forecasting.quorum import (
         available_provider_slugs,
         cap_preset_by_calls,
         estimate_quorum_calls,
         preset_model_count,
+        resolve_configured_panel,
         resolve_quorum_defaults,
     )
+
+    # Panel line-up precedence: explicit --models > QUORUM_PANEL_MODELS (appconfig,
+    # operator-pinned) > quorum.models (legacy yaml). The pinned appconfig panel
+    # takes PRECEDENCE over the connected-provider rebuild; a non-callable entry
+    # fails fast HERE (naming itself) before any background job is spawned.
+    models = None
+    configured_judge: str | None = None
+    if args.models:
+        models = [m.strip() for m in args.models.split(",") if m.strip()]
+    else:
+        try:
+            configured = resolve_configured_panel()
+        except _QuorumValidationError as exc:
+            raise SystemExit(f"forecast quorum: {exc}") from exc
+        if configured:
+            models = configured["models"]
+            configured_judge = configured.get("judge")
+        elif cfg.get("models"):
+            models = [str(m).strip() for m in cfg["models"] if str(m).strip()]
 
     # Default resolution (item 1). When the caller passed NO explicit --preset and
     # NO explicit model list, resolve the panel SHAPE from the question's
@@ -10496,7 +10511,8 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         default_delphi = int(cfg.get("delphi_rounds", 0) or 0)
         default_trim = int(cfg.get("trim", 1))
 
-    judge = args.judge or (cfg.get("judge") or None)
+    # --judge wins; else the pinned QUORUM_JUDGE_MODEL; else the legacy yaml judge.
+    judge = args.judge or configured_judge or (cfg.get("judge") or None)
     # GATE 2 (AIA P1.1, live): the --supervisor-search flag wins when passed;
     # otherwise inherit the quorum.supervisor_search config (default OFF). Only a
     # truthy value goes into the spec, so the live default stays byte-identical.
@@ -10687,6 +10703,18 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
             print(f"    blind spot: {spot}")
 
 
+# The operator-pinned panel keys live in the layered appconfig loader (config.yaml
+# `env:` section / env var / override), NOT the `quorum.*` yaml block — so a set of
+# either name writes to the `env:` section and a show reads the RESOLVED value (with
+# its source). Accepts the bare or `quorum.`-prefixed spelling.
+_QUORUM_APPCONFIG_KEYS = {
+    "QUORUM_PANEL_MODELS": "QUORUM_PANEL_MODELS",
+    "QUORUM_JUDGE_MODEL": "QUORUM_JUDGE_MODEL",
+    "PANEL_MODELS": "QUORUM_PANEL_MODELS",
+    "JUDGE_MODEL": "QUORUM_JUDGE_MODEL",
+}
+
+
 def _quorum_config(rest: list[str]) -> None:
     from hermes_cli.config import load_config, set_config_value
 
@@ -10694,6 +10722,26 @@ def _quorum_config(rest: list[str]) -> None:
         if len(rest) < 3:
             raise SystemExit("forecast quorum config set <key> <value>")
         key, value = rest[1], rest[2]
+        # An appconfig panel key (QUORUM_PANEL_MODELS / QUORUM_JUDGE_MODEL) is written
+        # to the config.yaml `env:` section so the layered loader + the doctor see it;
+        # everything else stays a `quorum.<key>` yaml knob as before.
+        canonical = _QUORUM_APPCONFIG_KEYS.get(key.strip().upper().replace("QUORUM.", ""))
+        if canonical is None and key.strip().upper() in _QUORUM_APPCONFIG_KEYS:
+            canonical = _QUORUM_APPCONFIG_KEYS[key.strip().upper()]
+        if canonical:
+            # Validate a pinned panel eagerly so a bad set is rejected NAMING the entry
+            # rather than failing silently at the next run.
+            if canonical == "QUORUM_PANEL_MODELS":
+                from forecasting.models import ValidationError
+                from forecasting.quorum import parse_panel_models_config, validate_panel_models
+
+                try:
+                    validate_panel_models(parse_panel_models_config(value))
+                except ValidationError as exc:
+                    raise SystemExit(f"forecast quorum config set: {exc}") from exc
+            set_config_value(f"env.{canonical}", value)
+            print(f"✓ set {canonical} = {value}  (config.yaml env:)")
+            return
         set_config_value(f"quorum.{key}", value)
         print(f"✓ set quorum.{key} = {value}")
         return
@@ -10705,6 +10753,17 @@ def _quorum_config(rest: list[str]) -> None:
         "delphi_rounds",
     ):
         print(f"  {key}: {cfg.get(key)}")
+    # Operator-pinned panel (appconfig layer) — show the RESOLVED value + source so an
+    # operator sees whether a pin comes from the env: section, a shell var, or is unset.
+    from forecasting import appconfig
+
+    ac = appconfig.get_config()
+    ac.reload()
+    print("  ── operator-pinned panel (appconfig) ──")
+    for name in ("QUORUM_PANEL_MODELS", "QUORUM_JUDGE_MODEL"):
+        value = ac.get_str(name, None)
+        source = ac.source_of(name)
+        print(f"  {name}: {value if value else '(unset)'}  [{source}]")
 
 
 def _quorum_default(rest: list[str], *, scope: str | None) -> None:

@@ -99,6 +99,19 @@ _KEYS: tuple[ConfigKey, ...] = (
               "Skip calibration-lesson synthesis in the cron runner.", category="cron"),
     ConfigKey("FORECAST_BRIDGE_PORT", "int", 8787, False,
               "Port for the read-only forecast web bridge.", category="web"),
+    # ── Quorum panel (operator-pinned model line-up) ─────────────────────────
+    # Comma list of ``provider:model`` seats that OVERRIDE the connected-provider
+    # panel rebuild (e.g. "openai-codex:gpt-5.5, gemini:gemini-2.5-flash"). Each
+    # entry is validated against callable providers — a non-callable entry errors
+    # naming itself. Unset ⇒ the preset/connected resolution is used unchanged.
+    ConfigKey("QUORUM_PANEL_MODELS", "str", None, False,
+              "Comma list of provider:model quorum panel seats; overrides the "
+              "connected-provider rebuild. Validated against callable providers.",
+              category="quorum"),
+    ConfigKey("QUORUM_JUDGE_MODEL", "str", None, False,
+              "Optional provider:model for the quorum judge synthesis (overrides "
+              "the preset/connected judge). Validated against callable providers.",
+              category="quorum"),
     ConfigKey("FORECAST_BIN", "str", None, False,
               "Explicit path to the forecast CLI binary (kanban launcher).", category="runtime"),
     # ── Canonical home / timezone / redaction (deprecated aliases) ───────────
