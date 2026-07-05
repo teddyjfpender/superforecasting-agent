@@ -131,6 +131,7 @@ FORECAST_LEDGER_SCHEMA = {
                     "propose_resolution",
                     "propose_resolutions",
                     "list_resolution_proposals",
+                    "backfill_market_ids",
                     "set_decision",
                     "configure",
                     "keep_fresh",

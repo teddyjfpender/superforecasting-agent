@@ -595,6 +595,60 @@ def rename_question(ledger, question_id: str, new_title: str, *, actor: str | No
     return ledger.get_question(question_id)
 
 
+_MARKET_REF_RE = re.compile(r"^[a-z0-9_.-]+:.+$")
+
+
+def set_question_market_ref(
+    ledger,
+    question_id: str,
+    *,
+    market_id: str,
+    market_source: str | None = None,
+    actor: str | None = None,
+) -> ForecastQuestion:
+    """Backfill the STRUCTURED market reference (``metadata.market_id`` + its
+    ``market_source``) that the resolution detector reads to pull a terminal
+    outcome from a settled market.
+
+    A GATED write (refused outside a forecast-commit context, exactly like
+    ``create_question``): it changes how a question RESOLVES, so it must never run
+    from an unattended audit/migration script — only through the forecast tool's
+    commit flow. FILL-ONLY + idempotent: a question that already carries a
+    *different* ``market_id`` is left untouched (raises), so a backfill can only
+    ADD a missing ref, never silently rewrite an existing one. Every other
+    metadata key is preserved.
+
+    ``market_id`` must be canonical ``"<venue>:<id>"`` form (the same form the
+    detector's :func:`build_market_outcome_reader` dispatches on).
+    """
+    _core._enforce_write_gate("set_question_market_ref")
+    ref = (market_id or "").strip()
+    if not _MARKET_REF_RE.match(ref):
+        raise ValidationError(
+            f"market_id must be canonical '<venue>:<id>' form (got {market_id!r})"
+        )
+    existing = ledger.get_question(question_id)
+    meta = dict(existing.metadata) if isinstance(existing.metadata, dict) else {}
+    current = meta.get("market_id")
+    if isinstance(current, str) and current.strip():
+        if current.strip() == ref:
+            return existing  # idempotent: identical ref already present
+        raise ValidationError(
+            f"question {question_id} already has market_id {current!r}; refusing "
+            "to overwrite (backfill is fill-only)"
+        )
+    meta["market_id"] = ref
+    source = (market_source or "").strip()
+    if source:
+        meta["market_source"] = source
+    with ledger._connect() as conn:
+        conn.execute(
+            "UPDATE forecast_questions SET metadata = ? WHERE id = ?",
+            (json_dumps(meta), question_id),
+        )
+    return ledger.get_question(question_id)
+
+
 def decision_readiness_issues(ledger, question: ForecastQuestion | str) -> list[str]:
     """Return decision-card gaps for ``question`` (id or object)."""
 

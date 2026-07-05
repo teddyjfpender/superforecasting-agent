@@ -1702,6 +1702,16 @@ class ForecastLedger:
     ) -> ForecastQuestion:
         return _questions.update_question_config(self, question_id=question_id, review_cadence=review_cadence, decision=decision, hooks=hooks)
 
+    def set_question_market_ref(
+        self,
+        question_id: str,
+        *,
+        market_id: str,
+        market_source: str | None = None,
+        actor: str | None = None,
+    ) -> ForecastQuestion:
+        return _questions.set_question_market_ref(self, question_id=question_id, market_id=market_id, market_source=market_source, actor=actor)
+
     def _cadence_is_valid(self, cadence: str) -> bool:
         return _questions._cadence_is_valid(self, cadence=cadence)
 
