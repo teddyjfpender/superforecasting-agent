@@ -197,4 +197,11 @@ def build_question_readiness(ledger: Any, question_id: str) -> dict[str, Any]:
     composite["question_id"] = question_id
     composite["title"] = question.title
     composite["src_count"] = watch_count
+    # Source diversity (the monoculture guard): distinct evidence source domains
+    # + types on THIS question. The whole edge rests on orthogonal signal, so a
+    # single-source serious forecast is a flagged (not blocked) risk.
+    try:
+        composite["source_diversity"] = ledger.question_source_diversity(question_id)
+    except Exception:  # noqa: BLE001 — diversity is advisory; never break readiness
+        composite["source_diversity"] = None
     return composite

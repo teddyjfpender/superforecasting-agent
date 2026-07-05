@@ -44,6 +44,7 @@ from __future__ import annotations
 import logging
 import math
 import random
+import re
 import sqlite3
 import statistics
 import uuid
@@ -261,6 +262,83 @@ def score_snapshot(ledger, forecast_id: str, *, force: bool = False) -> ScoreRec
     if score.calibration_eligible and score.forecast_origin == "live":
         ledger.update_domain_error_profile(question)
     return score
+
+
+def backfill_crps_scores(ledger, *, dry_run: bool = True) -> dict[str, Any]:
+    """Score (or re-score) the distribution / numeric / thesis class with CRPS.
+
+    Walks every non-binary question, and for its current snapshot against a
+    confirmed+scoreable resolution decides:
+
+    * ``crps_scored`` — the snapshot is a representable predictive distribution;
+      CRPS is computed. When ``dry_run`` is False and the existing recorded score
+      is not already a CRPS rule, the old non-invalidated score row is replaced.
+    * ``refused_not_representable`` — a candidate-share vote dict or a bare point
+      (scored by the vector / squared-error rule, not CRPS) — never fabricated.
+    * ``active_no_resolution`` — no confirmed resolution yet: cannot be scored
+      (there is no outcome), so CRPS will apply automatically when it resolves.
+    * ``no_snapshot`` — no current forecast to score.
+
+    Read-only when ``dry_run`` (the default). Returns the counts + per-question
+    detail rows so the caller can report exactly what would change."""
+    counts = {
+        "crps_scored": 0,
+        "rescored": 0,
+        "refused_not_representable": 0,
+        "active_no_resolution": 0,
+        "no_snapshot": 0,
+        "errors": 0,
+    }
+    details: list[dict[str, Any]] = []
+    for question in ledger.list_questions():
+        outcome_space = question.outcome_space
+        if outcome_space.type not in {"distribution", "numeric", "thesis"}:
+            continue
+        snapshot = ledger.get_current_snapshot(question.id)
+        if snapshot is None:
+            counts["no_snapshot"] += 1
+            continue
+        resolution = ledger.get_latest_resolution(question.id, confirmed_only=True)
+        if resolution is None:
+            counts["active_no_resolution"] += 1
+            continue
+        try:
+            scoring = ledger._score_forecast_payload(
+                snapshot.probability_or_distribution, resolution.outcome, outcome_space
+            )
+        except Exception:
+            counts["errors"] += 1
+            continue
+        rule = scoring.get("score_rule") or ""
+        if not str(rule).startswith("crps"):
+            counts["refused_not_representable"] += 1
+            details.append({"question_id": question.id, "rule": rule, "action": "refused"})
+            continue
+        counts["crps_scored"] += 1
+        existing = ledger._existing_score(snapshot.forecast_id, resolution.id)
+        is_rescore = existing is not None and not str(existing.score_rule or "").startswith("crps")
+        if is_rescore:
+            counts["rescored"] += 1
+        detail = {
+            "question_id": question.id,
+            "forecast_id": snapshot.forecast_id,
+            "rule": rule,
+            "crps": scoring.get("proper_score"),
+            "prior_rule": existing.score_rule if existing else None,
+            "action": "would_rescore" if is_rescore else ("would_score" if existing is None else "unchanged"),
+        }
+        if not dry_run and (existing is None or is_rescore):
+            with ledger._connect() as conn:
+                conn.execute(
+                    "DELETE FROM score_records WHERE forecast_id = ? AND resolution_id = ? "
+                    "AND invalidated_by_correction_id IS NULL",
+                    (snapshot.forecast_id, resolution.id),
+                )
+            rescored = ledger.score_snapshot(snapshot.forecast_id, force=False)
+            detail["action"] = "rescored" if is_rescore else "scored"
+            detail["score_id"] = rescored.id
+        details.append(detail)
+    return {"dry_run": dry_run, "counts": counts, "details": details}
 
 
 def get_score(ledger, score_id: str) -> ScoreRecord:
@@ -1066,6 +1144,226 @@ def _normal_distribution_score(
         "score_rule": "normal_negative_log_likelihood",
         "calibration_bucket": ledger._numeric_bucket(mean, outcome_space),
         "notes": f"Normal-distribution negative log likelihood; mean {mean_rule}={mean_error:.6g}.",
+    }
+
+
+# ── CRPS (Continuous Ranked Probability Score) ──────────────────────────────
+#
+# A proper score for the distribution/numeric outcome class the market can't
+# cover (beating-the-market-strategy.md:586-588 — "needs CRPS, not Brier").
+# We score ONLY what a snapshot actually stores and REFUSE (None, never a
+# fabricated number) anything not representable as an ordered predictive
+# distribution over a scalar outcome. Precedence, richest-faithful-first:
+#
+#   crps_discrete_cdf  — explicit CDF-threshold keys (``p_below_X`` /
+#       ``bucket_le_X`` / ``cdf_X``), quantile keys (``qNN`` / ``quantile_NN`` /
+#       ``percentile_NN``), or central-interval keys (``interval_W_low/high``)
+#       + ``median``: build the (threshold, F) constraint points and sum the
+#       squared CDF differences vs the outcome step, Σ_k (F_k − 1{y ≤ t_k})² —
+#       the ordered/RPS form of CRPS the fix names, proper for ordered outcomes.
+#   crps_discrete_pmf  — a genuine PMF over ordered NUMERIC bucket labels
+#       (mass ≈ 1): cumulate to a CDF and score the same way.
+#   crps_gaussian      — only ``mean`` + ``sd`` (finite, sd>0): the exact
+#       closed-form normal CRPS.
+#
+# 1/√π, the CRPS of a standard normal at its own mean's tail constant.
+_CRPS_INV_SQRT_PI = 1.0 / math.sqrt(math.pi)
+
+_CRPS_MEAN_KEYS = ("mean", "expected", "value", "point")
+_CRPS_SD_KEYS = ("sd", "std", "sigma", "stdev")
+
+
+def _crps_num_from_suffix(raw: Any) -> float | None:
+    """Parse a numeric threshold from a key suffix where the decimal point is
+    written as an underscore or dash (``4_18`` → 4.18, ``3_0`` → 3.0, ``10`` →
+    10.0). Returns None when nothing numeric can be recovered."""
+    s = str(raw).strip().lower()
+    # An underscore/dash is the decimal point in these keys (``4_18`` → 4.18).
+    # Try that reading FIRST — bare ``float("3_0")`` treats the underscore as a
+    # digit separator and yields 30.0, which is wrong here.
+    for candidate in (s.replace("_", ".").replace("-", "."), s):
+        try:
+            value = float(candidate)
+        except ValueError:
+            continue
+        if math.isfinite(value):
+            return value
+    return None
+
+
+def _crps_cdf_points(payload: dict[str, Any]) -> list[tuple[float, float]]:
+    """Collect ``(threshold, cumulative_probability)`` constraint points on the
+    predictive CDF from UNAMBIGUOUS keys: explicit CDF thresholds, quantiles,
+    central intervals, and the median. Bare ``pNN`` keys are deliberately NOT
+    read as quantiles — they collide with count-PMF mass labels (``p0``/``p1``),
+    which the PMF branch owns. Deduped by threshold; sorted ascending."""
+    points: dict[float, float] = {}
+
+    def _add(threshold: float | None, cdf: Any) -> None:
+        if threshold is None or not isinstance(cdf, (int, float)) or isinstance(cdf, bool):
+            return
+        cdf_value = float(cdf)
+        if not (math.isfinite(threshold) and math.isfinite(cdf_value)):
+            return
+        if 0.0 <= cdf_value <= 1.0:
+            points.setdefault(float(threshold), cdf_value)
+
+    for raw_key, raw_value in payload.items():
+        if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool):
+            continue
+        key = str(raw_key).strip().lower()
+        value = float(raw_value)
+        # 1) Explicit CDF-threshold keys: F(X) = value (value is a probability).
+        cdf_match = re.match(r"^(?:p_below|prob_below|p_lt|p_le|cdf|bucket_le|bucket_lt|le_below)[_-]?(.+)$", key)
+        if cdf_match:
+            _add(_crps_num_from_suffix(cdf_match.group(1)), value)
+            continue
+        # 2) Quantile keys (q-/quantile-/percentile-/pct-prefixed): F(value)=NN/100.
+        q_match = re.match(r"^(?:q|quantile|percentile|pct)[_-]?(\d{1,3})$", key)
+        if q_match:
+            pct = int(q_match.group(1))
+            if 1 <= pct <= 99 and math.isfinite(value):
+                points.setdefault(value, pct / 100.0)
+            continue
+        # 3) Central-interval keys: interval_W_low → (1-W/100)/2, high → 1-that.
+        iv_match = re.match(r"^(?:interval|ci|hdi|pi)[_-]?(\d{1,2})[_-]?(low|lo|l|high|hi|h)$", key)
+        if iv_match:
+            width = int(iv_match.group(1))
+            if 0 < width < 100 and math.isfinite(value):
+                frac = (1.0 - width / 100.0) / 2.0
+                side_low = iv_match.group(2) in ("low", "lo", "l")
+                points.setdefault(value, frac if side_low else 1.0 - frac)
+            continue
+        # 4) Median → F(median) = 0.5.
+        if key == "median" and math.isfinite(value):
+            points.setdefault(value, 0.5)
+    return sorted(points.items())
+
+
+def _crps_pmf_points(payload: dict[str, Any]) -> list[tuple[float, float]] | None:
+    """Cumulative-CDF points from a genuine PMF over ordered NUMERIC bucket
+    labels (count labels ``p0``/``p1``/``p6_plus`` or numeric strings) whose mass
+    sums to ≈ 1. Returns None when the payload is not such a PMF."""
+    masses: dict[float, float] = {}
+    for raw_key, raw_value in payload.items():
+        if not isinstance(raw_value, (int, float)) or isinstance(raw_value, bool):
+            continue
+        mass = float(raw_value)
+        if not (0.0 <= mass <= 1.0) or not math.isfinite(mass):
+            return None
+        key = str(raw_key).strip().lower()
+        count = re.match(r"^p_?(\d+)(?:_?plus|\+)?$", key)
+        if count:
+            value = float(count.group(1))
+        else:
+            value = _crps_num_from_suffix(key)
+            if value is None:
+                return None
+        masses[value] = masses.get(value, 0.0) + mass
+    total = sum(masses.values())
+    if len(masses) < 2 or not (0.9 <= total <= 1.1):
+        return None
+    cumulative = 0.0
+    points: list[tuple[float, float]] = []
+    for value, mass in sorted(masses.items()):
+        cumulative += mass / total
+        points.append((value, min(cumulative, 1.0)))
+    return points
+
+
+def _crps_gaussian_params(payload: dict[str, Any]) -> tuple[float | None, float | None]:
+    """Extract (mean, sd) from the moment keys or an ``equivalent_normal_*``
+    summary — the inputs to the closed-form normal CRPS + the log score."""
+    def _first(keys: tuple[str, ...], prefix: str = "") -> float | None:
+        for key in keys:
+            value = payload.get(prefix + key)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+                return float(value)
+        return None
+
+    mean = _first(_CRPS_MEAN_KEYS)
+    if mean is None:
+        mean = _first(("mean",), prefix="equivalent_normal_")
+    sd = _first(_CRPS_SD_KEYS)
+    if sd is None:
+        sd = _first(("sd",), prefix="equivalent_normal_")
+    return mean, sd
+
+
+def _crps_discrete(points: list[tuple[float, float]], outcome: float) -> float:
+    """Σ_k (F_k − 1{outcome ≤ t_k})² over the (threshold, CDF) points — the
+    ordered / ranked form of CRPS ("sum of squared CDF differences")."""
+    return sum((cdf - (1.0 if outcome <= threshold else 0.0)) ** 2 for threshold, cdf in points)
+
+
+def _crps_normal(mean: float, sd: float, outcome: float) -> float:
+    """Closed-form CRPS of N(mean, sd) at ``outcome`` (Gneiting & Raftery)."""
+    z = (outcome - mean) / sd
+    cdf = 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+    pdf = math.exp(-0.5 * z * z) / math.sqrt(2.0 * math.pi)
+    return sd * (z * (2.0 * cdf - 1.0) + 2.0 * pdf - _CRPS_INV_SQRT_PI)
+
+
+def _crps_score(
+    ledger,
+    probability_or_distribution: Any,
+    outcome: Any,
+    outcome_space: OutcomeSpace,
+) -> dict[str, Any] | None:
+    """CRPS score dict for a distributional dict payload, or None when the
+    forecast is not representable as an ordered predictive distribution over a
+    scalar outcome (a candidate-share dict → the vote-share vector scorer owns
+    it; a bare mean → the point squared-error path owns it). None is never a
+    fabricated score — the caller falls through to the existing scorers."""
+    if not isinstance(probability_or_distribution, dict) or not probability_or_distribution:
+        return None
+    try:
+        y = ledger._numeric_outcome(outcome)
+    except ValidationError:
+        return None  # non-scalar outcome (vote-share dict) — refuse CRPS.
+
+    points = _crps_cdf_points(probability_or_distribution)
+    rule: str | None = None
+    crps: float | None = None
+    if len(points) >= 2:
+        crps = _crps_discrete(points, y)
+        rule = "crps_discrete_cdf"
+    else:
+        pmf_points = _crps_pmf_points(probability_or_distribution)
+        if pmf_points and len(pmf_points) >= 2:
+            crps = _crps_discrete(pmf_points, y)
+            rule = "crps_discrete_pmf"
+
+    mean, sd = _crps_gaussian_params(probability_or_distribution)
+    if rule is None:
+        if mean is not None and sd is not None and sd > 0:
+            crps = _crps_normal(mean, sd, y)
+            rule = "crps_gaussian"
+        else:
+            return None  # no ordered distributional shape — refuse.
+
+    # Keep the Gaussian negative log likelihood in the log_score column when the
+    # snapshot carries a finite mean+sd, so the log-score surface stays populated.
+    log_score: float | None = None
+    if mean is not None and sd is not None and sd > 0:
+        variance = sd * sd
+        log_score = 0.5 * math.log(2 * math.pi * variance) + ((y - mean) ** 2) / (2 * variance)
+
+    bucket_input = mean
+    if bucket_input is None:
+        median = probability_or_distribution.get("median")
+        if isinstance(median, (int, float)) and not isinstance(median, bool):
+            bucket_input = float(median)
+    calibration_bucket = (
+        ledger._numeric_bucket(bucket_input, outcome_space) if bucket_input is not None else None
+    )
+    return {
+        "brier_score": None,
+        "log_score": log_score,
+        "proper_score": crps,
+        "score_rule": rule,
+        "calibration_bucket": calibration_bucket,
+        "notes": f"CRPS ({rule}) against confirmed resolution; lower is better.",
     }
 
 

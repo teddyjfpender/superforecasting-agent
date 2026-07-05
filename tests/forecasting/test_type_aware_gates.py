@@ -51,11 +51,13 @@ def test_thesis_aggregate_skips_llm_quality_rules():
 
 def test_modeled_forecast_still_gets_the_full_gate():
     # The SAME bare context, but a modeled (non-aggregate) live forecast: the hard
-    # evidence + outside-view rules must still bite.
+    # evidence + outside-view rules must still bite. impact="high" makes it a SERIOUS
+    # forecast so the (now serious-scoped) outside-view anchor rule fires.
     modeled = HookContext(
         question_id="fq_test",
         event="update",
         forecast_origin="live",
+        impact="high",
         is_thesis_or_factor=False,
         evidence_count=0,
         reference_class_count=0,

@@ -39,10 +39,12 @@ def test_resolve_defaults_contested_type_is_frontier_even_when_not_high():
     assert d["delphi_rounds"] == 1
 
 
-def test_resolve_defaults_medium_is_budget():
+def test_resolve_defaults_medium_is_budget_with_delphi():
+    # Multi-model budget panel defaults Delphi ON (finding #1: a real second read of
+    # independent panelists earns the anonymous revision round).
     d = quorum.resolve_quorum_defaults(_q(impact="medium"), available_providers=None)
     assert d["preset"] == "budget"
-    assert d["delphi_rounds"] == 0
+    assert d["delphi_rounds"] == 1
     assert d["trim"] == 1
 
 
@@ -63,6 +65,8 @@ def test_resolve_defaults_single_key_falls_back_to_self():
     )
     assert d["preset"] == "self"
     assert "self-fusion fallback" in d["reason"]
+    # Single-model self-fusion drops the Delphi round (Delphi is a multi-model default).
+    assert d["delphi_rounds"] == 0
 
 
 def test_resolve_defaults_single_key_no_active_model_keeps_preset():
@@ -430,6 +434,14 @@ def _tool_update_args(ledger, q, **over):
         "require_fresh_evidence": False,
         "require_decision_readiness": False,
     }
+    # Link any seeded reference class to THIS snapshot so the (now-ERROR) outside-view
+    # anchor gate is satisfied for the high-impact agent commit (finding #4).
+    try:
+        rcs = ledger.list_reference_classes(q.id)
+    except Exception:
+        rcs = []
+    if rcs:
+        args["reference_class_refs"] = [rcs[0]["id"]]
     args.update(over)
     return args
 

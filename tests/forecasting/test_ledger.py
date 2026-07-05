@@ -1131,7 +1131,11 @@ def test_numeric_forecasts_are_scored_with_normalized_squared_error(tmp_path):
     assert type_rows["numeric"]["mean_proper_score"] == pytest.approx(score.proper_score)
 
 
-def test_normal_distribution_forecasts_use_negative_log_likelihood(tmp_path):
+def test_normal_distribution_forecasts_use_crps_with_nll_retained(tmp_path):
+    # A Gaussian distribution (mean+sd, no quantiles/CDF) is scored by the
+    # closed-form CRPS as the proper score; the NLL is retained in log_score.
+    from forecasting.ledger.scoring import _crps_normal
+
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(
         title="What will annual inflation be?",
@@ -1149,9 +1153,9 @@ def test_normal_distribution_forecasts_use_negative_log_likelihood(tmp_path):
 
     expected_nll = 0.5 * math.log(2 * math.pi) + 0.5
     assert score.brier_score is None
-    assert score.log_score == pytest.approx(expected_nll)
-    assert score.proper_score == pytest.approx(expected_nll)
-    assert score.score_rule == "normal_negative_log_likelihood"
+    assert score.log_score == pytest.approx(expected_nll)  # NLL retained
+    assert score.proper_score == pytest.approx(_crps_normal(3.0, 1.0, 4.0))
+    assert score.score_rule == "crps_gaussian"
     assert score.calibration_bucket == "0.3-0.4"
 
 

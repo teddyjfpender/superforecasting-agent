@@ -184,7 +184,11 @@ def _question(ledger):
     )
 
 
-def test_gate_off_passes_no_search_runner_byte_identical(home, tmp_path, monkeypatch):
+def test_off_switch_via_spec_flag_byte_identical(home, tmp_path, monkeypatch):
+    # The appconfig-tunable OFF switch: an EXPLICIT supervisor_search=False in the
+    # spec (mirrors `forecast quorum --no-supervisor-search` / quorum.supervisor_search
+    # = false) keeps the run byte-identical to the pre-edge behaviour — no search
+    # runner is built even though the judge flags a gap.
     db = str(tmp_path / "forecasts.db")
     ledger = ForecastLedger(db)
     q = _question(ledger)
@@ -197,8 +201,10 @@ def test_gate_off_passes_no_search_runner_byte_identical(home, tmp_path, monkeyp
         lambda **_k: (_ for _ in ()).throw(AssertionError("search_runner must not be built when OFF")),
     )
 
-    # No supervisor_search key in spec, and no config flag -> default OFF.
-    spec = {"question_id": q.id, "db": db, "models": ["a/m1", "b/m2"], "trim": 0}
+    spec = {
+        "question_id": q.id, "db": db, "models": ["a/m1", "b/m2"], "trim": 0,
+        "supervisor_search": False,  # OFF switch
+    }
     run_id = qj.start_job(spec, wait=True)
     job = qj.read_job(run_id)
 
@@ -213,6 +219,39 @@ def test_gate_off_passes_no_search_runner_byte_identical(home, tmp_path, monkeyp
     assert panel["supervisor_evidence"] == []
     stages = [p["stage"] for p in job["progress"]]
     assert "supervisor_search" not in stages
+
+
+def test_live_default_on_fires_runner_without_any_config(home, tmp_path, monkeypatch):
+    # DEFAULT ON (finding #1): with NO supervisor_search key in the spec AND no config
+    # override at all, a LIVE quorum still runs the fresh-search loop. This pins the
+    # code-level default so a regression back to 0/223 is caught.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = _question(ledger)
+
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _gap_runner_factory())
+    monkeypatch.setattr(
+        ss, "build_supervisor_search_runner",
+        lambda **_k: (lambda queries: [{"title": "fresh"}]),
+    )
+    # Empty config (no quorum key at all) -> the code fallback must default ON.
+    import hermes_cli.config as hc
+
+    monkeypatch.setattr(hc, "load_config", lambda: {})
+
+    spec = {"question_id": q.id, "db": db, "models": ["a/m1", "b/m2"], "trim": 0}
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+
+    assert job["status"] == "done", job.get("error")
+    result = job["result"]
+    # The proven edge fired on its own: one research round + the fresh evidence.
+    assert result["research_rounds"] == 1
+    assert result["supervisor_evidence"] == [{"title": "fresh"}]
+    panel = ledger.get_panel_run(job["panel_run_id"])
+    assert panel["research_rounds"] == 1
+    stages = [p["stage"] for p in job["progress"]]
+    assert "supervisor_search" in stages
 
 
 def test_gate_on_runs_one_research_round_and_persists_evidence(home, tmp_path, monkeypatch):

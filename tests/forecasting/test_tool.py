@@ -1016,6 +1016,14 @@ def test_forecast_ledger_tool_high_impact_requires_panel_by_default(tmp_path):
         "reasons_up": ["mechanism points up"],
         "reasons_down": ["reversion risk"],
         "change_my_mind": ["a confirming data release"],
+        # A high-impact forecast must now carry an outside-view anchor (finding #4:
+        # require_outside_view_anchor is ERROR for high-impact); link one inline so
+        # this test isolates the PANEL formality, not the anchor gate.
+        "reference_class": {
+            "name": "comparable high-impact base rate",
+            "inclusion_criteria": "comparable prior cases",
+            "base_rate": 0.5,
+        },
     }
     blocked = json.loads(forecast_ledger_tool(dict(base)))
     # The panel-skip path clears the panel gate; attach evidence so it then also

@@ -143,6 +143,49 @@ def pm_query(args: dict[str, Any], ledger) -> str:
         "pm_query requires pm_mode in {search, event, book, history}", success=False
     )
 
+def curate_questions(args: dict[str, Any], ledger) -> str:
+    """Propose SHORT-HORIZON CONTESTED LIQUID BINARIES from the prediction-market
+    data plane as calibration-fuel candidate questions — with a resolution
+    criterion pre-drafted from the market. Proposal ONLY: this never creates a
+    question (the operator/agent confirms per question via create_question)."""
+    from forecasting.curation import CurationFilters, curate_market_candidates
+
+    svc = _pm_service()
+    try:
+        limit = int(args.get("limit") or 60)
+    except (TypeError, ValueError):
+        limit = 60
+    limit = max(1, min(limit, 200))
+    pairs = svc.list_events(
+        venue=str(args["venue"]) if args.get("venue") else None,
+        query=args.get("query") or None,
+        tag=args.get("tag") or None,
+        limit=limit,
+    )
+    base = CurationFilters()
+    filters = CurationFilters(
+        price_min=float(args["price_min"]) if args.get("price_min") is not None else base.price_min,
+        price_max=float(args["price_max"]) if args.get("price_max") is not None else base.price_max,
+        max_horizon_days=float(args["max_horizon_days"]) if args.get("max_horizon_days") is not None else base.max_horizon_days,
+        min_volume=float(args["min_volume"]) if args.get("min_volume") is not None else base.min_volume,
+    )
+    report = curate_market_candidates(pairs, filters=filters)
+    return tool_result(
+        success=True,
+        screened=report.screened,
+        rejected=report.rejected,
+        candidate_count=len(report.candidates),
+        candidates=[c.to_dict() for c in report.candidates],
+        note=(
+            "PROPOSAL ONLY — nothing was created. These are contested (15-85%), "
+            "short-horizon (<=45d), liquid binary markets, the decision-relevant "
+            "stratum the calibration loop is starved of. Confirm the ones worth "
+            "tracking by creating each with action='create_question' (title + "
+            "resolution_criteria are pre-drafted); never bulk-create blindly."
+        ),
+    )
+
+
 def market_query(args: dict[str, Any], ledger) -> str:
     refs = _market_query_refs(args)
     if not refs:
@@ -219,6 +262,7 @@ def research_audit(args: dict[str, Any], ledger) -> str:
 HANDLERS = {
     "market_quality": market_quality,
     "pm_query": pm_query,
+    "curate_questions": curate_questions,
     "market_query": market_query,
     "research_plan": research_plan,
     "research_audit": research_audit,
