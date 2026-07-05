@@ -5,6 +5,7 @@ import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { turnController } from '../app/turnController.js'
 import { getTurnState, resetTurnState } from '../app/turnStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
+import { setWarningsRunActive } from '../app/warningsRunStore.js'
 import { estimateTokensRough } from '../lib/text.js'
 import type { Msg } from '../types.js'
 
@@ -1349,6 +1350,33 @@ describe('createGatewayEventHandler', () => {
         vi.advanceTimersByTime(2000)
         expect(spy).toHaveBeenCalledTimes(2)
       } finally {
+        vi.useRealTimers()
+        spy.mockRestore()
+      }
+    })
+
+    it('SUPPRESSES the transcript write entirely while a Warnings pass owns the run', () => {
+      const onEvent = createGatewayEventHandler(buildCtx([]))
+      const spy = vi.spyOn(turnController, 'pushActivity')
+      vi.useFakeTimers()
+      try {
+        // A failing free pass owns the Warnings view: its 130 per-alert stderr lines
+        // (the LedgerNotFound storm) must NOT reach the transcript — the bar + the
+        // folded error line are the whole progress UI, so the view never scrolls.
+        setWarningsRunActive(true)
+        for (let i = 0; i < 130; i += 1) {
+          onEvent({ payload: { line: `LedgerNotFoundError: no active autopilot policy #${i}` }, type: 'gateway.stderr' } as any)
+        }
+        vi.advanceTimersByTime(1000)
+        expect(spy).not.toHaveBeenCalled()
+
+        // Once the pass releases the view, stderr resumes streaming to the transcript.
+        setWarningsRunActive(false)
+        onEvent({ payload: { line: 'gateway idle chatter' }, type: 'gateway.stderr' } as any)
+        expect(spy).toHaveBeenCalledTimes(1)
+        expect(spy).toHaveBeenLastCalledWith('gateway idle chatter', 'info')
+      } finally {
+        setWarningsRunActive(false)
         vi.useRealTimers()
         spy.mockRestore()
       }

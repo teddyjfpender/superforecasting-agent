@@ -99,6 +99,59 @@ def test_real_run_acks_only_genuine_gated_work(tmp_path):
     assert ids["material"] in open_now
 
 
+def test_failure_fold_collapses_identical_reasons(tmp_path):
+    """A failing free pass must report ONE "N failed: <reason>" line, not N rows.
+    `run_warning_resolution` folds non-resolved alerts by reason (reason -> count)
+    onto every alert/done progress event and the returned summary, so the desk
+    renders the storm as a single folded line instead of draining per-alert stderr."""
+    from forecasting.models import LedgerNotFoundError
+    from forecasting.warnings import ResolutionRunners
+
+    lg = _ledger(tmp_path)
+    for ref in ("fq_1", "fq_2", "fq_3"):
+        lg.create_alert(
+            severity="warning", scope_type="question", scope_ref=ref,
+            reason="evidence_stale_7d_plus", recommended_action="Re-forecast.")
+
+    def boom(_ledger, _w):  # every alert fails with the IDENTICAL cause
+        raise LedgerNotFoundError("no active autopilot policy")
+
+    events: list[dict] = []
+    summary = run_warning_resolution(
+        ledger=lg,
+        runners=ResolutionRunners(reforecast_runner=boom),
+        reconcile=False,
+        progress=events.append,
+    )
+
+    # Three identical failures collapse to ONE reason with a count of 3.
+    assert summary["failures"] == {"no active autopilot policy": 3}
+    assert summary["tally"].get("failed") == 3
+    # The terminal `done` event carries the same fold (the completion toast source).
+    done = [e for e in events if e.get("phase") == "done"][-1]
+    assert done["failures"] == {"no active autopilot policy": 3}
+    # Per-alert events carry the RUNNING (monotonic) fold — the live under-bar line.
+    alert_events = [e for e in events if e.get("phase") == "alert"]
+    assert alert_events[-1]["failures"] == {"no active autopilot policy": 3}
+    # No alert was acked — a failing pass never bare-acks to drop the count.
+    assert len(lg.list_alerts(unresolved_only=True)) == 3
+
+
+def test_clean_run_carries_no_failures_fold(tmp_path):
+    """A run with nothing to fail returns failures=None (byte-compatible with the
+    pre-fold shape) and emits no `failures` key on its events."""
+    lg = _ledger(tmp_path)
+    lg.create_alert(
+        severity="info", scope_type="question", scope_ref="fq_ok",
+        reason="autopilot_enabled", recommended_action="Informational.")
+
+    events: list[dict] = []
+    summary = run_warning_resolution(ledger=lg, reconcile=False, progress=events.append)
+
+    assert summary["failures"] is None
+    assert all("failures" not in e for e in events)
+
+
 def test_cancel_stops_cleanly_without_writing(tmp_path):
     lg = _ledger(tmp_path)
     _seed_alerts(lg)

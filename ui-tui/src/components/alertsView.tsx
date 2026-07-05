@@ -3,6 +3,7 @@ import { useStore } from '@nanostores/react'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
+import { setWarningsRunActive } from '../app/warningsRunStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { ForecastTriageLabel } from '../gatewayTypes.js'
 import type {
@@ -160,10 +161,95 @@ interface DismissTarget {
 
 interface AutomodeState {
   done: number
+  // Running fold of non-resolved alerts (reason → count) — the sweep carries this
+  // on its progress/complete events so the desk shows ONE "N failed: <reason>" line
+  // instead of the caller draining a per-alert stderr storm into the transcript.
+  failures?: Record<string, number>
   id: string
   phase: string
   reason?: string
   total: number
+}
+
+// Fold a reason→count map into a single honest summary: the total failure count,
+// the single most-common reason, and how many DISTINCT reasons there are (so the
+// line can note "(+N more)" when a pass failed for more than one cause).
+interface FailureFold {
+  distinct: number
+  topReason: string
+  total: number
+}
+
+const foldFailures = (failures?: Record<string, unknown>): FailureFold | null => {
+  if (!failures) {
+    return null
+  }
+
+  const entries = Object.entries(failures)
+    .map(([reason, count]): [string, number] => [reason, Math.max(0, Math.trunc(Number(count)) || 0)])
+    .filter(([, count]) => count > 0)
+
+  if (!entries.length) {
+    return null
+  }
+
+  entries.sort((a, b) => b[1] - a[1])
+
+  return {
+    distinct: entries.length,
+    topReason: entries[0][0],
+    total: entries.reduce((sum, [, count]) => sum + count, 0)
+  }
+}
+
+// The one-line failure summary rendered under the progress bar / in the toast:
+// "130 failed: no active autopilot policy (+2 more)". Length-bounded so it never
+// wraps the fixed status line.
+const failureLine = (fold: FailureFold, count?: number): string => {
+  const n = count ?? fold.total
+  const more = fold.distinct > 1 ? ` (+${fold.distinct - 1} more)` : ''
+
+  return `${nf(n)} failed: ${truncate(humanize(fold.topReason), 44)}${more}`
+}
+
+// A fixed-width ▓▓▓░░ bar for the automode heartbeat — the established compact
+// desk style. Indeterminate (all ░) until the sweep reports a positive total.
+const AUTOMODE_BAR_W = 14
+
+const progressBar = (done: number, total: number): string => {
+  if (!(total > 0)) {
+    return '░'.repeat(AUTOMODE_BAR_W)
+  }
+
+  const filled = Math.max(0, Math.min(AUTOMODE_BAR_W, Math.round((done / total) * AUTOMODE_BAR_W)))
+
+  return `${'▓'.repeat(filled)}${'░'.repeat(AUTOMODE_BAR_W - filled)}`
+}
+
+// The honest one-line completion toast: "<resolved> resolved · <failed> failed:
+// <reason>" off the sweep's tally + failure fold (never a bare "N/N processed"
+// that hides a 130/130 wipe-out). A cancel keeps the processed/total shape.
+const completionToast = (p: ForecastWarningsAutomodeComplete): string => {
+  if (p.cancelled) {
+    return `automode cancelled — ${p.processed ?? 0}/${p.total ?? 0} processed`
+  }
+
+  const tally = (p.tally ?? {}) as Record<string, unknown>
+  const num = (v: unknown): number => Math.max(0, Math.trunc(Number(v)) || 0)
+  const resolved = num(tally.resolved)
+  // "didn't do real work" = failed + skipped (the desk's established errors count).
+  const failed = num(tally.failed) + num(tally.skipped)
+  const fold = foldFailures(p.failures)
+
+  if (failed > 0) {
+    const reason = fold
+      ? `: ${truncate(humanize(fold.topReason), 44)}${fold.distinct > 1 ? ` (+${fold.distinct - 1} more)` : ''}`
+      : ''
+
+    return `automode done — ${resolved} resolved · ${failed} failed${reason}`
+  }
+
+  return `automode done — ${resolved} resolved (${p.processed ?? 0}/${p.total ?? 0})`
 }
 
 interface AlertsViewProps {
@@ -279,6 +365,43 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
 
+  // Re-attach to an in-flight warnings pass — one started before this view mounted,
+  // or still running after a close + reopen. The pass rides the shared jobs runtime,
+  // so jobs.active (filtered to the warnings type) is the free re-attach seam:
+  // adopt the live job's id so the bar, progress stream, and stderr-suppression all
+  // resume without the operator having to re-trigger it.
+  useEffect(() => {
+    if (automodeIdRef.current) {
+      return
+    }
+
+    gw.request<unknown>('jobs.active', { types: ['warnings'] })
+      .then(raw => {
+        const res = asRpcResult<{ jobs?: Array<Record<string, unknown>> }>(raw)
+        const live = res?.jobs?.[0]
+        const jobId = live?.job_id
+
+        if (typeof jobId === 'string' && jobId && !automodeIdRef.current) {
+          automodeIdRef.current = jobId
+          setWarningsRunActive(true)
+          setAutomode({
+            done: Math.max(0, Math.trunc(Number(live?.done_count)) || 0),
+            id: jobId,
+            phase: 'alert',
+            reason: typeof live?.current === 'string' ? live.current : undefined,
+            total: Math.max(0, Math.trunc(Number(live?.total)) || 0)
+          })
+        }
+      })
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gw])
+
+  // Belt-and-braces: drop the ownership flag if the view unmounts mid-pass. The job
+  // keeps running detached — we simply stop suppressing its stderr once the Warnings
+  // surface (which showed the bar instead) is gone.
+  useEffect(() => () => setWarningsRunActive(false), [])
+
   useEffect(() => {
     scrollRef.current?.scrollTo(0)
   }, [aggregate])
@@ -362,7 +485,16 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
       progressPendingRef.current = null
       setAutomode(prev =>
         prev
-          ? { ...prev, done: p.done ?? prev.done, total: p.total ?? prev.total, phase: p.phase ?? prev.phase, reason: p.reason ?? prev.reason }
+          ? {
+              ...prev,
+              done: p.done ?? prev.done,
+              // The fold is monotonic; keep the last non-empty map so a throttled
+              // paint that dropped the `failures` key never blanks the error line.
+              failures: (p.failures as Record<string, number> | undefined) ?? prev.failures,
+              phase: p.phase ?? prev.phase,
+              reason: p.reason ?? prev.reason,
+              total: p.total ?? prev.total
+            }
           : prev
       )
     }
@@ -403,9 +535,8 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
       automodeIdRef.current = null
       setAutomode(null)
-      setFlash(
-        `automode ${p.cancelled ? 'cancelled' : 'done'} — ${p.processed ?? 0}/${p.total ?? 0} processed`
-      )
+      setWarningsRunActive(false)
+      setFlash(completionToast(p))
       load()
     }
 
@@ -416,6 +547,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
 
       automodeIdRef.current = null
       setAutomode(null)
+      setWarningsRunActive(false)
       setFlash(`automode error: ${p.message ?? 'failed'}`)
     }
 
@@ -459,6 +591,9 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
         }
 
         automodeIdRef.current = res.job_id
+        // The Warnings view now OWNS the pass: suppress its per-alert stderr from the
+        // transcript (it still lands in /logs); the bar below is the sole progress UI.
+        setWarningsRunActive(true)
         setAutomode({ done: 0, id: res.job_id, phase: 'start', total: 0 })
       })
       .catch((err: unknown) => {
@@ -1163,18 +1298,28 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
     </Box>
   )
 
-  // Live automode heartbeat: a single status line (spinner + phase + done/total +
-  // the current alert reason + the cancel affordance) — no interleaved text. The
-  // spinner rides the 500ms `now` tick so the operator can SEE it working.
+  // Live automode heartbeat: a FIXED single-line progress bar (▓▓▓░░ done/total +
+  // the current alert reason + cancel affordance) driven purely by the coalesced
+  // progress events. The run's stderr is suppressed from the transcript while a
+  // pass owns this view, so this bar — and the folded "N failed: <reason>" line
+  // under it — is the WHOLE progress UI; the view never scrolls. The spinner rides
+  // the 500ms `now` tick so the operator can SEE it working.
+  const automodeFold = automode ? foldFailures(automode.failures) : null
   const automodeLine = automode ? (
-    <Text color={t.color.accent} wrap="truncate-end">
-      <Text>{`${spinnerFrame(now)} `}</Text>
-      <Text bold>automode</Text>
-      <Text color={t.color.muted}>{`  ${automode.phase}  ·  `}</Text>
-      <Text bold>{`${automode.done}/${automode.total || '…'}`}</Text>
-      {automode.reason ? <Text color={t.color.muted}>{`  ·  ${truncate(automode.reason, 28)}`}</Text> : null}
-      <Text color={t.color.muted}>{'  ·  Shift-A to cancel'}</Text>
-    </Text>
+    <Box flexDirection="column">
+      <Text color={t.color.accent} wrap="truncate-end">
+        <Text>{`${spinnerFrame(now)} `}</Text>
+        <Text bold>automode</Text>
+        <Text color={t.color.muted}>{'  '}</Text>
+        <Text color={t.color.ok}>{progressBar(automode.done, automode.total)}</Text>
+        <Text bold>{`  ${automode.done}/${automode.total || '…'}`}</Text>
+        {automode.reason ? <Text color={t.color.muted}>{`  ·  ${truncate(humanize(automode.reason), 28)}`}</Text> : null}
+        <Text color={t.color.muted}>{'  ·  ⇧A cancel'}</Text>
+      </Text>
+      {automodeFold ? (
+        <Text color={t.color.warn} wrap="truncate-end">{`  ↳ ${failureLine(automodeFold)}`}</Text>
+      ) : null}
+    </Box>
   ) : null
 
   // Dismiss modal: a one-line note capture. While open it owns the keyboard and

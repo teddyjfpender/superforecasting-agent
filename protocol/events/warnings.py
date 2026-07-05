@@ -30,6 +30,10 @@ class AutomodeProgress(WireModel):
     status: str | None = wire_optional()
     cancelled: bool | None = wire_optional()
     dry_run: bool | None = wire_optional()
+    # Running fold of non-resolved alerts, reason -> count. Present once the sweep
+    # has hit a failure so the desk can render one "N failed: <reason>" line under
+    # the progress bar instead of streaming per-alert stderr into the transcript.
+    failures: dict[str, Any] | None = wire_optional()
 
 
 class AutomodeComplete(WireModel):
@@ -43,6 +47,9 @@ class AutomodeComplete(WireModel):
     cancelled: bool | None = wire_optional()
     dry_run: bool | None = wire_optional()
     tally: dict[str, Any] | None = wire_optional()
+    # Final fold of non-resolved alerts, reason -> count — the honest completion
+    # toast reads "<resolved> resolved · <failed> failed: <top reason>" off this.
+    failures: dict[str, Any] | None = wire_optional()
 
 
 class AutomodeError(WireModel):

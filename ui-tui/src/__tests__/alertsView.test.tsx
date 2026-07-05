@@ -5,6 +5,7 @@ import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
+import { isWarningsRunActive, setWarningsRunActive } from '../app/warningsRunStore.js'
 import type {
   ForecastDashboardResponse,
   ForecastTriageContestedRow,
@@ -120,7 +121,11 @@ interface Call {
 // An EventEmitter-backed fake gateway: request() records calls + returns canned
 // results, and on/off/emit drive the streamed automode events. `contestedStore`
 // is MUTABLE — relabel splices the labeled row out so a reload reflects the ack.
-const fakeGw = (calls: Call[], contestedStore: ForecastTriageContestedRow[]) => {
+const fakeGw = (
+  calls: Call[],
+  contestedStore: ForecastTriageContestedRow[],
+  activeJobs: Array<Record<string, unknown>> = []
+) => {
   const gw = new EventEmitter() as EventEmitter & {
     request: (method: string, params?: Record<string, unknown>) => Promise<unknown>
   }
@@ -146,6 +151,9 @@ const fakeGw = (calls: Call[], contestedStore: ForecastTriageContestedRow[]) => 
 
       return Promise.resolve({ count: idx >= 0 ? 1 : 0, success: true })
     }
+    if (method === 'jobs.active') {
+      return Promise.resolve({ count: activeJobs.length, jobs: activeJobs })
+    }
     if (method === 'forecast.warnings.automode.run') {
       return Promise.resolve({ dry_run: false, job_id: 'wj_test' })
     }
@@ -163,6 +171,7 @@ const fakeGw = (calls: Call[], contestedStore: ForecastTriageContestedRow[]) => 
 }
 
 interface MountOpts {
+  activeJobs?: Array<Record<string, unknown>>
   contested?: ForecastTriageContestedRow[]
   initialFocus?: 'contested'
 }
@@ -171,7 +180,7 @@ const mount = async (opts: MountOpts = {}) => {
   process.env.FORECAST_TUI_INLINE = '1'
   const calls: Call[] = []
   const contestedStore: ForecastTriageContestedRow[] = [...(opts.contested ?? [])]
-  const gw = fakeGw(calls, contestedStore)
+  const gw = fakeGw(calls, contestedStore, opts.activeJobs ?? [])
 
   const [{ Box, render }, { AlertsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
     import('@hermes/ink'),
@@ -220,6 +229,7 @@ const mount = async (opts: MountOpts = {}) => {
 describe('AlertsView warning resolution', () => {
   afterEach(() => {
     resetOverlayState()
+    setWarningsRunActive(false)
     delete process.env.FORECAST_TUI_INLINE
   })
 
@@ -611,6 +621,89 @@ describe('free-pass progress coalescing (the operator flash bug)', () => {
     // count (the trailing paint), not an early one.
     expect(text).toContain('open')
     expect(text).toContain('60')
+    m.cleanup()
+  })
+})
+
+describe('R free-pass — fixed inline bar + honest error fold (no scrolling)', () => {
+  it('R renders a ▓░ progress bar from progress events and OWNS the run (stderr suppressed)', async () => {
+    const m = await mount()
+    await m.press('R')
+    await tick(60)
+    // The pass now owns the view: stderr suppression is armed for its lifetime.
+    expect(isWarningsRunActive()).toBe(true)
+
+    m.emit('forecast.warnings.automode.progress', { done: 40, job_id: 'wj_test', phase: 'alert', reason: 'postmortem_due', total: 130 })
+    await tick(60)
+    const text = m.text()
+    // A fixed inline bar (filled ▓ + empty ░) with the live done/total — never a
+    // transcript stream. The current alert reason rides the same single line.
+    expect(text).toContain('▓')
+    expect(text).toContain('░')
+    expect(text).toContain('40/130')
+    m.cleanup()
+  })
+
+  it('folds identical failure reasons to ONE line under the bar', async () => {
+    const m = await mount()
+    await m.press('R')
+    await tick(60)
+    // The server carries a running reason→count fold on the progress event; the
+    // desk collapses it to a single "N failed: <reason>" line (never N rows).
+    m.emit('forecast.warnings.automode.progress', {
+      done: 130,
+      failures: { 'no active autopilot policy': 130 },
+      job_id: 'wj_test',
+      phase: 'alert',
+      total: 130
+    })
+    await tick(60)
+    const text = m.text()
+    expect(text).toContain('130 failed:')
+    expect(text).toContain('No active autopilot policy')
+    // Exactly ONE folded line — the storm never becomes 130 rows.
+    expect(text.match(/failed:/g)?.length ?? 0).toBe(1)
+    m.cleanup()
+  })
+
+  it('completion toast reports honest counts (0 resolved · 130 failed: reason) and releases the run', async () => {
+    const m = await mount()
+    await m.press('R')
+    await tick(60)
+    expect(isWarningsRunActive()).toBe(true)
+
+    m.emit('forecast.warnings.automode.complete', {
+      cancelled: false,
+      failures: { 'no active autopilot policy': 130 },
+      job_id: 'wj_test',
+      processed: 130,
+      tally: { failed: 130 },
+      total: 130
+    })
+    await tick(60)
+    const text = m.text()
+    expect(text).toContain('0 resolved')
+    expect(text).toContain('130 failed')
+    expect(text).toContain('No active autopilot policy')
+    // The pass released the view → stderr streaming resumes for anything else.
+    expect(isWarningsRunActive()).toBe(false)
+    m.cleanup()
+  })
+
+  it('re-attaches to an in-flight warnings pass on mount (bar + progress resume)', async () => {
+    // A pass was already running when the view opened — jobs.active surfaces it.
+    const m = await mount({
+      activeJobs: [{ current: 'evidence_stale', done_count: 12, job_id: 'wj_live', status: 'running', total: 130, type: 'warnings' }]
+    })
+    await tick(80)
+    // Adopted the live job without the operator re-triggering it.
+    expect(isWarningsRunActive()).toBe(true)
+    expect(m.text()).toContain('12/130')
+
+    // Progress for the ADOPTED id drives the same bar.
+    m.emit('forecast.warnings.automode.progress', { done: 77, job_id: 'wj_live', phase: 'alert', total: 130 })
+    await tick(60)
+    expect(m.text()).toContain('77/130')
     m.cleanup()
   })
 })

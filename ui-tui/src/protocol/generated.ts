@@ -109,6 +109,7 @@ export interface ApprovalRespondResponse {
 export interface AutomodeCompletePayload {
   cancelled?: boolean
   dry_run?: boolean
+  failures?: Record<string, unknown>
   job_id: string
   processed?: number
   tally?: Record<string, unknown>
@@ -125,6 +126,7 @@ export interface AutomodeProgressPayload {
   cancelled?: boolean
   done?: number
   dry_run?: boolean
+  failures?: Record<string, unknown>
   job_id: string
   phase?: string
   reason?: string

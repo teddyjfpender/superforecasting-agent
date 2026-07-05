@@ -26,6 +26,7 @@ import type { GatewayEventHandlerContext } from './interfaces.js'
 import { raisePrompt } from './overlayStore.js'
 import { turnController } from './turnController.js'
 import { getUiState, patchUiState } from './uiStore.js'
+import { isWarningsRunActive } from './warningsRunStore.js'
 
 const NO_PROVIDER_RE = /\bNo (?:LLM|inference) provider configured\b/i
 
@@ -483,6 +484,16 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
       case WireEvent.GATEWAY_STDERR: {
         const line = String(ev.payload.line).slice(0, 120)
+
+        // While the Warnings view owns a live automode pass, its runner logs one
+        // (often failing) line PER alert. Those lines are already in the
+        // gateway-client log buffer (/logs) — do NOT also stream them into the
+        // transcript, or a 130-alert failure scrolls the whole view up and down.
+        // The pass's progress + a folded error line render as a fixed bar in the
+        // Warnings chrome instead (see warningsRunStore).
+        if (isWarningsRunActive()) {
+          return
+        }
 
         pushStderrCoalesced(line)
 

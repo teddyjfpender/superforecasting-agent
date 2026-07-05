@@ -1025,6 +1025,26 @@ def build_warning_runners(
     )
 
 
+_FAILURE_REPR_RE = re.compile(r"runner raised:\s*(\w+)\((.*)\)\s*$")
+
+
+def _failure_key(result: dict[str, Any]) -> str | None:
+    """A compact, FOLDABLE reason for one non-resolved alert, or ``None`` when the
+    alert resolved/surfaced. Identical reasons collapse under this key so a 130/130
+    failure storm reads as ONE ``130 failed: <reason>`` line in the desk, never 130
+    scrolling stderr rows. Prefers the inner exception MESSAGE (the operator-facing
+    cause, e.g. "no active autopilot policy") over the debug detail, falling back to
+    the exception type then the raw detail."""
+    if result.get("status") not in ("failed", "skipped"):
+        return None
+    detail = str(result.get("detail") or "").strip()
+    m = _FAILURE_REPR_RE.match(detail)
+    if m:
+        inner = m.group(2).strip().strip("'\"").strip()
+        return inner or m.group(1)
+    return detail or str(result.get("status"))
+
+
 def run_warning_resolution(
     *,
     db_path: str | None = None,
@@ -1147,6 +1167,10 @@ def run_warning_resolution(
     reconcile_result: dict[str, Any] | None = None
     spent = 0  # actual agent-runner invocations this cycle (the spend_cap counter)
     budget_exhausted = False
+    # Running fold of non-resolved alerts by reason (reason -> count). Carried on the
+    # progress + done events so the desk can render ONE "N failed: <reason>" line as
+    # the sweep runs, instead of the caller draining a per-alert stderr storm.
+    failures: dict[str, int] = {}
     with allow_ledger_writes(reason="forecast_warnings_resolution"):
         for index, warning in enumerate(open_warnings, start=1):
             if _is_cancelled():
@@ -1178,11 +1202,17 @@ def run_warning_resolution(
                     led.record_alert_attempt(warning.id, now=now)
                 except Exception:  # a cooldown-stamp failure must never break the sweep
                     pass
-            _emit({
+            fkey = _failure_key(result)
+            if fkey:
+                failures[fkey] = failures.get(fkey, 0) + 1
+            alert_event: dict[str, Any] = {
                 "phase": "alert", "done": index, "total": total,
                 "remaining": total - index, "alert_id": warning.id,
                 "reason": warning.reason, "status": status,
-            })
+            }
+            if failures:
+                alert_event["failures"] = dict(failures)
+            _emit(alert_event)
         # Reconcile unless a cooperative CANCEL stopped us mid-flight (an explicit
         # abort: do not touch alerts we never inspected). A BUDGET halt is different
         # — it only caps the PAID agent sweep; reconcile is cheap, free, non-agent
@@ -1198,8 +1228,12 @@ def run_warning_resolution(
     for result in results:
         status = result.get("status", "?")
         tally[status] = tally.get(status, 0) + 1
-    _emit({"phase": "done", "done": len(results), "total": total, "remaining": 0,
-           "cancelled": cancelled, "budget_exhausted": budget_exhausted, "dry_run": False})
+    done_event: dict[str, Any] = {"phase": "done", "done": len(results), "total": total,
+                                  "remaining": 0, "cancelled": cancelled,
+                                  "budget_exhausted": budget_exhausted, "dry_run": False}
+    if failures:
+        done_event["failures"] = dict(failures)
+    _emit(done_event)
     return {
         "dry_run": False,
         "cancelled": cancelled,
@@ -1209,6 +1243,7 @@ def run_warning_resolution(
         "total": total,
         "results": results,
         "tally": tally,
+        "failures": dict(failures) if failures else None,
         "reconcile": reconcile_result,
     }
 
