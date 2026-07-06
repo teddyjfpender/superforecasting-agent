@@ -378,6 +378,63 @@ def test_workspace_thesis_surfaces_event(tmp_path):
     assert ws["event_detail"]["participants"] == 5
 
 
+def test_aggregate_stamps_event_band_alongside_the_headline(tmp_path):
+    # The thesis publishes a real INTERVAL on its P(event) headline (the second-
+    # order MC band), not a bare dot — even though every member is binary and the
+    # mean-index score band is honestly withheld.
+    ledger, thesis, _ = _senate(tmp_path)
+    ledger.set_thesis_event(thesis.id, kind="count_threshold", threshold=3)
+    res = ledger.aggregate_thesis(thesis.id, rho=0.4)
+    payload = res["payload"]
+    # p10/p50/p90 ride in the FLAT numeric payload alongside the headline.
+    for key in ("event_p10", "event_p50", "event_p90"):
+        assert isinstance(payload[key], float)
+    assert payload["event_p10"] <= payload["event_p50"] <= payload["event_p90"]
+    # Central-in-band: the point headline is inside its own published band.
+    assert payload["event_p10"] <= payload["event_probability"] <= payload["event_p90"]
+    # The mean-index band is still withheld (all-binary → no calibrated dispersion).
+    assert "q05" not in payload
+    # Provenance detail (draw counts, member-interval coverage) lives in metadata.
+    snap = ledger.get_current_snapshot(thesis.id)
+    band_meta = snap.metadata["event"]["band"]
+    assert band_meta["members_defaulted"] == 5 and band_meta["members_with_interval"] == 0
+    assert band_meta["param_draws"] > 0 and band_meta["inner_draws"] > 0
+
+
+def test_aggregate_event_band_is_seed_deterministic(tmp_path):
+    ledger, thesis, _ = _senate(tmp_path)
+    ledger.set_thesis_event(thesis.id, kind="count_threshold", threshold=3)
+    a = ledger.aggregate_thesis(thesis.id, rho=0.4, now="2026-07-03T00:00:00Z", commit=False)
+    b = ledger.aggregate_thesis(thesis.id, rho=0.4, now="2026-07-03T00:00:00Z", commit=False)
+    assert a["payload"]["event_p10"] == b["payload"]["event_p10"]
+    assert a["payload"]["event_p90"] == b["payload"]["event_p90"]
+
+
+def test_workspace_and_summary_surface_the_event_band(tmp_path):
+    ledger, thesis, _ = _senate(tmp_path)
+    ledger.set_thesis_event(thesis.id, kind="count_threshold", threshold=3)
+    ledger.aggregate_thesis(thesis.id, rho=0.4)
+
+    ws = _workspace_thesis(ledger, ledger.get_question(thesis.id))
+    eb = ws["event_band"]
+    assert eb is not None and eb["p10"] <= eb["p50"] <= eb["p90"]
+    # The latest history point carries the interval so the desk draws the band.
+    last = ws["history"][-1]
+    assert last["event_low"] == eb["p10"] and last["event_high"] == eb["p90"]
+
+    row = next(r for r in build_thesis_summary(ledger=ledger) if r["id"] == thesis.id)
+    assert row["event_band"] is not None
+    assert row["event_band"]["p10"] <= row["event_probability"] <= row["event_band"]["p90"]
+
+
+def test_no_event_band_when_no_event_configured(tmp_path):
+    ledger, thesis, _ = _senate(tmp_path)
+    ledger.aggregate_thesis(thesis.id, rho=0.4)  # no event spec
+    ws = _workspace_thesis(ledger, ledger.get_question(thesis.id))
+    assert ws["event_band"] is None
+    assert "event_p10" not in ws  # only the mean-index diagnostics are present
+
+
 def test_thesis_history_stamps_regime_across_the_event_switch(tmp_path):
     # A thesis's headline series SWITCHES when a joint-event is configured: the
     # health mean-index (~0.5) gives way to P(event). Each history point is stamped

@@ -989,6 +989,10 @@ class ForecastThesisHistoryPoint(WireModel):
     thesis_score: float | None = wire_optional(nullable=True)
     score_low: float | None = wire_optional(nullable=True)
     score_high: float | None = wire_optional(nullable=True)
+    # The 90% interval on the P(event) headline for THIS point (second-order MC
+    # band); the desk draws the band around the event series in the event regime.
+    event_low: float | None = wire_optional(nullable=True)
+    event_high: float | None = wire_optional(nullable=True)
 
 
 class ForecastThesisEntity(WireModel):
@@ -1033,6 +1037,19 @@ class ForecastThesisScoreBand(WireModel):
     q95: float | None = wire_optional(nullable=True)
 
 
+class ForecastThesisEventBand(WireModel):
+    """The 90% interval ON the P(event) headline (second-order MC over the
+    member-probability + rho uncertainty). p10/p50/p90 are on the 0..1 event
+    scale. Present even for an all-binary thesis (whose mean-index score band is
+    honestly withheld); None when no event is configured or none participates."""
+
+    TS_NAME = "ForecastThesisEventBand"
+
+    p10: float | None = wire_optional(nullable=True)
+    p50: float | None = wire_optional(nullable=True)
+    p90: float | None = wire_optional(nullable=True)
+
+
 class ForecastThesisSensitivity(WireModel):
     """Per-member ∂P(event)/∂p_i from the thesis event MC — "which race matters".
     ``delta_p_event`` is the P(event) swing across the member's ±2pp bump (already
@@ -1068,6 +1085,11 @@ class ForecastThesis(WireModel):
     headline_probability: float | None = wire_optional(nullable=True)
     headline_display: str | None = wire_optional()
     event_probability: float | None = wire_optional(nullable=True)
+    # The honest 90% interval ON the P(event) headline (second-order MC band).
+    # This is the interval an all-binary thesis CAN publish even though its
+    # mean-index score_band is withheld (binary members carry no calibrated
+    # 0..1-unit dispersion). None when no event is configured / none participates.
+    event_band: ForecastThesisEventBand | None = wire_optional(nullable=True)
     thesis_score: float | None = wire_optional(nullable=True)
     score_band: ForecastThesisScoreBand | None = wire_optional(nullable=True)
     coverage: float | None = wire_optional(nullable=True)

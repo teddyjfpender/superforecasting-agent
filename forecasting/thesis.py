@@ -49,7 +49,14 @@ try:  # pragma: no cover - numpy optional
 except Exception:  # pragma: no cover - numpy optional
     _np = None
 
-__all__ = ["ThesisAggregate", "aggregate_thesis", "ThesisEventResult", "simulate_thesis_event"]
+__all__ = [
+    "ThesisAggregate",
+    "aggregate_thesis",
+    "ThesisEventResult",
+    "simulate_thesis_event",
+    "ThesisEventBand",
+    "simulate_thesis_event_band",
+]
 
 # Default staleness horizon when a member omits ``max_age_days``.
 _DEFAULT_MAX_AGE_DAYS = 45.0
@@ -1127,6 +1134,397 @@ def simulate_thesis_event(
         backend=backend,
         n_draws=draws,
         rho=rho_val,
+        seed=seed,
+        notes=notes,
+    )
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# EVENT-PROBABILITY BAND — the honest interval ON THE HEADLINE ITSELF
+# ════════════════════════════════════════════════════════════════════════════
+#
+# ``simulate_thesis_event`` returns a POINT P(event). It conditions on member
+# POINT probabilities and a POINT rho, so it can only ever be a point — even
+# though every one of those inputs is itself uncertain. That is exactly the
+# operator's complaint: the thesis headline is published as a dot with no
+# interval, and (for an all-binary thesis) the mean-index band is honestly
+# WITHHELD because binary members carry no calibrated 0..1-unit dispersion
+# (see ``aggregate_thesis``: ``if not has_dispersion or only_binary``).
+#
+# The epistemically honest interval propagates PARAMETER uncertainty via a
+# SECOND-ORDER (nested) Monte Carlo:
+#
+#   * OUTER loop — draw a parameter set: perturb each member probability in
+#     LOGIT space (a member that publishes only a point is not certain; its true
+#     probability could differ) and jitter rho over a documented sensitivity
+#     range. A member that DOES publish an interval (``p_ci90`` / ``p_sd``)
+#     overrides the default width with its own — thin inputs stay honestly wide,
+#     rich inputs tighten.
+#   * INNER loop — re-run the SAME Gaussian-copula event MC at that parameter
+#     draw, sharing ONE base latent matrix across every outer draw (common
+#     random numbers). CRN cancels the inner MC noise so the resulting spread is
+#     PARAMETER uncertainty, not sampling jitter.
+#
+# Publishing p10/p50/p90 of the EVENT PROBABILITY itself gives the thesis the
+# interval band the site + TUI already know how to render. When no binary member
+# participates the band is WITHHELD (never fabricated), mirroring the point sim.
+
+# Default epistemic width for a member that publishes only a POINT probability:
+# a std-dev in LOGIT units. 0.35 logit ≈ a ±1σ band of roughly ±4-8pp near the
+# middle (tighter in the tails) — "we trust the point, but not to the last few
+# points." A member that publishes its own interval overrides this per-member.
+_EVENT_BAND_SIGMA_LOGIT = 0.35
+# rho is a judgement call, so the band samples it uniformly over rho ± this
+# spread (clamped to the honest [0, 0.95]); it is a sensitivity range, not noise.
+_EVENT_BAND_RHO_SPREAD = 0.15
+# Draw counts. OUTER = parameter draws (the band's resolution); INNER = copula
+# draws per parameter set (kept modest — CRN across outer draws means the inner
+# noise cancels, so the band needs far fewer inner draws than the point sim).
+_EVENT_BAND_OUTER_NUMPY = 200
+_EVENT_BAND_INNER_NUMPY = 4_000
+_EVENT_BAND_OUTER_PYTHON = 48
+_EVENT_BAND_INNER_PYTHON = 600
+# Band quantiles reported for the event probability.
+_BAND_QUANTILES = (0.10, 0.50, 0.90)
+
+
+@dataclass
+class ThesisEventBand:
+    """A parameter-uncertainty INTERVAL on a thesis's P(event) headline.
+
+    ``p10`` / ``p50`` / ``p90`` are quantiles of the event probability itself
+    under a second-order Monte Carlo that propagates member-probability and rho
+    uncertainty. All three are ``None`` (withheld, not fabricated) when no binary
+    member participates — the same honesty gate as :func:`simulate_thesis_event`.
+
+    The reported band is GUARANTEED to bracket ``center`` (the point headline it
+    annotates): the central-in-band invariant an interval must never violate.
+    """
+
+    center: float | None                      # the point P(event) the band annotates
+    p10: float | None
+    p50: float | None
+    p90: float | None
+    participants: int
+    param_draws: int                           # OUTER parameter draws
+    inner_draws: int                           # INNER copula draws per parameter set
+    rho: float                                 # the point rho the sampling centres on
+    rho_spread: float                          # rho sampled over rho ± this (clamped)
+    sigma_logit_default: float                 # default logit-space width for point-only members
+    members_with_interval: int                 # members whose own interval set the width
+    members_defaulted: int                     # members that used the default width
+    backend: str                               # "numpy" | "python" | "none"
+    seed: int
+    notes: list[str] = field(default_factory=list)
+
+    def to_payload(self) -> dict[str, Any]:
+        """Flat numeric band fields for the snapshot payload (headline-scale)."""
+
+        if self.p10 is None or self.p90 is None:
+            return {}
+        return {
+            "event_p10": self.p10,
+            "event_p50": self.p50,
+            "event_p90": self.p90,
+        }
+
+
+def _member_logit_sigma(part: Mapping[str, Any], default_sigma: float) -> tuple[float, bool]:
+    """Per-member logit-space std dev for the parameter draw.
+
+    A member may publish its OWN uncertainty, which overrides the default:
+      * ``p_ci90`` == ``[lo, hi]`` → sigma = (logit(hi) - logit(lo)) / (2·z90)
+      * ``p_sd``   (0..1 std dev)  → sigma ≈ p_sd / (p·(1-p))   (delta method)
+    Returns ``(sigma_logit, used_member_interval)``. Falls back to ``default``
+    when the member is point-only (or its published width is unusable).
+    """
+
+    p = _clamp(_coerce_float(part.get("p")) or 0.5, _PPF_EPS, 1.0 - _PPF_EPS)
+    ci = part.get("p_ci90")
+    if isinstance(ci, (list, tuple)) and len(ci) == 2:
+        lo = _coerce_float(ci[0])
+        hi = _coerce_float(ci[1])
+        if lo is not None and hi is not None:
+            lo = _clamp(lo, _PPF_EPS, 1.0 - _PPF_EPS)
+            hi = _clamp(hi, _PPF_EPS, 1.0 - _PPF_EPS)
+            if hi > lo:
+                sigma = (logit(hi) - logit(lo)) / (2.0 * _Z90)
+                if math.isfinite(sigma) and sigma > 0:
+                    return sigma, True
+    sd = _coerce_float(part.get("p_sd"))
+    if sd is not None and sd > 0:
+        slope = p * (1.0 - p)
+        if slope > 0:
+            sigma = sd / slope
+            if math.isfinite(sigma) and sigma > 0:
+                return sigma, True
+    return default_sigma, False
+
+
+def _event_prob_numpy(
+    Z_base: Any, L: Any, p_vec: Sequence[float], counter: Any, K: int
+) -> float:
+    """P(#successes ≥ K) for ONE parameter set, reusing the base latents Z_base."""
+
+    np = _np
+    Z = Z_base @ L.T
+    thresholds = np.array([normal_ppf(_clamp(p, _PPF_EPS, 1.0 - _PPF_EPS)) for p in p_vec])
+    success = (Z < thresholds) ^ counter
+    counts = success.astype(np.int64).sum(axis=1)
+    return float(np.mean(counts >= K))
+
+
+def _simulate_band_numpy(
+    p_vec: Sequence[float], counter: Sequence[bool], sigmas: Sequence[float],
+    rho_val: float, rho_spread: float, pairwise: Mapping[frozenset[str], float],
+    ids: Sequence[str], K: int, inner: int, outer: int, seed: int,
+) -> tuple[float, list[float], str | None]:
+    """Vectorised second-order MC: returns (point, outer_samples, chol_note)."""
+
+    np = _np
+    n = len(p_vec)
+    counter_arr = np.asarray(counter, dtype=bool)
+    logits = np.array([logit(_clamp(p, _PPF_EPS, 1.0 - _PPF_EPS)) for p in p_vec])
+    sig = np.asarray(sigmas, dtype=float)
+
+    # ONE base latent matrix, shared across every outer draw (common random
+    # numbers): the outer spread is then PARAMETER uncertainty, not MC noise.
+    base_rng = np.random.default_rng(seed)
+    Z_base = base_rng.standard_normal((inner, n))
+
+    # Point estimate on the SAME latents (so it sits inside the parameter cloud).
+    L0, note = _cholesky_with_jitter(_build_corr_matrix(ids, rho_val, pairwise), use_numpy=True)
+    point = _event_prob_numpy(Z_base, L0, p_vec, counter_arr, K)
+
+    param_rng = np.random.default_rng(seed ^ 0x9E3779B9)
+    samples: list[float] = []
+    for _ in range(outer):
+        z = param_rng.standard_normal(n) * sig
+        pv = 1.0 / (1.0 + np.exp(-(logits + z)))
+        rho_draw = _clamp(rho_val + (param_rng.random() * 2.0 - 1.0) * rho_spread, 0.0, 0.95)
+        L, _n = _cholesky_with_jitter(_build_corr_matrix(ids, rho_draw, pairwise), use_numpy=True)
+        samples.append(_event_prob_numpy(Z_base, L, pv, counter_arr, K))
+    return point, samples, note
+
+
+def _simulate_band_python(
+    p_vec: Sequence[float], counter: Sequence[bool], sigmas: Sequence[float],
+    rho_val: float, rho_spread: float, pairwise: Mapping[frozenset[str], float],
+    ids: Sequence[str], K: int, inner: int, outer: int, seed: int,
+) -> tuple[float, list[float], str | None]:
+    """Pure-stdlib second-order MC (deterministic via ``random.Random(seed)``)."""
+
+    n = len(p_vec)
+    logits = [logit(_clamp(p, _PPF_EPS, 1.0 - _PPF_EPS)) for p in p_vec]
+
+    # One base latent matrix (list-of-rows), shared across outer draws.
+    base_rng = random.Random(seed)
+    Z_base = [[base_rng.gauss(0.0, 1.0) for _ in range(n)] for _ in range(inner)]
+
+    def _event_prob(L: list[list[float]], pv: Sequence[float]) -> float:
+        thresholds = [normal_ppf(_clamp(p, _PPF_EPS, 1.0 - _PPF_EPS)) for p in pv]
+        ge = 0
+        for x in Z_base:
+            cnt = 0
+            for i in range(n):
+                Li = L[i]
+                zi = 0.0
+                for k in range(i + 1):
+                    zi += Li[k] * x[k]
+                raw = zi < thresholds[i]
+                success = (not raw) if counter[i] else raw
+                if success:
+                    cnt += 1
+            if cnt >= K:
+                ge += 1
+        return ge / inner
+
+    L0, note = _cholesky_with_jitter(_build_corr_matrix(ids, rho_val, pairwise), use_numpy=False)
+    point = _event_prob(L0, p_vec)
+
+    param_rng = random.Random(seed ^ 0x9E3779B9)
+    samples: list[float] = []
+    for _ in range(outer):
+        pv = [inv_logit(logits[i] + param_rng.gauss(0.0, 1.0) * sigmas[i]) for i in range(n)]
+        rho_draw = _clamp(rho_val + (param_rng.random() * 2.0 - 1.0) * rho_spread, 0.0, 0.95)
+        L, _n = _cholesky_with_jitter(_build_corr_matrix(ids, rho_draw, pairwise), use_numpy=False)
+        samples.append(_event_prob(L, pv))
+    return point, samples, note
+
+
+def simulate_thesis_event_band(
+    members: Sequence[Mapping[str, Any]],
+    event: Mapping[str, Any],
+    *,
+    rho: float | str = 0.4,
+    correlation_matrix: Mapping[Any, float] | None = None,
+    inner_draws: int | None = None,
+    param_draws: int | None = None,
+    seed: int = 0,
+    rho_spread: float = _EVENT_BAND_RHO_SPREAD,
+    sigma_logit: float = _EVENT_BAND_SIGMA_LOGIT,
+    center: float | None = None,
+) -> ThesisEventBand:
+    """A second-order Monte-Carlo INTERVAL on a thesis's P(event) headline.
+
+    ``simulate_thesis_event`` gives the point; this propagates the uncertainty in
+    its INPUTS — each member probability (perturbed in logit space, using the
+    member's own published interval where it has one, else ``sigma_logit``) and
+    rho (jittered over ``rho ± rho_spread``) — through the SAME Gaussian-copula
+    event MC, and reports p10/p50/p90 of the event probability itself.
+
+    Args:
+        members / event / rho / correlation_matrix: exactly as
+            :func:`simulate_thesis_event` (only binary members participate).
+        inner_draws: copula draws per parameter set (default 4k numpy / 600 py).
+        param_draws: OUTER parameter draws (default 200 numpy / 48 py).
+        seed: deterministic RNG seed (the CALLER derives it from thesis id/as_of).
+        rho_spread: half-width of the uniform rho sensitivity range.
+        sigma_logit: default logit-space std dev for members that publish only a
+            point probability (documented epistemic width — never zero).
+        center: the point P(event) the band must bracket (typically the headline
+            from :func:`simulate_thesis_event`); defaults to this MC's own point.
+
+    Returns:
+        A :class:`ThesisEventBand`. p10/p50/p90 are ``None`` (withheld) when no
+        binary member participates. The reported band always brackets ``center``.
+    """
+
+    kind = str(event.get("kind", "")).lower()
+    if kind not in {"count_threshold", "all", "any"}:
+        raise ValueError(
+            f"event kind must be 'count_threshold', 'all' or 'any', got {kind!r}"
+        )
+
+    # Participants: binary members only (mirror simulate_thesis_event exactly).
+    parts: list[dict[str, Any]] = []
+    for member in members:
+        if str(member.get("kind", "")).lower() != "binary":
+            continue
+        p = _coerce_float(member.get("probability"))
+        if p is None:
+            continue
+        direction = str(member.get("direction", "support")).lower()
+        parts.append({
+            "member_id": str(member.get("member_id", "")),
+            "p": _clamp(p, 0.0, 1.0),
+            "counter": direction == "inverted",
+            "p_ci90": member.get("p_ci90"),
+            "p_sd": member.get("p_sd"),
+        })
+
+    n = len(parts)
+
+    if kind == "all":
+        K = n
+    elif kind == "any":
+        K = 1
+    else:
+        raw_k = event.get("threshold")
+        if raw_k is None:
+            raise ValueError("count_threshold event requires an integer 'threshold'")
+        try:
+            K = int(raw_k)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"threshold must be an integer, got {raw_k!r}") from exc
+
+    if isinstance(rho, str):
+        if rho == "estimate":
+            ps = [part["p"] for part in parts]
+            spread = (max(ps) - min(ps)) if len(ps) > 1 else 0.0
+            rho_val = _clamp(0.6 - 0.25 * spread, 0.0, 0.95)
+        else:
+            raise ValueError(f"rho must be a float or 'estimate', got {rho!r}")
+    else:
+        rho_val = _clamp(float(rho), 0.0, 0.95)
+
+    # Withhold (never fabricate) when nothing participates.
+    if n == 0:
+        return ThesisEventBand(
+            center=None, p10=None, p50=None, p90=None, participants=0,
+            param_draws=0, inner_draws=0, rho=rho_val, rho_spread=rho_spread,
+            sigma_logit_default=sigma_logit, members_with_interval=0,
+            members_defaulted=0, backend="none", seed=seed,
+            notes=["withheld: no binary member participates in the event band"],
+        )
+
+    pairwise = _normalize_event_corr(correlation_matrix)
+    ids = [part["member_id"] for part in parts]
+    p_vec = [part["p"] for part in parts]
+    counter = [part["counter"] for part in parts]
+
+    sigmas: list[float] = []
+    with_interval = 0
+    for part in parts:
+        sig, used = _member_logit_sigma(part, sigma_logit)
+        sigmas.append(sig)
+        if used:
+            with_interval += 1
+    defaulted = n - with_interval
+
+    use_numpy = _np is not None
+    if use_numpy:
+        inner = max(int(inner_draws), 1) if inner_draws else _EVENT_BAND_INNER_NUMPY
+        outer = max(int(param_draws), 1) if param_draws else _EVENT_BAND_OUTER_NUMPY
+        simulate = _simulate_band_numpy
+        backend = "numpy"
+    else:
+        inner = min(int(inner_draws), _EVENT_BAND_INNER_PYTHON) if inner_draws else _EVENT_BAND_INNER_PYTHON
+        outer = min(int(param_draws), _EVENT_BAND_OUTER_PYTHON) if param_draws else _EVENT_BAND_OUTER_PYTHON
+        inner = max(inner, 1)
+        outer = max(outer, 1)
+        simulate = _simulate_band_python
+        backend = "python"
+
+    point, samples, chol_note = simulate(
+        p_vec, counter, sigmas, rho_val, rho_spread, pairwise, ids, K,
+        inner, outer, seed,
+    )
+
+    notes: list[str] = []
+    if chol_note:
+        notes.append(chol_note)
+    if defaulted:
+        notes.append(
+            f"{defaulted} member(s) publish only a point probability; propagated "
+            f"an epistemic width of sigma={sigma_logit:g} in logit space (documented default)"
+        )
+    if with_interval:
+        notes.append(f"{with_interval} member(s) used their own published interval width")
+
+    ordered = sorted(samples)
+    q10 = _quantile(ordered, _BAND_QUANTILES[0])
+    q50 = _quantile(ordered, _BAND_QUANTILES[1])
+    q90 = _quantile(ordered, _BAND_QUANTILES[2])
+
+    # Central-in-band: the reported band MUST bracket the point it annotates.
+    # ``center`` is the headline (from simulate_thesis_event) when the caller
+    # supplies it, else this MC's own point. Widen minimally if MC noise put the
+    # point just outside its own parameter cloud (an interval that excluded its
+    # own headline would be the real lie).
+    annotated = center if center is not None else point
+    lo = min(q10, annotated)
+    hi = max(q90, annotated)
+    if lo < q10 or hi > q90:
+        notes.append("band widened to bracket the point headline (central-in-band)")
+    # Keep the reported median inside [lo, hi] (it always is: q10 ≤ q50 ≤ q90).
+    p50 = _clamp(q50, lo, hi)
+    assert lo <= annotated <= hi, "central-in-band invariant violated"
+
+    return ThesisEventBand(
+        center=annotated,
+        p10=lo,
+        p50=p50,
+        p90=hi,
+        participants=n,
+        param_draws=outer,
+        inner_draws=inner,
+        rho=rho_val,
+        rho_spread=rho_spread,
+        sigma_logit_default=sigma_logit,
+        members_with_interval=with_interval,
+        members_defaulted=defaulted,
+        backend=backend,
         seed=seed,
         notes=notes,
     )

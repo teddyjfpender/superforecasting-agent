@@ -430,6 +430,11 @@ def build_thesis_summary(
                 "health_display": f"{health:.0%}" if health is not None else "-",
                 "thesis_score": payload.get("thesis_score"),
                 "event_probability": event_probability,
+                "event_band": (
+                    {"p10": payload.get("event_p10"), "p50": payload.get("event_p50"), "p90": payload.get("event_p90")}
+                    if payload.get("event_p10") is not None and payload.get("event_p90") is not None
+                    else None
+                ),
                 "event": event_detail.get("event") if event_detail else None,
                 "count_distribution": event_detail.get("count_distribution") if event_detail else None,
                 "top_sensitivities": _top_event_sensitivities(event_detail),
@@ -1360,6 +1365,11 @@ def _thesis_history_point(snapshot: Any) -> dict[str, Any]:
         "thesis_score": payload.get("thesis_score"),
         "score_low": payload.get("q05"),
         "score_high": payload.get("q95"),
+        # The honest interval ON the event headline (second-order MC band). The
+        # desk draws these as the band around the event series — the interval the
+        # mean-index score band cannot give an all-binary thesis.
+        "event_low": payload.get("event_p10"),
+        "event_high": payload.get("event_p90"),
     }
 
 
@@ -1445,6 +1455,17 @@ def _workspace_thesis(
     if payload.get("q05") is not None and payload.get("q95") is not None:
         band = {"q05": payload.get("q05"), "q50": payload.get("q50"), "q95": payload.get("q95")}
 
+    # The honest interval ON the P(event) headline (second-order MC band). This is
+    # the interval an all-binary thesis CAN publish even though its mean-index
+    # score band is withheld (binary members carry no calibrated 0..1 dispersion).
+    event_band = None
+    if payload.get("event_p10") is not None and payload.get("event_p90") is not None:
+        event_band = {
+            "p10": payload.get("event_p10"),
+            "p50": payload.get("event_p50"),
+            "p90": payload.get("event_p90"),
+        }
+
     analyst_notes = ledger.list_analyst_notes(question.id)
 
     # Aggregate freshness: stale when a member moved after the last aggregate (or
@@ -1505,6 +1526,10 @@ def _workspace_thesis(
         "headline_probability": headline,
         "headline_display": f"{headline:.0%}" if headline is not None else "-",
         "score_band": band,
+        # The 90% interval on the P(event) headline (p10/p50/p90), from the
+        # second-order MC. None when no event is configured or no binary member
+        # participates — withheld, never fabricated.
+        "event_band": event_band,
         "coverage": payload.get("coverage"),
         "n_eff": payload.get("n_eff"),
         "rho": ensemble.get("rho"),

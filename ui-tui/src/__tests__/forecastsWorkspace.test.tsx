@@ -1071,6 +1071,52 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('withheld')
   })
 
+  it('renders the P(event) headline band for a joint-event thesis (the interval an all-binary thesis CAN publish)', async () => {
+    const [{ renderSync }, mod, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const { ThesisDeskRead, thesisHealthBandPoints } = mod
+
+    // A joint-threshold thesis (all-binary members): the mean-index score band is
+    // withheld (no calibrated 0..1 dispersion), but the second-order MC publishes a
+    // real interval ON the event headline. history points carry event_low/high.
+    const thesis = {
+      ...inflationThesis(),
+      event_band: { p10: 0.31, p50: 0.35, p90: 0.4 },
+      event_probability: 0.352,
+      history: [
+        { as_of: '2026-05-15T00:00:00Z', event_high: 0.42, event_low: 0.3, headline_probability: 0.34, headline_regime: 'event' },
+        { as_of: '2026-05-22T00:00:00Z', event_high: 0.41, event_low: 0.31, headline_probability: 0.36, headline_regime: 'event' },
+        { as_of: '2026-05-29T00:00:00Z', event_high: 0.4, event_low: 0.31, headline_probability: 0.352, headline_regime: 'event' }
+      ],
+      score_band: null // mean-index band honestly withheld for an all-binary thesis
+    }
+
+    // The trend band points come from the event interval, not a fabricated band.
+    const points = thesisHealthBandPoints(thesis as never)
+    expect(points[points.length - 1]).toEqual({ hi: 0.4, lo: 0.31, y: 0.352 })
+
+    const stdout = writeStream(120, 80)
+    renderSync(React.createElement(ThesisDeskRead, { t: DARK_THEME, thesis: thesis as never, width: 80 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    // The event headline + its 90% interval both surface (35% point, 31–40% band).
+    expect(text).toContain('event %')
+    expect(text).toContain('35%')
+    expect(text).toContain('event band')
+    expect(text).toContain('31% – 40%')
+    // The mean-index score band is still honestly withheld (shows the em dash).
+    expect(text).toContain('score band')
+    // The caveat now explains the band propagates parameter uncertainty.
+    expect(text).toContain('second-order MC')
+  })
+
   it('renders the factor as a lens tab with its member forecasts listed', async () => {
     const text = await renderWorkspace(120, factorFixture())
     // The factor is a lens tab (label truncated by the strip) alongside the

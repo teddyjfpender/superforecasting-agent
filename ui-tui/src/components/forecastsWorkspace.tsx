@@ -2671,13 +2671,15 @@ export const scoreText = (
   return head
 }
 
-// The thesis health time-series as a band chart (health probability with the
-// score band shown as the y-zoom). Distinct from the forecast band chart only in
-// that its series is the thesis's rolling health.
+// The thesis headline time-series as a band chart. In the EVENT regime the point
+// carries a real 90% interval on P(event) (the second-order MC band) — drawn as
+// the band around the series. In the health regime there is no per-point interval
+// for an all-binary thesis (its mean-index band is honestly withheld), so hi/lo
+// stay null. A band is only ever drawn from the point's OWN interval, never faked.
 export const thesisHealthBandPoints = (thesis: ForecastThesis): BandPoint[] =>
   (thesis.history ?? []).map(point => ({
-    hi: null,
-    lo: null,
+    hi: finite(point.event_high) ? point.event_high : null,
+    lo: finite(point.event_low) ? point.event_low : null,
     y: finite(point.headline_probability) ? point.headline_probability : null
   }))
 
@@ -2726,7 +2728,9 @@ function ThesisTrendBlock({ thesis, t, width }: { thesis: ForecastThesis; t: The
             </Text>
           ))}
           <Text color={t.color.label} wrap="truncate-end">
-            {`  ${shortDate(thesis.history?.[0]?.as_of)} → ${shortDate(thesis.as_of)}  ● health`}
+            {`  ${shortDate(thesis.history?.[0]?.as_of)} → ${shortDate(thesis.as_of)}  ● headline${
+              finite(thesis.event_band?.p10) && finite(thesis.event_band?.p90) ? '  ░ 90% event band' : ''
+            }`}
           </Text>
         </>
       ) : (
@@ -2879,6 +2883,7 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
   )
 
   const band = thesis.score_band
+  const eventBand = thesis.event_band
   const members = thesis.member_count ?? comps.length
   const topics = (thesis.topics ?? []).join(', ')
 
@@ -2912,6 +2917,20 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
       <Text color={t.color.muted} wrap="truncate-end">
         {'health = probability it is still alive · score = 0–100 strength index'}
       </Text>
+      {finite(thesis.event_probability) ? (
+        <>
+          <KV k="event %" t={t} v={`${pctOf(thesis.event_probability)} P(event)`} />
+          <KV
+            k="event band"
+            t={t}
+            v={
+              eventBand && finite(eventBand.p10) && finite(eventBand.p90)
+                ? `${pctOf(eventBand.p10)} – ${pctOf(eventBand.p90)} (90% interval)`
+                : '—'
+            }
+          />
+        </>
+      ) : null}
       <KV k="health %" t={t} v={`${thesis.health_display ?? (finite(thesis.health_probability) ? pct(thesis.health_probability) : 'withheld')} alive`} />
       <KV k="score /100" t={t} v={`${scoreText(thesis.thesis_score)} strength`} />
       <KV
@@ -2964,7 +2983,11 @@ export function ThesisDeskRead({ thesis, t, width }: { thesis: ForecastThesis; t
           {`Aggregated after the members' latest runs; members co-move (ρ ${fixedOr(thesis.rho, 2)}, n_eff ~${fixedOr(
             thesis.n_eff,
             1
-          )} of ${thesis.components?.length ?? 0}). Coverage ${pctOf(thesis.coverage)}.`}
+          )} of ${thesis.components?.length ?? 0}). Coverage ${pctOf(thesis.coverage)}.${
+            eventBand && finite(eventBand.p10) && finite(eventBand.p90)
+              ? ` The event band ${pctOf(eventBand.p10)}–${pctOf(eventBand.p90)} propagates member-probability + ρ uncertainty (second-order MC), so it does not shrink with co-movement.`
+              : ''
+          }`}
         </Text>
       </Box>
     </Box>

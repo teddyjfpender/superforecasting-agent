@@ -1458,6 +1458,7 @@ export interface ForecastThesis {
   delta?: null | number
   domain?: null | string
   entities?: ForecastThesisEntity[]
+  event_band?: null | ForecastThesisEventBand
   event_probability?: null | number
   freshness?: string
   headline_display?: string
@@ -1530,9 +1531,17 @@ export interface ForecastThesisEntity {
   weight_count?: number
 }
 
+export interface ForecastThesisEventBand {
+  p10?: null | number
+  p50?: null | number
+  p90?: null | number
+}
+
 export interface ForecastThesisHistoryPoint {
   as_of?: string
   created_at?: string
+  event_high?: null | number
+  event_low?: null | number
   headline_probability?: null | number
   headline_regime?: string
   score_high?: null | number

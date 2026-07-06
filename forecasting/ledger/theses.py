@@ -1147,20 +1147,34 @@ def aggregate_thesis(
     # index (health/score/band stay as diagnostics; nothing removed).
     event_spec = ledger._thesis_event_spec(thesis)
     event_result = None
+    event_band = None
     # The snapshot's probability_or_distribution is validated to a FLAT numeric
-    # dict, so only the numeric event_probability rides in the payload (it is
-    # the headline). The structured detail (spec / count distribution / per-
-    # member sensitivities) is stamped into the snapshot metadata below.
+    # dict, so only the numeric event_probability (+ the p10/p50/p90 band, all
+    # numeric) ride in the payload — the headline and its honest interval. The
+    # structured detail (spec / count distribution / per-member sensitivities /
+    # band provenance) is stamped into the snapshot metadata below.
     event_payload: dict[str, Any] = {}
     if event_spec is not None:
+        seed = ledger._thesis_event_seed(thesis_id, as_of)
         event_result = thesis_math.simulate_thesis_event(
             beliefs, event_spec,
             rho=rho,
             correlation_matrix=correlation,
-            seed=ledger._thesis_event_seed(thesis_id, as_of),
+            seed=seed,
         )
         if event_result.event_probability is not None:
             event_payload = {"event_probability": event_result.event_probability}
+            # Second-order MC interval ON the headline: propagate member-probability
+            # + rho uncertainty so the thesis publishes a real band, not a bare dot.
+            # ``center`` pins the band to bracket the point headline (central-in-band).
+            event_band = thesis_math.simulate_thesis_event_band(
+                beliefs, event_spec,
+                rho=rho,
+                correlation_matrix=correlation,
+                seed=seed,
+                center=event_result.event_probability,
+            )
+            event_payload.update(event_band.to_payload())
 
     def _thesis_payload() -> dict[str, Any]:
         return {**agg.to_payload(), **event_payload}
@@ -1242,7 +1256,8 @@ def aggregate_thesis(
         forecast_origin="live",
         calibration_eligible=False,
         metadata={
-            "thesis_notes": agg.notes + ((event_result.notes if event_result else [])),
+            "thesis_notes": agg.notes + ((event_result.notes if event_result else []))
+            + ((event_band.notes if event_band else [])),
             "thesis_spread": agg.spread,
             "entities": entities,
             "triggers": triggers,
@@ -1260,6 +1275,23 @@ def aggregate_thesis(
                 "n_draws": event_result.n_draws,
                 "rho": event_result.rho,
                 "seed": event_result.seed,
+                # The honest interval ON the headline (second-order MC over the
+                # member-probability + rho uncertainty). p10/p50/p90 also ride in
+                # the flat payload; this carries the provenance for the desk.
+                "band": {
+                    "p10": event_band.p10,
+                    "p50": event_band.p50,
+                    "p90": event_band.p90,
+                    "center": event_band.center,
+                    "param_draws": event_band.param_draws,
+                    "inner_draws": event_band.inner_draws,
+                    "rho_spread": event_band.rho_spread,
+                    "sigma_logit_default": event_band.sigma_logit_default,
+                    "members_with_interval": event_band.members_with_interval,
+                    "members_defaulted": event_band.members_defaulted,
+                    "backend": event_band.backend,
+                    "notes": event_band.notes,
+                } if event_band is not None else None,
             } if (event_result and event_result.event_probability is not None) else None,
         },
         reasons_up=_thesis_reason_lines(agg, "support"),
