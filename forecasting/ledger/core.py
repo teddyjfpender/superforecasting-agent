@@ -92,6 +92,10 @@ from forecasting.ledger import snapshots as _snapshots
 # Forecast-panel domain (panel runs + track-record weighting) lives in the
 # sibling ``panels`` module (D5 carve).
 from forecasting.ledger import panels as _panels
+# Deviation-bet domain (UPGRADE 2 — the deviation ledger: the desk's named-edge
+# bets against the market, scored Brier-ours-vs-market at resolution) lives in the
+# sibling ``deviation_bets`` module.
+from forecasting.ledger import deviation_bets as _deviation_bets
 # Scheduled-review domain (cadence, schedules, the review sweep) lives in the
 # sibling ``reviews`` module (D6 carve).
 from forecasting.ledger import reviews as _reviews
@@ -1284,6 +1288,31 @@ class ForecastLedger:
 
                 CREATE INDEX IF NOT EXISTS idx_panel_estimates_run
                     ON panel_estimates(panel_run_id);
+
+                CREATE TABLE IF NOT EXISTS deviation_bets (
+                    id TEXT PRIMARY KEY,
+                    question_id TEXT NOT NULL REFERENCES forecast_questions(id) ON DELETE CASCADE,
+                    panel_run_id TEXT REFERENCES panel_runs(id) ON DELETE SET NULL,
+                    created_at TEXT NOT NULL,
+                    market_price REAL NOT NULL,
+                    blind_pool REAL,
+                    reconciled_verdict REAL NOT NULL,
+                    deviation_pp REAL NOT NULL,
+                    named_edge TEXT,
+                    threshold_pp REAL NOT NULL,
+                    forecast_origin TEXT,
+                    outcome TEXT,
+                    brier_ours REAL,
+                    brier_market REAL,
+                    brier_delta REAL,
+                    resolution_id TEXT REFERENCES resolutions(id) ON DELETE SET NULL,
+                    scored_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_deviation_bets_question
+                    ON deviation_bets(question_id, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_deviation_bets_open
+                    ON deviation_bets(outcome, created_at DESC);
 
                 CREATE TABLE IF NOT EXISTS analyst_notes (
                     id TEXT PRIMARY KEY,
@@ -3024,6 +3053,23 @@ class ForecastLedger:
                     exc_info=True,
                 )
 
+        # UPGRADE 2 — deviation-bet resolution hook: score any OPEN named-edge bet
+        # for this question (Brier-ours-vs-Brier-market on the realized outcome).
+        # Fail-open + gated on scoreable exactly like auto-score; a scoring hiccup
+        # must never break the resolution, and the scorer is idempotent (an already-
+        # scored bet is skipped) so a re-resolve is a no-op.
+        if resolution_status == "confirmed" and criteria_satisfied and scoreable:
+            try:
+                self.score_deviation_bets(
+                    question_id, outcome, resolution_id=resolution_id, now=now
+                )
+            except Exception:
+                logger.debug(
+                    "deviation-bet scoring on resolution failed for %s",
+                    question_id,
+                    exc_info=True,
+                )
+
         return self.get_resolution(resolution_id)
 
     def get_resolution(self, resolution_id: str) -> Resolution:
@@ -3499,11 +3545,48 @@ class ForecastLedger:
         supervisor_evidence: list[dict[str, Any]] | None = None,
         delphi_rounds: int = 0,
         delphi_audit: dict[str, Any] | None = None,
+        supervisor_search_enabled: bool = False,
+        market_anchor: dict[str, Any] | None = None,
+        pseudo_diversity_caveat: str | None = None,
+        panel_resolution_note: str | None = None,
+        blind_pool: float | None = None,
+        reconciled_pool: float | None = None,
     ) -> dict[str, Any]:
-        return _panels.record_panel_run(self, question_id=question_id, estimates=estimates, aggregation_method=aggregation_method, trim=trim, snapshot_id=snapshot_id, triggered_by=triggered_by, perspectives=perspectives, judge=judge, final_probability=final_probability, final_source=final_source, research_rounds=research_rounds, supervisor_evidence=supervisor_evidence, delphi_rounds=delphi_rounds, delphi_audit=delphi_audit)
+        return _panels.record_panel_run(self, question_id=question_id, estimates=estimates, aggregation_method=aggregation_method, trim=trim, snapshot_id=snapshot_id, triggered_by=triggered_by, perspectives=perspectives, judge=judge, final_probability=final_probability, final_source=final_source, research_rounds=research_rounds, supervisor_evidence=supervisor_evidence, delphi_rounds=delphi_rounds, delphi_audit=delphi_audit, supervisor_search_enabled=supervisor_search_enabled, market_anchor=market_anchor, pseudo_diversity_caveat=pseudo_diversity_caveat, panel_resolution_note=panel_resolution_note, blind_pool=blind_pool, reconciled_pool=reconciled_pool)
 
     def get_panel_run(self, run_id: str) -> dict[str, Any]:
         return _panels.get_panel_run(self, run_id=run_id)
+
+    # ── Deviation bets (UPGRADE 2 — the deviation ledger) ──────────────────────
+
+    def record_deviation_bet(self, **kwargs: Any) -> dict[str, Any]:
+        return _deviation_bets.record_deviation_bet(self, **kwargs)
+
+    def get_deviation_bet(self, bet_id: str) -> dict[str, Any]:
+        return _deviation_bets.get_deviation_bet(self, bet_id)
+
+    def list_deviation_bets(
+        self,
+        question_id: str | None = None,
+        *,
+        only_open: bool = False,
+        only_scored: bool = False,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        return _deviation_bets.list_deviation_bets(self, question_id, only_open=only_open, only_scored=only_scored, limit=limit)
+
+    def score_deviation_bets(
+        self,
+        question_id: str,
+        outcome: Any,
+        *,
+        resolution_id: str | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        return _deviation_bets.score_deviation_bets(self, question_id, outcome, resolution_id=resolution_id, now=now)
+
+    def deviation_bet_edge_report(self) -> dict[str, Any]:
+        return _deviation_bets.deviation_bet_edge_report(self)
 
     def list_panel_runs(
         self,

@@ -2512,6 +2512,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     mn_report.add_argument("--json", action="store_true", help="Emit the report as JSON")
     mn_report.set_defaults(_forecast_handler=_cmd_market_nightly_report)
 
+    edge_parser = forecast_sub.add_parser(
+        "edge",
+        help=(
+            "UPGRADE 2 — the deviation ledger: did the desk's named-edge deviations "
+            "from the market beat it? n, win-rate vs market, mean Brier delta, "
+            "paired-bootstrap CI, and a threshold RECOMMENDATION (never auto-applied)."
+        ),
+    )
+    edge_parser.add_argument("--json", action="store_true", help="Emit the edge report as JSON")
+    edge_parser.set_defaults(_forecast_handler=_cmd_edge)
+
     tail_audit_parser = forecast_sub.add_parser(
         "tail-audit",
         help=(
@@ -3846,6 +3857,15 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         ablation = None
 
+    # DEVIATION EDGE (UPGRADE 2): did the desk's named-edge deviations from the
+    # market beat it, on resolved bets? The clean read on whether the whole
+    # orthogonality thesis is paying off — n, win-rate, mean Brier delta + CI, and
+    # a threshold recommendation (advisory only). Read-only + fail-safe.
+    try:
+        deviation_edge = ledger.deviation_bet_edge_report()
+    except Exception:
+        deviation_edge = None
+
     return {
         "product": PRODUCT_NAME,
         "process_version": PROCESS_VERSION,
@@ -3861,6 +3881,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "durability": durability,
         "source_diversity": source_diversity,
         "panel_vs_solo_ablation": ablation,
+        "deviation_edge": deviation_edge,
         "status": status,
         "pilot_report": pilot_report,
         "readiness": {
@@ -4293,6 +4314,19 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         from forecasting.ablation_study import format_ablation_line
 
         print(format_ablation_line(ablation))
+
+    edge = report.get("deviation_edge")
+    if isinstance(edge, dict) and (edge.get("n") or edge.get("n_open")):
+        delta = edge.get("mean_brier_delta")
+        delta_txt = f"{delta:+.4f}" if isinstance(delta, (int, float)) else "-"
+        wr = edge.get("win_rate")
+        wr_txt = f"{wr:.0%}" if isinstance(wr, (int, float)) else "-"
+        print(
+            f"deviation_edge: {edge.get('n', 0)} scored / {edge.get('n_open', 0)} open "
+            f"named-edge bets; win-rate {wr_txt}, mean Brier delta {delta_txt} "
+            f"[{edge.get('status')}]"
+        )
+        print(f"  {edge.get('recommendation')}")
 
     batches = report.get("templated_batches") or []
     if batches:
@@ -11997,6 +12031,49 @@ def _cmd_market_nightly_score(args: argparse.Namespace) -> None:
         print(f"  - {row['question_id']} outcome={row['outcome']} agent_brier={ab_s} market_brier={mb_s}")
     for note in result["notes"]:
         print(f"  note: {note}")
+
+
+def _cmd_edge(args: argparse.Namespace) -> None:
+    """UPGRADE 2 — read-only roll-up of the deviation ledger (named-edge bets vs market)."""
+    report = _ledger(args).deviation_bet_edge_report()
+    if getattr(args, "json", False):
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    def _fmt(value: Any) -> str:
+        return f"{value:.4f}" if isinstance(value, (int, float)) else "-"
+
+    n = report["n"]
+    print(
+        f"deviation bets — scored: {n}  open (pending resolution): {report.get('n_open', 0)}"
+        f"  [{report['status']}]"
+    )
+    if n == 0:
+        print(f"  {report['recommendation']}")
+        return
+    wr = report.get("win_rate")
+    print(
+        f"  win-rate vs market = "
+        + (f"{wr:.0%} ({report['agent_wins']}/{n})" if isinstance(wr, (int, float)) else "-")
+        + f"  (agent/market/ties = {report['agent_wins']}/{report['market_wins']}/{report['ties']})"
+    )
+    print(f"  mean Brier: ours = {_fmt(report.get('mean_brier_ours'))}  market = {_fmt(report.get('mean_brier_market'))}")
+    edge = report.get("mean_brier_delta")
+    lo = report.get("ci95_low")
+    hi = report.get("ci95_high")
+    band = (
+        f" [95% CI {lo:+.4f}..{hi:+.4f}]"
+        if isinstance(lo, (int, float)) and isinstance(hi, (int, float))
+        else ""
+    )
+    print(
+        "  mean Brier delta (market - ours, +ve ⇒ we beat market) = "
+        + (f"{edge:+.4f}{band}" if isinstance(edge, (int, float)) else "-")
+    )
+    p = report.get("p_value")
+    if isinstance(p, (int, float)):
+        print(f"  paired-bootstrap p-value = {p:.4f}")
+    print(f"  RECOMMENDATION: {report['recommendation']}")
 
 
 def _cmd_market_nightly_report(args: argparse.Namespace) -> None:

@@ -1015,3 +1015,170 @@ def test_resolve_connected_panel_zero_providers_fails_open():
     assert res["rebuilt"] is False
     assert res["label"] is None
     assert res["models"] is None
+
+
+# ── UPGRADE 1 — blind-then-reconcile panelist protocol ────────────────────────
+
+
+def _blind_reconcile_runner(blind_p, reconciled_p, *, justification="named edge", capture=None):
+    """A stub whose panelist RECONCILE turn (message carries '## Market
+    Reconciliation') returns ``reconciled_p`` and whose BLIND turn returns
+    ``blind_p``. Records every blind-turn user message into ``capture`` so a test
+    can prove the anchor never reached phase 1."""
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps(
+                {
+                    "probability": 0.5,
+                    "rationale": "j",
+                    "directional_confidence": "medium",
+                    "market_deviation_justification": justification,
+                }
+            )
+        if "Market Reconciliation" in user:
+            return json.dumps(
+                {
+                    "probability": reconciled_p,
+                    "rationale": "reconciled",
+                    "reconcile_reason": "converged toward the market",
+                }
+            )
+        if capture is not None:
+            capture.append(user)
+        return json.dumps({"probability": blind_p, "rationale": "blind"})
+
+    return runner
+
+
+def test_blind_phase_never_sees_the_anchor():
+    # UPGRADE 1: the anchor must PROVABLY never reach the blind (phase-1) prompt.
+    blind_users: list[str] = []
+    run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b", "c/d", "e/f"],
+        runner=_blind_reconcile_runner(0.60, 0.45, capture=blind_users),
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=0.20,
+        market_anchor_threshold_pp=10.0,
+    )
+    assert blind_users, "expected at least one blind-turn prompt"
+    for user in blind_users:
+        assert "0.20" not in user and "0.2000" not in user
+        assert "Outside-View Anchor" not in user
+        assert "Market Reconciliation" not in user
+        assert "market" not in user.lower() or "the market" not in user.lower()
+
+
+def test_build_panelist_prompt_blind_omits_anchor():
+    # Direct prompt-content assertion: with no anchor the blind prompt is anchor-free.
+    from forecasting.quorum import build_panelist_prompt
+
+    blind = build_panelist_prompt(
+        question_title="Q", resolution_criteria="R", context_packet="", market_anchor=None
+    )
+    assert "Outside-View Anchor" not in blind["user"]
+    # And the reconcile block DOES carry the anchor (phase 2 only).
+    from forecasting.quorum import build_reconcile_block
+
+    block = build_reconcile_block(blind_probability=0.6, market_anchor=0.2, threshold_pp=10.0)
+    assert "0.2000" in block and "Market Reconciliation" in block and "reconcile_reason" in block
+
+
+def test_blind_and_reconciled_numbers_both_recorded():
+    # UPGRADE 1: BOTH numbers per panelist are recorded (blind + reconciled + reason).
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b", "c/d", "e/f"],
+        runner=_blind_reconcile_runner(0.60, 0.45),
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=0.20,
+        market_anchor_threshold_pp=10.0,
+    )
+    for f in res.ok_forecasts:
+        assert f.blind_probability == 0.60
+        assert f.reconciled_probability == 0.45
+        assert f.probability == 0.45  # committed == reconciled
+        assert f.reconcile_reason == "converged toward the market"
+    # The estimate metadata carries both, so the durable panel_run is honest.
+    meta = res.panel_estimates()[0]["metadata"]
+    assert meta["blind_probability"] == 0.60 and meta["reconciled_probability"] == 0.45
+
+
+def test_reconciled_pool_routes_to_commit_blind_pool_is_independent():
+    # UPGRADE 1: the pool/judge/commit operate on RECONCILED; the BLIND pool is
+    # recorded alongside as the market-independent (orthogonality) signal.
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b", "c/d", "e/f"],
+        runner=_blind_reconcile_runner(0.60, 0.45),
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=0.20,
+        market_anchor_threshold_pp=10.0,
+    )
+    assert round(res.reconciled_pool, 4) == 0.45  # reconciled numbers pooled
+    assert round(res.blind_pool, 4) == 0.60  # blind numbers pooled, independently
+    assert res.reconciled_pool == res.aggregation.aggregate_probability
+    # blind_pool != reconciled_pool -> the orthogonality signal is computable.
+    assert abs(res.blind_pool - res.market_price) > abs(res.reconciled_pool - res.market_price)
+    d = res.to_dict()
+    assert d["blind_pool"] == 0.6 and d["reconciled_pool"] == 0.45
+
+
+def test_non_market_is_single_phase_unchanged():
+    # UPGRADE 1: a non-market question (no anchor) pays for NO reconcile turn — one
+    # runner call per panelist — and blind/reconciled pools stay None.
+    calls: dict[str, int] = {}
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps({"probability": 0.5, "rationale": "j"})
+        assert "Market Reconciliation" not in user  # never a reconcile turn
+        calls[model] = calls.get(model, 0) + 1
+        return _panelist_json(0.4)
+
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b", "c/d"],
+        runner=runner,
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=None,  # non-market
+    )
+    assert calls == {"a/b": 1, "c/d": 1}  # exactly one call per panelist
+    assert res.blind_pool is None and res.reconciled_pool is None
+    assert res.to_dict()["blind_pool"] is None
+
+
+def test_two_turn_single_session_seam_used_when_present():
+    # UPGRADE 1: a runner exposing `.two_turn` gets the single-session path (one
+    # blind turn, one reconcile turn) — the anchor enters ONLY via the follow-up.
+    seen = {"blind_user": None, "reconcile_user": None}
+
+    def runner(model, system, user):  # single-turn (judge + fallback)
+        return json.dumps({"probability": 0.5, "rationale": "j", "market_deviation_justification": "edge"})
+
+    def two_turn(model, system, blind_user, build_reconcile):
+        seen["blind_user"] = blind_user
+        blind_text = json.dumps({"probability": 0.7, "rationale": "blind"})
+        reconcile_user = build_reconcile(blind_text)  # anchor introduced HERE
+        seen["reconcile_user"] = reconcile_user
+        return blind_text, json.dumps({"probability": 0.5, "rationale": "rec", "reconcile_reason": "held"})
+
+    runner.two_turn = two_turn
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b"],
+        runner=runner,
+        judge_model="anthropic/claude-opus-4-8",
+        market_anchor=0.30,
+        market_anchor_threshold_pp=10.0,
+    )
+    assert "Outside-View Anchor" not in seen["blind_user"]
+    assert "0.3000" in seen["reconcile_user"] and "0.7000" in seen["reconcile_user"]
+    assert res.ok_forecasts[0].blind_probability == 0.7
+    assert res.ok_forecasts[0].reconciled_probability == 0.5

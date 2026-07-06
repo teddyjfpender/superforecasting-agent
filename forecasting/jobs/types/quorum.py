@@ -103,6 +103,11 @@ def _to_legacy(record: Any) -> dict[str, Any]:
     panel_run_id = result.get("panel_run_id")
     if panel_run_id is None:
         panel_run_id = ann.get("panel_run_id")
+    # UPGRADE 2 — surface the deviation bet id (like panel_run_id) so the desk/CLI
+    # can see a named-edge bet the run just recorded (None when no bet fired).
+    deviation_bet_id = result.get("deviation_bet_id")
+    if deviation_bet_id is None:
+        deviation_bet_id = ann.get("deviation_bet_id")
     return {
         "run_id": record.job_id,
         "question_id": (record.spec or {}).get("question_id"),
@@ -112,6 +117,7 @@ def _to_legacy(record: Any) -> dict[str, Any]:
         "spec": record.spec,
         "progress": record.progress,
         "panel_run_id": panel_run_id,
+        "deviation_bet_id": deviation_bet_id,
         "result": quorum_result,
         "error": record.error,
     }
@@ -564,7 +570,27 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     # unknown provider picture fails open and keeps the preset verbatim.
     panel_resolution_note: str | None = None
     a_preset = spec.get("preset")
-    if not spec.get("models") and a_preset not in (None, "self") and not self_fusion:
+
+    # OPERATOR-PINNED PANEL (QUORUM_PANEL_MODELS) — precedence over BOTH the preset
+    # expansion and the connected-provider rebuild. The CLI already resolves this into
+    # spec["models"]; this covers the non-CLI callers (gateway / autorun) whose spec did
+    # not. A non-callable entry raises ValidationError, which the runtime turns into an
+    # honest whole-job error rather than a silent drop.
+    panel_pinned = False
+    if not spec.get("models"):
+        from forecasting.quorum import resolve_configured_panel
+
+        configured = resolve_configured_panel()
+        if configured:
+            models = configured["models"]
+            if configured.get("judge") and not spec.get("judge"):
+                judge_model = configured["judge"]
+            self_fusion = False
+            panel_pinned = True
+            panel_resolution_note = "QUORUM_PANEL_MODELS -> " + ", ".join(models)
+            emit("panel_resolution", panel_resolution_note)
+
+    if not spec.get("models") and not panel_pinned and a_preset not in (None, "self") and not self_fusion:
         panel = resolve_connected_panel(
             a_preset,
             active_model=spec.get("active_model"),
@@ -737,6 +763,23 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
             "justification": result.market_justification,
             "pull_applied": bool(result.market_pull_applied),
         }
+    # UPGRADE 2 — the deviation ledger. Create a bet ONLY on a LIVE run (never a
+    # backtest: foreknowledge-gated by the SAME _cutoff_is_live predicate the
+    # supervisor search uses, so a resolved-question replay can never fabricate an
+    # edge) when the reconciled verdict deviates from the market anchor past the
+    # threshold WITH a named edge that was NOT pulled back to the price — a genuine
+    # conviction bet against the market. A within-threshold verdict, or one whose
+    # unjustified deviation was pulled toward the market, is deliberately NOT a bet.
+    live_run = _cutoff_is_live(evidence_cutoff)
+    make_bet = (
+        live_run
+        and result.market_price is not None
+        and result.market_deviation_pp is not None
+        and result.market_deviation_pp > market_anchor_threshold
+        and not result.market_pull_applied
+        and bool((result.market_justification or "").strip())
+    )
+    deviation_bet_id: str | None = None
     with allow_ledger_writes(reason="quorum_jobs.execute_job"):
         panel_run = ledger.record_panel_run(
             question_id=question.id,
@@ -756,12 +799,40 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
             market_anchor=market_anchor_record,
             pseudo_diversity_caveat=result.pseudo_diversity_caveat,
             panel_resolution_note=panel_resolution_note,
+            blind_pool=result.blind_pool,
+            reconciled_pool=result.reconciled_pool,
         )
+        if make_bet:
+            bet = ledger.record_deviation_bet(
+                question_id=question.id,
+                panel_run_id=panel_run["id"],
+                market_price=float(result.market_price),
+                blind_pool=result.blind_pool,
+                reconciled_verdict=float(result.committed_probability),
+                deviation_pp=float(result.market_deviation_pp),
+                named_edge=result.market_justification,
+                threshold_pp=float(market_anchor_threshold),
+                forecast_origin="live",
+            )
+            deviation_bet_id = bet["id"]
+            emit(
+                "deviation_bet",
+                f"named-edge bet vs market {float(result.market_price):.3f}: verdict "
+                f"{float(result.committed_probability):.3f} "
+                f"({float(result.market_deviation_pp):.1f}pp, blind_pool "
+                f"{result.blind_pool if result.blind_pool is None else round(result.blind_pool, 3)})",
+            )
 
     # Carry the panel_run_id + aggregate on the record's annotations too, so a
     # mid-flight read (before the runtime writes the terminal result) is still honest.
     ctx.annotate("panel_run_id", panel_run["id"])
-    return {"quorum_result": result.to_dict(), "panel_run_id": panel_run["id"]}
+    if deviation_bet_id:
+        ctx.annotate("deviation_bet_id", deviation_bet_id)
+    return {
+        "quorum_result": result.to_dict(),
+        "panel_run_id": panel_run["id"],
+        "deviation_bet_id": deviation_bet_id,
+    }
 
 
 QUORUM = JobType(

@@ -81,6 +81,10 @@ GATED_LEDGER_TABLES = frozenset(
         "forecast_questions",
         "forecast_snapshots",
         "panel_runs",
+        # Deviation bets (UPGRADE 2): a forecast-producing artifact (the desk's
+        # named-edge bet AGAINST the market). Creating one is a gated write — an
+        # ad-hoc script cannot fabricate a bet outside the quorum commit context.
+        "deviation_bets",
         # Watch config drives every automated data flow (refresh, autopilot,
         # alerts): a script mass-inserting watches is the same bypass class as
         # a scripted forecast. The tool exposes add_watched_source and the bulk

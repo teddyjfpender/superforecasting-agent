@@ -202,6 +202,94 @@ def test_extract_market_anchor_from_snapshot_component():
     assert extract_market_anchor(ledger, binary_q, plain) is None
 
 
+def _named_edge_runner_factory(table, *, justification="private unpriced signal"):
+    """A runner whose JUDGE names a market-deviation edge (so a large deviation is
+    KEPT, not pulled) — the setup that turns a deviation into a deviation BET."""
+
+    def make(**_kwargs):
+        def runner(model, system, user):
+            if "JUDGE" in system:
+                return json.dumps(
+                    {
+                        "probability": 0.55,
+                        "rationale": "judge",
+                        "directional_confidence": "medium",
+                        "market_deviation_justification": justification,
+                    }
+                )
+            return json.dumps(
+                {
+                    "probability": table.get(model, 0.5),
+                    "rationale": "panelist",
+                    "reconcile_reason": "held on the named edge",
+                }
+            )
+
+        return runner
+
+    return make
+
+
+def test_execute_job_creates_deviation_bet_on_live_named_edge(home, tmp_path, monkeypatch):
+    # UPGRADE 2: a LIVE market run whose reconciled verdict deviates past the
+    # threshold WITH a named edge (no pull) creates a scored-later deviation bet.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = ledger.create_question(
+        title="Will the merger close by Q4 2027?",
+        resolution_criteria="Resolves YES if the deal closes before 2028-01-01.",
+        impact="high",
+    )
+    table = {"a/m1": 0.55, "b/m2": 0.56}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _named_edge_runner_factory(table))
+    monkeypatch.setattr(qj, "extract_market_anchor", lambda *a, **k: 0.20)
+
+    spec = {"question_id": q.id, "db": db, "models": list(table), "trim": 0}
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+    assert job["status"] == "done", job.get("error")
+
+    result = job["result"]
+    assert result["market_pull_applied"] is False  # named edge -> no pull
+    assert job["deviation_bet_id"], "a live named-edge deviation must create a bet"
+
+    bets = ledger.list_deviation_bets(only_open=True)
+    assert len(bets) == 1
+    bet = bets[0]
+    assert bet["market_price"] == 0.20
+    assert bet["reconciled_verdict"] > 0.30 and bet["deviation_pp"] > 10.0
+    assert bet["named_edge"] == "private unpriced signal"
+    assert bet["blind_pool"] is not None  # the market-independent signal is stamped
+    assert bet["forecast_origin"] == "live"
+    # Progress announced the bet.
+    assert any(p["stage"] == "deviation_bet" for p in job["progress"])
+
+
+def test_execute_job_skips_deviation_bet_on_historical_cutoff(home, tmp_path, monkeypatch):
+    # UPGRADE 2: bet creation is foreknowledge-gated — a HISTORICAL cutoff (backtest/
+    # replay) creates NO bet, even with a named-edge deviation, so a resolved-question
+    # replay can never manufacture a fake edge.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = ledger.create_question(
+        title="Will the satellite launch by Q1 2027?",
+        resolution_criteria="Resolves YES if launched before 2027-04-01.",
+        impact="high",
+    )
+    table = {"a/m1": 0.55, "b/m2": 0.56}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _named_edge_runner_factory(table))
+    monkeypatch.setattr(qj, "extract_market_anchor", lambda *a, **k: 0.20)
+    # Force the foreknowledge gate CLOSED (historical cutoff / backtest).
+    monkeypatch.setattr(qj, "_cutoff_is_live", lambda *a, **k: False)
+
+    spec = {"question_id": q.id, "db": db, "models": list(table), "trim": 0}
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+    assert job["status"] == "done", job.get("error")
+    assert job["deviation_bet_id"] is None
+    assert ledger.list_deviation_bets() == []
+
+
 def test_execute_job_pulls_verdict_toward_market_anchor(home, tmp_path, monkeypatch):
     # A market-linked question with an unjustified over-deviation is pulled back
     # toward the market, and the artifact records the pull.

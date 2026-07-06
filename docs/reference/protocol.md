@@ -246,6 +246,7 @@ _(no fields)_
 | --- | --- |
 | `cancelled` | `boolean?` |
 | `dry_run` | `boolean?` |
+| `failures` | `Record<string, unknown>?` |
 | `job_id` | `string` |
 | `processed` | `number?` |
 | `tally` | `Record<string, unknown>?` |
@@ -266,6 +267,7 @@ _(no fields)_
 | `cancelled` | `boolean?` |
 | `done` | `number?` |
 | `dry_run` | `boolean?` |
+| `failures` | `Record<string, unknown>?` |
 | `job_id` | `string` |
 | `phase` | `string?` |
 | `reason` | `string?` |

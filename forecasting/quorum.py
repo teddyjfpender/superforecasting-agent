@@ -155,6 +155,17 @@ class ModelForecast:
     round_index: int = 1
     prior_probability: float | None = None
     revision_reason: str | None = None
+    # Blind-then-reconcile provenance (UPGRADE 1). On a market-linked question each
+    # panelist first produces a BLIND estimate WITHOUT seeing the market anchor
+    # (``blind_probability``), then — in a second turn on the SAME session — sees the
+    # anchor + its own blind number and RECONCILES (``reconciled_probability`` == the
+    # committed ``probability``), giving a named-edge ``reconcile_reason`` for any
+    # deviation. Both default to None so a non-market single-phase panelist (the
+    # anchor is None → no reconcile turn) is byte-identical to before: the blind and
+    # reconciled numbers are simply the one committed number.
+    blind_probability: float | None = None
+    reconciled_probability: float | None = None
+    reconcile_reason: str | None = None
 
     def to_estimate(self) -> dict[str, Any]:
         """Shape this forecast as a panel estimate for ``aggregate_panel_estimates``."""
@@ -177,6 +188,10 @@ class ModelForecast:
                 "round_index": self.round_index,
                 "prior_probability": self.prior_probability,
                 "revision_reason": self.revision_reason,
+                # Blind-then-reconcile provenance (None on the non-market path).
+                "blind_probability": self.blind_probability,
+                "reconciled_probability": self.reconciled_probability,
+                "reconcile_reason": self.reconcile_reason,
             },
         }
 
@@ -300,6 +315,16 @@ class QuorumResult:
     market_deviation_pp: float | None = None
     market_justification: str | None = None
     market_pull_applied: bool = False
+    # Blind-then-reconcile pools (UPGRADE 1 — the continuous orthogonality signal).
+    # ``blind_pool`` is the panel aggregate over the panelists' BLIND (pre-anchor)
+    # numbers — the market-INDEPENDENT signal, de-correlated from the price by
+    # construction; ``reconciled_pool`` is the aggregate over their RECONCILED
+    # (post-anchor) numbers (== the pooled ``aggregate_probability`` the judge/commit
+    # path operates on). Stamped alongside ``market_price`` so blind-vs-market
+    # divergence (the orthogonality measurement) travels with every market panel.
+    # Both None on a non-market question (no anchor → no blind/reconcile split).
+    blind_pool: float | None = None
+    reconciled_pool: float | None = None
     # Self-fusion pseudo-diversity caveat (FIX B). A prominent, honest label set when
     # the panel is N samples of ONE model (not independent multi-model fusion), so a
     # reader never mistakes resample spread for genuine model diversity. None on a
@@ -365,6 +390,15 @@ class QuorumResult:
             ),
             "market_justification": self.market_justification,
             "market_pull_applied": self.market_pull_applied,
+            # Blind-then-reconcile pools (None on a non-market question).
+            "blind_pool": (
+                round(self.blind_pool, 6) if self.blind_pool is not None else None
+            ),
+            "reconciled_pool": (
+                round(self.reconciled_pool, 6)
+                if self.reconciled_pool is not None
+                else None
+            ),
             "pseudo_diversity_caveat": self.pseudo_diversity_caveat,
             "judge": self.judge.to_dict() if self.judge else None,
             "forecasts": [
@@ -452,6 +486,43 @@ def build_panelist_prompt(
             "principles; do not assume any particular prior answer.)"
         )
     return {"system": _PANELIST_SYSTEM, "user": user}
+
+
+def build_reconcile_block(
+    *,
+    blind_probability: float,
+    market_anchor: float,
+    threshold_pp: float = 10.0,
+) -> str:
+    """The RECONCILE turn (UPGRADE 1 — blind-then-reconcile, phase 2).
+
+    Appended as a second-turn message AFTER a panelist has committed its BLIND
+    estimate (formed without ever seeing the market). It reveals the market anchor
+    and the panelist's OWN blind number and asks it to reconcile — keep, converge,
+    or hold against the market — naming the specific edge for any deviation past
+    ``threshold_pp``. Deliberately does NOT re-state the question (the reconcile
+    runs on the same session, so the model still has the full blind-turn context);
+    the two-session fallback re-supplies it. The panelist returns the same JSON
+    schema plus ``reconcile_reason``.
+    """
+
+    return (
+        "\n\n## Market Reconciliation\n"
+        f"Your BLIND estimate — formed WITHOUT seeing any market — was "
+        f"{float(blind_probability):.4f}.\n"
+        f"The market now prices YES at {float(market_anchor):.4f}. Treat the market as "
+        "the OUTSIDE-VIEW PRIOR: a strong aggregator of already-priced information, not "
+        "a number to reflexively copy. Reconcile your blind estimate with it — hold your "
+        "number, converge toward it, or move further away — but if your reconciled "
+        f"probability deviates more than {threshold_pp:.0f}pp from the market you MUST "
+        "name the SPECIFIC edge (private information, or a signal the market has not yet "
+        "priced) that justifies the deviation.\n"
+        "Return ONLY the same JSON object as before (probability, confidence_low, "
+        "confidence_high, rationale, reasons_up, reasons_down, change_my_mind, crux), "
+        "plus:\n"
+        "- reconcile_reason: the named edge justifying any material deviation from the "
+        "market, or one sentence on why you converged to / held against it"
+    )
 
 
 _JUDGE_SYSTEM = (
@@ -1798,6 +1869,34 @@ def run_quorum(
         raise ValidationError("delphi_rounds must be 0 or 1")
     judge_runner = judge_runner or runner
 
+    def _blind_reconcile(
+        model: str,
+        system: str,
+        blind_user: str,
+        build_reconcile: "Callable[[str], str]",
+    ) -> tuple[str, str]:
+        """One BLIND turn then one RECONCILE turn (UPGRADE 1), returning both raw
+        responses. ``blind_user`` NEVER carries the market anchor — the anchor is
+        introduced only by the ``build_reconcile(blind_text)`` follow-up, AFTER the
+        blind turn's output exists (so a test can prove phase-1 anchor-absence).
+
+        Cost-optimal single-session path when the production runner exposes a
+        ``.two_turn`` capability (:func:`make_aiagent_runner`): it builds ONE agent,
+        runs both turns on the SAME conversation, so the blind turn's expensive
+        research is not repeated (~half the cost of two independent sessions). Any
+        runner WITHOUT ``.two_turn`` (e.g. an injected test stub) falls back to two
+        plain calls — the fresh second call re-supplies the blind context + the
+        reconcile block. Both paths keep the anchor out of the blind turn.
+        """
+
+        two_turn = getattr(runner, "two_turn", None)
+        if callable(two_turn):
+            return two_turn(model, system, blind_user, build_reconcile)
+        blind_text = runner(model, system, blind_user)
+        reconcile_block = build_reconcile(blind_text)
+        reconciled_text = runner(model, system, blind_user + reconcile_block)
+        return blind_text, reconciled_text
+
     def _run_pass(
         working_context: str,
         *,
@@ -1824,30 +1923,65 @@ def run_quorum(
                 if prior_by_participant is not None
                 else None
             )
+            # BLIND prompt (UPGRADE 1): the market anchor is ALWAYS withheld from
+            # phase 1 — we pass ``market_anchor=None`` so no anchor block is built.
+            # On a non-market question market_anchor is None anyway, so this is the
+            # unchanged single-phase prompt; on a market question the anchor is
+            # introduced only in the RECONCILE turn below.
             prompt = build_panelist_prompt(
                 question_title=question_title,
                 resolution_criteria=resolution_criteria,
                 context_packet=working_context,
                 evidence_cutoff=evidence_cutoff,
                 sample_hint=index + 1 if self_fusion else None,
-                market_anchor=market_anchor,
+                market_anchor=None,
             )
-            user = prompt["user"]
+            blind_user = prompt["user"]
             if delphi_summary is not None:
-                user = user + build_revision_context_block(
+                blind_user = blind_user + build_revision_context_block(
                     prior=prior, delphi_summary=delphi_summary
                 )
+            system = prompt["system"]
             revision_reason: str | None = None
+            reconcile_reason: str | None = None
+            blind_probability: float | None = None
             try:
-                raw = runner(model, prompt["system"], user)
-                forecast = parse_panelist_response(raw, model)
-                if delphi_summary is not None:
-                    rr = _reparse_full(raw).get("revision_reason")
-                    revision_reason = str(rr).strip() if rr else None
+                if market_anchor is not None:
+                    # BLIND-THEN-RECONCILE (market-linked): commit a blind number,
+                    # THEN reveal the anchor + own blind number and reconcile.
+                    def _reconcile_from_blind(blind_text: str) -> str:
+                        bfc = parse_panelist_response(blind_text, model)
+                        return build_reconcile_block(
+                            blind_probability=bfc.probability,
+                            market_anchor=market_anchor,
+                            threshold_pp=market_anchor_threshold_pp,
+                        )
+
+                    blind_raw, reconciled_raw = _blind_reconcile(
+                        model, system, blind_user, _reconcile_from_blind
+                    )
+                    blind_probability = parse_panelist_response(
+                        blind_raw, model
+                    ).probability
+                    forecast = parse_panelist_response(reconciled_raw, model)
+                    payload = _reparse_full(reconciled_raw)
+                    rr = payload.get("reconcile_reason")
+                    reconcile_reason = str(rr).strip() if rr else None
+                    if delphi_summary is not None:
+                        dv = payload.get("revision_reason")
+                        revision_reason = str(dv).strip() if dv else None
+                else:
+                    # SINGLE-PHASE (non-market) — byte-identical to before.
+                    raw = runner(model, system, blind_user)
+                    forecast = parse_panelist_response(raw, model)
+                    blind_probability = forecast.probability
+                    if delphi_summary is not None:
+                        rr = _reparse_full(raw).get("revision_reason")
+                        revision_reason = str(rr).strip() if rr else None
             except Exception as exc:  # noqa: BLE001 — isolate one panelist's failure
-                # Any single model failing (bad JSON, timeout, provider/SDK error)
-                # is recorded as an errored panelist; the quorum completes on the
-                # survivors rather than aborting the whole run.
+                # Any single model failing (bad JSON, timeout, provider/SDK error,
+                # or a broken reconcile turn) is recorded as an errored panelist; the
+                # quorum completes on the survivors rather than aborting the whole run.
                 forecast = ModelForecast(
                     model=model, probability=0.5, error=f"{type(exc).__name__}: {exc}"
                 )
@@ -1857,6 +1991,16 @@ def run_quorum(
             forecast.round_index = round_index
             forecast.prior_probability = prior.probability if prior is not None else None
             forecast.revision_reason = revision_reason
+            # Blind-then-reconcile provenance: record BOTH numbers on a surviving
+            # panelist (blind == committed on the single-phase path; distinct on a
+            # market question). Errored panelists carry neither (excluded from pools).
+            forecast.reconcile_reason = reconcile_reason
+            forecast.blind_probability = (
+                blind_probability if forecast.error is None else None
+            )
+            forecast.reconciled_probability = (
+                forecast.probability if forecast.error is None else None
+            )
             # Track-record weighting (S7): a surviving panelist carries its measured
             # weight (default 1.0 when unmeasured/cold-start), consumed by the pool +
             # disagreement. Errored panelists keep 1.0 but are excluded from pooling.
@@ -2111,6 +2255,29 @@ def run_quorum(
             "not model disagreement"
         )
 
+    # Blind-then-reconcile pools (UPGRADE 1 — the continuous orthogonality signal).
+    # ``reconciled_pool`` IS the pool the commit path used (the reconciled numbers);
+    # ``blind_pool`` re-pools the panelists' BLIND (pre-anchor) numbers with the SAME
+    # method/trim/alpha so blind, reconciled, and market sit in one comparable space.
+    # Only on a market question (no anchor → no blind/reconcile split → both None).
+    blind_pool: float | None = None
+    reconciled_pool: float | None = None
+    if market_anchor is not None:
+        ok_final = [f for f in forecasts if f.error is None]
+        reconciled_pool = aggregation.aggregate_probability
+        blind_rows = [
+            {**f.to_estimate(), "probability": float(f.blind_probability)}
+            for f in ok_final
+            if f.blind_probability is not None
+        ]
+        if blind_rows:
+            blind_pool = aggregate_panel_estimates(
+                blind_rows,
+                method=pool_method,
+                trim=trim,
+                alpha_extremize=alpha_extremize,
+            ).aggregate_probability
+
     return QuorumResult(
         question_id=question_id,
         forecasts=forecasts,
@@ -2138,6 +2305,8 @@ def run_quorum(
         market_deviation_pp=anchor_result["deviation_pp"],
         market_justification=anchor_result["justification"],
         market_pull_applied=anchor_result["pull_applied"],
+        blind_pool=blind_pool,
+        reconciled_pool=reconciled_pool,
         pseudo_diversity_caveat=pseudo_diversity_caveat,
     )
 
@@ -2274,16 +2443,61 @@ def make_aiagent_runner(
             raise RuntimeError(detail or "model call failed with no response")
         return _assemble_response_text(result)
 
-    def _runner(model: str, system: str, user: str) -> str:
+    def _call_two_turn(
+        model: str,
+        system: str,
+        blind_user: str,
+        build_reconcile: "Callable[[str], str]",
+    ) -> tuple[str, str]:
+        """BLIND then RECONCILE on ONE agent session (UPGRADE 1). Builds the agent
+        ONCE, runs the (expensive, research-heavy) blind turn, then continues the
+        SAME conversation with the reconcile follow-up — so the anchor reaches the
+        model only in turn 2 and the blind research is not paid for twice."""
+
+        from agent.agent_factory import build_agent
+
+        provider_prefix, bare_model = _split_provider_model(model)
+        agent = build_agent(
+            model=bare_model,
+            requested_provider=provider_prefix or requested_provider,
+            enabled_toolsets=list(toolsets),
+            max_iterations=max_iterations,
+            quiet_mode=quiet,
+            skip_memory=True,
+            skip_context_files=True,
+            load_soul_identity=False,
+            platform="cli",
+        )
+        r1 = agent.run_conversation(blind_user, system_message=system)
+        if not isinstance(r1, dict):
+            blind_text = str(r1 or "")
+            history: Any = None
+        else:
+            if r1.get("failed") or r1.get("error"):
+                detail = str(r1.get("error") or "").strip()
+                raise RuntimeError(detail or "blind turn failed with no response")
+            blind_text = _assemble_response_text(r1)
+            history = r1.get("messages")
+        # Only NOW does the anchor enter (build_reconcile parses the blind text, may raise).
+        reconcile_user = build_reconcile(blind_text)
+        r2 = agent.run_conversation(reconcile_user, conversation_history=history)
+        if not isinstance(r2, dict):
+            return blind_text, str(r2 or "")
+        if r2.get("failed") or r2.get("error"):
+            detail = str(r2.get("error") or "").strip()
+            raise RuntimeError(detail or "reconcile turn failed with no response")
+        return blind_text, _assemble_response_text(r2)
+
+    def _run_with_timeout(model: str, fn: "Callable[[], Any]") -> Any:
         if not timeout or timeout <= 0:
-            return _call(model, system, user)
+            return fn()
         import threading
 
         box: dict[str, Any] = {}
 
         def _target() -> None:
             try:
-                box["result"] = _call(model, system, user)
+                box["result"] = fn()
             except Exception as exc:  # noqa: BLE001 — surfaced to the caller below
                 box["error"] = exc
 
@@ -2294,8 +2508,26 @@ def make_aiagent_runner(
             raise RuntimeError(f"model {model} timed out after {timeout:g}s")
         if "error" in box:
             raise box["error"]
-        return box.get("result", "")
+        return box.get("result")
 
+    def _runner(model: str, system: str, user: str) -> str:
+        return _run_with_timeout(model, lambda: _call(model, system, user)) or ""
+
+    def _two_turn(
+        model: str,
+        system: str,
+        blind_user: str,
+        build_reconcile: "Callable[[str], str]",
+    ) -> tuple[str, str]:
+        result = _run_with_timeout(
+            model, lambda: _call_two_turn(model, system, blind_user, build_reconcile)
+        )
+        return result if result is not None else ("", "")
+
+    # The blind-then-reconcile single-session seam (UPGRADE 1). run_quorum detects it
+    # via ``getattr(runner, "two_turn", None)``; an injected test stub without it
+    # falls back to two plain calls, so this is purely additive.
+    _runner.two_turn = _two_turn  # type: ignore[attr-defined]
     return _runner
 
 
@@ -2308,6 +2540,7 @@ __all__ = [
     "QuorumResult",
     "disagreement_signal",
     "build_panelist_prompt",
+    "build_reconcile_block",
     "build_judge_prompt",
     "build_delphi_summary",
     "build_revision_context_block",

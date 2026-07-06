@@ -193,15 +193,76 @@ def _coerce_json_response(response: Any) -> dict[str, Any]:
 
     fenced = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, flags=re.DOTALL | re.IGNORECASE)
     if fenced:
-        return _coerce_json_response(fenced.group(1))
+        try:
+            return _coerce_json_response(fenced.group(1))
+        except ValueError:
+            pass  # fenced block was not a clean object — fall through to scanning
 
+    # Greedy first-`{`…last-`}` slice: handles a lone JSON object wrapped in prose.
     start = text.find("{")
     end = text.rfind("}")
     if start != -1 and end > start:
-        parsed = json.loads(text[start : end + 1])
-        if isinstance(parsed, dict):
+        try:
+            parsed = json.loads(text[start : end + 1])
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass  # prose contained stray braces — scan for a balanced object below
+
+    # Prose-embedded fallback: a reasoning model may narrate around the JSON (or
+    # emit several objects). Scan for every balanced top-level `{...}` block and
+    # return the best one that parses — preferring an object that carries a
+    # ``probability`` (the answer object) over an incidental one.
+    best: dict[str, Any] | None = None
+    for candidate in _iter_balanced_objects(text):
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        if "probability" in parsed:
             return parsed
+        if best is None or len(parsed) > len(best):
+            best = parsed
+    if best is not None:
+        return best
     raise ValueError("agent protocol response did not contain a JSON object")
+
+
+def _iter_balanced_objects(text: str):
+    """Yield every balanced ``{...}`` substring of ``text`` (brace-depth scan).
+
+    String-literal aware so a ``}`` inside a JSON string value does not close an
+    object early. Emits outermost objects only (nested objects ride inside their
+    parent's substring), so a full answer object is returned intact rather than a
+    truncated inner fragment."""
+
+    depth = 0
+    start = -1
+    in_str = False
+    escaped = False
+    for i, ch in enumerate(text):
+        if in_str:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start != -1:
+                    yield text[start : i + 1]
+                    start = -1
 
 
 def _case_cutoff(case: dict[str, Any]):

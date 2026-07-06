@@ -66,6 +66,8 @@ def record_panel_run(
     market_anchor: dict[str, Any] | None = None,
     pseudo_diversity_caveat: str | None = None,
     panel_resolution_note: str | None = None,
+    blind_pool: float | None = None,
+    reconciled_pool: float | None = None,
 ) -> dict[str, Any]:
     """Aggregate a panel of perspective estimates and persist the artifact.
 
@@ -165,6 +167,14 @@ def record_panel_run(
     spread["supervisor_search"] = bool(supervisor_search_enabled) or research_rounds > 0
     if market_anchor:
         spread["market_anchor"] = dict(market_anchor)
+    # Blind-then-reconcile pools (UPGRADE 1): stamp the market-INDEPENDENT blind
+    # pool alongside the reconciled pool + market price so blind-vs-market
+    # divergence (the orthogonality signal) travels with the artifact the desk
+    # reads. Only present on a market question; None ⇒ omitted (byte-compatible).
+    if blind_pool is not None:
+        spread["blind_pool"] = round(float(blind_pool), 6)
+    if reconciled_pool is not None:
+        spread["reconciled_pool"] = round(float(reconciled_pool), 6)
     if pseudo_diversity_caveat:
         spread["pseudo_diversity_caveat"] = pseudo_diversity_caveat
     if panel_resolution_note:

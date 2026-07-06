@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **84 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **86 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -34,9 +34,11 @@ The full `forecast` command tree — **84 top-level commands** (also reachable a
 | [`forecast config`](#forecast-config) | Inspect the layered runtime configuration (typed loader + config doctor). |
 | [`forecast correction`](#forecast-correction) | Record non-mutating corrections |
 | [`forecast crux`](#forecast-crux) | Manage per-forecast crux variables (the decisive inputs) |
+| [`forecast curate`](#forecast-curate) | Propose short-horizon contested binary questions from live markets (calibration fuel) |
 | [`forecast cycle`](#forecast-cycle) | Run the closed-loop forecast cycle |
 | [`forecast doctor`](#forecast-doctor) | Run operational, pilot, and readiness checks |
 | [`forecast drill`](#forecast-drill) | Practice on already-RESOLVED binary questions and get scored instantly |
+| [`forecast edge`](#forecast-edge) | UPGRADE 2 — the deviation ledger: did the desk's named-edge deviations from the market beat it? n, win-rate vs market, mean Brier delta, paired-bootstrap CI, and a threshold RECOMMENDATION (never auto-applied). |
 | [`forecast errors`](#forecast-errors) | Show domain error profile summary |
 | [`forecast evidence`](#forecast-evidence) | Manage evidence items |
 | [`forecast evidence-map`](#forecast-evidence-map) | Show the crux evidence map for a forecast |
@@ -418,6 +420,7 @@ The full `forecast` command tree — **84 top-level commands** (also reachable a
 ## `forecast crux`
 
 - **`forecast crux add`** — Register a decisive crux variable for a forecast
+- **`forecast crux backfill`** — Promote cruxes trapped in existing panel runs into question_cruxes (dry-run by default)
 - **`forecast crux list`** — List a forecast's crux variables
 - **`forecast crux status`** — Update a crux's evidence status
 
@@ -432,6 +435,13 @@ The full `forecast` command tree — **84 top-level commands** (also reachable a
 | `--status` |  |
 | `--notes` |  |
 
+### `forecast crux backfill`
+
+| argument | help |
+| --- | --- |
+| `--apply` | Actually write the promoted cruxes (default is a dry-run preview). |
+| `--json` | Emit machine-readable JSON |
+
 ### `forecast crux list`
 
 | argument | help |
@@ -444,6 +454,21 @@ The full `forecast` command tree — **84 top-level commands** (also reachable a
 | --- | --- |
 | `crux_id` |  |
 | `status` |  |
+
+## `forecast curate`
+
+| argument | help |
+| --- | --- |
+| `--venue` | Restrict to one venue (polymarket/kalshi); default both |
+| `--query` | Optional market search query |
+| `--tag` | Optional Polymarket tag/category filter |
+| `--limit` | Max live events to fetch and screen |
+| `--price-min` | Contested-band lower bound (default 0.15) |
+| `--price-max` | Contested-band upper bound (default 0.85) |
+| `--max-horizon-days` | Resolve-within horizon (default 45) |
+| `--min-volume` | Advisory liquidity floor (default 1000) |
+| `--create` | Comma-separated candidate numbers to CREATE (explicit per-question confirm); omit for a dry run |
+| `--json` | Emit machine-readable proposals |
 
 ## `forecast cycle`
 
@@ -493,6 +518,12 @@ The full `forecast` command tree — **84 top-level commands** (also reachable a
 | `--domain` | Restrict to a domain (desk corpus only) |
 | `--corpus` | Which corpus to drill. 'desk' replays YOUR resolved questions; 'forecastbench' replays obscure resolved market questions you've never seen (deliberate practice, no recall). Default: auto — forecastbench when its dataset is cached and the desk has too few never-drilled questions, else desk. |
 | `--date` | ForecastBench question-set date for --corpus forecastbench (e.g. 2026-06-07, or 'latest' to fetch the newest). Defaults to the newest locally-cached set. |
+
+## `forecast edge`
+
+| argument | help |
+| --- | --- |
+| `--json` | Emit the edge report as JSON |
 
 ## `forecast errors`
 
@@ -2404,7 +2435,7 @@ The full `forecast` command tree — **84 top-level commands** (also reachable a
 | `--samples` | Self-fusion sample count (self preset). |
 | `--attach-snapshot` | Attach the resulting panel run to an existing snapshot id. |
 | `--triggered-by` |  |
-| `--supervisor-search` | Activate the live agentic-supervisor fresh-search loop (AIA P1.1): when the judge flags an unresolved crux it runs a real bounded web/news search and re-synthesises once on the fresh evidence. Default OFF (byte-identical baseline); also settable via quorum.supervisor_search. |
+| `--supervisor-search/--no-supervisor-search` | Live agentic-supervisor fresh-search loop (AIA P1.1): when the judge flags an unresolved crux it runs a real bounded web/news search and re-synthesises once on the fresh evidence. DEFAULT ON for live runs (leak-guarded off for a historical evidence_cutoff); pass --no-supervisor-search to disable this run, or set quorum.supervisor_search = false fleet-wide. |
 | `--scope` | For `quorum default`: which indicated panels get a quorum. |
 | `--wait` | Run synchronously and print the result (default: background job + run-id). |
 | `--seed` | Bootstrap seed for `quorum bench` (deterministic). |
