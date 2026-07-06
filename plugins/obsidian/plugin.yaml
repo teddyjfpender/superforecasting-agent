@@ -1,6 +1,6 @@
 name: obsidian
 version: 0.1.0
-description: "Native Obsidian vault integration — read, write, append, and search notes, plus sync the forecast desk's learnings (calibration lessons, analyst notes, question dossiers) into the vault as linked markdown notes. Vault path comes from OBSIDIAN_VAULT_PATH, else the managed workspace vault ~/.superforecasting-agent/docs/vault (created on first use). Generated notes keep agent content inside managed markers so human edits outside them survive re-syncs."
+description: "Native Obsidian vault integration — read, write, append, and search notes, plus the forecast desk's second brain: sync the ledger's concept graph (questions with cruxes/links, lessons, theses, cruxes, postmortems, entities) into wikilinked pages, query a question's vault neighbourhood before forecasting, and ingest the operator's page annotations back as triage-gated evidence. Vault path comes from OBSIDIAN_VAULT_PATH, else the managed workspace vault ~/.superforecasting-agent/docs/vault (created on first use). Generated notes keep agent content inside managed markers so human edits outside them survive re-syncs."
 author: teddyjfpender
 kind: standalone
 platforms:
@@ -13,5 +13,8 @@ provides_tools:
   - obsidian_append_note
   - obsidian_search
   - obsidian_sync_learnings
+  - obsidian_wiki_sync
+  - obsidian_wiki_query
+  - obsidian_ingest_notes
 hooks:
   - on_session_end

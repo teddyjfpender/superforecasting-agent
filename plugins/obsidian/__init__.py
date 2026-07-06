@@ -24,15 +24,21 @@ from plugins.obsidian.cli import obsidian_command as _obsidian_command
 from plugins.obsidian.cli import register_cli as _register_obsidian_cli
 from plugins.obsidian.tools import (
     OBSIDIAN_APPEND_NOTE_SCHEMA,
+    OBSIDIAN_INGEST_NOTES_SCHEMA,
     OBSIDIAN_READ_NOTE_SCHEMA,
     OBSIDIAN_SEARCH_SCHEMA,
     OBSIDIAN_SYNC_LEARNINGS_SCHEMA,
+    OBSIDIAN_WIKI_QUERY_SCHEMA,
+    OBSIDIAN_WIKI_SYNC_SCHEMA,
     OBSIDIAN_WRITE_NOTE_SCHEMA,
     check_obsidian_available,
     handle_obsidian_append_note,
+    handle_obsidian_ingest_notes,
     handle_obsidian_read_note,
     handle_obsidian_search,
     handle_obsidian_sync_learnings,
+    handle_obsidian_wiki_query,
+    handle_obsidian_wiki_sync,
     handle_obsidian_write_note,
 )
 
@@ -44,6 +50,9 @@ _TOOLS = (
     ("obsidian_append_note",    OBSIDIAN_APPEND_NOTE_SCHEMA,    handle_obsidian_append_note,    "➕"),
     ("obsidian_search",         OBSIDIAN_SEARCH_SCHEMA,         handle_obsidian_search,         "🔍"),
     ("obsidian_sync_learnings", OBSIDIAN_SYNC_LEARNINGS_SCHEMA, handle_obsidian_sync_learnings, "🧠"),
+    ("obsidian_wiki_sync",      OBSIDIAN_WIKI_SYNC_SCHEMA,      handle_obsidian_wiki_sync,      "🕸️"),
+    ("obsidian_wiki_query",     OBSIDIAN_WIKI_QUERY_SCHEMA,     handle_obsidian_wiki_query,     "🧭"),
+    ("obsidian_ingest_notes",   OBSIDIAN_INGEST_NOTES_SCHEMA,   handle_obsidian_ingest_notes,   "📥"),
 )
 
 

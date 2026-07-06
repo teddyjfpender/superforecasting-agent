@@ -3845,6 +3845,18 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         source_diversity = None
 
+    # SECOND BRAIN: vault health — pages/orphans/broken-links/stale/tombstones,
+    # section budget state, and the manifest's pending operator edits. Read-only
+    # + fail-safe (the plugin import is call-time; a missing vault reports None).
+    try:
+        from plugins.obsidian.prune import build_vault_health
+        from plugins.obsidian.vault import resolve_vault_path
+
+        _vault = resolve_vault_path()
+        vault_health = build_vault_health(_vault, ledger=ledger) if _vault else None
+    except Exception:
+        vault_health = None
+
     # PANEL-vs-SOLO ABLATION: does the 5-role panel + judge machinery actually
     # beat a lone panelist on the resolved book? A paired recenter-at-zero
     # bootstrap over resolved Brier-scoreable panels. Read-only + fail-safe;
@@ -3880,6 +3892,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "prediction_markets": prediction_markets,
         "durability": durability,
         "source_diversity": source_diversity,
+        "vault_health": vault_health,
         "panel_vs_solo_ablation": ablation,
         "deviation_edge": deviation_edge,
         "status": status,
@@ -4306,6 +4319,30 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
             f"source_diversity: median {median_txt} sources/question; "
             f"{div.get('single_source_question_count', 0)}/{div['questions_with_evidence']} "
             f"single-source ({pct_txt}){warn}"
+        )
+
+    # Second brain: vault health — page counts, rot signals, budget state, and
+    # pending operator edits awaiting triage-gated ingestion.
+    vh = report.get("vault_health") or {}
+    if vh and vh.get("pages"):
+        rot_bits = []
+        for key in ("orphans", "broken_links", "stale", "contradictions"):
+            if vh.get(key):
+                rot_bits.append(f"{vh[key]} {key.replace('_', ' ')}")
+        over = vh.get("budget_overflows") or {}
+        if over:
+            rot_bits.append(
+                "budget over: "
+                + ", ".join(f"{s} +{v.get('over_by')}" for s, v in over.items())
+            )
+        rot_txt = "; ".join(rot_bits) if rot_bits else "no rot flagged"
+        pending = vh.get("operator_edits_pending", 0)
+        pending_txt = (
+            f"; {pending} operator edit(s) pending ingest" if pending else ""
+        )
+        print(
+            f"vault_health: {vh.get('pages', 0)} pages "
+            f"({vh.get('tombstones', 0)} tombstones); {rot_txt}{pending_txt}"
         )
 
     # Panel-vs-solo ablation: is the panel machinery earning its cost?

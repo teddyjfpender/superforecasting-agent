@@ -7,6 +7,13 @@ Tools:
   obsidian_search         — filename or content search across vault markdown
   obsidian_sync_learnings — publish ledger learnings (lessons, question
                             dossiers, index) into the vault
+  obsidian_wiki_sync      — the enriched second-brain sync: questions (with
+                            cruxes/links), lessons, theses, cruxes,
+                            postmortems, entities + the delta manifest
+  obsidian_wiki_query     — retrieval-before-forecast: a question's concept
+                            page plus one hop of its wikilink neighbourhood
+  obsidian_ingest_notes   — ingest operator note deltas as evidence, through
+                            the triage trust gate (never around it)
 
 All handlers return JSON strings. Paths are vault-relative and traversal-safe;
 the vault root comes from OBSIDIAN_VAULT_PATH, else the managed workspace vault
@@ -164,6 +171,94 @@ OBSIDIAN_SEARCH_SCHEMA: Dict[str, Any] = {
             },
         },
         "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+OBSIDIAN_WIKI_SYNC_SCHEMA: Dict[str, Any] = {
+    "name": "obsidian_wiki_sync",
+    "description": (
+        "Publish the full second-brain concept graph into the Obsidian vault: "
+        "question dossiers (with cruxes, related forecasts, thesis membership), "
+        "calibration lessons, theses (members + entities), crux pages, "
+        "postmortems, entity pages, and the index — all wikilinked, all with "
+        "provenance frontmatter, all inside managed markers so operator "
+        "annotations survive. Updates the delta manifest. The ledger stays the "
+        "source of truth; tombstoned pages are never resurrected."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "question_status": {
+                "type": "string",
+                "description": "Question status filter (e.g. 'active', 'resolved'). Default 'active'.",
+            },
+            "limit": {
+                "type": "integer",
+                "description": "Cap on questions/theses published (most recent first).",
+            },
+        },
+        "additionalProperties": False,
+    },
+}
+
+OBSIDIAN_WIKI_QUERY_SCHEMA: Dict[str, Any] = {
+    "name": "obsidian_wiki_query",
+    "description": (
+        "Retrieval-before-forecast: pull a question's second-brain context "
+        "from the vault — its concept page plus one hop of its wikilink "
+        "neighbourhood (cruxes, lessons/reference classes, theses, entities), "
+        "operator annotations included. Give a question_id (preferred) or a "
+        "free-text query. Bounded output."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "question_id": {
+                "type": "string",
+                "description": "Ledger question id whose vault neighbourhood to pull.",
+            },
+            "query": {
+                "type": "string",
+                "description": "Free-text match on page titles/content (used when no question_id).",
+            },
+            "max_pages": {
+                "type": "integer",
+                "description": "Cap on returned pages (default 8).",
+            },
+        },
+        "additionalProperties": False,
+    },
+}
+
+OBSIDIAN_INGEST_NOTES_SCHEMA: Dict[str, Any] = {
+    "name": "obsidian_ingest_notes",
+    "description": (
+        "Ingest the operator's vault annotations as evidence — the vault→agent "
+        "half of the collaboration loop. Detects operator-authored deltas via "
+        "the manifest, triages each with the cheap labeler (staged as "
+        "triage_labels), and imports keep/skim verdicts through add_evidence "
+        "with provenance operator-note:<page> and the page's real modified "
+        "time. Respects the triage trust gate: while suggest_only, skip-labeled "
+        "notes are surfaced for review, never silently dropped. dry_run lists "
+        "pending deltas without any writes or model spend."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "dry_run": {
+                "type": "boolean",
+                "description": "List pending operator deltas without ingesting. Default false.",
+            },
+            "question_id": {
+                "type": "string",
+                "description": "Only ingest deltas mapped to this question.",
+            },
+            "model": {
+                "type": "string",
+                "description": "Model id for the cheap triage labeler (default $FORECAST_TRIAGE_MODEL or the house judge model).",
+            },
+        },
         "additionalProperties": False,
     },
 }
@@ -368,3 +463,136 @@ def handle_obsidian_sync_learnings(args: Dict[str, Any], **_kw) -> str:
     except Exception as e:
         return _err(f"sync failed: {e}")
     return _json({"success": True, **summary})
+
+
+def handle_obsidian_wiki_sync(args: Dict[str, Any], **_kw) -> str:
+    vault, error = _vault_or_error()
+    if error:
+        return _err(error)
+    from plugins.obsidian.wiki import sync_wiki
+
+    try:
+        summary = sync_wiki(
+            vault,
+            question_status=args.get("question_status", "active") or None,
+            limit=args.get("limit"),
+        )
+    except Exception as e:
+        return _err(f"wiki sync failed: {e}")
+    return _json({"success": True, **summary})
+
+
+_WIKI_QUERY_MAX_PAGES = 8
+_WIKI_QUERY_MAX_CHARS = 4000
+
+
+def handle_obsidian_wiki_query(args: Dict[str, Any], **_kw) -> str:
+    vault, error = _vault_or_error()
+    if error:
+        return _err(error)
+    question_id = (args.get("question_id") or "").strip()
+    query = (args.get("query") or "").strip()
+    if not question_id and not query:
+        return _err("obsidian_wiki_query requires a question_id or a query")
+    try:
+        max_pages = int(args.get("max_pages") or _WIKI_QUERY_MAX_PAGES)
+    except (TypeError, ValueError):
+        max_pages = _WIKI_QUERY_MAX_PAGES
+    max_pages = max(1, min(max_pages, 20))
+
+    from plugins.obsidian.prune import scan_vault
+
+    pages = [p for p in scan_vault(vault) if not p["tombstone"]]
+    by_stem: Dict[str, Dict[str, Any]] = {}
+    for page in pages:
+        by_stem[page["path"].removesuffix(".md")] = page
+        by_stem.setdefault(Path(page["path"]).stem, page)
+
+    seeds: list[Dict[str, Any]] = []
+    if question_id:
+        for page in pages:
+            front = page["front"]
+            if front.get("question_id") == question_id or question_id in (
+                front.get("provenance") or ""
+            ):
+                seeds.append(page)
+    else:
+        needle = query.lower()
+        for page in pages:
+            if needle in page["path"].lower() or needle in page["text"].lower():
+                seeds.append(page)
+    if not seeds:
+        return _json(
+            {"success": True, "count": 0, "pages": [],
+             "note": "no vault pages matched — run obsidian_wiki_sync first?"}
+        )
+
+    ordered: list[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def _add(page: Dict[str, Any]) -> None:
+        if page["path"] not in seen and len(ordered) < max_pages:
+            seen.add(page["path"])
+            ordered.append(page)
+
+    for seed in seeds:
+        _add(seed)
+    for seed in list(ordered):  # one hop of the wikilink neighbourhood
+        for target in seed["links_out"]:
+            neighbour = by_stem.get(target.strip())
+            if neighbour is not None and neighbour["path"] != seed["path"]:
+                _add(neighbour)
+
+    results = [
+        {
+            "path": page["path"],
+            "section": page["section"],
+            "summary": page["front"].get("summary"),
+            "status": page["front"].get("status"),
+            "as_of": page["front"].get("as_of"),
+            "content": page["text"][:_WIKI_QUERY_MAX_CHARS],
+            "truncated": len(page["text"]) > _WIKI_QUERY_MAX_CHARS,
+        }
+        for page in ordered
+    ]
+    return _json({"success": True, "count": len(results), "pages": results})
+
+
+def handle_obsidian_ingest_notes(args: Dict[str, Any], **_kw) -> str:
+    vault, error = _vault_or_error()
+    if error:
+        return _err(error)
+    from plugins.obsidian.ingest import ingest_operator_notes
+
+    dry_run = bool(args.get("dry_run"))
+    runner = None
+    model = args.get("model")
+    if not dry_run:
+        import os
+
+        from forecasting.quorum import DEFAULT_JUDGE_MODEL, make_aiagent_runner
+
+        model = model or os.getenv("FORECAST_TRIAGE_MODEL") or DEFAULT_JUDGE_MODEL
+        runner = make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)
+    try:
+        report = ingest_operator_notes(
+            vault,
+            runner=runner,
+            model=model,
+            question_id=(args.get("question_id") or "").strip() or None,
+            dry_run=dry_run,
+        )
+    except Exception as e:
+        return _err(f"ingest failed: {e}")
+    return _json(
+        {
+            "success": True,
+            **report,
+            "note": (
+                "Operator note deltas triaged through the trust gate: keep/skim landed as "
+                "evidence (provenance operator-note:<page>, timestamped with the page's real "
+                "modified time); needs_review items were labeled skip while the gate is "
+                "suggest_only — adjudicate with relabel_route or edit the note."
+            ),
+        }
+    )
