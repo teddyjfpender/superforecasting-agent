@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -93,10 +94,16 @@ def save_manifest(vault: Path, manifest: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = dict(manifest)
     payload["version"] = MANIFEST_VERSION
-    path.write_text(
+    # Atomic write (tmp + os.replace — the house pattern): the manifest is the
+    # ingestion high-water-mark store; a torn write here could re-ingest
+    # already-ingested operator notes (duplicate evidence) or lose tombstone
+    # state on the next sync.
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(
         json.dumps(payload, ensure_ascii=False, indent=1, sort_keys=True),
         encoding="utf-8",
     )
+    os.replace(tmp, path)
     return path
 
 
