@@ -264,6 +264,11 @@ export interface BandChart {
   gutterW: number
   /** width of the plot region (cells to the right of the gutter) */
   plotW: number
+  /** the EFFECTIVE y-domain the chart actually drew against — the caller's
+   *  [yMin, yMax] expanded (never shrunk) to strictly contain every drawn
+   *  artifact. A dot/band edge is thus never silently clamped onto the axis. */
+  yMin: number
+  yMax: number
 }
 
 const MARKER = '●'
@@ -288,20 +293,49 @@ export const bandChart = (
   }: { width?: number; height?: number; yMin?: number; yMax?: number } = {}
 ): BandChart => {
   const h = Math.max(3, height)
+  const active = points.filter(point => finite(point.y))
+
+  // ── Domain law ────────────────────────────────────────────────────────────
+  // Every drawn artifact (each marker + both edges of a drawn band) MUST fall
+  // inside the y-domain, so `rowFor`'s clamp never silently welds a value onto
+  // the top/bottom rule. We only ever EXPAND the caller's [yMin, yMax] outward
+  // (a caller's honest tight zoom that already contains the data is respected
+  // byte-for-byte); a small guard keeps even a boundary-touching value (a 0% /
+  // 100% dot, or a band edge at the axis) off the exact edge row.
+  const drawn: number[] = []
+  for (const point of active) {
+    drawn.push(point.y as number)
+    if (finite(point.lo) && finite(point.hi)) {
+      drawn.push(point.lo, point.hi)
+    }
+  }
+  let domainMin = yMin
+  let domainMax = yMax
+  if (drawn.length) {
+    const dMin = Math.min(...drawn)
+    const dMax = Math.max(...drawn)
+    const guard = Math.max(Math.abs(yMax - yMin) * 0.06, Math.abs(dMax - dMin) * 0.06, 1e-9)
+    domainMin = Math.min(domainMin, dMin - guard)
+    domainMax = Math.max(domainMax, dMax + guard)
+  }
+  if (domainMax - domainMin < 1e-9) {
+    // Degenerate domain with no data spread — open a unit window so heights map.
+    domainMax = domainMin + 1
+  }
+
   // Axis labels are abbreviated (k/M/B/T) and share one decimal count + suffix so
   // all three read at the same precision (100.08 / 100.00 / 99.92), then are
   // right-padded to a uniform width so the plot column never shifts.
-  const [topLabel, midLabel, bottomLabel] = axisLabels([yMax, (yMax + yMin) / 2, yMin])
+  const [topLabel, midLabel, bottomLabel] = axisLabels([domainMax, (domainMax + domainMin) / 2, domainMin])
   const labelW = Math.max(4, topLabel.length, midLabel.length, bottomLabel.length)
   const gutterW = labelW + 2 // label + " │"
   const plotW = Math.max(1, width - gutterW)
-  const span = yMax - yMin || 1
-  const active = points.filter(point => finite(point.y))
+  const span = domainMax - domainMin || 1
 
   const grid: string[][] = Array.from({ length: h }, () => Array.from({ length: plotW }, () => ' '))
 
   const rowFor = (value: number): number => {
-    const frac = clamp01((value - yMin) / span)
+    const frac = clamp01((value - domainMin) / span)
     return Math.round((1 - frac) * (h - 1))
   }
 
@@ -340,7 +374,9 @@ export const bandChart = (
     rows,
     axis: { top: topLabel, bottom: bottomLabel },
     gutterW,
-    plotW
+    plotW,
+    yMin: domainMin,
+    yMax: domainMax
   }
 }
 
@@ -606,4 +642,91 @@ export const boxWhisker = (
   cells[cMax] = '┤'
   cells[med] = '┃'
   return cells.join('')
+}
+
+// ── Change-aware dot-plot thinning (presentation only) ───────────────────────
+
+export interface DownsampleResult {
+  /** indices INTO THE ORIGINAL array that survive, oldest→newest. Every kept
+   *  index points at a finite (drawable) value. */
+  keptIndices: number[]
+  /** count of finite (drawable) points in the input */
+  total: number
+  /** count kept (== total when nothing was dropped) */
+  shown: number
+  /** true only when points were actually dropped */
+  downsampled: boolean
+  /** an honest one-line caption when thinned (e.g. "15 of 84 snapshots shown ·
+   *  largest moves"), '' otherwise */
+  note: string
+}
+
+/**
+ * Thin a dense series of dots down to a readable, change-aware preview WITHOUT
+ * touching the underlying data — the caller draws only `keptIndices`, and the
+ * ledger/history is untouched.
+ *
+ * A running desk rolls every snapshot forward, so a long-lived question condenses
+ * into an unreadable dot-strip (dozens of dots in clumps). This keeps the points
+ * that carry information: the FIRST and LAST are always retained (the anchors),
+ * then the remaining budget goes to the largest |Δ| moves (the material changes),
+ * ties broken toward recency. Gaps (non-finite values) are never counted or
+ * selected. When it drops points it says so via `note`, so the preview never
+ * lies about how much it is showing.
+ */
+export const downsampleSeries = (
+  values: ReadonlyArray<number | null | undefined>,
+  { cap = 15, unit = 'snapshots' }: { cap?: number; unit?: string } = {}
+): DownsampleResult => {
+  // Positions of the drawable (finite) points, in order.
+  const finiteIdx: number[] = []
+  values.forEach((value, index) => {
+    if (finite(value)) {
+      finiteIdx.push(index)
+    }
+  })
+  const total = finiteIdx.length
+  const limit = Math.max(2, Math.floor(cap))
+
+  if (total <= limit) {
+    return { downsampled: false, keptIndices: finiteIdx, note: '', shown: total, total }
+  }
+
+  const first = 0
+  const last = total - 1
+
+  // Score each interior point by its move magnitude vs the previous finite point.
+  const scored = finiteIdx
+    .map((originalIndex, pos) => {
+      if (pos === first || pos === last) {
+        return null
+      }
+      const delta = Math.abs((values[originalIndex] as number) - (values[finiteIdx[pos - 1]!] as number))
+      return { delta, pos }
+    })
+    .filter((entry): entry is { delta: number; pos: number } => entry !== null)
+
+  // Largest move first; ties broken toward the MORE RECENT point (higher pos).
+  scored.sort((a, b) => b.delta - a.delta || b.pos - a.pos)
+
+  const keepPos = new Set<number>([first, last])
+  for (const entry of scored) {
+    if (keepPos.size >= limit) {
+      break
+    }
+    keepPos.add(entry.pos)
+  }
+
+  const keptIndices = [...keepPos]
+    .sort((a, b) => a - b)
+    .map(pos => finiteIdx[pos]!)
+  const shown = keptIndices.length
+
+  return {
+    downsampled: true,
+    keptIndices,
+    note: `${shown} of ${total} ${unit} shown · largest moves`,
+    shown,
+    total
+  }
 }

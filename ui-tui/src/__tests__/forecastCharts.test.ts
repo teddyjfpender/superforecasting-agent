@@ -8,6 +8,7 @@ import {
   compactNumber,
   deltaGlyph,
   dotTrack,
+  downsampleSeries,
   histogram,
   levelSparkline,
   pct,
@@ -18,6 +19,35 @@ import {
   windowDeltaDetail,
   wrapLines
 } from '../lib/forecastCharts.js'
+
+// The finite drawn values of a set of band points (marker + band edges when both
+// present), i.e. every artifact bandChart actually paints.
+const drawnValues = (points: ReadonlyArray<{ y: number | null; lo?: number | null; hi?: number | null }>): number[] => {
+  const out: number[] = []
+  for (const p of points) {
+    if (typeof p.y === 'number' && Number.isFinite(p.y)) {
+      out.push(p.y)
+      if (typeof p.lo === 'number' && Number.isFinite(p.lo) && typeof p.hi === 'number' && Number.isFinite(p.hi)) {
+        out.push(p.lo, p.hi)
+      }
+    }
+  }
+  return out
+}
+
+// Every (row, col) a glyph occupies in the plot region of a rendered chart.
+const glyphCells = (chart: { rows: string[]; gutterW: number }, glyph: string): Array<{ row: number; col: number }> => {
+  const cells: Array<{ row: number; col: number }> = []
+  chart.rows.forEach((row, r) => {
+    const plot = row.slice(chart.gutterW)
+    ;[...plot].forEach((ch, c) => {
+      if (ch === glyph) {
+        cells.push({ row: r, col: c })
+      }
+    })
+  })
+  return cells
+}
 
 describe('format helpers', () => {
   it('pct formats probabilities as whole percents', () => {
@@ -657,5 +687,199 @@ describe('wrapLines', () => {
   it('returns [] for empty/blank text', () => {
     expect(wrapLines('', 10)).toEqual([])
     expect(wrapLines('   ', 10)).toEqual([])
+  })
+})
+
+// ── FIX 1: the y-domain must include every drawn artifact ─────────────────────
+// THE LAW: bandChart must never silently clamp a drawn value onto the axis
+// boundary. Whatever domain the caller passes, the chart expands it so every
+// marker + band edge lands honestly inside the plot — a dot must never sit past
+// the drawn axis bound.
+describe('bandChart domain containment (dots never escape the axis)', () => {
+  it('reports the effective [yMin, yMax] it actually drew against', () => {
+    const chart = bandChart([{ y: 0.5 }], { width: 20, height: 7 })
+    expect(typeof chart.yMin).toBe('number')
+    expect(typeof chart.yMax).toBe('number')
+    expect(chart.yMin).toBeLessThan(chart.yMax)
+  })
+
+  it('expands a subset domain UP to include a point above the supplied bound', () => {
+    // Caller under-scoped the axis (yMax 0.5) but a real point sits at 0.9. The
+    // old code clamped 0.9 onto row 0 — a dot welded to the top rule. The chart
+    // must instead expand so 0.9 is genuinely inside the domain.
+    const chart = bandChart([{ y: 0.9 }, { y: 0.5 }], { width: 24, height: 9, yMin: 0, yMax: 0.5 })
+    expect(chart.yMax).toBeGreaterThanOrEqual(0.9)
+    // Two distinct values must render in two distinct rows — not both pinned to
+    // the boundary.
+    const markerRows = new Set(glyphCells(chart, '●').map(cell => cell.row))
+    expect(markerRows.size).toBe(2)
+  })
+
+  it('expands DOWN to include a point below the supplied bound', () => {
+    const chart = bandChart([{ y: -0.3 }, { y: 0.4 }], { width: 24, height: 9, yMin: 0, yMax: 1 })
+    expect(chart.yMin).toBeLessThanOrEqual(-0.3)
+  })
+
+  it('expands to include band edges that exceed the supplied domain', () => {
+    // The marker is inside [0,1] but its band reaches 1.0 — the band edge is a
+    // drawn artifact too and must be strictly inside the axis (so the guard lifts
+    // the domain top past the edge value, never clamping it).
+    const chart = bandChart([{ y: 0.95, lo: 0.9, hi: 1.0 }], { width: 24, height: 9, yMin: 0, yMax: 1 })
+    expect(chart.yMax).toBeGreaterThan(1.0)
+  })
+
+  it('contains a probability extreme (100%) honestly instead of clamping it', () => {
+    // A 100% dot correctly sits at the axis top — but the domain must genuinely
+    // CONTAIN it (yMax strictly above 1 via the guard), so the placement is an
+    // honest projection, not clamp01 masking an out-of-range value.
+    const chart = bandChart([{ y: 1 }, { y: 0.4 }], { width: 24, height: 9, yMin: 0, yMax: 1 })
+    expect(chart.yMax).toBeGreaterThan(1)
+    // The two distinct values still land in two distinct rows.
+    const markerRows = new Set(glyphCells(chart, '●').map(cell => cell.row))
+    expect(markerRows.size).toBe(2)
+  })
+
+  it('never shrinks a domain that already contains the data with room', () => {
+    // Interior data (a real event band): the caller-supplied zoom is respected
+    // byte-for-byte, so honest tight zooms are not blown open.
+    const chart = bandChart([{ y: 0.352, lo: 0.31, hi: 0.4 }], { width: 30, height: 7, yMin: 0.28, yMax: 0.44 })
+    expect(chart.yMin).toBe(0.28)
+    expect(chart.yMax).toBe(0.44)
+  })
+
+  it('handles a degenerate supplied domain (min == max) without collapsing', () => {
+    const chart = bandChart([{ y: 0.4 }, { y: 0.6 }], { width: 20, height: 7, yMin: 0.5, yMax: 0.5 })
+    expect(chart.yMax).toBeGreaterThan(chart.yMin)
+    expect(chart.yMin).toBeLessThanOrEqual(0.4)
+    expect(chart.yMax).toBeGreaterThanOrEqual(0.6)
+  })
+
+  it('PROPERTY: for arbitrary series + bands + domains, every glyph stays inside the axis', () => {
+    // A deterministic LCG so the property is reproducible.
+    let seed = 0x2545f491
+    const rnd = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff
+      return seed / 0x7fffffff
+    }
+    const span = (a: number, b: number) => a + rnd() * (b - a)
+
+    for (let trial = 0; trial < 300; trial += 1) {
+      const n = 1 + Math.floor(rnd() * 12)
+      const points = Array.from({ length: n }, () => {
+        if (rnd() < 0.15) {
+          return { y: null as number | null }
+        }
+        const y = span(-2, 3)
+        if (rnd() < 0.5) {
+          const half = rnd() * 0.8
+          return { y, lo: y - half, hi: y + half }
+        }
+        return { y }
+      })
+      const h = 3 + Math.floor(rnd() * 8)
+      // Sometimes an adversarial (subset / degenerate / inverted) domain.
+      const a = span(-1, 2)
+      const b = span(-1, 2)
+      const chart = bandChart(points, { width: 8 + Math.floor(rnd() * 40), height: h, yMin: Math.min(a, b), yMax: Math.max(a, b) })
+
+      const values = drawnValues(points)
+      // 1) Containment: the reported domain includes every drawn artifact.
+      for (const v of values) {
+        expect(v).toBeGreaterThanOrEqual(chart.yMin)
+        expect(v).toBeLessThanOrEqual(chart.yMax)
+      }
+      // 2) Every glyph occupies a real axis row: 0..rows.length-1, and the honest
+      //    (un-clamped) projection of each drawn value lands in that range too.
+      const rowCount = chart.rows.length
+      const dsp = chart.yMax - chart.yMin || 1
+      for (const v of values) {
+        const honestRow = Math.round((1 - (v - chart.yMin) / dsp) * (rowCount - 1))
+        expect(honestRow).toBeGreaterThanOrEqual(0)
+        expect(honestRow).toBeLessThanOrEqual(rowCount - 1)
+      }
+      for (const glyph of ['●', '░']) {
+        for (const cell of glyphCells(chart, glyph)) {
+          expect(cell.row).toBeGreaterThanOrEqual(0)
+          expect(cell.row).toBeLessThanOrEqual(rowCount - 1)
+        }
+      }
+    }
+  })
+})
+
+// ── FIX 2: cap the dot preview at ~15 meaningful dots ─────────────────────────
+describe('downsampleSeries (change-aware dot-plot thinning)', () => {
+  it('returns every point untouched at or under the cap', () => {
+    const values = [0.1, 0.2, 0.3, 0.4]
+    const ds = downsampleSeries(values, { cap: 15 })
+    expect(ds.downsampled).toBe(false)
+    expect(ds.keptIndices).toEqual([0, 1, 2, 3])
+    expect(ds.shown).toBe(4)
+    expect(ds.total).toBe(4)
+    expect(ds.note).toBe('')
+  })
+
+  it('caps at the requested number of dots and ALWAYS keeps first + last', () => {
+    const values = Array.from({ length: 84 }, (_, i) => i / 84)
+    const ds = downsampleSeries(values, { cap: 15 })
+    expect(ds.downsampled).toBe(true)
+    expect(ds.shown).toBe(15)
+    expect(ds.keptIndices).toHaveLength(15)
+    expect(ds.keptIndices[0]).toBe(0)
+    expect(ds.keptIndices[ds.keptIndices.length - 1]).toBe(83)
+    // strictly increasing (chronological order preserved)
+    for (let i = 1; i < ds.keptIndices.length; i += 1) {
+      expect(ds.keptIndices[i]!).toBeGreaterThan(ds.keptIndices[i - 1]!)
+    }
+  })
+
+  it('keeps the points with the largest |delta| (material moves), not evenly-spaced ones', () => {
+    // A flat series with two sharp jumps in the middle. Those two indices MUST be
+    // kept over any of the flat neighbours.
+    const values = [0.5, 0.5, 0.5, 0.9, 0.9, 0.9, 0.2, 0.2, 0.2, 0.2, 0.2]
+    const ds = downsampleSeries(values, { cap: 4 })
+    expect(ds.downsampled).toBe(true)
+    expect(ds.keptIndices).toContain(3) // the +0.4 jump
+    expect(ds.keptIndices).toContain(6) // the −0.7 jump
+    expect(ds.keptIndices[0]).toBe(0)
+    expect(ds.keptIndices[ds.keptIndices.length - 1]).toBe(10)
+  })
+
+  it('breaks ties by recency (the later change wins)', () => {
+    // Two equal-magnitude jumps; with a budget of exactly one interior slot the
+    // MORE RECENT one is kept.
+    const values = [0.5, 0.7, 0.7, 0.7, 0.9, 0.9]
+    const ds = downsampleSeries(values, { cap: 3 })
+    expect(ds.keptIndices[0]).toBe(0)
+    expect(ds.keptIndices[ds.keptIndices.length - 1]).toBe(5)
+    expect(ds.keptIndices).toContain(4) // the later +0.2, not the earlier index 1
+    expect(ds.keptIndices).not.toContain(1)
+  })
+
+  it('emits an honest caption only when it actually dropped points', () => {
+    const many = downsampleSeries(Array.from({ length: 84 }, (_, i) => i / 84), { cap: 15, unit: 'snapshots' })
+    expect(many.note).toBe('15 of 84 snapshots shown · largest moves')
+    const few = downsampleSeries([0.1, 0.2], { cap: 15, unit: 'snapshots' })
+    expect(few.note).toBe('')
+  })
+
+  it('counts only drawable (finite) points and never selects gaps', () => {
+    const values = [0.1, null, 0.9, null, 0.2, 0.8, null, 0.3]
+    const ds = downsampleSeries(values, { cap: 3 })
+    // total counts the 5 finite points, not the 8 slots.
+    expect(ds.total).toBe(5)
+    // Every kept index points at a finite value.
+    for (const i of ds.keptIndices) {
+      expect(Number.isFinite(values[i])).toBe(true)
+    }
+    // first/last kept are the first/last FINITE indices.
+    expect(ds.keptIndices[0]).toBe(0)
+    expect(ds.keptIndices[ds.keptIndices.length - 1]).toBe(7)
+  })
+
+  it('degrades gracefully for a tiny cap (keeps first + last only)', () => {
+    const ds = downsampleSeries([0.1, 0.4, 0.2, 0.9, 0.3], { cap: 2 })
+    expect(ds.keptIndices).toEqual([0, 4])
+    expect(ds.downsampled).toBe(true)
   })
 })

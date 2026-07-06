@@ -530,6 +530,44 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(chartScale([])).toEqual({ yMax: 1, yMin: 0 })
   })
 
+  it('chartScale domain includes EVERY drawn artifact — band edges, not just markers', async () => {
+    const { chartScale } = await import('../components/forecastsWorkspace.js')
+    // A tight marker series with a much wider band (e.g. the event interval): the
+    // domain must contain the band edges too, or the band would be clipped/pinned.
+    const scale = chartScale([
+      { y: 0.5, lo: 0.2, hi: 0.85 },
+      { y: 0.52, lo: 0.22, hi: 0.9 }
+    ])
+    expect(scale.yMin).toBeLessThanOrEqual(0.2)
+    expect(scale.yMax).toBeGreaterThanOrEqual(0.9)
+  })
+
+  it('a rendered chart never clamps a drawn value onto the axis boundary (FIX 1)', async () => {
+    const [{ bandChart }, { chartScale, thesisHealthBandPoints }] = await Promise.all([
+      import('../lib/forecastCharts.js'),
+      import('../components/forecastsWorkspace.js')
+    ])
+    // The real event-band shape: headline + p10/p90 lows/highs per snapshot.
+    const points = thesisHealthBandPoints({
+      history: [
+        { as_of: '2026-05-15T00:00:00Z', event_high: 0.42, event_low: 0.3, headline_probability: 0.34 },
+        { as_of: '2026-05-22T00:00:00Z', event_high: 0.41, event_low: 0.31, headline_probability: 0.36 },
+        { as_of: '2026-05-29T00:00:00Z', event_high: 0.4, event_low: 0.31, headline_probability: 0.352 }
+      ]
+    } as never)
+    const chart = bandChart(points, { height: 7, width: 48, ...chartScale(points) })
+    // Every drawn value sits strictly inside the domain the chart reports — the
+    // clamp in rowFor is a proven no-op, so no dot escapes the axis.
+    for (const p of points) {
+      for (const v of [p.y, p.lo, p.hi]) {
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          expect(v).toBeGreaterThanOrEqual(chart.yMin)
+          expect(v).toBeLessThanOrEqual(chart.yMax)
+        }
+      }
+    }
+  })
+
   it('headlineLabel renders percent for probabilities and μ/σ for distributions', async () => {
     const { headlineLabel } = await import('../components/forecastsWorkspace.js')
     expect(headlineLabel({ headline_kind: 'probability', headline_probability: 0.52 } as ForecastWorkspaceItem)).toBe('52%')
@@ -1115,6 +1153,40 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('score band')
     // The caveat now explains the band propagates parameter uncertainty.
     expect(text).toContain('second-order MC')
+  })
+
+  it('caps the thesis dot-plot preview at ~15 dots and captions the thinning honestly (FIX 2)', async () => {
+    const [{ renderSync }, mod, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/forecastsWorkspace.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+    const { ThesisDeskRead } = mod
+
+    // 84 snapshots — the exact "dozens of dots in clumps" case the operator hit.
+    const history = Array.from({ length: 84 }, (_, i) => ({
+      as_of: new Date(Date.parse('2026-01-01T00:00:00Z') + i * 86_400_000).toISOString(),
+      headline_probability: 0.3 + 0.2 * Math.sin(i / 4),
+      headline_regime: 'event'
+    }))
+    const thesis = { ...inflationThesis(), event_band: null, history, score_band: null }
+
+    const stdout = writeStream(120, 90)
+    renderSync(React.createElement(ThesisDeskRead, { t: DARK_THEME, thesis: thesis as never, width: 90 }), {
+      exitOnCtrlC: false,
+      patchConsole: false,
+      stdout: stdout.stream
+    } as never)
+    const text = normalize(stdout.text(), stripAnsi)
+    // Honest caption: N of 84 shown, largest moves.
+    expect(text).toContain('of 84 snapshots shown · largest moves')
+    expect(text).toContain('15 of 84')
+    // The drawn marker count never exceeds the cap (one ● per kept snapshot; the
+    // chart squeezes columns but never draws more than 15 distinct dots).
+    const markerCount = (text.match(/●/g) ?? []).length
+    // headline legend also carries one ● — allow it, but the plot must be capped.
+    expect(markerCount).toBeLessThanOrEqual(15 + 1)
   })
 
   it('renders the factor as a lens tab with its member forecasts listed', async () => {

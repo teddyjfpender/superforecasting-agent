@@ -32,7 +32,7 @@ import {
   tabRefFactor,
   tabRefThesis
 } from '../lib/deskGroups.js'
-import { bandChart, deltaGlyph, levelSparkline, pct, shortDate, windowDelta, windowDeltaDetail, wrapLines } from '../lib/forecastCharts.js'
+import { bandChart, deltaGlyph, downsampleSeries, levelSparkline, pct, shortDate, windowDelta, windowDeltaDetail, wrapLines } from '../lib/forecastCharts.js'
 import { packetTailAudit } from '../lib/forecastTail.js'
 import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { spinnerFrame } from '../lib/icons.js'
@@ -2134,8 +2134,11 @@ export function DeskSummary({
   // fills only for distributions (their snapshots carry a real 90% interval) —
   // binaries draw just the marker line, which is correct. Auto-zoom the y-axis to
   // the data + band range so small probability moves are actually visible.
-  const bandPoints = historyToBandPoints(selected)
-  const hasSeries = bandPoints.some(point => finite(point.y))
+  const fullBandPoints = historyToBandPoints(selected)
+  const hasSeries = fullBandPoints.some(point => finite(point.y))
+  // Thin a dense dot-strip to its material moves (≤15 dots); data untouched.
+  const preview = downsampleSeries(fullBandPoints.map(point => point.y))
+  const bandPoints = preview.keptIndices.map(i => fullBandPoints[i]!)
   const { yMax, yMin } = chartScale(bandPoints)
   // Adapt the graph height to the terminal so the rest of the skinny panel (counts,
   // freshness, close, teaser) never gets pushed past the bottom on a short screen.
@@ -2190,7 +2193,9 @@ export function DeskSummary({
             </Text>
           ))}
           <Text color={t.color.muted} wrap="truncate-end">
-            {selected.headline_kind === 'distribution' ? 'μ over time' : 'probability over time'}
+            {`${selected.headline_kind === 'distribution' ? 'μ over time' : 'probability over time'}${
+              preview.downsampled ? ` · ${preview.note}` : ''
+            }`}
           </Text>
         </Box>
       ) : null}
@@ -2287,10 +2292,13 @@ function LensSummary({
   // The health series (thesis) / return series (factor) over time. Factors carry
   // a real q05–q95 band; theses plot the health line (the score band is a
   // different 0–100 scale, so it isn't drawn here).
-  const bandPoints = refFactor
+  const fullBandPoints = refFactor
     ? (refFactor.history ?? []).map(p => ({ hi: p.band_high ?? null, lo: p.band_low ?? null, y: p.headline_probability ?? null }))
     : (refThesis?.history ?? []).map(p => ({ y: p.headline_probability ?? null }))
-  const hasSeries = bandPoints.some(p => finite(p.y))
+  const hasSeries = fullBandPoints.some(p => finite(p.y))
+  // Thin a dense dot-strip to its material moves (≤15 dots); data untouched.
+  const preview = downsampleSeries(fullBandPoints.map(p => p.y))
+  const bandPoints = preview.keptIndices.map(i => fullBandPoints[i]!)
   const { yMax, yMin } = chartScale(bandPoints)
   const chartHeight = Math.max(4, Math.min(7, (rows ?? 28) - 14))
   const chart = hasSeries ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin }) : null
@@ -2344,7 +2352,9 @@ function LensSummary({
               {row}
             </Text>
           ))}
-          <Text color={t.color.muted} wrap="truncate-end">{refThesis ? 'health over time' : 'return over time'}</Text>
+          <Text color={t.color.muted} wrap="truncate-end">
+            {`${refThesis ? 'health over time' : 'return over time'}${preview.downsampled ? ` · ${preview.note}` : ''}`}
+          </Text>
         </Box>
       ) : null}
 

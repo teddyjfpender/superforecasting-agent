@@ -30,6 +30,7 @@ import {
   compactNumber,
   deltaGlyph,
   dotTrack,
+  downsampleSeries,
   histogram,
   type HistogramBar,
   levelSparkline,
@@ -1531,8 +1532,15 @@ export function ForecastDetail({
 }) {
   const delta = item.delta
   const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
-  const bandPoints = useMemo(() => historyToBandPoints(item), [item])
-  const hasSeries = bandPoints.some(point => finite(point.y))
+  const fullBandPoints = useMemo(() => historyToBandPoints(item), [item])
+  const hasSeries = fullBandPoints.some(point => finite(point.y))
+  // Change-aware preview: a long-lived question rolls hundreds of snapshots
+  // forward, condensing into an unreadable dot-strip. Thin to the material moves
+  // (first + last + largest |Δ|, ≤15) for the DRAWN dots only — the history is
+  // untouched. keptIndices align 1:1 with item.history, so the x-axis dates thin
+  // in lockstep with the markers.
+  const preview = useMemo(() => downsampleSeries(fullBandPoints.map(point => point.y)), [fullBandPoints])
+  const bandPoints = useMemo(() => preview.keptIndices.map(i => fullBandPoints[i]!), [preview, fullBandPoints])
   const scale = useMemo(() => chartScale(bandPoints), [bandPoints])
 
   const chart = useMemo(
@@ -1543,17 +1551,17 @@ export function ForecastDetail({
   )
 
   // The x-axis: real tick marks + deduped date labels spread across the actual
-  // snapshot time range (the dates of the finite-headline points, in order, so
-  // they line up with the chart's own column placement).
+  // snapshot time range. The dates come from the SAME kept indices as the drawn
+  // markers, so labels line up with the chart's column placement even when the
+  // preview was downsampled.
   const axis = useMemo(() => {
     if (!chart) {
       return null
     }
-    const dates = (item.history ?? [])
-      .filter(point => finite(point.headline_probability))
-      .map(point => point.as_of ?? null)
+    const history = item.history ?? []
+    const dates = preview.keptIndices.map(i => history[i]?.as_of ?? null)
     return timeAxis(dates, { gutterW: chart.gutterW, plotW: chart.plotW })
-  }, [chart, item.history])
+  }, [chart, item.history, preview])
 
   // Prefer the server-classified PMF (buckets only, moments/intervals stripped);
   // fall back to the raw dict for plain categorical forecasts.
@@ -1683,7 +1691,7 @@ export function ForecastDetail({
           <Text color={t.color.label} wrap="truncate-end">
             {`  ${
               isDistribution ? '● mean  ░ 90% interval' : item.panel ? '● forecast  ░ panel spread / confidence band' : '● forecast  ░ confidence band'
-            }`}
+            }${preview.downsampled ? `  ·  ${preview.note}` : ''}`}
           </Text>
         </>
       ) : null}
@@ -2684,8 +2692,11 @@ export const thesisHealthBandPoints = (thesis: ForecastThesis): BandPoint[] =>
   }))
 
 function ThesisTrendBlock({ thesis, t, width }: { thesis: ForecastThesis; t: Theme; width: number }) {
-  const points = useMemo(() => thesisHealthBandPoints(thesis), [thesis])
-  const hasSeries = points.filter(point => finite(point.y)).length >= 2
+  const fullPoints = useMemo(() => thesisHealthBandPoints(thesis), [thesis])
+  const hasSeries = fullPoints.filter(point => finite(point.y)).length >= 2
+  // Thin the dot-strip to its material moves (presentation-only; history intact).
+  const preview = useMemo(() => downsampleSeries(fullPoints.map(point => point.y)), [fullPoints])
+  const points = useMemo(() => preview.keptIndices.map(i => fullPoints[i]!), [preview, fullPoints])
   const scale = useMemo(() => chartScale(points), [points])
 
   const chart = useMemo(
@@ -2730,7 +2741,7 @@ function ThesisTrendBlock({ thesis, t, width }: { thesis: ForecastThesis; t: The
           <Text color={t.color.label} wrap="truncate-end">
             {`  ${shortDate(thesis.history?.[0]?.as_of)} → ${shortDate(thesis.as_of)}  ● headline${
               finite(thesis.event_band?.p10) && finite(thesis.event_band?.p90) ? '  ░ 90% event band' : ''
-            }`}
+            }${preview.downsampled ? `  ·  ${preview.note}` : ''}`}
           </Text>
         </>
       ) : (
@@ -3013,8 +3024,11 @@ export const factorReturnBandPoints = (factor: ForecastFactor): BandPoint[] =>
   }))
 
 function FactorTrendBlock({ factor, t, width }: { factor: ForecastFactor; t: Theme; width: number }) {
-  const points = useMemo(() => factorReturnBandPoints(factor), [factor])
-  const hasSeries = points.filter(point => finite(point.y)).length >= 2
+  const fullPoints = useMemo(() => factorReturnBandPoints(factor), [factor])
+  const hasSeries = fullPoints.filter(point => finite(point.y)).length >= 2
+  // Thin the dot-strip to its material moves (presentation-only; history intact).
+  const preview = useMemo(() => downsampleSeries(fullPoints.map(point => point.y)), [fullPoints])
+  const points = useMemo(() => preview.keptIndices.map(i => fullPoints[i]!), [preview, fullPoints])
   const scale = useMemo(() => chartScale(points), [points])
 
   const chart = useMemo(
@@ -3053,7 +3067,9 @@ function FactorTrendBlock({ factor, t, width }: { factor: ForecastFactor; t: The
             </Text>
           ))}
           <Text color={t.color.label} wrap="truncate-end">
-            {`  ${shortDate(factor.history?.[0]?.as_of)} → ${shortDate(factor.as_of)}  ● mean  ░ 90% band`}
+            {`  ${shortDate(factor.history?.[0]?.as_of)} → ${shortDate(factor.as_of)}  ● mean  ░ 90% band${
+              preview.downsampled ? `  ·  ${preview.note}` : ''
+            }`}
           </Text>
         </>
       ) : (
