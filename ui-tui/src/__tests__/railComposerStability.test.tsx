@@ -37,14 +37,12 @@ const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 const noop = () => {}
 
-const buildComposer = (input: string, cols: number): any => ({
+const buildComposer = (cols: number): any => ({
   cols,
   compIdx: 0,
   completions: [],
-  empty: input.length === 0,
+  empty: false,
   handleTextPaste: async () => null,
-  input,
-  inputBuf: [],
   pagerPageSize: 10,
   queueEditIdx: null,
   queuedDisplay: [],
@@ -92,8 +90,10 @@ describe('Home two-pane: Recent rail height is independent of composer growth', 
 
     const { resetOverlayState } = await import('../app/overlayStore.js')
     const { resetUiState } = await import('../app/uiStore.js')
+    const { $composerText } = await import('../app/composerTextStore.js')
     resetOverlayState()
     resetUiState()
+    $composerText.set({ input: 'hi', inputBuf: [] })
 
     const sessions = Array.from({ length: 30 }, (_, i) => ({
       id: `s${i}`,
@@ -133,7 +133,10 @@ describe('Home two-pane: Recent rail height is independent of composer growth', 
       virtualRows: [{ index: 0, key: 'm0', msg }]
     }
 
-    const App = ({ input }: { input: string }) =>
+    // The composer text lives in $composerText now; growing it there is what
+    // grows the input box (exactly like typing does in production).
+    const composer = buildComposer(COLS)
+    const App = () =>
       React.createElement(
         Box,
         { flexDirection: 'column', height: ROWS, width: COLS },
@@ -142,7 +145,7 @@ describe('Home two-pane: Recent rail height is independent of composer growth', 
           { value: { gw, rpc: gw.rpc } },
           React.createElement(AppLayout, {
             actions,
-            composer: buildComposer(input, COLS),
+            composer,
             mouseTracking: false,
             progress,
             status,
@@ -151,7 +154,7 @@ describe('Home two-pane: Recent rail height is independent of composer growth', 
         )
       )
 
-    const instance: any = await render(React.createElement(App, { input: 'hi' }), {
+    const instance: any = await render(React.createElement(App), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdin: writeStream(COLS, ROWS, true).stream,
@@ -161,7 +164,7 @@ describe('Home two-pane: Recent rail height is independent of composer growth', 
     await tick(160)
 
     const viewportFor = async (input: string) => {
-      instance.rerender(React.createElement(App, { input }))
+      $composerText.set({ input, inputBuf: [] })
       await tick(120)
 
       return railScrollRef.current?.getViewportHeight() ?? -1

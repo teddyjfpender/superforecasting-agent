@@ -95,8 +95,10 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
     ])
     const { resetOverlayState } = await import('../app/overlayStore.js')
     const { resetUiState } = await import('../app/uiStore.js')
+    const { $composerText, setComposerInput } = await import('../app/composerTextStore.js')
     resetOverlayState()
     resetUiState()
+    $composerText.set({ input: 'hi', inputBuf: [] })
 
     const sessions = Array.from({ length: 40 }, (_, i) => ({
       id: `s${i}`,
@@ -130,26 +132,24 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
     // faithful reproduction must hold it fixed across keystrokes.
     const gwValue = { gw, rpc: gw.rpc }
 
-    let setInput: (s: string) => void = noop
-    const App = () => {
-      const [input, _setInput] = React.useState('hi')
-      setInput = _setInput
-      const composer: any = {
-        cols: COLS,
-        compIdx: 0,
-        completions: [],
-        empty: false,
-        handleTextPaste: async () => null,
-        input,
-        inputBuf: [],
-        pagerPageSize: 10,
-        queueEditIdx: null,
-        queuedDisplay: [],
-        submit: noop,
-        updateInput: noop,
-        voiceRecordKey: null
-      }
+    // Typing writes to $composerText (as useComposerState does), NOT to a prop —
+    // so `composer` is a stable object and only store subscribers re-render.
+    const setInput = (s: string) => setComposerInput(s)
+    const composer: any = {
+      cols: COLS,
+      compIdx: 0,
+      completions: [],
+      empty: false,
+      handleTextPaste: async () => null,
+      pagerPageSize: 10,
+      queueEditIdx: null,
+      queuedDisplay: [],
+      submit: noop,
+      updateInput: noop,
+      voiceRecordKey: null
+    }
 
+    const App = () => {
       return React.createElement(
         Box,
         { flexDirection: 'column', height: ROWS, width: COLS },

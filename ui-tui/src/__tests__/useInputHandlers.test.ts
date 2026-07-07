@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { applyVoiceRecordResponse, shouldFallThroughForScroll, shouldOpenHomeHelp, shouldSoftFocusToday } from '../app/useInputHandlers.js'
+import {
+  applyVoiceRecordResponse,
+  pageScrollStep,
+  shouldFallThroughForScroll,
+  shouldOpenHomeHelp,
+  shouldSoftFocusToday
+} from '../app/useInputHandlers.js'
 
 const baseKey = {
   downArrow: false,
@@ -39,6 +45,24 @@ describe('shouldFallThroughForScroll — keep transcript scrolling alive during 
 
   it('does NOT fall through for unrelated state (no scroll keys held)', () => {
     expect(shouldFallThroughForScroll(baseKey)).toBe(false)
+  })
+})
+
+describe('pageScrollStep — PgUp/PgDn move a viewport-minus-one (one pager continuity line)', () => {
+  it('steps by viewport - 1 so exactly one line of continuity carries over', () => {
+    expect(pageScrollStep(24)).toBe(23)
+    expect(pageScrollStep(10)).toBe(9)
+  })
+
+  it('never returns less than 1 for degenerate viewports', () => {
+    expect(pageScrollStep(1)).toBe(1)
+    expect(pageScrollStep(0)).toBe(1)
+  })
+
+  it('stays under the DECSTBM fast-path threshold (step < viewport)', () => {
+    for (const vp of [5, 12, 40]) {
+      expect(pageScrollStep(vp)).toBeLessThan(vp)
+    }
   })
 })
 

@@ -937,6 +937,13 @@ export function useMainApp(gw: GatewayClient) {
     ]
   )
 
+  // NB: input / inputBuf are deliberately NOT here — they live in $composerText
+  // and are read reactively by the composer's own input subtree (ComposerPane).
+  // Keeping them out makes `appComposer` referentially stable across keystrokes,
+  // so AppLayout's memo holds and a keypress re-renders NOTHING above the
+  // composer (no NavBar / hero / Today / status-bar re-blit). The dep array
+  // lists only the genuinely-stable-while-typing fields — never `composerState`
+  // as a whole, whose identity changes on every keystroke.
   const appComposer = useMemo(
     () => ({
       cols,
@@ -944,8 +951,6 @@ export function useMainApp(gw: GatewayClient) {
       completions: composerState.completions,
       empty,
       handleTextPaste: composerActions.handleTextPaste,
-      input: composerState.input,
-      inputBuf: composerState.inputBuf,
       pagerPageSize,
       queueEditIdx: composerState.queueEditIdx,
       queuedDisplay: composerState.queuedDisplay,
@@ -953,7 +958,18 @@ export function useMainApp(gw: GatewayClient) {
       updateInput: composerActions.setInput,
       voiceRecordKey
     }),
-    [cols, composerActions, composerState, empty, pagerPageSize, submit, voiceRecordKey]
+    [
+      cols,
+      composerActions,
+      composerState.compIdx,
+      composerState.completions,
+      composerState.queueEditIdx,
+      composerState.queuedDisplay,
+      empty,
+      pagerPageSize,
+      submit,
+      voiceRecordKey
+    ]
   )
 
   // Pass current progress through unfrozen — streaming update throttling

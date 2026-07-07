@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 import { useStdin, withInkSuspended } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 
 import type { PasteEvent } from '../components/textInput.js'
 import { LARGE_PASTE } from '../config/limits.js'
@@ -19,7 +19,14 @@ import { readOsc52Clipboard } from '../lib/osc52.js'
 import { isRemoteShellSession } from '../lib/terminalSetup.js'
 import { pasteTokenLabel, stripTrailingPasteNewlines } from '../lib/text.js'
 
-import type { MaybePromise, PasteSnippet, UseComposerStateOptions, UseComposerStateResult } from './interfaces.js'
+import { setComposerInput, syncComposerText } from './composerTextStore.js'
+import type {
+  MaybePromise,
+  PasteSnippet,
+  StateSetter,
+  UseComposerStateOptions,
+  UseComposerStateResult
+} from './interfaces.js'
 import { $isBlocked } from './overlayStore.js'
 import { getUiState } from './uiStore.js'
 
@@ -104,10 +111,31 @@ export function useComposerState({
   onImageAttached,
   submitRef
 }: UseComposerStateOptions): UseComposerStateResult {
-  const [input, setInput] = useState('')
-  const [inputBuf, setInputBuf] = useState<string[]>([])
+  const [input, setInputState] = useState('')
+  const [inputBuf, setInputBufState] = useState<string[]>([])
   const [pasteSnips, setPasteSnips] = useState<PasteSnippet[]>([])
   const isBlocked = useStore($isBlocked)
+
+  // The canonical composer text stays in React state (every submit / keyboard /
+  // slash consumer reads it synchronously and unchanged). These wrappers also
+  // mirror it into $composerText so ONLY the composer's own input subtree — not
+  // AppLayout, the NavBar, the hero, or the status bar — re-renders per keystroke.
+  // Value-form writes (the typing path) hit the store synchronously first, so the
+  // store-subscribed input renders in the same batch (no stale frame); the layout
+  // effect below reconciles updater-form writes and any other state-only path.
+  const setInput = useCallback<StateSetter<string>>(next => {
+    if (typeof next !== 'function') {
+      setComposerInput(next)
+    }
+
+    setInputState(next)
+  }, [])
+
+  const setInputBuf = useCallback<StateSetter<string[]>>(next => setInputBufState(next), [])
+
+  useLayoutEffect(() => {
+    syncComposerText(input, inputBuf)
+  }, [input, inputBuf])
   const { querier } = useStdin() as { querier: Parameters<typeof readOsc52Clipboard>[0] }
 
   const {

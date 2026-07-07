@@ -65,14 +65,12 @@ const status: any = {
 
 const progress: any = { showProgressArea: false }
 
-const buildComposer = (input: string, cols: number): any => ({
+const buildComposer = (cols: number): any => ({
   cols,
   compIdx: 0,
   completions: [],
-  empty: input.length === 0,
+  empty: false,
   handleTextPaste: async () => null,
-  input,
-  inputBuf: [],
   pagerPageSize: 10,
   queueEditIdx: null,
   queuedDisplay: [],
@@ -91,10 +89,12 @@ const setup = async () => {
   ])
   const { resetOverlayState } = await import('../app/overlayStore.js')
   const { resetUiState } = await import('../app/uiStore.js')
+  const { $composerText, setComposerInput } = await import('../app/composerTextStore.js')
   resetOverlayState()
   resetUiState()
+  $composerText.set({ input: 'hi', inputBuf: [] })
 
-  return { AppLayout, Box, GatewayProvider, render }
+  return { AppLayout, Box, GatewayProvider, render, setComposerInput }
 }
 
 describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash', () => {
@@ -144,7 +144,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
           { value: gwValue },
           React.createElement(AppLayout, {
             actions,
-            composer: buildComposer('hi', cols),
+            composer: buildComposer(cols),
             mouseTracking: false,
             progress,
             status,
@@ -204,7 +204,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
   it('a composer keystroke emits no full-screen clear and only a small diff', async () => {
     const ROWS = 30
     const COLS = 120
-    const { AppLayout, Box, GatewayProvider, render } = await setup()
+    const { AppLayout, Box, GatewayProvider, render, setComposerInput } = await setup()
 
     // A tall transcript: if a keystroke re-blitted the transcript region, the
     // per-keystroke byte count would balloon and/or a full clear would fire.
@@ -249,12 +249,12 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
     // unstable context value would re-render every consumer through memo.
     const gwValue = { gw, rpc: gw.rpc }
 
-    let setInput: (s: string) => void = noop
-    const App = () => {
-      const [input, _setInput] = React.useState('hi')
-      setInput = _setInput
-
-      return React.createElement(
+    // Typing writes to $composerText (as production does); the transcript region
+    // must not re-blit under it.
+    const setInput = (s: string) => setComposerInput(s)
+    const composer = buildComposer(COLS)
+    const App = () =>
+      React.createElement(
         Box,
         { flexDirection: 'column', height: ROWS, width: COLS },
         React.createElement(
@@ -262,7 +262,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
           { value: gwValue },
           React.createElement(AppLayout, {
             actions,
-            composer: buildComposer(input, COLS),
+            composer,
             mouseTracking: false,
             progress,
             status,
@@ -270,7 +270,6 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
           })
         )
       )
-    }
 
     const out = writeStream(COLS, ROWS)
     const instance: any = await render(React.createElement(App), {

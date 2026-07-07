@@ -365,8 +365,9 @@ export interface AppLayoutComposerProps {
   completions: CompletionItem[]
   empty: boolean
   handleTextPaste: (event: PasteEvent) => MaybePromise<ComposerPasteResult | null>
-  input: string
-  inputBuf: string[]
+  // input / inputBuf are NOT here — the live composer text lives in the
+  // $composerText store and is read reactively by the composer's own subtree, so
+  // a keystroke never re-renders AppLayout. See app/composerTextStore.ts.
   pagerPageSize: number
   queueEditIdx: null | number
   queuedDisplay: string[]

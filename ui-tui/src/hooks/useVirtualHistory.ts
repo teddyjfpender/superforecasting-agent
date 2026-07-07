@@ -5,6 +5,7 @@ import {
   useDeferredValue,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore
@@ -140,6 +141,15 @@ export function useVirtualHistory(
   const [measuredHeightVersion, bumpMeasuredHeightVersion] = useState(0)
   const metrics = useRef({ sticky: true, top: 0, vp: 0 })
   const lastScrollTopRef = useRef(0)
+  // The row pinned at the viewport top while the reader is parked (scrolled up,
+  // not following). Used to hold their content still when a row ABOVE it changes
+  // height — an append the measured-compensation can't see because the changed
+  // row isn't mounted (e.g. a SESSION_INFO update regrowing the intro, or a
+  // front-trim of capped history). `manualAt` is the ScrollBox's last manual-
+  // scroll timestamp AT CAPTURE: it advances on scrollBy/scrollTo but NOT on the
+  // position-neutral adjustScrollTop, so it cleanly tells a genuine user scroll
+  // (follow it) from an offsets-shifted-under-a-still-reader event (compensate).
+  const topAnchorRef = useRef<null | { intra: number; key: string; manualAt: number }>(null)
 
   // Width change: scale cached heights by oldCols/newCols instead of clearing
   // (clearing forces a pessimistic back-walk mounting ~190 rows at once, each
@@ -516,6 +526,44 @@ export function useVirtualHistory(
       }
     }
 
+    // Above-viewport hold. While the reader is PARKED (following off, no
+    // in-flight programmatic scroll), keep the row at the viewport top pinned so
+    // any height change ABOVE it — mounted OR not — never drags their view. This
+    // fills the gap the measured compensation above leaves: it only sees MOUNTED
+    // rows, so an unmounted intro regrowing on SESSION_INFO or a taller final
+    // replacing a streaming preview above the fold would otherwise shift the
+    // reader. Uses the same position-neutral adjustScrollTop seam, and no-ops
+    // whenever the measured compensation already held the line (the anchor's
+    // desired top then already equals the current top). Skipped while a wheel/
+    // drag drain is in flight (pendingDelta ≠ 0) so it never fights a live scroll,
+    // and dropped while following so returning to the tail re-captures.
+    if (s && vp > 0 && n > 0 && pendingDelta === 0 && !sticky) {
+      const anchor = topAnchorRef.current
+      const manualAt = s.getLastManualScrollAt()
+      // Only compensate when the anchor is intact AND the user has NOT scrolled
+      // since it was captured — otherwise this is a real scroll to follow, not an
+      // offsets shift to absorb, and re-pinning would undo the user's movement.
+      if (anchor && anchor.manualAt === manualAt) {
+        const idx = items.findIndex(it => it.key === anchor.key)
+
+        if (idx >= 0) {
+          const curTop = Math.max(0, s.getScrollTop())
+          const desiredTop = Math.max(0, (offsets[idx] ?? 0) + anchor.intra)
+
+          if (desiredTop !== curTop) {
+            s.adjustScrollTop(desiredTop - curTop)
+          }
+        }
+      }
+
+      // Re-capture from the settled position so the NEXT frame holds this row.
+      const settledTop = Math.max(0, s.getScrollTop())
+      const a = Math.max(0, Math.min(n - 1, upperBound(offsets, settledTop, n + 1) - 1))
+      topAnchorRef.current = { intra: settledTop - (offsets[a] ?? 0), key: items[a]?.key ?? '', manualAt }
+    } else {
+      topAnchorRef.current = null
+    }
+
     if (s) {
       const next = {
         sticky: s.isSticky(),
@@ -543,14 +591,20 @@ export function useVirtualHistory(
     }
   }, [effEnd, effStart, items, liveTailActive, measuredHeightVersion, n, offsets, scrollRef, sticky, total, vp])
 
-  return {
-    bottomSpacer: Math.max(0, total - (offsets[effEnd] ?? total)),
-    end: effEnd,
-    measureRef,
-    offsets,
-    start: effStart,
-    topSpacer: offsets[effStart] ?? 0
-  }
+  // Memoize the returned window so a re-render that leaves the geometry
+  // unchanged (the common case: a composer keystroke re-renders useMainApp, but
+  // no message was added, no scroll happened, no height re-measured) hands back
+  // the SAME object. Without this, every keystroke produced a fresh literal —
+  // `appTranscript` changed identity — and TranscriptPane's memo broke, so the
+  // whole transcript region re-blitted (~5KB/keystroke). The fields below only
+  // change on real scroll/append/measure, so the identity is stable while typing.
+  const bottomSpacer = Math.max(0, total - (offsets[effEnd] ?? total))
+  const topSpacer = offsets[effStart] ?? 0
+
+  return useMemo(
+    () => ({ bottomSpacer, end: effEnd, measureRef, offsets, start: effStart, topSpacer }),
+    [bottomSpacer, effEnd, measureRef, offsets, effStart, topSpacer]
+  )
 }
 
 interface MeasuredNode {

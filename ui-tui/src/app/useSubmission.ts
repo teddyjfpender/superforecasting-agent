@@ -56,6 +56,13 @@ export function useSubmission(opts: UseSubmissionOptions) {
   const lastEmptyAt = useRef(0)
   const typingIdleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // `submit` flows into `appComposer` and thus into AppLayout's props. Reading
+  // the completion/buffer fields through a ref (instead of closing over
+  // `composerState`) keeps `submit` referentially stable across keystrokes, so
+  // AppLayout's memo holds and a keypress never re-renders the frame chrome.
+  const stateRef = useRef(composerState)
+  stateRef.current = composerState
+
   useEffect(() => {
     if (typingIdleTimer.current) {
       clearTimeout(typingIdleTimer.current)
@@ -372,12 +379,14 @@ export function useSubmission(opts: UseSubmissionOptions) {
 
   const submit = useCallback(
     (value: string) => {
-      if (composerState.completions.length) {
-        const row = composerState.completions[composerState.compIdx]
+      const cState = stateRef.current
+
+      if (cState.completions.length) {
+        const row = cState.completions[cState.compIdx]
 
         if (row?.text) {
           const text = value.startsWith('/') && row.text.startsWith('/') ? row.text.slice(1) : row.text
-          const next = value.slice(0, composerState.compReplace) + text
+          const next = value.slice(0, cState.compReplace) + text
 
           if (next !== value) {
             return composerActions.setInput(next)
@@ -385,7 +394,7 @@ export function useSubmission(opts: UseSubmissionOptions) {
         }
       }
 
-      if (!value.trim() && !composerState.inputBuf.length) {
+      if (!value.trim() && !cState.inputBuf.length) {
         const live = getUiState()
         const now = Date.now()
         const doubleTap = now - lastEmptyAt.current < DOUBLE_ENTER_MS
@@ -417,9 +426,9 @@ export function useSubmission(opts: UseSubmissionOptions) {
         return composerActions.setInput('')
       }
 
-      dispatchSubmission([...composerState.inputBuf, value].join('\n'))
+      dispatchSubmission([...cState.inputBuf, value].join('\n'))
     },
-    [appendMessage, composerActions, composerRefs, composerState, dispatchSubmission, gw, sys]
+    [appendMessage, composerActions, composerRefs, dispatchSubmission, gw, sys]
   )
 
   submitRef.current = submit

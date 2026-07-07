@@ -4,6 +4,7 @@ import { Fragment, memo, type RefObject, useCallback, useEffect, useMemo, useRef
 
 import { $agentsActive } from '../app/agentsActiveStore.js'
 import { $chordPending } from '../app/chordStore.js'
+import { $composerArmable, $composerText } from '../app/composerTextStore.js'
 import { useGateway } from '../app/gatewayContext.js'
 import { $homeFocus, setHomePane } from '../app/homeFocusStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
@@ -213,6 +214,11 @@ const ComposerPane = memo(function ComposerPane({
   const ui = useStore($uiState)
   const isBlocked = useStore($isBlocked)
   const chordPending = useStore($chordPending)
+  // The live composer text lives in $composerText (not in the `composer` prop),
+  // so subscribing here scopes every keystroke's re-render to THIS pane — the
+  // whole point of the isolation. AppLayout above never sees the text and never
+  // re-renders per keystroke.
+  const { input, inputBuf } = useStore($composerText)
 
   // Guided OAuth connect from the model picker: close it and launch the in-TUI
   // device-code sign-in (`/auth <slug>`), so connecting Codex never dead-ends.
@@ -228,12 +234,12 @@ const ComposerPane = memo(function ComposerPane({
   // when the conversations rail OR the landing "Today" panel holds it, the composer
   // goes inactive so its keystrokes/cursor don't compete with that pane's navigation.
   const composerActive = useStore($homeFocus).pane === 'conversation'
-  const sh = (composer.inputBuf[0] ?? composer.input).startsWith('!')
+  const sh = (inputBuf[0] ?? input).startsWith('!')
   const promptText = composerPromptText(ui.theme.brand.prompt, ui.info?.profile_name, sh)
   const promptWidth = composerPromptWidth(promptText)
   const promptBlank = ' '.repeat(promptWidth)
   const inputColumns = stableComposerColumns(composer.cols, promptWidth)
-  const inputHeight = inputVisualHeight(composer.input, inputColumns)
+  const inputHeight = inputVisualHeight(input, inputColumns)
   const inputMouseRef = useRef<null | TextInputMouseApi>(null)
 
   const captureInputDrag = (e: GutterMouseEvent) => {
@@ -333,11 +339,11 @@ const ComposerPane = memo(function ComposerPane({
           pagerPageSize={composer.pagerPageSize}
         />
 
-        {composer.input === '?' && !composer.inputBuf.length && <HelpHint t={ui.theme} />}
+        {input === '?' && !inputBuf.length && <HelpHint t={ui.theme} />}
 
         {!isBlocked && (
           <>
-            {composer.inputBuf.map((line, i) => (
+            {inputBuf.map((line, i) => (
               <Box key={i}>
                 <Box width={promptWidth}>
                   {i === 0 ? (
@@ -361,7 +367,7 @@ const ComposerPane = memo(function ComposerPane({
               <Box width={promptWidth}>
                 {sh ? (
                   <PromptPrefix color={ui.theme.color.shellDollar} promptText={promptText} width={promptWidth} />
-                ) : composer.inputBuf.length ? (
+                ) : inputBuf.length ? (
                   <Text color={ui.theme.color.prompt}>{promptBlank}</Text>
                 ) : (
                   <PromptPrefix bold color={ui.theme.color.prompt} promptText={promptText} width={promptWidth} />
@@ -378,7 +384,7 @@ const ComposerPane = memo(function ComposerPane({
                   onPaste={composer.handleTextPaste}
                   onSubmit={composer.submit}
                   placeholder={composer.empty ? PLACEHOLDER : ui.busy ? 'Ctrl+C to interrupt…' : ''}
-                  value={composer.input}
+                  value={input}
                   voiceRecordKey={composer.voiceRecordKey}
                 />
               </Box>
@@ -676,6 +682,10 @@ export const AppLayout = memo(function AppLayout({
   const ui = useStore($uiState)
   const homeFocus = useStore($homeFocus)
   const agentsActive = useStore($agentsActive)
+  // A computed boolean, NOT the text: it only notifies when the composer flips
+  // empty↔typed, so AppLayout re-renders on that transition (rare) and never on
+  // an ordinary keystroke.
+  const composerTextArmable = useStore($composerArmable)
   const { gw } = useGateway()
   const { stdout } = useStdout()
   const rows = stdout?.rows ?? 24
@@ -747,7 +757,7 @@ export const AppLayout = memo(function AppLayout({
   // focus, and no overlay owns the keys, ↑↓/⏎ drive the panel WITHOUT taking the
   // keyboard from typing. `globalModal` additionally hard-gates the panel while
   // the palette / cheat-sheet paints above the still-mounted landing.
-  const composerArmable = !composer.completions.length && !composer.inputBuf.length && !composer.input
+  const composerArmable = composerTextArmable && !composer.completions.length
 
   const todaySoftFocus =
     landing && homeFocus.pane === 'conversation' && composerArmable && canOpenGlobalOverlay(overlay)
