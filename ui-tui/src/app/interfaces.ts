@@ -175,6 +175,9 @@ export interface ComposerPasteResult {
 export type MaybePromise<T> = Promise<T> | T
 
 export interface ComposerActions {
+  /** Explicitly open path / @-mention completion for the current trailing token
+   *  (Tab). Path completion never auto-fires — see useCompletion. */
+  armPath: () => void
   clearIn: () => void
   dequeue: () => string | undefined
   enqueue: (text: string) => void

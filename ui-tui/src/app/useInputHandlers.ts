@@ -10,6 +10,7 @@ import type {
   SudoRespondResponse,
   VoiceRecordResponse
 } from '../gatewayTypes.js'
+import { completionRequestForInput } from '../hooks/useCompletion.js'
 import { forecastFindDraft, forecastShortcutForKey } from '../lib/forecastShortcuts.js'
 import { RAIL_WIDTH } from '../lib/homeLayout.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
@@ -535,6 +536,25 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       if (!key.wheelUp && !key.wheelDown) {
         return
       }
+    }
+
+    // Tab EXPLICITLY opens path / @-mention completion for a path-like trailing
+    // token. Path completion never auto-fires while typing (that flashed the
+    // dropdown on every "and/or" or "@name" — see useCompletion), so Tab is the
+    // trigger. Only when the composer is focused, no menu is already open, and
+    // the trailing token actually is path-like; otherwise Tab keeps its
+    // rail-focus (below) and completion-accept (further down) roles. Plain Tab
+    // only — shift+Tab stays the yolo toggle.
+    if (
+      key.tab &&
+      !key.shift &&
+      !cState.completions.length &&
+      getHomeFocus().pane === 'conversation' &&
+      completionRequestForInput(cState.input)?.method === 'complete.path'
+    ) {
+      cActions.armPath()
+
+      return
     }
 
     // --- Home conversations rail: keyboard focus switching ---

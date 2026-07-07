@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { CompletionItem } from '../app/interfaces.js'
 import { looksLikeSlashCommand } from '../domain/slash.js'
@@ -43,6 +43,16 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
   const [compIdx, setCompIdx] = useState(0)
   const [compReplace, setCompReplace] = useState(0)
   const ref = useRef('')
+  // Path / @-mention completion is EXPLICIT-TRIGGER only (Tab). `pathArm` is a
+  // nonce the composer bumps on that Tab; `lastArm` tracks the value the effect
+  // last consumed (so a Tab with unchanged input still re-fires), and `armed`
+  // stays true while the menu is open so it keeps filtering as you type — until
+  // the trailing path token breaks (request === null), which disarms it.
+  const [pathArm, setPathArm] = useState(0)
+  const lastArm = useRef(0)
+  const armed = useRef(false)
+
+  const armPath = useCallback(() => setPathArm(n => n + 1), [])
 
   useEffect(() => {
     const clear = () => {
@@ -53,23 +63,48 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
 
     if (blocked) {
       ref.current = ''
+      armed.current = false
       clear()
 
       return
     }
 
-    if (input === ref.current) {
+    const armBumped = pathArm !== lastArm.current
+
+    if (input === ref.current && !armBumped) {
       return
     }
 
     ref.current = input
+    lastArm.current = pathArm
+
+    if (armBumped) {
+      armed.current = true
+    }
 
     const request = completionRequestForInput(input)
     if (!request) {
+      armed.current = false
       clear()
 
       return
     }
+
+    // Slash COMMANDS (input starts with '/') auto-complete on every keystroke —
+    // that menu IS the feature. Path / @ completion does NOT auto-fire: without
+    // this gate, typing ordinary prose that merely contains a '/' or '@'
+    // ("and/or", "3/4", "@name") mounted the completion dropdown for a frame and
+    // tore it down on the next space — a ~16-row region repaint per token that
+    // reads as a full-screen flash on terminals without DEC-2026 synchronized
+    // output. It opens only once explicitly armed (Tab), then stays live while
+    // the trailing token is unbroken and disarms when it breaks (above).
+    if (request.method === 'complete.path' && !armed.current) {
+      clear()
+
+      return
+    }
+
+    armed.current = request.method === 'complete.path'
 
     const t = setTimeout(() => {
       if (ref.current !== input) {
@@ -106,7 +141,7 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
     }, 60)
 
     return () => clearTimeout(t)
-  }, [blocked, gw, input])
+  }, [blocked, gw, input, pathArm])
 
-  return { completions, compIdx, setCompIdx, compReplace }
+  return { armPath, completions, compIdx, setCompIdx, compReplace }
 }
