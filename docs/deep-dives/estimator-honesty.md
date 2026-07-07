@@ -125,6 +125,19 @@ The absence is visible, not zero-filled.
 | **The guard** | `list_events_payload` (`forecasting/pm/service.py`) serves a persisted browse tape immediately with `stale=True`, then revalidates in the background. The rows always carry their **original honest estimates** — the stale marker is the *only* thing the UI changes, a subtle signal that a live refresh is in flight. A number is never edited to look fresher than it is. |
 | **Pinned by** | `test_pm_service.py`. |
 
+### 11. The fabricated today-row — a lagged series is not a missing one
+
+| | |
+| --- | --- |
+| **The lie** | Daily official series (FRED `DCOILWTICO`, EIA spot prices) publish with a T-1/T-2 lag and carry NO row on weekends/holidays BY DESIGN. Two opposite lies tempt a desk: **fabricate** a today-dated row by carrying the prior close forward (a `2026-06-30 = 71.87` that the source never published), or **over-refuse** — error out on an ordinary publication lag as if the data were missing. The operator caught the honest-but-stuck middle: an agent that saw the latest real row was `2026-06-29 = 71.87`, refused to substitute it for `2026-06-30`, and had no explicit rule to lean on. |
+| **The guard** | The missing-observation rule (`forecasting/observation_freshness.py`). The honest latest value is the newest AVAILABLE observation carried with ITS OWN observation date as `as_of` (never today). `assess_observation_freshness` classifies the lag in **US business days** (weekends/holidays skipped): `<= max_business_days` (default 5, cadence-aware, env-overridable) is an **ordinary** lag — serve the lagged-latest; beyond that is **excessive** — the feed has gone dark, so the value maps to `None` (THE LAW) + a staleness note. The FRED market-data provider ages the reading at its `fetch` boundary (blanking a dead daily feed while cadence-inference spares a monthly series); the evidence path exposes `assess_series_freshness`; and the rule is stated in the agent prompt so the next run cites it instead of agonizing. |
+| **The EIA corollary** | A missing `EIA_API_KEY` is a **teaching error**, not a bare 403: the EIA API rejects keyless requests with `HTTP 403 API_KEY_MISSING`, so `load_eia_observations` fails fast BEFORE the request, naming the key + the free registration URL + the keyless FRED alternative. |
+| **Pinned by** | `tests/forecasting/test_observation_freshness.py` (ordinary vs. excessive, weekend/holiday, cadence-awareness, FRED fetch aging, `assess_series_freshness`, EIA key-missing teaching error + keyed request, agent-facing rule text, opt-in live probes). |
+
+The doctrine's third property (below) — *honesty is not silence* — is the whole
+point here: the desk neither invents a today-row nor hides the reading, it serves
+"last known 71.87 as of 2026-06-29" and says how stale that is.
+
 ---
 
 ## Why this shape
@@ -160,6 +173,9 @@ Verified against the current tree (`superforecasting-agent-snapshot`):
 - `forecasting/pm/aggregate.py` — `build_distribution`, `_NORMALIZE_SUM_LO/HI`, earned normalization + notes.
 - `forecasting/pm/stream_wire.py` — `Tick.estimate`, `parse_polymarket` / `parse_kalshi` server-side honest estimate.
 - `forecasting/pm/service.py` — `list_events_payload` stale-marked disk rows keep original estimates.
+- `forecasting/observation_freshness.py` — the missing-observation rule (`assess_observation_freshness`, business-day lag, cadence-aware threshold, `describe_missing_observation_rule`).
+- `forecasting/marketdata/providers/fred.py` — the rule applied at the `fetch` boundary (ordinary lag serves, excessive blanks to `None`).
+- `forecasting/source_adapters.py` — `assess_series_freshness` (evidence path) + the EIA missing-key teaching error.
 - `forecasting/marketdata/model.py` — the `None` NEVER `0` law, `num`, `epoch_ms`, `change_columns`.
 - `forecasting/marketdata/providers/bea.py` — the BEA trap fix (two explicit years, headline line, `None` on empty).
 - `ui-tui/src/lib/pmData.ts` — the "—" rendering (consumer half of the law).

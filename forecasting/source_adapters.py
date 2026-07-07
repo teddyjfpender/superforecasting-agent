@@ -21,6 +21,11 @@ from xml.etree import ElementTree
 
 from forecasting import appconfig
 from forecasting.models import OutcomeSpace, ValidationError, parse_timestamp, timestamp_to_datetime
+from forecasting.observation_freshness import (
+    FreshnessAssessment,
+    assess_observation_freshness,
+    resolve_max_business_days,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1569,6 +1574,61 @@ def _load_fred_from_series_page(
     return _parse_fred_series_page(series_id, html, limit=limit, since_date=since_date)
 
 
+# Newest-observation date is read from the first attribute present, preferring
+# the explicit observation date over the derived publish timestamp.
+_FRESHNESS_DATE_ATTRS = ("observation_date", "record_date", "published_at", "observation_period")
+
+
+def assess_series_freshness(
+    observations: list,
+    *,
+    as_of_reference=None,
+    series_class: str = "daily",
+    max_business_days: int | None = None,
+    label: str | None = None,
+) -> FreshnessAssessment:
+    """Age the newest row of a loaded series via the missing-observation rule.
+
+    ``observations`` is a list of loaded rows (``FredObservation``,
+    ``EiaObservation``, ...) in the loaders' ascending order, so the newest is
+    last. ``as_of_reference`` defaults to today (UTC). The result is ORDINARY
+    (use the lagged-latest stamped with its OWN observation date — the honest
+    reading of a T-1/T-2 daily feed), EXCESSIVE (treat as missing + flag
+    staleness), or UNKNOWN (undated). See :func:`describe_missing_observation_rule`.
+    """
+
+    limit = resolve_max_business_days(series_class, explicit=max_business_days)
+    if not observations:
+        return FreshnessAssessment(
+            status="unknown",
+            lag_business_days=-1,
+            as_of=None,
+            max_business_days=limit,
+            note=f"{label or 'series'}: no observations returned — empty, not merely lagged.",
+        )
+    newest = observations[-1]
+    obs_date = None
+    for attr in _FRESHNESS_DATE_ATTRS:
+        candidate = getattr(newest, attr, None)
+        if candidate:
+            obs_date = candidate
+            break
+    reference = as_of_reference if as_of_reference is not None else datetime.now(timezone.utc).date()
+    resolved_label = (
+        label
+        or getattr(newest, "series_id", None)
+        or getattr(newest, "series_name", None)
+        or getattr(newest, "dataset", None)
+        or "series"
+    )
+    return assess_observation_freshness(
+        obs_date,
+        as_of_reference=reference,
+        max_business_days=limit,
+        label=str(resolved_label),
+    )
+
+
 def load_fred_observations(
     series_id: str,
     *,
@@ -1635,11 +1695,15 @@ def load_eia_observations(
 ) -> list[EiaObservation]:
     """Load EIA energy time-series observations as timestamped evidence rows.
 
-    The EIA series API requires an ``api_key`` query parameter. We read it from
-    the ``api_key`` argument or the ``EIA_API_KEY`` env var and inject it when
-    the caller's endpoint does not already carry one; without a key EIA returns
-    HTTP 403, so prefer FRED for energy series (GASREGW, DCOILWTICO) which need
-    no key.
+    The EIA Open Data API (both the v1 ``/series/`` route and the current v2
+    ``/v2/...`` routes) REQUIRES an ``api_key`` query parameter. A keyless
+    request is rejected with HTTP 403 ``{"error":{"code":"API_KEY_MISSING"}}`` —
+    so rather than pass that bare 403 through, we fail fast BEFORE the request
+    with a teaching error naming ``EIA_API_KEY`` and the free registration URL.
+    The key is read from the ``api_key`` argument or the ``EIA_API_KEY`` env var
+    and injected when the caller's endpoint does not already carry one. Prefer
+    FRED for energy series (``GASREGW`` gasoline, ``DCOILWTICO`` crude), which
+    serve the same numbers keyless.
     """
 
     series_id, endpoint = _eia_endpoint(source, api_base_url=api_base_url)
@@ -1648,7 +1712,19 @@ def load_eia_observations(
     if limit <= 0:
         raise ValidationError("eia import --limit must be positive")
     resolved_key = (api_key or appconfig.secret("EIA_API_KEY") or "").strip()
-    if resolved_key and "api_key=" not in endpoint:
+    endpoint_has_key = "api_key=" in endpoint
+    if not resolved_key and not endpoint_has_key:
+        # EIA rejects keyless requests with HTTP 403 (API_KEY_MISSING). Teach the
+        # fix instead of letting a bare 403 surface to the agent.
+        raise ValidationError(
+            "eia import requires an API key: the EIA API rejects keyless requests "
+            "with HTTP 403 (API_KEY_MISSING). Set EIA_API_KEY — register free at "
+            "https://www.eia.gov/opendata/register.php, then `forecast api-key set "
+            "eia <key>`. Or use FRED for the same energy series with no key "
+            "(e.g. `import fred DCOILWTICO` for WTI crude, `fred GASREGW` for "
+            "gasoline)."
+        )
+    if resolved_key and not endpoint_has_key:
         separator = "&" if "?" in endpoint else "?"
         endpoint = f"{endpoint}{separator}{urlencode({'api_key': resolved_key})}"
     since_ts = parse_timestamp(since, field_name="since") if since else None

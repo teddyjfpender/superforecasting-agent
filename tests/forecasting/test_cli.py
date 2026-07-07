@@ -7169,6 +7169,8 @@ def test_eia_adapter_loads_energy_series_observations(monkeypatch):
             }
         }
 
+    # EIA requires a key (keyless requests 403); set one so the request is valid.
+    monkeypatch.setenv("EIA_API_KEY", "test-eia-key")
     monkeypatch.setattr(source_adapters, "_read_json_endpoint", fake_read_json_endpoint)
 
     observations = source_adapters.load_eia_observations(
@@ -7183,6 +7185,7 @@ def test_eia_adapter_loads_energy_series_observations(monkeypatch):
     assert captured["label"] == "eia observations"
     assert parsed.netloc == "eia.test"
     assert params["series_id"] == ["PET.RWTC.M"]
+    assert params["api_key"] == ["test-eia-key"]
     assert len(observations) == 1
     assert observations[0].series_id == "PET.RWTC.M"
     assert observations[0].series_name == "WTI crude oil spot price"
