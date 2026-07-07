@@ -3066,7 +3066,17 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         action="store_true",
         help="Auto-acknowledge alerts whose source-change has already been consumed (evidence imported + forecast updated since)",
     )
-    alerts_parser.add_argument("--dry-run", action="store_true", help="With --reconcile, preview without acknowledging")
+    alerts_parser.add_argument("--dry-run", action="store_true", help="With --reconcile/--collapse/--escalate, preview without writing")
+    alerts_parser.add_argument(
+        "--collapse",
+        action="store_true",
+        help="One-time: fold existing duplicate open-alert groups into the oldest row (keep oldest, fold counts)",
+    )
+    alerts_parser.add_argument(
+        "--escalate",
+        action="store_true",
+        help="Escalate the severity of aged open alerts (7d->warning, 14d->high)",
+    )
     alerts_parser.add_argument("--json", action="store_true", help="Emit machine-readable output")
     alerts_parser.set_defaults(_forecast_handler=_cmd_alerts)
 
@@ -13701,6 +13711,33 @@ def _cmd_autopilot_reject(args: argparse.Namespace) -> None:
 
 def _cmd_alerts(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    if getattr(args, "collapse", False):
+        result = ledger.collapse_duplicate_alerts(dry_run=getattr(args, "dry_run", False))
+        if getattr(args, "json", False):
+            print(json.dumps(result, indent=2))
+            return
+        verb = "would collapse" if result["dry_run"] else "collapsed"
+        if result["groups_collapsed"] == 0:
+            print("No duplicate open-alert groups to collapse.")
+        else:
+            print(
+                f"{verb.capitalize()} {result['groups_collapsed']} duplicate group(s); "
+                f"folded {result['rows_folded']} redundant row(s) into the oldest."
+            )
+        return
+    if getattr(args, "escalate", False):
+        result = ledger.escalate_aged_alerts(dry_run=getattr(args, "dry_run", False))
+        if getattr(args, "json", False):
+            print(json.dumps(result, indent=2))
+            return
+        verb = "would escalate" if result["dry_run"] else "escalated"
+        if result["escalated_count"] == 0:
+            print("No aged alerts to escalate.")
+        else:
+            print(f"{verb.capitalize()} {result['escalated_count']} aged alert(s) by severity:")
+            for entry in result["escalated"]:
+                print(f"  {entry['id']}  {entry['reason']}  {entry['from']} -> {entry['to']} ({entry['age_days']}d)")
+        return
     if getattr(args, "reconcile", False):
         result = ledger.reconcile_alerts(dry_run=getattr(args, "dry_run", False))
         if getattr(args, "json", False):

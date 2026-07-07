@@ -543,6 +543,21 @@ class AlertEvent:
     # drops out of the open backlog), so these never gate a forecast that moved.
     last_attempted_at: str | None = None
     attempt_count: int = 0
+    # Enqueue-dedup touch trail. An open alert with the same (scope_type, scope_ref,
+    # reason) is TOUCHED rather than duplicated: ``seen_count`` counts how many times
+    # the condition re-fired (first emit = 1) and ``last_seen_at`` stamps the most
+    # recent re-fire. These are DELIBERATELY separate from ``last_attempted_at`` /
+    # ``attempt_count`` (the paid-tier respend backoff) so a re-emitted REFORECAST /
+    # EVIDENCE alert is never mistaken for a failed paid attempt and wrongly cooled
+    # down. ``created_at`` always holds the OLDEST (first) emission, so age-based
+    # escalation measures genuine neglect.
+    seen_count: int = 1
+    last_seen_at: str | None = None
+    # Auto-closure audit note. A reconciliation/collapse close sets ``acknowledged_at``
+    # AND records WHY here (e.g. ``auto_close:fresh_snapshot`` / ``collapsed:al_...``),
+    # which makes an automatic close auditable and visibly distinct from an operator
+    # ack (leaves ``ack_note`` NULL) and from a human dismissal (sets ``dismissed_at``).
+    ack_note: str | None = None
 
     @property
     def is_dismissed(self) -> bool:

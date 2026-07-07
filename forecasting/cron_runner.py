@@ -511,6 +511,20 @@ def run_due_reviews(
                     f"acknowledged {recon['reconciled_count']} consumed alert(s); "
                     f"{len(recon['still_open'])} still open\n"
                 )
+        # Age-escalation (Fix 4): AFTER reconcile closes the satisfied alerts, escalate
+        # the severity of what genuinely remains open past the age thresholds so the
+        # desk (and the VOI alert_pressure input) sorts real neglect up. Idempotent —
+        # only ever raises severity, only on still-open rows — so it runs every sweep.
+        try:
+            esc = ledger.escalate_aged_alerts(now=now)
+        except Exception as exc:  # never break the sweep on escalation
+            sections.append(f"Alert escalation\nERROR: {exc}\n")
+        else:
+            if esc["escalated_count"]:
+                sections.append(
+                    "Alert escalation\n"
+                    f"escalated {esc['escalated_count']} aged alert(s) by severity\n"
+                )
 
     # Trailing resolver-proposal phase: run resolution rules + raise a confirm-me
     # alert for any question now DETERMINABLY resolvable from ingested data. The

@@ -1181,7 +1181,10 @@ class ForecastLedger:
                     dismiss_reason TEXT,
                     dismiss_ttl_days INTEGER,
                     last_attempted_at TEXT,
-                    attempt_count INTEGER NOT NULL DEFAULT 0
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    seen_count INTEGER NOT NULL DEFAULT 1,
+                    last_seen_at TEXT,
+                    ack_note TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS autopilot_policies (
@@ -1664,6 +1667,14 @@ class ForecastLedger:
             # paid attempt stamps these while leaving the alert OPEN (no bare-ack).
             self._ensure_column(conn, "alert_events", "last_attempted_at", "TEXT")
             self._ensure_column(conn, "alert_events", "attempt_count", "INTEGER NOT NULL DEFAULT 0")
+            # Warnings-lifecycle fix — universal enqueue dedup + auditable auto-close.
+            # ``seen_count`` / ``last_seen_at`` are the dedup touch trail (an open
+            # alert with the same scope+reason is touched, not re-emitted); ``ack_note``
+            # records WHY an alert was auto-closed (reconcile) or folded (collapse), so
+            # an automatic close is auditable + distinct from an operator ack/dismissal.
+            self._ensure_column(conn, "alert_events", "seen_count", "INTEGER NOT NULL DEFAULT 1")
+            self._ensure_column(conn, "alert_events", "last_seen_at", "TEXT")
+            self._ensure_column(conn, "alert_events", "ack_note", "TEXT")
             # R2 operator practice loop — defensive migrations for the scoring
             # columns (idempotent; a fresh CREATE already carries them).
             self._ensure_column(conn, "operator_estimates", "resolved_outcome", "TEXT")
@@ -8099,8 +8110,10 @@ class ForecastLedger:
         scope_ref: str,
         reason: str,
         recommended_action: str,
+        refresh_action: bool = False,
+        now: str | None = None,
     ) -> AlertEvent:
-        return _alerts.create_alert(self, severity=severity, scope_type=scope_type, scope_ref=scope_ref, reason=reason, recommended_action=recommended_action)
+        return _alerts.create_alert(self, severity=severity, scope_type=scope_type, scope_ref=scope_ref, reason=reason, recommended_action=recommended_action, refresh_action=refresh_action, now=now)
 
     def enqueue_resolution_proposal(self, *, question_id: str, outcome: Any, rationale: str, confirm_command: str | None = None) -> AlertEvent:
         return _alerts.enqueue_resolution_proposal(self, question_id=question_id, outcome=outcome, rationale=rationale, confirm_command=confirm_command)
@@ -8114,8 +8127,8 @@ class ForecastLedger:
     def list_alerts(self, *, unresolved_only: bool = True) -> list[AlertEvent]:
         return _alerts.list_alerts(self, unresolved_only=unresolved_only)
 
-    def acknowledge_alert(self, alert_id: str, *, acknowledged_at: str | None = None) -> AlertEvent:
-        return _alerts.acknowledge_alert(self, alert_id=alert_id, acknowledged_at=acknowledged_at)
+    def acknowledge_alert(self, alert_id: str, *, acknowledged_at: str | None = None, ack_note: str | None = None) -> AlertEvent:
+        return _alerts.acknowledge_alert(self, alert_id=alert_id, acknowledged_at=acknowledged_at, ack_note=ack_note)
 
     def record_alert_attempt(self, alert_id: str, *, now: str | None = None) -> AlertEvent:
         return _alerts.record_alert_attempt(self, alert_id=alert_id, now=now)
@@ -8137,6 +8150,12 @@ class ForecastLedger:
 
     def reconcile_alerts(self, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
         return _alerts.reconcile_alerts(self, now=now, dry_run=dry_run)
+
+    def escalate_aged_alerts(self, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+        return _alerts.escalate_aged_alerts(self, now=now, dry_run=dry_run)
+
+    def collapse_duplicate_alerts(self, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+        return _alerts.collapse_duplicate_alerts(self, now=now, dry_run=dry_run)
 
     def self_check(
         self,

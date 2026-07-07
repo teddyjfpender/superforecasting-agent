@@ -77,6 +77,29 @@ _SATURATION_ALERT_REASON = "under_saturated"
 # dismissal is NEVER an indefinite silence.
 DISMISS_TTL_DAYS_DEFAULT = 7
 
+# Severity ladder (most-severe first). Mirrors the warnings dispatcher's rank so the
+# desk, the dedup "severity max", and the age-escalation all agree on ordering.
+_SEVERITY_ORDER = ("info", "warning", "high")
+_SEVERITY_RANK = {name: rank for rank, name in enumerate(_SEVERITY_ORDER)}
+
+
+def _more_severe(a: str | None, b: str | None) -> str:
+    """Return whichever of two severities is MORE severe (info < warning < high).
+    An unknown severity is treated as the least severe so it never wins the max."""
+    ra = _SEVERITY_RANK.get((a or "").strip().lower(), -1)
+    rb = _SEVERITY_RANK.get((b or "").strip().lower(), -1)
+    return (a or "info") if ra >= rb else (b or "info")
+
+
+# Age-escalation thresholds (Fix 4). An OPEN alert that ages past these floors has
+# its severity escalated so a genuinely-neglected item sorts UP the desk instead of
+# drowning in the backlog. The escalation only ever RAISES severity (never a
+# downgrade) and keys off ``created_at`` (the oldest/first emission, preserved by the
+# enqueue dedup) — so the clock is real neglect, not the last re-fire. "elevated"
+# maps onto the existing ``warning`` tier (there is no separate tier in the ladder).
+ESCALATE_ELEVATED_DAYS = 7
+ESCALATE_HIGH_DAYS = 14
+
 # Canonical reason prefix for a resolution PROPOSAL alert (guide-and-make-visible,
 # never an auto-resolution). Both the metric-threshold resolver
 # (``propose_due_resolutions``) and the auto-resolution DETECTOR
@@ -323,28 +346,78 @@ def create_alert(
     scope_ref: str,
     reason: str,
     recommended_action: str,
+    refresh_action: bool = False,
+    now: str | None = None,
 ) -> AlertEvent:
-    alert_id = f"al_{uuid.uuid4().hex[:12]}"
+    """Open an alert, or — the UNIVERSAL enqueue dedup (Fix 1) — TOUCH the existing
+    OPEN alert with the same ``(scope_type, scope_ref, reason)`` instead of writing a
+    second row. This is the single chokepoint every producer flows through, so the
+    dedup covers the paths that previously bypassed it (``self_check``'s staleness
+    loop, the learning-review producers, benchmark gaps) and floods the ledger no
+    more: a re-fired condition bumps ``seen_count`` + ``last_seen_at`` and raises
+    ``severity`` to the max, but ``created_at`` (the first emission) and the row id
+    are preserved so age-escalation and downstream refs stay stable.
+
+    ``refresh_action=True`` also refreshes ``recommended_action`` on a touch — used by
+    digest producers (the domain-error-profile review) whose action text summarises a
+    changing set (matching forecasts); the default leaves a stable action untouched.
+    A dedup only ever folds into an OPEN row (``acknowledged_at IS NULL``): once an
+    alert is acked/dismissed a recurrence opens a fresh row, as it should.
+    """
+    stamp = parse_timestamp(now, field_name="now") or utc_now_iso()
     with ledger._connect() as conn:
-        conn.execute(
+        existing = conn.execute(
             """
-            INSERT INTO alert_events (
-                id, created_at, severity, scope_type, scope_ref, reason,
-                recommended_action
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            SELECT * FROM alert_events
+             WHERE scope_type = ? AND scope_ref = ? AND reason = ?
+               AND acknowledged_at IS NULL
+             ORDER BY created_at ASC
+             LIMIT 1
             """,
-            (
-                alert_id,
-                utc_now_iso(),
-                severity,
-                scope_type,
-                scope_ref,
-                reason,
-                recommended_action,
-            ),
-        )
-    return ledger.get_alert(alert_id)
+            (scope_type, scope_ref, reason),
+        ).fetchone()
+        if existing is not None:
+            # Touch, never a second row. Fold the re-fire into the oldest open row.
+            target_id = existing["id"]
+            new_severity = _more_severe(existing["severity"], severity)
+            if refresh_action:
+                conn.execute(
+                    "UPDATE alert_events "
+                    "SET severity = ?, seen_count = COALESCE(seen_count, 1) + 1, "
+                    "    last_seen_at = ?, recommended_action = ? WHERE id = ?",
+                    (new_severity, stamp, recommended_action, target_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE alert_events "
+                    "SET severity = ?, seen_count = COALESCE(seen_count, 1) + 1, "
+                    "    last_seen_at = ? WHERE id = ?",
+                    (new_severity, stamp, target_id),
+                )
+        else:
+            target_id = f"al_{uuid.uuid4().hex[:12]}"
+            conn.execute(
+                """
+                INSERT INTO alert_events (
+                    id, created_at, severity, scope_type, scope_ref, reason,
+                    recommended_action
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    target_id,
+                    stamp,
+                    severity,
+                    scope_type,
+                    scope_ref,
+                    reason,
+                    recommended_action,
+                ),
+            )
+    # Re-read AFTER the write transaction commits so the returned object reflects the
+    # persisted touch/insert (get_alert opens its own connection — it would not see an
+    # uncommitted transaction's rows).
+    return ledger.get_alert(target_id)
 
 
 def get_alert(ledger, alert_id: str) -> AlertEvent:
@@ -364,13 +437,30 @@ def list_alerts(ledger, *, unresolved_only: bool = True) -> list[AlertEvent]:
     return [ledger._row_to_alert(row) for row in rows]
 
 
-def acknowledge_alert(ledger, alert_id: str, *, acknowledged_at: str | None = None) -> AlertEvent:
+def acknowledge_alert(
+    ledger,
+    alert_id: str,
+    *,
+    acknowledged_at: str | None = None,
+    ack_note: str | None = None,
+) -> AlertEvent:
+    """Acknowledge (close) an alert. ``ack_note`` records WHY for an AUTOMATIC close
+    (reconciliation / collapse) — it makes the close auditable and visibly distinct
+    from an operator ack (leaves ``ack_note`` NULL) and a human dismissal (which also
+    stamps ``dismissed_at`` / ``dismiss_*``). An operator ack passes no note."""
     ledger.get_alert(alert_id)
+    stamped = parse_timestamp(acknowledged_at, field_name="acknowledged_at") or utc_now_iso()
     with ledger._connect() as conn:
-        conn.execute(
-            "UPDATE alert_events SET acknowledged_at = ? WHERE id = ?",
-            (parse_timestamp(acknowledged_at, field_name="acknowledged_at") or utc_now_iso(), alert_id),
-        )
+        if ack_note is not None:
+            conn.execute(
+                "UPDATE alert_events SET acknowledged_at = ?, ack_note = ? WHERE id = ?",
+                (stamped, ack_note, alert_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE alert_events SET acknowledged_at = ? WHERE id = ?",
+                (stamped, alert_id),
+            )
     return ledger.get_alert(alert_id)
 
 
@@ -505,32 +595,35 @@ def active_dismissal_keys(ledger, *, now: str | None = None) -> "set[tuple[str, 
 
 
 def reconcile_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
-    """Close the loop: source-changed -> evidence-imported -> forecast-updated
-    -> acknowledged. A question-scoped alert that fired BEFORE both fresh
-    evidence was imported AND a new forecast snapshot was committed has already
-    been consumed by the operator/agent — leaving it open is just alert fatigue,
-    so acknowledge it. Alerts still missing evidence or an update stay open with
-    an explicit reason. dry_run reports what WOULD be acknowledged without
-    mutating (so a cautious caller can preview). Idempotent.
+    """AUTO-CLOSE every open question-scoped alert whose condition NO LONGER HOLDS,
+    per-condition — so a satisfied alert is not immortal (the live "superseded alerts
+    never die" pathology). Each closer keys off the *specific* condition, not a blanket
+    evidence+update heuristic:
 
-    Acking liberally (any fresh evidence + any forecast update after the alert,
-    not necessarily from the alert's exact source) is intentional + safe for
-    source-driven alerts: it clears the backlog the operator already worked
-    past, and if the underlying source is still dirty the next self_check
-    re-raises a fresh alert — so a genuinely-open signal is never lost.
+    * ``last_update_*`` / ``new_evidence:*`` close on a FRESH forecast snapshot;
+    * ``evidence_stale_*`` / ``no_evidence`` close on FRESH / landed evidence;
+    * ``no_forecast_snapshot`` closes once a snapshot exists;
+    * ``close_time_within_*`` is SUPERSEDED by ``close_time_passed`` (the former closes
+      when the close date has passed / its passed-alert is open);
+    * ``resolution_check_due`` closes on a confirmed resolution OR an open proposal;
+    * ``close_time_passed`` closes once the question is closed/resolved;
+    * ``under_saturated`` clears on a score-based re-saturation;
+    * generic watched-source / trigger material-change alerts close when BOTH fresh
+      evidence was imported AND a forecast committed since.
+
+    A close sets ``acknowledged_at`` WITH an ``ack_note`` (``auto_close:<condition>``),
+    which makes it auditable and visibly distinct from an operator ack (no note) and a
+    human dismissal (``dismissed_at`` set). ``dry_run`` previews without mutating.
+    Idempotent, and if the underlying condition still holds the next self_check
+    re-raises a fresh alert, so a genuinely-open signal is never lost.
 
     EXCEPTION — the MANUAL classes (NO_AUTO: domain-error profiles, assumption /
     reference-class checks, central-in-band, calibration-lesson review; and
-    CONTESTED_LABEL: a triage auto-label the verifier disputes) are explicitly
-    EXCLUDED from auto-ack. These are human-judgment alerts the warning
-    dispatcher deliberately *surfaces* and never auto-resolves, and a new
-    forecast + fresh evidence does NOT address them (an invalidated assumption
-    is still invalidated; a band is still off-centre; a contested label is
-    closed only when the operator records a real expert label via
-    relabel_route). Reconciling one on unrelated forecast activity would
-    silently close a still-valid signal the operator must act on — the same
-    bare-ack the dispatcher forbids — so they always stay OPEN here."""
+    CONTESTED_LABEL: a disputed triage label) are EXCLUDED from auto-close: a new
+    forecast + fresh evidence does NOT address an invalidated assumption or a disputed
+    label, so they always stay OPEN (surfaced for a human)."""
     now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
+    now_dt = timestamp_to_datetime(now_ts)
     # Local import keeps reconcile_alerts free of any module import-order
     # coupling with the (model-only) warnings dispatcher.
     from forecasting.warnings import ResolutionKind, classify_warning
@@ -538,44 +631,127 @@ def reconcile_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -
     reconciled: list[dict[str, Any]] = []
     still_open: list[dict[str, Any]] = []
 
-    for alert in ledger.list_alerts(unresolved_only=True):
-        if alert.scope_type != "question":
-            still_open.append(
-                {"id": alert.id, "reason": alert.reason, "open_because": "scope is not a single question"}
-            )
-            continue
+    open_alerts = ledger.list_alerts(unresolved_only=True)
+    # Cross-alert supersession sets, computed once: a question carrying an OPEN
+    # ``close_time_passed`` alert supersedes its ``close_time_within_*`` alert, and a
+    # question carrying an OPEN resolution PROPOSAL has had its ``resolution_check_due``
+    # actioned into the confirm flow.
+    close_passed_qs = {
+        a.scope_ref for a in open_alerts
+        if a.scope_type == "question" and a.reason == "close_time_passed"
+    }
+    proposal_qs = {
+        a.scope_ref for a in open_alerts
+        if a.scope_type == "question"
+        and (a.reason or "").strip().lower().startswith(_RESOLUTION_PROPOSAL_REASON_PREFIX)
+    }
 
-        if classify_warning(alert.reason) in (
-            ResolutionKind.NO_AUTO,
-            ResolutionKind.CONTESTED_LABEL,
-        ):
-            still_open.append(
-                {
-                    "id": alert.id,
-                    "reason": alert.reason,
-                    "open_because": "manual class (no-auto / contested-label) — surfaced for human review, never auto-reconciled",
-                }
-            )
+    def _close(alert, note: str) -> None:
+        # Closure = acknowledged_at WITH an auto note: auditable + visibly distinct
+        # from an operator ack (no note) and a human dismissal (dismissed_at set).
+        if not dry_run:
+            ledger.acknowledge_alert(alert.id, acknowledged_at=now_ts, ack_note=f"auto_close:{note}")
+        reconciled.append({"id": alert.id, "reason": alert.reason, "scope_ref": alert.scope_ref})
+
+    def _keep(alert, because: str) -> None:
+        still_open.append({"id": alert.id, "reason": alert.reason, "open_because": because})
+
+    for alert in open_alerts:
+        if alert.scope_type != "question":
+            _keep(alert, "scope is not a single question")
             continue
 
         question_id = alert.scope_ref
+        reason = alert.reason or ""
 
-        # under_saturated is a SCORE-based signal, not an evidence-based one: it
-        # clears when the current snapshot's STORED saturation score is back
-        # at/above the bar, regardless of whether new evidence was imported. A
-        # non-evidence re-saturation (added reasoning tags, a re-run panel, a
-        # fuller decomposition) is a legitimate fix; the score on an immutable
-        # snapshot only rises via a fresh commit, so a current score >= bar
-        # already implies a re-forecast landed. Evidence-gated reconcile would
-        # leave an evidence-free re-saturation stuck open forever (alert fatigue,
-        # since the deduped sweep won't re-raise it).
-        if alert.reason == _SATURATION_ALERT_REASON:
+        def _snapshot():
+            try:
+                return ledger.get_current_snapshot(question_id)
+            except Exception:
+                return None
+
+        def _snapshot_after() -> bool:
+            snap = _snapshot()
+            ts = (getattr(snap, "created_at", None) or getattr(snap, "as_of", None) or "") if snap else ""
+            return bool(ts and ts > alert.created_at)
+
+        def _evidence_after() -> bool:
+            try:
+                return any(
+                    (getattr(item, "captured_at", None) or getattr(item, "available_at", None) or "") > alert.created_at
+                    for item in ledger.list_evidence(question_id)
+                )
+            except Exception:
+                return False
+
+        def _question():
+            try:
+                return ledger.get_question(question_id)
+            except Exception:
+                return None
+
+        def _confirmed_resolution() -> bool:
+            try:
+                return ledger.get_latest_resolution(question_id, confirmed_only=True) is not None
+            except Exception:
+                return False
+
+        # --- CONDITION-SPECIFIC auto-close (Fix 3) ---
+        # These run BEFORE the generic NO_AUTO skip because ``resolution_check_due``
+        # and ``close_time_passed`` fall through classify_warning to NO_AUTO; without
+        # an explicit carve-out they were immortal (the live "superseded alerts never
+        # die" pathology). Each closes ONLY on the precise condition clearing.
+
+        # close_time_within_* is SUPERSEDED once close_time_passed holds.
+        if reason.startswith("close_time_within_"):
+            q = _question()
+            close_dt = timestamp_to_datetime(getattr(q, "close_time", None)) if q else None
+            passed = question_id in close_passed_qs or (
+                close_dt is not None and now_dt is not None and close_dt <= now_dt
+            )
+            if passed:
+                _close(alert, "superseded_by_close_time_passed")
+            else:
+                _keep(alert, "close time has not yet passed")
+            continue
+
+        # resolution_check_due closes on a confirmed resolution OR an open proposal.
+        if reason == "resolution_check_due":
+            if _confirmed_resolution() or question_id in proposal_qs:
+                _close(alert, "resolution_confirmed_or_proposed")
+            else:
+                _keep(alert, "no confirmed resolution or open proposal yet")
+            continue
+
+        # close_time_passed closes once the question is actually closed/resolved.
+        if reason == "close_time_passed":
+            q = _question()
+            inactive = q is not None and getattr(q, "status", None) != "active"
+            if inactive or _confirmed_resolution():
+                _close(alert, "question_closed_or_resolved")
+            else:
+                _keep(alert, "question still active — needs close/resolution")
+            continue
+
+        # Genuine human-judgment classes (domain-error profiles, assumption /
+        # reference-class checks, central-in-band, calibration-lesson review,
+        # contested labels) are NEVER auto-reconciled — a new forecast + fresh
+        # evidence does not address an invalidated assumption or a disputed label.
+        if classify_warning(reason) in (ResolutionKind.NO_AUTO, ResolutionKind.CONTESTED_LABEL):
+            _keep(alert, "manual class (no-auto / contested-label) — surfaced for human review, never auto-reconciled")
+            continue
+
+        # under_saturated is a SCORE-based signal: it clears when the current
+        # snapshot's STORED saturation score is back at/above the bar, regardless of
+        # whether new evidence was imported (a non-evidence re-saturation is a
+        # legitimate fix; the score on an immutable snapshot only rises via a commit).
+        if reason == _SATURATION_ALERT_REASON:
             _sat_score: float | None = None
             _sat_bar: float | None = None
             try:
                 from forecasting.hooks import saturation_summary, sweep_alert_threshold
 
-                _snap = ledger.get_current_snapshot(question_id)
+                _snap = _snapshot()
                 _meta = getattr(_snap, "metadata", None) if _snap is not None else None
                 _summary = saturation_summary(_meta.get("saturation") if isinstance(_meta, dict) else None)
                 _raw = _summary.get("score") if _summary else None
@@ -584,53 +760,175 @@ def reconcile_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -
             except Exception:
                 _sat_score, _sat_bar = None, None
             if _sat_score is not None and _sat_bar is not None and _sat_score >= _sat_bar:
-                if not dry_run:
-                    ledger.acknowledge_alert(alert.id, acknowledged_at=now_ts)
-                reconciled.append({"id": alert.id, "reason": alert.reason, "scope_ref": question_id})
+                _close(alert, "re_saturated")
             else:
-                still_open.append({
-                    "id": alert.id,
-                    "reason": alert.reason,
-                    "open_because": (
-                        "saturation still below the bar"
-                        if _sat_score is not None
-                        else "no saturation score on the current snapshot"
-                    ),
-                })
+                _keep(alert, "saturation still below the bar" if _sat_score is not None
+                      else "no saturation score on the current snapshot")
             continue
 
-        try:
-            evidence_after = any(
-                (getattr(item, "captured_at", None) or getattr(item, "available_at", None) or "") > alert.created_at
-                for item in ledger.list_evidence(question_id)
-            )
-        except Exception:
-            evidence_after = False
+        # last_update_* — a stale forecast; closes when a FRESH snapshot exists.
+        if reason.startswith("last_update_"):
+            if _snapshot_after():
+                _close(alert, "fresh_snapshot")
+            else:
+                _keep(alert, "no forecast update committed since the alert")
+            continue
 
-        snapshot = None
-        try:
-            snapshot = ledger.get_current_snapshot(question_id)
-        except Exception:
-            snapshot = None
-        snapshot_ts = (getattr(snapshot, "created_at", None) or getattr(snapshot, "as_of", None) or "") if snapshot else ""
-        update_after = bool(snapshot_ts and snapshot_ts > alert.created_at)
+        # evidence_stale_* — closes on FRESH evidence.
+        if reason.startswith("evidence_stale_"):
+            if _evidence_after():
+                _close(alert, "fresh_evidence")
+            else:
+                _keep(alert, "no fresh evidence imported since the alert")
+            continue
 
-        if evidence_after and update_after:
-            if not dry_run:
-                ledger.acknowledge_alert(alert.id, acknowledged_at=now_ts)
-            reconciled.append({"id": alert.id, "reason": alert.reason, "scope_ref": question_id})
+        # no_evidence — closes when evidence LANDS.
+        if reason == "no_evidence":
+            if _evidence_after():
+                _close(alert, "evidence_landed")
+            else:
+                _keep(alert, "still no evidence imported")
+            continue
+
+        # no_forecast_snapshot — closes when a snapshot now EXISTS.
+        if reason == "no_forecast_snapshot":
+            if _snapshot() is not None:
+                _close(alert, "snapshot_created")
+            else:
+                _keep(alert, "still no forecast snapshot")
+            continue
+
+        # new_evidence:* — the operator reviewed it into a fresh forecast update.
+        if reason.startswith("new_evidence:"):
+            if _snapshot_after():
+                _close(alert, "reviewed_via_update")
+            else:
+                _keep(alert, "no forecast update committed since the alert")
+            continue
+
+        # Generic (watched-source / trigger material change): the loop closed only
+        # when BOTH fresh evidence was imported AND a forecast committed since.
+        ev = _evidence_after()
+        up = _snapshot_after()
+        if ev and up:
+            _close(alert, "source_change_consumed")
         else:
             missing = []
-            if not evidence_after:
+            if not ev:
                 missing.append("no fresh evidence imported since the alert")
-            if not update_after:
+            if not up:
                 missing.append("no forecast update committed since the alert")
-            still_open.append({"id": alert.id, "reason": alert.reason, "open_because": "; ".join(missing)})
+            _keep(alert, "; ".join(missing))
 
     return {
         "reconciled": reconciled,
         "reconciled_count": len(reconciled),
         "still_open": still_open,
+        "dry_run": dry_run,
+    }
+
+
+def escalate_aged_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+    """AGE-ESCALATE open alerts (Fix 4): an alert that has stayed open past a
+    threshold has its severity RAISED so a genuinely-neglected item sorts UP the desk
+    (and the VOI ``alert_pressure`` input reflects real neglect) instead of drowning
+    in the flood. Thresholds (:data:`ESCALATE_ELEVATED_DAYS` / :data:`ESCALATE_HIGH_DAYS`):
+    at 7d the severity floor is ``warning`` (elevated), at 14d it is ``high``.
+
+    Age is measured from ``created_at`` — the FIRST emission, preserved by the enqueue
+    dedup — so the clock is genuine neglect, not the last re-fire. Escalation only ever
+    RAISES severity (never a downgrade) and touches only OPEN alerts, so it is
+    idempotent: a second pass over an already-escalated backlog is a no-op. ``dry_run``
+    previews without mutating."""
+    now_dt = timestamp_to_datetime(parse_timestamp(now, field_name="now") or utc_now_iso())
+    escalated: list[dict[str, Any]] = []
+    for alert in ledger.list_alerts(unresolved_only=True):
+        created_dt = timestamp_to_datetime(alert.created_at)
+        if created_dt is None or now_dt is None:
+            continue
+        age_days = (now_dt - created_dt).total_seconds() / 86400.0
+        if age_days >= ESCALATE_HIGH_DAYS:
+            floor = "high"
+        elif age_days >= ESCALATE_ELEVATED_DAYS:
+            floor = "warning"
+        else:
+            continue
+        target = _more_severe(alert.severity, floor)
+        if target == (alert.severity or ""):
+            continue  # already at/above the age floor — never a downgrade
+        if not dry_run:
+            with ledger._connect() as conn:
+                conn.execute(
+                    "UPDATE alert_events SET severity = ? WHERE id = ? AND acknowledged_at IS NULL",
+                    (target, alert.id),
+                )
+        escalated.append({
+            "id": alert.id,
+            "reason": alert.reason,
+            "scope_ref": alert.scope_ref,
+            "from": alert.severity,
+            "to": target,
+            "age_days": round(age_days, 1),
+        })
+    return {"escalated": escalated, "escalated_count": len(escalated), "dry_run": dry_run}
+
+
+def collapse_duplicate_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
+    """ONE-TIME migration (Fix 1b): fold the EXISTING duplicate open-alert backlog
+    that accumulated before enqueue dedup existed. For every ``(scope_type, scope_ref,
+    reason)`` group with more than one OPEN row it KEEPS THE OLDEST row (smallest
+    ``created_at`` — so age-escalation and downstream refs stay stable) and FOLDS the
+    surplus into it: the kept row's ``seen_count`` becomes the group total and its
+    ``severity`` becomes the most-severe in the group, while each surplus row is closed
+    with ``acknowledged_at`` + ``ack_note = collapsed:<kept_id>`` (auditable, distinct
+    from an operator ack / dismissal).
+
+    ``dry_run`` reports what WOULD collapse without mutating. Idempotent: once run, no
+    group has more than one open row, so a second pass folds nothing."""
+    now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
+    open_alerts = ledger.list_alerts(unresolved_only=True)
+    groups: dict[tuple[str, str, str], list[AlertEvent]] = {}
+    for alert in open_alerts:
+        groups.setdefault((alert.scope_type, alert.scope_ref, alert.reason), []).append(alert)
+
+    groups_collapsed = 0
+    rows_folded = 0
+    folded_ids: list[str] = []
+    for members in groups.values():
+        if len(members) < 2:
+            continue
+        groups_collapsed += 1
+        ordered = sorted(members, key=lambda a: (a.created_at or "", a.id))
+        kept = ordered[0]
+        surplus = ordered[1:]
+        rows_folded += len(surplus)
+        total_seen = sum(int(getattr(m, "seen_count", 1) or 1) for m in members)
+        max_severity = kept.severity
+        for m in members:
+            max_severity = _more_severe(max_severity, m.severity)
+        latest_seen = max(
+            [s for s in (m.last_seen_at or m.created_at for m in members) if s],
+            default=kept.last_seen_at,
+        )
+        if dry_run:
+            folded_ids.extend(m.id for m in surplus)
+            continue
+        with ledger._connect() as conn:
+            conn.execute(
+                "UPDATE alert_events SET seen_count = ?, severity = ?, last_seen_at = ? WHERE id = ?",
+                (total_seen, max_severity, latest_seen, kept.id),
+            )
+            for m in surplus:
+                conn.execute(
+                    "UPDATE alert_events SET acknowledged_at = ?, ack_note = ? "
+                    "WHERE id = ? AND acknowledged_at IS NULL",
+                    (now_ts, f"collapsed:{kept.id}", m.id),
+                )
+                folded_ids.append(m.id)
+    return {
+        "groups_collapsed": groups_collapsed,
+        "rows_folded": rows_folded,
+        "folded_ids": folded_ids,
         "dry_run": dry_run,
     }
 
@@ -961,6 +1259,15 @@ def _domain_error_profile_alerts(
                         + "."
                         + matching_summary
                     ),
+                    # ONE alert per profile (scope_ref == profile id): the enqueue dedup
+                    # touches an already-open review instead of re-emitting a new row
+                    # every self_check (the live 1,899-rows-for-15-profiles flood).
+                    # refresh_action keeps the digest — the changing set of matching
+                    # forecasts in the action text — current on each touch. The
+                    # question-scoped ``domain_error_profile_applies:*`` alerts below are
+                    # the actionable, per-forecast items; this profile row is the
+                    # per-profile reminder, deduped and refreshed, never stacked.
+                    refresh_action=True,
                 )
             )
             for question in matching_questions:
@@ -1116,6 +1423,7 @@ def _row_to_alert(ledger, row: sqlite3.Row) -> AlertEvent:
     keys = set(row.keys())
     ttl = row["dismiss_ttl_days"] if "dismiss_ttl_days" in keys else None
     attempts = row["attempt_count"] if "attempt_count" in keys else 0
+    seen = row["seen_count"] if "seen_count" in keys else 1
     return AlertEvent(
         id=row["id"],
         created_at=row["created_at"],
@@ -1132,4 +1440,7 @@ def _row_to_alert(ledger, row: sqlite3.Row) -> AlertEvent:
         dismiss_ttl_days=int(ttl) if ttl is not None else None,
         last_attempted_at=row["last_attempted_at"] if "last_attempted_at" in keys else None,
         attempt_count=int(attempts) if attempts is not None else 0,
+        seen_count=int(seen) if seen is not None else 1,
+        last_seen_at=row["last_seen_at"] if "last_seen_at" in keys else None,
+        ack_note=row["ack_note"] if "ack_note" in keys else None,
     )
