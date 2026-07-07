@@ -1091,7 +1091,20 @@ export default class Ink {
     const { bytes: writeBytes, backpressure } = writeDiffToTerminal(
       this.terminal,
       optimized,
-      this.altScreenActive && !SYNC_OUTPUT_SUPPORTED,
+      // Belt-and-braces DEC 2026: NEVER skip the BSU/ESU synchronized-output
+      // brackets. Layout shifts (composer height crossing a wrap boundary,
+      // an overlay moving) move every transcript row → a full-frame repaint;
+      // a fullReset additionally emits clearTerminal (ESC[2J). Written
+      // un-bracketed the erase-then-repaint is visible as a screen flash.
+      // ?2026 is a private mode terminals that don't implement it silently
+      // ignore (harmless), so bracketing UNCONDITIONALLY makes those frames
+      // apply atomically on every terminal that DOES support it — including
+      // recent Terminal.app and others outside SYNC_OUTPUT_SUPPORTED's
+      // conservative allowlist. (SYNC_OUTPUT_SUPPORTED still gates the
+      // DECSTBM scroll fast-path above, which needs REAL atomicity, not a
+      // no-op wrapper.) Empty frames are never wrapped — writeDiffToTerminal
+      // returns early on an empty diff, so idle frames cost zero bytes.
+      false,
       trackDrain
         ? () => {
             // Callback fires once Node has flushed the chunk to the OS.
