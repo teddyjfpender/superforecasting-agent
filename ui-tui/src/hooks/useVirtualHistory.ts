@@ -475,6 +475,17 @@ export function useVirtualHistory(
     if (skipMeasurement.current) {
       skipMeasurement.current = false
     } else {
+      // Offset compensation: a measured correction that lands FULLY ABOVE the
+      // viewport top shifts the offsets of everything at/below it — the same
+      // scrollTop would suddenly show different content, so the viewport
+      // visually re-anchors near a message top ("sticky" scroll that snaps to
+      // the start of a response). Accumulate those deltas and shift scrollTop
+      // by the same amount so the content under the reader holds absolutely
+      // still. Sticky (at-bottom follow) skips this — the renderer pins to
+      // the real bottom anyway.
+      const committedTop = Math.max(0, s?.getScrollTop() ?? 0)
+      let compensation = 0
+
       for (let i = effStart; i < effEnd; i++) {
         const k = items[i]?.key
 
@@ -483,12 +494,25 @@ export function useVirtualHistory(
         }
 
         const h = Math.ceil((nodes.current.get(k) as MeasuredNode | undefined)?.yogaNode?.getComputedHeight?.() ?? 0)
+        const prev = heights.current.get(k)
 
-        if (h > 0 && heights.current.get(k) !== h) {
+        if (h > 0 && prev !== h) {
+          // offsets[] is this render's (pre-correction) geometry: the item's
+          // OLD bottom at/above the viewport top means the entire correction
+          // happened above the visible content. Items straddling the top keep
+          // their own start offset, so growing them doesn't move the view.
+          if (prev !== undefined && (offsets[i + 1] ?? 0) <= committedTop) {
+            compensation += h - prev
+          }
+
           heights.current.set(k, h)
           dirty = true
           heightDirty = true
         }
+      }
+
+      if (compensation !== 0 && s && !sticky) {
+        s.adjustScrollTop(compensation)
       }
     }
 

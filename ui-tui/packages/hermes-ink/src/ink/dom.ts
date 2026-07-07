@@ -72,6 +72,23 @@ export type DOMElement = {
   scrollViewportHeight?: number
   scrollViewportTop?: number
   stickyScroll?: boolean
+  // Was the box at (or past) the bottom at the END of the last frame?
+  // Gates the positional at-bottom follow: a transient content collapse
+  // (virtualization unmount + stale spacer, mid-commit Yoga states) drops
+  // prevMaxScroll to ≈ a mid-history scrollTop for one frame; the recovery
+  // frame then looks like "content grew while at bottom" and would yank the
+  // reader to the bottom (and restore sticky). Requiring at-bottom-ness on
+  // the PREVIOUS frame too makes the follow immune to single-frame dips.
+  scrollWasAtBottom?: boolean
+  // Consecutive frames a non-sticky scrollTop has been over maxScroll.
+  // Grace window before persisting the collapse clamp: a transient dip
+  // paints clamped but keeps the reader's real position; a genuine shrink
+  // (compaction, /clear) persists once the streak outlives the grace.
+  scrollShrinkFrames?: number
+  // True when the current over-max streak STARTED with a max-collapse
+  // transition (artifact signature) — only such streaks get the grace.
+  // Plain over-scroll input against a stable max clamps immediately.
+  scrollShrinkHeld?: boolean
   // When true, this ScrollBox opts out of the DECSTBM hardware-scroll
   // optimization. DECSTBM scrolls the FULL width of the scroll region's rows,
   // which corrupts any sibling content sharing those rows (e.g. a master list

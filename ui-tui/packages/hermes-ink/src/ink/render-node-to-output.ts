@@ -770,7 +770,23 @@ function renderNodeToOutput(
         // because the user was at bottom.
         const grew = scrollHeight >= prevScrollHeight
 
-        const atBottom = sticky || (grew && scrollTopBeforeFollow >= prevMaxScroll)
+        // Transient max-collapse detector. Mid-commit Yoga states can produce
+        // one-frame artifacts — the content collapses (virtualization unmount
+        // + stale spacer) or the VIEWPORT explodes to the content height (the
+        // box's height constraint lost for a frame while React re-arranges
+        // ancestors). Either way maxScroll craters, which (a) clamps a parked
+        // reader to the top of the transcript and (b) poisons prevMaxScroll so
+        // the RECOVERY frame reads "grew while at bottom" and yanks them to
+        // the bottom, restoring sticky. Both are guarded below.
+        const maxCollapsed = maxScroll < prevMaxScroll
+
+        // Two-frame artifact guard for the positional follow: also require
+        // the reader to have been at the bottom at the END of the previous
+        // frame (scrollWasAtBottom — never updated on collapse frames).
+        // First frame (undefined) falls back to the positional check alone.
+        const wasAtBottom = node.scrollWasAtBottom ?? scrollTopBeforeFollow >= prevMaxScroll
+
+        const atBottom = sticky || (grew && wasAtBottom && scrollTopBeforeFollow >= prevMaxScroll)
 
         // Viewport shrink (composer grew a wrapped line, a status rule
         // appeared): keep the BOTTOM edge stable when the user was reading
@@ -780,9 +796,16 @@ function renderNodeToOutput(
         // the content end; mid-history reading stays top-stable.
         const viewportShrink = Math.max(0, prevInnerHeight - innerHeight)
 
+        // prevMaxScroll > 0 rejects artifact recoveries: after a transient
+        // viewport explosion (prevVp ≈ prevSh, prevMax = 0), the return to a
+        // real viewport looks like a huge "shrink" with the bottom edge
+        // previously visible — advancing scrollTop would teleport a
+        // mid-history reader to the tail. A genuine composer-growth shrink
+        // always starts from a scrollable state (prevMax > 0).
         if (
           !atBottom &&
           viewportShrink > 0 &&
+          prevMaxScroll > 0 &&
           scrollHeight >= prevScrollHeight &&
           scrollTopBeforeFollow + prevInnerHeight >= prevScrollHeight - 1 &&
           (node.pendingScrollDelta ?? 0) >= 0
@@ -833,6 +856,14 @@ function renderNodeToOutput(
         const cMax = node.scrollClampMax
         const haveClamp = cMin !== undefined && cMax !== undefined
 
+        // A held over-max position (collapse streak, see shrinkHold below)
+        // re-bases onto the VISIBLE (clamped) position the moment the user
+        // scrolls — input must apply from what they see, not from the stale
+        // pre-collapse scrollTop.
+        if (pending !== undefined && pending !== 0 && node.scrollShrinkHeld && cur > maxScroll) {
+          cur = maxScroll
+        }
+
         if (pending !== undefined && pending !== 0) {
           // Drain continues even past the clamp — the render-clamp below
           // holds the VISUAL at the mounted edge regardless. Hard-stopping
@@ -858,6 +889,33 @@ function renderNodeToOutput(
 
         let scrollTop = Math.max(0, Math.min(cur, maxScroll))
 
+        // COLLAPSE clamp hold: a transient max-collapse (content dip or
+        // viewport explosion, which can span several renderer frames while
+        // React commits) must not relocate a mid-history reader — a max near
+        // zero would clamp their scrollTop to the top of the transcript, and
+        // the poisoned prevMax would then read as "grew while at bottom" and
+        // yank them to the tail. While an over-max streak that STARTED with a
+        // collapse transition lives, paint clamped but keep the real
+        // position; the streak ends when geometry recovers (position intact)
+        // or when user input arrives (re-based above, so a GENUINE shrink —
+        // compaction, /clear — stays responsive from the visible position).
+        // Plain over-scroll input against a STABLE max (no collapse
+        // transition) clamps immediately, preserving pending consumption.
+        const overMax = !sticky && cur > maxScroll
+
+        if (overMax) {
+          if ((node.scrollShrinkFrames ?? 0) === 0) {
+            node.scrollShrinkHeld = maxCollapsed
+          }
+
+          node.scrollShrinkFrames = (node.scrollShrinkFrames ?? 0) + 1
+        } else {
+          node.scrollShrinkFrames = 0
+          node.scrollShrinkHeld = false
+        }
+
+        const shrinkHold = overMax && node.scrollShrinkHeld === true
+
         // Virtual-scroll clamp: if scrollTop raced past the currently-mounted
         // range (burst PageUp before React re-renders), render at the EDGE of
         // the mounted children instead of blank spacer. Do NOT write back to
@@ -868,16 +926,30 @@ function renderNodeToOutput(
         // paint again with fresh bounds.
         const clamped = haveClamp ? Math.max(cMin, Math.min(scrollTop, cMax)) : scrollTop
 
-        node.scrollTop = scrollTop
+        node.scrollTop = shrinkHold ? cur : scrollTop
 
         // Clamp hitting top/bottom consumes any remainder. Set drainPending
         // only after clamp so a wasted no-op frame isn't scheduled.
-        if (scrollTop !== cur) {
+        if (scrollTop !== cur && !shrinkHold) {
           node.pendingScrollDelta = undefined
         }
 
         if (node.pendingScrollDelta !== undefined) {
           scrollDrainNode = node
+        }
+
+        // At-bottom memory for the positional follow (see wasAtBottom above).
+        // Only NON-collapse frames may update it, and only when the reader
+        // REACHED the bottom: a natural landing exactly at max, or a
+        // user-driven over-scroll (pending wheel-down past the end). A
+        // passive clamp (cur forced down INTO max by shrinking content or an
+        // artifact frame) is never user intent — a mid-history reader who
+        // coincidentally sits at a cratered max didn't CHOOSE the bottom,
+        // and appends must not start dragging them.
+        if (sticky) {
+          node.scrollWasAtBottom = true
+        } else if (grew && !maxCollapsed) {
+          node.scrollWasAtBottom = cur === maxScroll || (pending !== undefined && pending > 0 && cur >= maxScroll)
         }
 
         if ((node.scrollTop ?? 0) !== scrollTopBeforeFollow || node.stickyScroll !== stickyBeforeFollow) {

@@ -91,6 +91,14 @@ export const shouldSoftFocusToday = (chromeArmable: boolean, pane: HomePane, tod
 export const shouldOpenHomeHelp = (onHome: boolean, canOpenOverlay: boolean, pane: HomePane): boolean =>
   onHome && canOpenOverlay && pane !== 'conversation'
 
+/**
+ * PgUp/PgDn step: a full viewport MINUS ONE line, so exactly one line of
+ * continuity carries across pages (the standard pager convention — the
+ * reader never loses their place). Still under Ink's `delta < innerHeight`
+ * DECSTBM fast-path threshold. Floor of 1 for degenerate viewports.
+ */
+export const pageScrollStep = (viewport: number): number => Math.max(1, viewport - 1)
+
 export function applyVoiceRecordResponse(
   response: null | VoiceRecordResponse,
   starting: boolean,
@@ -628,10 +636,11 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     }
 
     if (key.pageUp || key.pageDown) {
-      // Half-viewport keeps 50% continuity and stays under Ink's
-      // `delta < innerHeight` DECSTBM fast-path threshold.
+      // Viewport-minus-one: one continuity line carries across pages (pager
+      // convention) while staying under Ink's `delta < innerHeight` DECSTBM
+      // fast-path threshold.
       const viewport = terminal.scrollRef.current?.getViewportHeight() ?? Math.max(6, (terminal.stdout?.rows ?? 24) - 8)
-      const step = Math.max(4, Math.floor(viewport / 2))
+      const step = pageScrollStep(viewport)
 
       return scrollTranscript(key.pageUp ? -step : step)
     }

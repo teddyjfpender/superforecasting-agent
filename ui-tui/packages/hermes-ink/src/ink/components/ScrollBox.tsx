@@ -14,6 +14,15 @@ export type ScrollBoxHandle = {
   scrollTo: (y: number) => void
   scrollBy: (dy: number) => void
   /**
+   * Offset compensation: shift scrollTop by `dy` WITHOUT breaking follow
+   * mode (stickyScroll) and WITHOUT registering a manual scroll. Used by
+   * virtualization when measured height corrections land ABOVE the viewport
+   * — the content under the reader must hold still, so scrollTop follows
+   * the shifted offsets. Unlike scrollBy this is position-neutral: it is
+   * never user intent.
+   */
+  adjustScrollTop: (dy: number) => void
+  /**
    * Scroll so `el`'s top is at the viewport top (plus `offset`). Unlike
    * scrollTo which bakes a number that's stale by the time the throttled
    * render fires, this defers the position read to render time —
@@ -178,6 +187,20 @@ function ScrollBox({ children, decstbm, ref, stickyScroll, ...style }: PropsWith
         manualScrollAtRef.current = Date.now()
         el.scrollAnchor = undefined
         el.pendingScrollDelta = (el.pendingScrollDelta ?? 0) + Math.floor(dy)
+        scrollMutated(el)
+      },
+      adjustScrollTop(dy: number) {
+        const el = domRef.current
+        const step = Math.trunc(dy)
+
+        if (!el || step === 0) {
+          return
+        }
+
+        // Deliberately does NOT touch stickyScroll / manualScrollAt /
+        // pendingScrollDelta: this is offset compensation, not user input.
+        // An in-flight drain stays valid — pending deltas are relative.
+        el.scrollTop = Math.max(0, (el.scrollTop ?? 0) + step)
         scrollMutated(el)
       },
       scrollToBottom() {
