@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/hooks/builtins.py (BUILTIN_RULES, RULE_DOCS)`
 
-Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **38 built-in rules**; operators can add their own with the hooks DSL.
+Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **42 built-in rules**; operators can add their own with the hooks DSL.
 
 
 Severities shown are the **defaults** — the shipped profile or an operator override can raise or lower any of them (`forecast hooks list` shows the resolved severity).
@@ -29,6 +29,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | `confidence_committed` | `warn` | 6.0 | Avoid near-maximum hedging unless genuine uncertainty is justified. |
 | `granularity_disciplined` | `warn` | 4.0 | WARN when a binary commit sits on a round-number anchor (a 0.10 multiple / quarter-point) no pooled component produced (Tetlock's granularity finding); never blocks. |
 | `tails_justified` | `warn` | 10.0 | No-path tails must be justified; do not over-weight unearned outcomes. |
+| `thesis_correlation_transparency` | `warn` | 4.0 | A thesis whose n_eff / member ratio is below the floor is a co-directional cluster (one bet dressed as many) — an honest dashboard label, never a block. |
 
 ## decision
 
@@ -45,6 +46,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | --- | --- | --- | --- |
 | `candidate_intervals_coherent` | `error` (blocks) | 12.0 | Per-candidate vote-share intervals, when present, must be coherent (finite p05<=median<=p95, median near the committed share, in bounds). |
 | `candidate_intervals_present` | `warn` | 10.0 | A high-impact vote-share forecast must carry per-candidate intervals (auto-computed from the ensemble spread; record no_interval_reason to opt out). |
+| `health_not_probability` | `warn` | 6.0 | A thesis presenting a mean-index health value must label it index-not-probability unless an event band exists (the index-as-probability lie). WARN. |
 | `output_renderable` | `error` (blocks) | 12.0 | A distribution needs a central tendency + an ordered interval the charts can draw. |
 | `pool_shrinkage_recorded` | `warn` | 10.0 | BLF A3: a post-harvest quorum-pooled commit must carry valid variance-adaptive pool-shrinkage provenance (α + inputs reconstructing the documented formula); a garbage α is the sharp fault, an absence on a non-calm market-linked panel the softer nag. |
 | `uncertainty_well_formed` | `error` (blocks) | 12.0 | Intervals must be ordered, nested, finite, non-degenerate, in-bounds. |
@@ -63,6 +65,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
+| `anchor_refs_attached` | `warn` | 7.0 | A question whose reference class EXISTS but is not linked on the current snapshot (the orphaned-anchor defect) — a MECHANICAL re-link fix, distinct from require_outside_view_anchor (which needs research). WARN standard, ERROR strict. |
 | `belief_trajectory_present` | `warn` | 8.0 | BLF A1: a post-harvest panel-backed commit must carry per-panelist belief trajectories (>=2 revision steps for a search-enabled seat; a single step needs a reason). Applies only to NEW panel runs — never retroactive. |
 | `crux_named` | `warn` | 8.0 | A high-impact commit must carry >=1 registered crux (question_cruxes) OR record crux_skip_reason naming why no single crux exists. |
 | `outside_view_refresh` | `warn` | 6.0 | A routine re-forecast of a question that has never carried a reference class WARNs (pure inside view since birth) — visibility, not a block. |
@@ -75,6 +78,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
+| `event_band_earned` | `warn` | 9.0 | A thesis with members but no configured joint event (name set-event), OR an event band whose member-interval coverage is below the earned floor (a default-width band masquerading as measured uncertainty). WARN. |
 | `require_citations` | `warn` | 8.0 | The forecast should cite evidence / model runs. |
 | `require_components` | `error` (blocks) | 15.0 | The forecast must decompose into pooled ensemble components. |
 | `require_evidence` | `error` (blocks) | 16.0 | A live forecast MUST carry at least one evidence record (hard requirement). |

@@ -1351,6 +1351,12 @@ def aggregate_thesis(
             "thesis_notes": agg.notes + ((event_result.notes if event_result else []))
             + ((event_band.notes if event_band else [])),
             "thesis_spread": agg.spread,
+            # Honesty label for the headline: an event-configured thesis leads with a
+            # scoreable P(event); otherwise ``health`` is a mean INDEX, not a probability
+            # (the health_not_probability gate + the desk read this to label it).
+            "thesis_headline_kind": (
+                "event_probability" if (event_result and event_result.event_probability is not None) else "index"
+            ),
             "entities": entities,
             "triggers": triggers,
             # Full event read (count distribution + per-member sensitivities +

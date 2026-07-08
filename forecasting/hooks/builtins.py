@@ -961,6 +961,117 @@ def _rem_specialist_seat(_ctx: HookContext) -> RemediationDescriptor:
     )
 
 
+# ── thesis-remediation gate family (anchor re-link + event-band honesty) ──────
+# THE ORPHANED-ANCHOR GATE. Distinct from require_outside_view_anchor: that gate
+# fires when NO anchor exists (an agentic research task); THIS one fires only when
+# an anchor EXISTS on the question but is not linked on the snapshot — a MECHANICAL
+# defect (re-link, no research). It reads snapshot_reference_class_count, the honest
+# unmasked count, so it is visible on lint where the anchor gate is deliberately
+# masked to the question count.
+def _applies_anchor_refs_attached(ctx: HookContext) -> bool:
+    return ctx.is_live and not ctx.is_thesis_or_factor and ctx.reference_class_count >= 1
+
+
+def _check_anchor_refs_attached(ctx: HookContext):
+    if ctx.snapshot_reference_class_count >= 1:
+        return _OK
+    return False, (
+        f"this question has {ctx.reference_class_count} reference class(es) on the books but the "
+        "current snapshot links NONE of them — the outside-view anchor is ORPHANED off the snapshot. "
+        "This is a MECHANICAL fix (the class already exists): run `forecast reference-class relink "
+        "--apply` to re-attach it, or stamp reference_class_refs on the next commit."
+    ), {"reference_class_count": ctx.reference_class_count}
+
+
+def _rem_relink_anchor(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "mechanical", "add_reference_class",
+        "Re-attach the question's existing reference class to the current snapshot (forecast reference-class relink --apply).",
+    )
+
+
+# THE EVENT-BAND-EARNED GATE. A thesis is a joint event; its headline should be a
+# scoreable P(event) with a band EARNED from the members. Two failure modes: (1) the
+# thesis has members but no event configured (name set-event); (2) it has an event
+# whose member-interval coverage is too thin (a default-width band unearned).
+_EVENT_BAND_COVERAGE_FLOOR = 0.30
+
+
+def _applies_event_band_earned(ctx: HookContext) -> bool:
+    return ctx.is_live and ctx.is_thesis_or_factor and ctx.thesis_member_count >= 1
+
+
+def _check_event_band_earned(ctx: HookContext):
+    floor = ctx.threshold("event_band_coverage_floor")
+    floor = _EVENT_BAND_COVERAGE_FLOOR if floor is None else floor
+    if not ctx.thesis_has_event:
+        return False, (
+            f"this thesis has {ctx.thesis_member_count} member(s) but NO joint-threshold event "
+            "configured — its headline is a damped mean index, not the P(event) the question really "
+            "asks. Configure it with `forecast thesis set-event <id> --kind count_threshold --threshold K` "
+            "so it emits a scoreable probability with a band."
+        ), {"mode": "thesis_event_missing", "member_count": ctx.thesis_member_count}
+    cov = ctx.thesis_event_interval_coverage
+    if cov is None or cov >= floor:
+        return _OK
+    return False, (
+        f"this thesis event band is DEFAULT-WIDTH — unearned: only {cov:.0%} of the participating "
+        f"members carry their own measured interval (below the {floor:.0%} floor), so the band is a "
+        "flat epistemic default, not measured uncertainty. Backfill member intervals with `forecast "
+        "thesis member-intervals <id> --apply` (panel spread), then re-aggregate."
+    ), {"mode": "event_band_unearned", "coverage": cov}
+
+
+def _rem_event_band(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "mechanical", "run_aggregate",
+        "Configure the thesis event (set-event) or backfill member intervals (member-intervals --apply), then re-aggregate.",
+    )
+
+
+# THE HEALTH-NOT-PROBABILITY GATE. A mean-index HEALTH value must be labeled
+# index-not-probability UNLESS an event band exists (then P is the headline). A
+# thesis presenting health as a bare number reads as a probability it is not.
+def _applies_health_not_probability(ctx: HookContext) -> bool:
+    return ctx.is_live and ctx.is_thesis_or_factor and ctx.thesis_health_present
+
+
+def _check_health_not_probability(ctx: HookContext):
+    if ctx.thesis_has_event or ctx.thesis_health_index_labeled:
+        return _OK
+    return False, (
+        "this thesis presents a mean-index HEALTH value with no event band and no index label — a "
+        "severity index reads as a probability it is not. Either configure the event (set-event) so "
+        "the headline becomes a real P(event), or ensure the surface labels health as an INDEX "
+        "(re-aggregate stamps thesis_headline_kind='index')."
+    ), {"health_present": True}
+
+
+# THE CORRELATION-TRANSPARENCY GATE. A low n_eff / member ratio is a co-directional
+# cluster (one bet dressed as many) — an honest dashboard label, NEVER a block.
+_NEFF_RATIO_FLOOR = 0.5
+
+
+def _applies_thesis_correlation_transparency(ctx: HookContext) -> bool:
+    return ctx.is_live and ctx.is_thesis_or_factor and ctx.thesis_n_eff_ratio is not None and ctx.thesis_member_count >= 3
+
+
+def _check_thesis_correlation_transparency(ctx: HookContext):
+    floor = ctx.threshold("neff_ratio_floor")
+    floor = _NEFF_RATIO_FLOOR if floor is None else floor
+    ratio = ctx.thesis_n_eff_ratio
+    if ratio is None or ratio >= floor:
+        return _OK
+    neff = ctx.thesis_n_eff
+    neff_txt = f"{neff:.1f}" if isinstance(neff, (int, float)) else "?"
+    return False, (
+        f"CO-DIRECTIONAL CLUSTER: n_eff ~{neff_txt} over {ctx.thesis_member_count} members "
+        f"(ratio {ratio:.0%}, below the {floor:.0%} floor) — the members co-move so strongly this is "
+        "closer to one bet dressed as many. The band is correlation-honest already; this label keeps "
+        "the member COUNT from reading as independent evidence."
+    ), {"n_eff": neff, "member_count": ctx.thesis_member_count, "ratio": ratio}
+
+
 # Ordered to match the legacy gate evaluation order (so the first blocking
 # failure yields the same message the inline gates raised first), then the two
 # additive rules.
@@ -1069,6 +1180,19 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
     # WARN FOREVER (a specialist on the wrong class is worse than none); never blocks.
     SimpleRule("specialist_seat_considered", Category.REASONING, Severity.WARN, 6.0,
                _check_specialist_seat_considered, _applies_specialist_seat, _rem_specialist_seat),
+    # Thesis-remediation family — anchor re-link + event-band honesty.
+    # anchor_refs_attached: RC exists on the question but not on the snapshot (mechanical).
+    SimpleRule("anchor_refs_attached", Category.REASONING, Severity.WARN, 7.0,
+               _check_anchor_refs_attached, _applies_anchor_refs_attached, _rem_relink_anchor),
+    # event_band_earned: a thesis missing its event, or an unearned default-width band.
+    SimpleRule("event_band_earned", Category.SATURATION, Severity.WARN, 9.0,
+               _check_event_band_earned, _applies_event_band_earned, _rem_event_band),
+    # health_not_probability: a thesis health index presented without a label / event band.
+    SimpleRule("health_not_probability", Category.OUTPUT, Severity.WARN, 6.0,
+               _check_health_not_probability, _applies_health_not_probability),
+    # thesis_correlation_transparency: a low n_eff/member ratio — honest label, never blocks.
+    SimpleRule("thesis_correlation_transparency", Category.CONFIDENCE, Severity.WARN, 4.0,
+               _check_thesis_correlation_transparency, _applies_thesis_correlation_transparency),
 )
 
 BUILTIN_RULE_IDS: tuple[str, ...] = tuple(r.id for r in BUILTIN_RULES)
@@ -1113,6 +1237,10 @@ RULE_DOCS: dict[str, str] = {
     "belief_trajectory_present": "BLF A1: a post-harvest panel-backed commit must carry per-panelist belief trajectories (>=2 revision steps for a search-enabled seat; a single step needs a reason). Applies only to NEW panel runs — never retroactive.",
     "pool_shrinkage_recorded": "BLF A3: a post-harvest quorum-pooled commit must carry valid variance-adaptive pool-shrinkage provenance (α + inputs reconstructing the documented formula); a garbage α is the sharp fault, an absence on a non-calm market-linked panel the softer nag.",
     "specialist_seat_considered": "BLF A5: a post-harvest continuous/count panel where a deterministic specialist seat is offerable (climatology KNN / seasonal-naive) should seat one or record its decline. WARN forever — never blocks.",
+    "anchor_refs_attached": "A question whose reference class EXISTS but is not linked on the current snapshot (the orphaned-anchor defect) — a MECHANICAL re-link fix, distinct from require_outside_view_anchor (which needs research). WARN standard, ERROR strict.",
+    "event_band_earned": "A thesis with members but no configured joint event (name set-event), OR an event band whose member-interval coverage is below the earned floor (a default-width band masquerading as measured uncertainty). WARN.",
+    "health_not_probability": "A thesis presenting a mean-index health value must label it index-not-probability unless an event band exists (the index-as-probability lie). WARN.",
+    "thesis_correlation_transparency": "A thesis whose n_eff / member ratio is below the floor is a co-directional cluster (one bet dressed as many) — an honest dashboard label, never a block.",
 }
 
 _RULE_BY_ID = {r.id: r for r in BUILTIN_RULES}

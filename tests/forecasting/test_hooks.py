@@ -52,6 +52,9 @@ def _saturated_live(**overrides) -> HookContext:
         # require_outside_view_anchor rule — a saturated forecast links its anchor).
         reference_class_count=1,
         linked_reference_class_count=1,
+        # ...and that link is honest on the snapshot itself (anchor_refs_attached:
+        # a saturated forecast is never an orphaned anchor).
+        snapshot_reference_class_count=1,
         # RDY machine-readiness rules — a fully-saturated commit carries a watched
         # source the desk can refresh and clears the machine-readiness floor.
         watched_source_count=2,

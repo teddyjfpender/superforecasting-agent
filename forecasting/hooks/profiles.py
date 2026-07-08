@@ -62,6 +62,11 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "belief_trajectory_present": _O,
         "pool_shrinkage_recorded": _O,
         "specialist_seat_considered": _O,
+        # Thesis-remediation gates — all OFF for scratch work.
+        "anchor_refs_attached": _O,
+        "event_band_earned": _O,
+        "health_not_probability": _O,
+        "thesis_correlation_transparency": _O,
     },
     # == the pre-hooks enforcement (tool require_* defaults + Phase 2 style gate),
     # which also equals the builtin default severities. Adopting it changes nothing.
@@ -137,6 +142,15 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         # BLF A5 — WARN FOREVER (a specialist on the wrong question class is worse than
         # none, so this never hard-gates — same doctrine as granularity_disciplined).
         "specialist_seat_considered": _W,
+        # Thesis-remediation gates. anchor_refs_attached is a mechanical defect (WARN-first
+        # in standard since a live-fire backfill just drained it; ERROR strict). event_band_
+        # earned is WARN (the fix is set-event / a member-interval backfill). health_not_
+        # probability WARN (conformance). thesis_correlation_transparency WARN FOREVER (an
+        # honest label, never a block — same doctrine as granularity/specialist).
+        "anchor_refs_attached": _W,
+        "event_band_earned": _W,
+        "health_not_probability": _W,
+        "thesis_correlation_transparency": _W,
     },
     # Everything blocking — for high-stakes desks that want full saturation.
     "strict": {
@@ -184,6 +198,13 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "belief_trajectory_present": _E,
         "pool_shrinkage_recorded": _E,
         "specialist_seat_considered": _W,
+        # Thesis-remediation gates. The mechanical orphaned-anchor + the event/band
+        # honesty gates BLOCK in strict; the correlation label stays advisory (an honest
+        # label is never a hard requirement, even here — like granularity/specialist).
+        "anchor_refs_attached": _E,
+        "event_band_earned": _E,
+        "health_not_probability": _E,
+        "thesis_correlation_transparency": _W,
     },
 }
 

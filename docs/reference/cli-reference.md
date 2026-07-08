@@ -2973,6 +2973,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 - **`forecast thesis dashboard`** — Thesis master list (health / score / Δ / coverage / members) — the dedicated thesis dashboard
 - **`forecast thesis entity`** — Manage entity suitability under a thesis
 - **`forecast thesis list`** — List thesis questions
+- **`forecast thesis member-intervals`** — Derive + stamp per-member probability intervals for a thesis's competitive binary members so its event band earns its width (dry-run by default)
 - **`forecast thesis members`** — List a thesis's member forecasts
 - **`forecast thesis set-correlation`** — Pin a pairwise correlation between two thesis members (members co-move unequally)
 - **`forecast thesis set-event`** — Configure the thesis as a JOINT THRESHOLD EVENT — P(#member successes >= K) via copula MC
@@ -3053,6 +3054,15 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `--limit` |  |
+
+### `forecast thesis member-intervals`
+
+| argument | help |
+| --- | --- |
+| `thesis` | row number, id, or search words for the thesis |
+| `--weight-floor` | Only members with weight >= this are backfilled (default 1.5) |
+| `--apply` | Stamp the derived intervals onto each competitive member's snapshot (default is a dry-run preview). |
+| `--json` | Emit machine-readable JSON |
 
 ### `forecast thesis members`
 

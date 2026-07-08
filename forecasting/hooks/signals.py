@@ -407,6 +407,20 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     except Exception:
         _has_market, _market_recorded = False, True
 
+    # ── thesis-remediation gate signals (anchor re-link + event-band honesty) ──
+    # snapshot_reference_class_count is the TRUE (unmasked) count so the orphaned-
+    # anchor gate can fire on lint where linked_reference_class_count is masked to
+    # the question count. The thesis signals only compute for a thesis/factor.
+    from forecasting.hooks.thesis_signals import (
+        snapshot_reference_class_count as _snap_rc_count_fn,
+        thesis_remediation_signals as _thesis_rem_signals,
+    )
+    _snap_rc_count = _snap_rc_count_fn(snap) if snap is not None else 0
+    try:
+        _thesis_sig = _thesis_rem_signals(ledger, question, snap) if (is_tf and snap is not None) else {}
+    except Exception:
+        _thesis_sig = {}
+
     return HookContext(
         question_id=question_id,
         forecast_origin=_g("forecast_origin", "live") or "live",
@@ -487,6 +501,15 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         market_skip_reason=(meta.get("market_skip_reason") or None),
         linked_market_source=_market_source,
         thresholds=_qthr,
+        # thesis-remediation gate signals (anchor re-link + event-band honesty).
+        snapshot_reference_class_count=_snap_rc_count,
+        thesis_has_event=_thesis_sig.get("thesis_has_event", True),
+        thesis_member_count=_thesis_sig.get("thesis_member_count", 0),
+        thesis_event_interval_coverage=_thesis_sig.get("thesis_event_interval_coverage"),
+        thesis_health_present=_thesis_sig.get("thesis_health_present", False),
+        thesis_health_index_labeled=_thesis_sig.get("thesis_health_index_labeled", True),
+        thesis_n_eff=_thesis_sig.get("thesis_n_eff"),
+        thesis_n_eff_ratio=_thesis_sig.get("thesis_n_eff_ratio"),
         # BLF gate signals (inert unless the latest run is post-harvest).
         panel_ran_post_harvest=_blf.get("panel_ran_post_harvest", False),
         belief_trajectory_ok=_blf.get("belief_trajectory_ok", True),
@@ -659,6 +682,9 @@ def build_commit_context(
         readiness_score=readiness_score,
         reference_class_count=reference_class_count,
         linked_reference_class_count=linked_reference_class_count,
+        # On commit the candidate's true refs are honest (not masked), so the
+        # orphaned-anchor gate reads the same count the anchor gate does.
+        snapshot_reference_class_count=linked_reference_class_count,
         is_thesis_or_factor=is_thesis_or_factor,
         committed_winner_prob=committed_winner_prob,
         derived_child_present=derived_child_present,

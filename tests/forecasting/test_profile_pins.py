@@ -51,6 +51,11 @@ STANDARD = {
     "belief_trajectory_present": _W,
     "pool_shrinkage_recorded": _W,
     "specialist_seat_considered": _W,
+    # Thesis-remediation gates — WARN-first in standard (correlation label WARN forever).
+    "anchor_refs_attached": _W,
+    "event_band_earned": _W,
+    "health_not_probability": _W,
+    "thesis_correlation_transparency": _W,
 }
 
 # The P3 gates and their strict-profile severities (granularity NEVER blocks).
@@ -64,6 +69,11 @@ STRICT_P3 = {
     "belief_trajectory_present": _E,
     "pool_shrinkage_recorded": _E,
     "specialist_seat_considered": _W,
+    # Thesis-remediation: anchor + event/band honesty block in strict; the label stays WARN.
+    "anchor_refs_attached": _E,
+    "event_band_earned": _E,
+    "health_not_probability": _E,
+    "thesis_correlation_transparency": _W,
 }
 
 
