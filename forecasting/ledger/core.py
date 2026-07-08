@@ -111,6 +111,8 @@ from forecasting.ledger import theses as _theses
 # bootstrap edge test, and lesson-application auditing) lives in the sibling
 # ``scoring`` module (D9 carve).
 from forecasting.ledger import scoring as _scoring
+# Outside-view anchor re-linking (the mechanical orphaned-anchor remediation).
+from forecasting.ledger import anchors as _anchors
 
 
 logger = logging.getLogger(__name__)
@@ -2445,6 +2447,12 @@ class ForecastLedger:
             result.append(data)
         return result
 
+    def set_snapshot_reference_class_refs(self, snapshot_id: str, refs: list[str]) -> list[str]:
+        return _anchors.set_snapshot_reference_class_refs(self, snapshot_id, refs)
+
+    def relink_orphaned_anchors(self, *, question_ids: list[str] | None = None, apply: bool = False) -> dict[str, Any]:
+        return _anchors.relink_orphaned_anchors(self, question_ids=question_ids, apply=apply)
+
     # ── crux evidence map ─────────────────────────────────────────────────────
     def add_crux(
         self,
@@ -3690,8 +3698,10 @@ class ForecastLedger:
         panel_resolution_note: str | None = None,
         blind_pool: float | None = None,
         reconciled_pool: float | None = None,
+        pool_shrinkage: dict[str, Any] | None = None,
+        specialist_summary: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return _panels.record_panel_run(self, question_id=question_id, estimates=estimates, aggregation_method=aggregation_method, trim=trim, snapshot_id=snapshot_id, triggered_by=triggered_by, perspectives=perspectives, judge=judge, final_probability=final_probability, final_source=final_source, research_rounds=research_rounds, supervisor_evidence=supervisor_evidence, delphi_rounds=delphi_rounds, delphi_audit=delphi_audit, supervisor_search_enabled=supervisor_search_enabled, market_anchor=market_anchor, pseudo_diversity_caveat=pseudo_diversity_caveat, panel_resolution_note=panel_resolution_note, blind_pool=blind_pool, reconciled_pool=reconciled_pool)
+        return _panels.record_panel_run(self, question_id=question_id, estimates=estimates, aggregation_method=aggregation_method, trim=trim, snapshot_id=snapshot_id, triggered_by=triggered_by, perspectives=perspectives, judge=judge, final_probability=final_probability, final_source=final_source, research_rounds=research_rounds, supervisor_evidence=supervisor_evidence, delphi_rounds=delphi_rounds, delphi_audit=delphi_audit, supervisor_search_enabled=supervisor_search_enabled, market_anchor=market_anchor, pseudo_diversity_caveat=pseudo_diversity_caveat, panel_resolution_note=panel_resolution_note, blind_pool=blind_pool, reconciled_pool=reconciled_pool, pool_shrinkage=pool_shrinkage, specialist_summary=specialist_summary)
 
     def get_panel_run(self, run_id: str) -> dict[str, Any]:
         return _panels.get_panel_run(self, run_id=run_id)
@@ -6694,6 +6704,15 @@ class ForecastLedger:
         limit: int = 500,
     ) -> dict[str, Any]:
         return _theses.aggregate_all_theses(self, now=now, rho=rho, limit=limit)
+
+    def backfill_thesis_member_intervals(
+        self,
+        thesis_id: str,
+        *,
+        weight_floor: float = 1.5,
+        apply: bool = False,
+    ) -> dict[str, Any]:
+        return _theses.backfill_thesis_member_intervals(self, thesis_id, weight_floor=weight_floor, apply=apply)
 
     def list_source_snapshots(
         self,

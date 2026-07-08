@@ -1286,6 +1286,9 @@ class ForecastWorkspaceEvidence(WireModel):
 class ForecastWorkspacePanelEstimate(WireModel):
     TS_NAME = "ForecastWorkspacePanelEstimate"
 
+    # BLF A1 — the compact per-panelist belief arc ("40%→55% · 3 steps · moved by:
+    # the CPI print"); null on a legacy / pre-harvest estimate with no trajectory.
+    belief: str | None = wire_optional(nullable=True)
     confidence_high: float | None = wire_optional(nullable=True)
     confidence_low: float | None = wire_optional(nullable=True)
     crux: str | None = wire_optional(nullable=True)

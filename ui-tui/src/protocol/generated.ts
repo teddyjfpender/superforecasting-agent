@@ -1932,6 +1932,7 @@ export interface ForecastWorkspacePanel {
 }
 
 export interface ForecastWorkspacePanelEstimate {
+  belief?: null | string
   confidence_high?: null | number
   confidence_low?: null | number
   crux?: null | string

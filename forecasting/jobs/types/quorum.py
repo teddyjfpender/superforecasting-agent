@@ -863,6 +863,21 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         and not result.market_pull_applied
         and bool((result.market_justification or "").strip())
     )
+    # BLF A5 — the specialist-seat summary. result.forecasts KEEPS declined/errored
+    # seats (panel_estimates() drops them before persistence), so this is the only place
+    # a SpecialistDeclined seat is captured for the gate. Absent (None) when the panel
+    # offered no specialist seats, so a non-specialist run stays byte-compatible.
+    from forecasting.specialists import SPECIALIST_IDS as _SPECIALIST_IDS
+
+    _spec_ran = [f.model for f in result.forecasts if f.model in _SPECIALIST_IDS and f.error is None]
+    _spec_declined = [
+        {"seat": f.model, "reason": f.error}
+        for f in result.forecasts
+        if f.model in _SPECIALIST_IDS and f.error is not None
+    ]
+    specialist_summary = (
+        {"ran": _spec_ran, "declined": _spec_declined} if (_spec_ran or _spec_declined) else None
+    )
     deviation_bet_id: str | None = None
     with allow_ledger_writes(reason="quorum_jobs.execute_job"):
         panel_run = ledger.record_panel_run(
@@ -885,6 +900,8 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
             panel_resolution_note=panel_resolution_note,
             blind_pool=result.blind_pool,
             reconciled_pool=result.reconciled_pool,
+            pool_shrinkage=result.pool_shrinkage,
+            specialist_summary=specialist_summary,
         )
         if make_bet:
             bet = ledger.record_deviation_bet(

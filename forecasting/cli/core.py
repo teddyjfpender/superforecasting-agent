@@ -2086,6 +2086,16 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     reference_status.add_argument("--check-cadence")
     reference_status.add_argument("--notes")
     reference_status.set_defaults(_forecast_handler=_cmd_reference_class_status)
+    reference_relink = reference_sub.add_parser(
+        "relink",
+        help="Re-attach a question's EXISTING reference classes to its current snapshot's refs (the orphaned-anchor fix; dry-run by default)",
+    )
+    reference_relink.add_argument(
+        "--apply", action="store_true",
+        help="Stamp the existing class ids onto each orphaned current snapshot (default is a dry-run preview).",
+    )
+    reference_relink.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    reference_relink.set_defaults(_forecast_handler=_cmd_reference_class_relink)
 
     crux_parser = forecast_sub.add_parser("crux", help="Manage per-forecast crux variables (the decisive inputs)")
     crux_sub = crux_parser.add_subparsers(dest="crux_command")
@@ -13768,6 +13778,33 @@ def _backfill_intervals_scan(ledger) -> dict[str, Any]:
         "by_source": counts,
         "proposals": proposals,
     }
+
+
+def _cmd_reference_class_relink(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    apply = bool(getattr(args, "apply", False))
+    result = ledger.relink_orphaned_anchors(apply=apply)
+    if getattr(args, "json", False):
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    mode = "APPLIED" if apply else "DRY-RUN (pass --apply to re-link)"
+    print(f"orphaned-anchor re-link {mode}")
+    print(
+        f"  {result['scanned_with_reference_class']} question(s) carry a reference class; "
+        f"{result['already_linked']} already cite one on the current snapshot"
+    )
+    verb = "re-linked" if apply else "would re-link"
+    print(
+        f"  {verb} {result['relinkable']} orphaned snapshot(s) to their existing class(es); "
+        f"{result['ambiguous']} ambiguous (>1 distinct outside view) SKIPPED for a human"
+    )
+    if apply:
+        print(f"  applied to {result.get('applied', 0)} snapshot(s)")
+    for p in result["proposals"]:
+        print(f"    [relink ] {p['question_id']}  {(p['title'] or '')[:52]}")
+    for p in result["ambiguous_detail"]:
+        names = "; ".join(dict.fromkeys(str(n) for n in (p.get('active_rc_names') or [])))
+        print(f"    [SKIP   ] {p['question_id']}  {(p['title'] or '')[:40]}  → {names[:60]}")
 
 
 def _cmd_intervals_backfill(args: argparse.Namespace) -> None:

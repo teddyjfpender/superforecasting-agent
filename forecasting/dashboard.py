@@ -1979,6 +1979,32 @@ def _workspace_evidence(item: Any) -> dict[str, Any]:
     }
 
 
+def _belief_trajectory_line(metadata: Any) -> str | None:
+    """A compact 'what moved the number' line for one panelist from its BLF belief
+    trajectory: the belief ARC (first→last probability) plus what moved the last
+    step (``moved_by``). None when the panelist carried no trajectory (a legacy /
+    pre-harvest estimate), so the modal simply omits the line rather than faking one."""
+    if not isinstance(metadata, dict):
+        return None
+    traj = metadata.get("belief_trajectory")
+    if not isinstance(traj, list) or not traj:
+        return None
+    steps = [s for s in traj if isinstance(s, dict)]
+    if not steps:
+        return None
+
+    def _p(step: dict[str, Any]) -> str | None:
+        v = step.get("probability")
+        return f"{float(v):.0%}" if isinstance(v, (int, float)) else None
+
+    first, last = _p(steps[0]), _p(steps[-1])
+    arc = f"{first}→{last}" if (first and last and len(steps) > 1) else (last or first)
+    moved = str(steps[-1].get("moved_by") or "").strip()
+    n = len(steps)
+    head = f"{arc} · {n} step{'s' if n != 1 else ''}" if arc else f"{n} step{'s' if n != 1 else ''}"
+    return f"{head} · moved by: {moved}" if moved else head
+
+
 def _workspace_panel(run: dict[str, Any]) -> dict[str, Any]:
     estimates = [
         {
@@ -1989,6 +2015,8 @@ def _workspace_panel(run: dict[str, Any]) -> dict[str, Any]:
             "crux": row.get("crux"),
             "confidence_low": row.get("confidence_low"),
             "confidence_high": row.get("confidence_high"),
+            # BLF A1 — the compact per-panelist belief arc for the desk panel modal.
+            "belief": _belief_trajectory_line(row.get("metadata")),
         }
         for row in (run.get("estimates") or [])
     ]

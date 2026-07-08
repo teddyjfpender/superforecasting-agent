@@ -2567,11 +2567,18 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
             <Box flexShrink={0} width={deltaW + 2}>
               <Text color={deltaColor}>{delta ? `  ${delta.padStart(deltaW)}` : ''}</Text>
             </Box>
-            <Box flexGrow={1} flexShrink={1} minWidth={0}>
+            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
               <Text color={t.color.muted} wrap="wrap">
                 {showWeights && finite(estimate.weight) ? `  w ${estimate.weight.toFixed(1)}` : ''}
                 {estimate.crux ? `  ${estimate.crux}` : ''}
               </Text>
+              {/* BLF A1 — the 'what moved the number' belief arc, when the panelist
+                  carried a trajectory (omitted for legacy / pre-harvest estimates). */}
+              {estimate.belief ? (
+                <Text color={estimate.trimmed ? t.color.muted : t.color.accent} wrap="truncate-end">
+                  {`  ${estimate.belief}`}
+                </Text>
+              ) : null}
             </Box>
           </Box>
         )

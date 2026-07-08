@@ -68,6 +68,8 @@ def record_panel_run(
     panel_resolution_note: str | None = None,
     blind_pool: float | None = None,
     reconciled_pool: float | None = None,
+    pool_shrinkage: dict[str, Any] | None = None,
+    specialist_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aggregate a panel of perspective estimates and persist the artifact.
 
@@ -175,6 +177,23 @@ def record_panel_run(
         spread["blind_pool"] = round(float(blind_pool), 6)
     if reconciled_pool is not None:
         spread["reconciled_pool"] = round(float(reconciled_pool), 6)
+    # BLF gate-wiring RETROACTIVITY MARKER — stamp the panel process version on EVERY
+    # run recorded from now on. A run without it predates the BLF gates, so the BLF
+    # rules (belief_trajectory_present / pool_shrinkage_recorded / specialist_seat_
+    # considered) never bind it. This is the whole guard; do not gate it on a caller flag.
+    from forecasting.hooks.blf_signals import PANEL_PROCESS_VERSION
+
+    spread["process_version"] = PANEL_PROCESS_VERSION
+    # BLF A3 — variance-adaptive pool-shrinkage provenance (α + inputs), so the shrink
+    # toward the outside-view anchor is reconstructable + validatable at the gate. None
+    # on an anchorless / perspective-panel run (byte-compatible — the key is simply absent).
+    if pool_shrinkage is not None:
+        spread["pool_shrinkage"] = dict(pool_shrinkage)
+    # BLF A5 — the specialist-seat summary ({ran:[...], declined:[{seat, reason}]}) so a
+    # honestly-declined seat is visible to the gate (a decline PASSES) and never mistaken
+    # for a seat that was never offered. Absent on a panel with no specialist seats.
+    if specialist_summary is not None:
+        spread["specialist_seats"] = dict(specialist_summary)
     if pseudo_diversity_caveat:
         spread["pseudo_diversity_caveat"] = pseudo_diversity_caveat
     if panel_resolution_note:

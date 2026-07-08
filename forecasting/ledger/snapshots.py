@@ -827,6 +827,17 @@ def create_snapshot(
             except Exception:
                 _terminal_calibration_present = True
 
+        # BLF gate signals (belief trajectories / pool shrinkage / specialist seats) from
+        # the panel run linked to THIS commit. panel_ran_post_harvest gates every BLF rule
+        # (a pre-marker run leaves them inert), so a first-BLF-panel commit binds forward
+        # while every legacy commit is untouched. Fail-open to the inert state.
+        try:
+            from forecasting.hooks.signals import blf_signals_from_panel_run as _blf_from_run
+
+            _blf = _blf_from_run(_linked_panel if panel_run_ref else None, question)
+        except Exception:
+            _blf = {}
+
         # Per-question minimum-requirement THRESHOLD overrides (from the settings
         # modal / forecast.config.set). Fed into both the user-rule context and the
         # observe-mode score so a gate's floor is per-forecast, not a global constant.
@@ -1122,6 +1133,17 @@ def create_snapshot(
                         terminal_calibration_present=_terminal_calibration_present,
                         research_adequate=_research_adequate,
                         research_adequacy_score=_research_adequacy_score,
+                        panel_ran_post_harvest=_blf.get("panel_ran_post_harvest", False),
+                        belief_trajectory_ok=_blf.get("belief_trajectory_ok", True),
+                        belief_trajectory_offenders=_blf.get("belief_trajectory_offenders", ()),
+                        belief_trajectory_search_enabled=_blf.get("belief_trajectory_search_enabled", False),
+                        pool_shrinkage_present=_blf.get("pool_shrinkage_present", False),
+                        pool_shrinkage_valid=_blf.get("pool_shrinkage_valid", True),
+                        pool_non_calm=_blf.get("pool_non_calm", False),
+                        specialist_offerable=_blf.get("specialist_offerable", False),
+                        specialist_seat_present=_blf.get("specialist_seat_present", False),
+                        specialist_declined=_blf.get("specialist_declined", False),
+                        specialist_series=_blf.get("specialist_series"),
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
                     _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
@@ -1286,6 +1308,18 @@ def create_snapshot(
                 market_skip_reason=_g8_market_skip_reason,
                 linked_market_source=_g8_market_source,
                 thresholds=_qthresholds,
+                # BLF gate signals (inert unless the linked panel is post-harvest).
+                panel_ran_post_harvest=_blf.get("panel_ran_post_harvest", False),
+                belief_trajectory_ok=_blf.get("belief_trajectory_ok", True),
+                belief_trajectory_offenders=_blf.get("belief_trajectory_offenders", ()),
+                belief_trajectory_search_enabled=_blf.get("belief_trajectory_search_enabled", False),
+                pool_shrinkage_present=_blf.get("pool_shrinkage_present", False),
+                pool_shrinkage_valid=_blf.get("pool_shrinkage_valid", True),
+                pool_non_calm=_blf.get("pool_non_calm", False),
+                specialist_offerable=_blf.get("specialist_offerable", False),
+                specialist_seat_present=_blf.get("specialist_seat_present", False),
+                specialist_declined=_blf.get("specialist_declined", False),
+                specialist_series=_blf.get("specialist_series"),
             )
             # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that
             # is NOT a programmatic (autofix) path and has not disabled the pass via the

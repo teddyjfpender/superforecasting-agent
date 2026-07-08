@@ -247,6 +247,46 @@ class HookContext:
     research_adequate: bool = True
     research_adequacy_score: float | None = None
 
+    # ── BLF gate-wiring (belief trajectories / pool shrinkage / specialists) ──────
+    # RETROACTIVITY BACKBONE. panel_ran_post_harvest is True ONLY for a linked panel
+    # run recorded after the BLF gate lattice shipped (it carries the process-version
+    # marker forecasting.hooks.blf_signals.PANEL_PROCESS_VERSION). Every BLF rule
+    # gates its applies() on this, so a pre-harvest panel — one that predates the
+    # machinery it would be judged for — is NEVER retroactively judged. Defaults
+    # False: no marker ⇒ the BLF rules do not apply, so a bare/legacy context is inert.
+    panel_ran_post_harvest: bool = False
+
+    # A1 · per-panelist belief trajectories. belief_trajectory_ok is the passing state
+    # (True by default); belief_trajectory_offenders names the panelists carrying too
+    # few belief-revision steps (a search-enabled panelist needs >=2 unless a single
+    # step records its reason). belief_trajectory_search_enabled records whether the
+    # run was search-enabled (which is what makes the >=2 requirement bite).
+    belief_trajectory_ok: bool = True
+    belief_trajectory_offenders: tuple[str, ...] = ()
+    belief_trajectory_search_enabled: bool = False
+
+    # A3 · variance-adaptive cross-model pool shrinkage provenance. pool_shrinkage_present
+    # is whether the linked quorum run recorded the α + inputs; pool_shrinkage_valid
+    # whether that α reconstructs from the documented formula within tolerance (True by
+    # default so an absent provenance never false-fires the validator); pool_non_calm
+    # whether the panel disagreement exceeded the calm dead-zone (so a shrink toward the
+    # anchor was in play). Absent-on-non-calm is scoped to a market-linked question via
+    # has_linked_market, since anchorless absence is legitimate (nothing to shrink to).
+    pool_shrinkage_present: bool = False
+    pool_shrinkage_valid: bool = True
+    pool_non_calm: bool = False
+
+    # A5 · deterministic specialist seats. specialist_offerable is True when
+    # attach_specialists WOULD offer a runnable seat (a continuous/count class with a
+    # derivable numeric threshold); specialist_seat_present whether a model:* seat
+    # produced a forecast in the linked run; specialist_declined whether an offered seat
+    # honestly DECLINED (recorded), which passes. specialist_series names the series the
+    # seat would read, for the teaching remediation.
+    specialist_offerable: bool = False
+    specialist_seat_present: bool = False
+    specialist_declined: bool = False
+    specialist_series: str | None = None
+
     # domain / outcome type for user-rule applies_to filters
     domain: str | None = None
     outcome_type: str | None = None
@@ -255,6 +295,36 @@ class HookContext:
     # question.metadata['forecast_hooks']['thresholds']. Empty by default, so the
     # gates fall back to their legacy constants. Read via ``threshold(key)``.
     thresholds: dict[str, float] = field(default_factory=dict)
+
+    # ── thesis-remediation gates (anchor re-link + event-band honesty) ────────────
+    # anchor_refs_attached: the TRUE count of reference classes linked on THIS snapshot
+    # (never masked to the question count — that is the whole point). When a question has
+    # reference_class_count >= 1 but snapshot_reference_class_count == 0 the anchor exists
+    # yet is orphaned off the snapshot — a MECHANICAL defect (re-link, no research). This
+    # is the honest signal ``linked_reference_class_count`` deliberately masks on lint.
+    snapshot_reference_class_count: int = 0
+
+    # event_band_earned: a THESIS with members but no configured event (thesis_has_event
+    # False) surfaces the missing-event WARN; a thesis WITH an event whose member-interval
+    # coverage (thesis_event_interval_coverage, fraction of the weight-bearing binary
+    # members carrying their OWN interval) is below the threshold surfaces the unearned-
+    # band WARN. Defaults are the passing state (has an event / full coverage / no members).
+    thesis_has_event: bool = True
+    thesis_member_count: int = 0
+    thesis_event_interval_coverage: float | None = None
+
+    # health_not_probability: a thesis snapshot presenting a mean-index HEALTH value must
+    # label it index-not-probability UNLESS an event band exists (then P is the headline).
+    # thesis_health_present is whether health rides the payload; thesis_health_index_labeled
+    # whether the surface/payload carries the index label (default True = passing).
+    thesis_health_present: bool = False
+    thesis_health_index_labeled: bool = True
+
+    # thesis_correlation_transparency: n_eff over member_count. A ratio below the threshold
+    # is a co-directional cluster (one bet dressed as many) — an honest dashboard label,
+    # never a block. None (not a thesis / not computable) is the passing state.
+    thesis_n_eff: float | None = None
+    thesis_n_eff_ratio: float | None = None
 
     def threshold(self, key: str) -> float | None:
         """Resolve a per-question threshold override, or None if not set (the gate

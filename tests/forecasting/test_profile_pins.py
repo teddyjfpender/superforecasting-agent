@@ -47,6 +47,10 @@ STANDARD = {
     "research_adequate": _W,
     "readiness_floor": _W,
     "no_watched_sources": _W,
+    # BLF gates — WARN-first in standard (A5 is WARN forever).
+    "belief_trajectory_present": _W,
+    "pool_shrinkage_recorded": _W,
+    "specialist_seat_considered": _W,
 }
 
 # The P3 gates and their strict-profile severities (granularity NEVER blocks).
@@ -56,6 +60,10 @@ STRICT_P3 = {
     "crux_named": _E,
     "market_anchor_engaged": _E,
     "update_cadence_honored": _E,
+    # BLF: A1/A3 block in strict; A5 stays advisory (a recommendation, never a gate).
+    "belief_trajectory_present": _E,
+    "pool_shrinkage_recorded": _E,
+    "specialist_seat_considered": _W,
 }
 
 

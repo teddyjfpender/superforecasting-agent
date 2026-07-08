@@ -2485,6 +2485,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 ## `forecast reference-class`
 
 - **`forecast reference-class list`** — List reference classes
+- **`forecast reference-class relink`** — Re-attach a question's EXISTING reference classes to its current snapshot's refs (the orphaned-anchor fix; dry-run by default)
 - **`forecast reference-class status`** — Update reference class status
 
 ### `forecast reference-class list`
@@ -2492,6 +2493,13 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `id` |  |
+
+### `forecast reference-class relink`
+
+| argument | help |
+| --- | --- |
+| `--apply` | Stamp the existing class ids onto each orphaned current snapshot (default is a dry-run preview). |
+| `--json` | Emit machine-readable JSON |
 
 ### `forecast reference-class status`
 

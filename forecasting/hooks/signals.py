@@ -68,6 +68,78 @@ def quorum_signals_from_panel_run(run: Any) -> tuple[bool, int, int, bool]:
     return is_quorum, persp_count, quorum_models, quorum_judged
 
 
+def blf_signals_from_panel_run(panel_run: Any, question: Any) -> dict[str, Any]:
+    """Derive the BLF gate signals (belief trajectories / pool shrinkage / specialist
+    seats) from a persisted panel-run dict + its question. Shared by the commit path
+    (the run linked via panel_run_ref) and the lint path (the latest run) so both
+    compute them identically. Returns the passing/inert state when ``panel_run`` is
+    None or pre-harvest, so a bare/legacy context never fires a BLF rule."""
+    from forecasting.hooks.blf_signals import (
+        belief_trajectory_signals,
+        panel_ran_post_harvest,
+        pool_shrinkage_signals,
+        specialist_seat_signals,
+    )
+
+    out: dict[str, Any] = {
+        "panel_ran_post_harvest": False,
+        "belief_trajectory_ok": True,
+        "belief_trajectory_offenders": (),
+        "belief_trajectory_search_enabled": False,
+        "pool_shrinkage_present": False,
+        "pool_shrinkage_valid": True,
+        "pool_non_calm": False,
+        "specialist_offerable": False,
+        "specialist_seat_present": False,
+        "specialist_declined": False,
+        "specialist_series": None,
+    }
+    if not panel_ran_post_harvest(panel_run):
+        # Still compute specialist_offerable (a question property) so the desk can see
+        # it, but keep the rule inert via panel_ran_post_harvest=False.
+        out["specialist_offerable"], out["specialist_series"] = _specialist_offerable(question)
+        return out
+    out["panel_ran_post_harvest"] = True
+    ok, offenders, search = belief_trajectory_signals(panel_run)
+    out["belief_trajectory_ok"] = ok
+    out["belief_trajectory_offenders"] = offenders
+    out["belief_trajectory_search_enabled"] = search
+    present, valid, non_calm = pool_shrinkage_signals(panel_run)
+    out["pool_shrinkage_present"] = present
+    out["pool_shrinkage_valid"] = valid
+    out["pool_non_calm"] = non_calm
+    seat_present, declined = specialist_seat_signals(panel_run)
+    offerable, series = _specialist_offerable(question)
+    out["specialist_offerable"] = offerable
+    out["specialist_series"] = series
+    out["specialist_seat_present"] = seat_present
+    out["specialist_declined"] = declined
+    return out
+
+
+def _specialist_offerable(question: Any) -> tuple[bool, str | None]:
+    """Whether attach_specialists WOULD offer a runnable deterministic seat for this
+    question (a continuous/count class WITH a derivable numeric threshold), plus the
+    series slug the seat would read (for the teaching remediation). Pure question
+    inspection — no data plane, so it is safe on the read path."""
+    try:
+        from forecasting.specialists import derive_threshold, specialist_applies
+
+        if not specialist_applies(question):
+            return False, None
+        threshold, _op = derive_threshold(question)
+        if threshold is None:
+            return False, None
+        meta = getattr(question, "metadata", None) or {}
+        hint = meta.get("series") if isinstance(meta, dict) else None
+        series = None
+        if isinstance(hint, dict):
+            series = hint.get("symbol") or hint.get("provider")
+        return True, (str(series) if series else None)
+    except Exception:
+        return False, None
+
+
 def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", snapshot=None) -> HookContext:
     """Assemble a HookContext for an EXISTING current snapshot by reading the
     ledger's saturation signals (read-only). Used by ``forecast lint`` / the finish
@@ -181,6 +253,14 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     except Exception:
         _latest_run = None
     is_quorum, persp_count, quorum_models, quorum_judged = quorum_signals_from_panel_run(_latest_run)
+
+    # BLF gate signals (belief trajectories / pool shrinkage / specialist seats) from
+    # the latest panel run. panel_ran_post_harvest gates every BLF rule, so a pre-marker
+    # run (the whole current board) leaves them inert — the retroactivity guard.
+    try:
+        _blf = blf_signals_from_panel_run(_latest_run, question)
+    except Exception:
+        _blf = {}
 
     # research adequacy (VOI-directed research judge): the deterministic checks only,
     # over the CURRENT ledger state + this snapshot. Fail-open (defaults adequate).
@@ -407,6 +487,18 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         market_skip_reason=(meta.get("market_skip_reason") or None),
         linked_market_source=_market_source,
         thresholds=_qthr,
+        # BLF gate signals (inert unless the latest run is post-harvest).
+        panel_ran_post_harvest=_blf.get("panel_ran_post_harvest", False),
+        belief_trajectory_ok=_blf.get("belief_trajectory_ok", True),
+        belief_trajectory_offenders=_blf.get("belief_trajectory_offenders", ()),
+        belief_trajectory_search_enabled=_blf.get("belief_trajectory_search_enabled", False),
+        pool_shrinkage_present=_blf.get("pool_shrinkage_present", False),
+        pool_shrinkage_valid=_blf.get("pool_shrinkage_valid", True),
+        pool_non_calm=_blf.get("pool_non_calm", False),
+        specialist_offerable=_blf.get("specialist_offerable", False),
+        specialist_seat_present=_blf.get("specialist_seat_present", False),
+        specialist_declined=_blf.get("specialist_declined", False),
+        specialist_series=_blf.get("specialist_series"),
     )
 
 
@@ -500,6 +592,19 @@ def build_commit_context(
     market_skip_reason: str | None = None,
     linked_market_source: str | None = None,
     thresholds: dict[str, float] | None = None,
+    # BLF gate signals (default to the inert/passing state so a non-panel or
+    # pre-harvest commit never fires a BLF rule).
+    panel_ran_post_harvest: bool = False,
+    belief_trajectory_ok: bool = True,
+    belief_trajectory_offenders: tuple[str, ...] = (),
+    belief_trajectory_search_enabled: bool = False,
+    pool_shrinkage_present: bool = False,
+    pool_shrinkage_valid: bool = True,
+    pool_non_calm: bool = False,
+    specialist_offerable: bool = False,
+    specialist_seat_present: bool = False,
+    specialist_declined: bool = False,
+    specialist_series: str | None = None,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
     scope. Cheap: no ledger IO (the caller passes precomputed signals)."""
@@ -581,4 +686,15 @@ def build_commit_context(
         market_skip_reason=(market_skip_reason or None),
         linked_market_source=(linked_market_source or None),
         thresholds=dict(thresholds or {}),
+        panel_ran_post_harvest=panel_ran_post_harvest,
+        belief_trajectory_ok=belief_trajectory_ok,
+        belief_trajectory_offenders=tuple(belief_trajectory_offenders or ()),
+        belief_trajectory_search_enabled=belief_trajectory_search_enabled,
+        pool_shrinkage_present=pool_shrinkage_present,
+        pool_shrinkage_valid=pool_shrinkage_valid,
+        pool_non_calm=pool_non_calm,
+        specialist_offerable=specialist_offerable,
+        specialist_seat_present=specialist_seat_present,
+        specialist_declined=specialist_declined,
+        specialist_series=(specialist_series or None),
     )

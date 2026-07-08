@@ -847,6 +847,120 @@ def _check_candidate_intervals_present(ctx: HookContext):
     return False, msg, {"coverage": cov}
 
 
+# ── BLF · belief trajectories present (A1) ────────────────────────────────────
+# A panel-backed live commit whose panel ran AFTER the BLF gates shipped must carry
+# per-panelist belief trajectories (the sequential revision that IS BLF's result vs
+# its terminal-synthesis baseline). A search-enabled panelist owes >=2 steps; a
+# single step is allowed WITH a recorded reason. RETROACTIVITY: applies ONLY to a
+# post-harvest panel run (panel_ran_post_harvest) — a panel that predates the
+# machinery is never judged for it, so this fires ~0 on the current board.
+def _applies_belief_trajectory(ctx: HookContext) -> bool:
+    return _modeled(ctx) and ctx.panel_ran_post_harvest
+
+
+def _check_belief_trajectory_present(ctx: HookContext):
+    if ctx.belief_trajectory_ok:
+        return _OK
+    offenders = ", ".join(ctx.belief_trajectory_offenders) or "the panelists"
+    need = (
+        "at least two belief-revision steps (or a single step WITH its reason)"
+        if ctx.belief_trajectory_search_enabled
+        else "at least one recorded belief step"
+    )
+    msg = (
+        f"this panel run recorded no per-panelist belief trajectory for: {offenders}. "
+        f"Each panelist must emit {need} on panel_estimates.metadata.belief_trajectory "
+        "— the ordered {step, probability, evidence_for/against, moved_by} revisions "
+        "where moved_by names what moved the number. Sequential revision is BLF's "
+        "result over terminal synthesis; re-run the panel so the trajectory is captured."
+    )
+    return False, msg, {"offenders": list(ctx.belief_trajectory_offenders)}
+
+
+def _rem_belief_trajectory(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "agentic", "run_panel",
+        "Re-run the panel so each panelist emits its ordered belief_trajectory (the "
+        "moved_by revisions), >=2 steps for a search-enabled seat.",
+        target_stage="model",
+    )
+
+
+# ── BLF · pool-shrinkage provenance recorded + valid (A3) ─────────────────────
+# A post-harvest quorum-pooled commit must carry the variance-adaptive pool-shrinkage
+# provenance (α + inputs) so every pooled number's shrink toward the outside-view
+# anchor is reconstructable. A present-but-garbage α (does not reconstruct from the
+# documented formula) is the sharp fault; an ABSENCE on a non-calm MARKET-linked panel
+# — where a shrink should have been recorded — is the softer nag (anchorless absence is
+# legitimate: nothing to shrink toward). RETROACTIVITY: post-harvest quorum runs only.
+def _applies_pool_shrinkage(ctx: HookContext) -> bool:
+    return _modeled(ctx) and ctx.is_quorum and ctx.panel_ran_post_harvest
+
+
+def _check_pool_shrinkage_recorded(ctx: HookContext):
+    if ctx.pool_shrinkage_present and not ctx.pool_shrinkage_valid:
+        msg = (
+            "this quorum's pool-shrinkage provenance is invalid: the recorded α does NOT "
+            "reconstruct from the documented A3 formula "
+            "(α = clamp01(max(floor, 1 − c·max(0, s² − s²_calm)))). A fabricated or drifted "
+            "provenance is worse than none — re-run the quorum so shrink_pool_toward_anchor "
+            "stamps the real α + inputs (var_logit, anchor, floor, c, calm_var)."
+        )
+        return False, msg, {"fault": "garbage"}
+    if (not ctx.pool_shrinkage_present) and ctx.pool_non_calm and ctx.has_linked_market:
+        msg = (
+            "this market-linked quorum disagreed past the calm dead-zone but recorded NO "
+            "pool-shrinkage provenance: the variance-adaptive shrink toward the market anchor "
+            "left no α + inputs on the pool. Re-run the quorum through run_quorum so "
+            "QuorumResult.pool_shrinkage is stamped, or record why the shrink was skipped."
+        )
+        return False, msg, {"fault": "absent"}
+    return _OK
+
+
+def _rem_pool_shrinkage(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "agentic", "run_quorum",
+        "Re-run the quorum so the variance-adaptive cross-model pool shrinkage records "
+        "its α + inputs (QuorumResult.pool_shrinkage).",
+        target_stage="model",
+    )
+
+
+# ── BLF · specialist seat considered (A5, WARN-only) ──────────────────────────
+# A continuous/count/temperature live commit where attach_specialists WOULD offer a
+# runnable deterministic seat (a derivable threshold) but the post-harvest panel shows
+# NO specialist seat AND none honestly declined is nudged (WARN forever — a specialist
+# on the wrong question is worse than none, so this never hard-gates). A recorded
+# SpecialistDeclined passes. RETROACTIVITY: post-harvest panel runs only.
+def _applies_specialist_seat(ctx: HookContext) -> bool:
+    return _modeled(ctx) and ctx.panel_ran_post_harvest and ctx.specialist_offerable
+
+
+def _check_specialist_seat_considered(ctx: HookContext):
+    if ctx.specialist_seat_present or ctx.specialist_declined:
+        return _OK
+    series = ctx.specialist_series or "the question's series"
+    msg = (
+        "this continuous/count forecast could seat a deterministic specialist "
+        "(climatology KNN / seasonal-naive over "
+        f"{series}) but the panel ran without one and none declined. Attach the "
+        "specialist seats (attach_specialists) so the honest outside view — the historical "
+        "same-season distribution — votes alongside the LLM panel, or let the seat DECLINE "
+        "on the record if its series is unreachable."
+    )
+    return False, msg, {"series": ctx.specialist_series}
+
+
+def _rem_specialist_seat(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "agentic", "run_quorum",
+        "Re-run the quorum with attach_specialists so the deterministic climatology / "
+        "seasonal-naive seats are offered (they decline honestly if their series is missing).",
+        target_stage="model",
+    )
+
+
 # Ordered to match the legacy gate evaluation order (so the first blocking
 # failure yields the same message the inline gates raised first), then the two
 # additive rules.
@@ -943,6 +1057,18 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_readiness_floor, _live),
     SimpleRule("no_watched_sources", Category.DECISION, Severity.WARN, 8.0,
                _check_no_watched_sources, _live, _rem_collect),
+    # BLF A1 — per-panelist belief trajectories on a post-harvest panel run. WARN
+    # standard, ERROR strict, OFF exploratory; applies only to NEW (post-marker) runs.
+    SimpleRule("belief_trajectory_present", Category.REASONING, Severity.WARN, 8.0,
+               _check_belief_trajectory_present, _applies_belief_trajectory, _rem_belief_trajectory),
+    # BLF A3 — variance-adaptive pool-shrinkage provenance recorded + valid. WARN
+    # standard, ERROR strict; garbage α is the sharp fault, absence-on-non-calm the nag.
+    SimpleRule("pool_shrinkage_recorded", Category.OUTPUT, Severity.WARN, 10.0,
+               _check_pool_shrinkage_recorded, _applies_pool_shrinkage, _rem_pool_shrinkage),
+    # BLF A5 — deterministic specialist seat considered on a continuous/count panel.
+    # WARN FOREVER (a specialist on the wrong class is worse than none); never blocks.
+    SimpleRule("specialist_seat_considered", Category.REASONING, Severity.WARN, 6.0,
+               _check_specialist_seat_considered, _applies_specialist_seat, _rem_specialist_seat),
 )
 
 BUILTIN_RULE_IDS: tuple[str, ...] = tuple(r.id for r in BUILTIN_RULES)
@@ -984,6 +1110,9 @@ RULE_DOCS: dict[str, str] = {
     "research_adequate": "Research must cover the levers that would move the forecast (reference class, evidence floor, independent + disconfirming + fresh evidence, watched triggers).",
     "readiness_floor": "A live forecast's machine-readiness (Desk RDY) score must clear the floor so the autonomous desk has the inputs to keep it alive.",
     "no_watched_sources": "A live forecast must have at least one active watched source the desk can refresh.",
+    "belief_trajectory_present": "BLF A1: a post-harvest panel-backed commit must carry per-panelist belief trajectories (>=2 revision steps for a search-enabled seat; a single step needs a reason). Applies only to NEW panel runs — never retroactive.",
+    "pool_shrinkage_recorded": "BLF A3: a post-harvest quorum-pooled commit must carry valid variance-adaptive pool-shrinkage provenance (α + inputs reconstructing the documented formula); a garbage α is the sharp fault, an absence on a non-calm market-linked panel the softer nag.",
+    "specialist_seat_considered": "BLF A5: a post-harvest continuous/count panel where a deterministic specialist seat is offerable (climatology KNN / seasonal-naive) should seat one or record its decline. WARN forever — never blocks.",
 }
 
 _RULE_BY_ID = {r.id: r for r in BUILTIN_RULES}

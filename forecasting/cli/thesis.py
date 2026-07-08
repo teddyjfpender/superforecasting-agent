@@ -105,6 +105,15 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
         "--clear", action="store_true", help="remove the event spec (revert to the mean-index headline)",
     )
     thesis_event.set_defaults(_forecast_handler=_cmd_thesis_set_event)
+    thesis_member_iv = thesis_sub.add_parser(
+        "member-intervals",
+        help="Derive + stamp per-member probability intervals for a thesis's competitive binary members so its event band earns its width (dry-run by default)",
+    )
+    thesis_member_iv.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_member_iv.add_argument("--weight-floor", type=float, default=1.5, help="Only members with weight >= this are backfilled (default 1.5)")
+    thesis_member_iv.add_argument("--apply", action="store_true", help="Stamp the derived intervals onto each competitive member's snapshot (default is a dry-run preview).")
+    thesis_member_iv.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    thesis_member_iv.set_defaults(_forecast_handler=_cmd_thesis_member_intervals)
     thesis_show = thesis_sub.add_parser("show", help="Show thesis health + per-member contributions (no commit)")
     thesis_show.add_argument("thesis", help="row number, id, or search words for the thesis")
     thesis_show.add_argument("--rho", type=float, default=0.4)
@@ -339,6 +348,35 @@ def _cmd_thesis_aggregate(args: argparse.Namespace) -> None:
     print(f"coverage: {agg.coverage:.0%}  n_eff: {agg.n_eff:.1f}  rho: {agg.rho:.2f}")
     if result.get("snapshot_id"):
         print(f"snapshot: {result['snapshot_id']}")
+
+
+def _cmd_thesis_member_intervals(args: argparse.Namespace) -> None:
+    import json as _json
+
+    ledger = _ledger(args)
+    thesis_id = _resolve_question_id(ledger, args.thesis)
+    apply = bool(getattr(args, "apply", False))
+    if apply:
+        from forecasting.ledger import allow_ledger_writes
+
+        with allow_ledger_writes(reason="forecast thesis member-intervals --apply"):
+            result = ledger.backfill_thesis_member_intervals(thesis_id, weight_floor=args.weight_floor, apply=True)
+    else:
+        result = ledger.backfill_thesis_member_intervals(thesis_id, weight_floor=args.weight_floor, apply=False)
+    if getattr(args, "json", False):
+        print(_json.dumps(result, indent=2, sort_keys=True))
+        return
+    mode = "APPLIED" if apply else "DRY-RUN (pass --apply to stamp)"
+    print(f"thesis member-interval backfill {mode}")
+    print(
+        f"  {result['competitive_members']} competitive member(s) (weight >= {result['weight_floor']}); "
+        f"panel-spread={result['by_source'].get('panel', 0)}, default-width={result['by_source'].get('default', 0)}"
+    )
+    if apply:
+        print(f"  stamped {result['applied']} member snapshot(s) — re-aggregate the thesis to earn the band")
+    for p in result["proposals"]:
+        lo, hi = p["p_ci90"]
+        print(f"    [{p['source']:<7}] w={p['weight']:.1f} p={p['committed_p']:.2f} ci90=[{lo:.2f},{hi:.2f}]  {(p['title'] or '')[:44]}")
 
 
 def _cmd_thesis_show(args: argparse.Namespace) -> None:

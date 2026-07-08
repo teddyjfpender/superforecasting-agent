@@ -58,6 +58,10 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "research_adequate": _O,
         "readiness_floor": _O,
         "no_watched_sources": _O,
+        # BLF gates — all OFF for scratch work.
+        "belief_trajectory_present": _O,
+        "pool_shrinkage_recorded": _O,
+        "specialist_seat_considered": _O,
     },
     # == the pre-hooks enforcement (tool require_* defaults + Phase 2 style gate),
     # which also equals the builtin default severities. Adopting it changes nothing.
@@ -125,6 +129,14 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "research_adequate": _W,
         "readiness_floor": _W,
         "no_watched_sources": _W,
+        # BLF A1/A3 — WARN-first in standard (the house doctrine: land WARN, promote to
+        # ERROR in strict / after a review cycle). They fire ~0 today (panels predate the
+        # marker), so the WARN is the honest observe tier while the process backfills.
+        "belief_trajectory_present": _W,
+        "pool_shrinkage_recorded": _W,
+        # BLF A5 — WARN FOREVER (a specialist on the wrong question class is worse than
+        # none, so this never hard-gates — same doctrine as granularity_disciplined).
+        "specialist_seat_considered": _W,
     },
     # Everything blocking — for high-stakes desks that want full saturation.
     "strict": {
@@ -166,6 +178,12 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "research_adequate": _E,
         "readiness_floor": _E,
         "no_watched_sources": _E,
+        # BLF A1/A3 block in strict (a high-stakes desk demands the sequential-revision
+        # process + reconstructable shrink provenance). A5 stays advisory — a specialist
+        # seat is a recommendation, never a hard requirement, even here.
+        "belief_trajectory_present": _E,
+        "pool_shrinkage_recorded": _E,
+        "specialist_seat_considered": _W,
     },
 }
 

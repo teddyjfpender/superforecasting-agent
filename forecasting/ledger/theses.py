@@ -599,6 +599,18 @@ def _belief_record(
         "probability": None,
         "dist": None,
     }
+    # Forward a binary member's OWN published probability interval into the belief
+    # record so the event band earns its width from the member (simulate_thesis_
+    # event_band reads p_ci90 / p_sd). Stored out-of-band on the snapshot metadata
+    # by the member-interval backfill; absent => the band falls to its documented
+    # default width, exactly as before.
+    _smeta = (snapshot.metadata if snapshot and isinstance(snapshot.metadata, dict) else {}) or {}
+    _ci = _smeta.get("p_ci90")
+    if isinstance(_ci, (list, tuple)) and len(_ci) == 2:
+        record["p_ci90"] = list(_ci)
+    _sd = _smeta.get("p_sd")
+    if isinstance(_sd, (int, float)) and not isinstance(_sd, bool):
+        record["p_sd"] = float(_sd)
     if belief is None:
         record["kind"] = "binary"  # unusable -> flagged missing downstream
     elif outcome_type == "binary" and isinstance(belief, (int, float)):
@@ -1076,6 +1088,86 @@ def clear_thesis_event(ledger, thesis_id: str) -> bool:
         with ledger._connect() as conn:
             conn.execute("UPDATE forecast_questions SET metadata = ? WHERE id = ?", (json_dumps(meta), thesis_id))
     return had
+
+
+def backfill_thesis_member_intervals(
+    ledger,
+    thesis_id: str,
+    *,
+    weight_floor: float = 1.5,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Derive + (optionally) stamp per-member probability intervals for a thesis's
+    COMPETITIVE binary members, so its event band earns its width from the members
+    instead of the flat sigma=0.35 default.
+
+    A member is competitive when its ``weight >= weight_floor``. For each, the
+    interval is derived in the shipped candidate-interval precedence (panel spread
+    of the per-model component probabilities > evidence-thinness default) and
+    stamped out-of-band on the member's current snapshot metadata (``p_ci90`` +
+    provenance). Read-only unless ``apply``. Distribution members are skipped (a
+    count event is defined over binary members only)."""
+    from forecasting import thesis as thesis_math
+
+    thesis = ledger.get_question(thesis_id)
+    if not ledger.is_thesis(thesis):
+        raise ValidationError("backfill_thesis_member_intervals requires a thesis question")
+    members = ledger.list_thesis_members(thesis_id)
+    proposals: list[dict[str, Any]] = []
+    by_source = {"panel": 0, "default": 0}
+    for m in members:
+        if float(m.get("weight", 1.0)) < weight_floor:
+            continue
+        mq = m["member_question_id"]
+        try:
+            q = ledger.get_question(mq)
+        except Exception:
+            continue
+        if q.outcome_space.type != "binary":
+            continue  # a count event is over binary members only
+        snap = ledger.get_current_snapshot(mq)
+        if snap is None or not isinstance(snap.probability_or_distribution, (int, float)):
+            continue
+        ec = snap.ensemble_components if isinstance(snap.ensemble_components, dict) else {}
+        comps = ec.get("components") if isinstance(ec, dict) else None
+        comp_probs = [
+            c.get("probability") for c in (comps or [])
+            if isinstance(c, dict) and isinstance(c.get("probability"), (int, float)) and not isinstance(c.get("probability"), bool)
+        ]
+        try:
+            ev_count = len(ledger.list_evidence(mq))
+        except Exception:
+            ev_count = 0
+        interval, provenance = thesis_math.derive_member_probability_interval(
+            snap.probability_or_distribution, component_probs=comp_probs, evidence_count=ev_count,
+        )
+        by_source[provenance["source"]] = by_source.get(provenance["source"], 0) + 1
+        proposals.append({
+            "member_question_id": mq,
+            "title": q.title,
+            "snapshot_id": snap.forecast_id,
+            "weight": float(m.get("weight", 1.0)),
+            "committed_p": float(snap.probability_or_distribution),
+            "p_ci90": interval["p_ci90"],
+            "source": provenance["source"],
+            "provenance": provenance,
+        })
+    applied = 0
+    if apply:
+        for p in proposals:
+            ledger.annotate_snapshot(p["snapshot_id"], {
+                "p_ci90": p["p_ci90"],
+                "p_member_interval_provenance": p["provenance"],
+            })
+            applied += 1
+    return {
+        "thesis_id": thesis_id,
+        "weight_floor": weight_floor,
+        "competitive_members": len(proposals),
+        "by_source": by_source,
+        "applied": applied,
+        "proposals": proposals,
+    }
 
 
 def _thesis_event_spec(ledger, thesis: Any) -> dict[str, Any] | None:

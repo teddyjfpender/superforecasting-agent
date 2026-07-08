@@ -56,6 +56,7 @@ __all__ = [
     "simulate_thesis_event",
     "ThesisEventBand",
     "simulate_thesis_event_band",
+    "derive_member_probability_interval",
 ]
 
 # Default staleness horizon when a member omits ``max_age_days``.
@@ -1186,6 +1187,62 @@ _EVENT_BAND_OUTER_PYTHON = 48
 _EVENT_BAND_INNER_PYTHON = 600
 # Band quantiles reported for the event probability.
 _BAND_QUANTILES = (0.10, 0.50, 0.90)
+
+# ── Per-member probability interval (the EARNED-band source) ──────────────────
+# Minimum per-model component samples for a trustworthy empirical spread — below
+# this the "spread" is noise, so we fall to the documented default (mirrors the
+# candidate-interval MIN_SPREAD_SAMPLES precedent).
+_MEMBER_SPREAD_MIN_SAMPLES = 3
+# Evidence-thinness DEFAULT half-width in LOGIT units for a point-only member:
+# base / sqrt(evidence), floored + capped. A single-source member gets the widest
+# default; never a fabricated sharpness. (The event band's own point-only fallback
+# is a flat sigma=0.35; this default is evidence-tied and carries provenance.)
+_MEMBER_DEFAULT_BASE_LOGIT = 0.6
+_MEMBER_DEFAULT_MIN_LOGIT = 0.2
+_MEMBER_DEFAULT_MAX_LOGIT = 1.0
+
+
+def derive_member_probability_interval(
+    committed_p: Any,
+    *,
+    component_probs: Sequence[Any] | None = None,
+    evidence_count: int = 0,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A binary member's own 90% probability interval + provenance, in the shipped
+    candidate-interval PRECEDENCE (panel spread > evidence-thinness default).
+
+    Returns ``({"p_ci90": [lo, hi]}, {"source", "params"})``. ``p_ci90`` is exactly
+    what :func:`simulate_thesis_event_band` consumes to widen/tighten a member's
+    parameter draw. When the ensemble priced the member several ways the band is
+    EARNED — the empirical p05..p95 spread of the per-model component probabilities.
+    Otherwise it is a documented evidence-thinness default centred on the committed
+    probability (wider as evidence thins). Never a fabricated tightness.
+    """
+    cp = _coerce_float(committed_p)
+    p = _clamp(cp if cp is not None else 0.5, _LOGIT_EPS, 1.0 - _LOGIT_EPS)
+    samples = sorted(
+        x for x in (_coerce_float(v) for v in (component_probs or []))
+        if x is not None and 0.0 <= x <= 1.0
+    )
+    # ── source (a): panel / ensemble spread (the earned band) ─────────────────
+    if len(samples) >= _MEMBER_SPREAD_MIN_SAMPLES:
+        lo = _clamp(_quantile(samples, 0.05), _LOGIT_EPS, 1.0 - _LOGIT_EPS)
+        hi = _clamp(_quantile(samples, 0.95), _LOGIT_EPS, 1.0 - _LOGIT_EPS)
+        if hi > lo:
+            return (
+                {"p_ci90": [round(lo, 6), round(hi, 6)]},
+                {"source": "panel", "params": {"n_components": len(samples), "method": "empirical_spread_p05_p95"}},
+            )
+    # ── source (c): evidence-thinness default (logit half-width around p) ─────
+    n = max(int(evidence_count or 0), 1)
+    hw = _clamp(_MEMBER_DEFAULT_BASE_LOGIT / math.sqrt(n), _MEMBER_DEFAULT_MIN_LOGIT, _MEMBER_DEFAULT_MAX_LOGIT)
+    lo = inv_logit(logit(p) - _Z90 * hw)
+    hi = inv_logit(logit(p) + _Z90 * hw)
+    return (
+        {"p_ci90": [round(lo, 6), round(hi, 6)]},
+        {"source": "default", "params": {"half_width_logit": round(hw, 4), "evidence_count": int(evidence_count or 0),
+                                          "base_logit": _MEMBER_DEFAULT_BASE_LOGIT}},
+    )
 
 
 @dataclass

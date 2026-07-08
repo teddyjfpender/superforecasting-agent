@@ -2467,6 +2467,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `belief` | `string? | null` |
 | `confidence_high` | `number? | null` |
 | `confidence_low` | `number? | null` |
 | `crux` | `string? | null` |
