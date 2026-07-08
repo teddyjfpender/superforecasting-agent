@@ -654,6 +654,7 @@ const StatusRulePane = memo(function StatusRulePane({
       <HomeStatusBar
         agents={agents}
         agentsGated={globalModal}
+        busy={ui.busy}
         cols={composer.cols}
         cwdLabel={status.cwdLabel}
         deskStatus={ui.forecastDeskStatus}
@@ -948,6 +949,7 @@ export const AppLayout = memo(function AppLayout({
         <HomeStatusBar
           agents={agentsActive}
           agentsGated={globalModal}
+          busy={ui.busy}
           cols={Math.max(20, heroCols - 2)}
           cwdLabel={status.cwdLabel}
           deskStatus={ui.forecastDeskStatus}

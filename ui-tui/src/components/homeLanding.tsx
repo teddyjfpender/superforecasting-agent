@@ -6,6 +6,7 @@ import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import type { Theme } from '../theme.js'
 
 import { modelLabel } from './appChrome.js'
+import { LiveStatus } from './liveStatus.js'
 
 // ── Home landing chrome ───────────────────────────────────────────────────────
 // The two small, self-contained pieces the redesigned Home column pins to its
@@ -149,6 +150,10 @@ interface HomeStatusBarProps {
   // click goes inert like every other interactive element.
   agentsGated?: boolean
   agentsShortcut?: string
+  // While a turn is active the leading segment becomes the live heartbeat spinner
+  // + derived running status (verb · elapsed · turn tokens); idle → the plain
+  // status string, byte-identical to the pre-heartbeat bar.
+  busy?: boolean
   cols: number
   // The far-right dim path (kept in the corner so the slim row never feels empty).
   cwdLabel: string
@@ -167,6 +172,7 @@ export function HomeStatusBar({
   agents,
   agentsGated = false,
   agentsShortcut = AGENTS_CHIP_SHORTCUT,
+  busy = false,
   cols,
   cwdLabel,
   deskStatus,
@@ -189,8 +195,7 @@ export function HomeStatusBar({
   // to the pre-chip bar.
   const inner = (
     <Text wrap="truncate-end">
-      <Text color={t.color.border}>{'─ '}</Text>
-      <Text color={statusColor}>{status}</Text>
+      <LiveStatus busy={busy} status={status} statusColor={statusColor} t={t} />
       <Text color={t.color.muted}>{' · '}</Text>
       <Text color={reviews > 0 ? t.color.accent : t.color.muted}>{reviews} to review</Text>
       <Text color={t.color.muted}>{' · '}</Text>
