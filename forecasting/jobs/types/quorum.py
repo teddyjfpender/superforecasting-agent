@@ -499,6 +499,32 @@ def extract_market_anchor(ledger: Any, question: Any, snapshot: Any) -> float | 
     return None
 
 
+def extract_outside_view_prior(ledger: Any, question: Any) -> float | None:
+    """The recorded outside-view PRIOR used as the A3 shrink anchor when a question
+    carries NO live market.
+
+    BLF A3's anchor is the market price where linked, ELSE this recorded prior — so a
+    contested NON-market panel still shrinks toward the outside view rather than
+    running free. Pulls the first ``base_rate`` baseline comparison (a reference-class
+    / status-quo rate the desk recorded) and returns its probability in ``(0, 1)``;
+    ``None`` when the question carries no such prior, so A3 stays a no-op there.
+    """
+
+    try:
+        for baseline in ledger.list_baseline_comparisons(question.id):
+            if str(baseline.get("baseline_type") or "").lower() != "base_rate":
+                continue
+            raw = ledger._baseline_probability_value(baseline)
+            if raw is None:
+                continue
+            prob = float(raw)
+            if 0.0 < prob < 1.0:
+                return prob
+    except Exception:  # noqa: BLE001 — best-effort; no prior on any read failure
+        return None
+    return None
+
+
 # ── the QUORUM type: one multi-model Delphi run per job ───────────────────────
 
 
@@ -637,6 +663,35 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         evidence_cutoff=evidence_cutoff,
     )
 
+    # DETERMINISTIC SPECIALISTS (BLF A5). For a CONTINUOUS question with a derivable
+    # numeric threshold, register climatology-KNN / seasonal-naive / living-model
+    # panelists under stable ``model:*`` ids and wrap the runner so those seats
+    # dispatch to deterministic estimators. It ADDS seats; the S7.5 track-record
+    # weighting (threaded below) weighs their votes empirically. A strict no-op for
+    # binary/categorical questions — every current quorum question — so the LLM-only
+    # panel stays byte-identical. Any seat whose series is unreachable DECLINES
+    # (recorded as a labeled, excluded panelist). Fail-open: any wiring error
+    # degrades to the LLM-only panel and never blocks the run.
+    try:
+        from forecasting.specialists import attach_specialists, specialist_seats_for
+
+        if specialist_seats_for(question):
+            as_of_date = None
+            if evidence_cutoff:
+                try:
+                    as_of_date = datetime.fromisoformat(
+                        str(evidence_cutoff).replace("Z", "")
+                    ).date()
+                except ValueError:
+                    as_of_date = None
+            before = len(models)
+            models, runner = attach_specialists(models, runner, question, as_of=as_of_date)
+            added = [m for m in models[before:] if m.startswith("model:")]
+            if added:
+                emit("specialists", "registered deterministic specialists: " + ", ".join(added))
+    except Exception as exc:  # noqa: BLE001 — specialists are additive; never block the panel
+        emit("specialists", f"skipped (non-fatal): {type(exc).__name__}: {exc}")
+
     def on_progress(stage: str, detail: str) -> None:
         emit(stage, detail)
 
@@ -730,6 +785,20 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
                 f"(deviation discipline >{market_anchor_threshold:.0f}pp needs justification)",
             )
 
+    # BLF A3 anchor fallback: with no live market, the variance-adaptive pool shrink
+    # anchors on the recorded outside-view prior (a base-rate baseline) instead, so a
+    # contested non-market panel still leans on the outside view. No prior → None → A3
+    # is a no-op, byte-identical to before.
+    outside_view_prior: float | None = None
+    if market_anchor is None:
+        outside_view_prior = extract_outside_view_prior(ledger, question)
+        if outside_view_prior is not None:
+            emit(
+                "outside_view_prior",
+                f"A3 shrink anchor {outside_view_prior:.3f} "
+                "(recorded base rate; no live market)",
+            )
+
     result = run_quorum(
         question_title=question.title,
         resolution_criteria=question.resolution_criteria,
@@ -750,6 +819,7 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         model_weights=model_weights or None,
         market_anchor=market_anchor,
         market_anchor_threshold_pp=market_anchor_threshold,
+        outside_view_prior=outside_view_prior,
         trials=trials,
     )
 

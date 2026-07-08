@@ -355,3 +355,41 @@ def test_execute_job_pulls_verdict_toward_market_anchor(home, tmp_path, monkeypa
     panel = ledger.get_panel_run(job["panel_run_id"])
     anchor = panel["spread_summary"]["market_anchor"]
     assert anchor["pull_applied"] is True and anchor["market_price"] == 0.20
+
+
+def test_execute_job_shrinks_contested_pool_toward_recorded_prior(home, tmp_path, monkeypatch):
+    # BLF A3: with NO live market, a contested non-market panel shrinks toward the
+    # recorded outside-view prior (a base_rate baseline). The committed number lands
+    # measurably closer to that prior than the bare pool would.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = ledger.create_question(
+        title="Will the startup ship its v1 by Q4 2027?",
+        resolution_criteria="Resolves YES if a v1 GA release ships before 2028-01-01.",
+        impact="high",
+    )
+    ledger.add_baseline_comparison(
+        question_id=q.id,
+        source="reference_class:seed_stage_v1",
+        baseline_type="base_rate",
+        probability_or_distribution=0.20,
+    )
+    # A contested panel well above the prior; no market anchor is available.
+    table = {"a/m1": 0.90, "b/m2": 0.60}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _stub_runner_factory(table))
+    monkeypatch.setattr(qj, "extract_market_anchor", lambda *a, **k: None)
+
+    spec = {"question_id": q.id, "db": db, "models": list(table), "trim": 0}
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+    assert job["status"] == "done", job.get("error")
+
+    result = job["result"]
+    assert result["market_price"] is None  # no market — the prior is the anchor
+    ps = result["pool_shrinkage"]
+    assert ps is not None and ps["anchor_source"] == "outside_view_prior"
+    assert ps["anchor"] == 0.20 and ps["shrunk"] is True
+    pre = ps["pre_shrink_pool"]
+    assert abs(result["final_probability"] - 0.20) < abs(pre - 0.20)
+    # The desk saw the anchor announced.
+    assert any(p["stage"] == "outside_view_prior" for p in job["progress"])

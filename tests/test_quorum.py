@@ -8,6 +8,9 @@ import pytest
 
 from forecasting.models import ValidationError
 from forecasting.quorum import (
+    _POOL_SHRINK_C,
+    _POOL_SHRINK_CALM_VAR,
+    _POOL_SHRINK_FLOOR,
     QUORUM_PRESETS,
     _split_provider_model,
     apply_market_anchor_discipline,
@@ -24,6 +27,7 @@ from forecasting.quorum import (
     resolve_models,
     resolve_trial_count,
     run_quorum,
+    shrink_pool_toward_anchor,
     validate_panel_models,
 )
 
@@ -1521,3 +1525,195 @@ def test_cap_trials_by_calls_bounds_to_budget():
         preset="frontier", delphi_rounds=0, samples=3, trials=5, max_calls=1
     )
     assert k3 == 1
+
+
+# ── BLF A3 — variance-adaptive cross-model pool shrinkage ─────────────────────
+#
+# A3 shrinks the DEFAULT cross-model pool (the aggregate AFTER A2's per-panelist
+# trial pooling) toward the outside-view anchor as a continuous function of
+# CROSS-PANELIST disagreement: the noisier the panel, the harder it leans on the
+# anchor. It mirrors A2's James–Stein family (α=max(f,1−c·s²)) one layer up — one
+# shrinkage philosophy at both layers — with a calm dead-zone so a calm panel (and
+# an anchorless question) is a STRICT no-op, which is the default-ON safety case.
+
+
+def test_shrink_pool_toward_anchor_helper_noops_and_engages():
+    # The pure helper: no anchor → strict no-op; calm variance → strict no-op;
+    # noisy variance → shrink toward the anchor with α<1, full provenance recorded.
+    from forecasting.bayes_toolkit import inv_logit, logit
+
+    noop = shrink_pool_toward_anchor(0.70, anchor=None, var_logit=5.0)
+    assert noop["probability"] == 0.70 and noop["alpha"] == 1.0 and noop["shrunk"] is False
+
+    calm = shrink_pool_toward_anchor(0.70, anchor=0.20, var_logit=_POOL_SHRINK_CALM_VAR)
+    assert calm["probability"] == 0.70 and calm["alpha"] == 1.0 and calm["shrunk"] is False
+
+    s2 = _POOL_SHRINK_CALM_VAR + 1.0
+    noisy = shrink_pool_toward_anchor(0.70, anchor=0.20, var_logit=s2)
+    expect_alpha = max(_POOL_SHRINK_FLOOR, 1.0 - _POOL_SHRINK_C * (s2 - _POOL_SHRINK_CALM_VAR))
+    assert abs(noisy["alpha"] - expect_alpha) < 1e-12 and noisy["shrunk"] is True
+    expect_p = inv_logit(expect_alpha * logit(0.70) + (1.0 - expect_alpha) * logit(0.20))
+    assert abs(noisy["probability"] - expect_p) < 1e-12
+    assert 0.20 < noisy["probability"] < 0.70  # strictly between anchor and pool
+
+
+def test_shrink_pool_is_continuous_at_the_calm_edge():
+    # NO CLIFF: just below the calm-band edge is a strict no-op; nudging just above
+    # engages but moves the pool by an infinitesimal amount, not a jump.
+    pool, anchor = 0.70, 0.20
+    below = shrink_pool_toward_anchor(pool, anchor=anchor, var_logit=_POOL_SHRINK_CALM_VAR - 1e-9)
+    at = shrink_pool_toward_anchor(pool, anchor=anchor, var_logit=_POOL_SHRINK_CALM_VAR)
+    above = shrink_pool_toward_anchor(pool, anchor=anchor, var_logit=_POOL_SHRINK_CALM_VAR + 1e-6)
+    assert below["probability"] == pool and below["alpha"] == 1.0
+    assert at["probability"] == pool and at["alpha"] == 1.0
+    assert above["alpha"] < 1.0  # engages just past the edge
+    assert abs(above["probability"] - pool) < 1e-3  # continuous, not a cliff
+
+
+def test_pool_shrinks_toward_anchor_on_contested_panel():
+    # THE PAYOFF: a contested market panel commits measurably CLOSER to the anchor
+    # than today's (pre-A3) pool, and α<1 with full provenance.
+    table = {"a/b": 0.90, "c/d": 0.60}
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="R",
+        models=list(table),
+        runner=_stub_runner(table),
+        judge_model=None,
+        trim=0,
+        market_anchor=0.20,
+        market_anchor_threshold_pp=100.0,  # isolate A3 from the discipline pull
+    )
+    ps = res.pool_shrinkage
+    assert ps is not None and ps["shrunk"] is True and ps["alpha"] < 1.0
+    assert ps["anchor_source"] == "market" and ps["anchor"] == 0.20
+    pre = res.aggregation.aggregate_probability  # the pre-A3 pool
+    assert 0.20 < res.committed_probability < pre
+    assert abs(res.committed_probability - 0.20) < abs(pre - 0.20)
+    json.dumps(res.to_dict())
+
+
+def test_calm_panel_pool_shrink_is_strict_noop():
+    # THE SAFETY CASE: a CALM panel (disagreement below the calm-band edge) with an
+    # anchor is a strict no-op — α≡1, committed bit-identical to the pre-A3 pool.
+    table = {"a/b": 0.55, "c/d": 0.56, "e/f": 0.54}  # tight cluster → calm
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="R",
+        models=list(table),
+        runner=_stub_runner(table),
+        judge_model=None,
+        trim=0,
+        market_anchor=0.20,
+        market_anchor_threshold_pp=100.0,
+    )
+    assert res.disagreement["disagreement_band"] == "calm"
+    ps = res.pool_shrinkage
+    assert ps["alpha"] == 1.0 and ps["shrunk"] is False
+    # Bit-identical to the pre-A3 pool: A3 did not move a calm number.
+    assert res.committed_probability == res.aggregation.aggregate_probability
+
+
+def test_no_anchor_pool_shrink_is_noop():
+    # No market link and no recorded prior → no anchor → strict no-op, and
+    # pool_shrinkage is None (byte-compatible run-status payload). The panel is
+    # contested, proving it is the ABSENT anchor — not calm — that no-ops A3.
+    table = {"a/b": 0.90, "c/d": 0.60}
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="R",
+        models=list(table),
+        runner=_stub_runner(table),
+        judge_model=None,
+        trim=0,
+    )
+    assert res.pool_shrinkage is None
+    assert res.committed_probability == res.aggregation.aggregate_probability
+
+
+def test_outside_view_prior_is_the_anchor_when_no_market():
+    # anchor = market where linked, ELSE the recorded outside-view prior. A contested
+    # NON-market panel with a recorded prior shrinks toward that prior; and when a
+    # market IS present it takes precedence over the prior.
+    table = {"a/b": 0.90, "c/d": 0.60}
+    common = dict(
+        question_title="Will X?",
+        resolution_criteria="R",
+        models=list(table),
+        runner=_stub_runner(table),
+        judge_model=None,
+        trim=0,
+        market_anchor_threshold_pp=100.0,
+    )
+    prior_only = run_quorum(**common, outside_view_prior=0.20)
+    ps = prior_only.pool_shrinkage
+    assert ps["anchor_source"] == "outside_view_prior" and ps["anchor"] == 0.20
+    assert ps["shrunk"] is True
+    pre = prior_only.aggregation.aggregate_probability
+    assert abs(prior_only.committed_probability - 0.20) < abs(pre - 0.20)
+
+    # Market wins when both are supplied.
+    both = run_quorum(**common, market_anchor=0.35, outside_view_prior=0.20)
+    assert both.pool_shrinkage["anchor_source"] == "market"
+    assert both.pool_shrinkage["anchor"] == 0.35
+
+
+def test_pool_shrink_alpha_matches_the_documented_formula():
+    # Provenance rigor: the recorded α and s² match the documented functional form
+    # exactly, and the committed number is the logit-space blend at that α.
+    from forecasting.bayes_toolkit import inv_logit, logit
+
+    table = {"a/b": 0.90, "c/d": 0.60}
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="R",
+        models=list(table),
+        runner=_stub_runner(table),
+        judge_model=None,
+        trim=0,
+        market_anchor=0.20,
+        market_anchor_threshold_pp=100.0,
+    )
+    ps = res.pool_shrinkage
+    s2 = res.disagreement["sd_logit"] ** 2
+    expect_alpha = max(
+        _POOL_SHRINK_FLOOR, 1.0 - _POOL_SHRINK_C * max(0.0, s2 - _POOL_SHRINK_CALM_VAR)
+    )
+    assert abs(ps["alpha"] - expect_alpha) < 1e-6
+    assert abs(ps["var_logit"] - s2) < 1e-6
+    assert ps["pre_shrink_pool"] == round(res.aggregation.aggregate_probability, 6)
+    pre = res.aggregation.aggregate_probability
+    expect_p = inv_logit(expect_alpha * logit(pre) + (1.0 - expect_alpha) * logit(0.20))
+    assert abs(res.committed_probability - expect_p) < 1e-6
+
+
+def test_named_edge_judge_high_overrides_the_shrunk_pool():
+    # A named edge STILL deviates: A3 shrinks the DEFAULT pool, but a high-confidence
+    # judge with a distinct, justified number overrides the (shrunk) pool wholesale.
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps(
+                {
+                    "probability": 0.88,
+                    "rationale": "decisive unpriced catalyst",
+                    "directional_confidence": "high",
+                    "market_deviation_justification": "a specific edge the market has not priced",
+                }
+            )
+        return _panelist_json({"a/b": 0.90, "c/d": 0.60}.get(model, 0.5))
+
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="R",
+        models=["a/b", "c/d"],
+        runner=runner,
+        judge_model="anthropic/claude-opus-4-8",
+        trim=0,
+        market_anchor=0.20,
+        market_anchor_threshold_pp=10.0,
+    )
+    assert res.final_source == "judge_high"
+    assert abs(res.committed_probability - 0.88) < 1e-9  # the named edge, not the shrunk pool
+    assert res.market_pull_applied is False  # justified deviation kept
+    # A3 still recorded its shrink of the DEFAULT pool, even though the edge escaped it.
+    assert res.pool_shrinkage is not None and res.pool_shrinkage["shrunk"] is True

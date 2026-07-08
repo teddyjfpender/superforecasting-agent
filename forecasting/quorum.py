@@ -92,6 +92,36 @@ _HIGH_IMPACT_TRIALS = 3  # high-impact question — three draws per seat, pooled
 _TRIAL_SHRINK_FLOOR = 0.5
 _TRIAL_SHRINK_C = 0.5
 
+# ── Variance-adaptive cross-model pool shrinkage (BLF A3) ─────────────────────
+# The CROSS-MODEL pool (the aggregate AFTER A2's per-panelist trial pooling) is
+# shrunk toward the outside-view anchor by the SAME James–Stein family as A2 — one
+# shrinkage philosophy at both layers, differing only in the variance it reads.
+# A2 shrinks a seat's K trials by the INTER-TRIAL logit variance (within-seat
+# noise); A3 shrinks the panel's pool by the CROSS-PANELIST logit variance the
+# ``disagreement_signal`` already computes (between-panelist noise, ``sd_logit²``).
+# BLF's rule: the noisier the panel, the harder the pool leans on the anchor.
+#
+#     α_pool = max(f, 1 − c·max(0, s² − s²_calm))
+#     ℓ_pool = α_pool·logit(pool) + (1 − α_pool)·logit(anchor)
+#
+# The CALM DEAD-ZONE (the hinge at ``s²_calm``) is what makes default-ON safe: at
+# or below the calm/moderate disagreement-band edge the pool is UNMOVED (α≡1, a
+# STRICT no-op — bit-identical to the pre-A3 pool), and because the hinge is
+# CONTINUOUS the shrinkage grows smoothly from zero just past it — there is no
+# cliff at the band edge. ``f`` floors the pool's own weight at ½ (it never
+# collapses onto the anchor); ``c`` sets how fast excess disagreement pulls toward
+# it. Documented, LOO-CV-able defaults, deliberately EQUAL to A2's f/c for
+# coherence — two layers of the same rule at two scopes.
+_POOL_SHRINK_FLOOR = 0.5
+_POOL_SHRINK_C = 0.5
+# The calm/moderate disagreement-band edge expressed in logit-variance space: the
+# disagreement index is ``tanh(sd_logit / scale)`` and the calm band is index<0.15
+# under ``scale=2.0`` (forecasting.panel), so the edge sits at
+# ``s²_calm = (2·atanh(0.15))² ≈ 0.0914``. Below it ``disagreement_signal`` labels
+# the panel "calm" and A3 leaves it untouched; a change to panel's scale/band would
+# want this kept in sync (a boundary test pins the correspondence).
+_POOL_SHRINK_CALM_VAR = (2.0 * math.atanh(0.15)) ** 2
+
 # Built-in presets mirror the Fusion blog's panels. ``self`` is the
 # single-provider self-fusion config — the model list is filled in at runtime
 # from the active model, repeated ``samples`` times.
@@ -391,6 +421,13 @@ class QuorumResult:
     # reader never mistakes resample spread for genuine model diversity. None on a
     # real multi-model panel.
     pseudo_diversity_caveat: str | None = None
+    # Variance-adaptive cross-model pool shrinkage (BLF A3). Provenance for the
+    # shrink of the DEFAULT pool toward the outside-view anchor: ``{alpha, var_logit,
+    # anchor, anchor_source, floor, c, calm_var, pre_shrink_pool, shrunk}`` — so every
+    # pooled number records its α + inputs and the formula is reconstructable. None on
+    # an anchorless question (no market link, no recorded prior); a dict with
+    # ``shrunk=False`` / ``alpha=1.0`` on a calm anchored panel (the strict no-op).
+    pool_shrinkage: dict[str, Any] | None = None
 
     @property
     def aggregate_probability(self) -> float:
@@ -461,6 +498,9 @@ class QuorumResult:
                 else None
             ),
             "pseudo_diversity_caveat": self.pseudo_diversity_caveat,
+            # Variance-adaptive pool shrinkage provenance (BLF A3). None on an
+            # anchorless question so the payload stays byte-compatible there.
+            "pool_shrinkage": self.pool_shrinkage,
             "judge": self.judge.to_dict() if self.judge else None,
             "forecasts": [
                 {
@@ -2003,6 +2043,66 @@ def _pool_seat_trials(
     return seat
 
 
+def shrink_pool_toward_anchor(
+    pool_probability: float,
+    *,
+    anchor: float | None,
+    var_logit: float,
+    floor: float = _POOL_SHRINK_FLOOR,
+    c: float = _POOL_SHRINK_C,
+    calm_var: float = _POOL_SHRINK_CALM_VAR,
+) -> dict[str, Any]:
+    """Variance-adaptively shrink the CROSS-MODEL pool toward the outside view (BLF A3).
+
+    Mirrors A2's per-panelist James–Stein shrink (:func:`_shrunk_logit_mean`) one
+    layer up: ``ℓ_shrunk = α·logit(pool) + (1−α)·logit(anchor)`` with
+    ``α = max(floor, 1 − c·max(0, var_logit − calm_var))``, where ``var_logit`` is
+    the CROSS-PANELIST logit variance (``disagreement.sd_logit²``). The noisier the
+    panel, the smaller α, the harder the pool leans on the anchor — but α never falls
+    below ``floor`` (the pool always keeps at least that much of its own signal).
+
+    Two STRICT no-ops, each returning the pool value UNCHANGED with ``alpha=1.0`` (so
+    the committed number is bit-identical to the pre-A3 pool):
+
+      * ``anchor is None`` — nothing to shrink toward (no market link, no recorded
+        prior); the default for a non-market question.
+      * ``var_logit <= calm_var`` — the panel is CALM (disagreement at/below the
+        calm/moderate band edge). The WHOLE calm band is a no-op, and because the
+        hinge is continuous, shrinkage grows smoothly from zero just past it — no
+        cliff. This is the default-ON safety case.
+
+    Returns ``{"probability", "alpha", "var_logit", "anchor", "floor", "c",
+    "calm_var", "shrunk"}`` — the pooled number plus the full provenance so every
+    shrunk commit records its α and inputs.
+    """
+
+    base = {
+        "probability": float(pool_probability),
+        "alpha": 1.0,
+        "var_logit": float(var_logit),
+        "anchor": (float(anchor) if anchor is not None else None),
+        "floor": float(floor),
+        "c": float(c),
+        "calm_var": float(calm_var),
+        "shrunk": False,
+    }
+    if anchor is None or float(var_logit) <= float(calm_var):
+        return base
+    excess = float(var_logit) - float(calm_var)
+    alpha = max(float(floor), 1.0 - float(c) * excess)
+    alpha = min(1.0, max(0.0, alpha))
+    if alpha >= 1.0:
+        # Defensive: a vanishing excess lands α at the identity — keep bit-identity
+        # (never round-trip the pool through logit/inv_logit for nothing).
+        return base
+    from forecasting.bayes_toolkit import inv_logit, logit
+
+    pooled = inv_logit(
+        alpha * logit(float(pool_probability)) + (1.0 - alpha) * logit(float(anchor))
+    )
+    return {**base, "probability": float(pooled), "alpha": float(alpha), "shrunk": True}
+
+
 def resolve_final_probability(
     pool_probability: float,
     judge: JudgeSynthesis | None,
@@ -2132,9 +2232,12 @@ def run_quorum(
     model_weights: Mapping[str, float] | None = None,
     market_anchor: float | None = None,
     market_anchor_threshold_pp: float = 10.0,
+    outside_view_prior: float | None = None,
     trials: int = 1,
     trial_shrink_floor: float = _TRIAL_SHRINK_FLOOR,
     trial_shrink_c: float = _TRIAL_SHRINK_C,
+    pool_shrink_floor: float = _POOL_SHRINK_FLOOR,
+    pool_shrink_c: float = _POOL_SHRINK_C,
 ) -> QuorumResult:
     """Run the full quorum: dispatch panelists, aggregate, judge-synthesise.
 
@@ -2212,6 +2315,23 @@ def run_quorum(
     A seat where some trials error is labeled (``trial_shrinkage['degraded']``); a
     seat where ALL trials error is an errored panelist, excluded from the pool
     exactly as a single failed panelist is today.
+
+    ``outside_view_prior`` (BLF A3) is the recorded outside-view prior used as the
+    shrink anchor when the question carries NO live market. The A3 anchor is the
+    ``market_anchor`` where linked, ELSE ``outside_view_prior``, else nothing (no-op).
+
+    ``pool_shrink_floor`` / ``pool_shrink_c`` (BLF A3) parameterise the
+    VARIANCE-ADAPTIVE shrink of the DEFAULT cross-model pool toward that anchor
+    (:func:`shrink_pool_toward_anchor`), the aggregation-layer sibling of A2's
+    per-panelist trial shrink. The pool is pulled toward the anchor by
+    ``α = max(f, 1 − c·max(0, s² − s²_calm))`` with ``s²`` the CROSS-PANELIST logit
+    variance (``disagreement.sd_logit²``) — the noisier the panel, the harder it
+    leans on the anchor — while a CALM panel (``s² ≤ s²_calm``) or an anchorless
+    question is a STRICT no-op, so the committed number is bit-identical to the
+    pre-A3 pool there (the default-ON safety case). The shrink governs only the
+    DEFAULT pool: a high-confidence judge override (the named edge) replaces the
+    shrunk pool wholesale, and the market-anchor discipline still keeps a justified
+    deviation. Every pooled number's α + inputs land on ``QuorumResult.pool_shrinkage``.
     """
 
     if not models:
@@ -2587,14 +2707,58 @@ def run_quorum(
                 working_context, round_index=1
             )
 
+    # ── variance-adaptive cross-model pool shrinkage (BLF A3) ──────────────────
+    # The DEFAULT cross-model pool (post per-panelist trial pooling) is shrunk toward
+    # the outside-view anchor — the market price where linked, else the recorded
+    # outside-view prior — as a CONTINUOUS function of cross-panelist disagreement:
+    # the noisier the panel, the harder it leans on the anchor (calm ⇒ strict no-op).
+    # This governs only the DEFAULT pool: a named edge is NOT shrunk — the judge_high
+    # override below replaces the (shrunk) pool wholesale, and the deviation discipline
+    # still keeps a justified deviation — so the shrink lands on the number the desk
+    # would otherwise commit by default. Every pooled number records its α + inputs.
+    pool_anchor = market_anchor if market_anchor is not None else outside_view_prior
+    _shrink = shrink_pool_toward_anchor(
+        aggregation.aggregate_probability,
+        anchor=pool_anchor,
+        var_logit=float(disagreement.get("sd_logit", 0.0)) ** 2,
+        floor=pool_shrink_floor,
+        c=pool_shrink_c,
+    )
+    shrunk_pool = _shrink["probability"]
+    pool_shrinkage: dict[str, Any] | None = (
+        {
+            "alpha": round(_shrink["alpha"], 6),
+            "var_logit": round(_shrink["var_logit"], 6),
+            "anchor": round(float(_shrink["anchor"]), 6),
+            "anchor_source": (
+                "market" if market_anchor is not None else "outside_view_prior"
+            ),
+            "floor": _shrink["floor"],
+            "c": _shrink["c"],
+            "calm_var": round(_shrink["calm_var"], 6),
+            "pre_shrink_pool": round(float(aggregation.aggregate_probability), 6),
+            "shrunk": _shrink["shrunk"],
+        }
+        if pool_anchor is not None
+        else None
+    )
+    if _shrink["shrunk"] and on_progress:
+        on_progress(
+            "pool_shrink",
+            f"panel noisy (s²={_shrink['var_logit']:.3f}) → α={_shrink['alpha']:.3f}; "
+            f"pool {aggregation.aggregate_probability:.3f}→{shrunk_pool:.3f} toward "
+            f"anchor {float(pool_anchor):.3f}",
+        )
+
     # ── confidence-gated supervisor override (AIA P0.3) ────────────────────────
     # The pool is already terminally-Platt'd inside aggregate_panel_estimates.
     # resolve_final_probability picks the winning branch on the RAW numbers; we
     # then Platt the judge's raw override here so terminal calibration lands on
     # whichever number wins EXACTLY ONCE (pool: Platt'd in aggregation; judge:
-    # Platt'd just below). Never both, never zero times.
+    # Platt'd just below). Never both, never zero times. The pool branch commits the
+    # A3-SHRUNK pool; the judge_high branch (the named edge) escapes the shrink.
     final_probability, final_source = resolve_final_probability(
-        aggregation.aggregate_probability, judge
+        shrunk_pool, judge
     )
     if final_source == "judge_high":
         alpha = float(alpha_extremize)
@@ -2702,6 +2866,7 @@ def run_quorum(
         blind_pool=blind_pool,
         reconciled_pool=reconciled_pool,
         pseudo_diversity_caveat=pseudo_diversity_caveat,
+        pool_shrinkage=pool_shrinkage,
     )
 
 
@@ -2944,6 +3109,7 @@ __all__ = [
     "resolve_final_probability",
     "resolve_quorum_defaults",
     "apply_market_anchor_discipline",
+    "shrink_pool_toward_anchor",
     "available_provider_slugs",
     "available_providers_detail",
     "resolve_connected_panel",
