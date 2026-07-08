@@ -75,18 +75,31 @@ export function abbrevTokens(n: number): string {
   return `${(v / 1_000_000).toFixed(1)}M`
 }
 
+// The honest "work" tally for a usage snapshot: the FRESH (non-cached) input the
+// model actually had to read + the output it produced. This is NOT `usage.total`.
+// `usage.total` is a billing meter — it re-counts the FULL re-sent context (incl.
+// every cache read) on each API call, so a long multi-call turn sums to millions
+// of "context processed" tokens (a real 4.8M-total session was 93% cache_read).
+// `usage.input` already EXCLUDES cache reads (fresh input only), so input+output
+// is the number an operator means by "what this turn spent".
+export function workTokens(usage: Pick<Usage, 'input' | 'output'>): number {
+  return (usage.input ?? 0) + (usage.output ?? 0)
+}
+
 // Cumulative tokens for the CURRENT turn. Two honest signals, whichever is larger
 // (so the counter never regresses and always reflects live progress):
-//   • reported — the authoritative session `usage.total` delta since turn start
-//     (lands on message-complete / session-info events);
+//   • reported — the fresh-work delta (usage.input + usage.output − baseline)
+//     since turn start, landing on message-complete / session-info events. We use
+//     the input/output split, never usage.total, so re-sent cached context can't
+//     inflate the number (see workTokens);
 //   • live — the in-flight rough estimate the turn store already tracks
 //     (reasoning + tool output + streamed prose), which ticks up during the turn.
 export function turnTokenCount(
   turn: Pick<TurnState, 'reasoningTokens' | 'streaming' | 'toolTokens'>,
-  usage: Pick<Usage, 'total'>,
-  baseTotal: number
+  usage: Pick<Usage, 'input' | 'output'>,
+  baseTokens: number
 ): number {
-  const reported = Math.max(0, (usage.total ?? 0) - baseTotal)
+  const reported = Math.max(0, workTokens(usage) - baseTokens)
 
   const live =
     (turn.reasoningTokens ?? 0) + (turn.toolTokens ?? 0) + estimateTokensRough(turn.streaming ?? '')

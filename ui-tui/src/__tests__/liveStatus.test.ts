@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { abbrevTokens, activityAdjective, turnTokenCount } from '../lib/liveStatus.js'
+import { abbrevTokens, activityAdjective, turnTokenCount, workTokens } from '../lib/liveStatus.js'
 
 // A minimal turn shape — only the fields activityAdjective/turnTokenCount read.
 const turn = (over: Partial<Parameters<typeof activityAdjective>[0]> = {}) => ({
@@ -63,24 +63,59 @@ describe('abbrevTokens — k/M to one decimal, boundary-exact', () => {
     expect(abbrevTokens(-5)).toBe('0')
     expect(abbrevTokens(999.9)).toBe('999')
   })
+
+  it('the honest work number stays a sane scale, not the 4.8M billing total', () => {
+    // A real session: usage.total 4,760,671 would render "4.8M" (the operator's
+    // "feels off"); the honest work (280,612 fresh in + 32,315 out) is 15x smaller.
+    expect(abbrevTokens(4_760_671)).toBe('4.8M')
+    expect(abbrevTokens(workTokens({ input: 280_612, output: 32_315 }))).toBe('312.9k')
+  })
 })
 
-describe('turnTokenCount — max(reported delta, live estimate)', () => {
-  it('uses the authoritative usage.total delta since turn start', () => {
+describe('workTokens — honest work tally: fresh input + output, no cached re-sends', () => {
+  it('sums fresh (cache-excluded) input and output', () => {
+    // The real 4.8M-total session: 4.45M of the total was cache_read re-sends; the
+    // genuine work is input 280,612 + output 32,315 = 312,927.
+    expect(workTokens({ input: 280_612, output: 32_315 })).toBe(312_927)
+  })
+
+  it('treats a missing split as zero', () => {
+    expect(workTokens({} as never)).toBe(0)
+  })
+})
+
+describe('turnTokenCount — honest work delta (input+output), never usage.total', () => {
+  it('reports the fresh input+output delta since turn start', () => {
     const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
-    // usage.total 8000, baseline 5000 → 3000 reported tokens this turn.
-    expect(turnTokenCount(t, { total: 8000 }, 5000)).toBe(3000)
+    // input 100k + output 20k = 120k now; baseline 100k → 20k of real work.
+    expect(turnTokenCount(t, { input: 100_000, output: 20_000 }, 100_000)).toBe(20_000)
+  })
+
+  it('a long multi-call turn does NOT inflate — cached context re-sends excluded', () => {
+    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+    // Baseline (input+output) at turn start = 300k. Over 50 tool calls the billing
+    // meter (usage.total) would climb into the MILLIONS as the whole context is
+    // re-sent each call, but fresh input only rose 40k and output 8k → honest 48k.
+    expect(turnTokenCount(t, { input: 340_000, output: 8_000 }, 300_000)).toBe(48_000)
   })
 
   it('falls back to the live in-flight estimate before usage lands', () => {
-    // Nothing reported yet (delta 0) → reasoning + tool + streamed prose estimate.
+    // No fresh delta yet (input+output == baseline) → reasoning+tool+prose estimate.
     const t = turn({ reasoningTokens: 120, streaming: 'abcd', toolTokens: 30 }) as never
     // estimateTokensRough('abcd') = (4 + 3) >> 2 = 1 → 120 + 30 + 1 = 151.
-    expect(turnTokenCount(t, { total: 5000 }, 5000)).toBe(151)
+    expect(turnTokenCount(t, { input: 5000, output: 0 }, 5000)).toBe(151)
   })
 
   it('never regresses below the reported delta', () => {
     const t = turn({ reasoningTokens: 10, toolTokens: 10 }) as never
-    expect(turnTokenCount(t, { total: 9000 }, 5000)).toBe(4000)
+    // input 8000 + output 1000 = 9000; baseline 5000 → 4000 (beats the 20 estimate).
+    expect(turnTokenCount(t, { input: 8000, output: 1000 }, 5000)).toBe(4000)
+  })
+
+  it('resets cleanly per turn: a fresh baseline zeroes the counter', () => {
+    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+    // Baseline captured AT the current snapshot → 0 work for the brand-new turn,
+    // even though the session cumulative is already large.
+    expect(turnTokenCount(t, { input: 500_000, output: 90_000 }, 590_000)).toBe(0)
   })
 })

@@ -31,7 +31,9 @@ describe('liveTick heartbeat cadence', () => {
 
 describe('the ticker advances while active', () => {
   it('increments $liveTick at the heartbeat interval and captures turn start + token baseline', () => {
-    patchUiState({ usage: { calls: 0, input: 0, output: 0, total: 4200 } })
+    // Baseline is the honest work tally (input + output), NOT usage.total — the
+    // huge total here is mostly re-sent cached context and must not seed the base.
+    patchUiState({ usage: { calls: 12, input: 3000, output: 1200, total: 4_200_000 } })
 
     startLiveTicker(1_000)
     expect($liveStartedAt.get()).toBe(1_000)

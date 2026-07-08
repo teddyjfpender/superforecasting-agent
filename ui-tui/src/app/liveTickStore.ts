@@ -1,5 +1,6 @@
 import { atom, onMount } from 'nanostores'
 
+import { workTokens } from '../lib/liveStatus.js'
 import { $uiState } from './uiStore.js'
 
 // ── Liveness heartbeat ────────────────────────────────────────────────────────
@@ -17,7 +18,9 @@ export const LIVE_TICK_MS = Math.round(1000 / LIVE_TICK_FPS)
 
 export const $liveTick = atom(0)
 // Turn-start wall clock (drives the elapsed counter) + the session token baseline
-// captured at turn start (turn tokens = cumulative usage.total − this baseline).
+// captured at turn start. Turn tokens = cumulative fresh work (usage.input +
+// usage.output) − this baseline — NOT usage.total, which re-counts re-sent cached
+// context every call and would balloon a long turn into millions (see workTokens).
 export const $liveStartedAt = atom<null | number>(null)
 export const $liveBaseTokens = atom(0)
 
@@ -29,7 +32,7 @@ export function startLiveTicker(now: number = Date.now()): void {
   }
 
   $liveStartedAt.set(now)
-  $liveBaseTokens.set($uiState.get().usage.total ?? 0)
+  $liveBaseTokens.set(workTokens($uiState.get().usage))
   timer = setInterval(() => $liveTick.set($liveTick.get() + 1), LIVE_TICK_MS)
 }
 
