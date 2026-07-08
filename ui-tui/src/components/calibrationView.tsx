@@ -11,7 +11,8 @@ import type {
   ForecastCalibrationLesson,
   ForecastCalibrationResponse,
   ForecastCalibrationSummary,
-  ForecastCalibrationTrend
+  ForecastCalibrationTrend,
+  ForecastCohortScoreboard
 } from '../gatewayTypes.js'
 import { bandChart, type BandPoint, levelSparkline, pct } from '../lib/forecastCharts.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
@@ -456,6 +457,72 @@ function LessonsCorrectingSection({ lessons, t, width }: { lessons: ForecastCali
   )
 }
 
+// The by-cohort scoreboard — the honest default. The tiny live calibration-
+// eligible stratum (the only skill-claim cohort) is kept APART from the
+// market-visible baselines; the continuous class gets its own CRPS scorecard;
+// the pooled Brier appears only as an explicitly-labelled diagnostic.
+const brier3 = (value: number | null | undefined): string => (finite(value) ? value.toFixed(3) : '—')
+
+// The cohorts map is a dynamically-keyed Record<string, unknown> on the wire;
+// each value is one binary-Brier cohort with this shape.
+interface CohortRow {
+  mean_brier?: number | null
+  n_brier?: number
+}
+
+function CohortScoreboardSection({ board, t }: { board: ForecastCohortScoreboard; t: Theme }) {
+  const cohorts = (board.cohorts ?? {}) as Record<string, CohortRow>
+  const rows: Array<{ key: string; label: string; tone: 'ok' | 'muted' }> = [
+    { key: 'live_calibration_eligible', label: 'live (calibration-eligible)', tone: 'ok' },
+    { key: 'backtest', label: 'backtest (market-visible)', tone: 'muted' },
+    { key: 'imported_baseline', label: 'imported baseline (market-visible)', tone: 'muted' },
+    { key: 'market_nightly', label: 'market_nightly (market-hidden)', tone: 'muted' }
+  ]
+  const cont = board.continuous_scorecard
+  const pooled = board.pooled_diagnostic
+  const quarantined = board.quarantined
+
+  return (
+    <>
+      <SectionTitle t={t}>scoreboard by cohort (never a pooled skill claim)</SectionTitle>
+      {rows.map(({ key, label, tone }) => {
+        const row = cohorts[key] ?? {}
+
+        return (
+          <Text key={key} wrap="truncate-end">
+            <Text color={tone === 'ok' ? t.color.ok : t.color.muted}>{label.padEnd(32)}</Text>
+            <Text color={t.color.muted}>{' n '}</Text>
+            <Text color={t.color.text}>{String(row.n_brier ?? 0).padStart(4)}</Text>
+            <Text color={t.color.muted}>{'  brier '}</Text>
+            <Text color={t.color.text}>{brier3(row.mean_brier)}</Text>
+          </Text>
+        )
+      })}
+      {cont ? (
+        <Text wrap="truncate-end">
+          <Text color={t.color.label}>{'continuous (CRPS/log — separate)'.padEnd(32)}</Text>
+          <Text color={t.color.muted}>{' n '}</Text>
+          <Text color={t.color.text}>{String(cont.n ?? 0).padStart(4)}</Text>
+          <Text color={t.color.muted}>{'  crps '}</Text>
+          <Text color={t.color.text}>{brier3(cont.mean_crps)}</Text>
+        </Text>
+      ) : null}
+      {pooled ? (
+        <Text color={t.color.muted} wrap="truncate-end">
+          {`${(pooled.label ?? 'pooled diagnostic — not a skill claim').slice(0, 44)}: n ${
+            pooled.n ?? 0
+          } brier ${brier3(pooled.mean_brier)}`}
+        </Text>
+      ) : null}
+      {quarantined?.n ? (
+        <Text color={t.color.warn} wrap="truncate-end">
+          {`quarantined (excluded from every cohort): ${quarantined.n}`}
+        </Text>
+      ) : null}
+    </>
+  )
+}
+
 function CalibrationBody({ data, t, width }: { data: ForecastCalibrationResponse; t: Theme; width: number }) {
   const summary = data.summary ?? {}
   const bias = data.bias ?? null
@@ -497,6 +564,8 @@ function CalibrationBody({ data, t, width }: { data: ForecastCalibrationResponse
           {verdict.text}
         </Text>
       </Box>
+
+      {data.cohort_scoreboard ? <CohortScoreboardSection board={data.cohort_scoreboard} t={t} /> : null}
 
       <TrendRow t={t} trend={summary.calibration_trend} />
 

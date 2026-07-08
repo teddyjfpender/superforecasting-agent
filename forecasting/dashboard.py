@@ -1127,6 +1127,11 @@ def build_workspace_payload(
         # the active workspace forecast list. The desk's read-only Bench lens keys
         # its visibility off this count (the scoreboard itself loads via forecast.bench).
         "bench_count": len(ledger.list_questions(domain="forecastbench")),
+        # Measurement honesty: score aggregates BY COHORT (live calibration-
+        # eligible kept apart from the market-visible baselines) + a SEPARATE
+        # continuous scorecard, with the pooled Brier retained only as a labelled
+        # diagnostic. Never a pooled all-artifact number as the headline.
+        "cohort_scoreboard": ledger.cohort_scoreboard(),
     }
 
 

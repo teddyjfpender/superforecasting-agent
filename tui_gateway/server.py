@@ -4378,6 +4378,16 @@ def _(rid, params: dict) -> dict:
             logger.exception("forecast.calibration operator summary failed")
             operator = None
 
+        # Measurement honesty: the by-cohort scoreboard (live calibration-
+        # eligible kept apart from the market-visible baselines + a SEPARATE
+        # continuous scorecard + a labelled pooled diagnostic). Global view only.
+        cohort_scoreboard = None
+        if domain is None and origin is None:
+            try:
+                cohort_scoreboard = ledger.cohort_scoreboard()
+            except Exception:
+                logger.exception("forecast.calibration cohort scoreboard failed")
+
         # Per-domain / per-origin breakdowns only make sense on the unfiltered
         # view; a filtered request already IS one row of that breakdown.
         domains: list[dict] = []
@@ -4409,6 +4419,7 @@ def _(rid, params: dict) -> dict:
                 "bias": bias,
                 "lessons": lessons,
                 "operator": operator,
+                "cohort_scoreboard": cohort_scoreboard,
                 "domains": domains,
                 "origins": origins,
                 "domain": domain,

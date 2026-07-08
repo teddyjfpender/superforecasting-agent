@@ -2360,6 +2360,37 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     calibration_parser.set_defaults(_forecast_handler=_cmd_calibration)
 
+    # Measurement-honesty surface: the by-cohort scoreboard, the pathological-row
+    # audit, and the two GATED remediation actions (artifact quarantine + CRPS
+    # backfill + continuous-miss postmortem stubs). Every action defaults to a
+    # dry-run report; `--apply` performs the gated write.
+    scores_parser = forecast_sub.add_parser(
+        "scoreboard", help="Cohort scoreboard, pathological-row audit, and gated score remediation"
+    )
+    scores_sub = scores_parser.add_subparsers(dest="scoreboard_command")
+
+    scores_board = scores_sub.add_parser("board", help="Print the by-cohort scoreboard (never a pooled headline)")
+    scores_board.set_defaults(_forecast_handler=_cmd_scores_board)
+
+    scores_audit_p = scores_sub.add_parser("audit", help="Classify pathological score rows (Brier=1.0 / |log|>10)")
+    scores_audit_p.add_argument("--json", action="store_true", help="Emit the machine-readable audit JSON")
+    scores_audit_p.set_defaults(_forecast_handler=_cmd_scores_audit)
+
+    scores_quar = scores_sub.add_parser("quarantine", help="Quarantine provable ingestion artifacts (dry-run unless --apply)")
+    scores_quar.add_argument("--apply", action="store_true", help="Perform the gated write (default: dry-run report)")
+    scores_quar.set_defaults(_forecast_handler=_cmd_scores_quarantine)
+
+    scores_crps = scores_sub.add_parser("backfill-crps", help="Score the distribution/numeric class with CRPS (dry-run unless --apply)")
+    scores_crps.add_argument("--apply", action="store_true", help="Perform the gated rescore (default: dry-run report)")
+    scores_crps.set_defaults(_forecast_handler=_cmd_scores_backfill_crps)
+
+    scores_pm = scores_sub.add_parser("postmortem-misses", help="Create postmortem STUBS for continuous misses (dry-run unless --apply)")
+    scores_pm.add_argument("--apply", action="store_true", help="Create the stubs (default: dry-run report)")
+    scores_pm.add_argument("--min-crps", type=float, default=0.0, help="Only stub misses with CRPS at or above this")
+    scores_pm.set_defaults(_forecast_handler=_cmd_scores_postmortem_misses)
+
+    scores_parser.set_defaults(_forecast_handler=_cmd_scores_board)
+
     # Operator practice loop (R2): train the HUMAN, Tetlock-style.
     practice_parser = forecast_sub.add_parser(
         "practice",
@@ -3740,6 +3771,18 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
 
     from forecasting.protocol import PROCESS_VERSION
 
+    # Measurement honesty: score aggregates BY COHORT (never a pooled headline) +
+    # the pathological-row audit that separates ingestion artifacts from real
+    # catastrophic misses. Both read-only + fail-safe, like every probe here.
+    try:
+        cohort_scoreboard = ledger.cohort_scoreboard()
+    except Exception:
+        cohort_scoreboard = None
+    try:
+        scores_audit = ledger.scores_audit()
+    except Exception:
+        scores_audit = None
+
     # A heuristic, read-only detector must NEVER take down the doctor audit.
     try:
         templated_batches = ledger.detect_templated_batches()
@@ -3906,6 +3949,8 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "panel_vs_solo_ablation": ablation,
         "deviation_edge": deviation_edge,
         "status": status,
+        "cohort_scoreboard": cohort_scoreboard,
+        "scores_audit": scores_audit,
         "pilot_report": pilot_report,
         "readiness": {
             "last": max(args.last, 0),
@@ -4217,8 +4262,30 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         f"live_scores={summary['score_counts_by_origin'].get('live', 0)} "
         f"postmortems={summary['postmortem_count']} "
         f"lessons={status['active_calibration_lesson_count']}/{status['calibration_lesson_count']} "
-        f"mean_brier={_format_metric(status['calibration_mean_brier'])}"
+        # Labelled: this is the live calibration-eligible cohort's Brier, NOT a
+        # pooled all-artifact number. The full by-cohort board prints below.
+        f"live_elig_brier={_format_metric(status['calibration_mean_brier'])}"
     )
+    board = report.get("cohort_scoreboard")
+    if board:
+        _print_cohort_scoreboard(board)
+    audit = report.get("scores_audit")
+    if audit:
+        counts = audit.get("counts") or {}
+        artifact_n = counts.get("artifact_degenerate_import", 0)
+        real_cont = counts.get("real_continuous_miss", 0)
+        real_bin = counts.get("real_binary_miss", 0)
+        total = sum(counts.values())
+        print(
+            f"scores audit: {total} pathological row(s) — "
+            f"artifact_degenerate_import={artifact_n} "
+            f"real_continuous_miss={real_cont} real_binary_miss={real_bin}"
+            + (
+                "  — propose `forecast scoreboard quarantine` (dry-run)"
+                if audit.get("proposed_quarantine")
+                else ""
+            )
+        )
     crux = status.get("crux_promotion") or {}
     print(
         "cruxes: "
@@ -11336,6 +11403,83 @@ def _cmd_lessons_apply(args: argparse.Namespace) -> None:
     print(f"  check: {_json.dumps(result['check'])}")
 
 
+def _cmd_scores_board(args: argparse.Namespace) -> None:
+    _print_cohort_scoreboard(_ledger(args).cohort_scoreboard())
+
+
+def _cmd_scores_audit(args: argparse.Namespace) -> None:
+    audit = _ledger(args).scores_audit()
+    if getattr(args, "json", False):
+        print(json.dumps(audit, indent=2, sort_keys=True))
+        return
+    counts = audit.get("counts") or {}
+    total = sum(counts.values())
+    print(f"scores audit: {total} pathological row(s) (Brier=1.0 or |log|>10)")
+    for reason in sorted(counts):
+        print(f"  {reason}: {counts[reason]}")
+    proposed = audit.get("proposed_quarantine") or []
+    if proposed:
+        print(f"proposed quarantine (provable artifacts, {len(proposed)}):")
+        for row in proposed[:12]:
+            print(f"  - {row['score_id']}  {row['title']!r}  brier={row.get('brier_score')}")
+        if len(proposed) > 12:
+            print(f"  … and {len(proposed) - 12} more")
+        print("  apply with: forecast scoreboard quarantine --apply")
+    else:
+        print("no provable artifacts to quarantine.")
+
+
+def _cmd_scores_quarantine(args: argparse.Namespace) -> None:
+    apply = getattr(args, "apply", False)
+    report = _ledger(args).quarantine_artifact_scores(dry_run=not apply)
+    verb = "quarantined" if apply else "would quarantine"
+    print(f"{verb} {report['count']} artifact score row(s) (dry_run={report['dry_run']}).")
+    for origin, impact in (report.get("cohort_impact") or {}).items():
+        before = _format_metric(impact.get("mean_brier_before"))
+        after = _format_metric(impact.get("mean_brier_after"))
+        if before != after:
+            print(f"  {origin}: mean_brier {before} -> {after}")
+    if not apply and report["count"]:
+        print("  confirm with: forecast scoreboard quarantine --apply")
+
+
+def _cmd_scores_backfill_crps(args: argparse.Namespace) -> None:
+    apply = getattr(args, "apply", False)
+    report = _ledger(args).backfill_crps_scores(dry_run=not apply)
+    counts = report.get("counts") or {}
+    print(
+        f"crps backfill (dry_run={report['dry_run']}): "
+        f"crps_scored={counts.get('crps_scored', 0)} rescored={counts.get('rescored', 0)} "
+        f"refused={counts.get('refused_not_representable', 0)} "
+        f"active_no_resolution={counts.get('active_no_resolution', 0)}"
+    )
+    for detail in (report.get("details") or []):
+        if detail.get("action") in {"would_score", "would_rescore", "scored", "rescored"}:
+            crps = detail.get("crps")
+            crps_txt = _format_metric(crps) if crps is not None else "-"
+            print(f"  {detail['question_id']}  {detail['action']}  crps={crps_txt}  rule={detail.get('rule')}")
+
+
+def _cmd_scores_postmortem_misses(args: argparse.Namespace) -> None:
+    apply = getattr(args, "apply", False)
+    report = _ledger(args).create_continuous_miss_postmortem_stubs(
+        dry_run=not apply, min_crps=getattr(args, "min_crps", 0.0)
+    )
+    verb = "created" if apply else "would create"
+    proposed = report.get("proposed") or []
+    print(f"{verb} {report['created'] if apply else len(proposed)} continuous-miss postmortem STUB(s) (dry_run={report['dry_run']}).")
+    for item in proposed:
+        gap = item.get("gap")
+        gap_txt = f"{gap:+.4g}" if gap is not None else "-"
+        print(
+            f"  {item['question_id']}  direction={item['direction']}  "
+            f"central={item.get('forecast_central')} outcome={item.get('outcome')} "
+            f"gap={gap_txt}  crps={_format_metric(item.get('crps'))}"
+        )
+    if not apply and proposed:
+        print("  create the stubs with: forecast scoreboard postmortem-misses --apply")
+
+
 def _cmd_calibration(args: argparse.Namespace) -> None:
     if getattr(args, "operator", False):
         _print_operator_calibration(
@@ -11373,6 +11517,13 @@ def _cmd_calibration(args: argparse.Namespace) -> None:
         horizon=args.horizon,
         calibration_eligible=None if args.all else True,
     )
+    # Cohort scoreboard FIRST — the honest, un-pooled default read. Only on the
+    # unfiltered global view (a domain/origin/horizon filter is already a slice).
+    if not (args.domain or args.forecast_origin or args.horizon):
+        try:
+            _print_cohort_scoreboard(ledger.cohort_scoreboard())
+        except Exception:
+            pass
     _print_calibration_summary(summary)
     # Plain-language read (S7): the measured signed-bias advisory teaching text for
     # this scope, then the active lessons CORRECTING forecasts here + whether they
@@ -12213,6 +12364,46 @@ def _cmd_market_nightly_report(args: argparse.Namespace) -> None:
         print(
             f"    wins voi/plain/ties = {vp.get('voi_wins', 0)}/{vp.get('plain_wins', 0)}/{vp.get('ties', 0)}"
         )
+
+
+def _print_cohort_scoreboard(board: dict[str, Any]) -> None:
+    """Print the score aggregates SEPARATED BY COHORT — the honest default. The
+    live calibration-eligible stratum (the only skill-claim cohort) is kept apart
+    from the market-visible baselines; the continuous (CRPS) class gets its own
+    scorecard; the pooled Brier is shown only as a labelled diagnostic."""
+    cohorts = board.get("cohorts") or {}
+    print("scoreboard (by cohort — never a pooled skill claim):")
+    order = [
+        ("live_calibration_eligible", "live (calibration-eligible)"),
+        ("backtest", "backtest (market-visible)"),
+        ("imported_baseline", "imported_baseline (market-visible)"),
+        ("market_nightly", "market_nightly (market-hidden bench)"),
+    ]
+    for key, label in order:
+        row = cohorts.get(key) or {}
+        domains = ", ".join(row.get("domains") or []) or "-"
+        print(
+            f"  {label}: n={row.get('n_brier', 0)} "
+            f"brier={_format_metric(row.get('mean_brier'))} domains=[{domains}]"
+        )
+    cont = board.get("continuous_scorecard") or {}
+    print(
+        f"  continuous scorecard (CRPS/log — a Brier cannot represent it): "
+        f"n={cont.get('n', 0)} mean_crps={_format_metric(cont.get('mean_crps'))} "
+        f"mean_log={_format_metric(cont.get('mean_log_score'))}"
+    )
+    by_rule = cont.get("by_rule") or {}
+    for rule, stats in by_rule.items():
+        print(f"    {rule}: n={stats.get('n', 0)} mean_crps={_format_metric(stats.get('mean_crps'))}")
+    pooled = board.get("pooled_diagnostic") or {}
+    print(
+        f"  {pooled.get('label', 'pooled diagnostic')}: "
+        f"n={pooled.get('n', 0)} brier={_format_metric(pooled.get('mean_brier'))}"
+    )
+    quarantined = board.get("quarantined") or {}
+    if quarantined.get("n"):
+        reasons = ", ".join(f"{k}={v}" for k, v in (quarantined.get("reasons") or {}).items())
+        print(f"  quarantined (excluded from every cohort): n={quarantined['n']} [{reasons}]")
 
 
 def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = None) -> None:

@@ -449,6 +449,7 @@ export interface ForecastCalibrationRequest {
 
 export interface ForecastCalibrationResponse {
   bias?: null | ForecastCalibrationBias
+  cohort_scoreboard?: ForecastCohortScoreboard
   domain?: null | string
   domains?: ForecastCalibrationBreakdownRow[]
   lessons?: ForecastCalibrationLesson[]
@@ -511,6 +512,13 @@ export interface ForecastCardBody {
   question_id: null | string
   question_title: string
   rationale_bullets: string[]
+}
+
+export interface ForecastCohortScoreboard {
+  cohorts?: Record<string, unknown>
+  continuous_scorecard?: ForecastContinuousScorecard
+  pooled_diagnostic?: ForecastPooledDiagnostic
+  quarantined?: ForecastQuarantineSummary
 }
 
 export interface ForecastCommandRequest {
@@ -579,6 +587,15 @@ export interface ForecastConfigThreshold {
   rule_ids?: string[]
   source: string
   value: number
+}
+
+export interface ForecastContinuousScorecard {
+  by_rule?: Record<string, unknown>
+  domains?: string[]
+  live_calibration_eligible_n?: number
+  mean_crps?: null | number
+  mean_log_score?: null | number
+  n?: number
 }
 
 export interface ForecastDashboardAlert {
@@ -1070,6 +1087,17 @@ export interface ForecastOnboardProposeResponse {
 export interface ForecastOutcomeSpace {
   choices?: unknown[]
   type?: string
+}
+
+export interface ForecastPooledDiagnostic {
+  label?: string
+  mean_brier?: null | number
+  n?: number
+}
+
+export interface ForecastQuarantineSummary {
+  n?: number
+  reasons?: Record<string, unknown>
 }
 
 export interface ForecastQuestionPacket {

@@ -341,6 +341,292 @@ def backfill_crps_scores(ledger, *, dry_run: bool = True) -> dict[str, Any]:
     return {"dry_run": dry_run, "counts": counts, "details": details}
 
 
+# ── Cohort scoreboard + scores audit (measurement honesty) ──────────────────
+#
+# A pooled all-artifact Brier is a category error: it sums the market-VISIBLE
+# baselines (backtest / imported_baseline / market_nightly — calibration-
+# ineligible by construction) with the tiny live calibration-eligible stratum,
+# and it silently drops the continuous (CRPS / log) class a Brier cannot even
+# represent. So the DEFAULT everywhere a score aggregate surfaces is BY COHORT:
+# each stratum reports its own mean, the continuous class gets a SEPARATE
+# scorecard, and the pooled number survives ONLY as an explicitly-labelled
+# ledger-wide DIAGNOSTIC ("all-artifact Brier — not a skill claim").
+
+# The origins that carry a BINARY Brier, in surfacing order. ``live`` is split
+# out into its calibration-eligible subset below; the rest are baselines.
+_BASELINE_COHORT_ORIGINS = ("backtest", "imported_baseline", "market_nightly")
+
+# Pathological thresholds — a degenerate Brier or a log score at/over the clamp
+# territory. |log|>10 catches both the binary clamp floor (~34.54 = −ln(1e-15))
+# and a fat-tailed Gaussian NLL; the classifier below separates the two.
+_PATHOLOGICAL_BRIER = 0.9999
+_PATHOLOGICAL_ABS_LOG = 10.0
+
+
+def _is_continuous_rule(rule: Any) -> bool:
+    """True for the ordered/numeric proper-score rules (CRPS families + the
+    Gaussian NLL) — the class a Brier cannot represent, scored separately."""
+    text = str(rule or "")
+    return text.startswith("crps") or text == "normal_negative_log_likelihood"
+
+
+def _cohort_bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Summarize one binary cohort: n, brier count, mean Brier (None on empty —
+    never a fabricated 0), and the domains it spans."""
+    briers = [float(r["brier_score"]) for r in rows if r["brier_score"] is not None]
+    domains = sorted({r["domain"] for r in rows if r["domain"]})
+    return {
+        "n": len(rows),
+        "n_brier": len(briers),
+        "mean_brier": (sum(briers) / len(briers)) if briers else None,
+        "domains": domains,
+    }
+
+
+def cohort_scoreboard(ledger) -> dict[str, Any]:
+    """Score aggregates SEPARATED BY COHORT — the honest default surface.
+
+    Returns:
+
+    * ``cohorts`` — one binary-Brier bucket per stratum:
+      ``live_calibration_eligible`` (the ONLY skill-claim stratum: live +
+      calibration_eligible), and the market-visible baselines ``backtest`` /
+      ``imported_baseline`` / ``market_nightly``. Each: n, n_brier, mean_brier
+      (None on empty), domains.
+    * ``continuous_scorecard`` — the CRPS / log class, scored SEPARATELY (a
+      Brier cannot represent it): n, mean_crps, mean_log_score, a per-rule
+      breakdown, the live calibration-eligible subset, and domains.
+    * ``pooled_diagnostic`` — the pooled all-artifact Brier, retained ONLY as an
+      explicitly-labelled ledger-wide diagnostic ("not a skill claim").
+    * ``quarantined`` — count + per-reason of the audit-quarantined rows that
+      every cohort above EXCLUDES.
+
+    Read-only. Quarantined rows (``audit_quarantine_reason`` set) are excluded
+    from every cohort and from the pooled diagnostic, and reported apart."""
+    with ledger._connect() as conn:
+        rows = [
+            dict(row)
+            for row in conn.execute(
+                """
+                SELECT forecast_origin, calibration_eligible, brier_score,
+                       proper_score, log_score, score_rule, domain,
+                       audit_quarantine_reason
+                FROM score_records
+                WHERE invalidated_by_correction_id IS NULL
+                """
+            ).fetchall()
+        ]
+
+    quarantined = [r for r in rows if r["audit_quarantine_reason"]]
+    clean = [r for r in rows if not r["audit_quarantine_reason"]]
+
+    # Binary cohorts. A row belongs to a binary cohort when it carries a Brier;
+    # the continuous class (CRPS / NLL) never does, so the two never overlap.
+    live_eligible = [
+        r for r in clean
+        if r["forecast_origin"] == "live" and r["calibration_eligible"] and r["brier_score"] is not None
+    ]
+    cohorts: dict[str, Any] = {"live_calibration_eligible": _cohort_bucket(live_eligible)}
+    for origin in _BASELINE_COHORT_ORIGINS:
+        cohorts[origin] = _cohort_bucket(
+            [r for r in clean if r["forecast_origin"] == origin and r["brier_score"] is not None]
+        )
+
+    # Continuous scorecard — CRPS / log, kept apart from every Brier.
+    continuous = [
+        r for r in clean if _is_continuous_rule(r["score_rule"]) and r["proper_score"] is not None
+    ]
+    crps_values = [float(r["proper_score"]) for r in continuous]
+    log_values = [float(r["log_score"]) for r in continuous if r["log_score"] is not None]
+    by_rule: dict[str, dict[str, Any]] = {}
+    for r in continuous:
+        rule = str(r["score_rule"])
+        bucket = by_rule.setdefault(rule, {"n": 0, "_crps": []})
+        bucket["n"] += 1
+        bucket["_crps"].append(float(r["proper_score"]))
+    continuous_scorecard = {
+        "n": len(continuous),
+        "mean_crps": (sum(crps_values) / len(crps_values)) if crps_values else None,
+        "mean_log_score": (sum(log_values) / len(log_values)) if log_values else None,
+        "live_calibration_eligible_n": sum(
+            1 for r in continuous if r["forecast_origin"] == "live" and r["calibration_eligible"]
+        ),
+        "domains": sorted({r["domain"] for r in continuous if r["domain"]}),
+        "by_rule": {
+            rule: {"n": bucket["n"], "mean_crps": sum(bucket["_crps"]) / len(bucket["_crps"])}
+            for rule, bucket in sorted(by_rule.items())
+        },
+    }
+
+    # Pooled diagnostic — explicitly NOT a skill claim.
+    pooled_briers = [float(r["brier_score"]) for r in clean if r["brier_score"] is not None]
+    pooled_diagnostic = {
+        "label": "all-artifact Brier — pooled ledger-wide diagnostic, NOT a skill claim",
+        "n": len(pooled_briers),
+        "mean_brier": (sum(pooled_briers) / len(pooled_briers)) if pooled_briers else None,
+    }
+
+    reason_counts: dict[str, int] = {}
+    for r in quarantined:
+        reason = str(r["audit_quarantine_reason"])
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+    return {
+        "cohorts": cohorts,
+        "continuous_scorecard": continuous_scorecard,
+        "pooled_diagnostic": pooled_diagnostic,
+        "quarantined": {"n": len(quarantined), "reasons": reason_counts},
+    }
+
+
+def _classify_pathological(row: dict[str, Any]) -> str:
+    """Reason-classify one pathological score row.
+
+    * ``real_continuous_miss`` — a CRPS / NLL row whose large |log| is the
+      fat-tailed Gaussian negative-log-likelihood at a genuine outcome, NOT an
+      artifact (its proper score is the CRPS, honestly large).
+    * ``artifact_degenerate_import`` — an imported baseline whose forecast is a
+      DEGENERATE binary probability (0.0 / 1.0) that resolved against it: the
+      synthetic target-price ingestion pattern. Provably not a real forecast.
+    * ``real_binary_miss`` — a genuine binary forecast that was confidently
+      wrong. A real miss, kept and scored.
+    * ``unclassified`` — pathological but none of the above; left for review."""
+    if _is_continuous_rule(row["score_rule"]):
+        return "real_continuous_miss"
+    prob = row.get("_probability")
+    is_degenerate = isinstance(prob, (int, float)) and not isinstance(prob, bool) and (
+        prob <= 1e-9 or prob >= 1.0 - 1e-9
+    )
+    if row["forecast_origin"] == "imported_baseline" and is_degenerate:
+        return "artifact_degenerate_import"
+    if isinstance(prob, (int, float)) and not isinstance(prob, bool):
+        return "real_binary_miss"
+    return "unclassified"
+
+
+def scores_audit(ledger) -> dict[str, Any]:
+    """READ-ONLY audit of PATHOLOGICAL score rows (Brier ≥ 1.0 or |log| > 10),
+    each classified by reason so an ingestion artifact is never confused with a
+    real catastrophic miss.
+
+    Returns ``{counts, rows, proposed_quarantine}``: ``rows`` carries every
+    pathological row with its ``reason`` + whether it is ``already_quarantined``;
+    ``proposed_quarantine`` is the subset provably an artifact
+    (``artifact_degenerate_import``) not yet quarantined — the gated
+    :func:`quarantine_artifact_scores` acts ONLY on these, and only when the
+    operator confirms (dry-run first)."""
+    with ledger._connect() as conn:
+        raw = conn.execute(
+            """
+            SELECT s.id, s.question_id, s.forecast_origin, s.brier_score,
+                   s.log_score, s.proper_score, s.score_rule, s.domain,
+                   s.audit_quarantine_reason,
+                   fs.probability_or_distribution AS payload,
+                   q.title AS title
+            FROM score_records s
+            JOIN forecast_snapshots fs ON fs.forecast_id = s.forecast_id
+            JOIN forecast_questions q ON q.id = s.question_id
+            WHERE s.invalidated_by_correction_id IS NULL
+              AND (s.brier_score >= ? OR ABS(s.log_score) > ?)
+            ORDER BY s.forecast_origin, s.id
+            """,
+            (_PATHOLOGICAL_BRIER, _PATHOLOGICAL_ABS_LOG),
+        ).fetchall()
+
+    from forecasting.models import json_loads
+
+    rows: list[dict[str, Any]] = []
+    counts: dict[str, int] = {}
+    proposed: list[dict[str, Any]] = []
+    for r in raw:
+        row = dict(r)
+        payload = json_loads(row.pop("payload"), None)
+        row["_probability"] = payload if isinstance(payload, (int, float)) else None
+        reason = _classify_pathological(row)
+        already = bool(row["audit_quarantine_reason"])
+        entry = {
+            "score_id": row["id"],
+            "question_id": row["question_id"],
+            "forecast_origin": row["forecast_origin"],
+            "brier_score": row["brier_score"],
+            "log_score": row["log_score"],
+            "score_rule": row["score_rule"],
+            "title": (row["title"] or "")[:80],
+            "reason": reason,
+            "already_quarantined": already,
+        }
+        rows.append(entry)
+        counts[reason] = counts.get(reason, 0) + 1
+        if reason == "artifact_degenerate_import" and not already:
+            proposed.append(entry)
+    return {"counts": counts, "rows": rows, "proposed_quarantine": proposed}
+
+
+def quarantine_artifact_scores(
+    ledger,
+    *,
+    dry_run: bool = True,
+    reasons: tuple[str, ...] = ("artifact_degenerate_import",),
+) -> dict[str, Any]:
+    """Gated quarantine of provable ingestion artifacts surfaced by
+    :func:`scores_audit`.
+
+    Read-only when ``dry_run`` (the default): returns the proposal + the cohort
+    impact so the operator can confirm before anything is written. When
+    ``dry_run`` is False, each targeted row is marked
+    ``audit_quarantine_reason=<reason>`` and forced ``calibration_eligible=0`` —
+    excluding it from every cohort aggregate. Idempotent: rows already
+    quarantined are skipped, so a re-apply reports ``count=0``."""
+    audit = scores_audit(ledger)
+    targets = [
+        row for row in audit["rows"]
+        if row["reason"] in reasons and not row["already_quarantined"]
+    ]
+    target_ids = {row["score_id"] for row in targets}
+
+    def _baseline_means(exclude: set[str]) -> dict[str, float | None]:
+        with ledger._connect() as conn:
+            out: dict[str, float | None] = {}
+            for origin in _BASELINE_COHORT_ORIGINS:
+                vals = [
+                    float(r[0])
+                    for r in conn.execute(
+                        "SELECT brier_score, id FROM score_records "
+                        "WHERE forecast_origin = ? AND brier_score IS NOT NULL "
+                        "AND invalidated_by_correction_id IS NULL "
+                        "AND audit_quarantine_reason IS NULL",
+                        (origin,),
+                    ).fetchall()
+                    if r[1] not in exclude
+                ]
+                out[origin] = (sum(vals) / len(vals)) if vals else None
+            return out
+
+    before = _baseline_means(set())
+    projected = _baseline_means(target_ids)  # before any write — the honest "would-be".
+
+    if not dry_run and targets:
+        with ledger._connect() as conn:
+            conn.executemany(
+                "UPDATE score_records SET audit_quarantine_reason = ?, "
+                "calibration_eligible = 0 WHERE id = ?",
+                [(row["reason"], row["score_id"]) for row in targets],
+            )
+
+    return {
+        "dry_run": dry_run,
+        "count": len(targets),
+        "proposed": targets,
+        "cohort_impact": {
+            origin: {
+                "mean_brier_before": before[origin],
+                "mean_brier_after": projected[origin],
+            }
+            for origin in _BASELINE_COHORT_ORIGINS
+        },
+    }
+
+
 def get_score(ledger, score_id: str) -> ScoreRecord:
     with ledger._connect() as conn:
         row = conn.execute("SELECT * FROM score_records WHERE id = ?", (score_id,)).fetchone()

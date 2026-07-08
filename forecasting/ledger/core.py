@@ -1589,6 +1589,12 @@ class ForecastLedger:
             self._ensure_column(conn, "score_records", "invalidated_by_correction_id", "TEXT")
             self._ensure_column(conn, "score_records", "proper_score", "REAL")
             self._ensure_column(conn, "score_records", "score_rule", "TEXT")
+            # Measurement-honesty quarantine: a NON-NULL reason marks a score row
+            # as a provable ingestion artifact (e.g. a synthetic target-price
+            # binary whose imported baseline is a degenerate 0.0) — excluded from
+            # every cohort aggregate + made calibration-ineligible via the gated
+            # audit path, never a real forecast miss.
+            self._ensure_column(conn, "score_records", "audit_quarantine_reason", "TEXT")
             self._ensure_column(conn, "postmortems", "invalidated_by_correction_id", "TEXT")
             self._ensure_column(conn, "calibration_lessons", "invalidated_by_correction_id", "TEXT")
             self._ensure_column(conn, "resolutions", "trusted_policy_id", "TEXT")
@@ -3124,6 +3130,17 @@ class ForecastLedger:
     def backfill_crps_scores(self, *, dry_run: bool = True) -> dict[str, Any]:
         return _scoring.backfill_crps_scores(self, dry_run=dry_run)
 
+    def cohort_scoreboard(self) -> dict[str, Any]:
+        return _scoring.cohort_scoreboard(self)
+
+    def scores_audit(self) -> dict[str, Any]:
+        return _scoring.scores_audit(self)
+
+    def quarantine_artifact_scores(
+        self, *, dry_run: bool = True, reasons: tuple[str, ...] = ("artifact_degenerate_import",)
+    ) -> dict[str, Any]:
+        return _scoring.quarantine_artifact_scores(self, dry_run=dry_run, reasons=reasons)
+
     def get_score(self, score_id: str) -> ScoreRecord:
         return _scoring.get_score(self, score_id=score_id)
 
@@ -3497,6 +3514,117 @@ class ForecastLedger:
             )
         self.update_domain_error_profile(question)
         return postmortem
+
+    def _predictive_central(self, payload: Any) -> float | None:
+        """A robust central estimate of a predictive distribution payload —
+        prefer an explicit central moment, else the midpoint of the narrowest
+        central interval, else a bare numeric. Used ONLY to state the direction
+        of a continuous miss (forecast central vs realized outcome); None when
+        no central can be read (never a fabricated number)."""
+        if isinstance(payload, (int, float)) and not isinstance(payload, bool):
+            return float(payload)
+        if not isinstance(payload, dict):
+            return None
+        for key in ("median", "mean", "expected", "point", "value"):
+            v = payload.get(key)
+            if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+                return float(v)
+        for width in ("50", "80", "90"):
+            lo = payload.get(f"interval_{width}_low")
+            hi = payload.get(f"interval_{width}_high")
+            if all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in (lo, hi)):
+                return (float(lo) + float(hi)) / 2.0
+        return None
+
+    def create_continuous_miss_postmortem_stubs(
+        self,
+        *,
+        question_ids: list[str] | None = None,
+        dry_run: bool = True,
+        min_crps: float = 0.0,
+    ) -> dict[str, Any]:
+        """Generate postmortem STUBS for resolved continuous (CRPS-scored) misses
+        — the direction (forecast central above/below the realized outcome) and
+        magnitude (CRPS + the raw gap) pre-filled from the score, surfaced as a
+        REVIEW ITEM for the operator and never auto-concluded (no ``lesson`` is
+        written, so no calibration lesson is spawned).
+
+        Read-only when ``dry_run`` (the default): returns the proposal. When
+        ``dry_run`` is False, a stub is created for each candidate that does not
+        already have a postmortem. Idempotent — questions already carrying a
+        postmortem are skipped."""
+        if question_ids is None:
+            candidates = [
+                q.id
+                for q in self.list_questions()
+                if q.outcome_space.type in {"distribution", "numeric"}
+            ]
+        else:
+            candidates = list(question_ids)
+
+        proposed: list[dict[str, Any]] = []
+        for qid in candidates:
+            score = self.get_current_score(qid)
+            if score is None or not str(score.score_rule or "").startswith("crps"):
+                continue
+            if score.proper_score is None or float(score.proper_score) < min_crps:
+                continue
+            if self.list_postmortems(question_id=qid):
+                continue  # never duplicate a postmortem.
+            snapshot = self.get_snapshot(score.forecast_id)
+            resolution = self.get_resolution(score.resolution_id)
+            central = self._predictive_central(snapshot.probability_or_distribution)
+            try:
+                outcome_value = self._numeric_outcome(resolution.outcome)
+            except Exception:
+                outcome_value = None
+            direction = "unknown"
+            gap: float | None = None
+            if central is not None and outcome_value is not None:
+                gap = central - outcome_value
+                direction = "high" if gap > 0 else "low" if gap < 0 else "on_target"
+            proposed.append(
+                {
+                    "question_id": qid,
+                    "score_id": score.id,
+                    "direction": direction,
+                    "forecast_central": central,
+                    "outcome": outcome_value,
+                    "gap": gap,
+                    "crps": float(score.proper_score),
+                }
+            )
+
+        created = 0
+        if not dry_run:
+            for item in proposed:
+                gap_txt = (
+                    f" by {abs(item['gap']):.4g} (forecast central {item['forecast_central']:.4g} "
+                    f"vs outcome {item['outcome']:.4g})"
+                    if item["gap"] is not None
+                    else ""
+                )
+                self.create_postmortem(
+                    question_id=item["question_id"],
+                    summary=(
+                        f"STUB (review): continuous miss — forecast ran {item['direction']}"
+                        f"{gap_txt}; CRPS {item['crps']:.4g}."
+                    ),
+                    what_happened=(
+                        f"Realized outcome {item['outcome']!r}; the forecast central estimate "
+                        f"was {item['forecast_central']!r} — i.e. the forecast ran {item['direction']}."
+                    ),
+                    what_was_expected=(
+                        f"Predictive distribution centered near {item['forecast_central']!r}; "
+                        f"CRPS against the confirmed outcome was {item['crps']:.4g}."
+                    ),
+                    # No lesson / failure_class: a STUB is a review item, never an
+                    # auto-concluded diagnosis. The operator fills these in.
+                    failure_class=None,
+                )
+                created += 1
+
+        return {"dry_run": dry_run, "created": created, "proposed": proposed}
 
     def get_postmortem(self, postmortem_id: str) -> dict[str, Any]:
         with self._connect() as conn:

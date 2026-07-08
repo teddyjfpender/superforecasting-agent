@@ -698,6 +698,50 @@ class ForecastCalibrationBreakdownRow(WireModel):
     origin: str | None = wire_optional()
 
 
+class ForecastContinuousScorecard(WireModel):
+    """The ordered/numeric class, scored SEPARATELY by CRPS / log — a Brier
+    cannot represent it, so it never joins the binary cohorts."""
+
+    TS_NAME = "ForecastContinuousScorecard"
+
+    n: int | None = wire_optional()
+    mean_crps: float | None = wire_optional(nullable=True)
+    mean_log_score: float | None = wire_optional(nullable=True)
+    live_calibration_eligible_n: int | None = wire_optional()
+    domains: list[str] | None = wire_optional()
+    by_rule: dict[str, Any] | None = wire_optional()
+
+
+class ForecastPooledDiagnostic(WireModel):
+    """The pooled all-artifact Brier — retained ONLY as an explicitly-labelled
+    ledger-wide diagnostic, NEVER a skill claim."""
+
+    TS_NAME = "ForecastPooledDiagnostic"
+
+    label: str | None = wire_optional()
+    n: int | None = wire_optional()
+    mean_brier: float | None = wire_optional(nullable=True)
+
+
+class ForecastQuarantineSummary(WireModel):
+    TS_NAME = "ForecastQuarantineSummary"
+
+    n: int | None = wire_optional()
+    reasons: dict[str, Any] | None = wire_optional()
+
+
+class ForecastCohortScoreboard(WireModel):
+    """Score aggregates SEPARATED BY COHORT — the honest default. Never a pooled
+    all-artifact Brier as a headline."""
+
+    TS_NAME = "ForecastCohortScoreboard"
+
+    cohorts: dict[str, Any] | None = wire_optional()
+    continuous_scorecard: ForecastContinuousScorecard | None = wire_optional()
+    pooled_diagnostic: ForecastPooledDiagnostic | None = wire_optional()
+    quarantined: ForecastQuarantineSummary | None = wire_optional()
+
+
 class ForecastCalibrationRequest(WireModel):
     TS_NAME = "ForecastCalibrationRequest"
 
@@ -709,6 +753,7 @@ class ForecastCalibrationResponse(WireModel):
     TS_NAME = "ForecastCalibrationResponse"
 
     bias: ForecastCalibrationBias | None = wire_optional(nullable=True)
+    cohort_scoreboard: ForecastCohortScoreboard | None = wire_optional()
     domain: str | None = wire_optional(nullable=True)
     domains: list[ForecastCalibrationBreakdownRow] | None = wire_optional()
     lessons: list[ForecastCalibrationLesson] | None = wire_optional()

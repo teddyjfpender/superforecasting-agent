@@ -636,6 +636,29 @@ def test_forecast_calibration_empty_ledger_reports_zero_counts(tmp_path, monkeyp
     assert bias is None or bias["status"] == "insufficient_evidence"
 
 
+def test_forecast_calibration_carries_cohort_scoreboard(tmp_path, monkeypatch):
+    # The forecast.calibration RPC must ship the by-cohort scoreboard so the TUI
+    # renders scores SEPARATED BY COHORT (never a pooled all-artifact headline).
+    from forecasting.ledger import ForecastLedger
+
+    db_path = tmp_path / "forecast.sqlite"
+    ForecastLedger(db_path)
+
+    import forecasting.ledger as ledger_module
+
+    real = ledger_module.ForecastLedger
+    monkeypatch.setattr(ledger_module, "ForecastLedger", lambda *a, **k: real(db_path))
+
+    resp = server.handle_request(
+        {"id": "1", "method": "forecast.calibration", "params": {}}
+    )
+    board = resp["result"]["cohort_scoreboard"]
+    assert board is not None
+    assert "live_calibration_eligible" in board["cohorts"]
+    assert "continuous_scorecard" in board
+    assert "not a skill claim" in board["pooled_diagnostic"]["label"].lower()
+
+
 def test_forecast_calibration_is_routed_to_thread_pool():
     assert "forecast.calibration" in server._LONG_HANDLERS
 
