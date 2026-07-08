@@ -417,20 +417,30 @@ _DIFFICULTY_ADJUSTMENT_LIMITS = (
 )
 
 
+# The canonical market/crowd baseline vocabulary used across the codebase
+# (market_ensemble, market_nightly.MARKET_BASELINE_TYPE, jobs/quorum): FB ingests
+# its freeze crowd price as ``market``; the live-edge / market_nightly harness
+# records its venue price as ``market_price``; imported market snapshots use
+# ``imported_market``. All three are genuine 0..1 YES probabilities.
+_MARKET_ANCHOR_BASELINE_TYPES = ("market", "market_price", "imported_market")
+
+
 def _market_anchors(conn) -> dict[str, float]:
     """Map ``question_id -> recorded market/crowd probability`` — the difficulty
     signal. Reads the ``baseline_comparisons`` market rows (FB ingests the freeze
     crowd price here; live/nightly questions record their venue price). Keeps a
     single 0..1 scalar per question (latest by ``as_of`` when several exist);
     non-scalar / out-of-range payloads are skipped (difficulty is binary-only)."""
+    placeholders = ",".join("?" for _ in _MARKET_ANCHOR_BASELINE_TYPES)
     anchors: dict[str, float] = {}
     for row in conn.execute(
-        """
+        f"""
         SELECT question_id, probability_or_distribution
         FROM baseline_comparisons
-        WHERE baseline_type = 'market'
+        WHERE baseline_type IN ({placeholders})
         ORDER BY as_of ASC
-        """
+        """,
+        _MARKET_ANCHOR_BASELINE_TYPES,
     ).fetchall():
         payload = json_loads(row["probability_or_distribution"], None)
         if isinstance(payload, (int, float)) and not isinstance(payload, bool):
