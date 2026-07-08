@@ -270,6 +270,11 @@ export type GatewayEvent =
         summary?: string
         tool_id: string
         todos?: unknown[]
+        // Cumulative session usage as of tool-complete time — folded into the
+        // usage store just like message.complete, so the liveness counter's
+        // reported delta climbs mid-turn (once per tool call) instead of only
+        // landing at end-of-turn.
+        usage?: Usage
       }
       session_id?: string
       type: typeof WireEvent.TOOL_COMPLETE

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from protocol.rpc.session import Usage
 from protocol.types import WireModel, wire_optional
 
 
@@ -44,9 +45,17 @@ class ToolComplete(WireModel):
     """``tool.complete`` — a tool call finished.
 
     The server (``_on_tool_complete``) emits ``tool_id`` + ``name`` always, then
-    conditionally ``duration_s`` / ``summary`` / ``todos`` / ``inline_diff``.
-    It NEVER emits ``error`` (the hand-written TUI type read a non-existent
-    ``error`` field — see the A2 report).
+    conditionally ``duration_s`` / ``summary`` / ``todos`` / ``inline_diff`` /
+    ``usage``.  It NEVER emits ``error`` (the hand-written TUI type read a
+    non-existent ``error`` field — see the A2 report).
+
+    ``usage`` carries the CUMULATIVE session usage (the same shape
+    ``message.complete`` ships) as of tool-complete time.  The API call that
+    produced this tool call has already folded into the session counters before
+    the tool executes (``conversation_loop`` folds usage right after the
+    response; ``_execute_tool_calls`` fires the complete callback afterward), so
+    the TUI can climb its liveness counter mid-turn instead of only at
+    ``message.complete``.
     """
 
     TS_NAME = "ToolCompletePayload"
@@ -57,6 +66,7 @@ class ToolComplete(WireModel):
     summary: str | None = wire_optional()
     inline_diff: str | None = wire_optional()
     todos: list[Any] | None = wire_optional()
+    usage: Usage | None = wire_optional()
 
 
 __all__ = ["ToolProgress", "ToolGenerating", "ToolStart", "ToolComplete"]

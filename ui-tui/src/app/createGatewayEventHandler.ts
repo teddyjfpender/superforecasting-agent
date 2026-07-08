@@ -650,6 +650,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
         return
       case WireEvent.TOOL_COMPLETE: {
+        // Fold the cumulative usage the gateway now ships on tool.complete into
+        // the session usage store — the SAME path message.complete uses. This
+        // lands the fresh-work delta (usage.input + usage.output) mid-turn, so
+        // the liveness counter's `reported` term climbs on every tool call
+        // instead of staying pinned at the turn-start baseline until end-of-turn.
+        if (ev.payload.usage) {
+          patchUiState(state => ({ ...state, usage: { ...state.usage, ...ev.payload.usage } }))
+        }
+
         const inlineDiffText =
           ev.payload.inline_diff && getUiState().inlineDiffs ? stripAnsi(String(ev.payload.inline_diff)).trim() : ''
 

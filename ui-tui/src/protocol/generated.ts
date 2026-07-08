@@ -3080,6 +3080,7 @@ export interface ToolCompletePayload {
   summary?: string
   todos?: unknown[]
   tool_id: string
+  usage?: Usage
 }
 
 export interface ToolGeneratingPayload {

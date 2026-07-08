@@ -2174,6 +2174,18 @@ def _on_tool_complete(sid: str, tool_call_id: str, name: str, args: dict, result
             payload["inline_diff"] = "\n".join(rendered)
     except Exception:
         pass
+    # Ship the CUMULATIVE session usage on every tool.complete so the TUI's
+    # liveness counter climbs mid-turn instead of only at message.complete. By
+    # the time this callback fires, conversation_loop has already folded the API
+    # call that produced THIS tool call into the session_* counters (the fold at
+    # response time precedes _execute_tool_calls), so _get_usage(agent) is fresh
+    # and monotonic — never a stale pre-fold number.
+    agent = session.get("agent") if session is not None else None
+    if agent is not None:
+        try:
+            payload["usage"] = _get_usage(agent)
+        except Exception:
+            pass
     if _tool_progress_enabled(sid) or payload.get("inline_diff"):
         _emit("tool.complete", sid, payload)
 

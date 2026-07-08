@@ -6020,3 +6020,52 @@ def test_get_usage_real_session_arithmetic_25e6cd08():
     # Honest work is ~15x smaller than the cache-inflated billing total.
     assert usage["total"] == 4_760_671
     assert round(usage["total"] / work, 1) == 15.2
+
+
+def test_on_tool_complete_ships_cumulative_usage_climbing_across_a_two_call_turn():
+    """tool.complete carries the CUMULATIVE session usage as of emit time, so a
+    two-call turn shows the counter climb tool-by-tool. Ordering that makes this
+    honest: conversation_loop folds each API call's usage into the session
+    counters at RESPONSE time, and _execute_tool_calls fires the complete
+    callback AFTERWARD — so _get_usage(agent) already includes the call that
+    produced this very tool call (never a stale pre-fold number)."""
+    sid = "sess-tool-usage"
+    agent = _usage_agent()
+    server._sessions[sid] = {"agent": agent}
+
+    emitted: list[tuple[str, str, dict]] = []
+    try:
+        with patch.object(server, "_emit", side_effect=lambda *a, **k: emitted.append(a)):
+            # ── API call #1 returns tool_calls → conversation_loop folds its
+            #    usage BEFORE the tools run → then the tool completes.
+            agent.session_input_tokens += 12_000
+            agent.session_output_tokens += 800
+            agent.session_total_tokens += 12_800
+            agent.session_api_calls += 1
+            server._on_tool_complete(sid, "tc_1", "web_search", {}, "found 5 results")
+
+            # ── API call #2 (with the tool result) folds MORE usage, then its
+            #    tool completes. The counter must be strictly larger now.
+            agent.session_input_tokens += 900
+            agent.session_output_tokens += 650
+            agent.session_total_tokens += 1_550
+            agent.session_api_calls += 1
+            server._on_tool_complete(sid, "tc_2", "read", {}, "file contents")
+    finally:
+        server._sessions.pop(sid, None)
+
+    completes = [(sid_, payload) for (event, sid_, payload) in emitted if event == "tool.complete"]
+    assert len(completes) == 2
+
+    usage_1 = completes[0][1]["usage"]
+    usage_2 = completes[1][1]["usage"]
+
+    # Each frame is CUMULATIVE (not per-call): call #1 sees only its own work,
+    # call #2 sees the sum of both calls.
+    work_1 = usage_1["input"] + usage_1["output"]
+    work_2 = usage_2["input"] + usage_2["output"]
+    assert work_1 == 12_800
+    assert work_2 == 12_800 + 1_550
+    # Monotonic climb — the whole point: the liveness counter grows mid-turn.
+    assert work_2 > work_1
+    assert usage_2["calls"] == 2

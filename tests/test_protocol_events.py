@@ -151,6 +151,11 @@ CASES: list[tuple[type, dict, bool]] = [
     (ToolComplete, {"tool_id": "tc_1", "name": "edit", "duration_s": 0.42, "summary": "ok",
                     "inline_diff": "- a\n+ b", "todos": [{"t": "x", "status": "completed"}]}, True),
     (ToolComplete, {"tool_id": "tc_1", "name": "bash"}, True),
+    # tool.complete now ships the cumulative session usage (same Usage shape as
+    # message.complete) so the TUI can climb its liveness counter mid-turn.
+    (ToolComplete, {"tool_id": "tc_1", "name": "web_search",
+                    "usage": {"calls": 3, "input": 1_200, "output": 340, "total": 1_540,
+                              "reasoning": 64}}, True),
     # ── blocking prompts ─────────────────────────────────────────────────────
     (ClarifyRequest, {"request_id": "r1", "question": "which?", "choices": ["a", "b"]}, False),
     (ClarifyRequest, {"request_id": "r1", "question": "which?", "choices": None}, False),
