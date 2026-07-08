@@ -142,6 +142,13 @@ export interface ForecastWorkspaceTrigger {
   window?: string
 }
 
+// One candidate's 90% vote-share interval (mirrors the gateway ForecastCandidateInterval).
+export interface ForecastCandidateInterval {
+  hi: number
+  lo: number
+  mid?: number | null
+}
+
 export interface ForecastWorkspaceItem {
   action_threshold?: null | string
   analyst_note?: ForecastAnalystNote | null
@@ -172,6 +179,10 @@ export interface ForecastWorkspaceItem {
   panel?: ForecastWorkspacePanel | null
   probability?: null | number | Record<string, unknown> | string
   probability_display?: string
+  // Per-candidate 90% vote-share intervals (p05/median/p95, normalized to lo/mid/hi on
+  // the payload scale). Mirrors the gateway's ForecastCandidateInterval; keyed by
+  // candidate label. Absent for non-vote-share forecasts.
+  candidate_intervals?: null | Record<string, ForecastCandidateInterval>
   rationale?: null | string
   reasons_down?: string[]
   reasons_up?: string[]

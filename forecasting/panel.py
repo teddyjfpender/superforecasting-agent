@@ -157,9 +157,11 @@ class PanelAggregation:
     notes: list[str] = field(default_factory=list)
     pre_extremize_probability: float | None = None
     applied_alpha: float = 1.0
+    applied_platt_d: float = 1.0
+    calibration_provenance: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "method": self.method,
             "aggregate_probability": round(self.aggregate_probability, 6),
             "spread": {
@@ -175,6 +177,13 @@ class PanelAggregation:
             ),
             "applied_alpha": round(self.applied_alpha, 6),
         }
+        # Hierarchical-Platt intercept markers ride along only when a non-identity
+        # intercept actually applied, so the identity commit stays byte-identical.
+        if self.applied_platt_d != 1.0:
+            payload["applied_platt_d"] = round(self.applied_platt_d, 6)
+        if self.calibration_provenance:
+            payload["calibration_provenance"] = self.calibration_provenance
+        return payload
 
 
 def aggregate_panel_estimates(
@@ -183,6 +192,8 @@ def aggregate_panel_estimates(
     method: str = DEFAULT_PANEL_AGGREGATION_METHOD,
     trim: int = 1,
     alpha_extremize: float = 1.0,
+    platt_d: float = 1.0,
+    calibration_provenance: Mapping[str, Any] | None = None,
 ) -> PanelAggregation:
     """Aggregate per-perspective probability estimates into a panel decision.
 
@@ -206,10 +217,16 @@ def aggregate_panel_estimates(
     Terminal calibration (AIA P0.1): after the pool, the scalar is passed
     through the desk's single recalibration kernel
     :func:`forecasting.bayes_toolkit.platt_scale` with a per-question
-    ``alpha_extremize`` slope, defaulting to ``1.0`` (the identity) so an
-    un-configured question is BYTE-IDENTICAL to the historical bare pool — the
-    hard invariant. At the identity, ``pre_extremize_probability`` stays ``None``
-    (mirroring :class:`bayes_toolkit.PoolResult`). The MEASURED per-scope
+    ``alpha_extremize`` slope AND an optional ``platt_d`` intercept term
+    (``platt_scale(p, alpha, d=platt_d)`` == ``sigma(alpha*logit(p) + log
+    platt_d)``), both defaulting to the identity (``1.0``) so an un-configured
+    question is BYTE-IDENTICAL to the historical bare pool — the hard invariant.
+    ``platt_d`` is the hierarchical-Platt hook (BLF A4): a cohort's intercept
+    ``b + delta_s`` rides in as ``exp(b + delta_s)`` — default-OFF, supplied only
+    when the operator has activated hierarchical mode. ``calibration_provenance``
+    (optional) records WHICH cohort/offset produced the number. At the identity,
+    ``pre_extremize_probability`` stays ``None`` (mirroring
+    :class:`bayes_toolkit.PoolResult`). The MEASURED per-scope
     confidence rescale is applied separately downstream in
     :func:`forecasting.learning.apply_active_lesson_adjustments` (the fixed
     de-hedge and the learned correction compose along the pipeline, NOT at this
@@ -249,16 +266,20 @@ def aggregate_panel_estimates(
         aggregate = float(median(probs))
 
     # ── terminal Platt calibration ────────────────────────────────────────────
-    # Apply the per-question extremization slope. At the identity (1.0) this is a
+    # Apply the per-question extremization slope AND the (default-identity)
+    # hierarchical intercept term. At the identity (alpha=1.0, d=1.0) this is a
     # strict no-op: the pre_extremize field stays None and the aggregate is
     # byte-identical to the bare pool.
     alpha = float(alpha_extremize)
+    d = float(platt_d)
+    calibrated = alpha != 1.0 or d != 1.0
     pre_extremize: float | None = None
-    if alpha != 1.0:
+    if calibrated:
         pre_extremize = float(aggregate)
-        aggregate = platt_scale(aggregate, alpha=alpha, d=1.0)
+        aggregate = platt_scale(aggregate, alpha=alpha, d=d)
+        detail = f"alpha={alpha:g}" + (f" d={d:g}" if d != 1.0 else "")
         notes.append(
-            f"terminal Platt calibration alpha={alpha:g}:"
+            f"terminal Platt calibration {detail}:"
             f" {pre_extremize:.4f} -> {float(aggregate):.4f}"
         )
 
@@ -266,10 +287,22 @@ def aggregate_panel_estimates(
     # Fold the terminal-calibration markers into the persisted spread so the
     # stage is observable downstream (the desk + the skipped-terminal-calibration
     # hook) without a schema migration — mirrors how disagreement_signal rides
-    # along here. ``applied_alpha`` is always present (1.0 = no-op);
-    # ``pre_extremize_probability`` is present only when calibration ran.
+    # along here. ``applied_alpha``/``terminal_calibration_applied`` are always
+    # present; the intercept + provenance keys ride along ONLY when a non-identity
+    # calibration actually ran (the identity commit stays byte-identical).
     spread["applied_alpha"] = round(alpha, 6)
-    spread["terminal_calibration_applied"] = alpha != 1.0
+    spread["terminal_calibration_applied"] = calibrated
+    if d != 1.0:
+        spread["applied_platt_d"] = round(d, 6)
+    provenance = dict(calibration_provenance) if calibration_provenance else None
+    if provenance and calibrated:
+        # Persist WHICH cohort/offset produced the number (BLF A4 provenance).
+        for key in ("cohort", "delta_s", "intercept_b", "slope_a", "small_cohort_fallback"):
+            if key in provenance:
+                spread[f"calibration_{key}"] = provenance[key]
+        spread["hierarchical_calibration_applied"] = bool(
+            provenance.get("delta_s") not in (None, 0.0)
+        )
     if pre_extremize is not None:
         spread["pre_extremize_probability"] = round(pre_extremize, 6)
     return PanelAggregation(
@@ -281,6 +314,8 @@ def aggregate_panel_estimates(
         notes=notes,
         pre_extremize_probability=pre_extremize,
         applied_alpha=alpha,
+        applied_platt_d=d,
+        calibration_provenance=provenance if calibrated else None,
     )
 
 

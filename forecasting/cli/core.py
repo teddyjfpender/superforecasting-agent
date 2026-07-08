@@ -1871,6 +1871,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     quorum_parser.add_argument("--trim", type=int, help="Drop this many extremes before pooling.")
     quorum_parser.add_argument("--samples", type=int, help="Self-fusion sample count (self preset).")
     quorum_parser.add_argument(
+        "--trials",
+        type=int,
+        help="Trials per panelist (BLF multi-trial). Each seat is drawn this many "
+        "times and pooled as a variance-shrunk logit mean toward the anchor; "
+        "default is impact-driven (high-impact 3, else 1).",
+    )
+    quorum_parser.add_argument(
         "--attach-snapshot",
         dest="attach_snapshot",
         help="Attach the resulting panel run to an existing snapshot id.",
@@ -2377,6 +2384,26 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     calibration_parser.add_argument("--since", help="Bias view: only count resolutions on/after this ISO date")
     calibration_parser.add_argument(
         "--recency-halflife", type=float, dest="recency_halflife_days", help="Bias view: recency half-life (days)"
+    )
+    calibration_parser.add_argument(
+        "--hierarchical",
+        action="store_true",
+        help="Hierarchical-Platt validation: held-out per-cohort Brier, global vs "
+        "per-cohort-intercept (BLF A4). The flip evidence for FORECAST_HIERARCHICAL_CALIBRATION.",
+    )
+    calibration_parser.add_argument(
+        "--min-cohort-n", type=int, dest="min_cohort_n",
+        help="Hierarchical view: min resolved rows before a cohort earns an offset (default 40).",
+    )
+    calibration_parser.add_argument(
+        "--folds", type=int, default=5, help="Hierarchical view: held-out CV folds (default 5).",
+    )
+    calibration_parser.add_argument(
+        "--split-by-venue", action="store_true", dest="split_by_venue",
+        help="Hierarchical view: refine cohorts to <origin>:<venue> where the data exists.",
+    )
+    calibration_parser.add_argument(
+        "--json", action="store_true", dest="as_json", help="Emit the raw report as JSON.",
     )
     calibration_parser.set_defaults(_forecast_handler=_cmd_calibration)
 
@@ -10653,10 +10680,12 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
     from forecasting.quorum import (
         available_provider_slugs,
         cap_preset_by_calls,
+        cap_trials_by_calls,
         estimate_quorum_calls,
         preset_model_count,
         resolve_configured_panel,
         resolve_quorum_defaults,
+        resolve_trial_count,
     )
 
     # Panel line-up precedence: explicit --models > QUORUM_PANEL_MODELS (appconfig,
@@ -11523,7 +11552,61 @@ def _cmd_scores_postmortem_misses(args: argparse.Namespace) -> None:
         print("  create the stubs with: forecast scoreboard postmortem-misses --apply")
 
 
+def _print_hierarchical_calibration(args: argparse.Namespace) -> None:
+    """Held-out per-cohort Brier: global vs hierarchical Platt (BLF A4).
+
+    READ-ONLY. The numbers here are the operator's evidence for flipping
+    ``FORECAST_HIERARCHICAL_CALIBRATION`` on: where a cohort's base-rate skew makes
+    a per-cohort intercept beat the single global map on OUT-OF-SAMPLE Brier."""
+
+    ledger = _ledger(args)
+    report = ledger.validate_hierarchical_calibration(
+        min_cohort_n=getattr(args, "min_cohort_n", None),
+        folds=getattr(args, "folds", 5),
+        split_by_venue=getattr(args, "split_by_venue", False),
+        since=getattr(args, "since", None),
+        recency_halflife_days=getattr(args, "recency_halflife_days", None),
+    )
+    if getattr(args, "as_json", False):
+        print(json.dumps(report, indent=2, sort_keys=True))
+        return
+
+    print("hierarchical Platt calibration — held-out per-cohort Brier (global vs per-cohort intercept)")
+    print(f"  rows={report.get('n', 0)}  folds={report.get('folds')}  min_cohort_n={report.get('min_cohort_n')}")
+    for note in report.get("notes", []):
+        print(f"  note: {note}")
+    if report.get("lambda") is not None:
+        print(f"  ridge lambda (LOO-CV): {report['lambda']:g}")
+    cohorts = report.get("cohorts") or {}
+    if cohorts:
+        print("  cohort                             n   identity    global   hierarch   delta   helps  offset")
+        for name, row in cohorts.items():
+            print(
+                f"  {name:<32} {row['n']:>5.0f}  {row['brier_identity']:>8.4f} "
+                f"{row['brier_global']:>8.4f} {row['brier_hierarchical']:>9.4f} "
+                f"{row['delta_brier_global_minus_hier']:>+7.4f}  "
+                f"{'yes' if row['hierarchical_helps'] else ' no':>5}  "
+                f"{'yes' if row['has_offset'] else ' no':>5}"
+            )
+    overall = report.get("overall") or {}
+    if overall:
+        print(
+            f"  overall: global={overall['brier_global']:.4f} "
+            f"hierarchical={overall['brier_hierarchical']:.4f} "
+            f"delta={overall['delta_brier_global_minus_hier']:+.4f}"
+        )
+    rec = report.get("recommendation", "insufficient_data")
+    improved = report.get("large_cohorts_improved")
+    tail = f" ({improved} offset-cohort(s) improved)" if improved is not None else ""
+    print(f"  recommendation: {rec}{tail}")
+    if rec == "flip_on":
+        print("  → set FORECAST_HIERARCHICAL_CALIBRATION=on to activate the per-cohort intercepts.")
+
+
 def _cmd_calibration(args: argparse.Namespace) -> None:
+    if getattr(args, "hierarchical", False):
+        _print_hierarchical_calibration(args)
+        return
     if getattr(args, "operator", False):
         _print_operator_calibration(
             _ledger(args),

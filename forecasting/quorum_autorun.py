@@ -86,8 +86,12 @@ def maybe_autorun_quorum(
         from forecasting.quorum import (
             available_provider_slugs,
             cap_preset_by_calls,
+            cap_trials_by_calls,
+            estimate_quorum_calls,
+            preset_model_count,
             quorum_auto_indicated,
             resolve_quorum_defaults,
+            resolve_trial_count,
         )
 
         full_cfg = load_config()
@@ -119,6 +123,24 @@ def maybe_autorun_quorum(
         preset, delphi_rounds, samples, est_calls, cap_note = cap_preset_by_calls(
             preset, delphi_rounds, max_calls=max_calls, samples=samples
         )
+        # Multi-trial per panelist (BLF A2): K from the question's impact, then
+        # bounded to fit the SAME quorum.max_calls budget (extra trials of the same
+        # seats are the cheapest lever, so they yield first). K=1 leaves everything
+        # byte-identical.
+        trials, _trials_reason = resolve_trial_count(question)
+        trials, trials_note = cap_trials_by_calls(
+            preset=preset,
+            delphi_rounds=delphi_rounds,
+            samples=samples,
+            trials=trials,
+            max_calls=max_calls,
+        )
+        if trials > 1:
+            est_calls = estimate_quorum_calls(
+                model_count=preset_model_count(preset, samples=samples),
+                delphi_rounds=delphi_rounds,
+                trials=trials,
+            )
 
         judge = cfg.get("judge") or None
         self_fusion = preset == "self"
@@ -154,15 +176,19 @@ def maybe_autorun_quorum(
             "model_timeout": int(cfg.get("model_timeout", 300)),
             "supervisor_search": bool(cfg.get("supervisor_search")),
             "delphi_rounds": delphi_rounds,
+            "trials": trials,
         }
         run_id = start_job(spec, wait=False)
+        trials_suffix = "" if trials <= 1 else f", trials={trials}"
         _say(
             f"↳ quorum auto-run started: {run_id} "
-            f"(preset={preset}, delphi={delphi_rounds}, ~{est_calls} model calls) — "
-            f"{defaults['reason']}."
+            f"(preset={preset}, delphi={delphi_rounds}{trials_suffix}, "
+            f"~{est_calls} model calls) — {defaults['reason']}."
         )
         if cap_note:
             _say(f"  cost cap: {cap_note}")
+        if trials_note:
+            _say(f"  cost cap: {trials_note}")
         _say(f"  poll with:  forecast quorum status {run_id}")
         return {
             "run_id": run_id,

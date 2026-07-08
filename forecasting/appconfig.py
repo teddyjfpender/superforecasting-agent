@@ -97,6 +97,12 @@ _KEYS: tuple[ConfigKey, ...] = (
               "Kill-switch: disable thesis-cascade freshening on member commits.", category="ledger"),
     ConfigKey("FORECAST_NO_LESSON_SYNTHESIS", "bool", False, False,
               "Skip calibration-lesson synthesis in the cron runner.", category="cron"),
+    ConfigKey("FORECAST_HIERARCHICAL_CALIBRATION", "bool", False, False,
+              "Activate hierarchical Platt (per-cohort intercept offsets delta_s) at "
+              "the terminal calibration. DEFAULT-OFF (same activation-gate pattern as "
+              "the sqrt(3) slope): the derivation returns the global map until this is "
+              "flipped on, backed by the `calibration --hierarchical` validation report.",
+              category="ledger"),
     ConfigKey("FORECAST_BRIDGE_PORT", "int", 8787, False,
               "Port for the read-only forecast web bridge.", category="web"),
     # ── Agent tool-call budget (checkpoint-continuation soft cap) ─────────────

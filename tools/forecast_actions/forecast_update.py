@@ -213,12 +213,13 @@ def update_forecast(args: dict[str, Any], ledger) -> str:
         )
         if _existing is not None:
             _rc_refs.append(_existing["id"])
-        elif not preview_flag:
-            # A preview writes nothing: don't create the inline reference class
-            # (the real commit will). Its would-be link is simply absent from the
-            # preview's outside-view signal; the advisories that drive the
-            # commit-then-remediate churn (reasoning/components/panel/style) are
-            # unaffected.
+        else:
+            # Create + link the inline anchor. This runs for a preview too: the G3
+            # first-commit anchor tier makes the outside view mandatory, so a preview
+            # must actually provision it to PREDICT the real commit's outcome (writing
+            # a reference-class row, never a snapshot — the preview's no-snapshot
+            # contract is intact). The reuse-by-name branch above means a subsequent
+            # real commit links this SAME anchor instead of piling up a duplicate.
             _created_rc = ledger.add_reference_class(
                 question_id=question_id,
                 name=_rc_name,

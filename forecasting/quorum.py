@@ -73,6 +73,25 @@ _UNSET_CONFIG: Any = object()
 # not spawn an unreasonable number of concurrent LLM calls.
 _AUTO_CONCURRENCY_CAP = 8
 
+# ── Multi-trial per-panelist pooling (BLF A2) ────────────────────────────────
+# A single run per panelist is a noisy POINT-SAMPLE of the model's own belief
+# distribution (BLF measures inter-trial σ≈0.20 in probability space — enormous),
+# so a high-impact question runs K trials per seat and pools them, per BLF, as a
+# James–Stein shrunken logit mean toward the outside-view anchor: the noisier the
+# trials, the harder the pool shrinks to the anchor. K is question-impact-driven
+# (config below); the extra spend rides the SAME cost caps + policy-matrix
+# LLM_SPEND authorize the panel width already does.
+_DEFAULT_TRIALS = 1  # routine question — one draw per seat (byte-identical baseline)
+_HIGH_IMPACT_TRIALS = 3  # high-impact question — three draws per seat, pooled
+# James–Stein form α = max(f, 1 − c·s²) with s² the inter-trial LOGIT variance:
+# α is the weight kept on the trials' own mean, (1−α) the weight shrunk onto the
+# anchor. ``_TRIAL_SHRINK_FLOOR`` (f) never lets the pool collapse entirely onto
+# the anchor; ``_TRIAL_SHRINK_C`` (c) sets how fast disagreement pulls toward it
+# (at s²≈1 — trials split ~0.27 vs ~0.73 — α hits the floor). Documented, LOO-CV-
+# able defaults; at s²=0 (K=1 or unanimous trials) α=1 so the pool is the mean.
+_TRIAL_SHRINK_FLOOR = 0.5
+_TRIAL_SHRINK_C = 0.5
+
 # Built-in presets mirror the Fusion blog's panels. ``self`` is the
 # single-provider self-fusion config — the model list is filled in at runtime
 # from the active model, repeated ``samples`` times.
@@ -166,6 +185,41 @@ class ModelForecast:
     blind_probability: float | None = None
     reconciled_probability: float | None = None
     reconcile_reason: str | None = None
+    # Linguistic belief state (BLF A1). The ordered trajectory of belief REVISIONS
+    # the panelist emitted as it accumulated evidence — each step a dict
+    # ``{step, probability, confidence, evidence_for, evidence_against,
+    # open_questions, moved_by}`` where ``moved_by`` names the single piece of
+    # evidence that moved the number. The LAST step's probability is the committed
+    # forecast (the final belief IS the commit). Empty when the panelist returned no
+    # trajectory (a stub/legacy response) — the committed number then stands alone.
+    belief_trajectory: list[dict[str, Any]] = field(default_factory=list)
+    # Multi-trial provenance (BLF A2). On a K>1 seat this ModelForecast is the
+    # POOLED belief over K trials; ``trials`` records each surviving trial
+    # (``{trial, probability, blind_probability, crux, moved_by}``) so a divergent
+    # lone-skeptic trial's distinct read stays discoverable, and ``trial_shrinkage``
+    # records the James–Stein pool (``{n_trials, survivors, alpha, var_logit,
+    # target, degraded}``). Both empty/None on the default K=1 path so a single-trial
+    # seat is byte-identical to a pre-A2 panelist.
+    trials: list[dict[str, Any]] = field(default_factory=list)
+    trial_shrinkage: dict[str, Any] | None = None
+
+    @property
+    def trial_probabilities(self) -> list[float]:
+        """The per-trial committed probabilities that feed the disagreement index.
+
+        A single-trial seat reports its one committed number; a multi-trial seat
+        reports EVERY surviving trial so trial divergence widens the measured spread
+        (BLF: the lone skeptic is a divergent trial). Byte-identical to
+        ``[self.probability]`` on the default K=1 path (``trials`` is empty)."""
+
+        if self.trials:
+            probs = [
+                t.get("probability")
+                for t in self.trials
+                if t.get("error") is None and t.get("probability") is not None
+            ]
+            return [float(p) for p in probs] or [self.probability]
+        return [self.probability]
 
     def to_estimate(self) -> dict[str, Any]:
         """Shape this forecast as a panel estimate for ``aggregate_panel_estimates``."""
@@ -192,6 +246,13 @@ class ModelForecast:
                 "blind_probability": self.blind_probability,
                 "reconciled_probability": self.reconciled_probability,
                 "reconcile_reason": self.reconcile_reason,
+                # Linguistic belief state (A1) + multi-trial provenance (A2). Ride
+                # the existing panel_estimates.metadata JSON column — no schema
+                # migration; empty/None on the legacy/K=1 path so a durable estimate
+                # is byte-compatible with a pre-BLF reader.
+                "belief_trajectory": self.belief_trajectory,
+                "trials": self.trials,
+                "trial_shrinkage": self.trial_shrinkage,
             },
         }
 
@@ -426,7 +487,12 @@ _PANELIST_SYSTEM = (
     "information you could not have known as of the evidence cutoff. Treat any "
     "single number (a market, a poll, a model) as a PRIOR to check, not the "
     "answer. Form your OWN independent view; you will not see other panelists' "
-    "answers. Use web search to gather current evidence where it helps."
+    "answers. Use web search to gather current evidence where it helps. "
+    "Maintain a running BELIEF STATE: hold a probability from your very first "
+    "prior and REVISE it after each piece of evidence you gather — naming, each "
+    "time, the specific evidence that moved the number and by how much. Do not "
+    "save all your judgement for the end; the number should walk the path of the "
+    "evidence, and your FINAL belief is your committed forecast."
 )
 
 _PANELIST_USER_TEMPLATE = (
@@ -443,7 +509,16 @@ _PANELIST_USER_TEMPLATE = (
     "- reasons_up: array of 1-3 concrete links that push the probability higher\n"
     "- reasons_down: array of 1-3 concrete links that push it lower\n"
     "- change_my_mind: array of 1-3 observations that would force a material update\n"
-    "- crux: one sentence naming the single biggest uncertainty"
+    "- crux: one sentence naming the single biggest uncertainty\n"
+    "- belief_trajectory: array of your belief REVISIONS in order, one entry per "
+    "evidence step you took. Each entry is an object with: step (1-based integer), "
+    "probability (your YES probability AFTER that step), confidence "
+    '("low"/"medium"/"high"), evidence_for (array of strings), evidence_against '
+    "(array of strings), open_questions (array of strings), and moved_by (one short "
+    'line naming the specific evidence that moved the number, or "prior" for your '
+    "starting anchor). Start with your prior and add a step whenever the evidence "
+    "shifts your view. The LAST step's probability MUST equal your committed "
+    "probability above — the final belief is the commit."
 )
 
 
@@ -518,10 +593,13 @@ def build_reconcile_block(
         "name the SPECIFIC edge (private information, or a signal the market has not yet "
         "priced) that justifies the deviation.\n"
         "Return ONLY the same JSON object as before (probability, confidence_low, "
-        "confidence_high, rationale, reasons_up, reasons_down, change_my_mind, crux), "
-        "plus:\n"
+        "confidence_high, rationale, reasons_up, reasons_down, change_my_mind, crux, "
+        "belief_trajectory), plus:\n"
         "- reconcile_reason: the named edge justifying any material deviation from the "
-        "market, or one sentence on why you converged to / held against it"
+        "market, or one sentence on why you converged to / held against it\n"
+        "APPEND one final step to belief_trajectory recording this reconciliation "
+        "(moved_by naming the outside-view anchor) and re-emit the full trajectory so "
+        "its last step is your reconciled commit."
     )
 
 
@@ -852,9 +930,16 @@ def parse_panelist_response(response: Any, model: str) -> ModelForecast:
     except ValueError as exc:
         raise ValidationError(f"{model}: {exc}") from exc
     payload = _reparse_full(response)
+    trajectory = _parse_belief_trajectory(payload.get("belief_trajectory"))
+    # BLF A1: the final belief IS the commit. When the panelist emitted a belief
+    # trajectory, its last step's probability is the committed number (the belief the
+    # evidence walked to); absent a trajectory, the top-level ``probability`` stands.
+    committed = float(parsed["probability"])
+    if trajectory and trajectory[-1].get("probability") is not None:
+        committed = float(trajectory[-1]["probability"])
     return ModelForecast(
         model=model,
-        probability=float(parsed["probability"]),
+        probability=committed,
         confidence_low=_opt_prob(payload.get("confidence_low")),
         confidence_high=_opt_prob(payload.get("confidence_high")),
         rationale=str(parsed.get("rationale") or ""),
@@ -862,6 +947,7 @@ def parse_panelist_response(response: Any, model: str) -> ModelForecast:
         reasons_down=_str_list(payload.get("reasons_down")),
         change_my_mind=_str_list(payload.get("change_my_mind")),
         crux=(str(payload["crux"]).strip() if payload.get("crux") else None),
+        belief_trajectory=trajectory,
     )
 
 
@@ -1004,6 +1090,56 @@ def _str_list(raw: Any) -> list[str]:
     else:
         return []
     return [str(item).strip() for item in items if str(item).strip()]
+
+
+def _belief_step(raw: Any, index: int) -> dict[str, Any] | None:
+    """Normalize one linguistic-belief-state step (BLF A1) into the recorded schema.
+
+    Returns ``{step, probability, confidence, evidence_for, evidence_against,
+    open_questions, moved_by}`` — the belief slot plus the one-line ``moved_by``
+    naming the evidence that moved the number. A step with no parseable probability
+    is dropped (a belief revision without a number is not a revision); ``step``
+    falls back to the 1-based position when the model omitted it. Tolerant by
+    design so a malformed step can never abort the whole panelist parse."""
+
+    if not isinstance(raw, Mapping):
+        return None
+    probability = _opt_prob(raw.get("probability"))
+    if probability is None:
+        probability = _opt_prob(raw.get("p"))
+    if probability is None:
+        return None
+    try:
+        step = int(raw.get("step"))
+    except (TypeError, ValueError):
+        step = index + 1
+    confidence = raw.get("confidence")
+    return {
+        "step": step,
+        "probability": probability,
+        "confidence": str(confidence).strip().lower() if confidence else None,
+        "evidence_for": _str_list(raw.get("evidence_for")),
+        "evidence_against": _str_list(raw.get("evidence_against")),
+        "open_questions": _str_list(raw.get("open_questions")),
+        "moved_by": (str(raw.get("moved_by")).strip() if raw.get("moved_by") else None),
+    }
+
+
+def _parse_belief_trajectory(raw: Any) -> list[dict[str, Any]]:
+    """The ordered belief trajectory (BLF A1) from a panelist payload.
+
+    Returns a list of normalized belief steps; ``[]`` when the field is absent or
+    carries nothing parseable — so a legacy/stub response with no trajectory yields
+    an empty trajectory and the committed number stands alone (byte-compatible)."""
+
+    if not isinstance(raw, (list, tuple)):
+        return []
+    out: list[dict[str, Any]] = []
+    for index, item in enumerate(raw):
+        step = _belief_step(item, index)
+        if step is not None:
+            out.append(step)
+    return out
 
 
 # ── Orchestration ────────────────────────────────────────────────────────────
@@ -1468,18 +1604,19 @@ def preset_model_count(preset: str | None, *, samples: int = 3) -> int:
 
 
 def estimate_quorum_calls(
-    *, model_count: int, delphi_rounds: int, has_judge: bool = True
+    *, model_count: int, delphi_rounds: int, has_judge: bool = True, trials: int = 1
 ) -> int:
     """Pre-run model-call estimate for a quorum.
 
-    Each round dispatches ``model_count`` panelists plus (if wired) one judge; a
-    Delphi run adds a second full round (``delphi_rounds`` in {0, 1}). Supervisor
-    fresh-search, when enabled, adds further full rounds — it is OPT-IN/OFF by
-    default and reported separately, so it is deliberately excluded here (the
-    estimate is the guaranteed floor, not the search-enabled ceiling)."""
+    Each round dispatches ``model_count`` panelists — each run ``trials`` times per
+    seat (BLF A2 multi-trial; ``trials=1`` is the default and byte-identical) — plus
+    (if wired) one judge. A Delphi run adds a second full round (``delphi_rounds`` in
+    {0, 1}). Supervisor fresh-search, when enabled, adds further full rounds — it is
+    OPT-IN/OFF by default and reported separately, so it is deliberately excluded
+    here (the estimate is the guaranteed floor, not the search-enabled ceiling)."""
 
     rounds = max(1, int(delphi_rounds) + 1)
-    per_round = max(1, int(model_count)) + (1 if has_judge else 0)
+    per_round = max(1, int(model_count)) * max(1, int(trials)) + (1 if has_judge else 0)
     return per_round * rounds
 
 
@@ -1672,6 +1809,193 @@ def resolve_quorum_defaults(
     }
 
 
+def resolve_trial_count(
+    question: Any,
+    *,
+    high_impact_trials: int = _HIGH_IMPACT_TRIALS,
+    default_trials: int = _DEFAULT_TRIALS,
+    override: int | None = None,
+) -> tuple[int, str]:
+    """Map a question's IMPACT onto K trials-per-panelist (BLF A2).
+
+    ``high`` impact runs ``high_impact_trials`` draws per seat (default 3 — a
+    contested, expensive-to-be-wrong question deserves the variance-reduced pool);
+    every other question stays ``default_trials`` (1 — a single draw, byte-identical
+    to a pre-A2 panelist). An explicit ``override`` (a per-run spec value) always
+    wins. Returns ``(K, reason)`` so the printable defaults line can name why. The
+    resolved K is bounded downstream by :func:`cap_trials_by_calls` + the policy
+    matrix's LLM_SPEND cap — the same brakes that bound panel width."""
+
+    if override is not None:
+        return max(1, int(override)), f"trials override={int(override)}"
+    impact = (getattr(question, "impact", None) or "").strip().lower()
+    if impact == "high":
+        return max(1, int(high_impact_trials)), (
+            f"impact=high → K={max(1, int(high_impact_trials))} trials/panelist"
+        )
+    return max(1, int(default_trials)), (
+        f"impact={impact or 'unset'} → K={max(1, int(default_trials))} trial/panelist"
+    )
+
+
+def cap_trials_by_calls(
+    *,
+    preset: str | None,
+    delphi_rounds: int,
+    samples: int,
+    trials: int,
+    max_calls: int,
+    has_judge: bool = True,
+) -> tuple[int, str | None]:
+    """Bound K trials-per-panelist to fit ``max_calls`` given the (already-capped)
+    panel shape.
+
+    Extra trials of the SAME seats are the cheapest lever to cut, so this runs AFTER
+    :func:`cap_preset_by_calls` has fixed the panel width/Delphi/samples: it steps K
+    down to the largest value whose total call estimate still fits ``max_calls``,
+    never below 1. Returns ``(trials, note)`` — ``note`` is ``None`` when the
+    requested K already fit (nothing changed), so a default K=1 run is untouched."""
+
+    model_count = preset_model_count(preset, samples=samples)
+    requested = max(1, int(trials))
+    k = requested
+    while k > 1 and estimate_quorum_calls(
+        model_count=model_count, delphi_rounds=delphi_rounds, has_judge=has_judge, trials=k
+    ) > int(max_calls):
+        k -= 1
+    if k == requested:
+        return requested, None
+    return k, f"trials {requested}→{k} to fit max_calls={int(max_calls)}"
+
+
+def _shrunk_logit_mean(
+    probabilities: Sequence[float],
+    *,
+    target: float | None,
+    floor: float = _TRIAL_SHRINK_FLOOR,
+    c: float = _TRIAL_SHRINK_C,
+) -> tuple[float, float, float]:
+    """Pool trial probabilities as a James–Stein shrunken logit mean (BLF A2).
+
+    Computes ``ℓ̂ = α·ℓ̄ + (1−α)·logit(target)`` with ``α = max(floor, 1 − c·s²)``
+    clamped to [0, 1], where ``ℓ̄`` is the mean of the trial logits and ``s²`` their
+    (population) variance: the noisier the trials, the smaller α, the harder the pool
+    shrinks toward the anchor. ``target=None`` shrinks toward the trials' OWN logit
+    mean — a strict no-op (pooled == mean), used for the market-INDEPENDENT blind
+    pool so the orthogonality signal is never contaminated by the anchor. Returns
+    ``(pooled_probability, alpha, var_logit)``; a single trial has ``s²=0 → α=1`` so
+    the pool is exactly that trial (K=1 identity)."""
+
+    from forecasting.bayes_toolkit import inv_logit, logit
+
+    logits = [logit(float(p)) for p in probabilities]
+    n = len(logits)
+    if n == 0:
+        raise ValidationError("_shrunk_logit_mean requires at least one probability")
+    mean = sum(logits) / n
+    var = sum((x - mean) ** 2 for x in logits) / n if n > 1 else 0.0
+    target_logit = logit(float(target)) if target is not None else mean
+    alpha = max(float(floor), 1.0 - float(c) * var)
+    alpha = min(1.0, max(0.0, alpha))
+    pooled = inv_logit(alpha * mean + (1.0 - alpha) * target_logit)
+    return float(pooled), float(alpha), float(var)
+
+
+def _pool_seat_trials(
+    model: str,
+    trials: Sequence[ModelForecast],
+    *,
+    market_anchor: float | None,
+    floor: float = _TRIAL_SHRINK_FLOOR,
+    c: float = _TRIAL_SHRINK_C,
+) -> ModelForecast:
+    """Pool a seat's K trials (BLF A2) into ONE representative ModelForecast.
+
+    The COMMITTED (reconciled) numbers shrink toward the outside-view anchor — the
+    market price when present, else the trials' own mean (a no-op) — via
+    :func:`_shrunk_logit_mean`; the BLIND numbers pool market-INDEPENDENTLY (target
+    ``None``) so ``blind_pool`` orthogonality is never contaminated by the anchor.
+    The trial NEAREST the pooled number carries the seat's qualitative headline
+    (rationale / reasons / crux / belief_trajectory — the pool itself is not a new
+    argument), every trial (survivor and error) is recorded in ``.trials`` so a
+    divergent lone-skeptic trial stays discoverable, and the pool summary lands in
+    ``.trial_shrinkage``. A seat where ALL trials errored returns the first errored
+    trial, labeled — excluded from the cross-model pool exactly as a single failed
+    panelist is."""
+
+    survivors = [f for f in trials if f.error is None]
+    n = len(trials)
+    if not survivors:
+        rep = trials[0]
+        rep.trial_shrinkage = {
+            "n_trials": n,
+            "survivors": 0,
+            "alpha": None,
+            "var_logit": None,
+            "target": None,
+            "degraded": True,
+        }
+        return rep
+
+    pooled_p, alpha, var = _shrunk_logit_mean(
+        [f.probability for f in survivors], target=market_anchor, floor=floor, c=c
+    )
+    blind = [f.blind_probability for f in survivors if f.blind_probability is not None]
+    blind_pooled = (
+        _shrunk_logit_mean(blind, target=None, floor=floor, c=c)[0] if blind else None
+    )
+    rep = min(survivors, key=lambda f: abs(f.probability - pooled_p))
+    seat = ModelForecast(
+        model=model,
+        probability=pooled_p,
+        confidence_low=rep.confidence_low,
+        confidence_high=rep.confidence_high,
+        rationale=rep.rationale,
+        reasons_up=list(rep.reasons_up),
+        reasons_down=list(rep.reasons_down),
+        change_my_mind=list(rep.change_my_mind),
+        crux=rep.crux,
+        weight=rep.weight,
+        reconcile_reason=rep.reconcile_reason,
+        revision_reason=rep.revision_reason,
+        belief_trajectory=list(rep.belief_trajectory),
+    )
+    # Mirror _run_trial's contract: blind == committed on the single-phase
+    # (non-market) path, distinct on a market question.
+    seat.blind_probability = blind_pooled if market_anchor is not None else pooled_p
+    seat.reconciled_probability = pooled_p
+    seat.trials = [
+        {
+            "trial": i + 1,
+            "probability": round(f.probability, 6) if f.error is None else None,
+            "blind_probability": (
+                round(f.blind_probability, 6)
+                if f.blind_probability is not None
+                else None
+            ),
+            "crux": f.crux,
+            "moved_by": (
+                f.belief_trajectory[-1].get("moved_by") if f.belief_trajectory else None
+            ),
+            "error": f.error,
+        }
+        for i, f in enumerate(trials)
+    ]
+    seat.trial_shrinkage = {
+        "n_trials": n,
+        "survivors": len(survivors),
+        "alpha": round(alpha, 6),
+        "var_logit": round(var, 6),
+        "target": (
+            round(float(market_anchor), 6)
+            if market_anchor is not None
+            else "trial_mean"
+        ),
+        "degraded": len(survivors) < n,
+    }
+    return seat
+
+
 def resolve_final_probability(
     pool_probability: float,
     judge: JudgeSynthesis | None,
@@ -1801,6 +2125,9 @@ def run_quorum(
     model_weights: Mapping[str, float] | None = None,
     market_anchor: float | None = None,
     market_anchor_threshold_pp: float = 10.0,
+    trials: int = 1,
+    trial_shrink_floor: float = _TRIAL_SHRINK_FLOOR,
+    trial_shrink_c: float = _TRIAL_SHRINK_C,
 ) -> QuorumResult:
     """Run the full quorum: dispatch panelists, aggregate, judge-synthesise.
 
@@ -1861,12 +2188,30 @@ def run_quorum(
     :func:`aggregate_panel_estimates` (weighted log-odds pool) and
     :func:`disagreement_signal`; the map actually used is echoed on
     ``QuorumResult.model_weights_used`` so the operator can see why.
+
+    ``trials`` (BLF A2 multi-trial) runs K independent draws PER PANELIST seat and
+    pools them, before the cross-model pool, as a James–Stein shrunken logit mean
+    toward the outside-view anchor (:func:`_shrunk_logit_mean`, floor
+    ``trial_shrink_floor`` = f, sensitivity ``trial_shrink_c`` = c): the noisier a
+    seat's trials, the harder its pool shrinks to the anchor (the market price when
+    present, else the trials' own mean — a no-op). ``trials=1`` (the default) is a
+    strict identity — one draw per seat, no pooling wrapper — so an un-configured
+    quorum is byte-identical. On a K>1 seat the pooled ModelForecast carries every
+    surviving trial in ``.trials`` (a divergent lone-skeptic trial stays
+    discoverable) and the pool summary in ``.trial_shrinkage``; the FULL trial sample
+    (not just the pooled seats) feeds :func:`disagreement_signal`, so trial
+    divergence widens the measured spread, and each seat's BLIND trials pool
+    market-INDEPENDENTLY into ``blind_pool`` so the orthogonality signal is intact.
+    A seat where some trials error is labeled (``trial_shrinkage['degraded']``); a
+    seat where ALL trials error is an errored panelist, excluded from the pool
+    exactly as a single failed panelist is today.
     """
 
     if not models:
         raise ValidationError("quorum requires at least one model")
     if delphi_rounds not in (0, 1):
         raise ValidationError("delphi_rounds must be 0 or 1")
+    trials = max(1, int(trials))
     judge_runner = judge_runner or runner
 
     def _blind_reconcile(
@@ -1916,13 +2261,15 @@ def run_quorum(
         with that seat's own prior from ``prior_by_participant`` (keyed by the stable
         ``p01``… seat id, NOT the model id — the ``self`` preset repeats a model)."""
 
-        def _dispatch(index: int, model: str) -> ModelForecast:
-            participant_id = f"p{index + 1:02d}"
-            prior = (
-                prior_by_participant.get(participant_id)
-                if prior_by_participant is not None
-                else None
-            )
+        def _run_trial(index: int, model: str) -> ModelForecast:
+            """One independent DRAW for a seat (BLF A2). Builds the (blind, anchor-
+            free) prompt, runs the single-phase or blind-then-reconcile turns, and
+            returns a ModelForecast with its INTRINSIC fields set — committed
+            probability, the blind/reconciled numbers + reason, the delphi
+            revision_reason, the belief trajectory (A1), and the track-record weight.
+            Seat-level provenance (participant_id/round_index/prior) is stamped by
+            ``_dispatch`` so a K>1 pooled seat and a K=1 passthrough share one path."""
+
             # BLIND prompt (UPGRADE 1): the market anchor is ALWAYS withheld from
             # phase 1 — we pass ``market_anchor=None`` so no anchor block is built.
             # On a non-market question market_anchor is None anyway, so this is the
@@ -1938,6 +2285,11 @@ def run_quorum(
             )
             blind_user = prompt["user"]
             if delphi_summary is not None:
+                prior = (
+                    prior_by_participant.get(f"p{index + 1:02d}")
+                    if prior_by_participant is not None
+                    else None
+                )
                 blind_user = blind_user + build_revision_context_block(
                     prior=prior, delphi_summary=delphi_summary
                 )
@@ -1978,22 +2330,17 @@ def run_quorum(
                     if delphi_summary is not None:
                         rr = _reparse_full(raw).get("revision_reason")
                         revision_reason = str(rr).strip() if rr else None
-            except Exception as exc:  # noqa: BLE001 — isolate one panelist's failure
-                # Any single model failing (bad JSON, timeout, provider/SDK error,
-                # or a broken reconcile turn) is recorded as an errored panelist; the
-                # quorum completes on the survivors rather than aborting the whole run.
+            except Exception as exc:  # noqa: BLE001 — isolate one trial's failure
+                # Any single draw failing (bad JSON, timeout, provider/SDK error, or a
+                # broken reconcile turn) is recorded as an errored trial; the seat
+                # pools on its survivors and the quorum completes on the survivors.
                 forecast = ModelForecast(
                     model=model, probability=0.5, error=f"{type(exc).__name__}: {exc}"
                 )
-            # Delphi provenance (harmless on the round-1 / non-delphi path: seat id
-            # set, round_index=1, no prior, no revision_reason).
-            forecast.participant_id = participant_id
-            forecast.round_index = round_index
-            forecast.prior_probability = prior.probability if prior is not None else None
             forecast.revision_reason = revision_reason
             # Blind-then-reconcile provenance: record BOTH numbers on a surviving
-            # panelist (blind == committed on the single-phase path; distinct on a
-            # market question). Errored panelists carry neither (excluded from pools).
+            # trial (blind == committed on the single-phase path; distinct on a
+            # market question). Errored trials carry neither (excluded from pooling).
             forecast.reconcile_reason = reconcile_reason
             forecast.blind_probability = (
                 blind_probability if forecast.error is None else None
@@ -2001,20 +2348,53 @@ def run_quorum(
             forecast.reconciled_probability = (
                 forecast.probability if forecast.error is None else None
             )
-            # Track-record weighting (S7): a surviving panelist carries its measured
+            # Track-record weighting (S7): a surviving trial carries its measured
             # weight (default 1.0 when unmeasured/cold-start), consumed by the pool +
-            # disagreement. Errored panelists keep 1.0 but are excluded from pooling.
+            # disagreement. Errored trials keep 1.0 but are excluded from pooling.
             if model_weights and forecast.error is None:
                 try:
                     forecast.weight = float(model_weights.get(model, 1.0))
                 except (TypeError, ValueError):
                     forecast.weight = 1.0
+            return forecast
+
+        def _dispatch(index: int, model: str) -> ModelForecast:
+            """Produce ONE seat forecast: run K trials (BLF A2) and pool them, then
+            stamp the seat-level provenance. K=1 is a strict passthrough — the single
+            trial, unchanged — so a default quorum is byte-identical to pre-A2."""
+
+            participant_id = f"p{index + 1:02d}"
+            prior = (
+                prior_by_participant.get(participant_id)
+                if prior_by_participant is not None
+                else None
+            )
+            trial_forecasts = [_run_trial(index, model) for _ in range(trials)]
+            seat = (
+                trial_forecasts[0]
+                if trials == 1
+                else _pool_seat_trials(
+                    model,
+                    trial_forecasts,
+                    market_anchor=market_anchor,
+                    floor=trial_shrink_floor,
+                    c=trial_shrink_c,
+                )
+            )
+            # Delphi provenance (harmless on the round-1 / non-delphi path: seat id
+            # set, round_index=1, no prior, no revision_reason).
+            seat.participant_id = participant_id
+            seat.round_index = round_index
+            seat.prior_probability = prior.probability if prior is not None else None
             if on_progress:
+                pooled_note = "" if trials == 1 else f" (pooled over {trials} trials)"
                 on_progress(
                     "panelist_done",
-                    f"{model}: {'error' if forecast.error else f'{forecast.probability:.3f}'}",
+                    f"{model}: "
+                    + ("error" if seat.error else f"{seat.probability:.3f}")
+                    + pooled_note,
                 )
-            return forecast
+            return seat
 
         slots: list[ModelForecast | None] = [None] * len(models)
         if on_progress:
@@ -2057,10 +2437,17 @@ def run_quorum(
             trim=trim,
             alpha_extremize=alpha_extremize,
         )
-        pass_disagreement = disagreement_signal(
-            [f.probability for f in ok],
-            [f.weight for f in ok],
-        )
+        # Disagreement is measured over the FULL trial sample (BLF A2): the cross-
+        # model pool commits on the variance-reduced per-seat numbers, but a divergent
+        # lone-skeptic TRIAL must still widen the measured spread. A K=1 seat reports
+        # its one committed number, so this is byte-identical to the pre-A2 signal.
+        trial_probs: list[float] = []
+        trial_weights: list[float] = []
+        for f in ok:
+            for p in f.trial_probabilities:
+                trial_probs.append(p)
+                trial_weights.append(f.weight)
+        pass_disagreement = disagreement_signal(trial_probs, trial_weights)
 
         pass_judge: JudgeSynthesis | None = None
         if judge_model:
@@ -2562,6 +2949,8 @@ __all__ = [
     "preset_model_count",
     "estimate_quorum_calls",
     "cap_preset_by_calls",
+    "resolve_trial_count",
+    "cap_trials_by_calls",
     "should_research",
     "run_quorum",
     "quorum_auto_indicated",

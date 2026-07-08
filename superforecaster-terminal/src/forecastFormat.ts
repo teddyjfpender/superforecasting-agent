@@ -252,6 +252,9 @@ export const bandChart = (
 export interface HistogramBar {
   label: string
   value: number
+  // Optional per-candidate 90% interval (vote-share p05/p95). When present the row
+  // appends ` [lo–hi]` so uncertainty is visible next to the point estimate.
+  interval?: { hi: number; lo: number } | null
 }
 
 /**
@@ -277,8 +280,30 @@ export const histogram = (
     // Probabilities and other fractional values get 2 decimals; whole counts
     // stay integer (so "1200" doesn't become "1200.00").
     const valueText = Number.isInteger(bar.value) ? String(bar.value) : bar.value.toFixed(2)
-    return `${label} ${'█'.repeat(fill)}${'░'.repeat(track - fill)} ${valueText}`
+    const iv = bar.interval
+    const fmt = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+    const intervalText = iv && finite(iv.lo) && finite(iv.hi) && iv.lo <= iv.hi ? ` [${fmt(iv.lo)}–${fmt(iv.hi)}]` : ''
+    return `${label} ${'█'.repeat(fill)}${'░'.repeat(track - fill)} ${valueText}${intervalText}`
   })
+}
+
+/** Per-candidate interval lookup tolerant of case/whitespace divergence (mirrors the
+ * TUI's intervalForLabel — the scorer + commit hook normalize candidate keys). */
+export const intervalForLabel = (
+  intervals: ForecastWorkspaceItem['candidate_intervals'] | undefined,
+  label: string
+): { hi: number; lo: number } | null => {
+  if (!intervals) return null
+  const direct = intervals[label]
+  if (direct && finite(direct.lo) && finite(direct.hi)) return { hi: direct.hi, lo: direct.lo }
+  const norm = label.trim().toLowerCase()
+  for (const key of Object.keys(intervals)) {
+    if (key.trim().toLowerCase() === norm) {
+      const iv = intervals[key]
+      if (iv && finite(iv.lo) && finite(iv.hi)) return { hi: iv.hi, lo: iv.lo }
+    }
+  }
+  return null
 }
 
 // ── Box-whisker (panel spread) ───────────────────────────────────────────────
@@ -421,9 +446,12 @@ export const matchesFilter = (item: ForecastWorkspaceItem, query: string): boole
   return haystack.includes(needle)
 }
 
-/** Categorical / bucket distribution → sorted bars; null for scalar or mean/sd shapes. */
+/** Categorical / bucket distribution → sorted bars; null for scalar or mean/sd shapes.
+ * When per-candidate `intervals` are supplied, each bar carries its 90% interval so the
+ * web PMF renders the same ` [lo–hi]` uncertainty the Desk TUI does. */
 export const distributionBars = (
-  probability: ForecastWorkspaceItem['probability']
+  probability: ForecastWorkspaceItem['probability'],
+  intervals?: ForecastWorkspaceItem['candidate_intervals']
 ): HistogramBar[] | null => {
   if (!probability || typeof probability !== 'object' || Array.isArray(probability)) {
     return null
@@ -443,10 +471,17 @@ export const distributionBars = (
     'expected',
     'value'
   ])
-  if (entries.every(([key]) => distributionalKeys.has(key.toLowerCase()))) {
+  const isStatKey = (key: string): boolean => {
+    const k = key.toLowerCase()
+    return distributionalKeys.has(k) || /^[qp]\d/.test(k) || k.startsWith('ci') || k.startsWith('interval')
+  }
+  if (entries.every(([key]) => isStatKey(key))) {
     return null
   }
-  return entries.map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
+  return entries
+    .filter(([key]) => !isStatKey(key))
+    .map(([label, value]) => ({ label, value, interval: intervalForLabel(intervals, label) }))
+    .sort((a, b) => b.value - a.value)
 }
 
 // Confidence band half-width factor (a low-confidence forecast gets a wider band).

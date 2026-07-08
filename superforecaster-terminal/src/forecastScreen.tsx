@@ -30,6 +30,7 @@ import {
   headlineLabel,
   histogram,
   historyToBandPoints,
+  intervalForLabel,
   matchesFilter,
   pct,
   shortDate,
@@ -366,8 +367,12 @@ function DeskReadBlock({ item, onJump }: { item: ForecastWorkspaceItem; onJump: 
   );
   const hasSeries = points.filter((p) => p.y != null).length >= 2;
   const pmfBars =
-    item.distribution?.pmf?.map((p) => ({ label: p.label, value: p.probability })) ??
-    distributionBars(item.probability) ??
+    item.distribution?.pmf?.map((p) => ({
+      label: p.label,
+      value: p.probability,
+      interval: intervalForLabel(item.candidate_intervals, p.label)
+    })) ??
+    distributionBars(item.probability, item.candidate_intervals) ??
     [];
   const related = item.related?.forecasts ?? [];
   const sharedSources = item.related?.shared_sources ?? [];

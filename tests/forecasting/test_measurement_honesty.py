@@ -320,3 +320,145 @@ def test_scoreboard_cli_end_to_end(tmp_path, capsys):
     assert "quarantined 1" in capsys.readouterr().out
     # Applied → the artifact is out of the imported cohort and re-apply is a no-op.
     assert ForecastLedger(tmp_path / "honesty.db").cohort_scoreboard()["quarantined"]["n"] == 1
+
+
+# ── 6. difficulty-adjusted scoreboard (BLF A6 / ABI) ─────────────────────────
+#
+# 62% of ForecastBench score variance is question DIFFICULTY. The cohort split
+# fixed the *composition* lie; difficulty adjustment fixes the *hardness* lie so
+# a desk taking hard questions isn't punished against one that farms easy ones.
+# Difficulty of a binary question = the recorded market/crowd anchor's Brier
+# against the outcome, d = (p_market - y)^2 (base uncertainty + resolution
+# surprise). Adjusted = raw_brier - mean_difficulty + reference_difficulty.
+
+
+def _market_anchor(ledger, question_id, probability):
+    """Record a market/crowd anchor (the difficulty signal) for a question."""
+    ledger.add_baseline_comparison(
+        question_id=question_id,
+        source="test-market",
+        baseline_type="market",
+        probability_or_distribution=probability,
+    )
+
+
+def test_difficulty_hard_desk_is_not_punished_vs_easy_farmer(tmp_path):
+    """The acceptance story: a desk taking HARD questions (crowd near 0.5) is not
+    punished on the difficulty-adjusted column against an easy-farmer (crowd
+    near-certain), even though the farmer wins on RAW Brier."""
+    ledger = _ledger(tmp_path)
+
+    # HARD desk → live cohort. Crowd was a coin-flip (d=0.25); desk beats it.
+    q, _ = _binary_score(ledger, title="hard 1", probability=0.65, outcome="yes")   # brier .1225
+    _market_anchor(ledger, q.id, 0.5)
+    q, _ = _binary_score(ledger, title="hard 2", probability=0.35, outcome="no")    # brier .1225
+    _market_anchor(ledger, q.id, 0.5)
+
+    # EASY farmer → backtest cohort. Crowd near-certain (d=0.01); desk slightly worse.
+    q, _ = _binary_score(ledger, title="easy 1", probability=0.8, outcome="yes",
+                         origin="backtest", calibration_eligible=False)             # brier .04
+    _market_anchor(ledger, q.id, 0.9)
+    q, _ = _binary_score(ledger, title="easy 2", probability=0.2, outcome="no",
+                         origin="backtest", calibration_eligible=False)             # brier .04
+    _market_anchor(ledger, q.id, 0.1)
+
+    board = ledger.cohort_scoreboard()
+    hard = board["cohorts"]["live_calibration_eligible"]
+    easy = board["cohorts"]["backtest"]
+
+    # RAW: the easy-farmer looks better.
+    assert hard["mean_brier"] == pytest.approx(0.1225)
+    assert easy["mean_brier"] == pytest.approx(0.04)
+    assert easy["mean_brier"] < hard["mean_brier"]
+
+    # Reference difficulty D̄ = mean crowd Brier across all four = 0.13.
+    assert board["difficulty_adjustment"]["reference_difficulty"] == pytest.approx(0.13)
+    assert hard["mean_difficulty"] == pytest.approx(0.25)
+    assert easy["mean_difficulty"] == pytest.approx(0.01)
+
+    # ADJUSTED: hard = .1225 - .25 + .13 = .0025 ; easy = .04 - .01 + .13 = .16.
+    assert hard["mean_brier_difficulty_adjusted"] == pytest.approx(0.0025)
+    assert easy["mean_brier_difficulty_adjusted"] == pytest.approx(0.16)
+    # The hard desk is no longer punished — it wins once difficulty is controlled.
+    assert hard["mean_brier_difficulty_adjusted"] < easy["mean_brier_difficulty_adjusted"]
+
+
+def test_difficulty_provenance_fb_published_derived_and_flagged(tmp_path):
+    """Three row classes: FB-published (domain forecastbench), market-anchor
+    derived (non-FB with an anchor), and no-anchor (flagged, shown raw only —
+    never a fabricated adjustment)."""
+    ledger = _ledger(tmp_path)
+
+    # FB-published: a ForecastBench backtest row (published freeze crowd price).
+    fb, _ = _binary_score(ledger, title="fb q", probability=0.6, outcome="yes",
+                          origin="backtest", calibration_eligible=False,
+                          domain="forecastbench")                                   # brier .16
+    _market_anchor(ledger, fb.id, 0.7)                                             # d = .09
+
+    # Derived: a live row with a recorded market anchor.
+    d1, _ = _binary_score(ledger, title="derived q", probability=0.3, outcome="no")  # brier .09
+    _market_anchor(ledger, d1.id, 0.4)                                            # d = .16
+
+    # No anchor: a live row with NO market price → difficulty not derivable.
+    _binary_score(ledger, title="no anchor q", probability=0.5, outcome="yes")     # brier .25
+
+    board = ledger.cohort_scoreboard()
+    adj = board["difficulty_adjustment"]
+    assert adj["provenance"] == {"forecastbench_published": 1, "market_anchor_derived": 1}
+    assert adj["n_eligible"] == 2
+    assert adj["n_no_anchor"] == 1
+    assert adj["reference_difficulty"] == pytest.approx((0.09 + 0.16) / 2)  # 0.125
+
+    live = board["cohorts"]["live_calibration_eligible"]
+    # Two live brier rows; only the anchored one is difficulty-eligible.
+    assert live["n_brier"] == 2
+    assert live["n_difficulty"] == 1
+    assert live["n_unadjusted"] == 1
+    assert live["mean_difficulty"] == pytest.approx(0.16)
+    # adjusted on the eligible subset only: .09 - .16 + .125 = .055
+    assert live["mean_brier_difficulty_adjusted"] == pytest.approx(0.055)
+    assert live["difficulty_note"]  # a flag is present for the excluded row
+
+    fb_cohort = board["cohorts"]["backtest"]
+    # .16 - .09 + .125 = .195
+    assert fb_cohort["mean_brier_difficulty_adjusted"] == pytest.approx(0.195)
+
+
+def test_difficulty_never_fabricated_when_no_anchor(tmp_path):
+    """A cohort of brier rows with NO recorded anchors shows unadjusted, flagged —
+    the adjusted column is None, never a fabricated number."""
+    ledger = _ledger(tmp_path)
+    _binary_score(ledger, title="a", probability=0.9, outcome="yes")
+    _binary_score(ledger, title="b", probability=0.7, outcome="no")
+    board = ledger.cohort_scoreboard()
+    live = board["cohorts"]["live_calibration_eligible"]
+    assert live["mean_brier"] is not None          # raw still reported
+    assert live["mean_brier_difficulty_adjusted"] is None
+    assert live["n_difficulty"] == 0
+    assert board["difficulty_adjustment"]["reference_difficulty"] is None
+    assert board["difficulty_adjustment"]["n_eligible"] == 0
+
+
+def test_difficulty_surfaces_on_workspace_payload(tmp_path):
+    ledger = _ledger(tmp_path)
+    q, _ = _binary_score(ledger, title="live A", probability=0.65, outcome="yes", domain="politics")
+    _market_anchor(ledger, q.id, 0.5)
+    from forecasting.dashboard import build_workspace_payload
+
+    payload = build_workspace_payload(ledger=ledger, include_related=False, include_lessons=False)
+    board = payload["cohort_scoreboard"]
+    assert "difficulty_adjustment" in board
+    assert "mean_brier_difficulty_adjusted" in board["cohorts"]["live_calibration_eligible"]
+
+
+def test_difficulty_cli_board_prints_adjusted_column(tmp_path, capsys):
+    from forecasting.cli.core import main
+
+    ledger = _ledger(tmp_path)
+    db = str(tmp_path / "honesty.db")
+    q, _ = _binary_score(ledger, title="live A", probability=0.65, outcome="yes", domain="politics")
+    _market_anchor(ledger, q.id, 0.5)
+
+    main(["--db", db, "scoreboard", "board"])
+    out = capsys.readouterr().out
+    assert "difficulty-adjusted" in out.lower()

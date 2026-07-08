@@ -522,6 +522,7 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         make_aiagent_runner,
         resolve_connected_panel,
         resolve_models,
+        resolve_trial_count,
         run_quorum,
     )
 
@@ -611,6 +612,18 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     # here and threaded into run_quorum (which validates {0, 1}). ``0`` is the DEFAULT
     # and keeps this path byte-identical: no extra model calls, empty delphi_audit.
     delphi_rounds = int(spec.get("delphi_rounds") or 0)
+
+    # Multi-trial per panelist (BLF A2). The spec ``trials`` (already cost-capped by
+    # the dispatch layer) wins; absent it, resolve K from the question's impact
+    # (high-impact → 3, else 1). ``1`` is the DEFAULT and keeps this path byte-
+    # identical — one draw per seat, no pooling. The extra spend rides the SAME
+    # LLM_SPEND authorize (above) + cost caps the panel width does.
+    if spec.get("trials"):
+        trials = max(1, int(spec.get("trials")))
+    else:
+        trials, trials_reason = resolve_trial_count(question)
+        if trials > 1:
+            emit("trials", f"{trials} trials/panelist — {trials_reason}")
 
     # FOREKNOWLEDGE GUARD (mirrors the supervisor-search guard below): gate the
     # PANELIST toolset on the SAME _cutoff_is_live(evidence_cutoff) predicate. A
@@ -737,6 +750,7 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
         model_weights=model_weights or None,
         market_anchor=market_anchor,
         market_anchor_threshold_pp=market_anchor_threshold,
+        trials=trials,
     )
 
     # Persist the quorum as a sibling panel run. The spread_summary already carries

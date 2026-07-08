@@ -59,6 +59,7 @@ from forecasting.models import (
     OutcomeSpace,
     ScoreRecord,
     ValidationError,
+    json_loads,
     recency_halflife_weight,
     timestamp_to_datetime,
     utc_now_iso,
@@ -370,16 +371,161 @@ def _is_continuous_rule(rule: Any) -> bool:
     return text.startswith("crps") or text == "normal_negative_log_likelihood"
 
 
-def _cohort_bucket(rows: list[dict[str, Any]]) -> dict[str, Any]:
+# BLF A6 — difficulty adjustment (ABI-style). 62% of ForecastBench score variance
+# is question DIFFICULTY (their mixed-effects finding). The cohort split fixed the
+# *composition* lie; this fixes the *hardness* lie so a desk that takes hard
+# questions is not punished against one that farms easy ones.
+#
+# The honest, single difficulty proxy per binary question is the recorded
+# market/crowd anchor's OWN Brier against the outcome:
+#
+#     difficulty d = (p_market - y)^2      y in {0, 1}
+#
+# which folds together BOTH base uncertainty (a crowd priced at 0.5 → d≈0.25, a
+# genuine coin-flip) and resolution surprise (a crowd confidently WRONG → d≈0.81).
+# This is exactly the reference forecaster's error that ForecastBench-style
+# difficulty adjustment controls for. Provenance is honest per row:
+#
+#   * ``forecastbench_published`` — the anchor is the ForecastBench freeze crowd
+#     price we INGESTED (its published difficulty signal; FB rows carry domain
+#     ``forecastbench`` / metadata ``source_dataset`` ``forecastbench:*``);
+#   * ``market_anchor_derived``  — a market baseline we recorded on a non-FB
+#     question (same formula, our own crowd/market dispersion).
+#
+# The adjustment re-centres each cohort's raw Brier by the difficulty of its OWN
+# question mix against a shared reference D̄ (the pooled mean difficulty over every
+# difficulty-eligible row):
+#
+#     adjusted = mean_brier(eligible) - mean_difficulty(eligible) + D̄
+#             = D̄ + mean(brier_i - d_i)        (excess-over-crowd, re-scaled)
+#
+# so a desk that beats a hard crowd lands BELOW D̄ and a desk that merely matches
+# an easy crowd lands AT D̄ — hard and easy question mixes are placed on one scale.
+# The LIMIT is explicit: a row with NO recorded market/crowd anchor has NO
+# derivable difficulty — it is EXCLUDED from the adjustment and shown in raw Brier
+# only, flagged. We NEVER fabricate a difficulty for an anchorless row.
+_DIFFICULTY_ADJUSTMENT_METHOD = (
+    "difficulty d = (market/crowd anchor - outcome)^2 per binary question; "
+    "adjusted mean Brier = raw - mean_difficulty + reference_difficulty. "
+    "FB rows use the published ForecastBench freeze crowd price; non-FB rows use a "
+    "recorded market anchor. Rows with no recorded anchor are shown unadjusted, flagged."
+)
+_DIFFICULTY_ADJUSTMENT_LIMITS = (
+    "The adjusted column is meaningful only RELATIVE to the shared reference "
+    "difficulty (surfaced here); it requires a recorded market/crowd anchor and a "
+    "clean binary outcome. Anchorless rows are never given a fabricated adjustment."
+)
+
+
+def _market_anchors(conn) -> dict[str, float]:
+    """Map ``question_id -> recorded market/crowd probability`` — the difficulty
+    signal. Reads the ``baseline_comparisons`` market rows (FB ingests the freeze
+    crowd price here; live/nightly questions record their venue price). Keeps a
+    single 0..1 scalar per question (latest by ``as_of`` when several exist);
+    non-scalar / out-of-range payloads are skipped (difficulty is binary-only)."""
+    anchors: dict[str, float] = {}
+    for row in conn.execute(
+        """
+        SELECT question_id, probability_or_distribution
+        FROM baseline_comparisons
+        WHERE baseline_type = 'market'
+        ORDER BY as_of ASC
+        """
+    ).fetchall():
+        payload = json_loads(row["probability_or_distribution"], None)
+        if isinstance(payload, (int, float)) and not isinstance(payload, bool):
+            value = float(payload)
+            if 0.0 <= value <= 1.0:
+                anchors[row["question_id"]] = value  # last (latest as_of) wins
+    return anchors
+
+
+def _difficulty_provenance(row: dict[str, Any]) -> str:
+    """``forecastbench_published`` when the anchor is an ingested ForecastBench
+    freeze crowd price, else ``market_anchor_derived``."""
+    if str(row["domain"] or "") == "forecastbench":
+        return "forecastbench_published"
+    meta = json_loads(row.get("question_metadata"), {}) or {}
+    if str(meta.get("source_dataset") or "").startswith("forecastbench"):
+        return "forecastbench_published"
+    return "market_anchor_derived"
+
+
+def _annotate_difficulty(ledger, rows: list[dict[str, Any]], anchors: dict[str, float]) -> None:
+    """Attach ``_difficulty`` + ``_difficulty_provenance`` to each clean binary
+    row that HAS a market anchor and a clean binary outcome; ``None`` otherwise.
+    Never fabricated — an anchorless / ambiguous row keeps ``_difficulty = None``."""
+    for row in rows:
+        row["_difficulty"] = None
+        row["_difficulty_provenance"] = None
+        if row["brier_score"] is None:
+            continue
+        anchor = anchors.get(row["question_id"])
+        if anchor is None:
+            continue
+        outcome_space = OutcomeSpace.from_json(row.get("outcome_space"))
+        raw_outcome = row.get("resolution_outcome")
+        outcome = json_loads(raw_outcome, raw_outcome)  # resolutions.outcome is JSON-encoded
+        observed = _operator_binary_observed(ledger, outcome, outcome_space)
+        if observed is None:  # fractional / ambiguous outcome → not a clean binary
+            continue
+        row["_difficulty"] = (anchor - observed) ** 2
+        row["_difficulty_provenance"] = _difficulty_provenance(row)
+
+
+def _cohort_bucket(rows: list[dict[str, Any]], reference_difficulty: float | None) -> dict[str, Any]:
     """Summarize one binary cohort: n, brier count, mean Brier (None on empty —
-    never a fabricated 0), and the domains it spans."""
+    never a fabricated 0), the domains it spans, and the difficulty-adjusted mean
+    Brier (None when the cohort has no difficulty-eligible row)."""
     briers = [float(r["brier_score"]) for r in rows if r["brier_score"] is not None]
     domains = sorted({r["domain"] for r in rows if r["domain"]})
-    return {
+    bucket = {
         "n": len(rows),
         "n_brier": len(briers),
         "mean_brier": (sum(briers) / len(briers)) if briers else None,
         "domains": domains,
+    }
+    bucket.update(_difficulty_adjust(rows, reference_difficulty))
+    return bucket
+
+
+def _difficulty_adjust(rows: list[dict[str, Any]], reference_difficulty: float | None) -> dict[str, Any]:
+    """The difficulty-adjusted fields for one cohort. Adjusts ONLY the rows that
+    carry a derivable difficulty (a recorded anchor + clean binary outcome); rows
+    without one are counted in ``n_unadjusted`` and flagged, never adjusted."""
+    n_brier = sum(1 for r in rows if r["brier_score"] is not None)
+    eligible = [
+        (float(r["brier_score"]), float(r["_difficulty"]))
+        for r in rows
+        if r["brier_score"] is not None and r.get("_difficulty") is not None
+    ]
+    n_difficulty = len(eligible)
+    if n_difficulty == 0 or reference_difficulty is None:
+        return {
+            "n_difficulty": 0,
+            "n_unadjusted": n_brier,
+            "mean_difficulty": None,
+            "mean_brier_difficulty_adjusted": None,
+            "difficulty_note": (
+                "no market/crowd anchor recorded — shown unadjusted (never a fabricated adjustment)"
+                if n_brier
+                else None
+            ),
+        }
+    mean_brier_eligible = sum(b for b, _ in eligible) / n_difficulty
+    mean_difficulty = sum(d for _, d in eligible) / n_difficulty
+    n_unadjusted = n_brier - n_difficulty
+    return {
+        "n_difficulty": n_difficulty,
+        "n_unadjusted": n_unadjusted,
+        "mean_difficulty": mean_difficulty,
+        "mean_brier_difficulty_adjusted": mean_brier_eligible - mean_difficulty + reference_difficulty,
+        "difficulty_note": (
+            f"{n_unadjusted} row(s) had no market/crowd anchor — excluded from the "
+            "adjustment, shown in raw Brier only"
+            if n_unadjusted
+            else None
+        ),
     }
 
 
@@ -401,24 +547,46 @@ def cohort_scoreboard(ledger) -> dict[str, Any]:
     * ``quarantined`` — count + per-reason of the audit-quarantined rows that
       every cohort above EXCLUDES.
 
+    A ``difficulty_adjustment`` block (BLF A6 / ABI) and a per-cohort
+    ``mean_brier_difficulty_adjusted`` column re-centre each cohort's raw Brier by
+    the difficulty of its own question mix (the recorded market/crowd anchor's
+    Brier against the outcome), so a hard-question desk is not punished against an
+    easy-farmer. Rows with no recorded anchor are shown unadjusted, flagged.
+
     Read-only. Quarantined rows (``audit_quarantine_reason`` set) are excluded
     from every cohort and from the pooled diagnostic, and reported apart."""
     with ledger._connect() as conn:
+        # Join the resolution outcome + question outcome_space/metadata so the
+        # difficulty proxy (market-anchor Brier vs the outcome) can be computed.
         rows = [
             dict(row)
             for row in conn.execute(
                 """
-                SELECT forecast_origin, calibration_eligible, brier_score,
-                       proper_score, log_score, score_rule, domain,
-                       audit_quarantine_reason
-                FROM score_records
-                WHERE invalidated_by_correction_id IS NULL
+                SELECT s.question_id AS question_id, s.forecast_origin,
+                       s.calibration_eligible, s.brier_score, s.proper_score,
+                       s.log_score, s.score_rule, s.domain, s.audit_quarantine_reason,
+                       r.outcome AS resolution_outcome,
+                       q.outcome_space AS outcome_space,
+                       q.metadata AS question_metadata
+                FROM score_records s
+                JOIN resolutions r ON r.id = s.resolution_id
+                JOIN forecast_questions q ON q.id = s.question_id
+                WHERE s.invalidated_by_correction_id IS NULL
                 """
             ).fetchall()
         ]
+        anchors = _market_anchors(conn)
 
     quarantined = [r for r in rows if r["audit_quarantine_reason"]]
     clean = [r for r in rows if not r["audit_quarantine_reason"]]
+
+    # Difficulty per clean binary row (market anchor + clean binary outcome), and
+    # the shared reference difficulty D̄ = pooled mean over every eligible row.
+    _annotate_difficulty(ledger, clean, anchors)
+    all_difficulties = [r["_difficulty"] for r in clean if r.get("_difficulty") is not None]
+    reference_difficulty = (
+        (sum(all_difficulties) / len(all_difficulties)) if all_difficulties else None
+    )
 
     # Binary cohorts. A row belongs to a binary cohort when it carries a Brier;
     # the continuous class (CRPS / NLL) never does, so the two never overlap.
@@ -426,10 +594,13 @@ def cohort_scoreboard(ledger) -> dict[str, Any]:
         r for r in clean
         if r["forecast_origin"] == "live" and r["calibration_eligible"] and r["brier_score"] is not None
     ]
-    cohorts: dict[str, Any] = {"live_calibration_eligible": _cohort_bucket(live_eligible)}
+    cohorts: dict[str, Any] = {
+        "live_calibration_eligible": _cohort_bucket(live_eligible, reference_difficulty)
+    }
     for origin in _BASELINE_COHORT_ORIGINS:
         cohorts[origin] = _cohort_bucket(
-            [r for r in clean if r["forecast_origin"] == origin and r["brier_score"] is not None]
+            [r for r in clean if r["forecast_origin"] == origin and r["brier_score"] is not None],
+            reference_difficulty,
         )
 
     # Continuous scorecard — CRPS / log, kept apart from every Brier.
@@ -471,10 +642,28 @@ def cohort_scoreboard(ledger) -> dict[str, Any]:
         reason = str(r["audit_quarantine_reason"])
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
 
+    provenance: dict[str, int] = {}
+    for r in clean:
+        prov = r.get("_difficulty_provenance")
+        if prov is not None:
+            provenance[prov] = provenance.get(prov, 0) + 1
+    n_no_anchor = sum(
+        1 for r in clean if r["brier_score"] is not None and r.get("_difficulty") is None
+    )
+    difficulty_adjustment = {
+        "method": _DIFFICULTY_ADJUSTMENT_METHOD,
+        "reference_difficulty": reference_difficulty,
+        "n_eligible": len(all_difficulties),
+        "n_no_anchor": n_no_anchor,
+        "provenance": provenance,
+        "limits": _DIFFICULTY_ADJUSTMENT_LIMITS,
+    }
+
     return {
         "cohorts": cohorts,
         "continuous_scorecard": continuous_scorecard,
         "pooled_diagnostic": pooled_diagnostic,
+        "difficulty_adjustment": difficulty_adjustment,
         "quarantined": {"n": len(quarantined), "reasons": reason_counts},
     }
 
@@ -1315,6 +1504,139 @@ def _domains_with_scores(ledger, *, forecast_origin: str | None = "live") -> lis
             params,
         ).fetchall()
     return [str(row[0]) for row in rows if row[0]]
+
+
+# ── Hierarchical Platt calibration — cohort-tagged resolved rows (BLF A4) ────
+# The scoreboard STRATA (cohort_scoreboard) become the calibration cohorts: the
+# per-cohort intercept offset delta_s wants exactly the base-rate skew those
+# strata expose. This reader is the READ-ONLY glue between the ledger and the
+# pure fit in ``forecasting.hierarchical_calibration``.
+
+# The scoreboard strata that carry a per-cohort intercept. ``live`` is only a
+# skill-claim stratum when calibration-eligible, matching cohort_scoreboard.
+_HIER_BASELINE_ORIGINS = ("backtest", "imported_baseline", "market_nightly")
+
+
+def _cohort_venue(question: Any) -> str | None:
+    """Best-effort market venue for a question (``metadata.market_source`` or the
+    ``<venue>:<id>`` prefix of ``metadata.market_id``); ``None`` when unknown."""
+
+    meta = getattr(question, "metadata", None)
+    if not isinstance(meta, dict):
+        return None
+    src = meta.get("market_source")
+    if isinstance(src, str) and src.strip():
+        return src.strip().lower()
+    market_id = meta.get("market_id")
+    if isinstance(market_id, str) and ":" in market_id:
+        prefix = market_id.split(":", 1)[0].strip().lower()
+        if prefix:
+            return prefix
+    return None
+
+
+def _cohort_key(score: ScoreRecord, question: Any, *, split_by_venue: bool) -> str | None:
+    """Scoreboard-stratum cohort key for a resolved row (``None`` ⇒ excluded)."""
+
+    origin = score.forecast_origin
+    if origin == "live":
+        if not score.calibration_eligible:
+            return None
+        base = "live_calibration_eligible"
+    elif origin in _HIER_BASELINE_ORIGINS:
+        base = origin
+    else:
+        return None
+    if split_by_venue:
+        venue = _cohort_venue(question)
+        if venue:
+            return f"{base}:{venue}"
+    return base
+
+
+def hierarchical_calibration_rows(
+    ledger,
+    *,
+    since: str | None = None,
+    recency_halflife_days: float | None = None,
+    split_by_venue: bool = False,
+    now: str | None = None,
+) -> list[Any]:
+    """Reduce resolved binary forecasts to cohort-tagged calibration rows.
+
+    Returns :class:`forecasting.hierarchical_calibration.CohortObservation` rows —
+    one per resolved binary forecast across the scoreboard strata (live +
+    calibration-eligible, backtest, imported_baseline, market_nightly), each
+    carrying the *raw* pre-adjustment P(yes) (contamination control, mirroring
+    :func:`_bias_observations`), its {0,1} outcome, the cohort key, and an optional
+    recency weight. ``split_by_venue`` refines a stratum to ``<origin>:<venue>``
+    where the question exposes a market venue (finer splits where the data exists).
+    READ-ONLY — pulls scores/snapshots/resolutions, mutates nothing."""
+
+    from datetime import datetime, timezone
+
+    from forecasting.hierarchical_calibration import CohortObservation
+
+    def _parse(ts: Any) -> "datetime | None":
+        if not ts:
+            return None
+        raw = str(ts).strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(raw)
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    now_dt = _parse(now) or datetime.now(timezone.utc)
+    scores = ledger.list_scores(calibration_eligible=None)
+    rows: list[Any] = []
+    for score in scores:
+        if score.brier_score is None:
+            continue
+        try:
+            question = ledger.get_question(score.question_id)
+        except LedgerNotFoundError:
+            continue
+        if question.outcome_space.type != "binary":
+            continue
+        cohort = _cohort_key(score, question, split_by_venue=split_by_venue)
+        if cohort is None:
+            continue
+        try:
+            snapshot = ledger.get_snapshot(score.forecast_id)
+        except LedgerNotFoundError:
+            continue
+        adjustment = snapshot.calibration_adjustment or {}
+        raw = adjustment.get("raw_probability")
+        committed = snapshot.probability_or_distribution
+        probability = raw if isinstance(raw, (int, float)) and not isinstance(raw, bool) else committed
+        if not isinstance(probability, (int, float)) or isinstance(probability, bool):
+            continue
+        observed = ledger._binary_outcome_value(score, question.outcome_space)
+        if observed is None:
+            continue
+        resolved_at = None
+        try:
+            resolved_at = ledger.get_resolution(score.resolution_id).resolved_at
+        except LedgerNotFoundError:
+            pass
+        if since and resolved_at and str(resolved_at) < str(since):
+            continue
+        weight = 1.0
+        if recency_halflife_days and recency_halflife_days > 0:
+            resolved_dt = _parse(resolved_at)
+            if resolved_dt is not None:
+                age_days = (now_dt - resolved_dt).total_seconds() / 86400.0
+                weight = recency_halflife_weight(age_days, recency_halflife_days)
+        rows.append(
+            CohortObservation(
+                raw_p=float(probability),
+                outcome=float(observed),
+                cohort=cohort,
+                weight=weight,
+            )
+        )
+    return rows
 
 
 def _existing_score(ledger, forecast_id: str, resolution_id: str) -> ScoreRecord | None:

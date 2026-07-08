@@ -4861,6 +4861,191 @@ class ForecastLedger:
         except Exception:  # noqa: BLE001 — derivation is best-effort; identity on any failure
             return 1.0
 
+    # ── Hierarchical Platt calibration (BLF A4) ──────────────────────────────
+    # The terminal calibration gains per-cohort intercept offsets delta_s over the
+    # scoreboard strata: q = sigma(a*logit(p) + b + delta_s). The fit lives in
+    # ``forecasting.hierarchical_calibration``; here is the READ-ONLY ledger glue
+    # (row gather + fit + held-out validation) and the DEFAULT-OFF activation
+    # derivation that mirrors ``derive_extremize_alpha``.
+
+    _HIER_CALIBRATION_FLAG = "FORECAST_HIERARCHICAL_CALIBRATION"
+
+    def hierarchical_calibration_rows(
+        self,
+        *,
+        since: str | None = None,
+        recency_halflife_days: float | None = None,
+        split_by_venue: bool = False,
+        now: str | None = None,
+    ) -> list[Any]:
+        return _scoring.hierarchical_calibration_rows(
+            self,
+            since=since,
+            recency_halflife_days=recency_halflife_days,
+            split_by_venue=split_by_venue,
+            now=now,
+        )
+
+    def fit_hierarchical_calibration(
+        self,
+        *,
+        min_cohort_n: int | None = None,
+        split_by_venue: bool = False,
+        since: str | None = None,
+        recency_halflife_days: float | None = None,
+        now: str | None = None,
+    ) -> Any | None:
+        """Fit the hierarchical Platt model on resolved rows, or ``None`` if empty.
+
+        READ-ONLY. Gathers cohort-tagged resolved rows and fits ``(a, b,
+        {delta_s})`` with LOO-CV ridge selection. Returns the
+        :class:`~forecasting.hierarchical_calibration.HierarchicalPlattModel` (its
+        ``to_payload`` is JSON-ready) or ``None`` when there are no resolved rows."""
+
+        from forecasting.hierarchical_calibration import (
+            DEFAULT_MIN_COHORT_N,
+            fit_hierarchical_platt,
+        )
+
+        rows = self.hierarchical_calibration_rows(
+            since=since,
+            recency_halflife_days=recency_halflife_days,
+            split_by_venue=split_by_venue,
+            now=now,
+        )
+        if not rows:
+            return None
+        return fit_hierarchical_platt(
+            rows,
+            min_cohort_n=DEFAULT_MIN_COHORT_N if min_cohort_n is None else int(min_cohort_n),
+        )
+
+    def validate_hierarchical_calibration(
+        self,
+        *,
+        min_cohort_n: int | None = None,
+        folds: int = 5,
+        split_by_venue: bool = False,
+        since: str | None = None,
+        recency_halflife_days: float | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        """Held-out per-cohort Brier — global vs hierarchical — on resolved rows.
+
+        READ-ONLY. This is the operator's flip evidence: the numbers that decide
+        whether to activate hierarchical mode. Mirrors the sweep-then-activate
+        discipline of the sqrt(3) slope."""
+
+        from forecasting.hierarchical_calibration import (
+            DEFAULT_MIN_COHORT_N,
+            validate_hierarchical_calibration as _validate,
+        )
+
+        rows = self.hierarchical_calibration_rows(
+            since=since,
+            recency_halflife_days=recency_halflife_days,
+            split_by_venue=split_by_venue,
+            now=now,
+        )
+        return _validate(
+            rows,
+            min_cohort_n=DEFAULT_MIN_COHORT_N if min_cohort_n is None else int(min_cohort_n),
+            folds=folds,
+        )
+
+    def derive_cohort_calibration(
+        self,
+        question: Any,
+        *,
+        forecast_origin: str | None = "live",
+        activated: bool | None = None,
+    ) -> dict[str, Any]:
+        """Per-question terminal-calibration params — DEFAULT-OFF hierarchical Platt.
+
+        Returns ``{alpha, platt_d, cohort, delta_s, intercept_b, ...}`` for the
+        question's scoreboard cohort. ``alpha``/``platt_d`` feed the terminal
+        calibration as ``platt_scale(p, alpha, d=platt_d)`` (the intercept ``b +
+        delta_s`` rides the ``d`` bias term as ``exp(b + delta_s)``).
+
+        ACTIVATION mirrors the sqrt(3) precedent: unless the operator flips
+        ``FORECAST_HIERARCHICAL_CALIBRATION`` on (or ``activated=True`` is passed),
+        this returns the IDENTITY (``alpha=1, platt_d=1`` — a strict no-op, so the
+        commit is byte-identical to today). When active it fits the model, resolves
+        the cohort, and — crucially — routes the fitted slope ``a`` through the
+        UNCHANGED P2.3 extremization safety gate: an ``a>1`` on a wrong-sided scope
+        is clamped back to 1.0, exactly as for the sqrt(3) slope. The intercept
+        offset (a base-rate shift, not extremization) is unaffected by that gate.
+
+        FAIL-SAFE: any thin/empty/non-binary scope, an unfit cohort, or any error
+        returns the identity. Data-layer only; the caller decides to consult it."""
+
+        identity = {
+            "alpha": 1.0,
+            "platt_d": 1.0,
+            "cohort": None,
+            "delta_s": 0.0,
+            "intercept_b": 0.0,
+            "slope_a": 1.0,
+            "active": False,
+            "small_cohort_fallback": True,
+            "reason": "hierarchical calibration inactive — identity (no-op)",
+        }
+        try:
+            if activated is None:
+                from forecasting import appconfig
+
+                activated = appconfig.get_bool(self._HIER_CALIBRATION_FLAG, False)
+            if not activated:
+                return identity
+            if getattr(getattr(question, "outcome_space", None), "type", None) != "binary":
+                return dict(identity, reason="non-binary question — identity")
+            model = self.fit_hierarchical_calibration()
+            if model is None:
+                return dict(identity, active=True, reason="no resolved rows — identity")
+
+            # Resolve the cohort this question would score into.
+            venue = _scoring._cohort_venue(question)
+            if forecast_origin == "live":
+                base = "live_calibration_eligible"
+            elif forecast_origin in _scoring._HIER_BASELINE_ORIGINS:
+                base = forecast_origin
+            else:
+                base = "live_calibration_eligible"
+            cohort = f"{base}:{venue}" if (venue and f"{base}:{venue}" in model.deltas) else base
+
+            delta_s, fell_back = model.delta_for(cohort)
+
+            # P2.3 guard, UNCHANGED: clamp an extremizing slope on a wrong-sided
+            # scope. Reuse the exact gate used for the sqrt(3) slope.
+            from forecasting.calibration_bias import extremization_alpha_gate
+
+            observations = self._bias_observations(
+                domain=getattr(question, "domain", None),
+                forecast_origin=forecast_origin,
+            )
+            verdict = extremization_alpha_gate(model.a, observations)
+            alpha = float(verdict.get("allowed_alpha", model.a) or 1.0)
+            intercept = model.b + delta_s
+            return {
+                "alpha": alpha,
+                "platt_d": math.exp(intercept),
+                "cohort": cohort,
+                "delta_s": delta_s,
+                "intercept_b": model.b,
+                "slope_a": model.a,
+                "slope_gated": alpha != model.a,
+                "active": True,
+                "small_cohort_fallback": fell_back,
+                "lambda": model.lambda_,
+                "reason": (
+                    f"hierarchical Platt cohort={cohort} delta_s={delta_s:.4f}"
+                    + (" (small-cohort fallback → global)" if fell_back else "")
+                    + (" [slope gated to 1.0]" if alpha != model.a else "")
+                ),
+            }
+        except Exception:  # noqa: BLE001 — best-effort; identity on any failure
+            return identity
+
     def calibration_bias(
         self,
         *,
