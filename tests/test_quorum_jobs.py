@@ -132,6 +132,42 @@ def test_execute_job_records_delphi_audit(home, tmp_path, monkeypatch):
     assert len(panel["delphi_audit"]["rounds"]) == 2
 
 
+def test_execute_job_multi_trial_persists_trajectory_and_shrinkage(home, tmp_path, monkeypatch):
+    # BLF A2, end-to-end: a high-impact question resolves K trials/panelist from its
+    # impact (no explicit spec['trials']), and the per-seat trial provenance +
+    # shrinkage ride the durable panel_estimates.metadata column.
+    db = str(tmp_path / "forecasts.db")
+    ledger = ForecastLedger(db)
+    q = ledger.create_question(
+        title="Will the central bank cut rates by Q3 2027?",
+        resolution_criteria="Resolves YES if a cut is announced before 2027-10-01.",
+        impact="high",
+    )
+
+    table = {"a/m1": 0.25, "b/m2": 0.55, "c/m3": 0.62}
+    monkeypatch.setattr(quorum, "make_aiagent_runner", _stub_runner_factory(table))
+
+    spec = {
+        "question_id": q.id,
+        "db": db,
+        "models": list(table),
+        "trim": 1,
+        # NO explicit trials — the impact=high question resolves K=3 in execute().
+    }
+    run_id = qj.start_job(spec, wait=True)
+    job = qj.read_job(run_id)
+
+    assert job["status"] == "done", job.get("error")
+    # The impact-driven trial count was resolved + streamed.
+    assert "trials" in [p["stage"] for p in job["progress"]]
+
+    panel = ledger.get_panel_run(job["panel_run_id"])
+    metas = [e["metadata"] for e in panel["estimates"]]
+    assert metas and all(m.get("trial_shrinkage") for m in metas)
+    assert all(m["trial_shrinkage"]["n_trials"] == 3 for m in metas)
+    assert all(len(m["trials"]) == 3 for m in metas)
+
+
 def test_quorum_auto_indicated_respects_scope():
     from forecasting.quorum import quorum_auto_indicated
 

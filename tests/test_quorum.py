@@ -11,13 +11,18 @@ from forecasting.quorum import (
     QUORUM_PRESETS,
     _split_provider_model,
     apply_market_anchor_discipline,
+    build_panelist_prompt,
+    build_reconcile_block,
+    cap_trials_by_calls,
     disagreement_signal,
+    estimate_quorum_calls,
     make_aiagent_runner,
     parse_judge_response,
     parse_panelist_response,
     resolve_configured_panel,
     resolve_connected_panel,
     resolve_models,
+    resolve_trial_count,
     run_quorum,
     validate_panel_models,
 )
@@ -1182,3 +1187,337 @@ def test_two_turn_single_session_seam_used_when_present():
     assert "0.3000" in seen["reconcile_user"] and "0.7000" in seen["reconcile_user"]
     assert res.ok_forecasts[0].blind_probability == 0.7
     assert res.ok_forecasts[0].reconciled_probability == 0.5
+
+
+# ── BLF A1 — linguistic belief state (the trajectory) ─────────────────────────
+
+
+def test_belief_trajectory_records_the_flip_and_commits_last_belief():
+    # BLF A1: the panelist re-emits its belief after each evidence step; the
+    # trajectory captures (step, p_t, moved_by), and the FINAL belief is the commit —
+    # even when a decoy top-level probability disagrees.
+    resp = "```json\n" + json.dumps(
+        {
+            "probability": 0.30,  # DECOY: the last belief must win over this
+            "rationale": "walked the evidence",
+            "reasons_up": ["u"],
+            "reasons_down": ["d"],
+            "change_my_mind": ["c"],
+            "crux": "the crux",
+            "belief_trajectory": [
+                {
+                    "step": 1,
+                    "probability": 0.55,
+                    "moved_by": "prior — reference-class base rate",
+                    "confidence": "low",
+                    "open_questions": ["turnout?"],
+                },
+                {"step": 2, "probability": 0.58, "moved_by": "a fresh poll nudged it up"},
+                {
+                    "step": 3,
+                    "probability": 0.18,
+                    "moved_by": "the incumbent withdrew — flips the base case",
+                    "confidence": "high",
+                },
+            ],
+        }
+    ) + "\n```"
+    f = parse_panelist_response(resp, "x/y")
+    # The trajectory is captured, in order, with the mover on the flip step.
+    assert [s["step"] for s in f.belief_trajectory] == [1, 2, 3]
+    flip = f.belief_trajectory[2]
+    assert flip["probability"] == 0.18 and "withdrew" in flip["moved_by"]
+    assert f.belief_trajectory[0]["open_questions"] == ["turnout?"]
+    # The final belief IS the commit — the decoy 0.30 loses.
+    assert f.probability == 0.18
+    # It rides the estimate metadata (the durable panel_estimates.metadata column).
+    assert f.to_estimate()["metadata"]["belief_trajectory"] == f.belief_trajectory
+
+
+def test_absent_trajectory_leaves_commit_and_metadata_backward_compatible():
+    # A legacy/stub response with no belief_trajectory: the committed number is the
+    # top-level probability and the trajectory metadata is an empty list.
+    f = parse_panelist_response(_panelist_json(0.42), "x/y")
+    assert f.probability == 0.42
+    assert f.belief_trajectory == []
+    meta = f.to_estimate()["metadata"]
+    assert meta["belief_trajectory"] == [] and meta["trials"] == []
+    assert meta["trial_shrinkage"] is None
+
+
+def test_blind_belief_trajectory_is_anchor_free_reconcile_adds_anchor_step():
+    # BLF A1 orthogonality: the belief state is requested in the blind prompt with NO
+    # anchor anywhere; the anchor step is introduced only by the reconcile block.
+    blind = build_panelist_prompt(
+        question_title="Q", resolution_criteria="R", context_packet="", market_anchor=None
+    )
+    assert "belief_trajectory" in blind["user"]
+    assert "anchor" not in blind["user"].lower() and "market" not in blind["user"].lower()
+    # A blind response's trajectory carries only evidence movers — never the anchor.
+    blind_resp = json.dumps(
+        {
+            "probability": 0.6,
+            "belief_trajectory": [
+                {"step": 1, "probability": 0.5, "moved_by": "prior"},
+                {"step": 2, "probability": 0.6, "moved_by": "a fresh poll"},
+            ],
+        }
+    )
+    bf = parse_panelist_response(blind_resp, "x/y")
+    assert all("market" not in (s["moved_by"] or "").lower() for s in bf.belief_trajectory)
+    # The reconcile block (phase 2) asks to APPEND an anchor step and re-emit.
+    block = build_reconcile_block(blind_probability=0.6, market_anchor=0.2, threshold_pp=10.0)
+    assert "belief_trajectory" in block and "anchor" in block.lower()
+
+
+# ── BLF A2 — multi-trial per panelist (variance-shrunk logit pool) ────────────
+
+
+def _trial_varying_runner(reconciled_by_trial, *, blind_p=0.75):
+    """A stub whose per-model RECONCILE turn returns a rotating value across trials
+    (so a seat's K draws diverge), each with a one-step belief trajectory; the blind
+    turn returns a constant. Judge (if any) is non-overriding."""
+
+    import threading
+
+    lock = threading.Lock()
+    counts: dict[str, int] = {}
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps(
+                {"probability": 0.5, "rationale": "j", "market_deviation_justification": ""}
+            )
+        if "Market Reconciliation" in user:
+            with lock:
+                n = counts.get(model, 0)
+                counts[model] = n + 1
+            p = reconciled_by_trial[n % len(reconciled_by_trial)]
+            return json.dumps(
+                {
+                    "probability": p,
+                    "rationale": "reconciled",
+                    "reconcile_reason": "converged",
+                    "belief_trajectory": [
+                        {"step": 1, "probability": p, "moved_by": "outside-view anchor"}
+                    ],
+                }
+            )
+        return json.dumps({"probability": blind_p, "rationale": "blind"})
+
+    return runner
+
+
+def _rotating_runner(values_by_model):
+    """Non-market single-phase stub: each model's committed probability rotates
+    across its trials so a seat's draws diverge."""
+
+    import threading
+
+    lock = threading.Lock()
+    counts: dict[str, int] = {}
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps({"probability": 0.5, "rationale": "j"})
+        with lock:
+            n = counts.get(model, 0)
+            counts[model] = n + 1
+        vals = values_by_model[model]
+        return _panelist_json(vals[n % len(vals)])
+
+    return runner
+
+
+def test_multi_trial_variance_shrinks_pooled_toward_anchor():
+    # BLF A2: K=3 divergent trials pool as a James–Stein shrunken logit mean toward
+    # the anchor (α<1); measurably closer to the anchor than the unshrunk mean.
+    from forecasting.bayes_toolkit import inv_logit, logit
+
+    reconciled = [0.70, 0.80, 0.90]
+    anchor = 0.20
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b"],
+        runner=_trial_varying_runner(reconciled),
+        judge_model=None,
+        market_anchor=anchor,
+        market_anchor_threshold_pp=100.0,  # keep the terminal discipline out of it
+        trials=3,
+    )
+    seat = res.ok_forecasts[0]
+    plain_mean = inv_logit(sum(logit(p) for p in reconciled) / len(reconciled))
+    assert seat.trial_shrinkage["survivors"] == 3
+    assert seat.trial_shrinkage["alpha"] < 1.0  # variance triggered the shrink
+    # Pooled sits strictly between the trials' own mean and the anchor.
+    assert anchor < seat.probability < plain_mean
+    assert abs(seat.probability - anchor) < abs(plain_mean - anchor)
+
+
+def test_zero_variance_trials_do_not_shrink_and_k1_is_identity():
+    # Contrast: identical trials (s²=0) → α=1, no shrink toward the anchor; and K=1
+    # is a strict passthrough with NO trial machinery (byte-identical to pre-A2).
+    res3 = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b"],
+        runner=_trial_varying_runner([0.80, 0.80, 0.80]),
+        judge_model=None,
+        market_anchor=0.20,
+        market_anchor_threshold_pp=100.0,
+        trials=3,
+    )
+    seat3 = res3.ok_forecasts[0]
+    assert seat3.trial_shrinkage["alpha"] == 1.0
+    assert abs(seat3.probability - 0.80) < 1e-9  # unmoved by the anchor
+
+    res1 = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b"],
+        runner=_trial_varying_runner([0.70, 0.80, 0.90]),
+        judge_model=None,
+        market_anchor=0.20,
+        market_anchor_threshold_pp=100.0,
+        trials=1,
+    )
+    seat1 = res1.ok_forecasts[0]
+    assert seat1.trial_shrinkage is None and seat1.trials == []
+    assert abs(seat1.probability - 0.70) < 1e-9  # the single draw, unpooled
+
+
+def test_trial_divergence_widens_the_disagreement_index():
+    # BLF A2: the FULL trial sample (not just the pooled seats) feeds the
+    # disagreement index, so a divergent trial widens the measured spread.
+    from forecasting.bayes_toolkit import inv_logit, logit
+
+    vals = {"a/m": [0.10, 0.40, 0.70], "b/m": [0.30, 0.60, 0.90]}
+    res = run_quorum(
+        question_title="Q",
+        resolution_criteria="R",
+        models=["a/m", "b/m"],
+        runner=_rotating_runner(vals),
+        judge_model=None,
+        trim=0,
+        trials=3,
+    )
+    full = [p for seat in vals.values() for p in seat]
+    assert (
+        res.disagreement["disagreement_index"]
+        == disagreement_signal(full)["disagreement_index"]
+    )
+    pooled = [
+        inv_logit(sum(logit(p) for p in seat) / len(seat)) for seat in vals.values()
+    ]
+    assert (
+        res.disagreement["disagreement_index"]
+        > disagreement_signal(pooled)["disagreement_index"]
+    )
+
+
+def test_multi_trial_seat_labels_partial_survivors_like_a_degraded_panel():
+    # BLF A2 honest-labeling: a 1-of-3-trials survivor seat still commits its
+    # survivor's number but is LABELED degraded; the whole quorum is NOT degraded
+    # because a second seat survived intact.
+    import threading
+
+    lock = threading.Lock()
+    counts: dict[str, int] = {}
+
+    def runner(model, system, user):
+        if "JUDGE" in system:
+            return json.dumps({"probability": 0.5, "rationale": "j"})
+        with lock:
+            n = counts.get(model, 0)
+            counts[model] = n + 1
+        if model == "flaky/m" and n >= 1:  # trials 2 and 3 fail for this seat
+            return "not json at all"
+        return _panelist_json(0.4)
+
+    res = run_quorum(
+        question_title="Q",
+        resolution_criteria="R",
+        models=["good/m", "flaky/m"],
+        runner=runner,
+        judge_model=None,
+        trim=0,
+        trials=3,
+    )
+    seats = {f.model: f for f in res.ok_forecasts}
+    flaky = seats["flaky/m"]
+    assert flaky.error is None and abs(flaky.probability - 0.4) < 1e-9
+    assert flaky.trial_shrinkage["n_trials"] == 3
+    assert flaky.trial_shrinkage["survivors"] == 1
+    assert flaky.trial_shrinkage["degraded"] is True
+    # Two seats survived → the quorum itself is not degraded.
+    assert res.degraded is False
+
+
+def test_multi_trial_metadata_round_trips():
+    # BLF A1+A2 schema round-trip: the pooled seat's belief trajectory + per-trial
+    # provenance ride the estimate metadata and survive a JSON round-trip (the
+    # panel_estimates.metadata column is a JSON blob — no schema migration).
+    res = run_quorum(
+        question_title="Will X?",
+        resolution_criteria="Resolves YES if X.",
+        models=["a/b"],
+        runner=_trial_varying_runner([0.70, 0.80, 0.90]),
+        judge_model=None,
+        market_anchor=0.20,
+        market_anchor_threshold_pp=100.0,
+        trials=3,
+    )
+    meta = res.panel_estimates()[0]["metadata"]
+    assert meta["trial_shrinkage"]["n_trials"] == 3
+    assert [t["trial"] for t in meta["trials"]] == [1, 2, 3]
+    # The pooled seat's headline trajectory is the representative trial's.
+    assert meta["belief_trajectory"] == res.ok_forecasts[0].belief_trajectory
+    assert json.loads(json.dumps(meta)) == meta
+    # The whole result still serialises for the run-status payload.
+    json.dumps(res.to_dict())
+
+
+# ── BLF A2 — trial-count resolution + cost bounding ──────────────────────────
+
+
+def test_resolve_trial_count_is_impact_driven():
+    class _Q:
+        def __init__(self, impact):
+            self.impact = impact
+
+    assert resolve_trial_count(_Q("high"))[0] == 3
+    assert resolve_trial_count(_Q("medium"))[0] == 1
+    assert resolve_trial_count(_Q(None))[0] == 1
+    # An explicit override wins over impact.
+    assert resolve_trial_count(_Q("high"), override=2)[0] == 2
+    # Configurable defaults.
+    assert resolve_trial_count(_Q("high"), high_impact_trials=5)[0] == 5
+
+
+def test_estimate_quorum_calls_scales_with_trials():
+    # trials=1 is byte-identical; K multiplies only the panelist calls, not the judge.
+    assert estimate_quorum_calls(model_count=3, delphi_rounds=0) == 4
+    assert estimate_quorum_calls(model_count=3, delphi_rounds=0, trials=3) == 3 * 3 + 1
+    assert (
+        estimate_quorum_calls(model_count=2, delphi_rounds=1, trials=2)
+        == (2 * 2 + 1) * 2
+    )
+
+
+def test_cap_trials_by_calls_bounds_to_budget():
+    # frontier = 2 models + judge → 2k+1 calls. max_calls=8 fits k=3 (7), not k=4 (9).
+    k, note = cap_trials_by_calls(
+        preset="frontier", delphi_rounds=0, samples=3, trials=5, max_calls=8
+    )
+    assert k == 3 and note and "→3" in note
+    # Already-fitting request is untouched (no note).
+    k2, note2 = cap_trials_by_calls(
+        preset="frontier", delphi_rounds=0, samples=3, trials=2, max_calls=8
+    )
+    assert k2 == 2 and note2 is None
+    # Never drops below 1, even under a pathological cap.
+    k3, _ = cap_trials_by_calls(
+        preset="frontier", delphi_rounds=0, samples=3, trials=5, max_calls=1
+    )
+    assert k3 == 1

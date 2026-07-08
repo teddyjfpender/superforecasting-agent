@@ -10758,28 +10758,49 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         else default_delphi
     )
 
+    # Multi-trial per panelist (BLF A2): an explicit --trials wins; else K is
+    # impact-driven (high-impact 3, else 1). ``1`` is byte-identical to pre-A2.
+    if args.trials is not None:
+        trials = max(1, int(args.trials))
+    else:
+        trials, _ = resolve_trial_count(question)
+
     # Cost cap (item 4): applies to any manual run WITHOUT an explicit --preset and
     # without an explicit model list — an oversized default preset is downgraded to
     # the largest that fits quorum.max_calls. An explicit --preset is respected.
     cap_note: str | None = None
+    trials_note: str | None = None
     if args.preset is None and not models:
         max_calls = int(cfg.get("max_calls", 12) or 12)
         preset, delphi_rounds, samples_hint, est_calls, cap_note = cap_preset_by_calls(
             preset, delphi_rounds, max_calls=max_calls, samples=samples_hint
         )
+        # Bound K to the SAME budget — extra trials of the same seats yield first.
+        trials, trials_note = cap_trials_by_calls(
+            preset=preset,
+            delphi_rounds=delphi_rounds,
+            samples=samples_hint,
+            trials=trials,
+            max_calls=max_calls,
+        )
 
-    if (resolution_note or cap_note) and not args.json:
+    if (resolution_note or cap_note or trials_note) and not args.json:
         model_count = preset_model_count(preset, samples=samples_hint)
-        est = estimate_quorum_calls(model_count=model_count, delphi_rounds=delphi_rounds)
+        est = estimate_quorum_calls(
+            model_count=model_count, delphi_rounds=delphi_rounds, trials=trials
+        )
+        trials_detail = "" if trials <= 1 else f", trials={trials}"
         detail = (
             f"↳ quorum defaults: preset {preset}: {model_count} models + judge, "
-            f"delphi={delphi_rounds}, ~{est} calls"
+            f"delphi={delphi_rounds}{trials_detail}, ~{est} calls"
         )
         if resolution_note:
             detail += f" — {resolution_note}"
         print(detail)
         if cap_note:
             print(f"  cost cap: {cap_note}")
+        if trials_note:
+            print(f"  cost cap: {trials_note}")
 
     self_fusion = preset == "self" and not models
     if self_fusion:
@@ -10813,6 +10834,7 @@ def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
         "model_timeout": int(cfg.get("model_timeout", 300)),
         "supervisor_search": supervisor_search,
         "delphi_rounds": delphi_rounds,
+        "trials": trials,
     }
 
     run_id = start_job(spec, wait=bool(args.wait))
@@ -12508,9 +12530,22 @@ def _print_cohort_scoreboard(board: dict[str, Any]) -> None:
     for key, label in order:
         row = cohorts.get(key) or {}
         domains = ", ".join(row.get("domains") or []) or "-"
+        adjusted = row.get("mean_brier_difficulty_adjusted")
+        adj_display = _format_metric(adjusted) if adjusted is not None else "n/a"
         print(
             f"  {label}: n={row.get('n_brier', 0)} "
-            f"brier={_format_metric(row.get('mean_brier'))} domains=[{domains}]"
+            f"brier={_format_metric(row.get('mean_brier'))} "
+            f"difficulty-adjusted={adj_display} domains=[{domains}]"
+        )
+    diff = board.get("difficulty_adjustment") or {}
+    if diff:
+        ref = diff.get("reference_difficulty")
+        provenance = ", ".join(f"{k}={v}" for k, v in (diff.get("provenance") or {}).items()) or "-"
+        print(
+            "  difficulty adjustment (ABI-style — a hard-question desk is not punished): "
+            f"reference={_format_metric(ref) if ref is not None else 'n/a'} "
+            f"eligible={diff.get('n_eligible', 0)} no-anchor={diff.get('n_no_anchor', 0)} "
+            f"[{provenance}]"
         )
     cont = board.get("continuous_scorecard") or {}
     print(

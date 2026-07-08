@@ -517,6 +517,7 @@ export interface ForecastCardBody {
 export interface ForecastCohortScoreboard {
   cohorts?: Record<string, unknown>
   continuous_scorecard?: ForecastContinuousScorecard
+  difficulty_adjustment?: ForecastDifficultyAdjustment
   pooled_diagnostic?: ForecastPooledDiagnostic
   quarantined?: ForecastQuarantineSummary
 }
@@ -896,6 +897,15 @@ export interface ForecastDeskTaskRequest {
   instruction: null | string
   question_ids: null | string[]
   session_id: null | string
+}
+
+export interface ForecastDifficultyAdjustment {
+  limits?: string
+  method?: string
+  n_eligible?: number
+  n_no_anchor?: number
+  provenance?: Record<string, unknown>
+  reference_difficulty?: null | number
 }
 
 export interface ForecastDoctorNextAction {

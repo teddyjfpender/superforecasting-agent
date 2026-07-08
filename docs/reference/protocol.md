@@ -756,6 +756,7 @@ _(no fields)_
 | --- | --- |
 | `cohorts` | `Record<string, unknown>?` |
 | `continuous_scorecard` | `ForecastContinuousScorecard?` |
+| `difficulty_adjustment` | `ForecastDifficultyAdjustment?` |
 | `pooled_diagnostic` | `ForecastPooledDiagnostic?` |
 | `quarantined` | `ForecastQuarantineSummary?` |
 
@@ -1197,6 +1198,17 @@ _(no fields)_
 | `instruction` | `string | null` |
 | `question_ids` | `string[] | null` |
 | `session_id` | `string | null` |
+
+### ForecastDifficultyAdjustment
+
+| field | type |
+| --- | --- |
+| `limits` | `string?` |
+| `method` | `string?` |
+| `n_eligible` | `number?` |
+| `n_no_anchor` | `number?` |
+| `provenance` | `Record<string, unknown>?` |
+| `reference_difficulty` | `number? | null` |
 
 ### ForecastDoctorNextAction
 

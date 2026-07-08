@@ -468,6 +468,8 @@ const brier3 = (value: number | null | undefined): string => (finite(value) ? va
 interface CohortRow {
   mean_brier?: number | null
   n_brier?: number
+  // BLF A6 — difficulty-adjusted Brier (null when the cohort has no anchored row).
+  mean_brier_difficulty_adjusted?: number | null
 }
 
 function CohortScoreboardSection({ board, t }: { board: ForecastCohortScoreboard; t: Theme }) {
@@ -481,6 +483,7 @@ function CohortScoreboardSection({ board, t }: { board: ForecastCohortScoreboard
   const cont = board.continuous_scorecard
   const pooled = board.pooled_diagnostic
   const quarantined = board.quarantined
+  const difficulty = board.difficulty_adjustment
 
   return (
     <>
@@ -495,9 +498,22 @@ function CohortScoreboardSection({ board, t }: { board: ForecastCohortScoreboard
             <Text color={t.color.text}>{String(row.n_brier ?? 0).padStart(4)}</Text>
             <Text color={t.color.muted}>{'  brier '}</Text>
             <Text color={t.color.text}>{brier3(row.mean_brier)}</Text>
+            <Text color={t.color.muted}>{'  adj '}</Text>
+            <Text color={t.color.text}>
+              {finite(row.mean_brier_difficulty_adjusted)
+                ? brier3(row.mean_brier_difficulty_adjusted)
+                : 'n/a'}
+            </Text>
           </Text>
         )
       })}
+      {difficulty ? (
+        <Text color={t.color.muted} wrap="truncate-end">
+          {`difficulty-adjusted (hard questions not punished): reference ${brier3(
+            difficulty.reference_difficulty
+          )}, eligible ${difficulty.n_eligible ?? 0}, no-anchor ${difficulty.n_no_anchor ?? 0}`}
+        </Text>
+      ) : null}
       {cont ? (
         <Text wrap="truncate-end">
           <Text color={t.color.label}>{'continuous (CRPS/log — separate)'.padEnd(32)}</Text>

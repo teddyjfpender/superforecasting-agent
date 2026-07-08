@@ -516,7 +516,7 @@ _PANELIST_USER_TEMPLATE = (
     '("low"/"medium"/"high"), evidence_for (array of strings), evidence_against '
     "(array of strings), open_questions (array of strings), and moved_by (one short "
     'line naming the specific evidence that moved the number, or "prior" for your '
-    "starting anchor). Start with your prior and add a step whenever the evidence "
+    "starting point). Start with your prior and add a step whenever the evidence "
     "shifts your view. The LAST step's probability MUST equal your committed "
     "probability above — the final belief is the commit."
 )

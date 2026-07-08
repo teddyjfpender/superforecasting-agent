@@ -376,6 +376,11 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | `--bias` | Show the SIGNED over/under-confidence view (per scope: SCE, CI, status) instead of the unsigned summary |
 | `--since` | Bias view: only count resolutions on/after this ISO date |
 | `--recency-halflife` | Bias view: recency half-life (days) |
+| `--hierarchical` | Hierarchical-Platt validation: held-out per-cohort Brier, global vs per-cohort-intercept (BLF A4). The flip evidence for FORECAST_HIERARCHICAL_CALIBRATION. |
+| `--min-cohort-n` | Hierarchical view: min resolved rows before a cohort earns an offset (default 40). |
+| `--folds` | Hierarchical view: held-out CV folds (default 5). |
+| `--split-by-venue` | Hierarchical view: refine cohorts to <origin>:<venue> where the data exists. |
+| `--json` | Emit the raw report as JSON. |
 
 ## `forecast complementarity`
 
@@ -2450,6 +2455,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | `--pool` | Pooling method for the panel ('mean' is the convexity baseline; the default stays trimmed_geomean_odds). |
 | `--trim` | Drop this many extremes before pooling. |
 | `--samples` | Self-fusion sample count (self preset). |
+| `--trials` | Trials per panelist (BLF multi-trial). Each seat is drawn this many times and pooled as a variance-shrunk logit mean toward the anchor; default is impact-driven (high-impact 3, else 1). |
 | `--attach-snapshot` | Attach the resulting panel run to an existing snapshot id. |
 | `--triggered-by` |  |
 | `--supervisor-search/--no-supervisor-search` | Live agentic-supervisor fresh-search loop (AIA P1.1): when the judge flags an unresolved crux it runs a real bounded web/news search and re-synthesises once on the fresh evidence. DEFAULT ON for live runs (leak-guarded off for a historical evidence_cutoff); pass --no-supervisor-search to disable this run, or set quorum.supervisor_search = false fleet-wide. |

@@ -55,6 +55,53 @@ from forecasting.ledger.gate import _enforce_write_gate, allow_ledger_writes
 logger = logging.getLogger(__name__)
 
 
+# BLF A7 — commit-path probability clamp. BLF clamps its final binary probability
+# to [0.05, 0.95] to bound worst-case Brier (a confidently-wrong 0.99 → NO scores
+# 0.9801; clamped to 0.95 it scores 0.9025). Our extremization guards cover the
+# CALIBRATION side; this is the TERMINAL commit-path bound. It is applied to the
+# agent's OWN committed binary probability AFTER every upstream calibration stage
+# (panel √3 Platt / quorum / learned-lesson rescale all run before the value
+# reaches ``create_snapshot``), scoped to binary scalars, and RECORDED in the
+# snapshot metadata whenever it engages — never silent. Faithful external
+# baselines (``imported_baseline``) and unscored scratchpad (``exploratory``) are
+# left byte-identical; distributions / vote-shares are out of scope.
+_COMMIT_PROBABILITY_FLOOR = 0.05
+_COMMIT_PROBABILITY_CEIL = 0.95
+# The scored origins that carry the agent's OWN forecast — where a worst-case
+# Brier bound is appropriate. ``imported_baseline`` (a faithful external record)
+# and ``exploratory`` (never scored) are deliberately excluded.
+_COMMIT_CLAMP_ORIGINS = frozenset({"live", "backtest", "market_nightly"})
+
+
+def _apply_commit_clamp(
+    payload: Any, outcome_space: OutcomeSpace, forecast_origin: str
+) -> tuple[Any, dict[str, Any] | None]:
+    """Clamp the agent's OWN committed binary probability to [floor, ceil].
+
+    Returns ``(payload, record)`` — ``payload`` is the (possibly clamped) value
+    and ``record`` is the honesty note stamped into metadata when the clamp
+    actually moved the number (``None`` when it was already in band or out of
+    scope). Binary scalars only; distributions / vote-shares pass through."""
+    if (
+        forecast_origin not in _COMMIT_CLAMP_ORIGINS
+        or getattr(outcome_space, "type", None) != "binary"
+        or isinstance(payload, bool)
+        or not isinstance(payload, (int, float))
+    ):
+        return payload, None
+    original = float(payload)
+    clamped = min(max(original, _COMMIT_PROBABILITY_FLOOR), _COMMIT_PROBABILITY_CEIL)
+    if clamped == original:
+        return payload, None
+    record = {
+        "original": original,
+        "clamped": clamped,
+        "bound": [_COMMIT_PROBABILITY_FLOOR, _COMMIT_PROBABILITY_CEIL],
+        "reason": "worst_case_brier_bound",
+    }
+    return clamped, record
+
+
 def _normalize_reason_list(raw: Any, *, field: str) -> list[str]:
     """Coerce a reasons_up / reasons_down / change_my_mind payload to ``list[str]``.
 
@@ -386,6 +433,14 @@ def create_snapshot(
         if forecast_origin == "exploratory":
             calibration_eligible = False
         payload = ledger._validate_probability_payload(probability_or_distribution, question.outcome_space)
+        # BLF A7 — terminal commit-path clamp (AFTER upstream calibration; scoped
+        # to the agent's own binary forecasts). Applied to ``payload`` so every
+        # downstream reader (saturation scoring, deviation-bet recorder, the
+        # INSERT, and the preview return) sees the bounded value; the honesty note
+        # is stamped into metadata below where ``snapshot_metadata`` is assembled.
+        payload, commit_clamp_record = _apply_commit_clamp(
+            payload, question.outcome_space, forecast_origin
+        )
         if not rationale.strip():
             raise ValidationError("forecast rationale is required")
         if confidence is not None and not (0 <= confidence <= 1):
@@ -492,6 +547,11 @@ def create_snapshot(
         effective_cutoff = cutoff_ts or as_of_ts
         ledger._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
         snapshot_metadata = dict(metadata or {})
+        # BLF A7 — record the commit-path clamp when it engaged (honesty law:
+        # never silent). Stamped BEFORE the preview return so preview and commit
+        # report the identical transform.
+        if commit_clamp_record is not None:
+            snapshot_metadata["commit_clamp"] = commit_clamp_record
         # Baseline for the next re-run's fresh-evidence gate (tie-proof count).
         if evidence_count_at_commit is not None:
             snapshot_metadata.setdefault("evidence_count_at_commit", evidence_count_at_commit)

@@ -730,6 +730,22 @@ class ForecastQuarantineSummary(WireModel):
     reasons: dict[str, Any] | None = wire_optional()
 
 
+class ForecastDifficultyAdjustment(WireModel):
+    """BLF A6 / ABI — the difficulty-adjustment summary. Difficulty = the recorded
+    market/crowd anchor's Brier vs the outcome; the per-cohort adjusted column
+    re-centres raw Brier by the difficulty of each cohort's own question mix so a
+    hard-question desk is not punished. Anchorless rows are shown unadjusted."""
+
+    TS_NAME = "ForecastDifficultyAdjustment"
+
+    method: str | None = wire_optional()
+    reference_difficulty: float | None = wire_optional(nullable=True)
+    n_eligible: int | None = wire_optional()
+    n_no_anchor: int | None = wire_optional()
+    provenance: dict[str, Any] | None = wire_optional()
+    limits: str | None = wire_optional()
+
+
 class ForecastCohortScoreboard(WireModel):
     """Score aggregates SEPARATED BY COHORT — the honest default. Never a pooled
     all-artifact Brier as a headline."""
@@ -739,6 +755,7 @@ class ForecastCohortScoreboard(WireModel):
     cohorts: dict[str, Any] | None = wire_optional()
     continuous_scorecard: ForecastContinuousScorecard | None = wire_optional()
     pooled_diagnostic: ForecastPooledDiagnostic | None = wire_optional()
+    difficulty_adjustment: ForecastDifficultyAdjustment | None = wire_optional()
     quarantined: ForecastQuarantineSummary | None = wire_optional()
 
 
