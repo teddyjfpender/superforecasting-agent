@@ -99,6 +99,76 @@ def candidate_shares(payload: Any) -> dict[str, float] | None:
     return None
 
 
+# G4 · granularity discipline. The round-number ANCHORS a lazy model reaches for
+# instead of committing the number the evidence computes: every 0.10 multiple in the
+# open interval, plus the quarter-points. 0.0 / 1.0 are excluded (degenerate
+# certainty is a different concern, not round-number hedging).
+_ROUND_ANCHORS: tuple[float, ...] = (0.1, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9)
+# How close a pooled component must land to the committed p for the roundness to be
+# "earned" (a pool that genuinely computes 0.60 is not anchoring).
+_EARNED_ROUND_TOLERANCE = 0.005
+
+
+def _binary_probability(payload: Any) -> float | None:
+    """The committed binary probability (a bare float), or None for any other
+    payload shape. A bool is not a probability."""
+    if isinstance(payload, (int, float)) and not isinstance(payload, bool):
+        p = float(payload)
+        return p if 0.0 <= p <= 1.0 else None
+    return None
+
+
+def _component_probabilities(components: Any) -> list[float]:
+    """Extract the numeric pooled probabilities from an ensemble_components blob
+    (a list of rows or the ``{components: [...]}`` wrapper), best-effort. Reads the
+    ``probability`` / ``value`` / ``estimate`` field off each row."""
+    rows: Any = components
+    if isinstance(rows, dict):
+        rows = rows.get("components", rows)
+    out: list[float] = []
+    if isinstance(rows, dict):
+        rows = list(rows.values())
+    if not isinstance(rows, (list, tuple)):
+        return out
+    for row in rows:
+        value: Any = None
+        if isinstance(row, dict):
+            for key in ("probability", "value", "estimate", "p"):
+                if isinstance(row.get(key), (int, float)) and not isinstance(row.get(key), bool):
+                    value = row.get(key)
+                    break
+        elif isinstance(row, (int, float)) and not isinstance(row, bool):
+            value = row
+        if value is not None and math.isfinite(float(value)):
+            out.append(float(value))
+    return out
+
+
+def is_round_number_anchored(
+    payload: Any,
+    components: Any,
+    *,
+    uncertainty_justified: bool = False,
+) -> bool:
+    """G4 — is the committed binary probability a round-number ANCHOR the evidence
+    did not compute? True when ``payload`` is a binary p that sits exactly on a round
+    anchor (a 0.10 multiple, or 0.25/0.5/0.75), no pooled component lands within
+    :data:`_EARNED_ROUND_TOLERANCE` of it (so the roundness is not earned), and no
+    ``uncertainty_justified`` escape is recorded. Pure arithmetic on data already in
+    scope — non-binary payloads and justified/earned rounds return False (passing)."""
+    if uncertainty_justified:
+        return False
+    p = _binary_probability(payload)
+    if p is None:
+        return False
+    if not any(abs(p - anchor) <= 1e-9 for anchor in _ROUND_ANCHORS):
+        return False
+    for value in _component_probabilities(components):
+        if abs(value - p) <= _EARNED_ROUND_TOLERANCE:
+            return False  # a pooled component actually produced this number — earned
+    return True
+
+
 def _is_candidate_share_pmf(payload: dict) -> bool:
     """A candidate-SHARE PMF: at least two numeric NAMED shares (keys that are not
     distribution-summary stats) summing to ~1 or ~100. Renderable as bars over the

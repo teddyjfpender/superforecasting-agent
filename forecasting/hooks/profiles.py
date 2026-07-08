@@ -48,6 +48,12 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "confidence_committed": _O,
         "reasoning_composition": _O,
         "require_outside_view_anchor": _O,
+        # P3 gates — all OFF for scratch work.
+        "outside_view_refresh": _O,
+        "granularity_disciplined": _O,
+        "crux_named": _O,
+        "market_anchor_engaged": _O,
+        "update_cadence_honored": _O,
         "thesis_aggregate_fresh": _O,
         "research_adequate": _O,
         "readiness_floor": _O,
@@ -100,6 +106,21 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         # re-forecasts are NOT hard-blocked (scoped to avoid bricking the re-forecast
         # flow — see _check_outside_view_anchor).
         "require_outside_view_anchor": _E,
+        # G3 refresh tier — WARN-only in standard (its job is visibility; promoting it
+        # would re-create the has_prior brick on routine re-forecasts). The first-commit
+        # ERROR tier lives INSIDE require_outside_view_anchor above.
+        "outside_view_refresh": _W,
+        # G4 — WARN FOREVER (never ERROR: hard-gating precision teaches fabricated 0.43s).
+        "granularity_disciplined": _W,
+        # G7 — WARN-first (60/63 high-impact cruxless today); promote to ERROR after the
+        # crux backfill lands and auto-promotion is observed filling new panels.
+        "crux_named": _W,
+        # G8 — WARN-first (6/7 market-watched record no comparison); promote to ERROR for
+        # high-impact once the deviation-bet ledger accrues its first scored cohort.
+        "market_anchor_engaged": _W,
+        # G5 — WARN in standard: sweep-side, so "WARN" means a red desk badge + alert
+        # priority, never a commit block (ERROR only in strict).
+        "update_cadence_honored": _W,
         "thesis_aggregate_fresh": _W,
         "research_adequate": _W,
         "readiness_floor": _W,
@@ -134,6 +155,13 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "confidence_committed": _W,     # soft min-sharpness with escape; never a hard block
         "reasoning_composition": _E,
         "require_outside_view_anchor": _E,
+        # P3 gates block in strict (granularity stays advisory — precision is never
+        # hard-gated, even here).
+        "outside_view_refresh": _E,
+        "granularity_disciplined": _W,
+        "crux_named": _E,
+        "market_anchor_engaged": _E,
+        "update_cadence_honored": _E,
         "thesis_aggregate_fresh": _W,
         "research_adequate": _E,
         "readiness_floor": _E,

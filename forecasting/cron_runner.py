@@ -648,6 +648,20 @@ def run_due_reviews(
                     f"under-saturated: {sat['under_saturated']} of {sat['checked']} checked; "
                     f"opened {len(sat['alerted'])} WARN alert(s)\n"
                 )
+        # G5 · cadence-overdue sweep (rides the same trailing phase): open a deduped
+        # cadence_overdue WARN alert for each live forecast past its review cadence × the
+        # grace multiple with no recorded reason. Best-effort; never breaks the sweep.
+        try:
+            cad = ledger.sweep_cadence_alerts()
+        except Exception as exc:
+            sections.append(f"Cadence sweep\nERROR: {exc}\n")
+        else:
+            if cad.get("alerted"):
+                sections.append(
+                    "Cadence sweep\n"
+                    f"past-cadence: {cad['overdue']} of {cad['checked']} checked; "
+                    f"opened {len(cad['alerted'])} WARN alert(s)\n"
+                )
 
     # Trailing Market-Model refresh phase (M5, flag-gated OFF by default): re-pull +
     # recompute active Market Models linked to still-open questions and open a deduped

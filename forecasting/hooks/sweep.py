@@ -142,6 +142,50 @@ def adherence_scorecard(ledger, *, question_ids=None) -> dict[str, Any]:
     }
 
 
+def by_rule_sweep(ledger, *, question_ids=None, live_only: bool = True, event: str = "lint") -> dict[str, Any]:
+    """READ-ONLY per-rule fire-count sweep across active questions — the operator's
+    debt table + the migration-count check. RE-LINTS each current snapshot fresh (so
+    the sweep-side rules like update_cadence_honored evaluate, unlike the stored
+    commit-time observe report the adherence scorecard reads), and tallies
+    ``{rule_id: {checked, failed_warn, failed_block}}``. ``live_only`` restricts to
+    live-origin currents (the 175 the live gates bind; the market_nightly benchmark
+    arms are correctly ignored). Returns the tally + denominators for a fire-count-vs-
+    plan report. No writes."""
+    rules: dict[str, dict[str, int]] = {}
+    checked = 0
+    if question_ids is None:
+        try:
+            question_ids = [q.id for q in ledger.list_questions(status="active")]
+        except Exception:
+            question_ids = []
+    for qid in question_ids or []:
+        report = lint_forecast(ledger, qid, event=event)
+        if report is None:
+            continue
+        if live_only:
+            try:
+                snap = ledger.get_current_snapshot(qid)
+            except Exception:
+                snap = None
+            if snap is None or getattr(snap, "forecast_origin", None) != "live":
+                continue
+        checked += 1
+        for verdict in report.verdicts:
+            bucket = rules.setdefault(verdict.rule_id, {"checked": 0, "failed_warn": 0, "failed_block": 0})
+            bucket["checked"] += 1
+            if verdict.passed:
+                continue
+            if verdict.severity.blocks:
+                bucket["failed_block"] += 1
+            else:
+                bucket["failed_warn"] += 1
+    out = {}
+    for rid in sorted(rules):
+        b = rules[rid]
+        out[rid] = {**b, "failed": b["failed_warn"] + b["failed_block"]}
+    return {"questions_scored": checked, "rules": out}
+
+
 def finish_sweep(ledger, question_ids, *, policy: Policy | None = None) -> dict[str, Any]:
     """Re-lint each touched forecast and summarize. Returns
     {checked, clean, under_saturated:[{question_id, score, blocking, warnings}]}.

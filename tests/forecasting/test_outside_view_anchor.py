@@ -42,11 +42,11 @@ def test_serious_live_forecast_without_reference_class_blocks(tmp_path):
     assert verdict.severity.value == "error"  # standard now blocks a serious forecast
 
 
-def test_first_pass_low_impact_forecast_is_not_hard_blocked():
-    # SCOPING (finding #4): a first-pass LOWER-impact forecast (not high-impact, no
-    # prior) is NOT hard-blocked on the anchor — the ERROR is scoped to serious
-    # forecasts (high_impact OR re-committed) so promoting it does not brick every
-    # routine first commit. Pure-engine so has_prior is controlled exactly.
+def test_first_commit_low_impact_forecast_requires_anchor():
+    # G3 · ANCHOR UNIVERSALITY: the FIRST live commit of ANY question (not just
+    # high-impact) now requires an outside-view anchor — the cheapest, most valuable
+    # moment, with no re-forecast flow to brick. A first-pass low-impact forecast with
+    # no linked reference class now BLOCKS (ERROR standard). Pure-engine: has_prior=False.
     ctx = HookContext(
         question_id="fq_low",
         event="update",
@@ -59,8 +59,32 @@ def test_first_pass_low_impact_forecast_is_not_hard_blocked():
     )
     report = run_hooks(ctx, resolve_severities(None, forecast_origin="live"))
     anchor = next((v for v in report.verdicts if v.rule_id == "require_outside_view_anchor"), None)
-    assert anchor is not None and anchor.passed is True  # serious-only: self-passes
+    assert anchor is not None and anchor.passed is False
+    assert anchor.severity.value == "error"
+    assert "first live forecast on this question requires an outside-view anchor" in anchor.message
+
+
+def test_low_impact_re_forecast_is_not_hard_blocked_on_anchor():
+    # The has_prior trap is designed around: a RE-forecast (has_prior=True) of a
+    # non-high-impact question does NOT hard-block on the anchor (the first-commit ERROR
+    # tier is scoped to first commits; the outside_view_refresh WARN nags it instead).
+    ctx = HookContext(
+        question_id="fq_low",
+        event="update",
+        forecast_origin="live",
+        impact="low",
+        has_prior=True,
+        is_thesis_or_factor=False,
+        reference_class_count=0,
+        linked_reference_class_count=0,
+    )
+    report = run_hooks(ctx, resolve_severities(None, forecast_origin="live"))
+    anchor = next((v for v in report.verdicts if v.rule_id == "require_outside_view_anchor"), None)
+    assert anchor is not None and anchor.passed is True  # re-commit self-passes the ERROR tier
     assert not any(b.rule_id == "require_outside_view_anchor" for b in report.blocking_failures())
+    # ...but the WARN refresh tier fires (visibility): the question has no anchor on the books.
+    refresh = next((v for v in report.verdicts if v.rule_id == "outside_view_refresh"), None)
+    assert refresh is not None and refresh.passed is False and refresh.severity.value == "warn"
 
 
 def test_attaching_a_reference_class_clears_the_anchor_gate(tmp_path):

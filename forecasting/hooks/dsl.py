@@ -79,6 +79,11 @@ _SIGNALS: dict[str, tuple[Callable[[HookContext], Any], str, str]] = {
     # v3 — VOI-directed research adequacy
     "research.adequate": (lambda c: c.research_adequate, "bool", "Research covers the levers that would move the forecast (reference class, evidence floor, independent + disconfirming + fresh evidence, watched triggers)."),
     "research.adequacy_score": (lambda c: c.research_adequacy_score if c.research_adequacy_score is not None else 100.0, "number", "Research-adequacy score 0..100 from the deterministic research_audit checks."),
+    # P3 gates — cruxes (G7), market anchor (G8), cadence (G5)
+    "cruxes.count": (lambda c: c.crux_count, "number", "Registered cruxes on the question (question_cruxes rows) — the variables that would most change the call."),
+    "market.linked": (lambda c: c.has_linked_market, "bool", "The question watches a market source (a market-prefixed component, an active watched market source, or a market baseline comparison)."),
+    "market.comparison_recorded": (lambda c: c.market_comparison_recorded, "bool", "The commit records the market price + deviation (a linked quorum panel run's market_anchor, or metadata.market_comparison)."),
+    "cadence.overdue_ratio": (lambda c: c.cadence_overdue_ratio, "number", "age(current snapshot) / review cadence period; >1 is past cadence (SWEEP-SIDE only; 0.0 at commit time)."),
 }
 
 SIGNAL_NAMES: tuple[str, ...] = tuple(sorted(_SIGNALS))
@@ -200,6 +205,19 @@ def validate_rule(spec: RuleSpec, *, known_ids: set[str] | None = None) -> list[
     if spec.remediation_hint not in _REMEDIATION_ACTIONS:
         issues.append(RuleIssue("remediation_hint", "error", f"unknown remediation_hint {spec.remediation_hint!r}",
                                 "one of: " + ", ".join(_REMEDIATION_ACTIONS)))
+
+    # applies_to hardening (§4.5): _applies only honors a fixed set of keys, so a
+    # hand-written filter on an unknown key (e.g. `question_type:` instead of
+    # `outcome_type:`) silently matches EVERYTHING — the documented silent-kill gotcha.
+    # WARN (save + flag) listing the valid keys so the author fixes it deliberately.
+    _VALID_APPLIES_KEYS = ("origin", "impact", "domain", "outcome_type")
+    for key in (spec.applies_to or {}):
+        if key not in _VALID_APPLIES_KEYS:
+            issues.append(RuleIssue(
+                "applies_to", "warn",
+                f"unknown applies_to key {key!r} is IGNORED — the rule will match every commit's scope on it",
+                "valid applies_to keys: " + ", ".join(_VALID_APPLIES_KEYS),
+            ))
 
     if not spec.check:
         issues.append(RuleIssue("check", "error", "a rule needs a check predicate", "add {signal, op, value}"))

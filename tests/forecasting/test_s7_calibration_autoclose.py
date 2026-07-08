@@ -159,6 +159,8 @@ def _update(db, question_id, **extra):
         "probability": 0.70,
         "rationale": "Evidence supports yes.",
         "as_of": "2026-01-02T00:00:00Z",
+        # G3: a first commit needs a linked outside-view anchor.
+        "reference_class": {"name": "macro base", "inclusion_criteria": "prior macro cases", "base_rate": 0.5},
     }
     args.update(extra)
     return json.loads(forecast_ledger_tool(args))

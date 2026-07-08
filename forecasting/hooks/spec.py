@@ -163,6 +163,43 @@ class HookContext:
     # provenance source of the intervals (panel|model|default), for the inspector.
     candidate_interval_source: str | None = None
 
+    # G4 · granularity discipline (Tetlock's hallmark). round_number_anchored is
+    # precomputed True ONLY for a binary live commit whose committed p is an exact
+    # round-number anchor (a 0.10 multiple, or 0.25/0.5/0.75) that NO pooled ensemble
+    # component actually produced AND that carries no uncertainty_justified escape —
+    # i.e. a round number the evidence did not compute. Defaults False (the passing
+    # state): a non-binary payload, an earned round, or a justified one never fires.
+    round_number_anchored: bool = False
+
+    # G5 · update-cadence escalation (SWEEP-SIDE). cadence_overdue_ratio is
+    # age(current.as_of) / cadence_period, populated ONLY for lint/finish_sweep events
+    # (the commit path leaves it 0.0 so the rule never fires at commit). It fires when
+    # the ratio exceeds the cadence_grace_ratio threshold AND no stale_evidence_reason
+    # covers the gap (cadence_reason_recorded). review_cadence is the human cadence
+    # label carried through for the teaching message.
+    cadence_overdue_ratio: float = 0.0
+    cadence_reason_recorded: bool = False
+    review_cadence: str | None = None
+
+    # G7 · crux minimum on high-impact. crux_count is one indexed COUNT on
+    # question_cruxes (free via idx_question_cruxes_question); crux_skip_reason is the
+    # metadata escape a commit records when no single crux exists. A high-impact live
+    # commit must carry >=1 registered crux OR name why none exists.
+    crux_count: int = 0
+    crux_skip_reason: str | None = None
+
+    # G8 · market-anchor universality (the deviation-ledger path). has_linked_market
+    # is True when the question watches a market source (a market-prefixed ensemble
+    # component, an active watched market source, or a market baseline comparison).
+    # market_comparison_recorded is True when the commit records the market price +
+    # deviation (a linked quorum panel run's market_anchor annotation, or the
+    # committer's metadata.market_comparison). market_skip_reason is the escape.
+    # Defaults are the PASSING state (no market linked / comparison satisfied).
+    has_linked_market: bool = False
+    market_comparison_recorded: bool = True
+    market_skip_reason: str | None = None
+    linked_market_source: str | None = None
+
     # style
     style_clean: bool = True
     style_offending_fields: tuple[str, ...] = ()

@@ -546,14 +546,18 @@ def _rem_research(_ctx: HookContext) -> RemediationDescriptor:
 
 # ── outside-view anchor (reference class) ─────────────────────────────────────
 def _check_outside_view_anchor(ctx: HookContext):
-    # HIGH-IMPACT-ONLY scoping (finding #4): the anchor is ENFORCED (ERROR in the
-    # standard profile) for a high-impact live forecast — the forecasts that most need
-    # an outside view. It is deliberately NOT gated on has_prior: gating re-commits too
-    # would demand a freshly-linked reference class on EVERY routine re-forecast, which
-    # bricks the re-forecast flow. A non-high-impact forecast self-passes here (no
-    # verdict fires), so promoting the severity to ERROR does not block the ~96% of live
-    # commits that never link a reference class — only the high-impact tier is gated.
-    if not ctx.high_impact:
+    # G3 · ANCHOR UNIVERSALITY (two tiers, no re-forecast bricking).
+    #   * HIGH-IMPACT (any commit) — the forecasts that most need an outside view.
+    #   * FIRST live commit of ANY question (``not has_prior``) — the cheapest, most
+    #     valuable moment for the anchor, and the one with NO re-forecast flow to
+    #     brick (the has_prior trap that scoped this rule last time was about
+    #     RE-commits; a first commit has no prior to be stale against). On the read/
+    #     lint path has_prior is True for every current snapshot, so the first-commit
+    #     tier fires 0 retroactively — it binds only NEW questions going forward.
+    # A non-high-impact RE-commit self-passes here (the outside_view_refresh WARN
+    # nags it instead, without blocking the flow).
+    first_commit = not ctx.has_prior
+    if not (ctx.high_impact or first_commit):
         return _OK
     # Snapshot-honest: a serious forecast must LINK its outside-view anchor to THIS
     # snapshot, not merely have one somewhere on the question (linked_reference_class_count
@@ -561,20 +565,21 @@ def _check_outside_view_anchor(ctx: HookContext):
     if ctx.linked_reference_class_count >= 1:
         return _OK
     claims_outside = any(method in {"outside_view", "base_rate"} for method in ctx.reasoning_methods)
+    _opener = "first live forecast on this question requires an outside-view anchor: " if (first_commit and not ctx.high_impact) else ""
     if ctx.reference_class_count >= 1:
         msg = (
-            f"this forecast links NO reference class though the question has {ctx.reference_class_count} — "
+            f"{_opener}this forecast links NO reference class though the question has {ctx.reference_class_count} — "
             "link your outside-view anchor to THIS snapshot (reference_class_refs, or the inline "
             "reference_class on update_forecast)."
         )
     elif claims_outside:
         msg = (
-            "reasoning_methods claims outside_view/base_rate but NO reference class is attached — "
+            f"{_opener}reasoning_methods claims outside_view/base_rate but NO reference class is attached — "
             "anchor the base rate you're claiming to reason from: call the 'add_reference_class' action."
         )
     else:
         msg = (
-            "serious live forecast has no outside-view anchor: attach at least one reference class / base rate "
+            f"{_opener}serious live forecast has no outside-view anchor: attach at least one reference class / base rate "
             "(call 'add_reference_class') so the forecast isn't pure inside-view prose."
         )
     return False, msg, {
@@ -588,6 +593,165 @@ def _rem_reference_class(_ctx: HookContext) -> RemediationDescriptor:
         "agentic", "add_reference_class",
         "Call the 'add_reference_class' action to attach an outside-view reference class / base rate to the forecast.",
         target_stage="research",
+    )
+
+
+# ── G3 · outside-view REFRESH tier (WARN) ─────────────────────────────────────
+# The non-blocking companion to the anchor gate: a routine RE-forecast of a
+# question that has NEVER carried a reference class (pure inside view since birth)
+# WARNs — surfaced, not blocked. It checks the QUESTION level (not the snapshot
+# link) precisely so a routine re-commit need not re-link its anchor every time,
+# which is the vector that bricked the re-forecast flow. High-impact re-commits are
+# already ERROR-gated by require_outside_view_anchor, so this tier scopes OUT of
+# high-impact to avoid a double verdict.
+def _applies_outside_view_refresh(ctx: HookContext) -> bool:
+    return ctx.is_live and not ctx.is_thesis_or_factor and ctx.has_prior and not ctx.high_impact
+
+
+def _check_outside_view_refresh(ctx: HookContext):
+    if ctx.reference_class_count >= 1:
+        return _OK
+    msg = (
+        "this question still has NO reference class on the books — the forecast has been "
+        "pure inside view since birth. Call 'add_reference_class' with the base rate you are "
+        "implicitly using; if you cannot name one, that is the finding."
+    )
+    return False, msg, {"reference_class_count": ctx.reference_class_count}
+
+
+# ── G4 · granularity discipline (Tetlock's hallmark) ──────────────────────────
+# The WARN-FOREVER half of the confidence family (confidence_committed is the
+# hedging half): flag a binary commit that sits on a round-number anchor (a 0.10
+# multiple, or 0.25/0.5/0.75) that NO pooled component actually produced and that
+# carries no uncertainty_justified escape. Never ERROR — hard-gating precision
+# teaches models to fabricate 0.43s, the opposite failure. It exists to make
+# round-number anchoring VISIBLE (the desk badge + the adherence scorecard).
+def _applies_granularity(ctx: HookContext) -> bool:
+    return (
+        ctx.is_live and not ctx.is_thesis_or_factor
+        and (ctx.outcome_type == "binary" or (ctx.outcome_type is None and not ctx.is_categorical and not ctx.is_distribution))
+    )
+
+
+def _check_granularity_disciplined(ctx: HookContext):
+    if not ctx.round_number_anchored:
+        return _OK
+    p = ctx.committed_winner_prob
+    p_txt = f"{p:g}" if isinstance(p, (int, float)) else "a round number"
+    msg = (
+        f"the committed probability {p_txt} is a round-number anchor (a 0.10 multiple, or "
+        "0.25/0.5/0.75) that no pooled component actually produced. Tetlock's granularity "
+        "finding: superforecasters' edge lives in distinctions finer than 10%. Re-pool the "
+        "components and commit the number the evidence computes — or record uncertainty_justified "
+        "if the roundness is genuinely earned."
+    )
+    return False, msg, {"p": p}
+
+
+# ── G5 · update-cadence escalation (SWEEP-SIDE) ───────────────────────────────
+# A stale question is stale precisely because it is NOT committing, so a commit-time
+# gate is the wrong shape. This rule evaluates ONLY on lint/finish_sweep events: a
+# question whose current snapshot has out-lived its review cadence (past the grace
+# multiple) with no recorded stale_evidence_reason fails, which drops its saturation
+# below the desk badge bar and rides the sweep_saturation_alerts → deduped
+# cadence-overdue alert the cron already services. WARN in standard (a red badge +
+# alert priority), ERROR in strict; commits are never touched.
+def _applies_update_cadence(ctx: HookContext) -> bool:
+    return (
+        ctx.event in ("lint", "finish_sweep")
+        and ctx.is_live and not ctx.is_thesis_or_factor
+        and ctx.review_cadence is not None
+    )
+
+
+def _check_update_cadence_honored(ctx: HookContext):
+    grace = ctx.threshold("cadence_grace_ratio")
+    if grace is None:
+        from forecasting.hooks.thresholds import DEFAULT_CADENCE_GRACE_RATIO
+        grace = DEFAULT_CADENCE_GRACE_RATIO
+    if ctx.cadence_overdue_ratio <= grace:
+        return _OK
+    if ctx.cadence_reason_recorded:
+        return _OK  # an acknowledged, explained pause is honest
+    cadence = ctx.review_cadence or "weekly"
+    msg = (
+        f"this forecast is {ctx.cadence_overdue_ratio:.1f}x past its {cadence} review cadence with no "
+        "recorded reason. A forecast that is not updated on cadence is not a live forecast — run "
+        "`forecast refresh <id>` (or the autonomous cycle), or record stale_evidence_reason if "
+        "nothing material can have changed."
+    )
+    return False, msg, {"overdue_ratio": ctx.cadence_overdue_ratio, "cadence": cadence}
+
+
+# ── G7 · crux minimum on high-impact ──────────────────────────────────────────
+# A high-impact commit must carry >=1 registered crux (the variable that would most
+# change the call) OR name why none exists (crux_skip_reason). In-flow this is nearly
+# free: a high-impact commit already requires a panel (require_panel ERROR), and the
+# panel auto-promotes its cruxes into question_cruxes before the commit reaches the
+# gate, so the rule binds only the panel-skipped path + pre-promotion legacy
+# questions — exactly the ones that should explain themselves. WARN standard (60/63
+# cruxless today — WARN-first, promote after the crux backfill), ERROR strict.
+def _applies_crux_named(ctx: HookContext) -> bool:
+    return ctx.is_live and not ctx.is_thesis_or_factor and ctx.high_impact
+
+
+def _check_crux_named(ctx: HookContext):
+    if ctx.crux_count >= 1:
+        return _OK
+    if (ctx.crux_skip_reason or "").strip():
+        return _OK
+    msg = (
+        "high-impact forecast has no registered crux: nothing on the question names the variable "
+        "that would most change this call. Run the panel (its cruxes auto-promote), promote them "
+        "with `forecast crux backfill --apply`, or record crux_skip_reason explaining why no single "
+        "crux exists. change_my_mind prose is not a tracked crux — a crux row is watchable, "
+        "statusable, and survives the next re-forecast."
+    )
+    return False, msg, {"crux_count": ctx.crux_count}
+
+
+def _rem_run_panel_crux(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "agentic", "run_panel",
+        "Run the panel (its cruxes auto-promote) or record crux_skip_reason.",
+        target_stage="model",
+    )
+
+
+# ── G8 · market-anchor universality (the deviation-ledger path) ───────────────
+# Any commit on a question with a LINKED market must record the market price +
+# deviation, even outside a quorum job (the discipline was a quorum courtesy, not a
+# commit invariant — deviation_bets had 0 rows while 7 live questions watched
+# markets). The rule requires ENGAGEMENT (record the price and, past threshold, the
+# named edge), never AGREEMENT — the soul's anti-market-echo stance is untouched.
+# WARN standard (6/7 record no comparison — WARN-first), ERROR strict.
+def _applies_market_anchor_engaged(ctx: HookContext) -> bool:
+    return ctx.is_live and not ctx.is_thesis_or_factor and ctx.has_linked_market
+
+
+def _check_market_anchor_engaged(ctx: HookContext):
+    if ctx.market_comparison_recorded:
+        return _OK
+    if (ctx.market_skip_reason or "").strip():
+        return _OK
+    from forecasting.hooks.thresholds import DEFAULT_NAMED_OUTCOME_ANCHOR_SHARE  # noqa: F401 (kept for parity)
+    source = ctx.linked_market_source or "a market source"
+    msg = (
+        f"this question has a live market ({source}) but the commit records no comparison against it. "
+        "Run the quorum (its blind-then-reconcile phase records the anchor, the deviation, and the "
+        "named edge automatically), or stamp metadata.market_comparison = {price, deviation_pp, "
+        "justification} — a deviation past the threshold with a named edge becomes a pre-registered "
+        "deviation bet the ledger scores at resolution. Disagreeing with the market is fine; not "
+        "knowing you disagree is not."
+    )
+    return False, msg, {"source": ctx.linked_market_source}
+
+
+def _rem_run_quorum_market(_ctx: HookContext) -> RemediationDescriptor:
+    return RemediationDescriptor(
+        "agentic", "run_quorum",
+        "Run the quorum (records the market anchor + deviation) or stamp metadata.market_comparison.",
+        target_stage="model",
     )
 
 
@@ -705,6 +869,11 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_require_evidence, _modeled, _rem_collect),
     SimpleRule("require_outside_view_anchor", Category.REASONING, Severity.WARN, 9.0,
                _check_outside_view_anchor, _modeled, _rem_reference_class),
+    # G3 — outside-view REFRESH tier: WARN when a routine (non-high-impact) re-forecast
+    # of a question that has never carried a reference class commits. Visibility, not a
+    # block (promoting it would re-create the has_prior brick).
+    SimpleRule("outside_view_refresh", Category.REASONING, Severity.WARN, 6.0,
+               _check_outside_view_refresh, _applies_outside_view_refresh, _rem_reference_class),
     SimpleRule("require_outcome_paths", Category.SATURATION, Severity.WARN, 10.0,
                _check_tail_paths, lambda c: c.is_live and (c.is_categorical or c.is_candidate_share), _rem_compress),
     # G1 — every named tail (categorical OR vote-share distribution) needs a cited base rate.
@@ -744,9 +913,25 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_calibration_bias_applied, _live, _rem_sharpen),
     SimpleRule("confidence_committed", Category.CONFIDENCE, Severity.WARN, 6.0,
                _check_confidence_committed, _live, _rem_sharpen),
+    # G4 — granularity discipline: WARN (never ERROR) on a binary round-number anchor
+    # no pooled component produced. Makes false-roundness visible; never blocks.
+    SimpleRule("granularity_disciplined", Category.CONFIDENCE, Severity.WARN, 4.0,
+               _check_granularity_disciplined, _applies_granularity, _rem_sharpen),
     # v2 — reasoning composition
     SimpleRule("reasoning_composition", Category.REASONING, Severity.WARN, 8.0,
                _check_reasoning_composition, _modeled, _rem_tag_reasoning),
+    # G7 — crux minimum: a high-impact commit must carry >=1 registered crux OR name
+    # why none exists. WARN standard (WARN-first; ERROR after the crux backfill), ERROR strict.
+    SimpleRule("crux_named", Category.REASONING, Severity.WARN, 8.0,
+               _check_crux_named, _applies_crux_named, _rem_run_panel_crux),
+    # G8 — market-anchor universality: a market-linked commit must record the market
+    # price + deviation (engagement, never agreement). WARN standard, ERROR strict.
+    SimpleRule("market_anchor_engaged", Category.QUORUM, Severity.WARN, 10.0,
+               _check_market_anchor_engaged, _applies_market_anchor_engaged, _rem_run_quorum_market),
+    # G5 — update-cadence escalation (SWEEP-SIDE): fires only on lint/finish_sweep for a
+    # question past its cadence×grace with no recorded reason. WARN standard, ERROR strict.
+    SimpleRule("update_cadence_honored", Category.DECISION, Severity.WARN, 8.0,
+               _check_update_cadence_honored, _applies_update_cadence, _rem_collect),
     # v3 — thesis/factor aggregate freshness (members moved since last aggregate)
     SimpleRule("thesis_aggregate_fresh", Category.SATURATION, Severity.WARN, 8.0,
                _check_thesis_fresh, lambda c: c.is_live and c.is_thesis_or_factor, _rem_run_aggregate),
@@ -772,7 +957,12 @@ RULE_DOCS: dict[str, str] = {
     "require_panel": "A deliberation panel must run (or record an explicit skip reason).",
     "require_citations": "The forecast should cite evidence / model runs.",
     "require_evidence": "A live forecast MUST carry at least one evidence record (hard requirement).",
-    "require_outside_view_anchor": "A serious live forecast should carry an outside-view anchor (reference class / base rate).",
+    "require_outside_view_anchor": "A serious live forecast (high-impact OR the FIRST commit of any question) must carry an outside-view anchor (reference class / base rate).",
+    "outside_view_refresh": "A routine re-forecast of a question that has never carried a reference class WARNs (pure inside view since birth) — visibility, not a block.",
+    "granularity_disciplined": "WARN when a binary commit sits on a round-number anchor (a 0.10 multiple / quarter-point) no pooled component produced (Tetlock's granularity finding); never blocks.",
+    "crux_named": "A high-impact commit must carry >=1 registered crux (question_cruxes) OR record crux_skip_reason naming why no single crux exists.",
+    "market_anchor_engaged": "A commit on a market-linked question must record the market price + deviation (via a quorum run or metadata.market_comparison) — engagement, never agreement.",
+    "update_cadence_honored": "SWEEP-SIDE: a live forecast past its review cadence (x the grace multiple) with no recorded stale_evidence_reason fails on lint/finish_sweep (badge + alert, never a commit block).",
     "require_outcome_paths": "Every material categorical / vote-share outcome needs a named path (no unearned tails).",
     "require_tail_base_rates": "Every named, non-residual outcome above the anchor-share threshold (categorical OR vote-share) must carry a cited base rate — else the mass belongs in the residual bucket.",
     "candidate_intervals_coherent": "Per-candidate vote-share intervals, when present, must be coherent (finite p05<=median<=p95, median near the committed share, in bounds).",

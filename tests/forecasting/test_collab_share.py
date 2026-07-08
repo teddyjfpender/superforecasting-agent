@@ -39,6 +39,8 @@ def seeded(tmp_path):
     tool(action="update_forecast", question_id=qid, probability=0.62,
          rationale="Base effects favor a hot print.",
          reasons_up=["shelter sticky", "energy rebound"],
+         # G3: a first commit needs a linked outside-view anchor.
+         reference_class={"name": "CPI base rate", "inclusion_criteria": "prior monthly CPI prints", "base_rate": 0.5},
          require_components=False, require_structured_reasoning=False, require_panel=False)
     return db, qid
 

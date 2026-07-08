@@ -71,6 +71,13 @@ from forecasting.models import (
 # bare-ack; deduped by reason+scope.
 _SATURATION_ALERT_REASON = "under_saturated"
 
+# G5 · cadence-overdue WARN alert reason. The sweep-side update_cadence_honored rule
+# fires read-only (event="lint") for a live forecast past its review cadence × the
+# grace multiple with no recorded stale_evidence_reason; this raises a deduped WARN
+# alert that folds through create_alert (touch, never re-row) and ages up the P1
+# escalation ladder (7d elevated / 14d high). It auto-closes on a fresh snapshot.
+_CADENCE_ALERT_REASON = "cadence_overdue"
+
 # Default re-surface window for a dismissed group (the design's TTL). A dismissal
 # silences a group for this many days; once the window elapses the group
 # re-surfaces (``self_check`` re-emits the alert IF the condition still holds). A
@@ -329,6 +336,62 @@ def sweep_saturation_alerts(
         if alert is not None:
             alerted.append(question.id)
     return {"checked": checked, "under_saturated": under, "alerted": alerted}
+
+
+def sweep_cadence_alerts(
+    ledger,
+    *,
+    limit: int = 500,
+) -> dict[str, Any]:
+    """G5 · scan active LIVE forecasts and open a deduped ``cadence_overdue`` WARN alert
+    for each whose current snapshot has out-lived its review cadence past the grace
+    multiple with no recorded stale_evidence_reason. Fires the sweep-side
+    update_cadence_honored hook rule READ-ONLY (event="lint"); the alert folds through
+    ``create_alert`` (touch, never re-row) and ages up the P1 escalation ladder
+    (7d elevated / 14d high). Best-effort. Returns ``{checked, overdue, alerted}``."""
+    from forecasting.hooks import lint_forecast
+
+    questions = [
+        q for q in ledger.list_questions(status="active", limit=limit)
+        if q.outcome_space.type != "thesis"
+    ]
+    checked = 0
+    overdue = 0
+    alerted: list[str] = []
+    for question in questions:
+        try:
+            report = lint_forecast(ledger, question.id, event="lint")
+        except Exception:
+            report = None
+        if report is None:
+            continue
+        checked += 1
+        verdict = next(
+            (v for v in report.verdicts if v.rule_id == "update_cadence_honored" and not v.passed),
+            None,
+        )
+        if verdict is None:
+            continue
+        overdue += 1
+        already = ledger._has_open_alert(
+            reason=_CADENCE_ALERT_REASON, scope_type="question", scope_ref=question.id
+        )
+        action = verdict.message or (
+            "This forecast is past its review cadence — run `forecast refresh <id>` or record "
+            "stale_evidence_reason."
+        )
+        # refresh_action keeps the (changing) overdue-ratio detail current on a touch.
+        ledger.create_alert(
+            severity="warning",
+            scope_type="question",
+            scope_ref=question.id,
+            reason=_CADENCE_ALERT_REASON,
+            recommended_action=action,
+            refresh_action=True,
+        )
+        if not already:
+            alerted.append(question.id)
+    return {"checked": checked, "overdue": overdue, "alerted": alerted}
 
 
 def _is_learning_alert_reason(reason: str | None) -> bool:
@@ -731,6 +794,16 @@ def reconcile_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -
                 _close(alert, "question_closed_or_resolved")
             else:
                 _keep(alert, "question still active — needs close/resolution")
+            continue
+
+        # G5 · cadence_overdue closes on a FRESH snapshot (the forecast was refreshed
+        # on cadence). Handled before the NO_AUTO skip so an unknown reason doesn't
+        # leave it immortal.
+        if reason == _CADENCE_ALERT_REASON:
+            if _snapshot_after():
+                _close(alert, "fresh_snapshot")
+            else:
+                _keep(alert, "no forecast update committed since the cadence alert")
             continue
 
         # Genuine human-judgment classes (domain-error profiles, assumption /

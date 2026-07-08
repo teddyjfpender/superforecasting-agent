@@ -896,6 +896,7 @@ def test_forecast_ledger_tool_lifecycle(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast", "require_components": False,
+                "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -974,6 +975,7 @@ def test_forecast_ledger_tool_can_require_update_citations(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast", "require_components": False,
+                "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -1107,6 +1109,7 @@ def test_forecast_ledger_tool_records_structured_postmortem_learning(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -1562,6 +1565,7 @@ def test_forecast_ledger_tool_manages_autopilot_update_proposals(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast", "require_components": False,
+                "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -1675,6 +1679,7 @@ def test_forecast_ledger_tool_can_save_ensemble_components(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast", "require_components": False,
+                "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -1805,6 +1810,7 @@ def test_forecast_ledger_tool_lists_model_runs_and_postmortems(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -1881,6 +1887,7 @@ def test_forecast_ledger_tool_exports_audit_packets(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -1979,6 +1986,7 @@ def test_forecast_ledger_tool_returns_pilot_report(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2055,6 +2063,7 @@ def test_forecast_ledger_tool_returns_doctor_report(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2128,6 +2137,7 @@ def test_forecast_ledger_tool_records_corrections_and_invalidates_learning(tmp_p
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2216,6 +2226,7 @@ def test_forecast_ledger_tool_lists_scores_for_calibration_review(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2386,6 +2397,7 @@ def test_forecast_ledger_tool_stores_snapshot_audit_metadata(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast", "require_components": False,
+                "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -2453,6 +2465,7 @@ def test_forecast_ledger_tool_can_apply_active_calibration_lessons(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast", "require_components": False,
+                "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                 "reasons_up": ["base rate and recent signal point higher"],
                 "reasons_down": ["small sample; reversion risk"],
                 "change_my_mind": ["a confirmed contradicting data release"],
@@ -2819,6 +2832,7 @@ def test_forecast_ledger_tool_reviews_focused_books(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2832,6 +2846,7 @@ def test_forecast_ledger_tool_reviews_focused_books(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -2877,6 +2892,7 @@ def test_forecast_ledger_tool_reads_calibration_and_error_memory(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -4658,10 +4674,12 @@ def test_workflow_report_aggregates_question_activity(tmp_path):
                               "source_or_note": f"note {i}", "claim": f"c{i}"})
     _reasons = {"reasons_up": ["up"], "reasons_down": ["down"], "change_my_mind": ["new data"]}
     forecast_ledger_tool({"action": "update_forecast", "require_components": False, "db": db, "question_id": qid,
+    "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                           "probability": 0.55, "rationale": "first", **_reasons})
     # Second snapshot has no new evidence since the first; this test exercises
     # report aggregation, not the re-run freshness or panel gates, so opt out.
     forecast_ledger_tool({"action": "update_forecast", "require_components": False,
+    "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                           "require_fresh_evidence": False, "require_panel": False, "db": db, "question_id": qid,
                           "probability": 0.6, "rationale": "second", **_reasons})
 
@@ -4901,6 +4919,7 @@ def test_forecast_ledger_tool_update_forecast_persists_reasons(tmp_path):
             {
                 "db": db,
                 "action": "update_forecast", "require_components": False,
+                "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
                 "question_id": qid,
                 "probability": 0.41,
                 "rationale": "base rate plus inside view",
@@ -4957,6 +4976,7 @@ def test_forecast_ledger_tool_structured_reasoning_enforced_by_default_for_live(
     # No reasons, no require flag, origin defaults to live -> rejected by default.
     rejected = json.loads(forecast_ledger_tool({
         "db": db, "action": "update_forecast", "require_components": False, "question_id": qid,
+        "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         "probability": 0.55, "rationale": "rough call",
     }))
     assert rejected["success"] is False
@@ -4968,6 +4988,7 @@ def test_forecast_ledger_tool_structured_reasoning_enforced_by_default_for_live(
     _seed_evidence(db, qid)
     allowed = json.loads(forecast_ledger_tool({
         "db": db, "action": "update_forecast", "require_components": False, "question_id": qid,
+        "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         "probability": 0.55, "rationale": "rough call",
         "require_structured_reasoning": False,
     }))
@@ -5045,6 +5066,7 @@ def test_forecast_ledger_tool_postmortem_persists_failure_class(tmp_path):
         {
             "db": db,
             "action": "update_forecast", "require_components": False,
+            "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
             "reasons_up": ["base rate and recent signal point higher"],
             "reasons_down": ["small sample; reversion risk"],
             "change_my_mind": ["a confirmed contradicting data release"],
@@ -5158,6 +5180,7 @@ def test_forecast_ledger_tool_requires_components_by_default_for_live(tmp_path):
     # Reasons present, but no components, origin defaults to live -> rejected.
     rejected = json.loads(forecast_ledger_tool({
         "db": db, "action": "update_forecast", "question_id": qid,
+        "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         "probability": 0.6, "rationale": "bare number", **reasons,
     }))
     assert rejected["success"] is False
@@ -5168,6 +5191,7 @@ def test_forecast_ledger_tool_requires_components_by_default_for_live(tmp_path):
     _seed_evidence(db, qid)
     allowed = json.loads(forecast_ledger_tool({
         "db": db, "action": "update_forecast", "question_id": qid,
+        "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         "rationale": "decomposed", "method": "weighted_ensemble", **reasons,
         "components": {
             "base_rate": {"probability": 0.5, "weight": 1},
@@ -5179,6 +5203,7 @@ def test_forecast_ledger_tool_requires_components_by_default_for_live(tmp_path):
     # Exploratory work bypasses the gate (judgment retained for scratch forecasts).
     explore = json.loads(forecast_ledger_tool({
         "db": db, "action": "update_forecast", "question_id": qid,
+        "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         "probability": 0.6, "rationale": "scratch", "forecast_origin": "exploratory",
     }))
     assert explore["success"] is True
@@ -5195,7 +5220,7 @@ def test_update_forecast_blocks_stale_rerun(tmp_path):
     reasons = {"reasons_up": ["up"], "reasons_down": ["down"], "change_my_mind": ["new data"]}
     # This test isolates the re-run freshness gate; opt out of the panel gate
     # (which now also binds re-commits) so it doesn't mask the evidence checks.
-    base = {"action": "update_forecast", "require_components": False, "require_panel": False, "db": db, "question_id": qid, **reasons}
+    base = {"action": "update_forecast", "require_components": False, "require_panel": False, "db": db, "question_id": qid, **reasons, "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5}}
 
     forecast_ledger_tool({"action": "add_evidence", "db": db, "question_id": qid,
                           "source_or_note": "n0", "claim": "c0"})

@@ -176,6 +176,8 @@ def test_tool_preview_returns_record_starts_no_quorum_writes_nothing(tmp_path):
         question_id=qid,
         probability=0.55,
         rationale="Clean tool rationale for the preview.",
+        # G3: a first commit needs an anchor; the preview counts the would-be inline link.
+        reference_class={"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         require_components=False,
         require_structured_reasoning=False,
         require_panel=False,
@@ -244,16 +246,17 @@ def test_tool_real_commit_still_writes_after_a_preview(tmp_path):
     qid = created["question"]["id"]
     _tool(db, action="add_evidence", question_id=qid, source_or_note="seed", claim="observed signal")
 
+    _rc = {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5}
     preview = _tool(
         db, action="update_forecast", question_id=qid, probability=0.55,
-        rationale="Clean tool rationale.", require_components=False,
+        rationale="Clean tool rationale.", reference_class=_rc, require_components=False,
         require_structured_reasoning=False, require_panel=False, preview=True,
     )
     assert preview["preview"]["would_commit"] is True
 
     committed = _tool(
         db, action="update_forecast", question_id=qid, probability=0.55,
-        rationale="Clean tool rationale.", require_components=False,
+        rationale="Clean tool rationale.", reference_class=_rc, require_components=False,
         require_structured_reasoning=False, require_panel=False,
     )
     assert committed["success"] is True

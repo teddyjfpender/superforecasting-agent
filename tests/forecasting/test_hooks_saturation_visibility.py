@@ -87,6 +87,8 @@ def test_tool_result_carries_saturation_score_and_advisories(tmp_path):
         "probability": 0.5, "rationale": "clean prose", "method": "m",
         "require_panel": False,
         "reasons_up": ["link a"], "reasons_down": ["link b"], "change_my_mind": ["link c"],
+        # G3: link an anchor so the first-commit anchor ERROR does not block.
+        "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         "components": {"base_rate": {"probability": 0.4, "weight": 1},
                        "inside_view": {"probability": 0.6, "weight": 1}},
     }))
@@ -119,6 +121,8 @@ def test_tool_result_omits_saturation_when_not_recorded(tmp_path, monkeypatch):
         "action": "update_forecast", "db": db, "question_id": qid,
         "probability": 0.5, "rationale": "clean prose", "method": "m", "require_panel": False,
         "reasons_up": ["link a"], "reasons_down": ["link b"], "change_my_mind": ["link c"],
+        # G3: link an anchor so the first-commit anchor ERROR does not block.
+        "reference_class": {"name": "base", "inclusion_criteria": "prior comparable cases", "base_rate": 0.5},
         "components": {"base_rate": {"probability": 0.4, "weight": 1},
                        "inside_view": {"probability": 0.6, "weight": 1}},
     }))

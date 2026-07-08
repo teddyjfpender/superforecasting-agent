@@ -72,6 +72,8 @@ def seeded(tmp_path):
         rationale="Base effects favor a hot print.",
         reasons_up=["shelter inflation sticky", "energy rebound", "wage growth firm", "services momentum"],
         evidence_refs=[eid],
+        # G3: a first commit needs a linked outside-view anchor.
+        reference_class={"name": "CPI base rate", "inclusion_criteria": "prior monthly CPI prints", "base_rate": 0.5},
         require_components=False, require_structured_reasoning=False, require_panel=False,
     )
     return ForecastLedger(db), qid, eid

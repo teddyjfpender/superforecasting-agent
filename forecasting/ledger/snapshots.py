@@ -200,6 +200,21 @@ def annotate_snapshot(ledger, snapshot_id: str, patch: dict[str, Any]) -> None:
         )
 
 
+def _market_deviation_threshold_pp() -> float:
+    """The unjustified-deviation threshold in percentage points for the commit-path
+    G8 deviation-bet recorder — the SAME ``quorum.market_anchor_deviation_pp`` config
+    the quorum job reads (default 10.0), so a non-quorum bet uses the same bar."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config().get("quorum", {})
+        if isinstance(cfg, dict) and "market_anchor_deviation_pp" in cfg:
+            return max(0.0, float(cfg.get("market_anchor_deviation_pp")))
+    except Exception:
+        pass
+    return 10.0
+
+
 def _committed_winner_prob(payload: Any, outcome_type: str | None = None) -> float | None:
     """The committed winner probability — defined ONLY for binary (the p) and
     categorical (the leading outcome's mass). For a distribution payload the
@@ -863,6 +878,67 @@ def create_snapshot(
             except Exception:
                 _research_adequate, _research_adequacy_score = True, None
 
+        # ── P3 gate commit-time signals (G4 granularity / G7 crux / G8 market) ──
+        # G3 rides has_prior + reference_class counts already fed to the context; G5 is
+        # sweep-side (its applies() excludes the commit event, so it never fires here).
+        # All best-effort / fail-open to the PASSING state so a read error never blocks.
+        _g4_round_anchored = False
+        _crux_count_commit = 0
+        _crux_skip_reason = snapshot_metadata.get("crux_skip_reason")
+        _g8_has_market = False
+        _g8_market_source = None
+        _g8_market_recorded = True
+        _g8_market_skip_reason = snapshot_metadata.get("market_skip_reason")
+        _g8_market_comparison: dict[str, Any] | None = None
+        if forecast_origin == "live":
+            try:
+                from forecasting.hooks.distribution import is_round_number_anchored as _is_round
+
+                _g4_round_anchored = _is_round(
+                    probability_or_distribution, ensemble_components,
+                    uncertainty_justified=bool(snapshot_metadata.get("uncertainty_justified")),
+                )
+            except Exception:
+                _g4_round_anchored = False
+            try:
+                _crux_count_commit = len(ledger.list_cruxes(question_id))
+            except Exception:
+                _crux_count_commit = 0
+            try:
+                from forecasting.hooks.market_anchor import (
+                    detect_linked_market as _detect_market,
+                )
+                from forecasting.hooks.market_anchor import (
+                    market_comparison_from_metadata as _market_meta,
+                )
+                from forecasting.hooks.market_anchor import (
+                    panel_run_records_market as _panel_market,
+                )
+
+                try:
+                    _mwatch = [
+                        s
+                        for w in ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")
+                        for s in (w.get("source"), w.get("source_type"))
+                    ]
+                except Exception:
+                    _mwatch = []
+                try:
+                    _mbase = [b.get("baseline_type") for b in ledger.list_baseline_comparisons(question_id)]
+                except Exception:
+                    _mbase = []
+                _g8_has_market, _g8_market_source = _detect_market(
+                    components=ensemble_components, watched_source_slugs=_mwatch, baseline_types=_mbase,
+                )
+                _g8_market_comparison = _market_meta(snapshot_metadata)
+                if _g8_has_market:
+                    _g8_market_recorded = (
+                        (_linked_panel is not None and _panel_market(_linked_panel))
+                        or _g8_market_comparison is not None
+                    )
+            except Exception:
+                _g8_has_market, _g8_market_recorded, _g8_market_comparison = False, True, None
+
         # User-defined rule enforcement (Phase 5). Only runs when the desk has
         # authored custom rules (zero overhead otherwise). A buggy rule engine must
         # never brick a commit (fail-OPEN on evaluation errors), but a legitimately
@@ -919,6 +995,13 @@ def create_snapshot(
                         candidate_interval_coverage=_g2_coverage,
                         candidate_interval_issues=_g2_issues,
                         no_interval_reason=snapshot_metadata.get("no_interval_reason"),
+                        round_number_anchored=_g4_round_anchored,
+                        crux_count=_crux_count_commit,
+                        crux_skip_reason=_crux_skip_reason,
+                        has_linked_market=_g8_has_market,
+                        market_comparison_recorded=_g8_market_recorded,
+                        market_skip_reason=_g8_market_skip_reason,
+                        linked_market_source=_g8_market_source,
                         thresholds=_qthresholds,
                     )
                     # Augment with the signals user rules may test that the candidate
@@ -1135,6 +1218,13 @@ def create_snapshot(
                 candidate_interval_issues=_g2_issues,
                 no_interval_reason=snapshot_metadata.get("no_interval_reason"),
                 candidate_interval_source=((snapshot_metadata.get("candidate_share_intervals_provenance") or {}).get("source") if isinstance(snapshot_metadata.get("candidate_share_intervals_provenance"), dict) else None),
+                round_number_anchored=_g4_round_anchored,
+                crux_count=_crux_count_commit,
+                crux_skip_reason=_crux_skip_reason,
+                has_linked_market=_g8_has_market,
+                market_comparison_recorded=_g8_market_recorded,
+                market_skip_reason=_g8_market_skip_reason,
+                linked_market_source=_g8_market_source,
                 thresholds=_qthresholds,
             )
             # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that
@@ -1268,6 +1358,42 @@ def create_snapshot(
     # commit, so `forecast lessons audit` can show whether each is actually used.
     if forecast_origin == "live":
         ledger._record_lesson_applications(question, forecast_id, probability_or_distribution, calibration_adjustment)
+    # G8 · deviation-ledger universality. A market-linked NON-QUORUM commit that
+    # stamped metadata.market_comparison with a named edge past the discipline
+    # threshold records a pre-registered deviation bet too — the seam had 0 rows
+    # because only quorum jobs wrote it. Binary-only (a market bet is a YES/NO
+    # proposition), live-only, best-effort (never breaks a commit), and inside the
+    # caller's already-open commit context (the gate is satisfied — the snapshot
+    # INSERT just succeeded under it). The quorum path stamps market_anchor on the
+    # panel run (NOT metadata.market_comparison), so keying on the committer's stamp
+    # never double-records the quorum's own bet.
+    if (
+        set_current
+        and forecast_origin == "live"
+        and getattr(question.outcome_space, "type", None) == "binary"
+        and _g8_market_comparison is not None
+        and isinstance(_winner_prob, (int, float))
+    ):
+        try:
+            _mprice = float(_g8_market_comparison["price"])
+            _mdev = _g8_market_comparison.get("deviation_pp")
+            if _mdev is None:
+                _mdev = abs(float(_winner_prob) - _mprice) * 100.0
+            _mjust = (_g8_market_comparison.get("justification") or "").strip()
+            _mthr = _market_deviation_threshold_pp()
+            if _mjust and float(_mdev) > _mthr:
+                ledger.record_deviation_bet(
+                    question_id=question_id,
+                    panel_run_id=panel_run_ref,
+                    market_price=_mprice,
+                    reconciled_verdict=float(_winner_prob),
+                    deviation_pp=float(_mdev),
+                    named_edge=_mjust,
+                    threshold_pp=_mthr,
+                    forecast_origin="live",
+                )
+        except Exception:  # deviation-bet recording is best-effort, never fatal
+            logger.debug("G8 commit-path deviation-bet recording failed (non-fatal)", exc_info=True)
     # Programmatic escalation (Wave 3 H4): a programmatic commit (refresh /
     # aggregate / autopilot — the lenient autofix paths that never hard-block)
     # whose recorded saturation is under the sweep bar escalates the SAME deduped

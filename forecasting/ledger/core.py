@@ -4789,6 +4789,9 @@ class ForecastLedger:
     ) -> dict[str, Any]:
         return _alerts.sweep_saturation_alerts(self, threshold=threshold, limit=limit)
 
+    def sweep_cadence_alerts(self, *, limit: int = 500) -> dict[str, Any]:
+        return _alerts.sweep_cadence_alerts(self, limit=limit)
+
 
     def check_triage_gate_graduation(
         self,

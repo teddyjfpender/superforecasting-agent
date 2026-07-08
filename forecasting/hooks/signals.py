@@ -248,6 +248,85 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     except Exception:
         _is_candidate_share = _is_candidate_share
 
+    # G4 · granularity (round-number anchor). Reads the committed payload + the pooled
+    # components + the uncertainty_justified escape — the same arithmetic the commit
+    # path uses, so lint and commit agree. Best-effort (defaults to the passing state).
+    _round_anchored = False
+    try:
+        from forecasting.hooks.distribution import is_round_number_anchored
+
+        _round_anchored = is_round_number_anchored(
+            payload, comp, uncertainty_justified=bool(meta.get("uncertainty_justified"))
+        )
+    except Exception:
+        _round_anchored = False
+
+    # G5 · cadence overdue ratio (SWEEP-SIDE only). age(current.as_of) / cadence period;
+    # populated only on lint/finish_sweep so the commit path never fires it. A live
+    # forecast with no explicit review_cadence still owes a weekly review (the desk's
+    # scheduled-review default), so the effective cadence falls back to weekly — matching
+    # the plan's cadence_days(question.review_cadence, default 7).
+    _review_cadence = getattr(question, "review_cadence", None) or "weekly"
+    _cadence_ratio = 0.0
+    _cadence_reason = bool(meta.get("stale_evidence_reason"))
+    if event in ("lint", "finish_sweep") and snap is not None:
+        try:
+            from datetime import datetime, timezone
+
+            from forecasting.models import timestamp_to_datetime
+
+            _as_of_dt = timestamp_to_datetime(_g("as_of"))
+            if _as_of_dt is not None:
+                _cadence_days = ledger._cadence_delta(_review_cadence).total_seconds() / 86400.0
+                if _cadence_days > 0:
+                    _age_days = (datetime.now(timezone.utc) - _as_of_dt).total_seconds() / 86400.0
+                    _cadence_ratio = max(0.0, _age_days / _cadence_days)
+        except Exception:
+            _cadence_ratio = 0.0
+
+    # G7 · crux count (one indexed COUNT on question_cruxes).
+    try:
+        _crux_count = len(ledger.list_cruxes(question_id))
+    except Exception:
+        _crux_count = 0
+
+    # G8 · market link + comparison. has_linked_market from a market-prefixed component,
+    # an active watched market source, or a market baseline comparison;
+    # market_comparison_recorded from the latest panel run's market_anchor annotation or
+    # the committer's metadata.market_comparison.
+    _has_market = False
+    _market_source = None
+    _market_recorded = True
+    try:
+        from forecasting.hooks.market_anchor import (
+            detect_linked_market,
+            market_comparison_from_metadata,
+            panel_run_records_market,
+        )
+
+        try:
+            _watch_slugs = [
+                s
+                for w in ledger.list_watched_sources(scope_type="question", scope_ref=question_id, status="active")
+                for s in (w.get("source"), w.get("source_type"))
+            ]
+        except Exception:
+            _watch_slugs = []
+        try:
+            _baseline_types = [b.get("baseline_type") for b in ledger.list_baseline_comparisons(question_id)]
+        except Exception:
+            _baseline_types = []
+        _has_market, _market_source = detect_linked_market(
+            components=comp, watched_source_slugs=_watch_slugs, baseline_types=_baseline_types
+        )
+        if _has_market:
+            _market_recorded = (
+                panel_run_records_market(_latest_run)
+                or market_comparison_from_metadata(meta) is not None
+            )
+    except Exception:
+        _has_market, _market_recorded = False, True
+
     return HookContext(
         question_id=question_id,
         forecast_origin=_g("forecast_origin", "live") or "live",
@@ -315,8 +394,29 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         candidate_interval_issues=_ci_issues,
         no_interval_reason=(meta.get("no_interval_reason") or None),
         candidate_interval_source=((meta.get("candidate_share_intervals_provenance") or {}).get("source") if isinstance(meta.get("candidate_share_intervals_provenance"), dict) else None),
+        # P3 gates
+        committed_winner_prob=_committed_winner_prob_readpath(ledger, payload, ospace.type),
+        round_number_anchored=_round_anchored,
+        cadence_overdue_ratio=_cadence_ratio,
+        cadence_reason_recorded=_cadence_reason,
+        review_cadence=_review_cadence,
+        crux_count=_crux_count,
+        crux_skip_reason=(meta.get("crux_skip_reason") or None),
+        has_linked_market=_has_market,
+        market_comparison_recorded=_market_recorded,
+        market_skip_reason=(meta.get("market_skip_reason") or None),
+        linked_market_source=_market_source,
         thresholds=_qthr,
     )
+
+
+def _committed_winner_prob_readpath(ledger, payload, outcome_type) -> float | None:
+    """The committed winner probability for the G4 message on the read path
+    (fail-soft; None on any error so the granularity message degrades gracefully)."""
+    try:
+        return ledger._committed_winner_prob(payload, outcome_type)
+    except Exception:
+        return None
 
 
 def build_commit_context(
@@ -388,6 +488,17 @@ def build_commit_context(
     candidate_interval_issues: tuple[str, ...] = (),
     no_interval_reason: str | None = None,
     candidate_interval_source: str | None = None,
+    # P3 gates (G3 rides has_prior/reference_class_count; these carry G4/G5/G7/G8)
+    round_number_anchored: bool = False,
+    cadence_overdue_ratio: float = 0.0,
+    cadence_reason_recorded: bool = False,
+    review_cadence: str | None = None,
+    crux_count: int = 0,
+    crux_skip_reason: str | None = None,
+    has_linked_market: bool = False,
+    market_comparison_recorded: bool = True,
+    market_skip_reason: str | None = None,
+    linked_market_source: str | None = None,
     thresholds: dict[str, float] | None = None,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
@@ -459,5 +570,15 @@ def build_commit_context(
         candidate_interval_issues=tuple(candidate_interval_issues or ()),
         no_interval_reason=(no_interval_reason or None),
         candidate_interval_source=(candidate_interval_source or None),
+        round_number_anchored=round_number_anchored,
+        cadence_overdue_ratio=cadence_overdue_ratio,
+        cadence_reason_recorded=cadence_reason_recorded,
+        review_cadence=review_cadence,
+        crux_count=crux_count,
+        crux_skip_reason=(crux_skip_reason or None),
+        has_linked_market=has_linked_market,
+        market_comparison_recorded=market_comparison_recorded,
+        market_skip_reason=(market_skip_reason or None),
+        linked_market_source=(linked_market_source or None),
         thresholds=dict(thresholds or {}),
     )

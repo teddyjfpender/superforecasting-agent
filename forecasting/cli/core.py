@@ -569,6 +569,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     )
     lint_parser.add_argument("question_id", nargs="?", help="Question id to lint")
     lint_parser.add_argument("--all", action="store_true", help="Lint every active question and summarize (finish sweep)")
+    lint_parser.add_argument("--by-rule", action="store_true", help="Read-only per-rule fire-count table across active live forecasts (the migration debt table)")
     lint_parser.add_argument("--json", action="store_true", help="Emit machine-readable output")
     lint_parser.set_defaults(_forecast_handler=_cmd_lint)
 
@@ -4008,7 +4009,20 @@ def _cmd_lint(args: argparse.Namespace) -> None:
     """Run the forecast saturation hooks read-only against a forecast (or all of
     them) and print the score + per-rule verdict table."""
     ledger = _ledger(args)
-    from forecasting.hooks import finish_sweep, lint_forecast
+    from forecasting.hooks import by_rule_sweep, finish_sweep, lint_forecast
+
+    if getattr(args, "by_rule", False):
+        table = by_rule_sweep(ledger)
+        if args.json:
+            print(json.dumps(table, ensure_ascii=False))
+            return
+        print(f"per-rule fire counts across {table['questions_scored']} active live forecasts:")
+        print(f"  {'rule':<32} {'checked':>7} {'warn':>6} {'block':>6}")
+        for rid, b in sorted(table["rules"].items(), key=lambda kv: -kv[1]["failed"]):
+            if not b["failed"]:
+                continue
+            print(f"  {rid:<32} {b['checked']:>7} {b['failed_warn']:>6} {b['failed_block']:>6}")
+        return
 
     if args.all:
         ids = [q.id for q in ledger.list_questions(status="active")]

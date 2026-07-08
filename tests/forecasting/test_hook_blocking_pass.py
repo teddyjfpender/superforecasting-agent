@@ -55,11 +55,14 @@ def test_standard_agent_commit_passes_evidence_floor_with_one_record(tmp_path):
     lg = _ledger(tmp_path)
     q = _q(lg)
     lg.add_evidence(question_id=q.id, source_or_note="quarterly report", claim="rates rose")
+    # G3: a FIRST commit now requires a linked outside-view anchor, so link one.
+    rc = lg.add_reference_class(question_id=q.id, name="hist", inclusion_criteria="prior cases", base_rate=0.4)
     snap = lg.create_snapshot(
         question_id=q.id, probability_or_distribution=0.5, rationale="clean prose",
-        method="m", require_panel=False, enforce_resolved_hooks=True,
+        method="m", require_panel=False, reference_class_refs=[rc["id"]],
+        enforce_resolved_hooks=True,
     )
-    assert snap is not None  # evidence present -> require_evidence satisfied
+    assert snap is not None  # evidence present + anchor linked -> commits
 
 
 # ── (b) STRICT profile actually blocks a rule it PROMOTES (was observe-only) ─────
@@ -188,10 +191,13 @@ def test_standard_well_provisioned_commit_does_not_fire_new_rules(tmp_path):
     readiness_score into the blocking-pass context, no_watched_sources would false-fire
     (count defaults to 0) — this pins that the real values arrive."""
     lg = _ledger(tmp_path)
-    q = _well_provisioned_q(lg)  # standard profile, watches>0, readiness>=60
+    q = _well_provisioned_q(lg)  # standard profile, watches>0, readiness>=60, rc present
+    # G3: link the already-present reference class so the FIRST-commit anchor clears.
+    _rc_id = lg.list_reference_classes(q.id)[0]["id"]
     snap = lg.create_snapshot(
         question_id=q.id, probability_or_distribution=0.5, rationale="clean prose",
-        method="m", require_panel=False, enforce_resolved_hooks=True,
+        method="m", require_panel=False, reference_class_refs=[_rc_id],
+        enforce_resolved_hooks=True,
     )
     assert snap is not None
     sat = (snap.metadata or {}).get("saturation") or {}
@@ -208,9 +214,13 @@ def test_standard_bare_commit_warns_new_rules_without_blocking(tmp_path):
     lg = _ledger(tmp_path)
     q = _q(lg)  # standard, no watches, low readiness
     lg.add_evidence(question_id=q.id, source_or_note="report", claim="x")  # clear the evidence floor
+    # G3: link an anchor so the FIRST-commit anchor ERROR does not block (leaving the
+    # WARN-only new rules to surface in the observe report, which is what this pins).
+    rc = lg.add_reference_class(question_id=q.id, name="hist", inclusion_criteria="prior cases", base_rate=0.4)
     snap = lg.create_snapshot(
         question_id=q.id, probability_or_distribution=0.5, rationale="clean prose",
-        method="m", require_panel=False, enforce_resolved_hooks=True,
+        method="m", require_panel=False, reference_class_refs=[rc["id"]],
+        enforce_resolved_hooks=True,
     )
     assert snap is not None
     warns = ((snap.metadata or {}).get("saturation") or {}).get("warnings", [])

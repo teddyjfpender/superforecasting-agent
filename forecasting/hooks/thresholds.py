@@ -33,6 +33,10 @@ DEFAULT_NULL_EXCESS_TOLERANCE = 0.05
 # this many percentage points of the committed share.
 DEFAULT_NAMED_OUTCOME_ANCHOR_SHARE = 0.10   # 10%
 DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP = 2.0  # 2 percentage points
+# G5: how far past its resolved review cadence a live forecast may drift (as a
+# multiple of the cadence period) before the sweep-side cadence rule fires. 1.5 =
+# fifty percent past cadence — an acknowledged stale_evidence_reason exempts it.
+DEFAULT_CADENCE_GRACE_RATIO = 1.5
 # Terminal Platt-calibration slope applied to the panel pool AFTER aggregation.
 # 1.0 is the IDENTITY (an un-configured question is byte-identical to the bare
 # pool); >1 sharpens away from 0.5, <1 flattens toward it. Composed
@@ -149,6 +153,19 @@ THRESHOLD_SPECS: tuple[ThresholdSpec, ...] = (
         direction="higher_looser",
         integer=False,
         help="How far (in percentage points) a per-candidate interval median may sit from the committed share.",
+    ),
+    ThresholdSpec(
+        key="cadence_grace_ratio",
+        label="Cadence grace (x cadence, G5)",
+        default=DEFAULT_CADENCE_GRACE_RATIO,
+        minimum=1.0,
+        maximum=10.0,
+        rule_ids=("update_cadence_honored",),
+        # A LARGER grace lets a forecast drift further past cadence before the
+        # sweep-side rule fires -> laxer.
+        direction="higher_looser",
+        integer=False,
+        help="How far past its review cadence (as a multiple) a live forecast may drift before the cadence rule fires on a sweep.",
     ),
     ThresholdSpec(
         key="alpha_extremize",

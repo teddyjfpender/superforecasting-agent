@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/hooks/builtins.py (BUILTIN_RULES, RULE_DOCS)`
 
-Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **30 built-in rules**; operators can add their own with the hooks DSL.
+Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **35 built-in rules**; operators can add their own with the hooks DSL.
 
 
 Severities shown are the **defaults** — the shipped profile or an operator override can raise or lower any of them (`forecast hooks list` shows the resolved severity).
@@ -27,6 +27,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | --- | --- | --- | --- |
 | `calibration_bias_applied` | `warn` | 6.0 | When measured under-confident, apply the calibration lesson. |
 | `confidence_committed` | `warn` | 6.0 | Avoid near-maximum hedging unless genuine uncertainty is justified. |
+| `granularity_disciplined` | `warn` | 4.0 | WARN when a binary commit sits on a round-number anchor (a 0.10 multiple / quarter-point) no pooled component produced (Tetlock's granularity finding); never blocks. |
 | `tails_justified` | `warn` | 10.0 | No-path tails must be justified; do not over-weight unearned outcomes. |
 
 ## decision
@@ -36,6 +37,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | `no_watched_sources` | `warn` | 8.0 | A live forecast must have at least one active watched source the desk can refresh. |
 | `readiness_floor` | `warn` | 10.0 | A live forecast's machine-readiness (Desk RDY) score must clear the floor so the autonomous desk has the inputs to keep it alive. |
 | `require_decision_readiness` | `warn` | 6.0 | The decision card should have no missing fields. |
+| `update_cadence_honored` | `warn` | 8.0 | SWEEP-SIDE: a live forecast past its review cadence (x the grace multiple) with no recorded stale_evidence_reason fails on lint/finish_sweep (badge + alert, never a commit block). |
 
 ## output
 
@@ -51,6 +53,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
+| `market_anchor_engaged` | `warn` | 10.0 | A commit on a market-linked question must record the market price + deviation (via a quorum run or metadata.market_comparison) — engagement, never agreement. |
 | `quorum_judged` | `warn` | 6.0 | A model quorum must carry a judge synthesis (consensus + contradictions). |
 | `quorum_participation` | `warn` | 8.0 | A panel/quorum that runs needs enough distinct perspectives. |
 | `quorum_required` | `warn` | 10.0 | Serious forecasts (high-impact / re-commit) need an actual panel or quorum run. |
@@ -59,8 +62,10 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
+| `crux_named` | `warn` | 8.0 | A high-impact commit must carry >=1 registered crux (question_cruxes) OR record crux_skip_reason naming why no single crux exists. |
+| `outside_view_refresh` | `warn` | 6.0 | A routine re-forecast of a question that has never carried a reference class WARNs (pure inside view since birth) — visibility, not a block. |
 | `reasoning_composition` | `warn` | 8.0 | Declare a sufficient set + count of reasoning methods. |
-| `require_outside_view_anchor` | `warn` | 9.0 | A serious live forecast should carry an outside-view anchor (reference class / base rate). |
+| `require_outside_view_anchor` | `warn` | 9.0 | A serious live forecast (high-impact OR the FIRST commit of any question) must carry an outside-view anchor (reference class / base rate). |
 | `require_tail_base_rates` | `warn` | 14.0 | Every named, non-residual outcome above the anchor-share threshold (categorical OR vote-share) must carry a cited base rate — else the mass belongs in the residual bucket. |
 
 ## saturation

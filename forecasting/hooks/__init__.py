@@ -43,6 +43,7 @@ from forecasting.hooks.signals import (
 from forecasting.hooks.sweep import (
     DEFAULT_SWEEP_ALERT_THRESHOLD,
     adherence_scorecard,
+    by_rule_sweep,
     finish_sweep,
     lint_forecast,
     saturation_summary,
@@ -86,6 +87,7 @@ __all__ = [
     "detect_style_offenders",
     "DEFAULT_SWEEP_ALERT_THRESHOLD",
     "adherence_scorecard",
+    "by_rule_sweep",
     "finish_sweep",
     "lint_forecast",
     "saturation_summary",

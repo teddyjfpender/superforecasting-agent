@@ -2130,6 +2130,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | --- | --- |
 | `question_id` | Question id to lint |
 | `--all` | Lint every active question and summarize (finish sweep) |
+| `--by-rule` | Read-only per-rule fire-count table across active live forecasts (the migration debt table) |
 | `--json` | Emit machine-readable output |
 
 ## `forecast list`
