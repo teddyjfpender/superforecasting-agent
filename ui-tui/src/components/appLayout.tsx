@@ -10,7 +10,15 @@ import { $homeFocus, setHomePane } from '../app/homeFocusStore.js'
 import type { AppLayoutProps } from '../app/interfaces.js'
 import { activeNavKey, canOpenGlobalOverlay, selectNavView } from '../app/navRoutes.js'
 import { $globalModal, $isBlocked, $overlayState, patchOverlayState } from '../app/overlayStore.js'
-import { $uiSessionId, $uiState, $uiTheme } from '../app/uiStore.js'
+import {
+  $uiCompact,
+  $uiDetailsCommandOverride,
+  $uiDetailsMode,
+  $uiSections,
+  $uiSessionId,
+  $uiState,
+  $uiTheme
+} from '../app/uiStore.js'
 import { useAgentsActivePoll } from '../app/useAgentsActivePoll.js'
 import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { VIEW_CHORDS } from '../content/keymaps.js'
@@ -91,7 +99,23 @@ const TranscriptPane = memo(function TranscriptPane({
   progress,
   transcript
 }: Pick<AppLayoutProps, 'actions' | 'progress' | 'transcript'> & { cols: number; decstbm?: boolean }) {
-  const ui = useStore($uiState)
+  // Subscribe ONLY to the display-shaping slice the transcript renders from —
+  // theme / sid / compact / details / sections — NOT the whole $uiState. A live
+  // session emits background $uiState notifies (config-sync poll, usage/status
+  // heartbeat, agents/contested counters) that the transcript does not render;
+  // with a broad `useStore($uiState)` each of those re-rendered the transcript,
+  // and a re-render concurrent with a composer keystroke walks the virtualized
+  // window through a transient full-history mount that re-blits the whole region
+  // (~7 KB/key) under the two-pane decstbm={false} + stickyScroll geometry — the
+  // "right chat blinks while I type" flash. These computed atoms notify only on a
+  // real change to a field the transcript actually uses, so typing leaves it put.
+  // (Same fix as the Recents rail — see ConversationsRailPane.)
+  const theme = useStore($uiTheme)
+  const sid = useStore($uiSessionId)
+  const compact = useStore($uiCompact)
+  const detailsMode = useStore($uiDetailsMode)
+  const detailsModeCommandOverride = useStore($uiDetailsCommandOverride)
+  const sections = useStore($uiSections)
 
   // LiveTodoPanel rides as a child of the latest user-message row so it
   // visually belongs to the prompt and follows it during scroll. -1 when
@@ -145,31 +169,31 @@ const TranscriptPane = memo(function TranscriptPane({
             <Box flexDirection="column" key={row.key} ref={transcript.virtualHistory.measureRef(row.key)}>
               {row.msg.role === 'user' && firstUserIdx >= 0 && row.index > firstUserIdx && (
                 <Box marginTop={1}>
-                  <Text color={ui.theme.color.border}>───</Text>
+                  <Text color={theme.color.border}>───</Text>
                 </Box>
               )}
 
               {row.msg.kind === 'intro' ? (
-                <HomeHero info={row.msg.info} maxCols={cols} t={ui.theme} />
+                <HomeHero info={row.msg.info} maxCols={cols} t={theme} />
               ) : row.msg.kind === 'session' && row.msg.info ? (
-                <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />
+                <SessionPanel info={row.msg.info} sid={sid} t={theme} />
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
                 <Panel
                   onCommandClick={actions.runCommand}
                   onCommandDraft={actions.draftCommand}
                   sections={row.msg.panelData.sections}
-                  t={ui.theme}
+                  t={theme}
                   title={row.msg.panelData.title}
                 />
               ) : (
                 <MessageLine
                   cols={cols}
-                  compact={ui.compact}
-                  detailsMode={ui.detailsMode}
-                  detailsModeCommandOverride={ui.detailsModeCommandOverride}
+                  compact={compact}
+                  detailsMode={detailsMode}
+                  detailsModeCommandOverride={detailsModeCommandOverride}
                   msg={row.msg}
-                  sections={ui.sections}
-                  t={ui.theme}
+                  sections={sections}
+                  t={theme}
                 />
               )}
 
@@ -181,17 +205,17 @@ const TranscriptPane = memo(function TranscriptPane({
 
           <StreamingAssistant
             cols={cols}
-            compact={ui.compact}
-            detailsMode={ui.detailsMode}
-            detailsModeCommandOverride={ui.detailsModeCommandOverride}
+            compact={compact}
+            detailsMode={detailsMode}
+            detailsModeCommandOverride={detailsModeCommandOverride}
             progress={progress}
-            sections={ui.sections}
+            sections={sections}
           />
         </Box>
       </ScrollBox>
 
       <NoSelect flexShrink={0} marginLeft={1}>
-        <TranscriptScrollbar scrollRef={transcript.scrollRef} t={ui.theme} />
+        <TranscriptScrollbar scrollRef={transcript.scrollRef} t={theme} />
       </NoSelect>
 
       <StickyPromptTracker
