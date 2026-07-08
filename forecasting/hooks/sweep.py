@@ -82,6 +82,66 @@ def lint_forecast(ledger, question_id: str, *, policy: Policy | None = None, eve
     return run_hooks(ctx, policy, rules=active_rules())
 
 
+def adherence_scorecard(ledger, *, question_ids=None) -> dict[str, Any]:
+    """Per-rule adherence across active questions — the operator's glanceable trust
+    surface. Tallied READ-ONLY from the STORED ``metadata['saturation']`` verdicts on
+    each current snapshot (no hook recompute, no schema change), so the doctor can
+    show ``{rule_id: {checked, passed, failed_warn, failed_block, pass_rate}}`` per
+    gate. The lazy operator's whole check becomes: every ``failed_block`` column is
+    zero and the ``failed_warn`` columns are falling.
+
+    ``failed_block`` counts a FAILED verdict whose recorded severity is ``error``
+    (it would refuse a commit); ``failed_warn`` counts a failed WARN. Questions with
+    no stored saturation report are skipped (not every snapshot carries one)."""
+    rules: dict[str, dict[str, int]] = {}
+    scored = 0
+    if question_ids is None:
+        try:
+            question_ids = [q.id for q in ledger.list_questions(status="active")]
+        except Exception:
+            question_ids = []
+    for qid in question_ids or []:
+        try:
+            snap = ledger.get_current_snapshot(qid)
+        except Exception:
+            snap = None
+        if snap is None:
+            continue
+        sat = (getattr(snap, "metadata", None) or {}).get("saturation")
+        if not isinstance(sat, dict):
+            continue
+        verdicts = sat.get("verdicts")
+        if not isinstance(verdicts, list):
+            continue
+        scored += 1
+        for verdict in verdicts:
+            if not isinstance(verdict, dict):
+                continue
+            rid = verdict.get("rule_id")
+            if not rid:
+                continue
+            bucket = rules.setdefault(rid, {"checked": 0, "passed": 0, "failed_warn": 0, "failed_block": 0})
+            bucket["checked"] += 1
+            if verdict.get("passed", True):
+                bucket["passed"] += 1
+            elif str(verdict.get("severity")) == "error":
+                bucket["failed_block"] += 1
+            else:
+                bucket["failed_warn"] += 1
+    out_rules: dict[str, dict[str, Any]] = {}
+    total_block = 0
+    for rid, bucket in sorted(rules.items()):
+        checked = bucket["checked"] or 1
+        total_block += bucket["failed_block"]
+        out_rules[rid] = {**bucket, "pass_rate": round(bucket["passed"] / checked, 3)}
+    return {
+        "questions_scored": scored,
+        "rules_tracked": len(out_rules),
+        "total_failed_block": total_block,
+        "rules": out_rules,
+    }
+
+
 def finish_sweep(ledger, question_ids, *, policy: Policy | None = None) -> dict[str, Any]:
     """Re-lint each touched forecast and summarize. Returns
     {checked, clean, under_saturated:[{question_id, score, blocking, warnings}]}.

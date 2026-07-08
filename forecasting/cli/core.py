@@ -3806,6 +3806,15 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         saturation = finish_sweep(ledger, active_ids)
     except Exception:
         saturation = {"checked": 0, "clean": 0, "under_saturated": []}
+    # ADHERENCE SCORECARD: per-gate pass rates over active questions, tallied from
+    # the STORED saturation verdicts (read-only, no recompute). The glanceable trust
+    # number — failed_block should be zero, failed_warn columns should be falling.
+    try:
+        from forecasting.hooks import adherence_scorecard
+
+        hook_adherence = adherence_scorecard(ledger, question_ids=active_ids)
+    except Exception:
+        hook_adherence = {"questions_scored": 0, "rules_tracked": 0, "total_failed_block": 0, "rules": {}}
     warnings_fold = {
         "alert_backlog": alert_backlog,
         "saturation": saturation,
@@ -3948,6 +3957,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "vault_health": vault_health,
         "panel_vs_solo_ablation": ablation,
         "deviation_edge": deviation_edge,
+        "hook_adherence": hook_adherence,
         "status": status,
         "cohort_scoreboard": cohort_scoreboard,
         "scores_audit": scores_audit,

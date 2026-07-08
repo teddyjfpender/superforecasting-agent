@@ -9,7 +9,13 @@ re-prompting. ``create_snapshot`` is the single fail-closed chokepoint.
 from __future__ import annotations
 
 from forecasting.hooks.builtins import BUILTIN_RULE_IDS, BUILTIN_RULES, style_message
-from forecasting.hooks.distribution import DistributionAssessment, assess_distribution, autofix_distribution
+from forecasting.hooks.distribution import (
+    DistributionAssessment,
+    assess_candidate_intervals,
+    assess_distribution,
+    autofix_distribution,
+    candidate_shares,
+)
 from forecasting.hooks.reasoning import REASONING_METHODS, normalize_methods
 from forecasting.hooks.engine import (
     Policy,
@@ -36,6 +42,7 @@ from forecasting.hooks.signals import (
 )
 from forecasting.hooks.sweep import (
     DEFAULT_SWEEP_ALERT_THRESHOLD,
+    adherence_scorecard,
     finish_sweep,
     lint_forecast,
     saturation_summary,
@@ -72,10 +79,13 @@ __all__ = [
     "THRESHOLD_SPECS",
     "ThresholdSpec",
     "normalize_thresholds",
+    "assess_candidate_intervals",
+    "candidate_shares",
     "build_commit_context",
     "build_context_from_ledger",
     "detect_style_offenders",
     "DEFAULT_SWEEP_ALERT_THRESHOLD",
+    "adherence_scorecard",
     "finish_sweep",
     "lint_forecast",
     "saturation_summary",

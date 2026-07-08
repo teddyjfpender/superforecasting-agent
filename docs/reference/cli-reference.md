@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **86 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **87 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -84,6 +84,7 @@ The full `forecast` command tree — **86 top-level commands** (also reachable a
 | [`forecast run-all`](#forecast-run-all) | Refresh every active member forecast, then aggregate every active thesis |
 | [`forecast schedule`](#forecast-schedule) | Manage scheduled self-checks |
 | [`forecast score`](#forecast-score) | Score the current forecast snapshot |
+| [`forecast scoreboard`](#forecast-scoreboard) | Cohort scoreboard, pathological-row audit, and gated score remediation |
 | [`forecast scores`](#forecast-scores) | List score records |
 | [`forecast search`](#forecast-search) | Search forecast questions without remembering IDs |
 | [`forecast self-check`](#forecast-self-check) | Create alerts for review work |
@@ -130,7 +131,9 @@ The full `forecast` command tree — **86 top-level commands** (also reachable a
 | `--all` |  |
 | `--ack` |  |
 | `--reconcile` | Auto-acknowledge alerts whose source-change has already been consumed (evidence imported + forecast updated since) |
-| `--dry-run` | With --reconcile, preview without acknowledging |
+| `--dry-run` | With --reconcile/--collapse/--escalate, preview without writing |
+| `--collapse` | One-time: fold existing duplicate open-alert groups into the oldest row (keep oldest, fold counts) |
+| `--escalate` | Escalate the severity of aged open alerts (7d->warning, 14d->high) |
 | `--json` | Emit machine-readable output |
 
 ## `forecast api-key`
@@ -2736,6 +2739,41 @@ The full `forecast` command tree — **86 top-level commands** (also reachable a
 | `id` |  |
 | `--force` |  |
 | `--baselines` | Also score imported market/crowd/baseline comparisons without changing the current forecast |
+
+## `forecast scoreboard`
+
+- **`forecast scoreboard audit`** — Classify pathological score rows (Brier=1.0 / |log|>10)
+- **`forecast scoreboard backfill-crps`** — Score the distribution/numeric class with CRPS (dry-run unless --apply)
+- **`forecast scoreboard board`** — Print the by-cohort scoreboard (never a pooled headline)
+- **`forecast scoreboard postmortem-misses`** — Create postmortem STUBS for continuous misses (dry-run unless --apply)
+- **`forecast scoreboard quarantine`** — Quarantine provable ingestion artifacts (dry-run unless --apply)
+
+### `forecast scoreboard audit`
+
+| argument | help |
+| --- | --- |
+| `--json` | Emit the machine-readable audit JSON |
+
+### `forecast scoreboard backfill-crps`
+
+| argument | help |
+| --- | --- |
+| `--apply` | Perform the gated rescore (default: dry-run report) |
+
+### `forecast scoreboard board`
+
+### `forecast scoreboard postmortem-misses`
+
+| argument | help |
+| --- | --- |
+| `--apply` | Create the stubs (default: dry-run report) |
+| `--min-crps` | Only stub misses with CRPS at or above this |
+
+### `forecast scoreboard quarantine`
+
+| argument | help |
+| --- | --- |
+| `--apply` | Perform the gated write (default: dry-run report) |
 
 ## `forecast scores`
 

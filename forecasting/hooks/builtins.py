@@ -591,6 +591,66 @@ def _rem_reference_class(_ctx: HookContext) -> RemediationDescriptor:
     )
 
 
+# ── G1 · distribution-tail base rates (the Binface gate) ──────────────────────
+# The categorical tail-audit family keyed on ``is_categorical`` alone, so a
+# candidate-share DISTRIBUTION (the Clacton shape) was never audited — a named
+# person could carry material, unearned, uncited mass forever. This closes that:
+# every named, non-residual outcome above the anchor-share threshold must carry a
+# cited base rate (outside view), else the mass belongs in the residual bucket.
+def _applies_tail_base_rates(ctx: HookContext) -> bool:
+    return ctx.is_live and not ctx.is_thesis_or_factor and (ctx.is_categorical or ctx.is_candidate_share)
+
+
+def _check_tail_base_rates(ctx: HookContext):
+    if not ctx.share_named_unanchored:
+        return _OK
+    threshold = ctx.threshold("named_outcome_anchor_share")
+    if threshold is None:
+        from forecasting.tail_audit import DEFAULT_NAMED_ANCHOR_SHARE
+        threshold = DEFAULT_NAMED_ANCHOR_SHARE
+    kind = "vote-share" if ctx.is_candidate_share else "categorical"
+    offenders = ", ".join(ctx.share_named_unanchored)
+    msg = (
+        f"live {kind} forecast puts {ctx.share_named_unanchored_mass:.1%} on named outcome(s) with NO "
+        f"cited base rate: {offenders}. A named person or option above {threshold:.0%} must carry an "
+        "outside view — pass outcome_paths with base_rate + base_rate_source for each (e.g. the "
+        "candidate's own prior vote shares), link a reference class scoped to that outcome, or move "
+        "the mass into the residual 'Other' bucket where unanchored mass belongs. Precision you "
+        "cannot cite is not precision."
+    )
+    return False, msg, {"offenders": list(ctx.share_named_unanchored), "mass": ctx.share_named_unanchored_mass}
+
+
+# ── G2 · per-candidate interval coherence ─────────────────────────────────────
+# Intervals live out-of-band in metadata.candidate_share_intervals_pp. When they
+# are present, nothing validated coverage or coherence — a band could contradict
+# its own point. This is a structural bug-catcher (same class as
+# uncertainty_well_formed): a malformed band is rejected; ABSENCE stays honest
+# (the presence gate is P2, this rule only fires when intervals are present).
+def _applies_candidate_intervals_coherent(ctx: HookContext) -> bool:
+    return (
+        ctx.is_live and not ctx.is_thesis_or_factor
+        and ctx.is_candidate_share and ctx.candidate_intervals_present
+    )
+
+
+def _check_candidate_intervals_coherent(ctx: HookContext):
+    if ctx.candidate_intervals_coherent:
+        return _OK
+    tol = ctx.threshold("interval_median_tolerance_pp")
+    if tol is None:
+        from forecasting.hooks.thresholds import DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP
+        tol = DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP
+    issues = "; ".join(ctx.candidate_interval_issues) or "malformed intervals"
+    msg = (
+        f"per-candidate intervals are malformed: {issues}. Each candidate needs finite "
+        f"p05 <= median <= p95, the median within {tol:.0f}pp of the committed share, inside the "
+        "question bounds. Fix the intervals — a band that contradicts its own point is worse than "
+        "no band."
+    )
+    return False, msg, {"issues": list(ctx.candidate_interval_issues)}
+
+
 # Ordered to match the legacy gate evaluation order (so the first blocking
 # failure yields the same message the inline gates raised first), then the two
 # additive rules.
@@ -614,7 +674,13 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
     SimpleRule("require_outside_view_anchor", Category.REASONING, Severity.WARN, 9.0,
                _check_outside_view_anchor, _modeled, _rem_reference_class),
     SimpleRule("require_outcome_paths", Category.SATURATION, Severity.WARN, 10.0,
-               _check_tail_paths, lambda c: c.is_live and c.is_categorical, _rem_compress),
+               _check_tail_paths, lambda c: c.is_live and (c.is_categorical or c.is_candidate_share), _rem_compress),
+    # G1 — every named tail (categorical OR vote-share distribution) needs a cited base rate.
+    SimpleRule("require_tail_base_rates", Category.REASONING, Severity.WARN, 14.0,
+               _check_tail_base_rates, _applies_tail_base_rates, _rem_reference_class),
+    # G2 — per-candidate intervals (when present) must be coherent (a structural bug-catcher).
+    SimpleRule("candidate_intervals_coherent", Category.OUTPUT, Severity.ERROR, 12.0,
+               _check_candidate_intervals_coherent, _applies_candidate_intervals_coherent, _rem_fix_distribution),
     SimpleRule("style_clean", Category.STYLE, Severity.ERROR, 5.0,
                _check_style, _live, _rem_style),
     SimpleRule("lessons_applied", Category.CALIBRATION, Severity.WARN, 6.0,
@@ -637,7 +703,7 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_quorum_judged, _modeled, _rem_run_quorum),
     # v2 — confidence lean
     SimpleRule("tails_justified", Category.CONFIDENCE, Severity.WARN, 10.0,
-               _check_tails_justified, lambda c: c.is_live and c.is_categorical, _rem_compress),
+               _check_tails_justified, lambda c: c.is_live and (c.is_categorical or c.is_candidate_share), _rem_compress),
     SimpleRule("calibration_bias_applied", Category.CONFIDENCE, Severity.WARN, 6.0,
                _check_calibration_bias_applied, _live, _rem_sharpen),
     SimpleRule("confidence_committed", Category.CONFIDENCE, Severity.WARN, 6.0,
@@ -671,7 +737,9 @@ RULE_DOCS: dict[str, str] = {
     "require_citations": "The forecast should cite evidence / model runs.",
     "require_evidence": "A live forecast MUST carry at least one evidence record (hard requirement).",
     "require_outside_view_anchor": "A serious live forecast should carry an outside-view anchor (reference class / base rate).",
-    "require_outcome_paths": "Every material categorical outcome needs a named path (no unearned tails).",
+    "require_outcome_paths": "Every material categorical / vote-share outcome needs a named path (no unearned tails).",
+    "require_tail_base_rates": "Every named, non-residual outcome above the anchor-share threshold (categorical OR vote-share) must carry a cited base rate — else the mass belongs in the residual bucket.",
+    "candidate_intervals_coherent": "Per-candidate vote-share intervals, when present, must be coherent (finite p05<=median<=p95, median near the committed share, in bounds).",
     "style_clean": "Prose must be house-clean (no em-dashes / formatting issues).",
     "lessons_applied": "Active calibration lessons should be applied to the commit.",
     "terminal_calibration_applied": "A linked panel run must pass through the terminal Platt calibration stage.",

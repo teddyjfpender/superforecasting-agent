@@ -571,10 +571,20 @@ def create_snapshot(
         # across answer-choice labels by default (outcome-space anchoring).
         # Always recorded for auditability; only ENFORCED when the caller opts
         # in via require_outcome_paths on a live forecast.
-        if question.outcome_space.type == "categorical" and isinstance(payload, dict):
+        # Extend the audit to candidate-share DISTRIBUTIONS (the Clacton shape), not
+        # just categoricals — that scope hole is exactly why a named tail on a
+        # vote-share board was never audited. A share distribution is audited over
+        # its shares NORMALIZED to fractions (the audit's sum check expects ~1.0).
+        _tail_share_map = None
+        if isinstance(payload, dict) and question.outcome_space.type != "categorical":
+            from forecasting.hooks.distribution import candidate_shares as _cshares
+
+            _tail_share_map = _cshares(payload)
+        if isinstance(payload, dict) and (question.outcome_space.type == "categorical" or _tail_share_map is not None):
             from forecasting.tail_audit import audit_outcomes, outcome_paths_from_inputs
 
-            audit = audit_outcomes(outcome_paths_from_inputs(payload, outcome_paths))
+            _audit_dist = _tail_share_map if _tail_share_map is not None else payload
+            audit = audit_outcomes(outcome_paths_from_inputs(_audit_dist, outcome_paths))
             snapshot_metadata["tail_audit"] = audit.to_dict()
             if require_outcome_paths and forecast_origin == "live" and not audit.passes:
                 offenders = [v.name for v in audit.verdicts if v.unearned]
@@ -752,6 +762,60 @@ def create_snapshot(
         except Exception:
             _qthresholds = {}
 
+        # G1/G2 (P1): candidate-share tail base-rate + interval coherence signals,
+        # computed ONCE from what this commit already carries (the payload, the
+        # outcome_paths anchors, the candidate_share_intervals_pp metadata) and
+        # threaded into every commit context so the gate + the observe report agree.
+        # A categorical payload is a named PMF for the anchor audit too; a vote-share
+        # DISTRIBUTION is the Clacton shape the old is_categorical scoping missed.
+        _g1_is_candidate_share = False
+        _g1_share_unanchored: tuple[str, ...] = ()
+        _g1_share_unanchored_mass = 0.0
+        _g2_present = False
+        _g2_coherent = True
+        _g2_coverage: float | None = None
+        _g2_issues: tuple[str, ...] = ()
+        if isinstance(payload, dict):
+            try:
+                from forecasting.hooks.distribution import (
+                    assess_candidate_intervals as _assess_ci,
+                    candidate_shares as _g1_cshares,
+                )
+                from forecasting.hooks.thresholds import (
+                    DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP as _G2_TOL,
+                    DEFAULT_NAMED_OUTCOME_ANCHOR_SHARE as _G1_THR,
+                )
+                from forecasting.tail_audit import (
+                    audit_named_anchors as _g1_audit,
+                    outcome_paths_from_inputs as _g1_rows,
+                )
+
+                _g1_shares = _g1_cshares(payload)
+                _g1_is_cat = question.outcome_space.type == "categorical"
+                # is_candidate_share is the VOTE-SHARE DISTRIBUTION signal (G1 covers
+                # categoricals via is_categorical; G2 is vote-share only). A categorical
+                # PMF also parses as shares, so gate the flag on non-categorical.
+                _g1_is_candidate_share = _g1_shares is not None and not _g1_is_cat
+                if _g1_shares is not None or _g1_is_cat:
+                    _g1_dist = _g1_shares if _g1_shares is not None else {
+                        str(k): float(v) for k, v in payload.items()
+                        if isinstance(v, (int, float)) and not isinstance(v, bool)
+                    }
+                    _g1_share_unanchored, _g1_share_unanchored_mass = _g1_audit(
+                        _g1_rows(_g1_dist, outcome_paths),
+                        threshold=_qthresholds.get("named_outcome_anchor_share", _G1_THR),
+                    )
+                if _g1_shares is not None:
+                    _g2_raw = snapshot_metadata.get("candidate_share_intervals_pp")
+                    _g2_present = isinstance(_g2_raw, dict) and bool(_g2_raw)
+                    _g2_coherent, _g2_coverage, _g2_issues_list = _assess_ci(
+                        payload, _g2_raw, bounds=getattr(question.outcome_space, "bounds", None),
+                        tolerance_pp=_qthresholds.get("interval_median_tolerance_pp", _G2_TOL),
+                    )
+                    _g2_issues = tuple(_g2_issues_list)
+            except Exception:
+                logger.debug("forecast-hooks G1/G2 signal computation failed (non-fatal)", exc_info=True)
+
         # VOI-directed research adequacy (research_audit.py): the DETERMINISTIC checks
         # only (NO LLM at commit), computed against the current evidence/reference/
         # watched state + THIS candidate commit's reasons_down + evidence_refs. Feeds
@@ -821,6 +885,13 @@ def create_snapshot(
                         tail_unearned_mass=float((snapshot_metadata.get("tail_audit") or {}).get("unearned_mass") or 0.0),
                         tail_offenders=[], rationale=rationale,
                         domain=getattr(question, "domain", None), outcome_type=question.outcome_space.type,
+                        is_candidate_share=_g1_is_candidate_share,
+                        share_named_unanchored=_g1_share_unanchored,
+                        share_named_unanchored_mass=_g1_share_unanchored_mass,
+                        candidate_intervals_present=_g2_present,
+                        candidate_intervals_coherent=_g2_coherent,
+                        candidate_interval_coverage=_g2_coverage,
+                        candidate_interval_issues=_g2_issues,
                         thresholds=_qthresholds,
                     )
                     # Augment with the signals user rules may test that the candidate
@@ -1028,6 +1099,13 @@ def create_snapshot(
                 terminal_calibration_present=_terminal_calibration_present,
                 research_adequate=_research_adequate,
                 research_adequacy_score=_research_adequacy_score,
+                is_candidate_share=_g1_is_candidate_share,
+                share_named_unanchored=_g1_share_unanchored,
+                share_named_unanchored_mass=_g1_share_unanchored_mass,
+                candidate_intervals_present=_g2_present,
+                candidate_intervals_coherent=_g2_coherent,
+                candidate_interval_coverage=_g2_coverage,
+                candidate_interval_issues=_g2_issues,
                 thresholds=_qthresholds,
             )
             # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that

@@ -10085,6 +10085,20 @@ class ForecastLedger:
         if isinstance(probability_or_distribution, (int, float)):
             return abs(float(probability_or_distribution) - 0.5) * 2
         if isinstance(probability_or_distribution, dict) and probability_or_distribution:
+            # A vote-share PMF's sharpness is its LEADING share, normalized to a
+            # 0-1 fraction. Without this, a percentage-point payload (Clacton's
+            # {Farage: 67, ...}) returned 67.0, making confidence_committed (floor
+            # 0.05) vacuously satisfied for every share board. candidate_shares is
+            # the shared extractor (it divides pp payloads by 100), so the gate and
+            # the metric agree on the scale.
+            try:
+                from forecasting.hooks.distribution import candidate_shares
+
+                shares = candidate_shares(probability_or_distribution)
+            except Exception:
+                shares = None
+            if shares:
+                return max(shares.values())
             numeric = [
                 float(value)
                 for value in probability_or_distribution.values()

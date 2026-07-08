@@ -204,6 +204,50 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     except Exception:
         readiness_score = None
 
+    # G1/G2 (P1): candidate-share tail base-rate + interval coherence. On the READ
+    # path the per-outcome base_rate anchors are not persisted (they are commit
+    # params), so a named tail is treated as unanchored here — which is exactly the
+    # honest migration count (the live boards stored no anchors). Intervals are read
+    # from the stored candidate_share_intervals_pp metadata.
+    _is_candidate_share = False
+    _share_unanchored: tuple[str, ...] = ()
+    _share_unanchored_mass = 0.0
+    _ci_present = False
+    _ci_coherent = True
+    _ci_coverage: float | None = None
+    _ci_issues: tuple[str, ...] = ()
+    try:
+        from forecasting.hooks.distribution import assess_candidate_intervals, candidate_shares
+        from forecasting.tail_audit import (
+            DEFAULT_NAMED_ANCHOR_SHARE,
+            audit_named_anchors,
+            outcome_paths_from_inputs,
+        )
+
+        _shares_ledger = candidate_shares(payload) if isinstance(payload, dict) else None
+        _is_cat = ospace.type == "categorical"
+        # Vote-share DISTRIBUTION signal (categoricals reach G1 via is_categorical; G2
+        # is vote-share only). A categorical PMF also parses as shares — gate it off.
+        _is_candidate_share = _shares_ledger is not None and not _is_cat
+        if (_shares_ledger is not None or _is_cat) and isinstance(payload, dict):
+            _anchor_dist = _shares_ledger if _shares_ledger is not None else {str(k): float(v) for k, v in payload.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+            _anchor_thr = _qthr.get("named_outcome_anchor_share", DEFAULT_NAMED_ANCHOR_SHARE)
+            _share_unanchored, _share_unanchored_mass = audit_named_anchors(
+                outcome_paths_from_inputs(_anchor_dist, None), threshold=_anchor_thr
+            )
+        if _shares_ledger is not None:
+            _iv_raw = meta.get("candidate_share_intervals_pp")
+            _ci_present = isinstance(_iv_raw, dict) and bool(_iv_raw)
+            from forecasting.hooks.thresholds import DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP
+
+            _ci_coherent, _ci_coverage, _ci_issues_list = assess_candidate_intervals(
+                payload, _iv_raw, bounds=getattr(ospace, "bounds", None),
+                tolerance_pp=_qthr.get("interval_median_tolerance_pp", DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP),
+            )
+            _ci_issues = tuple(_ci_issues_list)
+    except Exception:
+        _is_candidate_share = _is_candidate_share
+
     return HookContext(
         question_id=question_id,
         forecast_origin=_g("forecast_origin", "live") or "live",
@@ -262,6 +306,13 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         outcome_type=question.outcome_space.type,
         research_adequate=research_adequate,
         research_adequacy_score=research_adequacy_score,
+        is_candidate_share=_is_candidate_share,
+        share_named_unanchored=_share_unanchored,
+        share_named_unanchored_mass=_share_unanchored_mass,
+        candidate_intervals_present=_ci_present,
+        candidate_intervals_coherent=_ci_coherent,
+        candidate_interval_coverage=_ci_coverage,
+        candidate_interval_issues=_ci_issues,
         thresholds=_qthr,
     )
 
@@ -325,6 +376,14 @@ def build_commit_context(
     terminal_calibration_present: bool = True,
     research_adequate: bool = True,
     research_adequacy_score: float | None = None,
+    # G1/G2 (P1): candidate-share tail base-rate + interval coherence signals.
+    is_candidate_share: bool = False,
+    share_named_unanchored: tuple[str, ...] = (),
+    share_named_unanchored_mass: float = 0.0,
+    candidate_intervals_present: bool = False,
+    candidate_intervals_coherent: bool = True,
+    candidate_interval_coverage: float | None = None,
+    candidate_interval_issues: tuple[str, ...] = (),
     thresholds: dict[str, float] | None = None,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
@@ -387,5 +446,12 @@ def build_commit_context(
         terminal_calibration_present=terminal_calibration_present,
         research_adequate=research_adequate,
         research_adequacy_score=research_adequacy_score,
+        is_candidate_share=is_candidate_share,
+        share_named_unanchored=tuple(share_named_unanchored or ()),
+        share_named_unanchored_mass=share_named_unanchored_mass,
+        candidate_intervals_present=candidate_intervals_present,
+        candidate_intervals_coherent=candidate_intervals_coherent,
+        candidate_interval_coverage=candidate_interval_coverage,
+        candidate_interval_issues=tuple(candidate_interval_issues or ()),
         thresholds=dict(thresholds or {}),
     )

@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/hooks/builtins.py (BUILTIN_RULES, RULE_DOCS)`
 
-Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **27 built-in rules**; operators can add their own with the hooks DSL.
+Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **29 built-in rules**; operators can add their own with the hooks DSL.
 
 
 Severities shown are the **defaults** — the shipped profile or an operator override can raise or lower any of them (`forecast hooks list` shows the resolved severity).
@@ -41,6 +41,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
+| `candidate_intervals_coherent` | `error` (blocks) | 12.0 | Per-candidate vote-share intervals, when present, must be coherent (finite p05<=median<=p95, median near the committed share, in bounds). |
 | `output_renderable` | `error` (blocks) | 12.0 | A distribution needs a central tendency + an ordered interval the charts can draw. |
 | `uncertainty_well_formed` | `error` (blocks) | 12.0 | Intervals must be ordered, nested, finite, non-degenerate, in-bounds. |
 | `uncertainty_width_sane` | `warn` | 6.0 | Intervals must not be implausibly wide vs the question range. |
@@ -59,6 +60,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | --- | --- | --- | --- |
 | `reasoning_composition` | `warn` | 8.0 | Declare a sufficient set + count of reasoning methods. |
 | `require_outside_view_anchor` | `warn` | 9.0 | A serious live forecast should carry an outside-view anchor (reference class / base rate). |
+| `require_tail_base_rates` | `warn` | 14.0 | Every named, non-residual outcome above the anchor-share threshold (categorical OR vote-share) must carry a cited base rate — else the mass belongs in the residual bucket. |
 
 ## saturation
 
@@ -68,7 +70,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | `require_components` | `error` (blocks) | 15.0 | The forecast must decompose into pooled ensemble components. |
 | `require_evidence` | `error` (blocks) | 16.0 | A live forecast MUST carry at least one evidence record (hard requirement). |
 | `require_fresh_evidence` | `error` (blocks) | 15.0 | Evidence must be freshly collected for this commit (no stale re-run). |
-| `require_outcome_paths` | `warn` | 10.0 | Every material categorical outcome needs a named path (no unearned tails). |
+| `require_outcome_paths` | `warn` | 10.0 | Every material categorical / vote-share outcome needs a named path (no unearned tails). |
 | `require_panel` | `error` (blocks) | 12.0 | A deliberation panel must run (or record an explicit skip reason). |
 | `require_structured_reasoning` | `error` (blocks) | 15.0 | Reasons up / down / change-my-mind must all be present. |
 | `research_adequate` | `warn` | 10.0 | Research must cover the levers that would move the forecast (reference class, evidence floor, independent + disconfirming + fresh evidence, watched triggers). |

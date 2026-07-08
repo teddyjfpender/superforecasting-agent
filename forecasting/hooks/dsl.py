@@ -46,6 +46,13 @@ _SIGNALS: dict[str, tuple[Callable[[HookContext], Any], str, str]] = {
     "decision.gap_count": (lambda c: len(c.decision_gaps), "number", "Count of missing decision-card fields."),
     "tail.unearned_mass": (lambda c: c.tail_unearned_mass, "number", "Categorical: fraction of mass on outcomes with no named path (0..1)."),
     "tail.passes": (lambda c: True if c.tail_audit_passes is None else c.tail_audit_passes, "bool", "Categorical tail audit passes (no unearned mass)."),
+    # G1 — distribution-tail base rates (the Binface gate)
+    "tail.named_unanchored_mass": (lambda c: c.share_named_unanchored_mass, "number", "Fraction of mass on named, non-residual outcomes above the anchor-share threshold with NO cited base rate (0..1)."),
+    "tail.named_unanchored_count": (lambda c: len(c.share_named_unanchored), "number", "Count of named, non-residual outcomes above the anchor-share threshold with no cited base rate."),
+    "outcome.candidate_share": (lambda c: c.is_candidate_share, "bool", "The payload is a candidate-share (vote-share) PMF: named numeric shares summing to ~1 / ~100."),
+    # G2 — per-candidate interval coherence
+    "intervals.candidate_coverage": (lambda c: c.candidate_interval_coverage if c.candidate_interval_coverage is not None else 1.0, "number", "Named non-residual candidates with a per-candidate interval / total (0..1); 1.0 when not a share board."),
+    "intervals.candidate_coherent": (lambda c: c.candidate_intervals_coherent, "bool", "Per-candidate vote-share intervals (when present) are coherent (finite p05<=median<=p95, median near share, in bounds)."),
     "style.clean": (lambda c: c.style_clean, "bool", "Prose is house-clean (no em-dashes / formatting issues)."),
     "calibration.lessons_unapplied": (lambda c: c.active_lessons_unapplied, "number", "Active calibration lessons not applied to this commit."),
     "confidence.winner_prob": (lambda c: c.committed_winner_prob if c.committed_winner_prob is not None else 0.0, "number", "Committed winner probability: binary p, or the leading categorical outcome's mass."),

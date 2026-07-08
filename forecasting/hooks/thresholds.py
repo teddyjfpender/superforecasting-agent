@@ -28,6 +28,11 @@ DEFAULT_MIN_PERSPECTIVES = 3
 DEFAULT_MAX_WIDTH_RATIO = 1.0
 DEFAULT_MIN_SHARPNESS = 0.05
 DEFAULT_NULL_EXCESS_TOLERANCE = 0.05
+# G1: a NAMED, non-residual outcome above this share of the mass must carry a cited
+# base rate (outside view). G2: the per-candidate interval median must sit within
+# this many percentage points of the committed share.
+DEFAULT_NAMED_OUTCOME_ANCHOR_SHARE = 0.10   # 10%
+DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP = 2.0  # 2 percentage points
 # Terminal Platt-calibration slope applied to the panel pool AFTER aggregation.
 # 1.0 is the IDENTITY (an un-configured question is byte-identical to the bare
 # pool); >1 sharpens away from 0.5, <1 flattens toward it. Composed
@@ -120,6 +125,30 @@ THRESHOLD_SPECS: tuple[ThresholdSpec, ...] = (
         direction="higher_looser",
         integer=False,
         help="Allowed mass above the null-model tail before the no-path-tails gate fires.",
+    ),
+    ThresholdSpec(
+        key="named_outcome_anchor_share",
+        label="Named-outcome anchor share (G1)",
+        default=DEFAULT_NAMED_OUTCOME_ANCHOR_SHARE,
+        minimum=0.0,
+        maximum=1.0,
+        rule_ids=("require_tail_base_rates",),
+        # A LARGER threshold demands a base rate on fewer outcomes -> laxer.
+        direction="higher_looser",
+        integer=False,
+        help="A named, non-residual outcome above this share of the mass must carry a cited base rate.",
+    ),
+    ThresholdSpec(
+        key="interval_median_tolerance_pp",
+        label="Interval median tolerance (pp, G2)",
+        default=DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP,
+        minimum=0.0,
+        maximum=25.0,
+        rule_ids=("candidate_intervals_coherent",),
+        # A LARGER tolerance accepts a median further from the committed share -> laxer.
+        direction="higher_looser",
+        integer=False,
+        help="How far (in percentage points) a per-candidate interval median may sit from the committed share.",
     ),
     ThresholdSpec(
         key="alpha_extremize",

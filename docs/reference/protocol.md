@@ -676,6 +676,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `bias` | `ForecastCalibrationBias? | null` |
+| `cohort_scoreboard` | `ForecastCohortScoreboard?` |
 | `domain` | `string? | null` |
 | `domains` | `ForecastCalibrationBreakdownRow[]?` |
 | `lessons` | `ForecastCalibrationLesson[]?` |
@@ -748,6 +749,15 @@ _(no fields)_
 | `question_id` | `string | null` |
 | `question_title` | `string` |
 | `rationale_bullets` | `string[]` |
+
+### ForecastCohortScoreboard
+
+| field | type |
+| --- | --- |
+| `cohorts` | `Record<string, unknown>?` |
+| `continuous_scorecard` | `ForecastContinuousScorecard?` |
+| `pooled_diagnostic` | `ForecastPooledDiagnostic?` |
+| `quarantined` | `ForecastQuarantineSummary?` |
 
 ### ForecastCommandRequest
 
@@ -832,6 +842,17 @@ _(no fields)_
 | `rule_ids` | `string[]?` |
 | `source` | `string` |
 | `value` | `number` |
+
+### ForecastContinuousScorecard
+
+| field | type |
+| --- | --- |
+| `by_rule` | `Record<string, unknown>?` |
+| `domains` | `string[]?` |
+| `live_calibration_eligible_n` | `number?` |
+| `mean_crps` | `number? | null` |
+| `mean_log_score` | `number? | null` |
+| `n` | `number?` |
 
 ### ForecastDashboardAlert
 
@@ -1418,6 +1439,21 @@ _(no fields)_
 | `choices` | `unknown[]?` |
 | `type` | `string?` |
 
+### ForecastPooledDiagnostic
+
+| field | type |
+| --- | --- |
+| `label` | `string?` |
+| `mean_brier` | `number? | null` |
+| `n` | `number?` |
+
+### ForecastQuarantineSummary
+
+| field | type |
+| --- | --- |
+| `n` | `number?` |
+| `reasons` | `Record<string, unknown>?` |
+
 ### ForecastQuestionPacket
 
 | field | type |
@@ -1899,6 +1935,7 @@ _(no fields)_
 | `delta` | `number? | null` |
 | `domain` | `string? | null` |
 | `entities` | `ForecastThesisEntity[]?` |
+| `event_band` | `ForecastThesisEventBand? | null` |
 | `event_probability` | `number? | null` |
 | `freshness` | `string?` |
 | `headline_display` | `string?` |
@@ -1976,12 +2013,22 @@ _(no fields)_
 | `trend` | `string?` |
 | `weight_count` | `number?` |
 
+### ForecastThesisEventBand
+
+| field | type |
+| --- | --- |
+| `p10` | `number? | null` |
+| `p50` | `number? | null` |
+| `p90` | `number? | null` |
+
 ### ForecastThesisHistoryPoint
 
 | field | type |
 | --- | --- |
 | `as_of` | `string?` |
 | `created_at` | `string?` |
+| `event_high` | `number? | null` |
+| `event_low` | `number? | null` |
 | `headline_probability` | `number? | null` |
 | `headline_regime` | `string?` |
 | `score_high` | `number? | null` |
@@ -3904,6 +3951,7 @@ _(no fields)_
 | `summary` | `string?` |
 | `todos` | `unknown[]?` |
 | `tool_id` | `string` |
+| `usage` | `Usage?` |
 
 ### ToolGeneratingPayload
 

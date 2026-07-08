@@ -30,6 +30,8 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_citations": _O,
         "require_evidence": _W,
         "require_outcome_paths": _O,
+        "require_tail_base_rates": _O,
+        "candidate_intervals_coherent": _W,
         "style_clean": _W,
         "lessons_applied": _O,
         "terminal_calibration_applied": _O,
@@ -62,6 +64,14 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_citations": _W,
         "require_evidence": _E,
         "require_outcome_paths": _W,
+        # G1 — the Binface gate. WARN-FIRST in standard: 19/19 live share boards fail
+        # today, so land it as a visible WARN (the require_outside_view_anchor
+        # precedent — observe the fire rate for one review cycle, then promote to
+        # ERROR in a small, numbers-citing commit). strict blocks now.
+        "require_tail_base_rates": _W,
+        # G2 — per-candidate interval coherence is a structural bug-catcher (0 live
+        # failures), same class as uncertainty_well_formed: ERROR immediately.
+        "candidate_intervals_coherent": _E,
         "style_clean": _E,
         "lessons_applied": _W,
         "terminal_calibration_applied": _W,
@@ -101,6 +111,8 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_citations": _E,
         "require_evidence": _E,
         "require_outcome_paths": _E,
+        "require_tail_base_rates": _E,
+        "candidate_intervals_coherent": _E,
         "style_clean": _E,
         "lessons_applied": _E,
         "terminal_calibration_applied": _W,  # advisory even in strict (default 1.0 is a no-op stage)

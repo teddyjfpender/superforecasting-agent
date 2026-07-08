@@ -23,6 +23,7 @@ Tail classification taxonomy (most→least live):
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -35,6 +36,14 @@ EVIDENCE_STRENGTHS = ("strong", "mixed", "weak", "none")
 # specific path, but only up to this cap before it reads as tail padding.
 DEFAULT_RESIDUAL_CAP = 0.05  # 5%
 _RESIDUAL_NAMES = {"other", "others", "someone else", "field", "any other", "none of the above"}
+# A residual bucket is often labelled "Other <something>" ("Other official
+# candidates", "Other parties"), which exact-match missed — the exact class of
+# hole that let unanchored mass ride on a named-looking residual. Prefix-match it.
+_RESIDUAL_PREFIXES = ("other", "others", "any other", "someone else", "some other", "field", "none of the above")
+# G1 default: a NAMED, non-residual outcome carrying more than this share of the
+# mass must be backed by a cited base rate (outside view). Per-question tunable via
+# the `named_outcome_anchor_share` threshold.
+DEFAULT_NAMED_ANCHOR_SHARE = 0.10  # 10%
 
 
 @dataclass
@@ -46,6 +55,8 @@ class OutcomePath:
     path: str = ""  # the causal chain that resolves to this outcome
     classification: str = ""  # optional caller override; otherwise inferred
     evidence_strength: str = ""  # strong | mixed | weak | none
+    base_rate: float | None = None  # G1: cited outside-view base rate for this outcome
+    base_rate_source: str = ""      # G1: where the base rate came from (a reference class / prior result)
 
     @property
     def has_path(self) -> bool:
@@ -53,7 +64,24 @@ class OutcomePath:
 
     @property
     def is_residual(self) -> bool:
-        return self.classification == "residual" or self.name.strip().lower() in _RESIDUAL_NAMES
+        if self.classification == "residual":
+            return True
+        name = self.name.strip().lower()
+        if name in _RESIDUAL_NAMES:
+            return True
+        return any(name == prefix or name.startswith(prefix) for prefix in _RESIDUAL_PREFIXES)
+
+    @property
+    def is_anchored(self) -> bool:
+        """G1: the outcome carries a cited outside-view anchor — a finite base rate
+        AND a non-empty source. A path is a mechanism; an anchor is a NUMBER you can
+        cite (the candidate's own prior vote shares), which is what a named tail owes."""
+        return (
+            self.base_rate is not None
+            and isinstance(self.base_rate, (int, float))
+            and math.isfinite(float(self.base_rate))
+            and bool((self.base_rate_source or "").strip())
+        )
 
 
 @dataclass
@@ -288,13 +316,44 @@ def audit_outcomes(
     )
 
 
+def audit_named_anchors(
+    outcomes: list[OutcomePath],
+    *,
+    threshold: float = DEFAULT_NAMED_ANCHOR_SHARE,
+) -> tuple[tuple[str, ...], float]:
+    """G1 — the Binface gate. Return the NAMED, non-residual outcomes whose share
+    exceeds ``threshold`` but which carry NO cited base rate (outside-view anchor),
+    plus their total mass. Residual buckets are exempt — an unanchored tail belongs
+    there, not on a named person. ``outcomes`` probabilities are fractions (0-1)."""
+    offenders: list[str] = []
+    mass = 0.0
+    for o in outcomes:
+        if o.is_residual:
+            continue
+        prob = float(o.probability)
+        if prob <= threshold:
+            continue
+        if o.is_anchored:
+            continue
+        offenders.append(o.name)
+        mass += prob
+    return tuple(offenders), mass
+
+
+def _coerce_base_rate(value: Any) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
 def outcome_paths_from_inputs(
     distribution: dict[str, float],
     paths: dict[str, Any] | None,
 ) -> list[OutcomePath]:
     """Build OutcomePath rows from a categorical distribution dict plus an
     optional ``{outcome: path-info}`` map. Path-info may be a bare string (the
-    path) or a dict with ``path`` / ``classification`` / ``evidence_strength``.
+    path) or a dict with ``path`` / ``classification`` / ``evidence_strength`` /
+    ``base_rate`` / ``base_rate_source`` (the G1 outside-view anchor).
     """
     paths = paths or {}
     rows: list[OutcomePath] = []
@@ -310,6 +369,8 @@ def outcome_paths_from_inputs(
                     path=str(info.get("path", "") or ""),
                     classification=str(info.get("classification", "") or ""),
                     evidence_strength=str(info.get("evidence_strength", "") or ""),
+                    base_rate=_coerce_base_rate(info.get("base_rate")),
+                    base_rate_source=str(info.get("base_rate_source", "") or ""),
                 )
             )
         else:

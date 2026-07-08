@@ -138,6 +138,25 @@ class HookContext:
     tail_unearned_mass: float = 0.0
     tail_offenders: tuple[str, ...] = ()
 
+    # G1 · distribution-tail base rates (the Binface gate). A candidate-share PMF
+    # (vote share) is now audited like a categorical: every NAMED, non-residual
+    # outcome above the anchor-share threshold must carry a cited base rate.
+    # share_named_unanchored lists the offenders; the mass is their total share.
+    # Every field defaults to the PASSING state (not a share / nothing unanchored)
+    # so a context that cannot compute it never false-fires.
+    is_candidate_share: bool = False
+    share_named_unanchored: tuple[str, ...] = ()
+    share_named_unanchored_mass: float = 0.0
+
+    # G2 · per-candidate interval coherence. Intervals live out-of-band in
+    # metadata.candidate_share_intervals_pp; when present they must be well-formed
+    # (finite, p05<=median<=p95, median near the committed share, in bounds).
+    # Absence is honest — candidate_intervals_present gates whether to evaluate.
+    candidate_intervals_present: bool = False
+    candidate_intervals_coherent: bool = True
+    candidate_interval_coverage: float | None = None
+    candidate_interval_issues: tuple[str, ...] = ()
+
     # style
     style_clean: bool = True
     style_offending_fields: tuple[str, ...] = ()
