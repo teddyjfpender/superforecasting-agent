@@ -350,6 +350,33 @@ describe('histogram', () => {
     expect(rows[0]).toContain('72 [50–85]')
     expect(rows[1]!.includes('[')).toBe(false) // no interval -> no suffix
   })
+
+  it('overlays a per-candidate interval BRACKET (├ p05, ┤ p95) on the bar track', () => {
+    const rows = histogram(
+      [
+        { label: 'Farage', value: 67, interval: { lo: 58, hi: 75.5 } },
+        { label: 'Binface', value: 16.5, interval: { lo: 11.5, hi: 22.5 } },
+      ],
+      { width: 24, labelWidth: 8 }
+    )
+    // Both bars carry the bracket glyphs on the track and the numeric suffix.
+    expect(rows[0]).toContain('├')
+    expect(rows[0]).toContain('┤')
+    expect(rows[0]).toContain('[58–75.5]')
+    expect(rows[1]).toContain('├')
+    expect(rows[1]).toContain('┤')
+  })
+
+  it('extends the axis to the widest interval so an upper tail never clips', () => {
+    // A candidate whose p95 (95) overshoots the largest POINT (60) still lands on-track.
+    const rows = histogram(
+      [{ label: 'A', value: 60, interval: { lo: 40, hi: 95 } }],
+      { width: 20, labelWidth: 4 }
+    )
+    // ┤ sits at the far right (p95 is the widest artifact), never off the track.
+    const cell = rows[0]!.split(' ').find(seg => seg.includes('┤'))
+    expect(cell?.endsWith('┤')).toBe(true)
+  })
 })
 
 describe('boxWhisker', () => {

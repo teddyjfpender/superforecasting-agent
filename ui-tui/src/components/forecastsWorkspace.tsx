@@ -143,7 +143,8 @@ export const headlineLabel = (item: ForecastWorkspaceItem): string => {
   // stays a compact leader-first summary here. Continuous distributions are handled
   // above (μ/σ), so only NON-distribution kinds reach here.
   if (item.headline_kind !== 'distribution') {
-    const distHead = distributionHeadline(item.probability, { compact: true, max: 3 })
+    // The sidebar/detail one-line surfaces the LEADER's 90% interval where published.
+    const distHead = distributionHeadline(item.probability, { compact: true, max: 3, intervals: item.candidate_intervals })
     if (distHead) return distHead
   }
 
@@ -289,14 +290,25 @@ export const shortCandidateLabel = (name: string, max = 11): string => {
  */
 export const distributionHeadline = (
   probability: ForecastWorkspaceItem['probability'],
-  opts: { compact?: boolean; max?: number } = {}
+  opts: { compact?: boolean; max?: number; intervals?: ForecastWorkspaceItem['candidate_intervals'] } = {}
 ): null | string => {
-  const bars = distributionBars(probability)
+  const bars = distributionBars(probability, opts.intervals)
   if (!bars) {
     return null
   }
   const scale = bars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
-  const fmt = (bar: HistogramBar): string => `${shortCandidateLabel(bar.label)} ${(bar.value * scale).toFixed(1)}`
+  const fmt1 = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+  // The LEADER (index 0) shows its 90% interval where one is published — "67.0 [61-73]"
+  // — so the row/sidebar surfaces the leading candidate's uncertainty, not just a point.
+  // The tail stays point-only so the line does not blow its width budget.
+  const fmt = (bar: HistogramBar, index: number): string => {
+    const point = `${shortCandidateLabel(bar.label)} ${(bar.value * scale).toFixed(1)}`
+    const iv = index === 0 ? bar.interval : null
+    if (iv && finite(iv.lo) && finite(iv.hi)) {
+      return `${point} [${fmt1(iv.lo * scale)}-${fmt1(iv.hi * scale)}]`
+    }
+    return point
+  }
   const max = Math.max(1, opts.max ?? 3)
 
   if (opts.compact && bars.length > max) {
@@ -409,7 +421,7 @@ export const chartScale = (points: BandPoint[]): { yMax: number; yMin: number } 
 export interface VoteShareSeriesResult {
   /** one series per top-K candidate, then an aggregated `Other` when the tail is
    *  non-empty. The leader is index 0. Aligned to `keptIndices`. */
-  series: { label: string; values: (null | number)[] }[]
+  series: { label: string; latestInterval?: { hi: number; lo: number } | null; values: (null | number)[] }[]
   /** indices INTO item.history the columns were drawn from (drives the x-axis) */
   keptIndices: number[]
   /** the leader's downsample preview (its `note` is the honest thinning caption) */
@@ -469,6 +481,12 @@ export const buildVoteShareSeries = (
 
   const series = leaders.map(leader => ({
     label: leader.label,
+    // The per-candidate 90% interval for the LATEST point (scaled to the axis) —
+    // the chart draws it as a whisker on the final column.
+    latestInterval:
+      leader.interval && finite(leader.interval.lo) && finite(leader.interval.hi)
+        ? { hi: leader.interval.hi * scale, lo: leader.interval.lo * scale }
+        : null,
     values: kept.map(index => {
       const hit = barForLabel(pointBars[index] ?? null, leader.label)
       return hit ? hit.value * scale : null
@@ -479,6 +497,7 @@ export const buildVoteShareSeries = (
   if (currentBars.length > leaders.length) {
     series.push({
       label: 'Other',
+      latestInterval: null, // the aggregated tail carries no single interval
       values: kept.map(index => {
         const bars = pointBars[index]
         if (!bars) {

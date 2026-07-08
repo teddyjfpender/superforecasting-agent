@@ -534,6 +534,24 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(byLabel.Other).toBeNull() // no interval supplied for this candidate
   })
 
+  it('distributionHeadline shows the LEADER 90% interval where published, tail point-only', async () => {
+    const { distributionHeadline } = await import('../components/forecastsWorkspace.js')
+    const head = distributionHeadline(
+      { 'Nigel Farage': 67, 'Count Binface': 16.5, 'Laurence Fox': 4 },
+      { intervals: { 'Nigel Farage': { lo: 61, hi: 73 }, 'Count Binface': { lo: 12, hi: 22 } } }
+    )
+    // leader carries "67.0 [61-73]"; the tail (Binface) stays a bare point.
+    expect(head).toContain('Farage 67.0 [61-73]')
+    expect(head).toContain('Binface 16.5')
+    expect(head).not.toContain('Binface 16.5 [')
+  })
+
+  it('distributionHeadline omits the interval when the leader has none', async () => {
+    const { distributionHeadline } = await import('../components/forecastsWorkspace.js')
+    const head = distributionHeadline({ 'Nigel Farage': 67, 'Count Binface': 16.5 })
+    expect(head).toBe('Farage 67.0 · Binface 16.5')
+  })
+
   it('intervalForLabel tolerates case/whitespace divergence between share + interval keys', async () => {
     const { intervalForLabel } = await import('../components/forecastsWorkspace.js')
     const intervals = { 'Chris Pappas': { lo: 50, hi: 85 } }
@@ -652,6 +670,22 @@ describe('ForecastsWorkspace pure transforms', () => {
     const flat = chart.rows.map(row => row.cells.map(cell => cell.ch).join('')).join('')
     expect(flat).toContain('●')
     expect(flat).not.toContain('◆') // leader overwrote the collision
+  })
+
+  it('multiSeriesChart draws a per-candidate whisker on the latest column, point marker on top', async () => {
+    const { multiSeriesChart } = await import('../lib/forecastCharts.js')
+    // A wide interval [20, 85] around a latest point of 50, so the ┬/┴ caps sit clear
+    // of the ● marker's own row (the marker legitimately wins any shared cell).
+    const chart = multiSeriesChart(
+      [{ label: 'lead', values: [30, 50], latestInterval: { lo: 20, hi: 85 } }],
+      { height: 11, width: 24, yMax: 90, yMin: 0 }
+    )
+    const flat = chart.rows.map(row => row.cells.map(cell => cell.ch).join('')).join('')
+    expect(flat).toContain('┬') // p95 cap
+    expect(flat).toContain('┴') // p05 cap
+    expect(flat).toContain('╎') // whisker stem
+    expect(flat).toContain('●') // the latest point marker still shows
+    expect(chart.yMax).toBeGreaterThanOrEqual(85) // domain contains the whisker top
   })
 
   it('seriesRuns collapses tagged cells into contiguous same-series runs', async () => {

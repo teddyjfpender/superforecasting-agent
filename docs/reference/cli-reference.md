@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **87 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **88 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -48,6 +48,7 @@ The full `forecast` command tree — **87 top-level commands** (also reachable a
 | [`forecast hooks`](#forecast-hooks) | Inspect / tune / author the saturation + style hook rules |
 | [`forecast import`](#forecast-import) | Run an optional source adapter without making it the core workflow |
 | [`forecast ingest`](#forecast-ingest) | Capture a URL, file, or note as external forecast context |
+| [`forecast intervals`](#forecast-intervals) | Manage per-candidate vote-share intervals |
 | [`forecast jobs`](#forecast-jobs) | Administer detached background forecast jobs |
 | [`forecast lesson`](#forecast-lesson) | Review and promote calibration lessons |
 | [`forecast lessons`](#forecast-lessons) | List calibration lessons |
@@ -2004,6 +2005,18 @@ The full `forecast` command tree — **87 top-level commands** (also reachable a
 | `--source-name` |  |
 | `--source-type` |  |
 | `--dry-run` |  |
+
+## `forecast intervals`
+
+- **`forecast intervals backfill`** — Propose per-candidate intervals for live vote-share boards from their panel/model artifacts (dry-run by default)
+
+### `forecast intervals backfill`
+
+| argument | help |
+| --- | --- |
+| `--dry-run` | Preview the proposed intervals + counts without writing (this is the default). |
+| `--apply` | Stamp the proposed intervals onto each current snapshot's metadata (default is a dry-run preview). |
+| `--json` | Emit machine-readable JSON |
 
 ## `forecast jobs`
 

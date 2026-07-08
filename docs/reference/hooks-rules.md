@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/hooks/builtins.py (BUILTIN_RULES, RULE_DOCS)`
 
-Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **29 built-in rules**; operators can add their own with the hooks DSL.
+Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **30 built-in rules**; operators can add their own with the hooks DSL.
 
 
 Severities shown are the **defaults** — the shipped profile or an operator override can raise or lower any of them (`forecast hooks list` shows the resolved severity).
@@ -42,6 +42,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
 | `candidate_intervals_coherent` | `error` (blocks) | 12.0 | Per-candidate vote-share intervals, when present, must be coherent (finite p05<=median<=p95, median near the committed share, in bounds). |
+| `candidate_intervals_present` | `warn` | 10.0 | A high-impact vote-share forecast must carry per-candidate intervals (auto-computed from the ensemble spread; record no_interval_reason to opt out). |
 | `output_renderable` | `error` (blocks) | 12.0 | A distribution needs a central tendency + an ordered interval the charts can draw. |
 | `uncertainty_well_formed` | `error` (blocks) | 12.0 | Intervals must be ordered, nested, finite, non-degenerate, in-bounds. |
 | `uncertainty_width_sane` | `warn` | 6.0 | Intervals must not be implausibly wide vs the question range. |

@@ -806,7 +806,33 @@ def create_snapshot(
                         threshold=_qthresholds.get("named_outcome_anchor_share", _G1_THR),
                     )
                 if _g1_shares is not None:
+                    # P2 · COMPUTE per-candidate intervals at commit time when the
+                    # committer did not supply them (the honest sources, in precedence:
+                    # ensemble spread > model quantiles > evidence-tied default width).
+                    # Coherence-by-construction, so the G2 validator below passes on our
+                    # own output. Never overwrites agent-supplied intervals; never
+                    # fabricates a tightness (the default width is tied to evidence).
                     _g2_raw = snapshot_metadata.get("candidate_share_intervals_pp")
+                    if not (isinstance(_g2_raw, dict) and _g2_raw):
+                        try:
+                            from forecasting.hooks.candidate_intervals import (
+                                compute_candidate_share_intervals as _compute_ci,
+                            )
+
+                            _ev_ct = evidence_count_at_commit
+                            if _ev_ct is None:
+                                _ev_ct = len(evidence_refs or [])
+                            _ci_computed, _ci_prov = _compute_ci(
+                                payload, components=ensemble_components,
+                                evidence_count=_ev_ct,
+                                bounds=getattr(question.outcome_space, "bounds", None),
+                            )
+                            if _ci_computed:
+                                snapshot_metadata["candidate_share_intervals_pp"] = _ci_computed
+                                snapshot_metadata["candidate_share_intervals_provenance"] = _ci_prov
+                                _g2_raw = _ci_computed
+                        except Exception:
+                            logger.debug("forecast-hooks candidate-interval computation failed (non-fatal)", exc_info=True)
                     _g2_present = isinstance(_g2_raw, dict) and bool(_g2_raw)
                     _g2_coherent, _g2_coverage, _g2_issues_list = _assess_ci(
                         payload, _g2_raw, bounds=getattr(question.outcome_space, "bounds", None),
@@ -892,6 +918,7 @@ def create_snapshot(
                         candidate_intervals_coherent=_g2_coherent,
                         candidate_interval_coverage=_g2_coverage,
                         candidate_interval_issues=_g2_issues,
+                        no_interval_reason=snapshot_metadata.get("no_interval_reason"),
                         thresholds=_qthresholds,
                     )
                     # Augment with the signals user rules may test that the candidate
@@ -1106,6 +1133,8 @@ def create_snapshot(
                 candidate_intervals_coherent=_g2_coherent,
                 candidate_interval_coverage=_g2_coverage,
                 candidate_interval_issues=_g2_issues,
+                no_interval_reason=snapshot_metadata.get("no_interval_reason"),
+                candidate_interval_source=((snapshot_metadata.get("candidate_share_intervals_provenance") or {}).get("source") if isinstance(snapshot_metadata.get("candidate_share_intervals_provenance"), dict) else None),
                 thresholds=_qthresholds,
             )
             # (1) RESOLVED-POLICY blocking pass (Slice H3). Only for a live commit that

@@ -2111,6 +2111,25 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     crux_backfill.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     crux_backfill.set_defaults(_forecast_handler=_cmd_crux_backfill)
 
+    # Per-candidate vote-share intervals (P2): propose intervals for live share boards
+    # from their existing panel/model artifacts (dry-run by default).
+    intervals_parser = forecast_sub.add_parser("intervals", help="Manage per-candidate vote-share intervals")
+    intervals_sub = intervals_parser.add_subparsers(dest="intervals_command")
+    intervals_backfill = intervals_sub.add_parser(
+        "backfill",
+        help="Propose per-candidate intervals for live vote-share boards from their panel/model artifacts (dry-run by default)",
+    )
+    intervals_backfill.add_argument(
+        "--dry-run", action="store_true",
+        help="Preview the proposed intervals + counts without writing (this is the default).",
+    )
+    intervals_backfill.add_argument(
+        "--apply", action="store_true",
+        help="Stamp the proposed intervals onto each current snapshot's metadata (default is a dry-run preview).",
+    )
+    intervals_backfill.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    intervals_backfill.set_defaults(_forecast_handler=_cmd_intervals_backfill)
+
     evidence_map_parser = forecast_sub.add_parser("evidence-map", help="Show the crux evidence map for a forecast")
     evidence_map_parser.add_argument("question", help="row number, id, or search words for the question")
     evidence_map_parser.add_argument("--json", action="store_true")
@@ -13553,6 +13572,109 @@ def _cmd_crux_backfill(args: argparse.Namespace) -> None:
         f"  {verb} {result['promoted']} new crux(es); "
         f"skipped {result['skipped_existing']} already present"
     )
+
+
+def _backfill_intervals_scan(ledger) -> dict[str, Any]:
+    """Scan every LIVE vote-share board and propose per-candidate intervals from its
+    existing panel/model artifacts. Read-only. Classifies each derivable board by the
+    provenance SOURCE the committer would use (panel > model > default), so the report
+    mirrors what a real re-forecast would stamp."""
+    from forecasting.hooks.candidate_intervals import compute_candidate_share_intervals
+    from forecasting.hooks.distribution import candidate_shares
+
+    proposals: list[dict[str, Any]] = []
+    counts = {"panel": 0, "model": 0, "default": 0, "none": 0, "already_present": 0}
+    scanned = 0
+    for question in ledger.list_questions(status="active"):
+        osp = question.outcome_space
+        if not (osp.type == "distribution" and getattr(osp, "choices", None)):
+            continue
+        snap = ledger.get_current_snapshot(question.id)
+        if snap is None or (getattr(snap, "forecast_origin", "live") or "live") != "live":
+            continue
+        payload = snap.probability_or_distribution
+        if not (isinstance(payload, dict) and candidate_shares(payload) is not None):
+            continue
+        scanned += 1
+        meta = snap.metadata or {}
+        existing = meta.get("candidate_share_intervals_pp")
+        if isinstance(existing, dict) and existing:
+            counts["already_present"] += 1
+            proposals.append({"question_id": question.id, "title": question.title, "status": "already_present", "source": None})
+            continue
+        try:
+            evidence_count = len(ledger.list_evidence(question.id))
+        except Exception:
+            evidence_count = len(getattr(snap, "evidence_refs", None) or [])
+        intervals, prov = compute_candidate_share_intervals(
+            payload, components=snap.ensemble_components,
+            evidence_count=evidence_count, bounds=getattr(osp, "bounds", None),
+        )
+        if intervals is None:
+            counts["none"] += 1
+            proposals.append({"question_id": question.id, "title": question.title, "status": "none", "source": None})
+            continue
+        source = (prov or {}).get("source", "default")
+        counts[source] = counts.get(source, 0) + 1
+        proposals.append({
+            "question_id": question.id, "title": question.title, "snapshot_id": snap.forecast_id,
+            "status": "derivable", "source": source, "provenance": prov,
+            "intervals": intervals,
+        })
+    # "derivable" = a real spread (panel or model); "default-width" = evidence-tied.
+    derivable = counts["panel"] + counts["model"]
+    return {
+        "scanned": scanned,
+        "derivable": derivable,
+        "default_width": counts["default"],
+        "none": counts["none"],
+        "already_present": counts["already_present"],
+        "by_source": counts,
+        "proposals": proposals,
+    }
+
+
+def _cmd_intervals_backfill(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    apply = bool(getattr(args, "apply", False))
+    result = _backfill_intervals_scan(ledger)
+    if apply:
+        from forecasting.ledger import allow_ledger_writes
+
+        applied = 0
+        with allow_ledger_writes(reason="forecast intervals backfill --apply"):
+            for p in result["proposals"]:
+                if p.get("status") != "derivable":
+                    continue
+                ledger.annotate_snapshot(p["snapshot_id"], {
+                    "candidate_share_intervals_pp": p["intervals"],
+                    "candidate_share_intervals_provenance": p["provenance"],
+                })
+                applied += 1
+        result["applied"] = applied
+    if getattr(args, "json", False):
+        # Drop the bulky per-candidate interval maps from the default text-less JSON
+        # unless the caller wants them; keep the provenance + counts.
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    mode = "APPLIED" if apply else "DRY-RUN (pass --apply to stamp)"
+    print(f"vote-share interval backfill {mode}")
+    print(
+        f"  scanned {result['scanned']} live vote-share board(s); "
+        f"{result['already_present']} already carry intervals"
+    )
+    verb = "stamped" if apply else "would stamp"
+    print(
+        f"  {verb} {result['derivable']} from panel/model spread "
+        f"(panel={result['by_source']['panel']}, model={result['by_source']['model']}); "
+        f"{result['default_width']} from evidence-tied default width; "
+        f"{result['none']} not derivable"
+    )
+    if apply:
+        print(f"  applied to {result.get('applied', 0)} snapshot(s)")
+    for p in result["proposals"]:
+        if p.get("status") == "derivable":
+            print(f"    [{p['source']:<7}] {p['question_id']}  {(p['title'] or '')[:52]}")
 
 
 def _cmd_evidence_map(args: argparse.Namespace) -> None:

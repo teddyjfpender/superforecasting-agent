@@ -313,6 +313,8 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         candidate_intervals_coherent=_ci_coherent,
         candidate_interval_coverage=_ci_coverage,
         candidate_interval_issues=_ci_issues,
+        no_interval_reason=(meta.get("no_interval_reason") or None),
+        candidate_interval_source=((meta.get("candidate_share_intervals_provenance") or {}).get("source") if isinstance(meta.get("candidate_share_intervals_provenance"), dict) else None),
         thresholds=_qthr,
     )
 
@@ -384,6 +386,8 @@ def build_commit_context(
     candidate_intervals_coherent: bool = True,
     candidate_interval_coverage: float | None = None,
     candidate_interval_issues: tuple[str, ...] = (),
+    no_interval_reason: str | None = None,
+    candidate_interval_source: str | None = None,
     thresholds: dict[str, float] | None = None,
 ) -> HookContext:
     """Assemble a HookContext from the values create_snapshot already has in
@@ -453,5 +457,7 @@ def build_commit_context(
         candidate_intervals_coherent=candidate_intervals_coherent,
         candidate_interval_coverage=candidate_interval_coverage,
         candidate_interval_issues=tuple(candidate_interval_issues or ()),
+        no_interval_reason=(no_interval_reason or None),
+        candidate_interval_source=(candidate_interval_source or None),
         thresholds=dict(thresholds or {}),
     )

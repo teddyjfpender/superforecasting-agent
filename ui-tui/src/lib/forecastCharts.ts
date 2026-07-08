@@ -387,6 +387,9 @@ export interface Series {
   /** one value per drawn column (oldest→newest), aligned across every series;
    *  `null` renders a gap so a candidate missing from a snapshot never lies */
   values: ReadonlyArray<number | null>
+  /** optional 90% interval for the LATEST point — drawn as a vertical whisker on
+   *  the final column so the per-candidate uncertainty is visible on the chart */
+  latestInterval?: { hi: number; lo: number } | null
 }
 
 /** One rendered plot cell, tagged with the series it belongs to so the caller can
@@ -448,6 +451,11 @@ export const multiSeriesChart = (
         drawn.push(value)
       }
     }
+    // A latest-point whisker hi/lo can overshoot the point values (a wide upper
+    // tail); include them so the domain contains the drawn whisker, never clips it.
+    if (s.latestInterval && finite(s.latestInterval.lo) && finite(s.latestInterval.hi)) {
+      drawn.push(s.latestInterval.lo, s.latestInterval.hi)
+    }
   }
   const domainMin = yMin
   let domainMax = yMax
@@ -475,6 +483,24 @@ export const multiSeriesChart = (
   const colFor = (index: number): number => (count <= 1 ? 0 : Math.round((index * (plotW - 1)) / (count - 1)))
 
   const glyphs = series.map((_, i) => SERIES_GLYPHS[i] ?? '·')
+
+  // Per-candidate latest-point whiskers: a thin vertical bracket from p05→p95 on the
+  // FINAL column, tagged to its series so the caller colours it. Drawn FIRST (lowest
+  // rank first so the leader's whisker wins a shared cell) so the point markers below
+  // overwrite the whisker at each candidate's value row and stay legible.
+  const lastCol = colFor(Math.max(0, count - 1))
+  for (let si = series.length - 1; si >= 0; si -= 1) {
+    const iv = series[si]!.latestInterval
+    if (!iv || !finite(iv.lo) || !finite(iv.hi)) {
+      continue
+    }
+    const rTop = rowFor(Math.max(iv.lo, iv.hi))
+    const rBot = rowFor(Math.min(iv.lo, iv.hi))
+    for (let row = rTop; row <= rBot; row += 1) {
+      const ch = row === rTop ? '┬' : row === rBot ? '┴' : '╎'
+      grid[row]![lastCol] = { ch, series: si }
+    }
+  }
 
   // Draw the LOWEST-ranked series first so the leader (index 0), drawn last,
   // overwrites shared cells and stays visible.
@@ -678,19 +704,38 @@ export const histogram = (
   if (!usable.length) {
     return []
   }
-  const max = Math.max(...usable.map(bar => bar.value), 0)
+  // Interval whiskers share the bar's value scale, so a p05/p95 that overshoots the
+  // largest POINT value (a wide upper tail) still lands on-track — extend the axis to
+  // the widest drawn artifact (max point value OR any interval hi).
+  const maxHi = Math.max(
+    ...usable.map(bar => bar.value),
+    ...usable.map(bar => (bar.interval && finite(bar.interval.hi) ? bar.interval.hi : 0)),
+    0
+  )
   const track = Math.max(1, width)
   return usable.map(bar => {
     const label = bar.label.length > labelWidth ? `${bar.label.slice(0, labelWidth - 1)}…` : bar.label.padEnd(labelWidth)
-    const frac = max > 0 ? clamp01(bar.value / max) : 0
+    const frac = maxHi > 0 ? clamp01(bar.value / maxHi) : 0
     const fill = Math.round(frac * track)
     // Probabilities and other fractional values get 2 decimals; whole counts
     // stay integer (so "1200" doesn't become "1200.00").
     const valueText = Number.isInteger(bar.value) ? String(bar.value) : bar.value.toFixed(2)
     const iv = bar.interval
     const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1))
-    const intervalText = iv && finite(iv.lo) && finite(iv.hi) ? ` [${fmt(iv.lo)}–${fmt(iv.hi)}]` : ''
-    return `${label} ${'█'.repeat(fill)}${'░'.repeat(track - fill)} ${valueText}${intervalText}`
+    const hasIv = iv && finite(iv.lo) && finite(iv.hi) && iv.lo <= iv.hi
+    const intervalText = hasIv ? ` [${fmt(iv!.lo)}–${fmt(iv!.hi)}]` : ''
+    // The bar track: filled to the point value, then overlay a per-candidate interval
+    // BRACKET (├ at p05, ┤ at p95) so the uncertainty is visible on the bar itself, not
+    // just as a numeric suffix — task #150's bar machinery, extended with whiskers.
+    const cells: string[] = Array.from({ length: track }, (_, i) => (i < fill ? '█' : '░'))
+    if (hasIv && maxHi > 0) {
+      const col = (v: number): number => Math.max(0, Math.min(track - 1, Math.round(clamp01(v / maxHi) * (track - 1))))
+      const cLo = col(iv!.lo)
+      const cHi = col(iv!.hi)
+      cells[cLo] = '├'
+      cells[cHi] = '┤'
+    }
+    return `${label} ${cells.join('')} ${valueText}${intervalText}`
   })
 }
 

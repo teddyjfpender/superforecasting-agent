@@ -156,6 +156,12 @@ class HookContext:
     candidate_intervals_coherent: bool = True
     candidate_interval_coverage: float | None = None
     candidate_interval_issues: tuple[str, ...] = ()
+    # P2 · presence gate escape: an explicit reason the commit carries no per-candidate
+    # intervals (stamped like panel_skipped_reason). Non-empty ⇒ candidate_intervals_present
+    # passes even when coverage < 1.0 (intervals are genuinely not computable here).
+    no_interval_reason: str | None = None
+    # provenance source of the intervals (panel|model|default), for the inspector.
+    candidate_interval_source: str | None = None
 
     # style
     style_clean: bool = True

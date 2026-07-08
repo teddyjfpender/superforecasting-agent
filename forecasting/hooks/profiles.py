@@ -32,6 +32,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_outcome_paths": _O,
         "require_tail_base_rates": _O,
         "candidate_intervals_coherent": _W,
+        "candidate_intervals_present": _O,
         "style_clean": _W,
         "lessons_applied": _O,
         "terminal_calibration_applied": _O,
@@ -72,6 +73,10 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         # G2 — per-candidate interval coherence is a structural bug-catcher (0 live
         # failures), same class as uncertainty_well_formed: ERROR immediately.
         "candidate_intervals_coherent": _E,
+        # G2 presence (P2) — WARN-FIRST in standard (high-impact scope; the committer
+        # now auto-fills intervals, so this only nags an un-refreshed live board on
+        # lint). Promote to ERROR after one review cycle once the fire rate is read.
+        "candidate_intervals_present": _W,
         "style_clean": _E,
         "lessons_applied": _W,
         "terminal_calibration_applied": _W,
@@ -113,6 +118,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_outcome_paths": _E,
         "require_tail_base_rates": _E,
         "candidate_intervals_coherent": _E,
+        "candidate_intervals_present": _E,
         "style_clean": _E,
         "lessons_applied": _E,
         "terminal_calibration_applied": _W,  # advisory even in strict (default 1.0 is a no-op stage)

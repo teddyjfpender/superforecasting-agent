@@ -651,6 +651,38 @@ def _check_candidate_intervals_coherent(ctx: HookContext):
     return False, msg, {"issues": list(ctx.candidate_interval_issues)}
 
 
+# ── G2 · per-candidate interval PRESENCE (P2) ─────────────────────────────────
+# The committer now COMPUTES intervals when absent (ensemble spread > model quantiles
+# > evidence-tied default), so on the commit path this passes with coverage 1.0. The
+# WARN exists to make an UN-refilled live board visible on lint/sweep: a HIGH-IMPACT
+# vote-share forecast that carries no per-candidate uncertainty (was silently honest)
+# now WARNs in standard (ERROR in strict), unless a no_interval_reason is recorded. The
+# require_outside_view_anchor precedent — land WARN, promote once the fire rate is read.
+def _applies_candidate_intervals_present(ctx: HookContext) -> bool:
+    return (
+        ctx.is_live and not ctx.is_thesis_or_factor
+        and ctx.is_candidate_share and ctx.high_impact
+    )
+
+
+def _check_candidate_intervals_present(ctx: HookContext):
+    if (ctx.no_interval_reason or "").strip():
+        return _OK
+    if ctx.candidate_interval_coverage is not None and ctx.candidate_interval_coverage >= 1.0:
+        return _OK
+    cov = ctx.candidate_interval_coverage
+    cov_txt = f" (coverage {cov:.0%})" if isinstance(cov, (int, float)) else ""
+    msg = (
+        f"high-impact vote-share forecast carries no per-candidate uncertainty{cov_txt}: add "
+        "metadata.candidate_share_intervals_pp = {candidate: {p05, median, p95}} (percentage "
+        "points) for every named candidate — the Desk draws an error bar per candidate and the "
+        "scorer grades interval coverage at resolution. The committer computes these from the "
+        "ensemble spread automatically; if intervals are genuinely not computable here, record "
+        "no_interval_reason. A point share with no spread is a claim you did not quantify."
+    )
+    return False, msg, {"coverage": cov}
+
+
 # Ordered to match the legacy gate evaluation order (so the first blocking
 # failure yields the same message the inline gates raised first), then the two
 # additive rules.
@@ -681,6 +713,10 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
     # G2 — per-candidate intervals (when present) must be coherent (a structural bug-catcher).
     SimpleRule("candidate_intervals_coherent", Category.OUTPUT, Severity.ERROR, 12.0,
                _check_candidate_intervals_coherent, _applies_candidate_intervals_coherent, _rem_fix_distribution),
+    # G2 (P2) — a high-impact vote-share forecast must carry per-candidate intervals
+    # (auto-computed at commit; the WARN surfaces un-refilled live boards on lint).
+    SimpleRule("candidate_intervals_present", Category.OUTPUT, Severity.WARN, 10.0,
+               _check_candidate_intervals_present, _applies_candidate_intervals_present, _rem_sharpen),
     SimpleRule("style_clean", Category.STYLE, Severity.ERROR, 5.0,
                _check_style, _live, _rem_style),
     SimpleRule("lessons_applied", Category.CALIBRATION, Severity.WARN, 6.0,
@@ -740,6 +776,7 @@ RULE_DOCS: dict[str, str] = {
     "require_outcome_paths": "Every material categorical / vote-share outcome needs a named path (no unearned tails).",
     "require_tail_base_rates": "Every named, non-residual outcome above the anchor-share threshold (categorical OR vote-share) must carry a cited base rate — else the mass belongs in the residual bucket.",
     "candidate_intervals_coherent": "Per-candidate vote-share intervals, when present, must be coherent (finite p05<=median<=p95, median near the committed share, in bounds).",
+    "candidate_intervals_present": "A high-impact vote-share forecast must carry per-candidate intervals (auto-computed from the ensemble spread; record no_interval_reason to opt out).",
     "style_clean": "Prose must be house-clean (no em-dashes / formatting issues).",
     "lessons_applied": "Active calibration lessons should be applied to the commit.",
     "terminal_calibration_applied": "A linked panel run must pass through the terminal Platt calibration stage.",
