@@ -81,15 +81,39 @@ def test_hierarchical_beats_global_on_held_out_where_skew_exists():
         assert report["cohorts"][name]["has_offset"] is True
 
 
-def test_no_skew_keeps_global():
+def test_no_skew_does_not_recommend_flip():
     # Two cohorts with the SAME (zero) skew — a per-cohort intercept cannot help
-    # out-of-sample, so the offsets stay small and the verdict is keep_global.
+    # out-of-sample, so the held-out gain is inside the noise and the verdict is
+    # NEVER flip_on (marginal or keep_global). CV pins lambda at the grid ceiling.
     rows = _skewed_rows("live_calibration_eligible", 0.0, 300, seed=5) + _skewed_rows(
         "imported_baseline", 0.0, 300, seed=6
     )
     report = validate_hierarchical_calibration(rows, folds=5)
-    assert report["recommendation"] == "keep_global"
+    assert report["recommendation"] in {"keep_global", "marginal"}
+    assert report["recommendation"] != "flip_on"
     assert abs(report["overall"]["delta_brier_global_minus_hier"]) < 0.01
+    # A sub-material positive gain is reported as marginal, never a flip.
+    if report["overall"]["delta_brier_global_minus_hier"] > 0:
+        assert report["recommendation"] == "marginal"
+    # Zero skew ⇒ CV wants maximal shrinkage.
+    assert report["lambda_at_ceiling"] is True
+
+
+def test_material_bar_gates_the_flip_recommendation():
+    # A gain that is positive but below the material bar must NOT flip; a clearly
+    # material gain (strong skew) must. This is the discipline that kept the LIVE
+    # ledger's +0.0003 held-out gain from being mis-sold as a flip.
+    marginal = validate_hierarchical_calibration(
+        _skewed_rows("a", 0.0, 250, seed=40) + _skewed_rows("b", 0.05, 250, seed=41),
+        folds=5,
+    )
+    assert marginal["recommendation"] != "flip_on"
+    material = validate_hierarchical_calibration(
+        _skewed_rows("a", 1.4, 250, seed=42) + _skewed_rows("b", -1.3, 250, seed=43),
+        folds=5,
+    )
+    assert material["recommendation"] == "flip_on"
+    assert material["overall"]["delta_brier_global_minus_hier"] >= material["material_brier_delta"]
 
 
 # ── small-cohort fallback ────────────────────────────────────────────────────

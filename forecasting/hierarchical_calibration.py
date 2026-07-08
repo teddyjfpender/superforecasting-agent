@@ -89,6 +89,11 @@ _SOLVE_JITTER = 1e-10
 _LOO_MAX_N = 200
 _KFOLD_DEFAULT = 10
 _CV_SEED = 20260708
+# A held-out Brier improvement below this is NOISE, not a reason to flip mode on.
+# (On ~thousands of rows the SE of the mean Brier is ~1e-3; a sub-1e-3 delta is
+# well inside it.) The flip recommendation requires the pooled gain AND at least
+# one offset cohort to clear this bar — otherwise the honest verdict is keep_global.
+_MATERIAL_BRIER_DELTA = 1e-3
 
 
 # ── Observation contract ─────────────────────────────────────────────────────
@@ -537,6 +542,9 @@ def validate_hierarchical_calibration(
     chosen_lambda, lam_curve = _select_lambda(rows, large_cohorts, lambda_grid, None)
     out["lambda"] = chosen_lambda
     out["lambda_grid"] = [dict(r) for r in lam_curve]
+    # A lambda pegged at the grid ceiling means CV wants MAXIMAL shrinkage — the
+    # offsets are (near-)unsupported; a strong signal against flipping on.
+    out["lambda_at_ceiling"] = chosen_lambda >= max(lambda_grid)
 
     index = {c: j for j, c in enumerate(large_cohorts)}
     rng = Random(_CV_SEED)
@@ -583,6 +591,7 @@ def validate_hierarchical_calibration(
         b_h = bucket["hierarchical"] / n_c
         is_large = cohort in index
         delta = b_g - b_h  # >0 ⇒ hierarchical lowers Brier
+        material = delta >= _MATERIAL_BRIER_DELTA
         cohort_table[cohort] = {
             "n": round(n_c, 3),
             "has_offset": is_large,
@@ -591,10 +600,11 @@ def validate_hierarchical_calibration(
             "brier_hierarchical": round(b_h, 6),
             "delta_brier_global_minus_hier": round(delta, 6),
             "hierarchical_helps": bool(delta > 0),
+            "materially_helps": bool(material),
         }
         for key in tot:
             tot[key] += bucket[key]
-        if is_large and delta > 0:
+        if is_large and material:
             improved_large += 1
 
     overall = {}
@@ -609,13 +619,28 @@ def validate_hierarchical_calibration(
     out["cohorts"] = cohort_table
     out["overall"] = overall
 
-    # Conservative recommendation: flip ON only when the hierarchical map does not
-    # regress the pooled held-out Brier AND at least one offset-carrying cohort
-    # improves. Otherwise keep the global map.
-    if overall and overall["delta_brier_global_minus_hier"] >= 0 and improved_large >= 1:
+    # Conservative recommendation: flip ON only when the hierarchical map delivers
+    # a MATERIAL pooled held-out gain (>= _MATERIAL_BRIER_DELTA) AND at least one
+    # offset-carrying cohort clears the same bar. A positive-but-sub-material gain
+    # is reported as ``marginal`` (do not flip — it is inside the noise); anything
+    # else is ``keep_global``.
+    pooled_delta = overall.get("delta_brier_global_minus_hier", 0.0) if overall else 0.0
+    if overall and pooled_delta >= _MATERIAL_BRIER_DELTA and improved_large >= 1:
         out["recommendation"] = "flip_on"
+    elif overall and pooled_delta > 0:
+        out["recommendation"] = "marginal"
+        out["notes"].append(
+            f"pooled held-out gain {pooled_delta:+.6f} is positive but below the "
+            f"material bar {_MATERIAL_BRIER_DELTA} — inside the noise, do not flip"
+        )
     else:
         out["recommendation"] = "keep_global"
+    if out.get("lambda_at_ceiling"):
+        out["notes"].append(
+            "LOO-CV pinned lambda at the grid ceiling — the data prefers maximal "
+            "shrinkage, i.e. the per-cohort offsets are (near-)unsupported"
+        )
+    out["material_brier_delta"] = _MATERIAL_BRIER_DELTA
     out["large_cohorts_improved"] = improved_large
     out["large_cohorts"] = list(large_cohorts)
     return out

@@ -11598,16 +11598,17 @@ def _print_hierarchical_calibration(args: argparse.Namespace) -> None:
     for note in report.get("notes", []):
         print(f"  note: {note}")
     if report.get("lambda") is not None:
-        print(f"  ridge lambda (LOO-CV): {report['lambda']:g}")
+        ceiling = " [pinned at grid ceiling — offsets unsupported]" if report.get("lambda_at_ceiling") else ""
+        print(f"  ridge lambda (LOO-CV): {report['lambda']:g}{ceiling}")
     cohorts = report.get("cohorts") or {}
     if cohorts:
-        print("  cohort                             n   identity    global   hierarch   delta   helps  offset")
+        print("  cohort                             n   identity    global   hierarch    delta  helps  offset")
         for name, row in cohorts.items():
             print(
                 f"  {name:<32} {row['n']:>5.0f}  {row['brier_identity']:>8.4f} "
                 f"{row['brier_global']:>8.4f} {row['brier_hierarchical']:>9.4f} "
-                f"{row['delta_brier_global_minus_hier']:>+7.4f}  "
-                f"{'yes' if row['hierarchical_helps'] else ' no':>5}  "
+                f"{row['delta_brier_global_minus_hier']:>+8.4f}  "
+                f"{'yes' if row.get('materially_helps') else ' no':>5}  "
                 f"{'yes' if row['has_offset'] else ' no':>5}"
             )
     overall = report.get("overall") or {}
@@ -11615,14 +11616,17 @@ def _print_hierarchical_calibration(args: argparse.Namespace) -> None:
         print(
             f"  overall: global={overall['brier_global']:.4f} "
             f"hierarchical={overall['brier_hierarchical']:.4f} "
-            f"delta={overall['delta_brier_global_minus_hier']:+.4f}"
+            f"delta={overall['delta_brier_global_minus_hier']:+.4f} "
+            f"(material bar {report.get('material_brier_delta', 0.001)})"
         )
     rec = report.get("recommendation", "insufficient_data")
     improved = report.get("large_cohorts_improved")
-    tail = f" ({improved} offset-cohort(s) improved)" if improved is not None else ""
+    tail = f" ({improved} offset-cohort(s) materially improve)" if improved is not None else ""
     print(f"  recommendation: {rec}{tail}")
     if rec == "flip_on":
         print("  → set FORECAST_HIERARCHICAL_CALIBRATION=on to activate the per-cohort intercepts.")
+    elif rec == "marginal":
+        print("  → gain is inside the noise; keep global (do not flip) until it clears the material bar.")
 
 
 def _cmd_calibration(args: argparse.Namespace) -> None:
