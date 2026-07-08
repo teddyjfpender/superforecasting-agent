@@ -54,6 +54,7 @@ _REDACT_SECRETS_ENV_NAMES = (
     "HERMES_REDACT_SECRETS",
 )
 _MAX_ITERATIONS_ENV_NAMES = (
+    "FORECAST_AGENT_MAX_TOOL_ITERATIONS",  # canonical (appconfig key)
     "SUPERFORECASTING_AGENT_MAX_ITERATIONS",
     "FORECAST_MAX_ITERATIONS",
     "HERMES_MAX_ITERATIONS",
@@ -443,7 +444,7 @@ def load_cli_config() -> Dict[str, Any]:
             "threshold": 0.50,    # Compress at 50% of model's context limit
         },
         "agent": {
-            "max_turns": 90,  # Default max tool-calling iterations (shared with subagents)
+            "max_turns": 200,  # Soft cap per turn; a breach checkpoints + continues, not a hard stop
             "verbose": False,
             "system_prompt": "",
             "prefill_messages_file": "",
@@ -2747,11 +2748,11 @@ class HermesCLI:
         elif CLI_CONFIG.get("max_turns"):  # Backwards compat: root-level max_turns
             self.max_turns = CLI_CONFIG["max_turns"]
         else:
-            _max_iterations_raw = _first_max_iterations_env("90")[1]
-            try:
-                self.max_turns = int(_max_iterations_raw)
-            except (TypeError, ValueError):
-                self.max_turns = 90
+            # Honor FORECAST_AGENT_MAX_TOOL_ITERATIONS (or a legacy alias); default
+            # 200 — raised from 90 for deep-research turns. A soft-cap breach is a
+            # checkpoint-continuation, not a hard stop (see loop_should_continue).
+            from agent.iteration_budget import resolve_max_tool_iterations
+            self.max_turns = resolve_max_tool_iterations()
         
         # Parse and validate toolsets
         self.enabled_toolsets = toolsets
