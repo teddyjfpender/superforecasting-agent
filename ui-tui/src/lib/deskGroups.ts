@@ -2,9 +2,11 @@
  * Desk grouping — turns the forecast workspace payload into the ordered horizontal
  * category tabs the redesigned Desk navigates (mirroring the Markets view's tab strip).
  *
- * Order: each Thesis, then each Factor, then auto tag/theme groups for forecasts that
- * belong to no thesis/factor, then a final "All" catch-all. Thesis/factor membership is
- * server-side (question_ids); the tag fallback is pure TUI-side bucketing by topics→domain.
+ * Lens set: one tab per REAL thesis (an `outcome_type=thesis` aggregate), ordered by
+ * member count DESC so the largest ("major") thesis leads and smaller ("minor") theses
+ * follow, then a single "All" catch-all — and nothing else. Factor/tag/section
+ * pseudo-lenses (redundant lenses for thesis-style questions that aren't real theses)
+ * were removed: they cluttered the strip. Thesis membership is server-side (question_ids).
  */
 
 import type {
@@ -37,15 +39,6 @@ export interface DeskTab {
   forecastIds: string[]
 }
 
-/** The theme bucket a forecast falls into when it belongs to no thesis/factor:
- *  first non-blank topic, else domain, else "untagged". */
-export function forecastTheme(item: ForecastWorkspaceItem): string {
-  const topic = (item.topics || []).map((t) => (t || '').trim()).find(Boolean)
-  if (topic) return topic.toLowerCase()
-  const domain = (item.domain || '').trim()
-  return domain ? domain.toLowerCase() : 'untagged'
-}
-
 // Thesis/factor titles are long sentences ("Democrats take the Senate back tracker
 // thesis"); tabs need a SHORT label. Strip the trailing kind-noise words + stopwords
 // and keep the first significant words, so the strip stays on one line.
@@ -61,70 +54,38 @@ export function shortLensLabel(title: string, max = 18): string {
   return out || (title || 'Lens').slice(0, max)
 }
 
-/** A clean #tag label from a raw topic/theme: drop 4-digit years + 1-char tokens,
- *  keep the first significant word, cap short. "2026 u.s. primary election" → "primary". */
-export function cleanTagLabel(theme: string, max = 14): string {
-  const words = (theme || '').split(/[\s_./-]+/).filter((w) => w && !/^\d{4}$/.test(w) && w.length > 1)
-  const sig = words.find((w) => w.length > 2) ?? words[0] ?? theme
-  return sig.slice(0, max).toLowerCase()
-}
-
 export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
   const forecasts = payload.forecasts || []
   const present = new Set(forecasts.map((f) => f.id || '').filter(Boolean))
   const keep = (ids?: string[]): string[] => (ids || []).filter((id) => present.has(id))
+  const memberCount = (th: ForecastThesis): number => th.member_count ?? keep(th.question_ids).length
+
+  // REAL theses only, ordered by member count DESC: the largest thesis (the
+  // "major" thesis) leads, smaller ("minor") theses follow. Ties break on title so
+  // the order is stable across reloads.
+  const orderedTheses = [...(payload.theses || [])].sort(
+    (a, b) => memberCount(b) - memberCount(a) || (a.title || '').localeCompare(b.title || '')
+  )
 
   const tabs: DeskTab[] = []
   const grouped = new Set<string>()
-
-  for (const th of payload.theses || []) {
+  for (const th of orderedTheses) {
     const ids = keep(th.question_ids)
     ids.forEach((id) => grouped.add(id))
     tabs.push({ key: `thesis:${th.id ?? th.title}`, label: shortLensLabel(th.title || 'Thesis'), kind: 'thesis', refId: th.id, forecastIds: ids })
   }
-  for (const fa of payload.factors || []) {
-    const ids = keep(fa.question_ids)
-    ids.forEach((id) => grouped.add(id))
-    tabs.push({ key: `factor:${fa.id ?? fa.title}`, label: shortLensLabel(fa.title || 'Factor'), kind: 'factor', refId: fa.id, forecastIds: ids })
-  }
 
-  // ForecastBench backtest replays are carved out FIRST so they never reach the
-  // tag/All buckets — the live desk shows only organic forecasts, and the bench
-  // questions surface ONLY under the read-only "Bench" lens (which renders the
-  // scoreboard from the `forecast.bench` RPC, not this id list). Membership ids
-  // are still carried so a `/forecast <id>` jump can find a bench question's tab.
+  // ForecastBench backtest replays are still carved OUT of the All catch-all (the
+  // live desk lists ORGANIC forecasts only) but no longer get their own lens — the
+  // read-only Bench scoreboard is not a thesis, and the desk's lens set is real
+  // theses + All, nothing else. (Bench replays resolve immediately, so on the live
+  // desk this set is virtually always empty.)
   const benchIds = forecasts
     .map((f) => (grouped.has(f.id || '') ? '' : isBenchForecast(f) ? f.id || '' : ''))
     .filter(Boolean)
-  benchIds.forEach((id) => grouped.add(id))
 
-  // Tag/theme groups for the forecasts that belong to no thesis/factor (and are
-  // not bench replays — those are already grouped out above).
-  const buckets = new Map<string, string[]>()
-  for (const f of forecasts) {
-    const id = f.id || ''
-    if (!id || grouped.has(id)) continue
-    const theme = forecastTheme(f)
-    const arr = buckets.get(theme)
-    if (arr) arr.push(id)
-    else buckets.set(theme, [id])
-  }
-  const tagTabs: DeskTab[] = [...buckets.entries()]
-    .map(([theme, ids]) => ({ key: `tag:${theme}`, label: `#${cleanTagLabel(theme)}`, kind: 'tag' as const, forecastIds: ids }))
-    .sort((a, b) => b.forecastIds.length - a.forecastIds.length || a.label.localeCompare(b.label))
-  tabs.push(...tagTabs)
-
-  // The Bench lens sits just before the All catch-all. ForecastBench replays
-  // RESOLVE immediately, so they are NOT in the active workspace forecast list
-  // (benchIds is typically empty) — visibility keys off payload.benchCount, the
-  // count of domain=forecastbench questions of any status. The scoreboard loads
-  // from the forecast.bench RPC, not this id list, so empty forecastIds is fine.
-  if (benchIds.length || (payload.bench_count ?? 0) > 0) {
-    tabs.push({ key: 'bench', label: '◇ Bench', kind: 'bench', forecastIds: benchIds })
-  }
-
-  // The All catch-all excludes the carved-out bench replays (they are not organic
-  // live forecasts) but keeps every thesis/factor/tag member.
+  // The All catch-all keeps every thesis member + every un-grouped forecast, and
+  // excludes only the carved-out bench replays (not organic live forecasts).
   const allIds = forecasts.map((f) => f.id || '').filter((id) => id && !benchIds.includes(id))
   tabs.push({ key: 'all', label: 'All', kind: 'all', forecastIds: allIds })
   return tabs

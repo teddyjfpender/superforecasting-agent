@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildDeskTabs, cleanTagLabel, forecastsForTab, forecastTheme, isBenchForecast, shortLensLabel, tabWindow } from '../lib/deskGroups.js'
+import { buildDeskTabs, forecastsForTab, isBenchForecast, shortLensLabel, tabWindow } from '../lib/deskGroups.js'
 
 const item = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, ...extra })
 
@@ -8,21 +8,25 @@ const payload = {
   forecasts: [
     item('q1', { topics: ['Politics'] }),
     item('q2', { topics: [], domain: 'econ' }),
-    item('q3'), // no topic/domain -> untagged
+    item('q3'), // no topic/domain
     item('q4', { topics: ['Politics'] }),
     item('q5', { topics: ['Tech'] }),
   ],
   theses: [{ id: 'th1', title: 'Fed Path', question_ids: ['q1', 'q4', 'gone'] }],
+  // Factors are NO LONGER a lens — they must not produce a tab.
   factors: [{ id: 'fa1', title: 'Econ Factor', question_ids: ['q2'] }],
 } as never
 
 describe('deskGroups', () => {
   const tabs = buildDeskTabs(payload)
 
-  it('orders theses -> factors -> tag-groups -> All', () => {
-    expect(tabs.map((t) => t.kind)).toEqual(['thesis', 'factor', 'tag', 'tag', 'all'])
-    // Labels are SHORT (kind-noise stripped: "Econ Factor" -> "Econ").
-    expect(tabs.map((t) => t.label)).toEqual(['Fed Path', 'Econ', '#tech', '#untagged', 'All'])
+  it('reduces the lens set to real theses + a single All catch-all (no factor/tag lenses)', () => {
+    expect(tabs.map((t) => t.kind)).toEqual(['thesis', 'all'])
+    // Labels are SHORT (kind-noise stripped). No "#tag" or factor lens survives.
+    expect(tabs.map((t) => t.label)).toEqual(['Fed Path', 'All'])
+    expect(tabs.some((t) => t.kind === 'factor')).toBe(false)
+    expect(tabs.some((t) => t.kind === 'tag')).toBe(false)
+    expect(tabs.some((t) => t.label.startsWith('#'))).toBe(false)
   })
 
   it('thesis tab keeps only present members (drops missing ids)', () => {
@@ -30,22 +34,33 @@ describe('deskGroups', () => {
     expect(tabs[0].refId).toBe('th1')
   })
 
-  it('tag groups ONLY un-grouped forecasts, bucketed by theme', () => {
-    const tagTabs = tabs.filter((t) => t.kind === 'tag')
-    const tagged = tagTabs.flatMap((t) => t.forecastIds)
-    expect(tagged.sort()).toEqual(['q3', 'q5']) // q1/q4 in thesis, q2 in factor -> excluded
-  })
-
-  it('All tab has every forecast in order', () => {
+  it('All tab has every forecast in order (factor/ungrouped members included)', () => {
     const all = tabs[tabs.length - 1]
     expect(all.kind).toBe('all')
     expect(all.forecastIds).toEqual(['q1', 'q2', 'q3', 'q4', 'q5'])
   })
 
-  it('forecastTheme: topic > domain > untagged', () => {
-    expect(forecastTheme({ topics: ['Politics'], domain: 'econ' } as never)).toBe('politics')
-    expect(forecastTheme({ topics: [], domain: 'Econ' } as never)).toBe('econ')
-    expect(forecastTheme({} as never)).toBe('untagged')
+  it('orders theses by member count DESC — the "major" thesis leads', () => {
+    const t = buildDeskTabs({
+      forecasts: [item('a1'), item('a2'), item('a3'), item('b1')],
+      theses: [
+        { id: 'minor', title: 'Minor thesis', question_ids: ['b1'] },
+        { id: 'major', title: 'Major thesis', question_ids: ['a1', 'a2', 'a3'] },
+      ],
+    } as never)
+    expect(t.map((x) => x.kind)).toEqual(['thesis', 'thesis', 'all'])
+    expect(t.map((x) => x.refId)).toEqual(['major', 'minor', undefined])
+  })
+
+  it('member_count field wins over present-id count for ordering', () => {
+    const t = buildDeskTabs({
+      forecasts: [item('a1'), item('b1'), item('b2')],
+      theses: [
+        { id: 'small', title: 'Small', question_ids: ['b1', 'b2'] }, // 2 present ids
+        { id: 'big', title: 'Big', question_ids: ['a1'], member_count: 9 }, // fewer present, bigger book
+      ],
+    } as never)
+    expect(t.map((x) => x.refId)).toEqual(['big', 'small', undefined])
   })
 
   it('forecastsForTab resolves ids to items in order', () => {
@@ -59,7 +74,7 @@ describe('deskGroups', () => {
   })
 })
 
-describe('bench lens', () => {
+describe('bench forecasts (no lens, still carved out of All)', () => {
   it('isBenchForecast matches domain forecastbench OR bench/forecastbench tags', () => {
     expect(isBenchForecast({ domain: 'forecastbench' } as never)).toBe(true)
     expect(isBenchForecast({ domain: 'markets', topics: ['bench'] } as never)).toBe(true)
@@ -67,7 +82,7 @@ describe('bench lens', () => {
     expect(isBenchForecast({ domain: 'politics', topics: ['elections'] } as never)).toBe(false)
   })
 
-  it('carves bench forecasts into a separate Bench tab, before All, and OUT of All/tag groups', () => {
+  it('bench replays get NO lens tab and stay OUT of the All catch-all', () => {
     const benchPayload = {
       forecasts: [
         item('q1', { topics: ['Politics'] }),
@@ -75,30 +90,14 @@ describe('bench lens', () => {
         item('b2', { domain: 'markets', topics: ['bench'] }), // tag fallback
         item('q5', { topics: ['Tech'] }),
       ],
+      bench_count: 2,
     } as never
     const t = buildDeskTabs(benchPayload)
-    const kinds = t.map((x) => x.kind)
-    // Bench sits just before the final All catch-all.
-    expect(kinds[kinds.length - 2]).toBe('bench')
-    expect(kinds[kinds.length - 1]).toBe('all')
-
-    const bench = t.find((x) => x.kind === 'bench')!
-    expect(bench.forecastIds.sort()).toEqual(['b1', 'b2'])
-    expect(bench.label).toContain('Bench')
-
-    // Bench questions never appear in the tag groups…
-    const tagged = t.filter((x) => x.kind === 'tag').flatMap((x) => x.forecastIds)
-    expect(tagged).not.toContain('b1')
-    expect(tagged).not.toContain('b2')
-
-    // …nor in the All catch-all (live desk = organic forecasts only).
-    const all = t[t.length - 1]
-    expect(all.forecastIds).toEqual(['q1', 'q5'])
-  })
-
-  it('no Bench tab when no bench forecasts exist', () => {
-    const t = buildDeskTabs({ forecasts: [item('q1', { topics: ['Tech'] })] } as never)
+    // Only a single All lens (no theses here) — no Bench tab any more.
+    expect(t.map((x) => x.kind)).toEqual(['all'])
     expect(t.some((x) => x.kind === 'bench')).toBe(false)
+    // Bench replays are still excluded from All (live desk = organic forecasts only).
+    expect(t[t.length - 1].forecastIds).toEqual(['q1', 'q5'])
   })
 })
 
@@ -108,12 +107,6 @@ describe('short labels', () => {
     expect(shortLensLabel('Democrats take the Senate back tracker thesis').length).toBeLessThanOrEqual(18)
     expect(shortLensLabel('AI infrastructure scarcity thesis')).toBe('AI infrastructure')
     expect(shortLensLabel('Fed Path')).toBe('Fed Path')
-  })
-
-  it('cleanTagLabel drops years/short tokens and keeps the significant word', () => {
-    expect(cleanTagLabel('2026 u.s. primary election')).toBe('primary')
-    expect(cleanTagLabel('nbis')).toBe('nbis')
-    expect(cleanTagLabel('tech').length).toBeLessThanOrEqual(14)
   })
 })
 

@@ -504,7 +504,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
   }, [initialId])
 
-  // The ordered lens tabs (theses → factors → #tag-groups → Bench → All).
+  // The ordered lens tabs: real theses (member count desc, "major" first) → All.
   const tabs = useMemo<DeskTab[]>(() => (payload ? buildDeskTabs(payload) : []), [payload])
   const activeTab = tabs[Math.min(tab, Math.max(0, tabs.length - 1))]
   const refThesis = tabRefThesis(activeTab, theses)
@@ -2101,21 +2101,34 @@ export function DeskSummary({
 }) {
   const inner = Math.max(16, width - 2)
   const actionsBlock = <NextBestActions actions={nextActions} t={t} width={inner} />
+  // When an item is INSPECTED (a forecast, or the lens row), the book-wide
+  // Next-best-actions block moves BELOW that item's detail, separated by the
+  // established hairline rule — so the panel reads "here is this item, THEN what to
+  // touch next across the book" instead of leading with book-wide noise. Only shown
+  // when there ARE actions (NextBestActions renders null otherwise, so no dangling
+  // rule). When nothing is inspected the block still leads (it is all there is).
+  const hasActions = (nextActions ?? []).length > 0
+  const trailingActions = hasActions ? (
+    <Box flexDirection="column" marginTop={1}>
+      <Text color={semantics(t).rule}>{'─'.repeat(inner)}</Text>
+      <Box marginTop={1}>{actionsBlock}</Box>
+    </Box>
+  ) : null
 
   if (!selected) {
-    // The lens row is selected → give the panel the same rich treatment as a
-    // forecast: the lens's own aggregate + history graph + counts + teaser. The
-    // desk-level Next-best-actions block leads either way (it is book-wide, not
-    // per-selection), so it shows on the lens row too.
+    // The lens row is inspected → give the panel the same rich treatment as a
+    // forecast: the lens's own aggregate + history graph + counts + teaser, THEN the
+    // next-actions block below the hairline rule.
     if (refThesis || refFactor) {
       return (
         <Box flexDirection="column" flexShrink={0} width={width}>
-          {actionsBlock}
           <LensSummary refFactor={refFactor} refThesis={refThesis} rows={rows} t={t} width={width} />
+          {trailingActions}
         </Box>
       )
     }
 
+    // Truly nothing inspected → the book-wide block leads (current placement stands).
     return (
       <Box flexDirection="column" flexShrink={0} width={width}>
         {actionsBlock}
@@ -2156,7 +2169,6 @@ export function DeskSummary({
 
   return (
     <Box flexDirection="column" flexShrink={0} width={width}>
-      {actionsBlock}
       <LensHeader refFactor={refFactor} refThesis={refThesis} t={t} width={inner} />
 
       <Text bold color={t.color.primary} wrap="wrap">
@@ -2262,6 +2274,7 @@ export function DeskSummary({
           ⏎ open full detail
         </Text>
       </Box>
+      {trailingActions}
     </Box>
   )
 }

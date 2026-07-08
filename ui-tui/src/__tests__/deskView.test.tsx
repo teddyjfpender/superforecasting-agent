@@ -366,7 +366,7 @@ describe('DeskView (redesigned forecast desk)', () => {
     delete process.env.FORECAST_TUI_INLINE
   })
 
-  it('renders the header counts and the horizontal lens tabs (theses → factors → tags → All)', async () => {
+  it('renders the header counts and a reduced lens strip (real theses + All only)', async () => {
     const desk = await mountDesk(120, fixture())
     const text = desk.text()
     expect(text).toContain('FORECASTS')
@@ -374,10 +374,12 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('13 open alert')
     // Lens tab strip: short labels (kind-noise stripped, stopwords dropped) so the
     // strip stays on one line — "Inflation stays sticky through 2026" -> "Inflation
-    // stays", "Power-bottleneck basket" -> "Power-bottleneck".
+    // stays". The lens set is REAL theses + a single All catch-all: the factor and
+    // tag pseudo-lenses are gone, so "Power-bottleneck" / "#elections" never appear.
     expect(text).toContain('Inflation stays')
-    expect(text).toContain('Power-bottleneck')
     expect(text).toContain('All')
+    expect(text).not.toContain('Power-bottleneck')
+    expect(text).not.toContain('#elections')
     desk.cleanup()
   })
 
@@ -521,7 +523,8 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('Tab switches the lens and resets the selection (All tab shows the whole book)', async () => {
     const desk = await mountDesk(120, fixture())
-    // Tabs: [thesis, factor, #elections, All]. Three Tabs from the first → All.
+    // Lens set is now [thesis, All] (factor/tag lenses removed); Tab wraps, so three
+    // presses from the thesis tab still land on the last tab, All.
     await desk.press('\t')
     await desk.press('\t')
     await desk.press('\t')
@@ -757,6 +760,67 @@ describe('DeskView (redesigned forecast desk)', () => {
     expect(text).toContain('Texas still leans Republican')
     // The open-detail affordance.
     expect(text).toContain('open full detail')
+  })
+
+  it('places Next best actions BELOW the inspected forecast detail, under a hairline rule', async () => {
+    const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const item = texasItem()
+    const stdout = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: item.analyst_notes?.[0] ?? null,
+        nextActions: [
+          { action: 'add_sources', question_id: 'fq_x', reason: 'no fresh evidence', title: 'Refresh the sources' }
+        ],
+        refFactor: undefined,
+        refThesis: undefined,
+        selected: item,
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    const text = normalize(stdout.text(), stripAnsi)
+    // The block is present…
+    expect(text).toContain('Next best actions')
+    expect(text).toContain('Refresh the sources')
+    // …but now sits AFTER the inspected item's detail (the open-detail affordance is
+    // the LAST line of the detail body), separated by the established hairline rule.
+    expect(text.indexOf('open full detail')).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf('open full detail')).toBeLessThan(text.indexOf('Next best actions'))
+    expect(text).toContain('─') // the hairline separator
+  })
+
+  it('when NOTHING is inspected, Next best actions still leads the panel', async () => {
+    const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+      import('@hermes/ink'),
+      import('../components/deskView.js'),
+      import('../theme.js'),
+      import('../lib/text.js')
+    ])
+
+    const stdout = writeStream(120, 40)
+    renderSync(
+      React.createElement(DeskSummary, {
+        latestNote: null,
+        nextActions: [{ action: 'update', question_id: 'fq_x', reason: 'due', title: 'Update it' }],
+        refFactor: undefined,
+        refThesis: undefined,
+        selected: null,
+        t: DARK_THEME,
+        width: 44
+      }),
+      { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
+    )
+    const text = normalize(stdout.text(), stripAnsi)
+    // Empty state: the block leads, ABOVE the "Select a forecast" prompt.
+    expect(text.indexOf('Next best actions')).toBeLessThan(text.indexOf('Select a forecast'))
   })
 
   it('skinny summary leads with the factor μ aggregate on a factor lens tab', async () => {

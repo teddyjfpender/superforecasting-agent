@@ -6,6 +6,7 @@ import { turnController } from '../app/turnController.js'
 import { getTurnState, resetTurnState } from '../app/turnStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
 import { setWarningsRunActive } from '../app/warningsRunStore.js'
+import { turnTokenCount } from '../lib/liveStatus.js'
 import { estimateTokensRough } from '../lib/text.js'
 import type { Msg } from '../types.js'
 
@@ -86,6 +87,55 @@ describe('createGatewayEventHandler', () => {
     // doesn't visibly jump across the final answer at end-of-turn.
     expect(appended.indexOf(trail!)).toBeLessThan(appended.indexOf(finalText!))
     expect(getTurnState().todos).toEqual([])
+  })
+
+  it('folds tool.complete usage into the session store so the liveness counter climbs mid-turn', () => {
+    const onEvent = createGatewayEventHandler(buildCtx([]))
+
+    // Turn start: session already at 100k input + 20k output → the liveness
+    // baseline the counter deltas against.
+    patchUiState({ usage: { calls: 5, input: 100_000, output: 20_000, total: 900_000 } })
+    const baseTokens = 120_000
+    // A minimal (idle) turn so the counter's `live` estimate is 0 and the
+    // `reported` delta from the folded usage is what we're measuring.
+    const idleTurn = { reasoningTokens: 0, streaming: '', toolTokens: 0 }
+
+    // Before any tool.complete the reported delta is 0 — the pre-fix behaviour
+    // where the counter stayed pinned until message.complete.
+    expect(turnTokenCount(idleTurn, getUiState().usage, baseTokens)).toBe(0)
+
+    // API call #1's usage folded server-side, shipped on the first tool.complete.
+    onEvent({
+      payload: { name: 'web_search', tool_id: 'tc_1', usage: { calls: 6, input: 108_000, output: 21_000, total: 950_000 } },
+      type: 'tool.complete'
+    } as never)
+
+    expect(getUiState().usage.input).toBe(108_000)
+    expect(getUiState().usage.output).toBe(21_000)
+    const afterCall1 = turnTokenCount(idleTurn, getUiState().usage, baseTokens)
+    expect(afterCall1).toBe(9_000) // (108k + 21k) − 120k
+
+    // API call #2's cumulative usage on the second tool.complete → the counter
+    // climbs again, mid-turn, without waiting for message.complete.
+    onEvent({
+      payload: { name: 'read', tool_id: 'tc_2', usage: { calls: 7, input: 112_000, output: 22_500, total: 980_000 } },
+      type: 'tool.complete'
+    } as never)
+
+    const afterCall2 = turnTokenCount(idleTurn, getUiState().usage, baseTokens)
+    expect(afterCall2).toBe(14_500) // (112k + 22.5k) − 120k
+    expect(afterCall2).toBeGreaterThan(afterCall1)
+    // Cumulative usage stays merged into the store (calls advanced too).
+    expect(getUiState().usage.calls).toBe(7)
+  })
+
+  it('leaves the usage store untouched when tool.complete carries no usage', () => {
+    const onEvent = createGatewayEventHandler(buildCtx([]))
+
+    patchUiState({ usage: { calls: 2, input: 5_000, output: 1_000, total: 6_000 } })
+    onEvent({ payload: { name: 'bash', tool_id: 'tc_1' }, type: 'tool.complete' } as never)
+
+    expect(getUiState().usage).toMatchObject({ calls: 2, input: 5_000, output: 1_000 })
   })
 
   it('archives completed todos into transcript flow at end of turn', () => {

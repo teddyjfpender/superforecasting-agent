@@ -143,9 +143,9 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
     'Press h (or ?) any time — including here once you have stepped off the composer — for this help.'
   ],
   desk: [
-    'The Desk is your forecasts workspace. Lenses (Tab, or ←→) regroup the same book: Book, Review, Thesis, Factor, and a read-only Bench scoreboard. Move with ↑↓ and press Enter to open a forecast in detail.',
+    'The Desk is your forecasts workspace. Lenses (Tab, or ←→) regroup the book by your real theses, largest ("major") first, plus a single All catch-all. Move with ↑↓ and press Enter to open a forecast in detail.',
     'Updating has three tiers: u re-arms the review schedule, U runs a real update now, and A hands the question to an agent for autonomous reforecasting. Mark rows with Space (⇧↑↓ extends the selection) to run a tier across many at once — with nothing marked, a lens applies the action to all of its questions.',
-    'T opens a task over the selection; n creates a new question; R resolves one; s opens settings. The SRC / RDY columns flag readiness (evidence sourced, ready to score). Next best actions (top of the summary panel) ranks the book by value-of-information — what to touch next. Press / to filter, o to sort, and r to refresh.'
+    'T opens a task over the selection; n creates a new question; R resolves one; s opens settings. The SRC / RDY columns flag readiness (evidence sourced, ready to score). Next best actions (below the inspected detail) ranks the book by value-of-information — what to touch next. Press / to filter, o to sort, and r to refresh.'
   ],
   markets: [
     'Markets has two modes, toggled with m: Data (live quotes by category) and Models (agentic quant-research). Press p to jump to the Prediction section — Polymarket and Kalshi — where v cycles venue, 1·2·3 set the history range, and → expands outcomes.',

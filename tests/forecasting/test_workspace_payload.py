@@ -6,7 +6,14 @@ import json
 
 import pytest
 
-from forecasting.dashboard import _distribution_view, _headline_numeric, build_workspace_payload
+from forecasting.dashboard import (
+    _distribution_headline,
+    _distribution_view,
+    _headline_numeric,
+    _short_candidate_label,
+    build_workspace_payload,
+    format_probability,
+)
 from forecasting.ledger import ForecastLedger
 from forecasting.models import OutcomeSpace
 
@@ -111,6 +118,86 @@ def test_headline_numeric_keeps_finite_out_of_range_numeric():
     # A CPI-style mean of 3.1 is a legitimate numeric outcome, not a probability.
     assert _headline_numeric(3.1) == 3.1
     assert _headline_numeric({"mean": 3.1, "sd": 0.4}) == 3.1
+
+
+# ── Distribution / vote-share headline (probability_display) — no more raw JSON ──
+
+
+def test_short_candidate_label_surname_and_truncation():
+    assert _short_candidate_label("Nigel Farage") == "Farage"
+    assert _short_candidate_label("Count Binface") == "Binface"
+    assert _short_candidate_label("Laurence Fox") == "Fox"
+    assert _short_candidate_label("Fox") == "Fox"  # already short
+    assert _short_candidate_label("Other official candidates") == "Other offi…"  # 3 words → truncate
+
+
+def test_distribution_headline_sorts_desc_leader_first_no_json():
+    # The Clacton bug: a probability dict rendered as insertion-ordered JSON, which
+    # truncated the leader (Farage 67). Now value-sorted, leader first, 1dp, no braces.
+    headline = _distribution_headline(
+        {
+            "Count Binface": 16.5,
+            "Laurence Fox": 4.0,
+            "Nigel Farage": 67.0,
+            "Other official candidates": 12.5,
+        }
+    )
+    assert headline == "Farage 67.0 · Binface 16.5 · Other offi… 12.5 · Fox 4.0"
+    assert "{" not in headline and '"' not in headline
+
+
+def test_distribution_headline_fraction_scale_becomes_percent():
+    assert _distribution_headline({"Yes": 0.62, "No": 0.38}) == "Yes 62.0 · No 38.0"
+
+
+def test_distribution_headline_strips_stat_keys_and_needs_two_candidates():
+    # Hybrid payload: candidate shares + a bolted-on leader distribution. Only the
+    # candidate entries belong in the headline — never mean/median/q05/interval_*.
+    headline = _distribution_headline(
+        {
+            "Andy Biggs": 64.0,
+            "David Schweikert": 27.0,
+            "Other": 9.0,
+            "mean": 64.0,
+            "median": 63.36,
+            "q05": 43.29,
+            "interval_90_low": 43.29,
+        }
+    )
+    # "Andy Biggs" (10 chars) is already short → kept whole; "David Schweikert" (16)
+    # collapses to its surname; stat keys never appear.
+    assert headline == "Andy Biggs 64.0 · Schweikert 27.0 · Other 9.0"
+    # A pure moment dict is not a categorical PMF → None (falls back).
+    assert _distribution_headline({"mean": 3.1, "sd": 0.4}) is None
+    assert _distribution_headline({"Yes": 0.62}) is None  # single candidate
+
+
+def test_distribution_headline_ignores_continuous_distribution_shapes():
+    # A CPI-style continuous distribution (moments + intervals + bucket PMF) is NOT a
+    # categorical headline — its bucket/equivalent keys must not become "candidates".
+    # It falls back to the JSON dump (the TUI renders it via the μ/σ path anyway).
+    cpi = {
+        "mean": 4.23,
+        "sd": 0.1,
+        "median": 4.2,
+        "interval_90_low": 4.05,
+        "interval_90_high": 4.41,
+        "equivalent_normal_mean": 4.23,
+        "bucket_le_4_0": 0.2,
+        "bucket_4_0_4_2": 0.5,
+        "bucket_ge_4_2": 0.3,
+    }
+    assert _distribution_headline(cpi) is None
+    assert format_probability(cpi) == json.dumps(cpi, sort_keys=True)
+
+
+def test_format_probability_dict_uses_headline_not_json():
+    formatted = format_probability({"Count Binface": 16.5, "Nigel Farage": 67.0, "Laurence Fox": 4.0})
+    assert formatted == "Farage 67.0 · Binface 16.5 · Fox 4.0"
+    # Scalars keep their 3-dp form; a non-PMF dict still falls back to JSON.
+    assert format_probability(0.52) == "0.520"
+    assert format_probability({"mean": 3.1, "sd": 0.4}) == json.dumps({"mean": 3.1, "sd": 0.4}, sort_keys=True)
+    assert format_probability(None) == "-"
     assert _headline_numeric(-2.0) == -2.0
 
 

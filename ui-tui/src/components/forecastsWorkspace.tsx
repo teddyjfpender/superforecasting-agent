@@ -114,9 +114,11 @@ export const unitSuffix = (units: null | string | undefined): string => {
 
 /**
  * Headline label for a forecast.
- *   probability/categorical → a percent ("59%")
- *   distribution            → a continuous summary ("μ 4.23% · σ 0.10")
- * so a CPI mean never renders as a misleading "310%" or a raw JSON dump.
+ *   probability/binary → a percent ("59%")
+ *   distribution       → a continuous summary ("μ 4.23% · σ 0.10")
+ *   categorical PMF    → a value-sorted, leader-first list ("Farage 67.0 · …")
+ * so a CPI mean never renders as a misleading "310%" and a vote-share never dumps
+ * raw JSON that truncates the leader.
  */
 export const headlineLabel = (item: ForecastWorkspaceItem): string => {
   const dist = item.distribution
@@ -132,6 +134,15 @@ export const headlineLabel = (item: ForecastWorkspaceItem): string => {
     return parts.join(' · ')
   }
 
+  // Categorical / vote-share PMF → value-sorted, leader-first (never raw JSON). The
+  // detail modal also draws every candidate as a bar below, so the one-line headline
+  // stays a compact leader-first summary here. Continuous distributions are handled
+  // above (μ/σ), so only NON-distribution kinds reach here.
+  if (item.headline_kind !== 'distribution') {
+    const distHead = distributionHeadline(item.probability, { compact: true, max: 3 })
+    if (distHead) return distHead
+  }
+
   const headline = item.headline_probability
 
   if (finite(headline) && headline >= 0 && headline <= 1) {
@@ -145,10 +156,16 @@ export const headlineLabel = (item: ForecastWorkspaceItem): string => {
   return item.probability_display ?? '—'
 }
 
-/** Compact one-token headline for the master list (e.g. "59%" or "μ4.23%"). */
+/** Compact one-token headline for the master list (e.g. "59%", "μ4.23%", or a
+ *  value-sorted vote-share "Farage 67.0 · Binface 16.5 · Fox 4.0 · +2 more"). */
 export const headlineCompact = (item: ForecastWorkspaceItem, probDigits = 0): string => {
   if (item.headline_kind === 'distribution' && item.distribution && finite(item.distribution.mean)) {
     return `μ${trimNum(item.distribution.mean)}${unitSuffix(item.units)}`
+  }
+
+  if (item.headline_kind !== 'distribution') {
+    const distHead = distributionHeadline(item.probability, { compact: true, max: 3 })
+    if (distHead) return distHead
   }
 
   const headline = item.headline_probability
@@ -240,6 +257,49 @@ export const distributionBars = (
   return bars
     .map(([label, value]) => ({ label, value, interval: intervalForLabel(intervals, label) }))
     .sort((a, b) => b.value - a.value)
+}
+
+/** Short label for a candidate in a distribution headline: a long two-word person
+ *  name collapses to its surname ("Nigel Farage" → "Farage", "Count Binface" →
+ *  "Binface"), so the leader + top few fit one row. Longer/other multi-word labels
+ *  ("Other official candidates") and single long tokens just tail-truncate. */
+export const shortCandidateLabel = (name: string, max = 11): string => {
+  const trimmed = (name ?? '').trim()
+  if (trimmed.length <= max) return trimmed
+  const words = trimmed.split(/\s+/)
+  const last = words[words.length - 1] ?? ''
+  if (words.length === 2 && last.length > 0 && last.length <= max) return last
+  return truncate(trimmed, max)
+}
+
+/**
+ * Value-sorted, leader-first headline for a categorical / vote-share PMF —
+ * "Farage 67.0 · Binface 16.5 · Fox 4.0 · +2 more". NEVER a raw JSON dump: the old
+ * headline rendered the probability dict in INSERTION order inside braces, which
+ * truncated the very candidate that mattered (the leader, e.g. Farage 67). Sorted
+ * DESC so the leader is always first, 1dp, no braces/quotes. `compact` caps to
+ * `max` entries + "+N more" (row contexts, which then tail-ellipsize what remains);
+ * full mode lists every candidate (detail contexts, which wrap — never truncating a
+ * value). Fraction-scale dicts (every value in [0,1]) render as percentages (×100).
+ * Returns null when the payload is not a ≥2-candidate categorical distribution.
+ */
+export const distributionHeadline = (
+  probability: ForecastWorkspaceItem['probability'],
+  opts: { compact?: boolean; max?: number } = {}
+): null | string => {
+  const bars = distributionBars(probability)
+  if (!bars) {
+    return null
+  }
+  const scale = bars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
+  const fmt = (bar: HistogramBar): string => `${shortCandidateLabel(bar.label)} ${(bar.value * scale).toFixed(1)}`
+  const max = Math.max(1, opts.max ?? 3)
+
+  if (opts.compact && bars.length > max) {
+    return `${bars.slice(0, max).map(fmt).join(' · ')} · +${bars.length - max} more`
+  }
+
+  return bars.map(fmt).join(' · ')
 }
 
 /** Confidence/spread band for one history point. Latest point prefers the panel spread. */

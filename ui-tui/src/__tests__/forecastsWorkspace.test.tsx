@@ -583,6 +583,48 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(headlineLabel({} as ForecastWorkspaceItem)).toBe('—')
   })
 
+  it('headlineLabel renders a categorical vote-share as a value-sorted, leader-first list — never JSON', async () => {
+    const { headlineLabel } = await import('../components/forecastsWorkspace.js')
+    // The Clacton bug: insertion-ordered JSON that truncated the leader (Farage 67).
+    const clacton = headlineLabel({
+      headline_kind: 'probability',
+      probability: { 'Count Binface': 16.5, 'Laurence Fox': 4.0, 'Nigel Farage': 67.0, 'Other official candidates': 12.5 },
+      probability_display: '{"Count Binface": 16.5, ...}'
+    } as ForecastWorkspaceItem)
+    expect(clacton).not.toContain('{')
+    expect(clacton).not.toContain('"')
+    // Leader FIRST (Farage 67 — the value that got truncated before), strict value
+    // DESC, 1dp, "+N more" for the tail (compact row). "Other official candidates"
+    // (12.5) outranks Fox (4.0), so it is the third shown, not Fox.
+    expect(clacton.startsWith('Farage 67.0')).toBe(true)
+    expect(clacton).toBe('Farage 67.0 · Binface 16.5 · Other offi… 12.5 · +1 more')
+  })
+
+  it('shortCandidateLabel collapses long two-word names to the surname', async () => {
+    const { shortCandidateLabel } = await import('../components/forecastsWorkspace.js')
+    expect(shortCandidateLabel('Nigel Farage')).toBe('Farage')
+    expect(shortCandidateLabel('Count Binface')).toBe('Binface')
+    expect(shortCandidateLabel('Laurence Fox')).toBe('Fox')
+    expect(shortCandidateLabel('Fox')).toBe('Fox') // already short — unchanged
+    expect(shortCandidateLabel('Other official candidates')).toBe('Other offi…') // 3 words → truncate
+    expect(shortCandidateLabel('Supercalifragilistic')).toBe('Supercalif…') // single long token → truncate
+  })
+
+  it('distributionHeadline: sorted DESC, 1dp, compact "+N more" for rows vs full list for detail', async () => {
+    const { distributionHeadline } = await import('../components/forecastsWorkspace.js')
+    const pmf = { 'Count Binface': 16.5, 'Laurence Fox': 4.0, 'Nigel Farage': 67.0, 'Other official candidates': 12.5 }
+    // Row context: leader first, top-3 + "+N more" (the row then tail-ellipsizes).
+    expect(distributionHeadline(pmf, { compact: true, max: 3 })).toBe('Farage 67.0 · Binface 16.5 · Other offi… 12.5 · +1 more')
+    // Detail context: every candidate, no truncation of a value.
+    expect(distributionHeadline(pmf)).toBe('Farage 67.0 · Binface 16.5 · Other offi… 12.5 · Fox 4.0')
+    // Fraction-scale PMFs render as percentages (×100).
+    expect(distributionHeadline({ Yes: 0.62, No: 0.38 })).toBe('Yes 62.0 · No 38.0')
+    // Not a ≥2-candidate PMF → null (scalar / mean-sd shapes fall back elsewhere).
+    expect(distributionHeadline(0.52)).toBeNull()
+    expect(distributionHeadline({ mean: 3.1, sd: 0.4 })).toBeNull()
+    expect(distributionHeadline(null)).toBeNull()
+  })
+
   it('historyToBandPoints uses the distribution band, not the panel spread', async () => {
     const { historyToBandPoints } = await import('../components/forecastsWorkspace.js')
     const points = historyToBandPoints(cpiItem())
@@ -708,10 +750,10 @@ describe('ForecastsWorkspace render', () => {
     expect(text).toContain('FORECASTS')
     expect(text).toContain('2 active')
     expect(text).toContain('13 open alert')
-    // With no thesis/factor, the forecasts bucket into tag tabs (by topic) plus
-    // the catch-all "All" tab.
-    expect(text).toContain('#elections')
+    // With no thesis, every forecast lands in the single All catch-all — the tag
+    // pseudo-lenses were removed, so "#elections" no longer appears in the strip.
     expect(text).toContain('All')
+    expect(text).not.toContain('#elections')
     // The active tab's forecast renders as a dense table row (cursor + QUESTION
     // column); the long title truncates, so assert the visible prefix.
     expect(text).toContain('Will the Rep')
@@ -1189,14 +1231,14 @@ describe('ForecastsWorkspace render', () => {
     expect(markerCount).toBeLessThanOrEqual(15 + 1)
   })
 
-  it('renders the factor as a lens tab with its member forecasts listed', async () => {
+  it('does NOT surface a factor as a lens tab — its members fall into All', async () => {
     const text = await renderWorkspace(120, factorFixture())
-    // The factor is a lens tab (label truncated by the strip) alongside the
-    // catch-all All tab.
-    expect(text).toContain('Power-bottleneck bask')
+    // Factors are no longer a lens (the desk navigates by real theses + All only),
+    // so the factor label never appears in the tab strip…
+    expect(text).not.toContain('Power-bottleneck bask')
     expect(text).toContain('All')
-    // Its member forecast (Texas) renders in the active-tab list; the dense
-    // QUESTION column truncates the long title, so assert the visible prefix.
+    // …and its former member forecast (Texas) simply renders under the All tab; the
+    // dense QUESTION column truncates the long title, so assert the visible prefix.
     expect(text).toContain('Will the Rep')
   })
 
