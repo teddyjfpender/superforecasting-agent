@@ -4176,6 +4176,15 @@ class AIAgent:
         from agent.chat_completion_helpers import handle_max_iterations
         return handle_max_iterations(self, messages, api_call_count)
 
+    def _loop_should_continue(self, messages: list, api_call_count: int) -> bool:
+        """Forwarder — see ``agent.chat_completion_helpers.loop_should_continue``.
+
+        The per-iteration gate: keeps looping under the soft cap, and turns a
+        soft-cap breach into a checkpoint-continuation instead of a hard stop.
+        """
+        from agent.chat_completion_helpers import loop_should_continue
+        return loop_should_continue(self, messages, api_call_count)
+
     def run_conversation(
         self,
         user_message: str,
