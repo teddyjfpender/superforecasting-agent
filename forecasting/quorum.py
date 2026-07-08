@@ -471,6 +471,13 @@ class QuorumResult:
                     "weight": f.weight,
                     "crux": f.crux,
                     "error": f.error,
+                    # BLF A1/A2 process visibility (the durable per-step trajectory +
+                    # per-trial provenance live on the estimate metadata; here the
+                    # run-status carries only the compact indicators). ``belief_steps``
+                    # is 0 and ``trial_shrinkage`` None on the legacy/K=1 path, so a
+                    # baseline payload stays byte-compatible.
+                    "belief_steps": len(f.belief_trajectory),
+                    "trial_shrinkage": f.trial_shrinkage,
                 }
                 for f in self.forecasts
             ],
