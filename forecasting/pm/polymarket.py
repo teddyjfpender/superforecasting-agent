@@ -13,7 +13,7 @@ from __future__ import annotations
 import ast
 import json
 from typing import Any, Callable, Sequence
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode, urlparse
 
 from forecasting.pm._http import http_get_json
 from forecasting.pm.model import (
@@ -29,6 +29,90 @@ CLOB_BASE = "https://clob.polymarket.com"
 VENUE = "polymarket"
 
 FetchJson = Callable[[str], object]
+
+
+# ── id-form routing (pure) ───────────────────────────────────────────────────
+# One place the venue's id-form quirks live, so BOTH the watched-source adapter
+# (forecasting/source_adapters.load_polymarket_market) and the resolution reader
+# resolve the same market from the same string — no split-brain where a bare
+# slug/id/event-URL misses in the importer but works through pm_query.
+
+
+def is_condition_id(value: str) -> bool:
+    """True when ``value`` is a Polymarket *conditionId* — a ``0x``-prefixed hex
+    string (the on-chain condition hash).
+
+    Gamma's ``/markets`` endpoint keys its ``id`` filter on the NUMERIC market id
+    (decimal); passing a conditionId there returns HTTP 422 — it must go through
+    the dedicated ``condition_ids`` filter. Numeric ids and kebab slugs never
+    start with ``0x``, so the prefix is an unambiguous discriminator."""
+    v = value.strip().lower()
+    if not v.startswith("0x"):
+        return False
+    body = v[2:]
+    return bool(body) and all(c in "0123456789abcdef" for c in body)
+
+
+def market_endpoint_candidates(source: str, *, gamma_base: str = GAMMA_BASE) -> list[str]:
+    """Ordered Gamma endpoints that resolve ANY Polymarket id form to a market.
+
+    MARKET forms (slug / numeric id / ``0x`` conditionId) come FIRST so a source
+    that already resolved as a market resolves byte-for-byte as before; the EVENT
+    forms — the market-only importer's split-brain miss — are appended as
+    fallbacks. An event page URL (``polymarket.com/event/{slug}``), a bare event
+    slug, and a numeric EVENT id all resolve through the singular
+    ``/events/slug/{slug}`` | ``/events/{id}`` endpoints, which carry full nested
+    market detail (the ``/events?slug=`` *filter* drops each market's question).
+
+    A ``0x`` conditionId is NEVER an event, so it gets no event fallback (guarding
+    the resolution reader's conditionId path). Raises ``ValueError`` for a
+    structurally empty id/slug or a polymarket.com URL with no slug segment."""
+    base = gamma_base.rstrip("/")
+    source = source.strip()
+    parsed = urlparse(source)
+    if parsed.scheme in {"http", "https"}:
+        if parsed.netloc == "gamma-api.polymarket.com":
+            return [source]  # already a Gamma endpoint — pass through unchanged
+        if parsed.netloc.endswith("polymarket.com"):
+            parts = [part for part in parsed.path.split("/") if part]
+            if not parts:
+                raise ValueError("polymarket URL must include a market or event slug")
+            slug = parts[-1]
+            # A public URL is ``/event/{event-slug}[/{market-slug}]``: the event
+            # slug is the segment after "event"; else fall back to the last seg.
+            if "event" in parts and parts.index("event") + 1 < len(parts):
+                event_slug = parts[parts.index("event") + 1]
+            else:
+                event_slug = slug
+            candidates = [
+                f"{base}/markets?{urlencode({'slug': slug})}",
+                f"{base}/events/slug/{quote(event_slug)}",
+            ]
+            if event_slug != slug:
+                candidates.append(f"{base}/events/slug/{quote(slug)}")
+            return candidates
+        return [source]  # some other API URL — pass through unchanged
+    if source.startswith("id:"):
+        value = source.split(":", 1)[1].strip()
+    else:
+        value = source.removeprefix("slug:").strip()
+    if not value:
+        raise ValueError("polymarket market id/slug is empty")
+    if is_condition_id(value):
+        return [f"{base}/markets?{urlencode({'condition_ids': value})}"]
+    if value.isdigit():
+        # Numeric: try the MARKET id filter, then the EVENT id endpoint (Gamma
+        # keys ``/markets?id`` on the market id; an event id only resolves at
+        # ``/events/{id}``).
+        return [
+            f"{base}/markets?{urlencode({'id': value})}",
+            f"{base}/events/{quote(value)}",
+        ]
+    # kebab/text slug: market slug first, then the singular event-slug endpoint.
+    return [
+        f"{base}/markets?{urlencode({'slug': value})}",
+        f"{base}/events/slug/{quote(value)}",
+    ]
 
 
 # ── parsing (pure) ───────────────────────────────────────────────────────────
@@ -270,6 +354,8 @@ __all__ = [
     "CLOB_BASE",
     "VENUE",
     "PolymarketClient",
+    "is_condition_id",
+    "market_endpoint_candidates",
     "parse_event",
     "parse_events",
     "parse_market",

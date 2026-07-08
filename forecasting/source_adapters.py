@@ -21,6 +21,7 @@ from xml.etree import ElementTree
 
 from forecasting import appconfig
 from forecasting.models import OutcomeSpace, ValidationError, parse_timestamp, timestamp_to_datetime
+from forecasting.pm import polymarket as _pm_polymarket
 from forecasting.observation_freshness import (
     FreshnessAssessment,
     assess_observation_freshness,
@@ -5668,16 +5669,23 @@ def load_polymarket_market(
 
     if not source.strip():
         raise ValidationError("polymarket import source is required")
-    endpoint = _polymarket_endpoint_for_source(source.strip(), api_base_url=api_base_url)
-    payload = _polymarket_first_market(_read_json_endpoint(endpoint, "polymarket market"))
-    if payload is None and "condition_ids=" in endpoint and "closed=" not in endpoint:
-        # Gamma's default ``condition_ids`` view is OPEN-only, so a SETTLED market
-        # (which is exactly what RESOLUTION needs to read) comes back empty on the
-        # first call. Re-query explicitly for closed markets to recover its
-        # terminal ``outcomePrices``. An open market already returned above, so
-        # this fallback only fires for resolved markets.
-        closed_endpoint = f"{endpoint}&{urlencode({'closed': 'true'})}"
-        payload = _polymarket_first_market(_read_json_endpoint(closed_endpoint, "polymarket market (closed)"))
+    # Try the market endpoint(s) first, then the EVENT fallbacks — the data plane
+    # orders them so a source that already resolved as a market keeps hitting the
+    # SAME endpoint first (identical payload → identical watch signature), while a
+    # bare event slug / numeric event id / event-page URL now resolves instead of
+    # raising a validation miss.
+    payload = None
+    for endpoint in _polymarket_endpoint_candidates(source.strip(), api_base_url=api_base_url):
+        payload = _polymarket_first_market(_read_json_endpoint(endpoint, "polymarket market"))
+        if payload is None and "condition_ids=" in endpoint and "closed=" not in endpoint:
+            # Gamma's default ``condition_ids`` view is OPEN-only, so a SETTLED
+            # market (exactly what RESOLUTION needs to read) comes back empty on
+            # the first call. Re-query explicitly for closed markets to recover
+            # its terminal ``outcomePrices``.
+            closed_endpoint = f"{endpoint}&{urlencode({'closed': 'true'})}"
+            payload = _polymarket_first_market(_read_json_endpoint(closed_endpoint, "polymarket market (closed)"))
+        if payload is not None:
+            break
     if payload is None:
         raise ValidationError("polymarket market response did not include any markets")
 
@@ -7625,51 +7633,25 @@ def _metaculus_endpoint_for_source(source: str, *, api_base_url: str) -> str:
     return f"{api_base_url.rstrip('/')}/questions/{quote(question_id)}/"
 
 
-def _polymarket_is_condition_id(value: str) -> bool:
-    """True when ``value`` is a Polymarket *conditionId* — a ``0x``-prefixed hex
-    string (the on-chain condition hash, 32 bytes / 64 hex chars).
+# Venue id-form routing lives in the PM data plane (forecasting.pm.polymarket) —
+# ONE Polymarket truth shared by this watched-source adapter and the resolution
+# reader. These thin wrappers keep the ``sa.``-prefixed names the tests pin and
+# translate the data plane's ``ValueError`` into this module's ``ValidationError``.
+_polymarket_is_condition_id = _pm_polymarket.is_condition_id
 
-    Gamma's ``/markets`` endpoint keys its ``id`` filter on the NUMERIC market id
-    (decimal); passing a conditionId there returns HTTP 422. A conditionId must be
-    resolved through the dedicated ``condition_ids`` filter instead. Numeric ids
-    and kebab-case slugs never start with ``0x``, so the prefix is an unambiguous
-    discriminator."""
-    v = value.strip().lower()
-    if not v.startswith("0x"):
-        return False
-    body = v[2:]
-    return bool(body) and all(c in "0123456789abcdef" for c in body)
+
+def _polymarket_endpoint_candidates(source: str, *, api_base_url: str) -> list[str]:
+    """Ordered Gamma endpoints for any id form (market slug/id/conditionId first,
+    then the event fallbacks). See ``pm.polymarket.market_endpoint_candidates``."""
+    try:
+        return _pm_polymarket.market_endpoint_candidates(source, gamma_base=api_base_url)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
 
 
 def _polymarket_endpoint_for_source(source: str, *, api_base_url: str) -> str:
-    parsed = urlparse(source)
-    if parsed.scheme in {"http", "https"}:
-        if parsed.netloc == "gamma-api.polymarket.com":
-            return source
-        if parsed.netloc.endswith("polymarket.com"):
-            parts = [part for part in parsed.path.split("/") if part]
-            if not parts:
-                raise ValidationError("polymarket URL must include a market or event slug")
-            slug = parts[-1]
-            return f"{api_base_url.rstrip('/')}/markets?{urlencode({'slug': slug})}"
-        return source
-    if source.startswith("id:"):
-        market_id = source.split(":", 1)[1].strip()
-        if not market_id:
-            raise ValidationError("polymarket market id is empty")
-        # A conditionId (0x…) can't be resolved via the numeric ``id`` filter —
-        # route it through ``condition_ids`` (see _polymarket_is_condition_id).
-        if _polymarket_is_condition_id(market_id):
-            return f"{api_base_url.rstrip('/')}/markets?{urlencode({'condition_ids': market_id})}"
-        return f"{api_base_url.rstrip('/')}/markets?{urlencode({'id': market_id})}"
-    slug = source.removeprefix("slug:").strip()
-    if not slug:
-        raise ValidationError("polymarket market slug is empty")
-    # A bare conditionId passed without an ``id:`` prefix is still a conditionId,
-    # not a slug — resolve it through the condition_ids filter.
-    if _polymarket_is_condition_id(slug):
-        return f"{api_base_url.rstrip('/')}/markets?{urlencode({'condition_ids': slug})}"
-    return f"{api_base_url.rstrip('/')}/markets?{urlencode({'slug': slug})}"
+    """The PRIMARY (market) endpoint for a source — first of the candidate list."""
+    return _polymarket_endpoint_candidates(source, api_base_url=api_base_url)[0]
 
 
 def _metaculus_choices(payload: dict) -> list[str]:
