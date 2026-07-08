@@ -436,6 +436,16 @@ def init_agent(
     agent._budget_exhausted_injected = False
     agent._budget_grace_call = False
 
+    # Checkpoint-continuation state (see chat_completion_helpers.loop_should_continue).
+    # ``_iteration_soft_cap`` is the configured per-turn soft cap, captured once at
+    # the first turn; a soft-cap breach checkpoints and continues (interactive /
+    # spend-policy auto) rather than hard-stopping, bounded by a 10× absolute
+    # ceiling. ``_checkpoint_stop_reason`` lets the summary message name the key.
+    agent._iteration_soft_cap = None
+    agent._checkpoint_continuations = 0
+    agent._checkpoint_stop_reason = None
+    agent._checkpoint_hard_ceiling = None
+
     # Activity tracking — updated on each API call, tool execution, and
     # stream chunk.  Used by the gateway timeout handler to report what the
     # agent was doing when it was killed, and by the "still working"

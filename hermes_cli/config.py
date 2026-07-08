@@ -3221,7 +3221,7 @@ OPTIONAL_ENV_VARS = {
         "category": "setting",
     },
     "HERMES_MAX_ITERATIONS": {
-        "description": "Maximum tool-calling iterations per conversation (default: 90)",
+        "description": "Per-turn tool-call soft cap (default: 200; a breach checkpoints and continues, not a hard stop). Canonical key: FORECAST_AGENT_MAX_TOOL_ITERATIONS",
         "prompt": "Max iterations",
         "url": None,
         "password": False,

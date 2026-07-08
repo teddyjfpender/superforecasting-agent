@@ -325,7 +325,18 @@ def run_conversation(
     # NOTE: _turns_since_memory and _iters_since_skill are NOT reset here.
     # They are initialized in __init__ and must persist across run_conversation
     # calls so that nudge logic accumulates correctly in CLI mode.
-    agent.iteration_budget = IterationBudget(agent.max_iterations)
+    # Capture the configured per-turn soft cap ONCE (the first turn's value), then
+    # start every turn with a fresh budget window sized to it. Capturing once
+    # means a checkpoint-continuation extension from a previous turn (which raises
+    # ``max_iterations``) never leaks into the next turn — we reset back to the
+    # soft cap here. See ``agent.chat_completion_helpers.loop_should_continue``.
+    if getattr(agent, "_iteration_soft_cap", None) is None:
+        agent._iteration_soft_cap = agent.max_iterations
+    else:
+        agent.max_iterations = agent._iteration_soft_cap
+    agent._checkpoint_continuations = 0
+    agent._checkpoint_stop_reason = None
+    agent.iteration_budget = IterationBudget(agent._iteration_soft_cap)
 
     # Log conversation turn start for debugging/observability
     _preview_text = _summarize_user_message_for_log(user_message)
@@ -606,7 +617,7 @@ def run_conversation(
             should_review_memory=_should_review_memory,
         )
 
-    while (api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0) or agent._budget_grace_call:
+    while agent._loop_should_continue(messages, api_call_count) or agent._budget_grace_call:
         # Reset per-turn checkpoint dedup so each iteration can take one snapshot
         agent._checkpoint_mgr.new_turn()
 

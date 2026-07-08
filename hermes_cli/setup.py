@@ -1861,11 +1861,12 @@ def setup_agent_settings(config: dict):
     # config.yaml is authoritative; read from there. If a legacy .env
     # entry is still around (from pre-PR#18413 setups), prefer the
     # config value so we don't surface a stale number to the user.
-    current_max = str(cfg_get(config, "agent", "max_turns", default=90))
+    current_max = str(cfg_get(config, "agent", "max_turns", default=200))
     print_info("Maximum tool-calling iterations per forecast-session turn.")
-    print_info("Higher = more complex tasks, but costs more tokens.")
+    print_info("Soft cap: at each breach the loop surfaces progress, resets the")
+    print_info("budget, and continues (interactive: Ctrl+C to stop). Not a hard wall.")
     print_info(
-        f"Press Enter to keep {current_max}. Use 90 for most tasks or 150+ for open exploration."
+        f"Press Enter to keep {current_max}. Use 200 for most tasks or 400+ for deep research."
     )
 
     max_iter_str = prompt("Max iterations", current_max)

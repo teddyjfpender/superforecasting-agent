@@ -99,6 +99,20 @@ _KEYS: tuple[ConfigKey, ...] = (
               "Skip calibration-lesson synthesis in the cron runner.", category="cron"),
     ConfigKey("FORECAST_BRIDGE_PORT", "int", 8787, False,
               "Port for the read-only forecast web bridge.", category="web"),
+    # ── Agent tool-call budget (checkpoint-continuation soft cap) ─────────────
+    ConfigKey("FORECAST_AGENT_MAX_TOOL_ITERATIONS", "int", 200, False,
+              "Per-turn tool-call SOFT cap for the top-level agent loop. Hitting it "
+              "is a CHECKPOINT (surface progress + reset the budget + continue), not a "
+              "stop: interactive runs continue automatically; unattended runs continue "
+              "when the spend policy grants llm_spend auto. Default 200 (raised from 90 "
+              "for deep-research turns). Legacy aliases: SUPERFORECASTING_AGENT_MAX_"
+              "ITERATIONS / FORECAST_MAX_ITERATIONS / HERMES_MAX_ITERATIONS.",
+              category="runtime"),
+    ConfigKey("FORECAST_AGENT_MAX_TOOL_ITERATIONS_HARD_MULTIPLIER", "int", 10, False,
+              "Absolute tool-call ceiling as a multiple of the soft cap (default 10× ⇒ "
+              "2000). Even an interactive run stops here, with a message naming the key. "
+              "The spend caps remain the primary governor of unattended cost.",
+              category="runtime"),
     # ── Quorum panel (operator-pinned model line-up) ─────────────────────────
     # Comma list of ``provider:model`` seats that OVERRIDE the connected-provider
     # panel rebuild (e.g. "openai-codex:gpt-5.5, gemini:gemini-2.5-flash"). Each

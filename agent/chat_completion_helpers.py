@@ -1392,14 +1392,197 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
 
 
 
+def _operator_is_present(agent) -> bool:
+    """True when a human is at the terminal for this run (stdout is a TTY).
+
+    The interactive fast-path for checkpoint-continuation: the operator is
+    watching and can Ctrl+C, so a soft-cap breach continues automatically rather
+    than surrendering a legitimate long investigation.
+    """
+
+    try:
+        return not _is_unattended_run()
+    except Exception:  # noqa: BLE001 — any odd stdout ⇒ treat as unattended
+        return False
+
+
+def _policy_allows_llm_spend() -> bool:
+    """Whether the spend policy grants auto LLM spend for this run's provenance.
+
+    Wires the unattended checkpoint-continuation decision through the SAME policy
+    matrix that already meters spend (``forecasting.jobs.policy``). Run mode is
+    read from ``FORECAST_RUN_MODE`` (interactive|cycle|cron); an unattended agent
+    loop defaults to CYCLE (the autonomous-sweep row — ``llm_spend`` auto but
+    bounded by the existing spend caps). An operator tightens
+    ``FORECAST_POLICY_<MODE>_LLM_SPEND=ask|never`` to deny auto-continuation.
+    """
+
+    try:
+        from forecasting.jobs.policy import (
+            ActionClass,
+            Decision,
+            RunMode,
+            resolve_decision,
+        )
+
+        raw = (os.getenv("FORECAST_RUN_MODE") or "").strip().lower()
+        run_mode = {
+            "interactive": RunMode.INTERACTIVE,
+            "cycle": RunMode.CYCLE,
+            "cron": RunMode.CRON,
+        }.get(raw, RunMode.CYCLE)
+        return resolve_decision(run_mode, ActionClass.LLM_SPEND) == Decision.AUTO
+    except Exception:  # noqa: BLE001 — policy unavailable ⇒ mirror the all-auto default
+        # The hard ceiling + spend caps remain the backstop even here.
+        return True
+
+
+def loop_should_continue(agent, messages: list, api_call_count: int) -> bool:
+    """The conversation loop's per-iteration gate.
+
+    Fast path: still inside the current budget window ⇒ keep looping with no side
+    effects. When the soft cap is reached, this becomes a CHECKPOINT (see
+    :func:`_checkpoint_and_extend`) that either resets the budget and continues or
+    signals the loop to stop (falling to the key-naming summary).
+    """
+
+    if api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0:
+        return True
+    return _checkpoint_and_extend(agent, messages, api_call_count)
+
+
+def _checkpoint_and_extend(agent, messages: list, api_call_count: int) -> bool:
+    """Soft-cap checkpoint: decide continue-vs-stop, and on continue reset the
+    iteration budget + inject a brief progress prompt so the model narrates where
+    it is before pressing on. Returns True to keep looping, False to stop."""
+
+    from agent.iteration_budget import (
+        IterationBudget,
+        decide_checkpoint_continuation,
+        resolve_hard_ceiling,
+    )
+
+    # Subagents stay bounded — they hit their delegation cap and summarize+stop
+    # exactly as before. Checkpoint-continuation is a top-level-agent affordance.
+    if getattr(agent, "_delegate_depth", 0) > 0:
+        agent._checkpoint_stop_reason = "subagent_bounded"
+        return False
+
+    # Kanban workers are dispatcher-managed units whose (small) cap is deliberate
+    # flow-control: on exhaustion the dispatcher blocks/reclaims the task. Keep
+    # them bounded so that contract holds — do not checkpoint-continue.
+    if os.environ.get("HERMES_KANBAN_TASK"):
+        agent._checkpoint_stop_reason = "kanban_bounded"
+        return False
+
+    soft_cap = getattr(agent, "_iteration_soft_cap", None) or agent.max_iterations
+    hard_ceiling = resolve_hard_ceiling(soft_cap)
+    interactive = _operator_is_present(agent)
+    policy_allows = _policy_allows_llm_spend()
+
+    decision = decide_checkpoint_continuation(
+        api_call_count=api_call_count,
+        soft_cap=soft_cap,
+        hard_ceiling=hard_ceiling,
+        interactive=interactive,
+        policy_allows=policy_allows,
+    )
+
+    if not decision.should_continue:
+        # Remember why, so the final summary message can name it honestly.
+        agent._checkpoint_stop_reason = decision.reason
+        agent._checkpoint_hard_ceiling = hard_ceiling
+        return False
+
+    # ── Continue: reset the budget window + surface the checkpoint ────────────
+    agent._checkpoint_continuations = getattr(agent, "_checkpoint_continuations", 0) + 1
+    agent.iteration_budget = IterationBudget(soft_cap)
+    agent.max_iterations = api_call_count + soft_cap
+
+    if decision.reason == "interactive":
+        _tail = "operator present — Ctrl+C to stop"
+    else:
+        _tail = "spend policy auto — bounded by the spend caps"
+    try:
+        agent._emit_status(
+            f"🛰️ Checkpoint: {api_call_count} tool calls used "
+            f"({_tail}). Continuing with a fresh {soft_cap}-call budget "
+            f"(FORECAST_AGENT_MAX_TOOL_ITERATIONS; absolute ceiling {hard_ceiling})."
+        )
+    except Exception:  # noqa: BLE001 — status is best-effort, never fatal
+        pass
+
+    # Ask the model, inline, for a brief progress note + whether to continue.
+    # Injected as a user turn (role-safe after tool results); the model narrates
+    # progress on its next call and then keeps working — no extra out-of-band API
+    # call. Consecutive-user merges are handled by the loop's existing sanitizer.
+    messages.append({
+        "role": "user",
+        "content": (
+            f"[checkpoint — {api_call_count} tool calls used] "
+            "Briefly note your progress so far and whether continuing is "
+            "warranted, then keep working toward the goal."
+        ),
+    })
+    return True
+
+
+def build_max_iterations_summary_prompt(
+    max_iterations: int,
+    stop_reason: str | None = None,
+    hard_ceiling: int | None = None,
+) -> str:
+    """The final-summary prompt shown to the model when the loop stops at a cap.
+
+    NAMES the config key and the continuation option — teaching, not surrendering
+    — so the operator learns how to grant a deeper run next time. The wording
+    depends on WHY we stopped (absolute ceiling / unattended policy denial / a
+    plain cap with no checkpoint state).
+    """
+
+    if stop_reason == "hard_ceiling":
+        ceiling = hard_ceiling if hard_ceiling is not None else max_iterations
+        why = (
+            f"You've hit the absolute tool-call ceiling ({ceiling} calls — "
+            "10× the FORECAST_AGENT_MAX_TOOL_ITERATIONS soft cap; raise "
+            "FORECAST_AGENT_MAX_TOOL_ITERATIONS_HARD_MULTIPLIER to lift it). "
+        )
+    elif stop_reason == "policy_denied":
+        why = (
+            "You've reached this turn's tool-call soft cap "
+            f"({max_iterations}, set by FORECAST_AGENT_MAX_TOOL_ITERATIONS), "
+            "and this unattended run's spend policy did not grant auto-continuation "
+            "(set FORECAST_POLICY_<MODE>_LLM_SPEND=auto, or run interactively, to "
+            "continue past the cap). "
+        )
+    else:
+        why = (
+            "You've reached this turn's tool-call limit "
+            f"({max_iterations}, the soft cap set by "
+            "FORECAST_AGENT_MAX_TOOL_ITERATIONS; interactive runs continue "
+            "automatically at each checkpoint, and you can raise the key for "
+            "deeper unattended runs). "
+        )
+
+    return (
+        why
+        + "Please provide a final response summarizing what you've found and "
+        "accomplished so far, without calling any more tools."
+    )
+
+
 def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
-    """Request a summary when max iterations are reached. Returns the final response text."""
+    """Request a summary when the loop stops at a cap. Returns the final response text.
+
+    The prompt NAMES the config key and the continuation option — teaching, not
+    surrendering — so the operator learns how to grant a deeper run next time.
+    """
     print(f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary...")
 
-    summary_request = (
-        "You've reached the maximum number of tool-calling iterations allowed. "
-        "Please provide a final response summarizing what you've found and accomplished so far, "
-        "without calling any more tools."
+    summary_request = build_max_iterations_summary_prompt(
+        agent.max_iterations,
+        stop_reason=getattr(agent, "_checkpoint_stop_reason", None),
+        hard_ceiling=getattr(agent, "_checkpoint_hard_ceiling", None),
     )
     messages.append({"role": "user", "content": summary_request})
 
@@ -2558,6 +2741,8 @@ __all__ = [
     "build_assistant_message",
     "try_activate_fallback",
     "handle_max_iterations",
+    "build_max_iterations_summary_prompt",
+    "loop_should_continue",
     "cleanup_task_resources",
     "interruptible_streaming_api_call",
 ]
