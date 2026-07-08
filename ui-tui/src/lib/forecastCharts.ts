@@ -380,6 +380,131 @@ export const bandChart = (
   }
 }
 
+// ── Multi-series chart (categorical / vote-share over time) ──────────────────
+
+export interface Series {
+  label: string
+  /** one value per drawn column (oldest→newest), aligned across every series;
+   *  `null` renders a gap so a candidate missing from a snapshot never lies */
+  values: ReadonlyArray<number | null>
+}
+
+/** One rendered plot cell, tagged with the series it belongs to so the caller can
+ *  colour each candidate distinctly (`series === -1` for blank / gutter cells). */
+export interface SeriesCell {
+  ch: string
+  series: number
+}
+
+export interface MultiSeriesChart {
+  /** plot rows top→bottom: a y-gutter label prefix + one tagged cell per column */
+  rows: { cells: SeriesCell[]; gutter: string }[]
+  /** columns consumed by the y-gutter (label + " │") */
+  gutterW: number
+  /** width of the plot region (cells to the right of the gutter) */
+  plotW: number
+  /** the effective y-domain drawn against — the caller's floor is never lowered
+   *  (a vote share is clamped to [0, …]) but yMax expands to contain the data */
+  yMin: number
+  yMax: number
+  /** the marker glyph assigned to each series index (the leader is index 0) */
+  glyphs: string[]
+}
+
+// Distinct single-cell markers, leader first: a filled dot leads, then edged
+// shapes, then a hollow dot for the aggregated tail. All are width-1 in a
+// terminal (the emoji-width lesson) and match the glyph vocabulary already used
+// by bandChart / scatterPlot (●, ◆).
+const SERIES_GLYPHS = ['●', '◆', '▲', '■', '○', '◇', '△', '□'] as const
+
+/**
+ * Render several discrete time-series on ONE shared y-axis — a categorical /
+ * vote-share PMF over time, one line per candidate. Each series gets its own
+ * marker glyph (leader first, drawn LAST so it wins any shared cell — the leader
+ * reads as dominant). The y-domain floor is the caller's `yMin` and is NEVER
+ * lowered (a vote share is clamped to [0, max+headroom] — never the negative axis
+ * the single-series band chart produced when a probability spread was mixed in);
+ * `yMax` only ever expands to contain the drawn markers. Returns tagged cells so
+ * the caller colours each candidate distinctly.
+ */
+export const multiSeriesChart = (
+  series: ReadonlyArray<Series>,
+  {
+    width = 56,
+    height = 9,
+    yMin = 0,
+    yMax = 1
+  }: { width?: number; height?: number; yMin?: number; yMax?: number } = {}
+): MultiSeriesChart => {
+  const h = Math.max(3, height)
+  const count = Math.max(0, ...series.map(s => s.values.length))
+
+  // Domain: the floor stays at the caller's yMin (0 for shares — never negative);
+  // the ceiling grows to contain every drawn marker so nothing is clamped away.
+  const drawn: number[] = []
+  for (const s of series) {
+    for (const value of s.values) {
+      if (finite(value)) {
+        drawn.push(value)
+      }
+    }
+  }
+  const domainMin = yMin
+  let domainMax = yMax
+  if (drawn.length) {
+    domainMax = Math.max(domainMax, ...drawn)
+  }
+  if (domainMax - domainMin < 1e-9) {
+    domainMax = domainMin + 1
+  }
+
+  const [topLabel, midLabel, bottomLabel] = axisLabels([domainMax, (domainMax + domainMin) / 2, domainMin])
+  const labelW = Math.max(4, topLabel.length, midLabel.length, bottomLabel.length)
+  const gutterW = labelW + 2 // label + " │"
+  const plotW = Math.max(1, width - gutterW)
+  const span = domainMax - domainMin || 1
+
+  const grid: SeriesCell[][] = Array.from({ length: h }, () =>
+    Array.from({ length: plotW }, () => ({ ch: ' ', series: -1 }))
+  )
+
+  const rowFor = (value: number): number => {
+    const frac = clamp01((value - domainMin) / span)
+    return Math.round((1 - frac) * (h - 1))
+  }
+  const colFor = (index: number): number => (count <= 1 ? 0 : Math.round((index * (plotW - 1)) / (count - 1)))
+
+  const glyphs = series.map((_, i) => SERIES_GLYPHS[i] ?? '·')
+
+  // Draw the LOWEST-ranked series first so the leader (index 0), drawn last,
+  // overwrites shared cells and stays visible.
+  for (let si = series.length - 1; si >= 0; si -= 1) {
+    const values = series[si]!.values
+    values.forEach((value, index) => {
+      if (!finite(value)) {
+        return
+      }
+      grid[rowFor(value)]![colFor(index)] = { ch: glyphs[si]!, series: si }
+    })
+  }
+
+  const labelFor = (row: number): string => {
+    if (row === 0) {
+      return topLabel.padStart(labelW)
+    }
+    if (row === h - 1) {
+      return bottomLabel.padStart(labelW)
+    }
+    if (row === Math.floor((h - 1) / 2)) {
+      return midLabel.padStart(labelW)
+    }
+    return ' '.repeat(labelW)
+  }
+
+  const rows = grid.map((cells, row) => ({ cells, gutter: `${labelFor(row)} │` }))
+  return { rows, gutterW, plotW, yMin: domainMin, yMax: domainMax, glyphs }
+}
+
 // ── Time (x) axis ────────────────────────────────────────────────────────────
 
 export interface TimeAxis {

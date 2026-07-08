@@ -128,6 +128,59 @@ const cpiItem = (): ForecastWorkspaceItem => ({
   units: 'percent year-over-year'
 })
 
+// The operator's screenshot: a multi-candidate vote-share PMF. `probability` is a
+// candidate DICT (not a scalar), each history snapshot carries its own share dict,
+// and a probability-scale `panel` exists so we can assert it is NEVER rendered.
+const clactonItem = (opts: { intervals?: boolean } = {}): ForecastWorkspaceItem => ({
+  as_of: '2026-06-28T00:00:00Z',
+  candidate_intervals:
+    opts.intervals === false
+      ? null
+      : { 'Count Binface': { hi: 24, lo: 10 }, 'Nigel Farage': { hi: 78, lo: 55, mid: 67 } },
+  close_time: '2026-07-04T00:00:00Z',
+  confidence: 0.55,
+  delta: 1.5,
+  headline_kind: 'probability',
+  // The single scalar the BROKEN chart plotted (max/first key, not even the leader).
+  headline_probability: 16.5,
+  history: [
+    {
+      as_of: '2026-06-20T00:00:00Z',
+      headline_probability: 14,
+      probability: { 'Count Binface': 14, 'Laurence Fox': 6, 'Nigel Farage': 62, 'Other official candidates': 18 }
+    },
+    {
+      as_of: '2026-06-24T00:00:00Z',
+      headline_probability: 15,
+      probability: { 'Count Binface': 15, 'Laurence Fox': 5, 'Nigel Farage': 65, 'Other official candidates': 15 }
+    },
+    {
+      as_of: '2026-06-28T00:00:00Z',
+      headline_probability: 16.5,
+      probability: { 'Count Binface': 16.5, 'Laurence Fox': 4, 'Nigel Farage': 67, 'Other official candidates': 12.5 }
+    }
+  ],
+  id: 'fq_clacton',
+  outcome_type: 'categorical',
+  // A probability-scale panel spread — the binary machinery the modal must NOT mix
+  // into a vote-share question.
+  panel: {
+    aggregate_probability: 0.5,
+    aggregation_method: 'trimmed_geomean_odds',
+    estimates: [
+      { perspective: 'outside', probability: 0.42, trimmed: false },
+      { perspective: 'market', probability: 0.58, trimmed: false }
+    ],
+    spread: { max: 0.6, median: 0.5, min: 0.4 },
+    trim: 0
+  },
+  probability: { 'Count Binface': 16.5, 'Laurence Fox': 4, 'Nigel Farage': 67, 'Other official candidates': 12.5 },
+  probability_display: 'Farage 67.0 · Binface 16.5 · Other 12.5 · +1 more',
+  snapshot_count: 3,
+  status: 'active',
+  title: 'Clacton by-election: which candidate wins the seat?'
+})
+
 const fixture = (): ForecastWorkspaceResponse => ({
   active_count: 2,
   closing_soon_count: 0,
@@ -566,6 +619,99 @@ describe('ForecastsWorkspace pure transforms', () => {
         }
       }
     }
+  })
+
+  it('multiSeriesChart floors the axis at 0 (never a negative vote share) and expands the ceiling to the data', async () => {
+    const { multiSeriesChart } = await import('../lib/forecastCharts.js')
+    // The old single-series bug: 15% padding pushed the axis below 0. multiSeriesChart
+    // keeps the caller's floor (0) and only ever raises yMax to contain the markers.
+    const chart = multiSeriesChart(
+      [
+        { label: 'Farage', values: [62, 65, 67] },
+        { label: 'Binface', values: [14, null, 16.5] }
+      ],
+      { height: 7, width: 40, yMax: 10, yMin: 0 } // yMax deliberately below the data
+    )
+    expect(chart.yMin).toBe(0) // never negative
+    expect(chart.yMax).toBeGreaterThanOrEqual(67) // expanded to contain the leader
+    expect(chart.glyphs[0]).toBe('●') // leader gets the distinct filled marker
+    expect(chart.glyphs[1]).toBe('◆')
+  })
+
+  it('multiSeriesChart draws the leader LAST so it wins a shared cell (leader visually distinct)', async () => {
+    const { multiSeriesChart } = await import('../lib/forecastCharts.js')
+    // Two series at the same value + only column → they collide on one cell; the
+    // leader (index 0) is drawn last and overwrites, so ● shows, never ◆.
+    const chart = multiSeriesChart(
+      [
+        { label: 'lead', values: [10] },
+        { label: 'other', values: [10] }
+      ],
+      { height: 5, width: 20, yMax: 12, yMin: 0 }
+    )
+    const flat = chart.rows.map(row => row.cells.map(cell => cell.ch).join('')).join('')
+    expect(flat).toContain('●')
+    expect(flat).not.toContain('◆') // leader overwrote the collision
+  })
+
+  it('seriesRuns collapses tagged cells into contiguous same-series runs', async () => {
+    const { seriesRuns } = await import('../components/forecastsWorkspace.js')
+    expect(
+      seriesRuns([
+        { ch: ' ', series: -1 },
+        { ch: '●', series: 0 },
+        { ch: '●', series: 0 },
+        { ch: '◆', series: 1 }
+      ])
+    ).toEqual([
+      { series: -1, text: ' ' },
+      { series: 0, text: '●●' },
+      { series: 1, text: '◆' }
+    ])
+  })
+
+  it('buildVoteShareSeries pivots history into top-K candidate series + an aggregated Other (leader first)', async () => {
+    const { buildVoteShareSeries, distributionBars } = await import('../components/forecastsWorkspace.js')
+    const item = {
+      headline_kind: 'probability',
+      history: [
+        { as_of: 'd1', probability: { A: 38, B: 24, C: 16, D: 11, E: 6, F: 5 } },
+        { as_of: 'd2', probability: { A: 40, B: 25, C: 15, D: 10, E: 6, F: 4 } }
+      ],
+      probability: { A: 40, B: 25, C: 15, D: 10, E: 6, F: 4 }
+    } as unknown as ForecastWorkspaceItem
+    const bars = distributionBars(item.probability)!
+    const result = buildVoteShareSeries(item, bars)
+    // Top-4 candidates (value DESC, leader first) then a single Other for the tail.
+    expect(result.series.map(s => s.label)).toEqual(['A', 'B', 'C', 'D', 'Other'])
+    expect(result.scale).toBe(1) // percentage-scale payload, unscaled
+    // Other aggregates E+F per point: d1 → 11, d2 → 10.
+    const other = result.series[4]!
+    expect(other.values).toEqual([11, 10])
+    // The leader series carries A's shares across the (undownsampled) history.
+    expect(result.series[0]!.values).toEqual([38, 40])
+  })
+
+  it('buildVoteShareSeries scales a fraction-scale payload ×100 and gaps a missing candidate', async () => {
+    const { buildVoteShareSeries, distributionBars } = await import('../components/forecastsWorkspace.js')
+    const item = {
+      headline_kind: 'probability',
+      history: [
+        { as_of: 'd1', probability: { No: 0.45, Yes: 0.55 } },
+        { as_of: 'd2', probability: { Maybe: 0.4, Yes: 0.6 } }, // No absent → a gap, not a fake 0
+        { as_of: 'd3', probability: { No: 0.4, Yes: 0.6 } }
+      ],
+      probability: { No: 0.4, Yes: 0.6 }
+    } as unknown as ForecastWorkspaceItem
+    const bars = distributionBars(item.probability)!
+    const result = buildVoteShareSeries(item, bars)
+    const round = (values: (null | number)[]) => values.map(v => (v == null ? null : Math.round(v)))
+    expect(result.scale).toBe(100)
+    expect(result.series[0]!.label).toBe('Yes') // leader
+    expect(round(result.series[0]!.values)).toEqual([55, 60, 60]) // ×100
+    // 'No' is absent from d2 (a ≥2-candidate dict that just omits it) → a null gap.
+    expect(result.series[1]!.label).toBe('No')
+    expect(round(result.series[1]!.values)).toEqual([45, null, 40])
   })
 
   it('headlineLabel renders percent for probabilities and μ/σ for distributions', async () => {
@@ -1431,6 +1577,83 @@ describe('forecasts workspace tail audit + ensemble', () => {
     const text = await renderDetailProps({ item: texasItem(), tailAudit: failingAudit() })
     expect(text).toContain('! Conway')
     expect(text).toContain('owes an explanation') // null-model out-of-tolerance note
+  })
+})
+
+// The operator's Clacton critique — the detail chart was plotting a SINGLE generic
+// scalar with the binary panel band mixed in and a negative axis. These assert the
+// distribution-aware rebuild: multi-series, [0,…] axis, honest leader header, no band.
+describe('distribution-aware vote-share detail', () => {
+  it('draws a MULTI-SERIES vote-share chart (leader distinct) with a non-negative axis', async () => {
+    const text = await renderDetail(clactonItem(), 80)
+    // The chart is now a dedicated multi-candidate series, not "probability over time".
+    expect(text).toContain('vote share over time')
+    expect(text).not.toContain('probability over time')
+    // The leader (Farage, ●) is legended distinctly ahead of the other candidates.
+    expect(text).toContain('● Farage')
+    expect(text).toContain('◆') // a second, distinct series marker
+    expect(text).toContain('Binface')
+    // Every y-axis gutter label is >= 0 — a vote share is never negative (the bug).
+    const axisNums = text
+      .split('\n')
+      .filter(line => line.includes('│'))
+      .map(line => Number.parseFloat(line.split('│')[0]!.trim()))
+      .filter(n => Number.isFinite(n))
+    expect(axisNums.length).toBeGreaterThan(0)
+    for (const n of axisNums) {
+      expect(n).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('NEVER renders the binary panel-spread band or panel section on a vote-share question', async () => {
+    // clactonItem carries a probability-scale `panel`; it must be gated off entirely.
+    const text = await renderDetail(clactonItem(), 80)
+    expect(text).not.toContain('panel spread')
+    expect(text).not.toContain('confidence band')
+    expect(text).not.toContain('panel (') // the PanelSection header
+    // No band glyph WITHIN the chart (the histogram below legitimately uses ░ for
+    // unfilled bar track, so scope the check to the chart block).
+    const lines = text.split('\n')
+    const start = lines.findIndex(line => line.includes('vote share over time'))
+    const end = lines.findIndex((line, i) => i > start && line.includes('outcome distribution'))
+    expect(lines.slice(start, end).join('\n')).not.toContain('░')
+  })
+
+  it('headers the LEADER + its real interval, or an honest "no interval published"', async () => {
+    // With per-candidate intervals present: the leader value + its 90% band render.
+    const withIv = await renderDetail(clactonItem({ intervals: true }), 80)
+    expect(withIv).toContain('leader Nigel Farage 67.0')
+    expect(withIv).toContain('90% [55.0–78.0]')
+    expect(withIv).not.toContain('no interval published')
+    // Without them: the leader value stands, and the missing band is stated honestly
+    // — never a fabricated one.
+    const noIv = await renderDetail(clactonItem({ intervals: false }), 80)
+    expect(noIv).toContain('leader Nigel Farage 67.0')
+    expect(noIv).toContain('no interval published')
+  })
+
+  it('keeps the per-candidate bars section below the chart', async () => {
+    const text = await renderDetail(clactonItem(), 80)
+    expect(text).toContain('outcome distribution')
+    expect(text).toContain('Nigel Farage')
+    expect(text).toContain('█') // the histogram bar fill
+  })
+
+  it('leaves a binary question (scalar probability + PMF breakdown) unchanged', async () => {
+    // texasItem is binary: its `probability` is a SCALAR 0.52 even though it also
+    // ships a 3-way candidate PMF — it must NOT be mistaken for a vote share.
+    const text = await renderDetail(texasItem(), 80)
+    expect(text).toContain('probability over time')
+    expect(text).not.toContain('vote share over time')
+    expect(text).not.toContain('leader ')
+    expect(text).toContain('panel (3 perspectives)') // the binary panel still renders
+  })
+
+  it('leaves a continuous distribution (CPI mean/sd) unchanged', async () => {
+    const text = await renderDetail(cpiItem(), 80)
+    expect(text).toContain('mean over time')
+    expect(text).not.toContain('vote share over time')
+    expect(text).not.toContain('leader ')
   })
 })
 

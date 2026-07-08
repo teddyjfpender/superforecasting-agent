@@ -17,6 +17,7 @@ import type {
   ForecastThesisComponent,
   ForecastThesisEntity,
   ForecastThesisTrigger,
+  ForecastWorkspaceHistoryPoint,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
   ForecastWorkspacePanelEstimate,
@@ -30,12 +31,15 @@ import {
   compactNumber,
   deltaGlyph,
   dotTrack,
+  type DownsampleResult,
   downsampleSeries,
   histogram,
   type HistogramBar,
   levelSparkline,
+  multiSeriesChart,
   pct,
   pctDelta,
+  type SeriesCell,
   shortDate,
   timeAxis,
   wrapLines
@@ -398,6 +402,114 @@ export const chartScale = (points: BandPoint[]): { yMax: number; yMin: number } 
   }
 
   return { yMax: hi, yMin: lo }
+}
+
+// ── Vote-share / categorical PMF series (multi-candidate over time) ──────────
+
+export interface VoteShareSeriesResult {
+  /** one series per top-K candidate, then an aggregated `Other` when the tail is
+   *  non-empty. The leader is index 0. Aligned to `keptIndices`. */
+  series: { label: string; values: (null | number)[] }[]
+  /** indices INTO item.history the columns were drawn from (drives the x-axis) */
+  keptIndices: number[]
+  /** the leader's downsample preview (its `note` is the honest thinning caption) */
+  preview: DownsampleResult
+  /** the largest series value drawn (post-scale) — the chart's headroom anchor */
+  yMax: number
+  /** 100 when the payload is fraction-scale (shares in [0,1]), else 1 — so a 0.67
+   *  share and a 67.0 share both render as 67 on a 0–100 axis */
+  scale: number
+}
+
+// A candidate lookup tolerant of case/whitespace divergence between snapshots
+// (the same tolerance intervalForLabel applies to interval keys).
+const barForLabel = (bars: HistogramBar[] | null, label: string): HistogramBar | null => {
+  if (!bars) {
+    return null
+  }
+  const norm = label.trim().toLowerCase()
+  return bars.find(bar => bar.label.trim().toLowerCase() === norm) ?? null
+}
+
+/**
+ * Series-ify a vote-share / categorical PMF question's history into one line per
+ * candidate — CLIENT-SIDE, because each snapshot already carries its full share
+ * dict (`history[].probability`). The current snapshot's `probability` dict
+ * (value-sorted) sets the candidate ranking + which labels are candidates (stat
+ * keys already filtered by `distributionBars`); the top `topK` become their own
+ * series (leader first), and the remaining tail folds into an aggregated `Other`.
+ * Older points fill each series by the same candidate key (a missing candidate is
+ * a `null` gap, never a fake 0). The leader series drives the change-aware
+ * downsample so the x-axis thins on the material moves of the leading candidate.
+ * Fraction-scale payloads are scaled ×100 so the axis is always 0–100, never the
+ * negative axis the single-scalar chart produced.
+ */
+export const buildVoteShareSeries = (
+  item: ForecastWorkspaceItem,
+  currentBars: HistogramBar[],
+  topK = 4
+): VoteShareSeriesResult => {
+  const scale = currentBars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
+  const leaders = currentBars.slice(0, topK)
+  const tailLabels = new Set(currentBars.slice(topK).map(bar => bar.label.trim().toLowerCase()))
+  const history = (item.history ?? []) as ForecastWorkspaceHistoryPoint[]
+
+  // Per-point candidate bars (stat keys filtered, value-sorted) — null for a
+  // point whose payload is not a ≥2-candidate dict (older/degenerate snapshots).
+  const pointBars = history.map(point => distributionBars(point.probability))
+
+  // The leader's own series drives the downsample (its material moves anchor the
+  // thinned x-axis), then every series is drawn from the SAME kept columns.
+  const leaderValues = pointBars.map(bars => {
+    const hit = barForLabel(bars, leaders[0]?.label ?? '')
+    return hit ? hit.value * scale : null
+  })
+  const preview = downsampleSeries(leaderValues)
+  const kept = preview.keptIndices
+
+  const series = leaders.map(leader => ({
+    label: leader.label,
+    values: kept.map(index => {
+      const hit = barForLabel(pointBars[index] ?? null, leader.label)
+      return hit ? hit.value * scale : null
+    })
+  }))
+
+  // Aggregate the tail into a single `Other` line only when there IS a tail.
+  if (currentBars.length > leaders.length) {
+    series.push({
+      label: 'Other',
+      values: kept.map(index => {
+        const bars = pointBars[index]
+        if (!bars) {
+          return null
+        }
+        const tail = bars.filter(bar => tailLabels.has(bar.label.trim().toLowerCase()))
+        return tail.length ? tail.reduce((sum, bar) => sum + bar.value, 0) * scale : null
+      })
+    })
+  }
+
+  const drawn = series.flatMap(s => s.values).filter((value): value is number => finite(value))
+  const yMax = drawn.length ? Math.max(...drawn) : 0
+
+  return { keptIndices: kept, preview, scale, series, yMax }
+}
+
+/** Collapse a row of tagged plot cells into contiguous same-series runs, so the
+ *  multi-series chart renders one coloured <Text> per run (leader distinct) rather
+ *  than one node per cell. */
+export const seriesRuns = (cells: SeriesCell[]): { series: number; text: string }[] => {
+  const runs: { series: number; text: string }[] = []
+  for (const cell of cells) {
+    const last = runs[runs.length - 1]
+    if (last && last.series === cell.series) {
+      last.text += cell.ch
+    } else {
+      runs.push({ series: cell.series, text: cell.ch })
+    }
+  }
+  return runs
 }
 
 // ── Panel / ensemble spread fallback (from the forecast.question packet) ─────
@@ -1592,8 +1704,55 @@ export function ForecastDetail({
 }) {
   const delta = item.delta
   const deltaColor = !finite(delta) || Math.abs(delta) < 0.005 ? t.color.muted : delta > 0 ? t.color.ok : t.color.error
+  const isDistribution = item.headline_kind === 'distribution'
+
+  // A vote-share / categorical PMF question: a NON-distribution item whose OWN
+  // `probability` is a ≥2-candidate dict (a binary forecast's probability is a
+  // scalar even when it also ships a candidate PMF breakdown, so key off the raw
+  // dict — never `item.distribution.pmf`, which a binary can carry too). These get
+  // the MULTI-SERIES chart + a leader header + NO binary panel band.
+  const voteBars = useMemo(
+    () => (isDistribution ? null : distributionBars(item.probability, item.candidate_intervals)),
+    [isDistribution, item.probability, item.candidate_intervals]
+  )
+  const isVoteShare = !!voteBars && voteBars.length >= 2
+  const leader = isVoteShare && voteBars ? voteBars[0]! : null
+  const voteScale = voteBars && voteBars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
+
+  // Multi-candidate series (client-side series-ification from the snapshot dicts).
+  const vote = useMemo(
+    () => (isVoteShare && voteBars ? buildVoteShareSeries(item, voteBars) : null),
+    [isVoteShare, voteBars, item]
+  )
+  const hasMulti = !!vote && vote.series.some(series => series.values.some(finite))
+
+  const multiChart = useMemo(
+    () =>
+      vote && hasMulti
+        ? multiSeriesChart(vote.series, {
+            height: 9,
+            width: Math.min(56, Math.max(1, width - 1)),
+            // Never negative for shares: floor at 0, headroom above the leader.
+            yMax: vote.yMax * 1.08,
+            yMin: 0
+          })
+        : null,
+    [vote, hasMulti, width]
+  )
+
+  const multiAxis = useMemo(() => {
+    if (!multiChart || !vote) {
+      return null
+    }
+    const history = item.history ?? []
+    const dates = vote.keptIndices.map(i => history[i]?.as_of ?? null)
+    return timeAxis(dates, { gutterW: multiChart.gutterW, plotW: multiChart.plotW })
+  }, [multiChart, vote, item.history])
+
+  // ── Single-series band chart (binary + continuous distribution) ────────────
+  // Suppressed for vote-share questions — they draw the multi-series chart above.
   const fullBandPoints = useMemo(() => historyToBandPoints(item), [item])
-  const hasSeries = fullBandPoints.some(point => finite(point.y))
+  const hasSeries = !isVoteShare && fullBandPoints.some(point => finite(point.y))
   // Change-aware preview: a long-lived question rolls hundreds of snapshots
   // forward, condensing into an unreadable dot-strip. Thin to the material moves
   // (first + last + largest |Δ|, ≤15) for the DRAWN dots only — the history is
@@ -1638,13 +1797,19 @@ export function ForecastDetail({
   }, [item.distribution, item.probability, item.candidate_intervals])
 
   const dist = item.distribution
-  const isDistribution = item.headline_kind === 'distribution'
   const unit = unitSuffix(item.units)
   // Panel spread: the workspace item's own panel run, else the packet-derived
   // fallback. Distribution forecasts never borrow it — their components live
-  // on the outcome scale, not the probability scale.
-  const panel = item.panel ?? (isDistribution ? null : packetPanel)
+  // on the outcome scale, not the probability scale — and a vote-share question
+  // NEVER shows it (the binary spread machinery is the wrong object for a
+  // multi-candidate distribution — a share is not a P(yes)).
+  const panel = isVoteShare ? null : (item.panel ?? (isDistribution ? null : packetPanel))
   const topics = (item.topics ?? []).join(', ')
+
+  // Per-series colours (leader distinct + bold); the aggregated `Other` tail sits
+  // last and reads muted. Falls through to text for any overflow series.
+  const seriesColor = (index: number): string =>
+    [t.color.primary, t.color.info, t.color.warn, t.color.ok, t.color.accent, t.color.muted][index] ?? t.color.text
 
   return (
     <Box flexDirection="column">
@@ -1711,6 +1876,24 @@ export function ForecastDetail({
           ) : null}
         </Text>
       ) : null}
+      {/* Vote-share LEADER line: the leading candidate + its 90% interval where a
+          REAL one is published (per-candidate intervals are chosen-but-unbuilt in
+          the uncertainty arc), else an honest "no interval published" — never a
+          band synthesized by the binary machinery. */}
+      {isVoteShare && leader ? (
+        <Text wrap="truncate-end">
+          <Text color={t.color.muted}>leader </Text>
+          <Text bold color={t.color.primary}>{`${shortCandidateLabel(leader.label, 18)} ${(leader.value * voteScale).toFixed(1)}`}</Text>
+          {leader.interval && finite(leader.interval.lo) && finite(leader.interval.hi) ? (
+            <Text>
+              <Text color={t.color.muted}>{'  ·  90% '}</Text>
+              <Text color={t.color.text}>{`[${(leader.interval.lo * voteScale).toFixed(1)}–${(leader.interval.hi * voteScale).toFixed(1)}]`}</Text>
+            </Text>
+          ) : (
+            <Text color={t.color.muted}>{'  ·  no interval published'}</Text>
+          )}
+        </Text>
+      ) : null}
       <Text wrap="truncate-end">
         <Text color={t.color.muted}>close </Text>
         <Text color={t.color.label}>{shortDate(item.close_time)}</Text>
@@ -1727,6 +1910,45 @@ export function ForecastDetail({
             {item.resolution_criteria}
           </Text>
         </Box>
+      ) : null}
+
+      {/* Vote-share / categorical PMF → MULTI-SERIES: one line per top-K candidate
+          (leader distinct + bold), y-axis clamped to [0, max+headroom] — never the
+          negative axis the single-scalar chart drew, and never a binary panel band. */}
+      {multiChart && vote ? (
+        <>
+          <SectionTitle t={t}>vote share over time</SectionTitle>
+          {multiChart.rows.map((row, i) => (
+            <Text key={i} wrap="truncate-end">
+              <Text color={t.color.border}>{row.gutter}</Text>
+              {seriesRuns(row.cells).map((run, j) => (
+                <Text bold={run.series === 0} color={run.series < 0 ? undefined : seriesColor(run.series)} key={j}>
+                  {run.text}
+                </Text>
+              ))}
+            </Text>
+          ))}
+          {multiAxis ? (
+            <>
+              <Text color={t.color.border}>{multiAxis.ticks}</Text>
+              <Text color={t.color.label} wrap="truncate-end">
+                {multiAxis.labels}
+              </Text>
+            </>
+          ) : null}
+          <Text wrap="truncate-end">
+            {'  '}
+            {vote.series.map((series, i) => (
+              <Fragment key={i}>
+                <Text bold={i === 0} color={seriesColor(i)}>
+                  {`${multiChart.glyphs[i]} ${shortCandidateLabel(series.label)}`}
+                </Text>
+                {i < vote.series.length - 1 ? <Text color={t.color.muted}>{'   '}</Text> : null}
+              </Fragment>
+            ))}
+            {vote.preview.downsampled ? <Text color={t.color.muted}>{`  ·  ${vote.preview.note}`}</Text> : null}
+          </Text>
+        </>
       ) : null}
 
       {chart ? (
