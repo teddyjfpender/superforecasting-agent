@@ -70,6 +70,12 @@ export type DOMElement = {
   scrollClampMax?: number
   scrollHeight?: number
   scrollViewportHeight?: number
+  // The raw, UNGUARDED innerHeight from the last render — the rising-edge basis
+  // for the one-frame "viewport explosion" guard in render-node-to-output.
+  // scrollViewportHeight above may hold the prior stable value during the
+  // artifact; this one always tracks reality so a sustained viewport growth
+  // stops looking like a rising edge on the next frame (no latch).
+  scrollViewportHeightReal?: number
   scrollViewportTop?: number
   stickyScroll?: boolean
   // Was the box at (or past) the bottom at the END of the last frame?

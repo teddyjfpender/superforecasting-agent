@@ -698,7 +698,7 @@ function renderNodeToOutput(
         // culled against the visible window.
         const padTop = yogaNode.getComputedPadding(LayoutEdge.Top)
 
-        const innerHeight = Math.max(
+        let innerHeight = Math.max(
           0,
           (y2 ?? y + height) - (y1 ?? y) - padTop - yogaNode.getComputedPadding(LayoutEdge.Bottom)
         )
@@ -715,6 +715,49 @@ function renderNodeToOutput(
         // Capture previous scroll bounds BEFORE overwriting — the at-bottom
         // follow check compares against last frame's max.
         const prevScrollHeight = node.scrollHeight ?? scrollHeight
+
+        // One-frame "viewport explosion" guard. While React re-arranges the
+        // ScrollBox's ancestors (a keystroke re-render, a sibling pane growing,
+        // a background store notify), the box's height constraint is transiently
+        // lost for a single Yoga pass and innerHeight balloons to the CONTENT
+        // height (viewport == scrollHeight). Every consumer of that value then
+        // misfires for one frame: maxScroll collapses to 0 so the sticky follow
+        // slams scrollTop to the top and the whole region re-blits, and the
+        // transcript scrollbar sees `scrollHeight <= viewport` → "not scrollable"
+        // → it paints a BLANK column, then repaints its │/┃ next frame when the
+        // constraint returns. Superimposed on a live session's per-keystroke
+        // renders that reads as "the right side of the chat blinks on every key."
+        // Detect the RISING edge — the real viewport was scrollable and has now
+        // jumped to >= content while content did not shrink — and hold the prior
+        // real viewport for this frame. scrollViewportHeightReal tracks the raw
+        // (unguarded) value so a SUSTAINED growth (composer collapse, content
+        // that genuinely now fits) stops looking like a rising edge on the next
+        // frame and passes straight through — no latch, no alternation.
+        // lastGoodInner is the last NON-exploded viewport — the constrained
+        // height the box holds in steady state. It is deliberately NOT updated
+        // on explosion frames so that a MULTI-frame explosion (the artifact
+        // routinely spans two commits while React re-arranges ancestors) is
+        // caught on every one of its frames, not just the rising edge.
+        const lastGoodInner = node.scrollViewportHeightReal ?? innerHeight
+
+        // The artifact shrink-wraps the box to its content, so innerHeight lands
+        // EXACTLY on scrollHeight (no slack). A GENUINE "content now fits" state
+        // (composer collapsed, history trimmed) overshoots — the box keeps its
+        // larger allocated height so innerHeight > scrollHeight with blank slack
+        // below. That exact-vs-overshoot distinction is what lets real layout
+        // changes through while holding the one/two-frame explosion.
+        const exploded =
+          innerHeight === scrollHeight &&
+          lastGoodInner > 0 &&
+          lastGoodInner < scrollHeight &&
+          scrollHeight >= prevScrollHeight
+
+        if (exploded) {
+          innerHeight = lastGoodInner
+        } else {
+          node.scrollViewportHeightReal = innerHeight
+        }
+
         const prevInnerHeight = node.scrollViewportHeight ?? innerHeight
         node.scrollHeight = scrollHeight
         node.scrollViewportHeight = innerHeight

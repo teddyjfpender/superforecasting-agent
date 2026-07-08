@@ -17,6 +17,11 @@ const copyHotkeys: [string, string][] = isMac
 
 export const HOTKEYS: [string, string][] = [
   ...copyHotkeys,
+  // Mouse tracking is on (click zones, wheel, scrollbar drag), so a plain drag
+  // runs the IN-APP selection. While the chat is streaming that highlight can
+  // jitter as new lines land under the cursor — hold Shift to fall back to the
+  // terminal's own native selection, which the app never touches (rock steady).
+  ['drag · Shift+drag', 'select text — plain drag = in-app select; hold Shift for the terminal’s native selection (steady while streaming)'],
   [action + '+D', 'exit'],
   [action + '+G / Alt+G', 'open $EDITOR (Alt+G fallback for VSCode/Cursor)'],
   [action + '+L', 'redraw / repaint'],
