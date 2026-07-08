@@ -99,6 +99,37 @@ describe('turnTokenCount — honest work delta (input+output), never usage.total
     expect(turnTokenCount(t, { input: 340_000, output: 8_000 }, 300_000)).toBe(48_000)
   })
 
+  it('a simulated 10-call turn reports the SUM of fresh input+output, not the last call', () => {
+    const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+    // Realistic per-call fresh (cache-excluded) work: call 1 pays full input,
+    // later calls are mostly cache reads so their fresh input is small.
+    const perCall: [number, number][] = [
+      [12_000, 800],
+      [900, 650],
+      [1_100, 720],
+      [850, 610],
+      [1_300, 900],
+      [700, 540],
+      [1_500, 1_100],
+      [600, 480],
+      [1_000, 700],
+      [400, 300]
+    ]
+    const sumIn = perCall.reduce((a, [i]) => a + i, 0) // 20_350
+    const sumOut = perCall.reduce((a, [, o]) => a + o, 0) // 6_800
+    const [lastIn, lastOut] = perCall[perCall.length - 1]
+
+    // The gateway ships the session CUMULATIVE split, so usage.input/output already
+    // hold the running SUM; baseline was captured at turn start (100k prior input,
+    // 20k prior output). The counter reads this turn's honest work = 27,150.
+    expect(turnTokenCount(t, { input: 100_000 + sumIn, output: 20_000 + sumOut }, 120_000)).toBe(sumIn + sumOut)
+
+    // Had the gateway (wrongly) shipped only the LAST call's fresh usage, the delta
+    // would collapse to a cached-call sliver (700) — the operator's ~25-50 regression.
+    expect(turnTokenCount(t, { input: 100_000 + lastIn, output: 20_000 + lastOut }, 120_000)).toBe(lastIn + lastOut)
+    expect(sumIn + sumOut).toBeGreaterThan((lastIn + lastOut) * 10)
+  })
+
   it('falls back to the live in-flight estimate before usage lands', () => {
     // No fresh delta yet (input+output == baseline) → reasoning+tool+prose estimate.
     const t = turn({ reasoningTokens: 120, streaming: 'abcd', toolTokens: 30 }) as never

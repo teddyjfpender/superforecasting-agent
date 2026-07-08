@@ -5910,3 +5910,113 @@ def test_forecast_schedule_status(tmp_path, monkeypatch):
     assert res["scheduled_review_count"] >= 1
     refs = {r["scope_ref"] for r in res["scheduled_reviews"]}
     assert question.id in refs
+
+
+# ── _get_usage wire semantics: CUMULATIVE input/output ────────────────────────
+# The TUI liveness counter shows per-turn work as workTokens = (usage.input +
+# usage.output) − a baseline captured at turn start. That delta is only honest
+# if the input/output the gateway ships are the session CUMULATIVE totals (the
+# running SUM of every call's fresh, cache-excluded work) — the same way
+# usage.total accumulates. If they ever regressed to PER-CALL / last-message
+# values, the delta would collapse to roughly the final call's fresh input
+# (tiny once the prompt is cached) + its output — the ~25-50 undercount the
+# operator hit. These tests pin the cumulative contract server-side so a future
+# refactor of _get_usage (or the counters it reads) can't silently break it.
+
+
+def _usage_agent(**counters) -> types.SimpleNamespace:
+    """A minimal agent carrying just the session_* counters _get_usage reads.
+
+    context_compressor=None skips the context block; estimate_usage_cost is
+    already wrapped in try/except inside _get_usage, so no pricing table or
+    network is needed here.
+    """
+    defaults = dict(
+        model="anthropic/claude-opus-4",
+        provider="anthropic",
+        base_url=None,
+        session_input_tokens=0,
+        session_output_tokens=0,
+        session_cache_read_tokens=0,
+        session_cache_write_tokens=0,
+        session_reasoning_tokens=0,
+        session_prompt_tokens=0,
+        session_completion_tokens=0,
+        session_total_tokens=0,
+        session_api_calls=0,
+        context_compressor=None,
+    )
+    defaults.update(counters)
+    return types.SimpleNamespace(**defaults)
+
+
+def test_get_usage_ships_cumulative_input_output_not_last_call():
+    """A simulated 10-call turn: _get_usage must surface the SUM of every call's
+    fresh input+output, never just the last (cached, tiny) call."""
+    agent = _usage_agent()
+    # Realistic per-call fresh (cache-excluded) work: the first call pays full
+    # input, later calls are mostly cache reads so their fresh input is small;
+    # output varies per call. agent/conversation_loop folds each with += — we
+    # mirror that accumulation here.
+    per_call = [
+        (12_000, 800),
+        (900, 650),
+        (1_100, 720),
+        (850, 610),
+        (1_300, 900),
+        (700, 540),
+        (1_500, 1_100),
+        (600, 480),
+        (1_000, 700),
+        (400, 300),
+    ]
+    for fresh_in, out in per_call:
+        agent.session_input_tokens += fresh_in
+        agent.session_output_tokens += out
+        agent.session_total_tokens += fresh_in + out
+        agent.session_api_calls += 1
+
+    usage = server._get_usage(agent)
+
+    expected_in = sum(i for i, _ in per_call)  # 20_350
+    expected_out = sum(o for _, o in per_call)  # 6_800
+    assert usage["input"] == expected_in
+    assert usage["output"] == expected_out
+    assert usage["calls"] == len(per_call)
+
+    # The honest per-turn work is the SUM (27,150), which the counter deltas to.
+    work = usage["input"] + usage["output"]
+    assert work == expected_in + expected_out == 27_150
+
+    # Guard the exact regression: had _get_usage shipped only the LAST call, the
+    # workTokens delta would collapse to a fraction of the real turn.
+    last_in, last_out = per_call[-1]
+    assert work > (last_in + last_out) * 10  # 27,150 vs 700
+
+
+def test_get_usage_real_session_arithmetic_25e6cd08():
+    """Operator's real session 25e6cd08 (53 calls): cumulative fresh input
+    280,612 + output 32,315 = 312,927 honest work; the 4,760,671 total was 93%
+    cache_read re-sends. _get_usage must ship the cumulative split (not the last
+    call) so the counter reads 312.9k of work, not a cache-inflated 4.8M."""
+    cache_read = 4_447_744
+    agent = _usage_agent(
+        session_input_tokens=280_612,
+        session_output_tokens=32_315,
+        session_cache_read_tokens=cache_read,
+        session_prompt_tokens=280_612 + cache_read,  # provider "prompt" incl. cache
+        session_completion_tokens=32_315,
+        session_total_tokens=280_612 + cache_read + 32_315,  # 4,760,671
+        session_api_calls=53,
+    )
+
+    usage = server._get_usage(agent)
+
+    assert usage["input"] == 280_612
+    assert usage["output"] == 32_315
+    assert usage["calls"] == 53
+    work = usage["input"] + usage["output"]
+    assert work == 312_927
+    # Honest work is ~15x smaller than the cache-inflated billing total.
+    assert usage["total"] == 4_760_671
+    assert round(usage["total"] / work, 1) == 15.2
