@@ -219,9 +219,110 @@ def test_token_enforced_when_set(http_factory):
     status, _ = _get(h, "/events")
     assert status == 401
 
-    # /health stays open (liveness probe)
+    # HARDENED: /health now requires the token too (not public by default).
     status, _ = _get(h, "/health")
+    assert status == 401
+
+    # ...and it opens with the correct token, returning the enriched payload.
+    status, data = _get(h, "/health", token="s3cret-token")
     assert status == 200
+    assert "version" in json.loads(data)
+
+
+# ── token-file auth (the hardened default) ──────────────────────────────────
+
+
+def test_token_file_minted_and_required(http_factory, tmp_path):
+    tok_path = tmp_path / "gateway.token"
+    h = http_factory(token_file=str(tok_path))
+    # a token was minted into the file, 0600, and adopted by the server
+    assert tok_path.exists()
+    assert oct(tok_path.stat().st_mode & 0o777) == "0o600"
+    minted = tok_path.read_text().strip()
+    assert minted and h.token == minted
+
+    body = {"jsonrpc": "2.0", "id": 1, "method": "config.get", "params": {"key": "profile"}}
+    # loopback but token REQUIRED now (the network-trust hole is closed)
+    assert _post_rpc(h, body)[0] == 401
+    assert _post_rpc(h, body, token="wrong")[0] == 401
+    assert _post_rpc(h, body, token=minted)[0] == 200
+    # /health also gated by default
+    assert _get(h, "/health")[0] == 401
+    assert _get(h, "/health", token=minted)[0] == 200
+
+
+def test_token_file_reused_across_restarts(http_factory, tmp_path):
+    tok_path = tmp_path / "gateway.token"
+    tok_path.write_text("preexisting-token\n", encoding="utf-8")
+    h = http_factory(token_file=str(tok_path))
+    assert h.token == "preexisting-token"  # read, not re-minted
+    assert tok_path.read_text().strip() == "preexisting-token"
+
+
+def test_read_token_file_helper(tmp_path):
+    assert H.read_token_file(tmp_path) is None  # absent
+    (tmp_path / "gateway.token").write_text("  abc123  \n", encoding="utf-8")
+    assert H.read_token_file(tmp_path) == "abc123"  # local client reads it
+
+
+def test_malformed_auth_header_is_401(http_factory, tmp_path):
+    h = http_factory(token_file=str(tmp_path / "gateway.token"))
+    conn = http.client.HTTPConnection(h.host, h.port, timeout=10)
+    # no "Bearer " prefix
+    conn.request("GET", "/status", headers={"Authorization": h.token})
+    assert conn.getresponse().status == 401
+    conn.close()
+    # right scheme, empty token
+    conn = http.client.HTTPConnection(h.host, h.port, timeout=10)
+    conn.request("GET", "/status", headers={"Authorization": "Bearer "})
+    assert conn.getresponse().status == 401
+    conn.close()
+
+
+# ── /status + enriched /health observability ────────────────────────────────
+
+
+def test_status_requires_token_and_is_enriched(http_factory, tmp_path):
+    h = http_factory(token_file=str(tmp_path / "gateway.token"))
+    assert _get(h, "/status")[0] == 401  # gated
+    status, data = _get(h, "/status", token=h.token)
+    assert status == 200
+    payload = json.loads(data)
+    # the operator's when-something-feels-wrong fields
+    for field in ("status", "version", "uptime", "ledger_ok", "cron", "jobs_active", "spend"):
+        assert field in payload
+
+
+def test_health_public_exempts_health_liveness_only(http_factory, tmp_path):
+    h = http_factory(token_file=str(tmp_path / "gateway.token"), health_public=True)
+    # /health open WITHOUT a token, but liveness subset only (no sensitive fields)
+    status, data = _get(h, "/health")
+    assert status == 200
+    payload = json.loads(data)
+    assert payload["status"] == "ok"
+    assert "protocol_version" in payload and "version" in payload
+    assert "spend" not in payload and "ledger_ok" not in payload
+    # /rpc + /status still gated even in health-public mode
+    assert _get(h, "/status")[0] == 401
+    body = {"jsonrpc": "2.0", "id": 1, "method": "config.get", "params": {"key": "profile"}}
+    assert _post_rpc(h, body)[0] == 401
+
+
+def test_access_log_line_emitted(http_factory, tmp_path, caplog):
+    import logging
+
+    h = http_factory(token_file=str(tmp_path / "gateway.token"))
+    with caplog.at_level(logging.INFO, logger="tui_gateway.http_server"):
+        _get(h, "/health", token=h.token)
+    lines = [r.getMessage() for r in caplog.records if "route=/health" in r.getMessage()]
+    assert lines, "expected a structured access-log line"
+    assert "method=GET" in lines[0] and "status=200" in lines[0] and "ms=" in lines[0]
+
+
+def test_default_make_server_binds_loopback(http_factory):
+    """Bind verification pinned: the default make_server host is 127.0.0.1."""
+    h = http_factory()  # no host kwarg
+    assert h.host in ("127.0.0.1", "::1", "localhost")
 
 
 def test_non_loopback_without_token_refuses_loudly():
@@ -323,8 +424,26 @@ def test_parse_http_args_defaults():
         "port": 8765,
         "token": None,
         "generate_token": False,
+        "token_file": True,  # hardened default: mint/read {home}/gateway.token
+        "health_public": False,
         "alongside_stdio": False,
     }
+
+
+def test_parse_http_args_default_bind_is_loopback():
+    """Bind verification: the entry default host is loopback (127.0.0.1). A public
+    bind requires an explicit host on --http, never a silent default."""
+    assert _parse_http_args(["--http"])["host"] == "127.0.0.1"
+    assert _parse_http_args(["--http", ":9000"])["host"] == "127.0.0.1"
+    assert _parse_http_args(["--http", "0.0.0.0:9000"])["host"] == "0.0.0.0"
+
+
+def test_parse_http_args_token_file_and_health_flags():
+    cfg = _parse_http_args(["--http", "--http-no-token-file", "--http-health-public"])
+    assert cfg["token_file"] is False
+    assert cfg["health_public"] is True
+    cfg2 = _parse_http_args(["--http", "--http-token-file", "/tmp/tok"])
+    assert cfg2["token_file"] == "/tmp/tok"
 
 
 def test_parse_http_args_full():

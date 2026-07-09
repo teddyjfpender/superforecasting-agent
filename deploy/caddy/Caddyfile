@@ -1,0 +1,48 @@
+# ============================================================================
+# Caddyfile — the blessed TLS / reverse-proxy one-liner (P3.1, OPT-IN).
+# ============================================================================
+# The default Hetzner posture is ZERO public inbound ports (SSH only); you only
+# need this when you deliberately expose a surface publicly (the dashboard, the
+# OpenAI-compatible API server, or Slack Events HTTP mode). For a single
+# operator, an `ssh -L` tunnel or Tailscale is the honest default — see
+# docs/deploy/hetzner.md. Reach for Caddy only when a browser-reachable public
+# HTTPS URL is genuinely required.
+#
+# Usage:
+#   1. Point an A/AAAA record at the box:  desk.example.com -> <box ip>
+#   2. Set the two placeholders below (DOMAIN + the basic_auth hash).
+#   3. Open 80 + 443:  ufw allow 80/tcp && ufw allow 443/tcp
+#   4. docker compose -f /opt/superforecasting/compose.yml \
+#          -f deploy/caddy/compose.caddy.yml --profile tls up -d
+#
+# Caddy fetches + auto-renews a Let's Encrypt cert for DOMAIN. basic_auth adds
+# a login IN FRONT of the dashboard (belt AND braces with the dashboard's own
+# token). SSE buffering is OFF so /events streams flush immediately.
+# ============================================================================
+
+# Replace desk.example.com with your domain (this block key IS the cert subject).
+desk.example.com {
+	# Operator login in front of the dashboard. Generate the hash with:
+	#   docker run --rm caddy caddy hash-password --plaintext 'your-strong-pass'
+	# then paste it below (username `operator`).
+	basicauth {
+		operator REPLACE_WITH_BCRYPT_HASH
+	}
+
+	# The dashboard listens loopback-only inside the box (9119). Caddy is the
+	# ONLY process that may reach it from outside.
+	reverse_proxy 127.0.0.1:9119 {
+		# Server-Sent-Events: never buffer, or the desk's live event stream stalls.
+		flush_interval -1
+	}
+
+	encode gzip
+	header {
+		# Baseline hardening headers for a public surface.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+}

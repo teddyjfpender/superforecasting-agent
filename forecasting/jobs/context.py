@@ -215,6 +215,30 @@ class JobContext:
             "at": policy._now_iso(),
         }
 
+        # BOX-LEVEL SPEND CEILING (P3.2): an unattended box can spend across many
+        # cycles even when every policy cell is `auto`. Before honouring an LLM-spend
+        # grant, consult the daily/monthly token+USD budgets. A breach REFUSES the
+        # job (raises BudgetExceeded — a PolicyRefused subclass the runtime already
+        # treats as a terminal, teaching refusal), fires a severity=high ledger alert,
+        # and emits a notify event. No-op unless a ceiling is set (unlimited default).
+        if action is policy.ActionClass.LLM_SPEND:
+            breach = None
+            try:
+                from forecasting import budget as _budget
+
+                breach = _budget.enforce_llm_spend(
+                    run_mode=run_mode,
+                    db_path=(self._record.spec or {}).get("db"),
+                )
+            except Exception:  # noqa: BLE001 — a guard fault fails open (never halt the desk)
+                breach = None
+            if breach is not None:
+                entry["decision"] = policy.Decision.NEVER.value
+                entry["outcome"] = "budget_exceeded"
+                entry["budget_breach"] = breach.as_dict()
+                self._log_decision(entry)
+                raise _budget.BudgetExceeded(breach, run_mode=run_mode)
+
         # An operator approval overrides an `ask` cell for the resumed run.
         if granted and decision is policy.Decision.ASK:
             entry["decision"] = policy.Decision.AUTO.value

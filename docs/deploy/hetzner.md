@@ -164,6 +164,98 @@ machine-readable floor.
 
 ---
 
+## Hardening (P3): auth, TLS, spend, observability
+
+The P1 box is already locked down (dedicated user, UFW allow-22-only, zero public
+ports). P3 hardens what P1 deployed.
+
+### Gateway HTTP auth — token-gated, same-box UX unchanged
+
+The B4 HTTP+SSE serve mode (`superforecasting-agent --http`) used to trust the
+loopback network. It now **mints a bearer token at bootstrap into
+`{home}/gateway.token` (`0600`) and REQUIRES it on every route** — `/rpc`,
+`/events`, `/status`, and `/health` — with a constant-time compare; a missing or
+malformed token gets `401`.
+
+- **Same-box UX is unchanged.** A local client reads the token file
+  automatically. The **SSH→TUI landing is unaffected** — it spawns the gateway
+  over *stdio*, never HTTP, so the token gates only the HTTP surface.
+- **The bind is loopback by default** (`127.0.0.1`). A public bind requires an
+  explicit host on `--http` *and* auth; a non-loopback bind with no token and no
+  token-file refuses to start (or `--http-gen-token` prints one). Pinned by test
+  (`tests/tui_gateway/test_http_server.py`).
+
+The token is a **single shared, operator-grade** secret (not per-user) — it
+matches the single-tenant reality below (**one box = one operator**). If you ever
+put the dashboard or API server on a public port, they sit behind Caddy's auth
+*in addition to* their own tokens.
+
+**`/health` exemption choice (the default is secure).** By default `/health`
+requires the token and returns the enriched status. For an external liveness
+probe (uptime monitor, dead-man switch), start with `--http-health-public`:
+`/health` then answers unauthenticated but returns ONLY the minimal liveness
+subset (`status`, `protocol_version`, `version`, `uptime`, `subscribers`) — the
+sensitive spend/ledger/cron fields are never served without the token.
+
+### TLS / reverse-proxy — opt-in, because the default is zero-inbound
+
+You only need TLS when you deliberately expose a surface (dashboard, the
+OpenAI-compatible API server, Slack Events HTTP mode). Pick by situation:
+
+| Situation | Do this |
+|---|---|
+| **You (single operator), IP-only box** | **`ssh -L 9119:localhost:9119 forecast@<ip>`** — the honest default. No public port, no cert, nothing to renew. |
+| **You, want it always-on from anywhere** | **Tailscale** — a private tailnet address; still no public inbound port. |
+| **A domain + a browser-reachable public URL is genuinely required** | **Caddy** (`deploy/caddy/`): `docker compose -f /opt/superforecasting/compose.yml -f deploy/caddy/compose.caddy.yml --profile tls up -d`. Auto-HTTPS via ACME, `basic_auth` in front of the dashboard, SSE buffering off. Open 80+443 only; the dashboard stays loopback-only behind the proxy. |
+
+The `tls` compose profile means **Caddy never starts unless you ask for it** — the
+box stays zero-inbound otherwise.
+
+### Unattended spend guards — box-level ceilings
+
+The jobs policy matrix meters LLM spend per job, but nothing capped spend *across*
+cycles on an unwatched box. Set **box-level daily/monthly token + USD ceilings**
+(`0`/unset = unlimited) in `{home}/.env` (the bootstrap seeds commented guidance;
+pass them in the cloud-init env to arm at create time):
+
+```bash
+FORECAST_BUDGET_DAILY_USD=10
+FORECAST_BUDGET_MONTHLY_USD=150
+FORECAST_POLICY_CRON_LLM_SPEND=ask   # require sign-off before any cron spend
+```
+
+Enforced at the `authorize(LLM_SPEND)` chokepoint: a breach **refuses further paid
+jobs** (a terminal, teaching refusal that names the key to loosen), raises a
+`severity=high` ledger alert, and fires a notify event to your connected surfaces.
+**Reset is implicit** on the UTC day/month rollover — no cron, no drift.
+`forecast config doctor` shows current usage vs each ceiling + headroom.
+
+### Observability — the three curls to run when something feels wrong
+
+The HTTP serve mode exposes a token-gated `/status` (and enriched `/health`) plus
+one structured access-log line per request. Start it loopback-only when you want
+to poll it: `superforecasting-agent --http 127.0.0.1:8765` (it reuses
+`{home}/gateway.token`).
+
+```bash
+# 1. Full status: version, uptime, ledger ok, cron last/next-run, active jobs, spend-today.
+curl -sS -H "Authorization: Bearer $(cat ~/.superforecasting-agent/gateway.token)" \
+     http://127.0.0.1:8765/status | jq
+
+# 2. Liveness only (works unauthenticated iff you started with --http-health-public).
+curl -sS -H "Authorization: Bearer $(cat ~/.superforecasting-agent/gateway.token)" \
+     http://127.0.0.1:8765/health | jq '{status, uptime, version}'
+
+# 3. The request/boot log — one `http method=… route=… status=… ms=…` line per request.
+journalctl -u superforecasting-agent-gateway -n 100 --no-pager   # native lane
+docker logs --tail 100 superforecasting-agent-gateway            # docker lane
+```
+
+For a remote box, run these over your SSH session, or tunnel with
+`ssh -L 8765:localhost:8765 forecast@<ip>` and curl from your laptop.
+
+---
+
 ## Verifying the whole chain — the fresh-box proof
 
 `scripts/test-fresh-box.sh` runs the **entire** sequence — bootstrap → services

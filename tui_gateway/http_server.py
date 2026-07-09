@@ -38,12 +38,30 @@ it sees to the same hub.
 
 Auth
 ----
-Binds ``127.0.0.1`` by default (loopback, no token required — single local
-operator). A bearer token is REQUIRED for any non-loopback bind: pass one via
-``--http-token`` / the ``*_TUI_HTTP_TOKEN`` env, or ``--http-gen-token`` to
-generate + print one. Binding a non-loopback host with neither refuses to
-start, loudly. When a token is set it is enforced on ``/rpc`` and ``/events``
-with a constant-time compare; ``/health`` stays open as a liveness probe.
+Binds ``127.0.0.1`` by default (loopback — the single-operator posture). The
+hardened production path (``serve`` / ``python -m tui_gateway.entry --http``)
+MINTS a bearer token at bootstrap into ``{home}/gateway.token`` (``0600``) and
+REQUIRES it on **every** route — including ``/health`` and ``/status`` — with a
+constant-time compare; a missing/malformed token gets ``401``. Same-box UX is
+unchanged because a local client reads the token file automatically
+(:func:`read_token_file`) — the SSH-landing TUI is unaffected (it spawns the
+gateway over *stdio*, never HTTP).
+
+Token precedence: explicit ``--http-token`` / ``*_TUI_HTTP_TOKEN`` env  >  the
+``{home}/gateway.token`` file (``token_file=True``, the production default)  >
+none. A non-loopback bind with no token and no file refuses to start loudly
+(``--http-gen-token`` generates + prints one instead). ``make_server`` defaults
+``token_file=None`` (loopback stays token-free for embedded/dev use); ``serve``
+defaults ``token_file=True``.
+
+**/health exemption choice (documented).** The default is SECURE: ``/health``
+requires the token and returns the ENRICHED payload (version, uptime, ledger ok,
+cron last-run, active jobs, spend-today). Pass ``health_public=True`` /
+``--http-health-public`` to exempt ``/health`` from auth for an external liveness
+probe — in that mode it returns ONLY the minimal, non-sensitive liveness subset
+(status, protocol_version, uptime, version, subscribers); the sensitive fields
+(spend/ledger/cron) are never served unauthenticated. ``/status`` is always
+token-required and always returns the full enriched payload.
 """
 
 from __future__ import annotations
@@ -264,21 +282,104 @@ class _RpcSink:
 
 # ── Auth ──────────────────────────────────────────────────────────────────
 
+#: The persisted bearer-token file basename under ``{home}``.
+_TOKEN_FILENAME = "gateway.token"
 
-def _resolve_token(host: str, token: Optional[str], generate_token: bool) -> Optional[str]:
+
+def default_token_path(home: Optional["os.PathLike | str"] = None) -> "Path":
+    """``{home}/gateway.token`` — the persisted bearer-token file."""
+    from pathlib import Path
+
+    if home is None:
+        from hermes_constants import get_hermes_home
+
+        home = get_hermes_home()
+    return Path(home) / _TOKEN_FILENAME
+
+
+def read_token_file(home: Optional["os.PathLike | str"] = None) -> Optional[str]:
+    """Read the persisted gateway bearer token (for LOCAL clients — curl, probes,
+    scripts on the same box). Returns ``None`` when the file is absent/empty.
+
+    This is what keeps same-box UX unchanged after auth was made mandatory: a
+    client on the box reads the token the server minted and sends it as the
+    ``Authorization: Bearer`` header, no config needed.
+    """
+    path = default_token_path(home)
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+    return value or None
+
+
+def _mint_token_file(path: "Path") -> str:
+    """Read the token at *path*, or mint one and persist it ``0600``. Idempotent —
+    a restart reuses the same token so live local clients keep working."""
+    from pathlib import Path
+
+    path = Path(path)
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    except (OSError, ValueError):
+        pass
+    token = secrets.token_urlsafe(32)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Create restrictively, then write — the token never touches disk world-readable.
+    fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, (token + "\n").encode("utf-8"))
+    finally:
+        os.close(fd)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:  # pragma: no cover — non-POSIX fs
+        pass
+    return token
+
+
+def _resolve_token_file_path(token_file: "Optional[bool | str | os.PathLike]") -> "Optional[Path]":
+    """Normalise the ``token_file`` argument to a concrete path (or ``None``).
+
+    ``None``/``False`` → no file. ``True`` → ``{home}/gateway.token``. A path →
+    that path.
+    """
+    if not token_file:
+        return None
+    if token_file is True:
+        return default_token_path()
+    from pathlib import Path
+
+    return Path(token_file)  # type: ignore[arg-type]
+
+
+def _resolve_token(
+    host: str,
+    token: Optional[str],
+    generate_token: bool,
+    token_file: "Optional[bool | str | os.PathLike]" = None,
+) -> Optional[str]:
     """Resolve the bearer token, enforcing the non-loopback policy.
 
-    Precedence: explicit ``token`` arg > ``*_TUI_HTTP_TOKEN`` env > None.
-    A non-loopback bind with no token either generates one (``generate_token``)
-    or refuses to start, loudly.
+    Precedence: explicit ``token`` arg > ``*_TUI_HTTP_TOKEN`` env > the
+    ``{home}/gateway.token`` file (when ``token_file`` is truthy) > None. A
+    non-loopback bind with no token AND no file either generates one
+    (``generate_token``) or refuses to start, loudly.
     """
     token = (token or "").strip() or _tui_env("HTTP_TOKEN") or None
-
-    if _is_loopback(host):
-        return token
-
     if token:
         return token
+
+    file_path = _resolve_token_file_path(token_file)
+    if file_path is not None:
+        # Mint/read the persisted token — the hardened default: every route is
+        # token-gated even on loopback, local clients read the file automatically.
+        return _mint_token_file(file_path)
+
+    if _is_loopback(host):
+        return None
 
     if generate_token:
         token = secrets.token_urlsafe(32)
@@ -299,9 +400,125 @@ def _resolve_token(host: str, token: Optional[str], generate_token: bool) -> Opt
     raise RuntimeError(
         f"refusing to bind non-loopback host {host!r} without a bearer token. "
         "Set SUPERFORECASTING_AGENT_TUI_HTTP_TOKEN (or FORECAST_TUI_HTTP_TOKEN / "
-        "HERMES_TUI_HTTP_TOKEN), pass --http-token <token>, or pass "
-        "--http-gen-token to generate one. Loopback (127.0.0.1) needs no token."
+        "HERMES_TUI_HTTP_TOKEN), pass --http-token <token>, pass --http-gen-token "
+        "to generate one, or keep the default token-file (mints {home}/gateway.token). "
+        "Loopback (127.0.0.1) needs no token."
     )
+
+
+# ── observability (enriched /health + /status) ─────────────────────────────
+
+
+def _agent_version() -> Optional[str]:
+    try:
+        from hermes_cli import __version__
+
+        return str(__version__)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ledger_ok() -> Optional[bool]:
+    """Cheap liveness of the ledger DB — connect + ``SELECT 1``, no migrations.
+
+    ``None`` = the DB file does not exist yet (a fresh box, honest "unknown");
+    ``True`` = connectable; ``False`` = present but unreadable.
+    """
+    try:
+        import sqlite3
+
+        from forecasting import appconfig
+        from hermes_constants import get_hermes_home
+
+        db = (appconfig.get_str("FORECAST_LEDGER_DB", "") or "").strip()
+        db = db or str(get_hermes_home() / "forecasting" / "forecasting.db")
+        if not os.path.exists(db):
+            return None
+        con = sqlite3.connect(db, timeout=1.0)
+        try:
+            con.execute("SELECT 1")
+            return True
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _cron_snapshot() -> dict:
+    """Aggregate cron last-run / next-run from the in-process cron store."""
+    try:
+        from cron.jobs import load_jobs
+
+        jobs = load_jobs() or []
+        last = [str(j.get("last_run_at")) for j in jobs if j.get("last_run_at")]
+        nxt = [str(j.get("next_run_at")) for j in jobs if j.get("next_run_at")]
+        return {
+            "jobs": len(jobs),
+            "last_run": max(last) if last else None,
+            "next_run": min(nxt) if nxt else None,
+        }
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _jobs_active() -> Optional[int]:
+    try:
+        from forecasting.jobs.store import JobStore
+
+        return len(JobStore().active())
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _spend_snapshot() -> dict:
+    try:
+        from forecasting import budget
+
+        rep = budget.status_report()
+        usage = rep.get("usage") or {}
+        return {
+            "enabled": bool(rep.get("enabled")),
+            "day_tokens": usage.get("day_tokens"),
+            "day_usd": usage.get("day_usd"),
+            "month_tokens": usage.get("month_tokens"),
+            "month_usd": usage.get("month_usd"),
+            "breached": bool(rep.get("breached")),
+        }
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def observability_snapshot(server_obj: "GatewayHTTPServer") -> dict:
+    """The full enriched status payload (/status and authed /health). Every field
+    is best-effort — one subsystem hiccup never breaks the endpoint."""
+    from protocol.version import PROTOCOL_VERSION
+
+    uptime = time.monotonic() - server_obj.start_time
+    return {
+        "status": "ok",
+        "protocol_version": PROTOCOL_VERSION,
+        "version": _agent_version(),
+        "uptime": round(uptime, 3),
+        "subscribers": server_obj.hub.subscriber_count,
+        "ledger_ok": _ledger_ok(),
+        "cron": _cron_snapshot(),
+        "jobs_active": _jobs_active(),
+        "spend": _spend_snapshot(),
+    }
+
+
+def _liveness_payload(server_obj: "GatewayHTTPServer") -> dict:
+    """The minimal, non-sensitive subset served on a PUBLIC (auth-exempt) /health."""
+    from protocol.version import PROTOCOL_VERSION
+
+    uptime = time.monotonic() - server_obj.start_time
+    return {
+        "status": "ok",
+        "protocol_version": PROTOCOL_VERSION,
+        "version": _agent_version(),
+        "uptime": round(uptime, 3),
+        "subscribers": server_obj.hub.subscriber_count,
+    }
 
 
 # ── HTTP server ───────────────────────────────────────────────────────────
@@ -320,12 +537,14 @@ class GatewayHTTPServer(ThreadingHTTPServer):
         token: Optional[str],
         rpc_timeout: float,
         prev_stdio: Optional[Transport],
+        health_public: bool = False,
     ) -> None:
         super().__init__(server_address, _GatewayHandler)
         self.hub = hub
         self.token = token
         self.rpc_timeout = rpc_timeout
         self.start_time = time.monotonic()
+        self.health_public = health_public
         self._prev_stdio = prev_stdio
 
     def restore_transport(self) -> None:
@@ -390,39 +609,66 @@ class _GatewayHandler(BaseHTTPRequestHandler):
     # ── routes ────────────────────────────────────────────────────────────
 
     def do_GET(self) -> None:  # noqa: N802
+        start = time.monotonic()
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path == "/health":
-            self._handle_health()
+            status = self._handle_health()
+            self._access_log("GET", path, start, status)
+        elif path == "/status":
+            if not self._authorized():
+                self._unauthorized()
+                self._access_log("GET", path, start, 401)
+                return
+            self._send_json(200, observability_snapshot(self.server))  # type: ignore[arg-type]
+            self._access_log("GET", path, start)
         elif path == "/events":
             if not self._authorized():
                 self._unauthorized()
+                self._access_log("GET", path, start, 401)
                 return
             self._handle_events()
+            self._access_log("GET", path, start)
         else:
             self._send_json(404, {"error": "not found"})
+            self._access_log("GET", path, start, 404)
 
     def do_POST(self) -> None:  # noqa: N802
+        start = time.monotonic()
         path = self.path.split("?", 1)[0].rstrip("/") or "/"
         if path != "/rpc":
             self._send_json(404, {"error": "not found"})
+            self._access_log("POST", path, start, 404)
             return
         if not self._authorized():
             self._unauthorized()
+            self._access_log("POST", path, start, 401)
             return
         self._handle_rpc()
+        self._access_log("POST", path, start)
 
-    def _handle_health(self) -> None:
-        from protocol.version import PROTOCOL_VERSION
+    def _access_log(self, method: str, route: str, start: float, status: int = 200) -> None:
+        """One structured line per request to the gateway log path (method, route,
+        status, ms) — the operator's request trail. INFO so it lands wherever the
+        gateway configures handlers ({home}/logs/), never a stderr traceback."""
+        ms = int((time.monotonic() - start) * 1000)
+        try:
+            logger.info("http method=%s route=%s status=%d ms=%d", method, route, status, ms)
+        except Exception:  # noqa: BLE001 — logging must never break a response
+            pass
 
-        uptime = time.monotonic() - self.server.start_time  # type: ignore[attr-defined]
-        self._send_json(
-            200,
-            {
-                "protocol_version": PROTOCOL_VERSION,
-                "uptime": round(uptime, 3),
-                "subscribers": self._hub.subscriber_count,
-            },
-        )
+    def _handle_health(self) -> int:
+        """Authed → enriched status; public-mode + unauthed → minimal liveness;
+        else 401. The default (health not public) requires the token like every
+        route; a spend/ledger/cron field is NEVER served unauthenticated. Returns
+        the HTTP status for the access log."""
+        if self._authorized():
+            self._send_json(200, observability_snapshot(self.server))  # type: ignore[arg-type]
+            return 200
+        if getattr(self.server, "health_public", False):
+            self._send_json(200, _liveness_payload(self.server))  # type: ignore[arg-type]
+            return 200
+        self._unauthorized()
+        return 401
 
     def _read_body(self) -> Optional[bytes]:
         try:
@@ -575,6 +821,8 @@ def make_server(
     *,
     token: Optional[str] = None,
     generate_token: bool = False,
+    token_file: "Optional[bool | str | os.PathLike]" = None,
+    health_public: bool = False,
     alongside_stdio: bool = False,
     rpc_timeout: float = _DEFAULT_RPC_TIMEOUT_S,
 ) -> GatewayHTTPServer:
@@ -585,10 +833,13 @@ def make_server(
     and the hub is Tee'd on top (events reach BOTH stdio and SSE — the small
     fanout seam); otherwise the hub REPLACES it (HTTP-only serve mode).
 
-    Raises ``RuntimeError`` for a non-loopback bind with no token (unless
-    ``generate_token``).
+    ``token_file`` (``True`` → ``{home}/gateway.token``, or an explicit path)
+    mints/reads a persisted bearer token and gates EVERY route on it — the
+    hardened default of :func:`serve`. ``health_public`` exempts ``/health``
+    from auth (minimal liveness subset only). Raises ``RuntimeError`` for a
+    non-loopback bind with no token and no file (unless ``generate_token``).
     """
-    resolved_token = _resolve_token(host, token, generate_token)
+    resolved_token = _resolve_token(host, token, generate_token, token_file)
 
     hub = BroadcastHub()
     # Attach the append-only per-session event log. The hub is the convergence
@@ -612,6 +863,7 @@ def make_server(
             token=resolved_token,
             rpc_timeout=rpc_timeout,
             prev_stdio=prev,
+            health_public=health_public,
         )
     except Exception:
         # Bind failed — undo the transport swap so we don't strand the gateway.
@@ -627,25 +879,43 @@ def serve(
     *,
     token: Optional[str] = None,
     generate_token: bool = False,
+    token_file: "Optional[bool | str | os.PathLike]" = True,
+    health_public: bool = False,
     alongside_stdio: bool = False,
     rpc_timeout: float = _DEFAULT_RPC_TIMEOUT_S,
 ) -> None:
-    """Build + run the HTTP gateway server until interrupted (blocking)."""
+    """Build + run the HTTP gateway server until interrupted (blocking).
+
+    Defaults ``token_file=True``: the hardened production posture mints/reads
+    ``{home}/gateway.token`` and gates every route on it (local clients read the
+    file automatically). Pass ``token_file=False`` for the legacy loopback-only,
+    token-free mode.
+    """
     httpd = make_server(
         host,
         port,
         token=token,
         generate_token=generate_token,
+        token_file=token_file,
+        health_public=health_public,
         alongside_stdio=alongside_stdio,
         rpc_timeout=rpc_timeout,
     )
     bound_host, bound_port = httpd.server_address[0], httpd.server_address[1]
     auth = "token-protected" if httpd.token else "loopback, no token"
+    health = "public" if health_public else "token-required"
     print(
         f"[gateway-http] serving on http://{bound_host}:{bound_port} ({auth})  "
-        f"POST /rpc · GET /events · GET /health",
+        f"POST /rpc · GET /events · GET /status · GET /health ({health})",
         flush=True,
     )
+    if httpd.token and _resolve_token_file_path(token_file) is not None:
+        print(
+            f"[gateway-http] bearer token persisted at {default_token_path()} (0600). "
+            f"Local client: curl -H \"Authorization: Bearer $(cat {default_token_path()})\" "
+            f"http://{bound_host}:{bound_port}/status",
+            flush=True,
+        )
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

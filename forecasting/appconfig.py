@@ -247,6 +247,23 @@ _KEYS: tuple[ConfigKey, ...] = (
               "policy.cron.llm_spend = auto|ask|never (default auto, bounded by the paid-tier budget + interval).", category="policy"),
     ConfigKey("FORECAST_POLICY_CRON_SUBPROCESS", "str", None, False,
               "policy.cron.subprocess = auto|ask|never (default auto).", category="policy"),
+    # ── Box-level unattended spend ceilings (P3.2) ────────────────────────────
+    # Daily + monthly token/USD budgets enforced at authorize(LLM_SPEND). 0 = unset
+    # (UNLIMITED) — zero behaviour change until an operator sets a ceiling. A breach
+    # refuses paid jobs, raises a severity=high ledger alert, and fires a notify
+    # event. Reset is implicit on the UTC day/month rollover. See forecasting/budget.py.
+    ConfigKey("FORECAST_BUDGET_DAILY_TOKENS", "int", 0, False,
+              "Box daily LLM token ceiling (0 = unlimited). Breach refuses paid jobs.",
+              category="policy"),
+    ConfigKey("FORECAST_BUDGET_DAILY_USD", "float", 0.0, False,
+              "Box daily LLM cost ceiling in USD (0 = unlimited). Breach refuses paid jobs.",
+              category="policy"),
+    ConfigKey("FORECAST_BUDGET_MONTHLY_TOKENS", "int", 0, False,
+              "Box monthly LLM token ceiling (0 = unlimited). Breach refuses paid jobs.",
+              category="policy"),
+    ConfigKey("FORECAST_BUDGET_MONTHLY_USD", "float", 0.0, False,
+              "Box monthly LLM cost ceiling in USD (0 = unlimited). Breach refuses paid jobs.",
+              category="policy"),
 )
 
 REGISTRY: dict[str, ConfigKey] = {k.name: k for k in _KEYS}
@@ -676,7 +693,22 @@ def build_doctor_report(
         "precedence_conflicts": conflicts,
         "kalshi": _kalshi_report(cfg),
         "connections": _connections_report(),
+        "budgets": _budgets_report(),
     }
+
+
+def _budgets_report() -> dict[str, Any]:
+    """The box-level spend-ceiling section (usage vs ceilings + headroom).
+
+    Lazy import so this module carries no load-time edge to the budget/ledger
+    stack, and a config-only environment still reports cleanly.
+    """
+    try:
+        from forecasting import budget
+
+        return budget.status_report()
+    except Exception as exc:  # pragma: no cover — degrade, never break doctor
+        return {"enabled": False, "error": f"{exc.__class__.__name__}: {exc}"}
 
 
 def _connections_report() -> dict[str, Any]:
@@ -773,6 +805,31 @@ def render_doctor_report(report: dict[str, Any]) -> str:
         fails = row.get("consecutive_failures") or 0
         warn = f"  ⚠ {fails} consecutive failures" if fails else ""
         a(f"    - {row['id']}  events=[{', '.join(row.get('events') or [])}]  last={status}{warn}")
+
+    bud = report.get("budgets") or {}
+    a("")
+    a("BOX SPEND ceilings (unattended-box guard):")
+    if not bud.get("enabled"):
+        note = bud.get("error")
+        a("  (no ceiling set — unlimited" + (f"; {note}" if note else "") + ")")
+    else:
+        usage = bud.get("usage") or {}
+        budget = bud.get("budget") or {}
+        head = bud.get("headroom") or {}
+
+        def _line(label: str, used, limit, headroom) -> str:
+            if not limit:
+                return f"  {label:<16} {used} used  ·  no ceiling"
+            flag = "  ⚠ BREACHED" if headroom is not None and headroom <= 0 else ""
+            return f"  {label:<16} {used} / {limit}  ·  headroom {headroom}{flag}"
+
+        a(_line("daily tokens", usage.get("day_tokens"), budget.get("daily_tokens"), head.get("daily_tokens")))
+        a(_line("daily USD", usage.get("day_usd"), budget.get("daily_usd"), head.get("daily_usd")))
+        a(_line("monthly tokens", usage.get("month_tokens"), budget.get("monthly_tokens"), head.get("monthly_tokens")))
+        a(_line("monthly USD", usage.get("month_usd"), budget.get("monthly_usd"), head.get("monthly_usd")))
+        if bud.get("breached"):
+            b = bud["breached"]
+            a(f"  ⚠ paid jobs REFUSED: {b['scope']} {b['metric']} ceiling reached ({b['config_key']})")
 
     return "\n".join(out)
 

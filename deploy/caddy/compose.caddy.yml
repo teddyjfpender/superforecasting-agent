@@ -1,0 +1,28 @@
+# ============================================================================
+# compose.caddy.yml — OPT-IN Caddy TLS sidecar (P3.1). Layer it OVER the
+# generated /opt/superforecasting/compose.yml with a compose profile:
+#
+#   docker compose -f /opt/superforecasting/compose.yml \
+#       -f deploy/caddy/compose.caddy.yml --profile tls up -d
+#
+# The `tls` profile means Caddy NEVER starts by default — the box stays
+# zero-inbound until you explicitly ask for the public HTTPS surface. Publish
+# only 80/443; the dashboard itself stays loopback-only (Caddy reverse-proxies
+# to 127.0.0.1:9119 inside the box). Do NOT publish 9119 to the host.
+# ============================================================================
+services:
+  caddy:
+    image: caddy:2
+    container_name: superforecasting-agent-caddy
+    profiles: ["tls"]
+    restart: unless-stopped
+    # Caddy needs host-network reach to the loopback dashboard on 127.0.0.1:9119.
+    network_mode: host
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

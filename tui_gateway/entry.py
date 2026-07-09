@@ -293,6 +293,9 @@ def _parse_http_args(argv: list[str]) -> dict | None:
     token: str | None = None
     generate = False
     alongside = False
+    # Hardened default: mint/read {home}/gateway.token and gate every route on it.
+    token_file: object = True
+    health_public = False
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -307,6 +310,16 @@ def _parse_http_args(argv: list[str]) -> dict | None:
                 i += 1
         elif a == "--http-gen-token":
             generate = True
+        elif a == "--http-token-file":
+            # Explicit token-file path (default is {home}/gateway.token).
+            if i + 1 < len(argv):
+                token_file = argv[i + 1]
+                i += 1
+        elif a == "--http-no-token-file":
+            # Legacy loopback-only, token-free mode.
+            token_file = False
+        elif a == "--http-health-public":
+            health_public = True
         elif a == "--http-alongside-stdio":
             alongside = True
         i += 1
@@ -315,6 +328,8 @@ def _parse_http_args(argv: list[str]) -> dict | None:
         "port": port,
         "token": token,
         "generate_token": generate,
+        "token_file": token_file,
+        "health_public": health_public,
         "alongside_stdio": alongside,
     }
 
@@ -331,6 +346,8 @@ def _run_http(cfg: dict) -> None:
         cfg["port"],
         token=cfg.get("token"),
         generate_token=cfg.get("generate_token", False),
+        token_file=cfg.get("token_file", True),
+        health_public=cfg.get("health_public", False),
         alongside_stdio=cfg.get("alongside_stdio", False),
     )
 

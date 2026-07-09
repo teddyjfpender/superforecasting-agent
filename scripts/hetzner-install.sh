@@ -149,6 +149,67 @@ seed_secrets() {
   fi
 }
 
+# ── gateway HTTP bearer token — minted 0600; local clients auto-read it ─────
+# The B4 HTTP+SSE serve mode gates EVERY route (incl /status, /health) on this
+# token. We pre-mint it so the /status observability runbook works immediately
+# and the server reuses it (idempotent). The SSH->TUI landing is unaffected: it
+# spawns the gateway over stdio, never HTTP — this token gates the HTTP surface.
+mint_gateway_token() {
+  local tok="$FORECAST_HOME/gateway.token"
+  if [ -s "$tok" ]; then
+    ok "gateway.token already present (idempotent)"
+    return
+  fi
+  local val
+  if command -v openssl >/dev/null 2>&1; then
+    val="$(openssl rand -base64 33 | tr '+/' '-_' | tr -d '=\n')"
+  else
+    val="$(head -c 33 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"
+  fi
+  printf '%s\n' "$val" > "$tok"
+  chown "$FORECAST_USER:$FORECAST_USER" "$tok"
+  chmod 600 "$tok"
+  ok "minted {home}/gateway.token (0600) for the HTTP serve mode"
+}
+
+# ── spend-guard guidance (commented; the operator arms it) ─────────────────
+# P3.2: an unattended box can spend across cycles even when every policy cell is
+# `auto`. We seed COMMENTED box-level ceilings so a lazy operator only has to
+# uncomment + set a number — zero behaviour change until they do.
+seed_spend_guidance() {
+  local envf="$FORECAST_HOME/.env"
+  # Propagate any budget/policy ceilings set in the bootstrap env into {home}/.env
+  # (uncommented — the operator meant these). Idempotent: never duplicate a key.
+  local v val
+  for v in FORECAST_BUDGET_DAILY_TOKENS FORECAST_BUDGET_DAILY_USD \
+           FORECAST_BUDGET_MONTHLY_TOKENS FORECAST_BUDGET_MONTHLY_USD \
+           FORECAST_POLICY_CRON_LLM_SPEND; do
+    val="${!v:-}"
+    [ -n "$val" ] || continue
+    grep -q "^${v}=" "$envf" 2>/dev/null && continue
+    printf '%s=%s\n' "$v" "$val" >> "$envf"
+    ok "armed ${v} from bootstrap env"
+  done
+  chown "$FORECAST_USER:$FORECAST_USER" "$envf" 2>/dev/null || true
+  # Seed the commented guidance block once (skip if any budget line now exists).
+  grep -q "FORECAST_BUDGET_" "$envf" 2>/dev/null && return
+  cat >> "$envf" <<'ENVG'
+
+# ── Unattended spend guards (P3.2) — uncomment + set to cap an unwatched box ──
+# Box-level LLM ceilings. 0 / unset = UNLIMITED. A breach REFUSES paid jobs,
+# raises a severity=high ledger alert, and notifies your connected surfaces.
+# Reset is implicit on the UTC day / month rollover (no cron).
+# FORECAST_BUDGET_DAILY_TOKENS=2000000
+# FORECAST_BUDGET_DAILY_USD=10
+# FORECAST_BUDGET_MONTHLY_TOKENS=40000000
+# FORECAST_BUDGET_MONTHLY_USD=150
+# Require explicit sign-off before any UNATTENDED (cron) LLM spend:
+# FORECAST_POLICY_CRON_LLM_SPEND=ask
+ENVG
+  chown "$FORECAST_USER:$FORECAST_USER" "$envf"
+  ok "seeded spend-guard guidance into {home}/.env (commented; edit to arm)"
+}
+
 # ── 4a. pipx native lane ──────────────────────────────────────────────────
 install_pipx_lane() {
   if [ "$APT" = "1" ]; then
@@ -455,6 +516,18 @@ else:
       || record FAIL "gateway process NOT running"
   fi
 
+  # (c2) gateway HTTP bearer token minted 0600 (the HTTP-surface auth).
+  if [ -s "$FORECAST_HOME/gateway.token" ]; then
+    local mode; mode="$(stat -c '%a' "$FORECAST_HOME/gateway.token" 2>/dev/null || stat -f '%Lp' "$FORECAST_HOME/gateway.token" 2>/dev/null || echo '?')"
+    if [ "$mode" = "600" ]; then
+      record PASS "gateway.token minted (0600) — HTTP serve mode is auth-gated"
+    else
+      record WARN "gateway.token present but mode=$mode (want 600)"
+    fi
+  else
+    record WARN "gateway.token not minted — HTTP serve mode will mint on first start"
+  fi
+
   # (d) SSH landing self-test — forecast-desk resolves + tmux available.
   if [ -x "$DESK_BIN" ] && [ -r "$DESK_ENV" ]; then
     if command -v tmux >/dev/null 2>&1; then
@@ -499,6 +572,8 @@ stamp_version() {
 
 # ── run ───────────────────────────────────────────────────────────────────
 seed_secrets
+mint_gateway_token
+seed_spend_guidance
 case "$LANE" in
   pipx)   install_pipx_lane; supervise_pipx ;;
   docker) install_docker_lane; supervise_docker ;;
