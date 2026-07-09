@@ -1,11 +1,21 @@
 """Curated hook profiles + the strictness ladder.
 
-A profile is a named map of rule_id -> Severity. ``standard`` is defined to equal
-the system's pre-hooks enforcement (the tool's require_* defaults + the Phase 2
-style gate), so adopting config-driven policy is a no-op on upgrade. ``strict``
-promotes the advisory rules to blocking; ``exploratory-lenient`` drops everything
-to advisory. Impact scaling moves a question up/down this ladder without
+A profile is a named map of rule_id -> Severity. ``standard`` is the default
+enforcement tier; ``strict`` promotes the advisory rules to blocking;
+``exploratory-lenient`` drops everything to advisory. Impact scaling moves a
+question up/down this ``exploratory-lenient < standard < strict`` ladder without
 per-question config.
+
+``superforecaster`` (OFF the ladder, opt-in) is the "10/10 or blocked" tier: EVERY
+rule blocks. It is strictly >= ``strict`` on every rule and is the TARGET default
+once the remaining WARN classes are remediated — see its construction below.
+
+Promotion discipline (the ``require_outside_view_anchor`` precedent, reused here):
+land a rule WARN, read its live fire rate off the adherence scorecard for a review
+cycle, then promote WARN->ERROR in a small commit that CITES the numbers. The
+2026-07-09 promotion wave (remediation sweep 2, verified 0 live failures on all
+176 live actives) flipped seven such rules; ``forecast hooks promotions`` prints
+the standing queue of the next candidates.
 """
 
 from __future__ import annotations
@@ -95,18 +105,33 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         # lint). Promote to ERROR after one review cycle once the fire rate is read.
         "candidate_intervals_present": _W,
         "style_clean": _E,
+        # HELD AT WARN 2026-07-09 — see the promotion report. Verified 0/163 live fail,
+        # but ERROR would brick the DOCUMENTED live opt-out `use_active_lessons=false`
+        # (protocol.py:123: "Pass false only to deliberately commit your raw number").
+        # Promote deliberately alongside a protocol-doc + opt-out-test update, or after
+        # the opt-out records a skip reason the gate honors. exploratory origin already
+        # commits raw numbers, so the relief valve exists.
         "lessons_applied": _W,
-        "terminal_calibration_applied": _W,
+        # PROMOTED 2026-07-09 (0/153 live fail): the terminal Platt/calibration stage
+        # is a structural requirement, not a no-op — its absence blocks a live commit.
+        "terminal_calibration_applied": _E,
         # v2 — structural OUTPUT rules block (bug-catchers; programmatic auto-fix);
-        # reasoning + soft-confidence + quorum-participation are advisory by default.
+        # soft-confidence + quorum-participation stay advisory by default.
         "output_renderable": _E,
         "uncertainty_well_formed": _E,
-        "uncertainty_width_sane": _W,
+        # PROMOTED 2026-07-09 (0/68 live fail): a 90% band wider than the whole bounded
+        # range is a malformed output (same class as uncertainty_well_formed), not a
+        # fuzzy judgment — it blocks. (The width THRESHOLD stays per-question tunable.)
+        "uncertainty_width_sane": _E,
         "quorum_participation": _W,
         "quorum_required": _W,
-        "quorum_judged": _W,
+        # PROMOTED 2026-07-09 (0/173 live fail): a commit that leans on an UNJUDGED
+        # quorum run now blocks — a quorum is only decision-grade once judged.
+        "quorum_judged": _E,
         "tails_justified": _W,
-        "calibration_bias_applied": _W,
+        # PROMOTED 2026-07-09 (0/163 live fail): a live commit that skipped the
+        # over/under-confidence calibration-bias adjustment now blocks.
+        "calibration_bias_applied": _E,
         "confidence_committed": _W,
         "reasoning_composition": _W,
         # Outside-view anchoring is the single most reliable superforecasting
@@ -123,9 +148,12 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "outside_view_refresh": _W,
         # G4 — WARN FOREVER (never ERROR: hard-gating precision teaches fabricated 0.43s).
         "granularity_disciplined": _W,
-        # G7 — WARN-first (60/63 high-impact cruxless today); promote to ERROR after the
-        # crux backfill lands and auto-promotion is observed filling new panels.
-        "crux_named": _W,
+        # G7 — PROMOTED 2026-07-09 (crux backfill landed; remediation sweep 2 shows
+        # 0/62 high-impact live fail). A high-impact live commit with no registered
+        # crux now BLOCKS. The rule's check scopes the block to high-impact (the panel
+        # auto-promotes its cruxes pre-gate), so routine medium-impact commits are
+        # untouched — see _check_crux_named.
+        "crux_named": _E,
         # G8 — WARN-first (6/7 market-watched record no comparison); promote to ERROR for
         # high-impact once the deviation-bet ledger accrues its first scored cohort.
         "market_anchor_engaged": _W,
@@ -136,10 +164,12 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "research_adequate": _W,
         "readiness_floor": _W,
         "no_watched_sources": _W,
-        # BLF A1/A3 — WARN-first in standard (the house doctrine: land WARN, promote to
-        # ERROR in strict / after a review cycle). They fire ~0 today (panels predate the
-        # marker), so the WARN is the honest observe tier while the process backfills.
-        "belief_trajectory_present": _W,
+        # BLF A1 — PROMOTED 2026-07-09 (remediation sweep 2, 0/42 live fail): a
+        # post-harvest panel that recorded NO belief trajectory now blocks the commit
+        # (the rule's check is inert unless the linked panel is post-harvest, so
+        # pre-marker panels are untouched). A3 stays WARN-first (pool_shrinkage fires
+        # only on a non-calm quorum; land WARN, promote once the marker saturates).
+        "belief_trajectory_present": _E,
         "pool_shrinkage_recorded": _W,
         # BLF A5 — WARN FOREVER (a specialist on the wrong question class is worse than
         # none, so this never hard-gates — same doctrine as granularity_disciplined).
@@ -171,11 +201,14 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "candidate_intervals_present": _E,
         "style_clean": _E,
         "lessons_applied": _E,
-        "terminal_calibration_applied": _W,  # advisory even in strict (default 1.0 is a no-op stage)
+        # ERROR in strict since 2026-07-09: standard promoted it, so strict must be
+        # >= standard (the ladder must never invert on impact scale-up).
+        "terminal_calibration_applied": _E,
         # v2
         "output_renderable": _E,
         "uncertainty_well_formed": _E,
-        "uncertainty_width_sane": _W,   # width is genuinely fuzzy; stays advisory even in strict
+        # ERROR in strict since 2026-07-09 (standard promoted it; strict >= standard).
+        "uncertainty_width_sane": _E,
         "quorum_participation": _E,
         "quorum_required": _E,
         "quorum_judged": _E,
@@ -211,7 +244,50 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
     },
 }
 
+# ── The "10/10 or blocked" tier ───────────────────────────────────────────────
+# The superforecaster profile is EVERY built-in rule at ERROR — strict plus every
+# gate ERROR, the just-promoted set, AND the rules strict deliberately leaves WARN
+# (confidence_committed, granularity_disciplined, specialist_seat_considered,
+# thesis_correlation_transparency) pushed to ERROR too. It embodies the operator's
+# end state: "hooks on by default that don't allow anything less than a 10/10 style
+# forecast." It is deliberately OFF the impact-scaling ladder (scaled_profile leaves
+# it unchanged) — a desk opts in explicitly via ``forecast hooks set-profile
+# superforecaster`` or per-question ``metadata.forecast_hooks.profile``.
+#
+# Constructed from BUILTIN_RULE_IDS so a NEW rule is born blocking here (correct for
+# the maximal tier), and it is provably >= strict on every rule (ERROR dominates).
+#
+# THIS IS THE TARGET DEFAULT. It is not yet DEFAULT_PROFILE because these rule
+# classes still carry material WARN debt on the live book (they would brick the
+# routine commit/re-forecast flow today) and must be remediated first:
+#   - reasoning_composition   (63/173 live fail — breadth-of-methods backfill)
+#   - update_cadence_honored  (cadence: 41/173 past cadence × grace)
+#   - evidence_depth          (31/173 under the source-count floor)
+#   - market_anchor_engaged   (19/38 market-watched record no comparison)
+#   - require_tail_base_rates (tail base rates: 15/24 share boards unanchored)
+#   - require_panel / require_structured_reasoning (panel/structured blocks pending
+#                              the codex-quorum reset that stalled panel runs)
+# As ``forecast hooks promotions`` drains each class to 0 live failures, promote it
+# in ``standard`` (§ the promotion discipline above); when the list is empty,
+# ``superforecaster`` becomes ``DEFAULT_PROFILE``.
+HOOK_PROFILES["superforecaster"] = {rid: _E for rid in BUILTIN_RULE_IDS}
+
 DEFAULT_PROFILE = "standard"
+
+# The maximal-strictness opt-in tier. NOT the default until the WARN classes listed
+# on the superforecaster construction above are remediated to 0 live failures.
+SUPERFORECASTER_PROFILE = "superforecaster"
+
+# Rules deliberately HELD below ERROR in standard even at 0 live failures — a clean
+# live sweep is necessary but NOT sufficient (a promotion must not brick a documented
+# flow). ``forecast hooks promotions`` annotates these so the queue never reads as an
+# instruction to flip them.
+PROMOTION_HOLDS: dict[str, str] = {
+    "lessons_applied": (
+        "ERROR would brick the documented use_active_lessons=false opt-out "
+        "(protocol.py: 'Pass false only to deliberately commit your raw number')"
+    ),
+}
 
 # Required reasoning composition per profile: (must_include_all, min_distinct_count).
 # The min count forces breadth beyond the required set.
@@ -219,6 +295,8 @@ REASONING_REQUIRED: dict[str, tuple[tuple[str, ...], int]] = {
     "exploratory-lenient": ((), 0),
     "standard": (("outside_view", "base_rate"), 3),
     "strict": (("outside_view", "base_rate", "pre_mortem", "disconfirmation"), 5),
+    # >= strict (the maximal tier demands at least the strict breadth).
+    "superforecaster": (("outside_view", "base_rate", "pre_mortem", "disconfirmation"), 5),
 }
 
 

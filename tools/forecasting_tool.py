@@ -357,7 +357,7 @@ FORECAST_LEDGER_SCHEMA = {
                 "type": "object",
                 "description": (
                     "For action='configure': per-forecast saturation-hook settings. "
-                    "{profile?: standard|strict|exploratory-lenient, "
+                    "{profile?: standard|strict|exploratory-lenient|superforecaster, "
                     "overrides?: {<gate_id>: off|warn|error}, "
                     "thresholds?: {min_perspectives|min_reasoning_methods|max_width_ratio|"
                     "min_sharpness|null_excess_tolerance: <number>}}. lesson:* gates are NOT "

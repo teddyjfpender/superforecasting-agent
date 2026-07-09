@@ -65,8 +65,11 @@ def test_every_blf_rule_is_inert_pre_harvest():
 
 # ══ A1 · belief_trajectory_present ════════════════════════════════════════════
 def test_belief_trajectory_fires_on_missing_steps():
+    # PROMOTED 2026-07-09: belief_trajectory_present is ERROR in standard now (was WARN);
+    # the check stays inert unless the linked panel is post-harvest, so this only bites
+    # a post-harvest panel that recorded no trajectory.
     v = _verdict(_ctx(belief_trajectory_ok=False, belief_trajectory_offenders=("gpt-5.5", "opus")), "belief_trajectory_present")
-    assert v is not None and v.passed is False and v.severity is Severity.WARN
+    assert v is not None and v.passed is False and v.severity is Severity.ERROR
     assert "gpt-5.5" in v.message and "belief_trajectory" in v.message
 
 

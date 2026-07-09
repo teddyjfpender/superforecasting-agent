@@ -1026,6 +1026,9 @@ def test_forecast_ledger_tool_high_impact_requires_panel_by_default(tmp_path):
             "inclusion_criteria": "comparable prior cases",
             "base_rate": 0.5,
         },
+        # crux_named is ERROR for high-impact since the 2026-07-09 promotion; record the
+        # documented skip-reason escape so this test still isolates the PANEL formality.
+        "metadata": {"crux_skip_reason": "panel-formality isolation test; no contested crux"},
     }
     blocked = json.loads(forecast_ledger_tool(dict(base)))
     # The panel-skip path clears the panel gate; attach evidence so it then also

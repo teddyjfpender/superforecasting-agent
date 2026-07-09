@@ -267,7 +267,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `from_question_id` | string |  | For link/unlink: the source forecast id. |
 | `gold` | array<object> |  | label_score: gold labels as [{id, label}, ...] (the expert/ground-truth labels). |
 | `guardrail_policy` | object |  |  |
-| `hooks` | object |  | For action='configure': per-forecast saturation-hook settings. {profile?: standard|strict|exploratory-lenient, overrides?: {<gate_id>: off|warn|error}, thresholds?: {min_perspectives|min_reasoning_methods|max_width_ratio|min_sharpness|null_excess_tolerance: <number>}}. lesson:* gates are NOT settable here (they stay non-demotable). A LOOSER override is allowed but flagged in resolve_question_config. |
+| `hooks` | object |  | For action='configure': per-forecast saturation-hook settings. {profile?: standard|strict|exploratory-lenient|superforecaster, overrides?: {<gate_id>: off|warn|error}, thresholds?: {min_perspectives|min_reasoning_methods|max_width_ratio|min_sharpness|null_excess_tolerance: <number>}}. lesson:* gates are NOT settable here (they stay non-demotable). A LOOSER override is allowed but flagged in resolve_question_config. |
 | `horizon` | string |  |  |
 | `impact` | string |  |  |
 | `incident_type` | string |  |  |

@@ -740,8 +740,9 @@ DEFAULT_CONFIG = {
         "hooks": {
             # Master switch. False -> every rule is advisory (nothing blocks).
             "enabled": True,
-            # Baseline profile: exploratory-lenient | standard | strict.
-            # "standard" equals the system's prior enforcement (no behavior change).
+            # Baseline profile: exploratory-lenient | standard | strict | superforecaster.
+            # "standard" is the default enforcement tier; "superforecaster" is the
+            # opt-in "10/10 or blocked" tier (every gate ERROR).
             "profile": "standard",
             # Bump a question up/down the strictness ladder by its impact, with no
             # per-question config (ladder: exploratory-lenient < standard < strict).

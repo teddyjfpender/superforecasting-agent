@@ -46,6 +46,7 @@ from forecasting.hooks.sweep import (
     by_rule_sweep,
     finish_sweep,
     lint_forecast,
+    promotion_queue,
     saturation_summary,
     sweep_alert_threshold,
 )
@@ -90,6 +91,7 @@ __all__ = [
     "by_rule_sweep",
     "finish_sweep",
     "lint_forecast",
+    "promotion_queue",
     "saturation_summary",
     "sweep_alert_threshold",
     "load_hook_config",

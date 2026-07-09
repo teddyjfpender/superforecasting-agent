@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **88 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **90 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -32,6 +32,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | [`forecast calibration`](#forecast-calibration) | Show calibration summary (add `status` for the readiness cockpit) |
 | [`forecast complementarity`](#forecast-complementarity) | AIA P1.3 — fitted convex market+LLM Brier-minimizing blend + LOO additive value (read-only) |
 | [`forecast config`](#forecast-config) | Inspect the layered runtime configuration (typed loader + config doctor). |
+| [`forecast connect`](#forecast-connect) | Wire the desk to a chat surface (telegram / slack) in one guided flow |
 | [`forecast correction`](#forecast-correction) | Record non-mutating corrections |
 | [`forecast crux`](#forecast-crux) | Manage per-forecast crux variables (the decisive inputs) |
 | [`forecast curate`](#forecast-curate) | Propose short-horizon contested binary questions from live markets (calibration fuel) |
@@ -61,6 +62,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | [`forecast model`](#forecast-model) | Record a probabilistic model run (or `model build <ref>` to build a Market Model as a forecast leg) |
 | [`forecast new`](#forecast-new) | Create a scoreable forecast question |
 | [`forecast next`](#forecast-next) | Rank the book by value-of-information — what should I touch next? |
+| [`forecast notify`](#forecast-notify) | Inspect + test notification bindings (the delivery router) |
 | [`forecast onboard`](#forecast-onboard) | Curate a new question as a typed QuestionSpec — propose + validate, then commit the full fan-out |
 | [`forecast panel`](#forecast-panel) | Run / aggregate / inspect a multi-perspective forecast panel (outside, inside, market, red-team, sanity) |
 | [`forecast performance`](#forecast-performance) | Summarize recent backtest performance against available baselines |
@@ -400,6 +402,40 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | --- | --- |
 | `--json` | Emit the machine-readable report JSON. |
 
+## `forecast connect`
+
+- **`forecast connect signal`** — signal: expert-only (deferred) — prints the manual path
+- **`forecast connect slack`** — Guided Slack connect (manifest → token → whoami → bind → test)
+- **`forecast connect telegram`** — Guided Telegram bot connect (token → chat bind → test)
+- **`forecast connect whatsapp`** — whatsapp: expert-only (deferred) — prints the manual path
+
+### `forecast connect signal`
+
+### `forecast connect slack`
+
+| argument | help |
+| --- | --- |
+| `--token` | Bot User OAuth token (xoxb-…); skips the prompt |
+| `--channel` | Channel id to bind digests to |
+| `--events` | Event classes to deliver (CSV or 'all') |
+| `--format` | Manifest format |
+| `--non-interactive` | Fail instead of prompting (requires --token) |
+| `--skip-test` | Do not send a test card |
+| `--json` | Emit the result as JSON |
+
+### `forecast connect telegram`
+
+| argument | help |
+| --- | --- |
+| `--token` | BotFather token (skips the interactive prompt) |
+| `--chat-id` | Bind this chat id directly (skips capture) |
+| `--events` | Event classes to deliver (CSV or 'all') |
+| `--non-interactive` | Fail instead of prompting (requires --token + --chat-id) |
+| `--skip-test` | Do not send a test message |
+| `--json` | Emit the result as JSON |
+
+### `forecast connect whatsapp`
+
 ## `forecast correction`
 
 - **`forecast correction add`** — Add a correction record
@@ -666,6 +702,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 - **`forecast hooks methods`** — List the reasoning-method taxonomy the reasoning hook checks
 - **`forecast hooks preview`** — Dry-run a candidate rule spec against the current ledger (which forecasts would it block?)
 - **`forecast hooks profiles`** — List the curated profiles + their rule severities
+- **`forecast hooks promotions`** — Standing WARN->ERROR promotion queue: WARN-in-standard rules at 100% live pass (read-only advisor)
 - **`forecast hooks remove`** — Remove a user rule by id
 - **`forecast hooks set-profile`** — Set the active hook profile
 - **`forecast hooks set-severity`** — Set a rule's severity override (off|warn|error)
@@ -720,6 +757,12 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | `--json` |  |
 
 ### `forecast hooks profiles`
+
+### `forecast hooks promotions`
+
+| argument | help |
+| --- | --- |
+| `--json` |  |
 
 ### `forecast hooks remove`
 
@@ -2299,6 +2342,43 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | --- | --- |
 | `--limit` | How many actions to print (default: 5) |
 | `--json` | Emit the machine-readable ranked actions |
+
+## `forecast notify`
+
+- **`forecast notify add`** — Register a binding by hand
+- **`forecast notify list`** — List bindings with their last-delivery status
+- **`forecast notify remove`** — Remove a binding by route id
+- **`forecast notify test`** — Send a live test to a binding (route id or surface:target)
+
+### `forecast notify add`
+
+| argument | help |
+| --- | --- |
+| `surface` |  |
+| `target` | Chat id (telegram) or channel id (slack) |
+| `--events` | Event classes (CSV or 'all') |
+| `--thread` | Thread/topic id (optional) |
+| `--label` | Human label |
+| `--json` |  |
+
+### `forecast notify list`
+
+| argument | help |
+| --- | --- |
+| `--json` |  |
+
+### `forecast notify remove`
+
+| argument | help |
+| --- | --- |
+| `route_id` | The route id (from `forecast notify list`) |
+
+### `forecast notify test`
+
+| argument | help |
+| --- | --- |
+| `target` | A route id (telegram:123) or destination (slack:C0123) |
+| `--json` |  |
 
 ## `forecast onboard`
 

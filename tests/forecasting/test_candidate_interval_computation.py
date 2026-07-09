@@ -147,6 +147,10 @@ def _share_question(lg, *, impact="high", origin_profile=None):
     )
     lg.add_evidence(question_id=q.id, source_or_note="BBC", claim="four candidates on the ballot")
     rc = lg.add_reference_class(question_id=q.id, name="leader share", inclusion_criteria="prior by-election shares", base_rate=0.60)
+    # crux_named is ERROR for high-impact since the 2026-07-09 promotion; register one
+    # so these commits isolate the interval gates instead of blocking on the crux gate.
+    if impact == "high":
+        lg.add_crux(question_id=q.id, crux_variable="Reform turnout vs the residual field")
     return q, (rc["id"] if isinstance(rc, dict) else rc)
 
 

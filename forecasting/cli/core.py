@@ -599,6 +599,13 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     hooks_profiles = hooks_sub.add_parser("profiles", help="List the curated profiles + their rule severities")
     hooks_profiles.set_defaults(_forecast_handler=_cmd_hooks_profiles)
 
+    hooks_promotions = hooks_sub.add_parser(
+        "promotions",
+        help="Standing WARN->ERROR promotion queue: WARN-in-standard rules at 100% live pass (read-only advisor)",
+    )
+    hooks_promotions.add_argument("--json", action="store_true")
+    hooks_promotions.set_defaults(_forecast_handler=_cmd_hooks_promotions)
+
     hooks_explain = hooks_sub.add_parser("explain", help="Explain a signal (or list every signal the DSL exposes)")
     hooks_explain.add_argument("signal", nargs="?", help="Signal name; omit to list all")
     hooks_explain.set_defaults(_forecast_handler=_cmd_hooks_explain)
@@ -4284,6 +4291,38 @@ def _cmd_hooks_profiles(args: argparse.Namespace) -> None:
         print(f"{name}:")
         for rid, s in sevs.items():
             print(f"  {s.value:5}  {rid}")
+
+
+def _cmd_hooks_promotions(args: argparse.Namespace) -> None:
+    """The standing WARN->ERROR promotion queue — read-only advisor. Lists the
+    WARN-in-standard built-in rules that pass on every live active (0 failures on a
+    fresh re-lint), i.e. the rules the operator could promote to ERROR without
+    bricking the open book. The operator promotes deliberately; this only recommends."""
+    from forecasting.hooks import promotion_queue
+
+    ledger = _ledger(args)
+    q = promotion_queue(ledger)
+    if getattr(args, "json", False):
+        print(json.dumps(q, ensure_ascii=False))
+        return
+    print(
+        f"WARN->ERROR promotion queue (fresh live re-lint of {q['questions_scored']} "
+        f"live actives; {q['standard_warn_rules']} rules WARN in standard):"
+    )
+    promotable = q["promotable"]
+    if not promotable:
+        print("  (queue empty — no WARN-in-standard rule is at 100% live pass right now)")
+    else:
+        print("  PROMOTABLE — 0 live failures, safe to flip to ERROR in a numbers-citing commit:")
+        print(f"    {'rule':<34}{'std':>6}{'checked':>8}{'failed':>7}")
+        for row in promotable:
+            hold = f"  HELD: {row['hold']}" if row.get("hold") else ""
+            print(f"    {row['rule_id']:<34}{row['standard_severity']:>6}{row['checked']:>8}{row['failed']:>7}{hold}")
+    if q["blocked"]:
+        print("  NOT YET — WARN-in-standard rules with live failures (remediate first):")
+        print(f"    {'rule':<34}{'std':>6}{'checked':>8}{'failed':>7}")
+        for row in q["blocked"]:
+            print(f"    {row['rule_id']:<34}{row['standard_severity']:>6}{row['checked']:>8}{row['failed']:>7}")
 
 
 def _cmd_hooks_explain(args: argparse.Namespace) -> None:

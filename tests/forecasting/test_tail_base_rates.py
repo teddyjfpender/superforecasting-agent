@@ -280,13 +280,16 @@ def _clacton_question(lg, *, profile=None):
         impact="high",
         metadata=meta,
     )
-    # Provision so every OTHER standard gate passes: evidence floor + a linked
-    # reference class (require_outside_view_anchor is ERROR for high-impact).
+    # Provision so every OTHER standard gate passes, keeping G1 the isolated variable:
+    # evidence floor + a linked reference class (require_outside_view_anchor is ERROR
+    # for high-impact) + a registered crux (crux_named is ERROR for high-impact since
+    # the 2026-07-09 promotion — this high-impact board would otherwise block on it).
     lg.add_evidence(question_id=q.id, source_or_note="BBC ballot structure", claim="four candidates on the ballot")
     rc = lg.add_reference_class(
         question_id=q.id, name="incumbent-leader share",
         inclusion_criteria="prior Reform/UKIP by-election winner shares", base_rate=0.60,
     )
+    lg.add_crux(question_id=q.id, crux_variable="Reform turnout vs the residual field")
     return q, rc["id"] if isinstance(rc, dict) else rc
 
 

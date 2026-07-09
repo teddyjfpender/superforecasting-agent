@@ -9,7 +9,7 @@
 
 > **Source of truth:** `os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, hermes_cli/`
 
-Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **209 variables** (46 flagged as secrets, 163 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
+Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **210 variables** (47 flagged as secrets, 163 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
 
 
 > **Secrets** are classified by name (any variable whose name contains `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`). This is a conservative naming heuristic, not a data-flow analysis — treat the list as "never log or commit these", and audit the source before assuming a variable *not* listed here is safe to print.
@@ -17,7 +17,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Secrets & credentials
 
 
-**46 variables** carry a credential-shaped name. Provide them via the environment or the credential store; never commit them.
+**47 variables** carry a credential-shaped name. Provide them via the environment or the credential store; never commit them.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -60,6 +60,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `SLACK_BOT_TOKEN` | `None` | `tools.slack_tool` |
 | `SUDO_PASSWORD` | `''` | `hermes_cli.status`, `tools.terminal_tool` |
 | `SUPERFORECASTING_AGENT_REDACT_SECRETS` | `None` | `hermes_cli.codex_runtime_plugin_migration` |
+| `TELEGRAM_BOT_TOKEN` | `None` | `forecasting.transports.telegram` |
 | `TERMINAL_SSH_KEY` | `''`, `None` | `hermes_cli.doctor`, `tools.terminal_tool` |
 | `TOOL_GATEWAY_USER_TOKEN` | `None` | `tools.managed_tool_gateway` |
 | `VERCEL_OIDC_TOKEN` | `None` | `tools.terminal_tool` |

@@ -458,6 +458,9 @@ def _seed_commit_prereqs(ledger, q):
         inclusion_criteria="US mergers over $10B since 2010",
         base_rate=0.55,
     )
+    # crux_named is ERROR for high-impact since the 2026-07-09 promotion; register one
+    # so these commits reach the auto-quorum seam instead of blocking on the crux gate.
+    ledger.add_crux(question_id=q.id, crux_variable="whether the DOJ signals a second request")
 
 
 def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
@@ -511,12 +514,20 @@ def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monk
 
     ledger, q = _high_impact_ledger(tmp_path)
     _seed_commit_prereqs(ledger, q)
+    # record_panel_run at HEAD stamps PANEL_PROCESS_VERSION, so the BLF
+    # belief_trajectory_present gate (ERROR in standard since the 2026-07-09
+    # promotion) legitimately binds this run — each panelist carries a trajectory,
+    # exactly as the post-harvest process requires.
+    _traj = lambda a, b: {"belief_trajectory": [  # noqa: E731 — tiny fixture helper
+        {"step": 1, "probability": a, "moved_by": "base rate"},
+        {"step": 2, "probability": b, "moved_by": "regulator filing"},
+    ]}
     panel = ledger.record_panel_run(
         question_id=q.id,
         estimates=[
-            {"perspective": "base-rate", "probability": 0.5},
-            {"perspective": "insider", "probability": 0.6},
-            {"perspective": "skeptic", "probability": 0.45},
+            {"perspective": "base-rate", "probability": 0.5, "metadata": _traj(0.5, 0.5)},
+            {"perspective": "insider", "probability": 0.6, "metadata": _traj(0.5, 0.6)},
+            {"perspective": "skeptic", "probability": 0.45, "metadata": _traj(0.5, 0.45)},
         ],
         aggregation_method="median",
     )

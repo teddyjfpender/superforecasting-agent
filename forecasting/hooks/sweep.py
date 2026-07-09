@@ -186,6 +186,63 @@ def by_rule_sweep(ledger, *, question_ids=None, live_only: bool = True, event: s
     return {"questions_scored": checked, "rules": out}
 
 
+def promotion_queue(ledger, *, question_ids=None) -> dict[str, Any]:
+    """The standing WARN->ERROR promotion queue — the read-only advisor behind
+    ``forecast hooks promotions``.
+
+    Lists every built-in rule that is BELOW error in the ``standard`` profile
+    (i.e. a WARN the operator could promote) AND currently passes on EVERY live
+    active (0 failures on a fresh read-only re-lint). Promoting a queued rule to
+    ERROR provably bricks nothing on the open book today; the operator promotes
+    deliberately (this only recommends).
+
+    The pass signal is the FRESH live re-lint (:func:`by_rule_sweep`, live-only) —
+    the SAME source the promotion pre-check asserts against, so the queue and the
+    pre-check can never disagree. This is deliberately NOT the stored-verdict
+    :func:`adherence_scorecard`, which lags: it carries the market_nightly benchmark
+    arms and pre-promotion observe reports, so a rule can read <100% there while the
+    current live book passes it cleanly (the "sweep data may have aged" caveat, in
+    reverse). Returns ``{questions_scored, standard_warn_rules, promotable:[...],
+    blocked:[...]}`` where each entry is ``{rule_id, standard_severity, checked,
+    failed}`` sorted by rule id. A clean rule with a documented promotion HOLD
+    (:data:`~forecasting.hooks.profiles.PROMOTION_HOLDS`) carries a ``hold`` reason —
+    listed honestly, but not an instruction to flip it."""
+    from forecasting.hooks.profiles import PROMOTION_HOLDS, profile_severities
+    from forecasting.hooks.spec import Severity
+
+    table = by_rule_sweep(ledger, question_ids=question_ids, live_only=True)
+    standard = profile_severities("standard")
+    promotable: list[dict[str, Any]] = []
+    blocked: list[dict[str, Any]] = []
+    warn_rules = 0
+    for rid, sev in standard.items():
+        if sev is Severity.ERROR:
+            continue  # already blocking — not a promotion candidate
+        warn_rules += 1
+        bucket = table["rules"].get(rid)
+        # A rule with no live evaluations (checked == 0) is not a candidate: there is
+        # no live evidence it passes, so it stays off the queue until it fires.
+        if not bucket or bucket["checked"] == 0:
+            continue
+        row = {
+            "rule_id": rid,
+            "standard_severity": sev.value,
+            "checked": bucket["checked"],
+            "failed": bucket["failed"],
+        }
+        if rid in PROMOTION_HOLDS:
+            row["hold"] = PROMOTION_HOLDS[rid]
+        (promotable if bucket["failed"] == 0 else blocked).append(row)
+    promotable.sort(key=lambda r: r["rule_id"])
+    blocked.sort(key=lambda r: -r["failed"])
+    return {
+        "questions_scored": table["questions_scored"],
+        "standard_warn_rules": warn_rules,
+        "promotable": promotable,
+        "blocked": blocked,
+    }
+
+
 def finish_sweep(ledger, question_ids, *, policy: Policy | None = None) -> dict[str, Any]:
     """Re-lint each touched forecast and summarize. Returns
     {checked, clean, under_saturated:[{question_id, score, blocking, warnings}]}.

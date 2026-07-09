@@ -1,6 +1,7 @@
 """G7 · CRUX MINIMUM on high-impact — a high-impact commit must carry >=1 registered
-crux (question_cruxes) OR name why none exists (crux_skip_reason). WARN standard
-(60/63 cruxless today — WARN-first), ERROR strict."""
+crux (question_cruxes) OR name why none exists (crux_skip_reason). PROMOTED to ERROR
+standard 2026-07-09 (crux backfill landed; remediation sweep 2 = 0 live fail), ERROR
+strict. The check scopes the block to high-impact, so medium-impact is untouched."""
 
 from __future__ import annotations
 
@@ -27,9 +28,10 @@ class _QProfile:
         self.impact = "high"
 
 
-def test_high_impact_no_crux_warns():
+def test_high_impact_no_crux_blocks():
+    # PROMOTED 2026-07-09: crux_named is ERROR in standard now (was WARN).
     v = _verdict(_ctx(crux_count=0))
-    assert v is not None and v.passed is False and v.severity.value == "warn"
+    assert v is not None and v.passed is False and v.severity.value == "error"
     assert "no registered crux" in v.message
 
 
@@ -83,7 +85,7 @@ def test_ledger_high_impact_crux_wiring(tmp_path, monkeypatch):
     rc = lg.add_reference_class(question_id=q.id, name="hist", inclusion_criteria="prior cases", base_rate=0.4)
     lg.create_snapshot(question_id=q.id, probability_or_distribution=0.42, rationale="read",
                        require_panel=False, reference_class_refs=[rc["id"]], enforce_resolved_hooks=False)
-    # No crux yet -> the lint verdict fails (WARN).
+    # No crux yet -> the lint verdict fails (ERROR in standard since the promotion).
     report = lint_report(lg, q.id)
     v = next((x for x in report.verdicts if x.rule_id == "crux_named"), None)
     assert v is not None and v.passed is False
