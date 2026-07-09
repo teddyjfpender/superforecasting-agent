@@ -33,7 +33,7 @@ def _saturated_live(**overrides) -> HookContext:
         panel_skipped=False,
         has_fresh_evidence=True,
         acknowledge_stale_evidence=False,
-        evidence_count=4,
+        evidence_count=5,
         prior_forecast_id="fs_prior",
         prior_as_of="2026-06-01T00:00:00Z",
         decision_gaps=(),

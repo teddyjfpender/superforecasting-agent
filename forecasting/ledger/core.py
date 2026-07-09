@@ -2450,6 +2450,9 @@ class ForecastLedger:
     def set_snapshot_reference_class_refs(self, snapshot_id: str, refs: list[str]) -> list[str]:
         return _anchors.set_snapshot_reference_class_refs(self, snapshot_id, refs)
 
+    def refresh_current_snapshot_saturation(self, question_id: str, *, snapshot_id: str | None = None) -> bool:
+        return _anchors.refresh_current_snapshot_saturation(self, question_id, snapshot_id=snapshot_id)
+
     def relink_orphaned_anchors(self, *, question_ids: list[str] | None = None, apply: bool = False) -> dict[str, Any]:
         return _anchors.relink_orphaned_anchors(self, question_ids=question_ids, apply=apply)
 

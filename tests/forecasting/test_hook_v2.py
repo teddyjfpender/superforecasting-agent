@@ -249,10 +249,10 @@ def test_dsl_v2_signals_validate_and_evaluate():
 
 # ── RDY machine-readiness rules ───────────────────────────────────────────────
 def test_readiness_floor_fires_below_passes_at_or_above_and_on_none():
-    # below the default floor (60) -> fires
-    assert _verdict(_ctx(readiness_score=40.0), "readiness_floor").passed is False
+    # below the default floor (80) -> fires
+    assert _verdict(_ctx(readiness_score=60.0), "readiness_floor").passed is False
     # exactly at / above the floor -> passes
-    assert _verdict(_ctx(readiness_score=60.0), "readiness_floor").passed is True
+    assert _verdict(_ctx(readiness_score=80.0), "readiness_floor").passed is True
     assert _verdict(_ctx(readiness_score=85.0), "readiness_floor").passed is True
     # no composite (benchmark/market) -> PASSES (never fires on None)
     assert _verdict(_ctx(readiness_score=None), "readiness_floor").passed is True
@@ -267,17 +267,24 @@ def test_no_watched_sources_fires_on_zero_live_only():
     assert _verdict(_ctx(forecast_origin="exploratory", watched_source_count=0), "no_watched_sources") is None
 
 
+def test_evidence_depth_fires_below_default_ev_floor():
+    assert _verdict(_ctx(evidence_count=4), "evidence_depth").passed is False
+    assert _verdict(_ctx(evidence_count=5), "evidence_depth").passed is True
+    assert _verdict(_ctx(evidence_count=4, thresholds={"min_evidence_count": 3}), "evidence_depth").passed is True
+    assert _verdict(_ctx(forecast_origin="exploratory", evidence_count=0), "evidence_depth") is None
+
+
 def test_readiness_floor_appconfig_tunable():
-    # The fire boundary tracks FORECAST_HOOK_READINESS_FLOOR: score 55 passes at
-    # floor=50 and fires at floor=60. set_override has the highest precedence and is
+    # The fire boundary tracks FORECAST_HOOK_READINESS_FLOOR: score 75 passes at
+    # floor=70 and fires at floor=80. set_override has the highest precedence and is
     # robust to a reconfigured appconfig singleton in the test session.
     from forecasting import appconfig
 
     try:
-        appconfig.set_override("FORECAST_HOOK_READINESS_FLOOR", "50")
-        assert _verdict(_ctx(readiness_score=55.0), "readiness_floor").passed is True
-        appconfig.set_override("FORECAST_HOOK_READINESS_FLOOR", "60")
-        assert _verdict(_ctx(readiness_score=55.0), "readiness_floor").passed is False
+        appconfig.set_override("FORECAST_HOOK_READINESS_FLOOR", "70")
+        assert _verdict(_ctx(readiness_score=75.0), "readiness_floor").passed is True
+        appconfig.set_override("FORECAST_HOOK_READINESS_FLOOR", "80")
+        assert _verdict(_ctx(readiness_score=75.0), "readiness_floor").passed is False
     finally:
         appconfig.get_config().clear_override("FORECAST_HOOK_READINESS_FLOOR")
 

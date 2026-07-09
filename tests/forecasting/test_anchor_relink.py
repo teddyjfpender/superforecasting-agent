@@ -86,6 +86,33 @@ def test_already_linked_is_left_alone(tmp_path, monkeypatch):
     assert res["already_linked"] == 1 and res["relinkable"] == 0 and res["applied"] == 0
 
 
+def test_relink_refreshes_stored_saturation(tmp_path, monkeypatch):
+    lg = _ledger(tmp_path, monkeypatch)
+    q = lg.create_question(
+        title="Will X happen by close?",
+        resolution_criteria="Resolves yes if X happens by close; otherwise no.",
+        impact="high",
+    )
+    lg.add_evidence(question_id=q.id, source_or_note="s", claim="c")
+    rc = lg.add_reference_class(question_id=q.id, name="hist", inclusion_criteria="prior cases", base_rate=0.4)
+    snap = lg.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.42,
+        rationale="read",
+        require_panel=False,
+        reference_class_refs=[],
+        enforce_resolved_hooks=False,
+    )
+    before = (snap.metadata or {}).get("saturation") or {}
+    assert "anchor_refs_attached" in before.get("warnings", [])
+
+    lg.set_snapshot_reference_class_refs(snap.forecast_id, [rc["id"]])
+
+    after = (lg.get_current_snapshot(q.id).metadata or {}).get("saturation") or {}
+    failed = {v["rule_id"] for v in after.get("verdicts", []) if not v.get("passed", True)}
+    assert "anchor_refs_attached" not in failed
+
+
 def test_no_reference_class_is_not_a_candidate(tmp_path, monkeypatch):
     lg = _ledger(tmp_path, monkeypatch)
     q = _question_with_snapshot(lg, refs=[])  # no reference class at all

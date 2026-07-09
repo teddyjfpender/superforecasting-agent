@@ -465,10 +465,11 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": (
                     "CATEGORICAL forecasts: a {outcome_label: path-info} map naming the causal "
                     "PATH that routes mass to each material outcome. path-info is a string (the "
-                    "path) or an object {path, classification, evidence_strength: strong|mixed|weak}. "
+                    "path) or an object {path, classification, evidence_strength: strong|mixed|weak, "
+                    "base_rate, base_rate_source}. "
                     "Used by the probability-mass audit (also the `tail_audit` action) to flag "
-                    "UNEARNED tail mass — material outcomes (>=0.5%) with no named mechanism, the "
-                    "outcome-space-anchoring failure. The audit is always recorded on the snapshot."
+                    "UNEARNED tail mass and uncited named outcomes — material outcomes with no named "
+                    "mechanism or no cited outside-view anchor. Stored on the snapshot for re-lint."
                 ),
             },
             "require_outcome_paths": {
@@ -476,7 +477,8 @@ FORECAST_LEDGER_SCHEMA = {
                 "description": (
                     "Categorical live forecasts: refuse to save when any material outcome holds "
                     "mass with no named path (unearned tail mass). Provide outcome_paths, compress "
-                    "the mass, set false, or record as exploratory. Default false."
+                    "the mass, set false, or record as exploratory. Default false. For named "
+                    "outcomes above the anchor-share threshold, include base_rate + base_rate_source."
                 ),
             },
             "distribution": {

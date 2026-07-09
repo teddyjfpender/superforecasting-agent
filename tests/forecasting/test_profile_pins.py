@@ -20,6 +20,7 @@ STANDARD = {
     "require_panel": _E,
     "require_citations": _W,
     "require_evidence": _E,
+    "evidence_depth": _W,
     "require_outside_view_anchor": _E,
     "outside_view_refresh": _W,
     "require_outcome_paths": _W,

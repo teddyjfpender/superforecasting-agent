@@ -60,6 +60,19 @@ def test_factor_aggregates_basket_return(tmp_path):
     assert snap.calibration_eligible is False
 
 
+def test_factor_lint_does_not_require_thesis_event(tmp_path):
+    from forecasting.hooks import lint_forecast
+
+    ledger, factor, nbis, be = _factor(tmp_path)
+    ledger.add_thesis_member(factor.id, nbis.id, direction="support", weight=0.6)
+    ledger.add_thesis_member(factor.id, be.id, direction="support", weight=0.4)
+    ledger.aggregate_thesis(factor.id)
+
+    report = lint_forecast(ledger, factor.id)
+    assert report is not None
+    assert "event_band_earned" not in {v.rule_id for v in report.verdicts}
+
+
 def test_short_constituent_flips_sign(tmp_path):
     ledger, factor, nbis, be = _factor(tmp_path)
     ledger.add_thesis_member(factor.id, nbis.id, direction="support", weight=1.0)  # long +0.35

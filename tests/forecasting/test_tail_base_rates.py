@@ -21,6 +21,7 @@ from forecasting.hooks import (
     assess_candidate_intervals,
     assess_distribution,
     candidate_shares,
+    lint_forecast,
     run_hooks,
 )
 from forecasting.hooks.builtins import _RULE_BY_ID
@@ -341,9 +342,13 @@ def test_canary_green_when_named_tails_anchored(tmp_path):
         "Count Binface": {"base_rate": 0.02, "base_rate_source": "Binface 2024 GE Richmond 0.9%"},
     }
     snap = _commit_clacton(lg, q, rc, outcome_paths=anchored)
+    assert (snap.metadata or {}).get("outcome_paths") == anchored
     sat = (snap.metadata or {}).get("saturation") or {}
     assert "require_tail_base_rates" not in sat.get("warnings", [])
     assert "require_tail_base_rates" not in sat.get("blocking", [])
+    relint = lint_forecast(lg, q.id)
+    assert relint is not None
+    assert "require_tail_base_rates" not in {v.rule_id for v in relint.verdicts if not v.passed}
 
 
 def test_canary_g2_coherence_blocks_garbage_intervals(tmp_path):
@@ -361,6 +366,19 @@ def test_canary_g2_coherence_blocks_garbage_intervals(tmp_path):
     with pytest.raises(SaturationBlocked) as ei:
         _commit_clacton(lg, q, rc, outcome_paths=anchored, intervals=garbage)
     assert "candidate_intervals_coherent" in {v.rule_id for v in ei.value.report.blocking_failures()}
+
+
+def test_cli_outcome_path_json_preserves_base_rate_anchor():
+    from forecasting.cli.core import _parse_outcome_paths
+
+    parsed = _parse_outcome_paths([
+        'Count Binface={"base_rate":0.02,"base_rate_source":"Binface 2024 result"}',
+        "Nigel Farage=incumbent Reform path",
+    ])
+    assert parsed == {
+        "Count Binface": {"base_rate": 0.02, "base_rate_source": "Binface 2024 result"},
+        "Nigel Farage": "incumbent Reform path",
+    }
 
 
 # ══ Part F · doctor adherence scorecard ══════════════════════════════════════

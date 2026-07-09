@@ -9,6 +9,7 @@ import pytest
 
 from forecasting import ForecastLedger
 from forecasting.hooks import SaturationBlocked
+from forecasting.models import OutcomeSpace
 from tools.forecasting_tool import forecast_ledger_tool
 
 
@@ -147,6 +148,52 @@ def test_cli_lint_handler_emits_json(tmp_path, capsys):
     lg.initialize_schema()
     q = _q(lg)
     _commit_clean(lg, q)
-    _cmd_lint(argparse.Namespace(db=db, question_id=q.id, all=False, json=True))
+    _cmd_lint(argparse.Namespace(db=db, question_id=q.id, ids=[], thesis_members=[], all=False, by_rule=False, json=True))
     out = capsys.readouterr().out
-    assert '"score"' in out and '"verdicts"' in out
+    assert '"score"' in out and '"verdicts"' in out and '"metrics"' in out
+
+
+def test_cli_lint_ids_json_includes_metrics_and_warns(tmp_path, capsys):
+    import argparse
+    from forecasting.cli import _cmd_lint
+
+    db = str(tmp_path / "lint_ids.db")
+    lg = ForecastLedger(db_path=db)
+    lg.initialize_schema()
+    q = _q(lg)
+    for i in range(4):
+        lg.add_evidence(question_id=q.id, source_or_note=f"report {i}", claim="rates rose")
+    _commit_clean(lg, q)
+
+    _cmd_lint(argparse.Namespace(db=db, question_id=None, ids=[q.id], thesis_members=[], all=False, by_rule=False, json=True))
+    payload = json.loads(capsys.readouterr().out)
+    row = payload["results"][0]
+    assert row["question_id"] == q.id
+    assert row["metrics"]["evidence_count"] == 4
+    assert row["metrics"]["source_count"] == 0
+    assert row["metrics"]["readiness_floor"] == 80
+    assert "evidence_depth" in row["failed"]
+
+
+def test_cli_lint_thesis_members_expands_members(tmp_path, capsys):
+    import argparse
+    from forecasting.cli import _cmd_lint
+
+    db = str(tmp_path / "lint_thesis.db")
+    lg = ForecastLedger(db_path=db)
+    lg.initialize_schema()
+    thesis = lg.create_question(
+        title="Will the thesis hold?",
+        resolution_criteria="Aggregate health of member forecasts.",
+        outcome_space=OutcomeSpace(type="thesis"),
+    )
+    a = _q(lg)
+    b = _q(lg)
+    _commit_clean(lg, a)
+    _commit_clean(lg, b)
+    lg.add_thesis_member(thesis.id, a.id)
+    lg.add_thesis_member(thesis.id, b.id)
+
+    _cmd_lint(argparse.Namespace(db=db, question_id=None, ids=[], thesis_members=[thesis.id], all=False, by_rule=False, json=True))
+    payload = json.loads(capsys.readouterr().out)
+    assert {row["question_id"] for row in payload["results"]} == {a.id, b.id}

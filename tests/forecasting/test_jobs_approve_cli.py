@@ -72,6 +72,36 @@ def test_jobs_approve_json_emits_the_record(home, capsys):
     assert "llm_spend" in payload["policy_grants"]
 
 
+def test_jobs_status_active_and_cancel_cli(home, capsys):
+    store = JobStore(home=home)
+    job_id = store.new_id()
+    store.write(
+        JobRecord(
+            job_id=job_id,
+            type="reforecast",
+            spec={"question_ids": ["fq_a"]},
+            status="running",
+            total=3,
+            done_count=1,
+            current="fq_a",
+        )
+    )
+
+    forecast_main(["jobs", "status", job_id, "--json"])
+    status_payload = json.loads(capsys.readouterr().out)
+    assert status_payload["job_id"] == job_id
+    assert status_payload["status"] == "running"
+
+    forecast_main(["jobs", "active", "--json"])
+    active_payload = json.loads(capsys.readouterr().out)
+    assert [row["job_id"] for row in active_payload["jobs"]] == [job_id]
+
+    forecast_main(["jobs", "cancel", job_id, "--json"])
+    cancel_payload = json.loads(capsys.readouterr().out)
+    assert cancel_payload["cancel_requested"] is True
+    assert store.stop_path(job_id).exists()
+
+
 def test_jobs_approve_rejects_a_job_not_awaiting_approval(home, capsys):
     store = JobStore(home=home)
     job_id = store.new_id()

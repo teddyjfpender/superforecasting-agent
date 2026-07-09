@@ -20,6 +20,7 @@ from forecasting.hooks.spec import (
     Severity,
     SimpleRule,
 )
+from forecasting.hooks.thresholds import DEFAULT_MIN_EVIDENCE_COUNT, DEFAULT_READINESS_FLOOR
 
 _OK: tuple[bool, str, dict[str, Any]] = (True, "", {})
 
@@ -120,7 +121,6 @@ def _check_stale_evidence_justified(ctx: HookContext):
 # scores that 0-100. Below the floor the loop is literally missing inputs — this
 # rule surfaces that at commit. Tunable via FORECAST_HOOK_READINESS_FLOOR (or the
 # per-question ``readiness_floor`` threshold override).
-DEFAULT_READINESS_FLOOR = 60.0
 
 
 def _check_readiness_floor(ctx: HookContext):
@@ -160,6 +160,22 @@ def _check_no_watched_sources(ctx: HookContext):
         "record it as forecast_origin='exploratory'."
     )
     return False, msg, {"watched_source_count": ctx.watched_source_count}
+
+
+# ── evidence depth (the Desk EV floor, distinct from "any evidence") ──────────
+def _check_evidence_depth(ctx: HookContext):
+    floor = ctx.threshold("min_evidence_count")
+    if floor is None:
+        floor = DEFAULT_MIN_EVIDENCE_COUNT
+    if ctx.evidence_count >= floor:
+        return _OK
+    msg = (
+        f"live forecast has {ctx.evidence_count} evidence item(s), below the default "
+        f"EV floor of {floor:.0f}. Add enough independent, decision-relevant evidence "
+        "items for the forecast to clear the desk lint floor, or record it as "
+        "forecast_origin='exploratory'."
+    )
+    return False, msg, {"evidence_count": ctx.evidence_count, "floor": floor}
 
 
 # ── decision readiness ────────────────────────────────────────────────────────
@@ -998,7 +1014,7 @@ _EVENT_BAND_COVERAGE_FLOOR = 0.30
 
 
 def _applies_event_band_earned(ctx: HookContext) -> bool:
-    return ctx.is_live and ctx.is_thesis_or_factor and ctx.thesis_member_count >= 1
+    return ctx.is_live and ctx.is_thesis_or_factor and not ctx.is_factor and ctx.thesis_member_count >= 1
 
 
 def _check_event_band_earned(ctx: HookContext):
@@ -1092,6 +1108,8 @@ BUILTIN_RULES: tuple[SimpleRule, ...] = (
                _check_citations, _modeled, _rem_collect),
     SimpleRule("require_evidence", Category.SATURATION, Severity.ERROR, 16.0,
                _check_require_evidence, _modeled, _rem_collect),
+    SimpleRule("evidence_depth", Category.SATURATION, Severity.WARN, 8.0,
+               _check_evidence_depth, _modeled, _rem_collect),
     SimpleRule("require_outside_view_anchor", Category.REASONING, Severity.WARN, 9.0,
                _check_outside_view_anchor, _modeled, _rem_reference_class),
     # G3 — outside-view REFRESH tier: WARN when a routine (non-high-impact) re-forecast
@@ -1207,6 +1225,7 @@ RULE_DOCS: dict[str, str] = {
     "require_panel": "A deliberation panel must run (or record an explicit skip reason).",
     "require_citations": "The forecast should cite evidence / model runs.",
     "require_evidence": "A live forecast MUST carry at least one evidence record (hard requirement).",
+    "evidence_depth": "A modeled live forecast should carry at least the default EV floor of evidence items.",
     "require_outside_view_anchor": "A serious live forecast (high-impact OR the FIRST commit of any question) must carry an outside-view anchor (reference class / base rate).",
     "outside_view_refresh": "A routine re-forecast of a question that has never carried a reference class WARNs (pure inside view since birth) — visibility, not a block.",
     "granularity_disciplined": "WARN when a binary commit sits on a round-number anchor (a 0.10 multiple / quarter-point) no pooled component produced (Tetlock's granularity finding); never blocks.",

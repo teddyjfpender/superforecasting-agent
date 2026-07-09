@@ -568,6 +568,19 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         "lint", help="Saturation report for a forecast: 0-100 score + per-rule verdicts (style + completeness)"
     )
     lint_parser.add_argument("question_id", nargs="?", help="Question id to lint")
+    lint_parser.add_argument(
+        "--ids",
+        nargs="+",
+        default=[],
+        help="Lint an explicit cohort of question ids (space- or comma-separated)",
+    )
+    lint_parser.add_argument(
+        "--thesis-members",
+        action="append",
+        default=[],
+        metavar="THESIS",
+        help="Lint every direct member of this thesis (id, row number, or search words); repeatable",
+    )
     lint_parser.add_argument("--all", action="store_true", help="Lint every active question and summarize (finish sweep)")
     lint_parser.add_argument("--by-rule", action="store_true", help="Read-only per-rule fire-count table across active live forecasts (the migration debt table)")
     lint_parser.add_argument("--json", action="store_true", help="Emit machine-readable output")
@@ -970,10 +983,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
         dest="outcome_paths",
         action="append",
         default=[],
-        metavar="OUTCOME=PATH",
+        metavar="OUTCOME=PATH|JSON",
         help="Categorical forecasts: name the causal path for an outcome, e.g. "
-        "--outcome-path 'Lasher=leads polls + endorsements'. Repeatable. Feeds the "
-        "probability-mass audit that flags unearned tail mass.",
+        "--outcome-path 'Lasher=leads polls + endorsements' or "
+        "--outcome-path 'Lasher={\"base_rate\":0.42,\"base_rate_source\":\"prior result\"}'. "
+        "Repeatable. Feeds the probability-mass audit that flags unearned tail mass "
+        "and uncited named outcomes.",
     )
     update_parser.add_argument(
         "--require-outcome-paths",
@@ -4061,6 +4076,15 @@ def _cmd_lint(args: argparse.Namespace) -> None:
             print(f"  {rid:<32} {b['checked']:>7} {b['failed_warn']:>6} {b['failed_block']:>6}")
         return
 
+    if getattr(args, "ids", None) or getattr(args, "thesis_members", None):
+        scoped_ids = _lint_scope_ids(ledger, args)
+        summary = _lint_batch(ledger, scoped_ids)
+        if args.json:
+            print(json.dumps(summary, ensure_ascii=False))
+            return
+        _print_lint_batch(summary)
+        return
+
     if args.all:
         ids = [q.id for q in ledger.list_questions(status="active")]
         summary = finish_sweep(ledger, ids)
@@ -4080,23 +4104,159 @@ def _cmd_lint(args: argparse.Namespace) -> None:
 
     qid = args.question_id
     if not qid:
-        print("provide a question id, or --all to sweep every active forecast")
+        print("provide a question id, --ids, --thesis-members, or --all to sweep every active forecast")
         return
     report = lint_forecast(ledger, qid)
     if report is None:
         print(f"{qid}: no committed snapshot to lint")
         return
+    payload = _lint_report_payload(ledger, qid, report)
     if args.json:
-        print(json.dumps(report.to_dict(), ensure_ascii=False))
+        print(json.dumps(payload, ensure_ascii=False))
         return
-    d = report.to_dict()
-    print(f"saturation {d['score']}/100  {'PASS' if d['passed'] else 'BLOCK'}")
+    d = payload
+    metrics = d.get("metrics") or {}
+    status = _lint_status_label(d)
+    print(
+        f"saturation {d['score']}/100  {status}  "
+        f"ev={metrics.get('evidence_count', 0)}/{metrics.get('min_evidence_count', 5)}  "
+        f"src={metrics.get('source_count', 0)}  "
+        f"rdy={_fmt_metric(metrics.get('readiness_score'))}/{metrics.get('readiness_floor', 80)}"
+    )
     for v in report.verdicts:
         mark = "ok " if v.passed else ("ERR" if v.severity.blocks else "warn")
         line = f"  [{mark}] {v.rule_id}"
         if not v.passed:
             line += f"  -  {v.message[:90]}"
         print(line)
+
+
+def _split_lint_ids(values: Sequence[str] | None) -> list[str]:
+    out: list[str] = []
+    for raw in values or []:
+        for part in str(raw).split(","):
+            item = part.strip()
+            if item:
+                out.append(item)
+    return out
+
+
+def _lint_scope_ids(ledger: ForecastLedger, args: argparse.Namespace) -> list[str]:
+    ids: list[str] = []
+    if getattr(args, "question_id", None):
+        ids.append(args.question_id)
+    ids.extend(_split_lint_ids(getattr(args, "ids", None)))
+    for thesis_ref in getattr(args, "thesis_members", None) or []:
+        thesis_id = _resolve_question_id(ledger, thesis_ref)
+        ids.extend(str(member["member_question_id"]) for member in ledger.list_thesis_members(thesis_id))
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for qid in ids:
+        if qid in seen:
+            continue
+        seen.add(qid)
+        out.append(qid)
+    return out
+
+
+def _lint_metrics(ledger: ForecastLedger, qid: str) -> dict[str, Any]:
+    from forecasting.hooks.thresholds import DEFAULT_MIN_EVIDENCE_COUNT, DEFAULT_READINESS_FLOOR
+
+    try:
+        evidence_count = len(ledger.list_evidence(qid))
+    except Exception:
+        evidence_count = 0
+    try:
+        source_count = len(ledger.list_watched_sources(scope_type="question", scope_ref=qid, status="active"))
+    except Exception:
+        source_count = 0
+    try:
+        from forecasting.readiness_lens import build_question_readiness
+
+        readiness_score = build_question_readiness(ledger, qid).get("score")
+    except Exception:
+        readiness_score = None
+    return {
+        "evidence_count": evidence_count,
+        "min_evidence_count": int(DEFAULT_MIN_EVIDENCE_COUNT),
+        "source_count": source_count,
+        "min_source_count": 1,
+        "readiness_score": readiness_score,
+        "readiness_floor": int(DEFAULT_READINESS_FLOOR),
+    }
+
+
+def _lint_report_payload(ledger: ForecastLedger, qid: str, report) -> dict[str, Any]:
+    payload = report.to_dict()
+    payload["question_id"] = qid
+    try:
+        payload["title"] = ledger.get_question(qid).title
+    except Exception:
+        pass
+    payload["metrics"] = _lint_metrics(ledger, qid)
+    payload["failed"] = [v["rule_id"] for v in payload["verdicts"] if not v.get("passed")]
+    payload["clean"] = not payload["failed"]
+    return payload
+
+
+def _lint_batch(ledger: ForecastLedger, ids: Sequence[str]) -> dict[str, Any]:
+    from forecasting.hooks import lint_forecast
+
+    results: list[dict[str, Any]] = []
+    for qid in ids:
+        report = lint_forecast(ledger, qid)
+        if report is None:
+            results.append({"question_id": qid, "status": "no_snapshot", "clean": False})
+            continue
+        results.append(_lint_report_payload(ledger, qid, report))
+    checked = sum(1 for row in results if row.get("status") != "no_snapshot")
+    clean = sum(1 for row in results if row.get("clean") is True)
+    return {
+        "checked": checked,
+        "clean": clean,
+        "problem_count": checked - clean,
+        "no_snapshot": sum(1 for row in results if row.get("status") == "no_snapshot"),
+        "results": results,
+    }
+
+
+def _fmt_metric(value: Any) -> str:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(int(round(float(value))))
+    return "-"
+
+
+def _lint_status_label(row: dict[str, Any]) -> str:
+    if row.get("blocking"):
+        return "BLOCK"
+    if row.get("warnings"):
+        return "WARN"
+    return "CLEAN"
+
+
+def _print_lint_batch(summary: dict[str, Any]) -> None:
+    print(
+        f"saturation lint: {summary['checked']} checked, {summary['clean']} clean, "
+        f"{summary['problem_count']} with warnings/blockers"
+    )
+    if summary.get("no_snapshot"):
+        print(f"  no_snapshot: {summary['no_snapshot']}")
+    for row in summary["results"]:
+        qid = row["question_id"]
+        if row.get("status") == "no_snapshot":
+            print(f"  {qid}  no committed snapshot")
+            continue
+        metrics = row.get("metrics") or {}
+        failed = row.get("failed") or []
+        tags = ",".join(failed) if failed else "-"
+        print(
+            f"  {qid}  {row['score']}/100  {_lint_status_label(row):<5}  "
+            f"ev={metrics.get('evidence_count', 0)}/{metrics.get('min_evidence_count', 5)}  "
+            f"src={metrics.get('source_count', 0)}  "
+            f"rdy={_fmt_metric(metrics.get('readiness_score'))}/{metrics.get('readiness_floor', 80)}  "
+            f"{tags}"
+        )
 
 
 def _cmd_hooks_list(args: argparse.Namespace) -> None:
@@ -11336,11 +11496,11 @@ def _print_calibration_bias(args: argparse.Namespace) -> None:
         print(f"{scope:<22} {rep['status']:<20} {rep['ess']:>6.1f} {rep['n']:>4} {sce:>9} {ci:>18}  {note}")
 
 
-def _parse_outcome_paths(raw: list[str] | None) -> dict[str, str] | None:
-    """Parse repeated --outcome-path 'Outcome=path text' flags into a map."""
+def _parse_outcome_paths(raw: list[str] | None) -> dict[str, Any] | None:
+    """Parse repeated --outcome-path 'Outcome=path text|JSON object' flags."""
     if not raw:
         return None
-    paths: dict[str, str] = {}
+    paths: dict[str, Any] = {}
     for item in raw:
         if "=" not in item:
             raise SystemExit(
@@ -11348,8 +11508,19 @@ def _parse_outcome_paths(raw: list[str] | None) -> dict[str, str] | None:
             )
         name, path = item.split("=", 1)
         name = name.strip()
-        if name:
-            paths[name] = path.strip()
+        if not name:
+            continue
+        path = path.strip()
+        if path.startswith("{"):
+            try:
+                parsed = json.loads(path)
+            except json.JSONDecodeError as exc:
+                raise SystemExit(f"forecast: invalid --outcome-path JSON for {name}: {exc.msg}") from exc
+            if not isinstance(parsed, dict):
+                raise SystemExit(f"forecast: --outcome-path JSON for {name} must be an object")
+            paths[name] = parsed
+        else:
+            paths[name] = path
     return paths or None
 
 

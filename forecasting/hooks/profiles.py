@@ -29,6 +29,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_panel": _O,
         "require_citations": _O,
         "require_evidence": _W,
+        "evidence_depth": _O,
         "require_outcome_paths": _O,
         "require_tail_base_rates": _O,
         "candidate_intervals_coherent": _W,
@@ -79,6 +80,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_panel": _E,
         "require_citations": _W,
         "require_evidence": _E,
+        "evidence_depth": _W,
         "require_outcome_paths": _W,
         # G1 — the Binface gate. WARN-FIRST in standard: 19/19 live share boards fail
         # today, so land it as a visible WARN (the require_outside_view_anchor
@@ -162,6 +164,7 @@ HOOK_PROFILES: dict[str, dict[str, Severity]] = {
         "require_panel": _E,
         "require_citations": _E,
         "require_evidence": _E,
+        "evidence_depth": _E,
         "require_outcome_paths": _E,
         "require_tail_base_rates": _E,
         "candidate_intervals_coherent": _E,

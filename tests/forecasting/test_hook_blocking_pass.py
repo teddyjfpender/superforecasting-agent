@@ -70,9 +70,10 @@ def test_strict_profile_blocks_promoted_outside_view_anchor(tmp_path):
     lg = _ledger(tmp_path)
     # impact="high" makes it a SERIOUS forecast so the (serious-scoped) anchor rule fires.
     q = _q(lg, profile="strict", impact="high")
-    # Clear the evidence floor so the strict-only promotion (require_outside_view_anchor,
+    # Clear both evidence floors so the strict-only promotion (require_outside_view_anchor,
     # ERROR) is what blocks — proving the strict severity is real.
-    lg.add_evidence(question_id=q.id, source_or_note="report", claim="rates rose")
+    for i in range(5):
+        lg.add_evidence(question_id=q.id, source_or_note=f"report {i}", claim="rates rose")
     with pytest.raises(SaturationBlocked) as ei:
         lg.create_snapshot(
             question_id=q.id, probability_or_distribution=0.5, rationale="clean prose",
@@ -150,8 +151,8 @@ def test_kill_switch_disables_blocking(tmp_path, monkeypatch):
 # ── RDY machine-readiness enforcement (readiness_floor + no_watched_sources) ─────
 def _well_provisioned_q(lg, *, profile=None):
     """A question whose machine-readiness clears the floor and carries a watched
-    source, so neither new rule fires. (watches 20 + ref_class 12 + trigger 12 +
-    close_time 6 + impact 6 + resolution 6 = 62 >= 60 floor.)"""
+    source, so neither new rule fires. (watches 20 + auto-schedule 18 + ref_class
+    12 + trigger 12 + close_time 6 + impact 6 + resolution 6 = 80.)"""
     meta = {"forecast_hooks": {"profile": profile}} if profile else None
     q = lg.create_question(
         title="Will the indicator exceed target by close?",
@@ -165,7 +166,8 @@ def _well_provisioned_q(lg, *, profile=None):
     )
     lg.add_watched_source(scope_type="question", scope_ref=q.id, source="fred:CPIAUCSL")
     lg.add_reference_class(question_id=q.id, name="hist", inclusion_criteria="prior indicator cases", base_rate=0.4)
-    lg.add_evidence(question_id=q.id, source_or_note="quarterly report", claim="rates rose")
+    for i in range(5):
+        lg.add_evidence(question_id=q.id, source_or_note=f"quarterly report {i}", claim="rates rose")
     return q
 
 
@@ -191,7 +193,7 @@ def test_standard_well_provisioned_commit_does_not_fire_new_rules(tmp_path):
     readiness_score into the blocking-pass context, no_watched_sources would false-fire
     (count defaults to 0) — this pins that the real values arrive."""
     lg = _ledger(tmp_path)
-    q = _well_provisioned_q(lg)  # standard profile, watches>0, readiness>=60, rc present
+    q = _well_provisioned_q(lg)  # standard profile, watches>0, readiness>=80, rc present
     # G3: link the already-present reference class so the FIRST-commit anchor clears.
     _rc_id = lg.list_reference_classes(q.id)[0]["id"]
     snap = lg.create_snapshot(

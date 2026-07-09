@@ -45,8 +45,10 @@ describe('the ticker advances while active', () => {
   })
 
   it('start is idempotent — a second start does not double-drive the interval', () => {
-    startLiveTicker()
-    startLiveTicker()
+    startLiveTicker(1000)
+    startLiveTicker(9000)
+    expect($liveStartedAt.get()).toBe(1000)
+
     const before = $liveTick.get()
     vi.advanceTimersByTime(LIVE_TICK_MS * 3)
     // A single interval → exactly 3 ticks, not 6.
@@ -88,12 +90,8 @@ describe('the ticker stops at idle — zero ticks, zero churn', () => {
   })
 })
 
-describe('auto-wiring to the busy flag (onMount controller)', () => {
-  it('starts on busy=true and stops on busy=false while the heartbeat is subscribed', async () => {
-    // Subscribing installs the onMount controller.
-    const unsub = $liveTick.subscribe(() => {})
-    await Promise.resolve()
-
+describe('auto-wiring to the busy flag', () => {
+  it('starts on busy=true and stops on busy=false', async () => {
     patchUiState({ busy: true })
     await Promise.resolve()
     const before = $liveTick.get()
@@ -105,7 +103,33 @@ describe('auto-wiring to the busy flag (onMount controller)', () => {
     expect($liveTick.get()).toBe(0)
     vi.advanceTimersByTime(LIVE_TICK_MS * 10)
     expect($liveTick.get()).toBe(0)
+  })
 
-    unsub()
+  it('preserves elapsed time across view/status churn mid-turn', async () => {
+    patchUiState({ usage: { calls: 1, input: 7000, output: 300, total: 25000 } })
+    patchUiState({ busy: true })
+    await Promise.resolve()
+    vi.advanceTimersByTime(LIVE_TICK_MS * 2)
+
+    const startedAt = $liveStartedAt.get()
+    const baseTokens = $liveBaseTokens.get()
+    const tickAtUnmount = $liveTick.get()
+
+    patchUiState({ compact: true, status: 'checking another view…' })
+    vi.advanceTimersByTime(LIVE_TICK_MS * 5)
+    expect($liveStartedAt.get()).toBe(startedAt)
+    expect($liveBaseTokens.get()).toBe(baseTokens)
+    expect($liveTick.get()).toBe(tickAtUnmount + 5)
+
+    expect($liveStartedAt.get()).toBe(startedAt)
+    expect($liveBaseTokens.get()).toBe(baseTokens)
+    vi.advanceTimersByTime(LIVE_TICK_MS * 3)
+    expect($liveTick.get()).toBe(tickAtUnmount + 8)
+
+    patchUiState({ busy: false })
+    await Promise.resolve()
+    expect($liveTick.get()).toBe(0)
+    expect($liveStartedAt.get()).toBeNull()
+    expect($liveBaseTokens.get()).toBe(0)
   })
 })

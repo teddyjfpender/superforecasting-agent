@@ -235,6 +235,7 @@ class HookContext:
     # its members (a member moved after the last aggregate)? Surfaces the desk
     # badge + cron pickup; the member-commit cascade keeps it fresh by default.
     is_thesis_or_factor: bool = False
+    is_factor: bool = False
     aggregate_stale: bool = False
     newer_member_count: int = 0
 

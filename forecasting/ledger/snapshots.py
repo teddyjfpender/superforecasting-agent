@@ -350,6 +350,40 @@ def _validate_evidence_refs(
             )
 
 
+def _normalize_outcome_paths(paths: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return a JSON-clean map of per-outcome paths and base-rate anchors."""
+    if not isinstance(paths, dict) or not paths:
+        return None
+    clean: dict[str, Any] = {}
+    allowed = {"path", "classification", "evidence_strength", "base_rate", "base_rate_source"}
+    for raw_name, raw_info in paths.items():
+        name = str(raw_name).strip()
+        if not name:
+            continue
+        if isinstance(raw_info, str):
+            clean[name] = raw_info.strip()
+            continue
+        if not isinstance(raw_info, dict):
+            continue
+        item: dict[str, Any] = {}
+        for key in allowed:
+            if key not in raw_info or raw_info[key] is None:
+                continue
+            if key == "base_rate":
+                value = raw_info[key]
+                if isinstance(value, bool):
+                    continue
+                try:
+                    item[key] = float(value)
+                except (TypeError, ValueError):
+                    continue
+            else:
+                item[key] = str(raw_info[key]).strip()
+        if item:
+            clean[name] = item
+    return clean or None
+
+
 def create_snapshot(
     ledger,
     *,
@@ -641,6 +675,11 @@ def create_snapshot(
                     action="collect_evidence",
                 )
             snapshot_metadata["citation_policy"] = "required"
+        _outcome_paths = _normalize_outcome_paths(
+            outcome_paths if outcome_paths is not None else snapshot_metadata.get("outcome_paths")
+        )
+        if _outcome_paths:
+            snapshot_metadata["outcome_paths"] = _outcome_paths
         # Probability-mass audit for CATEGORICAL forecasts: route every
         # material outcome through a named mechanism so mass can't be spread
         # across answer-choice labels by default (outcome-space anchoring).
@@ -659,7 +698,7 @@ def create_snapshot(
             from forecasting.tail_audit import audit_outcomes, outcome_paths_from_inputs
 
             _audit_dist = _tail_share_map if _tail_share_map is not None else payload
-            audit = audit_outcomes(outcome_paths_from_inputs(_audit_dist, outcome_paths))
+            audit = audit_outcomes(outcome_paths_from_inputs(_audit_dist, _outcome_paths))
             snapshot_metadata["tail_audit"] = audit.to_dict()
             if require_outcome_paths and forecast_origin == "live" and not audit.passes:
                 offenders = [v.name for v in audit.verdicts if v.unearned]
@@ -888,7 +927,7 @@ def create_snapshot(
                         if isinstance(v, (int, float)) and not isinstance(v, bool)
                     }
                     _g1_share_unanchored, _g1_share_unanchored_mass = _g1_audit(
-                        _g1_rows(_g1_dist, outcome_paths),
+                        _g1_rows(_g1_dist, _outcome_paths),
                         threshold=_qthresholds.get("named_outcome_anchor_share", _G1_THR),
                     )
                 if _g1_shares is not None:
@@ -1271,6 +1310,7 @@ def create_snapshot(
                 reference_class_count=len(ledger.list_reference_classes(question_id)),
                 linked_reference_class_count=len(reference_class_refs or []),
                 is_thesis_or_factor=ledger.is_thesis(question),
+                is_factor=ledger.is_factor(question),
                 watched_source_count=_watched_count,
                 readiness_score=_readiness_score,
                 is_distribution=bool(_oda and _oda.is_distribution),

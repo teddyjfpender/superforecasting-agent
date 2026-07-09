@@ -77,6 +77,7 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     thesis_untag.set_defaults(_forecast_handler=_cmd_thesis_untag)
     thesis_members = thesis_sub.add_parser("members", help="List a thesis's member forecasts")
     thesis_members.add_argument("thesis", help="row number, id, or search words for the thesis")
+    thesis_members.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     thesis_members.set_defaults(_forecast_handler=_cmd_thesis_members)
     thesis_aggregate = thesis_sub.add_parser("aggregate", help="Aggregate members into a fresh thesis snapshot")
     thesis_aggregate.add_argument("thesis", help="row number, id, or search words for the thesis")
@@ -273,6 +274,9 @@ def _cmd_thesis_members(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     thesis_id = _resolve_question_id(ledger, args.thesis)
     members = ledger.list_thesis_members(thesis_id)
+    if getattr(args, "json", False):
+        print(json.dumps({"thesis_id": thesis_id, "count": len(members), "members": members}, indent=2, sort_keys=True))
+        return
     if not members:
         print("No members tagged. Add some with `forecast thesis tag <thesis> <member>`.")
         return

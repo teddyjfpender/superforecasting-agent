@@ -42,6 +42,33 @@ def _active_reference_classes(ledger, question_id: str) -> list[dict[str, Any]]:
     return [r for r in rows if (r.get("status") or "active") == "active"]
 
 
+def refresh_current_snapshot_saturation(
+    ledger,
+    question_id: str,
+    *,
+    snapshot_id: str | None = None,
+) -> bool:
+    """Recompute and persist the read-time saturation report for a current snapshot."""
+    snap = ledger.get_current_snapshot(question_id)
+    if snap is None:
+        return False
+    if snapshot_id is not None and snap.forecast_id != snapshot_id:
+        return False
+    from forecasting.hooks.sweep import lint_forecast
+
+    report = lint_forecast(ledger, question_id)
+    if report is None:
+        return False
+    metadata = dict(getattr(snap, "metadata", None) or {})
+    metadata["saturation"] = report.to_dict()
+    with allow_ledger_writes("refresh_snapshot_saturation"), ledger._connect() as conn:
+        conn.execute(
+            "UPDATE forecast_snapshots SET metadata = ? WHERE forecast_id = ?",
+            (json.dumps(metadata), snap.forecast_id),
+        )
+    return True
+
+
 def set_snapshot_reference_class_refs(ledger, snapshot_id: str, refs: list[str]) -> list[str]:
     """Blessed writer: set a snapshot's ``reference_class_refs`` to ``refs``.
 
@@ -56,16 +83,20 @@ def set_snapshot_reference_class_refs(ledger, snapshot_id: str, refs: list[str])
         if rid and rid not in seen:
             seen.add(rid)
             clean.append(rid)
+    question_id: str | None = None
     with allow_ledger_writes("set_snapshot_reference_class_refs"), ledger._connect() as conn:
         row = conn.execute(
-            "SELECT forecast_id FROM forecast_snapshots WHERE forecast_id = ?", (snapshot_id,)
+            "SELECT forecast_id, question_id FROM forecast_snapshots WHERE forecast_id = ?", (snapshot_id,)
         ).fetchone()
         if row is None:
             raise LedgerNotFoundError(f"snapshot not found: {snapshot_id}")
+        question_id = row["question_id"]
         conn.execute(
             "UPDATE forecast_snapshots SET reference_class_refs = ? WHERE forecast_id = ?",
             (json.dumps(clean), snapshot_id),
         )
+    if question_id:
+        refresh_current_snapshot_saturation(ledger, question_id, snapshot_id=snapshot_id)
     return clean
 
 

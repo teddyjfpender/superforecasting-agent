@@ -229,9 +229,11 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     # thesis/factor aggregate freshness: stale when a member's current snapshot is
     # newer than the aggregate's as_of (or the thesis has members but no aggregate).
     is_tf = False
+    is_factor = False
     agg_stale = False
     newer_members = 0
     try:
+        is_factor = bool(ledger.is_factor(question))
         if ledger.is_thesis(question):
             is_tf = True
             _members_tf = ledger.list_thesis_members(question_id)
@@ -312,8 +314,13 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         if (_shares_ledger is not None or _is_cat) and isinstance(payload, dict):
             _anchor_dist = _shares_ledger if _shares_ledger is not None else {str(k): float(v) for k, v in payload.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
             _anchor_thr = _qthr.get("named_outcome_anchor_share", DEFAULT_NAMED_ANCHOR_SHARE)
+            _stored_paths = meta.get("outcome_paths") if isinstance(meta, dict) else None
             _share_unanchored, _share_unanchored_mass = audit_named_anchors(
-                outcome_paths_from_inputs(_anchor_dist, None), threshold=_anchor_thr
+                outcome_paths_from_inputs(
+                    _anchor_dist,
+                    _stored_paths if isinstance(_stored_paths, dict) else None,
+                ),
+                threshold=_anchor_thr,
             )
         if _shares_ledger is not None:
             _iv_raw = meta.get("candidate_share_intervals_pp")
@@ -470,6 +477,7 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
         quorum_judged=quorum_judged,
         calibration_under_confident=under_confident,
         is_thesis_or_factor=is_tf,
+        is_factor=is_factor,
         aggregate_stale=agg_stale,
         newer_member_count=newer_members,
         reasoning_methods=tuple(meta.get("reasoning_methods") or ()),
@@ -587,6 +595,7 @@ def build_commit_context(
     reference_class_count: int = 0,
     linked_reference_class_count: int = 0,
     is_thesis_or_factor: bool = False,
+    is_factor: bool = False,
     committed_winner_prob: float | None = None,
     derived_child_present: bool = False,
     machine_scoreable: bool = True,
@@ -686,6 +695,7 @@ def build_commit_context(
         # orphaned-anchor gate reads the same count the anchor gate does.
         snapshot_reference_class_count=linked_reference_class_count,
         is_thesis_or_factor=is_thesis_or_factor,
+        is_factor=is_factor,
         committed_winner_prob=committed_winner_prob,
         derived_child_present=derived_child_present,
         machine_scoreable=machine_scoreable,

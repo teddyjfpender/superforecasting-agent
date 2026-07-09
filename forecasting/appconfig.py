@@ -88,7 +88,7 @@ _KEYS: tuple[ConfigKey, ...] = (
               "Direct-write gate mode: on | warn | off.", category="ledger"),
     ConfigKey("FORECAST_DISABLE_HOOK_BLOCKING", "bool", False, False,
               "Kill-switch: disable saturation/style hook blocking on live commits.", category="ledger"),
-    ConfigKey("FORECAST_HOOK_READINESS_FLOOR", "float", 60.0, False,
+    ConfigKey("FORECAST_HOOK_READINESS_FLOOR", "float", 80.0, False,
               "Machine-readiness (0-100) below which the readiness_floor hook fires on live commits.",
               category="ledger"),
     ConfigKey("FORECAST_DISABLE_SATURATION_ESCALATION", "bool", False, False,

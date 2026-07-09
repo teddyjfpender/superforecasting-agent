@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import Any
 
 
 def register(forecast_sub: argparse._SubParsersAction) -> None:
@@ -26,6 +27,27 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
         help="Administer detached background forecast jobs",
     )
     jobs_sub = jobs_parser.add_subparsers(dest="jobs_command")
+    jobs_status = jobs_sub.add_parser("status", help="Show one job record")
+    jobs_status.add_argument("job_id", help="The job id")
+    jobs_status.add_argument("--json", action="store_true", help="Emit the job record as JSON")
+    jobs_status.set_defaults(_forecast_handler=_cmd_jobs_status)
+
+    jobs_active = jobs_sub.add_parser(
+        "active",
+        aliases=["list"],
+        help="List queued/running jobs with a fresh heartbeat",
+    )
+    jobs_active.add_argument("--type", dest="job_type", action="append", help="Filter to a job type; repeatable")
+    jobs_active.add_argument("--limit", type=int, default=100)
+    jobs_active.add_argument("--all-status", action="store_true", help="List all stored jobs, not only active ones")
+    jobs_active.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    jobs_active.set_defaults(_forecast_handler=_cmd_jobs_active)
+
+    jobs_cancel = jobs_sub.add_parser("cancel", help="Request cooperative cancellation for a running job")
+    jobs_cancel.add_argument("job_id", help="The job id")
+    jobs_cancel.add_argument("--json", action="store_true", help="Emit the updated job record as JSON")
+    jobs_cancel.set_defaults(_forecast_handler=_cmd_jobs_cancel)
+
     jobs_approve = jobs_sub.add_parser(
         "approve",
         help="Approve a parked job awaiting operator sign-off and (by default) resume it",
@@ -38,6 +60,81 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     )
     jobs_approve.add_argument("--json", action="store_true", help="Emit the job record as JSON")
     jobs_approve.set_defaults(_forecast_handler=_cmd_jobs_approve)
+
+
+def _record_payload(record) -> dict[str, Any]:
+    return record.to_dict() if hasattr(record, "to_dict") else dict(record)
+
+
+def _print_job(payload: dict[str, Any]) -> None:
+    print(
+        f"{payload.get('job_id')}  {payload.get('type')}  {payload.get('status')}  "
+        f"{payload.get('done_count', 0)}/{payload.get('total') or '?'}"
+    )
+    current = payload.get("current")
+    if current:
+        print(f"  current: {current}")
+    if payload.get("cancel_requested"):
+        print("  cancel_requested: true")
+    if payload.get("error"):
+        print(f"  error: {payload['error']}")
+
+
+def _cmd_jobs_status(args: argparse.Namespace) -> None:
+    from forecasting.jobs.store import JobStore
+
+    try:
+        payload = _record_payload(JobStore().read(args.job_id))
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"forecast: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    _print_job(payload)
+
+
+def _cmd_jobs_active(args: argparse.Namespace) -> None:
+    from forecasting.jobs.store import JobStore
+
+    store = JobStore()
+    limit = max(1, int(getattr(args, "limit", 100) or 100))
+    if getattr(args, "all_status", False):
+        records = store.list(limit=limit)
+        if getattr(args, "job_type", None):
+            wanted = set(args.job_type)
+            records = [record for record in records if record.type in wanted]
+    else:
+        records = store.active(types=getattr(args, "job_type", None), limit=limit)
+    payload = [_record_payload(record) for record in records]
+    if getattr(args, "json", False):
+        print(json.dumps({"count": len(payload), "jobs": payload}, indent=2, sort_keys=True))
+        return
+    if not payload:
+        print("No jobs found." if getattr(args, "all_status", False) else "No active jobs.")
+        return
+    for row in payload:
+        _print_job(row)
+
+
+def _cmd_jobs_cancel(args: argparse.Namespace) -> None:
+    from forecasting.jobs.store import JobStore
+
+    store = JobStore()
+    try:
+        ok = store.request_cancel(args.job_id)
+    except ValueError as exc:
+        print(f"forecast: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    if not ok:
+        print(f"forecast: no job '{args.job_id}'", file=sys.stderr)
+        raise SystemExit(1)
+    payload = _record_payload(store.read(args.job_id))
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    print(f"cancel requested for {args.job_id}")
+    _print_job(payload)
 
 
 def _cmd_jobs_approve(args: argparse.Namespace) -> None:

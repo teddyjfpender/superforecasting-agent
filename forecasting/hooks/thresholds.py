@@ -37,6 +37,11 @@ DEFAULT_INTERVAL_MEDIAN_TOLERANCE_PP = 2.0  # 2 percentage points
 # multiple of the cadence period) before the sweep-side cadence rule fires. 1.5 =
 # fifty percent past cadence — an acknowledged stale_evidence_reason exempts it.
 DEFAULT_CADENCE_GRACE_RATIO = 1.5
+# Desk lint floors for the visible EV / RDY columns. `require_evidence` remains
+# the hard "any evidence at all" gate; this richer evidence-depth floor is
+# warning-level in the standard profile.
+DEFAULT_MIN_EVIDENCE_COUNT = 5.0
+DEFAULT_READINESS_FLOOR = 80.0
 # Terminal Platt-calibration slope applied to the panel pool AFTER aggregation.
 # 1.0 is the IDENTITY (an un-configured question is byte-identical to the bare
 # pool); >1 sharpens away from 0.5, <1 flattens toward it. Composed
@@ -166,6 +171,28 @@ THRESHOLD_SPECS: tuple[ThresholdSpec, ...] = (
         direction="higher_looser",
         integer=False,
         help="How far past its review cadence (as a multiple) a live forecast may drift before the cadence rule fires on a sweep.",
+    ),
+    ThresholdSpec(
+        key="min_evidence_count",
+        label="Min evidence items",
+        default=DEFAULT_MIN_EVIDENCE_COUNT,
+        minimum=1,
+        maximum=50,
+        rule_ids=("evidence_depth",),
+        direction="lower_looser",
+        integer=True,
+        help="Minimum evidence-item count expected on a modeled live forecast.",
+    ),
+    ThresholdSpec(
+        key="readiness_floor",
+        label="Min machine-readiness",
+        default=DEFAULT_READINESS_FLOOR,
+        minimum=0,
+        maximum=100,
+        rule_ids=("readiness_floor",),
+        direction="lower_looser",
+        integer=True,
+        help="Minimum Desk RDY score expected before a live forecast is considered machine-workable.",
     ),
     ThresholdSpec(
         key="alpha_extremize",
