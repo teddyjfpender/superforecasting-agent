@@ -4,14 +4,15 @@ BLF clamps its final binary probability to [0.05, 0.95] to bound worst-case
 Brier. Our extremization guards cover the CALIBRATION side; this is the terminal
 COMMIT-path bound. The discipline under test:
 
-* the clamp is applied to the agent's OWN committed binary probability
-  (``live`` / ``backtest`` / ``market_nightly``), scoped to binary scalars;
+* the clamp is applied to active agent commits
+  (``live`` / ``market_nightly``), scoped to binary scalars;
 * it is RECORDED in the snapshot metadata whenever it engages — never silent;
 * it is the TERMINAL transform: upstream √3 Platt / quorum / learned-lesson
   calibration all run BEFORE the value reaches ``create_snapshot``, so the
   scored value is the clamped one;
-* faithful external baselines (``imported_baseline``) and distributions /
-  vote-shares are left byte-identical (out of scope).
+* faithful external baselines (``imported_baseline``), benchmark replays
+  (``backtest``), and distributions / vote-shares are left byte-identical
+  (out of scope).
 """
 
 from __future__ import annotations
@@ -91,13 +92,14 @@ def test_exact_bounds_do_not_record_a_clamp(tmp_path):
         assert "commit_clamp" not in (snap.metadata or {})
 
 
-def test_backtest_origin_is_also_bounded(tmp_path):
-    # BLF measured the worst-case bound on its own forecasts, backtests included.
+def test_backtest_origin_is_recorded_faithfully(tmp_path):
+    # Backtests are benchmark replays. Clamping them mutates the measurement and
+    # makes a frozen market replay diverge from its paired baseline.
     ledger = _ledger(tmp_path)
     q = _binary_question(ledger)
     snap = _commit(ledger, q.id, 0.985, origin="backtest")
-    assert snap.probability_or_distribution == pytest.approx(0.95)
-    assert (snap.metadata or {}).get("commit_clamp") is not None
+    assert snap.probability_or_distribution == pytest.approx(0.985)
+    assert "commit_clamp" not in (snap.metadata or {})
 
 
 def test_imported_baseline_is_recorded_faithfully(tmp_path):

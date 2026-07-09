@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/hooks/builtins.py (BUILTIN_RULES, RULE_DOCS)`
 
-Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **42 built-in rules**; operators can add their own with the hooks DSL.
+Before a forecast snapshot commits, the hook engine runs these checks. Each rule resolves to a severity — `error` **blocks** the commit, `warn` surfaces without blocking, `off` is disabled — via the active profile and any per-rule override. `weight` is the penalty points a failed rule adds to the saturation score. There are **43 built-in rules**; operators can add their own with the hooks DSL.
 
 
 Severities shown are the **defaults** — the shipped profile or an operator override can raise or lower any of them (`forecast hooks list` shows the resolved severity).
@@ -79,6 +79,7 @@ Severities shown are the **defaults** — the shipped profile or an operator ove
 | rule | default severity | weight | what it checks |
 | --- | --- | --- | --- |
 | `event_band_earned` | `warn` | 9.0 | A thesis with members but no configured joint event (name set-event), OR an event band whose member-interval coverage is below the earned floor (a default-width band masquerading as measured uncertainty). WARN. |
+| `evidence_depth` | `warn` | 8.0 | A modeled live forecast should carry at least the default EV floor of evidence items. |
 | `require_citations` | `warn` | 8.0 | The forecast should cite evidence / model runs. |
 | `require_components` | `error` (blocks) | 15.0 | The forecast must decompose into pooled ensemble components. |
 | `require_evidence` | `error` (blocks) | 16.0 | A live forecast MUST carry at least one evidence record (hard requirement). |

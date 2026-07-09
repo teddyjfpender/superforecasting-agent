@@ -63,14 +63,15 @@ logger = logging.getLogger(__name__)
 # (panel √3 Platt / quorum / learned-lesson rescale all run before the value
 # reaches ``create_snapshot``), scoped to binary scalars, and RECORDED in the
 # snapshot metadata whenever it engages — never silent. Faithful external
-# baselines (``imported_baseline``) and unscored scratchpad (``exploratory``) are
-# left byte-identical; distributions / vote-shares are out of scope.
+# baselines (``imported_baseline``), benchmark replays (``backtest``), and
+# unscored scratchpad (``exploratory``) are left byte-identical; distributions /
+# vote-shares are out of scope.
 _COMMIT_PROBABILITY_FLOOR = 0.05
 _COMMIT_PROBABILITY_CEIL = 0.95
-# The scored origins that carry the agent's OWN forecast — where a worst-case
-# Brier bound is appropriate. ``imported_baseline`` (a faithful external record)
-# and ``exploratory`` (never scored) are deliberately excluded.
-_COMMIT_CLAMP_ORIGINS = frozenset({"live", "backtest", "market_nightly"})
+# The scored origins that carry an active agent forecast — where a worst-case
+# Brier bound is appropriate. Backtests are benchmark replays, so mutating their
+# frozen probabilities would corrupt the measurement.
+_COMMIT_CLAMP_ORIGINS = frozenset({"live", "market_nightly"})
 
 
 def _apply_commit_clamp(

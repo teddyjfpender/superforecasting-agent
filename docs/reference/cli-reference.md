@@ -2025,7 +2025,20 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 
 ## `forecast jobs`
 
+- **`forecast jobs active`** — List queued/running jobs with a fresh heartbeat
 - **`forecast jobs approve`** — Approve a parked job awaiting operator sign-off and (by default) resume it
+- **`forecast jobs cancel`** — Request cooperative cancellation for a running job
+- **`forecast jobs list`** — 
+- **`forecast jobs status`** — Show one job record
+
+### `forecast jobs active`
+
+| argument | help |
+| --- | --- |
+| `--type` | Filter to a job type; repeatable |
+| `--limit` |  |
+| `--all-status` | List all stored jobs, not only active ones |
+| `--json` | Emit machine-readable JSON |
 
 ### `forecast jobs approve`
 
@@ -2033,6 +2046,29 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | --- | --- |
 | `job_id` | The parked job id (status awaiting_approval) |
 | `--no-resume` | Record the approval grant but do not re-run the job |
+| `--json` | Emit the job record as JSON |
+
+### `forecast jobs cancel`
+
+| argument | help |
+| --- | --- |
+| `job_id` | The job id |
+| `--json` | Emit the updated job record as JSON |
+
+### `forecast jobs list`
+
+| argument | help |
+| --- | --- |
+| `--type` | Filter to a job type; repeatable |
+| `--limit` |  |
+| `--all-status` | List all stored jobs, not only active ones |
+| `--json` | Emit machine-readable JSON |
+
+### `forecast jobs status`
+
+| argument | help |
+| --- | --- |
+| `job_id` | The job id |
 | `--json` | Emit the job record as JSON |
 
 ## `forecast lesson`
@@ -2134,6 +2170,8 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `question_id` | Question id to lint |
+| `--ids` | Lint an explicit cohort of question ids (space- or comma-separated) |
+| `--thesis-members` | Lint every direct member of this thesis (id, row number, or search words); repeatable |
 | `--all` | Lint every active question and summarize (finish sweep) |
 | `--by-rule` | Read-only per-rule fire-count table across active live forecasts (the migration debt table) |
 | `--json` | Emit machine-readable output |
@@ -3069,6 +3107,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `thesis` | row number, id, or search words for the thesis |
+| `--json` | Emit machine-readable JSON |
 
 ### `forecast thesis set-correlation`
 
@@ -3260,7 +3299,7 @@ The full `forecast` command tree — **88 top-level commands** (also reachable a
 | `--require-panel/--no-require-panel` | For a high-impact live forecast, refuse to save unless a panel run is linked (--panel-run-ref / --panel-estimates-json) or --panel-skipped-reason is given. On by default; lower-impact first forecasts are only nudged. Use --no-require-panel (or --origin exploratory) to skip. |
 | `--panel-run-ref` | ID of an already-recorded panel run to link to this snapshot as its deliberative-panel evidence. |
 | `--panel-skipped-reason` | Recorded reason for committing a panel-indicated forecast without a panel (escape valve for the panel formality). |
-| `--outcome-path` | Categorical forecasts: name the causal path for an outcome, e.g. --outcome-path 'Lasher=leads polls + endorsements'. Repeatable. Feeds the probability-mass audit that flags unearned tail mass. |
+| `--outcome-path` | Categorical forecasts: name the causal path for an outcome, e.g. --outcome-path 'Lasher=leads polls + endorsements' or --outcome-path 'Lasher={"base_rate":0.42,"base_rate_source":"prior result"}'. Repeatable. Feeds the probability-mass audit that flags unearned tail mass and uncited named outcomes. |
 | `--require-outcome-paths` | Categorical live forecasts: refuse to commit when a material outcome holds mass with no named path (unearned tail mass). |
 | `--evidence-cutoff` |  |
 | `--backtest-run-id` |  |

@@ -354,7 +354,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `old_value` | any |  |  |
 | `only_media` | boolean |  |  |
 | `outcome` | string |  |  |
-| `outcome_paths` | object |  | CATEGORICAL forecasts: a {outcome_label: path-info} map naming the causal PATH that routes mass to each material outcome. path-info is a string (the path) or an object {path, classification, evidence_strength: strong|mixed|weak}. Used by the probability-mass audit (also the `tail_audit` action) to flag UNEARNED tail mass — material outcomes (>=0.5%) with no named mechanism, the outcome-space-anchoring failure. The audit is always recorded on the snapshot. |
+| `outcome_paths` | object |  | CATEGORICAL forecasts: a {outcome_label: path-info} map naming the causal PATH that routes mass to each material outcome. path-info is a string (the path) or an object {path, classification, evidence_strength: strong|mixed|weak, base_rate, base_rate_source}. Used by the probability-mass audit (also the `tail_audit` action) to flag UNEARNED tail mass and uncited named outcomes — material outcomes with no named mechanism or no cited outside-view anchor. Stored on the snapshot for re-lint. |
 | `outcome_type` | string | `binary`, `categorical`, `numeric`, `distribution` |  |
 | `output` | object |  |  |
 | `overweighted_evidence` | string |  |  |
@@ -413,7 +413,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `require_citations` | boolean |  |  |
 | `require_components` | boolean |  | Refuse to save a live snapshot unless ensemble_components is populated (the pooled drivers — base rate, mechanism, market/crowd, case-specific — each with a stable source slug). Defaults true; stops a serious forecast collapsing into a bare number. Set false or use forecast_origin='exploratory' for scratch work. |
 | `require_decision_readiness` | boolean |  | Refuse to save the snapshot unless the question has decision_owner, action_threshold, and at least one update_trigger. |
-| `require_outcome_paths` | boolean |  | Categorical live forecasts: refuse to save when any material outcome holds mass with no named path (unearned tail mass). Provide outcome_paths, compress the mass, set false, or record as exploratory. Default false. |
+| `require_outcome_paths` | boolean |  | Categorical live forecasts: refuse to save when any material outcome holds mass with no named path (unearned tail mass). Provide outcome_paths, compress the mass, set false, or record as exploratory. Default false. For named outcomes above the anchor-share threshold, include base_rate + base_rate_source. |
 | `require_panel` | boolean |  | For a high-impact live forecast, refuse to save unless a deliberative panel/quorum run is linked (panel_run_ref) or panel_skipped_reason is recorded. Defaults true; lower-impact first forecasts are nudged (panel_recommended), not blocked. Run a panel/quorum for serious forecasts regardless — see the process discipline. |
 | `require_structured_reasoning` | boolean |  | Refuse to save the snapshot unless reasons_up, reasons_down, and change_my_mind are all populated. Defaults true for live forecasts. |
 | `required_source` | string |  |  |
