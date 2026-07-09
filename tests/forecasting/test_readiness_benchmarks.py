@@ -9,6 +9,7 @@ import argparse
 
 import pytest
 
+import forecasting.cli as forecast_cli
 from forecasting.backtesting import build_backtest_performance_summaries, build_forecasting_evidence_status
 from forecasting.cli import _cmd_readiness, _run_safe_benchmarks
 from forecasting.ledger import ForecastLedger
@@ -32,7 +33,50 @@ def test_run_safe_benchmarks_runs_offline_suite(tmp_path):
     assert "builtin:kalshi-public-120-binary" in families
 
 
-def test_safe_benchmarks_close_offline_gaps_only(tmp_path):
+def _tiny_external_cases(source: str, family: str) -> list[dict[str, object]]:
+    return [
+        {
+            "id": f"{family}-yes",
+            "title": f"Will the {family} fixture resolve yes?",
+            "resolution_criteria": "Resolved yes for the fixture.",
+            "as_of": "2026-01-10T00:00:00Z",
+            "close_time": "2026-01-20T00:00:00Z",
+            "outcome": "yes",
+            "baselines": [{"baseline_type": "market", "source": source, "probability": 0.6}],
+            "evidence": [{"available_at": "2026-01-09T00:00:00Z", "stance": "increases"}],
+        },
+        {
+            "id": f"{family}-no",
+            "title": f"Will the {family} fixture resolve yes?",
+            "resolution_criteria": "Resolved no for the fixture.",
+            "as_of": "2026-01-10T00:00:00Z",
+            "close_time": "2026-01-20T00:00:00Z",
+            "outcome": "no",
+            "baselines": [{"baseline_type": "market", "source": source, "probability": 0.4}],
+            "evidence": [{"available_at": "2026-01-09T00:00:00Z", "stance": "decreases"}],
+        },
+    ]
+
+
+def test_safe_benchmarks_close_offline_gaps_only(tmp_path, monkeypatch):
+    cases_by_dataset = {
+        "builtin:manifold-public-120-binary": _tiny_external_cases("manifold", "manifold"),
+        "builtin:kalshi-public-120-binary": _tiny_external_cases("kalshi", "kalshi"),
+    }
+    monkeypatch.setattr(
+        forecast_cli,
+        "list_builtin_benchmarks",
+        lambda: [
+            {"name": "manifold-public-120-binary", "case_count": 2, "description": "fixture"},
+            {"name": "kalshi-public-120-binary", "case_count": 2, "description": "fixture"},
+        ],
+    )
+    monkeypatch.setattr(
+        forecast_cli,
+        "_load_backtest_cases",
+        lambda dataset, **_: list(cases_by_dataset[dataset]),
+    )
+
     lg = _ledger(tmp_path)
     _run_safe_benchmarks(lg, "forecast-engine")
     rows = lg.list_backtest_runs()

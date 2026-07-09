@@ -2106,14 +2106,15 @@ def _paired_bootstrap(
     rng = random.Random(PAIRED_BOOTSTRAP_SEED)
     ge_count = 0
     uncentered_means: list[float] = []
+    inv_count = 1.0 / count
     for _ in range(PAIRED_BOOTSTRAP_DRAWS):
-        # One shared index draw per iteration keeps the recentered (p-value)
-        # and uncentered (CI) resamples on the same deterministic stream.
-        idx = [rng.randrange(count) for _ in range(count)]
-        boot_centered = statistics.fmean(d0[i] for i in idx)
+        # One shared index stream per iteration keeps the recentered (p-value)
+        # and uncentered (CI) resamples deterministic. Avoid materializing the
+        # sampled indexes; readiness runs many benchmark reports under a 30s cap.
+        boot_centered = sum(d0[rng.randrange(count)] for _ in range(count)) * inv_count
         if abs(boot_centered) >= observed:
             ge_count += 1
-        uncentered_means.append(statistics.fmean(deltas[i] for i in idx))
+        uncentered_means.append(boot_centered + mean_delta)
 
     # Add-one (plus-one) correction so a Monte-Carlo p-value is never exactly
     # 0.0 — the true tail is bounded below by ~1/B, not 0.
