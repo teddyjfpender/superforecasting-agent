@@ -1,19 +1,21 @@
-name: Release (GitHub) — bundled TUI wheel
+name: Release (GitHub) — bundled TUI wheel [legacy]
 
-# Builds an installable wheel that bundles the prebuilt TUI and attaches it to
-# a GitHub Release, so anyone can install + launch without this repo:
+# SUPERSEDED by production-release.yml for tag-triggered releases.  That
+# workflow owns the formal artifact set (wheel + multi-arch image + checksums +
+# manifest) on SemVer tag pushes (vX.Y.Z).  This one is retained only as a
+# MANUAL escape hatch (workflow_dispatch) to rebuild + attach the bundled-TUI
+# wheel to an already-existing tag/release without the full pipeline.
+#
+# The `push: tags: v*` trigger was removed so a SemVer tag no longer races
+# production-release.yml to create the same GitHub Release.
 #
 #     pipx install https://github.com/<owner>/<repo>/releases/download/<tag>/superforecasting_agent-<ver>-py3-none-any.whl
 #     superforecasting-agent --tui
 #
-# This is the fork's "release binary" path. It does NOT publish to PyPI
-# (upload_to_pypi.yml owns that, if/when the fork configures a publisher).
-# Mirrors upload_to_pypi.yml's build so a Release wheel matches a PyPI wheel.
+# It does NOT publish to PyPI (upload_to_pypi.yml owns that, if/when the fork
+# configures a publisher).
 
 on:
-  push:
-    tags:
-      - 'v*'        # e.g. v2026.6.16, v0.14.0
   workflow_dispatch:
     inputs:
       tag:

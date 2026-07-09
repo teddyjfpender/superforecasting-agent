@@ -193,6 +193,127 @@ WhatsApp/Slack adapters, pairing security, in-process cron) — and the real gap
 
 ---
 
+## P0 — RELEASE ENGINEERING (the formal artifact set)
+
+**Why P0, before P1.** P1.1 ("publish the artifacts") and P1.4 ("upgrade path +
+downgrade guard") both assume a *release* exists to deploy. Today there is no
+standardized one: `pyproject` has been frozen at `0.17.0` while CalVer tags
+(`v2026.7.7.2`) marched on, the image the docs pull is a 404, and "a release" is
+whatever `scripts/build-release.sh` happened to emit. P0 makes a release a
+**formal, reproducible, machine-verifiable set of artifacts** so everything
+downstream — the Hetzner bootstrap, the one-line installer, the compose pull —
+resolves against a pinned contract instead of a floating `:latest`.
+
+**Research findings (2026-07-09, this repo):**
+- `scripts/build-release.sh` → `uv build` wheel+sdist with the bundled TUI
+  (`hermes_cli/tui_dist/entry.js`, 4.4 MB) + install scripts; `SKIP_NPM=1`
+  reuses `ui-tui/dist/entry.js` for an offline build (verified).
+- Two version schemes coexist: `pyproject`/`hermes_cli/__init__.py` SemVer
+  (`0.17.0`) and CalVer git tags (`v2026.*`). `scripts/release.py` bumps SemVer
+  **and** stamps a CalVer `__release_date__` and keeps `acp_registry/agent.json`
+  version-locked (a lint test enforces the ACP lock).
+- CI today: `release.yml` (`v*` push → GitHub Release bundled wheel),
+  `upload_to_pypi.yml` (`v20*` CalVer → PyPI trusted-publish, opt-in/dormant),
+  `docker-publish.yml` (main push + `release: published` → **Docker Hub**
+  `teddyjfpender/superforecasting-agent`, native amd64 + native-arm64-runner
+  multi-arch merge, moves `:latest`). No workflow pushes to **ghcr.io**; the
+  digest is never recorded anywhere a client can pin.
+- The launcher resolves its version from `hermes_cli.__version__`; the installer
+  (`scripts/install-release.sh`) resolves the newest release's `.whl` from the
+  GitHub Releases API and pipx-installs it — it pins nothing.
+
+### P0.1 The formal artifact set per release `vX.Y.Z`
+Every release produces exactly these, all attached to the GitHub Release:
+1. **Python wheel** — `superforecasting_agent-X.Y.Z-py3-none-any.whl`, bundling
+   `tui_dist` (node auto-provisioned at first launch). The pipx lane, unchanged.
+2. **Docker image** — `ghcr.io/teddyjfpender/superforecasting-agent`,
+   **multi-arch `linux/amd64 + linux/arm64`** (Hetzner sells both; CAX arm64 is
+   cheapest), tagged `vX.Y.Z` **and** `latest`. This is the missing piece P1.1
+   was written to close; P0 closes it on ghcr.
+3. **`SHA256SUMS`** — over the wheel, sdist, and installer, so a box can verify
+   what it downloaded.
+4. **`release-manifest.json`** — the machine-readable contract (schema
+   `scripts/release-manifest.schema.json`, `schema_version: "1"`): product,
+   `version`, `tag`, `released`, `git.{commit,branch}`, per-artifact
+   `{name, sha256, size_bytes}` for `wheel|sdist|installer|checksums`, the
+   `image.{registry,repository,tags,platforms,digest}` (digest = the pushed
+   multi-arch manifest-list digest; `null` in a dry-run), and
+   **`min_migration_version`** — the oldest prior release whose on-disk ledger
+   this build opens + forward-migrates. That field is the machine-readable half
+   of P1.4's `PRAGMA user_version` downgrade guard: the installer refuses to
+   deploy a build onto a `{home}` older than its `min_migration_version`.
+5. **`CHANGELOG.md` entry** — Keep-a-Changelog + SemVer, derived from
+   conventional-commit history since the last tag. Non-empty is a release gate.
+6. **The one-line installer, pinned to the manifest** — `install.sh` (staged
+   from `install-release.sh`) is attached to every release; the pinned form
+   resolves the manifest for the tag and installs exactly that wheel + verifies
+   its `SHA256SUMS`. (The manifest-pin resolution in the installer is a P1.2
+   fast-follow; the manifest it needs is emitted here in P0.)
+
+### P0.2 Versioning discipline
+- **Single source of truth: `pyproject.toml` `version`.** `hermes_cli/__init__.py`
+  and `acp_registry/agent.json` are kept byte-locked to it; the readiness gate
+  fails on any drift. SemVer `vX.Y.Z` is now **the** release scheme;
+  `release.py`'s CalVer lane and `upload_to_pypi.yml` (`v20*`) are legacy/opt-in
+  and untouched.
+- **Bump rules:** `feat` → minor, `fix`/`perf` → patch, breaking → major. The
+  `wip(...)`/`checkpoint` reality is honored — those commits never trigger a
+  release by themselves; a release is only ever a deliberate tag on a version
+  that the gate has passed.
+- **Release-readiness gate** (`scripts/check-release-ready.sh`, shared by the
+  workflow and a pre-tag hook): (a) version consistency across the three files,
+  (b) strict-SemVer format, (c) `vX.Y.Z` is not already a tag (version ≠ last
+  release), (d) changelog has a non-empty entry for the version; `--strict`
+  adds (e) protocol codegen fresh (`check-protocol.sh`) and (f) generated docs
+  fresh (`docgen --check`). Suites-green is enforced by the workflow (the `test`
+  job gates `release` via `needs:`), and locally by `--with-tests`.
+
+### P0.3 The pipeline
+- **`.github/workflows/production-release.yml`** — on a strict-SemVer tag push
+  (`v[0-9]+.[0-9]+.[0-9]+`, so CalVer `v20YY.*` never matches): `gate` (assert
+  `tag == v<pyproject>` + strict readiness) → `test` (fast suite) → `release`
+  (build wheel + web, build+push the multi-arch image to ghcr, checksums,
+  manifest with the real image digest, create the GitHub Release with 1–5
+  attached). It **supersedes** `release.yml`, whose `push: tags` trigger is
+  removed (kept as a manual `workflow_dispatch` escape hatch) so a SemVer tag
+  can't race two workflows to create the same Release.
+- **`scripts/release.sh`** — the **offline dry-run twin** (dry-run by default):
+  same gate → same wheel build → checksums → manifest (image `digest: null`,
+  "would push ghcr.io/…:vX.Y.Z,latest") → changelog-scaffold `RELEASE_NOTES.md`.
+  `--publish` does the real tag + multi-arch build/push + GitHub Release. This
+  is what makes a release **testable before any tag exists**.
+
+**Operator config the pipeline needs (not faked in the workflow):**
+- **ghcr.io push needs no secret** — it uses the built-in `GITHUB_TOKEN` with
+  `permissions: packages: write` (set in the workflow). The operator must, once:
+  enable *Settings → Actions → "Allow GitHub Actions to create and approve
+  packages"*, and after the first release set the ghcr package visibility to
+  **Public** so the docs' unauthenticated `docker pull ghcr.io/…` works.
+- **GitHub Release + assets** use `GITHUB_TOKEN` (`contents: write`) — no secret.
+- **Docker Hub mirror is a side effect, not owned here:** publishing the Release
+  fires `docker-publish.yml` (`release: published`), which needs the operator's
+  `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets. If those aren't set, that
+  mirror job fails harmlessly while the ghcr image (the P0 primary) still ships.
+- **PyPI** stays opt-in via `upload_to_pypi.yml`'s trusted publisher; P0 does
+  not couple to it.
+
+### P0.4 Status — what's BUILT NOW vs what remains
+- **Built + tested this arc (repo-only, no external accounts):**
+  `scripts/release_manifest.py` + `release-manifest.schema.json` (schema +
+  validator, jsonschema with a stdlib fallback); `scripts/check-release-ready.sh`
+  (red/green gate); `scripts/release.sh` (dry-run default — **verified: it built
+  the full six-artifact set locally**); `production-release.yml`; the version
+  debt fixed (`pyproject`/`__init__`/`acp_registry` → **`0.18.0`**) with an
+  honest `CHANGELOG.md` (gate lattice, BLF A1–A7, warnings-lifecycle drain, the
+  TUI quality arc, and this release-engineering slice). Tests:
+  `tests/scripts/test_release_manifest.py`, `tests/scripts/test_release_gate.py`.
+- **Deferred (needs a live account / first CI run):** the actual multi-arch
+  build on ghcr (P1.1's first run is the Docker-build probe this research
+  skipped); the installer's manifest-pin + `SHA256SUMS` verify (P1.2); wiring
+  `min_migration_version` to a real `PRAGMA user_version` stamp + refusal (P1.4).
+
+---
+
 ## P1 — DEPLOYABLE CORE
 
 ### P1.1 Publish the artifacts (close the marketing gap)

@@ -1,0 +1,253 @@
+name: Production Release (formal artifact set)
+
+# Cuts the FORMAL ARTIFACT SET for one release on a SemVer tag push (vX.Y.Z):
+#   1. Python wheel (bundled TUI, node auto-provision)  2. sdist
+#   3. install.sh (pinned one-line installer)           4. SHA256SUMS
+#   5. release-manifest.json (names, versions, image digest, min-migration)
+#   6. multi-arch image → ghcr.io (linux/amd64 + linux/arm64), tags vX.Y.Z + latest
+# and attaches 1-5 to the GitHub Release.  Mirrors scripts/release.sh so a
+# local dry-run matches CI exactly.
+#
+# ── OPERATOR CONFIG (must be set once; this workflow does NOT fake them) ──
+#   * ghcr.io image push uses the built-in GITHUB_TOKEN — no secret needed,
+#     only `permissions: packages: write` (below) + repo/org setting
+#     "Allow GitHub Actions to create and approve packages".  After the first
+#     release, set the ghcr package visibility to Public if the docs' one-line
+#     `docker pull ghcr.io/...` is meant to work unauthenticated.
+#   * The wheel + release are created with GITHUB_TOKEN (permissions below).
+#   * PyPI publishing is intentionally NOT part of this workflow (see
+#     upload_to_pypi.yml — a separate, opt-in, trusted-publisher path).
+#   * Docker Hub mirroring stays owned by docker-publish.yml (which fires on
+#     `release: published` and needs DOCKERHUB_USERNAME/DOCKERHUB_TOKEN); this
+#     workflow's `release: published` event will trigger it as a side effect.
+#
+# This SUPERSEDES release.yml (kept as a manual escape hatch) for tag-triggered
+# releases.  SemVer vX.Y.Z is now the single release scheme.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'   # strict SemVer only (excludes CalVer v20YY.*)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing SemVer tag to release (e.g. v0.18.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Gate: tag must be strict SemVer AND equal the pyproject source of truth,
+  # the changelog must carry a non-empty entry, and codegen must be fresh.
+  # -------------------------------------------------------------------------
+  gate:
+    if: github.repository == 'teddyjfpender/superforecasting-agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python 3.11
+          uv pip install --python .venv -e ".[all,dev]"
+
+      - name: Resolve + assert version == tag
+        id: resolve
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          VER="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -n1)"
+          if [ "v${VER}" != "${TAG}" ]; then
+            echo "::error::tag ${TAG} != pyproject version v${VER}"
+            exit 1
+          fi
+          echo "version=${VER}" >> "$GITHUB_OUTPUT"
+
+      - name: Readiness gate (strict)
+        run: PYTHON=.venv/bin/python scripts/check-release-ready.sh --strict --version "${{ steps.resolve.outputs.version }}"
+
+  # -------------------------------------------------------------------------
+  # Suites-green: the release job depends on this, so a red suite blocks a
+  # release. Mirrors tests.yml's fast lane.
+  # -------------------------------------------------------------------------
+  test:
+    if: github.repository == 'teddyjfpender/superforecasting-agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+      - name: Set up Python 3.11
+        run: uv python install 3.11
+      - name: Install dependencies
+        run: |
+          uv venv .venv --python 3.11
+          source .venv/bin/activate
+          uv pip install -e ".[all,dev]"
+      - name: Run tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/ -q --ignore=tests/integration --ignore=tests/e2e \
+            --tb=short -n auto --timeout=60 --timeout-method=signal
+        env:
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
+
+  # -------------------------------------------------------------------------
+  # Build the formal set: wheel + multi-arch image + checksums + manifest,
+  # then create the GitHub Release with everything attached.
+  # -------------------------------------------------------------------------
+  release:
+    needs: [gate, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write   # create the Release + upload assets
+      packages: write   # push the image to ghcr.io (built-in GITHUB_TOKEN)
+    env:
+      VERSION: ${{ needs.gate.outputs.version }}
+      TAG: ${{ inputs.tag || github.ref_name }}
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-tags: true
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build TUI bundle + web dashboard
+        run: |
+          cd ui-tui && npm ci && npm run build && cd ..
+          cd web && npm ci && npm run build && cd ..
+
+      - name: Bundle TUI + install scripts into hermes_cli
+        run: |
+          mkdir -p hermes_cli/tui_dist hermes_cli/scripts
+          cp ui-tui/dist/entry.js hermes_cli/tui_dist/entry.js
+          cp scripts/install.sh hermes_cli/scripts/install.sh
+          cp scripts/install.ps1 hermes_cli/scripts/install.ps1
+          test -f hermes_cli/tui_dist/entry.js
+          test -f hermes_cli/web_dist/index.html
+
+      - name: Build wheel + sdist
+        run: uv build --sdist --wheel
+
+      # ---- multi-arch image → ghcr.io (digest captured for the manifest) ----
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push multi-arch image
+        id: image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ env.TAG }}
+            ${{ env.IMAGE }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,mode=max,scope=release
+
+      # ---- assemble the artifact set (mirrors scripts/release.sh) ----
+      - name: Assemble artifacts + checksums + manifest
+        run: |
+          set -euo pipefail
+          cp scripts/install-release.sh dist/install.sh
+          WHEEL="$(ls dist/superforecasting_agent-*.whl | head -n1)"
+          SDIST="$(ls dist/superforecasting_agent-*.tar.gz | head -n1)"
+          ( cd dist && sha256sum \
+              "$(basename "$WHEEL")" "$(basename "$SDIST")" install.sh > SHA256SUMS )
+          python -m scripts.release_manifest build \
+            --version "$VERSION" --tag "$TAG" \
+            --min-migration "${RELEASE_MIN_MIGRATION:-0.17.0}" \
+            --artifact "wheel=$WHEEL" \
+            --artifact "sdist=$SDIST" \
+            --artifact "installer=dist/install.sh" \
+            --artifact "checksums=dist/SHA256SUMS" \
+            --image-registry ghcr.io \
+            --image-repo "${{ github.repository }}" \
+            --image-tag "$TAG" --image-tag latest \
+            --image-platform linux/amd64 --image-platform linux/arm64 \
+            --image-digest "${{ steps.image.outputs.digest }}" \
+            --out dist/release-manifest.json
+
+      - name: Scaffold release notes
+        run: |
+          {
+            printf '# %s\n\n' "$TAG"
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\[" ver "\\]" { grab=1 }
+              grab && seen && /^## \[/ { exit }
+              grab { print; seen=1 }
+            ' CHANGELOG.md
+          } > dist/RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" \
+            dist/superforecasting_agent-*.whl \
+            dist/superforecasting_agent-*.tar.gz \
+            dist/install.sh dist/SHA256SUMS dist/release-manifest.json \
+            --title "$TAG" --notes-file dist/RELEASE_NOTES.md --verify-tag \
+          || gh release upload "$TAG" \
+            dist/superforecasting_agent-*.whl \
+            dist/superforecasting_agent-*.tar.gz \
+            dist/install.sh dist/SHA256SUMS dist/release-manifest.json --clobber
