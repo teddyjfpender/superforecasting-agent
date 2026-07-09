@@ -675,7 +675,23 @@ def build_doctor_report(
         "secrets": secrets,
         "precedence_conflicts": conflicts,
         "kalshi": _kalshi_report(cfg),
+        "connections": _connections_report(),
     }
+
+
+def _connections_report() -> dict[str, Any]:
+    """The notification-surface section — bound chats + last delivery status.
+
+    Lazy import so this module has no load-time edge to the notify/transport
+    stack (and so a config-only environment without the messaging deps still
+    reports cleanly).
+    """
+    try:
+        from forecasting import notify
+
+        return notify.connections_report()
+    except Exception as exc:  # pragma: no cover — degrade, never break doctor
+        return {"surfaces": {}, "routes": [], "error": f"{exc.__class__.__name__}: {exc}"}
 
 
 def render_doctor_report(report: dict[str, Any]) -> str:
@@ -739,6 +755,24 @@ def render_doctor_report(report: dict[str, Any]) -> str:
         a("  marketdata alias mismatches:")
         for m in k["alias_mismatches"]:
             a(f"    ⚠ {m['note']}")
+
+    conn = report.get("connections") or {}
+    a("")
+    a("NOTIFICATION connections (surfaces + bound chats):")
+    surfaces = conn.get("surfaces") or {}
+    if not surfaces:
+        a("  (notify stack unavailable" + (f": {conn['error']}" if conn.get("error") else "") + ")")
+    for name in sorted(surfaces):
+        info = surfaces[name]
+        tok = "token set" if info.get("token_present") else "no token"
+        bound = info.get("bound_count", 0)
+        health = "" if info.get("healthy", True) else "  ⚠ a binding is failing"
+        a(f"  {name:<10} {tok}  ·  {bound} binding(s){health}")
+    for row in conn.get("routes") or []:
+        status = row.get("last_status") or "never delivered"
+        fails = row.get("consecutive_failures") or 0
+        warn = f"  ⚠ {fails} consecutive failures" if fails else ""
+        a(f"    - {row['id']}  events=[{', '.join(row.get('events') or [])}]  last={status}{warn}")
 
     return "\n".join(out)
 

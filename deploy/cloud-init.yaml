@@ -1,0 +1,61 @@
+#cloud-config
+# ============================================================================
+# Hetzner "user data" for a zero-interaction Superforecasting Agent box.
+# ============================================================================
+# Paste this into Hetzner Cloud Console → Create Server → Cloud config, after
+# filling the three placeholders below. On first boot cloud-init runs the same
+# idempotent bootstrap the curl|bash quickstart uses — no interactive steps.
+#
+# FILL THESE IN:
+#   1. ssh_authorized_keys      → your PUBLIC key (root access for setup/debug)
+#   2. SSH_PUBKEY (write_files) → the key that should LAND IN THE TUI
+#   3. AUTH_JSON_BOOTSTRAP      → (optional) seed LLM OAuth non-interactively;
+#                                 or leave empty and run `auth add` over SSH later
+#
+# After boot: `ssh forecast@<ip>` drops you straight into the desk.
+# ============================================================================
+
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - ca-certificates
+  - ufw
+  - tmux
+  - git
+  - ripgrep
+  - unattended-upgrades
+
+# Root key for admin/debug access (the forecast user's landing is wired by the
+# bootstrap from SSH_PUBKEY below).
+ssh_authorized_keys:
+  - ssh-ed25519 AAAA_REPLACE_WITH_YOUR_PUBLIC_KEY operator@laptop
+
+write_files:
+  # The bootstrap reads these as its environment. Keep 0600 — it may hold a
+  # secret (AUTH_JSON_BOOTSTRAP).
+  - path: /etc/superforecasting/bootstrap.env
+    permissions: "0600"
+    content: |
+      # The key that lands in the TUI (ssh forecast@box). REQUIRED for the
+      # one-command SSH-into-desk experience.
+      SSH_PUBKEY="ssh-ed25519 AAAA_REPLACE_WITH_THE_DESK_KEY operator@laptop"
+      # Optional: an admin key that gets a PLAIN shell (escape hatch).
+      # SSH_ADMIN_PUBKEY="ssh-ed25519 AAAA... admin@laptop"
+      # Optional: seed LLM OAuth so the agent can forecast on first boot.
+      # AUTH_JSON_BOOTSTRAP='{"providers": {...}}'
+      # Lane + release (defaults are fine): auto picks Docker if present, else pipx.
+      LANE="auto"
+      TAG="latest"
+      REPO="teddyjfpender/superforecasting-agent"
+
+runcmd:
+  # Firewall: SSH only (the agent needs no inbound ports — Slack is Socket Mode,
+  # Telegram is long-poll, the dashboard is reached via `ssh -L`).
+  - [ bash, -lc, "ufw allow 22/tcp && ufw --force enable || true" ]
+  # Fetch + run the idempotent bootstrap with the env above. It creates the
+  # forecast user, installs the agent, provisions systemd + the backup timer,
+  # wires the SSH->TUI landing, and runs config doctor as the acceptance gate.
+  - [ bash, -lc, "set -a; . /etc/superforecasting/bootstrap.env; set +a; curl -fsSL https://raw.githubusercontent.com/${REPO}/main/scripts/hetzner-install.sh -o /root/hetzner-install.sh && bash /root/hetzner-install.sh 2>&1 | tee /var/log/superforecasting-bootstrap.log" ]
+
+final_message: "Superforecasting Agent bootstrap finished. `ssh forecast@<ip>` lands in the TUI. Bootstrap log: /var/log/superforecasting-bootstrap.log"

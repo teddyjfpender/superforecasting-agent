@@ -747,7 +747,31 @@ def run_due_reviews(
                     )
                 sections.append("\n".join(lines) + "\n")
 
-    return "\n".join(sections)
+    report = "\n".join(sections)
+
+    # Forecast-native notification fan-out (P2.4): deliver this sweep's digest to
+    # every connected surface bound via `forecast connect` / `--notify`. No-op
+    # when there are no bindings; per-binding failures are isolated + recorded
+    # (surfaced in doctor), and a persistently dead binding raises a ledger alert
+    # — the sweep itself never breaks on delivery. A stable per-sweep event_id
+    # keeps it "one digest per destination", not one per question.
+    if report.strip():
+        try:
+            from forecasting import notify as _notify
+
+            run_ids = [r["run"]["id"] for r in results if r.get("run")]
+            event_id = "self-check:" + (run_ids[0] if run_ids else (now or _utc_event_stamp()))
+            _notify.deliver_digest(report, event_id=event_id, db_path=db_path)
+        except Exception:  # never let notification delivery break the sweep
+            pass
+
+    return report
+
+
+def _utc_event_stamp() -> str:
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def gated_evidence_collection(

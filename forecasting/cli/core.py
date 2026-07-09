@@ -3476,6 +3476,12 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
 
     _slack_admin.register(forecast_sub)
 
+    # connect/notify domain — the guided messaging-surface wiring (P2) + the
+    # notification router CLI (`forecast connect <surface>`, `forecast notify`).
+    from forecasting.cli import connect_admin as _connect_admin
+
+    _connect_admin.register(forecast_sub)
+
     return parser
 
 
@@ -14131,6 +14137,23 @@ def _cmd_autopilot_enable(args: argparse.Namespace) -> None:
         print("Warnings:")
         for warning in warnings:
             print(f"  - {warning}")
+
+    # Close the notify dead-end: `--notify <surface>:<target>` used to write a
+    # destination string nothing read. Register it as a real router binding so
+    # this question's digests + alerts actually reach the operator.
+    if getattr(args, "notify", None):
+        try:
+            from forecasting import notify as _notify
+
+            route = _notify.register_destination(
+                args.notify,
+                events=("cycle_digest", "alert"),
+                label=f"autopilot:{args.id}",
+                source=f"autopilot:{args.id}",
+            )
+            print(f"Notify: bound {route.id} (digests + alerts)")
+        except ValueError as exc:
+            print(f"Notify: could not bind {args.notify!r} — {exc}", file=sys.stderr)
 
 
 def _cmd_autopilot_disable(args: argparse.Namespace) -> None:

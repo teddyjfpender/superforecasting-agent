@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# ============================================================================
+# forecast-desk — SSH landing: drop an incoming session straight into the TUI.
+# ============================================================================
+# Installed to /usr/local/bin/forecast-desk by scripts/hetzner-install.sh and
+# wired as the ForceCommand on the forecast user's authorized_keys:
+#
+#   command="/usr/local/bin/forecast-desk",no-X11-forwarding,no-agent-forwarding \
+#       ssh-ed25519 AAAA... operator@laptop
+#
+# Per-key (not global sshd) ForceCommand so an admin key WITHOUT the option
+# still gets a normal shell — the trivial per-key opt-out.
+#
+# Behaviour, driven by SSH_ORIGINAL_COMMAND (what the client asked to run):
+#   (default / "desk")   -> attach-or-create the shared tmux desk running the TUI
+#   "desk2", "desk3", …  -> an independent second/third TUI (own tmux session)
+#   "shell"              -> a plain login shell (escape hatch)
+#   anything else        -> run it in a login shell (scp/rsync/git one-offs work)
+#
+# tmux is the default so a dropped link (hotel wifi) reconnects to the SAME
+# desk with scrollback intact, and N viewers of "desk" mirror ONE job runtime.
+#
+# The launch command differs per install lane and is provided by
+# /etc/superforecasting/desk.env (DESK_CMD=...). Native lane runs the TUI
+# directly; Docker lane execs it inside the gateway container.
+# ============================================================================
+set -euo pipefail
+
+DESK_ENV="${FORECAST_DESK_ENV:-/etc/superforecasting/desk.env}"
+
+# Default: native pipx launcher. Overridden by the lane env file the bootstrap
+# writes (Docker lane sets DESK_CMD to a `docker exec` into the container).
+DESK_CMD="superforecasting-agent --tui"
+TMUX_BIN="tmux"
+# shellcheck disable=SC1090
+[ -r "$DESK_ENV" ] && . "$DESK_ENV"
+
+# Resolve a usable login shell for the escape hatches.
+login_shell="${SHELL:-}"
+[ -x "$login_shell" ] || login_shell="$(command -v bash || command -v sh)"
+
+cmd="${SSH_ORIGINAL_COMMAND:-desk}"
+
+# Sanitize the tmux session name to a safe token (defence-in-depth; tmux -s
+# already treats the value literally, but a clean name keeps `tmux ls` readable).
+sanitize() { printf '%s' "$1" | tr -cd 'a-zA-Z0-9_-' | cut -c1-32; }
+
+start_desk() {
+  local session; session="$(sanitize "$1")"; [ -n "$session" ] || session="desk"
+  if command -v "$TMUX_BIN" >/dev/null 2>&1; then
+    # new-session -A: attach if it exists, else create. One shared runtime.
+    exec "$TMUX_BIN" new-session -A -s "$session" "$DESK_CMD"
+  fi
+  # tmux missing (should not happen on a provisioned box) — run the TUI raw so
+  # the operator still lands somewhere useful, just without reconnect-resume.
+  echo "forecast-desk: tmux not found; launching the TUI without session persistence" >&2
+  exec $DESK_CMD
+}
+
+case "$cmd" in
+  shell|"")
+    exec "$login_shell" -l
+    ;;
+  desk|desk[0-9]*)
+    start_desk "$cmd"
+    ;;
+  *)
+    # scp/rsync/git/one-off commands still work — the SSH key is the boundary.
+    exec "$login_shell" -lc "$cmd"
+    ;;
+esac
