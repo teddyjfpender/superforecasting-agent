@@ -7,7 +7,43 @@ import types
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from tui_gateway import server
+
+
+@pytest.fixture(autouse=True)
+def _stop_leaked_notification_pollers():
+    """Kill any notification-poller daemon a test in this file leaked.
+
+    ``_init_session`` (reached via ``session.create``/``session.new``) starts
+    ``_start_notification_poller`` — a daemon thread looping on the
+    process-global ``process_registry.completion_queue``. A test that creates a
+    real session without neutralising the poller leaves it running; on the same
+    xdist worker it then STEALS async-delegation completion events from later
+    ``tests/tools/test_async_delegation.py`` tests (they see an empty queue →
+    "assert None is not None"), passing in isolation but red in the full suite.
+
+    We reach the poller's stop Event and session dict via the thread's own
+    ``_args`` (``(stop_event, sid, session)``), so this also stops pollers whose
+    session a test already popped from ``server._sessions``. Runs in teardown of
+    every test here, so no poller outlives the file on the worker.
+    """
+    yield
+    for th in threading.enumerate():
+        target = getattr(th, "_target", None)
+        if getattr(target, "__name__", "") != "_notification_poller_loop":
+            continue
+        args = getattr(th, "_args", None) or ()
+        if len(args) >= 3:
+            stop_evt, _sid, sess = args[0], args[1], args[2]
+            try:
+                stop_evt.set()
+            except Exception:
+                pass
+            if isinstance(sess, dict):
+                sess["_finalized"] = True
+        th.join(timeout=1.0)
 
 
 class _ChunkyStdout:

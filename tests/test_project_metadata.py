@@ -5,6 +5,8 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
+
 
 def _load_project():
     pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
@@ -4641,9 +4643,18 @@ def test_machine_readable_docs_metadata_points_to_forecast_snapshot():
     generator = (root / "website" / "scripts" / "generate-llms-txt.py").read_text(
         encoding="utf-8"
     )
-    static_llms = (root / "website" / "static" / "llms.txt").read_text(
-        encoding="utf-8"
-    )
+    # website/static/llms.txt is a gitignored BUILD ARTIFACT the generator above
+    # emits at docs-build time (see website/.gitignore) — several assertions
+    # here check fully-assembled URLs that exist only in the generated OUTPUT,
+    # not the generator source. A fresh CI test checkout runs no docs build, so
+    # the file is absent; skip with a clear reason rather than FileNotFoundError.
+    static_path = root / "website" / "static" / "llms.txt"
+    if not static_path.exists():
+        pytest.skip(
+            "website/static/llms.txt is a docs-build artifact (gitignored); "
+            "run website/scripts/generate-llms-txt.py to materialise it locally"
+        )
+    static_llms = static_path.read_text(encoding="utf-8")
     text = "\n".join([generator, static_llms])
 
     assert (

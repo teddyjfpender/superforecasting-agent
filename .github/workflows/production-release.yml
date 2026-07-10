@@ -118,9 +118,24 @@ jobs:
           # use, see pyproject LAZY_DEPS rationale) — but the hermetic-test
           # discipline bans runtime installs (HERMES_DISABLE_LAZY_INSTALLS), so
           # CI must pre-install the SDKs the suite exercises, exactly as a
-          # long-lived real install accumulates them.
+          # long-lived real install accumulates them. The set below is the
+          # COMPLETE list of lazy features whose tests import the real SDK
+          # unguarded (no importorskip) — determined empirically from which
+          # `image.*/terminal.*/search.*` tests fail with FeatureUnavailable
+          # when the pin is absent. Pins mirror tools/lazy_deps.py exactly.
+          #   - fal-client       image.fal        (test_image_generation, test_managed_media_gateways)
+          #   - modal            terminal.modal   (test_modal_snapshot_isolation)
+          #   - daytona          terminal.daytona (test_daytona_environment)
+          #   - vercel           terminal.vercel  (test_vercel_sandbox_environment)
+          #   - parallel-web     search.parallel  (test_web_tools_config)
+          # Lazy features whose tests importorskip when the SDK is absent
+          # (discord/telegram/matrix/slack/edge-tts/…) are DELIBERATELY left out:
+          # they skip cleanly, and several (e.g. mautrix/python-olm) have no
+          # macOS/Windows build path — the very reason lazy-install exists.
           uv pip install -e ".[all,dev]" "numpy==2.4.3" \
-            "anthropic==0.86.0" "hindsight-client==0.6.1"
+            "anthropic==0.86.0" "hindsight-client==0.6.1" \
+            "fal-client==0.13.1" "modal==1.3.4" "daytona==0.155.0" \
+            "vercel==0.5.7" "parallel-web==0.4.2"
       - name: Run tests
         run: |
           source .venv/bin/activate

@@ -57,7 +57,13 @@ def test_gate_red_when_changelog_entry_missing():
     assert "changelog has no non-empty" in r.stdout
 
 
-def test_gate_red_when_tag_already_exists():
+def test_gate_red_when_tag_already_exists(monkeypatch):
+    # PRE-TAG mode assertion: an already-existing tag is a red ("bump first").
+    # On CI the tag push sets GITHUB_REF=refs/tags/vX.Y.Z, which flips the gate
+    # into TAG-RUN mode (an existing tag is expected, not a conflict) and this
+    # would go green. Clear it so the gate exercises the local pre-tag path the
+    # assertion is about; test_gate_tag_run_* below pin the tag-run behaviour.
+    monkeypatch.delenv("GITHUB_REF", raising=False)
     ver = _pyproject_version()
     tag = f"v{ver}"
     existing = subprocess.run(
@@ -68,6 +74,66 @@ def test_gate_red_when_tag_already_exists():
     r = _run(["bash", str(GATE), "--version", ver])
     assert r.returncode == 1
     assert "already exists" in r.stdout
+
+
+def _clone_repo(dest: Path) -> Path:
+    """Local clone of the repo (full history + tags) for tag-position tests.
+
+    Isolated in tmp — we move a tag here to exercise the gate's tag-run modes
+    without ever touching (or pushing) a tag in the real repo.
+    """
+    if shutil.which("git") is None:
+        pytest.skip("git is required for tag-run gate tests")
+    r = subprocess.run(
+        ["git", "clone", "--local", "--quiet", str(REPO_ROOT), str(dest)],
+        capture_output=True, text=True, timeout=120,
+    )
+    if r.returncode != 0:
+        pytest.skip(f"git clone --local unavailable: {r.stderr.strip()}")
+    return dest
+
+
+def _run_in(repo: Path, cmd, **env):
+    e = dict(os.environ)
+    e.update(env)
+    return subprocess.run(
+        cmd, cwd=repo, env=e, capture_output=True, text=True, timeout=600
+    )
+
+
+def test_gate_tag_run_ready_when_tag_points_at_head(tmp_path):
+    # TAG-RUN mode (CI on a tag push): the tag exists by definition; the real
+    # invariant is that it points at HEAD → READY.
+    clone = _clone_repo(tmp_path / "clone")
+    ver = _pyproject_version()
+    tag = f"v{ver}"
+    subprocess.run(
+        ["git", "-C", str(clone), "tag", "-f", tag, "HEAD"],
+        check=True, capture_output=True,
+    )
+    gate = clone / "scripts" / "check-release-ready.sh"
+    r = _run_in(clone, ["bash", str(gate), "--version", ver],
+                GITHUB_REF=f"refs/tags/{tag}")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "tag-run" in r.stdout and "points at HEAD" in r.stdout
+    assert "READY" in r.stdout
+
+
+def test_gate_tag_run_not_ready_when_tag_points_elsewhere(tmp_path):
+    # TAG-RUN mode but the tag was cut at a different commit than HEAD → red.
+    clone = _clone_repo(tmp_path / "clone")
+    ver = _pyproject_version()
+    tag = f"v{ver}"
+    subprocess.run(
+        ["git", "-C", str(clone), "tag", "-f", tag, "HEAD~1"],
+        check=True, capture_output=True,
+    )
+    gate = clone / "scripts" / "check-release-ready.sh"
+    r = _run_in(clone, ["bash", str(gate), "--version", ver],
+                GITHUB_REF=f"refs/tags/{tag}")
+    assert r.returncode == 1
+    assert "does not point at HEAD" in r.stdout
+    assert "NOT READY" in r.stdout
 
 
 @pytest.mark.skipif(

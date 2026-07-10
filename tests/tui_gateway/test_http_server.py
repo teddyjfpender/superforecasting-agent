@@ -314,6 +314,18 @@ def test_access_log_line_emitted(http_factory, tmp_path, caplog):
     h = http_factory(token_file=str(tmp_path / "gateway.token"))
     with caplog.at_level(logging.INFO, logger="tui_gateway.http_server"):
         _get(h, "/health", token=h.token)
+        # do_GET flushes the response (_handle_health) BEFORE it emits the
+        # access log, and it runs on the server's handler THREAD — so _get()
+        # can return before the INFO record is emitted. Wait for it WITHIN the
+        # caplog context: once at_level exits it restores the logger level and
+        # a late record would be filtered out, dropping it on slower CI runners
+        # (the cross-thread race behind the "expected a structured access-log
+        # line" flake).
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
+            if any("route=/health" in r.getMessage() for r in caplog.records):
+                break
+            time.sleep(0.02)
     lines = [r.getMessage() for r in caplog.records if "route=/health" in r.getMessage()]
     assert lines, "expected a structured access-log line"
     assert "method=GET" in lines[0] and "status=200" in lines[0] and "ms=" in lines[0]

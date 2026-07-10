@@ -24,6 +24,33 @@ from hermes_cli.main import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _rebind_from_current_main():
+    """Rebind the symbols under test from the *live* ``hermes_cli.main``.
+
+    Sibling tests (e.g. ``test_curator_recent_run_notice.py``) call
+    ``importlib.reload(hermes_cli.main)``, which re-executes the module IN
+    PLACE: the module ``__dict__`` gets fresh class/function objects, but the
+    by-value names this file imported at collection time still point at the
+    OLD objects. The old ``_install_hangup_protection`` then looks up
+    ``_UpdateOutputStream`` in the (mutated) module dict and instantiates the
+    NEW class, so ``isinstance(sys.stdout, <old _UpdateOutputStream>)`` fails —
+    "assert False" on CI, green in isolation. Rebinding here before every test
+    keeps the function and the class we assert against from the SAME (current)
+    module object, so the test is immune to any reload on the worker.
+    """
+    import importlib
+
+    import hermes_cli.main as _m
+
+    _m = importlib.import_module("hermes_cli.main")
+    g = globals()
+    g["_UpdateOutputStream"] = _m._UpdateOutputStream
+    g["_finalize_update_output"] = _m._finalize_update_output
+    g["_install_hangup_protection"] = _m._install_hangup_protection
+    yield
+
+
 # -----------------------------------------------------------------------------
 # _UpdateOutputStream
 # -----------------------------------------------------------------------------
