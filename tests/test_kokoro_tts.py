@@ -7,7 +7,12 @@ from __future__ import annotations
 import json
 import wave
 
-import numpy as np
+import pytest
+
+# numpy is an optional (voice-extra) dependency. Skip the whole module when it
+# is absent rather than hard-failing at collection — mirrors the house pattern
+# in tests/tools/test_voice_mode.py and tests/tools/test_file_sync_back.py.
+np = pytest.importorskip("numpy")
 
 import tools.tts_tool as tts
 

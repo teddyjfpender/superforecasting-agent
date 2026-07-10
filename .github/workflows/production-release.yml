@@ -110,7 +110,11 @@ jobs:
         run: |
           uv venv .venv --python 3.11
           source .venv/bin/activate
-          uv pip install -e ".[all,dev]"
+          # numpy lives in the [voice] extra (NOT [all], which excludes the
+          # wheel-only STT stack). test_kokoro_tts.py / test_voice_mode.py
+          # exercise real numpy WAV/audio logic, so install it explicitly here
+          # rather than letting those tests silently importorskip in CI.
+          uv pip install -e ".[all,dev]" "numpy==2.4.3"
       - name: Run tests
         run: |
           source .venv/bin/activate
@@ -120,6 +124,13 @@ jobs:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
+          # Import-time home provisioning (model_tools.discover_builtin_tools ->
+          # tools.approval.load_permanent_allowlist -> ensure_hermes_home) runs
+          # at pytest COLLECTION, before any conftest fixture can redirect
+          # HERMES_HOME. Point it at a writable throwaway dir so collection can
+          # never try to mkdir /root/.superforecasting-agent on a runner whose
+          # HOME is not writable.
+          HERMES_HOME: ${{ runner.temp }}/hermes-home
 
   # -------------------------------------------------------------------------
   # Build the formal set: wheel + multi-arch image + checksums + manifest,
