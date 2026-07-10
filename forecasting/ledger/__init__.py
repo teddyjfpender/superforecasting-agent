@@ -49,6 +49,16 @@ from forecasting.ledger import reviews as _reviews  # noqa: F401  (submodule han
 from forecasting.ledger import alerts as _alerts  # noqa: F401  (submodule handle)
 from forecasting.ledger import theses as _theses  # noqa: F401  (submodule handle)
 from forecasting.ledger import scoring as _scoring  # noqa: F401  (submodule handle)
+from forecasting.ledger import resolutions as _resolutions  # noqa: F401  (submodule handle)
+from forecasting.ledger import lessons as _lessons  # noqa: F401  (submodule handle)
+from forecasting.ledger import model_scoring as _model_scoring  # noqa: F401  (submodule handle)
+from forecasting.ledger import backtest as _backtest  # noqa: F401  (submodule handle)
+from forecasting.ledger import market_models as _market_models  # noqa: F401  (submodule handle)
+from forecasting.ledger import question_meta as _question_meta  # noqa: F401  (submodule handle)
+from forecasting.ledger import source_signatures as _source_signatures  # noqa: F401  (submodule handle)
+from forecasting.ledger import refresh as _refresh  # noqa: F401  (submodule handle)
+from forecasting.ledger import autopilot as _autopilot  # noqa: F401  (submodule handle)
+from forecasting.ledger import exports as _exports  # noqa: F401  (submodule handle)
 from forecasting.ledger.core import *  # noqa: F401,F403  (re-export public surface)
 
 # ``core`` re-exports the watch constants it still uses (ROLES/TYPES); re-export

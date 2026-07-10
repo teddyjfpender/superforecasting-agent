@@ -389,7 +389,7 @@ ignore_imports = [
     "forecasting.hooks.store -> hermes_cli.config",
     "forecasting.jobs.__main__ -> hermes_cli.plugins",
     "forecasting.jobs.types.quorum -> hermes_cli.config",
-    "forecasting.ledger.core -> hermes_cli.config",
+    "forecasting.ledger.model_scoring -> hermes_cli.config",
     "forecasting.ledger.snapshots -> hermes_cli.config",
     "forecasting.market_nightly_forecaster -> hermes_cli.config",
     "forecasting.market_nightly_forecaster -> hermes_cli.plugins",
