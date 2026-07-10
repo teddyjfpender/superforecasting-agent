@@ -85,9 +85,18 @@ else
   c_bad "version '${VERSION}' is not strict semver X.Y.Z"
 fi
 
-# 3. Tag must not already exist (version != last released tag).
+# 3. Tag discipline. Two legitimate modes:
+#    - pre-tag (local, default): the tag must NOT exist yet — bump first.
+#    - tag-run (CI, GITHUB_REF points at this tag): the tag exists BY
+#      DEFINITION; the real invariant is that it points at HEAD.
 TAG="v${VERSION}"
-if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
+if [ "${GITHUB_REF:-}" = "refs/tags/${TAG}" ]; then
+  if [ "$(git rev-parse "refs/tags/${TAG}^{commit}")" = "$(git rev-parse HEAD)" ]; then
+    c_ok "tag-run: ${TAG} points at HEAD"
+  else
+    c_bad "tag-run: ${TAG} does not point at HEAD"
+  fi
+elif git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null 2>&1; then
   c_bad "tag ${TAG} already exists — bump before releasing"
 else
   c_ok "tag ${TAG} is unused"
