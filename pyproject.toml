@@ -234,6 +234,14 @@ markers = [
     "integration: marks tests requiring external services (API keys, Modal, etc.)",
     "real_concurrent_gate: opt out of the autouse stub that disables _detect_concurrent_hermes_instances",
     "ssh: marks tests requiring SSH access/configuration",
+    # Hermetic-CI discipline: a test that genuinely cannot run without live
+    # network and/or real provider credentials carries one (or both) of these.
+    # They stay OFF the default + release runs (both exclude them explicitly)
+    # and are opt-in via HERMES_LIVE_TESTS=1 with the relevant key configured.
+    # Do NOT reach for these to paper over an env-coupled test that CAN be made
+    # hermetic — fix the test instead (see CONTRIBUTING.md → Hermetic tests).
+    "requires_network: test performs real outbound network I/O (live API/HTTP).",
+    "requires_credentials: test needs real provider credentials to run.",
 ]
 filterwarnings = [
     # opentelemetry's importlib_metadata compatibility shim uses the deprecated

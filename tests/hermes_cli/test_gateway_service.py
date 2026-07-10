@@ -1353,10 +1353,17 @@ class TestDetectVenvDir:
 class TestSystemUnitHermesHome:
     """HERMES_HOME in system units must reference the target user, not root."""
 
-    def test_system_unit_uses_target_user_home_not_calling_user(self, monkeypatch):
-        # Simulate sudo: Path.home() returns /root, target user is alice
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
-        monkeypatch.delenv("HERMES_HOME", raising=False)
+    def test_system_unit_uses_target_user_home_not_calling_user(self, tmp_path, monkeypatch):
+        # Simulate sudo: the calling user's home differs from the target user's.
+        # Use a writable tmp dir (NOT the real /root) so the home-resolution
+        # probe (``_default_home_candidate().exists()``) can't hit a real
+        # mode-0700 ``/root`` and raise PermissionError on CI — the exact
+        # env-coupling that failed the v0.18.0 release.
+        fake_root = tmp_path / "root"
+        fake_root.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
+        for _name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
+            monkeypatch.delenv(_name, raising=False)
         monkeypatch.setattr(
             gateway_cli, "_system_service_identity",
             lambda run_as_user=None: ("alice", "alice", "/home/alice"),
@@ -1369,12 +1376,17 @@ class TestSystemUnitHermesHome:
         unit = gateway_cli.generate_systemd_unit(system=True, run_as_user="alice")
 
         _assert_home_aliases(unit, "/home/alice/.superforecasting-agent")
-        assert '/root/.superforecasting-agent' not in unit
+        # The calling user's home must be remapped away, not baked in.
+        assert f"{fake_root}/.superforecasting-agent" not in unit
 
-    def test_system_unit_remaps_profile_to_target_user(self, monkeypatch):
-        # Simulate sudo with a profile: HERMES_HOME was resolved under root
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
-        monkeypatch.setenv("HERMES_HOME", "/root/.hermes/profiles/coder")
+    def test_system_unit_remaps_profile_to_target_user(self, tmp_path, monkeypatch):
+        # Simulate sudo with a profile: HERMES_HOME resolved under the calling
+        # user's home. Use a writable tmp home (NOT /root) — see the sibling
+        # test for why touching a real ``/root`` breaks CI.
+        fake_root = tmp_path / "root"
+        fake_root.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
+        monkeypatch.setenv("HERMES_HOME", str(fake_root / ".hermes" / "profiles" / "coder"))
         monkeypatch.setattr(
             gateway_cli, "_system_service_identity",
             lambda run_as_user=None: ("alice", "alice", "/home/alice"),
@@ -1387,11 +1399,14 @@ class TestSystemUnitHermesHome:
         unit = gateway_cli.generate_systemd_unit(system=True, run_as_user="alice")
 
         _assert_home_aliases(unit, "/home/alice/.hermes/profiles/coder")
-        assert '/root/' not in unit
+        # None of the calling user's home path may survive into the unit.
+        assert str(fake_root) not in unit
 
-    def test_system_unit_preserves_custom_hermes_home(self, monkeypatch):
+    def test_system_unit_preserves_custom_hermes_home(self, tmp_path, monkeypatch):
         # Custom HERMES_HOME not under any user's home — keep as-is
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
+        fake_root = tmp_path / "root"
+        fake_root.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
         monkeypatch.setenv("HERMES_HOME", "/opt/hermes-shared")
         monkeypatch.setattr(
             gateway_cli, "_system_service_identity",
@@ -1417,22 +1432,33 @@ class TestSystemUnitHermesHome:
 class TestHermesHomeForTargetUser:
     """Unit tests for _hermes_home_for_target_user()."""
 
-    def test_remaps_default_home(self, monkeypatch):
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
-        monkeypatch.delenv("HERMES_HOME", raising=False)
+    # These exercise PURE path-mapping. They must never make the code stat a
+    # real restricted path: the calling user's home is a writable tmp dir (NOT
+    # ``/root``), so ``_default_home_candidate().exists()`` can't raise
+    # PermissionError on a CI runner where ``/root`` is mode-0700.
+    def test_remaps_default_home(self, tmp_path, monkeypatch):
+        fake_root = tmp_path / "root"
+        fake_root.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
+        for _name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
+            monkeypatch.delenv(_name, raising=False)
 
         result = gateway_cli._hermes_home_for_target_user("/home/alice")
         assert result == "/home/alice/.superforecasting-agent"
 
-    def test_remaps_profile_path(self, monkeypatch):
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
-        monkeypatch.setenv("HERMES_HOME", "/root/.hermes/profiles/coder")
+    def test_remaps_profile_path(self, tmp_path, monkeypatch):
+        fake_root = tmp_path / "root"
+        fake_root.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
+        monkeypatch.setenv("HERMES_HOME", str(fake_root / ".hermes" / "profiles" / "coder"))
 
         result = gateway_cli._hermes_home_for_target_user("/home/alice")
         assert result == "/home/alice/.hermes/profiles/coder"
 
-    def test_keeps_custom_path(self, monkeypatch):
-        monkeypatch.setattr(Path, "home", staticmethod(lambda: Path("/root")))
+    def test_keeps_custom_path(self, tmp_path, monkeypatch):
+        fake_root = tmp_path / "root"
+        fake_root.mkdir()
+        monkeypatch.setattr(Path, "home", staticmethod(lambda: fake_root))
         monkeypatch.setenv("HERMES_HOME", "/opt/hermes")
 
         result = gateway_cli._hermes_home_for_target_user("/home/alice")

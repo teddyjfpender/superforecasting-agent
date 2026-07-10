@@ -547,7 +547,7 @@ def test_resolve_panelist_toolsets_historical_is_closed_book():
         assert forbidden not in names, names
 
 
-def test_resolve_panelist_toolsets_live_is_research_only():
+def test_resolve_panelist_toolsets_live_is_research_only(web_backend_available):
     from forecasting.quorum import resolve_panelist_toolsets
 
     # A LIVE cutoff (None == no cutoff) must yield web research ONLY — web_search is
@@ -564,7 +564,7 @@ def test_resolve_panelist_toolsets_live_is_research_only():
             assert forbidden not in names, names
 
 
-def test_make_aiagent_runner_threads_cutoff_into_panelist_toolset(monkeypatch):
+def test_make_aiagent_runner_threads_cutoff_into_panelist_toolset(monkeypatch, web_backend_available):
     # The QUORUM call path (jobs.types.quorum.execute) builds the runner with
     # evidence_cutoff; assert that flows into the build_agent enabled_toolsets so the
     # leak guard is actually in force on the constructed panelist.

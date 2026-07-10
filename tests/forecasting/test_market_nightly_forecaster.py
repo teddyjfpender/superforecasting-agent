@@ -90,7 +90,7 @@ def test_forecaster_search_toolset_includes_web_and_is_not_closed_book():
     assert agent.kwargs["enabled_toolsets"]  # non-empty (closed-book would be [])
 
 
-def test_live_forecaster_exposes_no_ledger_write_tools():
+def test_live_forecaster_exposes_no_ledger_write_tools(web_backend_available):
     # ROOT-CAUSE REGRESSION: the LIVE one-shot market forecaster must be a PURE
     # RESEARCH agent. It previously enabled the "forecasting" toolset, which exposes
     # the ``forecast_ledger`` tool (create_question / update_forecast / record_panel /

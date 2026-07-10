@@ -1739,6 +1739,18 @@ def test_auth_remove_copilot_suppresses_all_variants(tmp_path, monkeypatch):
         },
     )
 
+    # Seed a self-contained, isolated store: the ``gh_cli`` entry is a borrowed
+    # credential source, so ``load_pool`` prunes it unless the source resolves
+    # live. On a host without an authenticated ``gh`` CLI (any CI runner) the
+    # written entry would be pruned and ``auth remove 1`` would raise
+    # "No credential #1". Stub the resolver so the entry is retained
+    # deterministically, regardless of the host's gh state.
+    import hermes_cli.copilot_auth as _copilot_auth
+    monkeypatch.setattr(
+        _copilot_auth, "resolve_copilot_token",
+        lambda: ("ghp_fake", "gh auth token"),
+    )
+
     from types import SimpleNamespace
     from hermes_cli.auth import is_source_suppressed
     from hermes_cli.auth_commands import auth_remove_command

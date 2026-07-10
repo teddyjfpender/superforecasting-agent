@@ -526,6 +526,20 @@ def _hermetic_environment(tmp_path, monkeypatch):
     monkeypatch.setenv("AWS_METADATA_SERVICE_TIMEOUT", "1")
     monkeypatch.setenv("AWS_METADATA_SERVICE_NUM_ATTEMPTS", "1")
 
+    # 4b'. No-network guard: forbid runtime lazy `pip install`s (tools/lazy_deps.py).
+    #     A test that touches a feature whose optional backend isn't installed
+    #     (e.g. `forecast bayes` when scipy is absent, as on the release runner)
+    #     would otherwise shell out to `uv pip install ...` — a multi-second
+    #     NETWORK call. That both breaks hermeticity and widens the window for
+    #     capsys/thread races (it deterministically failed
+    #     test_cli_bayes_lr_update_rationale on the v0.18.0 release: the correct
+    #     stdout was produced but a concurrent leaked bg-review thread raced the
+    #     capture during the pip subprocess). The toolkit degrades to its stdlib
+    #     fallback when the backend is missing, so disabling the install is safe.
+    #     Tests that specifically exercise the install path manage this flag
+    #     themselves (see tests/tools/test_lazy_deps.py).
+    monkeypatch.setenv("HERMES_DISABLE_LAZY_INSTALLS", "1")
+
     # 4c. Direct-ledger-write gate (forecasting/ledger.py) defaults ON in
     #     PRODUCTION, refusing forecast-producing writes (create_snapshot /
     #     create_question / record_panel_run) attempted outside a recognised
@@ -878,6 +892,30 @@ def _reset_tool_registry_caches():
         _clear_tool_defs_cache()
     except ImportError:
         pass
+
+
+@pytest.fixture
+def web_backend_available(monkeypatch):
+    """Make a web-search backend deterministically available.
+
+    ``web_search`` / ``web_extract`` register with ``check_fn=check_web_api_key``
+    (tools/web_tools.py). Every keyed backend (exa/parallel/firecrawl/…) is
+    stripped by the hermetic env, leaving only the key-free ``ddgs`` package —
+    so whether these tools resolve depends on whether ``ddgs`` happens to be
+    installed in the ambient venv. It is in dev, but NOT in the release
+    runner's ``.[all,dev]`` set, which is exactly why tool-COMPOSITION tests
+    (does the "web" toolset resolve to web_search? does the live forecaster
+    expose no ledger-write tool?) passed locally and failed the v0.18.0
+    release with an empty tool set.
+
+    Tests that assert toolset composition should not be coupled to that
+    ambient package. Simulate the free ddgs backend so discovery is
+    deterministic. The autouse ``_reset_tool_registry_caches`` fixture already
+    clears the check_fn + tool-defs caches per test, so the patched
+    availability is picked up on the next resolution.
+    """
+    import tools.web_tools as web_tools
+    monkeypatch.setattr(web_tools, "_ddgs_package_importable", lambda: True)
 
 
 # ── Live-system guard ──────────────────────────────────────────────────────

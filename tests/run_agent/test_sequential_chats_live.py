@@ -47,6 +47,8 @@ LIVE = os.environ.get("HERMES_LIVE_TESTS") == "1"
 OR_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 
 pytestmark = [
+    pytest.mark.requires_network,
+    pytest.mark.requires_credentials,
     pytest.mark.skipif(not LIVE, reason="live-only — set HERMES_LIVE_TESTS=1"),
     pytest.mark.skipif(not OR_KEY, reason="OPENROUTER_API_KEY not configured"),
 ]

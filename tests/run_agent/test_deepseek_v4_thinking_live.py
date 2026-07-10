@@ -24,6 +24,8 @@ LIVE_MODELS = ("deepseek-v4-flash", "deepseek-v4-pro")
 LIVE_BASE_URL = "https://api.deepseek.com"
 
 pytestmark = [
+    pytest.mark.requires_network,
+    pytest.mark.requires_credentials,
     pytest.mark.skipif(not LIVE, reason="live-only: set HERMES_LIVE_TESTS=1"),
     pytest.mark.skipif(not DEEPSEEK_KEY, reason="DEEPSEEK_API_KEY not configured"),
 ]

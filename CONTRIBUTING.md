@@ -282,6 +282,43 @@ scripts/run_tests.sh
 pytest tests/ -v
 ```
 
+### Hermetic tests
+
+The suite runs under a **hermetic** environment (see `tests/conftest.py`):
+per-test `HERMES_HOME`, credential env vars stripped, locale/timezone pinned,
+and runtime lazy `pip install`s disabled (`HERMES_DISABLE_LAZY_INSTALLS=1`) so
+no test shells out to the network. A test must pass with **no network and no
+credentials**. Common ways tests accidentally couple to the environment — all
+of which are *test bugs to fix*, not to mark:
+
+- **Touching a real restricted path.** Don't point home resolution
+  (`Path.home()`, `HERMES_HOME`) at a real `/root` — a mode-0700 dir raises
+  `PermissionError` on CI when the runner isn't root. Use a writable `tmp_path`.
+- **Depending on an ambient optional package.** Tool discovery gates
+  `web_search` on an installed search backend (the key-free one is the `ddgs`
+  package). Toolset-composition tests must make the backend deterministic — use
+  the `web_backend_available` fixture rather than relying on `ddgs` being
+  installed locally.
+- **Depending on host auth state.** A `gh_cli`/OAuth-seeded credential-pool
+  entry is pruned unless the source resolves live. Seed your own isolated store
+  and stub the resolver (e.g. `resolve_copilot_token`).
+
+Only when a test **genuinely** needs live network and/or real provider
+credentials (e.g. the `*_live.py` end-to-end probes) mark it:
+
+```python
+pytestmark = [
+    pytest.mark.requires_network,       # real outbound HTTP / live API
+    pytest.mark.requires_credentials,   # real provider keys
+    pytest.mark.skipif(not LIVE, reason="live-only — set HERMES_LIVE_TESTS=1"),
+]
+```
+
+Both CI (`tests.yml`) and the release run (`production-release.yml`) exclude
+`requires_network` / `requires_credentials` with a **printed count**
+(`excluded N env-coupled tests`) — exclusion is visible, never silent. Run the
+live tests locally with `HERMES_LIVE_TESTS=1` and the relevant key set.
+
 ---
 
 ## Project Structure
