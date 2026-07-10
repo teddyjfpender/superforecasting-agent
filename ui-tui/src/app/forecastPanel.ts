@@ -19,38 +19,52 @@ import {
 } from '../lib/forecastShortcuts.js'
 import { snapshotTailAudit, tailAuditChip, tailAuditFails, unearnedOutcomes } from '../lib/forecastTail.js'
 import type { PanelSection } from '../types.js'
+import {
+  countUnearnedTail,
+  draftTarget,
+  fieldString,
+  forecastActionTarget,
+  forecastFreshnessLabel,
+  formatBacktestSources,
+  formatBacktestWins,
+  formatCi95,
+  formatClaimStatus,
+  formatClaimVerdict,
+  formatConfidence,
+  formatCount,
+  formatDelta,
+  formatDoctorStatus,
+  formatErrorScope,
+  formatLessonScope,
+  formatLiveBaselineName,
+  formatMetric,
+  formatProbability,
+  formatRequirement,
+  formatReviewReason,
+  formatScheduleRunScope,
+  formatSigned,
+  formatVerdict,
+  learnedErrorReviewCount,
+  numberValue,
+  plural,
+  probability_delta,
+  rowWithTarget,
+  shortDate,
+  shortId,
+  truncate,
+  unearnedTailMarker
+} from './forecast/format.js'
+import type { ForecastPanelRow } from './forecast/format.js'
 
-// A categorical forecast with UNEARNED tail mass is a desk flag: the visual
-// detail and the glanceable text must agree. These helpers read the optional
-// `tail_audit` on a dashboard question; questions without one (binary,
-// distribution, older snapshots, or a payload that doesn't carry the audit yet)
-// are simply never flagged — no fake findings.
-const questionHasUnearnedTail = (row: { tail_audit?: ForecastDashboardQuestion['tail_audit'] }): boolean =>
-  tailAuditFails(row.tail_audit)
+// forecastFreshnessLabel is the one publicly-imported formatter (the rest are
+// internal to the section builders); re-exported so callers/tests keep it here.
+export { forecastFreshnessLabel } from './forecast/format.js'
+import { rankForecastQuestionMatches, searchNormalize } from './forecast/search.js'
 
-const countUnearnedTail = (questions: ForecastDashboardQuestion[]): number =>
-  questions.reduce((count, row) => (questionHasUnearnedTail(row) ? count + 1 : count), 0)
-
-// The compact "unearned tail" book/rail marker for one question, or '' when
-// clean. e.g. "unearned tail 1.7% (Conway)".
-const unearnedTailMarker = (row: ForecastDashboardQuestion): string => {
-  if (!questionHasUnearnedTail(row)) {
-    return ''
-  }
-
-  const audit = row.tail_audit
-  const offenders = unearnedOutcomes(audit)
-  const lead = offenders[0]?.name
-
-  const mass =
-    typeof audit?.unearned_mass === 'number' && Number.isFinite(audit.unearned_mass)
-      ? `${(audit.unearned_mass * 100).toFixed(audit.unearned_mass * 100 < 10 ? 1 : 0)}%`
-      : ''
-
-  return `unearned tail${mass ? ` ${mass}` : ''}${lead ? ` (${lead})` : ''}`
-}
-
-type ForecastPanelRow = NonNullable<PanelSection['rows']>[number]
+// The question search/ranking helpers live in ./forecast/search.js;
+// rankForecastQuestionMatches + the match shape are re-exported here for callers.
+export { rankForecastQuestionMatches } from './forecast/search.js'
+export type { ForecastQuestionSearchMatch } from './forecast/search.js'
 
 export interface ForecastDeskActionItem {
   command: string
@@ -62,242 +76,6 @@ export interface ForecastDeskCompactItem {
   label: string
   detail: string
 }
-
-export interface ForecastQuestionSearchMatch {
-  index: number
-  matched: string[]
-  row: ForecastDashboardQuestion | ForecastDashboardReview
-  score: number
-}
-
-const truncate = (value: string, max: number) => (value.length > max ? `${value.slice(0, Math.max(0, max - 1))}…` : value)
-
-const draftTarget = (command: string) => `draft:${command}`
-
-const unsafeCommandExample = (value: string) => /(?:<[^>]+>|\[[^\]]+\]|\.\.\.|;)/.test(value)
-
-const forecastActionTarget = (value: null | string | undefined): string | undefined => {
-  const raw = (value ?? '').trim()
-
-  if (!raw) {
-    return undefined
-  }
-
-  const direct = raw.startsWith('/') ? raw.split(/\s+(?:and|then)\s+/i)[0]?.trim() ?? raw : ''
-
-  if (direct && !unsafeCommandExample(direct)) {
-    return direct
-  }
-
-  const quoted = raw.match(/`(\/?(?:forecast|superforecasting-agent\s+forecast)\s+[^`]+)`/i)?.[1]?.trim()
-  const command = quoted || raw.match(/\b(forecast\s+[A-Za-z0-9][^.;\n]*)/i)?.[1]?.trim()
-
-  if (!command || unsafeCommandExample(command)) {
-    return undefined
-  }
-
-  if (command.toLowerCase().startsWith('superforecasting-agent forecast ')) {
-    return `/forecast ${command.slice('superforecasting-agent forecast '.length).trim()}`
-  }
-
-  if (command.toLowerCase().startsWith('forecast ')) {
-    return `/forecast ${command.slice('forecast '.length).trim()}`
-  }
-
-  return command.startsWith('/') ? command : undefined
-}
-
-const rowWithTarget = (key: string, value: string, target?: string): ForecastPanelRow =>
-  target ? [key, value, target] : [key, value]
-
-const numberValue = (value: unknown): number | null =>
-  typeof value === 'number' && Number.isFinite(value) ? value : null
-
-const formatCount = (value: unknown) => {
-  const number = numberValue(value)
-
-  return number === null ? '0' : String(number)
-}
-
-// A distribution arrives as a label→number map (categorical outcomes like
-// {yes:0.6,no:0.4}, or numeric stats/quantiles like {p50:2.0,mean:2.1}).
-// Rendering the raw JSON in a desk row was unreadable, so surface the value of
-// interest: the most-likely outcome for probabilities, or the leading stats.
-const formatDistribution = (value: Record<string, unknown>): string => {
-  const entries = Object.entries(value)
-    .map(([key, raw]) => [key, numberValue(raw)] as [string, number | null])
-    .filter((entry): entry is [string, number] => entry[1] !== null)
-
-  if (!entries.length) {
-    return '-'
-  }
-
-  const looksProbabilistic = entries.every(([, n]) => n >= 0 && n <= 1)
-
-  if (looksProbabilistic) {
-    const [topKey, topValue] = [...entries].sort((a, b) => b[1] - a[1])[0]!
-    const more = entries.length > 1 ? ` (+${entries.length - 1})` : ''
-
-    return truncate(`${topKey} ${topValue.toFixed(2)}${more}`, 24)
-  }
-
-  return truncate(entries.slice(0, 2).map(([key, n]) => `${key} ${n}`).join('  '), 24)
-}
-
-// Human-first number grammar: probabilities read as percentages ("61%",
-// "8.5%"), deltas as direction + points ("↑8pt", "↓0.4pt"). The raw-decimal
-// "P=0.610 Δ=+0.080" notation read like ledger internals, not a dashboard.
-const formatPercent = (number: number) => {
-  const pct = number * 100
-  const text = Math.abs(pct - Math.round(pct)) < 0.05 ? pct.toFixed(0) : pct.toFixed(1)
-
-  return `${text}%`
-}
-
-const formatProbability = (value: ForecastDashboardQuestion['probability']) => {
-  const number = numberValue(value)
-
-  if (number !== null) {
-    return formatPercent(number)
-  }
-
-  if (value && typeof value === 'object') {
-    return formatDistribution(value as Record<string, unknown>)
-  }
-
-  return value ? String(value) : '-'
-}
-
-const formatDelta = (value: ForecastDashboardQuestion['delta']) => {
-  const number = numberValue(value)
-
-  if (number === null) {
-    return '-'
-  }
-
-  if (number === 0) {
-    return 'unchanged'
-  }
-
-  const pts = Math.abs(number) * 100
-  const text = Math.abs(pts - Math.round(pts)) < 0.05 ? pts.toFixed(0) : pts.toFixed(1)
-
-  return `${number > 0 ? '↑' : '↓'}${text}pt`
-}
-
-const formatConfidence = (value: ForecastDashboardQuestion['confidence']) => {
-  const number = numberValue(value)
-
-  return number === null ? '-' : formatPercent(number)
-}
-
-// Signed decimal for SCORE quantities (Brier edges, CI bounds) — these are
-// score differences, not probability points, so the ↑pt grammar would lie.
-const formatSigned = (value: ForecastDashboardQuestion['delta']) => {
-  const number = numberValue(value)
-
-  if (number === null) {
-    return '-'
-  }
-
-  return `${number >= 0 ? '+' : ''}${number.toFixed(3)}`
-}
-
-const shortDate = (value: null | string | undefined) => (value ? value.slice(0, 10) : '-')
-
-const shortId = (value: string | undefined) => (value ? value.replace(/^fq_/, '').slice(0, 8) : '-')
-
-const DAY_MS = 24 * 60 * 60 * 1000
-
-export const forecastFreshnessLabel = (value: null | string | undefined, now = new Date()) => {
-  if (!value) {
-    return 'no as-of'
-  }
-
-  const timestamp = Date.parse(value)
-
-  if (!Number.isFinite(timestamp)) {
-    return 'as-of set'
-  }
-
-  const ageDays = Math.max(0, Math.floor((now.getTime() - timestamp) / DAY_MS))
-
-  if (ageDays === 0) {
-    return 'fresh today'
-  }
-
-  if (ageDays === 1) {
-    return '1d old'
-  }
-
-  if (ageDays < 31) {
-    return `${ageDays}d old`
-  }
-
-  const ageMonths = Math.floor(ageDays / 30)
-
-  return `${ageMonths}mo old`
-}
-
-const formatMetric = (value: null | number | undefined) => {
-  const number = numberValue(value)
-
-  return number === null ? '-' : number.toFixed(6)
-}
-
-const formatBacktestWins = (row: { paired_agent_wins?: number; paired_baseline_wins?: number; paired_ties?: number }) =>
-  `${row.paired_agent_wins ?? 0}/${row.paired_baseline_wins ?? 0}/${row.paired_ties ?? 0}`
-
-const formatBacktestSources = (row: ForecastDashboardBacktest) =>
-  truncate((row.probability_sources && row.probability_sources.length ? row.probability_sources : ['dataset']).join(','), 24)
-
-const formatClaimVerdict = (claimStatus: ForecastDashboardClaimStatus | undefined) => {
-  const verdict = claimStatus?.verdict
-
-  if (verdict === 'benchmark_replay_only') {
-    return 'replay only'
-  }
-
-  return verdict ? truncate(String(verdict).replace(/_/g, ' '), 24) : '-'
-}
-
-const formatClaimStatus = (row: ForecastDashboardBacktest) => {
-  return formatClaimVerdict(row.claim_status)
-}
-
-const formatCi95 = (low: null | number | undefined, high: null | number | undefined) =>
-  numberValue(low) === null || numberValue(high) === null
-    ? '-'
-    : `[${formatSigned(low)},${formatSigned(high)}]`
-
-const formatLiveBaselineName = (row: ForecastDashboardLiveBaseline) =>
-  truncate(`${row.baseline_type || '-'}:${row.source || '-'}`, 28)
-
-const formatScheduleRunScope = (row: ForecastDashboardScheduleRun) => {
-  if (row.scope_type === 'domain_topic' && row.scope_ref) {
-    try {
-      const parsed = JSON.parse(row.scope_ref) as { domain?: string; topic?: string }
-
-      return `domain:${parsed.domain || '*'}/${parsed.topic || '*'}`
-    } catch {
-      return `domain:${row.scope_ref}`
-    }
-  }
-
-  return `${row.scope_type || 'schedule'}:${row.scope_ref || '*'}`
-}
-
-const formatVerdict = (value: string | undefined) =>
-  value ? truncate(String(value).replace(/_/g, ' '), 36) : '-'
-
-const formatRequirement = (value: string | undefined) =>
-  value ? truncate(String(value).replace(/_/g, ' '), 28) : 'evidence'
-
-const formatDoctorStatus = (value: string | undefined) =>
-  value ? truncate(String(value).replace(/_/g, ' '), 42) : '-'
-
-const plural = (count: number, singular: string, pluralForm = `${singular}s`) =>
-  `${count} ${count === 1 ? singular : pluralForm}`
 
 const doctorRows = (doctor: ForecastDashboardDoctor): ForecastPanelRow[] => {
   const rows: ForecastPanelRow[] = [
@@ -451,17 +229,6 @@ export const forecastDeskStatusLabel = (response: ForecastDashboardResponse): st
 
   return bits.join('  ·  ')
 }
-
-const formatErrorScope = (row: { domain?: null | string; question_type?: null | string; topic?: null | string }) => {
-  const base = row.domain || 'global'
-  const topic = row.topic ? `/${row.topic}` : ''
-  const questionType = row.question_type ? `:${row.question_type}` : ''
-
-  return truncate(`${base}${topic}${questionType}`, 28)
-}
-
-const formatLessonScope = (row: { scope_ref?: null | string; scope_type?: null | string }) =>
-  `${row.scope_type || 'global'}:${row.scope_ref || '*'}`
 
 const componentContributionRows = (calibration: ForecastDashboardCalibration | undefined, limit: number): [string, string][] => {
   const rows = calibration?.ensemble_component_contributions
@@ -715,149 +482,6 @@ const focusedActionRows = (questions: ForecastDashboardQuestion[], reviewQueue: 
   ]
 }
 
-const searchNormalize = (value: unknown) =>
-  String(value ?? '')
-    .toLowerCase()
-    .replace(/[^a-z0-9_ -]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-
-const searchTokens = (query: string) =>
-  searchNormalize(query)
-    .split(/\s+/)
-    .filter(token => token.length >= 2)
-
-const uniqueForecastRows = (
-  questions: ForecastDashboardQuestion[],
-  reviewQueue: ForecastDashboardReview[]
-): Array<{ index: number; row: ForecastDashboardQuestion | ForecastDashboardReview }> => {
-  const rows: Array<{ index: number; row: ForecastDashboardQuestion | ForecastDashboardReview }> = []
-  const seen = new Set<string>()
-
-  questions.forEach((row, index) => {
-    if (!row.id || seen.has(row.id)) {
-      return
-    }
-
-    seen.add(row.id)
-    rows.push({ index, row })
-  })
-
-  reviewQueue.forEach(row => {
-    if (!row.id || seen.has(row.id)) {
-      return
-    }
-
-    seen.add(row.id)
-    rows.push({ index: rows.length, row })
-  })
-
-  return rows
-}
-
-const scoreForecastQuestionMatch = (
-  row: ForecastDashboardQuestion | ForecastDashboardReview,
-  query: string,
-  tokens: string[]
-): ForecastQuestionSearchMatch | null => {
-  const id = row.id || ''
-  const short = shortId(id)
-  const title = row.title || ''
-  const domain = row.domain || ''
-  const topics = 'topics' in row && Array.isArray(row.topics) ? row.topics.join(' ') : ''
-  const status = 'status' in row ? row.status || '' : ''
-  const latestRationale = 'latest_rationale' in row ? row.latest_rationale || '' : ''
-
-  const latestEvidence = [
-    'latest_evidence_claim' in row ? row.latest_evidence_claim || '' : '',
-    'latest_evidence_summary' in row ? row.latest_evidence_summary || '' : ''
-  ].join(' ')
-
-  const text = searchNormalize([id, short, title, domain, topics, status, latestRationale, latestEvidence].join(' '))
-  const fullQuery = searchNormalize(query)
-  const matched = new Set<string>()
-  let score = 0
-
-  if (!fullQuery) {
-    return null
-  }
-
-  if (searchNormalize(id) === fullQuery || searchNormalize(short) === fullQuery) {
-    score += 40
-    matched.add('id')
-  } else if (searchNormalize(id).includes(fullQuery) || searchNormalize(short).includes(fullQuery)) {
-    score += 24
-    matched.add('id')
-  }
-
-  if (searchNormalize(title).includes(fullQuery)) {
-    score += 14
-    matched.add('title')
-  }
-
-  if (domain && searchNormalize(domain).includes(fullQuery)) {
-    score += 8
-    matched.add('domain')
-  }
-
-  if (topics && searchNormalize(topics).includes(fullQuery)) {
-    score += 8
-    matched.add('topics')
-  }
-
-  if (latestRationale && searchNormalize(latestRationale).includes(fullQuery)) {
-    score += 6
-    matched.add('rationale')
-  }
-
-  if (latestEvidence && searchNormalize(latestEvidence).includes(fullQuery)) {
-    score += 6
-    matched.add('evidence')
-  }
-
-  for (const token of tokens) {
-    if (!text.includes(token)) {
-      continue
-    }
-
-    score += searchNormalize(title).includes(token) ? 4 : 2
-
-    if (searchNormalize(title).includes(token)) {
-      matched.add(token)
-    }
-  }
-
-  if (tokens.length && tokens.every(token => text.includes(token))) {
-    score += 6
-  }
-
-  return score > 0 ? { index: 0, matched: Array.from(matched), row, score } : null
-}
-
-export const rankForecastQuestionMatches = (
-  response: ForecastDashboardResponse,
-  query: string,
-  limit = 12
-): ForecastQuestionSearchMatch[] => {
-  const summary = response.summary
-
-  if (!summary) {
-    return []
-  }
-
-  const tokens = searchTokens(query)
-
-  return uniqueForecastRows(summary.questions ?? [], summary.review_queue ?? [])
-    .map(({ index, row }) => {
-      const match = scoreForecastQuestionMatch(row, query, tokens)
-
-      return match ? { ...match, index } : null
-    })
-    .filter((match): match is ForecastQuestionSearchMatch => Boolean(match))
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, Math.max(limit, 0))
-}
-
 const searchRowDelta = (row: ForecastDashboardQuestion | ForecastDashboardReview) =>
   'delta' in row ? formatDelta(row.delta) : '-'
 
@@ -950,16 +574,6 @@ export const forecastQuestionSearchSections = (
   }
 
   return sections
-}
-
-const fieldString = (row: Record<string, unknown> | null | undefined, key: string) => {
-  const value = row?.[key]
-
-  if (value === null || value === undefined || value === '') {
-    return '-'
-  }
-
-  return String(value)
 }
 
 const packetCurrentSnapshot = (packet: ForecastQuestionPacket) => packet.forecast_history?.at(-1)
@@ -1142,13 +756,6 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
   })
 
   return sections
-}
-
-const probability_delta = (previous: unknown, current: unknown) => {
-  const previousNumber = numberValue(previous)
-  const currentNumber = numberValue(current)
-
-  return previousNumber === null || currentNumber === null ? null : currentNumber - previousNumber
 }
 
 const sectionTitlesByLedgerView: Record<string, string[]> = {
@@ -1837,14 +1444,6 @@ export const forecastBookSections = (
 
   return sections
 }
-
-const isLearnedErrorReviewReason = (reason?: string) => (reason ?? '').startsWith('domain_error_profile_applies:')
-
-const formatReviewReason = (reason?: string) =>
-  isLearnedErrorReviewReason(reason) ? 'learned error profile' : reason || 'review'
-
-const learnedErrorReviewCount = (rows: ForecastDashboardReview[]) =>
-  rows.filter(row => (row.reasons ?? []).some(isLearnedErrorReviewReason)).length
 
 export const forecastDeskRailSections = (response: ForecastDashboardResponse): PanelSection[] => {
   const summary = response.summary

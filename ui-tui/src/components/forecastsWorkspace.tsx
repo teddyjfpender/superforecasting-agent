@@ -62,6 +62,25 @@ import type { Theme } from '../theme.js'
 import type { PanelSection } from '../types.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
+import {
+  buildVoteShareSeries,
+  chartScale,
+  historyToBandPoints,
+  seriesRuns
+} from './forecast/charts.js'
+import {
+  deltaLabel,
+  distributionBars,
+  finite,
+  FORECAST_SEARCH_FIELDS,
+  headlineCompact,
+  headlineLabel,
+  intervalForLabel,
+  shortCandidateLabel,
+  trimNum,
+  truncate,
+  unitSuffix
+} from './forecast/headlines.js'
 import { windowItems } from './overlayControls.js'
 
 export const openForecastsWorkspace = (initialId: string | null = null) =>
@@ -98,438 +117,6 @@ type LeftRow =
   | { kind: 'thesis'; thesis: ForecastThesis }
   | { factor: ForecastFactor; kind: 'factor' }
   | { item: ForecastWorkspaceItem; kind: 'forecast' }
-
-export const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
-
-// Distribution values (μ, σ, median, CI bounds, Δμ) are abbreviated with
-// k/M/B/T so a Bitcoin mean reads "73k", not "73000", and the master-list and
-// detail values stay short. Percentages and small values pass through unchanged.
-export const trimNum = (value: number): string => compactNumber(value)
-
-export const unitSuffix = (units: null | string | undefined): string => {
-  const u = (units ?? '').toLowerCase()
-
-  if (u.includes('percent') || u.includes('%')) {
-    return '%'
-  }
-
-  return ''
-}
-
-/**
- * Headline label for a forecast.
- *   probability/binary → a percent ("59%")
- *   distribution       → a continuous summary ("μ 4.23% · σ 0.10")
- *   categorical PMF    → a value-sorted, leader-first list ("Farage 67.0 · …")
- * so a CPI mean never renders as a misleading "310%" and a vote-share never dumps
- * raw JSON that truncates the leader.
- */
-export const headlineLabel = (item: ForecastWorkspaceItem): string => {
-  const dist = item.distribution
-
-  if (item.headline_kind === 'distribution' && dist && finite(dist.mean)) {
-    const suffix = unitSuffix(item.units)
-    const parts = [`μ ${trimNum(dist.mean)}${suffix}`]
-
-    if (finite(dist.sd)) {
-      parts.push(`σ ${trimNum(dist.sd)}`)
-    }
-
-    return parts.join(' · ')
-  }
-
-  // Categorical / vote-share PMF → value-sorted, leader-first (never raw JSON). The
-  // detail modal also draws every candidate as a bar below, so the one-line headline
-  // stays a compact leader-first summary here. Continuous distributions are handled
-  // above (μ/σ), so only NON-distribution kinds reach here.
-  if (item.headline_kind !== 'distribution') {
-    // The sidebar/detail one-line surfaces the LEADER's 90% interval where published.
-    const distHead = distributionHeadline(item.probability, { compact: true, max: 3, intervals: item.candidate_intervals })
-    if (distHead) return distHead
-  }
-
-  const headline = item.headline_probability
-
-  if (finite(headline) && headline >= 0 && headline <= 1) {
-    return pct(headline)
-  }
-
-  if (finite(headline)) {
-    return item.probability_display ?? String(headline)
-  }
-
-  return item.probability_display ?? '—'
-}
-
-/** Compact one-token headline for the master list (e.g. "59%", "μ4.23%", or a
- *  value-sorted vote-share "Farage 67.0 · Binface 16.5 · Fox 4.0 · +2 more"). */
-export const headlineCompact = (item: ForecastWorkspaceItem, probDigits = 0): string => {
-  if (item.headline_kind === 'distribution' && item.distribution && finite(item.distribution.mean)) {
-    return `μ${trimNum(item.distribution.mean)}${unitSuffix(item.units)}`
-  }
-
-  if (item.headline_kind !== 'distribution') {
-    const distHead = distributionHeadline(item.probability, { compact: true, max: 3 })
-    if (distHead) return distHead
-  }
-
-  const headline = item.headline_probability
-
-  if (finite(headline) && headline >= 0 && headline <= 1) {
-    return pct(headline, probDigits)
-  }
-
-  return finite(headline) ? String(headline) : '—'
-}
-
-/** Delta in headline units: percent-points for probabilities, outcome units (Δμ) for distributions. */
-export const deltaLabel = (item: ForecastWorkspaceItem): string => {
-  const d = item.delta
-
-  if (!finite(d) || Math.abs(d) < (item.headline_kind === 'distribution' ? 1e-6 : 0.005)) {
-    return '· flat'
-  }
-
-  if (item.headline_kind === 'distribution') {
-    return `${deltaGlyph(d)} Δμ ${d > 0 ? '+' : ''}${trimNum(d)}${unitSuffix(item.units)}`
-  }
-
-  return pctDelta(d)
-}
-
-export const truncate = (value: string, max: number): string =>
-  value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1))}…`
-
-// Field weights for the desk `/` filter: title dominates, then domain/topics,
-// then the id. Shared between the boolean test and the ranked list below so they
-// always agree on what matches.
-const FORECAST_SEARCH_FIELDS: FieldSpec<ForecastWorkspaceItem>[] = [
-  { get: i => i.title, weight: 1 },
-  { get: i => i.domain, weight: 0.6 },
-  { get: i => i.topics, weight: 0.5 },
-  { get: i => i.id, weight: 0.3 }
-]
-
-export const matchesFilter = (item: ForecastWorkspaceItem, query: string): boolean =>
-  !query.trim() || rankItems([item], query, FORECAST_SEARCH_FIELDS).length > 0
-
-/** Categorical / bucket distribution → sorted bars; null for scalar or mean/sd shapes. */
-/** Per-candidate interval lookup that tolerates case/whitespace divergence between the
- * share keys and the interval keys (the scorer + commit hook normalize candidate keys,
- * so the dashboard must too — else an interval silently drops). */
-export const intervalForLabel = (
-  intervals: ForecastWorkspaceItem['candidate_intervals'] | undefined,
-  label: string
-): { hi: number; lo: number } | null => {
-  if (!intervals) return null
-  if (intervals[label]) return intervals[label]
-  const norm = label.trim().toLowerCase()
-  for (const key of Object.keys(intervals)) {
-    if (key.trim().toLowerCase() === norm) return intervals[key]
-  }
-  return null
-}
-
-export const distributionBars = (
-  probability: ForecastWorkspaceItem['probability'],
-  intervals?: ForecastWorkspaceItem['candidate_intervals']
-): HistogramBar[] | null => {
-  if (!probability || typeof probability !== 'object' || Array.isArray(probability)) {
-    return null
-  }
-
-  const entries = Object.entries(probability).filter(([, value]) => finite(value)) as [string, number][]
-
-  // Drop distribution-summary fields (mean / median / sd / quantiles / intervals) so a
-  // HYBRID payload (candidate shares + a bolted-on leader distribution, e.g. from a
-  // vote-share repair) renders ONLY the candidate bars — never q05 / q25 / interval_*
-  // as spurious "candidates". Candidate labels are kept; stat keys are filtered.
-  const distributionalKeys = new Set([
-    'mean', 'mu', 'sd', 'sigma', 'std', 'stdev', 'variance', 'expected', 'value',
-    'median', 'mode', 'lower', 'upper', 'low', 'high', 'min', 'max',
-  ])
-  const isStatKey = (key: string): boolean => {
-    const k = key.toLowerCase()
-    return distributionalKeys.has(k) || /^[qp]\d/.test(k) || k.startsWith('ci') || k.startsWith('interval')
-  }
-
-  const bars = entries.filter(([key]) => !isStatKey(key))
-
-  if (bars.length < 2) {
-    return null
-  }
-
-  return bars
-    .map(([label, value]) => ({ label, value, interval: intervalForLabel(intervals, label) }))
-    .sort((a, b) => b.value - a.value)
-}
-
-/** Short label for a candidate in a distribution headline: a long two-word person
- *  name collapses to its surname ("Nigel Farage" → "Farage", "Count Binface" →
- *  "Binface"), so the leader + top few fit one row. Longer/other multi-word labels
- *  ("Other official candidates") and single long tokens just tail-truncate. */
-export const shortCandidateLabel = (name: string, max = 11): string => {
-  const trimmed = (name ?? '').trim()
-  if (trimmed.length <= max) return trimmed
-  const words = trimmed.split(/\s+/)
-  const last = words[words.length - 1] ?? ''
-  if (words.length === 2 && last.length > 0 && last.length <= max) return last
-  return truncate(trimmed, max)
-}
-
-/**
- * Value-sorted, leader-first headline for a categorical / vote-share PMF —
- * "Farage 67.0 · Binface 16.5 · Fox 4.0 · +2 more". NEVER a raw JSON dump: the old
- * headline rendered the probability dict in INSERTION order inside braces, which
- * truncated the very candidate that mattered (the leader, e.g. Farage 67). Sorted
- * DESC so the leader is always first, 1dp, no braces/quotes. `compact` caps to
- * `max` entries + "+N more" (row contexts, which then tail-ellipsize what remains);
- * full mode lists every candidate (detail contexts, which wrap — never truncating a
- * value). Fraction-scale dicts (every value in [0,1]) render as percentages (×100).
- * Returns null when the payload is not a ≥2-candidate categorical distribution.
- */
-export const distributionHeadline = (
-  probability: ForecastWorkspaceItem['probability'],
-  opts: { compact?: boolean; max?: number; intervals?: ForecastWorkspaceItem['candidate_intervals'] } = {}
-): null | string => {
-  const bars = distributionBars(probability, opts.intervals)
-  if (!bars) {
-    return null
-  }
-  const scale = bars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
-  const fmt1 = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
-  // The LEADER (index 0) shows its 90% interval where one is published — "67.0 [61-73]"
-  // — so the row/sidebar surfaces the leading candidate's uncertainty, not just a point.
-  // The tail stays point-only so the line does not blow its width budget.
-  const fmt = (bar: HistogramBar, index: number): string => {
-    const point = `${shortCandidateLabel(bar.label)} ${(bar.value * scale).toFixed(1)}`
-    const iv = index === 0 ? bar.interval : null
-    if (iv && finite(iv.lo) && finite(iv.hi)) {
-      return `${point} [${fmt1(iv.lo * scale)}-${fmt1(iv.hi * scale)}]`
-    }
-    return point
-  }
-  const max = Math.max(1, opts.max ?? 3)
-
-  if (opts.compact && bars.length > max) {
-    return `${bars.slice(0, max).map(fmt).join(' · ')} · +${bars.length - max} more`
-  }
-
-  return bars.map(fmt).join(' · ')
-}
-
-/** Confidence/spread band for one history point. Latest point prefers the panel spread. */
-const bandForPoint = (
-  isLatest: boolean,
-  panel: ForecastWorkspacePanel | null | undefined
-): { hi?: number; lo?: number } => {
-  if (isLatest && panel?.spread && finite(panel.spread.min) && finite(panel.spread.max)) {
-    return { hi: panel.spread.max, lo: panel.spread.min }
-  }
-
-  // Never SYNTHESIZE a band from `confidence`. The old `clamp01(1 - confidence) * K`
-  // fallback assumed a 0-1 probability scale, so on a vote-share point (e.g. 44.7 on a
-  // 0-100 axis) it clamped to ~[0,1] and rendered the band detached at the bottom of
-  // the chart — disconnected from the point. A forecast's band must come from its OWN
-  // interval (distribution ci90) or a real panel spread; otherwise show no band.
-  return {}
-}
-
-export const historyToBandPoints = (item: ForecastWorkspaceItem): BandPoint[] => {
-  const history = item.history ?? []
-  const isDistribution = item.headline_kind === 'distribution'
-
-  return history.map((point, index) => {
-    const y = point.headline_probability
-
-    if (!finite(y)) {
-      return { y: null }
-    }
-
-    // Distribution snapshots carry their own 90% interval (in outcome units);
-    // use it directly and never the panel's probability spread.
-    if (finite(point.band_low) && finite(point.band_high)) {
-      return { hi: point.band_high, lo: point.band_low, y }
-    }
-
-    const isLatest = index === history.length - 1
-
-    const band = bandForPoint(!isDistribution && isLatest, isDistribution ? null : item.panel)
-
-    return { hi: band.hi ?? null, lo: band.lo ?? null, y }
-  })
-}
-
-const MIN_CHART_SPAN = 0.12
-
-/**
- * Auto-zoom the y-axis to the data + band range so small probability moves and
- * the confidence band are actually visible (a fixed 0..1 axis squashes a
- * 0.49→0.58 series into one row). A minimum span stops a flat series from
- * exploding into noise; probability series stay clamped to [0,1]; the axis
- * labels report the real bounds so the zoom is honest.
- */
-export const chartScale = (points: BandPoint[]): { yMax: number; yMin: number } => {
-  const values: number[] = []
-
-  for (const point of points) {
-    if (finite(point.y)) {
-      values.push(point.y)
-    }
-
-    if (finite(point.lo)) {
-      values.push(point.lo)
-    }
-
-    if (finite(point.hi)) {
-      values.push(point.hi)
-    }
-  }
-
-  if (!values.length) {
-    return { yMax: 1, yMin: 0 }
-  }
-
-  const probabilityLike = values.every(value => value >= 0 && value <= 1)
-  let lo = Math.min(...values)
-  let hi = Math.max(...values)
-
-  if (hi - lo < MIN_CHART_SPAN) {
-    const mid = (lo + hi) / 2
-    lo = mid - MIN_CHART_SPAN / 2
-    hi = mid + MIN_CHART_SPAN / 2
-  }
-
-  const pad = (hi - lo) * 0.15
-  lo -= pad
-  hi += pad
-
-  if (probabilityLike) {
-    lo = Math.max(0, lo)
-    hi = Math.min(1, hi)
-  }
-
-  if (hi - lo < 1e-6) {
-    hi = lo + 1
-  }
-
-  return { yMax: hi, yMin: lo }
-}
-
-// ── Vote-share / categorical PMF series (multi-candidate over time) ──────────
-
-export interface VoteShareSeriesResult {
-  /** one series per top-K candidate, then an aggregated `Other` when the tail is
-   *  non-empty. The leader is index 0. Aligned to `keptIndices`. */
-  series: { label: string; latestInterval?: { hi: number; lo: number } | null; values: (null | number)[] }[]
-  /** indices INTO item.history the columns were drawn from (drives the x-axis) */
-  keptIndices: number[]
-  /** the leader's downsample preview (its `note` is the honest thinning caption) */
-  preview: DownsampleResult
-  /** the largest series value drawn (post-scale) — the chart's headroom anchor */
-  yMax: number
-  /** 100 when the payload is fraction-scale (shares in [0,1]), else 1 — so a 0.67
-   *  share and a 67.0 share both render as 67 on a 0–100 axis */
-  scale: number
-}
-
-// A candidate lookup tolerant of case/whitespace divergence between snapshots
-// (the same tolerance intervalForLabel applies to interval keys).
-const barForLabel = (bars: HistogramBar[] | null, label: string): HistogramBar | null => {
-  if (!bars) {
-    return null
-  }
-  const norm = label.trim().toLowerCase()
-  return bars.find(bar => bar.label.trim().toLowerCase() === norm) ?? null
-}
-
-/**
- * Series-ify a vote-share / categorical PMF question's history into one line per
- * candidate — CLIENT-SIDE, because each snapshot already carries its full share
- * dict (`history[].probability`). The current snapshot's `probability` dict
- * (value-sorted) sets the candidate ranking + which labels are candidates (stat
- * keys already filtered by `distributionBars`); the top `topK` become their own
- * series (leader first), and the remaining tail folds into an aggregated `Other`.
- * Older points fill each series by the same candidate key (a missing candidate is
- * a `null` gap, never a fake 0). The leader series drives the change-aware
- * downsample so the x-axis thins on the material moves of the leading candidate.
- * Fraction-scale payloads are scaled ×100 so the axis is always 0–100, never the
- * negative axis the single-scalar chart produced.
- */
-export const buildVoteShareSeries = (
-  item: ForecastWorkspaceItem,
-  currentBars: HistogramBar[],
-  topK = 4
-): VoteShareSeriesResult => {
-  const scale = currentBars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
-  const leaders = currentBars.slice(0, topK)
-  const tailLabels = new Set(currentBars.slice(topK).map(bar => bar.label.trim().toLowerCase()))
-  const history = (item.history ?? []) as ForecastWorkspaceHistoryPoint[]
-
-  // Per-point candidate bars (stat keys filtered, value-sorted) — null for a
-  // point whose payload is not a ≥2-candidate dict (older/degenerate snapshots).
-  const pointBars = history.map(point => distributionBars(point.probability))
-
-  // The leader's own series drives the downsample (its material moves anchor the
-  // thinned x-axis), then every series is drawn from the SAME kept columns.
-  const leaderValues = pointBars.map(bars => {
-    const hit = barForLabel(bars, leaders[0]?.label ?? '')
-    return hit ? hit.value * scale : null
-  })
-  const preview = downsampleSeries(leaderValues)
-  const kept = preview.keptIndices
-
-  const series = leaders.map(leader => ({
-    label: leader.label,
-    // The per-candidate 90% interval for the LATEST point (scaled to the axis) —
-    // the chart draws it as a whisker on the final column.
-    latestInterval:
-      leader.interval && finite(leader.interval.lo) && finite(leader.interval.hi)
-        ? { hi: leader.interval.hi * scale, lo: leader.interval.lo * scale }
-        : null,
-    values: kept.map(index => {
-      const hit = barForLabel(pointBars[index] ?? null, leader.label)
-      return hit ? hit.value * scale : null
-    })
-  }))
-
-  // Aggregate the tail into a single `Other` line only when there IS a tail.
-  if (currentBars.length > leaders.length) {
-    series.push({
-      label: 'Other',
-      latestInterval: null, // the aggregated tail carries no single interval
-      values: kept.map(index => {
-        const bars = pointBars[index]
-        if (!bars) {
-          return null
-        }
-        const tail = bars.filter(bar => tailLabels.has(bar.label.trim().toLowerCase()))
-        return tail.length ? tail.reduce((sum, bar) => sum + bar.value, 0) * scale : null
-      })
-    })
-  }
-
-  const drawn = series.flatMap(s => s.values).filter((value): value is number => finite(value))
-  const yMax = drawn.length ? Math.max(...drawn) : 0
-
-  return { keptIndices: kept, preview, scale, series, yMax }
-}
-
-/** Collapse a row of tagged plot cells into contiguous same-series runs, so the
- *  multi-series chart renders one coloured <Text> per run (leader distinct) rather
- *  than one node per cell. */
-export const seriesRuns = (cells: SeriesCell[]): { series: number; text: string }[] => {
-  const runs: { series: number; text: string }[] = []
-  for (const cell of cells) {
-    const last = runs[runs.length - 1]
-    if (last && last.series === cell.series) {
-      last.text += cell.ch
-    } else {
-      runs.push({ series: cell.series, text: cell.ch })
-    }
-  }
-  return runs
-}
 
 // ── Panel / ensemble spread fallback (from the forecast.question packet) ─────
 
@@ -688,6 +275,31 @@ export const panelFromPacket = (packet: ForecastQuestionPacket | null | undefine
     trim: 0
   }
 }
+
+// The headline/format lib and chart/series builders now live in
+// ./forecast/headlines.js and ./forecast/charts.js; re-exported here so
+// callers (deskView) and the test suite keep importing them from this module.
+export {
+  deltaLabel,
+  distributionBars,
+  distributionHeadline,
+  finite,
+  headlineCompact,
+  headlineLabel,
+  intervalForLabel,
+  matchesFilter,
+  shortCandidateLabel,
+  trimNum,
+  truncate,
+  unitSuffix
+} from './forecast/headlines.js'
+export {
+  buildVoteShareSeries,
+  chartScale,
+  historyToBandPoints,
+  seriesRuns
+} from './forecast/charts.js'
+export type { VoteShareSeriesResult } from './forecast/charts.js'
 
 export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: ForecastsWorkspaceProps) {
   const { stdout } = useStdout()
