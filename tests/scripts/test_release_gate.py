@@ -34,9 +34,19 @@ def _pyproject_version() -> str:
     raise AssertionError("no version in pyproject.toml")
 
 
-def test_gate_green_for_current_version():
+def test_gate_green_for_current_version(tmp_path):
+    # Deterministic PRE-TAG mode regardless of environment: run in a clone
+    # with the version tag removed (the real repo may legitimately carry it
+    # mid-release) and GITHUB_REF cleared (ambient on CI tag runs, where it
+    # would flip the gate into tag-run mode).
+    clone = _clone_repo(tmp_path / "clone")
     ver = _pyproject_version()
-    r = _run(["bash", str(GATE), "--version", ver])
+    subprocess.run(
+        ["git", "-C", str(clone), "tag", "-d", f"v{ver}"],
+        check=False, capture_output=True,
+    )
+    gate = clone / "scripts" / "check-release-ready.sh"
+    r = _run_in(clone, ["bash", str(gate), "--version", ver], GITHUB_REF=None)
     assert r.returncode == 0, r.stdout + r.stderr
     assert "READY" in r.stdout
     assert "version consistent" in r.stdout
@@ -95,7 +105,12 @@ def _clone_repo(dest: Path) -> Path:
 
 def _run_in(repo: Path, cmd, **env):
     e = dict(os.environ)
-    e.update(env)
+    # None means "ensure absent" (e.g. GITHUB_REF leaks in ambient CI env).
+    for k, v in env.items():
+        if v is None:
+            e.pop(k, None)
+        else:
+            e[k] = v
     return subprocess.run(
         cmd, cwd=repo, env=e, capture_output=True, text=True, timeout=600
     )
@@ -124,9 +139,17 @@ def test_gate_tag_run_not_ready_when_tag_points_elsewhere(tmp_path):
     clone = _clone_repo(tmp_path / "clone")
     ver = _pyproject_version()
     tag = f"v{ver}"
+    # Tag a fresh commit we mint ourselves, then move HEAD past it — never
+    # HEAD~1, which does not exist under CI's shallow (depth-1) checkout.
     subprocess.run(
-        ["git", "-C", str(clone), "tag", "-f", tag, "HEAD~1"],
+        ["git", "-C", str(clone), "tag", "-f", tag, "HEAD"],
         check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(clone), "commit", "--allow-empty", "-m", "advance"],
+        check=True, capture_output=True,
+        env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+             "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"},
     )
     gate = clone / "scripts" / "check-release-ready.sh"
     r = _run_in(clone, ["bash", str(gate), "--version", ver],
@@ -145,7 +168,10 @@ def test_release_dry_run_produces_full_artifact_set(tmp_path):
     py = str(REPO_ROOT / ".venv" / "bin" / "python")
     if not Path(py).exists():
         py = shutil.which("python3") or "python3"
-    r = _run(["bash", str(RELEASE), "--out", str(out)], PYTHON=py)
+    # The gate has its own dedicated tests (both modes, above). This test's
+    # subject is the ARTIFACT SET, and the repo may legitimately carry the
+    # version tag mid-release — so use the sanctioned tests/CI gate skip.
+    r = _run(["bash", str(RELEASE), "--out", str(out)], PYTHON=py, SKIP_GATE="1")
     assert r.returncode == 0, r.stdout + r.stderr
     ver = _pyproject_version()
     expected = [

@@ -7397,8 +7397,19 @@ class ForecastLedger:
                 if is_changed:
                     changed_readings.append({"source_type": stype, "source": source, "value": reading, "payload": payload})
                     if persist:
+                        # Stamp the imported reading as available AS OF run_at —
+                        # the refresh moment, which is exactly this snapshot's
+                        # evidence_cutoff below. Without this, add_evidence defaults
+                        # available_at to a FRESH utc_now_iso() (truncated to whole
+                        # seconds); if the wall clock ticks a second between run_at
+                        # and this write on a slow worker, the new evidence lands
+                        # after the cutoff and _validate_evidence_refs rejects the
+                        # commit. A payload-supplied available_at still wins (a real
+                        # adapter reading's true observation time).
                         evidence = self.add_evidence(
-                            question_id=question_id, archive_url_snapshot=False, **payload
+                            question_id=question_id,
+                            archive_url_snapshot=False,
+                            **{"available_at": run_at, **payload},
                         )
                         new_evidence_ids.append(evidence.id)
 

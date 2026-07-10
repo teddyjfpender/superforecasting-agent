@@ -1153,7 +1153,24 @@ def self_check(
                 continue
         if scores and not ledger.list_postmortems(question.id):
             if auto_postmortem:
-                latest_score = scores[0]
+                # Derive the auto-postmortem from the CURRENT snapshot's score —
+                # the desk's own resolved forecast — not an arbitrary scores[0].
+                # list_scores orders by scored_at DESC ONLY, so scores[0] can be a
+                # non-eligible imported_baseline score (backtests write a 0.5
+                # baseline score AFTER the desk score) whenever the wall clock
+                # ticks a second between the two inserts on a slow CI worker.
+                # create_postmortem re-scores the current snapshot, so selecting
+                # that same score here keeps the lesson text consistent with the
+                # postmortem's calibration_eligible gate (else a real eligible miss
+                # silently synthesizes no calibration lesson).
+                latest_score = next(
+                    (
+                        score
+                        for score in scores
+                        if current is not None and score.forecast_id == current.forecast_id
+                    ),
+                    scores[0],
+                )
                 postmortem = ledger.create_postmortem(
                     question_id=question.id,
                     summary="Auto-created by forecast self-check after confirmed resolution and scoring.",
