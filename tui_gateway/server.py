@@ -1632,20 +1632,40 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
         current_base_url = getattr(agent, "base_url", "") or ""
         current_api_key = getattr(agent, "api_key", "") or ""
     else:
-        runtime = resolve_runtime_provider(requested=None)
-        current_provider = str(runtime.get("provider", "") or "")
+        # No live agent — e.g. the primary provider's sign-in died, so the
+        # session never built one.  We only need the CURRENT provider as
+        # *context* for switch_model; the TARGET provider's credentials are
+        # resolved inside switch_model.  Resolving the current runtime must
+        # therefore NEVER abort the switch: a dead current provider (an
+        # unauthenticated codex) would otherwise raise "No Codex credentials
+        # stored" and trap the user on the very provider they are leaving —
+        # the same trap-class as the setup Ctrl+C and copilot dead-token bugs.
         current_model = _resolve_model()
-        current_base_url = str(runtime.get("base_url", "") or "")
-        # Preserve a callable api_key (Azure Foundry Entra ID bearer
-        # provider) unchanged — ``str(...)`` would produce
-        # ``"<function ...>"`` and poison downstream switch_model
-        # validation. Match the agent-present branch's behavior at the
-        # top of this block.
-        _runtime_key = runtime.get("api_key", "")
-        if callable(_runtime_key) and not isinstance(_runtime_key, str):
-            current_api_key = _runtime_key
-        else:
-            current_api_key = str(_runtime_key or "")
+        try:
+            runtime = resolve_runtime_provider(requested=None)
+            current_provider = str(runtime.get("provider", "") or "")
+            current_base_url = str(runtime.get("base_url", "") or "")
+            # Preserve a callable api_key (Azure Foundry Entra ID bearer
+            # provider) unchanged — ``str(...)`` would produce
+            # ``"<function ...>"`` and poison downstream switch_model
+            # validation. Match the agent-present branch's behavior above.
+            _runtime_key = runtime.get("api_key", "")
+            if callable(_runtime_key) and not isinstance(_runtime_key, str):
+                current_api_key = _runtime_key
+            else:
+                current_api_key = str(_runtime_key or "")
+        except Exception:
+            # Current provider is unauthenticated / unresolvable.  Learn only
+            # its slug from config/env (non-raising) so switch_model can still
+            # detect a provider change; leave creds empty — switch_model
+            # resolves the TARGET fresh and validates ONLY that provider.
+            from hermes_cli.runtime_provider import resolve_requested_provider
+
+            current_provider = resolve_requested_provider(None)
+            if current_provider == "auto":
+                current_provider = ""
+            current_base_url = ""
+            current_api_key = ""
 
     # Load user-defined providers so switch_model can resolve named custom
     # endpoints (e.g. "ollama-launch") and validate against saved model lists.

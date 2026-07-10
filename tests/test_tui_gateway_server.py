@@ -3846,6 +3846,159 @@ def test_config_set_model_allowed_when_idle(monkeypatch):
         server._sessions.pop("sid", None)
 
 
+# ---------------------------------------------------------------------------
+# Switching AWAY from a dead provider must NEVER require that provider's
+# credentials.  With codex UNAUTHENTICATED the session never builds an agent,
+# so _apply_model_switch takes the no-agent branch — which used to resolve the
+# CURRENT (codex) runtime eagerly just to learn the current provider slug,
+# raising "No Codex credentials stored" and trapping the user on the very
+# provider they were trying to leave.  Same trap-class as the setup Ctrl+C
+# and copilot dead-token bugs.
+# ---------------------------------------------------------------------------
+
+
+def _dead_codex_resolver(*, requested=None, target_model=None, **_kw):
+    """resolve_runtime_provider stub: the current (codex) provider is dead."""
+    from hermes_cli.auth import AuthError
+
+    if requested in {None, "", "openai-codex"}:
+        raise AuthError(
+            "No Codex credentials stored. Run `/auth` (in the TUI) to authenticate.",
+            provider="openai-codex",
+            code="codex_auth_missing",
+            relogin_required=True,
+        )
+    raise AssertionError(f"unexpected provider resolution: {requested!r}")
+
+
+def test_apply_model_switch_away_from_dead_codex_no_agent(monkeypatch):
+    """Switching to a DIFFERENT provider with no live agent must not consult
+    the dead current (codex) provider's credentials."""
+    import hermes_cli.model_switch as ms
+    import hermes_cli.runtime_provider as rp
+    from hermes_cli.model_switch import ModelSwitchResult
+
+    captured = {}
+
+    def _fake_switch_model(**kwargs):
+        captured.update(kwargs)
+        return ModelSwitchResult(
+            success=True,
+            new_model="minimax/minimax-m2.7",
+            target_provider="openrouter",
+            provider_label="OpenRouter",
+            is_global=False,
+            api_key="sk-or",
+            base_url="https://openrouter.ai/api/v1",
+            api_mode="chat_completions",
+        )
+
+    monkeypatch.setattr(rp, "resolve_runtime_provider", _dead_codex_resolver)
+    monkeypatch.setattr(
+        rp, "resolve_requested_provider", lambda requested=None: "openai-codex"
+    )
+    monkeypatch.setattr(ms, "switch_model", _fake_switch_model)
+    monkeypatch.setattr(server, "_store_session_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_resolve_model", lambda: "gpt-5.4")
+
+    # No live agent — agent build died on the dead codex sign-in.
+    result = server._apply_model_switch(
+        "",
+        {"agent": None},
+        "minimax/minimax-m2.7 --provider openrouter --tui-session",
+    )
+
+    assert result["value"] == "minimax/minimax-m2.7"
+    # switch_model was reached; the CURRENT provider was learned from
+    # config/env (non-raising), NOT via the credential-demanding runtime
+    # resolution.  The TARGET is validated inside switch_model.
+    assert captured["current_provider"] == "openai-codex"
+    assert captured["explicit_provider"] == "openrouter"
+
+
+def test_apply_model_switch_no_agent_authed_current_unchanged(monkeypatch):
+    """Regression guard: when the current provider resolves fine, the no-agent
+    branch still passes its resolved provider/base_url/api_key to switch_model."""
+    import hermes_cli.model_switch as ms
+    import hermes_cli.runtime_provider as rp
+    from hermes_cli.model_switch import ModelSwitchResult
+
+    captured = {}
+
+    def _resolve(*, requested=None, target_model=None, **_kw):
+        assert requested is None
+        return {
+            "provider": "anthropic",
+            "base_url": "https://api.anthropic.com",
+            "api_key": "sk-ant",
+            "api_mode": "anthropic_messages",
+        }
+
+    def _fake_switch_model(**kwargs):
+        captured.update(kwargs)
+        return ModelSwitchResult(
+            success=True,
+            new_model="minimax/minimax-m2.7",
+            target_provider="openrouter",
+            provider_label="OpenRouter",
+            is_global=False,
+            api_key="sk-or",
+            base_url="https://openrouter.ai/api/v1",
+            api_mode="chat_completions",
+        )
+
+    monkeypatch.setattr(rp, "resolve_runtime_provider", _resolve)
+    monkeypatch.setattr(ms, "switch_model", _fake_switch_model)
+    monkeypatch.setattr(server, "_store_session_toggle", lambda *a, **k: None)
+    monkeypatch.setattr(server, "_resolve_model", lambda: "claude-sonnet-4.6")
+
+    result = server._apply_model_switch(
+        "",
+        {"agent": None},
+        "minimax/minimax-m2.7 --provider openrouter --tui-session",
+    )
+
+    assert result["value"] == "minimax/minimax-m2.7"
+    assert captured["current_provider"] == "anthropic"
+    assert captured["current_base_url"] == "https://api.anthropic.com"
+    assert captured["current_api_key"] == "sk-ant"
+
+
+def test_switch_model_to_dead_codex_returns_teaching_error(monkeypatch):
+    """Switching TO an unauthenticated provider surfaces the teaching error
+    naming that provider — the target's creds are validated, not the source's."""
+    import hermes_cli.runtime_provider as rp
+    from hermes_cli.auth import AuthError
+    from hermes_cli.model_switch import switch_model
+
+    def _resolve(*, requested=None, target_model=None, **_kw):
+        if requested == "openai-codex":
+            raise AuthError(
+                "No Codex credentials stored. Run `/auth` (in the TUI) or "
+                "`superforecasting-agent auth` to authenticate.",
+                provider="openai-codex",
+                code="codex_auth_missing",
+                relogin_required=True,
+            )
+        raise AssertionError(f"unexpected provider resolution: {requested!r}")
+
+    monkeypatch.setattr(rp, "resolve_runtime_provider", _resolve)
+
+    result = switch_model(
+        raw_input="gpt-5.4",
+        current_provider="anthropic",
+        current_model="claude-sonnet-4.6",
+        current_base_url="",
+        current_api_key="sk-ant",
+        is_global=False,
+        explicit_provider="openai-codex",
+    )
+
+    assert result.success is False
+    assert result.target_provider == "openai-codex"
+    assert "No Codex credentials stored" in (result.error_message or "")
+
+
 def test_mirror_slash_side_effects_rejects_mutating_commands_while_running(monkeypatch):
     """Slash worker passthrough (e.g. /model, /style, /prompt,
     /compress) must reject during an in-flight turn.  Same race as
