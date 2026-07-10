@@ -32,7 +32,9 @@ ALLOWED = [
     re.compile(r"^\s*#"),                                   # comment
     re.compile(r"^\s*from\s+[\w.]+\s+import\s+.+$"),        # import-from
     re.compile(r"^\s*import\s+[\w.]+(\s+as\s+\w+)?\s*$"),   # import
-    re.compile(r"^\s*\w[\w.]*\.register\w*\([\w.]*\)\s*$"),  # register* hook
+    # register* hook — bare (CLI) or the sibling `register(sys.modules[__name__])`
+    # idiom (pm_rpc/jobs_rpc; the reload-safe tui_gateway family-carve seam).
+    re.compile(r"^\s*\w[\w.]*\.register\w*\((sys\.modules\[__name__\]|[\w.]*)\)\s*$"),
     re.compile(r"^\s*_?\w+\s*=\s*_\w+\.[\w.]+\s*$"),        # facade re-bind
     re.compile(r"^\s*return\s+_\w+\.[\w.]+\(.*\)\s*$"),     # one-line delegate
     re.compile(r"^\s*noqa.*$"),

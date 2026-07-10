@@ -497,3 +497,69 @@ Until then:
   1.7 exceeds the 1,200-line soft cap (one cohesive lifecycle domain; the two
   sibling-dep helpers stay in core) → carries `MOVES-ONLY`. difflib: 0 unexpected
   added lines on every slice.
+
+## Wave 2a — the server family-split (2026-07-10)
+
+`tui_gateway/server.py` 9,618 → 6,219 lines (−3,419) across 12 family carves.
+The RPC handlers are anonymous `@rpc_validated("m.n") def _(rid, params)` (not
+named like the CLI `_cmd_*`), so membership/slicing is keyed off the DECORATOR
+method-name string via a line-range extractor, not `extract.py`'s name match.
+Two new gates added to `scripts/carve/`: `dump_registry.py` (the sorted
+`_methods` dict — the wire-protocol byte-identity gate; must write via
+`sys.__stdout__` because the gateway swaps `sys.stdout` for the JSON-RPC wire at
+import) and a broadened `verify_moves.py` register-hook regex to accept the
+`register(sys.modules[__name__])` sibling idiom.
+
+- **Import-side-effect registration is NOT reload-safe — use `register(server)`.**
+  A carved family whose `@rpc_validated` decorators fire only on first import
+  VANISHES from `_methods` after `importlib.reload(server)` (test_protocol /
+  test_review_summary_callback reload + clear `_methods`; server's own handlers
+  re-register on reload, an already-imported sibling does not). Fix = the
+  pm_rpc/jobs_rpc contract: each module SHADOWS `rpc_validated`/`method` with a
+  local capturing decorator that appends `(kind,name,fn)` to `_REGISTRARS`
+  (handler bodies stay byte-verbatim), and `server.py` calls `_X.register(server)`
+  at load AND on every reload, replaying through the REAL `server.rpc_validated`.
+- **Monkeypatch hop policy = hop the patched set + mutable shared state.** Grep
+  tests for `monkeypatch.setattr(server,…)` / `patch("tui_gateway.server.X")` /
+  `server.X =`; those names reach via `_core.X`. Non-patched pure helpers stay in
+  core and import bare. The `_emit`↔`_voice_emit` substring collision means hops
+  MUST be word-boundary regex, never string-replace.
+- **`global X` in a moved handler is the hard case** (voice.record mutates
+  `_voice_event_sid`). Drop the `global` statement and rewrite every read AND
+  write to the `_core.X` attribute form so the moved writer and the STAYING
+  helpers (`_voice_emit`) share the one live object. Same reasoning hoisted
+  `_voice_sid_lock` to a hop.
+- **The read-form trap still bites MOVED HELPERS** (not the anonymous handlers,
+  which tests reach only via `dispatch`). `commands.cli_exec` moved
+  `_cli_exec_blocked`, which tests call as `server._cli_exec_blocked(argv)` →
+  re-bind `_cli_exec_blocked = _commands_rpc._cli_exec_blocked` at core's bottom.
+  The full-suite grep of every moved helper across `tests/` is the gate.
+- **Per-slice results** (server.py 9,618 → 6,219, −3,419; registry byte-identical
+  every slice: 137 methods; verify_moves 0 unexpected added lines every slice):
+
+  | Slice | Module | New | Core Δ | Patched hops | Suite |
+  |---|---|---:|---:|---|:---:|
+  | obsidian.* | `obsidian_rpc.py` | 357 | −306 | none | 370 ✓ |
+  | markets.model.*+news | `market_models_rpc.py` | 326 | −281 | `_emit` | 370 ✓ |
+  | forecast.* | `forecast_rpc.py` | 1,093 | −1,038 | `_nightly_self_check_job`,`_review_sweep_*` | 370 ✓ |
+  | rollback.* | `rollback_rpc.py` | 142 | −100 | none | 370 ✓ |
+  | agents.* | `agents_rpc.py` | 167 | −131 | none | 370 ✓ |
+  | delegation/spawn/subagent | `subagents_rpc.py` | 226 | −169 | none | 370 ✓ |
+  | complete.*/paste | `completion_rpc.py` | 306 | −250 | `_hermes_home` | 370 ✓ |
+  | voice.*+insights | `voice_rpc.py` | 314 | −250 | `_emit`,`_get_db`,`_store_session_toggle`,`_voice_event_sid`,`_voice_sid_lock` | 370 ✓ |
+  | browser.manage+CDP | `browser_rpc.py` | 279 | −239 | `_emit` | 370 ✓ |
+  | commands/cli.exec | `commands_rpc.py` | 456 | −406 | `_load_cfg`,`_sessions` (+`_cli_exec_blocked` re-bind) | 370 ✓ |
+  | tools/toolsets | `tools_rpc.py` | 214 | −170 | `_load_enabled_toolsets`,`_sessions` | 370 ✓ |
+  | cron/skills | `cron_skills_rpc.py` | 147 | −111 | none | 370 ✓ |
+
+  Suite = `tests/test_tui_gateway_server.py` + `tests/tui_gateway/` (370 pass; the
+  one `test_hooks_preview_snapshot…` failure is PRE-EXISTING at the fork baseline,
+  a forecast snapshot-batching assertion, not a carve regression). A single-process
+  sweep of ALL gateway-touching tests (`-n0`): 6,237 pass; the only other 2
+  failures are `tests/gateway/test_approve_deny_commands.py` E2E — which imports NO
+  `tui_gateway` (pure `tools.approval`) — so out of this carve's reach.
+  server.py's residual ~6.2k is the runtime the plan says STAYS (transport +
+  dispatch + `_SlashWorker` + `_run_prompt_submit` streaming + session lifecycle +
+  agent build + config.set/model-switch + auth); `session_rpc`/`config_theme_rpc`
+  (the session-runtime-coupled families) are the remaining path toward ~4k, staged
+  for follow-on slices.
