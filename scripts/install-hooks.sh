@@ -23,6 +23,11 @@ fi
 git config core.hooksPath .githooks
 chmod +x .githooks/pre-commit .githooks/commit-msg .githooks/pre-push 2>/dev/null || true
 
+# Moves-only refactor law, blame half: skip the verified moves-only carve commits
+# in `git blame` so authorship flows through the carve (see .git-blame-ignore-revs
+# and docs/plans/2026-07-10-modularization-program.md §W0.2).
+git config blame.ignoreRevsFile .git-blame-ignore-revs
+
 cat <<'EOF'
 Hermes git hooks installed  (core.hooksPath = .githooks)
 
@@ -35,6 +40,13 @@ Hermes git hooks installed  (core.hooksPath = .githooks)
     HERMES_HOOKS_SKIP_TSC=1 git commit ...   # skip only the WIP TypeScript check
 
   Uninstall:  git config --unset core.hooksPath
+
+  Architecture contracts (import-linter): `lint-imports` enforces the import
+  directions in pyproject.toml [tool.importlinter] (CI: lint.yml ->
+  lint-architecture). Install with `uv pip install -e ".[dev]"`, then run
+  `lint-imports` before a push that touches package boundaries.
+
+  git blame now skips the moves-only carve commits (.git-blame-ignore-revs).
 
   The laws these gates enforce: CONTRIBUTING.md -> "The Laws" and "Local Gates".
 EOF

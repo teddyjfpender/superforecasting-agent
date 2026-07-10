@@ -5362,8 +5362,9 @@ def test_tester_pilot_docs_cover_scheduled_learning_loop():
         encoding="utf-8"
     )
     # 8ce9630d9 split the forecasting/cli.py megafile into a package; the
-    # schedule-run surface now lives in forecasting/cli/core.py.
-    forecast_cli = (root / "forecasting" / "cli" / "core.py").read_text(encoding="utf-8")
+    # modularization Wave-1 reviews carve then moved the schedule-run surface
+    # into forecasting/cli/reviews.py (the `review`/`schedule` domain module).
+    forecast_cli = (root / "forecasting" / "cli" / "reviews.py").read_text(encoding="utf-8")
 
     assert 'schedule_run.add_argument("--due"' in forecast_cli
     assert "forecast --db \"$FORECAST_DB\" schedule run --due --auto-score --auto-postmortem" in tester_pilot

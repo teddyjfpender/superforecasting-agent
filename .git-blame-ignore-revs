@@ -1,0 +1,29 @@
+# Moves-only refactor commits — skipped by `git blame` so authorship flows
+# through the carve to the original author of each line.
+#
+# This is the missing half of the CONTRIBUTING "Moves-only refactor slices"
+# bargain (docs/plans/2026-07-10-modularization-program.md §W0.2): a carve
+# relocates method bodies verbatim + adds one-line delegates, so blaming the
+# moved lines to the carve commit is noise. Every commit listed here was
+# verified moves-only (difflib categorizer: zero unexpected added lines).
+#
+# Enable it locally (scripts/install-hooks.sh does this for you):
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# APPEND POLICY: every future MOVES-ONLY carve commit appends its full 40-char
+# hash here in the SAME PR that lands the carve.
+
+# ── Arc D — the ledger + tools + cli-package megafile carves (2026-07-03..) ──
+7c4dac300fb5fd55f175760cbcf0f7caf1f82150  # refactor(ledger): ARC D1 — watches carve
+6be447523f66a59eddd8b25aa54bdbb16ed79bfc  # refactor(ledger): ARC D2 — questions carve
+51adb4161418ed5c70faf6c19195e39b08e854b1  # refactor(ledger): ARC D3 — evidence + triage carve
+4302d016b9d39ad69189e0f9b13eadcb45ba6755  # refactor(ledger): ARC D gate-leaf + D4 — snapshots carve
+1ecfcc6a84618a9ea80b958ca2674345d44c5d1c  # refactor(ledger): ARC D5+D6 — panels + reviews carve
+00922498bb9054e2d3772a8ab6fdbbdc6cdeaef5  # refactor(ledger): ARC D7-D9 — alerts, theses, scoring
+d6dc6602134dfc0d9426f7a041719962e56506ac  # refactor(tools): forecast_actions dispatch decompose
+8ce9630d9436e41015bbf3b906be652c49e823b3  # refactor(cli): last megafile becomes a package
+
+# ── Modularization Wave 1 — the staged 8 CLI domain carves (2026-07-10) ──────
+# (append each slice's hash as it is committed: doctor_admin, reviews,
+#  quorum_panel, markets_pm, triage_calibration, benchmarks, questions_admin,
+#  refresh_cycle)

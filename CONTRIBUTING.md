@@ -55,6 +55,19 @@ masquerading as a feature: the pre-push/commit gate blocks it unless the commit 
 carries the literal marker **`MOVES-ONLY`**, your attestation (and the reviewer's cue)
 that the diff is moves plus delegates only.
 
+### Architecture contracts
+
+**Import directions are declared once and enforced.** `pyproject.toml
+[tool.importlinter]` names the allowed edges — `protocol/` imports nothing
+app-side, `forecasting.ledger` never imports `forecasting.cli`, `forecasting`
+never imports `tui_gateway`, and three ratchets (`* → run_agent`, `forecasting →
+hermes_cli`, `forecasting → tools`) whose frozen violation lists may only shrink.
+`lint-imports` is exit-code gated in CI (`lint-architecture` in
+`.github/workflows/lint.yml`). Adding a feature? The **ownership map + per-
+extension-point checklists** in `docs/architecture/ownership-map.md` name the one
+module to touch and the registry it wires into; the carve toolkit is
+`scripts/carve/` (its README has the moves-only recipe and findings ledger).
+
 ### The size rules
 
 **New modules stay under ~400 lines; no refactor slice moves more than ~1,200 lines.**

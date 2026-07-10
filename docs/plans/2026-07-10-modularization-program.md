@@ -430,4 +430,70 @@ Until then:
 
 # FINDINGS LEDGER (append per slice, Arc-D style)
 
-*(empty — first slice appends here)*
+## Wave 0 — formalities (2026-07-10)
+
+- **import-linter is the right tool, `allow_indirect_imports` is the key knob.**
+  The forbidden contracts default to detecting *indirect* chains, which through
+  the shared `agent`/`hermes_cli` tangle makes even "clean" boundaries
+  (`ledger↛cli`, `forecasting↛tui_gateway`) look broken. Setting
+  `allow_indirect_imports = "true"` restricts to the DIRECT architectural edge —
+  which is what every contract here means. All 6 contracts then resolve: 3 Tier-1
+  kept clean, 3 ratchets frozen. `run_agent.py`/`cli.py` are top-level modules, so
+  `include_external_packages = true` is required for the `*↛run_agent` contract to
+  see them.
+- **Measured ratchet counts (direct edges):** `*→run_agent` **21**,
+  `forecasting→hermes_cli` **22**, `forecasting→tools` **17** (the plan's 25/39/23
+  estimates were pre-carve and mixed direct+indirect). Frozen in
+  `[tool.importlinter]`; they may only shrink. The Wave-1 carve *preserved* these
+  edges (they rode along with the moved bodies, e.g. `forecasting.cli.core →
+  hermes_cli.config` became `…markets_pm/quorum_panel/refresh_cycle → …config`) —
+  moves-only means the ratchet total is unchanged, just re-attributed.
+- **Carve tooling versioned** (`scripts/carve/`): `analyze_domain.py` (exclusivity
+  with staying-propagation), `deps.py` (bare-vs-hop import split), `extract.py`
+  (AST extents / strip), `verify_moves.py` (difflib gate), `dump_help_tree.py` +
+  `dump_order.py` (the two byte-identity gates). Recipe + findings in its README.
+
+## Wave 1 — the 8 CLI domain carves (2026-07-10)
+
+- **Two byte-identity gates are needed, not one.** The structural tree dump sorts
+  subcommands, so it CANNOT see a registration reorder; `dump_order.py` pins the
+  registration order separately. A domain whose subcommands are non-contiguous
+  (doctor+backup vs config; market-nightly vs market-quality; the four
+  refresh/rerun/cycle/run-all positions) exposes MULTIPLE register hooks, each
+  called at its pre-carve position.
+- **The monkeypatch trap has two shapes and both must be greped for EVERY moved
+  name (handlers AND helpers).** Read-form (`cli._x`, `from forecasting.cli import
+  _x`) → re-bind `_x = _domain._x` at core's bottom (`_build_doctor_report`,
+  `_cmd_rerun`, `_cmd_market_nightly_*`, `_maybe_autorun_quorum`, and the four
+  benchmark JSONL helpers). String-patch-form that must reach a moved call site →
+  keep the name in core, hop `_core._x` (`_ledger` everywhere; `_load_backtest_cases`
+  /`_apply_backtest_probability_source`/`list_builtin_benchmarks` and the `load_*`
+  adapters in benchmarks; `_draft_resolution_criteria` in questions). **The FULL
+  suite — not the targeted subset — caught the slice-1.6 read-form regression
+  (`_write_agent_protocol_prompt_jsonl` et al.); always run it before declaring a
+  slice done.**
+- **Cross-slice coupling is real:** once carved, siblings import shared helpers
+  from core, so `analyze_domain.py` (core-only) is not the last word — grep
+  `forecasting/cli/*.py` too. `_print_panel_summary`/`_resolve_active_model_id`
+  had to STAY in core because `quorum_panel`/`markets_pm` import them, even though
+  the questions analyzer called them movable.
+- **`ruff F821` is the reg-block safety net.** `deps.py` scans function bodies
+  only; register blocks and string annotations reference constants it misses
+  (`CALIBRATION_LESSON_STATUSES`, `"ForecastLedger"`). F821 on the new module
+  before the suite catches them every time.
+- **Per-slice results** (core.py: 17,056 → 11,540 lines, −5,516):
+
+  | Slice | Module | New lines | Core Δ | Help/Order | Suite |
+  |---|---|---:|---:|:---:|:---:|
+  | 1.1 doctor | `doctor_admin.py` | 746 | −681 | ✓ | 261 ✓ |
+  | 1.2 reviews | `reviews.py` | 491 | −450 | ✓ | 265 ✓ |
+  | 1.3 quorum/panel | `quorum_panel.py` | 861 | −822 | ✓ | 269 ✓ |
+  | 1.4 markets | `markets_pm.py` | 469 | −424 | ✓ | 272 ✓ |
+  | 1.5 triage/calib/lessons | `triage_calibration.py` | 707 | −654 | ✓ | 259 ✓ |
+  | 1.6 bench/backtest | `benchmarks.py` | 683 | −612 | ✓ | 254 ✓ |
+  | 1.7 questions | `questions_admin.py` | 1,351 | −1,283 | ✓ | 308 ✓ |
+  | 1.8 refresh/cycle | `refresh_cycle.py` | 733 | −690 | ✓ | 282 ✓ |
+
+  1.7 exceeds the 1,200-line soft cap (one cohesive lifecycle domain; the two
+  sibling-dep helpers stay in core) → carries `MOVES-ONLY`. difflib: 0 unexpected
+  added lines on every slice.

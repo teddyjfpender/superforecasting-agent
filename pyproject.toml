@@ -80,7 +80,7 @@ modal = ["modal==1.3.4"]
 daytona = ["daytona==0.155.0"]
 vercel = ["vercel==0.5.7"]
 hindsight = ["hindsight-client==0.6.1"]
-dev = ["debugpy==1.8.20", "pytest==9.0.2", "pytest-asyncio==1.3.0", "pytest-xdist==3.8.0", "pytest-split==0.11.0", "pytest-timeout==2.4.0", "mcp==1.26.0", "ty==0.0.21", "ruff==0.15.10"]
+dev = ["debugpy==1.8.20", "pytest==9.0.2", "pytest-asyncio==1.3.0", "pytest-xdist==3.8.0", "pytest-split==0.11.0", "pytest-timeout==2.4.0", "mcp==1.26.0", "ty==0.0.21", "ruff==0.15.10", "import-linter==2.13"]
 messaging = ["python-telegram-bot[webhooks]==22.6", "discord.py[voice]==2.7.1", "aiohttp==3.13.3", "brotlicffi==1.2.0.1", "slack-bolt==1.27.0", "slack-sdk==3.40.1", "qrcode==7.4.2"]
 cron = []  # croniter is now a core dependency; this extra kept for back-compat
 slack = ["slack-bolt==1.27.0", "slack-sdk==3.40.1", "aiohttp==3.13.3"]
@@ -288,3 +288,140 @@ select = ["PLW1514"]
 "skills/**" = ["PLW1514"]
 "optional-skills/**" = ["PLW1514"]
 "plugins/**" = ["PLW1514"]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Architecture contracts (import-linter / grimp). Wave-0 formality layer of the
+# 2026-07-10 modularization program (docs/plans/2026-07-10-modularization-program.md
+# §W0.1). grimp's AST scan sees FUNCTION-LEVEL imports too, so the ~2,100 lazy
+# edges are visible to contracts rather than laundered. Run: `lint-imports`
+# (exit-code gated). CI: .github/workflows/lint.yml → lint-architecture.
+#
+# Enforcement tiers:
+#   1. ENFORCE NOW (already true, 0 violations): protocol purity; ledger↛cli;
+#      forecasting↛tui_gateway.
+#   2. RATCHET (frozen violation lists below — they may only SHRINK, never grow):
+#      *↛run_agent (the inverted entry-script edge); forecasting↛hermes_cli;
+#      forecasting↛tools.
+[tool.importlinter]
+root_packages = [
+    "forecasting",
+    "protocol",
+    "tui_gateway",
+    "tools",
+    "agent",
+    "gateway",
+    "hermes_cli",
+]
+# run_agent.py / cli.py are top-level MODULES (not packages), so they are seen as
+# "external" nodes; this must be true for the *↛run_agent forbidden contract.
+include_external_packages = true
+
+# ── Tier 1: enforce now ──────────────────────────────────────────────────────
+[[tool.importlinter.contracts]]
+name = "protocol is a pure kernel (imports nothing app-side)"
+type = "forbidden"
+source_modules = ["protocol"]
+forbidden_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "hermes_cli", "run_agent", "cli"]
+allow_indirect_imports = "true"
+
+[[tool.importlinter.contracts]]
+name = "forecasting.ledger never imports forecasting.cli"
+type = "forbidden"
+source_modules = ["forecasting.ledger"]
+forbidden_modules = ["forecasting.cli"]
+allow_indirect_imports = "true"
+
+[[tool.importlinter.contracts]]
+name = "forecasting never imports tui_gateway (already clean; enforce before it decays)"
+type = "forbidden"
+source_modules = ["forecasting"]
+forbidden_modules = ["tui_gateway"]
+allow_indirect_imports = "true"
+
+# ── Tier 2: ratchets (frozen lists — shrink only) ────────────────────────────
+[[tool.importlinter.contracts]]
+name = "nothing imports the run_agent entry script (inverted edge; burn down)"
+type = "forbidden"
+source_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "hermes_cli", "cli"]
+forbidden_modules = ["run_agent"]
+allow_indirect_imports = "true"
+ignore_imports = [
+    "agent.agent_factory -> run_agent",
+    "agent.agent_init -> run_agent",
+    "agent.agent_runtime_helpers -> run_agent",
+    "agent.background_review -> run_agent",
+    "agent.chat_completion_helpers -> run_agent",
+    "agent.codex_runtime -> run_agent",
+    "agent.conversation_loop -> run_agent",
+    "agent.curator -> run_agent",
+    "agent.system_prompt -> run_agent",
+    "agent.tool_executor -> run_agent",
+    "agent.transports.codex -> run_agent",
+    "forecasting.cli.benchmarks -> run_agent",
+    "forecasting.cli.core -> run_agent",
+    "forecasting.jobs.types.task -> run_agent",
+    "forecasting.market_model -> run_agent",
+    "gateway.platforms.api_server -> run_agent",
+    "gateway.platforms.feishu_comment -> run_agent",
+    "gateway.run -> run_agent",
+    "hermes_cli.oneshot -> run_agent",
+    "tools.delegate_tool -> run_agent",
+    "tui_gateway.server -> run_agent",
+]
+
+[[tool.importlinter.contracts]]
+name = "forecasting↛hermes_cli (kernel seam; ratchet)"
+type = "forbidden"
+source_modules = ["forecasting"]
+forbidden_modules = ["hermes_cli"]
+allow_indirect_imports = "true"
+ignore_imports = [
+    "forecasting.api_keys -> hermes_cli.env_loader",
+    "forecasting.appconfig -> hermes_cli.config",
+    "forecasting.cli.core -> hermes_cli.config",
+    "forecasting.cli.core -> hermes_cli.env_loader",
+    "forecasting.cli.markets_pm -> hermes_cli.config",
+    "forecasting.cli.quorum_panel -> hermes_cli.config",
+    "forecasting.cli.refresh_cycle -> hermes_cli.config",
+    "forecasting.cron_runner -> hermes_cli.config",
+    "forecasting.hooks.engine -> hermes_cli.config",
+    "forecasting.hooks.loader -> hermes_cli.config",
+    "forecasting.hooks.store -> hermes_cli.config",
+    "forecasting.jobs.__main__ -> hermes_cli.plugins",
+    "forecasting.jobs.types.quorum -> hermes_cli.config",
+    "forecasting.ledger.core -> hermes_cli.config",
+    "forecasting.ledger.snapshots -> hermes_cli.config",
+    "forecasting.market_nightly_forecaster -> hermes_cli.config",
+    "forecasting.market_nightly_forecaster -> hermes_cli.plugins",
+    "forecasting.protocol -> hermes_cli.config",
+    "forecasting.quorum -> hermes_cli.models",
+    "forecasting.quorum_autorun -> hermes_cli.config",
+    "forecasting.research_audit -> hermes_cli.config",
+    "forecasting.scheduler -> hermes_cli.config",
+]
+
+[[tool.importlinter.contracts]]
+name = "forecasting↛tools (ratchet)"
+type = "forbidden"
+source_modules = ["forecasting"]
+forbidden_modules = ["tools"]
+allow_indirect_imports = "true"
+ignore_imports = [
+    "forecasting.bayes_toolkit -> tools.lazy_deps",
+    "forecasting.cli.connect_admin -> tools.slack_tool",
+    "forecasting.cli.core -> tools.forecasting_tool",
+    "forecasting.cli.questions_admin -> tools.forecasting_tool",
+    "forecasting.cli.refresh_cycle -> tools.forecasting_tool",
+    "forecasting.cli.slack_admin -> tools.forecast_actions.share",
+    "forecasting.cli.slack_admin -> tools.slack_tool",
+    "forecasting.cli.triage_calibration -> tools.forecasting_tool",
+    "forecasting.collab.directory -> tools.slack_tool",
+    "forecasting.cron_runner -> tools.forecasting_tool",
+    "forecasting.jobs.types.refresh -> tools.forecasting_tool",
+    "forecasting.market_compute -> tools.lazy_deps",
+    "forecasting.market_model -> tools.forecasting_tool",
+    "forecasting.market_model -> tools.market_presentation_tool",
+    "forecasting.market_model -> tools.terminal_tool",
+    "forecasting.notify -> tools.slack_tool",
+    "forecasting.supervisor_search -> tools.web_tools",
+]
