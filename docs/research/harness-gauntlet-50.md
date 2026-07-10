@@ -12,6 +12,12 @@ each question's forecast cutoff, per the baseline formalism in the benchmarking-
 memo (§7). Nothing here is hypothetical: every question is a currently-open uncertainty
 with a named authoritative resolution path.
 
+**Tranche 2 (N1–N25, §2b) added 2026-07-11.** The core 50 skews long — the cohort now
+carries a deliberate fast arm: 15 questions resolving by 2026-10-15 and 10 more by
+2026-12-01, so the engine's skill is *observable within the quarter* (score → postmortem
+→ lesson-synthesis full loops before December). Tranche market states were verified live
+on 2026-07-10, same discipline as above.
+
 ---
 
 ## 0. What "maximum exercise" means for this engine
@@ -53,25 +59,33 @@ documented expert disagreement; no question resolvable by a single lookup; prefe
 questions where the outside-view base rate and the inside view point in different
 directions — the superforecaster discriminator.
 
-| Axis | Target | Delivered |
-|---|---|---|
-| Binary | ~20 | 20 (B1–B20) |
-| Categorical / vote-share distribution | ~10 | 10 (V1–V10) |
-| Continuous / count | ~10 | 10 (C1–C10) |
-| Thesis clusters | ~5 | 5 (T1–T5, aggregating members drawn from the 45) |
-| Long-horizon (deliberate, cadence-stressing) | ~5 | 5 (L1–L5) |
-| Liquid market anchor (named venue + slug/ticker, verified 2026-07-10) | ≥25 | ~41 (all B except B1; all V; C1–C6, C9, C10; every thesis via members; L1/L2/L4/L5) |
-| Structured data feed (FRED/BLS/BEA/EIA/NOAA/NSIDC/USGS/CDC/GISTEMP) | ≥10 | 13 (C1–C10, B20, + core-PCE & ONI in T1/T4) |
-| Evidence-rich fast movers (triage/refresh load) | ≥10 | 14 (B6, B10–B12, B14, B15, B18, C8, V1, V7, V9, B3/B4, T3) |
-| Adversarial resolution criteria | 3–5 | 8 flagged ⚠ (B2, B5, B6, B11, B12, B18, L2, L3) |
-| Resolves ≤1 month (by ~2026-08-10) | ~10 | 10 (B1, B2, B3, C1, C2, C3, V7, V9, V10, + gedatolisib fast) |
-| Resolves ≤3 months (by ~2026-10-10) | ~20 | ~20 (B6, B18, V1–V6, C5, C6, + the ≤1-mo set rolls in) |
-| Resolves ≤12 months (by ~2027-07) | ~15 | ~15 (B4, B5, B7–B17, B19, B20, C4, C7–C10, V8, T-clusters) |
-| Multi-year | ~5 | 5 (L1–L5) |
+| Axis | Target | Delivered (core 50) | Tranche 2 (N1–N25) → cohort of 75 |
+|---|---|---|---|
+| Binary | ~20 | 20 (B1–B20) | +12 (N1, N3, N7–N10, N16, N17, N19, N21, N23, N25) → 32 |
+| Categorical / vote-share distribution | ~10 | 10 (V1–V10) | +3 (N2, N4, N14) → 13 |
+| Continuous / count | ~10 | 10 (C1–C10) | +10 (N5, N6, N11–N13, N15, N18, N20, N22, N24) → 20 |
+| Thesis clusters | ~5 | 5 (T1–T5, aggregating members drawn from the 45) | +0 new; tranche members tag into T1 (N5, N8, N15, N17, N18), T2 (N4, N16, N21), T4 (N13, N20), T5 (N10, N24) |
+| Long-horizon (deliberate, cadence-stressing) | ~5 | 5 (L1–L5) | +0 — the tranche is the fast arm by design |
+| Liquid market anchor (named venue + slug/ticker, verified 2026-07-10) | ≥25 | ~41 (all B except B1; all V; C1–C6, C9, C10; every thesis via members; L1/L2/L4/L5) | +17 (N1–N5, N7–N11, N15, N17–N19, N21, N23, N24) → ~58 |
+| Structured data feed (FRED/BLS/BEA/EIA/NOAA/NSIDC/USGS/CDC/GISTEMP) | ≥10 | 13 (C1–C10, B20, + core-PCE & ONI in T1/T4) | +10 (seats: N5, N11, N12, N15, N18 — incl. the plane's **first coingecko and frankfurter exercises**; declines: N6, N13, N20, N22, N24) → 23 |
+| Evidence-rich fast movers (triage/refresh load) | ≥10 | 14 (B6, B10–B12, B14, B15, B18, C8, V1, V7, V9, B3/B4, T3) | +9 (N1–N3, N8, N10, N19, N22, N23, N25) → 23 |
+| Adversarial resolution criteria | 3–5 | 8 flagged ⚠ (B2, B5, B6, B11, B12, B18, L2, L3) | +5 ⚠ (N2, N3, N16, N23, N25) → 13 |
+| Resolves ≤1 month (by ~2026-08-10) | ~10 | 10 (B1, B2, B3, C1, C2, C3, V7, V9, V10, + gedatolisib fast) | +4 by 2026-08-11 (N1–N4) → 14 |
+| Resolves ≤3 months (by ~2026-10-10) | ~20 | ~20 (B6, B18, V1–V6, C5, C6, + the ≤1-mo set rolls in) | +15 by 2026-10-15 (Window A, N1–N15) → ~35 |
+| **Tranche 2 Window B: resolves 2026-10-15 → 2026-12-01** | ~10 | — | 10 (N16–N25) |
+| Resolves ≤12 months (by ~2027-07) | ~15 | ~15 (B4, B5, B7–B17, B19, B20, C4, C7–C10, V8, T-clusters) | tranche fully resolved by 2026-12-01 |
+| Multi-year | ~5 | 5 (L1–L5) | — |
+
+With Tranche 2 the cohort's resolution ladder becomes: ~14 resolved by mid-August, ~35
+by 2026-10-15, ~50 by 2026-12-01 — the fast mass the observation plan's lesson loop
+(§3) needs to complete full turns inside the quarter.
 
 Domains: geopolitics/conflict, US midterms 2026 + international elections, central
 banks/macro prints, AI/tech milestones, energy/climate/weather, markets/finance,
-science/health, sports (2, deliberately — WC 2026 is live).
+science/health, sports (4 across the cohort, deliberately — the WC 2026 window closes
+2026-07-19, so N1/N2 are the last fast sports reps). Tranche 2 adds three non-Fed
+central banks (ECB/BoE/BoJ), FX and crypto levels on the wired data plane, and two
+Baltic/Balkan-adjacent electoral information environments.
 
 ---
 
@@ -438,6 +452,199 @@ members to stress the sign handling.
 
 ---
 
+## 2b. Tranche 2 — the near-horizon 25 (added 2026-07-11)
+
+The core 50 proves depth; this tranche buys *feedback speed*. Fifteen questions resolve
+by **2026-10-15** (Window A) and ten more by **2026-12-01** (Window B), so scoring,
+postmortems, and lesson synthesis all complete inside the observation quarter. Same
+hardness bar (contested 25–75% where a market exists, or documented expert disagreement;
+outside-view-vs-inside-view conflicts preferred), same legend (⚠, prices observed live
+**2026-07-10**, freeze at each cutoff), same onboarding constraints (live-origin;
+`metadata['series']` hints at creation). Where a venue's dated instance had not yet
+listed on 2026-07-10 (noted per question), the series is named and the price is captured
+at cutoff — that capture is itself part of the snapshot discipline.
+
+### Window A — resolves by 2026-10-15 (N1–N15)
+
+**N1. Will France win its 2026-07-14 World Cup semifinal and reach the final?**
+- Type: binary. Resolves: FIFA official result of SF1 (Dallas, 2026-07-14), France vs the Spain–Belgium QF winner; advancing on extra time or penalties counts.
+- Dates: pairing fixed 2026-07-11, cutoff 2026-07-13, resolve 2026-07-14. Horizon: **days**.
+- Market: Polymarket `world-cup-winner` (France ~33–40% tournament-wide) + Kalshi `KXMENWORLDCUP-26` (~35–41%); the per-match market lists once the pairing fixes Jul 11 — capture at cutoff.
+- Exercises: the fastest resolution→postmortem turn in the cohort (days from commit to score); snapshot discipline on a fast-moving line; conditional-probability decomposition — the desk must back the implied SF-win probability out of the tournament boards and defend any deviation.
+- Hard: France's 2-0-over-Morocco form vs a rested Spain is a genuine 55–65% zone call, and the implied-conditional arithmetic is exactly where sloppy desks contradict their own V7 commit.
+
+**N2. Who wins the 2026 World Cup Golden Boot?** ⚠(tie-break criteria)
+- Type: categorical. Resolves: FIFA official Golden Boot award after the 2026-07-19 final (tie-breaks: most assists, then fewest minutes).
+- Dates: resolve 2026-07-19. Horizon: **≤2 weeks**.
+- Market: Polymarket golden-boot board (Mbappé 43%, Messi 38%; $27M volume); Kalshi `KXWCGOALLEADER-26` (Messi 39% / Mbappé 36% as of Jun 23) — the two venues **disagree on the favorite**.
+- Exercises: cross-venue blind-reconcile on a fast categorical; tail base rates on the chasing pack (Kane, Haaland); criteria-tightness — the award's assist/minutes tie-break makes "most goals" the wrong mental model.
+- Hard: a two-to-three-match race where one brace flips the ordering, priced oppositely by two liquid crowds; resolution can hinge on the tie-break rule, not the scoring table.
+
+**N3. Will OPEC+ announce a further production increase for September at its 2026-08-02 meeting?** ⚠(what counts as an increase)
+- Type: binary. Resolves: official communiqué from the 2026-08-02 (virtual) meeting of the V7 producers announcing any headline production-cap increase for September; compensation-schedule adjustments alone don't count.
+- Dates: resolve 2026-08-02. Horizon: **≤1 month**.
+- Market: Polymarket `will-opec-hike-production-by-next-meeting` (live; thin — capture at cutoff); C9's EIA/Kalshi complex is the context anchor.
+- Exercises: criteria-tightness on baseline-vs-compensation accounting (the classic OPEC gotcha); base rate (five consecutive monthly increases, +188 kb/d for August) vs inside view (US strikes on Iran resumed this week; the group says the pace "could be paused or reversed"); feeds C9's bimodal Brent distribution and T1's energy pass-through story.
+- Hard: the unwind streak says yes; fresh Iran re-escalation and first-meeting-without-UAE group dynamics make the pause live — and "increase" itself requires reading the quota tables.
+
+**N4. Who wins the 2026 Minnesota DFL Senate primary (2026-08-11)?**
+- Type: categorical. Resolves: MN Secretary of State results / credible-reporting consensus, 2026-08-11 (open seat; Tina Smith retiring).
+- Dates: resolve 2026-08-11. Horizon: **≤1 month**.
+- Market: Polymarket `minnesota-democratic-senate-primary-winner` (Flanagan 79% / Craig 19%).
+- Exercises: V9's sibling one week later — organization/endorsement signal (convention endorsement, Smith's backing) vs fundraising/moderate-lane signal (Craig's larger warchest, skipped the endorsement process); the V9+N4 pair gives a two-point primary-model calibration read inside a single week; T2-adjacent.
+- Hard: the 79% price leans on exactly the signal (party infrastructure) that open primaries sometimes ignore; primary polling is sparse and convention-endorsement effects are regime-dependent in Minnesota.
+
+**N5. What monthly change in nonfarm payrolls will the BLS report for August 2026 (released 2026-09-04)?**
+- Type: continuous (thousands). Resolves: BLS Employment Situation, August, initial print. Series: **FRED `PAYEMS`** (MoM; wired → specialist SEATS).
+- Dates: resolve 2026-09-04. Horizon: **≤2 months**.
+- Market: Kalshi `KXPAYROLLS-26AUG` (monthly series; July instance live now — the August instance lists ~1 month out, capture at listing).
+- Exercises: specialist-vs-LLM CRPS with a scheduled mid-trajectory evidence drop — the July print (C2, Aug 7) lands between commit and resolution, the cleanest belief-trajectory update test in the tranche; T1 member.
+- Hard: stall-speed (+57k June) vs a falling labor-supply breakeven — a near-zero August and a rebound past 100k are both live, one month deeper into the stall than C2.
+
+**N6. What will the August 2026 ISM Manufacturing PMI be (released 2026-09-01)?**
+- Type: continuous (index). Resolves: ISM Manufacturing Report on Business, August, headline PMI. Series: **ISM (proprietary)** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-09-01. Horizon: **≤2 months**.
+- Market: none liquid named on 2026-07-10 (venue instances for monthly ISM appear sporadically — capture at cutoff if one lists).
+- Exercises: the decline path on a *macro* series (the core 50 only declines on climate/geo/health series); diffusion-index reasoning — the 50.0 boundary is a narrative discontinuity but not a CRPS one, a trap for level-thinkers.
+- Hard: six straight expansion months but decelerating (53.3 ← 54.0) with prices-paid still at 73 — late-cycle ISM momentum is where extrapolation and mean-reversion both routinely miss.
+
+**N7. Will the ECB raise its key rates at the 2026-09-10 meeting?**
+- Type: binary. Resolves: ECB monetary policy decision press release, 2026-09-10 14:15 CET; any ≥25bp increase in the deposit facility rate.
+- Dates: resolve 2026-09-10. Horizon: **≤2 months**.
+- Market: Polymarket monthly ECB series (`ecb-interest-rates-<month>-2026`; June/July instances verified live) + `ecb-rate-hike-in-2026`; OIS pricing ~**50%** for a September hike (Reuters, Jul 9).
+- Exercises: a literal coin flip on a non-Fed central bank — does the macro reasoning generalize past the FOMC; the July 23 meeting (pause expected) is a scheduled mid-trajectory catalyst; N7/N8/N9 form a three-central-bank cluster whose correlation the desk must pin, not assume.
+- Hard: the June hike was insurance against Middle-East energy pass-through; September turns on whether second-round effects show up in exactly two more core prints — the ECB itself says the call is contingent on oil.
+
+**N8. Will the FOMC raise the target range at the 2026-09-15/16 meeting?**
+- Type: binary. Resolves: Fed implementation note, 2026-09-16 14:00 ET.
+- Dates: resolve 2026-09-16. Horizon: **≤2 months**.
+- Market: Polymarket `fed-decision-in-september-762` (no change 56%, +25bp **38.5%**); Kalshi `KXFEDDECISION-26SEP`.
+- Exercises: the specific-meeting slice of B4's coin flip — the desk must hold a coherent term structure across B3 (July ~15%), N8 (~38%), N17 (October) and B4 (any-2026 ~50%); the four prices over-determine each other, so cross-question coherence is directly auditable; quorum K=3; T1 member.
+- Hard: 38.5% sits exactly where a first hike under a new chair either lands on the September SEP round or slips — July CPI (Aug 12) and Jackson Hole both hit mid-window.
+
+**N9. Will the Bank of England raise Bank Rate at the 2026-09-17 meeting?**
+- Type: binary. Resolves: BoE MPC announcement, 2026-09-17; any increase from the prevailing Bank Rate (3.75%; June vote 7–2 to hold).
+- Dates: resolve 2026-09-17. Horizon: **≤2 months**.
+- Market: Polymarket `bank-of-england-decision-in-september` (live; capture at cutoff) + `bank-of-england-rate-hike-in-2026`.
+- Exercises: documented professional disagreement as the anchor-of-record — Bank of America (hikes in July *and* September) vs Oxford Economics (hold into 2027); the July 30 MPC is the mid-trajectory catalyst; third leg of the N7/N8/N9 correlation cluster.
+- Hard: a 7–2 hold with hawkish dissents and sticky services inflation — the MPC's reaction function this cycle is genuinely contested among professionals, not just traders.
+
+**N10. Will Google release Gemini 4.0 by 2026-09-30?**
+- Type: binary. Resolves: Gemini 4.0 (or clearly-designated successor flagship) publicly accessible — open beta / rolling waitlist counts — per the Polymarket series rules, by 2026-09-30.
+- Dates: resolve 2026-09-30. Horizon: **≤3 months**.
+- Market: Polymarket `gemini-4pt0-released-by-*` dated series (June-30 rung expired NO; live rungs reprice monthly — capture the Sep-30 rung at cutoff); Manifold `gemini-4-released-in-2026` (83%, already a T5 member — this question is the *dated rung*, not the year).
+- Exercises: release-hazard term structure — placing month-by-month mass under a year-probability the desk already tracks; competitive coupling to B18 (GPT-6) makes N10/B18 a correlated pair for T5's band.
+- Hard: 83%-by-December is consistent with anywhere from ~25% to ~65% by September — the dated rung is a shipping-cadence judgment the year number doesn't answer.
+
+**N11. What will the Bitcoin price be at 2026-09-30 23:59 UTC?**
+- Type: continuous ($). Resolves: CoinGecko BTC-USD spot, 2026-09-30 23:59 UTC. Series: **coingecko `bitcoin`** (wired → specialist SEATS — the plane's first coingecko exercise).
+- Dates: resolve 2026-09-30. Horizon: **≤3 months**.
+- Market: Kalshi `KXBTCY-27JAN0100` (EOY range board) + `KXBTCMAXY-26DEC31`; Polymarket monthly crypto boards; spot **$64,149** (Jul 10).
+- Exercises: first coingecko specialist seat — trend/vol baseline vs LLM regime reasoning in a post-crash year; anchor triangulation across *range boards* rather than a single point market (a harder G8 engagement than a binary price).
+- Hard: post-crash regime ($60K February low, choppy recovery, far off the 2025 highs) under macro hike-risk — momentum and mean-reversion baselines point opposite ways and the range boards imply a fat, skewed distribution.
+
+**N12. What will the EUR/USD ECB reference rate be on 2026-09-30?**
+- Type: continuous. Resolves: ECB euro reference rate published 2026-09-30 (~16:00 CET). Series: **frankfurter `EUR/USD`** (wired → specialist SEATS — the plane's first frankfurter exercise).
+- Dates: resolve 2026-09-30. Horizon: **≤3 months**.
+- Market: none liquid named — documented forecaster split instead: spot 1.1438 (Jul 9, near a one-year low) vs Goldman ~1.25 year-end inside a 1.15–1.28 street range.
+- Exercises: frankfurter seat + a pure rate-differential question mechanically coupled to N7/N8 — the desk should derive this distribution from its own central-bank grid, and the coupling belongs in a pinned correlation, not independent marginals; no-anchor discipline (G8 dark).
+- Hard: both central banks have live hike scenarios pulling the pair opposite ways — the honest distribution is a function of a 2×2 policy grid, not a trend line.
+
+**N13. How many Atlantic named storms will have formed by 2026-09-30?**
+- Type: count. Resolves: NHC operational naming, season-to-date through 2026-09-30 23:59 UTC (operational designations as read 2026-10-01). Series: **NHC** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-10-01. Horizon: **≤3 months**.
+- Market: none direct — Kalshi `KXTROPSTORM-26DEC01` (season total, implied median ~11) is a *related-window* anchor to note and down-weight, not engage.
+- Exercises: rung 1 of the N13/N20 ladder — the two rungs plus C5's season total describe one latent formation process, and their implied August/September rates must cohere (a three-question consistency audit); PMF CRPS; decline honesty; T4 member.
+- Hard: 1 storm by Jul 10 (Arthur, Jun 17) vs a ~11-by-Sep-30 climatology — El Niño plus record Saharan dust argue for the deepest negative anomaly in years, but a single active August can add 4+ names in three weeks; the ladder punishes anchoring on the dead pace *and* reflexive mean-reversion.
+
+**N14. Which party wins the most votes in Latvia's 2026-10-03 Saeima election?**
+- Type: categorical. Resolves: CVK (Central Election Commission) final national vote count, ~2026-10-04.
+- Dates: election 2026-10-03, resolve ~2026-10-04. Horizon: **≤3 months**.
+- Market: none found 2026-07-10 — polling series instead: PolitPro trend AS (United List) 16.6% vs LPV (Latvia First) 15.0%, while single July polls have them *tied at 9.8%* — the house-effect spread is the story.
+- Exercises: no-anchor categorical in a sparse information environment (thin English-language feeds — the B13 triage problem in an electoral setting); G1 tail base rates on a 7-party field; the 5% threshold echoes V4's discontinuity one country over.
+- Hard: a 1.6-point trend gap inside enormous house-effect noise, a right-populist front-runner whose turnout is systematically mis-polled across Europe, and no crowd to lean on — pure desk skill.
+
+**N15. What headline YoY CPI will the BLS report for September 2026 (released 2026-10-13)?**
+- Type: continuous (%). Resolves: BLS CPI-U NSA 12-month change, September release. Series: **FRED `CPIAUCSL`** (wired → specialist SEATS).
+- Dates: resolve 2026-10-13. Horizon: **≤3 months**.
+- Market: Kalshi `KXCPIYOY-26SEP` (monthly series; the August rung already trades per T1 — September lists on schedule).
+- Exercises: third rung of the CPI chain (C1 June → T1's Aug satellite → N15) — by commit the desk holds two realized prints from its own earlier forecasts, the first same-series lesson-compounding test; T1; **B6 interlock**: an Oct-1 shutdown can delay the release, so the resolution-date risk is itself forecastable.
+- Hard: whether C1's energy-base-effect drop extends or stalls against tariff-sticky core — by October this print discriminates the whole T1 regime call, and the specialist has two fresh in-sample points.
+
+### Window B — resolves 2026-10-15 → 2026-12-01 (N16–N25)
+
+**N16. Will Democrats lead the RealClearPolitics generic-congressional-ballot average by ≥5.0 points at close 2026-10-20?** ⚠(snapshot criteria)
+- Type: binary. Resolves: the RCP "2026 Generic Congressional Vote" average as displayed 23:59 ET 2026-10-20 (archived capture governs; displayed spread, one decimal).
+- Dates: resolve 2026-10-20. Horizon: **≤4 months**.
+- Market: none direct — deliberately: Kalshi `KXHOUSEPOPVOTEMARGIN-27NOV03` and T2's PV-margin market price the *November actual*, not this poll-state snapshot.
+- Exercises: adversarial resolution wording (which average, which timestamp, pollster-roster drift inside RCP's basket); a fixed-date *information-state* forecast — probability over the polling environment, not the election; T2 leading-indicator member that lets the postmortem decompose poll-state error from poll-to-outcome error on V8/B7–B9.
+- Hard: RCP shows D+7.2 today while Economist/YouGov shows D+2 — resolution depends on pollster mix and October news flow, and the base rate for three-month generic-ballot drift is roughly ±3 points.
+
+**N17. Will the FOMC raise the target range at the 2026-10-27/28 meeting?**
+- Type: binary. Resolves: Fed implementation note, 2026-10-28 14:00 ET.
+- Dates: resolve 2026-10-28. Horizon: **≤4 months**.
+- Market: Kalshi `KXFEDDECISION-26OCT` (series verified via the July instance); Polymarket monthly Fed series; CME FedWatch cross-check.
+- Exercises: the conditional rung — P(Oct hike) is dominated by what September does (N8), so the belief trajectory must show a regime jump on Sep 16 and the commit should carry pre-registered conditionals (hike-if-Sept-held vs second-hike-if-Sept-hiked) for the Delphi rounds to interrogate; completes the B3/N8/N17/B4 term structure; T1.
+- Hard: the unconditional number hides two very different conditionals — desks that don't decompose will end up incoherent against their own N8/B4 commits, and the coherence audit will catch it.
+
+**N18. What advance-estimate annualized real GDP growth will the BEA report for Q3 2026 (released 2026-10-29)?**
+- Type: continuous (% SAAR). Resolves: BEA advance estimate, first print. Series: **FRED `A191RL1Q225SBEA`** (wired → specialist SEATS).
+- Dates: resolve 2026-10-29. Horizon: **≤4 months**.
+- Market: Kalshi `KXGDP-26OCT29` (series verified via the Q2 instance).
+- Exercises: C3's rematch with roles revealed — by commit the Q2 print (Jul 30) has resolved the GDPNow-vs-Kalshi wedge, and the desk must decide whether the winner was signal or luck: the first *within-quarter application* of a lesson to the same series; **B6 interlock** (a shutdown delays BEA releases and starves GDPNow of inputs); T1.
+- Hard: tariff front-running unwinds and inventory whiplash make Q3 the noisiest print of the year — the desk's own Q2 postmortem is either its edge or its trap.
+
+**N19. Will the Bank of Japan raise its policy rate at the 2026-10-29/30 meeting?**
+- Type: binary. Resolves: BoJ Policy Board statement, 2026-10-30 (Outlook Report meeting); any increase from 1.0%.
+- Dates: resolve 2026-10-30. Horizon: **≤4 months**.
+- Market: Polymarket monthly BoJ series (`bank-of-japan-decision-in-<month>`; June instance verified) — market-implied **>60%** for a hike by October (Bloomberg / Japan Times, Jul 2).
+- Exercises: a >60% anchor the blind pool can legitimately fight — the desk owns the reference class (BoJ hikes have historically come slower than markets price); high-velocity yen watched sources; couples to N11/N12 through the global-rates channel.
+- Hard: the every-six-months hike cadence says December; the sliding yen and 71%-of-economists survey say October — a clean inside-view-vs-cadence-base-rate fight at a price where being right pays.
+
+**N20. How many Atlantic named storms will have formed by 2026-10-31?**
+- Type: count. Resolves: NHC operational naming, season-to-date through 2026-10-31 23:59 UTC (read 2026-11-01). Series: **NHC** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-11-01. Horizon: **≤4 months**.
+- Market: none direct; Kalshi `KXTROPSTORM-26DEC01` related-window (down-weighted).
+- Exercises: rung 2 of the ladder — when N13 resolves Oct 1, G5 should force an N20 re-forecast within days (the cadence machinery's cleanest live test); the increment, not the level, is the forecast; T4; PMF CRPS.
+- Hard: October adds ~2 named storms climatologically but ~0–1 in strong El Niño years — desks that update N20 by adding a constant to N13's realization miss the ENSO-conditional increment entirely.
+
+**N21. Who wins the 2026 Georgia governor's race (Bottoms D vs Jackson R)?**
+- Type: binary. Resolves: AP/Fox/NBC consensus or certification, 2026-11-03; Georgia's 50%+1 rule means a late-December runoff tail exists.
+- Dates: resolve 2026-11-04 (runoff tail ~Dec 29). Horizon: **≤4 months**.
+- Market: Polymarket `georgia-governor-winner-2026` (**D 50% / R 48%**); Kalshi `GOVPARTYGA-26`.
+- Exercises: the tranche's purest coin flip; joint reasoning with B8 — the same-state Senate market sits at 86.5% D while this sits at 50%, so the market asserts massive ticket-splitting: the desk must either reproduce that conditional structure or register a deviation on one leg (a sharper version of V8's correlation test); T2 member; the runoff rule is a named tail (G1 discipline on a binary).
+- Hard: same electorate, same day, two races priced 36 points apart — either one market is wrong or Georgia ticket-splitting is back; both hypotheses are defensible and exactly one scores.
+
+**N22. What will EIA working gas in storage (Lower 48) be for the week ending 2026-10-30 (reported ~2026-11-05)?**
+- Type: continuous (Bcf). Resolves: EIA Weekly Natural Gas Storage Report for the injection-season-ending week, released ~2026-11-05. Series: **EIA WNGSR** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-11-05. Horizon: **≤4 months**.
+- Market: none named — the EIA STEO's own end-of-October forecast (**3,966 Bcf**, 5% above the five-year average) is the published baseline to beat.
+- Exercises: decline path on an energy series; an *agency point forecast* as de-facto anchor — the C9 problem without a market: does the desk treat STEO like a crowd or out-argue it; ~16 scheduled weekly reports before resolution make this the densest watched-source cadence in the cohort.
+- Hard: current surplus (2,983 Bcf on Jul 3, +6.6% vs 5-yr) vs cooling-demand and LNG-export swings — the terminal level is a sum of 16 weekly increments each with real variance; distribution width is the skill.
+
+**N23. Will the US and China announce a tariff agreement or formal truce extension on or before 2026-11-10?** ⚠(extension vs agreement vs lapse)
+- Type: binary. Resolves: official announcement (USTR/White House and MOFCOM-confirmed) of a comprehensive tariff agreement OR a formal extension of the reciprocal-tariff suspension that otherwise expires 2026-11-10; expiry accompanied only by negotiation noise resolves NO.
+- Dates: resolve 2026-11-10. Horizon: **≤4 months**.
+- Market: Polymarket `us-x-china-tariff-agreement-by-july-31-20260626205549138` (Yes **42.5%**) — the near rung of a dated ladder; later rungs list toward the deadline (capture at cutoff).
+- Exercises: criteria-tightness — the May 2026 Trump–Xi Beijing "framework" is exactly the deal-shaped object that must be read against the wording (B11's discipline on a trade file); deadline-hazard shape (mass piles at the buzzer); high-velocity watched feeds; term-structure arbitrage across the rung ladder.
+- Hard: the base rate for these truces is extension-at-the-buzzer (2025, twice) — but a framework-without-details plus midterm-season incentives on both sides makes lapse-and-snapback a genuinely live tail.
+
+**N24. What non-GAAP EPS will Nvidia report for Q3 FY2027 (report ~2026-11-18)?**
+- Type: continuous ($). Resolves: NVDA Q3 FY2027 earnings release (8-K / press release), non-GAAP diluted EPS. Series: **company IR** — no wired provider → specialist **DECLINES**.
+- Dates: resolve ~2026-11-18. Horizon: **≤4.5 months**.
+- Market: Polymarket per-quarter series `nvda-quarterly-earnings-nongaap-eps-<date>-<consensus>` (May instance verified; its beat-consensus binary priced ~100% — which is exactly why this question asks for the *level*, not the beat).
+- Exercises: the AI-infra scarcity thesis (T5/B19) cashed into one auditable number; CRPS against a consensus that itself drifts (the anchor moves — snapshot discipline); B19 interlock — this print is B19's named single-earnings flip hazard.
+- Hard: "will they beat" is a 95% gimme; *by how much* — against supply-constrained guidance, hyperscaler capex revisions, and China licensing noise — is a wide distribution the beat-rate base rate says nothing about.
+
+**N25. Will the COP31 cover decision include an explicit fossil-fuel transition commitment?** ⚠(which text counts)
+- Type: binary. Resolves: the COP31/CMA cover decision(s) formally adopted at Antalya (2026-11-09–20) contain an explicit reference to "transitioning away from fossil fuels" or stronger phase-down/phase-out language; UNFCCC-published decision text governs — side declarations and presidency statements don't count.
+- Dates: conference 2026-11-09–20 (leaders' summit Nov 11–12), resolve ~2026-11-21. Horizon: **≤4.5 months**.
+- Market: none found 2026-07-10 — negotiation-text watched sources and expert commentary carry it.
+- Exercises: adversarial criteria at treaty-text granularity — which document is "the cover decision" when a COP splits its texts (the B12 problem in multilateral form); a hard-deadline evidence crescendo in week 2; T4-adjacent (climate politics decoupled from climate physics).
+- Hard: COP28 set the phrase precedent, the Belém round conspicuously dropped it, and the Türkiye-host / Australia-president split presidency makes the final text a bargaining artifact — the base rate on final-week COP language is near-uninformative.
+
+---
+
 ## 3. Observation plan — what to measure while the engine runs
 
 ### 3.1 Per-question instrumentation
@@ -503,6 +710,23 @@ currents). Specific pressure points, with the dashboards to watch:
 (`marketdata/keys.py`) so specialists seat; attach `metadata['series']` hints at
 creation; register watched sources per question; commit everything live-origin; freeze
 market baselines at cutoff with raw payload + hash (benchmarking memo §16 items 1–10).
+
+**What the fast tranche (§2b) uniquely enables.** Tranche 2 turns the lesson loop from
+a promise into a measured, multi-turn process inside one quarter: the July resolutions
+(N1–N3) produce the cohort's first scored postmortems within days of onboarding; the
+lessons they synthesize compile into `lesson:*` hooks that must demonstrably bite on the
+September commits (N5–N9); those resolve and postmortem in time to re-forecast the
+late-October/November cluster (N16–N25) — **two full score→postmortem→lesson→apply turns
+before December**, where the core 50 alone would not complete one until 2027. It also
+stresses the cadence machinery in its tight regime rather than its weekly default: ~20
+dated catalysts (prints, meetings, matches, deadlines) inside twelve weeks push the G5
+deadline clamp toward daily-to-48-hour reviews, demand time-matched market snapshots
+near close on a dozen anchored questions at once, and concentrate refresh/triage bursts
+around release timestamps — if update cadence, VOI ordering (the §3.2 rank-correlation
+readout becomes measurable in weeks, not months), or the postmortem pipeline saturates
+under high-frequency updating, this tranche is where it shows first. Finally, its ~25
+resolutions by 2026-12-01 fill the G8 deviation-bet promotion precondition (first scored
+cohort ≥10) entirely within the observation quarter.
 
 ---
 
