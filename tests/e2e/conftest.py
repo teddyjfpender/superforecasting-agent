@@ -24,98 +24,20 @@ from gateway.session import SessionEntry, SessionSource, build_session_key
 
 E2E_MESSAGE_SETTLE_DELAY = 0.3
 
-# Platform library mocks
+# Platform library mocks — installed from the single shared source of truth so
+# the e2e and gateway suites can never wire the adapters to divergent mocks.
+# See tests/_platform_mocks.py for the full rationale. These MUST run before
+# the adapter imports below, which freeze the adapters' library bindings for
+# the lifetime of the worker process.
+from tests._platform_mocks import (  # noqa: E402
+    install_discord_mock,
+    install_slack_mock,
+    install_telegram_mock,
+)
 
-# Ensure telegram module is available (mock it if not installed)
-def _ensure_telegram_mock():
-    """Install mock telegram modules so TelegramAdapter can be imported."""
-    if "telegram" in sys.modules and hasattr(sys.modules["telegram"], "__file__"):
-        return # Real library installed
-
-    telegram_mod = MagicMock()
-    telegram_mod.Update = MagicMock()
-    telegram_mod.Update.ALL_TYPES = []
-    telegram_mod.Bot = MagicMock
-    telegram_mod.constants.ParseMode.MARKDOWN_V2 = "MarkdownV2"
-    telegram_mod.ext.Application = MagicMock()
-    telegram_mod.ext.Application.builder = MagicMock
-    telegram_mod.ext.ContextTypes.DEFAULT_TYPE = type(None)
-    telegram_mod.ext.MessageHandler = MagicMock
-    telegram_mod.ext.CommandHandler = MagicMock
-    telegram_mod.ext.filters = MagicMock()
-    telegram_mod.request.HTTPXRequest = MagicMock
-
-    for name in (
-        "telegram",
-        "telegram.constants",
-        "telegram.ext",
-        "telegram.ext.filters",
-        "telegram.request",
-    ):
-        sys.modules.setdefault(name, telegram_mod)
-
-
-# Ensure discord module is available (mock it if not installed)
-def _ensure_discord_mock():
-    """Install mock discord modules so DiscordAdapter can be imported."""
-    if "discord" in sys.modules and hasattr(sys.modules["discord"], "__file__"):
-        return # Real library installed
-
-    discord_mod = MagicMock()
-    discord_mod.Intents.default.return_value = MagicMock()
-    discord_mod.DMChannel = type("DMChannel", (), {})
-    discord_mod.Thread = type("Thread", (), {})
-    discord_mod.ForumChannel = type("ForumChannel", (), {})
-    discord_mod.Forbidden = type("Forbidden", (Exception,), {})
-    discord_mod.MessageType = SimpleNamespace(default=0, reply=19)
-    discord_mod.Object = lambda *, id: SimpleNamespace(id=id)
-    discord_mod.Interaction = object
-    discord_mod.app_commands = SimpleNamespace(
-        describe=lambda **kwargs: (lambda fn: fn),
-        choices=lambda **kwargs: (lambda fn: fn),
-        Choice=lambda **kwargs: SimpleNamespace(**kwargs),
-    )
-    discord_mod.opus.is_loaded.return_value = True
-
-    ext_mod = MagicMock()
-    commands_mod = MagicMock()
-    commands_mod.Bot = MagicMock
-    ext_mod.commands = commands_mod
-
-    sys.modules.setdefault("discord", discord_mod)
-    sys.modules.setdefault("discord.ext", ext_mod)
-    sys.modules.setdefault("discord.ext.commands", commands_mod)
-    sys.modules.setdefault("discord.opus", discord_mod.opus)
-
-
-def _ensure_slack_mock():
-    """Install mock slack modules so SlackAdapter can be imported."""
-    if "slack_bolt" in sys.modules and hasattr(sys.modules["slack_bolt"], "__file__"):
-        return  # Real library installed
-
-    slack_bolt = MagicMock()
-    slack_bolt.async_app.AsyncApp = MagicMock
-    slack_bolt.adapter.socket_mode.async_handler.AsyncSocketModeHandler = MagicMock
-
-    slack_sdk = MagicMock()
-    slack_sdk.web.async_client.AsyncWebClient = MagicMock
-
-    for name, mod in [
-        ("slack_bolt", slack_bolt),
-        ("slack_bolt.async_app", slack_bolt.async_app),
-        ("slack_bolt.adapter", slack_bolt.adapter),
-        ("slack_bolt.adapter.socket_mode", slack_bolt.adapter.socket_mode),
-        ("slack_bolt.adapter.socket_mode.async_handler", slack_bolt.adapter.socket_mode.async_handler),
-        ("slack_sdk", slack_sdk),
-        ("slack_sdk.web", slack_sdk.web),
-        ("slack_sdk.web.async_client", slack_sdk.web.async_client),
-    ]:
-        sys.modules.setdefault(name, mod)
-
-
-_ensure_telegram_mock()
-_ensure_discord_mock()
-_ensure_slack_mock()
+install_telegram_mock()
+install_discord_mock()
+install_slack_mock()
 
 import discord  # noqa: E402 — mocked above
 from gateway.platforms.telegram import TelegramAdapter  # noqa: E402

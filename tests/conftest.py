@@ -591,6 +591,20 @@ def _reset_module_state():
         _logger.setLevel(logging.NOTSET)
         _logger.propagate = True
 
+    # Re-enable EVERY disabled logger, not just the named app loggers above.
+    # ``logging.config.dictConfig`` defaults ``disable_existing_loggers=True``,
+    # which flips ``.disabled = True`` on every logger that already exists but
+    # isn't named in the config. A test (or production code it drives) that runs
+    # dictConfig then leaks that state, silently suppressing INFO records a
+    # later, unrelated test asserts on via ``caplog`` — the running example was
+    # ``tui_gateway.http_server``'s access-log line vanishing in wide -k sweeps
+    # while passing in isolation. Disabling a logger is never a legitimate
+    # cross-test state, so clear it for all of them. Snapshot the dict first:
+    # ``getLogger`` on a PlaceHolder would mutate ``loggerDict`` mid-iteration.
+    for _existing in list(logging.root.manager.loggerDict.values()):
+        if isinstance(_existing, logging.Logger) and _existing.disabled:
+            _existing.disabled = False
+
     # --- tools.approval — the single biggest source of cross-test pollution ---
     try:
         from tools import approval as _approval_mod

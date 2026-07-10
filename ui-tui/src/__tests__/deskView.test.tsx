@@ -251,6 +251,33 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 
 const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+// Wait until the rendered frame has settled instead of sleeping a fixed number
+// of milliseconds. Fixed real-timer settles (the old `tick(100)` / `tick(60)`)
+// raced the DeskView's async data subscription under heavy PARALLEL vitest
+// load — the frame the assertion read was occasionally the pre-subscription
+// one, so the test flaked in wide runs while passing 3/3 in isolation. This
+// polls the rendered text and returns as soon as it has been non-empty and
+// byte-identical for `stableFor` ms (fast when the machine is idle, patient
+// when it is loaded), capped at `timeout`.
+const waitForStable = async (
+  read: () => string,
+  { stableFor = 40, timeout = 2000, interval = 8 }: { stableFor?: number; timeout?: number; interval?: number } = {}
+) => {
+  const start = Date.now()
+  let prev = read()
+  let lastChange = Date.now()
+  for (;;) {
+    await tick(interval)
+    const cur = read()
+    if (cur !== prev) {
+      prev = cur
+      lastChange = Date.now()
+    }
+    const settled = cur.trim().length > 0 && Date.now() - lastChange >= stableFor
+    if (settled || Date.now() - start >= timeout) return
+  }
+}
+
 const fakeGw = (response: ForecastWorkspaceResponse) =>
   ({
     request: (method: string, params: Record<string, unknown>) => {
@@ -343,10 +370,10 @@ const mountDesk = async (columns: number, response: ForecastWorkspaceResponse, g
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
-  // Give Ink time to wire raw-mode input BEFORE any press — under heavy parallel
-  // suite load a 60ms settle occasionally raced the subscription, dropping the
-  // first keypress.
-  await tick(100)
+  // Wait for the initial async data subscription + first render to settle and
+  // for Ink to wire raw-mode input BEFORE any press. Condition-based (see
+  // waitForStable) so it never races the subscription under parallel load.
+  await waitForStable(() => normalize(stdout.text(), stripAnsi))
 
   return {
     cleanup: () => {
