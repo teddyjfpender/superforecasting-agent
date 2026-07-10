@@ -18,6 +18,17 @@ carries a deliberate fast arm: 15 questions resolving by 2026-10-15 and 10 more 
 → lesson-synthesis full loops before December). Tranche market states were verified live
 on 2026-07-10, same discipline as above.
 
+**Tranche 3 (T6–T9 + M1–M22, §2c) added 2026-07-11.** Four full **thesis
+architectures** — world-view claims over heterogeneous member baskets (binaries +
+continuous prints + a count PMF, mixed domains and horizons) — because the thesis
+machinery has only ever carried two live architectures (the Senate count thesis: 35
+co-directional binaries; the AI-infra scarcity thesis: 17 co-directional members whose
+n_eff honestly collapsed to 2.25) and the T1–T5 clusters above are sketches, not
+architectures. Tranche 3 reuses 20 existing gauntlet questions across 22 cross-linked
+member edges (B14 and N23 each serve two theses in opposite directions) and adds 22 new
+member questions (M1–M22); each thesis is built to force a *different*
+correlation-honesty posture (§2c). Market and data states verified live 2026-07-10/11.
+
 ---
 
 ## 0. What "maximum exercise" means for this engine
@@ -80,12 +91,28 @@ With Tranche 2 the cohort's resolution ladder becomes: ~14 resolved by mid-Augus
 by 2026-10-15, ~50 by 2026-12-01 — the fast mass the observation plan's lesson loop
 (§3) needs to complete full turns inside the quarter.
 
-Domains: geopolitics/conflict, US midterms 2026 + international elections, central
-banks/macro prints, AI/tech milestones, energy/climate/weather, markets/finance,
-science/health, sports (4 across the cohort, deliberately — the WC 2026 window closes
-2026-07-19, so N1/N2 are the last fast sports reps). Tranche 2 adds three non-Fed
-central banks (ECB/BoE/BoJ), FX and crypto levels on the wired data plane, and two
-Baltic/Balkan-adjacent electoral information environments.
+**Tranche 3 delta (T6–T9 + M1–M22, §2c).** The composition after the thesis tranche:
+
+| Axis | Tranche 3 delta → cohort of 101 |
+|---|---|
+| Binary | +4 (M10, M16, M20, M22) → 36 |
+| Categorical / count PMF | +1 (M2, the Fed cut-count board) → 14 |
+| Continuous / count | +17 (M1, M3–M9, M11–M15, M17–M19, M21) → 37 |
+| Thesis architectures | **+4 (T6–T9, 44 member edges: 22 reused cross-links + 22 new)** → 9 theses |
+| Liquid market anchor | +4 (M1 Kalshi `KXFED-26DEC` ladder, M2 Polymarket cut-count board, M4 Polymarket/Kalshi China GDP, M22 Polymarket meeting boards) → ~62 |
+| Structured data feed | +4 seats (M1 FRED `DFEDTARU`, M3 FRED `CP0000EZ19M086NEST` — first euro-area FRED series, M7 frankfurter `CNY`, M9 stooq `hg.f` — first commodity-futures seat) / +13 declines (NBS, GACC, SGX, CPCA, ACEA, NEA, IEA, BNEF, Cox, BMF, UNHCR series — none wired) → 40 |
+| Adversarial resolution criteria | +4 ⚠ (M12 denominator trap, M16 scenario naming, M19 which-budget-figure, M21 series break) → 17 |
+| Resolves by 2026-10-15 | +6 (M3, M5, M6, M10, M12, M20) → ~41 |
+| Resolves 2026-10-15 → 2026-12-01 | +10 (M4, M7–M9, M11, M13–M15, M16, M18) → ~60 |
+| Resolves by early 2027-01 | +6 (M1, M2, M17, M19, M21, M22) — all four theses fully member-resolved by ~2027-01-05 |
+
+Ledger accounting: 87 member-level questions (B/V/C/N/M) + 9 theses + 5 long-horizon =
+**101 questions**. Theses themselves don't "resolve" — each T6–T9 carries a pre-registered
+member-outcome event definition (§2c) scored mechanically at member resolution, plus its
+health trajectory as the continuous readout. Tranche 3 adds domains the cohort lacked:
+China macro (GDP/PMI/trade/retail/FX), EU autos and EV adoption, global solar, defense
+budgets, and displacement data — and two members (B14, N23) now sit in **two theses with
+opposite directions**, the deliberate cross-link stressor.
 
 ---
 
@@ -645,6 +672,480 @@ at cutoff — that capture is itself part of the snapshot discipline.
 
 ---
 
+## 2c. Tranche 3 — thesis architectures (T6–T9, added 2026-07-11)
+
+The two live theses prove the machinery runs; they do not prove it is *honest under
+architecture*. The Senate thesis is 35 same-shaped binaries with one driver and a K=51
+count event (`rho_default 0.0`, pinned pairs at 0.03); the AI-infra scarcity thesis is 17
+members whose grouped covariance model (within-bucket 0.10–0.12, cross-bucket 0.02)
+honestly reported **n_eff 2.25 of 17** — the whole thesis is ~2 independent co-directional
+bets. Both are legitimate; neither exercises mixed-sign members, print-heavy baskets,
+opposite-direction shared members, or a thesis whose members resolve months apart.
+Tranche 3 adds four architectures that do, each pinned to a *different* falsifiable
+correlation-honesty posture:
+
+| Thesis | Posture | The machinery prediction it registers |
+|---|---|---|
+| T6 Global easing cycle stalls | **Deliberate redundancy** — a nested Fed ladder pinned ρ≈0.85 | Kish n_eff must collapse to ~4–5 of 12 and the copula count distribution must go lumpy/bimodal, not binomial |
+| T7 China re-acceleration | **Mixed-sign damper** (required by design) — B14 inverted against every macro member | n_eff must NOT collapse: ≥6 of 10 (contrast AI-scarcity's 2.25/17); the damper must show negative leave-one-out pull |
+| T8 Energy-transition inflection | **Sign-contested + confounded members** — cheap oil is both glut evidence and an EV headwind | The inverted-pair representation (ρ clamp [0,0.95] forces sign into the `direction` bit) must carry the tension without fabricating diversification |
+| T9 Conflict regime escalation | **Deliberate diversification** — cross-theater ρ pinned 0.10 | n_eff must stay ≥7 of 11; a collapse means the desk smuggled in a single-polycrisis-driver assumption it never argued |
+
+House mechanics honored throughout (from `forecasting/thesis.py` + `ledger/theses.py`,
+verified on this branch): pairwise ρ via `set_thesis_correlation` is clamped to
+**[0, 0.95]** — anti-correlation is expressed by member `direction=inverted`, never a
+negative ρ; the Monte-Carlo event (`simulate_thesis_event`, `forecast thesis set-event`)
+runs on **binary members only**, weight-blind, with distribution members excluded under
+an honest note; the mean index withholds its band when no member carries calibrated
+dispersion; staleness decays weight to a 0.15 floor and drops members past 2×max_age;
+and — the seam tranche 3 will surface — **there is no resolved-member concept**:
+`_belief_record` reads the member's current snapshot, so when a member resolves
+mid-thesis, its realized truth either gets committed as a terminal snapshot (p→0/1,
+fresh) or silently decays out through the freshness floor. T6's September central-bank
+rungs hit this seam first; whichever behavior the desk exhibits is a finding.
+
+**Event convention.** Each thesis pre-registers a scoreable event over member-level
+directional outcomes — every member spec below pins its threshold, so the resolution-time
+count is mechanical. Where the binary set is deep (T6, T9) the in-engine
+`set-event --kind count_threshold` copula runs natively and `simulate_thesis_event_band`
+must publish a p10/p50/p90 interval bracketing the headline. T7 and T8 are deliberately
+print-heavy: their in-engine event sees only 3 binaries each, forcing the machinery's
+binary-only exclusion note into the open — the pre-registered fast-follow is
+threshold-shadow binaries, *not* silent inclusion of distribution members.
+
+**Onboarding corrections found during tranche-3 verification** (snapshot discipline —
+fix at cutoff, do not inherit): N19's anchor note conflated per-meeting with cumulative
+BoJ pricing — as of Jul 10 the October meeting prices ~26% per-meeting / ~44% cumulative
+by end-October / ~84% by December (rateprobability.com), not ">60% for October". B11/T3
+state moved after 2026-07-10 verification: the US struck 80+ Iranian targets Jul 7–9 and
+revoked the oil license effective Jul 7 — refresh before commit. C9/N3's demand frame is
+stale: the July 10 IEA OMR marks 2026 world demand at **−1.0 mb/d** (war demand
+destruction; −4.8 mb/d in 2Q26) against OPEC's +1.0 mb/d — a 2.0 mb/d institutional
+spread, versus ~0.6 pre-war. Slug gotchas: the Kalshi year-end Fed series is `KXFED`
+(not KXFEDFUNDS); Polymarket's live BoE September market is the datestamped
+`bank-of-england-decision-in-september-20260623013317237` (the plain slug is the
+resolved 2025 market); `api.frankfurter.app` 301-redirects to `api.frankfurter.dev/v1`
+(the source adapter must follow it).
+
+### T6. Global easing cycle stalls — the redundancy stressor
+
+**Claim (falsifiable):** Through 2026-12-31, none of the four major central banks (Fed,
+ECB, BoE, BoJ) delivers a net policy-rate cut, and at least two of the four tighten
+further — the 2024–25 global easing cycle is over, not paused.
+
+**Event definition (scoreable):** `count_threshold K=4` over the 7 binary members
+{B4, N8, N17, N7, N9, N19, B5-inverted} — i.e. at least four hawkish successes, where
+B5-inverted counts "no recession" as a success. Blind-pool baseline implies E[count]≈3.0,
+so K=4 is a genuine ~25–40% event, not a gimme. Runs natively in-engine.
+
+**Members (12 — 9 reused, 3 new):**
+
+| Member | Dir | Weight | Role | Threshold (thesis side) |
+|---|---|---|---|---|
+| B4 Fed any-2026 hike (Kalshi `FEDHIKE-26DEC31` 52c; Polymarket `fed-rate-hike-in-2026` 51.5c) | support | 2.5 | fed_ladder | YES |
+| N8 Sept FOMC hike (Kalshi hike 31/34c) | support | 1.5 | fed_ladder | YES |
+| N17 Oct FOMC hike | support | 1.0 | fed_ladder | YES |
+| M1 Fed funds midpoint after Dec 9 meeting | support | 1.5 | fed_ladder | ≥3.75% |
+| M2 Fed 2026 cut count | support | 1.0 | fed_ladder | 0 cuts |
+| N7 ECB Sept-10 hike (deposit now 2.25% after the Jun 11 insurance hike) | support | 2.0 | global_breadth | YES |
+| N9 BoE Sept-17 hike (Polymarket +25bp 17.65c) | support | 1.5 | global_breadth | YES |
+| N19 BoJ Oct-29/30 hike (corrected anchor: ~26% per-meeting) | support | 1.5 | global_breadth | YES |
+| N15 Sept US CPI YoY | support | 1.5 | inflation_prints | ≥3.6% |
+| M3 Euro-area Sept flash HICP | support | 1.0 | inflation_prints | ≥2.7% |
+| C4 10y Treasury at 2026-12-31 | support | 1.0 | term_structure | ≥4.60% |
+| B5 US recession 2026 | **inverted** | 1.0 | damper | NO recession |
+
+New member specs:
+
+**M1. What will the federal funds target-range midpoint be after the 2026-12-08/09 FOMC meeting?**
+- Type: continuous (%). Resolves: Fed implementation note, 2026-12-09 14:00 ET (midpoint of the announced range; current range 3.50–3.75% → midpoint 3.625%). Series: **FRED `DFEDTARU`** (target-range upper limit, daily; wired → specialist SEATS).
+- Dates: resolve 2026-12-09. Horizon: **≤5 months**.
+- Market: Kalshi **`KXFED-26DEC`** strike ladder (Jul 10: >3.75% 55/69c, >4.00% 27/38c, >4.25% 4/12c) — the de-facto terminal-rate market the desk must convert into a full distribution.
+- Exercises: distribution-from-ladder construction (a harder G8 engagement than a binary price); the T6 redundancy design — M1 is B4 restated in level space, pinned ρ≈0.85, and the aggregate must not count it as independent evidence; CRPS against a discrete outcome grid.
+- Hard: the ladder implies one-hike as modal with real mass on two — the *second* hike, not the first, is where the market's own term structure and the SEP dots (median 3.8%) genuinely disagree.
+
+**M2. How many 25bp rate cuts will the Fed deliver in 2026?**
+- Type: count PMF (0/1/2/3+). Resolves: Fed statements through 2026-12-31. No wired series (policy-decision count) → specialist DECLINES.
+- Dates: resolve 2026-12-31. Horizon: **≤6 months**.
+- Market: Polymarket **`how-many-fed-rate-cuts-in-2026`** (Jul 10 gamma: 0 cuts **77.55c**, 1 cut 14.5c, 2 cuts 3.65c; $5.9M on the 0-bucket, >$40M event volume).
+- Exercises: count-PMF calibration against a liquid board; the cut-side complement of B4 (the pair over-determines the policy path — coherence auditable); T6 fed_ladder member.
+- Hard: pricing the 1-cut tail correctly requires the December-pivot scenario (fuel-price demand destruction + stall-speed payrolls) that the 0-cuts consensus at 77.5% mostly ignores — blind pools historically over-herd on exactly this shape.
+
+**M3. What YoY euro-area flash HICP will Eurostat report for September 2026 (flash, ~2026-10-02)?**
+- Type: continuous (%). Resolves: Eurostat flash estimate for September 2026 (ECB stats calendar pins the linked release at 2026-10-02; treat 10-01 as the alternative — pin the exact date at cutoff). Series: **FRED `CP0000EZ19M086NEST`** (HICP all-items EA19, monthly; wired → specialist SEATS — the plane's first euro-area FRED series).
+- Dates: resolve ~2026-10-02. Horizon: **≤3 months**.
+- Market: none liquid — ECB staff projections (3.0% for 2026) and the June flash (2.8%, down from 3.2% May) are the published baselines.
+- Exercises: specialist-vs-LLM on a non-US inflation series; the M3→N7 coupling (the September flash lands three weeks after the ECB's September decision — the *order* of information matters and the belief trajectory must show it); T6 inflation_prints member.
+- Hard: energy base effects (energy HICP 8.7% and falling) argue fast disinflation; the ECB's own hike says second-round effects are live — the print adjudicates the insurance-hike thesis in near-real-time.
+
+**Expected ρ (with reasoning):** fed_ladder internal **0.85** (B4/N8/N17/M1/M2 are one
+latent policy path expressed five ways — nested, not merely correlated); cross-central-bank
+**0.30** (shared oil/tariff inflation shock, but reaction functions differ — the ECB
+already hiked on energy pass-through while the Fed debates); prints→policy **0.40–0.45**
+(pin N15↔N8/B4 at 0.45, M3↔N7 at 0.45); C4↔fed_ladder **0.35**; B5's underlying
+recession latent vs the hike members **0.25** with the sign carried by inversion.
+`rho_default 0.15`. **Kish n_eff target: ~4–5 of 12.** If the machinery reports n_eff ≥ 8,
+the covariance model is fabricating diversification from a nested ladder.
+
+**Horizon spread:** 2026-09-10 (N7) → 09-16/17 (N8/N9) → 10-02 (M3) → 10-13 (N15) →
+10-28 (N17) → 10-30 (N19) → 12-09 (M1) → 12-31 (B4, M2, C4, B5). Three months of staged
+member resolutions inside a standing thesis — the resolved-member seam gets hit repeatedly.
+
+**Why hard:** the flagship member is a literal coin flip (B4 at 51–52c on two venues) and
+the world-views are cleanly opposed: *level-shift camp* (tariff+oil inflation is regime
+change — median dot 3.8%, 9 of 18 dots ≥1 hike, ECB already tightening, BoJ normalizing
+into a 162 yen) vs *stall camp* (+57k payrolls, GDPNow 1.3%, 2Q26 fuel demand destruction
+— cuts resume by December and the 0-cuts board at 77.5% is over-herded). Even the anchors
+disagree with each other: FedWatch prices the July hike ~25–30% while Kalshi sits at 14c.
+
+**Observation hooks:** (1) the copula count distribution must be lumpy — with ρ≈0.85
+inside the ladder, P(count) should pile at ≤1 and ≥4, not hump at 3; publish
+`count_distribution {p10,p50,p90}` next to T9's near-binomial one as the honesty exhibit.
+(2) `simulate_thesis_event_band` p10/p50/p90 must bracket the headline and visibly widen
+versus a naive-independence rerun. (3) B4/N8/N17/N15 are shared with T1 — `build_cross_refs`
+must FLAG the overlap (advisory-only), never merge the two theses' bands. (4) September
+resolutions (N7 09-10, N8 09-16, N9 09-17) hit the resolved-member seam within one week —
+watch whether realized outcomes enter as terminal snapshots or decay out. (5)
+`top_sensitivities` must rank B4/N8 first; if a safe member tops the list the CRN
+sensitivity math is broken.
+
+### T7. China re-acceleration — the mixed-sign stressor (required)
+
+**Claim (falsifiable):** China re-accelerates through H2 2026 — the Q3 GDP print lands at
+or above 4.8% YoY with export, PMI, retail and physical-demand momentum confirming — and
+no Taiwan-tension shock interrupts the run.
+
+**Event definition (scoreable):** `count_threshold K=6` over the 9 dated member outcomes
+— all members except M9, which is excluded from the event for the same attribution reason
+T8 excludes its war-confounded members (its 2026 driver is the US tariff, not Chinese
+demand); thresholds in the table; B14's success = *no* clash. Adjudicated mechanically at
+member resolution. In-engine, the copula event sees only the binary trio
+{M10, N23, B14-inverted} (`--kind count_threshold --threshold 2`) — the deliberate
+thinness that forces the binary-only exclusion note into the artifact record.
+
+**Members (10 — 2 reused, 8 new).** Context the claim must clear: the official 2026
+target was itself cut to **4.5–5.0%** (first sub-5 target on record, set 2026-03-05);
+consensus sits 4.4–4.8 (Goldman 4.8 / ING 4.6 / BBVA 4.5); Q1 printed 5.0. "≥4.8" is the
+top of consensus, not a rounding of the target.
+
+| Member | Dir | Weight | Role | Threshold (thesis side) |
+|---|---|---|---|---|
+| M4 Q3 GDP YoY (NBS, 2026-10-19) | support | 3.0 | growth_print | ≥4.8% |
+| M5 Sept NBS manufacturing PMI (2026-09-30) | support | 1.5 | momentum | ≥50.5 |
+| M6 Sept exports YoY (GACC, ~2026-10-13) | support | 1.5 | momentum | ≥+8% |
+| M11 Sept retail sales YoY (NBS, 2026-10-19) | support | 1.5 | domestic_demand | ≥+1.0% |
+| M10 PBoC policy-rate cut by 2026-09-30 | support | 2.0 | policy_response | YES |
+| M7 USD/CNY ECB reference rate, 2026-10-30 | support | 1.0 | external_price | ≤6.85 (hi_is_good=0) |
+| M8 Iron ore 62% Fe CFR China, 2026-10-30 | support | 1.25 | physical_demand | ≥$100/t |
+| M9 COMEX copper front-month, 2026-10-30 | support | 0.5 | physical_demand | ≥$5.80/lb |
+| B14 China–Taiwan military clash (7.1%) | **inverted** | 1.5 | damper | NO clash |
+| N23 US–China tariff agreement/truce extension (42.5% near rung) | support | 1.0 | external_policy | YES |
+
+New member specs:
+
+**M4. What Q3 2026 real GDP growth (YoY) will China's NBS report on 2026-10-19?**
+- Type: continuous (%). Resolves: NBS national economic performance release, 2026-10-19 10:00 Beijing (release calendar confirmed: Jan 19 / Apr 16 / Jul 15 / **Oct 19**). Series: **NBS quarterly YoY** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-10-19. Horizon: **≤3.5 months**.
+- Market: Polymarket `china-gdp-growth-yy-in-q2-2026` (Q2 board: 4.6–4.9 at 62%, 4.3–4.6 at 36%) rolls quarterly — capture the Q3 board at listing; Kalshi `KXCHGDPYOY` series (settles off Trading Economics); Polymarket `china-annual-gdp-growth-2026` (4.0–5.0 at 91%) as the coarse year anchor.
+- Exercises: the Q2 print (Jul 15, days after onboarding) is a scheduled mid-trajectory evidence drop for a Q3 question — the cleanest two-stage belief-trajectory test in the tranche; decline honesty on the cohort's highest-weight thesis member; T7 growth_print anchor.
+- Hard: the NBS smoothing prior (prints hug the target band) fights the tape's genuine split — exports +19.4% and PPI +4.1% vs property −3.5% (35th straight month) and retail ~−1%; ≥4.8 requires the re-acceleration to be real *and* the statistician to print it.
+
+**M5. What will the September 2026 NBS manufacturing PMI be (released 2026-09-30)?**
+- Type: continuous (index). Resolves: NBS PMI release, 2026-09-30 09:30 Beijing. Series: **NBS** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-09-30. Horizon: **≤3 months**.
+- Market: none — June printed 50.3 (back above 50 on tech-export demand; Caixin 51.7, 7th straight expansion month); the 50-line narrative discontinuity is not a CRPS one (N6's trap, Chinese edition).
+- Exercises: N6's diffusion-index lesson applied cross-country within the same quarter (the first same-shape lesson-transfer test); T7 momentum member.
+- Hard: the NBS/Caixin spread (state vs private/export firms) is itself the signal — extrapolating the wrong one is the standing failure mode on this series.
+
+**M6. What YoY export growth (USD terms) will China customs report for September 2026 (~2026-10-13)?**
+- Type: continuous (%). Resolves: GACC monthly trade release for September (mid-October; exact date unannounced — pin at cutoff). Series: **GACC** — no wired provider → specialist **DECLINES**.
+- Dates: resolve ~2026-10-13. Horizon: **≤3 months**.
+- Market: none. Baselines: May +19.4% (record $376.8B), Jan–May +15.5% — the boom the member asks whether September still carries.
+- Exercises: base-effect reasoning (H2 2025 comps are high — a decelerating YoY can coexist with strong levels); N23 interlock: the truce expiry (Nov 10) sits *after* resolution but its anticipation loads September front-running — a cross-member causal note the desk should write; T7 momentum.
+- Hard: post-IEEPA tariffs (10% baseline + surviving 301/232 lines) make the US-bound series regime-broken; +8% is where "re-acceleration" and "base-effect fade" genuinely disagree.
+
+**M7. What will the ECB euro-reference-derived USD/CNY rate be on 2026-10-30?**
+- Type: continuous. Resolves: ECB reference rates published 2026-10-30 (~16:00 CET), EUR/CNY ÷ EUR/USD. Series: **frankfurter `CNY`** (wired → specialist SEATS — second frankfurter exercise; note the api.frankfurter.dev redirect).
+- Dates: resolve 2026-10-30. Horizon: **≤4 months**.
+- Market: none named — spot 6.78 (Jul 10), yuan +5.5% over 12 months.
+- Exercises: the deliberately **sign-ambiguous member** (low weight is the design): re-acceleration argues a stronger yuan, but the policy response the thesis also predicts (M10 easing) argues a weaker one — the desk must write the sign argument down, and the panel should visibly disagree about direction, not just magnitude.
+- Hard: a two-channel FX question where both channels are *inside the same thesis* — the member exists to prove the machinery can hold a member whose thesis-support direction is itself a judgment.
+
+**M8. What will the 62% Fe CFR China iron-ore price be on 2026-10-30?**
+- Type: continuous ($/t). Resolves: SGX TSI 62% Fe front-month settlement, 2026-10-30. Series: **SGX** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-10-30. Horizon: **≤4 months**.
+- Market: futures curve itself (spot ~$98.9 Jul 10; Dalian −2.5% YoY; record ~160Mt port inventories).
+- Exercises: the *clean* physical-demand proxy (vs M9's confounded one — the pair is the point); stimulus-anticipation dynamics (the late-July Politburo is a scheduled catalyst that moves this member first); T7 physical_demand.
+- Hard: record port stocks and a dying property bid argue sub-$90; a stimulus-led restock argues $110 — the distribution is genuinely bimodal around the Politburo outcome.
+
+**M9. What will the COMEX copper front-month settlement be on 2026-10-30?**
+- Type: continuous ($/lb). Resolves: COMEX HG front-month settle, 2026-10-30. Series: **stooq `hg.f`** (wired → specialist SEATS — the plane's first commodity-futures seat).
+- Dates: resolve 2026-10-30. Horizon: **≤4 months**.
+- Market: the futures strip (spot ~$6.15/lb Jul 8, COMEX–LME spread blown to $300–500/t on tariff arbitrage, record ~652kt COMEX stocks; Section 232 50% product tariff slated 2026-08-01).
+- Exercises: the **deliberate confound member**: copper's 2026 driver is the US tariff, not Chinese demand — pinned ρ to the China block is 0.10 and the membership rationale must say *why* a nominally China-linked commodity earns near-zero co-movement (correlation is a claim, not a default — the audit case).
+- Hard: the desk must resist the narrative pull of "copper = China" that the thesis title invites; scoring this member correctly is mostly about the Aug 1 tariff, and mis-attributing it corrupts the thesis band.
+
+**M10. Will the PBoC cut a benchmark policy rate (7-day reverse repo or LPR) on or before 2026-09-30?**
+- Type: binary. Resolves: PBoC announcement of a reduction in the 7-day reverse-repo rate or either LPR tenor by 2026-09-30; RRR-only moves don't count.
+- Dates: resolve 2026-09-30. Horizon: **≤3 months**.
+- Market: none — documented analyst split instead: street rate-cut calls moved *up* to Q3 2026 (ING, Capital Economics) with the late-July Politburo the scheduled catalyst; the counter-view says the PBoC defends the 6.78 yuan and waits.
+- Exercises: policy-reaction binary with a dated catalyst mid-window; the **reflexivity note** the desk must write: a cut supports the thesis mechanically (stimulus) while *signaling* the growth weakness the thesis denies — membership direction is support, the rationale must carry the caveat; T7 policy_response.
+- Hard: easing-into-strength vs easing-as-admission is a live analyst fight; the Politburo readout (~Jul 28–30) will move this 20+ points in a day.
+
+**M11. What YoY retail-sales growth will NBS report for September 2026 (2026-10-19)?**
+- Type: continuous (%). Resolves: NBS monthly indicator release, 2026-10-19 (same batch as M4). Series: **NBS** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-10-19. Horizon: **≤3.5 months**.
+- Market: none. Baseline: June retail expected ~−1% YoY (trade-in subsidy fatigue); the 250B-yuan trade-in program (62.5B front-loaded Dec 30) plus the service-sector interest subsidies are the stimulus already in flight.
+- Exercises: the **same-release-instant pair with M4** — one NBS drop moves two members at 10:00 Beijing sharp; the thesis snapshot after Oct 19 must move once, not twice (cascade re-aggregation correctness under simultaneous member updates); T7 domestic_demand.
+- Hard: consumption is the bear's best exhibit (negative prints in mid-2026) and the bull's necessary condition — +1.0% is exactly the contested zone where stimulus either shows up or doesn't.
+
+**Expected ρ (with reasoning):** macro-print block (M4/M5/M6/M11) internal **0.45** (one
+underlying activity state, different measurement noise); M10→prints **0.25** (policy is
+*reactive* — the correlation is real but the direction of causation is backwards, said in
+the rationale); M7→block **0.30**; M8→block **0.35**; **M9→block 0.10 pinned low** (the
+tariff confound); B14's underlying vs the block **0.10** (an escalation shock would hit
+trade and sentiment, but the strait temperature is currently at the pre-Lai baseline —
+sorties reverted, 12 clean June days); N23↔M6 **0.35**. `rho_default 0.10`. **Kish n_eff
+target: ≥6 of 10.** This thesis is the required **mixed-sign** architecture: B14 pulls
+against every macro member (inversion carries the sign), M7 is sign-ambiguous by design,
+and M9 is co-named but de-correlated — if the aggregate behaves like one co-directional
+bet, the covariance model has failed exactly the way AI-scarcity's 2.25/17 warned.
+
+**Horizon spread:** 2026-07-15 (Q2 print — mid-trajectory evidence, not a member) →
+09-30 (M5, M10) → ~10-13 (M6) → 10-19 (M4, M11) → 10-30 (M7, M8, M9) → 11-10 (N23) →
+12-31 (B14).
+
+**Why hard:** the dashboard disagrees with itself *today* — exports +19.4% and PPI +4.1%
+(near 4-year high) against property −3.5% (35th straight monthly decline), iron ore soft
+at record port stocks, retail negative, and a yuan at 12-month highs while the street
+calls for Q3 easing. The official target cut to 4.5–5.0 means even the state's own claim
+is below the thesis bar. Bull and bear each own half the members at commit time.
+
+**Observation hooks:** (1) the in-engine event's honest exclusion note (7 of 10 members
+excluded as distributions) must appear verbatim in the thesis payload — its absence is a
+machinery bug, its presence pre-registers the threshold-shadow-binary fast-follow. (2)
+**B14 and N23 each sit in two theses with opposite directions** (B14: inverted here,
+support in T9; N23: support here, inverted in T9) — one member snapshot must fan out via
+`_cascade_reaggregate_parents` into two parents with opposite signs, and cross-pollination
+must flag the shared edge (flag-don't-merge) in both directions. (3) the Oct 19 NBS batch
+is the simultaneous-update correctness test. (4) M9's pinned-low ρ plus its written
+rationale is the exhibit that correlation entries are argued, not defaulted.
+
+### T8. Energy-transition inflection 2026 — the sign-contested, war-confounded architecture
+
+**Claim (falsifiable):** 2026 closes with the transition's structural indicators still
+inflecting upward — record Chinese and EU EV penetration prints, a sub-$100/kWh average
+battery pack price, and institutional texts (WEO STEPS, COP31) that still date the
+oil-demand peak pre-2030 — despite the war-crashed oil market, the first-ever global
+solar decline, and the post-credit US EV floor.
+
+**Event definition (scoreable):** `count_threshold K=4` over the **6 named structural
+indicators**: {M12 ≥60%, M13 ≥20.5%, M16 YES, M17 <$100/kWh, M18 ≥5.5%, N25 YES}. The
+war-confounded members (M14, M15, C9, N3, N22) inform health but are **excluded from the
+event by design** — the event must read the structure, not the war. In-engine the copula
+sees the binary trio {M16, N3, N25}; same exclusion-note discipline as T7.
+
+**Members (11 — 4 reused, 7 new).** World-state the design absorbs: the Iran war crashed
+2026 oil demand (IEA July OMR: −1.0 mb/d for 2026, −4.8 mb/d in 2Q26, +2.0 mb/d rebound
+projected for 2027) — so "the demand curve bent in 2026" is TRUE for the wrong reason,
+and a thesis scored naively on it would be a false positive. The claim is therefore
+pinned to structural indicators, and the demand members carry explicit attribution notes.
+
+| Member | Dir | Weight | Role | Threshold (thesis side) |
+|---|---|---|---|---|
+| M12 China NEV retail penetration, Sept (CPCA, ~2026-10-13) ⚠ | support | 2.0 | ev_adoption | ≥60% |
+| M13 EU YTD BEV share at the Sept ACEA release (~2026-10-22/28) | support | 1.5 | ev_adoption | ≥20.5% |
+| M18 US Q3 BEV share (Cox/KBB, ~late Oct) | support | 1.0 | ev_adoption | ≥5.5% |
+| M14 China solar additions Jan–Sep (NEA, ~late Oct) ⚠ | support | 1.0 | supply_build | ≥120 GW |
+| M15 IEA Nov-13 OMR: 2026 world oil demand delta | support | 1.0 | demand_curve | ≤−0.5 mb/d (hi_is_good=0) |
+| M16 WEO-2026: STEPS keeps a pre-2030 oil-demand peak ⚠ | support | 1.5 | institutional_text | YES |
+| M17 BNEF pack price, Dec survey (~2026-12-08/10) | support | 1.5 | techno_economics | <$100/kWh |
+| N3 OPEC+ September production increase (Aug 2 meeting) | support | 0.75 | fossil_complex | YES |
+| C9 December Brent monthly average | **inverted** | 0.75 | fossil_complex | ≤$75 |
+| N22 EIA gas storage, end-October week | support | 0.5 | fossil_complex | ≥3,966 Bcf |
+| N25 COP31 cover-decision fossil-transition language ⚠ | support | 1.0 | institutional_text | YES |
+
+New member specs:
+
+**M12. What China NEV retail penetration will CPCA report for September 2026?** ⚠(denominator trap)
+- Type: continuous (%). Resolves: CPCA full monthly release (~2026-10-13/14; preliminary ~Oct 9 — the full release governs). Series: **CPCA** — no wired provider → specialist **DECLINES**.
+- Dates: resolve ~2026-10-14. Horizon: **≤3.5 months**.
+- Market: none. Baselines: June 2026 **62.8%** (third straight month >60%) — but NEV retail *fell 9.4% YoY* while gasoline retail plunged 39%: penetration is rising on a **shrinking denominator** (total PV retail −21% YoY). 2025 full year: 54.07%.
+- Exercises: the adversarial edge is in what the number *means*, not what it is — the desk note must decompose share into numerator and denominator or the postmortem should catch the omission; seasonal reasoning (Q4 pull-forward patterns); T8 ev_adoption anchor.
+- Hard: ≥60% in September is likely-but-not-safe (seasonality dips shoulder months), and treating it as transition triumph while absolute NEV sales fall six straight months is exactly the criteria-tightness failure the ⚠ marks.
+
+**M13. What year-to-date EU BEV share will ACEA report in its September 2026 release (~2026-10-22/28)?**
+- Type: continuous (%). Resolves: ACEA new-car registrations press release for September 2026, YTD BEV share of EU registrations (embargo lands 3rd–4th week of October; 2025 precedent Oct 28 — pin at cutoff via the ACEA calendar). Series: **ACEA** — no wired provider → specialist **DECLINES**.
+- Dates: resolve ~2026-10-28. Horizon: **≤4 months**.
+- Market: none. Baselines: YTD-May 2026 **20.0%** (vs 15.3% a year earlier); Q1 19.4%; FY2025 17.4%; Italy +75.7%, France +55.4%, Germany +40.9% YoY growth.
+- Exercises: trend-persistence vs saturation on a monotone administrative series (the rare member where the naive trend IS the smart money — the LLM must justify any deviation); T8 ev_adoption.
+- Hard: 20.5% YTD by September requires the monthly rate to hold ~21%+ through Q3 against 2026's CO2-target-relaxation headwind — a subtle compliance-cycle argument, not an extrapolation.
+
+**M14. How much solar capacity will China's NEA report added January–September 2026?** ⚠(the member built to score against)
+- Type: continuous (GW). Resolves: NEA energy statistics for Jan–Sep 2026 (~late October; monthly stats land 3rd–4th week following). Series: **NEA** — no wired provider → specialist **DECLINES**.
+- Dates: resolve ~2026-10-28. Horizon: **≤4 months**.
+- Market: none. Baselines: Jan–May 2026 **59.59 GW** (~70% below reform-rush 2025); Q1 −18.5 GW YoY; CPIA full-year forecast 180–240 GW (−24% to −43%); 2025 actual 315 GW (NEA, ac).
+- Exercises: a **deliberately bear member inside a bull thesis** — the June-2025 pricing reform cliffed the series, and the honest thesis carries the drag rather than curating it away; the health trajectory must visibly pay for it; T8 supply_build.
+- Hard: the reform makes every YoY comparison regime-broken — 120 GW by September is genuinely uncertain in *both* directions (a 2H policy-driven rush is the standing pattern; the reform removed the rush's cause).
+
+**M15. What 2026 world oil-demand change will the IEA's November OMR print (2026-11-13)?**
+- Type: continuous (mb/d, YoY). Resolves: IEA Oil Market Report, November 2026 edition (release calendar confirmed: Nov **13**, 10:00 Paris), 2026 world demand delta. Series: **IEA** — no wired provider → specialist **DECLINES**.
+- Dates: resolve 2026-11-13. Horizon: **≤4 months**.
+- Market: none — the institutional spread IS the anchor: IEA July OMR −1.0 mb/d (easing from −1.1 in June; quarterly path −4.8 → −1.7 → +1.2) vs OPEC MOMR +1.0 mb/d — a **2.0 mb/d spread** between the two reference agencies, versus ~0.6 pre-war.
+- Exercises: forecast-the-forecaster (N22's STEO problem at agency scale, with two agencies in open conflict); the **attribution discipline**: the number will superficially confirm the thesis for a war reason — the desk note must attribute the bend (war vs structure) or the resolution retrospective should flag the miss; T8 demand_curve, weight deliberately low.
+- Hard: the revision path depends on post-war rebound speed (the IEA already projects +2.0 for 2027) — modeling an agency's revision behavior under political pressure is nothing like modeling demand.
+
+**M16. Will the IEA's WEO 2026 keep a pre-2030 global oil-demand peak in its STEPS scenario?** ⚠(scenario naming)
+- Type: binary. Resolves: World Energy Outlook 2026 (release unannounced; precedent Nov 12, plausibly keyed to COP31 Antalya Nov 9–20) — YES iff the published STEPS (or its clearly-designated successor central policy scenario) shows global oil demand peaking before 2030. Presidency statements, CPS projections, and press framing don't count.
+- Dates: resolve ~2026-11. Horizon: **≤5 months**.
+- Market: none — the fight is documented: WEO 2025 resurrected the Current Policies Scenario under US pressure (CPS: ~113 mb/d by 2050, no peak) while STEPS kept a ~2030 peak at ~102 mb/d; "peak oil vanished from the base forecast" was the press read.
+- Exercises: L2-grade criteria discipline on an *institutional text* (which scenario is "the" scenario when the institution itself is hedging under political pressure — B12's problem in energy-outlook form); T8 institutional_text.
+- Hard: the war-crashed 2026 baseline mechanically pulls the peak *earlier* while the political pressure pushes the framing *away* from peaks — text and number can walk opposite directions in one document.
+
+**M17. What volume-weighted average lithium-ion pack price will BNEF's December 2026 survey report?**
+- Type: continuous ($/kWh). Resolves: BNEF annual battery price survey (~2026-12-08/10; 2025 survey landed Dec 9). Series: **BNEF** — no wired provider → specialist **DECLINES**.
+- Dates: resolve ~2026-12-10. Horizon: **≤5 months**.
+- Market: none. Baselines: 2025 **$108/kWh** (−8%; BEV packs $99 — first sub-$100; LFP $81 vs NMC $128; China average $84 vs NA +44% / EU +56% premia).
+- Exercises: techno-economic learning-curve reasoning against a one-print-per-year series (no cadence to hide behind — one commit, one CRPS); the regional-mix trap (the global average moves with China share, not just chemistry); T8 techno_economics.
+- Hard: sub-$100 needs another −8% year against firming lithium and the tariff-fragmented NA/EU premia — the learning curve and the trade war point opposite ways.
+
+**M18. What US BEV share of new-vehicle sales will Cox/KBB report for Q3 2026?**
+- Type: continuous (%). Resolves: Cox Automotive/KBB quarterly EV sales report for Q3 2026 (~late October). Series: **Cox** — no wired provider → specialist **DECLINES**.
+- Dates: resolve ~2026-10-30. Horizon: **≤4 months**.
+- Market: none. Baselines: the post-credit cliff is data now — Q3 2025 record 10.5% (pull-forward) → Q4 5.8% → Q1 2026 5.8% → Q2 5.4%: **halved, then floored** for three straight quarters.
+- Exercises: floor-vs-slide on a regime-broken series (the specialist declines; the LLM must argue whether 5.4–5.8 is equilibrium or waypoint); the bear-side structural member that keeps T8 honest about its weakest geography; T8 ev_adoption.
+- Hard: three quarters of stability after a −46% shock reads as a floor — but model-year-2027 pricing without the credit hits in Q3, exactly the quarter in question.
+
+**Expected ρ (with reasoning):** ev_adoption internal **0.35** (the three EV members share
+the technology cost curve but sit in *de-synchronized* policy regimes — the US repealed,
+the EU relaxed targets, China reformed pricing; 2026 is the year the "one global EV
+trend" assumption is weakest and the pinned value says so); M14↔EV members **0.15**;
+fossil_complex internal **0.50** (war-loaded — pin C9↔M15 at 0.50 explicitly);
+institutional_text internal **0.30**, to physical prints **0.10** (COP language and WEO
+scenarios move on politics, not tonnage); **C9-inverted↔M12/M13 pinned 0.15 with the
+tension written down**: cheap oil is glut evidence (supports, via inversion) *and* an
+EV-economics headwind (undermines) — the second sign-contested pair in the tranche.
+`rho_default 0.10`. **Kish n_eff target: ~6 of 11.**
+
+**Horizon spread:** 2026-08-02 (N3) → ~10-14 (M12) → ~10-28 (M13, M14, M18) → 11-05
+(N22) → 11-13 (M15) → ~11-20 (M16, N25) → ~12-10 (M17) → 2027-01 (C9 settles).
+
+**Why hard:** every trend line bent in 2026 for a non-transition reason — the war crashed
+demand while OPEC still prints +1.0 growth (a 2.0 mb/d institutional spread); the pricing
+reform cliffed Chinese solar (~−70% YTD) in the year global additions were supposed to set
+a record (BNEF and SolarPower Europe both now forecast the **first global solar decline**);
+the US halved-then-floored on the credit repeal while the EU accelerated 17.4→20.0. "The
+inflection confirmed" and "the year the transition stalled" are both fully citable from
+this member set — the thesis forces the desk to say which half of the dashboard is signal.
+
+**Observation hooks:** (1) the event echo must show exactly the six named indicators —
+the confounded members' exclusion is pre-registered, so their appearance in the event is
+a wiring bug. (2) the C9-inverted↔EV-members pinned pair is the direction-bit
+anti-correlation test (T4's stressor with the sign tension *inside* one economic
+argument). (3) M15/M16 resolution retrospectives must show attribution reasoning
+(war vs structure) — if the postmortem credits the war-bent demand curve to the
+transition, the lesson-synthesis loop failed at exactly the confound it was warned about.
+(4) M14's drag must be visible in the health trajectory (a thesis that only rises while
+carrying a −70% member is aggregating dishonestly).
+
+### T9. Conflict regime escalation — the diversification-honesty pole
+
+**Claim (falsifiable):** H2 2026 is escalatory across theaters, not settling: the
+active-war ceasefires and great-power accommodations on the board fail to land by
+2026-12-31 while the rearmament prints keep rising — against the de-escalation world
+where Ankara-summit diplomacy, the Iran MOU track, and the Gaza phase framework begin to
+hold.
+
+**Event definition (scoreable):** `count_threshold K=5` over the 8 binary members
+{B10-inv, B11-inv, B12, B13-inv, B14, N23-inv, M20, M22-inv} — at least five
+escalation-side outcomes. Blind baseline implies E[count]≈4.2, so K=5 is a genuine
+~35–45% event. Runs natively in-engine; with cross-theater ρ pinned at 0.10 the count
+distribution should sit near-binomial — publish it beside T6's lumpy one.
+
+**Members (11 — 7 reused, 4 new).** Week-of-commit tape, both directions: the US struck
+80+ Iranian targets Jul 7–9 *during* the Ankara NATO summit and revoked the oil license
+(escalatory), while NATO pledged $80B/yr Ukraine aid for 2026–27, Hamas dissolved its
+civil administration Jul 6 (a de-escalation gesture), and the displacement prints are
+*improving* (UNHCR flat-to-falling; Sudan IDPs −23% from peak on returns).
+
+| Member | Dir | Weight | Role | Threshold (thesis side) |
+|---|---|---|---|---|
+| B10 Russia–Ukraine ceasefire by Dec 31 (Dec rung 39%) | **inverted** | 2.0 | ukraine_theater | NO |
+| M22 Putin–Zelensky meeting before 2027 | **inverted** | 1.0 | ukraine_theater | NO meeting |
+| M21 UNHCR-recorded Ukrainian refugees, last 2026 portal update ⚠ | support | 0.75 | human_cost | ≥5.9M (current-series basis) |
+| B11 US–Iran final deal by Dec 31 | **inverted** | 1.5 | mideast_theater | NO |
+| B12 Israel–Hamas ceasefire cancelled by Dec 31 (22%) | support | 1.5 | mideast_theater | YES |
+| B13 Sudan RSF–SAF ceasefire by Dec 31 (30.5%) | **inverted** | 1.0 | africa_theater | NO |
+| B14 China–Taiwan military clash before 2027 (7.1%) | support | 1.0 | indo_pacific | YES |
+| V10 North Korea July missile-test count | support | 0.75 | indo_pacific | ≥2 |
+| N23 US–China tariff agreement/truce extension by Nov 10 | **inverted** | 0.75 | economic_conflict | NO |
+| M19 German 2027 defense budget (EP14) as passed ⚠ | support | 1.0 | rearmament | ≥€109.7B |
+| M20 Poland 2027 draft budget: defense ≥5.0% of GDP | support | 1.0 | rearmament | YES |
+
+New member specs:
+
+**M19. What Einzelplan 14 (defense) level will the Bundestag pass in the final 2027 federal budget?** ⚠(which figure)
+- Type: continuous (€B). Resolves: the EP14 core defense allocation in the 2027 Bundeshaushalt as passed at second/third reading (~early December 2026; Bereinigungssitzung mid-November). **EP14 core only** — the ~€30B special-fund tranche and the €11.6B Ukraine aid line are excluded, and the ⚠ exists because every press number (€130.1B "total defense") conflates them.
+- Dates: resolve ~2026-12-05. Horizon: **≤5 months**.
+- Market: none. Baseline: the cabinet draft approved 2026-07-06 sets EP14 at **€109.7B** (+32.7% vs 2026's €82.7B), inside a €555.4B budget with €118.7B new core borrowing; Finanzplan path €153.9B (2028) → €183.7B (2030).
+- Exercises: legislative-amendment reasoning on a dated institutional print (does a draft survive the Bereinigung intact — a reference class the desk must build); criteria tightness on budget-line accounting; T9 rearmament.
+- Hard: coalition SPD-left pressure and borrowing optics argue trims; procurement backlogs and the 3.5%-by-2029 NATO path argue top-ups — drafts have moved *both* directions in Bereinigung in the last decade.
+
+**M20. Will Poland's 2027 draft budget set defense spending at ≥5.0% of GDP?**
+- Type: binary. Resolves: the Council of Ministers' 2027 draft budget (statutory Sejm submission by 2026-09-30; the 2026 draft was unveiled 2025-08-29) — YES iff the announced planned defense share is ≥5.0% of GDP on the government's own headline basis.
+- Dates: resolve ~2026-09-30. Horizon: **≤3 months**.
+- Market: none. Baselines: 2026 plan 4.8% of GDP (PLN 200B, NATO-highest); NATO's July 2026 dataset scores Poland's 2026 *core* spend at 4.68%; €43.7B in EU SAFE loans signed May 2026; the Armed Forces Support Fund carries >$55B debt by 2028.
+- Exercises: fiscal-politics binary with a hard statutory deadline (the fastest-resolving new member in T9); headline-basis vs NATO-basis accounting discipline; T9 rearmament pair with M19 (pinned 0.40 — shared threat driver, different fiscal constraints).
+- Hard: 4.8 → 5.0 is one election-season announcement away and one deficit-rule fight away — a genuine coin-toss on Polish coalition politics.
+
+**M21. How many Ukrainian refugees will UNHCR's Operational Data Portal record globally at its last 2026 update?** ⚠(series break)
+- Type: continuous (M). Resolves: the "Ukraine situation" global recorded-refugee figure on data.unhcr.org at the final 2026 portal update (monthly cadence, Eurostat-driven), read 2027-01-05. **Current-series basis pinned**: the November 2025 methodology revision (EU figures = active temporary-protection beneficiaries) cut the headline from ~6.9M to ~5.7–5.9M — commits are against the revised series, and any further revision is a named resolution risk.
+- Dates: resolve 2027-01-05. Horizon: **≤6 months**.
+- Market: none. Baselines: Dec 2025 5.86M; Feb 2026 5.9M; Apr 2026 ~5.7M — **flat-to-falling** on returns and expiring registrations even as the war grinds.
+- Exercises: the tranche's data-member analogue of B12 — the criteria fight is in the *series definition*, not the world; the **contrarian print member**: displacement easing inside an escalation thesis keeps T9 from being a vibes basket (its weight is real and its direction is support-with-a-straight-face: renewed escalation → outflows resume); T9 human_cost.
+- Hard: a Ukraine-theater escalation (B10-inv world) plausibly *raises* this print while the de-escalation world lowers it — but administrative dynamics (TPD expiries, returns) dominate month-to-month, so the desk must model the bureaucracy, not the front line.
+
+**M22. Will Putin and Zelensky meet in person before 2027?**
+- Type: binary. Resolves: a confirmed in-person bilateral or multilateral meeting (both physically present in a working session; funerals/summit photo-ops per market rules) by 2026-12-31.
+- Dates: resolve 2026-12-31. Horizon: **≤6 months**.
+- Market: Polymarket "where will Zelenskyy and Putin meet next before 2027" board — **86% "no meeting before 2027"** (~14% any meeting); `will-putin-meet-with-zelenskyy-by-august-31` at ~4% (thin: $20K vol). Talks state: last formal round Geneva 2026-02-17/18 (territorial issue tabled for the first time); no next round scheduled; Türkiye offering to host round 4 and an Istanbul leaders' summit.
+- Exercises: dated-diplomatic-catalyst binary — the scheduled H2 windows are enumerable (UNGA high-level week Sep 22–28, APEC Shenzhen Nov 18–19, G20 Miami Dec 14–15 with a floated Trump–Xi backdrop) and the belief trajectory should show discrete mass at each; inverted membership makes it the de-escalation sentinel; T9 ukraine_theater.
+- Hard: the base rate of announced-then-blown Ukraine summits is the desk's own B10 reference class, but a Putin who says he is "ready" per the "Anchorage–Istanbul agreements" plus an election-season US push makes the 14% tail genuinely live.
+
+**Expected ρ (with reasoning):** **cross-theater 0.10 by design** — the thesis refuses
+the "one polycrisis driver" assumption a priori; if the theaters really do co-move in H2,
+the *members* will show it and the desk must argue ρ up with evidence, not vibes.
+Within-theater: Ukraine bloc (B10/M21/M22 underlyings) **0.55**; Mideast (B11/B12)
+**0.35**; rearmament (M19/M20) **0.40** (shared threat perception, different fiscal
+politics); indo_pacific (B14/V10) **0.15** (Pyongyang's cadence is not Beijing's);
+N23↔B14 **0.20** (a Taiwan shock kills the truce; the reverse is weaker).
+`rho_default 0.10`. **Kish n_eff target: ≥7 of 11** — the mirror image of T6: here a
+*collapse* is the failure, because it would mean the covariance model imposed a global
+driver nobody argued for.
+
+**Horizon spread:** ~2026-08-01 (V10) → ~09-30 (M20) → 11-10 (N23) → ~12-05 (M19) →
+12-31 (B10, B11, B12, B13, B14, M22) → 2027-01-05 (M21).
+
+**Why hard:** the two most liquid members sit near the middle (B10 39%, N23 ~42.5% near
+rung), the commit-week tape is maximally escalatory (US–Iran strikes during the NATO
+summit) while the humanitarian prints improve on returns and definitional churn — the
+"regime" is genuinely ambiguous, each theater has an idiosyncratic resolver, and the
+thesis stands or falls on whether five independent-ish escalations co-occur, which is
+exactly what a diversified count event prices and a mean index blurs.
+
+**Observation hooks:** (1) T9's near-binomial count distribution against T6's lumpy one
+is the tranche's headline correlation-honesty exhibit — same machinery, opposite pinned
+structures, visibly different shapes. (2) the B14/N23 opposite-direction shared edges
+with T7 (see T7 hook 2). (3) mean-vs-event divergence: the mean index will sit high
+(most inverted members are low-probability ceasefires) while P(count≥5) sits near 40% —
+the two readouts answering different questions is §2 of the thesis deep-dive made
+observable. (4) M21's series-break criteria is the data-side adversarial case: the
+postmortem must show the commit was scored on the pinned basis. (5) VOI ordering should
+put B10/N23/M20 above the safe members; a staleness-driven ordering that surfaces B14
+(7%) first is a VOI weighting bug.
+
+---
+
 ## 3. Observation plan — what to measure while the engine runs
 
 ### 3.1 Per-question instrumentation
@@ -727,6 +1228,26 @@ readout becomes measurable in weeks, not months), or the postmortem pipeline sat
 under high-frequency updating, this tranche is where it shows first. Finally, its ~25
 resolutions by 2026-12-01 fill the G8 deviation-bet promotion precondition (first scored
 cohort ≥10) entirely within the observation quarter.
+
+**What the thesis tranche (§2c) uniquely enables.** Tranche 3 turns the thesis rows of
+§3.1 from spot checks into a designed experiment. The four architectures pin four
+*falsifiable machinery predictions* before any data arrives: T6's n_eff must collapse
+(~4–5/12) and its count distribution go lumpy; T9's n_eff must hold (≥7/11) and its
+count distribution sit near-binomial; T7 must survive a mixed-sign damper plus a
+pinned-low confound member without degenerating into one co-directional bet; T8 must
+carry sign-contested and deliberately-bear members without curating them away. Beyond
+the aggregation math, the tranche exercises seams no live thesis has ever hit: the
+**resolved-member seam** (staged September–December member resolutions inside standing
+theses — terminal snapshots vs freshness-decay disappearance), the **binary-only event
+layer** under print-heavy baskets (the exclusion note as a required artifact, the
+threshold-shadow-binary fast-follow pre-registered), **opposite-direction shared members**
+(B14 and N23 each fan into two parents with opposite signs on every snapshot —
+`_cascade_reaggregate_parents` correctness plus flag-don't-merge cross-refs in both
+directions), and **simultaneous-member updates** (the Oct 19 NBS batch moves two T7
+members in one release instant). The per-thesis event definitions are all
+member-outcome-scoreable by ~2027-01-05, so the tranche's four world-view bets produce
+graded verdicts — not just health curves — one quarter after the fast arm's lesson loop
+has already turned twice.
 
 ---
 
