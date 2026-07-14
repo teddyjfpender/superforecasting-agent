@@ -2861,6 +2861,20 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
         "advanced": True,
     },
+    "GITHUB_CAPABILITY_SIGNING_KEY": {
+        "description": "Signing key for repository-bound GitHub capabilities",
+        "prompt": "GitHub capability signing key",
+        "password": True,
+        "category": "messaging",
+        "advanced": True,
+    },
+    "SLACK_CHANGESET_ACTION_SIGNING_KEY": {
+        "description": "Signing key for expiring Slack changeset actions",
+        "prompt": "Slack changeset action signing key",
+        "password": True,
+        "category": "messaging",
+        "advanced": True,
+    },
     "FORECAST_TRACE_ENCRYPTION_KEY": {
         "description": "Encryption key for private forecast execution traces",
         "prompt": "Forecast trace encryption key",

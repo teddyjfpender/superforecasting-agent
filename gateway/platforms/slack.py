@@ -10,6 +10,7 @@ Uses slack-bolt (Python) with Socket Mode for:
 
 import asyncio
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -348,6 +349,19 @@ class SlackAdapter(BasePlatformAdapter):
         # (channel_id, user_id) to avoid cross-user collisions.
         # Each value: {"response_url": str, "ts": float}
         self._slash_command_contexts: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        # Optional forecast-ledger review handler. Both Socket Mode and signed
+        # HTTP Block Kit payloads enter through this same callback.
+        self._changeset_action_handler = None
+        self._changeset_message_handler = None
+        self._changeset_ingress_store = None
+
+    def set_changeset_action_handler(self, handler) -> None:
+        """Attach the durable forecast-changeset Block Kit action service."""
+        self._changeset_action_handler = handler
+
+    def set_changeset_message_handler(self, handler) -> None:
+        """Attach thread-to-changeset creation and initial-card rendering."""
+        self._changeset_message_handler = handler
 
     def _describe_slack_api_error(self, response: Any, *, file_obj: Optional[Dict[str, Any]] = None) -> Optional[str]:
         """Convert Slack API auth/permission failures into actionable user-facing text."""
@@ -693,6 +707,13 @@ class SlackAdapter(BasePlatformAdapter):
             ):
                 self._app.action(_action_id)(self._handle_slash_confirm_action)
 
+            from forecasting.slack_collaboration import ACTION_NAMES
+
+            for _action_name in sorted(ACTION_NAMES):
+                self._app.action(f"forecast_{_action_name}")(
+                    self._handle_changeset_action
+                )
+
             if transport == "webhook":
                 self._running = True
                 logger.info(
@@ -748,6 +769,118 @@ class SlackAdapter(BasePlatformAdapter):
                     await self._handle_approval_action(_ack, payload, action)
                 elif action_id.startswith("hermes_confirm_"):
                     await self._handle_slash_confirm_action(_ack, payload, action)
+                elif action_id.startswith("forecast_"):
+                    await self._handle_changeset_action(_ack, payload, action)
+
+    async def _handle_changeset_action(self, ack, body, action) -> None:
+        """Ack quickly, then run the transport-neutral durable review handler."""
+
+        durable = bool(body.get("_durably_persisted"))
+        if not durable:
+            durable = await asyncio.to_thread(
+                self._persist_changeset_action,
+                body,
+                action,
+            )
+        await ack()
+        if not durable:
+            logger.warning("[Slack] Changeset action was not durably accepted")
+            return
+        handler = self._changeset_action_handler
+        if handler is None:
+            logger.warning("[Slack] Changeset action handler is not configured")
+            return
+        try:
+            result = handler(body, action)
+            if hasattr(result, "__await__"):
+                result = await result
+            if isinstance(result, dict) and isinstance(result.get("render"), dict):
+                await self.upsert_changeset_card(result["render"])
+        except Exception:
+            logger.exception("[Slack] Changeset action failed")
+            channel_id = str((body.get("channel") or {}).get("id") or "")
+            user_id = str((body.get("user") or {}).get("id") or "")
+            if channel_id and user_id:
+                await self.send_private_notice(
+                    channel_id,
+                    user_id,
+                    "This forecast changeset action could not be completed safely. The public card was not advanced.",
+                )
+
+    def _persist_changeset_action(self, body: dict, action: dict) -> bool:
+        """Persist a sanitized Socket Mode action before review/GitHub work."""
+
+        try:
+            if self._changeset_ingress_store is None:
+                from gateway.execution_store import ExecutionStore
+
+                self._changeset_ingress_store = ExecutionStore(
+                    self.config.extra.get("run_store_path")
+                )
+            team = str((body.get("team") or {}).get("id") or body.get("team_id") or "unknown")
+            channel = str((body.get("channel") or {}).get("id") or "unknown")
+            message = body.get("message") or {}
+            thread = str(message.get("thread_ts") or message.get("ts") or "root")
+            client_id = str(
+                body.get("trigger_id")
+                or body.get("action_ts")
+                or hashlib.sha256(
+                    f"{action.get('action_id')}:{action.get('value')}".encode()
+                ).hexdigest()
+            )
+            return self._changeset_ingress_store.append_message(
+                message_id=f"slack:{team}:{client_id}",
+                client_message_id=client_id,
+                thread_key=f"slack:{team}:{channel}:{thread}",
+                role="user",
+                parts={
+                    "type": "block_actions",
+                    "action_id": action.get("action_id"),
+                    "value_digest": hashlib.sha256(
+                        str(action.get("value") or "").encode()
+                    ).hexdigest(),
+                },
+                metadata={"transport": "socket", "platform": "slack"},
+                platform="slack",
+            )
+        except Exception:
+            logger.exception("[Slack] Could not persist changeset action")
+            return False
+
+    async def upsert_changeset_card(self, rendered: dict) -> SendResult:
+        """Create or edit the one durable public status card for a changeset."""
+
+        channel = str(rendered.get("channel") or "")
+        if not channel:
+            return SendResult(success=False, error="Missing Slack channel")
+        try:
+            client = self._get_client(channel)
+            kwargs = {
+                "channel": channel,
+                "text": str(rendered.get("text") or "Forecast changeset status"),
+                "blocks": list(rendered.get("blocks") or []),
+            }
+            if rendered.get("message_ts"):
+                result = await client.chat_update(ts=rendered["message_ts"], **kwargs)
+            else:
+                if rendered.get("thread_ts"):
+                    kwargs["thread_ts"] = rendered["thread_ts"]
+                result = await client.chat_postMessage(**kwargs)
+            return SendResult(
+                success=True,
+                message_id=str(result.get("ts") or rendered.get("message_ts") or ""),
+                raw_response=result,
+            )
+        except Exception:
+            logger.exception("[Slack] Failed to render changeset card")
+            return SendResult(success=False, error="Slack changeset card delivery failed")
+
+    async def post_changeset_final(self, rendered: dict) -> SendResult:
+        """Post the separate durable ledger result below the editable card."""
+
+        payload = dict(rendered)
+        payload.pop("message_ts", None)
+        return await self.upsert_changeset_card(payload)
 
     async def create_handoff_thread(
         self,
@@ -2080,6 +2213,23 @@ class SlackAdapter(BasePlatformAdapter):
                     to_remove = list(self._mentioned_threads)[:self._MENTIONED_THREADS_MAX // 2]
                     for t in to_remove:
                         self._mentioned_threads.discard(t)
+
+        if self._changeset_message_handler is not None and team_id and channel_id and thread_ts:
+            try:
+                collaboration_result = self._changeset_message_handler(
+                    {
+                        "team_id": team_id,
+                        "channel_id": channel_id,
+                        "thread_ts": thread_ts,
+                        "message_ts": ts,
+                        "user_id": user_id,
+                        "text": text,
+                    }
+                )
+                if hasattr(collaboration_result, "__await__"):
+                    await collaboration_result
+            except Exception:
+                logger.exception("[Slack] Could not initialize changeset collaboration")
 
         # When entering a thread for the first time (no existing session),
         # fetch thread context so the agent understands the conversation.

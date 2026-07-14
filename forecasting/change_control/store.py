@@ -26,13 +26,31 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
     "ready": frozenset({"publishing", "checks_running", "cancelled", "abandoned"}),
     "publishing": frozenset({"review_open", "blocked", "cancelled"}),
     "review_open": frozenset(
-        {"checks_running", "review_required", "changes_requested", "held", "abandoned"}
+        {
+            "checks_running",
+            "review_required",
+            "changes_requested",
+            "held",
+            "cancelled",
+            "abandoned",
+        }
     ),
-    "checks_running": frozenset({"blocked", "review_required", "merge_ready"}),
+    "checks_running": frozenset(
+        {"blocked", "review_required", "merge_ready", "held", "cancelled"}
+    ),
     "review_required": frozenset(
-        {"checks_running", "changes_requested", "held", "merge_ready", "rejected"}
+        {
+            "checks_running",
+            "changes_requested",
+            "held",
+            "merge_ready",
+            "rejected",
+            "cancelled",
+        }
     ),
-    "changes_requested": frozenset({"draft", "checks_running", "held", "rejected"}),
+    "changes_requested": frozenset(
+        {"draft", "checks_running", "held", "rejected", "cancelled"}
+    ),
     "held": frozenset({"draft", "review_open", "review_required", "cancelled"}),
     "blocked": frozenset({"draft", "checks_running", "cancelled", "superseded"}),
     "merge_ready": frozenset({"merge_queued", "merged_apply_pending", "held"}),
@@ -375,6 +393,54 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             correlation_id TEXT NOT NULL,
             created_at TEXT NOT NULL,
             PRIMARY KEY (remote_kind, remote_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS slack_changeset_cards (
+            changeset_id TEXT PRIMARY KEY REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            slack_team_id TEXT NOT NULL,
+            slack_channel_id TEXT NOT NULL,
+            slack_thread_ts TEXT NOT NULL,
+            message_ts TEXT,
+            phase TEXT NOT NULL,
+            active_owner_id TEXT,
+            active_agent_instance_id TEXT,
+            active_agent_persona TEXT,
+            pr_url TEXT,
+            checks_state TEXT NOT NULL DEFAULT 'pending',
+            next_action TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT '{}',
+            render_revision INTEGER NOT NULL DEFAULT 0,
+            last_progress_at TEXT NOT NULL,
+            last_heartbeat_at TEXT NOT NULL,
+            final_message_ts TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS slack_changeset_action_nonces (
+            nonce_hash TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            changeset_digest TEXT NOT NULL,
+            action TEXT NOT NULL,
+            slack_team_id TEXT NOT NULL,
+            slack_channel_id TEXT NOT NULL,
+            slack_thread_ts TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'issued',
+            slack_user_id TEXT,
+            result TEXT,
+            created_at TEXT NOT NULL,
+            consumed_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS slack_changeset_presence (
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            owner_id TEXT NOT NULL,
+            agent_instance_id TEXT NOT NULL,
+            agent_persona TEXT NOT NULL,
+            presence TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            PRIMARY KEY (changeset_id, agent_instance_id)
         );
         """
     )

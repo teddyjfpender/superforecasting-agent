@@ -717,7 +717,9 @@ class APIServerAdapter(BasePlatformAdapter):
 
         async def _run() -> None:
             try:
-                result = handler(payload)
+                dispatched_payload = dict(payload)
+                dispatched_payload["_durably_persisted"] = True
+                result = handler(dispatched_payload)
                 if hasattr(result, "__await__"):
                     await result
             except Exception:
@@ -734,6 +736,21 @@ class APIServerAdapter(BasePlatformAdapter):
     def _slack_persisted_parts(payload: Dict[str, Any]) -> Dict[str, Any]:
         """Keep replay identity/content without persisting Slack response URLs or tokens."""
         event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        actions = []
+        for action in payload.get("actions") or []:
+            if not isinstance(action, dict):
+                continue
+            item = {
+                key: action.get(key)
+                for key in ("action_id", "value")
+                if action.get(key) is not None
+            }
+            if str(action.get("action_id") or "").startswith("forecast_"):
+                item.pop("value", None)
+                item["value_digest"] = hashlib.sha256(
+                    str(action.get("value") or "").encode()
+                ).hexdigest()
+            actions.append(item)
         return {
             "type": payload.get("type"),
             "command": payload.get("command"),
@@ -743,11 +760,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 for key in ("type", "channel", "user", "ts", "thread_ts")
                 if event.get(key) is not None
             },
-            "actions": [
-                {key: action.get(key) for key in ("action_id", "value") if action.get(key) is not None}
-                for action in (payload.get("actions") or [])
-                if isinstance(action, dict)
-            ],
+            "actions": actions,
         }
 
     @staticmethod

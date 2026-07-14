@@ -10,6 +10,7 @@ from forecasting.change_control.collaboration import (
     get_or_create_thread_changeset,
     record_contribution,
     resolve_identity_binding,
+    resolve_slack_owner_binding,
     revoke_identity_binding,
 )
 from forecasting.change_control.compatibility import sync_legacy_proposal, wrap_legacy_proposal
@@ -124,6 +125,9 @@ class ChangeControl:
     def resolve_identity(self, **kwargs: Any) -> dict[str, Any]:
         return resolve_identity_binding(self.ledger, **kwargs)
 
+    def resolve_slack_owner(self, **kwargs: Any) -> dict[str, Any]:
+        return resolve_slack_owner_binding(self.ledger, **kwargs)
+
     def revoke_identity(self, binding_id: str) -> dict[str, Any]:
         return revoke_identity_binding(self.ledger, binding_id)
 
@@ -148,6 +152,7 @@ __all__ = [
     "record_contribution",
     "record_transcript",
     "resolve_identity_binding",
+    "resolve_slack_owner_binding",
     "sync_legacy_proposal",
     "wrap_legacy_proposal",
     "revoke_identity_binding",

@@ -3220,6 +3220,322 @@ class GatewayRunner:
 
         return True
 
+    def _configure_slack_changeset_collaboration(self, slack_adapter: Any) -> None:
+        """Wire one ledger changeset/card/action path into both Slack transports."""
+
+        try:
+            import hashlib
+
+            from hermes_cli.config import load_config
+
+            config = load_config()
+            collaboration = config.get("collaboration") or {}
+            repository = collaboration.get("repository") or {}
+            github = collaboration.get("github") or {}
+            if not collaboration.get("enabled"):
+                return
+            repository_slug = str(repository.get("slug") or "").strip()
+            workspace_id = str(repository.get("workspace_id") or "").strip()
+            action_secret = os.getenv("SLACK_CHANGESET_ACTION_SIGNING_KEY", "")
+            if not repository_slug or not workspace_id or not action_secret:
+                logger.warning(
+                    "Slack ledger collaboration is enabled but repository/workspace/action signing configuration is incomplete"
+                )
+                return
+
+            from forecasting import ForecastLedger
+            from forecasting.change_control import ChangeControl
+            from forecasting.change_control.collaboration import resolve_slack_owner_binding
+            from forecasting.github import (
+                CapabilityGitHubClient,
+                GitHubCapabilityBroker,
+                GitHubOAuthService,
+            )
+            from forecasting.slack_collaboration import (
+                SlackActionService,
+                SlackChangesetCardService,
+            )
+            from forecasting.models import LedgerNotFoundError
+
+            ledger = ForecastLedger()
+            control = ChangeControl(ledger)
+            cards = SlackChangesetCardService(ledger)
+            github_factory = None
+            oauth_secret = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
+            token_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", "")
+            capability_secret = os.getenv("GITHUB_CAPABILITY_SIGNING_KEY", "")
+            client_id = str(github.get("client_id") or "")
+            if github.get("enabled") and all(
+                (oauth_secret, token_key, capability_secret, client_id)
+            ):
+                oauth = GitHubOAuthService(
+                    ledger,
+                    client_id=client_id,
+                    client_secret=oauth_secret,
+                    token_key=token_key,
+                    api_url=str(github.get("api_url") or "https://api.github.com"),
+                    api_version=str(github.get("api_version") or "2026-03-10"),
+                )
+                broker = GitHubCapabilityBroker(
+                    ledger,
+                    repository_slug=repository_slug,
+                    signing_key=hashlib.sha256(capability_secret.encode()).digest(),
+                    token_provider=oauth.control_plane_token,
+                    api_url=str(github.get("api_url") or "https://api.github.com"),
+                    api_version=str(github.get("api_version") or "2026-03-10"),
+                )
+
+                def github_factory(binding: dict[str, Any], changeset_id: str) -> Any:
+                    return CapabilityGitHubClient(
+                        broker,
+                        changeset_id=changeset_id,
+                        identity_binding_id=binding["id"],
+                        actor_kind="human",
+                    )
+
+            actions = SlackActionService(
+                ledger,
+                signing_key=hashlib.sha256(action_secret.encode()).digest(),
+                repository_slug=repository_slug,
+                github_client_factory=github_factory,
+            )
+
+            async def on_message(context: dict[str, str]) -> None:
+                def prepare() -> tuple[dict[str, Any], dict[str, Any]]:
+                    binding = resolve_slack_owner_binding(
+                        ledger,
+                        slack_team_id=context["team_id"],
+                        slack_user_id=context["user_id"],
+                    )
+                    thread = control.thread_changeset(
+                        workspace_id=workspace_id,
+                        slack_team_id=context["team_id"],
+                        slack_channel_id=context["channel_id"],
+                        slack_thread_ts=context["thread_ts"],
+                        owner_id=binding["owner_id"],
+                        agent_instance_id=binding["agent_instance_id"],
+                        agent_persona=binding["agent_persona"],
+                    )
+                    try:
+                        cards.heartbeat(thread["changeset_id"])
+                    except LedgerNotFoundError:
+                        cards.update(
+                            thread["changeset_id"],
+                            slack_team_id=context["team_id"],
+                            slack_channel_id=context["channel_id"],
+                            slack_thread_ts=context["thread_ts"],
+                            phase="researching",
+                            next_action="The active agent is researching and will report progress here.",
+                            active_owner_id=binding["owner_id"],
+                            active_agent_instance_id=binding["agent_instance_id"],
+                            active_agent_persona=binding["agent_persona"],
+                            state={"heartbeat_expected": True, "run_state": "starting"},
+                        )
+                    cards.presence(
+                        thread["changeset_id"],
+                        owner_id=binding["owner_id"],
+                        agent_instance_id=binding["agent_instance_id"],
+                        agent_persona=binding["agent_persona"],
+                        presence="working",
+                    )
+                    return thread, cards.render(thread["changeset_id"], actions=actions)
+
+                try:
+                    thread, rendered = await asyncio.to_thread(prepare)
+                except LedgerNotFoundError:
+                    return
+                delivered = await slack_adapter.upsert_changeset_card(rendered)
+                if delivered.success and delivered.message_id and not rendered.get("message_ts"):
+                    await asyncio.to_thread(
+                        cards.set_message_ts,
+                        thread["changeset_id"],
+                        delivered.message_id,
+                    )
+
+            async def on_action(body: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
+                team_id = str((body.get("team") or {}).get("id") or body.get("team_id") or "")
+                channel_id = str((body.get("channel") or {}).get("id") or "")
+                user_id = str((body.get("user") or {}).get("id") or "")
+                message = body.get("message") or {}
+                thread_ts = str(message.get("thread_ts") or message.get("ts") or "")
+                result = await asyncio.to_thread(
+                    actions.handle,
+                    str(action.get("value") or ""),
+                    action_id=str(action.get("action_id") or ""),
+                    slack_team_id=team_id,
+                    slack_channel_id=channel_id,
+                    slack_thread_ts=thread_ts,
+                    slack_user_id=user_id,
+                )
+                card = await asyncio.to_thread(cards.get, result["changeset_id"])
+                rendered = await asyncio.to_thread(
+                    cards.render,
+                    result["changeset_id"],
+                    actions=actions,
+                    transcript_digest=card["state"].get("transcript_digest"),
+                )
+                return {**result, "render": rendered}
+
+            slack_adapter.set_changeset_message_handler(on_message)
+            slack_adapter.set_changeset_action_handler(on_action)
+            self._slack_changeset_services = {
+                "ledger": ledger,
+                "control": control,
+                "cards": cards,
+                "actions": actions,
+            }
+            logger.info("Slack ledger collaboration wired for workspace %s", workspace_id)
+        except Exception:
+            logger.exception("Could not configure Slack ledger collaboration")
+
+    def _slack_card_identity(self, event: Any, source: Any) -> tuple[str, str, str] | None:
+        if source.platform != Platform.SLACK:
+            return None
+        raw = event.raw_message if isinstance(getattr(event, "raw_message", None), dict) else {}
+        team_id = str(raw.get("team") or raw.get("team_id") or "")
+        channel_id = str(source.chat_id or raw.get("channel") or "")
+        thread_ts = str(source.thread_id or raw.get("thread_ts") or raw.get("ts") or "")
+        if not team_id or not channel_id or not thread_ts:
+            return None
+        return team_id, channel_id, thread_ts
+
+    def _update_slack_changeset_progress(
+        self,
+        event: Any,
+        source: Any,
+        *,
+        event_type: str,
+        tool_name: str | None,
+    ) -> None:
+        services = getattr(self, "_slack_changeset_services", None)
+        identity = self._slack_card_identity(event, source)
+        if not services or identity is None:
+            return
+        cards = services["cards"]
+        ledger = services["ledger"]
+        team_id, channel_id, thread_ts = identity
+        with ledger._connect() as conn:
+            row = conn.execute(
+                """SELECT changeset_id FROM slack_changeset_cards
+                   WHERE slack_team_id = ? AND slack_channel_id = ? AND slack_thread_ts = ?""",
+                (team_id, channel_id, thread_ts),
+            ).fetchone()
+        if row is None:
+            return
+        changeset_id = str(row["changeset_id"])
+        card = cards.get(changeset_id)
+        if event_type == "tool.started":
+            name = str(tool_name or "tool")
+            phase = card["phase"]
+            if phase in {"researching", "editing"}:
+                phase = (
+                    "researching"
+                    if any(term in name.lower() for term in ("search", "read", "web", "evidence"))
+                    else "editing"
+                )
+            state = {**card["state"], "heartbeat_expected": True, "run_state": "working"}
+            next_action = f"The active agent is running `{name}`; the card will update on progress."
+            progress = True
+        else:
+            phase = card["phase"]
+            state = {**card["state"], "heartbeat_expected": True, "run_state": "working"}
+            next_action = card["next_action"]
+            progress = True
+        cards.update(
+            changeset_id,
+            slack_team_id=team_id,
+            slack_channel_id=channel_id,
+            slack_thread_ts=thread_ts,
+            phase=phase,
+            next_action=next_action,
+            active_owner_id=card.get("active_owner_id"),
+            active_agent_instance_id=card.get("active_agent_instance_id"),
+            active_agent_persona=card.get("active_agent_persona"),
+            pr_url=card.get("pr_url"),
+            checks_state=card["checks_state"],
+            state=state,
+            progress=progress,
+        )
+        rendered = cards.render(
+            changeset_id,
+            actions=services["actions"],
+            transcript_digest=state.get("transcript_digest"),
+        )
+        adapter = self.adapters.get(Platform.SLACK)
+        loop = getattr(self, "_gateway_loop", None)
+        if adapter is not None and loop is not None and loop.is_running():
+            asyncio.run_coroutine_threadsafe(adapter.upsert_changeset_card(rendered), loop)
+
+    async def _settle_slack_changeset_card(
+        self,
+        event: Any,
+        source: Any,
+        *,
+        run_status: str,
+    ) -> None:
+        services = getattr(self, "_slack_changeset_services", None)
+        identity = self._slack_card_identity(event, source)
+        adapter = self.adapters.get(Platform.SLACK)
+        if not services or identity is None or adapter is None:
+            return
+        cards = services["cards"]
+        ledger = services["ledger"]
+        team_id, channel_id, thread_ts = identity
+
+        def settle() -> dict[str, Any] | None:
+            with ledger._connect() as conn:
+                row = conn.execute(
+                    """SELECT changeset_id FROM slack_changeset_cards
+                       WHERE slack_team_id = ? AND slack_channel_id = ? AND slack_thread_ts = ?""",
+                    (team_id, channel_id, thread_ts),
+                ).fetchone()
+            if row is None:
+                return None
+            changeset_id = str(row["changeset_id"])
+            card = cards.get(changeset_id)
+            next_action = (
+                "The agent turn finished; review the proposed work or continue in this thread."
+                if run_status == "completed"
+                else "The agent turn stopped; retry or inspect the durable run diagnostics."
+            )
+            state = {
+                **card["state"],
+                "heartbeat_expected": False,
+                "run_state": run_status,
+            }
+            cards.update(
+                changeset_id,
+                slack_team_id=team_id,
+                slack_channel_id=channel_id,
+                slack_thread_ts=thread_ts,
+                phase=card["phase"],
+                next_action=next_action,
+                active_owner_id=card.get("active_owner_id"),
+                active_agent_instance_id=card.get("active_agent_instance_id"),
+                active_agent_persona=card.get("active_agent_persona"),
+                pr_url=card.get("pr_url"),
+                checks_state=card["checks_state"],
+                state=state,
+                progress=True,
+            )
+            if card.get("active_agent_instance_id") and card.get("active_owner_id"):
+                cards.presence(
+                    changeset_id,
+                    owner_id=card["active_owner_id"],
+                    agent_instance_id=card["active_agent_instance_id"],
+                    agent_persona=card.get("active_agent_persona") or "Agent",
+                    presence="waiting" if run_status == "completed" else "disconnected",
+                )
+            return cards.render(
+                changeset_id,
+                actions=services["actions"],
+                transcript_digest=state.get("transcript_digest"),
+            )
+
+        rendered = await asyncio.to_thread(settle)
+        if rendered is not None:
+            await adapter.upsert_changeset_card(rendered)
+
     async def _drain_active_agents(self, timeout: float) -> tuple[Dict[str, Any], bool]:
         snapshot = self._snapshot_running_agents()
         last_active_count = self._running_agent_count()
@@ -4141,6 +4457,8 @@ class GatewayRunner:
             if callable(set_handler) and callable(http_handler):
                 set_handler(http_handler)
                 logger.info("Slack signed-webhook ingress wired to Slack adapter")
+        if slack_adapter is not None:
+            self._configure_slack_changeset_collaboration(slack_adapter)
         
         if connected_count == 0:
             if startup_nonretryable_errors:
@@ -9186,6 +9504,14 @@ class GatewayRunner:
                         )
                 except Exception:
                     logger.exception("Could not terminalize gateway execution %s", _durable_run_id)
+            try:
+                await self._settle_slack_changeset_card(
+                    event,
+                    source,
+                    run_status=_durable_status or "failed",
+                )
+            except Exception:
+                logger.exception("Could not settle Slack changeset liveness")
             # Restore session context variables to their pre-handler state
             self._clear_session_env(_session_env_tokens)
 
@@ -15883,6 +16209,16 @@ class GatewayRunner:
 
         def progress_callback(event_type: str, tool_name: str = None, preview: str = None, args: dict = None, **kwargs):
             """Callback invoked by agent on tool lifecycle events."""
+            if event_type in {"tool.started", "tool.completed"} and _run_still_current():
+                try:
+                    self._update_slack_changeset_progress(
+                        event,
+                        source,
+                        event_type=event_type,
+                        tool_name=tool_name,
+                    )
+                except Exception:
+                    logger.exception("Could not update Slack changeset liveness")
             if not progress_queue or not _run_still_current():
                 return
 
@@ -16399,6 +16735,15 @@ class GatewayRunner:
         def _status_callback_sync(event_type: str, message: str) -> None:
             if not _status_adapter or not _run_still_current():
                 return
+            try:
+                self._update_slack_changeset_progress(
+                    event,
+                    source,
+                    event_type="heartbeat",
+                    tool_name=None,
+                )
+            except Exception:
+                logger.exception("Could not heartbeat Slack changeset card")
             prepared_message = _prepare_gateway_status_message(
                 source.platform,
                 event_type,

@@ -53,8 +53,12 @@ def _ensure_slack_mock():
     ]:
         sys.modules.setdefault(name, mod)
 
-    # aiohttp is imported alongside slack-bolt; mock it if missing
-    sys.modules.setdefault("aiohttp", MagicMock())
+    # Keep the real aiohttp package available to API-server tests collected in
+    # the same worker; only mock it when it is genuinely unavailable.
+    try:
+        __import__("aiohttp")
+    except ImportError:
+        sys.modules.setdefault("aiohttp", MagicMock())
 
 
 _ensure_slack_mock()
@@ -231,6 +235,77 @@ class TestAppMentionHandler:
         event = adapter._handle_slack_message.await_args.args[0]
         assert event["team"] == "T123"
         assert event["type"] == "app_mention"
+
+    @pytest.mark.asyncio
+    async def test_webhook_changeset_action_uses_shared_handler(self, adapter):
+        handler = AsyncMock(return_value={"ok": True})
+        adapter.set_changeset_action_handler(handler)
+        payload = {
+            "_durably_persisted": True,
+            "type": "block_actions",
+            "team": {"id": "T1"},
+            "channel": {"id": "C1"},
+            "user": {"id": "U1"},
+            "message": {"ts": "1.2", "thread_ts": "1.1"},
+            "actions": [{"action_id": "forecast_approve", "value": "signed-value"}],
+        }
+
+        await adapter.handle_http_payload(payload)
+
+        handler.assert_awaited_once_with(payload, payload["actions"][0])
+
+    @pytest.mark.asyncio
+    async def test_socket_changeset_action_persists_before_work_and_deduplicates(self, tmp_path):
+        config = PlatformConfig(
+            enabled=True,
+            token="xoxb-fake-token",
+            extra={"run_store_path": str(tmp_path / "runs.db")},
+        )
+        adapter = SlackAdapter(config)
+        handler = AsyncMock(return_value={"ok": True})
+        adapter.set_changeset_action_handler(handler)
+        ack = AsyncMock()
+        body = {
+            "type": "block_actions",
+            "trigger_id": "trigger-1",
+            "team": {"id": "T1"},
+            "channel": {"id": "C1"},
+            "user": {"id": "U1"},
+            "message": {"ts": "1.2", "thread_ts": "1.1"},
+        }
+        action = {"action_id": "forecast_approve", "value": "signed-value"}
+
+        await adapter._handle_changeset_action(ack, body, action)
+        await adapter._handle_changeset_action(ack, body, action)
+
+        assert ack.await_count == 2
+        handler.assert_awaited_once_with(body, action)
+        messages = adapter._changeset_ingress_store.list_messages("slack:T1:C1:1.1")
+        assert len(messages) == 1
+        serialized = str(messages[0])
+        assert "signed-value" not in serialized
+        assert "value_digest" in serialized
+
+    @pytest.mark.asyncio
+    async def test_upsert_changeset_card_posts_then_edits(self, adapter):
+        client = AsyncMock()
+        client.chat_postMessage = AsyncMock(return_value={"ts": "card-1"})
+        client.chat_update = AsyncMock(return_value={"ts": "card-1"})
+        adapter._get_client = MagicMock(return_value=client)
+        rendered = {
+            "channel": "C1",
+            "thread_ts": "1.1",
+            "text": "Forecast changeset",
+            "blocks": [{"type": "section", "text": {"type": "mrkdwn", "text": "Live"}}],
+        }
+
+        created = await adapter.upsert_changeset_card(rendered)
+        edited = await adapter.upsert_changeset_card({**rendered, "message_ts": created.message_id})
+
+        assert created.message_id == "card-1"
+        assert edited.success is True
+        client.chat_postMessage.assert_awaited_once()
+        client.chat_update.assert_awaited_once()
 
 
 class TestSlackConnectCleanup:

@@ -245,6 +245,27 @@ def resolve_identity_binding(
     return dict(row)
 
 
+def resolve_slack_owner_binding(
+    ledger: Any,
+    *,
+    slack_team_id: str,
+    slack_user_id: str,
+) -> dict[str, Any]:
+    """Resolve a human Slack user to one owner/GitHub identity, independent of persona."""
+
+    with ledger._connect() as conn:
+        rows = conn.execute(
+            """SELECT * FROM collaboration_identity_bindings
+               WHERE slack_team_id = ? AND slack_user_id = ? AND status = 'active'
+               ORDER BY created_at, id""",
+            (slack_team_id, slack_user_id),
+        ).fetchall()
+    owners = {(row["owner_id"], row["github_user_id"], row["github_node_id"]) for row in rows}
+    if len(owners) != 1:
+        raise LedgerNotFoundError("no unambiguous active Slack-owner-GitHub binding")
+    return dict(rows[0])
+
+
 def revoke_identity_binding(ledger: Any, binding_id: str) -> dict[str, Any]:
     get_identity_binding(ledger, binding_id)
     now = utc_now_iso()
@@ -335,5 +356,6 @@ __all__ = [
     "get_identity_binding",
     "record_contribution",
     "resolve_identity_binding",
+    "resolve_slack_owner_binding",
     "revoke_identity_binding",
 ]
