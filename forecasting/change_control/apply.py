@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import uuid
 from dataclasses import asdict, is_dataclass
 from typing import Any, Mapping
@@ -383,7 +384,14 @@ def _attempt(ledger: Any, changeset_id: str, *, merge_sha: str | None) -> str:
 
 def _failed(ledger: Any, changeset_id: str, attempt_id: str, exc: BaseException) -> None:
     now = utc_now_iso()
-    diagnostic = f"{type(exc).__name__}: changeset application failed"
+    transient = isinstance(exc, (TimeoutError, ConnectionError)) or (
+        isinstance(exc, sqlite3.OperationalError)
+        and any(marker in str(exc).lower() for marker in ("locked", "busy", "temporarily"))
+    )
+    diagnostic = (
+        f"{'transient' if transient else 'semantic'}:{type(exc).__name__}:"
+        "changeset application failed"
+    )
     with ledger._connect() as conn:
         conn.execute(
             """UPDATE ledger_apply_attempts

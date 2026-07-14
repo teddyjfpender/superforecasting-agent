@@ -3388,6 +3388,122 @@ class GatewayRunner:
         except Exception:
             logger.exception("Could not configure Slack ledger collaboration")
 
+    def _configure_github_http_collaboration(self, api_adapter: Any) -> None:
+        """Wire signed GitHub ingress and delegated OAuth before HTTP route freeze."""
+
+        try:
+            from urllib.parse import urljoin
+
+            from hermes_cli.config import load_config
+
+            config = load_config()
+            collaboration = config.get("collaboration") or {}
+            github = collaboration.get("github") or {}
+            repository = collaboration.get("repository") or {}
+            if not collaboration.get("enabled") or not github.get("enabled"):
+                return
+            repository_slug = str(repository.get("slug") or "").strip()
+            webhook_secret = os.getenv("GITHUB_WEBHOOK_SECRET", "")
+            app_id = str(github.get("app_id") or "").strip()
+            if not repository_slug or not webhook_secret or not app_id:
+                logger.warning(
+                    "GitHub collaboration needs a repository, webhook secret, and App ID"
+                )
+                return
+
+            from forecasting import ForecastLedger
+            from forecasting.github import (
+                GitHubOAuthService,
+                GitHubWebhookProcessor,
+                MergeApplyReconciler,
+                ingest_github_webhook,
+            )
+
+            ledger = ForecastLedger()
+            processor = GitHubWebhookProcessor(
+                ledger,
+                repository_slug=repository_slug,
+                promotion_app_id=app_id,
+            )
+            reconciler = MergeApplyReconciler(ledger)
+
+            def ingest(headers: dict[str, str], body: bytes) -> dict[str, Any]:
+                return ingest_github_webhook(
+                    ledger,
+                    headers=headers,
+                    body=body,
+                    secret=webhook_secret,
+                    repository_slug=repository_slug,
+                )
+
+            def process(delivery_id: str) -> dict[str, Any]:
+                result = processor.process(delivery_id)
+                if result.get("event_type") == "pull_request" and result.get("action") == "closed":
+                    reconciler.run(limit=100)
+                return result
+
+            oauth_begin = None
+            oauth_complete = None
+            oauth_secret = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
+            token_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", "")
+            client_id = str(github.get("client_id") or "").strip()
+            public_base = str(github.get("public_base_url") or "").rstrip("/")
+            callback_path = str(
+                github.get("oauth_callback_path") or "/api/oauth/github/callback"
+            )
+            if all((oauth_secret, token_key, client_id, public_base)):
+                oauth = GitHubOAuthService(
+                    ledger,
+                    client_id=client_id,
+                    client_secret=oauth_secret,
+                    token_key=token_key,
+                    api_url=str(github.get("api_url") or "https://api.github.com"),
+                    api_version=str(github.get("api_version") or "2026-03-10"),
+                    state_ttl_seconds=int(github.get("oauth_state_ttl_seconds") or 600),
+                )
+                redirect_uri = urljoin(public_base + "/", callback_path.lstrip("/"))
+
+                def oauth_begin(payload: dict[str, Any]) -> dict[str, str]:
+                    required = (
+                        "owner_id",
+                        "slack_team_id",
+                        "slack_user_id",
+                        "agent_instance_id",
+                        "agent_persona",
+                    )
+                    missing = [key for key in required if not str(payload.get(key) or "").strip()]
+                    if missing:
+                        raise ValueError("missing GitHub OAuth identity fields: " + ", ".join(missing))
+                    return oauth.begin(
+                        owner_id=str(payload["owner_id"]),
+                        slack_team_id=str(payload["slack_team_id"]),
+                        slack_user_id=str(payload["slack_user_id"]),
+                        agent_instance_id=str(payload["agent_instance_id"]),
+                        agent_persona=str(payload["agent_persona"]),
+                        agent_avatar_url=(str(payload.get("agent_avatar_url")) if payload.get("agent_avatar_url") else None),
+                        slack_bot_user_id=(str(payload.get("slack_bot_user_id")) if payload.get("slack_bot_user_id") else None),
+                        redirect_uri=redirect_uri,
+                    )
+
+                def oauth_complete(state: str, code: str) -> dict[str, Any]:
+                    return oauth.complete(state=state, code=code, redirect_uri=redirect_uri)
+
+            setter = getattr(api_adapter, "set_github_collaboration_handlers", None)
+            if not callable(setter):
+                logger.warning("API server does not support GitHub collaboration routes")
+                return
+            setter(
+                ingest=ingest,
+                process=process,
+                oauth_begin=oauth_begin,
+                oauth_complete=oauth_complete,
+                webhook_path=str(github.get("webhook_path") or "/api/webhooks/github"),
+                oauth_callback_path=callback_path,
+            )
+            logger.info("GitHub signed webhook and OAuth routes configured")
+        except Exception:
+            logger.exception("Could not configure GitHub HTTP collaboration")
+
     def _slack_card_identity(self, event: Any, source: Any) -> tuple[str, str, str] | None:
         if source.platform != Platform.SLACK:
             return None
@@ -4355,6 +4471,8 @@ class GatewayRunner:
             adapter.set_fatal_error_handler(self._handle_adapter_fatal_error)
             adapter.set_session_store(self.session_store)
             adapter.set_busy_session_handler(self._handle_active_session_busy_message)
+            if platform == Platform.API_SERVER:
+                self._configure_github_http_collaboration(adapter)
             
             # Try to connect
             logger.info("Connecting to %s...", platform.value)

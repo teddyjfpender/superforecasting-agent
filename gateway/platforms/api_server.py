@@ -687,11 +687,118 @@ class APIServerAdapter(BasePlatformAdapter):
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
         self._slack_event_handler = None
+        self._github_handlers: Optional[Dict[str, Any]] = None
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
 
     def set_slack_event_handler(self, handler) -> None:
         """Attach the Slack adapter's transport-neutral event dispatcher."""
         self._slack_event_handler = handler
+
+    def set_github_collaboration_handlers(
+        self,
+        *,
+        ingest,
+        process,
+        oauth_begin=None,
+        oauth_complete=None,
+        webhook_path: str = "/api/webhooks/github",
+        oauth_begin_path: str = "/api/oauth/github/begin",
+        oauth_callback_path: str = "/api/oauth/github/callback",
+    ) -> None:
+        """Attach trusted control-plane handlers before the HTTP server starts."""
+        paths = (webhook_path, oauth_begin_path, oauth_callback_path)
+        if any(not path.startswith("/") or ".." in path or "\\" in path for path in paths):
+            raise ValueError("GitHub collaboration route path is unsafe")
+        self._github_handlers = {
+            "ingest": ingest,
+            "process": process,
+            "oauth_begin": oauth_begin,
+            "oauth_complete": oauth_complete,
+            "webhook_path": webhook_path,
+            "oauth_begin_path": oauth_begin_path,
+            "oauth_callback_path": oauth_callback_path,
+        }
+
+    async def _handle_github_webhook(self, request: "web.Request") -> "web.Response":
+        handlers = self._github_handlers or {}
+        try:
+            body = await request.read()
+            delivery = await asyncio.to_thread(
+                handlers["ingest"], dict(request.headers), body
+            )
+        except PermissionError:
+            return web.json_response({"error": "invalid GitHub webhook signature"}, status=401)
+        except (ValueError, KeyError) as exc:
+            return web.json_response({"error": str(exc)[:300]}, status=400)
+        except Exception as exc:
+            from forecasting.models import ValidationError
+
+            if isinstance(exc, ValidationError):
+                return web.json_response({"error": str(exc)[:300]}, status=400)
+            logger.exception("[api_server] GitHub webhook ingress failed")
+            return web.json_response({"error": "GitHub webhook ingress failed"}, status=500)
+        if delivery.get("state") == "pending":
+            task = asyncio.create_task(self._process_github_delivery(delivery["delivery_id"]))
+            try:
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except (AttributeError, TypeError):
+                pass
+        return web.json_response(
+            {"delivery_id": delivery["delivery_id"], "state": delivery["state"]},
+            status=202,
+        )
+
+    async def _process_github_delivery(self, delivery_id: str) -> None:
+        try:
+            await asyncio.to_thread((self._github_handlers or {})["process"], delivery_id)
+        except Exception:
+            logger.exception("[api_server] GitHub delivery processing failed: %s", delivery_id)
+
+    async def _handle_github_oauth_begin(self, request: "web.Request") -> "web.Response":
+        auth_err = self._check_auth(request)
+        if auth_err is not None:
+            return auth_err
+        handler = (self._github_handlers or {}).get("oauth_begin")
+        if handler is None:
+            return web.json_response({"error": "GitHub OAuth is not configured"}, status=503)
+        try:
+            payload = await request.json()
+            if not isinstance(payload, dict):
+                raise ValueError("request body must be a JSON object")
+            result = await asyncio.to_thread(handler, payload)
+        except (ValueError, KeyError) as exc:
+            return web.json_response({"error": str(exc)[:300]}, status=400)
+        except Exception as exc:
+            from forecasting.models import ValidationError
+
+            if isinstance(exc, ValidationError):
+                return web.json_response({"error": str(exc)[:300]}, status=400)
+            logger.exception("[api_server] GitHub OAuth begin failed")
+            return web.json_response({"error": "GitHub OAuth could not be started"}, status=500)
+        return web.json_response(result, status=201)
+
+    async def _handle_github_oauth_callback(self, request: "web.Request") -> "web.Response":
+        handler = (self._github_handlers or {}).get("oauth_complete")
+        if handler is None:
+            return web.json_response({"error": "GitHub OAuth is not configured"}, status=503)
+        state = str(request.query.get("state") or "")
+        code = str(request.query.get("code") or "")
+        if not state or not code or len(state) > 1024 or len(code) > 1024:
+            return web.json_response({"error": "GitHub OAuth callback is invalid"}, status=400)
+        try:
+            binding = await asyncio.to_thread(handler, state, code)
+        except Exception:
+            logger.exception("[api_server] GitHub OAuth callback failed")
+            return web.json_response({"error": "GitHub account linking failed"}, status=400)
+        return web.json_response(
+            {
+                "status": "linked",
+                "owner_id": binding["owner_id"],
+                "github_login": binding["github_login"],
+                "agent_persona": binding["agent_persona"],
+            }
+        )
 
     async def _dispatch_slack_event(self, payload: Dict[str, Any]) -> None:
         handler = self._slack_event_handler
@@ -3654,6 +3761,17 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/v1/responses", self._handle_responses)
             self._app.router.add_get("/v1/responses/{response_id}", self._handle_get_response)
             self._app.router.add_delete("/v1/responses/{response_id}", self._handle_delete_response)
+            if self._github_handlers is not None:
+                self._app.router.add_post(
+                    self._github_handlers["webhook_path"], self._handle_github_webhook
+                )
+                self._app.router.add_post(
+                    self._github_handlers["oauth_begin_path"], self._handle_github_oauth_begin
+                )
+                self._app.router.add_get(
+                    self._github_handlers["oauth_callback_path"],
+                    self._handle_github_oauth_callback,
+                )
             # Slack signed-webhook ingress and OAuth install. The Slack adapter
             # is wired after all platform adapters connect so Socket Mode and
             # webhook mode share the same normalizer and renderer.

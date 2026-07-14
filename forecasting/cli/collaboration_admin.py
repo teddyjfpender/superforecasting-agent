@@ -87,6 +87,54 @@ def register_cli(subparsers: argparse._SubParsersAction) -> None:
     reconcile.add_argument("--json", action="store_true")
     reconcile.set_defaults(func=_cmd_reconcile)
 
+    github = subparsers.add_parser("github", help="Manage delegated GitHub identities")
+    github.add_argument("--db", help="Override the active forecast ledger database")
+    github_commands = github.add_subparsers(dest="github_command", required=True)
+    auth = github_commands.add_parser("auth", help="Begin GitHub App user authorization")
+    for flag in ("owner-id", "slack-team-id", "slack-user-id", "agent-instance-id", "agent-persona"):
+        auth.add_argument(f"--{flag}", required=True)
+    auth.add_argument("--agent-avatar-url")
+    auth.add_argument("--slack-bot-user-id")
+    auth.add_argument("--json", action="store_true")
+    auth.set_defaults(func=_cmd_github_auth)
+    github_status = github_commands.add_parser("status", help="List linked identities safely")
+    github_status.add_argument("--json", action="store_true")
+    github_status.set_defaults(func=_cmd_github_status)
+    revoke = github_commands.add_parser("revoke", help="Revoke a delegated GitHub identity")
+    revoke.add_argument("binding_id")
+    revoke.add_argument("--yes", action="store_true")
+    revoke.add_argument("--json", action="store_true")
+    revoke.set_defaults(func=_cmd_github_revoke)
+
+    changeset = subparsers.add_parser("changeset", help="Inspect and recover ledger changesets")
+    changeset.add_argument("--db", help="Override the active forecast ledger database")
+    changeset_commands = changeset.add_subparsers(dest="changeset_command", required=True)
+    changeset_list = changeset_commands.add_parser("list", help="List ledger changesets")
+    changeset_list.add_argument("--workspace-id")
+    changeset_list.add_argument("--status")
+    changeset_list.add_argument("--limit", type=int, default=100)
+    changeset_list.add_argument("--json", action="store_true")
+    changeset_list.set_defaults(func=_cmd_changeset_list)
+    for name, handler, help_text in (
+        ("show", _cmd_changeset_show, "Show one changeset"),
+        ("preview", _cmd_changeset_preview, "Validate and preview operations"),
+    ):
+        command = changeset_commands.add_parser(name, help=help_text)
+        command.add_argument("changeset_id")
+        command.add_argument("--json", action="store_true")
+        command.set_defaults(func=handler)
+    for name, handler, help_text in (
+        ("apply", _cmd_changeset_apply, "Apply a merge-ready changeset"),
+        ("retry", _cmd_changeset_retry, "Retry a transient merge-apply failure"),
+        ("abandon", _cmd_changeset_abandon, "Abandon an unmerged changeset"),
+    ):
+        command = changeset_commands.add_parser(name, help=help_text)
+        command.add_argument("changeset_id")
+        command.add_argument("--yes", action="store_true")
+        command.add_argument("--dry-run", action="store_true")
+        command.add_argument("--json", action="store_true")
+        command.set_defaults(func=handler)
+
 
 def _ledger(args: argparse.Namespace) -> ForecastLedger:
     return ForecastLedger(getattr(args, "db", None))
@@ -354,6 +402,138 @@ def _cmd_reconcile(args: argparse.Namespace) -> None:
             "result": result,
         },
     )
+
+
+def _github_oauth(args: argparse.Namespace):
+    from urllib.parse import urljoin
+
+    from forecasting.github import GitHubOAuthService
+
+    collaboration, _ = _configuration()
+    github = collaboration.get("github") or {}
+    client_secret = os.environ.get("GITHUB_APP_CLIENT_SECRET", "")
+    token_key = os.environ.get("GITHUB_TOKEN_ENCRYPTION_KEY", "")
+    client_id = str(github.get("client_id") or "")
+    public_base = str(github.get("public_base_url") or "").rstrip("/")
+    if not all((client_id, client_secret, token_key, public_base)):
+        raise ValidationError("GitHub OAuth client, secrets, and public_base_url are required")
+    callback_path = str(github.get("oauth_callback_path") or "/api/oauth/github/callback")
+    service = GitHubOAuthService(
+        _ledger(args),
+        client_id=client_id,
+        client_secret=client_secret,
+        token_key=token_key,
+        api_url=str(github.get("api_url") or "https://api.github.com"),
+        api_version=str(github.get("api_version") or "2026-03-10"),
+        state_ttl_seconds=int(github.get("oauth_state_ttl_seconds") or 600),
+    )
+    return service, urljoin(public_base + "/", callback_path.lstrip("/"))
+
+
+def _cmd_github_auth(args: argparse.Namespace) -> None:
+    service, redirect_uri = _github_oauth(args)
+    result = service.begin(
+        owner_id=args.owner_id,
+        slack_team_id=args.slack_team_id,
+        slack_user_id=args.slack_user_id,
+        agent_instance_id=args.agent_instance_id,
+        agent_persona=args.agent_persona,
+        agent_avatar_url=args.agent_avatar_url,
+        slack_bot_user_id=args.slack_bot_user_id,
+        redirect_uri=redirect_uri,
+    )
+    _emit(args, {"authorization_url": result["authorization_url"], "expires_in_seconds": 600})
+
+
+def _cmd_github_status(args: argparse.Namespace) -> None:
+    ledger = _ledger(args)
+    ChangeControl(ledger)
+    with ledger._connect() as conn:
+        rows = conn.execute(
+            """SELECT b.id, b.owner_id, b.slack_team_id, b.slack_user_id,
+                      b.agent_instance_id, b.agent_persona, b.github_user_id,
+                      b.github_login, b.status, t.status AS token_status,
+                      t.expires_at, t.refresh_expires_at
+               FROM collaboration_identity_bindings b
+               LEFT JOIN github_user_tokens t ON t.identity_binding_id = b.id
+               ORDER BY b.created_at, b.id"""
+        ).fetchall()
+    _emit(args, {"identities": [dict(row) for row in rows]})
+
+
+def _cmd_github_revoke(args: argparse.Namespace) -> None:
+    if not args.yes:
+        raise ValidationError("revocation is destructive; rerun with --yes")
+    ledger = _ledger(args)
+    binding = ChangeControl(ledger).revoke_identity(args.binding_id)
+    with ledger._connect() as conn:
+        conn.execute(
+            """UPDATE github_user_tokens SET status = 'revoked', revoked_at = datetime('now'),
+                      updated_at = datetime('now') WHERE identity_binding_id = ?""",
+            (args.binding_id,),
+        )
+    _emit(
+        args,
+        {"binding_id": binding["id"], "owner_id": binding["owner_id"], "status": "revoked"},
+    )
+
+
+def _changeset_packet(control: ChangeControl, changeset_id: str) -> dict[str, Any]:
+    return {
+        "changeset": control.get_changeset(changeset_id),
+        "operations": [
+            operation.as_dict() for operation in control.list_operations(changeset_id)
+        ],
+        "reviews": control.list_reviews(changeset_id),
+        "quorum": vars(control.quorum(changeset_id)),
+    }
+
+
+def _cmd_changeset_list(args: argparse.Namespace) -> None:
+    rows = ChangeControl(_ledger(args)).list_changesets(
+        workspace_id=args.workspace_id,
+        status=args.status,
+        limit=args.limit,
+    )
+    _emit(args, {"changesets": rows})
+
+
+def _cmd_changeset_show(args: argparse.Namespace) -> None:
+    _emit(args, _changeset_packet(ChangeControl(_ledger(args)), args.changeset_id))
+
+
+def _cmd_changeset_preview(args: argparse.Namespace) -> None:
+    _emit(args, ChangeControl(_ledger(args)).preview(args.changeset_id))
+
+
+def _confirm_changeset(args: argparse.Namespace, action: str) -> bool:
+    if args.dry_run:
+        _emit(args, {"action": action, "changeset_id": args.changeset_id, "dry_run": True})
+        return False
+    if not args.yes:
+        raise ValidationError(f"{action} changes state; rerun with --yes")
+    return True
+
+
+def _cmd_changeset_apply(args: argparse.Namespace) -> None:
+    if _confirm_changeset(args, "apply"):
+        result = ChangeControl(_ledger(args)).apply(args.changeset_id)
+        _emit(args, {"action": "applied", "result": result})
+
+
+def _cmd_changeset_retry(args: argparse.Namespace) -> None:
+    if not _confirm_changeset(args, "retry"):
+        return
+    from forecasting.github import MergeApplyReconciler
+
+    _emit(args, MergeApplyReconciler(_ledger(args)).reconcile(args.changeset_id))
+
+
+def _cmd_changeset_abandon(args: argparse.Namespace) -> None:
+    if not _confirm_changeset(args, "abandon"):
+        return
+    result = ChangeControl(_ledger(args)).transition(args.changeset_id, "abandoned")
+    _emit(args, {"action": "abandoned", "changeset": result})
 
 
 __all__ = ["register_cli"]

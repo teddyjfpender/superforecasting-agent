@@ -1732,6 +1732,7 @@ DEFAULT_CONFIG = {
             "upload_url": "https://uploads.github.com",
             "app_id": "",
             "client_id": "",
+            "public_base_url": "",
             "oauth_callback_path": "/api/oauth/github/callback",
             "oauth_state_ttl_seconds": 600,
             "api_version": "2026-03-10",
@@ -3886,6 +3887,15 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
                         "error",
                         f"collaboration.github.{key} must be an absolute HTTPS URL",
                         f"Set collaboration.github.{key} to an https:// endpoint",
+                    ))
+            public_base = str(github.get("public_base_url") or "")
+            if public_base:
+                parsed = urlparse(public_base)
+                if parsed.scheme != "https" or not parsed.hostname or parsed.query or parsed.fragment:
+                    issues.append(ConfigIssue(
+                        "error",
+                        "collaboration.github.public_base_url must be an absolute HTTPS URL",
+                        "Example: https://forecast.example.com",
                     ))
             ttl = github.get("oauth_state_ttl_seconds", 600)
             if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl < 60:

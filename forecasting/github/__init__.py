@@ -6,6 +6,7 @@ from forecasting.github.capabilities import CapabilityGitHubClient, GitHubCapabi
 from forecasting.github.checks import PromotionCheckPublisher
 from forecasting.github.events import GitHubWebhookProcessor, record_github_origin
 from forecasting.github.publisher import GitHubPublisher
+from forecasting.github.reconcile import MergeApplyReconciler
 from forecasting.github.webhooks import ingest_github_webhook, mark_delivery_processed
 
 __all__ = [
@@ -15,6 +16,7 @@ __all__ = [
     "GitHubOAuthService",
     "GitHubPublisher",
     "GitHubWebhookProcessor",
+    "MergeApplyReconciler",
     "PromotionCheckPublisher",
     "record_github_origin",
     "ingest_github_webhook",

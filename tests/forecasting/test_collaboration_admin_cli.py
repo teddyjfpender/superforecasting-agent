@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import argparse
 import shutil
-from pathlib import Path
+
+import pytest
 
 from forecasting import ForecastLedger
 from forecasting.cli import collaboration_admin
@@ -84,3 +85,54 @@ def test_workspace_reconcile_requires_explicit_confirmation(monkeypatch):
         assert "--yes" in str(exc)
     else:
         raise AssertionError("reconcile unexpectedly ran without confirmation")
+
+
+def test_github_status_and_changeset_commands_never_emit_token_ciphertext(tmp_path, capsys):
+    ledger = ForecastLedger(tmp_path / "ledger.db")
+    from forecasting.change_control import ChangeControl
+
+    control = ChangeControl(ledger)
+    binding = control.bind_identity(
+        owner_id="owner_1",
+        slack_team_id="T1",
+        slack_user_id="U1",
+        agent_instance_id="agent_1",
+        agent_persona="Mira",
+        github_user_id="101",
+        github_node_id="node-101",
+        github_login="octocat",
+    )
+    with ledger._connect() as conn:
+        conn.execute(
+            """INSERT INTO github_user_tokens
+               (id, identity_binding_id, access_ciphertext, token_type, status,
+                created_at, updated_at)
+               VALUES ('token_1', ?, 'ciphertext-secret', 'bearer', 'active',
+                       datetime('now'), datetime('now'))""",
+            (binding["id"],),
+        )
+    changeset = control.create_changeset(workspace_id="desk_1")
+
+    status = _parse("github", "--db", str(ledger.db_path), "status", "--json")
+    status.func(status)
+    listed = _parse("changeset", "--db", str(ledger.db_path), "list", "--json")
+    listed.func(listed)
+    shown = _parse(
+        "changeset", "--db", str(ledger.db_path), "show", changeset["id"], "--json"
+    )
+    shown.func(shown)
+    output = capsys.readouterr().out
+
+    assert "octocat" in output
+    assert changeset["id"] in output
+    assert "ciphertext-secret" not in output
+
+
+def test_changeset_mutations_require_confirmation(tmp_path):
+    ledger = ForecastLedger(tmp_path / "ledger.db")
+    from forecasting.change_control import ChangeControl
+
+    changeset = ChangeControl(ledger).create_changeset(workspace_id="desk_1")
+    args = _parse("changeset", "--db", str(ledger.db_path), "abandon", changeset["id"])
+    with pytest.raises(Exception, match="--yes"):
+        args.func(args)

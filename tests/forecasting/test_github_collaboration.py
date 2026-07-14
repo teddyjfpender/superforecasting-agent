@@ -517,8 +517,38 @@ def test_merge_webhook_sets_apply_pending_without_claiming_ledger_application(tm
         repository_slug="acme/forecasts",
         promotion_app_id="1234",
     ).process("merge-delivery")
-
     merged = control.get_changeset(changeset["id"])
     assert merged["status"] == "merged_apply_pending"
     assert merged["merge_sha"] == "merge-7"
     assert merged["applied_revision"] is None
+
+
+def test_merge_apply_reconciler_stops_retrying_semantic_failures(tmp_path):
+    from forecasting.github import MergeApplyReconciler
+
+    ledger, control, _, changeset = _published_changeset(tmp_path, status="merge_ready")
+    control.transition(
+        changeset["id"],
+        "merged_apply_pending",
+        fields={"merge_sha": "merge-7"},
+    )
+    reconciler = MergeApplyReconciler(ledger)
+
+    first = reconciler.reconcile(changeset["id"])
+    second = reconciler.reconcile(changeset["id"])
+
+    assert first == {
+        "changeset_id": changeset["id"],
+        "state": "apply_failed",
+        "retryable": False,
+        "reason": "application_failed",
+    }
+    assert second["state"] == "blocked"
+    assert second["reason"] == "semantic_failure_requires_superseding_changeset"
+    with ledger._connect() as conn:
+        attempts = conn.execute(
+            "SELECT diagnostic FROM ledger_apply_attempts WHERE changeset_id = ?",
+            (changeset["id"],),
+        ).fetchall()
+    assert len(attempts) == 1
+    assert attempts[0]["diagnostic"].startswith("semantic:")

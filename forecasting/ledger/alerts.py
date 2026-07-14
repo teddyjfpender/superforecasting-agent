@@ -495,7 +495,7 @@ def list_alerts(ledger, *, unresolved_only: bool = True) -> list[AlertEvent]:
     where = "WHERE acknowledged_at IS NULL" if unresolved_only else ""
     with ledger._connect() as conn:
         rows = conn.execute(
-            f"SELECT * FROM alert_events {where} ORDER BY created_at DESC"
+            f"SELECT * FROM alert_events {where} ORDER BY created_at DESC, rowid ASC"
         ).fetchall()
     return [ledger._row_to_alert(row) for row in rows]
 
