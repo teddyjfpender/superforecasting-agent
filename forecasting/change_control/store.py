@@ -398,6 +398,42 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (remote_kind, remote_id)
         );
 
+        CREATE TABLE IF NOT EXISTS github_agent_discussion_events (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            actor_kind TEXT NOT NULL,
+            identity_binding_id TEXT,
+            trigger_kind TEXT,
+            remote_kind TEXT NOT NULL,
+            remote_id TEXT NOT NULL,
+            model TEXT,
+            run_id TEXT,
+            token_count INTEGER NOT NULL DEFAULT 0,
+            round_number INTEGER,
+            body_digest TEXT,
+            created_at TEXT NOT NULL,
+            UNIQUE (remote_kind, remote_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_github_agent_discussion_events_changeset
+            ON github_agent_discussion_events(changeset_id, created_at, id);
+
+        CREATE TABLE IF NOT EXISTS github_agent_discussion_leases (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            identity_binding_id TEXT NOT NULL,
+            trigger_kind TEXT NOT NULL,
+            run_id TEXT NOT NULL,
+            state TEXT NOT NULL,
+            started_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            finished_at TEXT,
+            UNIQUE (changeset_id, identity_binding_id, run_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_github_agent_discussion_leases_active
+            ON github_agent_discussion_leases(changeset_id, state, expires_at);
+
         CREATE TABLE IF NOT EXISTS github_slack_mirrors (
             delivery_id TEXT PRIMARY KEY
                 REFERENCES github_webhook_deliveries(delivery_id) ON DELETE CASCADE,

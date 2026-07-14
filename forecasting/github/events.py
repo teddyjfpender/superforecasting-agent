@@ -55,6 +55,19 @@ def record_github_origin(
                 utc_now_iso(),
             ),
         )
+        if remote_kind in {"comment", "review"}:
+            conn.execute(
+                """UPDATE github_agent_discussion_events
+                   SET actor_kind = ?, identity_binding_id = ?
+                   WHERE remote_kind = ? AND remote_id = ? AND changeset_id = ?""",
+                (
+                    actor_kind,
+                    identity_binding_id,
+                    remote_kind,
+                    str(remote_id),
+                    changeset_id,
+                ),
+            )
 
 
 class GitHubWebhookProcessor:
@@ -86,6 +99,8 @@ class GitHubWebhookProcessor:
         event_type = delivery["event_type"]
         if event_type == "pull_request_review":
             self._review(delivery)
+        elif event_type in {"issue_comment", "pull_request_review_comment"}:
+            self._comment(delivery)
         elif event_type == "pull_request":
             self._pull_request(delivery)
         elif event_type == "check_run":
@@ -134,6 +149,15 @@ class GitHubWebhookProcessor:
         else:
             actor_kind = "human"
             binding = self._binding_for_github(github_user_id)
+            from forecasting.github.discussion import record_human_discussion_activity
+
+            record_human_discussion_activity(
+                self.ledger,
+                changeset_id=changeset["id"],
+                remote_kind="review",
+                remote_id=str(review.get("id")),
+                identity_binding_id=binding["id"],
+            )
         add_review(
             self.ledger,
             changeset["id"],
@@ -151,6 +175,43 @@ class GitHubWebhookProcessor:
             ),
             head_sha=str(review.get("commit_id") or changeset.get("head_sha") or "") or None,
             metadata={"github_review_id": str(review.get("id"))},
+        )
+
+    def _comment(self, delivery: dict[str, Any]) -> None:
+        if delivery.get("action") not in {"created", "edited"}:
+            return
+        payload = delivery["payload"]
+        comment = payload.get("comment") or {}
+        remote_id = str(comment.get("id") or "")
+        if not remote_id:
+            raise ValidationError("GitHub comment lacks an immutable ID")
+        changeset = self._changeset_for_pull(payload)
+        with self.ledger._connect() as conn:
+            marker = conn.execute(
+                """SELECT actor_kind FROM github_origin_markers
+                   WHERE remote_kind = 'comment' AND remote_id = ?""",
+                (remote_id,),
+            ).fetchone()
+        if marker is not None and marker["actor_kind"] == "agent":
+            return
+        remote_user = comment.get("user") or payload.get("sender") or {}
+        if str(remote_user.get("type") or "").lower() == "bot":
+            return
+        github_user_id = str(remote_user.get("id") or "")
+        binding = None
+        if github_user_id:
+            try:
+                binding = self._binding_for_github(github_user_id)
+            except PermissionError:
+                pass
+        from forecasting.github.discussion import record_human_discussion_activity
+
+        record_human_discussion_activity(
+            self.ledger,
+            changeset_id=changeset["id"],
+            remote_kind="comment",
+            remote_id=remote_id,
+            identity_binding_id=None if binding is None else binding["id"],
         )
 
     def _pull_request(self, delivery: dict[str, Any]) -> None:
@@ -262,7 +323,10 @@ class GitHubWebhookProcessor:
 
     def _changeset_for_pull(self, payload: dict[str, Any]) -> dict[str, Any]:
         pull = payload.get("pull_request") or {}
-        number = pull.get("number")
+        issue = payload.get("issue") or {}
+        number = pull.get("number") or (
+            issue.get("number") if issue.get("pull_request") else None
+        )
         with self.ledger._connect() as conn:
             row = conn.execute(
                 """SELECT id FROM ledger_changesets

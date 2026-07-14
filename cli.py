@@ -517,6 +517,7 @@ def load_cli_config() -> Dict[str, Any]:
                 "upload_url": "https://uploads.github.com",
                 "app_id": "",
                 "client_id": "",
+                "public_base_url": "",
                 "oauth_callback_path": "/api/oauth/github/callback",
                 "oauth_state_ttl_seconds": 600,
                 "api_version": "2026-03-10",
@@ -533,6 +534,15 @@ def load_cli_config() -> Dict[str, Any]:
                 "high_required_humans": 2,
                 "high_requires_owner_or_steward": True,
                 "risk_overrides": {},
+            },
+            "discussion": {
+                "max_comments": 12,
+                "max_rounds": 6,
+                "max_tokens": 16000,
+                "max_elapsed_seconds": 1800,
+                "max_concurrent_tasks": 2,
+                "agent_loop_threshold": 4,
+                "max_comment_bytes": 32768,
             },
             "transcripts": {
                 "raw_retention_days": 90,

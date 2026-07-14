@@ -8,6 +8,7 @@ from forecasting.github.capabilities import (
     GitHubPermissionError,
 )
 from forecasting.github.checks import PromotionCheckPublisher
+from forecasting.github.discussion import AgentDiscussionCoordinator, DiscussionLimits
 from forecasting.github.events import GitHubWebhookProcessor, record_github_origin
 from forecasting.github.publisher import GitHubPublisher
 from forecasting.github.reconcile import MergeApplyReconciler
@@ -20,6 +21,8 @@ __all__ = [
     "CapabilityGitHubClient",
     "GitHubOAuthService",
     "GitHubPermissionError",
+    "AgentDiscussionCoordinator",
+    "DiscussionLimits",
     "GitHubPublisher",
     "GitHubWebhookProcessor",
     "MergeApplyReconciler",

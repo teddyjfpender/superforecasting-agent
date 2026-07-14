@@ -848,6 +848,7 @@ class TestCollaborationConfig:
         assert collaboration["github"]["api_url"] == "https://api.github.com"
         assert collaboration["repository"]["default_branch"] == "main"
         assert collaboration["review"]["materiality_threshold"] == 0.10
+        assert collaboration["discussion"]["agent_loop_threshold"] == 4
         assert collaboration["transcripts"]["raw_retention_days"] == 90
 
     def test_valid_collaboration_config_has_no_errors(self):
@@ -887,6 +888,16 @@ class TestCollaborationConfig:
         messages = [issue.message for issue in validate_config_structure(config)]
         assert any("raw_retention_days" in message for message in messages)
         assert any("materiality_threshold" in message for message in messages)
+
+    def test_rejects_nonpositive_discussion_limits(self):
+        from copy import deepcopy
+
+        from hermes_cli.config import validate_config_structure
+
+        config = deepcopy(DEFAULT_CONFIG)
+        config["collaboration"]["discussion"]["max_comments"] = 0
+        messages = [issue.message for issue in validate_config_structure(config)]
+        assert any("discussion.max_comments" in message for message in messages)
 
     def test_rejects_short_oauth_state_and_unsafe_callback_path(self):
         from copy import deepcopy

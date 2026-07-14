@@ -76,6 +76,14 @@ collaboration:
     default_branch: main
   review:
     materiality_threshold: 0.10
+  discussion:
+    max_comments: 12
+    max_rounds: 6
+    max_tokens: 16000
+    max_elapsed_seconds: 1800
+    max_concurrent_tasks: 2
+    agent_loop_threshold: 4
+    max_comment_bytes: 32768
   transcripts:
     raw_retention_days: 90
     require_publish_consent: true
@@ -174,6 +182,19 @@ agent persona/avatar, and immutable GitHub user. An owner's agent may commit and
 comment through that owner's delegated GitHub token, but the attestation remains
 `actor_kind: agent`; it never becomes human approval. Contributing owners cannot
 self-approve their changes.
+
+Autonomous PR discussion is control-plane governed. An agent can comment only
+after assignment, mention, a policy request, or a failed check attributed to
+its work. Every comment names the persona, human owner, model/run, and exact
+changeset digest; the raw body is secret-scanned before publication and only its
+digest is retained locally. Comment, round, token, elapsed-time, and concurrent
+task budgets are enforced transactionally per changeset. When consecutive agent
+turns reach `agent_loop_threshold`, the final comment asks for human direction,
+the changeset moves to `held`, and the Slack card shows the same pause. A human
+GitHub comment or review resets loop detection but does not replenish the other
+per-changeset budgets. This comment-only coordinator cannot dismiss a human
+change request, edit policy, or manufacture a human approval; fixes use the
+existing owner-scoped branch capability.
 
 ## Transcript privacy and retention
 

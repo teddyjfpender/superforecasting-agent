@@ -1750,6 +1750,15 @@ DEFAULT_CONFIG = {
             "high_requires_owner_or_steward": True,
             "risk_overrides": {},  # {"operation.kind": "low|medium|high"}
         },
+        "discussion": {
+            "max_comments": 12,
+            "max_rounds": 6,
+            "max_tokens": 16000,
+            "max_elapsed_seconds": 1800,
+            "max_concurrent_tasks": 2,
+            "agent_loop_threshold": 4,
+            "max_comment_bytes": 32768,
+        },
         "transcripts": {
             "raw_retention_days": 90,
             "require_publish_consent": True,
@@ -3865,11 +3874,13 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
         github = collaboration.get("github") or {}
         repository = collaboration.get("repository") or {}
         review = collaboration.get("review") or {}
+        discussion = collaboration.get("discussion") or {}
         transcripts = collaboration.get("transcripts") or {}
         for section_name, section in (
             ("github", github),
             ("repository", repository),
             ("review", review),
+            ("discussion", discussion),
             ("transcripts", transcripts),
         ):
             if not isinstance(section, dict):
@@ -3967,6 +3978,23 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
                     "collaboration.transcripts.raw_retention_days must be non-negative",
                     "Use 90 for the default retention period",
                 ))
+        if isinstance(discussion, dict):
+            for key in (
+                "max_comments",
+                "max_rounds",
+                "max_tokens",
+                "max_elapsed_seconds",
+                "max_concurrent_tasks",
+                "agent_loop_threshold",
+                "max_comment_bytes",
+            ):
+                value = discussion.get(key)
+                if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                    issues.append(ConfigIssue(
+                        "error",
+                        f"collaboration.discussion.{key} must be a positive integer",
+                        "Use the documented default or another value greater than zero",
+                    ))
 
     # ── custom_providers must be a list, not a dict ──────────────────────
     cp = config.get("custom_providers")

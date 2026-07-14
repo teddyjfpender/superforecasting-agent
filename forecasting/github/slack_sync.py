@@ -76,7 +76,15 @@ class GitHubSlackMirror:
             review = payload.get("review") or {}
             next_action = f"{actor} submitted a GitHub review: {review.get('state') or 'updated'}."
         elif event_type in {"issue_comment", "pull_request_review_comment"}:
-            next_action = f"{actor} added a GitHub PR comment; review it before responding."
+            metadata = json.loads(changeset.get("metadata") or "{}")
+            if changeset["status"] == "held" and metadata.get("discussion_pause"):
+                phase = "held"
+                next_action = (
+                    "Autonomous agent discussion paused after consecutive agent turns; "
+                    "human direction is required in Slack or GitHub."
+                )
+            else:
+                next_action = f"{actor} added a GitHub PR comment; review it before responding."
         elif event_type == "merge_group":
             phase = "merge_queued"
             next_action = "GitHub merge queue state changed; policy checks remain authoritative."
