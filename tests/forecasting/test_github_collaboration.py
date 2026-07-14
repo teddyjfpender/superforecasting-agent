@@ -11,6 +11,7 @@ from forecasting import ForecastLedger
 from forecasting.change_control import ChangeControl
 from forecasting.github.auth import GitHubOAuthService
 from forecasting.github.capabilities import GitHubCapabilityBroker
+from forecasting.github.events import GitHubWebhookProcessor, record_github_origin
 from forecasting.github.webhooks import ingest_github_webhook, mark_delivery_processed
 from forecasting.models import LedgerNotFoundError, ValidationError
 
@@ -362,3 +363,162 @@ def test_capability_rejects_tampering_path_confusion_and_revoked_identity(tmp_pa
     with pytest.raises(PermissionError, match="revoked"):
         broker.execute(capability, method="POST", path=path)
     assert calls == []
+
+
+def _published_changeset(tmp_path, *, status="review_open"):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    control = ChangeControl(ledger)
+    binding = control.bind_identity(
+        owner_id="owner_1",
+        slack_team_id="T1",
+        slack_user_id="U1",
+        agent_instance_id="agent_1",
+        agent_persona="Mira",
+        github_user_id="101",
+        github_node_id="node-101",
+        github_login="reviewer",
+    )
+    changeset = control.create_changeset(workspace_id="desk_1")
+    control.transition(changeset["id"], "ready")
+    control.transition(changeset["id"], "publishing")
+    control.transition(
+        changeset["id"],
+        "review_open",
+        fields={"pr_number": 7, "head_sha": "head-7", "branch": "forecast/changesets/7"},
+    )
+    if status == "merge_ready":
+        control.transition(changeset["id"], "checks_running")
+        control.transition(changeset["id"], "merge_ready")
+    return ledger, control, binding, control.get_changeset(changeset["id"])
+
+
+def test_webhook_processor_records_direct_human_review_idempotently(tmp_path):
+    ledger, control, _, changeset = _published_changeset(tmp_path)
+    payload = {
+        "action": "submitted",
+        "repository": {"id": 42, "full_name": "acme/forecasts"},
+        "pull_request": {
+            "number": 7,
+            "head": {"ref": changeset["branch"], "sha": "head-7"},
+            "base": {"ref": "main", "sha": "base"},
+        },
+        "review": {
+            "id": 88,
+            "state": "approved",
+            "commit_id": "head-7",
+            "user": {"id": 101, "node_id": "node-101", "login": "reviewer"},
+        },
+        "sender": {"id": 101, "node_id": "node-101", "login": "reviewer"},
+    }
+    body, signature = _signed("secret", payload)
+    row = ingest_github_webhook(
+        ledger,
+        headers={
+            "X-Hub-Signature-256": signature,
+            "X-GitHub-Delivery": "review-delivery",
+            "X-GitHub-Event": "pull_request_review",
+        },
+        body=body,
+        secret="secret",
+        repository_slug="acme/forecasts",
+    )
+    processor = GitHubWebhookProcessor(
+        ledger,
+        repository_slug="acme/forecasts",
+        promotion_app_id="1234",
+    )
+    assert processor.process(row["delivery_id"])["state"] == "processed"
+    assert processor.process(row["delivery_id"])["state"] == "processed"
+    reviews = control.list_reviews(changeset["id"])
+    assert len(reviews) == 1
+    assert reviews[0]["actor_kind"] == "human"
+    assert reviews[0]["owner_id"] == "owner_1"
+
+
+def test_agent_origin_review_never_becomes_human_approval(tmp_path):
+    ledger, control, binding, changeset = _published_changeset(tmp_path)
+    record_github_origin(
+        ledger,
+        remote_kind="review",
+        remote_id="89",
+        changeset_id=changeset["id"],
+        actor_kind="agent",
+        identity_binding_id=binding["id"],
+        correlation_id="slack-action-1",
+    )
+    payload = {
+        "action": "submitted",
+        "repository": {"id": 42, "full_name": "acme/forecasts"},
+        "pull_request": {
+            "number": 7,
+            "head": {"ref": changeset["branch"], "sha": "head-7"},
+            "base": {"ref": "main", "sha": "base"},
+        },
+        "review": {
+            "id": 89,
+            "state": "approved",
+            "commit_id": "head-7",
+            "user": {"id": 101, "node_id": "node-101", "login": "reviewer"},
+        },
+        "sender": {"id": 101, "node_id": "node-101", "login": "reviewer"},
+    }
+    body, signature = _signed("secret", payload)
+    ingest_github_webhook(
+        ledger,
+        headers={
+            "X-Hub-Signature-256": signature,
+            "X-GitHub-Delivery": "agent-review",
+            "X-GitHub-Event": "pull_request_review",
+        },
+        body=body,
+        secret="secret",
+        repository_slug="acme/forecasts",
+    )
+    GitHubWebhookProcessor(
+        ledger,
+        repository_slug="acme/forecasts",
+        promotion_app_id="1234",
+    ).process("agent-review")
+
+    review = control.list_reviews(changeset["id"])[0]
+    assert review["actor_kind"] == "agent"
+    assert review["agent_persona"] == "Mira"
+    assert control.quorum(changeset["id"]).approved_owner_ids == ()
+
+
+def test_merge_webhook_sets_apply_pending_without_claiming_ledger_application(tmp_path):
+    ledger, control, _, changeset = _published_changeset(tmp_path, status="merge_ready")
+    payload = {
+        "action": "closed",
+        "repository": {"id": 42, "full_name": "acme/forecasts"},
+        "pull_request": {
+            "number": 7,
+            "merged": True,
+            "merge_commit_sha": "merge-7",
+            "head": {"ref": changeset["branch"], "sha": "head-7"},
+            "base": {"ref": "main", "sha": "base"},
+        },
+        "sender": {"id": 101, "node_id": "node-101", "login": "reviewer"},
+    }
+    body, signature = _signed("secret", payload)
+    ingest_github_webhook(
+        ledger,
+        headers={
+            "X-Hub-Signature-256": signature,
+            "X-GitHub-Delivery": "merge-delivery",
+            "X-GitHub-Event": "pull_request",
+        },
+        body=body,
+        secret="secret",
+        repository_slug="acme/forecasts",
+    )
+    GitHubWebhookProcessor(
+        ledger,
+        repository_slug="acme/forecasts",
+        promotion_app_id="1234",
+    ).process("merge-delivery")
+
+    merged = control.get_changeset(changeset["id"])
+    assert merged["status"] == "merged_apply_pending"
+    assert merged["merge_sha"] == "merge-7"
+    assert merged["applied_revision"] is None

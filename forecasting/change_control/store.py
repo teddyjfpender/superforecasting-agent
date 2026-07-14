@@ -29,7 +29,9 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         {"checks_running", "review_required", "changes_requested", "held", "abandoned"}
     ),
     "checks_running": frozenset({"blocked", "review_required", "merge_ready"}),
-    "review_required": frozenset({"changes_requested", "held", "merge_ready", "rejected"}),
+    "review_required": frozenset(
+        {"checks_running", "changes_requested", "held", "merge_ready", "rejected"}
+    ),
     "changes_requested": frozenset({"draft", "checks_running", "held", "rejected"}),
     "held": frozenset({"draft", "review_open", "review_required", "cancelled"}),
     "blocked": frozenset({"draft", "checks_running", "cancelled", "superseded"}),
@@ -350,6 +352,30 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             repository_slug TEXT NOT NULL,
             used_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS github_promotion_checks (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            repository_slug TEXT NOT NULL,
+            app_id TEXT NOT NULL,
+            github_check_id TEXT NOT NULL,
+            head_sha TEXT NOT NULL,
+            conclusion TEXT NOT NULL,
+            details TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (changeset_id, head_sha, app_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS github_origin_markers (
+            remote_kind TEXT NOT NULL,
+            remote_id TEXT NOT NULL,
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            actor_kind TEXT NOT NULL,
+            identity_binding_id TEXT,
+            correlation_id TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY (remote_kind, remote_id)
+        );
         """
     )
     conn.execute(
@@ -550,6 +576,16 @@ def transition_changeset(
                 WHERE id = ? AND status = ?""",
             params,
         )
+        if (
+            cursor.rowcount == 1
+            and "head_sha" in updates
+            and updates["head_sha"] != changeset.get("head_sha")
+        ):
+            conn.execute(
+                """UPDATE ledger_reviews SET stale_at = ?
+                   WHERE changeset_id = ? AND stale_at IS NULL""",
+                (utc_now_iso(), changeset_id),
+            )
     if cursor.rowcount != 1:
         raise ValidationError(f"changeset {changeset_id} changed concurrently")
     return get_changeset(ledger, changeset_id)

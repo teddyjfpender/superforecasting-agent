@@ -7,7 +7,11 @@ import uuid
 from typing import Any, Mapping
 
 from forecasting.change_control.models import content_digest
-from forecasting.change_control.store import create_changeset, get_changeset
+from forecasting.change_control.store import (
+    create_changeset,
+    get_changeset,
+    transition_changeset,
+)
 from forecasting.models import LedgerNotFoundError, ValidationError, utc_now_iso
 
 
@@ -71,6 +75,12 @@ def get_or_create_thread_changeset(
             metadata={"thread_generation": generation},
         )
         branch = f"forecast/changesets/{changeset['id']}"
+        transition_changeset(
+            ledger,
+            changeset["id"],
+            changeset["status"],
+            fields={"branch": branch},
+        )
         now = utc_now_iso()
         thread_id = f"thread_{uuid.uuid4().hex[:16]}"
         with ledger._connect() as conn:
@@ -138,13 +148,22 @@ def bind_identity(
                    WHERE status = 'active' AND (
                        agent_instance_id = ? OR
                        (slack_team_id = ? AND slack_user_id = ?) OR
-                       owner_id = ?
+                       owner_id = ? OR github_user_id = ? OR github_node_id = ?
                    )""",
-                (agent_instance_id, slack_team_id, slack_user_id, owner_id),
+                (
+                    agent_instance_id,
+                    slack_team_id,
+                    slack_user_id,
+                    owner_id,
+                    github_user_id,
+                    github_node_id,
+                ),
             ).fetchall()
             for row in conflicts:
                 if row["owner_id"] != owner_id:
-                    raise ValidationError("Slack user or agent instance is bound to another owner")
+                    raise ValidationError(
+                        "Slack user, agent instance, or GitHub identity is bound to another owner"
+                    )
                 if (
                     row["github_user_id"] != github_user_id
                     or row["github_node_id"] != github_node_id

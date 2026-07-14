@@ -122,6 +122,7 @@ class GitHubCapabilityBroker:
         method: str,
         path: str,
         json_body: Mapping[str, Any] | None = None,
+        expected_statuses: tuple[int, ...] = (),
     ) -> dict[str, Any]:
         payload = self._verify(capability)
         method = method.upper()
@@ -164,17 +165,19 @@ class GitHubCapabilityBroker:
                 f"{self.api_url}{path}",
                 **request_kwargs,
             )
-            response.raise_for_status()
+            status_code = int(response.status_code)
+            if status_code not in expected_statuses:
+                response.raise_for_status()
             try:
                 response_body = response.json()
             except Exception:
                 response_body = None
-            result = {"status_code": int(response.status_code), "body": _redact(response_body)}
+            result = {"status_code": status_code, "body": _redact(response_body)}
             self._audit(payload, result="success")
             return result
-        except Exception as exc:
+        except Exception:
             self._audit(payload, result="failed")
-            raise RuntimeError(f"GitHub {payload['action']} request failed") from exc
+            raise RuntimeError(f"GitHub {payload['action']} request failed") from None
 
     def _verify(self, capability: str) -> dict[str, Any]:
         try:
@@ -228,6 +231,48 @@ class GitHubCapabilityBroker:
             )
 
 
+class CapabilityGitHubClient:
+    """Bind every publisher call to one changeset and delegated identity."""
+
+    def __init__(
+        self,
+        broker: GitHubCapabilityBroker,
+        *,
+        changeset_id: str,
+        identity_binding_id: str,
+        actor_kind: str,
+    ) -> None:
+        self.broker = broker
+        self.changeset_id = changeset_id
+        self.identity_binding_id = identity_binding_id
+        self.actor_kind = actor_kind
+
+    def call(
+        self,
+        action: str,
+        method: str,
+        path: str,
+        body: Mapping[str, Any] | None = None,
+        *,
+        expected_statuses: tuple[int, ...] = (),
+    ) -> dict[str, Any]:
+        capability = self.broker.issue(
+            changeset_id=self.changeset_id,
+            identity_binding_id=self.identity_binding_id,
+            actor_kind=self.actor_kind,
+            action=action,
+            method=method,
+            path=path,
+        )
+        return self.broker.execute(
+            capability,
+            method=method,
+            path=path,
+            json_body=body,
+            expected_statuses=expected_statuses,
+        )
+
+
 def _redact(value: Any) -> Any:
     if isinstance(value, str):
         return _SECRET.sub("[REDACTED]", value)
@@ -243,4 +288,4 @@ def _redact(value: Any) -> Any:
     return value
 
 
-__all__ = ["GitHubCapabilityBroker"]
+__all__ = ["CapabilityGitHubClient", "GitHubCapabilityBroker"]

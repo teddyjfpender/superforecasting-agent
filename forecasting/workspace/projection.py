@@ -87,19 +87,13 @@ def _changeset_packet(ledger: Any, changeset: Mapping[str, Any]) -> dict[str, An
             "id",
             "workspace_id",
             "base_revision",
-            "status",
             "digest",
             "risk_tier",
             "risk_reasons",
-            "branch",
-            "pr_number",
-            "head_sha",
-            "merge_sha",
             "author_owner_ids",
             "author_identities",
             "affected_question_ids",
             "created_at",
-            "updated_at",
             "applied_revision",
             "applied_at",
         )
@@ -129,6 +123,105 @@ def _changeset_packet(ledger: Any, changeset: Mapping[str, Any]) -> dict[str, An
         for review in list_reviews(ledger, str(changeset["id"]))
     ]
     return _portable(public)
+
+
+def _provenance_files(ledger: Any, changeset_id: str) -> dict[str, bytes]:
+    files: dict[str, bytes] = {}
+    with ledger._connect() as conn:
+        bundle = conn.execute(
+            "SELECT * FROM provenance_bundles WHERE changeset_id = ?", (changeset_id,)
+        ).fetchone()
+        contributions = conn.execute(
+            """SELECT attestation, attestation_digest, created_at
+               FROM collaboration_contributions WHERE changeset_id = ?
+               ORDER BY created_at, id""",
+            (changeset_id,),
+        ).fetchall()
+        if contributions:
+            files[f"attestations/{changeset_id}/contributors.json"] = _json_bytes(
+                {
+                    "version": 1,
+                    "changeset_id": changeset_id,
+                    "contributions": [
+                        {
+                            "attestation": json.loads(row["attestation"]),
+                            "digest": row["attestation_digest"],
+                            "created_at": row["created_at"],
+                        }
+                        for row in contributions
+                    ],
+                }
+            )
+        if bundle is None:
+            return files
+        decisions = conn.execute(
+            """SELECT * FROM provenance_decision_records
+               WHERE bundle_id = ? ORDER BY created_at, id""",
+            (bundle["id"],),
+        ).fetchall()
+        transcripts = conn.execute(
+            """SELECT id, format, status, digest, byte_size, safety_findings, created_at
+               FROM provenance_transcripts WHERE bundle_id = ? ORDER BY created_at, id""",
+            (bundle["id"],),
+        ).fetchall()
+        consents = conn.execute(
+            """SELECT transcript_digest, repository_slug, owner_id, decision, created_at
+               FROM provenance_consents WHERE changeset_id = ?
+               ORDER BY transcript_digest, repository_slug, owner_id""",
+            (changeset_id,),
+        ).fetchall()
+    files[f"attestations/{changeset_id}/provenance.json"] = _json_bytes(
+        {
+            "version": 1,
+            "changeset_id": changeset_id,
+            "changeset_digest": bundle["changeset_digest"],
+            "provenance_digest": bundle["digest"],
+        }
+    )
+    if decisions:
+        files[f"attestations/{changeset_id}/decisions.json"] = _json_bytes(
+            {
+                "version": 1,
+                "changeset_id": changeset_id,
+                "decisions": [
+                    _portable(
+                        {
+                            **dict(row),
+                            **{
+                                key: json.loads(row[key])
+                                for key in (
+                                    "alternatives",
+                                    "evidence_refs",
+                                    "assumptions",
+                                    "probability_changes",
+                                    "unresolved_uncertainty",
+                                    "tools",
+                                    "tests",
+                                )
+                            },
+                        }
+                    )
+                    for row in decisions
+                ],
+            }
+        )
+    if transcripts or consents:
+        files[f"transcripts/{changeset_id}/manifest.json"] = _json_bytes(
+            {
+                "version": 1,
+                "changeset_id": changeset_id,
+                "artifacts": [
+                    {
+                        **dict(row),
+                        "safety_findings": json.loads(row["safety_findings"]),
+                    }
+                    for row in transcripts
+                ],
+                "publication_consents": [dict(row) for row in consents],
+                "content_included": False,
+            }
+        )
+    return files
 
 
 def export_workspace(
@@ -170,6 +263,7 @@ def export_workspace(
             files[f"changesets/{changeset['id']}/changeset.json"] = _json_bytes(
                 _changeset_packet(snapshot, changeset)
             )
+            files.update(_provenance_files(snapshot, str(changeset["id"])))
         files["policies/review-policy.json"] = _json_bytes(
             {"version": 1, "risk_tiers": ["low", "medium", "high"]}
         )

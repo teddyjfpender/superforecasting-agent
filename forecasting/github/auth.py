@@ -167,30 +167,36 @@ class GitHubOAuthService:
         verifier = _open(
             state_row["verifier_ciphertext"], self.key, aad=f"oauth-state:{state_hash}"
         )
-        token_data = _response_json(
-            self.http_post(
-                "https://github.com/login/oauth/access_token",
-                data={
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "code_verifier": verifier,
-                },
-                headers={"Accept": "application/json"},
-                timeout=15,
+        try:
+            token_data = _response_json(
+                self.http_post(
+                    "https://github.com/login/oauth/access_token",
+                    data={
+                        "client_id": self.client_id,
+                        "client_secret": self.client_secret,
+                        "code": code,
+                        "redirect_uri": redirect_uri,
+                        "code_verifier": verifier,
+                    },
+                    headers={"Accept": "application/json"},
+                    timeout=15,
+                )
             )
-        )
+        except Exception:
+            raise ValidationError("GitHub OAuth token exchange failed") from None
         access_token = str(token_data.get("access_token") or "")
         if not access_token:
             raise ValidationError("GitHub token exchange did not return an access token")
-        user = _response_json(
-            self.http_get(
-                f"{self.api_url}/user",
-                headers=self._headers(access_token),
-                timeout=15,
+        try:
+            user = _response_json(
+                self.http_get(
+                    f"{self.api_url}/user",
+                    headers=self._headers(access_token),
+                    timeout=15,
+                )
             )
-        )
+        except Exception:
+            raise ValidationError("GitHub authenticated-user lookup failed") from None
         if not user.get("id") or not user.get("node_id") or not user.get("login"):
             raise ValidationError("GitHub authenticated-user response lacks immutable identity fields")
         binding = bind_identity(
@@ -283,19 +289,22 @@ class GitHubOAuthService:
         refresh_token = _open(
             row["refresh_ciphertext"], self.key, aad=f"github-token:{binding_id}:refresh"
         )
-        token_data = _response_json(
-            self.http_post(
-                "https://github.com/login/oauth/access_token",
-                data={
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "grant_type": "refresh_token",
-                    "refresh_token": refresh_token,
-                },
-                headers={"Accept": "application/json"},
-                timeout=15,
+        try:
+            token_data = _response_json(
+                self.http_post(
+                    "https://github.com/login/oauth/access_token",
+                    data={
+                        "client_id": self.client_id,
+                        "client_secret": self.client_secret,
+                        "grant_type": "refresh_token",
+                        "refresh_token": refresh_token,
+                    },
+                    headers={"Accept": "application/json"},
+                    timeout=15,
+                )
             )
-        )
+        except Exception:
+            raise ValidationError("GitHub delegated-token refresh failed") from None
         if not token_data.get("access_token"):
             raise ValidationError("GitHub refresh did not return an access token")
         self._store_tokens(binding_id, token_data)
