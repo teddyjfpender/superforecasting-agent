@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from forecasting import ForecastLedger
+from forecasting.change_control import ChangeControl, LedgerOperation
 from forecasting.ledger import allow_ledger_writes
-from forecasting.workspace import export_workspace, validate_workspace
+from forecasting.models import ValidationError
+from forecasting.workspace import bootstrap_workspace, export_workspace, validate_workspace
 from forecasting.workspace.manifest import WorkspaceManifest
 
 
@@ -87,3 +91,59 @@ def test_validator_ignores_managed_git_metadata(tmp_path):
     (root / ".git" / "objects").mkdir(parents=True)
     (root / ".git" / "config").write_text("token=local-only-git-config")
     assert validate_workspace(root).valid is True
+
+
+def test_bootstrap_reconstructs_in_staging_with_digest_parity(tmp_path):
+    ledger, question = _ledger(tmp_path)
+    root = tmp_path / "workspace"
+    manifest = export_workspace(ledger, root, workspace_id="desk_1")
+    target = tmp_path / "restored" / "forecasting.db"
+
+    result = bootstrap_workspace(root, target)
+
+    restored = ForecastLedger(target)
+    restored_question = restored.get_question(question.id)
+    assert restored_question.title == question.title
+    assert restored.get_current_snapshot(question.id).probability_or_distribution == 0.62
+    assert result["content_digest"] == manifest.content_digest
+    assert not list(target.parent.glob("*.staging-*"))
+
+
+def test_bootstrap_never_overwrites_existing_ledger(tmp_path):
+    ledger, _ = _ledger(tmp_path)
+    root = tmp_path / "workspace"
+    export_workspace(ledger, root, workspace_id="desk_1")
+    target = tmp_path / "existing.db"
+    target.write_bytes(b"existing-ledger")
+    with pytest.raises(ValidationError, match="already exists"):
+        bootstrap_workspace(root, target)
+    assert target.read_bytes() == b"existing-ledger"
+
+
+def test_bootstrap_preserves_generalized_changesets(tmp_path):
+    ledger, _ = _ledger(tmp_path)
+    control = ChangeControl(ledger)
+    changeset = control.create_changeset(
+        workspace_id="desk_1", author_owner_ids=["owner_1"]
+    )
+    control.add_operation(
+        changeset["id"],
+        LedgerOperation(
+            id="document_1",
+            kind="document.update",
+            target_ref="brief_1",
+            payload={"path": "documents/brief.md", "content": "Current thesis."},
+        ),
+    )
+    root = tmp_path / "workspace"
+    export_workspace(ledger, root, workspace_id="desk_1")
+    target = tmp_path / "restored.db"
+
+    bootstrap_workspace(root, target)
+
+    restored = ChangeControl(ForecastLedger(target))
+    restored_changeset = restored.get_changeset(changeset["id"])
+    assert restored_changeset["digest"] == control.get_changeset(changeset["id"])["digest"]
+    assert restored.list_operations(changeset["id"])[0].as_dict() == control.list_operations(
+        changeset["id"]
+    )[0].as_dict()

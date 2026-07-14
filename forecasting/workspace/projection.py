@@ -149,6 +149,16 @@ def export_workspace(
 
         snapshot = ForecastLedger(snapshot_path)
         files: dict[str, bytes] = {}
+        with snapshot._connect() as conn:
+            revisions = [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT * FROM ledger_revisions ORDER BY revision"
+                ).fetchall()
+            ]
+        files["ledger/revisions.json"] = _json_bytes(
+            {"version": 1, "revisions": revisions}
+        )
         for question in sorted(snapshot.list_questions(), key=lambda item: item.id):
             files[f"ledger/questions/{question.id}.json"] = _json_bytes(
                 _question_packet(snapshot, question.id)
