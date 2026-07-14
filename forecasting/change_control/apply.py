@@ -438,6 +438,14 @@ def apply_changeset(ledger: Any, changeset_id: str) -> dict[str, Any]:
                 )
             if changeset["metadata"].get("checks_passed") is not True:
                 raise ValidationError("required changeset checks have not passed")
+            decision_count = conn.execute(
+                """SELECT COUNT(*) FROM provenance_decision_records d
+                   JOIN provenance_bundles b ON b.id = d.bundle_id
+                   WHERE b.changeset_id = ?""",
+                (changeset_id,),
+            ).fetchone()[0]
+            if decision_count < 1:
+                raise ValidationError("changeset requires a provenance decision record")
             quorum = evaluate_quorum(
                 risk_tier=changeset["risk_tier"],
                 reviews=list_reviews(ledger, changeset_id),
@@ -490,6 +498,9 @@ def apply_changeset(ledger: Any, changeset_id: str) -> dict[str, Any]:
                     reviewed_by="changeset-apply",
                     forecast_snapshot_id=forecast_id,
                 )
+            from forecasting.change_control.provenance import ensure_bundle
+
+            provenance_bundle = ensure_bundle(ledger, changeset_id)
             next_revision = int(revision["revision"]) + 1
             ledger_digest = content_digest(
                 {
@@ -503,6 +514,7 @@ def apply_changeset(ledger: Any, changeset_id: str) -> dict[str, Any]:
                 "changeset_digest": changeset["digest"],
                 "revision": next_revision,
                 "ledger_digest": ledger_digest,
+                "provenance_bundle_id": provenance_bundle["id"],
                 "objects": results,
             }
             now = utc_now_iso()

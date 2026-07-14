@@ -55,6 +55,19 @@ def _question(ledger, *, probability: float | None = None):
 
 def _merge_ready(control, changeset_id: str, *, head_sha: str | None = None):
     changeset = control.get_changeset(changeset_id)
+    with control.ledger._connect() as conn:
+        decisions = conn.execute(
+            """SELECT COUNT(*) FROM provenance_decision_records d
+               JOIN provenance_bundles b ON b.id = d.bundle_id
+               WHERE b.changeset_id = ?""",
+            (changeset_id,),
+        ).fetchone()[0]
+    if not decisions:
+        control.add_decision_record(
+            changeset_id,
+            conclusion="The proposed operation is supported by the reviewed evidence.",
+            tests=["changeset preview passed"],
+        )
     metadata = {**changeset["metadata"], "checks_passed": True}
     fields = {"metadata": metadata}
     if head_sha:
@@ -419,6 +432,7 @@ def test_transactional_apply_is_idempotent_and_increments_revision(tmp_path):
     assert first == second
     assert first["revision"] == 1
     assert len(first["ledger_digest"]) == 64
+    assert first["provenance_bundle_id"].startswith("prov_")
     assert len(ledger.list_evidence(question.id)) == 1
     assert control.get_changeset(changeset["id"])["status"] == "applied"
 

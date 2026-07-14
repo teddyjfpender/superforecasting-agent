@@ -9,6 +9,14 @@ from forecasting.change_control.compatibility import sync_legacy_proposal, wrap_
 from forecasting.change_control.models import LedgerOperation
 from forecasting.change_control.policy import classify_operations, evaluate_quorum
 from forecasting.change_control.preview import preview_changeset
+from forecasting.change_control.provenance import (
+    add_decision_record,
+    ensure_bundle,
+    link_session,
+    publication_decision,
+    record_consent,
+    record_transcript,
+)
 from forecasting.change_control.store import (
     add_operation,
     add_review,
@@ -82,14 +90,38 @@ class ChangeControl:
     def sync_legacy_proposal(self, changeset_id: str, **kwargs: Any) -> dict[str, Any] | None:
         return sync_legacy_proposal(self.ledger, changeset_id, **kwargs)
 
+    def provenance_bundle(self, changeset_id: str) -> dict[str, Any]:
+        return ensure_bundle(self.ledger, changeset_id)
+
+    def link_session(self, changeset_id: str, **kwargs: Any) -> dict[str, Any]:
+        return link_session(self.ledger, changeset_id, **kwargs)
+
+    def add_decision_record(self, changeset_id: str, **kwargs: Any) -> dict[str, Any]:
+        return add_decision_record(self.ledger, changeset_id, **kwargs)
+
+    def record_transcript(self, changeset_id: str, **kwargs: Any) -> dict[str, Any]:
+        return record_transcript(self.ledger, changeset_id, **kwargs)
+
+    def record_transcript_consent(self, changeset_id: str, **kwargs: Any) -> dict[str, Any]:
+        return record_consent(self.ledger, changeset_id, **kwargs)
+
+    def transcript_publication_decision(self, changeset_id: str, **kwargs: Any) -> str | None:
+        return publication_decision(self.ledger, changeset_id, **kwargs)
+
 
 __all__ = [
     "ChangeControl",
     "LedgerOperation",
     "apply_changeset",
+    "add_decision_record",
     "classify_operations",
+    "ensure_bundle",
     "evaluate_quorum",
+    "link_session",
     "preview_changeset",
+    "publication_decision",
+    "record_consent",
+    "record_transcript",
     "sync_legacy_proposal",
     "wrap_legacy_proposal",
 ]

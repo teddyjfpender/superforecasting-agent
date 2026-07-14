@@ -73,6 +73,23 @@ def wrap_legacy_proposal(
         author_attestation={"source": "legacy_autopilot", "proposal_id": proposal_id},
     )
     add_operation(ledger, changeset["id"], operation)
+    from forecasting.change_control.provenance import add_decision_record
+
+    add_decision_record(
+        ledger,
+        changeset["id"],
+        conclusion=proposal["rationale"],
+        evidence_refs=proposal["evidence_refs"],
+        assumptions=proposal["assumption_refs"],
+        probability_changes=[
+            {
+                "question_id": proposal["question_id"],
+                "before": None if prior is None else prior.probability_or_distribution,
+                "after": proposal["proposed_probability_or_distribution"],
+            }
+        ],
+        tools=["legacy_autopilot"],
+    )
     return get_changeset(ledger, changeset["id"])
 
 

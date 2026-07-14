@@ -137,6 +137,99 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL,
             PRIMARY KEY (changeset_id, artifact_type, artifact_ref)
         );
+
+        CREATE TABLE IF NOT EXISTS provenance_bundles (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL UNIQUE REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            changeset_digest TEXT NOT NULL,
+            digest TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS provenance_session_links (
+            id TEXT PRIMARY KEY,
+            bundle_id TEXT NOT NULL REFERENCES provenance_bundles(id) ON DELETE CASCADE,
+            source_type TEXT NOT NULL,
+            session_id TEXT,
+            run_id TEXT,
+            scope TEXT NOT NULL DEFAULT '{}',
+            metadata TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            UNIQUE (bundle_id, source_type, session_id, run_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS provenance_decision_records (
+            id TEXT PRIMARY KEY,
+            bundle_id TEXT NOT NULL REFERENCES provenance_bundles(id) ON DELETE CASCADE,
+            conclusion TEXT NOT NULL,
+            alternatives TEXT NOT NULL DEFAULT '[]',
+            evidence_refs TEXT NOT NULL DEFAULT '[]',
+            assumptions TEXT NOT NULL DEFAULT '[]',
+            probability_changes TEXT NOT NULL DEFAULT '[]',
+            unresolved_uncertainty TEXT NOT NULL DEFAULT '[]',
+            model TEXT,
+            prompt_version TEXT,
+            tools TEXT NOT NULL DEFAULT '[]',
+            tests TEXT NOT NULL DEFAULT '[]',
+            digest TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS provenance_transcripts (
+            id TEXT PRIMARY KEY,
+            bundle_id TEXT NOT NULL REFERENCES provenance_bundles(id) ON DELETE CASCADE,
+            format TEXT NOT NULL,
+            status TEXT NOT NULL,
+            digest TEXT NOT NULL,
+            locator TEXT,
+            byte_size INTEGER NOT NULL,
+            safety_findings TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS provenance_consents (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            transcript_digest TEXT NOT NULL,
+            repository_slug TEXT NOT NULL,
+            owner_id TEXT NOT NULL,
+            decision TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE (changeset_id, transcript_digest, repository_slug, owner_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS provenance_trace_archives (
+            id TEXT PRIMARY KEY,
+            bundle_id TEXT NOT NULL REFERENCES provenance_bundles(id) ON DELETE CASCADE,
+            object_locator TEXT NOT NULL,
+            ciphertext_digest TEXT NOT NULL,
+            byte_size INTEGER NOT NULL,
+            retention_deadline TEXT NOT NULL,
+            key_version TEXT NOT NULL,
+            authorization TEXT NOT NULL DEFAULT '{}',
+            state TEXT NOT NULL DEFAULT 'active',
+            pin_reason TEXT,
+            pin_expires_at TEXT,
+            legal_hold INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            deleted_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS provenance_access_events (
+            id TEXT PRIMARY KEY,
+            archive_id TEXT NOT NULL REFERENCES provenance_trace_archives(id) ON DELETE CASCADE,
+            actor_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            occurred_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS provenance_retention_tombstones (
+            archive_id TEXT PRIMARY KEY,
+            ciphertext_digest TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            deleted_at TEXT NOT NULL
+        );
         """
     )
     conn.execute(
