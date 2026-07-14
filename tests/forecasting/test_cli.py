@@ -15794,6 +15794,7 @@ def _seed_quorum_question(db: str) -> str:
 
 
 def test_quorum_delphi_flag_passes_delphi_rounds_one(tmp_path, monkeypatch, capsys):
+    from forecasting import quorum as qmod
     from forecasting.jobs.types import quorum as qj
 
     parser = _parser()
@@ -15807,6 +15808,7 @@ def test_quorum_delphi_flag_passes_delphi_rounds_one(tmp_path, monkeypatch, caps
         return "qr_delphione"
 
     monkeypatch.setattr(qj, "start_job", _fake_start_job)
+    monkeypatch.setattr(qmod, "resolve_configured_panel", lambda: None)
     monkeypatch.setattr(
         qj,
         "read_job",
@@ -15831,6 +15833,7 @@ def test_quorum_delphi_flag_passes_delphi_rounds_one(tmp_path, monkeypatch, caps
 
 
 def test_quorum_delphi_rounds_zero_passes_zero(tmp_path, monkeypatch, capsys):
+    from forecasting import quorum as qmod
     from forecasting.jobs.types import quorum as qj
 
     parser = _parser()
@@ -15844,6 +15847,7 @@ def test_quorum_delphi_rounds_zero_passes_zero(tmp_path, monkeypatch, capsys):
         return "qr_delphizero"
 
     monkeypatch.setattr(qj, "start_job", _fake_start_job)
+    monkeypatch.setattr(qmod, "resolve_configured_panel", lambda: None)
 
     _run(parser, ["forecast", "--db", db, "quorum", question_id, "--delphi-rounds", "0"])
 
@@ -15854,6 +15858,7 @@ def test_quorum_delphi_rounds_zero_passes_zero(tmp_path, monkeypatch, capsys):
 
 
 def test_quorum_delphi_conflicts_with_delphi_rounds_zero(tmp_path, monkeypatch):
+    from forecasting import quorum as qmod
     from forecasting.jobs.types import quorum as qj
 
     parser = _parser()
@@ -15864,6 +15869,7 @@ def test_quorum_delphi_conflicts_with_delphi_rounds_zero(tmp_path, monkeypatch):
         raise AssertionError("start_job must not run when the flags conflict")
 
     monkeypatch.setattr(qj, "start_job", _must_not_run)
+    monkeypatch.setattr(qmod, "resolve_configured_panel", lambda: None)
 
     with pytest.raises(SystemExit) as exc:
         _run(
