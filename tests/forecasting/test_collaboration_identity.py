@@ -129,3 +129,38 @@ def test_contribution_attests_all_identity_layers_and_is_idempotent(tmp_path):
             binding=binding,
             actor_kind="human",
         )
+
+
+def test_each_contributing_owner_becomes_an_author_for_quorum(tmp_path):
+    control = _control(tmp_path)
+    first = _binding(control)
+    second = _binding(
+        control,
+        owner_id="owner_2",
+        slack_user_id="U2",
+        agent_instance_id="agent_2",
+        agent_persona="Atlas",
+        github_user_id="202",
+        github_node_id="node-202",
+        github_login="atlas-owner",
+    )
+    thread = _thread(control)
+    control.record_contribution(
+        thread["changeset_id"],
+        idempotency_key="message-owner-1",
+        binding=first,
+        actor_kind="human",
+    )
+    control.record_contribution(
+        thread["changeset_id"],
+        idempotency_key="message-owner-2",
+        binding=second,
+        actor_kind="agent",
+    )
+
+    changeset = control.get_changeset(thread["changeset_id"])
+    assert changeset["author_owner_ids"] == ["owner_1", "owner_2"]
+    assert {item["agent_persona"] for item in changeset["author_identities"]} == {
+        "Mira",
+        "Atlas",
+    }

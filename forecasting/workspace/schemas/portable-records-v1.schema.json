@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superforecasting-agent.local/schemas/portable-records-v1.json",
+  "title": "Portable forecast workspace records v1",
+  "oneOf": [
+    { "$ref": "#/$defs/revisions" },
+    { "$ref": "#/$defs/question" },
+    { "$ref": "#/$defs/changeset" },
+    { "$ref": "#/$defs/contributors" },
+    { "$ref": "#/$defs/provenance" },
+    { "$ref": "#/$defs/decisions" },
+    { "$ref": "#/$defs/transcriptManifest" },
+    { "$ref": "#/$defs/reviewPolicy" },
+    { "$ref": "#/$defs/extensionLock" }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "revisions": {
+      "type": "object",
+      "required": ["version", "revisions"],
+      "properties": { "version": { "const": 1 }, "revisions": { "type": "array" } }
+    },
+    "question": {
+      "type": "object",
+      "required": ["question"],
+      "properties": { "question": { "type": "object", "required": ["id", "title"] } }
+    },
+    "changeset": {
+      "type": "object",
+      "required": ["id", "workspace_id", "base_revision", "digest", "operations", "reviews"],
+      "properties": {
+        "digest": { "$ref": "#/$defs/digest" },
+        "operations": { "type": "array", "items": { "type": "object" } },
+        "reviews": { "type": "array", "items": { "type": "object" } }
+      }
+    },
+    "contributors": {
+      "type": "object",
+      "required": ["version", "changeset_id", "contributions"],
+      "properties": {
+        "version": { "const": 1 },
+        "contributions": { "type": "array", "items": { "type": "object", "required": ["attestation", "digest", "created_at"] } }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["version", "changeset_id", "changeset_digest", "provenance_digest"],
+      "properties": {
+        "version": { "const": 1 },
+        "changeset_digest": { "$ref": "#/$defs/digest" },
+        "provenance_digest": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "decisions": {
+      "type": "object",
+      "required": ["version", "changeset_id", "decisions"],
+      "properties": { "version": { "const": 1 }, "decisions": { "type": "array" } }
+    },
+    "transcriptManifest": {
+      "type": "object",
+      "required": ["version", "changeset_id", "artifacts", "publication_consents", "content_included"],
+      "properties": { "version": { "const": 1 }, "artifacts": { "type": "array" }, "publication_consents": { "type": "array" } }
+    },
+    "reviewPolicy": {
+      "type": "object",
+      "required": ["version", "risk_tiers"],
+      "properties": { "version": { "const": 1 }, "risk_tiers": { "type": "array" } }
+    },
+    "extensionLock": {
+      "type": "object",
+      "required": ["version", "overlays"],
+      "properties": { "version": { "const": 1 }, "overlays": { "type": "array" } }
+    }
+  }
+}

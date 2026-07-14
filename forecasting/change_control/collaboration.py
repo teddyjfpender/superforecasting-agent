@@ -308,8 +308,9 @@ def record_contribution(
         "metadata": dict(metadata or {}),
     }
     contribution_id = f"contrib_{uuid.uuid4().hex[:16]}"
-    with ledger._connect() as conn:
-        conn.execute(
+    with ledger.transaction(immediate=True):
+        with ledger._connect() as conn:
+            conn.execute(
             """INSERT OR IGNORE INTO collaboration_contributions (
                    id, changeset_id, idempotency_key, owner_id, slack_user_id,
                    github_user_id, agent_instance_id, agent_persona, actor_kind,
@@ -331,10 +332,35 @@ def record_contribution(
                 utc_now_iso(),
             ),
         )
-        row = conn.execute(
-            "SELECT * FROM collaboration_contributions WHERE idempotency_key = ?",
-            (idempotency_key,),
-        ).fetchone()
+            row = conn.execute(
+                "SELECT * FROM collaboration_contributions WHERE idempotency_key = ?",
+                (idempotency_key,),
+            ).fetchone()
+            changeset = get_changeset(ledger, changeset_id)
+            owners = list(changeset["author_owner_ids"])
+            identities = list(changeset["author_identities"])
+            if current["owner_id"] not in owners:
+                owners.append(current["owner_id"])
+            identity = {
+                "owner_id": current["owner_id"],
+                "github_user_id": current["github_user_id"],
+                "agent_instance_id": current["agent_instance_id"],
+                "agent_persona": current["agent_persona"],
+                "actor_kind": actor_kind,
+            }
+            if identity not in identities:
+                identities.append(identity)
+            conn.execute(
+                """UPDATE ledger_changesets
+                   SET author_owner_ids = ?, author_identities = ?, updated_at = ?
+                   WHERE id = ?""",
+                (
+                    json.dumps(sorted(set(owners))),
+                    json.dumps(identities, sort_keys=True),
+                    utc_now_iso(),
+                    changeset_id,
+                ),
+            )
     result = dict(row)
     result["attestation"] = json.loads(result["attestation"])
     if (

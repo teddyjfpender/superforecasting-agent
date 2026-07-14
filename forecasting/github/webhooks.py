@@ -165,6 +165,14 @@ def _sanitize_payload(event_type: str, payload: Mapping[str, Any]) -> dict[str, 
                 "sha": (pull.get("base") or {}).get("sha"),
             },
         }
+    issue = payload.get("issue")
+    if isinstance(issue, Mapping):
+        result["issue"] = {
+            "id": issue.get("id"),
+            "number": issue.get("number"),
+            "html_url": issue.get("html_url"),
+            "pull_request": bool(issue.get("pull_request")),
+        }
     for key in ("review", "comment"):
         value = payload.get(key)
         if isinstance(value, Mapping):

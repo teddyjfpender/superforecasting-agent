@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import re
 import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
 from forecasting.models import ValidationError
+from forecasting.change_control.models import LedgerOperation, changeset_digest, content_digest
 from forecasting.workspace.manifest import WorkspaceManifest
 
 
@@ -32,6 +34,67 @@ _SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("authorization", re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}", re.I)),
     ("session_cookie", re.compile(r"\b(?:_gh_sess|user_session|session_cookie)\b", re.I)),
 )
+
+
+def _validate_generated_json(relative: str, value: object) -> list[str]:
+    errors: list[str] = []
+    if not isinstance(value, dict):
+        return [f"generated JSON must be an object: {relative}"]
+    if relative == "ledger/revisions.json":
+        if value.get("version") != 1 or not isinstance(value.get("revisions"), list):
+            errors.append(f"invalid ledger revision packet: {relative}")
+    elif relative.startswith("ledger/questions/"):
+        if not isinstance(value.get("question"), dict) or not value["question"].get("id"):
+            errors.append(f"invalid question packet: {relative}")
+    elif relative.endswith("/changeset.json"):
+        try:
+            operations = [LedgerOperation.from_dict(item) for item in value["operations"]]
+            actual = changeset_digest(
+                workspace_id=str(value["workspace_id"]),
+                base_revision=int(value["base_revision"]),
+                operations=operations,
+            )
+            if actual != value.get("digest"):
+                errors.append(f"changeset digest mismatch: {relative}")
+        except (KeyError, TypeError, ValueError, ValidationError) as exc:
+            errors.append(f"invalid changeset packet {relative}: {exc}")
+    elif relative.endswith("/contributors.json"):
+        for index, contribution in enumerate(value.get("contributions") or []):
+            if not isinstance(contribution, dict) or content_digest(
+                contribution.get("attestation")
+            ) != contribution.get("digest"):
+                errors.append(f"contributor attestation digest mismatch: {relative}#{index}")
+    elif relative.endswith("/decisions.json"):
+        fields = (
+            "conclusion",
+            "alternatives",
+            "evidence_refs",
+            "assumptions",
+            "probability_changes",
+            "unresolved_uncertainty",
+            "model",
+            "prompt_version",
+            "tools",
+            "tests",
+        )
+        for index, decision in enumerate(value.get("decisions") or []):
+            if not isinstance(decision, dict):
+                errors.append(f"invalid decision record: {relative}#{index}")
+                continue
+            body = {field: decision.get(field) for field in fields}
+            if content_digest(body) != decision.get("digest"):
+                errors.append(f"decision record digest mismatch: {relative}#{index}")
+    elif relative.endswith("/provenance.json"):
+        for key in ("changeset_digest", "provenance_digest"):
+            if not re.fullmatch(r"[a-f0-9]{64}", str(value.get(key) or "")):
+                errors.append(f"invalid {key}: {relative}")
+    elif relative.endswith("/manifest.json") and relative.startswith("transcripts/"):
+        if value.get("version") != 1 or not isinstance(value.get("artifacts"), list):
+            errors.append(f"invalid transcript manifest: {relative}")
+    elif relative in {"policies/review-policy.json", "extensions/lock.json"}:
+        if value.get("version") != 1:
+            errors.append(f"unsupported generated record version: {relative}")
+    return errors
 
 
 @dataclass(frozen=True)
@@ -89,6 +152,13 @@ def validate_workspace(
             for secret_class, pattern in _SECRET_PATTERNS:
                 if pattern.search(text):
                     errors.append(f"{secret_class} detected in {relative}")
+            if path.suffix == ".json":
+                try:
+                    value = json.loads(text)
+                except json.JSONDecodeError:
+                    errors.append(f"invalid JSON: {relative}")
+                else:
+                    errors.extend(_validate_generated_json(relative, value))
 
     if manifest is not None:
         expected = set(manifest.files)

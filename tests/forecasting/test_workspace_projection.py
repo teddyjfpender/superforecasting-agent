@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 
 import pytest
 
@@ -147,3 +149,48 @@ def test_bootstrap_preserves_generalized_changesets(tmp_path):
     assert restored.list_operations(changeset["id"])[0].as_dict() == control.list_operations(
         changeset["id"]
     )[0].as_dict()
+
+
+def test_validator_recomputes_nested_contributor_attestations(tmp_path):
+    ledger, _ = _ledger(tmp_path)
+    control = ChangeControl(ledger)
+    binding = control.bind_identity(
+        owner_id="owner_1",
+        slack_team_id="T1",
+        slack_user_id="U1",
+        agent_instance_id="agent_1",
+        agent_persona="Mira",
+        github_user_id="101",
+        github_node_id="node-101",
+        github_login="octocat",
+    )
+    changeset = control.create_changeset(workspace_id="desk_1")
+    control.record_contribution(
+        changeset["id"],
+        idempotency_key="contribution-1",
+        binding=binding,
+        actor_kind="agent",
+    )
+    root = tmp_path / "workspace"
+    export_workspace(ledger, root, workspace_id="desk_1")
+    relative = f"attestations/{changeset['id']}/contributors.json"
+    path = root / relative
+    packet = json.loads(path.read_text())
+    packet["contributions"][0]["attestation"]["agent_persona"] = "forged"
+    path.write_text(json.dumps(packet, sort_keys=True, indent=2) + "\n")
+    manifest = WorkspaceManifest.from_yaml((root / "forecast-workspace.yaml").read_text())
+    files = dict(manifest.files)
+    files[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+    (root / "forecast-workspace.yaml").write_text(
+        WorkspaceManifest(
+            workspace_id=manifest.workspace_id,
+            default_branch=manifest.default_branch,
+            ledger_revision=manifest.ledger_revision,
+            files=files,
+        ).to_yaml()
+    )
+
+    report = validate_workspace(root)
+
+    assert not report.valid
+    assert any("contributor attestation digest mismatch" in error for error in report.errors)

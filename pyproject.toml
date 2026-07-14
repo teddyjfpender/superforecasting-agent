@@ -218,7 +218,14 @@ py-modules = ["run_agent", "model_tools", "toolsets", "batch_runner", "trajector
 [tool.setuptools.package-data]
 hermes_cli = ["web_dist/**/*", "tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
 gateway = ["assets/**/*"]
-forecasting = ["data/*.csv", "data/*.md"]
+forecasting = [
+  "data/*.csv",
+  "data/*.md",
+  "change_control/schemas/*.json",
+  "workspace/*.md",
+  "workspace/schemas/*.json",
+  "workspace/schemas/*.md",
+]
 plugins = [
   "*/dashboard/manifest.json",
   "*/dashboard/dist/*",

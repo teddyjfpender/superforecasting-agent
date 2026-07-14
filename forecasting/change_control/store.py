@@ -395,6 +395,19 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             PRIMARY KEY (remote_kind, remote_id)
         );
 
+        CREATE TABLE IF NOT EXISTS github_slack_mirrors (
+            delivery_id TEXT PRIMARY KEY
+                REFERENCES github_webhook_deliveries(delivery_id) ON DELETE CASCADE,
+            changeset_id TEXT NOT NULL
+                REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            state TEXT NOT NULL DEFAULT 'pending',
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            delivered_at TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS slack_changeset_cards (
             changeset_id TEXT PRIMARY KEY REFERENCES ledger_changesets(id) ON DELETE CASCADE,
             slack_team_id TEXT NOT NULL,

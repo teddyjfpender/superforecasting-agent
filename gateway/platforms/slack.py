@@ -16,6 +16,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Any, Tuple, List
 
@@ -865,6 +866,13 @@ class SlackAdapter(BasePlatformAdapter):
             else:
                 if rendered.get("thread_ts"):
                     kwargs["thread_ts"] = rendered["thread_ts"]
+                if rendered.get("correlation_id"):
+                    kwargs["client_msg_id"] = str(
+                        uuid.uuid5(
+                            uuid.NAMESPACE_URL,
+                            f"slack-changeset:{rendered['correlation_id']}",
+                        )
+                    )
                 result = await client.chat_postMessage(**kwargs)
             return SendResult(
                 success=True,
@@ -881,6 +889,31 @@ class SlackAdapter(BasePlatformAdapter):
         payload = dict(rendered)
         payload.pop("message_ts", None)
         return await self.upsert_changeset_card(payload)
+
+    async def post_changeset_event(self, rendered: dict) -> SendResult:
+        """Post one idempotent GitHub activity summary into the Slack thread."""
+
+        channel = str(rendered.get("channel") or "")
+        thread_ts = str(rendered.get("thread_ts") or "")
+        correlation_id = str(rendered.get("correlation_id") or "")
+        if not channel or not thread_ts or not correlation_id:
+            return SendResult(success=False, error="Missing Slack event destination")
+        client_msg_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"github-slack:{correlation_id}"))
+        try:
+            result = await self._get_client(channel).chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=str(rendered.get("text") or "GitHub activity updated."),
+                client_msg_id=client_msg_id,
+            )
+            return SendResult(
+                success=True,
+                message_id=str(result.get("ts") or ""),
+                raw_response=result,
+            )
+        except Exception:
+            logger.exception("[Slack] Failed to mirror GitHub activity")
+            return SendResult(success=False, error="Slack GitHub activity delivery failed")
 
     async def create_handoff_thread(
         self,

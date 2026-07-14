@@ -12,8 +12,10 @@ from forecasting.change_control import ChangeControl
 from forecasting.github.auth import GitHubOAuthService
 from forecasting.github.capabilities import GitHubCapabilityBroker
 from forecasting.github.events import GitHubWebhookProcessor, record_github_origin
+from forecasting.github.slack_sync import GitHubSlackMirror
 from forecasting.github.webhooks import ingest_github_webhook, mark_delivery_processed
 from forecasting.models import LedgerNotFoundError, ValidationError
+from forecasting.slack_collaboration import SlackChangesetCardService
 
 
 class _Response:
@@ -552,3 +554,61 @@ def test_merge_apply_reconciler_stops_retrying_semantic_failures(tmp_path):
         ).fetchall()
     assert len(attempts) == 1
     assert attempts[0]["diagnostic"].startswith("semantic:")
+
+
+def test_github_comment_mirrors_to_slack_card_durably_without_body(tmp_path):
+    ledger, _, _, changeset = _published_changeset(tmp_path)
+    cards = SlackChangesetCardService(ledger)
+    cards.update(
+        changeset["id"],
+        slack_team_id="T1",
+        slack_channel_id="C1",
+        slack_thread_ts="1710000000.000001",
+        phase="review_required",
+        next_action="Review the proposal.",
+    )
+    payload = {
+        "action": "created",
+        "repository": {"id": 42, "full_name": "acme/forecasts"},
+        "issue": {
+            "id": 70,
+            "number": 7,
+            "html_url": "https://github.test/acme/forecasts/pull/7",
+            "pull_request": {"url": "https://api.github.test/repos/acme/forecasts/pulls/7"},
+        },
+        "comment": {
+            "id": 99,
+            "body": "untrusted body must not be persisted or mirrored",
+            "html_url": "https://github.test/acme/forecasts/pull/7#issuecomment-99",
+            "user": {"id": 303, "login": "reviewer-three"},
+        },
+        "sender": {"id": 303, "login": "reviewer-three"},
+    }
+    body, signature = _signed("secret", payload)
+    ingest_github_webhook(
+        ledger,
+        headers={
+            "X-Hub-Signature-256": signature,
+            "X-GitHub-Delivery": "comment-delivery",
+            "X-GitHub-Event": "issue_comment",
+        },
+        body=body,
+        secret="secret",
+        repository_slug="acme/forecasts",
+    )
+    GitHubWebhookProcessor(
+        ledger,
+        repository_slug="acme/forecasts",
+        promotion_app_id="1234",
+    ).process("comment-delivery")
+    mirror = GitHubSlackMirror(ledger, cards)
+
+    prepared = mirror.prepare("comment-delivery")
+
+    assert "reviewer-three added a comment" in prepared["summary"]
+    assert "untrusted body" not in json.dumps(prepared)
+    assert cards.get(changeset["id"])["state"]["github_correlation_id"] == "comment-delivery"
+    assert mirror.pending() == ["comment-delivery"]
+    mirror.mark("comment-delivery", delivered=True)
+    assert mirror.prepare("comment-delivery") is None
+    assert mirror.pending() == []

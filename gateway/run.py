@@ -3316,6 +3316,24 @@ class GatewayRunner:
                         agent_instance_id=binding["agent_instance_id"],
                         agent_persona=binding["agent_persona"],
                     )
+                    contribution_key = (
+                        f"slack:{context['team_id']}:{context['channel_id']}:"
+                        f"{context.get('message_ts') or context['thread_ts']}"
+                    )
+                    control.record_contribution(
+                        thread["changeset_id"],
+                        idempotency_key=f"{contribution_key}:human",
+                        binding=binding,
+                        actor_kind="human",
+                        metadata={"transport": "slack", "kind": "thread_message"},
+                    )
+                    control.record_contribution(
+                        thread["changeset_id"],
+                        idempotency_key=f"{contribution_key}:agent",
+                        binding=binding,
+                        actor_kind="agent",
+                        metadata={"transport": "slack", "kind": "delegated_agent_work"},
+                    )
                     try:
                         cards.heartbeat(thread["changeset_id"])
                     except LedgerNotFoundError:
@@ -3384,6 +3402,11 @@ class GatewayRunner:
                 "cards": cards,
                 "actions": actions,
             }
+            from forecasting.github import GitHubSlackMirror
+
+            pending_mirror = GitHubSlackMirror(ledger, cards, actions=actions)
+            for delivery_id in pending_mirror.pending(limit=100):
+                self._mirror_github_delivery_to_slack(delivery_id)
             logger.info("Slack ledger collaboration wired for workspace %s", workspace_id)
         except Exception:
             logger.exception("Could not configure Slack ledger collaboration")
@@ -3440,6 +3463,7 @@ class GatewayRunner:
                 result = processor.process(delivery_id)
                 if result.get("event_type") == "pull_request" and result.get("action") == "closed":
                     reconciler.run(limit=100)
+                self._mirror_github_delivery_to_slack(delivery_id)
                 return result
 
             oauth_begin = None
@@ -3503,6 +3527,59 @@ class GatewayRunner:
             logger.info("GitHub signed webhook and OAuth routes configured")
         except Exception:
             logger.exception("Could not configure GitHub HTTP collaboration")
+
+    def _mirror_github_delivery_to_slack(self, delivery_id: str) -> None:
+        """Project one durable GitHub event into Slack and leave failures retryable."""
+
+        services = getattr(self, "_slack_changeset_services", None)
+        loop = getattr(self, "_gateway_loop", None)
+        adapter = self.adapters.get(Platform.SLACK) if hasattr(self, "adapters") else None
+        if not services or adapter is None or loop is None or not loop.is_running():
+            return
+        try:
+            from forecasting.github import GitHubSlackMirror
+
+            mirror = GitHubSlackMirror(
+                services["ledger"],
+                services["cards"],
+                actions=services["actions"],
+            )
+            prepared = mirror.prepare(delivery_id)
+            if prepared is None:
+                return
+        except Exception:
+            logger.exception("Could not prepare GitHub-to-Slack mirror %s", delivery_id)
+            return
+
+        async def deliver() -> None:
+            errors: list[str] = []
+            card_result = await adapter.upsert_changeset_card(prepared["render"])
+            if not card_result.success:
+                errors.append(card_result.error or "card update failed")
+            if prepared.get("summary"):
+                card = services["cards"].get(prepared["changeset_id"])
+                event_result = await adapter.post_changeset_event(
+                    {
+                        "channel": card["slack_channel_id"],
+                        "thread_ts": card["slack_thread_ts"],
+                        "text": prepared["summary"],
+                        "correlation_id": delivery_id,
+                    }
+                )
+                if not event_result.success:
+                    errors.append(event_result.error or "event summary failed")
+            if prepared.get("final"):
+                final_result = await adapter.post_changeset_final(prepared["final"])
+                if not final_result.success:
+                    errors.append(final_result.error or "final result failed")
+            await asyncio.to_thread(
+                mirror.mark,
+                delivery_id,
+                delivered=not errors,
+                error="; ".join(errors) if errors else None,
+            )
+
+        asyncio.run_coroutine_threadsafe(deliver(), loop)
 
     def _slack_card_identity(self, event: Any, source: Any) -> tuple[str, str, str] | None:
         if source.platform != Platform.SLACK:
