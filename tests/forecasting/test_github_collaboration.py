@@ -585,6 +585,57 @@ def test_merge_webhook_sets_apply_pending_without_claiming_ledger_application(tm
     assert merged["applied_revision"] is None
 
 
+def test_merge_group_tracks_queue_state_idempotently(tmp_path):
+    ledger, control, _, changeset = _published_changeset(tmp_path, status="merge_ready")
+    payload = {
+        "action": "checks_requested",
+        "repository": {"id": 42, "full_name": "acme/forecasts"},
+        "merge_group": {
+            "id": 901,
+            "head_ref": "refs/heads/gh-readonly-queue/main/pr-7-deadbeef",
+            "head_sha": "merge-group-head",
+            "base_ref": "refs/heads/main",
+            "base_sha": "base",
+        },
+    }
+    body, signature = _signed("secret", payload)
+    headers = {
+        "X-Hub-Signature-256": signature,
+        "X-GitHub-Delivery": "merge-group-1",
+        "X-GitHub-Event": "merge_group",
+    }
+    ingest_github_webhook(
+        ledger,
+        headers=headers,
+        body=body,
+        secret="secret",
+        repository_slug="acme/forecasts",
+    )
+    ingest_github_webhook(
+        ledger,
+        headers=headers,
+        body=body,
+        secret="secret",
+        repository_slug="acme/forecasts",
+    )
+    processor = GitHubWebhookProcessor(
+        ledger, repository_slug="acme/forecasts", promotion_app_id="1234"
+    )
+
+    processor.process("merge-group-1")
+    processor.process("merge-group-1")
+
+    queued = control.get_changeset(changeset["id"])
+    assert queued["status"] == "merge_queued"
+    assert queued["metadata"]["merge_group"]["head_sha"] == "merge-group-head"
+    with ledger._connect() as conn:
+        redeliveries = conn.execute(
+            """SELECT redelivery_count FROM github_webhook_deliveries
+               WHERE delivery_id = 'merge-group-1'"""
+        ).fetchone()[0]
+    assert redeliveries == 1
+
+
 def test_merge_apply_reconciler_stops_retrying_semantic_failures(tmp_path):
     from forecasting.github import MergeApplyReconciler
 

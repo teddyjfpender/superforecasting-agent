@@ -14,6 +14,7 @@ from forecasting.models import ValidationError
 
 FORMAT_VERSION = 1
 _SAFE_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_SAFE_REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class WorkspaceManifest:
     default_branch: str
     ledger_revision: int
     files: Mapping[str, str]
+    repository_slug: str | None = None
     format_version: int = FORMAT_VERSION
 
     def __post_init__(self) -> None:
@@ -35,6 +37,10 @@ class WorkspaceManifest:
             raise ValidationError("default_branch is not a safe Git ref")
         if self.ledger_revision < 0:
             raise ValidationError("ledger_revision must be non-negative")
+        if self.repository_slug is not None and not _SAFE_REPOSITORY.fullmatch(
+            self.repository_slug
+        ):
+            raise ValidationError("repository_slug must use owner/repository form")
         for path, digest in self.files.items():
             if path.startswith("/") or ".." in path.split("/"):
                 raise ValidationError(f"unsafe manifest path: {path}")
@@ -46,7 +52,7 @@ class WorkspaceManifest:
         return content_digest(dict(sorted(self.files.items())))
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "format_version": self.format_version,
             "workspace_id": self.workspace_id,
             "default_branch": self.default_branch,
@@ -54,6 +60,9 @@ class WorkspaceManifest:
             "content_digest": self.content_digest,
             "files": dict(sorted(self.files.items())),
         }
+        if self.repository_slug is not None:
+            result["repository_slug"] = self.repository_slug
+        return result
 
     def to_yaml(self) -> str:
         return yaml.safe_dump(self.as_dict(), sort_keys=False, allow_unicode=True)
@@ -69,6 +78,9 @@ class WorkspaceManifest:
             default_branch=str(value.get("default_branch") or ""),
             ledger_revision=int(value.get("ledger_revision", -1)),
             files=dict(value.get("files") or {}),
+            repository_slug=(
+                str(value["repository_slug"]) if value.get("repository_slug") else None
+            ),
         )
         if value.get("content_digest") != manifest.content_digest:
             raise ValidationError("workspace manifest content_digest does not match files")

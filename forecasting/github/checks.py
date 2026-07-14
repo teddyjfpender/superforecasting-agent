@@ -145,7 +145,19 @@ class PromotionCheckPublisher:
             "action_required": "review_required",
             "failure": "blocked",
         }[conclusion]
-        return transition_changeset(self.ledger, changeset_id, target)
+        metadata = dict(changeset.get("metadata") or {})
+        metadata["checks_passed"] = conclusion == "success"
+        metadata["promotion_check"] = {
+            "app_id": self.app_id,
+            "head_sha": changeset.get("head_sha"),
+            "conclusion": conclusion,
+        }
+        return transition_changeset(
+            self.ledger,
+            changeset_id,
+            target,
+            fields={"metadata": metadata},
+        )
 
     def _transcript_state(self, changeset_id: str) -> str:
         with self.ledger._connect() as conn:

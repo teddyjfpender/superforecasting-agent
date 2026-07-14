@@ -340,3 +340,46 @@ def test_app_sourced_promotion_check_binds_exact_head_and_advances_low_risk(tmp_
         stored = dict(conn.execute("SELECT * FROM github_promotion_checks").fetchone())
     assert stored["app_id"] == "1234"
     assert stored["head_sha"] == published["head_sha"]
+    checked = control.get_changeset(changeset["id"])
+    assert checked["metadata"]["checks_passed"] is True
+    assert checked["metadata"]["promotion_check"] == {
+        "app_id": "1234",
+        "head_sha": published["head_sha"],
+        "conclusion": "success",
+    }
+
+
+def test_successful_check_merge_and_restart_reconciliation_apply_once(tmp_path):
+    from forecasting.github import MergeApplyReconciler
+
+    ledger, control, changeset = _changeset(tmp_path)
+    github = _GitHub()
+    workspace = tmp_path / "workspace"
+    GitHubPublisher(
+        ledger, repository_slug="acme/forecasts", client=github
+    ).publish(changeset["id"], workspace)
+
+    class _App:
+        def call(self, action, method, path, body=None, *, expected_statuses=()):
+            return {"status_code": 201, "body": {"id": 903}}
+
+    PromotionCheckPublisher(
+        ledger,
+        repository_slug="acme/forecasts",
+        app_id="1234",
+        client=_App(),
+    ).publish(changeset["id"], workspace)
+    control.transition(
+        changeset["id"],
+        "merged_apply_pending",
+        fields={"merge_sha": "merge-903"},
+    )
+
+    first = MergeApplyReconciler(ledger).run()
+    second = MergeApplyReconciler(ledger).run()
+
+    assert first[0]["state"] == "applied"
+    assert second == []
+    stored = control.get_changeset(changeset["id"])
+    assert stored["status"] == "applied"
+    assert stored["applied_revision"] == 1

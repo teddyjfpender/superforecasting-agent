@@ -132,13 +132,14 @@ def _safe_transcript_bytes(row: Mapping[str, Any]) -> bytes | None:
     locator = row.get("locator")
     if not locator:
         return None
-    allowed = (get_hermes_home() / "provenance" / "safe-transcripts").resolve()
+    allowed_roots = ((get_hermes_home() / "provenance" / "safe-transcripts").resolve(),)
     try:
         candidate = Path(str(locator)).expanduser()
         if candidate.is_symlink():
             return None
         path = candidate.resolve(strict=True)
-        path.relative_to(allowed)
+        if not any(path.is_relative_to(root) for root in allowed_roots):
+            return None
         if not path.is_file() or path.stat().st_size > 2_000_000:
             return None
         data = path.read_bytes()
@@ -152,8 +153,6 @@ def _safe_transcript_bytes(row: Mapping[str, Any]) -> bytes | None:
     if review_transcript_findings(text, location="safe-transcript-artifact"):
         return None
     return data
-
-
 def _provenance_files(
     ledger: Any,
     changeset: Mapping[str, Any],
@@ -169,7 +168,7 @@ def _provenance_files(
         contributions = conn.execute(
             """SELECT attestation, attestation_digest, created_at
                FROM collaboration_contributions WHERE changeset_id = ?
-               ORDER BY created_at, id""",
+               ORDER BY attestation_digest""",
             (changeset_id,),
         ).fetchall()
         if contributions:
@@ -221,7 +220,11 @@ def _provenance_files(
                 "decisions": [
                     _portable(
                         {
-                            **dict(row),
+                            **{
+                                key: value
+                                for key, value in dict(row).items()
+                                if key != "bundle_id"
+                            },
                             **{
                                 key: json.loads(row[key])
                                 for key in (
@@ -358,6 +361,7 @@ def export_workspace(
             default_branch=default_branch,
             ledger_revision=current_revision(snapshot)["revision"],
             files=digests,
+            repository_slug=repository_slug,
         )
         files["forecast-workspace.yaml"] = manifest.to_yaml().encode("utf-8")
         for relative, data in files.items():

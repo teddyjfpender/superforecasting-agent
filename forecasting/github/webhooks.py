@@ -201,6 +201,8 @@ def _sanitize_payload(event_type: str, payload: Mapping[str, Any]) -> dict[str, 
                     "conclusion",
                     "head_sha",
                     "head_ref",
+                    "base_sha",
+                    "base_ref",
                 )
             }
             app = value.get("app")

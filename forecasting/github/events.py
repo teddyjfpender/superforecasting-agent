@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from forecasting.change_control.collaboration import get_identity_binding
@@ -89,6 +90,8 @@ class GitHubWebhookProcessor:
             self._pull_request(delivery)
         elif event_type == "check_run":
             self._check_run(delivery)
+        elif event_type == "merge_group":
+            self._merge_group(delivery)
         elif event_type == "github_app_authorization":
             self._authorization(delivery)
         return mark_delivery_processed(self.ledger, delivery_id)
@@ -191,6 +194,44 @@ class GitHubWebhookProcessor:
             ).fetchone()
         if row is None or row["head_sha"] != check.get("head_sha"):
             raise PermissionError("ledger/promotion check is not bound to a known head")
+
+    def _merge_group(self, delivery: dict[str, Any]) -> None:
+        action = str(delivery.get("action") or "")
+        if action not in {"checks_requested", "destroyed"}:
+            return
+        group = delivery["payload"].get("merge_group") or {}
+        head_ref = str(group.get("head_ref") or "")
+        match = re.search(r"(?:^|/)pr-(\d+)(?:-|$)", head_ref)
+        if match is None:
+            raise ValidationError("merge group head does not identify a pull request")
+        changeset = self._changeset_for_pull(
+            {"pull_request": {"number": int(match.group(1))}}
+        )
+        metadata = dict(changeset.get("metadata") or {})
+        metadata["merge_group"] = {
+            "head_ref": head_ref,
+            "head_sha": str(group.get("head_sha") or ""),
+            "state": action,
+        }
+        if action == "checks_requested":
+            if changeset["status"] == "merge_ready":
+                transition_changeset(
+                    self.ledger,
+                    changeset["id"],
+                    "merge_queued",
+                    fields={"metadata": metadata},
+                )
+            elif changeset["status"] != "merge_queued":
+                raise ValidationError(
+                    f"merge queue cannot start from status {changeset['status']}"
+                )
+        elif changeset["status"] == "merge_queued":
+            transition_changeset(
+                self.ledger,
+                changeset["id"],
+                "held",
+                fields={"metadata": metadata},
+            )
 
     def _authorization(self, delivery: dict[str, Any]) -> None:
         if delivery.get("action") not in {"revoked", "deleted"}:

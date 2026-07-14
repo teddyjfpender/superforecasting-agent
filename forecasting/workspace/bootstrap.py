@@ -9,7 +9,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from forecasting.change_control.models import LedgerOperation, changeset_digest
+from hermes_constants import get_hermes_home
+
+from forecasting.change_control.models import LedgerOperation, changeset_digest, content_digest
 from forecasting.ledger.gate import allow_ledger_writes
 from forecasting.models import ValidationError
 from forecasting.workspace.manifest import WorkspaceManifest
@@ -25,6 +27,138 @@ class BootstrapError(ValidationError):
 
 def _load_json(path: Path) -> Any:
     return json.loads(path.read_text("utf-8"))
+
+
+def _import_provenance(conn: Any, ledger: Any, root: Path, packet: dict[str, Any]) -> None:
+    changeset_id = str(packet["id"])
+    contributor_path = root / f"attestations/{changeset_id}/contributors.json"
+    if contributor_path.is_file():
+        contributors = _load_json(contributor_path).get("contributions") or []
+        for contribution in contributors:
+            attestation = dict(contribution["attestation"])
+            digest = str(contribution["digest"])
+            conn.execute(
+                """INSERT INTO collaboration_contributions (
+                       id, changeset_id, idempotency_key, owner_id, slack_user_id,
+                       github_user_id, agent_instance_id, agent_persona, actor_kind,
+                       commit_sha, attestation, attestation_digest, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    f"contrib_import_{digest[:24]}",
+                    changeset_id,
+                    f"portable:{changeset_id}:{digest}",
+                    str(attestation.get("human_owner") or "portable-owner"),
+                    f"portable:{attestation.get('human_owner') or 'owner'}",
+                    str(attestation.get("github_actor") or "portable-github-user"),
+                    str(attestation.get("agent_instance") or "portable-agent"),
+                    str(attestation.get("agent_persona") or "Portable Agent"),
+                    str(attestation.get("actor_kind") or "agent"),
+                    attestation.get("commit_sha"),
+                    json.dumps(attestation, sort_keys=True),
+                    digest,
+                    contribution["created_at"],
+                ),
+            )
+
+    provenance_path = root / f"attestations/{changeset_id}/provenance.json"
+    if not provenance_path.is_file():
+        return
+    provenance = _load_json(provenance_path)
+    bundle_id = f"prov_import_{changeset_id}"
+    conn.execute(
+        """INSERT INTO provenance_bundles
+           (id, changeset_id, changeset_digest, digest, created_at)
+           VALUES (?, ?, ?, ?, ?)""",
+        (
+            bundle_id,
+            changeset_id,
+            provenance["changeset_digest"],
+            provenance["provenance_digest"],
+            packet["created_at"],
+        ),
+    )
+    decisions_path = root / f"attestations/{changeset_id}/decisions.json"
+    if decisions_path.is_file():
+        for decision in _load_json(decisions_path).get("decisions") or []:
+            conn.execute(
+                """INSERT INTO provenance_decision_records
+                   (id, bundle_id, conclusion, alternatives, evidence_refs, assumptions,
+                    probability_changes, unresolved_uncertainty, model, prompt_version,
+                    tools, tests, digest, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    decision["id"],
+                    bundle_id,
+                    decision["conclusion"],
+                    json.dumps(decision.get("alternatives") or [], sort_keys=True),
+                    json.dumps(decision.get("evidence_refs") or [], sort_keys=True),
+                    json.dumps(decision.get("assumptions") or [], sort_keys=True),
+                    json.dumps(decision.get("probability_changes") or [], sort_keys=True),
+                    json.dumps(
+                        decision.get("unresolved_uncertainty") or [], sort_keys=True
+                    ),
+                    decision.get("model"),
+                    decision.get("prompt_version"),
+                    json.dumps(decision.get("tools") or [], sort_keys=True),
+                    json.dumps(decision.get("tests") or [], sort_keys=True),
+                    decision["digest"],
+                    decision["created_at"],
+                ),
+            )
+    transcript_manifest_path = root / f"transcripts/{changeset_id}/manifest.json"
+    if not transcript_manifest_path.is_file():
+        return
+    transcript_manifest = _load_json(transcript_manifest_path)
+    published_digest = transcript_manifest.get("published_digest")
+    safe_content = root / f"transcripts/{changeset_id}/transcript.md"
+    locator: str | None = None
+    if transcript_manifest.get("content_included") and safe_content.is_file():
+        destination = (
+            get_hermes_home()
+            / "provenance"
+            / "safe-transcripts"
+            / changeset_id
+            / f"{published_digest}.md"
+        )
+        destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        destination.parent.chmod(0o700)
+        destination.write_bytes(safe_content.read_bytes())
+        destination.chmod(0o600)
+        locator = str(destination)
+    for artifact in transcript_manifest.get("artifacts") or []:
+        conn.execute(
+            """INSERT INTO provenance_transcripts
+               (id, bundle_id, format, status, digest, locator, byte_size,
+                safety_findings, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                artifact["id"],
+                bundle_id,
+                artifact["format"],
+                artifact["status"],
+                artifact["digest"],
+                locator if artifact["digest"] == published_digest else None,
+                artifact["byte_size"],
+                json.dumps(artifact.get("safety_findings") or [], sort_keys=True),
+                artifact["created_at"],
+            ),
+        )
+    for consent in transcript_manifest.get("publication_consents") or []:
+        consent_digest = str(consent["transcript_digest"])
+        conn.execute(
+            """INSERT INTO provenance_consents
+               (id, changeset_id, transcript_digest, repository_slug, owner_id,
+                decision, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (
+                f"consent_import_{content_digest(consent)[:24]}",
+                changeset_id,
+                consent_digest,
+                consent["repository_slug"],
+                consent["owner_id"],
+                consent["decision"],
+                consent["created_at"],
+            ),
+        )
 
 
 def _import_changesets(ledger: Any, root: Path, manifest: WorkspaceManifest) -> None:
@@ -114,6 +248,7 @@ def _import_changesets(ledger: Any, root: Path, manifest: WorkspaceManifest) -> 
                         review.get("stale_at"),
                     ),
                 )
+            _import_provenance(conn, ledger, root, packet)
         revision_packet = _load_json(root / "ledger/revisions.json")
         conn.execute("DELETE FROM ledger_revisions")
         for revision in revision_packet["revisions"]:
@@ -171,6 +306,7 @@ def bootstrap_workspace(
                 Path(temp),
                 workspace_id=manifest.workspace_id,
                 default_branch=manifest.default_branch,
+                repository_slug=manifest.repository_slug,
             )
             if exported.content_digest != manifest.content_digest:
                 raise ValidationError(
