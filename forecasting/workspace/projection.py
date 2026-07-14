@@ -10,7 +10,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from forecasting.change_control.store import current_revision, list_changesets, list_operations, list_reviews
+from forecasting.change_control.models import content_digest
+from forecasting.change_control.transcripts import review_transcript_findings
 from forecasting.workspace.manifest import WorkspaceManifest
+from hermes_constants import get_hermes_home
 
 
 _DROP_KEYS = frozenset(
@@ -125,7 +128,39 @@ def _changeset_packet(ledger: Any, changeset: Mapping[str, Any]) -> dict[str, An
     return _portable(public)
 
 
-def _provenance_files(ledger: Any, changeset_id: str) -> dict[str, bytes]:
+def _safe_transcript_bytes(row: Mapping[str, Any]) -> bytes | None:
+    locator = row.get("locator")
+    if not locator:
+        return None
+    allowed = (get_hermes_home() / "provenance" / "safe-transcripts").resolve()
+    try:
+        candidate = Path(str(locator)).expanduser()
+        if candidate.is_symlink():
+            return None
+        path = candidate.resolve(strict=True)
+        path.relative_to(allowed)
+        if not path.is_file() or path.stat().st_size > 2_000_000:
+            return None
+        data = path.read_bytes()
+        text = data.decode("utf-8")
+    except (OSError, UnicodeDecodeError, ValueError):
+        return None
+    if len(data) != int(row["byte_size"]):
+        return None
+    if content_digest(text) != row["digest"]:
+        return None
+    if review_transcript_findings(text, location="safe-transcript-artifact"):
+        return None
+    return data
+
+
+def _provenance_files(
+    ledger: Any,
+    changeset: Mapping[str, Any],
+    *,
+    repository_slug: str | None,
+) -> dict[str, bytes]:
+    changeset_id = str(changeset["id"])
     files: dict[str, bytes] = {}
     with ledger._connect() as conn:
         bundle = conn.execute(
@@ -160,7 +195,7 @@ def _provenance_files(ledger: Any, changeset_id: str) -> dict[str, bytes]:
             (bundle["id"],),
         ).fetchall()
         transcripts = conn.execute(
-            """SELECT id, format, status, digest, byte_size, safety_findings, created_at
+            """SELECT id, format, status, digest, locator, byte_size, safety_findings, created_at
                FROM provenance_transcripts WHERE bundle_id = ? ORDER BY created_at, id""",
             (bundle["id"],),
         ).fetchall()
@@ -206,19 +241,57 @@ def _provenance_files(ledger: Any, changeset_id: str) -> dict[str, bytes]:
             }
         )
     if transcripts or consents:
+        latest = transcripts[-1] if transcripts else None
+        initiating_owners = changeset.get("author_owner_ids") or ()
+        initiating_owner = str(initiating_owners[0]) if initiating_owners else None
+        publication_status = "transcript_not_available"
+        transcript_content: bytes | None = None
+        if latest is not None:
+            if latest["status"] == "unsafe":
+                publication_status = "transcript_unavailable_safety_failure"
+            elif latest["status"] == "withheld":
+                publication_status = "transcript_withheld_by_owner"
+            elif not repository_slug or not initiating_owner:
+                publication_status = "transcript_consent_required"
+            else:
+                decision = next(
+                    (
+                        row["decision"]
+                        for row in consents
+                        if row["transcript_digest"] == latest["digest"]
+                        and row["repository_slug"] == repository_slug
+                        and row["owner_id"] == initiating_owner
+                    ),
+                    None,
+                )
+                if decision == "omit":
+                    publication_status = "transcript_withheld_by_owner"
+                elif decision == "include":
+                    transcript_content = _safe_transcript_bytes(dict(latest))
+                    publication_status = (
+                        "transcript_included"
+                        if transcript_content is not None
+                        else "transcript_unavailable_safety_failure"
+                    )
+                else:
+                    publication_status = "transcript_consent_required"
+        if transcript_content is not None:
+            files[f"transcripts/{changeset_id}/transcript.md"] = transcript_content
         files[f"transcripts/{changeset_id}/manifest.json"] = _json_bytes(
             {
                 "version": 1,
                 "changeset_id": changeset_id,
                 "artifacts": [
                     {
-                        **dict(row),
+                        **{key: value for key, value in dict(row).items() if key != "locator"},
                         "safety_findings": json.loads(row["safety_findings"]),
                     }
                     for row in transcripts
                 ],
                 "publication_consents": [dict(row) for row in consents],
-                "content_included": False,
+                "publication_status": publication_status,
+                "content_included": transcript_content is not None,
+                "published_digest": latest["digest"] if transcript_content is not None else None,
             }
         )
     return files
@@ -230,6 +303,7 @@ def export_workspace(
     *,
     workspace_id: str,
     default_branch: str = "main",
+    repository_slug: str | None = None,
 ) -> WorkspaceManifest:
     """Export a read-consistent, secret-resistant repository projection."""
 
@@ -263,7 +337,13 @@ def export_workspace(
             files[f"changesets/{changeset['id']}/changeset.json"] = _json_bytes(
                 _changeset_packet(snapshot, changeset)
             )
-            files.update(_provenance_files(snapshot, str(changeset["id"])))
+            files.update(
+                _provenance_files(
+                    snapshot,
+                    changeset,
+                    repository_slug=repository_slug,
+                )
+            )
         files["policies/review-policy.json"] = _json_bytes(
             {"version": 1, "risk_tiers": ["low", "medium", "high"]}
         )

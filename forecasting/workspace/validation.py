@@ -91,6 +91,17 @@ def _validate_generated_json(relative: str, value: object) -> list[str]:
     elif relative.endswith("/manifest.json") and relative.startswith("transcripts/"):
         if value.get("version") != 1 or not isinstance(value.get("artifacts"), list):
             errors.append(f"invalid transcript manifest: {relative}")
+        allowed_statuses = {
+            "transcript_not_available",
+            "transcript_consent_required",
+            "transcript_withheld_by_owner",
+            "transcript_unavailable_safety_failure",
+            "transcript_included",
+        }
+        if value.get("publication_status") not in allowed_statuses:
+            errors.append(f"invalid transcript publication status: {relative}")
+        if not isinstance(value.get("content_included"), bool):
+            errors.append(f"invalid transcript inclusion flag: {relative}")
     elif relative in {"policies/review-policy.json", "extensions/lock.json"}:
         if value.get("version") != 1:
             errors.append(f"unsupported generated record version: {relative}")
@@ -161,6 +172,33 @@ def validate_workspace(
                     errors.extend(_validate_generated_json(relative, value))
 
     if manifest is not None:
+        for relative, path in actual.items():
+            if not (
+                relative.startswith("transcripts/")
+                and relative.endswith("/manifest.json")
+            ):
+                continue
+            try:
+                packet = json.loads(path.read_text("utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            included = packet.get("content_included") is True
+            status = packet.get("publication_status")
+            transcript_relative = relative.removesuffix("manifest.json") + "transcript.md"
+            transcript_path = actual.get(transcript_relative)
+            if included:
+                if status != "transcript_included" or transcript_path is None:
+                    errors.append(f"included transcript content is missing: {relative}")
+                else:
+                    try:
+                        transcript_text = transcript_path.read_text("utf-8")
+                    except (OSError, UnicodeDecodeError):
+                        continue
+                    if content_digest(transcript_text) != packet.get("published_digest"):
+                        errors.append(f"published transcript digest mismatch: {relative}")
+            elif transcript_path is not None:
+                errors.append(f"withheld transcript content is present: {relative}")
+
         expected = set(manifest.files)
         missing = sorted(expected - set(actual))
         unexpected = sorted(set(actual) - expected - {"forecast-workspace.yaml"})

@@ -71,6 +71,15 @@ def _find_secrets(text: str, location: str) -> list[dict[str, str]]:
     ]
 
 
+def review_transcript_findings(text: str, *, location: str = "transcript") -> tuple[dict[str, str], ...]:
+    """Re-scan a rendered transcript before it crosses a publication boundary."""
+
+    findings = _find_secrets(text, location)
+    if MARKER_START not in text or MARKER_END not in text:
+        findings.append({"class": "invalid_transcript_markers", "location": location})
+    return tuple(findings)
+
+
 def _sanitize(text: str, *, max_chars: int) -> str:
     value = _PATH.sub("[LOCAL_PATH]", text)
     value = _EMAIL.sub("[REDACTED_EMAIL]", value)
@@ -259,5 +268,6 @@ __all__ = [
     "MARKER_START",
     "TranscriptRender",
     "render_review_transcript",
+    "review_transcript_findings",
     "update_marked_section",
 ]

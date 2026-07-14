@@ -84,6 +84,7 @@ class GitHubPublisher:
             root,
             workspace_id=changeset["workspace_id"],
             default_branch=self.default_branch,
+            repository_slug=self.repository_slug,
         )
         validate_workspace(root, raise_on_error=True)
         preview = preview_changeset(self.ledger, changeset_id)

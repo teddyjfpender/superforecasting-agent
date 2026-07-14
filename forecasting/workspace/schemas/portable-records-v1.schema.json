@@ -58,8 +58,15 @@
     },
     "transcriptManifest": {
       "type": "object",
-      "required": ["version", "changeset_id", "artifacts", "publication_consents", "content_included"],
-      "properties": { "version": { "const": 1 }, "artifacts": { "type": "array" }, "publication_consents": { "type": "array" } }
+      "required": ["version", "changeset_id", "artifacts", "publication_consents", "publication_status", "content_included", "published_digest"],
+      "properties": {
+        "version": { "const": 1 },
+        "artifacts": { "type": "array" },
+        "publication_consents": { "type": "array" },
+        "publication_status": { "enum": ["transcript_not_available", "transcript_consent_required", "transcript_withheld_by_owner", "transcript_unavailable_safety_failure", "transcript_included"] },
+        "content_included": { "type": "boolean" },
+        "published_digest": { "type": ["string", "null"] }
+      }
     },
     "reviewPolicy": {
       "type": "object",

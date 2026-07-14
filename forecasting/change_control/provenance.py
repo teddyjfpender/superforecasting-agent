@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import uuid
+from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from forecasting.change_control.models import content_digest
 from forecasting.change_control.store import get_changeset
 from forecasting.models import LedgerNotFoundError, ValidationError, utc_now_iso
+from hermes_constants import get_hermes_home
 
 
 def ensure_bundle(ledger: Any, changeset_id: str) -> dict[str, Any]:
@@ -178,9 +182,33 @@ def record_transcript(
     byte_size: int,
     locator: str | None = None,
     safety_findings: Iterable[Mapping[str, Any]] = (),
+    content: str | None = None,
 ) -> dict[str, Any]:
     if status not in {"safe", "withheld", "unsafe"}:
         raise ValidationError(f"unsupported transcript status: {status}")
+    if content is not None:
+        if status != "safe" or format != "markdown":
+            raise ValidationError("only safe Markdown transcript content may be stored")
+        if locator is not None:
+            raise ValidationError("locator cannot be supplied with transcript content")
+        encoded = content.encode("utf-8")
+        if content_digest(content) != digest or len(encoded) != int(byte_size):
+            raise ValidationError("transcript content does not match its digest or byte size")
+        directory = (
+            get_hermes_home() / "provenance" / "safe-transcripts" / changeset_id
+        )
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        os.chmod(directory, 0o700)
+        destination = directory / f"{digest}.md"
+        with tempfile.NamedTemporaryFile(
+            mode="wb", dir=directory, prefix=".transcript-", delete=False
+        ) as handle:
+            handle.write(encoded)
+            temporary = Path(handle.name)
+        os.chmod(temporary, 0o600)
+        temporary.replace(destination)
+        os.chmod(destination, 0o600)
+        locator = str(destination)
     bundle = ensure_bundle(ledger, changeset_id)
     transcript_id = f"transcript_{uuid.uuid4().hex[:16]}"
     with ledger._connect() as conn:
