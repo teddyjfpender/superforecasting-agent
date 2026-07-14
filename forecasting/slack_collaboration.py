@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import secrets
+import tempfile
 import time
 from datetime import datetime, timezone
 from typing import Any, Callable, Mapping
@@ -87,6 +88,8 @@ class SlackActionService:
         signing_key: bytes,
         repository_slug: str,
         github_client_factory: Callable[[dict[str, Any], str], Any] | None = None,
+        github_publisher_factory: Callable[[dict[str, Any], dict[str, Any]], Any]
+        | None = None,
         role_resolver: Callable[[str, dict[str, Any]], set[str]] | None = None,
         clock: Callable[[], float] = time.time,
     ) -> None:
@@ -96,6 +99,7 @@ class SlackActionService:
         self.signing_key = signing_key
         self.repository_slug = repository_slug
         self.github_client_factory = github_client_factory
+        self.github_publisher_factory = github_publisher_factory
         self.role_resolver = role_resolver or self._default_roles
         self.clock = clock
 
@@ -201,9 +205,12 @@ class SlackActionService:
                 "action": action,
                 "changeset_id": changeset["id"],
                 "state": "failed",
+                "status": get_changeset(self.ledger, changeset["id"])["status"],
                 "message": "The changeset action could not be completed safely.",
             }
             self._finish(nonce_hash, "failed", result)
+            if action == "open_pr":
+                return result
             raise
 
     def _apply(
@@ -270,7 +277,22 @@ class SlackActionService:
             )
             result["consent"] = consent["decision"]
         elif action == "open_pr":
-            result["pr_number"] = changeset.get("pr_number")
+            if changeset.get("pr_number"):
+                result["pr_number"] = changeset["pr_number"]
+            elif self.github_publisher_factory is None:
+                raise ValidationError("GitHub publication is not configured")
+            else:
+                publisher = self.github_publisher_factory(binding, changeset)
+                with tempfile.TemporaryDirectory(prefix="forecast-github-publish-") as root:
+                    published = publisher.publish(changeset["id"], root)
+                result.update(
+                    {
+                        "pr_number": published["pr_number"],
+                        "pr_url": published.get("pr_url"),
+                        "head_repository": published.get("head_repository"),
+                        "publication_mode": published.get("publication_mode"),
+                    }
+                )
         elif action in {"view_diff", "preview_transcript"}:
             result["read_only"] = True
         result["status"] = get_changeset(self.ledger, changeset["id"])["status"]
@@ -402,6 +424,8 @@ class SlackActionService:
             "author_owner_ids"
         ]:
             raise PermissionError("only an initiating owner may publish transcript content")
+        if action == "open_pr" and owner_id not in changeset["author_owner_ids"]:
+            raise PermissionError("only a contributing owner may publish this changeset")
         if action in _REVIEW_ACTIONS and not (
             {"reviewer", "owner", "steward", "admin"} & roles
         ):
@@ -676,7 +700,7 @@ class SlackChangesetCardService:
             names.extend(["transcript_include", "transcript_omit"])
         names.extend(["approve", "request_changes", "reject"])
         names.append("resume" if changeset["status"] == "held" else "hold")
-        if changeset.get("pr_number"):
+        if not changeset.get("pr_number"):
             names.append("open_pr")
         names.append("cancel")
         elements = []

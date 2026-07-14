@@ -31,6 +31,7 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             "review_required",
             "changes_requested",
             "held",
+            "blocked",
             "cancelled",
             "abandoned",
         }
@@ -45,13 +46,14 @@ _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
             "held",
             "merge_ready",
             "rejected",
+            "blocked",
             "cancelled",
         }
     ),
     "changes_requested": frozenset(
-        {"draft", "checks_running", "held", "rejected", "cancelled"}
+        {"draft", "checks_running", "held", "blocked", "rejected", "cancelled"}
     ),
-    "held": frozenset({"draft", "review_open", "review_required", "cancelled"}),
+    "held": frozenset({"draft", "review_open", "review_required", "blocked", "cancelled"}),
     "blocked": frozenset({"draft", "checks_running", "cancelled", "superseded"}),
     "merge_ready": frozenset({"merge_queued", "merged_apply_pending", "held"}),
     "merge_queued": frozenset({"merged_apply_pending", "held", "blocked"}),

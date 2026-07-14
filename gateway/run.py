@@ -3250,6 +3250,7 @@ class GatewayRunner:
                 CapabilityGitHubClient,
                 GitHubCapabilityBroker,
                 GitHubOAuthService,
+                GitHubPublisher,
             )
             from forecasting.slack_collaboration import (
                 SlackActionService,
@@ -3261,6 +3262,7 @@ class GatewayRunner:
             control = ChangeControl(ledger)
             cards = SlackChangesetCardService(ledger)
             github_factory = None
+            github_publisher_factory = None
             oauth_secret = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
             token_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", "")
             capability_secret = os.getenv("GITHUB_CAPABILITY_SIGNING_KEY", "")
@@ -3276,21 +3278,57 @@ class GatewayRunner:
                     api_url=str(github.get("api_url") or "https://api.github.com"),
                     api_version=str(github.get("api_version") or "2026-03-10"),
                 )
-                broker = GitHubCapabilityBroker(
-                    ledger,
-                    repository_slug=repository_slug,
-                    signing_key=hashlib.sha256(capability_secret.encode()).digest(),
-                    token_provider=oauth.control_plane_token,
-                    api_url=str(github.get("api_url") or "https://api.github.com"),
-                    api_version=str(github.get("api_version") or "2026-03-10"),
-                )
 
-                def github_factory(binding: dict[str, Any], changeset_id: str) -> Any:
+                def delegated_client(
+                    binding: dict[str, Any],
+                    changeset_id: str,
+                    *,
+                    actor_kind: str,
+                    include_owner_fork: bool = False,
+                ) -> Any:
+                    fork_slug = f"{binding['github_login']}/{repository_slug.split('/', 1)[1]}"
+                    broker = GitHubCapabilityBroker(
+                        ledger,
+                        repository_slug=repository_slug,
+                        additional_repository_slugs=[fork_slug]
+                        if include_owner_fork
+                        else (),
+                        signing_key=hashlib.sha256(capability_secret.encode()).digest(),
+                        token_provider=oauth.control_plane_token,
+                        api_url=str(github.get("api_url") or "https://api.github.com"),
+                        api_version=str(github.get("api_version") or "2026-03-10"),
+                    )
                     return CapabilityGitHubClient(
                         broker,
                         changeset_id=changeset_id,
                         identity_binding_id=binding["id"],
-                        actor_kind="human",
+                        actor_kind=actor_kind,
+                    )
+
+                def github_factory(binding: dict[str, Any], changeset_id: str) -> Any:
+                    return delegated_client(binding, changeset_id, actor_kind="human")
+
+                def github_publisher_factory(
+                    binding: dict[str, Any], changeset: dict[str, Any]
+                ) -> Any:
+                    client = delegated_client(
+                        binding,
+                        changeset["id"],
+                        actor_kind="agent",
+                        include_owner_fork=True,
+                    )
+                    fork_slug = (
+                        f"{binding['github_login']}/{repository_slug.split('/', 1)[1]}"
+                    )
+                    return GitHubPublisher(
+                        ledger,
+                        repository_slug=repository_slug,
+                        client=client,
+                        default_branch=str(repository.get("default_branch") or "main"),
+                        fork_repository_slug=fork_slug,
+                        fork_owner_login=binding["github_login"],
+                        fork_owner_github_user_id=binding["github_user_id"],
+                        fork_client=client,
                     )
 
             actions = SlackActionService(
@@ -3298,6 +3336,7 @@ class GatewayRunner:
                 signing_key=hashlib.sha256(action_secret.encode()).digest(),
                 repository_slug=repository_slug,
                 github_client_factory=github_factory,
+                github_publisher_factory=github_publisher_factory,
             )
 
             async def on_message(context: dict[str, str]) -> None:
@@ -3386,6 +3425,39 @@ class GatewayRunner:
                     slack_user_id=user_id,
                 )
                 card = await asyncio.to_thread(cards.get, result["changeset_id"])
+                if result.get("pr_url"):
+                    card = await asyncio.to_thread(
+                        cards.update,
+                        result["changeset_id"],
+                        slack_team_id=card["slack_team_id"],
+                        slack_channel_id=card["slack_channel_id"],
+                        slack_thread_ts=card["slack_thread_ts"],
+                        phase="draft_pr",
+                        next_action="Draft PR published; checks and review are now visible.",
+                        pr_url=result["pr_url"],
+                        checks_state="pending",
+                        state={
+                            **card["state"],
+                            "head_repository": result.get("head_repository"),
+                            "publication_mode": result.get("publication_mode"),
+                        },
+                    )
+                elif result.get("ok") is False:
+                    card = await asyncio.to_thread(
+                        cards.update,
+                        result["changeset_id"],
+                        slack_team_id=card["slack_team_id"],
+                        slack_channel_id=card["slack_channel_id"],
+                        slack_thread_ts=card["slack_thread_ts"],
+                        phase="failed",
+                        next_action=(
+                            "Publication is blocked but recoverable; relink GitHub access "
+                            "or retry with a fresh action."
+                        ),
+                        pr_url=card.get("pr_url"),
+                        checks_state=card["checks_state"],
+                        state={**card["state"], "run_state": "publication_blocked"},
+                    )
                 rendered = await asyncio.to_thread(
                     cards.render,
                     result["changeset_id"],

@@ -4,9 +4,12 @@ import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
+import pytest
+
 from forecasting import ForecastLedger
 from forecasting.change_control import ChangeControl, LedgerOperation
 from forecasting.github.app import GitHubAppClient
+from forecasting.github.capabilities import GitHubPermissionError
 from forecasting.github.checks import PromotionCheckPublisher
 from forecasting.github.publisher import GitHubPublisher
 
@@ -68,6 +71,39 @@ class _Response:
 
     def json(self):
         return self._body
+
+
+class _ForkGitHub(_GitHub):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fork_exists = False
+        self.deny_canonical = True
+        self.deny_fork = False
+
+    def call(self, action, method, path, body=None, *, expected_statuses=()):
+        self.calls.append((action, method, path, body, expected_statuses))
+        if method == "GET" and path == "/repos/octocat/forecasts":
+            if not self.fork_exists:
+                return {"status_code": 404, "body": {"message": "Not Found"}}
+            return {"status_code": 200, "body": self._fork_body()}
+        if method == "POST" and path == "/repos/acme/forecasts/forks":
+            self.fork_exists = True
+            return {"status_code": 202, "body": self._fork_body()}
+        if method == "POST" and path == "/repos/acme/forecasts/git/blobs" and self.deny_canonical:
+            raise GitHubPermissionError("denied", status_code=403)
+        if method == "POST" and path == "/repos/octocat/forecasts/git/blobs" and self.deny_fork:
+            raise GitHubPermissionError("denied", status_code=403)
+        self.calls.pop()
+        return super().call(action, method, path, body, expected_statuses=expected_statuses)
+
+    @staticmethod
+    def _fork_body():
+        return {
+            "full_name": "octocat/forecasts",
+            "owner": {"login": "octocat", "id": 101},
+            "parent": {"full_name": "acme/forecasts"},
+            "source": {"full_name": "acme/forecasts"},
+        }
 
 
 def _changeset(tmp_path):
@@ -158,6 +194,75 @@ def test_republish_updates_existing_pr_and_stales_head_bound_review(tmp_path):
         call for call in github.calls if call[1] == "PATCH" and "/git/ref/heads/" in call[2]
     ]
     assert branch_updates[-1][3]["force"] is False
+
+
+def _fork_publisher(ledger, github):
+    return GitHubPublisher(
+        ledger,
+        repository_slug="acme/forecasts",
+        client=github,
+        fork_repository_slug="octocat/forecasts",
+        fork_owner_login="octocat",
+        fork_owner_github_user_id="101",
+        fork_client=github,
+    )
+
+
+def test_publisher_falls_back_to_verified_owner_fork_without_force_push(tmp_path):
+    ledger, control, changeset = _changeset(tmp_path)
+    github = _ForkGitHub()
+    result = _fork_publisher(ledger, github).publish(
+        changeset["id"], tmp_path / "workspace"
+    )
+
+    assert result["repository"] == "acme/forecasts"
+    assert result["head_repository"] == "octocat/forecasts"
+    assert result["publication_mode"] == "owner_fork"
+    assert control.get_changeset(changeset["id"])["digest"] == changeset["digest"]
+    assert any(call[2] == "/repos/acme/forecasts/forks" for call in github.calls)
+    pr_call = next(call for call in github.calls if call[2].endswith("/pulls"))
+    assert pr_call[3]["head"] == f"octocat:{result['branch']}"
+    assert not any(
+        call[1] == "PATCH" and (call[3] or {}).get("force") is True
+        for call in github.calls
+    )
+
+
+def test_fork_permission_loss_blocks_but_preserves_recoverable_changeset(tmp_path):
+    ledger, control, changeset = _changeset(tmp_path)
+    github = _ForkGitHub()
+    publisher = _fork_publisher(ledger, github)
+    publisher.publish(changeset["id"], tmp_path / "workspace")
+    github.deny_fork = True
+
+    with pytest.raises(GitHubPermissionError):
+        publisher.publish(changeset["id"], tmp_path / "workspace")
+
+    stored = control.get_changeset(changeset["id"])
+    assert stored["status"] == "blocked"
+    assert stored["metadata"]["github_publication_error"] == {
+        "recoverable": True,
+        "category": "permission_denied",
+    }
+    assert stored["digest"] == changeset["digest"]
+
+
+def test_publisher_rejects_repository_confused_fork(tmp_path):
+    ledger, control, changeset = _changeset(tmp_path)
+    github = _ForkGitHub()
+    github._fork_body = lambda: {
+        "full_name": "octocat/forecasts",
+        "owner": {"login": "octocat", "id": 999},
+        "parent": {"full_name": "attacker/forecasts"},
+        "source": {"full_name": "attacker/forecasts"},
+    }
+
+    with pytest.raises(PermissionError, match="identity or ancestry"):
+        _fork_publisher(ledger, github).publish(
+            changeset["id"], tmp_path / "workspace"
+        )
+
+    assert control.get_changeset(changeset["id"])["status"] == "blocked"
 
 
 def test_app_client_uses_cached_installation_token_and_redacts_response():

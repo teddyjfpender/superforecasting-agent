@@ -15,6 +15,7 @@ from forecasting.change_control.store import (
     list_reviews,
     transition_changeset,
 )
+from forecasting.github.capabilities import GitHubPermissionError
 from forecasting.models import ValidationError
 from forecasting.workspace import export_workspace, validate_workspace
 
@@ -55,6 +56,10 @@ class GitHubPublisher:
         repository_slug: str,
         client: GitHubCaller,
         default_branch: str = "main",
+        fork_repository_slug: str | None = None,
+        fork_owner_login: str | None = None,
+        fork_owner_github_user_id: str | None = None,
+        fork_client: GitHubCaller | None = None,
     ) -> None:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository_slug):
             raise ValidationError("repository_slug must use owner/repository form")
@@ -64,6 +69,26 @@ class GitHubPublisher:
         self.repository_slug = repository_slug
         self.default_branch = default_branch
         self.client = client
+        self.fork_repository_slug = fork_repository_slug
+        self.fork_owner_login = fork_owner_login
+        self.fork_owner_github_user_id = fork_owner_github_user_id
+        self.fork_client = fork_client
+        fork_values = (
+            fork_repository_slug,
+            fork_owner_login,
+            fork_owner_github_user_id,
+            fork_client,
+        )
+        if any(value is not None for value in fork_values):
+            if not all(value is not None for value in fork_values):
+                raise ValidationError("owner-fork fallback configuration is incomplete")
+            if not re.fullmatch(
+                r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", str(fork_repository_slug)
+            ):
+                raise ValidationError("fork_repository_slug must use owner/repository form")
+            fork_owner, _ = str(fork_repository_slug).split("/", 1)
+            if fork_owner.casefold() != str(fork_owner_login).casefold():
+                raise ValidationError("fork repository owner must match the linked GitHub login")
 
     def publish(
         self,
@@ -88,16 +113,65 @@ class GitHubPublisher:
         )
         validate_workspace(root, raise_on_error=True)
         preview = preview_changeset(self.ledger, changeset_id)
-        head_sha = self._publish_tree(root, branch, changeset)
-        body = self._pull_request_body(
-            changeset,
-            preview=preview,
-            provenance_digest=bundle["digest"],
-            slack_thread_url=slack_thread_url,
-        )
-        pr = self._publish_pull_request(changeset, branch=branch, body=body)
+        publication = dict((changeset.get("metadata") or {}).get("github_publication") or {})
+        head_repository = str(publication.get("head_repository") or self.repository_slug)
+        tree_client = self.client
+        if head_repository != self.repository_slug:
+            if head_repository != self.fork_repository_slug or self.fork_client is None:
+                raise ValidationError("stored GitHub publication repository is not authorized")
+            self._ensure_owner_fork()
+            tree_client = self.fork_client
+        try:
+            try:
+                head_sha = self._publish_tree(
+                    root,
+                    branch,
+                    changeset,
+                    repository_slug=head_repository,
+                    client=tree_client,
+                )
+            except GitHubPermissionError:
+                if head_repository != self.repository_slug or self.fork_client is None:
+                    raise
+                self._ensure_owner_fork()
+                head_repository = str(self.fork_repository_slug)
+                tree_client = self.fork_client
+                head_sha = self._publish_tree(
+                    root,
+                    branch,
+                    changeset,
+                    repository_slug=head_repository,
+                    client=tree_client,
+                )
+            body = self._pull_request_body(
+                changeset,
+                preview=preview,
+                provenance_digest=bundle["digest"],
+                slack_thread_url=slack_thread_url,
+            )
+            reuse_pr = bool(changeset.get("pr_number")) and (
+                not publication or publication.get("head_repository") == head_repository
+            )
+            pr = self._publish_pull_request(
+                changeset,
+                branch=branch,
+                body=body,
+                head_repository=head_repository,
+                reuse_pr=reuse_pr,
+            )
+        except Exception as exc:
+            self._record_publication_failure(changeset_id, exc)
+            raise
 
         current = get_changeset(self.ledger, changeset_id)
+        metadata = dict(current.get("metadata") or {})
+        recovering_publication = "github_publication_error" in metadata
+        metadata["github_publication"] = {
+            "canonical_repository": self.repository_slug,
+            "head_repository": head_repository,
+            "mode": "canonical" if head_repository == self.repository_slug else "owner_fork",
+        }
+        metadata.pop("github_publication_error", None)
         updated = transition_changeset(
             self.ledger,
             changeset_id,
@@ -106,6 +180,7 @@ class GitHubPublisher:
                 "branch": branch,
                 "head_sha": head_sha,
                 "pr_number": int(pr["number"]),
+                "metadata": metadata,
             },
         )
         if updated["status"] == "publishing":
@@ -115,9 +190,20 @@ class GitHubPublisher:
                 "review_open",
                 expected_status="publishing",
             )
+        elif updated["status"] == "blocked" and recovering_publication:
+            updated = transition_changeset(
+                self.ledger,
+                changeset_id,
+                "checks_running",
+                expected_status="blocked",
+            )
         return {
             "changeset_id": changeset_id,
             "repository": self.repository_slug,
+            "head_repository": head_repository,
+            "publication_mode": (
+                "canonical" if head_repository == self.repository_slug else "owner_fork"
+            ),
             "branch": branch,
             "head_sha": head_sha,
             "pr_number": int(pr["number"]),
@@ -149,27 +235,30 @@ class GitHubPublisher:
         root: Path,
         branch: str,
         changeset: Mapping[str, Any],
+        *,
+        repository_slug: str,
+        client: GitHubCaller,
     ) -> str:
-        branch_path = f"/repos/{self.repository_slug}/git/ref/heads/{branch}"
-        branch_ref = self.client.call(
+        branch_path = f"/repos/{repository_slug}/git/ref/heads/{branch}"
+        branch_ref = client.call(
             "repository.read", "GET", branch_path, expected_statuses=(404,)
         )
         branch_exists = branch_ref["status_code"] != 404
         if branch_exists:
             parent_sha = str(_body(branch_ref).get("object", {}).get("sha") or "")
         else:
-            base_ref = self.client.call(
+            base_ref = client.call(
                 "repository.read",
                 "GET",
-                f"/repos/{self.repository_slug}/git/ref/heads/{self.default_branch}",
+                f"/repos/{repository_slug}/git/ref/heads/{self.default_branch}",
             )
             parent_sha = str(_body(base_ref).get("object", {}).get("sha") or "")
         if not parent_sha:
             raise ValidationError("GitHub branch response did not include a commit SHA")
-        parent_commit = self.client.call(
+        parent_commit = client.call(
             "repository.read",
             "GET",
-            f"/repos/{self.repository_slug}/git/commits/{parent_sha}",
+            f"/repos/{repository_slug}/git/commits/{parent_sha}",
         )
         parent_tree = str(_body(parent_commit).get("tree", {}).get("sha") or "")
         if not parent_tree:
@@ -178,10 +267,10 @@ class GitHubPublisher:
         entries: list[dict[str, str]] = []
         for path in sorted(item for item in root.rglob("*") if item.is_file()):
             relative = path.relative_to(root).as_posix()
-            blob = self.client.call(
+            blob = client.call(
                 "branch.write",
                 "POST",
-                f"/repos/{self.repository_slug}/git/blobs",
+                f"/repos/{repository_slug}/git/blobs",
                 {
                     "content": base64.b64encode(path.read_bytes()).decode("ascii"),
                     "encoding": "base64",
@@ -191,10 +280,10 @@ class GitHubPublisher:
             if not blob_sha:
                 raise ValidationError(f"GitHub did not return a blob SHA for {relative}")
             entries.append({"path": relative, "mode": "100644", "type": "blob", "sha": blob_sha})
-        tree = self.client.call(
+        tree = client.call(
             "branch.write",
             "POST",
-            f"/repos/{self.repository_slug}/git/trees",
+            f"/repos/{repository_slug}/git/trees",
             {"base_tree": parent_tree, "tree": entries},
         )
         tree_sha = str(_body(tree).get("sha") or "")
@@ -202,10 +291,10 @@ class GitHubPublisher:
             raise ValidationError("GitHub did not return a tree SHA")
         head_sha = parent_sha
         if tree_sha != parent_tree:
-            commit = self.client.call(
+            commit = client.call(
                 "branch.write",
                 "POST",
-                f"/repos/{self.repository_slug}/git/commits",
+                f"/repos/{repository_slug}/git/commits",
                 {
                     "message": f"Forecast changeset {changeset['id']}\n\nDigest: {changeset['digest']}",
                     "tree": tree_sha,
@@ -217,17 +306,17 @@ class GitHubPublisher:
                 raise ValidationError("GitHub did not return a commit SHA")
         if branch_exists:
             if head_sha != parent_sha:
-                self.client.call(
+                client.call(
                     "branch.write",
                     "PATCH",
                     branch_path,
                     {"sha": head_sha, "force": False},
                 )
         else:
-            self.client.call(
+            client.call(
                 "branch.write",
                 "POST",
-                f"/repos/{self.repository_slug}/git/refs",
+                f"/repos/{repository_slug}/git/refs",
                 {"ref": f"refs/heads/{branch}", "sha": head_sha},
             )
         return head_sha
@@ -238,15 +327,18 @@ class GitHubPublisher:
         *,
         branch: str,
         body: str,
+        head_repository: str,
+        reuse_pr: bool,
     ) -> Mapping[str, Any]:
+        head_owner = head_repository.split("/", 1)[0]
         payload = {
             "title": f"Forecast changeset {changeset['id']}",
             "body": body,
             "base": self.default_branch,
-            "head": branch,
+            "head": branch if head_repository == self.repository_slug else f"{head_owner}:{branch}",
             "draft": True,
         }
-        if changeset.get("pr_number"):
+        if reuse_pr:
             result = self.client.call(
                 "pull_request.write",
                 "PATCH",
@@ -264,6 +356,67 @@ class GitHubPublisher:
         if not value.get("number"):
             raise ValidationError("GitHub did not return a pull request number")
         return value
+
+    def _ensure_owner_fork(self) -> Mapping[str, Any]:
+        if self.fork_client is None or self.fork_repository_slug is None:
+            raise GitHubPermissionError(
+                "canonical branch write was denied and no owner fork is configured"
+            )
+        result = self.fork_client.call(
+            "repository.read",
+            "GET",
+            f"/repos/{self.fork_repository_slug}",
+            expected_statuses=(404,),
+        )
+        if result["status_code"] == 404:
+            result = self.fork_client.call(
+                "repository.fork",
+                "POST",
+                f"/repos/{self.repository_slug}/forks",
+                {},
+            )
+        repository = _body(result)
+        full_name = str(repository.get("full_name") or "")
+        owner = repository.get("owner")
+        parent = repository.get("parent")
+        source = repository.get("source")
+        if not (
+            isinstance(owner, Mapping)
+            and isinstance(parent, Mapping)
+            and isinstance(source, Mapping)
+        ):
+            raise PermissionError("GitHub owner fork identity or ancestry is invalid")
+        ancestry = {str(parent.get("full_name") or ""), str(source.get("full_name") or "")}
+        if (
+            full_name.casefold() != self.fork_repository_slug.casefold()
+            or str(owner.get("login") or "").casefold()
+            != str(self.fork_owner_login).casefold()
+            or str(owner.get("id") or "") != str(self.fork_owner_github_user_id)
+            or self.repository_slug.casefold()
+            not in {value.casefold() for value in ancestry if value}
+        ):
+            raise PermissionError("GitHub owner fork identity or ancestry is invalid")
+        return repository
+
+    def _record_publication_failure(self, changeset_id: str, exc: Exception) -> None:
+        current = get_changeset(self.ledger, changeset_id)
+        metadata = dict(current.get("metadata") or {})
+        metadata["github_publication_error"] = {
+            "recoverable": True,
+            "category": (
+                "permission_denied"
+                if isinstance(exc, (GitHubPermissionError, PermissionError))
+                else "publication_failed"
+            ),
+        }
+        status = "blocked" if current["status"] in _REPUBLISHABLE else current["status"]
+        transition_changeset(
+            self.ledger,
+            changeset_id,
+            status,
+            expected_status=current["status"],
+            fields={"metadata": metadata},
+        )
 
     def _pull_request_body(
         self,

@@ -9,7 +9,7 @@ import json
 import re
 import time
 import uuid
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from forecasting.change_control.collaboration import get_identity_binding
 from forecasting.change_control.store import get_changeset
@@ -32,6 +32,9 @@ _ACTION_RULES: dict[str, tuple[tuple[str, re.Pattern[str]], ...]] = {
     ),
     "comment.write": (
         ("POST", re.compile(r"^/repos/[^/]+/[^/]+/issues/[0-9]+/comments$")),
+    ),
+    "repository.fork": (
+        ("POST", re.compile(r"^/repos/[^/]+/[^/]+/forks$")),
     ),
 }
 _SECRET = re.compile(
@@ -59,6 +62,7 @@ class GitHubCapabilityBroker:
         request: Callable[..., Any] | None = None,
         api_url: str = "https://api.github.com",
         api_version: str = "2026-03-10",
+        additional_repository_slugs: Iterable[str] = (),
     ) -> None:
         if len(signing_key) < 32:
             raise ValidationError("GitHub capability signing key must be at least 32 bytes")
@@ -66,6 +70,12 @@ class GitHubCapabilityBroker:
             raise ValidationError("repository_slug must use owner/repository form")
         self.ledger = ledger
         self.repository_slug = repository_slug
+        repositories = [repository_slug]
+        for slug in additional_repository_slugs:
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
+                raise ValidationError("additional repository slug is invalid")
+            repositories.append(slug)
+        self.repository_slugs = tuple(dict.fromkeys(repositories))
         self.signing_key = signing_key
         self.token_provider = token_provider
         if request is None:
@@ -94,11 +104,11 @@ class GitHubCapabilityBroker:
         if actor_kind not in {"human", "agent"}:
             raise ValidationError("GitHub capability actor_kind must be human or agent")
         method = method.upper()
-        self._authorize(action, method, path)
+        repository = self._authorize(action, method, path)
         payload = {
             "version": 1,
             "id": f"ghcap_{uuid.uuid4().hex[:16]}",
-            "repository": self.repository_slug,
+            "repository": repository,
             "changeset_id": changeset_id,
             "identity_binding_id": identity_binding_id,
             "owner_id": binding["owner_id"],
@@ -166,6 +176,10 @@ class GitHubCapabilityBroker:
                 **request_kwargs,
             )
             status_code = int(response.status_code)
+            if status_code in {401, 403} and status_code not in expected_statuses:
+                raise GitHubPermissionError(
+                    f"GitHub denied {payload['action']}", status_code=status_code
+                )
             if status_code not in expected_statuses:
                 response.raise_for_status()
             try:
@@ -175,6 +189,9 @@ class GitHubCapabilityBroker:
             result = {"status_code": status_code, "body": _redact(response_body)}
             self._audit(payload, result="success")
             return result
+        except GitHubPermissionError:
+            self._audit(payload, result="failed")
+            raise
         except Exception:
             self._audit(payload, result="failed")
             raise RuntimeError(f"GitHub {payload['action']} request failed") from None
@@ -190,21 +207,31 @@ class GitHubCapabilityBroker:
             payload = json.loads(_unb64(encoded))
         except Exception as exc:
             raise PermissionError("GitHub capability signature is invalid") from exc
-        if payload.get("version") != 1 or payload.get("repository") != self.repository_slug:
+        if payload.get("version") != 1 or payload.get("repository") not in self.repository_slugs:
             raise PermissionError("GitHub capability repository or version is invalid")
         if int(payload.get("expires_at") or 0) < int(time.time()):
             raise PermissionError("GitHub capability expired")
         return payload
 
-    def _authorize(self, action: str, method: str, path: str) -> None:
+    def _authorize(self, action: str, method: str, path: str) -> str:
         if "?" in path or "#" in path or "\\" in path or "%" in path or ".." in path.split("/"):
             raise PermissionError("GitHub capability path is ambiguous")
-        prefix = f"/repos/{self.repository_slug}/"
-        if not path.startswith(prefix):
+        repository = next(
+            (
+                slug
+                for slug in self.repository_slugs
+                if path == f"/repos/{slug}" or path.startswith(f"/repos/{slug}/")
+            ),
+            None,
+        )
+        if repository is None:
             raise PermissionError("GitHub capability is bound to another repository")
+        if action == "repository.fork" and repository != self.repository_slug:
+            raise PermissionError("only the canonical repository may be forked")
         rules = _ACTION_RULES.get(action, ())
         if not any(rule_method == method and pattern.fullmatch(path) for rule_method, pattern in rules):
             raise PermissionError("GitHub capability action does not allow this method and path")
+        return repository
 
     def _audit(self, payload: Mapping[str, Any], *, result: str) -> None:
         with self.ledger._connect() as conn:
@@ -273,6 +300,14 @@ class CapabilityGitHubClient:
         )
 
 
+class GitHubPermissionError(PermissionError):
+    """A redacted GitHub authorization failure suitable for fallback decisions."""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 def _redact(value: Any) -> Any:
     if isinstance(value, str):
         return _SECRET.sub("[REDACTED]", value)
@@ -288,4 +323,4 @@ def _redact(value: Any) -> Any:
     return value
 
 
-__all__ = ["CapabilityGitHubClient", "GitHubCapabilityBroker"]
+__all__ = ["CapabilityGitHubClient", "GitHubCapabilityBroker", "GitHubPermissionError"]

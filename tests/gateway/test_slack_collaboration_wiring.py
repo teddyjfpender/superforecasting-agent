@@ -117,3 +117,52 @@ async def test_gateway_wires_thread_changeset_card_without_resetting_existing_ph
             (changeset["id"],),
         ).fetchone()["presence"]
     assert presence == "waiting"
+
+
+def test_gateway_builds_owner_fork_publisher_with_agent_attribution(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    control = ChangeControl(ledger)
+    binding = control.bind_identity(
+        owner_id="owner_1",
+        slack_team_id="T1",
+        slack_user_id="U1",
+        agent_instance_id="agent_1",
+        agent_persona="Mira",
+        github_user_id="101",
+        github_node_id="node-101",
+        github_login="reviewer",
+    )
+    changeset = control.create_changeset(
+        workspace_id="desk_1", author_owner_ids=["owner_1"]
+    )
+    config = {
+        "collaboration": {
+            "enabled": True,
+            "github": {"enabled": True, "client_id": "client-1"},
+            "repository": {
+                "slug": "acme/forecasts",
+                "workspace_id": "desk_1",
+                "default_branch": "main",
+            },
+        }
+    }
+    monkeypatch.setenv("SLACK_CHANGESET_ACTION_SIGNING_KEY", "action-secret")
+    monkeypatch.setenv("GITHUB_APP_CLIENT_SECRET", "oauth-secret")
+    monkeypatch.setenv("GITHUB_TOKEN_ENCRYPTION_KEY", "token-key")
+    monkeypatch.setenv("GITHUB_CAPABILITY_SIGNING_KEY", "capability-secret")
+    runner = GatewayRunner.__new__(GatewayRunner)
+    slack = _Slack()
+    runner.adapters = {Platform.SLACK: slack}
+    oauth = SimpleNamespace(control_plane_token=lambda binding_id: "never-exposed")
+    with patch("hermes_cli.config.load_config", return_value=config), patch(
+        "forecasting.ForecastLedger", return_value=ledger
+    ), patch("forecasting.github.GitHubOAuthService", return_value=oauth):
+        runner._configure_slack_changeset_collaboration(slack)
+
+    publisher = runner._slack_changeset_services[
+        "actions"
+    ].github_publisher_factory(binding, changeset)
+    assert publisher.repository_slug == "acme/forecasts"
+    assert publisher.fork_repository_slug == "reviewer/forecasts"
+    assert publisher.fork_owner_github_user_id == "101"
+    assert publisher.client.actor_kind == "agent"

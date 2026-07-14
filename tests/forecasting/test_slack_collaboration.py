@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -163,6 +164,72 @@ def test_transcript_consent_is_bound_to_initiating_owner_and_digest(tmp_path):
     assert consent["transcript_digest"] == "a" * 64
     assert consent["repository_slug"] == "acme/forecasts"
     assert consent["owner_id"] == "reviewer_1"
+
+
+def test_contributing_owner_can_publish_draft_pr_from_slack_action(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    control = ChangeControl(ledger)
+    binding = control.bind_identity(
+        owner_id="owner_1", slack_team_id="T1", slack_user_id="U1",
+        agent_instance_id="agent_1", agent_persona="Mira",
+        github_user_id="101", github_node_id="node-101", github_login="owner-one",
+    )
+    changeset = control.create_changeset(
+        workspace_id="desk_1", author_owner_ids=["owner_1"]
+    )
+    factory_calls = []
+
+    class _Publisher:
+        def publish(self, changeset_id, output_dir):
+            factory_calls.append((changeset_id, output_dir))
+            assert Path(output_dir).is_dir()
+            return {
+                "pr_number": 8,
+                "pr_url": "https://github.test/acme/forecasts/pull/8",
+                "head_repository": "owner-one/forecasts",
+                "publication_mode": "owner_fork",
+            }
+
+    service = SlackActionService(
+        ledger, signing_key=b"s" * 32, repository_slug="acme/forecasts",
+        github_publisher_factory=lambda resolved, value: (
+            factory_calls.append((resolved["id"], value["id"])) or _Publisher()
+        ),
+    )
+    result = _handle(
+        service, _issue(service, changeset["id"], action="open_pr"), action="open_pr"
+    )
+    assert result["pr_number"] == 8
+    assert result["publication_mode"] == "owner_fork"
+    assert factory_calls[0] == (binding["id"], changeset["id"])
+    assert factory_calls[1][0] == changeset["id"]
+
+
+def test_failed_slack_publication_returns_safe_recoverable_state(tmp_path):
+    ledger, _, _, changeset = _setup(tmp_path, author="reviewer_1")
+    with ledger._connect() as conn:
+        conn.execute(
+            "UPDATE ledger_changesets SET pr_number = NULL WHERE id = ?",
+            (changeset["id"],),
+        )
+
+    class _Publisher:
+        def publish(self, changeset_id, output_dir):
+            raise PermissionError("sensitive upstream diagnostic")
+
+    service = SlackActionService(
+        ledger,
+        signing_key=b"s" * 32,
+        repository_slug="acme/forecasts",
+        github_publisher_factory=lambda binding, value: _Publisher(),
+    )
+    token = _issue(service, changeset["id"], action="open_pr")
+
+    result = _handle(service, token, action="open_pr")
+
+    assert result["ok"] is False
+    assert result["state"] == "failed"
+    assert "sensitive" not in json.dumps(result)
 
 
 def test_status_card_is_one_editable_message_with_presence_liveness_and_final(tmp_path):

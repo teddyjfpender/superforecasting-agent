@@ -10,7 +10,7 @@ import pytest
 from forecasting import ForecastLedger
 from forecasting.change_control import ChangeControl
 from forecasting.github.auth import GitHubOAuthService
-from forecasting.github.capabilities import GitHubCapabilityBroker
+from forecasting.github.capabilities import GitHubCapabilityBroker, GitHubPermissionError
 from forecasting.github.events import GitHubWebhookProcessor, record_github_origin
 from forecasting.github.slack_sync import GitHubSlackMirror
 from forecasting.github.webhooks import ingest_github_webhook, mark_delivery_processed
@@ -365,6 +365,60 @@ def test_capability_rejects_tampering_path_confusion_and_revoked_identity(tmp_pa
     with pytest.raises(PermissionError, match="revoked"):
         broker.execute(capability, method="POST", path=path)
     assert calls == []
+
+
+def test_capability_binds_one_exact_owner_fork_without_repository_confusion(tmp_path):
+    control, binding, changeset, _, _ = _capability_fixture(tmp_path)
+    broker = GitHubCapabilityBroker(
+        control.ledger,
+        repository_slug="acme/forecasts",
+        additional_repository_slugs=["verified-user/forecasts"],
+        signing_key=b"f" * 32,
+        token_provider=lambda binding_id: f"ghu_control_plane_{binding_id}_123456789",
+        request=lambda method, url, **kwargs: _Response(
+            {"full_name": "verified-user/forecasts", "owner": {"id": 101}}
+        ),
+    )
+    fork_path = "/repos/verified-user/forecasts"
+    capability = broker.issue(
+        changeset_id=changeset["id"], identity_binding_id=binding["id"],
+        actor_kind="agent", action="repository.read", method="GET", path=fork_path,
+    )
+    assert broker.execute(capability, method="GET", path=fork_path)["status_code"] == 200
+    with pytest.raises(PermissionError, match="another repository"):
+        broker.issue(
+            changeset_id=changeset["id"], identity_binding_id=binding["id"],
+            actor_kind="agent", action="repository.read", method="GET",
+            path="/repos/attacker/forecasts",
+        )
+    with pytest.raises(PermissionError, match="canonical repository"):
+        broker.issue(
+            changeset_id=changeset["id"], identity_binding_id=binding["id"],
+            actor_kind="agent", action="repository.fork", method="POST",
+            path="/repos/verified-user/forecasts/forks",
+        )
+
+
+def test_capability_exposes_only_redacted_permission_failure_for_fallback(tmp_path):
+    control, binding, changeset, _, _ = _capability_fixture(tmp_path)
+    broker = GitHubCapabilityBroker(
+        control.ledger,
+        repository_slug="acme/forecasts",
+        signing_key=b"p" * 32,
+        token_provider=lambda binding_id: f"ghu_control_plane_{binding_id}_123456789",
+        request=lambda method, url, **kwargs: _Response(
+            {"message": "denied ghu_secret_value_12345678901234567890"}, status=403
+        ),
+    )
+    path = "/repos/acme/forecasts/git/blobs"
+    capability = broker.issue(
+        changeset_id=changeset["id"], identity_binding_id=binding["id"],
+        actor_kind="agent", action="branch.write", method="POST", path=path,
+    )
+    with pytest.raises(GitHubPermissionError, match="denied branch.write") as failure:
+        broker.execute(capability, method="POST", path=path, json_body={"content": "x"})
+    assert failure.value.status_code == 403
+    assert "secret" not in str(failure.value)
 
 
 def _published_changeset(tmp_path, *, status="review_open"):

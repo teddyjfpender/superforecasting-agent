@@ -2,7 +2,11 @@
 
 from forecasting.github.auth import GitHubOAuthService
 from forecasting.github.app import GitHubAppClient
-from forecasting.github.capabilities import CapabilityGitHubClient, GitHubCapabilityBroker
+from forecasting.github.capabilities import (
+    CapabilityGitHubClient,
+    GitHubCapabilityBroker,
+    GitHubPermissionError,
+)
 from forecasting.github.checks import PromotionCheckPublisher
 from forecasting.github.events import GitHubWebhookProcessor, record_github_origin
 from forecasting.github.publisher import GitHubPublisher
@@ -15,6 +19,7 @@ __all__ = [
     "GitHubAppClient",
     "CapabilityGitHubClient",
     "GitHubOAuthService",
+    "GitHubPermissionError",
     "GitHubPublisher",
     "GitHubWebhookProcessor",
     "MergeApplyReconciler",
