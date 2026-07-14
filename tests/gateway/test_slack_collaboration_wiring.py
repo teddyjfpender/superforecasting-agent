@@ -138,7 +138,7 @@ def test_gateway_builds_owner_fork_publisher_with_agent_attribution(tmp_path, mo
     config = {
         "collaboration": {
             "enabled": True,
-            "github": {"enabled": True, "client_id": "client-1"},
+            "github": {"enabled": True, "client_id": "client-1", "app_id": "1234"},
             "repository": {
                 "slug": "acme/forecasts",
                 "workspace_id": "desk_1",

@@ -72,7 +72,11 @@ def ingest_github_webhook(
     quarantine_reason = None
     if event_type not in SUPPORTED_EVENTS:
         quarantine_reason = "unsupported_event"
-    elif not authorized and event_type not in {"installation", "github_app_authorization"}:
+    elif not authorized and event_type not in {
+        "installation",
+        "installation_repositories",
+        "github_app_authorization",
+    }:
         quarantine_reason = "unauthorized_repository"
     state = "quarantined" if quarantine_reason else "pending"
     sanitized = _sanitize_payload(event_type, payload)
@@ -146,7 +150,15 @@ def _sanitize_payload(event_type: str, payload: Mapping[str, Any]) -> dict[str, 
     }
     installation = payload.get("installation")
     if isinstance(installation, Mapping):
-        result["installation"] = {"id": installation.get("id")}
+        result["installation"] = {
+            "id": installation.get("id"),
+            "app_id": installation.get("app_id"),
+            "account": _user(installation.get("account")),
+            "target_type": installation.get("target_type"),
+            "repository_selection": installation.get("repository_selection"),
+            "permissions": dict(installation.get("permissions") or {}),
+            "suspended_at": installation.get("suspended_at"),
+        }
     repository = payload.get("repository")
     if isinstance(repository, Mapping):
         result["repository"] = {
@@ -215,6 +227,17 @@ def _sanitize_payload(event_type: str, payload: Mapping[str, Any]) -> dict[str, 
             "id": payload["authorization"].get("id"),
             "user": _user(payload["authorization"].get("user")),
         }
+    for key in ("repositories", "repositories_added", "repositories_removed"):
+        repositories = payload.get(key)
+        if isinstance(repositories, list):
+            result[key] = [
+                {
+                    field: repository.get(field)
+                    for field in ("id", "node_id", "full_name", "private")
+                }
+                for repository in repositories
+                if isinstance(repository, Mapping)
+            ]
     return result
 
 

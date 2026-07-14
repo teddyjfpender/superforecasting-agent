@@ -701,12 +701,22 @@ class APIServerAdapter(BasePlatformAdapter):
         process,
         oauth_begin=None,
         oauth_complete=None,
+        installation_begin=None,
+        installation_complete=None,
         webhook_path: str = "/api/webhooks/github",
         oauth_begin_path: str = "/api/oauth/github/begin",
         oauth_callback_path: str = "/api/oauth/github/callback",
+        installation_begin_path: str = "/api/install/github/begin",
+        installation_callback_path: str = "/api/install/github/callback",
     ) -> None:
         """Attach trusted control-plane handlers before the HTTP server starts."""
-        paths = (webhook_path, oauth_begin_path, oauth_callback_path)
+        paths = (
+            webhook_path,
+            oauth_begin_path,
+            oauth_callback_path,
+            installation_begin_path,
+            installation_callback_path,
+        )
         if any(not path.startswith("/") or ".." in path or "\\" in path for path in paths):
             raise ValueError("GitHub collaboration route path is unsafe")
         self._github_handlers = {
@@ -714,9 +724,13 @@ class APIServerAdapter(BasePlatformAdapter):
             "process": process,
             "oauth_begin": oauth_begin,
             "oauth_complete": oauth_complete,
+            "installation_begin": installation_begin,
+            "installation_complete": installation_complete,
             "webhook_path": webhook_path,
             "oauth_begin_path": oauth_begin_path,
             "oauth_callback_path": oauth_callback_path,
+            "installation_begin_path": installation_begin_path,
+            "installation_callback_path": installation_callback_path,
         }
 
     async def _handle_github_webhook(self, request: "web.Request") -> "web.Response":
@@ -799,6 +813,55 @@ class APIServerAdapter(BasePlatformAdapter):
                 "agent_persona": binding["agent_persona"],
             }
         )
+
+    async def _handle_github_installation_begin(
+        self, request: "web.Request"
+    ) -> "web.Response":
+        auth_err = self._check_auth(request)
+        if auth_err is not None:
+            return auth_err
+        handler = (self._github_handlers or {}).get("installation_begin")
+        if handler is None:
+            return web.json_response(
+                {"error": "GitHub installation is not configured"}, status=503
+            )
+        try:
+            result = await asyncio.to_thread(handler)
+        except Exception:
+            logger.exception("[api_server] GitHub installation begin failed")
+            return web.json_response(
+                {"error": "GitHub installation could not be started"}, status=500
+            )
+        return web.json_response(result, status=201)
+
+    async def _handle_github_installation_callback(
+        self, request: "web.Request"
+    ) -> "web.Response":
+        handler = (self._github_handlers or {}).get("installation_complete")
+        if handler is None:
+            return web.json_response(
+                {"error": "GitHub installation is not configured"}, status=503
+            )
+        state = str(request.query.get("state") or "")
+        installation_id = str(request.query.get("installation_id") or "")
+        if (
+            not state
+            or not installation_id
+            or len(state) > 1024
+            or len(installation_id) > 64
+        ):
+            return web.json_response(
+                {"error": "GitHub installation callback is invalid"}, status=400
+            )
+        try:
+            result = await asyncio.to_thread(handler, state, installation_id)
+        except Exception:
+            logger.exception("[api_server] GitHub installation callback failed")
+            return web.json_response(
+                {"error": "GitHub installation is not yet authorized for this repository"},
+                status=400,
+            )
+        return web.json_response(result)
 
     async def _dispatch_slack_event(self, payload: Dict[str, Any]) -> None:
         handler = self._slack_event_handler
@@ -3771,6 +3834,14 @@ class APIServerAdapter(BasePlatformAdapter):
                 self._app.router.add_get(
                     self._github_handlers["oauth_callback_path"],
                     self._handle_github_oauth_callback,
+                )
+                self._app.router.add_post(
+                    self._github_handlers["installation_begin_path"],
+                    self._handle_github_installation_begin,
+                )
+                self._app.router.add_get(
+                    self._github_handlers["installation_callback_path"],
+                    self._handle_github_installation_callback,
                 )
             # Slack signed-webhook ingress and OAuth install. The Slack adapter
             # is wired after all platform adapters connect so Socket Mode and

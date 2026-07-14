@@ -63,6 +63,7 @@ class GitHubCapabilityBroker:
         api_url: str = "https://api.github.com",
         api_version: str = "2026-03-10",
         additional_repository_slugs: Iterable[str] = (),
+        installation_authorizer: Callable[[str, str], None] | None = None,
     ) -> None:
         if len(signing_key) < 32:
             raise ValidationError("GitHub capability signing key must be at least 32 bytes")
@@ -85,6 +86,7 @@ class GitHubCapabilityBroker:
         self.request = request
         self.api_url = api_url.rstrip("/")
         self.api_version = api_version
+        self.installation_authorizer = installation_authorizer
 
     def issue(
         self,
@@ -234,6 +236,8 @@ class GitHubCapabilityBroker:
         rules = _ACTION_RULES.get(action, ())
         if not any(rule_method == method and pattern.fullmatch(path) for rule_method, pattern in rules):
             raise PermissionError("GitHub capability action does not allow this method and path")
+        if self.installation_authorizer is not None:
+            self.installation_authorizer(self.repository_slug, action)
         return repository
 
     def _audit(self, payload: Mapping[str, Any], *, result: str) -> None:

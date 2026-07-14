@@ -66,8 +66,11 @@ collaboration:
   github:
     enabled: true
     app_id: "123456"
+    app_slug: "forecast-desk"
     client_id: "Iv1.example"
     public_base_url: "https://forecast.example.com"
+    installation_begin_path: /api/install/github/begin
+    installation_callback_path: /api/install/github/callback
     webhook_path: /api/webhooks/github
     oauth_callback_path: /api/oauth/github/callback
   repository:
@@ -126,11 +129,27 @@ Grant the App only the repository permissions used by the control plane:
 - Issues: read/write, for PR discussion comments
 
 Subscribe to `pull_request`, `pull_request_review`, `check_run`, `issue_comment`,
-`merge_group`, and installation/repository-selection changes. Point the webhook
+`merge_group`, `installation`, `installation_repositories`, and authorization
+changes. Point the webhook
 at `/api/webhooks/github` and the callback at
 `/api/oauth/github/callback`. User-to-server OAuth uses PKCE; encrypted access and
 refresh tokens remain in the control plane and are never returned to Slack or a
 sandbox.
+
+Set the GitHub App Setup URL to the public
+`/api/install/github/callback` endpoint. Run
+`superforecasting-agent github install` to open the App installation page,
+select the exact canonical workspace repository, and then verify
+`superforecasting-agent github status --json`. Signed installation webhooks bind
+the immutable installation/App/account/repository IDs, repository selection,
+and granted permission levels. Owner capabilities are issued only while both
+the delegated user binding and this App-side repository grant are active.
+Removing the repository, suspending/deleting the installation, or reducing a
+required permission blocks new calls and is rechecked before an already-issued
+capability can use the owner's token.
+The installation URL carries a short-lived, single-use state value; the setup
+callback succeeds only after the signed webhook has recorded that the returned
+installation ID grants the exact configured repository.
 
 Use a repository ruleset that:
 
@@ -225,6 +244,7 @@ superforecasting-agent workspace reconcile --apply-merged CHANGESET --dry-run
 superforecasting-agent workspace reconcile --apply-merged CHANGESET --yes
 
 superforecasting-agent github status --json
+superforecasting-agent github install --json
 superforecasting-agent github revoke BINDING --yes
 
 superforecasting-agent changeset review-policy --json

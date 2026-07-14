@@ -96,6 +96,34 @@ async def test_github_oauth_begin_requires_api_auth_and_callback_returns_identit
     assert json.loads(callback.body)["github_login"] == "octocat-123"
 
 
+@pytest.mark.asyncio
+async def test_github_installation_begin_requires_auth_and_callback_validates_state():
+    adapter = APIServerAdapter(PlatformConfig(enabled=True, extra={"key": "api-secret"}))
+    adapter.set_github_collaboration_handlers(
+        ingest=lambda _headers, _body: {},
+        process=lambda _delivery_id: None,
+        installation_begin=lambda: {"installation_url": "https://github.test/install"},
+        installation_complete=lambda state, installation_id: {
+            "status": "installed",
+            "installation_id": installation_id,
+            "state_seen": state,
+        },
+    )
+    denied = await adapter._handle_github_installation_begin(_Request())
+    allowed = await adapter._handle_github_installation_begin(
+        _Request(headers={"Authorization": "Bearer api-secret"})
+    )
+    invalid = await adapter._handle_github_installation_callback(_Request(query={}))
+    callback = await adapter._handle_github_installation_callback(
+        _Request(query={"state": "one-time", "installation_id": "77"})
+    )
+
+    assert denied.status == 401
+    assert allowed.status == 201
+    assert invalid.status == 400
+    assert json.loads(callback.body)["installation_id"] == "77"
+
+
 def test_github_route_paths_fail_closed():
     adapter = APIServerAdapter(PlatformConfig(enabled=True))
     with pytest.raises(ValueError, match="unsafe"):
@@ -103,6 +131,12 @@ def test_github_route_paths_fail_closed():
             ingest=lambda _headers, _body: {},
             process=lambda _delivery_id: None,
             webhook_path="/api/../escape",
+        )
+    with pytest.raises(ValueError, match="unsafe"):
+        adapter.set_github_collaboration_handlers(
+            ingest=lambda _headers, _body: {},
+            process=lambda _delivery_id: None,
+            installation_callback_path="../escape",
         )
 
 
@@ -175,5 +209,7 @@ def test_gateway_wires_signed_github_ingress_before_connect(tmp_path, monkeypatc
     )
 
     assert captured["webhook_path"] == "/api/webhooks/github"
+    assert captured["installation_begin_path"] == "/api/install/github/begin"
+    assert captured["installation_callback_path"] == "/api/install/github/callback"
     assert delivery["state"] == "pending"
     assert control.get_changeset(changeset["id"])["status"] == "applied"

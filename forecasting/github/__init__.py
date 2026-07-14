@@ -10,6 +10,7 @@ from forecasting.github.capabilities import (
 from forecasting.github.checks import PromotionCheckPublisher
 from forecasting.github.discussion import AgentDiscussionCoordinator, DiscussionLimits
 from forecasting.github.events import GitHubWebhookProcessor, record_github_origin
+from forecasting.github.installations import GitHubInstallationRegistry, installation_url
 from forecasting.github.publisher import GitHubPublisher
 from forecasting.github.reconcile import MergeApplyReconciler
 from forecasting.github.slack_sync import GitHubSlackMirror
@@ -20,6 +21,7 @@ __all__ = [
     "GitHubAppClient",
     "CapabilityGitHubClient",
     "GitHubOAuthService",
+    "GitHubInstallationRegistry",
     "GitHubPermissionError",
     "AgentDiscussionCoordinator",
     "DiscussionLimits",
@@ -30,5 +32,6 @@ __all__ = [
     "PromotionCheckPublisher",
     "record_github_origin",
     "ingest_github_webhook",
+    "installation_url",
     "mark_delivery_processed",
 ]

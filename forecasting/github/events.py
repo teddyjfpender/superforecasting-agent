@@ -77,10 +77,12 @@ class GitHubWebhookProcessor:
         *,
         repository_slug: str,
         promotion_app_id: str,
+        installation_registry: Any | None = None,
     ) -> None:
         self.ledger = ledger
         self.repository_slug = repository_slug
         self.promotion_app_id = str(promotion_app_id)
+        self.installation_registry = installation_registry
 
     def process(self, delivery_id: str) -> dict[str, Any]:
         with self.ledger._connect() as conn:
@@ -94,9 +96,13 @@ class GitHubWebhookProcessor:
         delivery["payload"] = json.loads(delivery["payload"])
         if delivery["state"] in {"processed", "quarantined"}:
             return delivery
-        if str(delivery.get("repository_slug") or "").lower() != self.repository_slug.lower():
-            raise PermissionError("GitHub delivery repository does not match workspace")
         event_type = delivery["event_type"]
+        if event_type not in {
+            "installation",
+            "installation_repositories",
+            "github_app_authorization",
+        } and str(delivery.get("repository_slug") or "").lower() != self.repository_slug.lower():
+            raise PermissionError("GitHub delivery repository does not match workspace")
         if event_type == "pull_request_review":
             self._review(delivery)
         elif event_type in {"issue_comment", "pull_request_review_comment"}:
@@ -109,6 +115,13 @@ class GitHubWebhookProcessor:
             self._merge_group(delivery)
         elif event_type == "github_app_authorization":
             self._authorization(delivery)
+        elif event_type in {"installation", "installation_repositories"}:
+            if self.installation_registry is not None:
+                self.installation_registry.apply(
+                    event_type=event_type,
+                    action=str(delivery.get("action") or ""),
+                    payload=delivery["payload"],
+                )
         return mark_delivery_processed(self.ledger, delivery_id)
 
     def _review(self, delivery: dict[str, Any]) -> None:

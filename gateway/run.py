@@ -3249,6 +3249,7 @@ class GatewayRunner:
             from forecasting.github import (
                 CapabilityGitHubClient,
                 GitHubCapabilityBroker,
+                GitHubInstallationRegistry,
                 GitHubOAuthService,
                 GitHubPublisher,
             )
@@ -3267,8 +3268,9 @@ class GatewayRunner:
             token_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", "")
             capability_secret = os.getenv("GITHUB_CAPABILITY_SIGNING_KEY", "")
             client_id = str(github.get("client_id") or "")
+            app_id = str(github.get("app_id") or "")
             if github.get("enabled") and all(
-                (oauth_secret, token_key, capability_secret, client_id)
+                (oauth_secret, token_key, capability_secret, client_id, app_id)
             ):
                 oauth = GitHubOAuthService(
                     ledger,
@@ -3277,6 +3279,9 @@ class GatewayRunner:
                     token_key=token_key,
                     api_url=str(github.get("api_url") or "https://api.github.com"),
                     api_version=str(github.get("api_version") or "2026-03-10"),
+                )
+                installations = GitHubInstallationRegistry(
+                    ledger, app_id=app_id, repository_slug=repository_slug
                 )
 
                 def delegated_client(
@@ -3297,6 +3302,7 @@ class GatewayRunner:
                         token_provider=oauth.control_plane_token,
                         api_url=str(github.get("api_url") or "https://api.github.com"),
                         api_version=str(github.get("api_version") or "2026-03-10"),
+                        installation_authorizer=installations.authorize,
                     )
                     return CapabilityGitHubClient(
                         broker,
@@ -3509,16 +3515,21 @@ class GatewayRunner:
             from forecasting import ForecastLedger
             from forecasting.github import (
                 GitHubOAuthService,
+                GitHubInstallationRegistry,
                 GitHubWebhookProcessor,
                 MergeApplyReconciler,
                 ingest_github_webhook,
             )
 
             ledger = ForecastLedger()
+            installations = GitHubInstallationRegistry(
+                ledger, app_id=app_id, repository_slug=repository_slug
+            )
             processor = GitHubWebhookProcessor(
                 ledger,
                 repository_slug=repository_slug,
                 promotion_app_id=app_id,
+                installation_registry=installations,
             )
             reconciler = MergeApplyReconciler(ledger)
             recovered = reconciler.run(limit=100)
@@ -3546,6 +3557,41 @@ class GatewayRunner:
 
             oauth_begin = None
             oauth_complete = None
+            installation_begin = None
+            installation_complete = None
+            app_slug = str(github.get("app_slug") or "").strip()
+            if app_slug:
+
+                def installation_begin() -> dict[str, Any]:
+                    return installations.begin(
+                        app_slug=app_slug,
+                        ttl_seconds=int(
+                            github.get("installation_state_ttl_seconds") or 600
+                        ),
+                    )
+
+                def installation_complete(
+                    state: str, installation_id: str
+                ) -> dict[str, Any]:
+                    with ledger._connect() as conn:
+                        pending = conn.execute(
+                            """SELECT delivery_id, payload
+                               FROM github_webhook_deliveries
+                               WHERE state = 'pending' AND event_type IN
+                                 ('installation', 'installation_repositories')
+                               ORDER BY received_at, delivery_id"""
+                        ).fetchall()
+                    for row in pending:
+                        payload = json.loads(row["payload"])
+                        event_installation_id = str(
+                            (payload.get("installation") or {}).get("id") or ""
+                        )
+                        if event_installation_id == installation_id:
+                            processor.process(row["delivery_id"])
+                    return installations.complete(
+                        state=state, installation_id=installation_id
+                    )
+
             oauth_secret = os.getenv("GITHUB_APP_CLIENT_SECRET", "")
             token_key = os.getenv("GITHUB_TOKEN_ENCRYPTION_KEY", "")
             client_id = str(github.get("client_id") or "").strip()
@@ -3599,8 +3645,17 @@ class GatewayRunner:
                 process=process,
                 oauth_begin=oauth_begin,
                 oauth_complete=oauth_complete,
+                installation_begin=installation_begin,
+                installation_complete=installation_complete,
                 webhook_path=str(github.get("webhook_path") or "/api/webhooks/github"),
                 oauth_callback_path=callback_path,
+                installation_begin_path=str(
+                    github.get("installation_begin_path") or "/api/install/github/begin"
+                ),
+                installation_callback_path=str(
+                    github.get("installation_callback_path")
+                    or "/api/install/github/callback"
+                ),
             )
             logger.info("GitHub signed webhook and OAuth routes configured")
         except Exception:

@@ -97,6 +97,9 @@ def register_cli(subparsers: argparse._SubParsersAction) -> None:
     auth.add_argument("--slack-bot-user-id")
     auth.add_argument("--json", action="store_true")
     auth.set_defaults(func=_cmd_github_auth)
+    install = github_commands.add_parser("install", help="Open the GitHub App installation flow")
+    install.add_argument("--json", action="store_true")
+    install.set_defaults(func=_cmd_github_install)
     github_status = github_commands.add_parser("status", help="List linked identities safely")
     github_status.add_argument("--json", action="store_true")
     github_status.set_defaults(func=_cmd_github_status)
@@ -487,6 +490,27 @@ def _cmd_github_auth(args: argparse.Namespace) -> None:
     _emit(args, {"authorization_url": result["authorization_url"], "expires_in_seconds": 600})
 
 
+def _cmd_github_install(args: argparse.Namespace) -> None:
+    from forecasting.github import GitHubInstallationRegistry
+
+    collaboration, repository = _configuration()
+    github = collaboration.get("github") or {}
+    registry = GitHubInstallationRegistry(
+        _ledger(args),
+        app_id=str(github.get("app_id") or ""),
+        repository_slug=str(repository.get("slug") or ""),
+    )
+    result = registry.begin(
+        app_slug=str(github.get("app_slug") or ""),
+        ttl_seconds=int(github.get("installation_state_ttl_seconds") or 600),
+    )
+    result["next_action"] = (
+        "Install the App for the exact workspace repository; the signed webhook "
+        "must record the grant before the setup callback can complete."
+    )
+    _emit(args, result)
+
+
 def _cmd_github_status(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
     ChangeControl(ledger)
@@ -500,7 +524,21 @@ def _cmd_github_status(args: argparse.Namespace) -> None:
                LEFT JOIN github_user_tokens t ON t.identity_binding_id = b.id
                ORDER BY b.created_at, b.id"""
         ).fetchall()
-    _emit(args, {"identities": [dict(row) for row in rows]})
+    collaboration, repository = _configuration()
+    github = collaboration.get("github") or {}
+    installations = []
+    if github.get("app_id") and repository.get("slug"):
+        from forecasting.github import GitHubInstallationRegistry
+
+        installations = GitHubInstallationRegistry(
+            ledger,
+            app_id=str(github["app_id"]),
+            repository_slug=str(repository["slug"]),
+        ).status()
+    _emit(
+        args,
+        {"identities": [dict(row) for row in rows], "installations": installations},
+    )
 
 
 def _cmd_github_revoke(args: argparse.Namespace) -> None:

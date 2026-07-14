@@ -365,6 +365,45 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             revoked_at TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS github_app_installations (
+            installation_id TEXT PRIMARY KEY,
+            app_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            account_node_id TEXT,
+            account_login TEXT NOT NULL,
+            target_type TEXT,
+            repository_selection TEXT NOT NULL,
+            permissions TEXT NOT NULL DEFAULT '{}',
+            status TEXT NOT NULL DEFAULT 'active',
+            suspended_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS github_app_installation_repositories (
+            installation_id TEXT NOT NULL
+                REFERENCES github_app_installations(installation_id) ON DELETE CASCADE,
+            repository_id TEXT NOT NULL,
+            repository_node_id TEXT,
+            repository_slug TEXT NOT NULL,
+            private INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'active',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (installation_id, repository_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_github_installation_repositories_slug
+            ON github_app_installation_repositories(repository_slug, status);
+
+        CREATE TABLE IF NOT EXISTS github_installation_states (
+            state_hash TEXT PRIMARY KEY,
+            repository_slug TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            installation_id TEXT,
+            consumed_at TEXT
+        );
+
         CREATE TABLE IF NOT EXISTS github_capability_uses (
             capability_id TEXT PRIMARY KEY,
             changeset_id TEXT NOT NULL,

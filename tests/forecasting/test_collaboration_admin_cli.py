@@ -129,6 +129,30 @@ def test_github_status_and_changeset_commands_never_emit_token_ciphertext(tmp_pa
     assert "ciphertext-secret" not in output
 
 
+def test_github_install_starts_exact_app_flow(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(
+        collaboration_admin,
+        "_configuration",
+        lambda: (
+            {
+                "github": {
+                    "app_id": "1234",
+                    "app_slug": "forecast-desk",
+                    "installation_state_ttl_seconds": 600,
+                }
+            },
+            {"slug": "acme/forecasts"},
+        ),
+    )
+    args = _parse(
+        "github", "--db", str(tmp_path / "ledger.db"), "install", "--json"
+    )
+    args.func(args)
+    output = capsys.readouterr().out
+    assert "https://github.com/apps/forecast-desk/installations/new" in output
+    assert "acme/forecasts" in output
+
+
 def test_changeset_mutations_require_confirmation(tmp_path):
     ledger = ForecastLedger(tmp_path / "ledger.db")
     from forecasting.change_control import ChangeControl

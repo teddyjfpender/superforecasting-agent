@@ -1731,8 +1731,12 @@ DEFAULT_CONFIG = {
             "api_url": "https://api.github.com",
             "upload_url": "https://uploads.github.com",
             "app_id": "",
+            "app_slug": "",
             "client_id": "",
             "public_base_url": "",
+            "installation_begin_path": "/api/install/github/begin",
+            "installation_callback_path": "/api/install/github/callback",
+            "installation_state_ttl_seconds": 600,
             "oauth_callback_path": "/api/oauth/github/callback",
             "oauth_state_ttl_seconds": 600,
             "api_version": "2026-03-10",
@@ -3908,20 +3912,33 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
                         "collaboration.github.public_base_url must be an absolute HTTPS URL",
                         "Example: https://forecast.example.com",
                     ))
-            ttl = github.get("oauth_state_ttl_seconds", 600)
-            if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl < 60:
+            for key in ("oauth_state_ttl_seconds", "installation_state_ttl_seconds"):
+                ttl = github.get(key, 600)
+                if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl < 60:
+                    issues.append(ConfigIssue(
+                        "error",
+                        f"collaboration.github.{key} must be at least 60",
+                        "Use 600 for the default ten-minute authorization window",
+                    ))
+            app_slug = str(github.get("app_slug") or "")
+            if app_slug and not re.fullmatch(r"[A-Za-z0-9-]+", app_slug):
                 issues.append(ConfigIssue(
                     "error",
-                    "collaboration.github.oauth_state_ttl_seconds must be at least 60",
-                    "Use 600 for the default ten-minute OAuth window",
+                    "collaboration.github.app_slug is invalid",
+                    "Use the slug from https://github.com/apps/<app-slug>",
                 ))
-            for key in ("oauth_callback_path", "webhook_path"):
+            for key in (
+                "oauth_callback_path",
+                "installation_begin_path",
+                "installation_callback_path",
+                "webhook_path",
+            ):
                 path = str(github.get(key) or "")
                 if not path.startswith("/") or ".." in path or "\\" in path:
                     issues.append(ConfigIssue(
                         "error",
                         f"collaboration.github.{key} must be a safe absolute path",
-                        f"Use /api/{'oauth/github/callback' if key == 'oauth_callback_path' else 'webhooks/github'}",
+                        "Use a fixed absolute /api/... path without traversal",
                     ))
         if isinstance(repository, dict):
             slug = str(repository.get("slug") or "").strip()

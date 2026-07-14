@@ -846,6 +846,7 @@ class TestCollaborationConfig:
         collaboration = DEFAULT_CONFIG["collaboration"]
         assert collaboration["enabled"] is False
         assert collaboration["github"]["api_url"] == "https://api.github.com"
+        assert collaboration["github"]["app_slug"] == ""
         assert collaboration["repository"]["default_branch"] == "main"
         assert collaboration["review"]["materiality_threshold"] == 0.10
         assert collaboration["discussion"]["agent_loop_threshold"] == 4
@@ -872,10 +873,12 @@ class TestCollaborationConfig:
         config["collaboration"]["review"]["risk_overrides"] = {
             "forecast.update": "critical"
         }
+        config["collaboration"]["github"]["app_slug"] = "../wrong"
         messages = [issue.message for issue in validate_config_structure(config)]
         assert any("absolute HTTPS URL" in message for message in messages)
         assert any("owner/repository" in message for message in messages)
         assert any("unknown risk tier" in message for message in messages)
+        assert any("app_slug" in message for message in messages)
 
     def test_rejects_negative_retention_and_invalid_threshold(self):
         from copy import deepcopy
