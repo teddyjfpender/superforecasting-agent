@@ -516,6 +516,10 @@ def load_cli_config() -> Dict[str, Any]:
                 "api_url": "https://api.github.com",
                 "upload_url": "https://uploads.github.com",
                 "app_id": "",
+                "client_id": "",
+                "oauth_callback_path": "/api/oauth/github/callback",
+                "oauth_state_ttl_seconds": 600,
+                "api_version": "2026-03-10",
                 "webhook_path": "/api/webhooks/github",
             },
             "repository": {

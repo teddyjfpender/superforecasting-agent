@@ -887,3 +887,15 @@ class TestCollaborationConfig:
         messages = [issue.message for issue in validate_config_structure(config)]
         assert any("raw_retention_days" in message for message in messages)
         assert any("materiality_threshold" in message for message in messages)
+
+    def test_rejects_short_oauth_state_and_unsafe_callback_path(self):
+        from copy import deepcopy
+
+        from hermes_cli.config import validate_config_structure
+
+        config = deepcopy(DEFAULT_CONFIG)
+        config["collaboration"]["github"]["oauth_state_ttl_seconds"] = 10
+        config["collaboration"]["github"]["oauth_callback_path"] = "../callback"
+        messages = [issue.message for issue in validate_config_structure(config)]
+        assert any("oauth_state_ttl_seconds" in message for message in messages)
+        assert any("oauth_callback_path" in message for message in messages)

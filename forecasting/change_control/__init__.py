@@ -5,6 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from forecasting.change_control.apply import apply_changeset
+from forecasting.change_control.collaboration import (
+    bind_identity,
+    get_or_create_thread_changeset,
+    record_contribution,
+    resolve_identity_binding,
+    revoke_identity_binding,
+)
 from forecasting.change_control.compatibility import sync_legacy_proposal, wrap_legacy_proposal
 from forecasting.change_control.models import LedgerOperation
 from forecasting.change_control.policy import classify_operations, evaluate_quorum
@@ -108,20 +115,40 @@ class ChangeControl:
     def transcript_publication_decision(self, changeset_id: str, **kwargs: Any) -> str | None:
         return publication_decision(self.ledger, changeset_id, **kwargs)
 
+    def thread_changeset(self, **kwargs: Any) -> dict[str, Any]:
+        return get_or_create_thread_changeset(self.ledger, **kwargs)
+
+    def bind_identity(self, **kwargs: Any) -> dict[str, Any]:
+        return bind_identity(self.ledger, **kwargs)
+
+    def resolve_identity(self, **kwargs: Any) -> dict[str, Any]:
+        return resolve_identity_binding(self.ledger, **kwargs)
+
+    def revoke_identity(self, binding_id: str) -> dict[str, Any]:
+        return revoke_identity_binding(self.ledger, binding_id)
+
+    def record_contribution(self, changeset_id: str, **kwargs: Any) -> dict[str, Any]:
+        return record_contribution(self.ledger, changeset_id, **kwargs)
+
 
 __all__ = [
     "ChangeControl",
     "LedgerOperation",
     "apply_changeset",
     "add_decision_record",
+    "bind_identity",
     "classify_operations",
     "ensure_bundle",
     "evaluate_quorum",
     "link_session",
+    "get_or_create_thread_changeset",
     "preview_changeset",
     "publication_decision",
     "record_consent",
+    "record_contribution",
     "record_transcript",
+    "resolve_identity_binding",
     "sync_legacy_proposal",
     "wrap_legacy_proposal",
+    "revoke_identity_binding",
 ]

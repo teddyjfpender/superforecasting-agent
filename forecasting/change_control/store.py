@@ -230,6 +230,126 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             reason TEXT NOT NULL,
             deleted_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS collaboration_threads (
+            id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            slack_team_id TEXT NOT NULL,
+            slack_channel_id TEXT NOT NULL,
+            slack_thread_ts TEXT NOT NULL,
+            generation INTEGER NOT NULL,
+            changeset_id TEXT NOT NULL UNIQUE REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            branch TEXT NOT NULL UNIQUE,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE (workspace_id, slack_team_id, slack_channel_id, slack_thread_ts, generation)
+        );
+
+        CREATE TABLE IF NOT EXISTS collaboration_identity_bindings (
+            id TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            slack_team_id TEXT NOT NULL,
+            slack_user_id TEXT NOT NULL,
+            agent_instance_id TEXT NOT NULL,
+            agent_persona TEXT NOT NULL,
+            agent_avatar_url TEXT,
+            slack_bot_user_id TEXT,
+            github_user_id TEXT NOT NULL,
+            github_node_id TEXT NOT NULL,
+            github_login TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            revoked_at TEXT,
+            UNIQUE (slack_team_id, slack_user_id, agent_instance_id),
+            UNIQUE (agent_instance_id)
+        );
+
+        CREATE TABLE IF NOT EXISTS collaboration_contributions (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL REFERENCES ledger_changesets(id) ON DELETE CASCADE,
+            idempotency_key TEXT NOT NULL UNIQUE,
+            owner_id TEXT NOT NULL,
+            slack_user_id TEXT NOT NULL,
+            github_user_id TEXT NOT NULL,
+            agent_instance_id TEXT NOT NULL,
+            agent_persona TEXT NOT NULL,
+            actor_kind TEXT NOT NULL,
+            commit_sha TEXT,
+            attestation TEXT NOT NULL,
+            attestation_digest TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS github_webhook_deliveries (
+            delivery_id TEXT PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            action TEXT,
+            installation_id TEXT,
+            repository_id TEXT,
+            repository_slug TEXT,
+            state TEXT NOT NULL,
+            payload TEXT NOT NULL,
+            quarantine_reason TEXT,
+            received_at TEXT NOT NULL,
+            processed_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS github_action_audit (
+            id TEXT PRIMARY KEY,
+            changeset_id TEXT,
+            correlation_id TEXT,
+            human_owner TEXT NOT NULL,
+            github_actor TEXT NOT NULL,
+            agent_instance TEXT NOT NULL,
+            agent_persona TEXT NOT NULL,
+            actor_kind TEXT NOT NULL,
+            action TEXT NOT NULL,
+            repository_slug TEXT NOT NULL,
+            result TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS github_oauth_states (
+            state_hash TEXT PRIMARY KEY,
+            owner_id TEXT NOT NULL,
+            slack_team_id TEXT NOT NULL,
+            slack_user_id TEXT NOT NULL,
+            agent_instance_id TEXT NOT NULL,
+            agent_persona TEXT NOT NULL,
+            agent_avatar_url TEXT,
+            slack_bot_user_id TEXT,
+            redirect_uri TEXT NOT NULL,
+            verifier_ciphertext TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            consumed_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS github_user_tokens (
+            id TEXT PRIMARY KEY,
+            identity_binding_id TEXT NOT NULL UNIQUE
+                REFERENCES collaboration_identity_bindings(id) ON DELETE CASCADE,
+            access_ciphertext TEXT NOT NULL,
+            refresh_ciphertext TEXT,
+            expires_at TEXT,
+            refresh_expires_at TEXT,
+            token_type TEXT NOT NULL DEFAULT 'bearer',
+            status TEXT NOT NULL DEFAULT 'active',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            revoked_at TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS github_capability_uses (
+            capability_id TEXT PRIMARY KEY,
+            changeset_id TEXT NOT NULL,
+            identity_binding_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            repository_slug TEXT NOT NULL,
+            used_at TEXT NOT NULL
+        );
         """
     )
     conn.execute(

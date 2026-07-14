@@ -1731,6 +1731,10 @@ DEFAULT_CONFIG = {
             "api_url": "https://api.github.com",
             "upload_url": "https://uploads.github.com",
             "app_id": "",
+            "client_id": "",
+            "oauth_callback_path": "/api/oauth/github/callback",
+            "oauth_state_ttl_seconds": 600,
+            "api_version": "2026-03-10",
             "webhook_path": "/api/webhooks/github",
         },
         "repository": {
@@ -2850,6 +2854,13 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
         "advanced": True,
     },
+    "GITHUB_TOKEN_ENCRYPTION_KEY": {
+        "description": "Encryption key for delegated GitHub user tokens",
+        "prompt": "GitHub token encryption key",
+        "password": True,
+        "category": "messaging",
+        "advanced": True,
+    },
     "FORECAST_TRACE_ENCRYPTION_KEY": {
         "description": "Encryption key for private forecast execution traces",
         "prompt": "Forecast trace encryption key",
@@ -3861,6 +3872,21 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
                         "error",
                         f"collaboration.github.{key} must be an absolute HTTPS URL",
                         f"Set collaboration.github.{key} to an https:// endpoint",
+                    ))
+            ttl = github.get("oauth_state_ttl_seconds", 600)
+            if isinstance(ttl, bool) or not isinstance(ttl, int) or ttl < 60:
+                issues.append(ConfigIssue(
+                    "error",
+                    "collaboration.github.oauth_state_ttl_seconds must be at least 60",
+                    "Use 600 for the default ten-minute OAuth window",
+                ))
+            for key in ("oauth_callback_path", "webhook_path"):
+                path = str(github.get(key) or "")
+                if not path.startswith("/") or ".." in path or "\\" in path:
+                    issues.append(ConfigIssue(
+                        "error",
+                        f"collaboration.github.{key} must be a safe absolute path",
+                        f"Use /api/{'oauth/github/callback' if key == 'oauth_callback_path' else 'webhooks/github'}",
                     ))
         if isinstance(repository, dict):
             slug = str(repository.get("slug") or "").strip()
