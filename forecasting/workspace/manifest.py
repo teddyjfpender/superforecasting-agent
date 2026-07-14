@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Mapping
 
 import yaml
@@ -12,6 +13,7 @@ from forecasting.models import ValidationError
 
 
 FORMAT_VERSION = 1
+_SAFE_WORKSPACE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 @dataclass(frozen=True)
@@ -25,8 +27,12 @@ class WorkspaceManifest:
     def __post_init__(self) -> None:
         if self.format_version != FORMAT_VERSION:
             raise ValidationError(f"unsupported workspace format version: {self.format_version}")
-        if not self.workspace_id.strip():
-            raise ValidationError("workspace_id is required")
+        if not _SAFE_WORKSPACE_ID.fullmatch(self.workspace_id):
+            raise ValidationError("workspace_id contains unsafe path characters")
+        if not self.default_branch or self.default_branch.startswith(("-", ".")) or any(
+            marker in self.default_branch for marker in ("..", "~", "^", ":", "\\", " ")
+        ):
+            raise ValidationError("default_branch is not a safe Git ref")
         if self.ledger_revision < 0:
             raise ValidationError("ledger_revision must be non-negative")
         for path, digest in self.files.items():

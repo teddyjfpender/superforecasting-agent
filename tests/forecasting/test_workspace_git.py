@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -55,3 +56,35 @@ def test_managed_git_fast_forwards_clean_checkout(tmp_path):
 def test_managed_checkout_path_rejects_traversal():
     with pytest.raises(ValidationError, match="unsafe"):
         managed_checkout_path("../outside")
+
+
+def test_managed_git_rejects_executable_remotes_and_local_drivers(tmp_path):
+    managed = ManagedGit(timeout_seconds=10)
+    with pytest.raises(ValidationError, match="HTTPS"):
+        managed.clone("ext::sh -c touch /tmp/pwned", tmp_path / "checkout")
+
+    _, remote = _remote(tmp_path)
+    checkout = managed.clone(str(remote), tmp_path / "safe", branch="main")
+    _git(checkout, "config", "filter.hostile.clean", "touch /tmp/pwned")
+    with pytest.raises(ValidationError, match="unsafe Git configuration"):
+        managed.status(checkout)
+
+
+def test_managed_git_credentials_use_askpass_not_arguments(tmp_path, monkeypatch):
+    calls = []
+
+    def fake_run(argv, **kwargs):
+        calls.append((argv, kwargs["env"]))
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    ManagedGit().run(
+        ["fetch", "origin"],
+        credential_callback=lambda: ("x-access-token", "github-secret-token"),
+    )
+
+    argv, env = calls[0]
+    assert "github-secret-token" not in argv
+    assert env["GIT_ASKPASS_REQUIRE"] == "force"
+    assert env["SFA_GIT_PASSWORD"] == "github-secret-token"
+    assert not Path(env["GIT_ASKPASS"]).exists()

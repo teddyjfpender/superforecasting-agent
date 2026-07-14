@@ -10763,7 +10763,7 @@ _BUILTIN_SUBCOMMANDS = frozenset(
         "model", "pairing", "plugins", "postinstall", "profile", "proxy",
         "send", "sessions", "setup",
         "skills", "slack", "status", "tools", "uninstall", "update",
-        "version", "webhook", "whatsapp", "chat", "desk", "security",
+        "version", "webhook", "whatsapp", "chat", "desk", "security", "workspace",
         # Help-ish invocations — plugin commands not being listed in
         # top-level --help is an acceptable trade-off for skipping an
         # expensive eager import of every bundled plugin module.
@@ -10879,8 +10879,10 @@ def main():
     chat_parser.set_defaults(func=cmd_chat)
 
     from forecasting.cli import cmd_forecast, register_cli as register_forecast_cli
+    from forecasting.cli.collaboration_admin import register_cli as register_collaboration_cli
 
     register_forecast_cli(subparsers)
+    register_collaboration_cli(subparsers)
 
     # =========================================================================
     # model command
