@@ -108,6 +108,95 @@ Additional gates by affected surface:
 No quality gate may use live Slack, GitHub, model, or secret credentials in the
 default test suite.
 
+## Implementation Status (paused 2026-07-14)
+
+This is the execution ledger for `superforecasting-agent-snapshot` through
+commit `f2e17c741`. The acceptance criteria below remain the normative
+definition of done; this section records what is implemented, what is only
+partially wired, and the safe boundary for the next implementation pass.
+
+### Delivered
+
+The following stories have implementation and focused test coverage:
+
+- **Change control:** US-001 through US-009. This includes typed configuration,
+  revision-aware multi-forecast changesets, canonical operation schemas,
+  deterministic preview, transactional idempotent apply, risk classification,
+  digest-bound quorum, legacy proposal compatibility, and provenance bundles.
+- **Transcript governance:** US-011 and US-012. Review-safe scoped transcripts,
+  fail-closed secret detection, stable publication markers, consent binding,
+  and withheld/safety-failure outcomes are implemented.
+- **Portable Git workspace:** US-014 through US-018. The repository format,
+  deterministic projection, validated bootstrap, managed Git service, and one
+  durable branch/changeset generation per Slack thread are implemented.
+- **GitHub identity and proposal plane:** US-019 through US-024. This includes
+  stateful GitHub App installation onboarding, per-user OAuth, exact
+  installation/repository/permission grants, four-layer identity attribution,
+  encrypted owner tokens, capability-brokered writes, signed durable webhooks,
+  idempotent draft PR publication, and canonical/fork branch selection.
+- **Slack interaction:** US-027 through US-029. Persistent liveness cards,
+  progress/heartbeat/final states, review and transcript actions, action
+  authorization/idempotency, and shared Socket Mode/signed-HTTP semantics are
+  implemented.
+- **Operator surface and documentation:** US-033 and US-037. Workspace,
+  collaboration, GitHub-installation, audit, retention, and recovery commands
+  are documented alongside local, single-control-plane, and Kubernetes hosting
+  guidance.
+
+### Partially delivered
+
+| Story | Implemented now | Remaining before the story is complete |
+| --- | --- | --- |
+| US-010 | Encrypted local trace archives, digests, authorization checks, and immutable access events. | Add a dedicated authorized control-plane access endpoint and hosted object-store adapter. |
+| US-013 | Ninety-day defaults, pins/legal holds, idempotent tombstones, CLI status, and a retention sweeper. | Schedule the sweeper in the hosted runtime and alert on overdue deletion. |
+| US-025 | `PromotionCheckPublisher` validates the configured App and exact head SHA; check payloads and merge-group events have focused tests. | Wire check publication into the production PR/update path, publish the synthetic merge-group SHA result, and prove ruleset enforcement end to end. |
+| US-026 | Merge webhooks durably enter `merged_apply_pending`; the reconciler revalidates and applies idempotently. | Publish authoritative `applied`/`apply_failed` GitHub results and remediation guidance from the production worker. |
+| US-030 | Shared per-thread changesets, serialized work, owner-specific credentials, contributions, and presence are durable. | Wire explicit cross-owner “request another person's agent” routing into the live Slack coordinator. |
+| US-031 | Durable GitHub-to-Slack summaries, correlation, terminal-state mirroring, and restart catch-up exist. | Add resolved-conversation handling and explicit burst coalescing/rate-limit behavior. |
+| US-032 | A bounded discussion coordinator enforces allowed triggers, comment/round/token/time/concurrency budgets, attribution, loop detection, and human reset. | Connect assignment, mention, policy, and failed-check webhook triggers to the live agent runner. |
+| US-034 | Offline health metrics, safe remediation messages, merged-unapplied recovery, and outage-tolerant admin status exist. | Add check-duration and stale-sandbox metrics, complete correlation fields, and reconcile orphan PRs/branches plus repository digest drift. |
+| US-035 | Signature, replay, repository/identity, approval, path, branch, Git, bootstrap, transcript, credential, and capability boundaries have focused coverage. | Generate/apply Kubernetes `NetworkPolicy` and complete prompt-injection and compromised-sandbox adversarial fixtures. |
+| US-036 | The deterministic harness covers three humans/agents, identity attribution, multi-forecast contributions, consent, quorum, merge queue, restart, exactly-once apply, and bootstrap parity. | Add literal duplicate Socket/HTTP delivery, unsafe-transcript non-mutation, and merged-stale-changeset non-mutation to the same end-to-end harness. |
+
+### Remaining implementation order
+
+1. **Close the promotion truth path:** wire US-025 checks into PR publication
+   and post US-026 terminal apply results back to GitHub and Slack.
+2. **Finish live multiplayer routing:** connect cross-owner agent requests,
+   GitHub discussion triggers, resolved conversations, and burst coalescing.
+3. **Finish trace operations:** schedule retention, add the authorized trace
+   access endpoint, and provide the hosted object-store/KMS adapter.
+4. **Harden hosted operation:** add reconciliation/latency metrics, orphan and
+   digest-drift repair, Kubernetes network policy, and the remaining adversarial
+   tests.
+5. **Close release evidence:** extend the acceptance harness, run shadow-mode
+   risk classification, and only then enable low-risk automatic promotion.
+6. **Prepare multi-replica hosted GA:** replace the single-control-plane SQLite
+   and local-blob assumptions with Postgres and object-store adapters before
+   horizontal scaling.
+
+### Safe operating boundary at this pause
+
+- GitHub collaboration remains opt-in and repository-scoped. Keep automatic
+  promotion disabled until the production `ledger/promotion` check and
+  terminal apply-result wiring are complete.
+- The shipped collaboration state is safe for one control-plane process. Do not
+  horizontally scale the SQLite deployment.
+- The autonomous discussion governor is callable and tested, but its live
+  webhook-to-agent triggers should remain disabled until the runner wiring is
+  complete.
+- Private traces are available only through authorized local control-plane/CLI
+  paths; no public raw-trace endpoint is claimed.
+
+### Validation snapshot
+
+- The final GitHub installation/capability/wiring slice passed its focused
+  tests.
+- The latest broad pre-push run reached `13,961 passed, 85 skipped`; one existing
+  offline readiness benchmark exceeded its 30-second timeout under parallel
+  load and then passed when rerun alone. The one-time push bypass was explicit
+  and recorded in `.githooks/skips.log`.
+
 ## 4. User Stories
 
 ### Phase A — Domain contracts and authoritative application
