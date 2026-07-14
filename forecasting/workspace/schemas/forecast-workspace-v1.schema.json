@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superforecasting-agent.local/schemas/forecast-workspace-v1.json",
+  "title": "Forecast workspace manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "format_version",
+    "workspace_id",
+    "default_branch",
+    "ledger_revision",
+    "content_digest",
+    "files"
+  ],
+  "properties": {
+    "format_version": { "const": 1 },
+    "workspace_id": { "type": "string", "minLength": 1 },
+    "default_branch": { "type": "string", "minLength": 1 },
+    "ledger_revision": { "type": "integer", "minimum": 0 },
+    "content_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "files": {
+      "type": "object",
+      "propertyNames": { "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+      "additionalProperties": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+    }
+  }
+}

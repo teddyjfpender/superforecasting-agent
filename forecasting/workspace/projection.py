@@ -1,0 +1,186 @@
+"""Deterministic portable projection of the authoritative forecast ledger."""
+
+from __future__ import annotations
+
+import json
+import hashlib
+import sqlite3
+import tempfile
+from pathlib import Path
+from typing import Any, Mapping
+
+from forecasting.change_control.store import current_revision, list_changesets, list_operations, list_reviews
+from forecasting.workspace.manifest import WorkspaceManifest
+
+
+_DROP_KEYS = frozenset(
+    {
+        "generated_at",
+        "reasoning",
+        "reasoning_content",
+        "reasoning_details",
+        "system_prompt",
+        "snapshot_path",
+        "source_file_path",
+        "artifact_paths",
+        "api_key",
+        "token",
+        "secret",
+        "cookie",
+    }
+)
+_PACKET_KEYS = (
+    "question",
+    "forecast_history",
+    "evidence",
+    "assumptions",
+    "reference_classes",
+    "resolution",
+    "scores",
+    "postmortems",
+    "calibration_lessons",
+    "forecast_links",
+    "thesis_members",
+    "thesis_entities",
+    "analyst_notes",
+)
+
+
+def _portable(value: Any, *, key: str = "") -> Any:
+    if key.lower() in _DROP_KEYS:
+        return None
+    if isinstance(value, Mapping):
+        return {
+            str(item_key): portable
+            for item_key, item_value in sorted(value.items(), key=lambda item: str(item[0]))
+            if str(item_key).lower() not in _DROP_KEYS
+            if (portable := _portable(item_value, key=str(item_key))) is not None
+        }
+    if isinstance(value, list):
+        return [_portable(item) for item in value]
+    return value
+
+
+def _json_bytes(value: Any) -> bytes:
+    return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
+
+
+def _backup(ledger: Any, path: Path) -> None:
+    source = sqlite3.connect(ledger.db_path)
+    target = sqlite3.connect(path)
+    try:
+        source.backup(target)
+    finally:
+        target.close()
+        source.close()
+
+
+def _question_packet(ledger: Any, question_id: str) -> dict[str, Any]:
+    packet = json.loads(ledger.export_question(question_id, fmt="json"))
+    return _portable({key: packet.get(key) for key in _PACKET_KEYS})
+
+
+def _changeset_packet(ledger: Any, changeset: Mapping[str, Any]) -> dict[str, Any]:
+    public = {
+        key: changeset.get(key)
+        for key in (
+            "id",
+            "workspace_id",
+            "base_revision",
+            "status",
+            "digest",
+            "risk_tier",
+            "risk_reasons",
+            "branch",
+            "pr_number",
+            "head_sha",
+            "merge_sha",
+            "author_owner_ids",
+            "author_identities",
+            "affected_question_ids",
+            "created_at",
+            "updated_at",
+            "applied_revision",
+            "applied_at",
+        )
+    }
+    public["operations"] = [
+        operation.as_dict() for operation in list_operations(ledger, str(changeset["id"]))
+    ]
+    public["reviews"] = [
+        {
+            key: review.get(key)
+            for key in (
+                "id",
+                "changeset_digest",
+                "head_sha",
+                "decision",
+                "actor_kind",
+                "owner_id",
+                "github_user_id",
+                "agent_instance_id",
+                "agent_persona",
+                "role",
+                "source",
+                "created_at",
+                "stale_at",
+            )
+        }
+        for review in list_reviews(ledger, str(changeset["id"]))
+    ]
+    return _portable(public)
+
+
+def export_workspace(
+    ledger: Any,
+    output_dir: str | Path,
+    *,
+    workspace_id: str,
+    default_branch: str = "main",
+) -> WorkspaceManifest:
+    """Export a read-consistent, secret-resistant repository projection."""
+
+    root = Path(output_dir).expanduser()
+    root.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="forecast-workspace-export-") as directory:
+        snapshot_path = Path(directory) / "ledger.db"
+        _backup(ledger, snapshot_path)
+        from forecasting import ForecastLedger
+
+        snapshot = ForecastLedger(snapshot_path)
+        files: dict[str, bytes] = {}
+        for question in sorted(snapshot.list_questions(), key=lambda item: item.id):
+            files[f"ledger/questions/{question.id}.json"] = _json_bytes(
+                _question_packet(snapshot, question.id)
+            )
+        for changeset in sorted(
+            list_changesets(snapshot, workspace_id=workspace_id, limit=100_000),
+            key=lambda item: item["id"],
+        ):
+            files[f"changesets/{changeset['id']}/changeset.json"] = _json_bytes(
+                _changeset_packet(snapshot, changeset)
+            )
+        files["policies/review-policy.json"] = _json_bytes(
+            {"version": 1, "risk_tiers": ["low", "medium", "high"]}
+        )
+        files["extensions/lock.json"] = _json_bytes({"version": 1, "overlays": []})
+        files[".gitignore"] = (
+            b"*.db\n*.db-*\n.env\n.env.*\n!.env.example\nraw-traces/\n"
+            b"**/raw-traces/\n__pycache__/\n*.pyc\n.git-credentials\n"
+        )
+        digests = {path: hashlib.sha256(data).hexdigest() for path, data in files.items()}
+        manifest = WorkspaceManifest(
+            workspace_id=workspace_id,
+            default_branch=default_branch,
+            ledger_revision=current_revision(snapshot)["revision"],
+            files=digests,
+        )
+        files["forecast-workspace.yaml"] = manifest.to_yaml().encode("utf-8")
+        for relative, data in files.items():
+            destination = root / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(data)
+    return manifest
+
+
+__all__ = ["export_workspace"]
