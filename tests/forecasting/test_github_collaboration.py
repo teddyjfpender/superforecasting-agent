@@ -399,7 +399,10 @@ def test_capability_binds_one_exact_owner_fork_without_repository_confusion(tmp_
         )
 
 
-def test_capability_exposes_only_redacted_permission_failure_for_fallback(tmp_path):
+@pytest.mark.parametrize("status_code", [403, 404])
+def test_capability_exposes_only_redacted_permission_failure_for_fallback(
+    tmp_path, status_code
+):
     control, binding, changeset, _, _ = _capability_fixture(tmp_path)
     broker = GitHubCapabilityBroker(
         control.ledger,
@@ -407,7 +410,8 @@ def test_capability_exposes_only_redacted_permission_failure_for_fallback(tmp_pa
         signing_key=b"p" * 32,
         token_provider=lambda binding_id: f"ghu_control_plane_{binding_id}_123456789",
         request=lambda method, url, **kwargs: _Response(
-            {"message": "denied ghu_secret_value_12345678901234567890"}, status=403
+            {"message": "denied ghu_secret_value_12345678901234567890"},
+            status=status_code,
         ),
     )
     path = "/repos/acme/forecasts/git/blobs"
@@ -417,7 +421,7 @@ def test_capability_exposes_only_redacted_permission_failure_for_fallback(tmp_pa
     )
     with pytest.raises(GitHubPermissionError, match="denied branch.write") as failure:
         broker.execute(capability, method="POST", path=path, json_body={"content": "x"})
-    assert failure.value.status_code == 403
+    assert failure.value.status_code == status_code
     assert "secret" not in str(failure.value)
 
 

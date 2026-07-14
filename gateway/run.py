@@ -3521,6 +3521,12 @@ class GatewayRunner:
                 promotion_app_id=app_id,
             )
             reconciler = MergeApplyReconciler(ledger)
+            recovered = reconciler.run(limit=100)
+            if recovered:
+                logger.info(
+                    "Reconciled %d merged ledger changeset(s) during gateway startup",
+                    len(recovered),
+                )
 
             def ingest(headers: dict[str, str], body: bytes) -> dict[str, Any]:
                 return ingest_github_webhook(

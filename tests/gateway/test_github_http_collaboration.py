@@ -108,8 +108,37 @@ def test_github_route_paths_fail_closed():
 
 def test_gateway_wires_signed_github_ingress_before_connect(tmp_path, monkeypatch):
     from forecasting import ForecastLedger
+    from forecasting.change_control import ChangeControl, LedgerOperation
 
     ledger = ForecastLedger(tmp_path / "ledger.db")
+    control = ChangeControl(ledger)
+    changeset = control.create_changeset(workspace_id="desk_1")
+    control.add_operation(
+        changeset["id"],
+        LedgerOperation(
+            id="document_1",
+            kind="document.update",
+            target_ref="brief_1",
+            payload={"path": "documents/brief.md", "content": "Recovered."},
+        ),
+    )
+    control.add_decision_record(
+        changeset["id"], conclusion="Recover the merged portable document update."
+    )
+    for state in (
+        "ready",
+        "publishing",
+        "review_open",
+        "checks_running",
+        "merge_ready",
+        "merged_apply_pending",
+    ):
+        fields = (
+            {"merge_sha": "merge-1"}
+            if state == "merged_apply_pending"
+            else ({"metadata": {"checks_passed": True}} if state == "merge_ready" else None)
+        )
+        control.transition(changeset["id"], state, fields=fields)
     config = {
         "collaboration": {
             "enabled": True,
@@ -147,3 +176,4 @@ def test_gateway_wires_signed_github_ingress_before_connect(tmp_path, monkeypatc
 
     assert captured["webhook_path"] == "/api/webhooks/github"
     assert delivery["state"] == "pending"
+    assert control.get_changeset(changeset["id"])["status"] == "applied"

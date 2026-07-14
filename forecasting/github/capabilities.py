@@ -176,7 +176,10 @@ class GitHubCapabilityBroker:
                 **request_kwargs,
             )
             status_code = int(response.status_code)
-            if status_code in {401, 403} and status_code not in expected_statuses:
+            permission_denied = status_code in {401, 403} or (
+                status_code == 404 and payload["action"] == "branch.write"
+            )
+            if permission_denied and status_code not in expected_statuses:
                 raise GitHubPermissionError(
                     f"GitHub denied {payload['action']}", status_code=status_code
                 )

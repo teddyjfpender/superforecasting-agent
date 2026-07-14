@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import shutil
 
 import pytest
@@ -136,3 +137,86 @@ def test_changeset_mutations_require_confirmation(tmp_path):
     args = _parse("changeset", "--db", str(ledger.db_path), "abandon", changeset["id"])
     with pytest.raises(Exception, match="--yes"):
         args.func(args)
+
+
+def test_review_policy_and_status_are_inspectable(tmp_path, monkeypatch, capsys):
+    ledger = ForecastLedger(tmp_path / "ledger.db")
+    from forecasting.change_control import ChangeControl
+
+    control = ChangeControl(ledger)
+    changeset = control.create_changeset(workspace_id="desk_1")
+    monkeypatch.setattr(
+        collaboration_admin,
+        "_configuration",
+        lambda: (
+            {"review": {"materiality_threshold": 0.15, "risk_overrides": {}}},
+            {},
+        ),
+    )
+
+    policy = _parse("changeset", "--db", str(ledger.db_path), "review-policy", "--json")
+    policy.func(policy)
+    status = _parse(
+        "changeset", "--db", str(ledger.db_path), "review-status",
+        changeset["id"], "--json",
+    )
+    status.func(status)
+    output = capsys.readouterr().out
+
+    assert '"materiality_threshold": 0.15' in output
+    assert changeset["id"] in output
+    assert '"ledger_apply_status": "draft"' in output
+
+
+def test_trace_retention_and_access_audit_never_emit_private_content(tmp_path, capsys):
+    from forecasting.change_control import ChangeControl
+    from forecasting.change_control.trace_archive import (
+        capture_trace_archive,
+        read_trace_archive,
+    )
+
+    ledger = ForecastLedger(tmp_path / "ledger.db")
+    control = ChangeControl(ledger)
+    changeset = control.create_changeset(workspace_id="desk_1")
+    key = base64.urlsafe_b64encode(b"k" * 32).decode()
+    archive = capture_trace_archive(
+        ledger,
+        changeset["id"],
+        {"private": "raw transcript must never print"},
+        workspace_key=key,
+        retention_days=0,
+        object_dir=tmp_path / "private",
+    )
+    with pytest.raises(PermissionError):
+        read_trace_archive(
+            ledger,
+            archive["id"],
+            actor_id="auditor_1",
+            reason="private review reason",
+            authorize=lambda record, actor: False,
+            workspace_key=key,
+        )
+
+    retention = _parse(
+        "changeset", "--db", str(ledger.db_path), "transcript-retention",
+        "--sweep", "--dry-run", "--json",
+    )
+    retention.func(retention)
+    access = _parse(
+        "changeset", "--db", str(ledger.db_path), "transcript-access-audit",
+        "--archive-id", archive["id"], "--json",
+    )
+    access.func(access)
+    output = capsys.readouterr().out
+
+    assert archive["id"] in output
+    assert "raw transcript must never print" not in output
+    assert "private review reason" not in output
+    assert "reason_digest" in output
+    assert "object_locator" not in output
+
+    destructive = _parse(
+        "changeset", "--db", str(ledger.db_path), "transcript-retention", "--sweep"
+    )
+    with pytest.raises(Exception, match="--yes"):
+        destructive.func(destructive)

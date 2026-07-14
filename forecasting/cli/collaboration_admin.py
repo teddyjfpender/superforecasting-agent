@@ -123,6 +123,39 @@ def register_cli(subparsers: argparse._SubParsersAction) -> None:
         command.add_argument("changeset_id")
         command.add_argument("--json", action="store_true")
         command.set_defaults(func=handler)
+
+    review_policy = changeset_commands.add_parser(
+        "review-policy", help="Show effective changeset risk and quorum policy"
+    )
+    review_policy.add_argument("--json", action="store_true")
+    review_policy.set_defaults(func=_cmd_review_policy)
+    review_status = changeset_commands.add_parser(
+        "review-status", help="Show current review and quorum state"
+    )
+    review_status.add_argument("changeset_id", nargs="?")
+    review_status.add_argument("--limit", type=int, default=100)
+    review_status.add_argument("--json", action="store_true")
+    review_status.set_defaults(func=_cmd_review_status)
+    retention = changeset_commands.add_parser(
+        "transcript-retention", help="Audit or sweep private trace retention"
+    )
+    retention.add_argument("--changeset-id")
+    retention.add_argument("--state")
+    retention.add_argument("--limit", type=int, default=100)
+    retention.add_argument("--sweep", action="store_true")
+    retention.add_argument("--yes", action="store_true")
+    retention.add_argument("--dry-run", action="store_true")
+    retention.add_argument("--json", action="store_true")
+    retention.set_defaults(func=_cmd_transcript_retention)
+    access = changeset_commands.add_parser(
+        "transcript-access-audit", help="Audit private trace access without trace content"
+    )
+    access.add_argument("--changeset-id")
+    access.add_argument("--archive-id")
+    access.add_argument("--actor-id")
+    access.add_argument("--limit", type=int, default=100)
+    access.add_argument("--json", action="store_true")
+    access.set_defaults(func=_cmd_transcript_access_audit)
     for name, handler, help_text in (
         ("apply", _cmd_changeset_apply, "Apply a merge-ready changeset"),
         ("retry", _cmd_changeset_retry, "Retry a transient merge-apply failure"),
@@ -534,6 +567,160 @@ def _cmd_changeset_abandon(args: argparse.Namespace) -> None:
         return
     result = ChangeControl(_ledger(args)).transition(args.changeset_id, "abandoned")
     _emit(args, {"action": "abandoned", "changeset": result})
+
+
+def _cmd_review_policy(args: argparse.Namespace) -> None:
+    collaboration, _ = _configuration()
+    configured = dict(collaboration.get("review") or {})
+    _emit(
+        args,
+        {
+            "version": 1,
+            "materiality_threshold": float(
+                configured.get("materiality_threshold", 0.10)
+            ),
+            "risk_overrides": dict(configured.get("risk_overrides") or {}),
+            "human_approvals": {"low": 0, "medium": 1, "high": 2},
+            "high_risk_owner_or_steward_required": True,
+            "contributing_owners_may_not_self_approve": True,
+            "approval_binding": ["changeset_digest", "head_sha"],
+        },
+    )
+
+
+def _review_status(control: ChangeControl, changeset_id: str) -> dict[str, Any]:
+    changeset = control.get_changeset(changeset_id)
+    quorum = control.quorum(changeset_id)
+    reviews = control.list_reviews(changeset_id)
+    return {
+        "changeset_id": changeset_id,
+        "status": changeset["status"],
+        "risk_tier": changeset["risk_tier"],
+        "changeset_digest": changeset["digest"],
+        "head_sha": changeset.get("head_sha"),
+        "pr_number": changeset.get("pr_number"),
+        "github_merge_status": (
+            "merged" if changeset.get("merge_sha") else "not_merged"
+        ),
+        "ledger_apply_status": changeset["status"],
+        "quorum": vars(quorum),
+        "reviews": reviews,
+    }
+
+
+def _cmd_review_status(args: argparse.Namespace) -> None:
+    control = ChangeControl(_ledger(args))
+    if args.changeset_id:
+        rows = [_review_status(control, args.changeset_id)]
+    else:
+        pending = control.list_changesets(limit=max(1, min(int(args.limit), 1000)))
+        rows = [
+            _review_status(control, row["id"])
+            for row in pending
+            if row["status"] not in {
+                "applied",
+                "rejected",
+                "cancelled",
+                "abandoned",
+                "superseded",
+            }
+        ]
+    _emit(args, {"review_status": rows})
+
+
+def _retention_rows(args: argparse.Namespace) -> list[dict[str, Any]]:
+    clauses: list[str] = []
+    values: list[Any] = []
+    if args.changeset_id:
+        clauses.append("b.changeset_id = ?")
+        values.append(args.changeset_id)
+    if args.state:
+        clauses.append("a.state = ?")
+        values.append(args.state)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    values.append(max(1, min(int(args.limit), 1000)))
+    ledger = _ledger(args)
+    ChangeControl(ledger)
+    with ledger._connect() as conn:
+        rows = conn.execute(
+            f"""SELECT a.id, b.changeset_id, a.byte_size, a.retention_deadline,
+                       a.key_version, a.state, a.pin_reason, a.pin_expires_at,
+                       a.legal_hold, a.created_at, a.deleted_at
+                FROM provenance_trace_archives a
+                JOIN provenance_bundles b ON b.id = a.bundle_id
+                {where}
+                ORDER BY a.retention_deadline, a.id LIMIT ?""",
+            values,
+        ).fetchall()
+    return [{**dict(row), "legal_hold": bool(row["legal_hold"])} for row in rows]
+
+
+def _cmd_transcript_retention(args: argparse.Namespace) -> None:
+    rows = _retention_rows(args)
+    payload: dict[str, Any] = {"archives": rows, "swept_archive_ids": []}
+    if args.sweep:
+        if args.dry_run:
+            from forecasting.models import utc_now_iso
+
+            now = utc_now_iso()
+            payload["would_sweep_archive_ids"] = [
+                row["id"]
+                for row in rows
+                if row["state"] == "active"
+                and row["retention_deadline"] <= now
+                and not row["legal_hold"]
+                and (not row["pin_expires_at"] or row["pin_expires_at"] <= now)
+            ]
+        else:
+            if not args.yes:
+                raise ValidationError("retention sweep deletes ciphertext; rerun with --yes")
+            from forecasting.change_control.trace_archive import sweep_expired_traces
+
+            payload["swept_archive_ids"] = sweep_expired_traces(_ledger(args))
+    _emit(args, payload)
+
+
+def _cmd_transcript_access_audit(args: argparse.Namespace) -> None:
+    from forecasting.change_control.models import content_digest
+
+    clauses: list[str] = []
+    values: list[Any] = []
+    for column, value in (
+        ("b.changeset_id", args.changeset_id),
+        ("e.archive_id", args.archive_id),
+        ("e.actor_id", args.actor_id),
+    ):
+        if value:
+            clauses.append(f"{column} = ?")
+            values.append(value)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    values.append(max(1, min(int(args.limit), 1000)))
+    ledger = _ledger(args)
+    ChangeControl(ledger)
+    with ledger._connect() as conn:
+        rows = conn.execute(
+            f"""SELECT e.id, e.archive_id, b.changeset_id, e.actor_id,
+                       e.action, e.reason, e.occurred_at
+                FROM provenance_access_events e
+                JOIN provenance_trace_archives a ON a.id = e.archive_id
+                JOIN provenance_bundles b ON b.id = a.bundle_id
+                {where}
+                ORDER BY e.occurred_at DESC, e.id DESC LIMIT ?""",
+            values,
+        ).fetchall()
+    events = [
+        {
+            "id": row["id"],
+            "archive_id": row["archive_id"],
+            "changeset_id": row["changeset_id"],
+            "actor_id": row["actor_id"],
+            "action": row["action"],
+            "reason_digest": content_digest(row["reason"]),
+            "occurred_at": row["occurred_at"],
+        }
+        for row in rows
+    ]
+    _emit(args, {"access_events": events})
 
 
 __all__ = ["register_cli"]
