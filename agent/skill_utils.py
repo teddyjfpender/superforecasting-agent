@@ -227,14 +227,11 @@ def get_external_skills_dirs() -> List[Path]:
 
     raw_dirs = skills_cfg.get("external_dirs")
     if not raw_dirs:
-        result: List[Path] = []
-        if cache_key is not None:
-            _EXTERNAL_DIRS_CACHE[cache_key] = list(result)
-        return result
+        raw_dirs = []
     if isinstance(raw_dirs, str):
         raw_dirs = [raw_dirs]
     if not isinstance(raw_dirs, list):
-        return []
+        raw_dirs = []
 
     from hermes_constants import get_hermes_home
 
@@ -264,6 +261,18 @@ def get_external_skills_dirs() -> List[Path]:
             result.append(p)
         else:
             logger.debug("External skills dir does not exist, skipping: %s", p)
+
+    # Git extension skills reuse the same trusted external-directory loader.
+    try:
+        from agent.extension_sources import sync_extension_sources
+
+        for checkout in sync_extension_sources(parsed):
+            skill_dir = checkout.surface("skills")
+            if skill_dir is not None and skill_dir not in seen:
+                seen.add(skill_dir)
+                result.append(skill_dir)
+    except Exception:
+        logger.warning("Failed to synchronize extension skill sources", exc_info=True)
 
     if cache_key is not None:
         _EXTERNAL_DIRS_CACHE[cache_key] = list(result)

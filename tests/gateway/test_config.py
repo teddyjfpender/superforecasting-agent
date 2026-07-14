@@ -253,6 +253,26 @@ class TestGatewayConfigRoundtrip:
 
 
 class TestLoadGatewayConfig:
+    def test_webhook_slack_enables_api_ingress_and_bridges_run_store(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        run_store = tmp_path / "runs.db"
+        (hermes_home / "config.yaml").write_text(
+            "slack:\n"
+            "  transport: webhook\n"
+            "hosted_execution:\n"
+            f"  run_store_path: {run_store}\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        config = load_gateway_config()
+
+        assert config.platforms[Platform.SLACK].extra["transport"] == "webhook"
+        assert config.platforms[Platform.API_SERVER].enabled is True
+        assert config.platforms[Platform.API_SERVER].extra["slack_transport"] == "webhook"
+        assert config.platforms[Platform.API_SERVER].extra["run_store_path"] == str(run_store)
+
     def test_bridges_quick_commands_from_config_yaml(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()

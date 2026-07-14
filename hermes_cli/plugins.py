@@ -865,6 +865,27 @@ class PluginManager:
         logger.debug("  bundled/platforms: %d manifest(s)", len(bundled_platforms))
         manifests.extend(bundled_platforms)
 
+        # Ordered Git extensions sit between bundled and local user plugins.
+        # Later extension sources shadow earlier ones; user/project plugins
+        # retain their existing higher precedence for classic deployments.
+        try:
+            from agent.extension_sources import sync_extension_sources
+
+            extension_checkouts = sync_extension_sources()
+        except Exception:
+            extension_checkouts = []
+            logger.exception("Extension source synchronization failed")
+        for index, checkout in enumerate(extension_checkouts):
+            plugin_dir = checkout.surface("plugins")
+            if plugin_dir is None:
+                continue
+            extension_manifests = self._scan_directory(
+                plugin_dir,
+                source=f"extension:{index}",
+                skip_names={"memory", "context_engine", "model-providers"},
+            )
+            manifests.extend(extension_manifests)
+
         # 2. User plugins (~/.hermes/plugins/)
         user_dir = get_hermes_home() / "plugins"
         logger.debug("Scanning user plugins: %s", user_dir)

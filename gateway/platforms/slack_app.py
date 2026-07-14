@@ -14,7 +14,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import os
 import time
+from urllib.parse import parse_qs
 from pathlib import Path
 from typing import Any
 
@@ -94,8 +96,13 @@ def write_slack_token(
     data[str(team_id)] = {"token": token, "team_name": team_name or str(team_id)}
     p.parent.mkdir(parents=True, exist_ok=True)
     tmp = p.with_name(p.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
     tmp.replace(p)
+    p.chmod(0o600)
     return data[str(team_id)]
 
 
@@ -152,17 +159,29 @@ async def handle_events_request(request, *, signing_secret, on_event=None):
     sig = request.headers.get("X-Slack-Signature")
     if not verify_slack_signature(signing_secret, ts, body, sig):
         return web.Response(status=401, text="invalid signature")
-    payload = parse_event_request(body)
+    content_type = request.headers.get("Content-Type", "")
+    if "application/x-www-form-urlencoded" in content_type:
+        form = parse_qs(body.decode("utf-8", errors="replace"), keep_blank_values=True)
+        if form.get("payload"):
+            payload = parse_event_request(form["payload"][0])
+        else:
+            payload = {key: values[0] if values else "" for key, values in form.items()}
+            payload["type"] = "slash_command"
+    else:
+        payload = parse_event_request(body)
     challenge = url_verification_challenge(payload)
     if challenge is not None:
         return web.json_response({"challenge": challenge})
-    if payload.get("type") == "event_callback" and on_event is not None:
+    if payload and on_event is not None:
         try:
             maybe = on_event(payload)
             if hasattr(maybe, "__await__"):
                 await maybe
         except Exception:
-            pass  # never fail the ack on a dispatch error — Slack will retry otherwise
+            # Signature verification succeeded, but the control plane did not
+            # durably accept the delivery. Ask Slack to retry instead of
+            # acknowledging work that may be lost.
+            return web.Response(status=503, text="delivery not accepted")
     return web.Response(status=200, text="")
 
 
@@ -180,15 +199,18 @@ async def handle_oauth_request(request, *, client_id, client_secret, redirect_ur
     return web.Response(status=400, text=f"install failed: {result.get('error')}")
 
 
-def register_slack_routes(app, *, signing_secret, client_id=None, client_secret=None, redirect_uri=None, on_event=None):
+def register_slack_routes(app, *, signing_secret, client_id=None, client_secret=None, redirect_uri=None, on_event=None, events_enabled=True):
     """Register the Slack HTTP routes on an existing aiohttp ``web.Application``:
-    ``POST /slack/events`` always; ``GET /slack/oauth/redirect`` when OAuth creds are
-    provided. Call this from the gateway HTTP server startup when SLACK_SIGNING_SECRET
-    is configured (Socket Mode and HTTP can coexist)."""
+    signed Events routes when ``events_enabled``; the OAuth redirect when credentials
+    are provided. Socket Mode disables Events while retaining optional OAuth install."""
     async def _events(request):
         return await handle_events_request(request, signing_secret=signing_secret, on_event=on_event)
 
-    app.router.add_post("/slack/events", _events)
+    if events_enabled:
+        if not signing_secret:
+            raise ValueError("Slack Events routes require a signing secret")
+        app.router.add_post("/slack/events", _events)
+        app.router.add_post("/api/webhooks/slack", _events)
     if client_id and client_secret:
         async def _oauth(request):
             return await handle_oauth_request(request, client_id=client_id, client_secret=client_secret, redirect_uri=redirect_uri)

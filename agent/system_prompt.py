@@ -24,6 +24,7 @@ Pure helpers that read the agent's state.  AIAgent keeps thin forwarders.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Dict, List, Optional
 
@@ -40,7 +41,10 @@ from agent.prompt_builder import (
     TOOL_USE_ENFORCEMENT_MODELS,
     build_runtime_identity_hint,
     get_agent_help_guidance,
+    _scan_context_content,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _ra():
@@ -100,6 +104,19 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
 
     # Fork-native self-help plus legacy Hermes runtime compatibility guidance.
     stable_parts.append(get_agent_help_guidance())
+
+    # Revision-locked organization guidance is additive and ordered. It does
+    # not replace the forecasting identity or project-local context files.
+    try:
+        from agent.extension_sources import load_extension_prompts
+
+        _extension_prompt = load_extension_prompts()
+        if _extension_prompt:
+            stable_parts.append(
+                _scan_context_content(_extension_prompt, "extension prompts")
+            )
+    except Exception as exc:
+        logger.warning("Could not load extension prompt overlays: %s", exc)
 
     # Tool-aware behavioral guidance: only inject when the tools are loaded
     tool_guidance = []

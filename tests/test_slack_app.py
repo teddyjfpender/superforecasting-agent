@@ -7,7 +7,9 @@ import asyncio
 import hashlib
 import hmac
 import json
+import stat
 import time
+from urllib.parse import quote
 
 from gateway.platforms import slack_app as sa
 
@@ -62,6 +64,21 @@ def test_write_slack_token_merges(tmp_path):
     data = json.loads(p.read_text())
     assert data["T1"] == {"token": "xoxb-1", "team_name": "Acme"}
     assert data["T2"]["token"] == "xoxb-2"  # second workspace merged, first preserved
+    assert stat.S_IMODE(p.stat().st_mode) == 0o600
+
+
+def test_socket_mode_can_register_oauth_without_event_routes():
+    from aiohttp import web
+
+    app = web.Application()
+    sa.register_slack_routes(
+        app, signing_secret=None, client_id="id", client_secret="secret",
+        events_enabled=False,
+    )
+    paths = {route.resource.canonical for route in app.router.routes()}
+    assert "/slack/oauth/redirect" in paths
+    assert "/slack/events" not in paths
+    assert "/api/webhooks/slack" not in paths
 
 
 def test_install_from_oauth_code_persists_token(tmp_path):
@@ -131,11 +148,26 @@ def test_events_handler_dispatches_event_callback():
     assert seen and seen[0]["type"] == "event_callback"
 
 
-def test_events_handler_never_fails_ack_on_dispatch_error():
+def test_events_handler_requests_retry_on_acceptance_error():
     def _boom(_payload):
         raise RuntimeError("dispatch blew up")
 
     resp = asyncio.run(
         sa.handle_events_request(_signed_req("shh", {"type": "event_callback", "event": {}}), signing_secret="shh", on_event=_boom)
     )
-    assert resp.status == 200  # Slack still gets its ack (else it retries forever)
+    assert resp.status == 503
+
+
+def test_events_handler_dispatches_signed_form_payload():
+    payload = {"type": "block_actions", "actions": [{"action_id": "hermes_deny"}]}
+    body = ("payload=" + quote(json.dumps(payload))).encode()
+    ts = str(int(time.time()))
+    req = _FakeReq(body, {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Slack-Request-Timestamp": ts,
+        "X-Slack-Signature": _sign("shh", ts, body.decode()),
+    })
+    seen = []
+    resp = asyncio.run(sa.handle_events_request(req, signing_secret="shh", on_event=seen.append))
+    assert resp.status == 200
+    assert seen == [payload]

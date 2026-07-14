@@ -220,6 +220,18 @@ class TestAppMentionHandler:
                 f"Slack slash regex does not match {expected}"
             )
 
+    @pytest.mark.asyncio
+    async def test_verified_webhook_message_uses_normal_slack_pipeline(self, adapter):
+        adapter._handle_slack_message = AsyncMock()
+        await adapter.handle_http_payload({
+            "type": "event_callback",
+            "team_id": "T123",
+            "event": {"type": "app_mention", "channel": "C123", "ts": "1.2"},
+        })
+        event = adapter._handle_slack_message.await_args.args[0]
+        assert event["team"] == "T123"
+        assert event["type"] == "app_mention"
+
 
 class TestSlackConnectCleanup:
     """Regression coverage for failed connect() cleanup."""

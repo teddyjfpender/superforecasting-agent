@@ -45,6 +45,7 @@ except ImportError:
     web = None  # type: ignore[assignment]
 
 from gateway.config import Platform, PlatformConfig
+from gateway.execution_store import ExecutionStore, TERMINAL_RUN_STATUSES
 from gateway.platforms.base import (
     BasePlatformAdapter,
     SendResult,
@@ -666,10 +667,12 @@ class APIServerAdapter(BasePlatformAdapter):
         self._model_name: str = self._resolve_model_name(
             extra.get("model_name", os.getenv("API_SERVER_MODEL_NAME", "")),
         )
+        self._slack_transport = str(extra.get("slack_transport", "socket")).lower()
         self._app: Optional["web.Application"] = None
         self._runner: Optional["web.AppRunner"] = None
         self._site: Optional["web.TCPSite"] = None
         self._response_store = ResponseStore()
+        self._run_store = ExecutionStore(extra.get("run_store_path"))
         # Active run streams: run_id -> asyncio.Queue of SSE event dicts
         self._run_streams: Dict[str, "asyncio.Queue[Optional[Dict]]"] = {}
         # Creation timestamps for orphaned-run TTL sweep
@@ -683,7 +686,100 @@ class APIServerAdapter(BasePlatformAdapter):
         # resolves requests by session key, while API clients address the
         # in-flight run by run_id.
         self._run_approval_sessions: Dict[str, str] = {}
+        self._slack_event_handler = None
         self._session_db: Optional[Any] = None  # Lazy-init SessionDB for session continuity
+
+    def set_slack_event_handler(self, handler) -> None:
+        """Attach the Slack adapter's transport-neutral event dispatcher."""
+        self._slack_event_handler = handler
+
+    async def _dispatch_slack_event(self, payload: Dict[str, Any]) -> None:
+        handler = self._slack_event_handler
+        if handler is None:
+            logger.warning("[api_server] Slack webhook received before Slack adapter was wired")
+            return
+
+        inbound = self._slack_inbound_identity(payload)
+        if inbound is not None:
+            is_new = await asyncio.to_thread(
+                self._run_store.append_message,
+                message_id=inbound["message_id"],
+                client_message_id=inbound["client_message_id"],
+                thread_key=inbound["thread_key"],
+                role="user",
+                parts=self._slack_persisted_parts(payload),
+                metadata={"transport": "webhook", "platform": "slack"},
+                platform="slack",
+            )
+            if not is_new:
+                logger.info("[api_server] Ignoring duplicate Slack delivery %s", inbound["message_id"])
+                return
+
+        async def _run() -> None:
+            try:
+                result = handler(payload)
+                if hasattr(result, "__await__"):
+                    await result
+            except Exception:
+                logger.exception("[api_server] Slack webhook dispatch failed")
+
+        task = asyncio.create_task(_run())
+        try:
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except (AttributeError, TypeError):
+            pass
+
+    @staticmethod
+    def _slack_persisted_parts(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Keep replay identity/content without persisting Slack response URLs or tokens."""
+        event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        return {
+            "type": payload.get("type"),
+            "command": payload.get("command"),
+            "text": payload.get("text") or event.get("text"),
+            "event": {
+                key: event.get(key)
+                for key in ("type", "channel", "user", "ts", "thread_ts")
+                if event.get(key) is not None
+            },
+            "actions": [
+                {key: action.get(key) for key in ("action_id", "value") if action.get(key) is not None}
+                for action in (payload.get("actions") or [])
+                if isinstance(action, dict)
+            ],
+        }
+
+    @staticmethod
+    def _slack_inbound_identity(payload: Dict[str, Any]) -> Optional[Dict[str, str]]:
+        event = payload.get("event") if isinstance(payload.get("event"), dict) else {}
+        team = str(payload.get("team_id") or event.get("team") or "unknown")
+        channel = str(
+            event.get("channel")
+            or payload.get("channel_id")
+            or (payload.get("container") or {}).get("channel_id")
+            or "unknown"
+        )
+        thread = str(
+            event.get("thread_ts")
+            or event.get("ts")
+            or (payload.get("container") or {}).get("thread_ts")
+            or (payload.get("container") or {}).get("message_ts")
+            or "root"
+        )
+        client_id = str(
+            payload.get("event_id")
+            or payload.get("trigger_id")
+            or event.get("client_msg_id")
+            or ""
+        )
+        if not client_id:
+            return None
+        return {
+            "message_id": f"slack:{team}:{client_id}",
+            "client_message_id": client_id,
+            "thread_key": f"slack:{team}:{channel}:{thread}",
+        }
 
     @staticmethod
     def _parse_cors_origins(value: Any) -> tuple[str, ...]:
@@ -2832,9 +2928,9 @@ class APIServerAdapter(BasePlatformAdapter):
     _RUN_STATUS_TTL = 3600  # seconds to retain terminal run status for polling
 
     def _set_run_status(self, run_id: str, status: str, **fields: Any) -> Dict[str, Any]:
-        """Update pollable run status without exposing private agent objects."""
+        """Persist pollable run status without exposing private agent objects."""
         now = time.time()
-        current = self._run_statuses.get(run_id, {})
+        current = self._run_store.get_run(run_id) or self._run_statuses.get(run_id, {})
         current.update({
             "object": "hermes.run",
             "run_id": run_id,
@@ -2843,22 +2939,46 @@ class APIServerAdapter(BasePlatformAdapter):
         })
         current.setdefault("created_at", fields.pop("created_at", now))
         current.update(fields)
+        store_fields = {
+            key: value
+            for key, value in current.items()
+            if key not in {"run_id", "status", "updated_at"}
+        }
+        persisted = self._run_store.update_run(run_id, status, **store_fields)
+        if persisted is not None:
+            current = persisted
         self._run_statuses[run_id] = current
         return current
+
+    def _get_run_status(self, run_id: str) -> Optional[Dict[str, Any]]:
+        return self._run_store.get_run(run_id) or self._run_statuses.get(run_id)
+
+    def _append_run_event(self, run_id: str, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Persist an event, then wake any live SSE subscribers."""
+        try:
+            persisted = self._run_store.append_event(run_id, event)
+        except KeyError:
+            # Compatibility for tests and callers that seed the legacy status
+            # cache directly. Real API-created runs are always durable.
+            persisted = dict(event)
+        q = self._run_streams.get(run_id)
+        if q is not None:
+            try:
+                q.put_nowait(persisted)
+            except Exception:
+                pass
+        return persisted
 
     def _make_run_event_callback(self, run_id: str, loop: "asyncio.AbstractEventLoop"):
         """Return a tool_progress_callback that pushes structured events to the run's SSE queue."""
         def _push(event: Dict[str, Any]) -> None:
             self._set_run_status(
                 run_id,
-                self._run_statuses.get(run_id, {}).get("status", "running"),
+                (self._get_run_status(run_id) or {}).get("status", "running"),
                 last_event=event.get("event"),
             )
-            q = self._run_streams.get(run_id)
-            if q is None:
-                return
             try:
-                loop.call_soon_threadsafe(q.put_nowait, event)
+                loop.call_soon_threadsafe(self._append_run_event, run_id, event)
             except Exception:
                 pass
 
@@ -2902,13 +3022,6 @@ class APIServerAdapter(BasePlatformAdapter):
         gateway_session_key, key_err = self._parse_session_key_header(request)
         if key_err is not None:
             return key_err
-
-        # Enforce concurrency limit
-        if len(self._run_streams) >= self._MAX_CONCURRENT_RUNS:
-            return web.json_response(
-                _openai_error(f"Too many concurrent runs (max {self._MAX_CONCURRENT_RUNS})", code="rate_limit_exceeded"),
-                status=429,
-            )
 
         try:
             body = await request.json()
@@ -2973,6 +3086,32 @@ class APIServerAdapter(BasePlatformAdapter):
         run_id = f"run_{uuid.uuid4().hex}"
         session_id = body.get("session_id") or stored_session_id or run_id
         approval_session_key = gateway_session_key or session_id or run_id
+        thread_key = gateway_session_key or f"api_server:{session_id}"
+        idempotency_key = body.get("idempotency_key")
+        if idempotency_key is not None and (
+            not isinstance(idempotency_key, str)
+            or not idempotency_key.strip()
+            or len(idempotency_key) > 256
+        ):
+            return web.json_response(
+                _openai_error("idempotency_key must be a non-empty string of at most 256 characters"),
+                status=400,
+            )
+        if idempotency_key:
+            existing = self._run_store.get_run_by_idempotency(thread_key, idempotency_key)
+            if existing is not None:
+                headers = {SESSION_KEY_HEADER: gateway_session_key} if gateway_session_key else {}
+                return web.json_response(
+                    {"run_id": existing["run_id"], "status": existing["status"], "replayed": True},
+                    status=200,
+                    headers=headers,
+                )
+
+        if len(self._active_run_tasks) >= self._MAX_CONCURRENT_RUNS:
+            return web.json_response(
+                _openai_error(f"Too many concurrent runs (max {self._MAX_CONCURRENT_RUNS})", code="rate_limit_exceeded"),
+                status=429,
+            )
         ephemeral_system_prompt = instructions
         loop = asyncio.get_running_loop()
         q: "asyncio.Queue[Optional[Dict]]" = asyncio.Queue()
@@ -2988,7 +3127,7 @@ class APIServerAdapter(BasePlatformAdapter):
             if delta is None:
                 return
             try:
-                loop.call_soon_threadsafe(q.put_nowait, {
+                loop.call_soon_threadsafe(self._append_run_event, run_id, {
                     "event": "message.delta",
                     "run_id": run_id,
                     "timestamp": time.time(),
@@ -2997,12 +3136,51 @@ class APIServerAdapter(BasePlatformAdapter):
             except Exception:
                 pass
 
-        self._set_run_status(
+        try:
+            initial_status = self._run_store.create_run(
+                run_id,
+                thread_key=thread_key,
+                session_id=session_id,
+                idempotency_key=idempotency_key,
+                data={
+                    "object": "hermes.run",
+                    "run_id": run_id,
+                    "status": "queued",
+                    "created_at": created_at,
+                    "session_id": session_id,
+                    "model": body.get("model", self._model_name),
+                },
+                initial_message={
+                    "message_id": f"{run_id}:input",
+                    "role": "user",
+                    "parts": user_message,
+                    "metadata": {"run_id": run_id},
+                },
+            )
+        except sqlite3.IntegrityError:
+            self._run_streams.pop(run_id, None)
+            self._run_streams_created.pop(run_id, None)
+            self._run_approval_sessions.pop(run_id, None)
+            existing = (
+                self._run_store.get_run_by_idempotency(thread_key, idempotency_key)
+                if idempotency_key else None
+            )
+            if existing is not None:
+                return web.json_response(
+                    {"run_id": existing["run_id"], "status": existing["status"], "replayed": True},
+                    status=200,
+                )
+            return web.json_response(
+                _openai_error(
+                    "This thread already has an active execution or the idempotency key was already used.",
+                    code="execution_conflict",
+                ),
+                status=409,
+            )
+        self._run_statuses[run_id] = initial_status
+        self._append_run_event(
             run_id,
-            "queued",
-            created_at=created_at,
-            session_id=session_id,
-            model=body.get("model", self._model_name),
+            {"event": "execution.queued", "run_id": run_id, "timestamp": created_at},
         )
 
         async def _run_and_close():
@@ -3031,7 +3209,7 @@ class APIServerAdapter(BasePlatformAdapter):
                         last_event="approval.request",
                     )
                     try:
-                        loop.call_soon_threadsafe(q.put_nowait, event)
+                        loop.call_soon_threadsafe(self._append_run_event, run_id, event)
                     except Exception:
                         pass
 
@@ -3089,7 +3267,7 @@ class APIServerAdapter(BasePlatformAdapter):
                 # block below never fires — issue #15561).
                 if isinstance(result, dict) and result.get("failed"):
                     error_msg = result.get("error") or "agent run failed"
-                    q.put_nowait({
+                    self._append_run_event(run_id, {
                         "event": "run.failed",
                         "run_id": run_id,
                         "timestamp": time.time(),
@@ -3103,7 +3281,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     )
                 else:
                     final_response = result.get("final_response", "") if isinstance(result, dict) else ""
-                    q.put_nowait({
+                    self._append_run_event(run_id, {
                         "event": "run.completed",
                         "run_id": run_id,
                         "timestamp": time.time(),
@@ -3117,6 +3295,19 @@ class APIServerAdapter(BasePlatformAdapter):
                         usage=usage,
                         last_event="run.completed",
                     )
+                    if final_response:
+                        try:
+                            self._run_store.append_message(
+                                message_id=f"{run_id}:output",
+                                thread_key=thread_key,
+                                client_message_id=None,
+                                role="assistant",
+                                parts=final_response,
+                                metadata={"run_id": run_id},
+                                platform="api_server",
+                            )
+                        except Exception:
+                            logger.exception("[api_server] could not persist output message for %s", run_id)
             except asyncio.CancelledError:
                 self._set_run_status(
                     run_id,
@@ -3124,7 +3315,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     last_event="run.cancelled",
                 )
                 try:
-                    q.put_nowait({
+                    self._append_run_event(run_id, {
                         "event": "run.cancelled",
                         "run_id": run_id,
                         "timestamp": time.time(),
@@ -3141,7 +3332,7 @@ class APIServerAdapter(BasePlatformAdapter):
                     last_event="run.failed",
                 )
                 try:
-                    q.put_nowait({
+                    self._append_run_event(run_id, {
                         "event": "run.failed",
                         "run_id": run_id,
                         "timestamp": time.time(),
@@ -3195,7 +3386,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
 
         run_id = request.match_info["run_id"]
-        status = self._run_statuses.get(run_id)
+        status = self._get_run_status(run_id)
         if status is None:
             return web.json_response(
                 _openai_error(f"Run not found: {run_id}", code="run_not_found"),
@@ -3213,13 +3404,19 @@ class APIServerAdapter(BasePlatformAdapter):
 
         # Allow subscribing slightly before the run is registered (race condition window)
         for _ in range(20):
-            if run_id in self._run_streams:
+            if self._get_run_status(run_id) is not None:
                 break
             await asyncio.sleep(0.05)
         else:
             return web.json_response(_openai_error(f"Run not found: {run_id}", code="run_not_found"), status=404)
 
-        q = self._run_streams[run_id]
+        try:
+            after_event_id = max(0, int(request.query.get("after_event_id", "0")))
+        except ValueError:
+            return web.json_response(
+                _openai_error("after_event_id must be an integer", code="invalid_cursor"),
+                status=400,
+            )
 
         response = web.StreamResponse(
             status=200,
@@ -3233,22 +3430,32 @@ class APIServerAdapter(BasePlatformAdapter):
 
         try:
             while True:
-                try:
-                    event = await asyncio.wait_for(q.get(), timeout=30.0)
-                except asyncio.TimeoutError:
-                    await response.write(b": keepalive\n\n")
-                    continue
-                if event is None:
-                    # Run finished — send final SSE comment and close
+                events = self._run_store.list_events(run_id, after_event_id=after_event_id)
+                for event in events:
+                    after_event_id = int(event["event_id"])
+                    payload = f"data: {json.dumps(event)}\n\n"
+                    await response.write(payload.encode())
+
+                status = self._get_run_status(run_id) or {}
+                if status.get("status") in TERMINAL_RUN_STATUSES and not events:
                     await response.write(b": stream closed\n\n")
                     break
-                payload = f"data: {json.dumps(event)}\n\n"
-                await response.write(payload.encode())
+
+                q = self._run_streams.get(run_id)
+                try:
+                    if q is None:
+                        await asyncio.sleep(0.25)
+                        continue
+                    await asyncio.wait_for(q.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    await response.write(b": keepalive\n\n")
         except Exception as exc:
             logger.debug("[api_server] SSE stream error for run %s: %s", run_id, exc)
         finally:
-            self._run_streams.pop(run_id, None)
-            self._run_streams_created.pop(run_id, None)
+            status = self._get_run_status(run_id) or {}
+            if status.get("status") in TERMINAL_RUN_STATUSES:
+                self._run_streams.pop(run_id, None)
+                self._run_streams_created.pop(run_id, None)
 
         return response
 
@@ -3260,7 +3467,7 @@ class APIServerAdapter(BasePlatformAdapter):
             return auth_err
 
         run_id = request.match_info["run_id"]
-        status = self._run_statuses.get(run_id)
+        status = self._get_run_status(run_id)
         if status is None:
             return web.json_response(
                 _openai_error(f"Run not found: {run_id}", code="run_not_found"),
@@ -3321,18 +3528,13 @@ class APIServerAdapter(BasePlatformAdapter):
             )
 
         self._set_run_status(run_id, "running", last_event="approval.responded")
-        q = self._run_streams.get(run_id)
-        if q is not None:
-            try:
-                q.put_nowait({
-                    "event": "approval.responded",
-                    "run_id": run_id,
-                    "timestamp": time.time(),
-                    "choice": choice,
-                    "resolved": resolved,
-                })
-            except Exception:
-                pass
+        self._append_run_event(run_id, {
+            "event": "approval.responded",
+            "run_id": run_id,
+            "timestamp": time.time(),
+            "choice": choice,
+            "resolved": resolved,
+        })
 
         return web.json_response({
             "object": "hermes.run.approval_response",
@@ -3439,25 +3641,27 @@ class APIServerAdapter(BasePlatformAdapter):
             self._app.router.add_post("/v1/responses", self._handle_responses)
             self._app.router.add_get("/v1/responses/{response_id}", self._handle_get_response)
             self._app.router.add_delete("/v1/responses/{response_id}", self._handle_delete_response)
-            # Slack HTTP Events + OAuth install — additive, gated on a signing secret,
-            # and coexists with Socket Mode. The endpoint verifies signatures, answers
-            # the url_verification handshake, and completes the OAuth install (writes
-            # slack_tokens.json). on_event is None for now: routing HTTP-delivered events
-            # into the agent turn loop is the bolt-adapter follow-on.
+            # Slack signed-webhook ingress and OAuth install. The Slack adapter
+            # is wired after all platform adapters connect so Socket Mode and
+            # webhook mode share the same normalizer and renderer.
             _slack_signing = os.getenv("SLACK_SIGNING_SECRET")
-            if _slack_signing:
+            _slack_client_id = os.getenv("SLACK_CLIENT_ID")
+            _slack_client_secret = os.getenv("SLACK_CLIENT_SECRET")
+            _events_enabled = self._slack_transport == "webhook"
+            if (_events_enabled and _slack_signing) or (_slack_client_id and _slack_client_secret):
                 try:
                     from gateway.platforms.slack_app import register_slack_routes
 
                     register_slack_routes(
                         self._app,
                         signing_secret=_slack_signing,
-                        client_id=os.getenv("SLACK_CLIENT_ID"),
-                        client_secret=os.getenv("SLACK_CLIENT_SECRET"),
+                        client_id=_slack_client_id,
+                        client_secret=_slack_client_secret,
                         redirect_uri=os.getenv("SLACK_OAUTH_REDIRECT_URI"),
-                        on_event=None,
+                        on_event=self._dispatch_slack_event,
+                        events_enabled=_events_enabled,
                     )
-                    logger.info("[api_server] Slack HTTP routes registered (/slack/events, /slack/oauth/redirect)")
+                    logger.info("[api_server] Slack HTTP routes registered (events=%s, oauth=%s)", _events_enabled, bool(_slack_client_id and _slack_client_secret))
                 except Exception as exc:  # never block server startup on the optional Slack wiring
                     logger.warning("[api_server] Slack route registration failed: %s", exc)
             # Cron jobs management API

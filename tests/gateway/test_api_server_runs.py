@@ -102,6 +102,18 @@ def auth_adapter():
 
 
 class TestStartRun:
+    def test_persisted_slack_payload_excludes_response_credentials(self, adapter):
+        persisted = adapter._slack_persisted_parts({
+            "type": "block_actions",
+            "token": "legacy-secret",
+            "response_url": "https://hooks.slack.com/actions/secret",
+            "actions": [{"action_id": "hermes_deny", "value": "session-1"}],
+        })
+        serialized = json.dumps(persisted)
+        assert "legacy-secret" not in serialized
+        assert "hooks.slack.com" not in serialized
+        assert persisted["actions"] == [{"action_id": "hermes_deny", "value": "session-1"}]
+
     @pytest.mark.asyncio
     async def test_start_returns_202(self, adapter):
         app = _create_runs_app(adapter)
@@ -128,6 +140,33 @@ class TestStartRun:
                 assert status["object"] == "hermes.run"
 
     @pytest.mark.asyncio
+    async def test_idempotency_replays_existing_run(self, adapter):
+        app = _create_runs_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            with patch.object(adapter, "_create_agent") as mock_create:
+                mock_agent = MagicMock()
+                mock_agent.run_conversation.return_value = {"final_response": "done"}
+                mock_agent.session_prompt_tokens = 0
+                mock_agent.session_completion_tokens = 0
+                mock_agent.session_total_tokens = 0
+                mock_create.return_value = mock_agent
+                body = {
+                    "input": "hello", "session_id": "stable-thread",
+                    "idempotency_key": "delivery-1",
+                }
+
+                first = await cli.post("/v1/runs", json=body)
+                first_data = await first.json()
+                second = await cli.post("/v1/runs", json=body)
+                second_data = await second.json()
+
+                assert first.status == 202
+                assert second.status == 200
+                assert second_data["run_id"] == first_data["run_id"]
+                assert second_data["replayed"] is True
+                assert second_data["status"] in {"queued", "running", "completed"}
+
+    @pytest.mark.asyncio
     async def test_start_invalid_json_returns_400(self, adapter):
         app = _create_runs_app(adapter)
         async with TestClient(TestServer(app)) as cli:
@@ -152,6 +191,15 @@ class TestStartRun:
         app = _create_runs_app(adapter)
         async with TestClient(TestServer(app)) as cli:
             resp = await cli.post("/v1/runs", json={"input": ""})
+        assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_invalid_idempotency_key_returns_400(self, adapter):
+        app = _create_runs_app(adapter)
+        async with TestClient(TestServer(app)) as cli:
+            resp = await cli.post(
+                "/v1/runs", json={"input": "hello", "idempotency_key": {"bad": True}},
+            )
         assert resp.status == 400
 
     @pytest.mark.asyncio

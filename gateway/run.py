@@ -38,6 +38,7 @@ import tempfile
 import threading
 import time
 import sqlite3
+import uuid
 from collections import OrderedDict
 from contextvars import copy_context
 from pathlib import Path
@@ -1626,6 +1627,18 @@ class GatewayRunner:
             has_active_processes_fn=lambda key: process_registry.has_active_for_session(key),
         )
         self.delivery_router = DeliveryRouter(self.config)
+        # Durable turn state is shared by API and messaging transports. The
+        # classic gateway is single-owner, so any active rows from a previous
+        # process cannot be resumed and are terminalized at startup.
+        from gateway.execution_store import ExecutionStore
+        try:
+            from hermes_cli.config import load_config as _load_full_config
+
+            _hosted = (_load_full_config().get("hosted_execution") or {})
+            _run_store_path = _hosted.get("run_store_path") or None
+        except Exception:
+            _run_store_path = None
+        self._execution_store = ExecutionStore(_run_store_path)
         self._running = False
         self._gateway_loop: Optional[asyncio.AbstractEventLoop] = None
         self._shutdown_event = asyncio.Event()
@@ -4074,6 +4087,7 @@ class GatewayRunner:
                         target.append(
                             f"{platform.value}: {adapter.fatal_error_message}"
                         )
+
                         # Queue for reconnection if the error is retryable
                         if adapter.fatal_error_retryable:
                             self._failed_platforms[platform] = {
@@ -4116,6 +4130,17 @@ class GatewayRunner:
                     "attempts": 1,
                     "next_retry": time.monotonic() + 30,
                 }
+
+        # Webhook Slack uses the API server for signed ingress but keeps all
+        # event normalization and rendering in the existing Slack adapter.
+        slack_adapter = self.adapters.get(Platform.SLACK)
+        api_adapter = self.adapters.get(Platform.API_SERVER)
+        if slack_adapter is not None and api_adapter is not None:
+            set_handler = getattr(api_adapter, "set_slack_event_handler", None)
+            http_handler = getattr(slack_adapter, "handle_http_payload", None)
+            if callable(set_handler) and callable(http_handler):
+                set_handler(http_handler)
+                logger.info("Slack signed-webhook ingress wired to Slack adapter")
         
         if connected_count == 0:
             if startup_nonretryable_errors:
@@ -8627,6 +8652,45 @@ class GatewayRunner:
             run_generation,
         )
 
+        _durable_run_id = f"gateway_{uuid.uuid4().hex}"
+        _durable_status = None
+        _durable_error = None
+        try:
+            _created = self._execution_store.create_run(
+                _durable_run_id,
+                thread_key=session_key,
+                session_id=session_entry.session_id,
+                data={"status": "queued", "platform": _platform_name},
+                platform=_platform_name,
+                initial_message={
+                    "message_id": f"{_durable_run_id}:input",
+                    "client_message_id": (
+                        f"{_platform_name}:{event.message_id}" if event.message_id else None
+                    ),
+                    "role": "user",
+                    "parts": message_text,
+                    "metadata": {"platform": _platform_name},
+                },
+            )
+            if _created is None:
+                logger.info(
+                    "Ignoring duplicate %s delivery %s for session %s",
+                    _platform_name, event.message_id, session_key,
+                )
+                self._clear_session_env(_session_env_tokens)
+                return None
+            self._execution_store.append_event(
+                _durable_run_id,
+                {"event": "execution.queued", "run_id": _durable_run_id, "timestamp": time.time()},
+            )
+            self._execution_store.update_run(_durable_run_id, "running")
+        except Exception:
+            # Durable state must not take the existing local gateway offline.
+            # Hosted operators should alert on this log and fail closed at the
+            # service layer if durable execution is mandatory.
+            logger.exception("Could not persist gateway execution state")
+            _durable_run_id = None
+
         try:
             # Emit agent:start hook
             hook_ctx = {
@@ -8650,6 +8714,9 @@ class GatewayRunner:
                 event_message_id=self._reply_anchor_for_event(event),
                 channel_prompt=event.channel_prompt,
             )
+            if agent_result.get("failed"):
+                _durable_status = "failed"
+                _durable_error = str(agent_result.get("error") or "agent run failed")[:300]
 
             # Stop persistent typing indicator now that the agent is done
             try:
@@ -8673,6 +8740,7 @@ class GatewayRunner:
                     )
                 elif _stale_adapter and hasattr(_stale_adapter, "_post_delivery_callbacks"):
                     _stale_adapter._post_delivery_callbacks.pop(_quick_key, None)
+                _durable_status = "cancelled"
                 return None
 
             response = agent_result.get("final_response") or ""
@@ -9017,8 +9085,10 @@ class GatewayRunner:
                             )
                     except Exception as _e:
                         logger.debug("trailing footer send failed: %s", _e)
+                _durable_status = _durable_status or "completed"
                 return None
 
+            _durable_status = _durable_status or "completed"
             return response
             
         except Exception as e:
@@ -9032,6 +9102,8 @@ class GatewayRunner:
             logger.exception("Agent error in session %s", session_key)
             error_type = type(e).__name__
             error_detail = str(e)[:300] if str(e) else "no details available"
+            _durable_status = "failed"
+            _durable_error = f"{error_type}: {error_detail}"
             status_hint = ""
             status_code = getattr(e, "status_code", None)
             _hist_len = len(history) if 'history' in locals() else 0
@@ -9081,6 +9153,39 @@ class GatewayRunner:
                 "Try again or use /reset to start a fresh session."
             )
         finally:
+            if _durable_run_id:
+                _terminal = _durable_status or "failed"
+                _event_name = f"run.{_terminal}"
+                _fields = {"last_event": _event_name}
+                if _durable_error:
+                    _fields["error"] = _durable_error
+                if _terminal == "completed" and "response" in locals():
+                    _fields["output"] = response
+                try:
+                    self._execution_store.update_run(
+                        _durable_run_id, _terminal, **_fields,
+                    )
+                    self._execution_store.append_event(
+                        _durable_run_id,
+                        {
+                            "event": _event_name,
+                            "run_id": _durable_run_id,
+                            "timestamp": time.time(),
+                            **({"error": _durable_error} if _durable_error else {}),
+                        },
+                    )
+                    if _terminal == "completed" and "response" in locals() and response:
+                        self._execution_store.append_message(
+                            message_id=f"{_durable_run_id}:output",
+                            thread_key=session_key,
+                            client_message_id=None,
+                            role="assistant",
+                            parts=response,
+                            metadata={"run_id": _durable_run_id},
+                            platform=_platform_name,
+                        )
+                except Exception:
+                    logger.exception("Could not terminalize gateway execution %s", _durable_run_id)
             # Restore session context variables to their pre-handler state
             self._clear_session_env(_session_env_tokens)
 
@@ -17329,9 +17434,15 @@ class GatewayRunner:
                     except Exception:
                         pass
                 try:
+                    _notice = f"⏳ Still working... ({_elapsed_mins} min elapsed{_status_detail})"
+                    if source.platform == Platform.SLACK and progress_queue is not None:
+                        # Slack's progress consumer edits one existing message,
+                        # avoiding a permanent status bubble every three minutes.
+                        progress_queue.put(_notice)
+                        continue
                     _notify_res = await _notify_adapter.send(
                         source.chat_id,
-                        f"⏳ Still working... ({_elapsed_mins} min elapsed{_status_detail})",
+                        _notice,
                         metadata=_status_thread_metadata,
                     )
                     if (
@@ -18316,6 +18427,14 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         return False
     atexit.register(remove_pid_file)
     atexit.register(release_gateway_runtime_lock)
+
+    # Only the process that owns the gateway runtime lock may reconcile runs.
+    # Doing this in GatewayRunner.__init__ would let a losing second process
+    # mark the live owner's executions failed before it noticed the lock.
+    _run_store = getattr(runner, "_execution_store", None)
+    _recovered_runs = _run_store.fail_active_runs() if _run_store is not None else []
+    if _recovered_runs:
+        logger.warning("Recovered %d interrupted gateway run(s)", len(_recovered_runs))
 
     # MCP tool discovery — run in an executor so the asyncio event loop
     # stays responsive even when a configured MCP server is slow or

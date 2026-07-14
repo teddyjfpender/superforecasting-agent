@@ -18,12 +18,51 @@ import ast
 import importlib
 import json
 import logging
+import re
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class CredentialRequirement:
+    """A control-plane credential binding for a hosted tool.
+
+    The model and sandbox see this identifier and its network scope, never the
+    secret value. Exact hosts and HTTPS-only transport keep proxy policy easy
+    to audit; callers needing broader behavior should declare another binding.
+    """
+
+    name: str
+    env_var: str
+    hosts: tuple[str, ...]
+    path_prefixes: tuple[str, ...] = ("/",)
+    header: str = "Authorization"
+    value_prefix: str = "Bearer "
+
+    def __post_init__(self) -> None:
+        if not self.name or not self.env_var:
+            raise ValueError("Credential requirements need name and env_var")
+        if not self.hosts or any(
+            not host or "/" in host or "://" in host or "*" in host
+            or any(char.isspace() for char in host)
+            for host in self.hosts
+        ):
+            raise ValueError("Credential hosts must be exact hostnames")
+        if not self.path_prefixes or any(
+            not path.startswith("/") or "\\" in path or "%" in path
+            or ".." in path.split("/")
+            for path in self.path_prefixes
+        ):
+            raise ValueError("Credential path prefixes must be unambiguous absolute paths")
+        if not re.fullmatch(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+", self.header):
+            raise ValueError("Invalid credential header")
+        if "\r" in self.value_prefix or "\n" in self.value_prefix:
+            raise ValueError("Invalid credential value prefix")
 
 
 def _is_registry_register_call(node: ast.AST) -> bool:
@@ -81,11 +120,13 @@ class ToolEntry:
         "name", "toolset", "schema", "handler", "check_fn",
         "requires_env", "is_async", "description", "emoji",
         "max_result_size_chars", "dynamic_schema_overrides",
+        "credentials",
     )
 
     def __init__(self, name, toolset, schema, handler, check_fn,
                  requires_env, is_async, description, emoji,
-                 max_result_size_chars=None, dynamic_schema_overrides=None):
+                 max_result_size_chars=None, dynamic_schema_overrides=None,
+                 credentials=()):
         self.name = name
         self.toolset = toolset
         self.schema = schema
@@ -104,6 +145,7 @@ class ToolEntry:
         # on every get_definitions() call; results are merged shallow on top
         # of the base schema before the {"type": "function", ...} wrap.
         self.dynamic_schema_overrides = dynamic_schema_overrides
+        self.credentials = tuple(credentials)
 
 
 # ---------------------------------------------------------------------------
@@ -245,6 +287,7 @@ class ToolRegistry:
         emoji: str = "",
         max_result_size_chars: int | float | None = None,
         dynamic_schema_overrides: Callable = None,
+        credentials: list[CredentialRequirement] | tuple[CredentialRequirement, ...] | None = None,
         override: bool = False,
     ):
         """Register a tool.  Called at module-import time by each tool file.
@@ -300,10 +343,16 @@ class ToolRegistry:
                 emoji=emoji,
                 max_result_size_chars=max_result_size_chars,
                 dynamic_schema_overrides=dynamic_schema_overrides,
+                credentials=credentials or (),
             )
             if check_fn and toolset not in self._toolset_checks:
                 self._toolset_checks[toolset] = check_fn
             self._generation += 1
+
+    def get_credential_requirements(self, name: str) -> tuple[CredentialRequirement, ...]:
+        """Return immutable hosted credential policy for a registered tool."""
+        entry = self.get_entry(name)
+        return entry.credentials if entry else ()
 
     def deregister(self, name: str) -> None:
         """Remove a tool from the registry.

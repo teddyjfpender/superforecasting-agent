@@ -1716,6 +1716,12 @@ DEFAULT_CONFIG = {
         "guard_agent_created": False,
     },
 
+    # Ordered, revision-locked organization extensions. Each source may expose
+    # plugins/, workflows/, skills/, and prompts/ without forking core.
+    "extensions": {
+        "sources": [],  # [{"repo": "owner/repo", "ref": "<commit-sha>"}]
+    },
+
     # Curator — background skill maintenance.
     #
     # Periodically reviews AGENT-CREATED skills (never bundled or
@@ -1758,10 +1764,29 @@ DEFAULT_CONFIG = {
 
     # Slack platform settings (gateway mode)
     "slack": {
+        "transport": "socket",          # socket | webhook (one ingress per workspace)
         "require_mention": True,       # Require @mention to respond in channels
         "free_response_channels": "",  # Comma-separated channel IDs where bot responds without mention
         "allowed_channels": "",        # If set, bot ONLY responds in these channel IDs (whitelist)
         "channel_prompts": {},         # Per-channel ephemeral system prompts
+    },
+
+    # Hosted execution. The gateway/API remains the durable control plane;
+    # Kubernetes pods are disposable, conversation-scoped workers.
+    "hosted_execution": {
+        "runtime": "local",  # local | kubernetes
+        "run_store_path": "",  # empty = active forecast home / execution_store.db
+        "kubernetes": {
+            "namespace": "superforecasting-agent",
+            "image": "",  # use a pinned tag or digest in hosted deployments
+            "service_account": "superforecasting-agent-sandbox",
+            "idle_ttl_seconds": 1800,
+            "workspace_size": "8Gi",
+            "cpu_request": "250m",
+            "cpu_limit": "2",
+            "memory_request": "512Mi",
+            "memory_limit": "4Gi",
+        },
     },
 
     # Discord platform settings (gateway mode)

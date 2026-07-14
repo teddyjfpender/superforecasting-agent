@@ -902,6 +902,15 @@ def load_gateway_config() -> GatewayConfig:
             # Slack settings → env vars (env vars take precedence)
             slack_cfg = yaml_cfg.get("slack", {})
             if isinstance(slack_cfg, dict):
+                if "transport" in slack_cfg:
+                    _, slack_extra = _ensure_platform_extra_dict(platforms_data, "slack")
+                    slack_transport = str(slack_cfg["transport"]).strip().lower()
+                    slack_extra["transport"] = slack_transport
+                    _, api_extra = _ensure_platform_extra_dict(platforms_data, "api_server")
+                    api_extra["slack_transport"] = slack_transport
+                    if slack_transport == "webhook":
+                        api_entry, _ = _ensure_platform_extra_dict(platforms_data, "api_server")
+                        api_entry["enabled"] = True
                 if "require_mention" in slack_cfg and not os.getenv("SLACK_REQUIRE_MENTION"):
                     os.environ["SLACK_REQUIRE_MENTION"] = str(slack_cfg["require_mention"]).lower()
                 if "strict_mention" in slack_cfg and not os.getenv("SLACK_STRICT_MENTION"):
@@ -921,6 +930,11 @@ def load_gateway_config() -> GatewayConfig:
                     if isinstance(ac, list):
                         ac = ",".join(str(v) for v in ac)
                     os.environ["SLACK_ALLOWED_CHANNELS"] = str(ac)
+
+            hosted_cfg = yaml_cfg.get("hosted_execution", {})
+            if isinstance(hosted_cfg, dict) and hosted_cfg.get("run_store_path"):
+                _, api_extra = _ensure_platform_extra_dict(platforms_data, "api_server")
+                api_extra["run_store_path"] = str(hosted_cfg["run_store_path"])
 
             # Discord settings → env vars (env vars take precedence)
             discord_cfg = yaml_cfg.get("discord", {})

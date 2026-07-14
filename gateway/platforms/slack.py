@@ -504,7 +504,7 @@ class SlackAdapter(BasePlatformAdapter):
         return SendResult(success=True, message_id=None)
 
     async def connect(self) -> bool:
-        """Connect to Slack via Socket Mode."""
+        """Authenticate Slack and start the configured exclusive ingress."""
         if not SLACK_AVAILABLE:
             logger.error(
                 "[Slack] slack-bolt not installed. Run: pip install slack-bolt",
@@ -513,12 +513,22 @@ class SlackAdapter(BasePlatformAdapter):
 
         raw_token = self.config.token
         app_token = os.getenv("SLACK_APP_TOKEN")
+        transport = str(
+            self.config.extra.get("transport")
+            or os.getenv("SLACK_TRANSPORT", "socket")
+        ).strip().lower()
+        if transport not in {"socket", "webhook"}:
+            logger.error("[Slack] Invalid transport %r (expected socket or webhook)", transport)
+            return False
 
         if not raw_token:
             logger.error("[Slack] SLACK_BOT_TOKEN not set")
             return False
-        if not app_token:
+        if transport == "socket" and not app_token:
             logger.error("[Slack] SLACK_APP_TOKEN not set")
+            return False
+        if transport == "webhook" and not os.getenv("SLACK_SIGNING_SECRET"):
+            logger.error("[Slack] SLACK_SIGNING_SECRET not set for webhook transport")
             return False
 
         proxy_url = _resolve_slack_proxy_url()
@@ -545,7 +555,9 @@ class SlackAdapter(BasePlatformAdapter):
 
         lock_acquired = False
         try:
-            if not self._acquire_platform_lock('slack-app-token', app_token, 'Slack app token'):
+            lock_name = "slack-app-token" if transport == "socket" else "slack-webhook"
+            lock_value = app_token if transport == "socket" else os.getenv("SLACK_SIGNING_SECRET", "")
+            if not self._acquire_platform_lock(lock_name, lock_value, f'Slack {transport} ingress'):
                 return False
             lock_acquired = True
 
@@ -681,6 +693,14 @@ class SlackAdapter(BasePlatformAdapter):
             ):
                 self._app.action(_action_id)(self._handle_slash_confirm_action)
 
+            if transport == "webhook":
+                self._running = True
+                logger.info(
+                    "[Slack] Webhook transport ready (%d workspace(s)); awaiting API server wiring",
+                    len(self._team_clients),
+                )
+                return True
+
             # Start Socket Mode handler in background
             self._handler = AsyncSocketModeHandler(self._app, app_token, proxy=proxy_url)
             _apply_slack_proxy(self._handler.client, proxy_url)
@@ -699,6 +719,35 @@ class SlackAdapter(BasePlatformAdapter):
         finally:
             if lock_acquired and not self._running:
                 self._release_platform_lock()
+
+    async def handle_http_payload(self, payload: dict) -> None:
+        """Dispatch a verified Slack webhook through the Socket Mode handlers."""
+        payload_type = str(payload.get("type") or "")
+        if payload_type == "event_callback":
+            event = dict(payload.get("event") or {})
+            if payload.get("team_id") and not event.get("team"):
+                event["team"] = payload["team_id"]
+            event_type = str(event.get("type") or "")
+            if event_type in {"message", "app_mention"}:
+                await self._handle_slack_message(event)
+            elif event_type in {"assistant_thread_started", "assistant_thread_context_changed"}:
+                await self._handle_assistant_thread_lifecycle_event(event)
+            return
+
+        if payload_type == "slash_command" or payload.get("command"):
+            await self._handle_slash_command(payload)
+            return
+
+        if payload_type == "block_actions":
+            async def _ack(*_args, **_kwargs):
+                return None
+
+            for action in payload.get("actions") or []:
+                action_id = str(action.get("action_id") or "")
+                if action_id.startswith("hermes_approve_") or action_id == "hermes_deny":
+                    await self._handle_approval_action(_ack, payload, action)
+                elif action_id.startswith("hermes_confirm_"):
+                    await self._handle_slash_confirm_action(_ack, payload, action)
 
     async def create_handoff_thread(
         self,
