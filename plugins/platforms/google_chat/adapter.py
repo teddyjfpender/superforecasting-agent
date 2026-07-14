@@ -3188,8 +3188,14 @@ async def _standalone_send(
         or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
     )
 
-    if service_account is None:
-        return {"error": "Google Chat standalone send: google-auth not installed"}
+    # Standalone cron delivery needs only google-auth, not the much heavier
+    # Pub/Sub/googleapiclient stack loaded by the interactive adapter.
+    service_account_module = service_account
+    if service_account_module is None:
+        try:
+            from google.oauth2 import service_account as service_account_module
+        except ImportError:
+            return {"error": "Google Chat standalone send: google-auth not installed"}
 
     try:
         from google.auth.transport.requests import Request as _GoogleAuthRequest
@@ -3204,7 +3210,9 @@ async def _standalone_send(
                     info = json.loads(sa_value)
                 except json.JSONDecodeError as exc:
                     return {"error": f"Google Chat standalone send: inline SA JSON is invalid: {exc}"}
-                creds = service_account.Credentials.from_service_account_info(info, scopes=_CHAT_SCOPES)
+                creds = service_account_module.Credentials.from_service_account_info(
+                    info, scopes=_CHAT_SCOPES
+                )
             else:
                 if not os.path.exists(sa_value):
                     return {"error": f"Google Chat standalone send: SA JSON file not found at {sa_value}"}
@@ -3213,7 +3221,9 @@ async def _standalone_send(
                         info = json.load(fh)
                 except json.JSONDecodeError as exc:
                     return {"error": f"Google Chat standalone send: SA JSON file is invalid: {exc}"}
-                creds = service_account.Credentials.from_service_account_info(info, scopes=_CHAT_SCOPES)
+                creds = service_account_module.Credentials.from_service_account_info(
+                    info, scopes=_CHAT_SCOPES
+                )
         else:
             try:
                 import google.auth as _google_auth

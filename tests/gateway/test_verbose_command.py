@@ -153,7 +153,8 @@ class TestVerboseCommand:
         """Cycling /verbose on Telegram doesn't change Slack's setting.
 
         Without a global tool_progress, each platform uses its built-in
-        default: Telegram = 'new' (overridden high tier), Slack = 'off' (quiet Slack default).
+        default: Telegram = 'new' (overridden high tier), Slack = 'new'
+        (one editable liveness message).
         """
         hermes_home = tmp_path / "hermes"
         hermes_home.mkdir()
@@ -180,8 +181,8 @@ class TestVerboseCommand:
         platforms = saved["display"]["platforms"]
         # Telegram: new -> all (platform default = new)
         assert platforms["telegram"]["tool_progress"] == "all"
-        # Slack: off -> new (first /verbose cycle from quiet default)
-        assert platforms["slack"]["tool_progress"] == "new"
+        # Slack: new -> all (first /verbose cycle from liveness default)
+        assert platforms["slack"]["tool_progress"] == "all"
 
     @pytest.mark.asyncio
     async def test_no_config_file_returns_disabled(self, tmp_path, monkeypatch):

@@ -2888,23 +2888,25 @@ class TestGoogleChatStandaloneSend:
         fake_creds.token = "the-token"
         fake_creds.refresh = MagicMock(return_value=None)
 
-        original = _gc_mod.service_account.Credentials.from_service_account_info
-        _gc_mod.service_account.Credentials.from_service_account_info = MagicMock(
-            return_value=fake_creds
+        monkeypatch.setattr(
+            _gc_mod,
+            "service_account",
+            types.SimpleNamespace(
+                Credentials=types.SimpleNamespace(
+                    from_service_account_info=MagicMock(return_value=fake_creds)
+                )
+            ),
         )
-        try:
-            _install_fake_google_auth_transport(monkeypatch)
-            send_resp = _FakeAiohttpResponse(200, {"name": "spaces/AAA/messages/MMM"})
-            session = _FakeAiohttpSession([send_resp])
-            _install_fake_aiohttp(monkeypatch, session)
+        _install_fake_google_auth_transport(monkeypatch)
+        send_resp = _FakeAiohttpResponse(200, {"name": "spaces/AAA/messages/MMM"})
+        session = _FakeAiohttpSession([send_resp])
+        _install_fake_aiohttp(monkeypatch, session)
 
-            result = await _gc_mod._standalone_send(
-                PlatformConfig(enabled=True, extra={}),
-                "spaces/AAAA-BBBB",
-                "hello cron",
-            )
-        finally:
-            _gc_mod.service_account.Credentials.from_service_account_info = original
+        result = await _gc_mod._standalone_send(
+            PlatformConfig(enabled=True, extra={}),
+            "spaces/AAAA-BBBB",
+            "hello cron",
+        )
 
         assert result == {
             "success": True,
@@ -2943,27 +2945,29 @@ class TestGoogleChatStandaloneSend:
         fake_creds.token = "the-token"
         fake_creds.refresh = MagicMock(return_value=None)
 
-        original = _gc_mod.service_account.Credentials.from_service_account_info
-        _gc_mod.service_account.Credentials.from_service_account_info = MagicMock(
-            return_value=fake_creds
+        monkeypatch.setattr(
+            _gc_mod,
+            "service_account",
+            types.SimpleNamespace(
+                Credentials=types.SimpleNamespace(
+                    from_service_account_info=MagicMock(return_value=fake_creds)
+                )
+            ),
         )
-        try:
-            _install_fake_google_auth_transport(monkeypatch)
-            send_resp = _FakeAiohttpResponse(
-                403,
-                {"error": {"code": 403, "message": "forbidden"}},
-                text_body='{"error":{"code":403,"message":"forbidden"}}',
-            )
-            session = _FakeAiohttpSession([send_resp])
-            _install_fake_aiohttp(monkeypatch, session)
+        _install_fake_google_auth_transport(monkeypatch)
+        send_resp = _FakeAiohttpResponse(
+            403,
+            {"error": {"code": 403, "message": "forbidden"}},
+            text_body='{"error":{"code":403,"message":"forbidden"}}',
+        )
+        session = _FakeAiohttpSession([send_resp])
+        _install_fake_aiohttp(monkeypatch, session)
 
-            result = await _gc_mod._standalone_send(
-                PlatformConfig(enabled=True, extra={}),
-                "spaces/AAAA-BBBB",
-                "hi",
-            )
-        finally:
-            _gc_mod.service_account.Credentials.from_service_account_info = original
+        result = await _gc_mod._standalone_send(
+            PlatformConfig(enabled=True, extra={}),
+            "spaces/AAAA-BBBB",
+            "hi",
+        )
 
         assert "error" in result
         assert "403" in result["error"]

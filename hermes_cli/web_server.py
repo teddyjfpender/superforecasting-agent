@@ -390,6 +390,9 @@ _CATEGORY_MERGE: Dict[str, str] = {
     "code_execution": "agent",
     "prompt_caching": "agent",
     "goals": "agent",
+    # Ordered organization overlays are an agent capability, and a single
+    # `sources` field does not warrant its own dashboard tab.
+    "extensions": "agent",
     # Only `telegram.reactions` currently lives under telegram — fold it in
     # with the other messaging-platform config (discord) so it isn't an
     # orphan tab of one field.
