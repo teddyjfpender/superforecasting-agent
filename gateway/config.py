@@ -936,6 +936,11 @@ def load_gateway_config() -> GatewayConfig:
                 _, api_extra = _ensure_platform_extra_dict(platforms_data, "api_server")
                 api_extra["run_store_path"] = str(hosted_cfg["run_store_path"])
 
+            collaboration_cfg = yaml_cfg.get("collaboration", {})
+            if isinstance(collaboration_cfg, dict):
+                _, api_extra = _ensure_platform_extra_dict(platforms_data, "api_server")
+                api_extra["collaboration"] = collaboration_cfg
+
             # Discord settings → env vars (env vars take precedence)
             discord_cfg = yaml_cfg.get("discord", {})
             if isinstance(discord_cfg, dict):

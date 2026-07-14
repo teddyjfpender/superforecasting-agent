@@ -580,6 +580,20 @@ class TestRootLevelProviderOverride:
         assert cfg["terminal"]["vercel_runtime"] == "python3.13"
         assert os.environ["TERMINAL_VERCEL_RUNTIME"] == "python3.13"
 
+    def test_collaboration_defaults_match_canonical_config(self, tmp_path, monkeypatch):
+        from hermes_cli.config import DEFAULT_CONFIG
+
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        import cli
+
+        monkeypatch.setattr(cli, "_hermes_home", hermes_home)
+        config = cli.load_cli_config()
+
+        assert config["collaboration"] == DEFAULT_CONFIG["collaboration"]
+
     def test_normalize_root_model_keys_moves_to_model(self):
         """_normalize_root_model_keys migrates root keys into model section."""
         from hermes_cli.config import _normalize_root_model_keys

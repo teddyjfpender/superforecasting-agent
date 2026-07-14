@@ -1722,6 +1722,36 @@ DEFAULT_CONFIG = {
         "sources": [],  # [{"repo": "owner/repo", "ref": "<commit-sha>"}]
     },
 
+    # Multiplayer ledger collaboration. Disabled until a canonical GitHub
+    # workspace is linked; all credentials stay in .env / the credential store.
+    "collaboration": {
+        "enabled": False,
+        "github": {
+            "enabled": False,
+            "api_url": "https://api.github.com",
+            "upload_url": "https://uploads.github.com",
+            "app_id": "",
+            "webhook_path": "/api/webhooks/github",
+        },
+        "repository": {
+            "slug": "",  # owner/repository
+            "workspace_id": "",
+            "default_branch": "main",
+        },
+        "review": {
+            "materiality_threshold": 0.10,
+            "medium_required_humans": 1,
+            "high_required_humans": 2,
+            "high_requires_owner_or_steward": True,
+            "risk_overrides": {},  # {"operation.kind": "low|medium|high"}
+        },
+        "transcripts": {
+            "raw_retention_days": 90,
+            "require_publish_consent": True,
+            "max_publish_bytes": 262144,
+        },
+    },
+
     # Curator — background skill maintenance.
     #
     # Periodically reviews AGENT-CREATED skills (never bundled or
@@ -2796,6 +2826,37 @@ OPTIONAL_ENV_VARS = {
         "password": True,
         "category": "tool",
     },
+    "GITHUB_APP_PRIVATE_KEY": {
+        "description": "Private key for the forecast workspace GitHub App",
+        "prompt": "GitHub App private key",
+        "url": "https://github.com/settings/apps",
+        "password": True,
+        "category": "messaging",
+        "advanced": True,
+    },
+    "GITHUB_APP_CLIENT_SECRET": {
+        "description": "OAuth client secret for delegated GitHub user access",
+        "prompt": "GitHub App client secret",
+        "url": "https://github.com/settings/apps",
+        "password": True,
+        "category": "messaging",
+        "advanced": True,
+    },
+    "GITHUB_WEBHOOK_SECRET": {
+        "description": "Signing secret for forecast workspace GitHub webhooks",
+        "prompt": "GitHub webhook secret",
+        "url": "https://github.com/settings/apps",
+        "password": True,
+        "category": "messaging",
+        "advanced": True,
+    },
+    "FORECAST_TRACE_ENCRYPTION_KEY": {
+        "description": "Encryption key for private forecast execution traces",
+        "prompt": "Forecast trace encryption key",
+        "password": True,
+        "category": "messaging",
+        "advanced": True,
+    },
 
     # ── Bundled skills (opt-in: only needed if the user uses that skill) ──
     # These use category="skill" (distinct from "tool") so the sandbox
@@ -3763,6 +3824,99 @@ def validate_config_structure(config: Optional[Dict[str, Any]] = None) -> List["
             ]
 
     issues: List[ConfigIssue] = []
+
+    # ── multiplayer ledger collaboration ────────────────────────────────
+    collaboration = config.get("collaboration")
+    if collaboration is not None and not isinstance(collaboration, dict):
+        issues.append(ConfigIssue(
+            "error",
+            "collaboration must be a YAML mapping",
+            "Use collaboration: {enabled: false, github: ..., repository: ...}",
+        ))
+    elif isinstance(collaboration, dict):
+        from urllib.parse import urlparse
+
+        github = collaboration.get("github") or {}
+        repository = collaboration.get("repository") or {}
+        review = collaboration.get("review") or {}
+        transcripts = collaboration.get("transcripts") or {}
+        for section_name, section in (
+            ("github", github),
+            ("repository", repository),
+            ("review", review),
+            ("transcripts", transcripts),
+        ):
+            if not isinstance(section, dict):
+                issues.append(ConfigIssue(
+                    "error",
+                    f"collaboration.{section_name} must be a YAML mapping",
+                    f"Replace collaboration.{section_name} with a mapping of named settings",
+                ))
+        if isinstance(github, dict):
+            for key in ("api_url", "upload_url"):
+                value = str(github.get(key) or "")
+                parsed = urlparse(value)
+                if parsed.scheme != "https" or not parsed.hostname:
+                    issues.append(ConfigIssue(
+                        "error",
+                        f"collaboration.github.{key} must be an absolute HTTPS URL",
+                        f"Set collaboration.github.{key} to an https:// endpoint",
+                    ))
+        if isinstance(repository, dict):
+            slug = str(repository.get("slug") or "").strip()
+            if slug and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
+                issues.append(ConfigIssue(
+                    "error",
+                    "collaboration.repository.slug must use owner/repository form",
+                    "Example: forecasting-team/forecast-ledger",
+                ))
+            branch = str(repository.get("default_branch") or "").strip()
+            if not branch or branch.startswith(("-", ".")) or any(
+                marker in branch for marker in ("..", "~", "^", ":", "\\", " ")
+            ):
+                issues.append(ConfigIssue(
+                    "error",
+                    "collaboration.repository.default_branch is not a safe Git ref",
+                    "Use a simple branch name such as main",
+                ))
+        if isinstance(review, dict):
+            threshold = review.get("materiality_threshold", 0.10)
+            if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) \
+                    or not 0 <= float(threshold) <= 1:
+                issues.append(ConfigIssue(
+                    "error",
+                    "collaboration.review.materiality_threshold must be between 0 and 1",
+                    "Use 0.10 for the default ten-percentage-point boundary",
+                ))
+            for key in ("medium_required_humans", "high_required_humans"):
+                value = review.get(key)
+                if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                    issues.append(ConfigIssue(
+                        "error",
+                        f"collaboration.review.{key} must be a non-negative integer",
+                        "Use 1 for medium risk and 2 for high risk",
+                    ))
+            overrides = review.get("risk_overrides") or {}
+            if not isinstance(overrides, dict):
+                issues.append(ConfigIssue(
+                    "error",
+                    "collaboration.review.risk_overrides must be a mapping",
+                    "Map operation kinds to low, medium, or high",
+                ))
+            elif any(value not in {"low", "medium", "high"} for value in overrides.values()):
+                issues.append(ConfigIssue(
+                    "error",
+                    "collaboration.review.risk_overrides contains an unknown risk tier",
+                    "Risk override values must be low, medium, or high",
+                ))
+        if isinstance(transcripts, dict):
+            retention = transcripts.get("raw_retention_days", 90)
+            if isinstance(retention, bool) or not isinstance(retention, int) or retention < 0:
+                issues.append(ConfigIssue(
+                    "error",
+                    "collaboration.transcripts.raw_retention_days must be non-negative",
+                    "Use 90 for the default retention period",
+                ))
 
     # ── custom_providers must be a list, not a dict ──────────────────────
     cp = config.get("custom_providers")

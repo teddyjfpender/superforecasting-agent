@@ -839,3 +839,51 @@ class TestUserMessagePreviewConfig:
         preview = DEFAULT_CONFIG["display"]["user_message_preview"]
         assert preview["first_lines"] == 2
         assert preview["last_lines"] == 2
+
+
+class TestCollaborationConfig:
+    def test_defaults_are_disabled_and_retention_is_ninety_days(self):
+        collaboration = DEFAULT_CONFIG["collaboration"]
+        assert collaboration["enabled"] is False
+        assert collaboration["github"]["api_url"] == "https://api.github.com"
+        assert collaboration["repository"]["default_branch"] == "main"
+        assert collaboration["review"]["materiality_threshold"] == 0.10
+        assert collaboration["transcripts"]["raw_retention_days"] == 90
+
+    def test_valid_collaboration_config_has_no_errors(self):
+        from hermes_cli.config import validate_config_structure
+
+        issues = validate_config_structure(DEFAULT_CONFIG)
+        collaboration_errors = [
+            issue for issue in issues
+            if issue.severity == "error" and "collaboration" in issue.message
+        ]
+        assert collaboration_errors == []
+
+    def test_rejects_insecure_url_bad_slug_and_unknown_risk_tier(self):
+        from copy import deepcopy
+
+        from hermes_cli.config import validate_config_structure
+
+        config = deepcopy(DEFAULT_CONFIG)
+        config["collaboration"]["github"]["api_url"] = "http://api.github.test"
+        config["collaboration"]["repository"]["slug"] = "missing-owner"
+        config["collaboration"]["review"]["risk_overrides"] = {
+            "forecast.update": "critical"
+        }
+        messages = [issue.message for issue in validate_config_structure(config)]
+        assert any("absolute HTTPS URL" in message for message in messages)
+        assert any("owner/repository" in message for message in messages)
+        assert any("unknown risk tier" in message for message in messages)
+
+    def test_rejects_negative_retention_and_invalid_threshold(self):
+        from copy import deepcopy
+
+        from hermes_cli.config import validate_config_structure
+
+        config = deepcopy(DEFAULT_CONFIG)
+        config["collaboration"]["transcripts"]["raw_retention_days"] = -1
+        config["collaboration"]["review"]["materiality_threshold"] = 2
+        messages = [issue.message for issue in validate_config_structure(config)]
+        assert any("raw_retention_days" in message for message in messages)
+        assert any("materiality_threshold" in message for message in messages)

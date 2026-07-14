@@ -253,6 +253,24 @@ class TestGatewayConfigRoundtrip:
 
 
 class TestLoadGatewayConfig:
+    def test_bridges_collaboration_config_to_api_control_plane(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        (hermes_home / "config.yaml").write_text(
+            "collaboration:\n"
+            "  enabled: true\n"
+            "  repository:\n"
+            "    slug: forecast-team/ledger\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+
+        config = load_gateway_config()
+
+        collaboration = config.platforms[Platform.API_SERVER].extra["collaboration"]
+        assert collaboration["enabled"] is True
+        assert collaboration["repository"]["slug"] == "forecast-team/ledger"
+
     def test_webhook_slack_enables_api_ingress_and_bridges_run_store(self, tmp_path, monkeypatch):
         hermes_home = tmp_path / ".hermes"
         hermes_home.mkdir()

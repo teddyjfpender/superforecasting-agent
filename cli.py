@@ -507,6 +507,35 @@ def load_cli_config() -> Dict[str, Any]:
             # shown once per install then latched here.
             "seen": {},
         },
+        # Keep the classic CLI's local defaults aligned with DEFAULT_CONFIG;
+        # user config still deep-merges below.
+        "collaboration": {
+            "enabled": False,
+            "github": {
+                "enabled": False,
+                "api_url": "https://api.github.com",
+                "upload_url": "https://uploads.github.com",
+                "app_id": "",
+                "webhook_path": "/api/webhooks/github",
+            },
+            "repository": {
+                "slug": "",
+                "workspace_id": "",
+                "default_branch": "main",
+            },
+            "review": {
+                "materiality_threshold": 0.10,
+                "medium_required_humans": 1,
+                "high_required_humans": 2,
+                "high_requires_owner_or_steward": True,
+                "risk_overrides": {},
+            },
+            "transcripts": {
+                "raw_retention_days": 90,
+                "require_publish_consent": True,
+                "max_publish_bytes": 262144,
+            },
+        },
     }
     
     # Track whether the config file explicitly set terminal config.

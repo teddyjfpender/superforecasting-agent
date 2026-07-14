@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superforecasting-agent.local/schemas/ledger-operation-v1.json",
+  "title": "Ledger operation v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "kind",
+    "target_ref",
+    "preconditions",
+    "payload",
+    "provenance_refs",
+    "author_attestation"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$" },
+    "kind": {
+      "enum": [
+        "forecast.create",
+        "forecast.update",
+        "evidence.attach",
+        "assumption.upsert",
+        "reference_class.upsert",
+        "question.criteria.update",
+        "resolution.create",
+        "thesis.update",
+        "document.update",
+        "lesson.activate"
+      ]
+    },
+    "target_ref": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "preconditions": { "type": "object" },
+    "payload": { "type": "object" },
+    "provenance_refs": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "uniqueItems": true
+    },
+    "author_attestation": { "type": "object" }
+  }
+}

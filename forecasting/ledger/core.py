@@ -452,6 +452,17 @@ class ForecastLedger:
         # A burst of resolutions (a bulk close, a backfill loop) fires at most one
         # synthesis per scope per window; human-paced resolutions each fire.
         self._bias_synth_last: dict[str, float] = {}
+        # A changeset apply may call several existing ledger methods.  Those
+        # methods all use ``with ledger._connect()`` independently, so keep a
+        # task/thread-local borrowed connection while an outer transaction is
+        # active.  The small wrapper below prevents inner context managers from
+        # committing or closing the outer transaction.
+        self._transaction_connection: contextvars.ContextVar[sqlite3.Connection | None] = (
+            contextvars.ContextVar(
+                f"forecast_ledger_transaction_{id(self)}",
+                default=None,
+            )
+        )
         try:
             self.initialize_schema()
         except sqlite3.Error as exc:
@@ -461,7 +472,20 @@ class ForecastLedger:
                 "pass --db with a writable path."
             ) from exc
 
-    def _connect(self) -> sqlite3.Connection:
+    class _BorrowedConnection:
+        def __init__(self, connection: sqlite3.Connection) -> None:
+            self._connection = connection
+
+        def __enter__(self) -> sqlite3.Connection:
+            return self._connection
+
+        def __exit__(self, exc_type, exc, traceback) -> bool:
+            return False
+
+        def __getattr__(self, name: str) -> Any:
+            return getattr(self._connection, name)
+
+    def _new_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON")
@@ -494,6 +518,38 @@ class ForecastLedger:
         except Exception:  # pragma: no cover - defensive only
             logger.debug("could not install ledger write authorizer", exc_info=True)
         return conn
+
+    def _connect(self) -> sqlite3.Connection:
+        active = self._transaction_connection.get()
+        if active is not None:
+            return self._BorrowedConnection(active)  # type: ignore[return-value]
+        return self._new_connection()
+
+    @contextlib.contextmanager
+    def transaction(self, *, immediate: bool = False):
+        """Run public ledger methods in one atomic SQLite transaction.
+
+        Nested calls reuse the outer transaction. ``BEGIN IMMEDIATE`` is used
+        by changeset promotion to obtain SQLite's cross-process writer lock
+        before checking the base revision.
+        """
+
+        active = self._transaction_connection.get()
+        if active is not None:
+            yield active
+            return
+        conn = self._new_connection()
+        token = self._transaction_connection.set(conn)
+        try:
+            conn.execute("BEGIN IMMEDIATE" if immediate else "BEGIN")
+            yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            self._transaction_connection.reset(token)
+            conn.close()
 
     # ── durability: online backup + integrity (the ledger IS the asset) ─────────
     #
@@ -1698,6 +1754,13 @@ class ForecastLedger:
             self._ensure_column(conn, "operator_estimates", "resolved_outcome", "TEXT")
             self._ensure_column(conn, "operator_estimates", "brier", "REAL")
             self._ensure_column(conn, "operator_estimates", "scored_at", "TEXT")
+
+            # Multiplayer ledger governance is an additive domain. Keep its DDL
+            # outside this already-large schema body while initializing it on
+            # every normal ForecastLedger construction and legacy database open.
+            from forecasting.change_control.store import initialize_schema
+
+            initialize_schema(conn)
 
     def _ensure_column(
         self,
