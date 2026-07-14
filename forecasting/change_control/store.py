@@ -314,6 +314,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             state TEXT NOT NULL,
             payload TEXT NOT NULL,
             quarantine_reason TEXT,
+            redelivery_count INTEGER NOT NULL DEFAULT 0,
             received_at TEXT NOT NULL,
             processed_at TEXT
         );
@@ -459,6 +460,14 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         );
         """
     )
+    webhook_columns = {
+        row["name"] for row in conn.execute("PRAGMA table_info(github_webhook_deliveries)")
+    }
+    if "redelivery_count" not in webhook_columns:
+        conn.execute(
+            "ALTER TABLE github_webhook_deliveries "
+            "ADD COLUMN redelivery_count INTEGER NOT NULL DEFAULT 0"
+        )
     conn.execute(
         """INSERT OR IGNORE INTO ledger_revisions
            (revision, parent_revision, changeset_id, digest, applied_at)

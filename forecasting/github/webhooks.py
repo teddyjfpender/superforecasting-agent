@@ -77,7 +77,7 @@ def ingest_github_webhook(
     state = "quarantined" if quarantine_reason else "pending"
     sanitized = _sanitize_payload(event_type, payload)
     with ledger._connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """INSERT OR IGNORE INTO github_webhook_deliveries (
                    delivery_id, event_type, action, installation_id,
                    repository_id, repository_slug, state, payload,
@@ -96,6 +96,13 @@ def ingest_github_webhook(
                 utc_now_iso(),
             ),
         )
+        if cursor.rowcount == 0:
+            conn.execute(
+                """UPDATE github_webhook_deliveries
+                   SET redelivery_count = redelivery_count + 1
+                   WHERE delivery_id = ?""",
+                (delivery_id,),
+            )
         row = conn.execute(
             "SELECT * FROM github_webhook_deliveries WHERE delivery_id = ?",
             (delivery_id,),

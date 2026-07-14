@@ -218,6 +218,8 @@ def test_webhook_verifies_before_persisting_and_deduplicates_delivery(tmp_path):
     )
     assert first["delivery_id"] == second["delivery_id"]
     assert first["state"] == "pending"
+    assert first["redelivery_count"] == 0
+    assert second["redelivery_count"] == 1
     assert "private review body" not in json.dumps(first["payload"])
     assert mark_delivery_processed(ledger, "delivery-1")["state"] == "processed"
     assert mark_delivery_processed(ledger, "delivery-1")["state"] == "processed"

@@ -340,10 +340,18 @@ def _cmd_link(args: argparse.Namespace) -> None:
 
 
 def _status_payload(args: argparse.Namespace) -> dict[str, Any]:
+    from forecasting.collaboration_health import collaboration_health
+
+    health = collaboration_health(_ledger(args))
     try:
         repository, workspace_id, branch = _linked()
     except ValidationError:
-        return {"linked": False, "github_merge_status": "unlinked", "ledger_apply_status": "local"}
+        return {
+            "linked": False,
+            "github_merge_status": "unlinked",
+            "ledger_apply_status": "local",
+            "collaboration_health": health,
+        }
     checkout = managed_checkout_path(workspace_id)
     payload: dict[str, Any] = {
         "linked": True,
@@ -353,6 +361,7 @@ def _status_payload(args: argparse.Namespace) -> dict[str, Any]:
         "path": str(checkout),
         "github_merge_status": "unknown",
         "ledger_apply_status": "authoritative-local",
+        "collaboration_health": health,
     }
     if not checkout.is_dir():
         payload["repository_status"] = "missing"
