@@ -19,6 +19,24 @@ GATE = REPO_ROOT / "scripts" / "check-release-ready.sh"
 RELEASE = REPO_ROOT / "scripts" / "release.sh"
 
 
+def test_required_ledger_exports_module_is_tracked():
+    result = subprocess.run(
+        [
+            "git",
+            "ls-files",
+            "--error-unmatch",
+            "forecasting/ledger/exports.py",
+        ],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, (
+        "forecasting/ledger/exports.py is required by the ledger facade but is "
+        "missing from Git (check the broad export* ignore rule)"
+    )
+
+
 def _run(cmd, **env):
     e = dict(os.environ)
     e.update(env)
