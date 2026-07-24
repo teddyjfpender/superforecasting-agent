@@ -133,6 +133,10 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | --- | --- |
 | `--all` |  |
 | `--ack` |  |
+| `--task` |  |
+| `--action` | Act on an awaiting-human operational task selected by --task. |
+| `--defer-hours` |  |
+| `--note` |  |
 | `--reconcile` | Auto-acknowledge alerts whose source-change has already been consumed (evidence imported + forecast updated since) |
 | `--dry-run` | With --reconcile/--collapse/--escalate, preview without writing |
 | `--collapse` | One-time: fold existing duplicate open-alert groups into the oldest row (keep oldest, fold counts) |
@@ -439,6 +443,7 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 ## `forecast correction`
 
 - **`forecast correction add`** — Add a correction record
+- **`forecast correction apply`** — Apply a proposed correction
 - **`forecast correction list`** — List correction records
 
 ### `forecast correction add`
@@ -453,6 +458,13 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | `--new-json` |  |
 | `--patch-json` |  |
 | `--status` |  |
+
+### `forecast correction apply`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--applied-by` |  |
 
 ### `forecast correction list`
 
@@ -702,7 +714,7 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 - **`forecast hooks methods`** — List the reasoning-method taxonomy the reasoning hook checks
 - **`forecast hooks preview`** — Dry-run a candidate rule spec against the current ledger (which forecasts would it block?)
 - **`forecast hooks profiles`** — List the curated profiles + their rule severities
-- **`forecast hooks promotions`** — Standing WARN->ERROR promotion queue: WARN-in-standard rules at 100% live pass (read-only advisor)
+- **`forecast hooks promotions`** — Standing WARN->ERROR promotion queue: WARN-in-standard rules at 100%% live pass (read-only advisor)
 - **`forecast hooks remove`** — Remove a user rule by id
 - **`forecast hooks set-profile`** — Set the active hook profile
 - **`forecast hooks set-severity`** — Set a rule's severity override (off|warn|error)
@@ -2815,8 +2827,8 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | `--deliver` |  |
 | `--profile` |  |
 | `--no-agent` | Free-tier-only continuous mode (do NOT wire the paid LLM tier) |
-| `--paid-budget` | Per-cycle paid-tier agent-run cap (default 3) |
-| `--paid-min-interval-hours` | Minimum hours between paid passes (default 6) |
+| `--paid-budget` | Per-cycle paid-tier agent-run cap (default 1) |
+| `--paid-min-interval-hours` | Minimum hours between paid passes (default 0.5) |
 | `--model` |  |
 | `--provider` |  |
 | `--max-iterations` |  |
@@ -2866,14 +2878,14 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | `--no-synthesize-lessons` | Do NOT synthesize calibration lessons in the nightly sweep |
 | `--refresh-market-models` | Re-pull + recompute Market Models linked to open questions in the nightly sweep |
 | `--no-refresh-market-models` | Do NOT refresh Market Models in the nightly sweep |
-| `--estimate-source-changes` | Estimate queued immutable source changes in the nightly sweep |
+| `--estimate-source-changes` | Also estimate queued source changes nightly (normally owned by automode) |
 | `--no-estimate-source-changes` | Do NOT run the source-change estimator in the nightly sweep |
-| `--estimator-model` | Model override for source-change estimation |
-| `--estimator-provider` | Provider override for source-change estimation |
-| `--estimator-limit` | Maximum source-change estimates per nightly sweep |
-| `--estimator-max-iterations` | Maximum tool iterations for each source-change estimate |
-| `--calibrate-utility` | Fit the task-utility model when enough labelled outcomes exist |
-| `--no-calibrate-utility` | Do NOT fit task utility in the nightly sweep |
+| `--estimator-model` |  |
+| `--estimator-provider` |  |
+| `--estimator-limit` |  |
+| `--estimator-max-iterations` |  |
+| `--calibrate-utility` |  |
+| `--no-calibrate-utility` |  |
 
 ### `forecast schedule list`
 

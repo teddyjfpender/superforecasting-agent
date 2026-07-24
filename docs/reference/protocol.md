@@ -1068,6 +1068,7 @@ _(no fields)_
 | `open_alert_count` | `number?` |
 | `open_assumption_count` | `number?` |
 | `open_reference_class_count` | `number?` |
+| `operations` | `Record<string, unknown>?` |
 | `probability` | `Record<string, unknown> | number | string? | null` |
 | `resolution_time` | `string? | null` |
 | `stale_assumption_count` | `number?` |
@@ -2511,6 +2512,7 @@ _(no fields)_
 | `generated_at` | `string?` |
 | `next_actions` | `ForecastNextAction[]?` |
 | `open_alert_count` | `number?` |
+| `operations` | `Record<string, unknown>?` |
 | `output` | `string?` |
 | `product` | `string?` |
 | `theses` | `ForecastThesis[]?` |

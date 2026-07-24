@@ -9,7 +9,7 @@
 
 > **Source of truth:** `os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, hermes_cli/`
 
-Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **210 variables** (47 flagged as secrets, 163 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
+Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **215 variables** (50 flagged as secrets, 165 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
 
 
 > **Secrets** are classified by name (any variable whose name contains `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`). This is a conservative naming heuristic, not a data-flow analysis — treat the list as "never log or commit these", and audit the source before assuming a variable *not* listed here is safe to print.
@@ -17,7 +17,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Secrets & credentials
 
 
-**47 variables** carry a credential-shaped name. Provide them via the environment or the credential store; never commit them.
+**50 variables** carry a credential-shaped name. Provide them via the environment or the credential store; never commit them.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -38,10 +38,13 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `FAL_KEY` | `None` | `tools.tool_backend_helpers` |
 | `FIRECRAWL_API_KEY` | `''` | `tools.web_tools` |
 | `FORECAST_REDACT_SECRETS` | `None` | `hermes_cli.codex_runtime_plugin_migration` |
+| `FORECAST_TRACE_ENCRYPTION_KEY` | `''` | `forecasting.change_control.trace_archive` |
 | `FRED_API_KEY` | `None` | `tools.forecasting_tool` |
-| `GH_TOKEN` | `None` | `tools.skills_hub` |
+| `GH_TOKEN` | `None` | `forecasting.cli.collaboration_admin`, `tools.skills_hub` |
+| `GITHUB_APP_CLIENT_SECRET` | `''` | `forecasting.cli.collaboration_admin` |
 | `GITHUB_APP_PRIVATE_KEY_PATH` | `None` | `tools.skills_hub` |
-| `GITHUB_TOKEN` | `None` | `tools.skills_hub`, `tools.tirith_security` |
+| `GITHUB_TOKEN` | `None` | `forecasting.cli.collaboration_admin`, `tools.skills_hub`, `tools.tirith_security` |
+| `GITHUB_TOKEN_ENCRYPTION_KEY` | `''` | `forecasting.cli.collaboration_admin` |
 | `HASS_TOKEN` | `''`, `None` | `hermes_cli.tools_config`, `tools.homeassistant_tool`, `tools.send_message_tool` |
 | `HERMES_API_KEY` | `''` | `tui_gateway.server` |
 | `HERMES_KANBAN_SPECIFY_MAX_TOKENS` | `'6000'` | `hermes_cli.kanban_specify` |
@@ -72,7 +75,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Configuration & runtime
 
 
-**163 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
+**165 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -86,7 +89,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `AUXILIARY_WEB_EXTRACT_MODEL` | `''` | `tools.browser_tool` |
 | `AWS_EC2_METADATA_DISABLED` | `None` | `hermes_cli.doctor` |
 | `AZURE_FOUNDRY_BASE_URL` | `''` | `hermes_cli.runtime_provider` |
-| `BROWSER_CDP_URL` | `''` | `tools.browser_camofox`, `tools.browser_tool`, `tui_gateway.server` |
+| `BROWSER_CDP_URL` | `''` | `tools.browser_camofox`, `tools.browser_tool`, `tui_gateway.browser_rpc` |
 | `BROWSER_INACTIVITY_TIMEOUT` | `'300'` | `tools.browser_tool` |
 | `CAMOFOX_URL` | `''` | `tools.browser_camofox` |
 | `CAMOFOX_USER_ID` | `''` | `tools.browser_camofox` |
@@ -117,6 +120,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `GATEWAY_HEALTH_URL` | `None` | `hermes_cli.web_server` |
 | `GITHUB_APP_ID` | `None` | `tools.skills_hub` |
 | `GITHUB_APP_INSTALLATION_ID` | `None` | `tools.skills_hub` |
+| `GITHUB_SHA` | `None` | `forecasting.ledger.workflow` |
 | `GROQ_BASE_URL` | `'https://api.groq.com/openai/v1'` | `tools.transcription_tools` |
 | `HASS_URL` | `''`, `'http://homeassistant.local:8123'` | `tools.homeassistant_tool`, `tools.send_message_tool` |
 | `HERMES_ALLOW_ROOT_GATEWAY` | `None` | `hermes_cli.gateway` |
@@ -163,7 +167,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `MINIMAX_PORTAL_BASE_URL` | `None` | `hermes_cli.web_server` |
 | `NOVITA_BASE_URL` | `''` | `hermes_cli.models` |
 | `NO_COLOR` | `None` | `hermes_cli.colors`, `hermes_cli.security_advisories` |
-| `OBSIDIAN_VAULT_PATH` | `''` | `tui_gateway.server` |
+| `OBSIDIAN_VAULT_PATH` | `''` | `tui_gateway.obsidian_rpc` |
 | `OLLAMA_BASE_URL` | `''` | `hermes_cli.models` |
 | `OPENAI_BASE_URL` | `''` | `hermes_cli.models`, `hermes_cli.runtime_provider` |
 | `OPENROUTER_BASE_URL` | `''` | `hermes_cli.runtime_provider` |
@@ -192,6 +196,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `STT_OPENAI_MODEL` | `'whisper-1'` | `tools.transcription_tools` |
 | `SUDO_USER` | `None` | `hermes_cli.gateway` |
 | `SUPERFORECASTING_AGENT_BIN` | `''` | `hermes_cli.kanban_db` |
+| `SUPERFORECASTING_AGENT_CODE_REVISION` | `None` | `forecasting.ledger.workflow` |
 | `SUPERFORECASTING_AGENT_HOME` | `''` | `hermes_cli.main` |
 | `SUPERFORECASTING_AGENT_TIMEZONE` | `''` | `hermes_cli.config` |
 | `TERM` | `'dumb'`, `None` | `hermes_cli.colors`, `hermes_cli.main` |

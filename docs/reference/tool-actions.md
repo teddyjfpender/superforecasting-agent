@@ -188,7 +188,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `base_rate_error` | string |  |  |
 | `baseline_type` | string |  |  |
 | `bayes_action` | string |  | For action='bayes': which Bayesian toolkit routine to run — lr_update, decompose_update, combine, evidence_weight, evidence_cluster, blend_base_rates, poll_to_prob, polls, devig, normalize_market, combine_markets, sensitivity, forecast_diff. |
-| `bayes_payload` | object |  | For action='bayes': the inputs for the chosen bayes_action (e.g. {prior_p, lrs} for lr_update; {components, method, extremize, correlation_matrix} for combine; {previous, current, components} for forecast_diff). |
+| `bayes_payload` | object |  | For action='bayes': the inputs for the chosen bayes_action (e.g. {prior_p, lrs} for lr_update; {components, method, extremize, correlation_matrix} for combine; {previous, current, components} for forecast_diff). sensitivity requires {components:[{name, probability, weight?}], parameter_ranges:{component_name:[low, high]}}. |
 | `bounds` | array<number> |  |  |
 | `bucket` | string |  |  |
 | `cadence` | string |  |  |
@@ -451,11 +451,11 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `source_country` | string |  |  |
 | `source_lang` | string |  |  |
 | `source_name` | string |  |  |
-| `source_or_note` | string |  |  |
+| `source_or_note` | string |  | add_evidence: REQUIRED source URL or a durable note identifying the evidence. For a raw web page use action='ingest' or add_evidence with this field; do not send source_type='url' to import_source_evidence. |
 | `source_refs` | array<string> |  |  |
 | `source_role` | string |  | For set_resolution_rule: which watched-source role supplies the value (default 'resolver'). |
 | `source_snapshot_refs` | array<string> |  |  |
-| `source_type` | string | 59 values (see source) |  |
+| `source_type` | string | 59 values (see source) | Action-dependent source kind. import_source_evidence accepts structured adapters such as fred, polymarket, kalshi, rss, and SEC—not raw 'url'. For a raw URL use action='ingest'. add_watched_source may use url, file, or manual. |
 | `source_url` | string |  |  |
 | `sources` | array<string> |  |  |
 | `spec` | object |  | propose_spec/commit_spec/full_forecast: an explicit QuestionSpec draft (overrides `prompt` when both are given). |
