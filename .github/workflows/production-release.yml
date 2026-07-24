@@ -86,7 +86,16 @@ jobs:
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
 
       - name: Readiness gate (strict)
-        run: PYTHON=.venv/bin/python scripts/check-release-ready.sh --strict --version "${{ steps.resolve.outputs.version }}"
+        run: |
+          set +e
+          GITHUB_REF="refs/tags/${{ inputs.tag || github.ref_name }}" \
+            PYTHON=.venv/bin/python \
+            scripts/check-release-ready.sh --strict --version "${{ steps.resolve.outputs.version }}"
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            .venv/bin/python -m scripts.docgen --check || true
+          fi
+          exit "$status"
 
   # -------------------------------------------------------------------------
   # Suites-green: the release job depends on this, so a red suite blocks a
