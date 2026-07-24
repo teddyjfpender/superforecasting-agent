@@ -139,9 +139,10 @@ if [ "$STRICT" = "1" ]; then
   [ -n "$PY" ] || { [ -x .venv/bin/python ] && PY=.venv/bin/python; }
   [ -n "$PY" ] || PY="$(command -v python3 || true)"
   if [ -n "$PY" ] && "$PY" -c "import scripts.docgen" >/dev/null 2>&1; then
-    if "$PY" -m scripts.docgen --check >/dev/null 2>&1; then
+    if docgen_output="$("$PY" -m scripts.docgen --check 2>&1)"; then
       c_ok "generated docs up to date"
     else
+      printf '%s\n' "$docgen_output" >&2
       c_bad "generated docs stale (run: python -m scripts.docgen)"
     fi
   else

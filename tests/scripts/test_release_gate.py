@@ -159,6 +159,35 @@ def test_gate_tag_run_not_ready_when_tag_points_elsewhere(tmp_path):
     assert "NOT READY" in r.stdout
 
 
+def test_strict_gate_reports_stale_generated_doc_paths(tmp_path):
+    clone = _clone_repo(tmp_path / "clone")
+    ver = _pyproject_version()
+    subprocess.run(
+        ["git", "-C", str(clone), "tag", "-d", f"v{ver}"],
+        check=False, capture_output=True,
+    )
+    gate = clone / "scripts" / "check-release-ready.sh"
+    shutil.copy2(GATE, gate)
+    fake_python = tmp_path / "python"
+    fake_python.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "-c" ]; then exit 0; fi\n'
+        'echo "  docs/reference/README.md" >&2\n'
+        "exit 1\n"
+    )
+    fake_python.chmod(0o755)
+
+    r = _run_in(
+        clone,
+        ["bash", str(gate), "--strict", "--version", ver],
+        GITHUB_REF=None,
+        PYTHON=str(fake_python),
+    )
+
+    assert r.returncode == 1
+    assert "docs/reference/README.md" in r.stderr
+
+
 @pytest.mark.skipif(
     shutil.which("uv") is None or not (REPO_ROOT / "ui-tui" / "dist" / "entry.js").exists(),
     reason="dry-run needs uv + a prebuilt TUI bundle (ui-tui/dist/entry.js)",
