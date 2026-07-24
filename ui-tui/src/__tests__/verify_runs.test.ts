@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+
 import { diverging, renderHeatmap } from '../lib/viz/index.js'
 import type { ChartTheme, RenderCtx } from '../lib/viz/index.js'
 

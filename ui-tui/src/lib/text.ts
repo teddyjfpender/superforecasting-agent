@@ -16,6 +16,7 @@ const ANSI_OSC_RE = new RegExp(`${ESC}\\][\\s\\S]*?(?:${BEL}|${ESC}\\\\)`, 'g')
 const ANSI_STRING_RE = new RegExp(`${ESC}[PX^_][\\s\\S]*?(?:${BEL}|${ESC}\\\\)`, 'g')
 const ANSI_NON_CSI_ESC_SEQ_RE = new RegExp(`${ESC}(?!\\[|\\]|P|X|\\^|_)[ -/]*[0-~]`, 'g')
 const ANSI_STRAY_ESC_RE = new RegExp(`${ESC}(?!\\[)[\\s\\S]?`, 'g')
+// eslint-disable-next-line no-control-regex -- sanitization intentionally matches C0 controls
 const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0D\x0E-\x1A\x1C-\x1F\x7F]/g
 const WS_RE = /\s+/g
 
@@ -107,10 +108,12 @@ export const pasteTokenLabel = (text: string, lineCount: number) => {
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const THINKING_VERBS_PATTERN = VERBS.map(escapeRegExp).join('|')
 const THINKING_FRAMES_PATTERN = FACES.map(escapeRegExp).join('|')
+
 const THINKING_STATUS_RE = new RegExp(
   `^(?:(?:${THINKING_FRAMES_PATTERN})\\s*)?(?:${THINKING_VERBS_PATTERN})\\.{0,3}$`,
   'i'
 )
+
 const THINKING_STATUS_CHUNK_RE = new RegExp(
   `(?:(?:${THINKING_FRAMES_PATTERN})|[^A-Za-z\n]+)\\s*(?:${THINKING_VERBS_PATTERN})\\.{1,3}\\s*`,
   'giu'

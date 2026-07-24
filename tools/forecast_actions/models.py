@@ -116,6 +116,15 @@ def build_model(args: dict[str, Any], ledger) -> str:
         if args.get(k) is not None and k not in mparams:
             mparams[k] = args.get(k)
 
+    # Agents sometimes put a quantitative METHOD in the LLM `model` field.
+    # Keep those namespaces separate so an identifier such as
+    # `correlated_regime_switching_monte_carlo` is never sent to an API.
+    llm_model = str(mparams.get("model") or "").strip()
+    method_markers = ("monte_carlo", "regime_switch", "simulation", "timeseries", "loglinear")
+    if llm_model and any(marker in llm_model.lower() for marker in method_markers):
+        mparams.setdefault("analysis_type", llm_model)
+        mparams.pop("model", None)
+
     recommendation = MM.recommend_model_family(outcome_type, question_text)
     out = MM.build_market_model(question_text, mparams, ledger=ledger, runtime=args.get("runtime"))
     model_id = out.get("model_id")
@@ -186,6 +195,25 @@ def bayes(args: dict[str, Any], ledger) -> str:
     payload = args.get("bayes_payload") or {}
     if not isinstance(payload, dict):
         return tool_error("bayes_payload must be an object", success=False)
+    if bayes_action == "sensitivity":
+        if not isinstance(payload.get("components"), list):
+            return tool_error("bayes sensitivity requires components as an array", success=False)
+        if not isinstance(payload.get("parameter_ranges"), dict):
+            return tool_error(
+                "bayes sensitivity requires parameter_ranges as an object mapping component names to arrays",
+                success=False,
+            )
+        invalid_ranges = [
+            str(name)
+            for name, values in payload["parameter_ranges"].items()
+            if not isinstance(values, list) or not values
+        ]
+        if invalid_ranges:
+            return tool_error(
+                "bayes sensitivity parameter ranges must be non-empty arrays: "
+                + ", ".join(invalid_ranges),
+                success=False,
+            )
     outcome = run_bayes_action(bayes_action, payload)
     return tool_result(
         success=True,

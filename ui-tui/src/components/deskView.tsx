@@ -1,29 +1,13 @@
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { Box, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { Fragment, memo, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { ReviewSweepState } from '../app/interfaces.js'
-import { type JobRecordShape, useJobAttach } from '../app/useJobAttach.js'
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { $reviewSweep } from '../app/uiStore.js'
+import { useJobAttach } from '../app/useJobAttach.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type {
-  ForecastAnalystNote,
-  ForecastBenchResponse,
-  ForecastBenchRow,
-  ForecastFactor,
-  ForecastNextAction,
-  ForecastQuestionPacketResponse,
-  ForecastReforecastResultRow,
-  ForecastReforecastStartResponse,
-  ForecastReforecastStatusResponse,
-  ForecastReviewsNextResponse,
-  ForecastThesis,
-  ForecastWorkspaceItem,
-  ForecastWorkspacePanel,
-  ForecastWorkspaceResponse
-} from '../protocol/generated.js'
 import { sweepColor, sweepStops } from '../lib/accentSweep.js'
 import {
   buildDeskTabs,
@@ -38,16 +22,51 @@ import { type FieldSpec, filterRanked } from '../lib/fuzzyRank.js'
 import { spinnerFrame } from '../lib/icons.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
-import { nextCycleState, sortIndicator, sortRows, type SortDir, type SortValue, type TableSortState, useTableSort } from '../lib/tableSort.js'
+import { nextCycleState, type SortDir, sortIndicator, sortRows, type TableSortState, useTableSort } from '../lib/tableSort.js'
 import { dirColor, pad, readinessColor, type Semantics, semantics } from '../lib/visualSemantics.js'
+import type {
+  ForecastAnalystNote,
+  ForecastBenchResponse,
+  ForecastBenchRow,
+  ForecastFactor,
+  ForecastNextAction,
+  ForecastQuestionPacketResponse,
+  ForecastReforecastStartResponse,
+  ForecastReviewsNextResponse,
+  ForecastThesis,
+  ForecastWorkspaceItem,
+  ForecastWorkspacePanel,
+  ForecastWorkspaceResponse
+} from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
-import { OverlayScrollbar } from './agentsOverlay.js'
 import { ForecastPulse } from './appChrome.js'
+import {
+  DESK_COLS,
+  DESK_PRIORITY,
+  DESK_SORT_KEYS,
+  deskCellText,
+  deskSortValue,
+  dueNowCell,
+  dueText,
+  SORT_MODE_LABELS
+} from './desk/cells.js'
+import type { DeskCol, DeskSweepCtx } from './desk/cells.js'
+import {
+  AGENT_JOB_TYPES,
+  agentJobFromRecord,
+  reforecastStatusFromRecord,
+  REFRESH_JOB_TYPES,
+  refreshJobFromRecord,
+  refreshTally,
+  summarizeAgentJob,
+  summarizeRearm,
+  summarizeUpdate
+} from './desk/jobs.js'
+import type { AgentJob, MassTally, RefreshJob } from './desk/jobs.js'
 import { DeskTabs as DeskTabsStrip } from './deskTabs.js'
-import { ForecastSettingsModal } from './forecastSettingsModal.js'
-import { ModalOverlay } from './modalOverlay.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
+import { ForecastSettingsModal } from './forecastSettingsModal.js'
 import {
   AnalystNote,
   chartScale,
@@ -69,29 +88,8 @@ import {
   truncate,
   unitSuffix
 } from './forecastsWorkspace.js'
-import {
-  deskCellText,
-  DESK_COLS,
-  DESK_PRIORITY,
-  DESK_SORT_KEYS,
-  deskSortValue,
-  dueNowCell,
-  dueText,
-  SORT_MODE_LABELS
-} from './desk/cells.js'
-import type { DeskCol, DeskSweepCtx } from './desk/cells.js'
-import {
-  AGENT_JOB_TYPES,
-  agentJobFromRecord,
-  REFRESH_JOB_TYPES,
-  reforecastStatusFromRecord,
-  refreshJobFromRecord,
-  refreshTally,
-  summarizeAgentJob,
-  summarizeRearm,
-  summarizeUpdate
-} from './desk/jobs.js'
-import type { AgentJob, MassTally, RefreshJob } from './desk/jobs.js'
+import { ModalOverlay } from './modalOverlay.js'
+import { OperationsCockpit } from './operationsCockpit.js'
 import { windowItems } from './overlayControls.js'
 
 // ── Desk view (redesigned forecast workspace) ────────────────────────────────
@@ -152,7 +150,7 @@ export {
   summarizeRearm,
   summarizeUpdate
 }
-export type { AgentJob, MassOutcome, MassTally, RefreshJob } from './desk/jobs.js'
+export type { DeskSweepCtx } from './desk/cells.js'
 
 interface DeskViewProps {
   gw: GatewayClient
@@ -304,6 +302,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // keeps the cursor stable. Sweep-done / u / U reloads still fire immediately.
   useEffect(() => {
     const id = setInterval(() => load(), 90_000)
+
     return () => clearInterval(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw])
@@ -315,18 +314,22 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const pullReviewsNextRef = useRef<() => void>(() => undefined)
   useEffect(() => {
     let cancelled = false
+
     const pull = () => {
       gw.request<unknown>('forecast.reviews.next', {})
         .then(raw => {
-          if (cancelled) return
+          if (cancelled) {return}
           const r = asRpcResult<ForecastReviewsNextResponse>(raw)
-          if (r) setReviewsNext(r)
+
+          if (r) {setReviewsNext(r)}
         })
         .catch(() => {})
     }
+
     pullReviewsNextRef.current = pull
     pull()
     const id = setInterval(pull, 60_000)
+
     return () => {
       cancelled = true
       clearInterval(id)
@@ -341,7 +344,8 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     const was = prevSweepRef.current
     prevSweepRef.current = sweepRunning
     pullReviewsNextRef.current()
-    if (was && !sweepRunning) load()
+
+    if (was && !sweepRunning) {load()}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sweepRunning])
 
@@ -368,27 +372,32 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // organic-forecast list. It loads its own `forecast.bench` payload (cached so
   // re-entry is instant) and renders a distinct agent-vs-market Brier table.
   const onBench = activeTab?.kind === 'bench'
+  const onOperations = activeTab?.kind === 'operations'
   const cachedBench = getOverlayCache<ForecastBenchResponse>('forecast.bench')
   const [bench, setBench] = useState<ForecastBenchResponse | null>(() => cachedBench ?? null)
   const [benchLoading, setBenchLoading] = useState(false)
 
   useEffect(() => {
-    if (!onBench) return
-    if (!cachedBench) setBenchLoading(true)
+    if (!onBench) {return}
+
+    if (!cachedBench) {setBenchLoading(true)}
     let cancelled = false
     gw.request<unknown>('forecast.bench', {})
       .then(raw => {
-        if (cancelled) return
+        if (cancelled) {return}
         const result = asRpcResult<ForecastBenchResponse>(raw)
+
         if (result) {
           setOverlayCache('forecast.bench', result)
           setBench(result)
         }
+
         setBenchLoading(false)
       })
       .catch(() => {
-        if (!cancelled) setBenchLoading(false)
+        if (!cancelled) {setBenchLoading(false)}
       })
+
     return () => {
       cancelled = true
     }
@@ -406,6 +415,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // Minute-bucketed clock so the window/age/next sort values stay stable within a
   // minute (the memo doesn't re-sort on every 500ms reflow tick).
   const nowMinute = Math.floor(Date.now() / 60_000) * 60_000
+
   const sortedVisible = useMemo(
     () => sortRows(visible, sort.state.key, sort.state.dir, (it, k) => deskSortValue(it, k, nowMinute)),
     [visible, sort.state.key, sort.state.dir, nowMinute]
@@ -419,6 +429,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const nightlyNextAt = reviewsNext?.nightly?.next_run_at
   const nextTickAt = sweeper?.next_tick_at
   const spinTick = sweepRunning ? now : 0
+
   const sweepCtx = useMemo<DeskSweepCtx>(
     () => ({
       frame: spinTick,
@@ -449,37 +460,47 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const pendingReselectId = useRef<null | string>(null)
   useEffect(() => {
     const id = pendingReselectId.current
-    if (id == null) return
+
+    if (id == null) {return}
     pendingReselectId.current = null
     const idx = sortedVisible.findIndex(it => it.id === id)
-    if (idx >= 0) setSel(idx + lensOffset)
+
+    if (idx >= 0) {setSel(idx + lensOffset)}
   }, [sortedVisible, lensOffset])
 
   const armReselect = () => {
     pendingReselectId.current = selectedId
   }
+
   // Flash the mode a sort action lands on — the ONLY on-screen signal for the
   // keyless 'voi' mode (it has no column header to carry the ▲/▼ indicator).
   const flashSort = (state: TableSortState) => {
     if (!state.key) {
       setFlash('sort: book order')
+
       return
     }
+
     const label = SORT_MODE_LABELS[state.key] ?? state.key
     setFlash(`sort: ${label}${state.key === 'voi' ? '' : ` ${state.dir === 'asc' ? '↑' : '↓'}`}`)
   }
+
   const onSortCycle = () => {
     armReselect()
     flashSort(nextCycleState(sort.state, DESK_SORT_KEYS))
     sort.cycle()
   }
+
   const onSortToggle = () => {
     armReselect()
+
     if (sort.state.key) {
       flashSort({ dir: sort.state.dir === 'asc' ? 'desc' : 'asc', key: sort.state.key })
     }
+
     sort.toggle()
   }
+
   const onSortByKey = (key: string) => {
     armReselect()
     sort.sortByKey(key)
@@ -502,11 +523,13 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         // actually resolves to a thesis/factor (not just by kind), else the cursor
         // could overshoot by one on a malformed payload.
         const tk = tabs[ti]
+
         const off =
           (tk.kind === 'thesis' && theses.some(h => h.id === tk.refId)) ||
           (tk.kind === 'factor' && factors.some(f => f.id === tk.refId))
             ? 1
             : 0
+
         initialIdRef.current = null
         setTab(ti)
         setSel(idx + off)
@@ -618,8 +641,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // carried by forecast.question instead — merge them onto the item for the modal.
   // (Must live with the other hooks, ABOVE the loading/error early-returns.)
   const detailItem = useMemo(() => {
-    if (!selected) return null
-    if (!packet || packetId !== selectedId) return selected
+    if (!selected) {return null}
+
+    if (!packet || packetId !== selectedId) {return selected}
+
     return {
       ...selected,
       related: packet.related ?? selected.related,
@@ -631,6 +656,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // teardown (the loop checks unmountedRef before every state write / reschedule).
   useEffect(() => {
     unmountedRef.current = false
+
     return () => {
       unmountedRef.current = true
     }
@@ -644,9 +670,11 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       if (prev.size === 0) {
         return prev
       }
+
       const live = new Set(items.map(i => i.id).filter(Boolean))
       let changed = false
       const next = new Set<string>()
+
       for (const id of prev) {
         if (live.has(id)) {
           next.add(id)
@@ -654,6 +682,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           changed = true
         }
       }
+
       return changed ? next : prev
     })
   }, [items])
@@ -689,12 +718,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     if (!agentJob) {
       return EMPTY_ID_SET
     }
+
     const rem = new Set<string>()
+
     for (const id of agentJob.targetIds) {
       if (!agentJob.doneIds.has(id)) {
         rem.add(id)
       }
     }
+
     return rem
   }, [agentJob])
 
@@ -728,12 +760,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     if (!refreshJob) {
       return EMPTY_ID_SET
     }
+
     const rem = new Set<string>()
+
     for (const id of refreshJob.targetIds) {
       if (!refreshJob.doneIds.has(id)) {
         rem.add(id)
       }
     }
+
     return rem
   }, [refreshJob])
 
@@ -743,13 +778,17 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     if (refreshRemaining.size === 0) {
       return agentRemaining
     }
+
     if (agentRemaining.size === 0) {
       return refreshRemaining
     }
+
     const merged = new Set<string>(agentRemaining)
+
     for (const id of refreshRemaining) {
       merged.add(id)
     }
+
     return merged
   }, [agentRemaining, refreshRemaining])
 
@@ -771,7 +810,8 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const runRearm = () => {
     const targetId = lensActive ? (refThesis?.id ?? refFactor?.id) : selectedId
     const targetTitle = lensActive ? (refThesis?.title ?? refFactor?.title) : selected?.title
-    if (!targetId) return
+
+    if (!targetId) {return}
     setFlash(`↻ re-armed for next cycle: ${truncate(targetTitle ?? targetId, 32)}`)
     gw.request('forecast.reforecast', { id: targetId })
       .then(() => load()) // silent refresh (no 'refreshed' flash) so NEXT flips to "now" but the re-arm message stays
@@ -787,6 +827,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     if (hasLens && rowIndex === 0) {
       return null
     }
+
     return sortedVisible[rowIndex - lensOffset]?.id ?? null
   }
 
@@ -794,14 +835,17 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // the lens row (no id) it just advances.
   const toggleMark = () => {
     const id = selectedId
+
     if (id) {
       setSelectedIds(prev => {
         const next = new Set(prev)
+
         if (next.has(id)) {
           next.delete(id)
         } else {
           next.add(id)
         }
+
         return next
       })
     } else if (lensActive && refThesis) {
@@ -811,6 +855,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       // a normal Space so the cursor lands on the first markable member below.
       setFlash('thesis row runs its members — mark member questions instead')
     }
+
     setSel(i => Math.min(Math.max(0, rowCount - 1), i + 1))
   }
 
@@ -823,12 +868,15 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
       const next = new Set(prev)
       const a = rowIdAt(from)
       const b = rowIdAt(to)
+
       if (a) {
         next.add(a)
       }
+
       if (b) {
         next.add(b)
       }
+
       return next
     })
     setSel(to)
@@ -844,13 +892,16 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         .filter(it => it.id && selectedIds.has(it.id))
         .map(it => ({ id: it.id!, title: it.title ?? it.id! }))
     }
+
     if (kind === 'update' && lensActive) {
       // `U` on the thesis/factor lens row → trigger every member question.
       return sortedVisible.filter(it => it.id).map(it => ({ id: it.id!, title: it.title ?? it.id! }))
     }
+
     if (!lensActive && selectedId) {
       return [{ id: selectedId, title: selected?.title ?? selectedId }]
     }
+
     return []
   }
 
@@ -865,28 +916,36 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     if (massRunningRef.current) {
       const p = massProgress
       setFlash(p ? `already ${p.verb} ${p.total}…` : 're-arming…')
+
       return
     }
+
     const targets = massTargets('rearm')
+
     if (!targets.length) {
       setFlash('select a forecast to re-arm')
+
       return
     }
+
     massRunningRef.current = true
     setFlash('') // clear any stale flash so only the live progress shows during the run
     const total = targets.length
     const tally: MassTally = { error: 0, noSources: 0, refreshed: 0, unchanged: 0 }
 
     const step = (i: number) => {
-      if (unmountedRef.current) return
+      if (unmountedRef.current) {return}
+
       if (i >= total) {
         massRunningRef.current = false
         setMassProgress(null)
         clearSelection()
         load() // one reload after the whole fan-out
         setFlash(summarizeRearm(tally))
+
         return
       }
+
       const { id, title } = targets[i]!
       setMassProgress({ current: i + 1, title: truncate(title, 32), total, verb: 're-arming' })
       gw.request('forecast.reforecast', { id })
@@ -898,6 +957,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         })
         .finally(() => step(i + 1))
     }
+
     step(0)
   }
 
@@ -912,24 +972,32 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const runRefresh = () => {
     if (refreshRunningRef.current) {
       setFlash(refreshJob ? `already updating ${refreshJob.done}/${refreshJob.total}…` : 'already updating…')
+
       return
     }
+
     const targets = massTargets('update')
+
     if (!targets.length) {
       setFlash('select a forecast to update now')
+
       return
     }
+
     const ids = targets.map(target => target.id)
     refreshRunningRef.current = true
     setFlash('') // the re-attach-backed progress line below is the sole feedback
     gw.request<unknown>('jobs.start', { spec: { question_ids: ids }, type: 'refresh' })
       .then(raw => {
         const r = asRpcResult<{ job_id?: string }>(raw)
+
         if (!r?.job_id) {
           refreshRunningRef.current = false
           setFlash('update start failed')
+
           return
         }
+
         setRefreshJob({
           current: null,
           done: 0,
@@ -956,13 +1024,18 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const runAgent = () => {
     if (agentRunningRef.current) {
       setFlash(`agent running: ${agentJob?.runId ?? '…'}`)
+
       return
     }
+
     const targets = massTargets('update')
+
     if (!targets.length) {
       setFlash('select a forecast for the agent')
+
       return
     }
+
     const ids = targets.map(target => target.id)
     agentRunningRef.current = true
     setFlash(
@@ -971,11 +1044,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     gw.request<unknown>('forecast.reforecast.start', { question_ids: ids })
       .then(raw => {
         const r = asRpcResult<ForecastReforecastStartResponse>(raw)
+
         if (!r?.run_id) {
           agentRunningRef.current = false
           setFlash('agent start failed')
+
           return
         }
+
         setAgentJob({
           current: null,
           done: 0,
@@ -1000,13 +1076,18 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const openTask = () => {
     if (agentRunningRef.current) {
       setFlash(`agent running: ${agentJob?.runId ?? '…'}`)
+
       return
     }
+
     const targets = massTargets('update')
+
     if (!targets.length) {
       setFlash('select a forecast for a task')
+
       return
     }
+
     setTaskTargetIds(targets.map(target => target.id))
     setTaskOpen(true)
   }
@@ -1018,8 +1099,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const submitTask = (instruction: string) => {
     if (agentRunningRef.current || !taskTargetIds.length) {
       setTaskOpen(false)
+
       return
     }
+
     const ids = taskTargetIds
     agentRunningRef.current = true
     setTaskOpen(false)
@@ -1027,11 +1110,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     gw.request<unknown>('forecast.desk.task', { instruction, question_ids: ids })
       .then(raw => {
         const r = asRpcResult<ForecastReforecastStartResponse>(raw)
+
         if (!r?.run_id) {
           agentRunningRef.current = false
           setFlash('task start failed')
+
           return
         }
+
         setAgentJob({
           current: null,
           done: 0,
@@ -1057,8 +1143,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   const openResolve = () => {
     if (lensActive || !selected) {
       setFlash('select a forecast to resolve')
+
       return
     }
+
     setFlash('resolve · see the Actions section (⤓ scrolled to it)')
     setResolveScroll(true)
     setResolveContext(true)
@@ -1075,12 +1163,13 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // The id + title the settings modal targets: the selected forecast, or (on a
   // lens row) the lens thesis/factor itself.
   const settingsTargetId = lensActive ? (refThesis?.id ?? refFactor?.id ?? null) : selectedId
+
   const settingsTargetTitle = lensActive
     ? (refThesis?.title ?? refFactor?.title ?? null)
     : (selected?.title ?? null)
 
   const openSettings = () => {
-    if (!settingsTargetId) return
+    if (!settingsTargetId) {return}
     setModalOpen(false)
     setSettingsOpen(true)
   }
@@ -1093,6 +1182,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     if (settingsOpen || taskOpen) {
       return
     }
+
     // Filter text-entry mode swallows printable keys.
     if (filtering) {
       if (key.return) {
@@ -1381,13 +1471,14 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
   // DeskLensRow banner (non-thesis lenses are unaffected). So the banner only leads
   // a factor tab, and refThesis is threaded into DeskForecastList as its pinned row.
   const showBanner = hasLens && !refThesis
+
   const list = (
     <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
       {showBanner ? (
         <DeskLensRow
           active={lensActive}
           onOpen={() => {
-            if (modalOpen || settingsOpen || taskOpen || globalModal) return
+            if (modalOpen || settingsOpen || taskOpen || globalModal) {return}
             setSel(0)
             setModalOpen(true)
           }}
@@ -1405,8 +1496,8 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         nowMs={Math.floor(Date.now() / 60_000) * 60_000}
         // Clicking the pinned thesis row selects it (row 0 / lensActive), the same
         // as an arrow-key landing — Enter then opens the thesis read.
-        onPinnedSelect={() => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) setSel(0) }}
-        onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) setSel(i + lensOffset) }}
+        onPinnedSelect={() => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {setSel(0)} }}
+        onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {setSel(i + lensOffset)} }}
         // The header sorts on click, but only while nothing modal is covering the
         // body — matches the row/tab click gating.
         onSort={modalOpen || settingsOpen || taskOpen || globalModal ? undefined : onSortByKey}
@@ -1417,9 +1508,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
         pinnedThesis={refThesis}
         runningId={agentJob?.current?.question_id ?? refreshJob?.current ?? null}
         runningIds={runningRemaining}
-        spinTick={agentJob || refreshJob ? now : 0}
         sortDir={sort.state.dir}
         sortKey={sort.state.key}
+        spinTick={agentJob || refreshJob ? now : 0}
         sweep={sweepCtx}
         t={t}
         visibleRows={Math.max(3, visibleRows - (showBanner ? 2 : 0))}
@@ -1572,7 +1663,9 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     : onBench
       ? [
           { k: '⇥', label: 'Lens', run: () => switchTab(tab + 1) },
-          { k: 'r', label: 'Refresh', run: () => { setBenchLoading(true); gw.request<unknown>('forecast.bench', {}).then(raw => { const r = asRpcResult<ForecastBenchResponse>(raw); if (r) { setOverlayCache('forecast.bench', r); setBench(r) } setBenchLoading(false) }).catch(() => setBenchLoading(false)) } },
+          { k: 'r', label: 'Refresh', run: () => { setBenchLoading(true); gw.request<unknown>('forecast.bench', {}).then(raw => { const r = asRpcResult<ForecastBenchResponse>(raw);
+
+ if (r) { setOverlayCache('forecast.bench', r); setBench(r) } setBenchLoading(false) }).catch(() => setBenchLoading(false)) } },
           { k: 'h', label: 'Help', run: openHelpOverlay },
           { k: 'q', label: 'Close', run: onClose }
         ]
@@ -1667,8 +1760,10 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
           Body clicks are gated while the modal is open (switchTab/onSelect early-
           return) so the still-visible tabs/rows can't leak interaction — the
           keyboard is already trapped by the `if (modalOpen) return` in useInput. */}
-      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) switchTab(i) }} t={t} tabs={tabs} width={width} />
-      {onBench ? (
+      <DeskTabsStrip active={tab} onSelect={i => { if (!modalOpen && !settingsOpen && !taskOpen && !globalModal) {switchTab(i)} }} t={t} tabs={tabs} width={width} />
+      {onOperations ? (
+        <OperationsCockpit operations={payload?.operations} t={t} />
+      ) : onBench ? (
         // The Bench lens replaces the list+panel with its own read-only scoreboard
         // — bench questions never mix into the live organic-forecast list.
         <Box flexDirection="column" flexGrow={1} flexShrink={1} minHeight={0}>
@@ -1721,6 +1816,7 @@ export function SweepStatusLine({
     // tail (the same graphic the chat header floats). Both ride the desk's existing
     // `now` tick (500ms), so no new timer is introduced.
     const swept = sweepColor(sweepStops(t), now)
+
     return (
       <Text wrap="truncate-end">
         <Text color={swept}>{`${spinnerFrame(now)} sweeping ${dueCount} due… `}</Text>
@@ -1730,16 +1826,19 @@ export function SweepStatusLine({
   }
 
   const due = reviews?.due_count ?? 0
+
   if (due <= 0) {
     return null
   }
 
   const sweeper = reviews?.sweeper
+
   if (sweeper?.enabled) {
     const tickAt = sweeper.next_tick_at ? Date.parse(sweeper.next_tick_at) : NaN
     const nowMs = Date.now()
     const imminent = !Number.isFinite(tickAt) || tickAt <= nowMs || tickAt - nowMs < 60000
     const label = imminent ? 'next sweep <1m' : `next sweep in ${Math.ceil((tickAt - nowMs) / 60000)}m`
+
     return (
       <Text color={t.color.muted} wrap="truncate-end">
         {`${label} · ${due} due`}
@@ -1775,6 +1874,7 @@ export function AgentProgressLine({
   if (!agent) {
     return null
   }
+
   const inner = Math.max(16, width - 2)
   const label = agent.mode === 'task' ? 'task' : 'agent'
   const title = agent.current?.title ? ` · ${agent.current.title}` : ''
@@ -1783,6 +1883,7 @@ export function AgentProgressLine({
   // often no `current`) reads the latest progress[] note instead.
   const detail = agent.mode === 'task' && agent.note ? ` · ${agent.note}` : `${title}${stage}`
   const line = `🧠 ${label} ${agent.done}/${agent.total}${detail}`
+
   return (
     <Text color={sweepColor(sweepStops(t), now)} wrap="truncate-end">
       {truncate(line, inner)}
@@ -1821,22 +1922,28 @@ export function DeskTaskModal({
       if (key.escape) {
         return onCancel()
       }
+
       if (key.return) {
         // A bare Enter submits. (Multiline instructions arrive via paste — a pasted
         // chunk carries its own embedded newlines, with key.return unset.)
         const trimmed = value.trim()
+
         if (trimmed) {
           onSubmit(trimmed)
         }
+
         return
       }
+
       if (key.backspace || key.delete) {
         return setValue(v => v.slice(0, -1))
       }
+
       if (ch && !key.ctrl && !key.meta) {
         // Accept printable chars AND embedded newlines (bracketed paste) so a
         // multiline instruction survives intact.
         const printable = [...ch].filter(c => c >= ' ' || c === '\n').join('')
+
         if (printable) {
           setValue(v => v + printable)
         }
@@ -1899,9 +2006,11 @@ const NEXT_ACTION_BADGE: Record<string, string> = {
 
 export function NextBestActions({ actions, t, width }: { actions: ForecastNextAction[]; t: Theme; width: number }) {
   const top = (actions ?? []).slice(0, 3)
+
   if (!top.length) {
     return null
   }
+
   const badgeColor = (action: string | undefined): string =>
     action === 'add_sources' ? t.color.warn : action === 'review_due' ? t.color.ok : t.color.accent
 
@@ -1962,6 +2071,7 @@ export function DeskSummary({
   // when there ARE actions (NextBestActions renders null otherwise, so no dangling
   // rule). When nothing is inspected the block still leads (it is all there is).
   const hasActions = (nextActions ?? []).length > 0
+
   const trailingActions = hasActions ? (
     <Box flexDirection="column" marginTop={1}>
       <Text color={semantics(t).rule}>{'─'.repeat(inner)}</Text>
@@ -2010,6 +2120,7 @@ export function DeskSummary({
   // Adapt the graph height to the terminal so the rest of the skinny panel (counts,
   // freshness, close, teaser) never gets pushed past the bottom on a short screen.
   const chartHeight = Math.max(4, Math.min(7, (rows ?? 28) - 16))
+
   const chart = hasSeries
     ? bandChart(bandPoints, { height: chartHeight, width: inner, yMax, yMin })
     : null
@@ -2162,6 +2273,7 @@ function LensSummary({
   const fullBandPoints = refFactor
     ? (refFactor.history ?? []).map(p => ({ hi: p.band_high ?? null, lo: p.band_low ?? null, y: p.headline_probability ?? null }))
     : (refThesis?.history ?? []).map(p => ({ y: p.headline_probability ?? null }))
+
   const hasSeries = fullBandPoints.some(p => finite(p.y))
   // Thin a dense dot-strip to its material moves (≤15 dots); data untouched.
   const preview = downsampleSeries(fullBandPoints.map(p => p.y))
@@ -2278,6 +2390,7 @@ function DeskLensRow({
   // health carries "%", score carries "/100" so they can't be read as the same
   // kind of number even when their values are close ("health 54% · score 54/100").
   let agg = ''
+
   if (refThesis) {
     const health = refThesis.health_probability
     agg = `health ${refThesis.health_display ?? (finite(health) ? pct(health) : '—')} · score ${scoreText(refThesis.thesis_score)}`
@@ -2287,6 +2400,7 @@ function DeskLensRow({
   }
 
   const titleW = Math.max(8, width - agg.length - 18)
+
   return (
     <Box marginBottom={1} onClick={onOpen}>
       <Text backgroundColor={active ? t.color.selectionBg : undefined} bold wrap="truncate-end">
@@ -2379,7 +2493,7 @@ function LensHeader({
 // Desk column specs, sort-key comparables, and per-cell colour+text formatters
 // live in ./desk/cells.js; re-exported so callers/tests import them from deskView.
 export { deskCellText, deskSortValue, dueNowCell, SORT_MODE_LABELS }
-export type { DeskSweepCtx } from './desk/cells.js'
+export type { AgentJob, MassOutcome, MassTally, RefreshJob } from './desk/jobs.js'
 
 export function DeskForecastList({
   cursor,
@@ -2473,8 +2587,10 @@ export function DeskForecastList({
     const sensSlot = pinnedThesis ? 8 : 0
     const keep = new Set<string>(['q'])
     let usedW = 2 + satGutter // cursor marker + optional saturation gutter
+
     for (const key of DESK_PRIORITY) {
       const c = DESK_COLS.find(col => col.key === key)
+
       if (c && usedW + c.w + 1 <= avail - QMIN) {
         keep.add(key)
         usedW += c.w + 1
@@ -2497,6 +2613,7 @@ export function DeskForecastList({
 
     return { avail, colWidth, keptCols, satGutter, sem, sensSlot, showTrend, trendW }
   }, [t, width, hasUnderSaturated, pinnedThesis])
+
   const { avail, colWidth, keptCols, satGutter, sem, sensSlot, showTrend, trendW } = layout
 
   // Thesis lens only: member_id → its ∂P(event)/∂p_i swing (as a signed pp), read
@@ -2504,11 +2621,13 @@ export function DeskForecastList({
   // matters" marker each member row shows. Empty on every other lens (no marker).
   const sensByMember = useMemo(() => {
     const map = new Map<string, number>()
+
     for (const s of pinnedThesis?.top_sensitivities ?? []) {
       if (s.member_id != null && finite(s.delta_p_event)) {
         map.set(s.member_id, s.delta_p_event! * 100)
       }
     }
+
     return map
   }, [pinnedThesis])
 
@@ -2561,8 +2680,8 @@ export function DeskForecastList({
         <Box onClick={onPinnedSelect} width={width}>
           <DeskThesisRow
             active={pinnedActive}
-            colWidth={colWidth}
             cols={keptCols}
+            colWidth={colWidth}
             nowMs={nowMs}
             satGutter={satGutter}
             sem={sem}
@@ -2581,19 +2700,19 @@ export function DeskForecastList({
           <Box key={item.id ?? `fc:${index}`} onClick={() => onSelect(index)} width={width}>
             <DeskListRow
               active={index === cursor}
-              colWidth={colWidth}
               cols={keptCols}
+              colWidth={colWidth}
               item={item}
               marked={markedIds.has(item.id ?? '')}
               nowMs={nowMs}
               running={runningIds.has(item.id ?? '')}
               runningNow={runningId !== null && runningId === item.id}
-              sensSlot={sensSlot}
-              sensitivityPp={sensByMember.size ? sensByMember.get(item.id ?? '') ?? null : null}
-              spinFrame={runningId !== null && runningId === item.id ? spinTick : 0}
               satGutter={satGutter}
               sem={sem}
+              sensitivityPp={sensByMember.size ? sensByMember.get(item.id ?? '') ?? null : null}
+              sensSlot={sensSlot}
               showTrend={showTrend}
+              spinFrame={runningId !== null && runningId === item.id ? spinTick : 0}
               sweep={sweep}
               t={t}
               trendW={trendW}
@@ -2689,13 +2808,16 @@ const DeskListRow = memo(function DeskListRow({
   // 1-month level trend: the headline series on a fixed 0..1 scale for binaries,
   // auto-zoomed to the data range for distributions (μ is not a 0..1 quantity).
   const sparkValues = (item.history ?? []).slice(-trendW).map(point => point.headline_probability ?? null)
+
   const sparkOpts =
     item.headline_kind === 'distribution'
       ? (() => {
           const fv = sparkValues.filter((v): v is number => finite(v))
+
           return fv.length ? { yMax: Math.max(...fv), yMin: Math.min(...fv) } : {}
         })()
       : {}
+
   const trend = showTrend ? levelSparkline(sparkValues, sparkOpts) : ''
   const trendColor = dirColor(sem, item.delta ?? windows['1mo'])
 
@@ -2703,6 +2825,7 @@ const DeskListRow = memo(function DeskListRow({
   // A dim trailing marker for an under-saturated forecast (Wave 3). Appended like
   // the alert badge so the healthy case never widens the dense table.
   const underSaturated = item.saturation_below_threshold === true
+
   // Thesis lens: the member's signed ∂P(event) swing (in pp), shown IN the trend
   // slot (its reserved width, so it never truncates) IN PLACE of the 1MO spark —
   // on a thesis lens "which race moves the event" outranks the member's own spark.
@@ -2785,16 +2908,21 @@ const DeskListRow = memo(function DeskListRow({
 // value the series ends on). Absent both → null → '—'.
 const thesisHeadline = (thesis: ForecastThesis): null | number => {
   const direct = thesis.headline_probability
+
   if (finite(direct)) {
     return direct
   }
+
   const hist = thesis.history ?? []
+
   for (let i = hist.length - 1; i >= 0; i -= 1) {
     const y = hist[i]?.headline_probability
+
     if (finite(y)) {
       return y
     }
   }
+
   return null
 }
 
@@ -2843,6 +2971,7 @@ export const thesisCellText = (
   nowMs: number
 ): { color: string; text: string } => {
   const item = thesisAsItem(thesis)
+
   switch (key) {
     case 'q':
       return { color: t.color.accent, text: item.title ?? item.id ?? 'thesis' }
@@ -2851,6 +2980,7 @@ export const thesisCellText = (
       return { color: t.color.accent, text: headlineCompact(item, 2) }
 
     case '1d':
+
     case '1mo':
     case '1w': {
       // The number/colour comes from the precomputed regime-aware window. When it
@@ -2859,12 +2989,15 @@ export const thesisCellText = (
       // when the only in-window baseline predates the event-config regime switch,
       // so there is no same-regime comparison yet (never a cross-regime lie).
       const value = windows[key]
+
       if (value === null) {
         const days = key === '1d' ? 1 : key === '1w' ? 7 : 30
+
         if (windowDeltaDetail(thesis.history, nowMs, days).newSeries) {
           return { color: sem.subtle, text: '—ⁿ' }
         }
       }
+
       return deskCellText(key, item, sem, t, windows, nowMs, undefined)
     }
 
@@ -2994,8 +3127,9 @@ const benchBrierText = (value: null | number | undefined): string =>
 // EDGE = market Brier − agent Brier; positive (green) = the agent beat the
 // honest market freeze on Brier. Neutral when either leg is missing.
 const benchEdgeCell = (edge: null | number | undefined, t: Theme): { color: string; text: string } => {
-  if (edge === null || edge === undefined || !finite(edge)) return { color: t.color.muted, text: '—' }
+  if (edge === null || edge === undefined || !finite(edge)) {return { color: t.color.muted, text: '—' }}
   const sign = edge > 0 ? '+' : ''
+
   return { color: Math.abs(edge) < 0.0005 ? t.color.muted : edge > 0 ? t.color.ok : t.color.error, text: `${sign}${edge.toFixed(3)}` }
 }
 
@@ -3082,6 +3216,7 @@ function BenchScoreboard({
         const e = benchEdgeCell(row.brier_edge, t)
         const outText = !row.resolved || row.outcome === null || row.outcome === undefined ? '—' : row.outcome >= 0.5 ? '1' : '0'
         const outColor = outText === '1' ? t.color.ok : outText === '0' ? t.color.error : t.color.muted
+
         return (
           <Text key={row.id} wrap="truncate-end">
             <Text color={t.color.label}>{pad(truncate(row.title ?? row.id, qW), qW, 'left')}</Text>

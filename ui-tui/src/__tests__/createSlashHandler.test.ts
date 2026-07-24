@@ -95,6 +95,7 @@ describe('createSlashHandler', () => {
 
   it('runs the in-TUI device-code sign-in for /auth and reports success', async () => {
     patchUiState({ sid: 'sid-auth' })
+
     const rpc = vi.fn((method: string) => {
       if (method === 'auth.start') {
         return Promise.resolve({
@@ -111,6 +112,7 @@ describe('createSlashHandler', () => {
 
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/auth')).toBe(true)
@@ -232,6 +234,7 @@ describe('createSlashHandler', () => {
 
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/questions')).toBe(true)
@@ -275,6 +278,7 @@ describe('createSlashHandler', () => {
           }
         })
       }
+
       if (method === 'forecast.question') {
         return Promise.resolve({
           packet: {
@@ -295,6 +299,7 @@ describe('createSlashHandler', () => {
 
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/questions 2')).toBe(true)
@@ -333,6 +338,7 @@ describe('createSlashHandler', () => {
 
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/questions inflation energy')).toBe(true)
@@ -374,9 +380,11 @@ describe('createSlashHandler', () => {
           }
         })
       }
+
       if (method === 'forecast.command') {
         return Promise.resolve({ code: 0, output: `ran ${params.arg}` })
       }
+
       if (method === 'forecast.question') {
         return Promise.resolve({
           packet: {
@@ -395,6 +403,7 @@ describe('createSlashHandler', () => {
 
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
     const handler = createSlashHandler(ctx)
 
@@ -454,8 +463,10 @@ describe('createSlashHandler', () => {
           }
         })
       }
+
       return Promise.resolve({ output: 'ok' })
     })
+
     const handler = createSlashHandler(buildCtx({ gateway: { ...buildGateway(), rpc } }))
 
     expect(handler('/rerun fq_cpi')).toBe(true)
@@ -481,6 +492,7 @@ describe('createSlashHandler', () => {
         }
       })
     )
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/book')).toBe(true)
@@ -504,6 +516,7 @@ describe('createSlashHandler', () => {
         }
       })
     )
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/ledger evidence')).toBe(true)
@@ -536,6 +549,7 @@ describe('createSlashHandler', () => {
         }
       })
     )
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/4')).toBe(true)
@@ -553,6 +567,7 @@ describe('createSlashHandler', () => {
       if (method === 'forecast.command') {
         return Promise.resolve({ code: 0, output: 'created forecast question fq_123' })
       }
+
       if (method === 'forecast.dashboard') {
         return Promise.resolve({
           summary: {
@@ -567,6 +582,7 @@ describe('createSlashHandler', () => {
 
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/forecast new "Will X happen?" --resolution-criteria "Resolved by source"')).toBe(true)
@@ -651,6 +667,7 @@ describe('createSlashHandler', () => {
 
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/review')).toBe(true)
@@ -841,6 +858,7 @@ describe('createSlashHandler', () => {
 
   it('applies /reasoning hide to the thinking section immediately', async () => {
     patchUiState({ sections: { thinking: 'expanded' }, showReasoning: true, sid: 'sid-abc' })
+
     const ctx = buildCtx({
       gateway: {
         ...buildGateway(),
@@ -863,6 +881,7 @@ describe('createSlashHandler', () => {
 
   it('applies /reasoning show to the thinking section immediately', async () => {
     patchUiState({ sections: { thinking: 'hidden' }, showReasoning: false, sid: 'sid-abc' })
+
     const ctx = buildCtx({
       gateway: {
         ...buildGateway(),
@@ -954,11 +973,14 @@ describe('createSlashHandler', () => {
       if (method === 'skills.reload') {
         return Promise.resolve({ output: '42 skill(s) available' })
       }
+
       if (method === 'commands.catalog') {
         return Promise.resolve({ canon: { '/new-skill': '/new-skill' }, pairs: [['/new-skill', 'demo']] })
       }
+
       return Promise.resolve({})
     })
+
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     createSlashHandler(ctx)('/reload-skills')

@@ -3,6 +3,7 @@ import { useStore } from '@nanostores/react'
 import { useEffect, useRef } from 'react'
 
 import { TYPING_IDLE_MS } from '../config/timing.js'
+import { resolveViewChord } from '../content/keymaps.js'
 import type {
   ApprovalRespondResponse,
   ConfigSetResponse,
@@ -17,8 +18,6 @@ import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platfo
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { dismissFirstRunHint } from '../lib/uiFlagsStore.js'
 import { computeWheelStep, initWheelAccelForHost } from '../lib/wheelAccel.js'
-
-import { resolveViewChord } from '../content/keymaps.js'
 
 import { $chordPending, armChord, clearChord } from './chordStore.js'
 import { getHomeFocus, type HomePane, setHomePane } from './homeFocusStore.js'
@@ -287,8 +286,10 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // which clears the speaking audiogram.
     if (voice.speaking) {
       gateway.rpc('voice.stop', { session_id: getUiState().sid }).catch(() => {})
+
       return
     }
+
     if (!voice.enabled) {
       return actions.sys('voice: mode is off — enable with /voice on')
     }

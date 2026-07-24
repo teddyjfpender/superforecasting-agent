@@ -89,6 +89,7 @@ def test_classifier_ports_the_desk_client_logic():
     assert classify_refresh_status("committed") == "refreshed"
     assert classify_refresh_status("re_pooled") == "refreshed"
     assert classify_refresh_status("carry_forward") == "refreshed"
+    assert classify_refresh_status("needs_estimation") == "needs_estimation"
     assert classify_refresh_status("no_change") == "unchanged"
     assert classify_refresh_status("no_watched_sources") == "no_sources"
     assert classify_refresh_status(None) == "refreshed"
@@ -117,6 +118,7 @@ def test_mixed_outcomes_roll_into_an_honest_tally(home, monkeypatch):
     # no-sources, 1 error.
     assert record.result["tally"] == {
         "refreshed": 1,
+        "needs_estimation": 0,
         "unchanged": 1,
         "no_sources": 1,
         "error": 1,
@@ -199,6 +201,7 @@ def test_empty_batch_is_a_clean_no_op(home, monkeypatch):
     assert record.result["total"] == 0
     assert record.result["tally"] == {
         "refreshed": 0,
+        "needs_estimation": 0,
         "unchanged": 0,
         "no_sources": 0,
         "error": 0,

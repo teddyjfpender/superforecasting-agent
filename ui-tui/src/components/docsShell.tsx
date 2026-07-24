@@ -1,7 +1,8 @@
 import { Box, NoSelect, Text } from '@hermes/ink'
 
-import type { DocKind } from './docsView.js'
 import type { Theme } from '../theme.js'
+
+import type { DocKind } from './docsView.js'
 
 // ── Shared Docs chrome ────────────────────────────────────────────────────
 // Both Docs branches (Markdown vault + LaTeX workspace) wear the same shell so
@@ -130,7 +131,7 @@ export function DocsKindTabs({
     const on = kind === k
 
     return (
-      <Box onClick={() => { if (!disabled) onSelect(k) }}>
+      <Box onClick={() => { if (!disabled) {onSelect(k)} }}>
         <Text bold={on} color={on ? t.color.accent : t.color.muted}>
           {`${on ? '▸ ' : '  '}${key} ${label}`}
         </Text>

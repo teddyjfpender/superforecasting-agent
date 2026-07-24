@@ -1101,11 +1101,13 @@ export function TextInput({
         if (e.button === 2) {
           e.stopImmediatePropagation?.()
           const decision = decideRightClickAction(vRef.current, selRange())
+
           if (decision.action === 'copy') {
             void writeClipboardText(decision.text)
 
             return
           }
+
           emitPaste({ cursor: curRef.current, hotkey: true, text: '', value: vRef.current })
 
           return
@@ -1198,10 +1200,12 @@ export function decideRightClickAction(
 ): RightClickDecision {
   if (range && range.end > range.start) {
     const text = value.slice(range.start, range.end)
+
     if (text) {
       return { action: 'copy', text }
     }
   }
+
   return { action: 'paste' }
 }
 

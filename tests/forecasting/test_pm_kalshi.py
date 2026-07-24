@@ -155,6 +155,39 @@ def test_text_query_paginates_the_catalog():
     assert any("/events/" in c for c in calls), "matches hydrate via the detail path"
 
 
+def test_catalog_paginates_and_indexes_nested_markets():
+    calls: list[str] = []
+
+    def fetch(url, **kw):
+        calls.append(url)
+        if "cursor=next" in url:
+            return {
+                "events": [{"event_ticker": "KXCPI-2", "title": "July CPI", "series_ticker": "KXCPI"}],
+                "cursor": "",
+            }
+        return {
+            "events": [{
+                "event_ticker": "KXCPI-1",
+                "title": "June CPI",
+                "series_ticker": "KXCPI",
+                "markets": [{
+                    "ticker": "KXCPI-1-T3.1",
+                    "title": "Will CPI exceed 3.1%?",
+                    "yes_sub_title": "Above 3.1%",
+                    "volume_fp": "42",
+                }],
+            }],
+            "cursor": "next",
+        }
+
+    rows = kal.KalshiClient(fetch=fetch).catalog_events()
+    assert [row["event_id"] for row in rows] == ["KXCPI-1", "KXCPI-2"]
+    assert len(calls) == 2
+    assert all("with_nested_markets=true" in url for url in calls)
+    assert rows[0]["market_count"] == 1 and rows[0]["volume"] == 42
+    assert "will cpi exceed 3.1%" in rows[0]["search"]
+
+
 def test_untraded_market_last_price_zero_is_no_estimate():
     """Kalshi reports last_price=0 for untraded markets: that is 'no trade',
     never a 0.00% probability (with a 0/100 book the degenerate guard already

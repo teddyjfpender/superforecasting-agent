@@ -540,6 +540,7 @@ export function useVirtualHistory(
     if (s && vp > 0 && n > 0 && pendingDelta === 0 && !sticky) {
       const anchor = topAnchorRef.current
       const manualAt = s.getLastManualScrollAt()
+
       // Only compensate when the anchor is intact AND the user has NOT scrolled
       // since it was captured — otherwise this is a real scroll to follow, not an
       // offsets shift to absorb, and re-pinning would undo the user's movement.

@@ -558,6 +558,13 @@ class AlertEvent:
     # which makes an automatic close auditable and visibly distinct from an operator
     # ack (leaves ``ack_note`` NULL) and from a human dismissal (sets ``dismissed_at``).
     ack_note: str | None = None
+    # Stable condition identity used for database-enforced open-alert dedup.
+    # ``reason`` remains the human-readable event text and may include changing
+    # detail; ``alert_key`` strips that volatility for queue semantics.
+    alert_key: str | None = None
+    # Machine-readable closure semantics. Unlike ``acknowledged_at``, this says
+    # what actually disposed of the condition.
+    disposition: str | None = None
 
     @property
     def is_dismissed(self) -> bool:

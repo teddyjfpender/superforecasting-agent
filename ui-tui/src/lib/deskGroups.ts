@@ -16,14 +16,15 @@ import type {
   ForecastWorkspaceResponse,
 } from '../gatewayTypes.js'
 
-export type DeskTabKind = 'thesis' | 'factor' | 'tag' | 'bench' | 'all'
+export type DeskTabKind = 'thesis' | 'factor' | 'tag' | 'bench' | 'operations' | 'all'
 
 /** True when a forecast is a ForecastBench backtest replay (domain isolation, with a
  *  tag fallback) — these belong in the separate read-only "Bench" lens, NOT the live
  *  organic-forecast list. Mirrors the gateway's `build_bench_scoreboard` selector. */
 export function isBenchForecast(item: ForecastWorkspaceItem): boolean {
-  if ((item.domain || '').trim().toLowerCase() === 'forecastbench') return true
+  if ((item.domain || '').trim().toLowerCase() === 'forecastbench') {return true}
   const tags = (item.topics || []).map((t) => (t || '').trim().toLowerCase())
+
   return tags.includes('bench') || tags.includes('forecastbench')
 }
 
@@ -49,8 +50,11 @@ export function shortLensLabel(title: string, max = 18): string {
   const cleaned = (title || '').replace(LABEL_NOISE, ' ').replace(/\s+/g, ' ').trim()
   const words = cleaned.split(' ').filter((w) => w && !LABEL_STOP.has(w.toLowerCase()))
   let out = words.slice(0, 3).join(' ')
-  if (out.length > max) out = words.slice(0, 2).join(' ')
-  if (out.length > max) out = `${out.slice(0, max - 1)}…`
+
+  if (out.length > max) {out = words.slice(0, 2).join(' ')}
+
+  if (out.length > max) {out = `${out.slice(0, max - 1)}…`}
+
   return out || (title || 'Lens').slice(0, max)
 }
 
@@ -69,6 +73,7 @@ export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
 
   const tabs: DeskTab[] = []
   const grouped = new Set<string>()
+
   for (const th of orderedTheses) {
     const ids = keep(th.question_ids)
     ids.forEach((id) => grouped.add(id))
@@ -88,13 +93,16 @@ export function buildDeskTabs(payload: ForecastWorkspaceResponse): DeskTab[] {
   // excludes only the carved-out bench replays (not organic live forecasts).
   const allIds = forecasts.map((f) => f.id || '').filter((id) => id && !benchIds.includes(id))
   tabs.push({ key: 'all', label: 'All', kind: 'all', forecastIds: allIds })
+  tabs.push({ key: 'operations', label: 'Operations', kind: 'operations', forecastIds: [] })
+
   return tabs
 }
 
 /** Resolve a tab's forecast ids to the item objects, preserving order. */
 export function forecastsForTab(tab: DeskTab | undefined, forecasts: ForecastWorkspaceItem[]): ForecastWorkspaceItem[] {
-  if (!tab) return []
+  if (!tab) {return []}
   const byId = new Map(forecasts.map((f) => [f.id || '', f]))
+
   return tab.forecastIds.map((id) => byId.get(id)).filter((f): f is ForecastWorkspaceItem => !!f)
 }
 
@@ -104,15 +112,18 @@ export function forecastsForTab(tab: DeskTab | undefined, forecasts: ForecastWor
  *  (Markets gets away with rendering all ~10 hard-coded categories). */
 export function tabWindow(labelWidths: number[], active: number, maxWidth: number, sep = 3): { start: number; end: number } {
   const n = labelWidths.length
-  if (n === 0) return { start: 0, end: 0 }
+
+  if (n === 0) {return { start: 0, end: 0 }}
   const a = Math.max(0, Math.min(active, n - 1))
   const budget = Math.max(labelWidths[a], maxWidth - 6) // leave room for the ‹ › overflow markers + their spaces
   let start = a
   let end = a + 1
   let used = labelWidths[a]
+
   for (;;) {
     const left = start > 0 ? used + sep + labelWidths[start - 1] : Number.POSITIVE_INFINITY
     const right = end < n ? used + sep + labelWidths[end] : Number.POSITIVE_INFINITY
+
     if (right <= budget && right <= left) {
       used = right
       end += 1
@@ -123,15 +134,19 @@ export function tabWindow(labelWidths: number[], active: number, maxWidth: numbe
       break
     }
   }
+
   return { start, end }
 }
 
 /** The thesis/factor whose aggregate read heads the skinny panel for a lens tab. */
 export function tabRefThesis(tab: DeskTab | undefined, theses: ForecastThesis[] = []): ForecastThesis | undefined {
-  if (!tab || tab.kind !== 'thesis') return undefined
+  if (!tab || tab.kind !== 'thesis') {return undefined}
+
   return theses.find((t) => t.id === tab.refId)
 }
+
 export function tabRefFactor(tab: DeskTab | undefined, factors: ForecastFactor[] = []): ForecastFactor | undefined {
-  if (!tab || tab.kind !== 'factor') return undefined
+  if (!tab || tab.kind !== 'factor') {return undefined}
+
   return factors.find((f) => f.id === tab.refId)
 }

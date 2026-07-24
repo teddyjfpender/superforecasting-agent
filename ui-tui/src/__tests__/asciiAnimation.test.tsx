@@ -32,6 +32,7 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
     setRawMode?: (mode: boolean) => void
     unref?: () => PassThrough
   }
+
   let output = ''
   Object.assign(stream, {
     columns,
@@ -62,6 +63,7 @@ const renderAnim = async (props: { active?: boolean } = {}) => {
 
   const stdout = writeStream(40, 10)
   const stdin = writeStream(40, 10, true)
+
   const instance = render(
     React.createElement(AsciiAnimation, { animation: FIXTURE, ...props }),
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }

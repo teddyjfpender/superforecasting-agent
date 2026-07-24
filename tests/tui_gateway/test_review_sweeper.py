@@ -64,6 +64,26 @@ def test_runs_the_sweep_when_due_and_emits_events(monkeypatch, tmp_path):
     # State file recorded the run for `forecast doctor`.
     state = cr.read_review_sweeper_state()
     assert state["ran"] is True and state["due_count"] == 2
+    assert state["running"] is False
+    assert state["last_sweep_started_at"] == "2026-07-02T12:00:00Z"
+    assert state["last_sweep_completed_at"]
+
+
+def test_persists_in_flight_state_before_slow_sweep(monkeypatch, tmp_path):
+    events, calls = _reset(monkeypatch, tmp_path, due=2)
+
+    def inspect_in_flight(*args, **kwargs):
+        state = cr.read_review_sweeper_state()
+        assert state["running"] is True
+        assert state["last_sweep_started_at"] == "2026-07-02T12:00:00Z"
+        calls.append(True)
+        return "alerts: 0\ncommitted: 0\n"
+
+    monkeypatch.setattr(cr, "run_due_reviews", inspect_in_flight)
+    result = server._run_review_sweep(now="2026-07-02T12:00:00Z")
+
+    assert result["running"] is False
+    assert calls == [True]
 
 
 def test_skips_when_nothing_due(monkeypatch, tmp_path):

@@ -301,6 +301,7 @@ const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<
   process.env.FORECAST_TUI_INLINE = '1'
   const home = homeOverride ?? mkdtempSync(join(tmpdir(), 'pm-section-'))
   process.env.SUPERFORECASTING_AGENT_HOME = home
+
   if (!homeOverride) {
     writeFileSync(join(home, 'markets.json'), JSON.stringify({ categories: [], custom: [], providers, watchlist: [] }))
   }
@@ -330,6 +331,7 @@ const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<
     cleanup: (keepHome = false) => {
       instance.unmount?.()
       instance.cleanup?.()
+
       if (!keepHome) {
         rmSync(home, { force: true, recursive: true })
       }
@@ -660,6 +662,7 @@ describe('deep venue search via /', () => {
     const calls: Call[] = []
     const gw = fakeGw(calls)
     const base = gw.request.bind(gw)
+
     // The weather event exists ONLY behind a server query — never in the
     // browse page (it sits thousands of events deep in the real catalogs).
     gw.request = (method: string, params: Record<string, unknown> = {}) => {
@@ -676,6 +679,7 @@ describe('deep venue search via /', () => {
 
       return base(method, params)
     }
+
     const m = await mount(['predictionmarkets'], gw)
     expect(m.text()).not.toContain('Max weather')
     await m.press('/')
@@ -694,6 +698,7 @@ describe('discovered markets persist', () => {
     const calls: Call[] = []
     const gw = fakeGw(calls)
     const base = gw.request.bind(gw)
+
     const wxItem = () => {
       const wx = fedItem()
       wx.distribution.event_id = 'WX'
@@ -703,12 +708,14 @@ describe('discovered markets persist', () => {
 
       return wx
     }
+
     gw.request = (method: string, params: Record<string, unknown> = {}) => {
       if (method === 'pm.list' && typeof params.query === 'string') {
         calls.push({ method, params })
 
         return Promise.resolve({ count: 1, events: [wxItem()] })
       }
+
       if (method === 'pm.detail' && params.event_id === 'WX') {
         calls.push({ method, params })
         const it = wxItem()
@@ -718,6 +725,7 @@ describe('discovered markets persist', () => {
 
       return base(method, params)
     }
+
     const m = await mount(['predictionmarkets'], gw)
     await m.press('/')
     await m.press('weather')
@@ -750,6 +758,7 @@ const wxGw = () => {
   const calls: Call[] = []
   const gw = fakeGw(calls)
   const base = gw.request.bind(gw)
+
   const wxItem = () => {
     const wx = fedItem() // kalshi binary base
     wx.distribution.event_id = 'WX'
@@ -759,12 +768,14 @@ const wxGw = () => {
 
     return wx
   }
+
   gw.request = (method: string, params: Record<string, unknown> = {}) => {
     if (method === 'pm.list' && typeof params.query === 'string') {
       calls.push({ method, params })
 
       return Promise.resolve({ count: 1, events: [wxItem()] })
     }
+
     if (method === 'pm.detail' && params.event_id === 'WX') {
       calls.push({ method, params })
       const it = wxItem()
@@ -856,6 +867,7 @@ describe('hydration fans out pm.detail in bounded batches', () => {
     let maxInFlight = 0
     const gw = fakeGw([])
     const base = gw.request.bind(gw)
+
     gw.request = (method: string, params: Record<string, unknown> = {}) => {
       if (method === 'pm.detail' && typeof params.event_id === 'string' && params.event_id.startsWith('SV-')) {
         inFlight++
@@ -892,6 +904,7 @@ describe('first-open loading state (no 0-events flash)', () => {
     const gw = fakeGw([])
     const base = gw.request.bind(gw)
     let releaseList: ((v: unknown) => void) | null = null
+
     gw.request = (method: string, params: Record<string, unknown> = {}) => {
       if (method === 'pm.list' && !params.query) {
         return new Promise(resolve => {

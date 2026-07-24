@@ -6,11 +6,30 @@ from __future__ import annotations
 from pathlib import Path
 
 from forecasting.scheduler import (
+    SOURCE_ESTIMATOR_CRON_SCRIPT,
     WARNING_AUTOMODE_CRON_SCRIPT,
+    install_source_estimator_cron,
+    remove_source_estimator_cron,
+    source_estimator_cron_status,
     install_warning_automode_cron,
     remove_warning_automode_cron,
     warning_automode_cron_status,
 )
+
+
+def test_source_estimator_has_its_own_no_agent_job_and_script(tmp_path):
+    assert source_estimator_cron_status()["installed"] is False
+    job = install_source_estimator_cron(schedule="every 15 minutes")
+    assert job["no_agent"] is True
+    assert job["script"] == SOURCE_ESTIMATOR_CRON_SCRIPT
+    from hermes_constants import get_hermes_home
+
+    body = (
+        get_hermes_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT
+    ).read_text(encoding="utf-8")
+    assert "main_source_estimator" in body
+    assert source_estimator_cron_status()["installed"] is True
+    assert remove_source_estimator_cron() == 1
 
 
 def test_start_installs_a_no_agent_job_and_script(tmp_path):

@@ -37,6 +37,7 @@ const writeStream = (columns: number, rows: number, isTTY = true) => {
 }
 
 const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
+
 const noop = () => {}
 
 const actions: any = {
@@ -87,6 +88,7 @@ const setup = async () => {
     import('../app/gatewayContext.js'),
     import('@hermes/ink')
   ])
+
   const { resetOverlayState } = await import('../app/overlayStore.js')
   const { resetUiState } = await import('../app/uiStore.js')
   const { $composerText, setComposerInput } = await import('../app/composerTextStore.js')
@@ -107,6 +109,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
     // captured frame. Many more rows than fit the viewport, so the list
     // overflows and scrolls.
     const label = (i: number) => `ZZ${i}zz`
+
     const sessions = Array.from({ length: 40 }, (_, i) => ({
       id: `s${i}`,
       message_count: 1,
@@ -126,6 +129,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
     const railScrollRef = React.createRef<any>()
     const scrollRef = React.createRef<any>()
     const msg = { role: 'user' as const, text: 'hello world' }
+
     const transcript: any = {
       historyItems: [msg],
       railScrollRef,
@@ -135,6 +139,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
     }
 
     const gwValue = { gw, rpc: gw.rpc }
+
     const App = ({ cols }: { cols: number }) =>
       React.createElement(
         Box,
@@ -154,12 +159,14 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
       )
 
     const out = writeStream(COLS, ROWS)
+
     const instance: any = await render(React.createElement(App, { cols: COLS }), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdin: writeStream(COLS, ROWS, true).stream,
       stdout: out.stream
     })
+
     await tick(200)
 
     // The rail is a real, bounded, overflowing ScrollBox (content > viewport).
@@ -212,6 +219,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
       role: (i % 2 ? 'assistant' : 'user') as const,
       text: `message number ${i} with several words to force some real height here`
     }))
+
     const sessions = Array.from({ length: 40 }, (_, i) => ({
       id: `s${i}`,
       message_count: 1,
@@ -230,6 +238,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
 
     const railScrollRef = React.createRef<any>()
     const scrollRef = React.createRef<any>()
+
     const transcript: any = {
       historyItems: items,
       railScrollRef,
@@ -253,6 +262,7 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
     // must not re-blit under it.
     const setInput = (s: string) => setComposerInput(s)
     const composer = buildComposer(COLS)
+
     const App = () =>
       React.createElement(
         Box,
@@ -272,12 +282,14 @@ describe('Home two-pane: Recents rail scrolls; composer keystrokes never flash',
       )
 
     const out = writeStream(COLS, ROWS)
+
     const instance: any = await render(React.createElement(App), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdin: writeStream(COLS, ROWS, true).stream,
       stdout: out.stream
     })
+
     await tick(250)
 
     // ERASE_SCREEN (CSI 2 J) is the full-repaint "flash" signal.

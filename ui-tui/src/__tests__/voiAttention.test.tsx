@@ -17,6 +17,7 @@ const writeStream = (columns: number, rows: number) => {
   stream.on('data', chunk => {
     output += chunk.toString()
   })
+
   return { stream, text: () => output }
 }
 
@@ -54,11 +55,13 @@ describe('NextBestActions block', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const stdout = writeStream(120, 40)
     renderSync(
       React.createElement(NextBestActions, { actions, t: DARK_THEME, width: 44 }),
       { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
     )
+
     return normalize(stdout.text(), stripAnsi)
   }
 
@@ -118,6 +121,7 @@ describe('thesis-lens sensitivity marker', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const stdout = writeStream(112, 40)
     renderSync(
       React.createElement(DeskForecastList as never, {
@@ -137,6 +141,7 @@ describe('thesis-lens sensitivity marker', () => {
       } as never),
       { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
     )
+
     return normalize(stdout.text(), stripAnsi)
   }
 

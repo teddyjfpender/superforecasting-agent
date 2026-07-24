@@ -3,7 +3,6 @@ import React from 'react'
 import { c as _c } from 'react/compiler-runtime'
 
 import { tuiEnvValue } from '../../utils/envAlias.js'
-
 import type { Color, Styles } from '../styles.js'
 
 const ENV_ON_RE = /^(?:1|true|yes|on)$/i

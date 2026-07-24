@@ -8,9 +8,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { openExternalUrl } from './openExternalUrl.js'
-import { type PMHistoryRange, type PMOutcomeDTO, type PMVenue,
-  fetchPMList,
-  type PMListItem
+import {
+  fetchPMListResult,
+  type PMHistoryRange,
+  type PMListItem,
+  type PMOutcomeDTO,
+  type PMVenue
 } from './pmData.js'
 import {
   DEFAULT_PM_FILTER,
@@ -20,10 +23,10 @@ import {
   PM_SORT_KEYS,
   type PMDisplayRow,
   pmExpandable,
-  pmRowId,
   type PmFilter,
   pmFilterActive,
   pmFilterSummary,
+  pmRowId,
   pmSortValue
 } from './pmRows.js'
 import { sortRows, type TableSortState, useTableSort } from './tableSort.js'
@@ -47,6 +50,7 @@ const POLL_MS = 30_000
 export interface PmSection {
   activeOutcome: null | PMOutcomeDTO
   book: ReturnType<typeof usePmSelectionData>['book']
+  catalog: ReturnType<typeof usePmList>['catalog']
   clampedSel: number
   cycleSort: () => void
   cycleVenue: () => void
@@ -56,6 +60,7 @@ export interface PmSection {
   // marks them; `x` removes them.
   discoveredKeys: ReadonlySet<string>
   expanded: ReadonlySet<string>
+  error: string
   filter: PmFilter
   filterActive: boolean
   filterSummary: string
@@ -120,7 +125,7 @@ export function usePmSection(
   const [sel, setSelState] = useState(0)
   const [historyRange, setHistoryRange] = useState<PMHistoryRange>('1w')
 
-  const { items, loaded, loading, reload, stale } = usePmList(gw, tabActive, venue)
+  const { catalog, error, items, loaded, loading, reload, stale } = usePmList(gw, tabActive, venue)
 
   // DISCOVERED events persist across sessions (deep '/' search compounds the
   // tape's coverage): the fold / persist / chunked-hydrate lifecycle lives in
@@ -147,38 +152,65 @@ export function usePmSection(
 
     setSearching(true)
     let cancelled = false
+
     const id = setTimeout(() => {
-      fetchPMList(gw, { limit: 30, query, ...(venue === 'all' ? {} : { venue }) })
-        .then(found => {
-          if (!cancelled) {
-            setSearchItems(found)
+      const run = async () => {
+        try {
+          // The first response is an instant local-catalog preview. Paint it
+          // immediately, then quietly poll while the gateway enriches those
+          // same rows with live venue probabilities out of band.
+          for (let attempt = 0; attempt < 12 && !cancelled; attempt += 1) {
+            const result = await fetchPMListResult(gw, {
+              limit: 200,
+              query,
+              ...(venue === 'all' ? {} : { venue })
+            })
+
+            if (cancelled) {
+              return
+            }
+
+            setSearchItems(result.items)
             setSearching(false)
-            foldDiscovered(found)
+            foldDiscovered(result.items)
+
+            if (!result.stale) {
+              return
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 400))
           }
-        })
-        .catch(() => {
+        } catch {
           if (!cancelled) {
             setSearchItems(null)
             setSearching(false)
           }
-        })
+        }
+      }
+
+      void run()
     }, 450)
 
     return () => {
       cancelled = true
       clearTimeout(id)
     }
+    // foldDiscovered intentionally stays out: usePmDiscovered returns a new
+    // closure per render, while this request lifecycle keys only on the query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gw, tabActive, query, venue])
 
   const pool = useMemo(() => {
     const seen = new Set(items.map(i => i.event.event_id))
     const merged = [...items]
+
     for (const item of discovered.values()) {
       if (!seen.has(item.event.event_id)) {
         seen.add(item.event.event_id)
         merged.push(item)
       }
     }
+
     for (const item of searchItems ?? []) {
       if (!seen.has(item.event.event_id)) {
         seen.add(item.event.event_id)
@@ -196,6 +228,7 @@ export function usePmSection(
   const discoveredKeys = useMemo(() => {
     const browse = new Set(items.map(i => i.event.event_id))
     const keys = new Set<string>()
+
     for (const item of discovered.values()) {
       if (!browse.has(item.event.event_id)) {
         keys.add(pmRowId(item))
@@ -393,12 +426,14 @@ export function usePmSection(
   return {
     activeOutcome,
     book,
+    catalog,
     clampedSel,
     cycleSort: sort.cycle,
     cycleVenue,
     detailItem,
     discoveredKeys,
     expanded,
+    error,
     filter,
     filterActive: pmFilterActive(filter),
     filterSummary: pmFilterSummary(filter),

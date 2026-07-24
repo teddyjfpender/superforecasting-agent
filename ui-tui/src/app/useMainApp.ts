@@ -121,9 +121,12 @@ export function useMainApp(gw: GatewayClient) {
   useEffect(() => {
     if (!voiceSpeaking) {
       setVoiceFrame(0)
+
       return
     }
+
     const id = setInterval(() => setVoiceFrame((f) => (f + 1) % 100000), 90)
+
     return () => clearInterval(id)
   }, [voiceSpeaking])
   const [turnStartedAt, setTurnStartedAt] = useState<null | number>(null)
@@ -416,6 +419,7 @@ export function useMainApp(gw: GatewayClient) {
         .then((r: any) => {
           const count =
             typeof r?.count === 'number' ? r.count : Array.isArray(r?.contested) ? r.contested.length : 0
+
           patchUiState({ forecastContestedCount: Math.max(0, count) })
         })
         .catch(() => {})
@@ -841,6 +845,7 @@ export function useMainApp(gw: GatewayClient) {
   const onModelSelect = useCallback((value: string, effort?: string) => {
     patchOverlayState({ modelPicker: false })
     slashRef.current(`/model ${value}`)
+
     // Fire the reasoning effort AFTER the model switch so the live
     // session-agent reasoning_config the gateway sets lands on the post-switch
     // agent instance (switch_model keeps the agent object). The codex transport

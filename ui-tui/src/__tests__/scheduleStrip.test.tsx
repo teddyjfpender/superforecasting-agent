@@ -78,6 +78,7 @@ const fakeGw = (status: unknown) => {
   const gw = new EventEmitter() as EventEmitter & {
     request: (method: string, params?: Record<string, unknown>) => Promise<unknown>
   }
+
   gw.request = (method: string) => {
     if (method === 'forecast.schedule.status') {
       return Promise.resolve(status)
@@ -154,6 +155,7 @@ describe('deriveScheduleHealth', () => {
 
   it('has no content when nothing is scheduled', async () => {
     const { deriveScheduleHealth } = await import('../components/scheduleStrip.js')
+
     const empty: ForecastScheduleStatusResponse = {
       cron: { errored: [], healthy: true, installed: 0, jobs: [], missed: [] },
       healthy: true,
@@ -210,6 +212,7 @@ describe('ScheduleStrip render states', () => {
       healthy: true,
       scheduled_reviews: []
     })
+
     // The strip is hidden (no SCHEDULE header) when nothing is scheduled.
     expect(m.text()).not.toContain('SCHEDULE')
     m.cleanup()

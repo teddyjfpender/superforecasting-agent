@@ -24,6 +24,7 @@ const NO_AUTO_PREFIXES = [
   'central_in_band',
   'calibration_lesson'
 ]
+
 const MATERIAL_PREFIXES = ['watched_source_changed', 'watched_source_unavailable', 'trigger_fired']
 const BOOKKEEPING_PREFIXES = ['autopilot_enabled', 'autopilot_source_failed', 'review_due']
 // No evidence / no snapshot yet — collect evidence FIRST (the REFORECAST runner
@@ -102,37 +103,44 @@ export const warningResolution = (kind: WarningKind): WarningResolution => {
         label: 'Score resolved question',
         detail: 'Compute + persist the Brier/log score for the confirmed resolution. Acked only if the score commits; stays OPEN if it cannot be scored yet.'
       }
+
     case 'postmortem':
       return {
         auto: true,
         label: 'Score + postmortem',
         detail: 'Score the resolved question, then write its postmortem. Acked only if the score commits.'
       }
+
     case 'material_change':
       return {
         auto: true,
         label: 'Run autopilot',
         detail: 'Re-check the watched source(s); if one moved, record a snapshot and propose an update. Stays open if the source is down.'
       }
+
     case 'reforecast':
       return {
         auto: false,
         label: 'Reforecast (needs agent)',
         detail: 'A fresh LLM reforecast is required — the TUI path has no agent runner, so this stays OPEN. Run `forecast warnings resolve --agent` from the CLI.'
       }
+
     case 'evidence_collection':
       return {
         auto: false,
         label: 'Collect evidence (needs agent)',
         detail: 'No evidence yet — an LLM/web search+import pass is required, which the TUI path has no runner for, so this stays OPEN. It acks only if it imports ≥1 new reading. Run `forecast warnings resolve --agent` from the CLI.'
       }
+
     case 'bookkeeping':
       return {
         auto: true,
         label: 'Acknowledge notice',
         detail: 'Informational notice — there is no forecast to move, so acking it is the correct close-out.'
       }
+
     case 'no_auto':
+
     default:
       return {
         auto: false,

@@ -111,8 +111,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
   // line. The full stream is untouched in the gateway-client log buffer.
   let stderrPending: null | string = null
   let stderrTimer: null | ReturnType<typeof setTimeout> = null
+
   const flushStderr = () => {
     stderrTimer = null
+
     if (stderrPending !== null) {
       const line = stderrPending
       stderrPending = null
@@ -122,8 +124,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
       stderrTimer = setTimeout(flushStderr, GATEWAY_STDERR_COALESCE_MS)
     }
   }
+
   const pushStderrCoalesced = (line: string) => {
     stderrPending = line
+
     if (stderrTimer === null) {
       flushStderr() // leading edge: paint now, then open the coalescing window
     }

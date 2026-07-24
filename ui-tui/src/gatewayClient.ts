@@ -88,7 +88,7 @@ const asWireText = (raw: unknown): string | null => {
 // otherwise-malformed URLs that the WHATWG `URL` parser can't accept.
 // Used by the `redactUrl` fallback so embedded credentials are
 // scrubbed from log lines even when the URL is unparseable.
-const _USERINFO_FALLBACK_RE = /^([a-z][a-z0-9+.\-]*:\/\/)[^/?#@]*@/i
+const _USERINFO_FALLBACK_RE = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@]*@/i
 
 // Connection URLs (gateway, sidecar) often carry bearer tokens in the query
 // string. We surface them in user-facing log lines and the
@@ -195,6 +195,7 @@ export class GatewayClient extends EventEmitter {
     const ws = this.ws
     this.ws = null
     this.wsConnectPromise = null
+
     try {
       ws?.close()
     } catch {
@@ -261,6 +262,7 @@ export class GatewayClient extends EventEmitter {
 
     if (typeof WebSocket === 'undefined') {
       this.pushLog(`[sidecar] WebSocket unavailable; skipping mirror to ${redactUrl(this.sidecarUrl)}`)
+
       return
     }
 
@@ -404,6 +406,7 @@ export class GatewayClient extends EventEmitter {
       let settled = false
 
       this.ws = ws
+
       const connectPromise = new Promise<void>((resolve, reject) => {
         ws.addEventListener(
           'open',
@@ -489,12 +492,14 @@ export class GatewayClient extends EventEmitter {
     if (this.proc && !this.proc.killed && this.proc.exitCode === null) {
       this.proc.kill()
     }
+
     this.proc = null
     this.closeGatewaySocket()
     this.closeSidecarSocket()
 
     if (attachUrl) {
       this.startAttachedGateway(attachUrl)
+
       return
     }
 

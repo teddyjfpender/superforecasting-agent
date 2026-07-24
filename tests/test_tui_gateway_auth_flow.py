@@ -10,6 +10,7 @@ codex_device_flow seam.
 
 from __future__ import annotations
 
+import threading
 import time
 
 from hermes_cli.codex_device_flow import DeviceCodeGrant
@@ -131,6 +132,7 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
         lambda ac, cv, **kw: {"tokens": {"access_token": "fresh_at", "refresh_token": "rt"}},
     )
     monkeypatch.setattr("hermes_cli.auth._save_codex_tokens", lambda *a, **k: None)
+    fresh_pool = object()
     monkeypatch.setattr(
         "hermes_cli.runtime_provider.resolve_runtime_provider",
         lambda **kw: {
@@ -138,6 +140,7 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
             "api_key": "fresh_at",
             "base_url": "https://chatgpt.com/backend-api/codex",
             "api_mode": "codex_responses",
+            "credential_pool": fresh_pool,
         },
     )
 
@@ -146,6 +149,7 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
     class _FakeAgent:
         provider = "openai-codex"
         model = "gpt-5.4"
+        _credential_pool = object()
 
         def switch_model(self, *, new_model, new_provider, api_key, base_url, api_mode):
             switched.update(
@@ -163,8 +167,41 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
         assert result["credentials_applied"] is True
         assert switched["api_key"] == "fresh_at"
         assert switched["new_provider"] == "openai-codex"
+        assert server._sessions["sid_auth"]["agent"]._credential_pool is fresh_pool
     finally:
         server._sessions.pop("sid_auth", None)
+
+
+def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch):
+    """A cached pre-auth initialization failure is cleared and rebuilt."""
+    old_ready = threading.Event()
+    old_ready.set()
+    started = {}
+    session = {
+        "agent": None,
+        "agent_error": "No Codex credentials stored",
+        "agent_ready": old_ready,
+        "agent_build_started": True,
+        "running": False,
+    }
+
+    def _fake_start(sid, current):
+        started["sid"] = sid
+        started["session"] = current
+
+    monkeypatch.setattr(server, "_start_agent_build", _fake_start)
+    server._sessions["sid_failed_auth"] = session
+    try:
+        assert server._refresh_agent_credentials_after_auth(
+            "sid_failed_auth", "openai-codex"
+        ) is True
+        assert session["agent_error"] is None
+        assert session["agent_ready"] is not old_ready
+        assert session["agent_ready"].is_set() is False
+        assert session["agent_build_started"] is False
+        assert started == {"sid": "sid_failed_auth", "session": session}
+    finally:
+        server._sessions.pop("sid_failed_auth", None)
 
 
 def test_auth_poll_reports_terminal_status_once(monkeypatch):

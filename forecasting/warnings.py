@@ -258,6 +258,9 @@ _NO_AUTO_PREFIXES = (
     "reference_class",       # reference_class_*:*
     "central_in_band",
     "calibration_lesson",    # calibration_lesson_review — human-curated
+    # The watch scheduler owns retries. Re-polling every source on the question
+    # from the warning worker is slow and cannot repair a broken endpoint.
+    "watched_source_unavailable",
 )
 
 # A triage auto-label the verifier disputes (Thinking Machines L8 contested
@@ -268,13 +271,12 @@ _CONTESTED_LABEL_PREFIXES = ("contested_label",)
 
 _MATERIAL_PREFIXES = (
     "watched_source_changed",
-    "watched_source_unavailable",
-    "trigger_fired",         # trigger_fired:fred:DGS10 — a watched indicator crossed a threshold
+    "autopilot_source_failed",
+    "autopilot_required_source_failed",
 )
 
 _BOOKKEEPING_PREFIXES = (
     "autopilot_enabled",
-    "autopilot_source_failed",
     "review_due",
 )
 
@@ -289,6 +291,12 @@ _EVIDENCE_COLLECTION_PREFIXES = (
 )
 
 _REFORECAST_PREFIXES = (
+    "forecast_estimation_required",
+    # A threshold crossing already happened; re-polling the same source cannot
+    # resolve it.  It needs fresh judgment over the captured signal.
+    "trigger_fired",
+    # A substantive learned-error review concluded that the forecast must move.
+    "learned_error_update_required",
     "evidence_stale",        # evidence_stale_7d_plus, etc.
     "last_update",           # last_update_* staleness
     "new_evidence",          # new_evidence:*
@@ -890,7 +898,11 @@ def resolve_alert(
 
     # BOOKKEEPING: informational notice; acking is the correct close-out.
     if kind is ResolutionKind.BOOKKEEPING:
-        ledger.acknowledge_alert(warning.id, acknowledged_at=now)
+        ledger.acknowledge_alert(
+            warning.id,
+            acknowledged_at=now,
+            disposition="not_actionable",
+        )
         return _result(
             warning,
             status="resolved",
@@ -930,7 +942,18 @@ def resolve_alert(
         )
 
     # Real gated work succeeded → acking is the natural consequence.
-    ledger.acknowledge_alert(warning.id, acknowledged_at=now)
+    dispositions = {
+        ResolutionKind.REFORECAST: "resolved_by_forecast_update",
+        ResolutionKind.EVIDENCE_COLLECTION: "resolved_by_forecast_update",
+        ResolutionKind.MATERIAL_CHANGE: "resolved_by_forecast_update",
+        ResolutionKind.SCORE: "resolved_by_resolution",
+        ResolutionKind.POSTMORTEM: "resolved_by_resolution",
+    }
+    ledger.acknowledge_alert(
+        warning.id,
+        acknowledged_at=now,
+        disposition=dispositions.get(kind, "not_actionable"),
+    )
     return _result(
         warning,
         status="resolved",

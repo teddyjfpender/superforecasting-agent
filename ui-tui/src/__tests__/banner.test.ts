@@ -26,6 +26,7 @@ describe('forecast desk banner art', () => {
     expect(lines.length).toBe(4)
     const widths = new Set(lines.map(line => line.length))
     expect(widths).toEqual(new Set([LOGO_WIDTH]))
+
     // The right border glyph sits in the final column on every line.
     for (const line of lines) {
       expect(['┓', '┃', '┛']).toContain(line[line.length - 1])
@@ -55,8 +56,10 @@ describe('forecast desk banner art', () => {
     // every row (this is exactly what drifted before and broke the borders).
     const columnIndex = (line: string) => {
       const idx = [...line].findIndex((ch, i) => i > line.indexOf('│') && /[┬│┴]/.test(ch))
+
       return idx
     }
+
     const separatorColumns = new Set(boxLines.map(columnIndex))
     expect(separatorColumns.size).toBe(1)
   })

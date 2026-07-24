@@ -43,6 +43,7 @@ const inkStdout = () => {
     isTTY: boolean
     rows: number
   }
+
   Object.assign(stream, { columns: 80, isTTY: false, rows: 24 })
   stream.on('data', () => undefined)
 

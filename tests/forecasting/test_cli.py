@@ -10495,6 +10495,7 @@ def test_forecast_cli_pilot_bundle_outputs_handoff_packet(tmp_path, capsys):
         cadence="1d",
         next_run_at="2026-05-24T09:00:00Z",
     )
+    ledger.run_due_scheduled_reviews(now="2026-05-24T10:00:00Z")
     ledger.resolve_question(
         question_id=question.id,
         outcome="yes",
@@ -10506,8 +10507,6 @@ def test_forecast_cli_pilot_bundle_outputs_handoff_packet(tmp_path, capsys):
         summary="Bundle fixture completed one live loop.",
         lesson="Keep pilot handoff artifacts bundled.",
     )
-    ledger.run_due_scheduled_reviews(now="2026-05-24T10:00:00Z")
-
     _run(
         parser,
         [

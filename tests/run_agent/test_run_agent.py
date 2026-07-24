@@ -2207,6 +2207,7 @@ class TestConcurrentToolExecution:
                 session_id=agent.session_id,
                 enabled_tools=list(agent.valid_tool_names),
                 skip_pre_tool_call_hook=True,
+                main_runtime=agent._current_main_runtime(),
             )
             assert result == "result"
 
@@ -5624,4 +5625,3 @@ class TestSaveSessionLogRedactsSecrets:
         assert "gsk_abc123def456ghi789jkl012mno" not in parts[0]["text"]
         # Image part preserved untouched
         assert parts[1]["image_url"]["url"].startswith("data:image")
-

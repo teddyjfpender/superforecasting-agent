@@ -66,6 +66,7 @@ export function NewModelModal({
   // Blinking block cursor (the modal is self-contained, so it owns its own tick).
   useEffect(() => {
     const id = setInterval(() => setBlink(b => !b), 500)
+
     return () => clearInterval(id)
   }, [])
 

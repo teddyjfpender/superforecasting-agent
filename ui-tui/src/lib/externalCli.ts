@@ -12,6 +12,7 @@ const configuredForecastBin = () =>
 
 const resolveForecastBins = () => {
   const configured = configuredForecastBin()
+
   return configured ? [configured] : ['superforecasting-agent', 'hermes']
 }
 
@@ -30,12 +31,16 @@ const launchOne = (bin: string, args: string[]): Promise<LaunchResult> =>
 
 export const launchForecastCommand = async (args: string[]): Promise<LaunchResult> => {
   let last: (LaunchResult & { errorCode?: string }) | null = null
+
   for (const bin of resolveForecastBins()) {
     const result = await launchOne(bin, args) as LaunchResult & { errorCode?: string }
     last = result
-    if (result.errorCode === 'ENOENT') continue
+
+    if (result.errorCode === 'ENOENT') {continue}
+
     return result
   }
+
   return last ?? { code: null, error: 'no forecast CLI binary found' }
 }
 

@@ -24,6 +24,39 @@ from forecasting.models import OutcomeSpace, ValidationError, utc_now_iso
 _APPLYABLE_STATUSES = frozenset({"merge_ready", "merged_apply_pending", "apply_failed"})
 
 
+def _validate_github_promotion_check(ledger: Any, changeset: Mapping[str, Any]) -> None:
+    """Require the App-authored exact-head record for GitHub-backed proposals."""
+
+    if changeset.get("pr_number") is None:
+        return
+    promotion = dict((changeset.get("metadata") or {}).get("promotion_check") or {})
+    app_id = str(promotion.get("app_id") or "")
+    head_sha = str(changeset.get("head_sha") or "")
+    if (
+        not app_id
+        or not head_sha
+        or promotion.get("head_sha") != head_sha
+        or promotion.get("conclusion") != "success"
+    ):
+        raise ValidationError("GitHub proposal lacks an exact successful promotion check")
+    with ledger._connect() as conn:
+        row = conn.execute(
+            """SELECT conclusion, details FROM github_promotion_checks
+               WHERE changeset_id = ? AND head_sha = ? AND app_id = ?""",
+            (changeset["id"], head_sha, app_id),
+        ).fetchone()
+    if row is None or row["conclusion"] != "success":
+        raise ValidationError("GitHub promotion check source is missing or unsuccessful")
+    details = json.loads(row["details"])
+    if (
+        details.get("source_head_sha", head_sha) != head_sha
+        or details.get("merge_group", False) is not False
+        or details.get("hard_failures")
+        or details.get("quorum_satisfied") is not True
+    ):
+        raise ValidationError("GitHub promotion check details do not authorize application")
+
+
 def _public(value: Any) -> Any:
     if is_dataclass(value):
         return asdict(value)
@@ -124,6 +157,7 @@ def _snapshot_kwargs(payload: Mapping[str, Any], *, provenance: Mapping[str, Any
         "require_output_structure",
         "distribution_autofix",
         "enforce_resolved_hooks",
+        "allow_resolved_backfill",
     }
     result = {key: payload[key] for key in allowed if key in payload}
     result["metadata"] = {**dict(payload.get("metadata") or {}), **provenance}
@@ -446,6 +480,7 @@ def apply_changeset(ledger: Any, changeset_id: str) -> dict[str, Any]:
                 )
             if changeset["metadata"].get("checks_passed") is not True:
                 raise ValidationError("required changeset checks have not passed")
+            _validate_github_promotion_check(ledger, changeset)
             decision_count = conn.execute(
                 """SELECT COUNT(*) FROM provenance_decision_records d
                    JOIN provenance_bundles b ON b.id = d.bundle_id

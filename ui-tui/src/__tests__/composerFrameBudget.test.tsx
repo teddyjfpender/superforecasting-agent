@@ -27,8 +27,10 @@ import type * as HomeLandingModule from '../components/homeLanding.js'
 // ERASE_SCREEN (CSI 2 J) — the full-repaint "flash" — must never appear.
 
 const counts: Record<string, number> = {}
+
 const bump = (k: string) => {
   counts[k] = (counts[k] ?? 0) + 1
+
   return null
 }
 
@@ -42,10 +44,12 @@ vi.mock('../components/streamingAssistant.js', () => ({
 vi.mock('../components/navBar.js', () => ({ NavBar: () => bump('navbar') }))
 vi.mock('../components/branding.js', async importOriginal => {
   const actual = await importOriginal<typeof BrandingModule>()
+
   return { ...actual, HomeHero: () => bump('hero') }
 })
 vi.mock('../components/homeLanding.js', async importOriginal => {
   const actual = await importOriginal<typeof HomeLandingModule>()
+
   return { ...actual, HomeStatusBar: () => bump('statusBar'), HomeTip: () => bump('tip') }
 })
 vi.mock('../components/todayPanel.js', () => ({ TodayPanel: () => bump('today') }))
@@ -70,10 +74,12 @@ const writeStream = (columns: number, rows: number, isTTY = true) => {
     unref: () => stream
   })
   stream.on('data', (c: Buffer) => (output += c.toString()))
+
   return { clear: () => (output = ''), stream, text: () => output }
 }
 
 const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
+
 const noop = () => {}
 
 const actions: any = {
@@ -81,10 +87,12 @@ const actions: any = {
   clearSelection: noop, draftCommand: noop, onModelSelect: noop, resumeById: noop,
   runCommand: noop, setStickyPrompt: noop
 }
+
 const status: any = {
   cwdLabel: '~/x', forecastPulseTick: 0, sessionStartedAt: null, showStickyPrompt: false,
   statusColor: 'white', stickyPrompt: '', turnStartedAt: null, voiceLabel: ''
 }
+
 const progress: any = { showProgressArea: false }
 
 const buildComposer = (cols: number): any => ({
@@ -100,12 +108,14 @@ const setup = async () => {
     import('@hermes/ink'),
     import('../hooks/useVirtualHistory.js')
   ])
+
   const { resetOverlayState } = await import('../app/overlayStore.js')
   const { resetUiState } = await import('../app/uiStore.js')
   const store = await import('../app/composerTextStore.js')
   resetOverlayState()
   resetUiState()
   store.resetComposerText()
+
   return { AppLayout, Box, GatewayProvider, render, store, useVirtualHistory }
 }
 
@@ -113,6 +123,7 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
   for (const k of Object.keys(counts)) {
     delete counts[k]
   }
+
   const ROWS = 30
   const COLS = 120
   const { AppLayout, Box, GatewayProvider, render, store, useVirtualHistory } = await setup()
@@ -121,11 +132,13 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
   const sessions = Array.from({ length: 40 }, (_, i) => ({
     id: `s${i}`, message_count: 1, preview: '', source: 'tui', started_at: 40 - i, title: `chat ${i + 1}`
   }))
+
   const gw: any = {
     off: noop, on: noop,
     request: async (m: string) => (m === 'session.list' ? { sessions } : null),
     rpc: async () => null
   }
+
   const railScrollRef = React.createRef<any>()
   const gwValue = { gw, rpc: gw.rpc }
   const composer = buildComposer(COLS)
@@ -136,10 +149,12 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
     const scrollRef = React.useRef<any>(null)
     const rows = React.useMemo(() => virtualRows, [])
     const virtualHistory = useVirtualHistory(scrollRef, rows, COLS)
+
     const transcript = React.useMemo(
       () => ({ historyItems, railScrollRef, scrollRef, virtualHistory, virtualRows: rows }),
       [virtualHistory, rows]
     )
+
     return React.createElement(Box, { flexDirection: 'column', height: ROWS, width: COLS },
       React.createElement(GatewayProvider, { value: gwValue },
         React.createElement(AppLayout, {
@@ -148,18 +163,22 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
   }
 
   const out = writeStream(COLS, ROWS)
+
   const instance: any = await render(React.createElement(App), {
     exitOnCtrlC: false, patchConsole: false, stdin: writeStream(COLS, ROWS, true).stream, stdout: out.stream
   })
+
   await tick(250)
 
   // Baseline the render counters AFTER the initial settle; measure only typing.
   for (const k of Object.keys(counts)) {
     delete counts[k]
   }
+
   let total = 0
   let v = 'hi'
   const perKey: number[] = []
+
   for (let k = 0; k < 6; k++) {
     out.clear()
     v += 'a'
@@ -167,6 +186,7 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
     await tick(90)
     const frame = out.text()
     expect(frame).not.toContain(ERASE_SCREEN)
+
     // Drop the first (one-time layout settle); budget the five steady keystrokes.
     if (k > 0) {
       perKey.push(frame.length)
@@ -175,6 +195,7 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
   }
 
   instance.unmount?.()
+
   return { counts: { ...counts }, perKey, total }
 }
 
@@ -184,6 +205,7 @@ describe('Home composer: whole-frame keystroke budget', () => {
       role: (i % 2 ? 'assistant' : 'user') as const,
       text: `message number ${i} with several words to force some real height here`
     }))
+
     const { counts: c, perKey, total } = await runBudget(
       items,
       items.map((m, i) => ({ index: i, key: `m${i}`, msg: m }))
@@ -198,6 +220,7 @@ describe('Home composer: whole-frame keystroke budget', () => {
     for (const b of perKey) {
       expect(b).toBeLessThan(PER_KEYSTROKE_CEILING)
     }
+
     expect(total).toBeLessThan(FIVE_KEYSTROKE_BUDGET)
   })
 
@@ -216,6 +239,7 @@ describe('Home composer: whole-frame keystroke budget', () => {
     for (const b of perKey) {
       expect(b).toBeLessThan(PER_KEYSTROKE_CEILING)
     }
+
     expect(total).toBeLessThan(FIVE_KEYSTROKE_BUDGET)
   })
 })

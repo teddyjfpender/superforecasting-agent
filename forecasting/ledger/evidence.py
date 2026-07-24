@@ -29,6 +29,8 @@ this leaf re-imports came back empty).
 
 from __future__ import annotations
 
+import atexit
+from collections import Counter
 import logging
 import sqlite3  # noqa: F401  (row type hints on the carved readers)
 import uuid
@@ -50,6 +52,21 @@ from forecasting.models import (
 )
 
 logger = logging.getLogger(__name__)
+_LEAK_WARNING_KEYS: set[tuple[str, str]] = set()
+_LEAK_WARNING_COUNTS: Counter[tuple[str, str]] = Counter()
+
+
+def _log_leak_domain_tally() -> None:
+    total = sum(_LEAK_WARNING_COUNTS.values())
+    if total:
+        logger.info(
+            "leak-domain evidence tally: %s item(s), %s normalized source/reason pair(s)",
+            total,
+            len(_LEAK_WARNING_COUNTS),
+        )
+
+
+atexit.register(_log_leak_domain_tally)
 
 # Triage rubric scopes (leaf-owned; the D1 "constants to the leaf" rule) — the
 # desk-authored "interesting vs merely relevant" taste is scoped like a
@@ -172,11 +189,17 @@ def add_evidence(
             evidence_metadata["leak_reason"] = reason
             if admissible_for_backtests:
                 admissible_for_backtests = False
-            logger.warning(
-                "evidence source flagged as leak domain (inadmissible for backtests): %s — %s",
-                inferred_url,
-                reason,
-            )
+            from urllib.parse import urlparse
+
+            warning_key = (urlparse(inferred_url).netloc.lower(), reason)
+            _LEAK_WARNING_COUNTS[warning_key] += 1
+            if warning_key not in _LEAK_WARNING_KEYS:
+                _LEAK_WARNING_KEYS.add(warning_key)
+                logger.info(
+                    "evidence source flagged as leak domain (inadmissible for backtests): %s — %s",
+                    inferred_url,
+                    reason,
+                )
     with ledger._connect() as conn:
         conn.execute(
             """

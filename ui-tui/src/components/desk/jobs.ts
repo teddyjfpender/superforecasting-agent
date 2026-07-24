@@ -1,6 +1,5 @@
 import type { JobRecordShape } from '../../app/useJobAttach.js'
 import type { ForecastReforecastResultRow, ForecastReforecastStatusResponse } from '../../protocol/generated.js'
-
 import { truncate } from '../forecastsWorkspace.js'
 
 // ── Mass forced re-run ("run en masse") ──────────────────────────────────────
@@ -20,6 +19,7 @@ export type MassTally = Record<MassOutcome, number>
 export const refreshTally = (result: unknown): MassTally => {
   const t = (result as { tally?: Record<string, unknown> } | null | undefined)?.tally ?? {}
   const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
   return {
     error: n(t.error),
     noSources: n(t.no_sources),
@@ -33,23 +33,29 @@ export const refreshTally = (result: unknown): MassTally => {
 // so); the rest only when non-zero.
 export const summarizeUpdate = (t: MassTally): string => {
   const parts = [`${t.refreshed} updated`]
+
   if (t.unchanged) {
     parts.push(`${t.unchanged} unchanged`)
   }
+
   if (t.noSources) {
     parts.push(`${t.noSources} no sources`)
   }
+
   if (t.error) {
     parts.push(`${t.error} failed`)
   }
+
   return `✓ ${parts.join(' · ')}`
 }
 
 export const summarizeRearm = (t: MassTally): string => {
   const parts = [`${t.refreshed} re-armed`]
+
   if (t.error) {
     parts.push(`${t.error} failed`)
   }
+
   return `✓ ${parts.join(' · ')}`
 }
 
@@ -103,15 +109,18 @@ export const REFRESH_JOB_TYPES = ['refresh']
 // annotated partial results; task-mode `note` is the latest progress detail.
 export const agentJobFromRecord = (rec: JobRecordShape): AgentJob => {
   const spec = rec.spec ?? {}
+
   const ann = (rec.annotations ?? {}) as {
     current?: { question_id?: string; stage?: string; title?: string } | null
     progress?: { detail?: string }[]
     results?: { question_id?: string }[]
   }
+
   const results = ann.results ?? (rec.result as { results?: { question_id?: string }[] } | null)?.results ?? []
   const doneIds = new Set(results.map(row => row.question_id).filter(Boolean) as string[])
   const progress = ann.progress ?? []
   const lastNote = progress.length ? progress[progress.length - 1]?.detail : undefined
+
   return {
     current: ann.current ?? null,
     done: rec.done_count ?? results.length,
@@ -133,6 +142,7 @@ export const refreshJobFromRecord = (rec: JobRecordShape): RefreshJob => {
   const targetIds = new Set<string>((spec.question_ids ?? []).map(String))
   const partial = (rec.annotations?.results as { question_id?: string }[] | undefined) ?? []
   const doneIds = new Set<string>(partial.map(x => x.question_id).filter(Boolean) as string[])
+
   return {
     current: typeof rec.current === 'string' ? rec.current : null,
     done: rec.done_count ?? doneIds.size,
@@ -152,6 +162,7 @@ export const refreshJobFromRecord = (rec: JobRecordShape): RefreshJob => {
 export const reforecastStatusFromRecord = (rec: JobRecordShape): ForecastReforecastStatusResponse => {
   const ann = (rec.annotations ?? {}) as { results?: ForecastReforecastResultRow[]; task_summary?: string }
   const result = (rec.result ?? {}) as { results?: ForecastReforecastResultRow[]; task_summary?: string }
+
   return {
     error: rec.error ?? null,
     results: result.results ?? ann.results ?? [],
@@ -173,19 +184,26 @@ export const summarizeAgentJob = (r: ForecastReforecastStatusResponse, mode: 'ag
   const blocked = results.filter(x => !x.committed && !x.error).length
   const quorums = r.quorums_started ?? results.filter(x => x.quorum_autorun).length
   const parts = [`${committed} committed`]
+
   if (blocked) {
     parts.push(`${blocked} blocked`)
   }
+
   if (errors) {
     parts.push(`${errors} errors`)
   }
+
   if (quorums) {
     parts.push(`${quorums} quorum${quorums === 1 ? '' : 's'} started`)
   }
+
   const tally = `✓ ${parts.join(' · ')}`
+
   if (mode === 'task') {
     const summary = (r.task_summary ?? '').trim()
+
     return summary ? `✓ ${truncate(summary, 96)}` : tally
   }
+
   return tally
 }

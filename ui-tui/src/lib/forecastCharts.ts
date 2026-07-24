@@ -30,6 +30,7 @@ export const deltaGlyph = (delta: number | null | undefined): string => {
   if (!finite(delta) || Math.abs(delta) < 0.005) {
     return '·'
   }
+
   return delta > 0 ? '▲' : '▼'
 }
 
@@ -40,8 +41,10 @@ export const pctDelta = (delta: number | null | undefined): string => {
   if (!finite(delta) || Math.abs(delta) < 0.00005) {
     return '· flat'
   }
+
   const points = (delta * 100).toFixed(2)
   const sign = delta > 0 ? '+' : ''
+
   return `${deltaGlyph(delta)} ${sign}${points}pt`
 }
 
@@ -66,6 +69,7 @@ const pickScale = (maxAbs: number): readonly [number, string] => {
       return [scale, suffix]
     }
   }
+
   return [1, '']
 }
 
@@ -73,6 +77,7 @@ const pickScale = (maxAbs: number): readonly [number, string] => {
 const naturalDecimals = (x: number): number => {
   const s = Math.abs(x).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
   const dot = s.indexOf('.')
+
   return dot === -1 ? 0 : s.length - dot - 1
 }
 
@@ -80,15 +85,19 @@ export const compactNumber = (value: number | null | undefined): string => {
   if (!finite(value)) {
     return '—'
   }
+
   const sign = value < 0 ? '-' : ''
   const abs = Math.abs(value)
+
   for (const [scale, suffix] of MAGNITUDES) {
     if (abs >= scale) {
       const scaled = abs / scale
       const decimals = scaled >= 100 ? 0 : scaled >= 10 ? 1 : 2
+
       return `${sign}${trimZeros(scaled.toFixed(decimals))}${suffix}`
     }
   }
+
   // Below 1000 there is no suffix; match the prior 2-decimal-then-trim display
   // (e.g. 4.24 -> "4.24", 0.098 -> "0.1") so existing values are unchanged.
   return `${sign}${trimZeros(abs.toFixed(2))}`
@@ -102,11 +111,14 @@ export const compactNumber = (value: number | null | undefined): string => {
  */
 export const axisLabels = (values: ReadonlyArray<number | null | undefined>): string[] => {
   const present = values.filter(finite)
+
   if (!present.length) {
     return values.map(() => '—')
   }
+
   const [scale, suffix] = pickScale(Math.max(...present.map(value => Math.abs(value)), 0))
   const decimals = Math.min(4, Math.max(0, ...present.map(value => naturalDecimals(value / scale))))
+
   return values.map(value => (finite(value) ? `${(value / scale).toFixed(decimals)}${suffix}` : '—'))
 }
 
@@ -164,6 +176,7 @@ export const windowDeltaDetail = (
   days: number
 ): WindowDeltaDetail => {
   const points = history ?? []
+
   if (points.length < 2) {
     return { delta: null, newSeries: false }
   }
@@ -171,14 +184,18 @@ export const windowDeltaDetail = (
   // Current = the newest point carrying a finite headline (+ its regime).
   let current: number | null = null
   let currentRegime: string | null | undefined
+
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const y = points[i]!.headline_probability
+
     if (finite(y)) {
       current = y
       currentRegime = points[i]!.headline_regime
+
       break
     }
   }
+
   if (current === null) {
     return { delta: null, newSeries: false }
   }
@@ -190,9 +207,11 @@ export const windowDeltaDetail = (
   // in-window, finite, SAME-regime point. A cross-regime in-window point is
   // skipped but remembered so the null is reported as a "new series" boundary.
   let sawCrossRegime = false
+
   for (let i = points.length - 1; i >= 0; i -= 1) {
     const point = points[i]!
     const ms = point.as_of ? Date.parse(point.as_of) : Number.NaN
+
     if (Number.isFinite(ms) && ms <= cutoff && finite(point.headline_probability)) {
       if (
         currentRegime != null &&
@@ -200,8 +219,10 @@ export const windowDeltaDetail = (
         point.headline_regime !== currentRegime
       ) {
         sawCrossRegime = true
+
         continue
       }
+
       return { delta: current - point.headline_probability, newSeries: false }
     }
   }
@@ -234,16 +255,20 @@ export const levelSparkline = (
   { yMin = 0, yMax = 1 }: { yMin?: number; yMax?: number } = {}
 ): string => {
   const span = yMax - yMin
+
   if (!values.length || span <= 0) {
     return ''
   }
+
   return values
     .map(value => {
       if (!finite(value)) {
         return ' '
       }
+
       const frac = clamp01((value - yMin) / span)
       const idx = Math.round(frac * (SPARK_RAMP.length - 1))
+
       return SPARK_RAMP[idx]
     })
     .join('')
@@ -303,14 +328,18 @@ export const bandChart = (
   // byte-for-byte); a small guard keeps even a boundary-touching value (a 0% /
   // 100% dot, or a band edge at the axis) off the exact edge row.
   const drawn: number[] = []
+
   for (const point of active) {
     drawn.push(point.y as number)
+
     if (finite(point.lo) && finite(point.hi)) {
       drawn.push(point.lo, point.hi)
     }
   }
+
   let domainMin = yMin
   let domainMax = yMax
+
   if (drawn.length) {
     const dMin = Math.min(...drawn)
     const dMax = Math.max(...drawn)
@@ -318,6 +347,7 @@ export const bandChart = (
     domainMin = Math.min(domainMin, dMin - guard)
     domainMax = Math.max(domainMax, dMax + guard)
   }
+
   if (domainMax - domainMin < 1e-9) {
     // Degenerate domain with no data spread — open a unit window so heights map.
     domainMax = domainMin + 1
@@ -336,6 +366,7 @@ export const bandChart = (
 
   const rowFor = (value: number): number => {
     const frac = clamp01((value - domainMin) / span)
+
     return Math.round((1 - frac) * (h - 1))
   }
 
@@ -346,13 +377,16 @@ export const bandChart = (
     const col = colFor(index, active.length)
     const lo = finite(point.lo) ? point.lo : null
     const hi = finite(point.hi) ? point.hi : null
+
     if (lo !== null && hi !== null) {
       const rTop = rowFor(Math.max(lo, hi))
       const rBot = rowFor(Math.min(lo, hi))
+
       for (let r = rTop; r <= rBot; r += 1) {
         grid[r]![col] = BAND
       }
     }
+
     grid[rowFor(point.y as number)]![col] = MARKER
   })
 
@@ -360,16 +394,20 @@ export const bandChart = (
     if (row === 0) {
       return topLabel.padStart(labelW)
     }
+
     if (row === h - 1) {
       return bottomLabel.padStart(labelW)
     }
+
     if (row === Math.floor((h - 1) / 2)) {
       return midLabel.padStart(labelW)
     }
+
     return ' '.repeat(labelW)
   }
 
   const rows = grid.map((cells, row) => `${labelFor(row)} │${cells.join('')}`)
+
   return {
     rows,
     axis: { top: topLabel, bottom: bottomLabel },
@@ -445,23 +483,28 @@ export const multiSeriesChart = (
   // Domain: the floor stays at the caller's yMin (0 for shares — never negative);
   // the ceiling grows to contain every drawn marker so nothing is clamped away.
   const drawn: number[] = []
+
   for (const s of series) {
     for (const value of s.values) {
       if (finite(value)) {
         drawn.push(value)
       }
     }
+
     // A latest-point whisker hi/lo can overshoot the point values (a wide upper
     // tail); include them so the domain contains the drawn whisker, never clips it.
     if (s.latestInterval && finite(s.latestInterval.lo) && finite(s.latestInterval.hi)) {
       drawn.push(s.latestInterval.lo, s.latestInterval.hi)
     }
   }
+
   const domainMin = yMin
   let domainMax = yMax
+
   if (drawn.length) {
     domainMax = Math.max(domainMax, ...drawn)
   }
+
   if (domainMax - domainMin < 1e-9) {
     domainMax = domainMin + 1
   }
@@ -478,8 +521,10 @@ export const multiSeriesChart = (
 
   const rowFor = (value: number): number => {
     const frac = clamp01((value - domainMin) / span)
+
     return Math.round((1 - frac) * (h - 1))
   }
+
   const colFor = (index: number): number => (count <= 1 ? 0 : Math.round((index * (plotW - 1)) / (count - 1)))
 
   const glyphs = series.map((_, i) => SERIES_GLYPHS[i] ?? '·')
@@ -489,13 +534,17 @@ export const multiSeriesChart = (
   // rank first so the leader's whisker wins a shared cell) so the point markers below
   // overwrite the whisker at each candidate's value row and stay legible.
   const lastCol = colFor(Math.max(0, count - 1))
+
   for (let si = series.length - 1; si >= 0; si -= 1) {
     const iv = series[si]!.latestInterval
+
     if (!iv || !finite(iv.lo) || !finite(iv.hi)) {
       continue
     }
+
     const rTop = rowFor(Math.max(iv.lo, iv.hi))
     const rBot = rowFor(Math.min(iv.lo, iv.hi))
+
     for (let row = rTop; row <= rBot; row += 1) {
       const ch = row === rTop ? '┬' : row === rBot ? '┴' : '╎'
       grid[row]![lastCol] = { ch, series: si }
@@ -510,6 +559,7 @@ export const multiSeriesChart = (
       if (!finite(value)) {
         return
       }
+
       grid[rowFor(value)]![colFor(index)] = { ch: glyphs[si]!, series: si }
     })
   }
@@ -518,16 +568,20 @@ export const multiSeriesChart = (
     if (row === 0) {
       return topLabel.padStart(labelW)
     }
+
     if (row === h - 1) {
       return bottomLabel.padStart(labelW)
     }
+
     if (row === Math.floor((h - 1) / 2)) {
       return midLabel.padStart(labelW)
     }
+
     return ' '.repeat(labelW)
   }
 
   const rows = grid.map((cells, row) => ({ cells, gutter: `${labelFor(row)} │` }))
+
   return { rows, gutterW, plotW, yMin: domainMin, yMax: domainMax, glyphs }
 }
 
@@ -558,6 +612,7 @@ export const timeAxis = (
 ): null | TimeAxis => {
   const pw = Math.max(1, Math.floor(plotW))
   const gw = Math.max(0, Math.floor(gutterW))
+
   const times = isoDates
     .map(value => (value ? Date.parse(value) : Number.NaN))
     .filter((ms): ms is number => Number.isFinite(ms))
@@ -580,23 +635,29 @@ export const timeAxis = (
     if (placed.has(label)) {
       return false // dedup — never print the same date twice
     }
+
     const len = label.length
     let start = align === 'left' ? col : align === 'right' ? col - len + 1 : col - Math.floor(len / 2)
     start = Math.max(0, Math.min(pw - len, start))
+
     if (start < 0) {
       return false // label wider than the whole plot
     }
+
     for (let i = Math.max(0, start - 1); i < Math.min(pw, start + len + 1); i += 1) {
       if (occupied[i]) {
         return false
       }
     }
+
     for (let i = 0; i < len; i += 1) {
       labelCells[start + i] = label[i]!
       occupied[start + i] = true
     }
+
     tickCells[Math.max(0, Math.min(pw - 1, col))] = '┬'
     placed.add(label)
+
     return true
   }
 
@@ -609,6 +670,7 @@ export const timeAxis = (
     // wherever it fits without colliding.
     tryPlace(0, isoDay(minMs), 'left')
     tryPlace(pw - 1, isoDay(maxMs), 'right')
+
     for (let i = 1; i < total - 1; i += 1) {
       const frac = i / (total - 1)
       tryPlace(Math.round(frac * (pw - 1)), isoDay(minMs + frac * (maxMs - minMs)), 'center')
@@ -616,6 +678,7 @@ export const timeAxis = (
   }
 
   const corner = gw > 0 ? `${' '.repeat(gw - 1)}└` : ''
+
   return {
     ticks: `${corner}${tickCells.join('')}`,
     labels: `${' '.repeat(gw)}${labelCells.join('')}`
@@ -632,9 +695,11 @@ export const timeAxis = (
  */
 export const wrapLines = (text: string, width: number, maxLines = 3): string[] => {
   const w = Math.max(1, Math.floor(width))
+
   const words = String(text ?? '')
     .split(/\s+/)
     .filter(Boolean)
+
   if (!words.length) {
     return []
   }
@@ -648,15 +713,21 @@ export const wrapLines = (text: string, width: number, maxLines = 3): string[] =
         lines.push(current)
         current = ''
       }
+
       let rest = word
+
       while (rest.length > w) {
         lines.push(rest.slice(0, w))
         rest = rest.slice(w)
       }
+
       current = rest
+
       continue
     }
+
     const next = current ? `${current} ${word}` : word
+
     if (next.length > w) {
       lines.push(current)
       current = word
@@ -664,6 +735,7 @@ export const wrapLines = (text: string, width: number, maxLines = 3): string[] =
       current = next
     }
   }
+
   if (current) {
     lines.push(current)
   }
@@ -674,10 +746,13 @@ export const wrapLines = (text: string, width: number, maxLines = 3): string[] =
 
   const kept = lines.slice(0, maxLines)
   let tail = kept[maxLines - 1]!
+
   if (tail.length >= w) {
     tail = tail.slice(0, Math.max(0, w - 1))
   }
+
   kept[maxLines - 1] = `${tail}…`
+
   return kept
 }
 
@@ -701,9 +776,11 @@ export const histogram = (
   { width = 22, labelWidth = 16 }: { width?: number; labelWidth?: number } = {}
 ): string[] => {
   const usable = bars.filter(bar => finite(bar.value))
+
   if (!usable.length) {
     return []
   }
+
   // Interval whiskers share the bar's value scale, so a p05/p95 that overshoots the
   // largest POINT value (a wide upper tail) still lands on-track — extend the axis to
   // the widest drawn artifact (max point value OR any interval hi).
@@ -712,7 +789,9 @@ export const histogram = (
     ...usable.map(bar => (bar.interval && finite(bar.interval.hi) ? bar.interval.hi : 0)),
     0
   )
+
   const track = Math.max(1, width)
+
   return usable.map(bar => {
     const label = bar.label.length > labelWidth ? `${bar.label.slice(0, labelWidth - 1)}…` : bar.label.padEnd(labelWidth)
     const frac = maxHi > 0 ? clamp01(bar.value / maxHi) : 0
@@ -728,6 +807,7 @@ export const histogram = (
     // BRACKET (├ at p05, ┤ at p95) so the uncertainty is visible on the bar itself, not
     // just as a numeric suffix — task #150's bar machinery, extended with whiskers.
     const cells: string[] = Array.from({ length: track }, (_, i) => (i < fill ? '█' : '░'))
+
     if (hasIv && maxHi > 0) {
       const col = (v: number): number => Math.max(0, Math.min(track - 1, Math.round(clamp01(v / maxHi) * (track - 1))))
       const cLo = col(iv!.lo)
@@ -735,6 +815,7 @@ export const histogram = (
       cells[cLo] = '├'
       cells[cHi] = '┤'
     }
+
     return `${label} ${cells.join('')} ${valueText}${intervalText}`
   })
 }
@@ -756,14 +837,18 @@ export const dotTrack = (
   if (!finite(value)) {
     return ''
   }
+
   const track = Math.max(3, width)
   const span = yMax - yMin || 1
   const col = (v: number): number => Math.round(clamp01((v - yMin) / span) * (track - 1))
   const cells = Array.from({ length: track }, () => '·')
+
   if (finite(reference)) {
     cells[col(reference)] = '┊'
   }
+
   cells[col(value)] = '●'
+
   return cells.join('')
 }
 
@@ -788,9 +873,11 @@ export const boxWhisker = (
 ): string => {
   const min = finite(spread.min) ? spread.min : null
   const max = finite(spread.max) ? spread.max : null
+
   if (min === null || max === null) {
     return ''
   }
+
   const track = Math.max(3, width)
   const span = yMax - yMin || 1
   const col = (value: number): number => Math.round(clamp01((value - yMin) / span) * (track - 1))
@@ -802,15 +889,19 @@ export const boxWhisker = (
   const med = finite(spread.median) ? col(spread.median) : Math.round((cMin + cMax) / 2)
 
   const cells = Array.from({ length: track }, () => ' ')
+
   for (let i = cMin; i <= cMax; i += 1) {
     cells[i] = FLAT
   }
+
   for (let i = Math.min(p25, p75); i <= Math.max(p25, p75); i += 1) {
     cells[i] = '▒'
   }
+
   cells[cMin] = '├'
   cells[cMax] = '┤'
   cells[med] = '┃'
+
   return cells.join('')
 }
 
@@ -871,7 +962,9 @@ export const downsampleSeries = (
       if (pos === first || pos === last) {
         return null
       }
+
       const delta = Math.abs((values[originalIndex] as number) - (values[finiteIdx[pos - 1]!] as number))
+
       return { delta, pos }
     })
     .filter((entry): entry is { delta: number; pos: number } => entry !== null)
@@ -880,16 +973,19 @@ export const downsampleSeries = (
   scored.sort((a, b) => b.delta - a.delta || b.pos - a.pos)
 
   const keepPos = new Set<number>([first, last])
+
   for (const entry of scored) {
     if (keepPos.size >= limit) {
       break
     }
+
     keepPos.add(entry.pos)
   }
 
   const keptIndices = [...keepPos]
     .sort((a, b) => a - b)
     .map(pos => finiteIdx[pos]!)
+
   const shown = keptIndices.length
 
   return {

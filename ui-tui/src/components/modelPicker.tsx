@@ -24,6 +24,7 @@ type Stage = 'provider' | 'key' | 'model' | 'effort' | 'disconnect'
 const FALLBACK_EFFORTS = ['low', 'medium', 'high', 'xhigh']
 const NONE_EFFORT = 'none'
 const DEFAULT_EFFORT = 'medium'
+
 const EFFORT_HINTS: Record<string, string> = {
   none: 'disable reasoning (no thinking)',
   low: 'fastest · cheapest · least thorough',
@@ -37,7 +38,7 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
   const [currentModel, setCurrentModel] = useState('')
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(true)
-  const [persistGlobal, setPersistGlobal] = useState(false)
+  const [persistGlobal, setPersistGlobal] = useState(true)
   const [providerIdx, setProviderIdx] = useState(0)
   const [modelIdx, setModelIdx] = useState(0)
   const [effortIdx, setEffortIdx] = useState(0)
@@ -94,6 +95,7 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
   // Provider-level hint: True when ANY model in the lineup is effort-capable.
   // Used only for the coarse step-count display (2 vs 3 steps).
   const supportsEffort = provider?.supports_reasoning_effort === true
+
   // Per-MODEL gating: the effort step shows only when the SELECTED model takes
   // a reasoning.effort dial. A mixed xAI lineup pairs effort-capable models
   // (grok-3-mini, grok-4.3) with non-capable ones (grok-4, grok-4-fast); the
@@ -103,12 +105,14 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
     if (!provider) {
       return false
     }
+
     if (Array.isArray(provider.reasoning_effort_models)) {
       return provider.reasoning_effort_models.includes(model)
     }
 
     return provider.supports_reasoning_effort === true
   }
+
   const baseEfforts = provider?.reasoning_efforts?.length ? provider.reasoning_efforts : FALLBACK_EFFORTS
   // Prepend a "none" option so a user with reasoning disabled can keep it off
   // when switching models (firing /reasoning none) instead of being forced to
@@ -121,6 +125,7 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
     if (!provider) {
       return
     }
+
     onSelect(
       `${model} --provider ${provider.slug}${persistGlobal ? ' --global' : ` ${TUI_SESSION_MODEL_FLAG}`}`,
       effort
@@ -265,7 +270,9 @@ export function ModelPicker({ gw, onCancel, onConnect, onSelect, sessionId, t }:
 
     const count =
       stage === 'provider' ? providers.length : stage === 'effort' ? efforts.length : models.length
+
     const sel = stage === 'provider' ? providerIdx : stage === 'effort' ? effortIdx : modelIdx
+
     const setSel =
       stage === 'provider' ? setProviderIdx : stage === 'effort' ? setEffortIdx : setModelIdx
 

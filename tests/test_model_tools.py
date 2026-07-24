@@ -112,6 +112,29 @@ class TestHandleFunctionCall:
         # pre_tool_call does NOT get duration_ms (nothing has run yet).
         assert "duration_ms" not in kwargs_by_hook["pre_tool_call"]
 
+    def test_live_main_runtime_reaches_tool_dispatch(self, monkeypatch):
+        captured = {}
+
+        def fake_dispatch(name, args, **kwargs):
+            captured.update(kwargs)
+            return '{"ok":true}'
+
+        monkeypatch.setattr("model_tools.registry.dispatch", fake_dispatch)
+        runtime = {
+            "provider": "openai-codex",
+            "model": "gpt-5.6-sol",
+            "base_url": "https://chatgpt.com/backend-api/codex",
+        }
+
+        result = handle_function_call(
+            "web_search",
+            {"q": "test"},
+            main_runtime=runtime,
+        )
+
+        assert result == '{"ok":true}'
+        assert captured["main_runtime"] == runtime
+
 
 # =========================================================================
 # Agent loop tools

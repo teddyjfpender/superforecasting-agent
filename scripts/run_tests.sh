@@ -179,23 +179,34 @@ WORKERS="${HERMES_TEST_WORKERS:-4}"
 # ── Run pytest ──────────────────────────────────────────────────────────────
 cd "$REPO_ROOT"
 
+# Preserve partial progress and failures even when an outer command runner kills
+# this script before pytest can print its final traceback. CI may override the
+# directory while local runs default to an ignored repo-local artifact folder.
+TEST_ARTIFACT_DIR="${HERMES_TEST_ARTIFACT_DIR:-$REPO_ROOT/.test-results}"
+mkdir -p "$TEST_ARTIFACT_DIR"
+JUNIT_XML="$TEST_ARTIFACT_DIR/pytest-$(date -u +%Y%m%dT%H%M%SZ)-$$.xml"
+PYTEST_LOG="${JUNIT_XML%.xml}.log"
+
 # If the first argument starts with `-` treat all args as pytest flags;
 # otherwise treat them as test paths.
 ARGS=("$@")
 
 echo "▶ running pytest with $WORKERS workers, hermetic env, in $REPO_ROOT"
 echo "  (TZ=UTC LANG=C.UTF-8 PYTHONHASHSEED=0; all credential env vars unset)"
+echo "  JUnit artifact: $JUNIT_XML"
+echo "  Streaming log: $PYTEST_LOG"
 
 # -o "addopts=" clears pyproject.toml's `-n auto` so our -n wins.
 # We re-add --timeout/--timeout-method here because pyproject.toml's
 # addopts is wiped above. The 60s cap is essential: see pyproject.toml
 # for why (suite deadlocks at session teardown without it).
-exec "$PYTHON" -m pytest \
+"$PYTHON" -m pytest \
   -o "addopts=" \
   -n "$WORKERS" \
   --timeout=30 \
   --timeout-method=signal \
+  --junitxml="$JUNIT_XML" \
   --ignore=tests/integration \
   --ignore=tests/e2e \
   -m "not integration" \
-  "${ARGS[@]}"
+  "${ARGS[@]}" 2>&1 | tee "$PYTEST_LOG"

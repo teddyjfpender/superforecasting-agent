@@ -174,6 +174,28 @@ const fixture = (): ForecastWorkspaceResponse => ({
   forecasts: [texasItem(), cpiItem()],
   generated_at: '2026-05-29T14:00:00Z',
   open_alert_count: 13,
+  operations: {
+    queue: {
+      deterministic_critical: {
+        backlog: 2,
+        oldest_age_minutes: 12,
+        slo_minutes: 15,
+        slo_breaches: 0,
+        claims_today: 4,
+        daily_budget: 10000
+      }
+    },
+    history: [
+      { day: '2026-05-28', arrivals: 3, services: 2, cost_usd: 0.01 },
+      { day: '2026-05-29', arrivals: 1, services: 4, cost_usd: 0.02 }
+    ],
+    cost: { today_usd: 0.02, total_usd: 0.03, model_calls: 2, source_calls: 4, per_material_update_usd: 0.03, provenance: { estimated: 2 } },
+    coverage: { active_questions: 2, active_without_forecast: 0, active_without_schedule: 1, active_without_watch: 1 },
+    capacity: { actively_serviced: 2, monitor_only: 0, resolution_only: 0, archived: 0 },
+    source_changes: { pending: 3, estimator_required: 2, stranded: 0, open_failed: 1, failed: 1, processed: 8, oldest_pending_at: '2026-05-28T10:00:00Z' },
+    high_severity: { open: 2, awaiting_execution: 2, unclaimed: 1, slo_breaches: 1, oldest_age_minutes: 90, human_escalation: 1, assigned_owner_count: 1 },
+    rate_limits: []
+  },
   product: 'Superforecasting Agent',
   theses: [inflationThesis()]
 })
@@ -266,15 +288,19 @@ const waitForStable = async (
   const start = Date.now()
   let prev = read()
   let lastChange = Date.now()
+
   for (;;) {
     await tick(interval)
     const cur = read()
+
     if (cur !== prev) {
       prev = cur
       lastChange = Date.now()
     }
+
     const settled = cur.trim().length > 0 && Date.now() - lastChange >= stableFor
-    if (settled || Date.now() - start >= timeout) return
+
+    if (settled || Date.now() - start >= timeout) {return}
   }
 }
 
@@ -334,18 +360,23 @@ const refreshGw = (
   ({
     request: (method: string, params: Record<string, unknown>) => {
       calls.push({ method, params })
+
       if (method === 'forecast.question') {
         return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
       }
+
       if (method === 'jobs.start') {
         return Promise.resolve({ job_id: 'job_1', type: params.type })
       }
+
       if (method === 'jobs.status') {
         return Promise.resolve({ found: !!job, job })
       }
+
       if (method === 'jobs.active') {
         return Promise.resolve({ count: active.length, jobs: active })
       }
+
       return Promise.resolve(response)
     }
   }) as never
@@ -404,9 +435,26 @@ describe('DeskView (redesigned forecast desk)', () => {
     // stays". The lens set is REAL theses + a single All catch-all: the factor and
     // tag pseudo-lenses are gone, so "Power-bottleneck" / "#elections" never appear.
     expect(text).toContain('Inflation stays')
+    expect(text).toContain('Operations')
     expect(text).toContain('All')
     expect(text).not.toContain('Power-bottleneck')
     expect(text).not.toContain('#elections')
+    desk.cleanup()
+  })
+
+  it('renders a dedicated operations cockpit with history and measured cost', async () => {
+    const desk = await mountDesk(120, fixture())
+    await desk.press('\t')
+    await desk.press('\t')
+    const text = desk.text()
+    expect(text).toContain('Operational cockpit')
+    expect(text).toContain('30-day flow')
+    expect(text).toContain('Measured cost')
+    expect(text).toContain('$0.0200')
+    expect(text).toContain('cost basis estimated 2')
+    expect(text).toContain('deterministic_critical')
+    expect(text).toContain('SLA breaches 1')
+    expect(text).toContain('human escalation 1 · assigned 1')
     desk.cleanup()
   })
 
@@ -450,8 +498,6 @@ describe('DeskView (redesigned forecast desk)', () => {
   it('renders the dense column-table header and per-row numeric columns', async () => {
     const desk = await mountDesk(120, fixture())
     // Move to the All tab so both forecasts are listed.
-    await desk.press('\t')
-    await desk.press('\t')
     await desk.press('\t')
     const text = desk.text()
     // The bold header row names the dense columns (mirrors the Markets table).
@@ -553,8 +599,6 @@ describe('DeskView (redesigned forecast desk)', () => {
     // Lens set is now [thesis, All] (factor/tag lenses removed); Tab wraps, so three
     // presses from the thesis tab still land on the last tab, All.
     await desk.press('\t')
-    await desk.press('\t')
-    await desk.press('\t')
     const text = desk.text()
     // The All lens shows every forecast. The dense QUESTION column truncates long
     // titles to fit, so assert the visible prefixes.
@@ -566,8 +610,6 @@ describe('DeskView (redesigned forecast desk)', () => {
   it('Enter opens the full-detail modal for the selected forecast', async () => {
     const desk = await mountDesk(120, fixture())
     // Move to the All tab so a concrete forecast is selected, then open it.
-    await desk.press('\t')
-    await desk.press('\t')
     await desk.press('\t')
     await desk.press('\r')
     const text = desk.text()
@@ -719,8 +761,6 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('/ opens the inline filter and narrows the visible list', async () => {
     const desk = await mountDesk(120, fixture())
-    await desk.press('\t')
-    await desk.press('\t')
     await desk.press('\t') // All tab — holds both forecasts
     await desk.press('/')
     await desk.press('texas')
@@ -924,8 +964,6 @@ describe('DeskView (redesigned forecast desk)', () => {
     const desk = await mountDesk(120, fixture())
     // All tab holds the whole book so the dense column table + header render.
     await desk.press('\t')
-    await desk.press('\t')
-    await desk.press('\t')
     // `o` sorts the first column (QUESTION) ascending → a ▲ indicator on the header.
     await desk.press('o')
     expect(desk.text()).toContain('QUESTION ▲')
@@ -938,8 +976,6 @@ describe('DeskView (redesigned forecast desk)', () => {
   it('o cycles forward through the columns (QUESTION → PROB → …) in header order', async () => {
     const desk = await mountDesk(120, fixture())
     await desk.press('\t')
-    await desk.press('\t')
-    await desk.press('\t')
     await desk.press('o') // QUESTION
     await desk.press('o') // PROB (next in header order)
     expect(desk.text()).toContain('PROB ▲')
@@ -949,8 +985,6 @@ describe('DeskView (redesigned forecast desk)', () => {
   it('keeps the SELECTED forecast selected across a re-sort (tracks by id, not index)', async () => {
     const desk = await mountDesk(120, fixture())
     // All tab → rows are [texas ("Will…"), cpi ("May…")] in server order.
-    await desk.press('\t')
-    await desk.press('\t')
     await desk.press('\t')
     // Put the cursor on row 1 — the CPI question.
     await desk.press('j')
@@ -967,8 +1001,6 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('sort composes with the / filter (sorts the filtered set, not the whole book)', async () => {
     const desk = await mountDesk(120, fixture())
-    await desk.press('\t')
-    await desk.press('\t')
     await desk.press('\t') // All tab
     await desk.press('/')
     await desk.press('senate') // narrows to the Texas Senate question only
@@ -991,6 +1023,7 @@ describe('DeskView (redesigned forecast desk)', () => {
       open_alert_count: 0,
       product: 'Superforecasting Agent'
     })
+
     // Tabs are [#misc, #market, All]. Switch to All so all three rows render in
     // one frame and every NEXT cell is visible.
     await desk.press('\t')
@@ -1043,7 +1076,8 @@ const dueWorkspace = (): ForecastWorkspaceResponse => ({
 const reviewsGw = (workspace: ForecastWorkspaceResponse, reviews: unknown) =>
   ({
     request: (method: string, params: Record<string, unknown>) => {
-      if (method === 'forecast.reviews.next') return Promise.resolve(reviews)
+      if (method === 'forecast.reviews.next') {return Promise.resolve(reviews)}
+
       if (method === 'forecast.question') {
         return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
       }
@@ -1066,6 +1100,7 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
       import('../lib/icons.js'),
       import('../lib/accentSweep.js')
     ])
+
     const now = 1_700_000_000_000
     const base = { frame: 0, nightlyNextAt: NaN, nextTickAt: NaN, nowMs: now, running: false, sweeperEnabled: false }
 
@@ -1111,6 +1146,7 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
         patchConsole: false,
         stdout: out.stream
       } as never)
+
       return normalize(out.text(), stripAnsi)
     }
 
@@ -1123,6 +1159,7 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
     const sweeping = draw({ now: 0, reviews: null, sweepRunning: { dueCount: 4 }, t: DARK_THEME })
     expect(sweeping).toContain('sweeping 4 due')
     expect(sweeping).toContain(SPINNER[0])
+
     // Due + enabled sweeper w/ a future tick → "next sweep in Xm · N due".
     const countdown = draw({
       now: 0,
@@ -1130,6 +1167,7 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
       sweepRunning: null,
       t: DARK_THEME
     })
+
     expect(countdown).toContain('next sweep in')
     expect(countdown).toContain('3 due')
     // Due + DISABLED sweeper + a scheduled nightly → "N due · tonight".
@@ -1148,11 +1186,13 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
   it('NEXT cell: an overdue review with an enabled sweeper reads "due · Xm" (not a static "now")', async () => {
     const future = new Date(Date.now() + 8 * 60000).toISOString()
     const ws = dueWorkspace()
+
     const reviews = {
       due_count: 1,
       nightly: { installed: true, next_run_at: future },
       sweeper: { enabled: true, interval_minutes: 10, next_tick_at: future, running: false }
     }
+
     const desk = await mountDesk(120, ws, reviewsGw(ws, reviews))
     const text = desk.text()
     // The honest countdown replaced the static "now".
@@ -1186,6 +1226,7 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
       open_alert_count: 0,
       product: 'Superforecasting Agent'
     }
+
     const reviews = { due_count: 1, sweeper: { enabled: true, next_tick_at: null, running: true } }
     const desk = await mountDesk(120, ws, reviewsGw(ws, reviews))
     const text = desk.text()
@@ -1323,6 +1364,7 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
 
   it('U starts ONE detached REFRESH job over EVERY marked id and toasts the job-computed honest tally', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
+
     // The job runs the whole batch server-side and reports back a done JobRecord
     // carrying the honest tally it computed (1 refreshed, 1 unchanged, 1 no-sources).
     const doneJob = {
@@ -1331,6 +1373,7 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
       status: 'done',
       total: 3
     }
+
     const desk = await mountDesk(120, multiFixture(), refreshGw(multiFixture(), calls, doneJob))
     await desk.press(' ') // mark fq_a
     await desk.press(' ') // mark fq_b
@@ -1458,6 +1501,7 @@ const renderList = async (width: number, items: ForecastWorkspaceItem[], props: 
     import('../theme.js'),
     import('../lib/text.js')
   ])
+
   const stdout = writeStream(Math.max(width + 6, 80), 40)
   renderSync(
     React.createElement(DeskForecastList as never, {
@@ -1477,6 +1521,7 @@ const renderList = async (width: number, items: ForecastWorkspaceItem[], props: 
     } as never),
     { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
   )
+
   return normalize(stdout.text(), stripAnsi)
 }
 
@@ -1497,6 +1542,7 @@ describe('DeskView SRC / RDY readiness columns', () => {
       import('../theme.js'),
       import('../lib/visualSemantics.js')
     ])
+
     const sem = semantics(DARK_THEME)
     const win = { '1d': null, '1mo': null, '1w': null }
     const cell = (key: string, item: ForecastWorkspaceItem) => deskCellText(key, item, sem, DARK_THEME, win, 0)
@@ -1559,6 +1605,7 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
       import('../theme.js'),
       import('../lib/visualSemantics.js')
     ])
+
     const sem = semantics(DARK_THEME)
     const win = { '1d': null, '1mo': null, '1w': null }
     const cell = (key: string) => thesisCellText(key, inflationThesis(), sem, DARK_THEME, win, 0)
@@ -1567,11 +1614,13 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
     expect(cell('prob').color).toBe(DARK_THEME.color.accent)
     // QUESTION is the thesis title.
     expect(cell('q').text).toBe('Inflation stays sticky through 2026')
+
     // The columns a thesis has no per-question analogue for render an honest '—'
     // (absence as absence — never a fabricated 0, unlike a member SRC 0 warning).
     for (const key of ['ev', 'src', 'rdy', 'next']) {
       expect(cell(key)).toEqual({ color: sem.subtle, text: '—' })
     }
+
     // A thesis with no history/event probability stays an honest '—', never a fake number.
     expect(
       thesisCellText('prob', { ...inflationThesis(), history: [] }, sem, DARK_THEME, win, 0).text
@@ -1584,6 +1633,7 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
       import('../theme.js'),
       import('../lib/visualSemantics.js')
     ])
+
     const sem = semantics(DARK_THEME)
     // A +3pt 1W move formats exactly like a member row's window column.
     expect(
@@ -1615,6 +1665,7 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
       import('../theme.js'),
       import('../lib/visualSemantics.js')
     ])
+
     const sem = semantics(DARK_THEME)
     const now = Date.now()
     // The precomputed window is null (no same-regime anchor ≤ now−7d); the cell adds
@@ -1630,6 +1681,7 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
       import('../theme.js'),
       import('../lib/visualSemantics.js')
     ])
+
     const sem = semantics(DARK_THEME)
     // A +1pt same-regime (event) move → a real number cell, colour by direction.
     const cell = thesisCellText('1w', regimeSwitchThesis(), sem, DARK_THEME, { '1d': null, '1mo': null, '1w': 0.01 }, 0)
@@ -1643,18 +1695,22 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
       import('../theme.js'),
       import('../lib/visualSemantics.js')
     ])
+
     const sem = semantics(DARK_THEME)
     // All windows absent AND no regime boundary (nowMs=0 → nothing is in-window) →
     // 1D/1W/1MO are bare '—'. Together with the always-'—' EV/SRC/RDY/NEXT columns,
     // EVERY '—' cell must paint the identical subtle colour (no '1MO uncolored' drift).
     const win = { '1d': null, '1mo': null, '1w': null }
+
     const cells = ['1d', '1w', '1mo', 'ev', 'src', 'rdy', 'next'].map(k =>
       thesisCellText(k, inflationThesis(), sem, DARK_THEME, win, 0)
     )
+
     for (const cell of cells) {
       expect(cell.text).toBe('—')
       expect(cell.color).toBe(sem.subtle)
     }
+
     // one distinct colour across every absent cell
     expect(new Set(cells.map(c => c.color)).size).toBe(1)
   })
@@ -1665,6 +1721,7 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
       pinnedActive: true,
       pinnedThesis: inflationThesis()
     })
+
     // The pinned thesis leads the table: the ◆ marker + its 2dp event probability,
     // with the member forecast (CPI) rendering below it.
     expect(text).toContain('◆')
@@ -1681,6 +1738,7 @@ describe('DeskView readiness summary block', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const stdout = writeStream(120, 40)
     renderSync(
       React.createElement(DeskSummary, {
@@ -1693,6 +1751,7 @@ describe('DeskView readiness summary block', () => {
       }),
       { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream } as never
     )
+
     return normalize(stdout.text(), stripAnsi)
   }
 
@@ -1733,6 +1792,7 @@ describe('AgentProgressLine', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const stdout = writeStream(60, 6)
     renderSync(
       React.createElement(AgentProgressLine as never, { agent: agentJob(), now: 0, t: DARK_THEME, width: 56 } as never),
@@ -1780,9 +1840,11 @@ const jobGw = (
   ({
     request: (method: string, params: Record<string, unknown>) => {
       calls.push({ method, params })
+
       if (method === 'forecast.question') {
         return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
       }
+
       if (method === 'forecast.reforecast.start' || method === 'forecast.desk.task') {
         return Promise.resolve({
           note: 'ok',
@@ -1790,12 +1852,15 @@ const jobGw = (
           total: Array.isArray(params.question_ids) ? (params.question_ids as unknown[]).length : 0
         })
       }
+
       if (method === 'jobs.status') {
         return Promise.resolve({ found: !!record, job: record })
       }
+
       if (method === 'jobs.active') {
         return Promise.resolve({ count: 0, jobs: [] }) // no pre-existing job; start+attach drives it
       }
+
       return Promise.resolve(response)
     }
   }) as never
@@ -1803,6 +1868,7 @@ const jobGw = (
 describe('DeskView detached agent jobs (A / T)', () => {
   it('A starts a detached agent run over the marked batch, polls status, and toasts the HONEST tally', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
+
     // A terminal reforecast JobRecord (jobs.status shape): per-question results ride
     // the record's `result`; quorums_started is derived from the quorum_autorun rows.
     const record = {
@@ -1820,6 +1886,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
       total: 3,
       type: 'reforecast'
     }
+
     const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, record))
     await desk.press(' ') // mark fq_a
     await desk.press(' ') // mark fq_b
@@ -1841,6 +1908,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
 
   it('guards ONE job at a time — a second A while running flashes the run_id, no duplicate start', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
+
     const running = {
       current: { stage: 'research', title: 'Beta question' },
       done_count: 1,
@@ -1849,6 +1917,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
       status: 'running',
       total: 3
     }
+
     const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, running))
     await desk.press(' ')
     await desk.press(' ')
@@ -1873,6 +1942,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
 
   it('T opens the task modal, captures typed text, and submits forecast.desk.task with the batch + toast', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
+
     // A terminal TASK JobRecord: the agent's own task_summary rides `result` and
     // leads the completion toast (mode resolved from the record's `type`).
     const record = {
@@ -1884,6 +1954,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
       total: 1,
       type: 'task'
     }
+
     const desk = await mountDesk(120, multiFixture(), jobGw(multiFixture(), calls, record))
     await desk.press(' ') // mark fq_a → the task batch is {fq_a}
     await desk.press('T')
@@ -1918,6 +1989,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
 
   it('summarizeAgentJob leads task mode with the task_summary, agent mode with the committed/blocked split', async () => {
     const { summarizeAgentJob } = await import('../components/deskView.js')
+
     const agent = summarizeAgentJob(
       {
         quorums_started: 4,
@@ -1934,6 +2006,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
       },
       'agent'
     )
+
     expect(agent).toContain('12 committed')
     expect(agent).toContain('2 blocked')
     expect(agent).toContain('3 errors')
@@ -1950,6 +2023,7 @@ describe('DeskView agent-run visibility', () => {
 
   it('re-attaches to a live detached job on mount and animates the working row', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
+
     // A live reforecast JobRecord (jobs.status/jobs.active shape): the per-question
     // pointer rides annotations.current; the target batch rides spec.question_ids.
     const record = {
@@ -1962,6 +2036,7 @@ describe('DeskView agent-run visibility', () => {
       total: 2,
       type: 'reforecast'
     }
+
     const resp = (): ForecastWorkspaceResponse => ({
       active_count: 3,
       closing_soon_count: 0,
@@ -1970,18 +2045,23 @@ describe('DeskView agent-run visibility', () => {
       open_alert_count: 0,
       product: 'Superforecasting Agent'
     })
+
     const gw = {
       request: (method: string, params: Record<string, unknown>) => {
         calls.push({ method, params })
+
         if (method === 'jobs.active') {
           return Promise.resolve({ count: 1, jobs: [record] })
         }
+
         if (method === 'jobs.status') {
           return Promise.resolve({ found: true, job: record })
         }
+
         if (method === 'forecast.question') {
           return Promise.resolve({ packet: { question: { id: params.id, title: 'pkt' } } })
         }
+
         return Promise.resolve(resp())
       }
     } as never
@@ -2012,6 +2092,7 @@ describe('DeskView detached REFRESH jobs (U / mass-U)', () => {
 
   it('re-attaches to a live REFRESH job on mount (jobs.active) and resumes the spinner + ⋯ markers', async () => {
     const calls: { method: string; params: Record<string, unknown> }[] = []
+
     // A live job the operator started before leaving the Desk: fq_a is in flight
     // (current), fq_b is still queued. jobs.active discovers it on mount; the poller
     // then resumes the visuals — the whole point of moving the loop onto the runtime.
@@ -2024,6 +2105,7 @@ describe('DeskView detached REFRESH jobs (U / mass-U)', () => {
       status: 'running',
       total: 2
     }
+
     const runningStatus = {
       annotations: { results: [] },
       current: 'fq_a',
@@ -2033,6 +2115,7 @@ describe('DeskView detached REFRESH jobs (U / mass-U)', () => {
       status: 'running',
       total: 2
     }
+
     const resp = (): ForecastWorkspaceResponse => ({
       active_count: 3,
       closing_soon_count: 0,
@@ -2041,6 +2124,7 @@ describe('DeskView detached REFRESH jobs (U / mass-U)', () => {
       open_alert_count: 0,
       product: 'Superforecasting Agent'
     })
+
     const desk = await mountDesk(120, resp(), refreshGw(resp(), calls, runningStatus, [liveJob]))
     await tick(300)
     // The mount discovery found the live job and the poller attached to it by id.
@@ -2076,6 +2160,7 @@ describe('sidebar wrap law', () => {
     const { DARK_THEME } = await import('../theme.js')
     const item = plainRow('fq_long', 'Will the market begin pricing AI-infrastructure scarcity as a persistent macro constraint through 2027?')
     const stdout = writeStream(60, 40)
+
     const inst = render(
       React.createElement(DeskSummary as never, {
         latestNote: {
@@ -2087,6 +2172,7 @@ describe('sidebar wrap law', () => {
       }),
       { exitOnCtrlC: false, patchConsole: false, stdout: stdout.stream }
     )
+
     await tick(80)
     inst.unmount?.()
     const text = stripAnsiLocal(stdout.text())

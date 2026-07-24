@@ -50,6 +50,30 @@ from tools.registry import discover_builtin_tools, registry
 from toolsets import get_toolset, resolve_toolset, validate_toolset
 
 
+def test_forecast_tool_forwards_live_runtime_to_actions(tmp_path, monkeypatch):
+    from tools.forecast_actions import ACTIONS
+
+    runtime = {
+        "provider": "openai-codex",
+        "model": "gpt-5.6-sol",
+        "base_url": "https://chatgpt.com/backend-api/codex",
+    }
+    monkeypatch.setitem(
+        ACTIONS,
+        "capture_runtime",
+        lambda args, _ledger: json.dumps({"runtime": args.get("_main_runtime")}),
+    )
+
+    result = json.loads(
+        forecast_ledger_tool(
+            {"action": "capture_runtime", "db": str(tmp_path / "runtime.db")},
+            main_runtime=runtime,
+        )
+    )
+
+    assert result["runtime"] == runtime
+
+
 def _seed_evidence(db, question_id, *, note="baseline reading", claim="observed signal"):
     """Attach one evidence record so an AGENT-path update_forecast clears the
     require_evidence floor. The interactive tool opts into the ledger's resolved-policy
@@ -2679,7 +2703,12 @@ def test_forecast_ledger_tool_self_check_and_schedule_filter_by_confidence(tmp_p
     assert checked["alerts"][0]["scope_ref"] == low_confidence.id
     assert all(alert["scope_ref"] != high_confidence.id for alert in checked["alerts"])
     assert scheduled["scheduled_review"]["confidence_below"] == pytest.approx(0.5)
-    scheduled_alerts = ran["scheduled_review_results"][0]["alerts"]
+    scheduled_result = next(
+        row
+        for row in ran["scheduled_review_results"]
+        if row["review"]["id"] == scheduled["scheduled_review"]["id"]
+    )
+    scheduled_alerts = scheduled_result["alerts"]
     assert any(alert["scope_ref"] == low_confidence.id for alert in scheduled_alerts)
     assert all(alert["scope_ref"] != high_confidence.id for alert in scheduled_alerts)
 

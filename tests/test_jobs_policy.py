@@ -357,7 +357,13 @@ def test_refresh_under_auto_default_is_byte_identical(home, monkeypatch):
     record = runtime.run(job_id, store=store)
 
     assert record.status == "done"
-    assert record.result["tally"] == {"refreshed": 1, "unchanged": 1, "no_sources": 0, "error": 0}
+    assert record.result["tally"] == {
+        "refreshed": 1,
+        "unchanged": 1,
+        "no_sources": 0,
+        "needs_estimation": 0,
+        "error": 0,
+    }
     # Exactly one authorize call, auto, at the batch's real action point.
     assert len(record.policy_decisions) == 1
     assert record.policy_decisions[0]["class"] == "ledger_writes"

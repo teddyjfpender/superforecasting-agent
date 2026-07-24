@@ -22,6 +22,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl
+from urllib.parse import urlparse
 
 from forecasting.ledger import core as _core
 from forecasting.models import (
@@ -161,6 +162,23 @@ def add_watched_source(
             "source_type must be file, url, manual, rss, gdelt, fivethirtyeight, github, githubrepo, githubissues, githubcommits, githubactions, coingecko, pypi, npm, hackernews, reddit, bluesky, mastodon, reliefweb, federalregister, courtlistener, nvd, cisakev, openmeteo, airquality, weatherhistory, usgs, eonet, nws, clinicaltrials, openfda, pubmed, owid, whogho, fema, fred, eia, treasury, bls, worldbank, imf, census, socrata, ckan, stooq, yahoo, "
             "sec, secfacts, arxiv, openalex, crossref, wikipedia, wikipediapageviews, manifold, metaculus, polymarket, or kalshi"
         )
+    if inferred_type in {"url", "rss"}:
+        candidate = source.split(":", 1)[1] if source.startswith(("rss:", "atom:")) else source
+        parsed = urlparse(candidate)
+        local_rss_fixture = (
+            inferred_type == "rss"
+            and Path(candidate).is_absolute()
+            and not any(ord(char) < 32 for char in candidate)
+        )
+        if not local_rss_fixture and (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or any(ord(char) < 33 for char in candidate)
+            or candidate.count("http://") + candidate.count("https://") != 1
+        ):
+            raise ValidationError(
+                "watched URL must be one absolute HTTP(S) URL with no spaces or control characters"
+            )
 
     watch_id = f"ws_{uuid.uuid4().hex[:12]}"
     created_at = utc_now_iso()
@@ -173,7 +191,7 @@ def add_watched_source(
     with _core.allow_ledger_writes("add_watched_source"), ledger._connect() as conn:
         conn.execute(
             """
-            INSERT INTO watched_sources (
+            INSERT OR IGNORE INTO watched_sources (
                 id, scope_type, scope_ref, source, source_type, created_at,
                 last_checked_at, last_seen_signature, status, metadata, role
             )
@@ -193,7 +211,25 @@ def add_watched_source(
                 role,
             ),
         )
-    return ledger.get_watched_source(watch_id)
+        row = conn.execute(
+            """
+            SELECT id, metadata, role FROM watched_sources
+            WHERE scope_type = ? AND source = ? AND source_type = ?
+              AND ((scope_ref IS NULL AND ? IS NULL) OR scope_ref = ?)
+              AND status = 'active'
+            LIMIT 1
+            """,
+            (scope_type, source, inferred_type, scope_ref, scope_ref),
+        ).fetchone()
+        result_id = row["id"]
+        if result_id != watch_id and (metadata or role is not None):
+            merged = json_loads(row["metadata"], {})
+            merged.update(metadata or {})
+            conn.execute(
+                "UPDATE watched_sources SET metadata = ?, role = COALESCE(?, role) WHERE id = ?",
+                (json_dumps(merged), role, result_id),
+            )
+    return ledger.get_watched_source(result_id)
 
 
 def get_watched_source(ledger, watch_id: str) -> dict[str, Any]:
@@ -243,11 +279,23 @@ def check_watched_sources(
     alerts: list[AlertEvent] = []
     for watch in watches:
         source_type = watch["source_type"]
+        from forecasting.ledger.workflow import acquire_watch_source_token
+
+        rate_limit = acquire_watch_source_token(ledger, watch, now=now_ts)
+        if not rate_limit["granted"]:
+            continue
+        from forecasting.ledger.source_signatures import (
+            begin_source_observation_capture,
+            take_source_observation,
+        )
+
+        begin_source_observation_capture()
         current_signature = ledger._source_signature(
             watch["source"],
             source_type,
             metadata=watch.get("metadata"),
         )
+        observed_content = take_source_observation()
         previous_signature = watch.get("last_seen_signature")
         should_alert = (
             source_type
@@ -315,24 +363,69 @@ def check_watched_sources(
         )
         if should_alert:
             reason = "watched_source_unavailable" if current_signature.startswith("missing:") else "watched_source_changed"
-            alerts.append(
-                ledger.create_alert(
-                    severity="warning" if reason == "watched_source_unavailable" else "info",
-                    scope_type=watch["scope_type"],
-                    scope_ref=watch["scope_ref"] or watch["id"],
-                    reason=f"{reason}:{watch['id']}",
-                    recommended_action=ledger._watched_source_action(watch),
+            from forecasting.ledger.workflow import (
+                link_source_change_alert,
+                pending_source_change,
+                record_source_change_event,
+            )
+            handoff = pending_source_change(
+                ledger,
+                watched_source_id=watch["id"],
+                current_signature=current_signature,
+            )
+            if handoff is None:
+                failed = reason == "watched_source_unavailable"
+                source_snapshot = ledger._record_source_snapshot(
+                    question_id=(
+                        watch["scope_ref"] if watch["scope_type"] == "question" else None
+                    ),
+                    watch=watch,
+                    retrieved_at=now_ts,
+                    signature=current_signature,
+                    previous_signature=previous_signature,
+                    changed=not failed,
+                    status="failed" if failed else "success",
+                    error_message=current_signature if failed else None,
+                    observed_content=observed_content,
                 )
+                handoff = record_source_change_event(
+                    ledger,
+                    question_id=(
+                        watch["scope_ref"] if watch["scope_type"] == "question" else None
+                    ),
+                    watch=watch,
+                    source_snapshot=source_snapshot,
+                    previous_signature=previous_signature,
+                    current_signature=current_signature,
+                    detected_at=now_ts,
+                )
+            alert = ledger.create_alert(
+                severity="warning" if reason == "watched_source_unavailable" else "info",
+                scope_type=watch["scope_type"],
+                scope_ref=watch["scope_ref"] or watch["id"],
+                reason=f"{reason}:{watch['id']}",
+                recommended_action=ledger._watched_source_action(watch),
             )
+            link_source_change_alert(ledger, handoff["event"]["id"], alert.id)
+            alerts.append(alert)
         with ledger._connect() as conn:
-            conn.execute(
-                """
-                UPDATE watched_sources
-                SET last_checked_at = ?, last_seen_signature = ?
-                WHERE id = ?
-                """,
-                (now_ts, current_signature, watch["id"]),
-            )
+            if should_alert:
+                # Detection owns only last_checked_at. The consumer advances
+                # last_seen_signature after it records a disposition, so the
+                # exact old/new handoff cannot disappear between phases.
+                conn.execute(
+                    "UPDATE watched_sources SET last_checked_at = ? WHERE id = ?",
+                    (now_ts, watch["id"]),
+                )
+            else:
+                conn.execute(
+                    """
+                    UPDATE watched_sources
+                    SET last_checked_at = ?, last_seen_signature = ?
+                    WHERE id = ?
+                    """,
+                    (now_ts, current_signature, watch["id"]),
+                )
     # Executable update_triggers: compare the question's triggers against the
     # latest imported values and emit `trigger_fired` alerts. Scoped to the
     # questions whose watched sources we just checked.
@@ -587,13 +680,28 @@ def _source_signature(
     if not path.is_file():
         return f"missing:{path}"
     digest = hashlib.sha256()
+    excerpt = bytearray()
     try:
         with path.open("rb") as handle:
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
+                if len(excerpt) < 32_768:
+                    excerpt.extend(chunk[: 32_768 - len(excerpt)])
     except OSError:
         return f"missing:{path}"
     stat = path.stat()
+    from forecasting.ledger.source_signatures import capture_source_observation
+
+    capture_source_observation(
+        {
+            "entry_id": str(path),
+            "canonical_url": None,
+            "title": path.name,
+            "published_at": None,
+            "summary": bytes(excerpt).decode("utf-8", errors="replace")[:8_000],
+            "content_hash": digest.hexdigest(),
+        }
+    )
     return f"file:{stat.st_size}:{digest.hexdigest()}"
 
 

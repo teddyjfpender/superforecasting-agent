@@ -137,6 +137,7 @@ const digitFromCodepoint = (value: string | undefined): string | undefined => {
   }
 
   const codepoint = Number.parseInt(value, 10)
+
   if (!Number.isFinite(codepoint)) {
     return undefined
   }
@@ -154,6 +155,7 @@ const hasAltModifier = (modifier: string | undefined): boolean => {
   }
 
   const value = Number.parseInt(modifier, 10)
+
   return Number.isFinite(value) && ((value - 1) & 2) !== 0
 }
 
@@ -163,6 +165,7 @@ const rawAltDigit = (raw: string | undefined): string | undefined => {
   }
 
   const escape = '\x1b'
+
   if (raw.length === 2 && raw[0] === escape && raw[1] && raw[1] >= '1' && raw[1] <= '9') {
     return raw[1]
   }
@@ -177,11 +180,13 @@ const rawAltDigit = (raw: string | undefined): string | undefined => {
 
   const sequence = raw.slice(2)
   const csiU = sequence.match(/^(\d+);(\d+)u$/)
+
   if (csiU && hasAltModifier(csiU[2])) {
     return digitFromCodepoint(csiU[1])
   }
 
   const modifyOtherKeys = sequence.match(/^27;(\d+);(\d+)~$/)
+
   if (modifyOtherKeys && hasAltModifier(modifyOtherKeys[1])) {
     return digitFromCodepoint(modifyOtherKeys[2])
   }
@@ -195,6 +200,7 @@ const macOptionDigit = (input: string, key: ForecastShortcutKeyEvent) => {
   }
 
   const glyphDigit = MAC_OPTION_DIGITS[input]
+
   if (glyphDigit) {
     return glyphDigit
   }
@@ -227,6 +233,7 @@ export const forecastShortcutForKey = (
 
   const rawDigit =
     key.ctrl === true || key.shift === true || key.super === true ? undefined : rawAltDigit(raw)
+
   const altDigit = macOptionDigit(input, key) ?? rawDigit ?? (cleanAlt(key) ? ch : undefined)
 
   if (!altDigit || trimmedComposer) {

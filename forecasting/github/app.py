@@ -65,7 +65,11 @@ class GitHubAppClient:
     ) -> dict[str, Any]:
         method = method.upper()
         check_path = f"/repos/{self.repository_slug}/check-runs"
-        if action != "check.write" or method != "POST" or path != check_path:
+        check_update = re.fullmatch(rf"{re.escape(check_path)}/[0-9]+", path)
+        if action != "check.write" or not (
+            (method == "POST" and path == check_path)
+            or (method == "PATCH" and check_update is not None)
+        ):
             raise PermissionError("GitHub App client only permits repository promotion checks")
         token = self._installation_access_token()
         kwargs: dict[str, Any] = {

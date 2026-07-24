@@ -63,6 +63,7 @@ const sevColor = (t: Theme, sev: string): string =>
 const cycleSev = (current: string, dir: 1 | -1): Severity => {
   const idx = Math.max(0, SEVERITIES.indexOf((current as Severity) ?? 'warn'))
   const n = SEVERITIES.length
+
   return SEVERITIES[((idx + dir) % n + n) % n]
 }
 
@@ -73,6 +74,7 @@ const stepThreshold = (thr: ForecastConfigThreshold, value: number, dir: 1 | -1)
   const step = thr.integer ? 1 : Math.max(0.01, Math.round(span * 0.05 * 100) / 100)
   let next = value + dir * step
   next = Math.max(thr.minimum, Math.min(thr.maximum, next))
+
   return thr.integer ? Math.round(next) : Math.round(next * 100) / 100
 }
 
@@ -100,11 +102,13 @@ export function ForecastSettingsModal({
 
   // working draft (mutated locally, written on Save)
   const [cadence, setCadence] = useState('')
+
   const [decision, setDecision] = useState<DraftDecision>({
     action_threshold: '',
     decision_deadline: '',
     decision_owner: ''
   })
+
   const [gates, setGates] = useState<ForecastConfigGate[]>([])
   const [thresholds, setThresholds] = useState<ForecastConfigThreshold[]>([])
   // The machine-readiness composite for the READINESS section at the top of the
@@ -117,24 +121,29 @@ export function ForecastSettingsModal({
     aliveRef.current = true
     setLoading(true)
     setError('')
+
     // Never hang indefinitely on "Loading settings…": if the gateway is slow
     // (it builds a fresh ledger per forecast.config call) or busy, surface a
     // clear, actionable state instead of an endless spinner.
     const timer = setTimeout(() => {
-      if (!aliveRef.current) return
+      if (!aliveRef.current) {return}
       setError('Settings are taking a while to load — the desk gateway may be busy. Press Esc to close and try again.')
       setLoading(false)
     }, 8000)
+
     gw.request<unknown>('forecast.config', { id: questionId })
       .then(raw => {
-        if (!aliveRef.current) return
+        if (!aliveRef.current) {return}
         clearTimeout(timer)
         const cfg = asRpcResult<ForecastConfigResponse>(raw)
+
         if (!cfg) {
           setError('No settings are available for this forecast — it may be a benchmark or market question without a configurable profile. Press Esc to close.')
           setLoading(false)
+
           return
         }
+
         setCadence(cfg.cadence ?? '')
         setDecision({
           action_threshold: cfg.decision?.action_threshold ?? '',
@@ -147,7 +156,7 @@ export function ForecastSettingsModal({
         setLoading(false)
       })
       .catch((err: unknown) => {
-        if (!aliveRef.current) return
+        if (!aliveRef.current) {return}
         clearTimeout(timer)
         setError(err instanceof Error ? err.message : String(err))
         setLoading(false)
@@ -164,12 +173,13 @@ export function ForecastSettingsModal({
     let alive = true
     gw.request<unknown>('forecast.question.readiness', { question_id: questionId })
       .then(raw => {
-        if (!alive) return
+        if (!alive) {return}
         setReadiness(asRpcResult<ForecastQuestionReadinessResponse>(raw) ?? null)
       })
       .catch(() => {
-        if (alive) setReadiness(null)
+        if (alive) {setReadiness(null)}
       })
+
     return () => {
       alive = false
     }
@@ -183,9 +193,11 @@ export function ForecastSettingsModal({
       { key: 'decision_deadline', kind: 'text' },
       { key: 'action_threshold', kind: 'text' }
     ]
+
     gates.forEach((_, i) => out.push({ key: `gate_${i}`, kind: 'gate', ref: i }))
     thresholds.forEach((_, i) => out.push({ key: `thr_${i}`, kind: 'threshold', ref: i }))
     out.push({ key: 'save', kind: 'save' })
+
     return out
   }, [gates, thresholds])
 
@@ -201,7 +213,7 @@ export function ForecastSettingsModal({
   }, [fields.length])
 
   const save = () => {
-    if (busy) return
+    if (busy) {return}
     setBusy(true)
     setStatus('saving…')
     setError('')
@@ -209,17 +221,21 @@ export function ForecastSettingsModal({
     // default are written (so an unchanged gate stays profile-driven). Thresholds:
     // only the keys that differ from the registry default are written.
     const overrides: Record<string, string> = {}
+
     for (const g of gates) {
       if (g.severity && g.default && g.severity !== g.default) {
         overrides[g.id] = g.severity
       }
     }
+
     const thrOut: Record<string, number> = {}
+
     for (const thr of thresholds) {
       if (thr.value !== thr.default) {
         thrOut[thr.key] = thr.value
       }
     }
+
     const params: Record<string, unknown> = {
       decision: {
         action_threshold: decision.action_threshold,
@@ -230,16 +246,17 @@ export function ForecastSettingsModal({
       id: questionId,
       review_cadence: cadence
     }
+
     gw.request('forecast.config.set', params)
       .then(() => {
-        if (!aliveRef.current) return
+        if (!aliveRef.current) {return}
         setBusy(false)
         setStatus('saved')
         onSaved?.()
         onClose()
       })
       .catch((err: unknown) => {
-        if (!aliveRef.current) return
+        if (!aliveRef.current) {return}
         setBusy(false)
         setStatus('')
         setError(err instanceof Error ? err.message : String(err))
@@ -247,7 +264,7 @@ export function ForecastSettingsModal({
   }
 
   const editText = (apply: (prev: string) => string) => {
-    if (current.key === 'cadence') return setCadence(apply)
+    if (current.key === 'cadence') {return setCadence(apply)}
     setDecision(prev => ({ ...prev, [current.key]: apply(prev[current.key as keyof DraftDecision]) }))
   }
 
@@ -255,8 +272,10 @@ export function ForecastSettingsModal({
     if (current.kind === 'gate' && current.ref !== undefined) {
       const i = current.ref
       setGates(prev => prev.map((g, gi) => (gi === i ? { ...g, severity: cycleSev(g.severity, dir), source: 'override' } : g)))
+
       return
     }
+
     if (current.kind === 'threshold' && current.ref !== undefined) {
       const i = current.ref
       setThresholds(prev =>
@@ -272,39 +291,49 @@ export function ForecastSettingsModal({
     setSel(i => {
       const max = Math.max(0, fields.length - 1)
       const cur = Math.min(Math.max(0, i), max)
+
       return Math.min(max, Math.max(0, cur + delta))
     })
 
   useInput((ch, key) => {
     if (busy) {
-      if (key.escape) onClose()
+      if (key.escape) {onClose()}
+
       return
     }
-    if (key.escape) return onClose()
+
+    if (key.escape) {return onClose()}
 
     if (key.upArrow || (ch === 'k' && current.kind !== 'cadence' && current.kind !== 'text')) {
       return move(-1)
     }
+
     if (key.downArrow || (ch === 'j' && current.kind !== 'cadence' && current.kind !== 'text')) {
       return move(1)
     }
+
     if (key.tab) {
       return setSel(i => {
         const max = Math.max(0, fields.length - 1)
         const cur = Math.min(Math.max(0, i), max)
+
         return cur >= max ? 0 : cur + 1
       })
     }
 
     if (current.kind === 'save') {
-      if (key.return) return save()
+      if (key.return) {return save()}
+
       return
     }
 
     if (current.kind === 'gate' || current.kind === 'threshold') {
-      if (key.leftArrow || ch === 'h' || ch === '-') return adjust(-1)
-      if (key.rightArrow || ch === 'l' || ch === '+' || ch === ' ') return adjust(1)
-      if (key.return) return move(1)
+      if (key.leftArrow || ch === 'h' || ch === '-') {return adjust(-1)}
+
+      if (key.rightArrow || ch === 'l' || ch === '+' || ch === ' ') {return adjust(1)}
+
+      if (key.return) {return move(1)}
+
       return
     }
 
@@ -312,12 +341,15 @@ export function ForecastSettingsModal({
     if (key.return) {
       return move(1)
     }
+
     if (key.backspace || key.delete) {
       return editText(s => s.slice(0, -1))
     }
+
     if (ch && !key.ctrl && !key.meta) {
       const printable = [...ch].filter(c => c >= ' ').join('')
-      if (printable) editText(s => s + printable)
+
+      if (printable) {editText(s => s + printable)}
     }
   }, { isActive: !globalModal })
 
@@ -329,6 +361,7 @@ export function ForecastSettingsModal({
 
   const textRow = (key: string, label: string, value: string, placeholder: string) => {
     const active = current.key === key
+
     return (
       <Text key={key} wrap="truncate-end">
         <Text color={active ? t.color.accent : t.color.muted}>{cursorFor(key)}</Text>
@@ -348,6 +381,7 @@ export function ForecastSettingsModal({
     const key = `gate_${i}`
     const active = current.key === key
     const looser = g.looser
+
     return (
       <Text key={key} wrap="truncate-end">
         <Text color={active ? t.color.accent : t.color.muted}>{cursorFor(key)}</Text>
@@ -362,6 +396,7 @@ export function ForecastSettingsModal({
   const thrRow = (thr: ForecastConfigThreshold, i: number) => {
     const key = `thr_${i}`
     const active = current.key === key
+
     return (
       <Text key={key} wrap="truncate-end">
         <Text color={active ? t.color.accent : t.color.muted}>{cursorFor(key)}</Text>
@@ -387,6 +422,7 @@ export function ForecastSettingsModal({
   // of the modal (configuration below). Read-only; hidden when the composite is
   // unavailable (a benchmark/market question). A fully-ready question shows "· ready".
   const gapCount = readiness?.gaps?.length ?? 0
+
   const readinessSection = readiness && Number.isFinite(readiness.score) ? (
     <Box flexDirection="column" flexShrink={0}>
       <Box flexShrink={0}>

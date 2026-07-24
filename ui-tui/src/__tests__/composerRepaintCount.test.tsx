@@ -55,6 +55,7 @@ const writeStream = (columns: number, rows: number, isTTY = true) => {
 }
 
 const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
+
 const noop = () => {}
 
 const actions: any = {
@@ -93,6 +94,7 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
       import('../app/gatewayContext.js'),
       import('@hermes/ink')
     ])
+
     const { resetOverlayState } = await import('../app/overlayStore.js')
     const { resetUiState } = await import('../app/uiStore.js')
     const { $composerText, setComposerInput } = await import('../app/composerTextStore.js')
@@ -119,6 +121,7 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
     const railScrollRef = React.createRef<any>()
     const scrollRef = React.createRef<any>()
     const msg = { role: 'user' as const, text: 'hello world' }
+
     const transcript: any = {
       historyItems: [msg],
       railScrollRef,
@@ -135,6 +138,7 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
     // Typing writes to $composerText (as useComposerState does), NOT to a prop —
     // so `composer` is a stable object and only store subscribers re-render.
     const setInput = (s: string) => setComposerInput(s)
+
     const composer: any = {
       cols: COLS,
       compIdx: 0,
@@ -169,18 +173,21 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
     }
 
     const out = writeStream(COLS, ROWS)
+
     const instance: any = await render(React.createElement(App), {
       exitOnCtrlC: false,
       patchConsole: false,
       stdin: writeStream(COLS, ROWS, true).stream,
       stdout: out.stream
     })
+
     await tick(200)
 
     const railBaseline = railRenders
     const streamBaseline = streamRenders
 
     let v = 'hi'
+
     for (const ch of ['a', 'b', 'c', 'd', 'e']) {
       v += ch
       setInput(v)

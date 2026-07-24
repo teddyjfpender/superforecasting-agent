@@ -143,6 +143,7 @@ describe('themeFromOption', () => {
 
   it('dark mode lifts a light theme so it stays legible (no dark-on-dark)', async () => {
     const { themeFromOption } = await import('../components/themePicker.js')
+
     // A light-designed theme: near-black text + dark-blue accent (unreadable
     // on a dark terminal until the dark-mode contrast floor lifts them).
     const lightTheme = {
@@ -152,11 +153,15 @@ describe('themeFromOption', () => {
       name: 'daylight',
       source: 'builtin' as const
     }
+
     const cl = (v: number) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4)
+
     const lum = (hex: string) => {
       const n = parseInt(hex.replace('#', ''), 16)
+
       return 0.2126 * cl((n >> 16) & 255) + 0.7152 * cl((n >> 8) & 255) + 0.0722 * cl(n & 255)
     }
+
     const contrast = (hex: string) => (lum(hex) + 0.05) / 0.05
 
     // Forced dark mode: text + accent get lifted above the AA floor.

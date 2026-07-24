@@ -10,6 +10,7 @@ const ENV_KEYS = [
   'TERM',
   'TERM_PROGRAM'
 ] as const
+
 let importId = 0
 
 async function withCleanEnv(setup: () => void, body: () => Promise<void>) {

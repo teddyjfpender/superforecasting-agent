@@ -9,26 +9,24 @@
 // union discriminated on `type`). Both are `type` aliases, never `interface`s,
 // so the A4 grep-proof (no hand-written wire-shape INTERFACE outside
 // generated.ts) holds. The forecast value-enums re-export from ./types.js.
-import { WireEvent } from './protocol/generated.js'
+import type { WireEvent } from './protocol/generated.js'
 import type { GatewaySkin, SubagentEventPayload } from './protocol/generated.js'
 import type { SessionInfo, Usage } from './types.js'
-
-// ── the forecast-desk value enums (moved to types.ts; re-exported here so the
-// historical `from '../gatewayTypes.js'` import sites keep resolving) ─────────
-export type { ForecastTailClassification, ForecastTriageLabel } from './types.js'
 
 // ── generated wire shapes — every hand-written interface mirror is DELETED; the
 // one source of truth is ./protocol/generated.ts. Re-exported here so consumers
 // keep one stable import site while the arc's endgame lands. ──────────────────
 export type {
-  // gateway / skin / completion / transcript
-  GatewayCompletionItem,
-  GatewaySkin,
-  GatewayTranscriptMessage,
+  // prompt / blocking-prompt acks / shell / clipboard / input / image
+  ApprovalRespondResponse,
+  BackgroundStartResponse,
+  // voice / model / tools / reload / process / browser
+  BrowserManageResponse,
+  ClarifyRespondResponse,
+  ClipboardPasteResponse,
   // commands / completion / slash
   CommandsCatalogResponse,
   CompletionResponse,
-  SlashExecResponse,
   // config / setup / theme
   ConfigDisplayConfig,
   ConfigFullResponse,
@@ -36,9 +34,33 @@ export type {
   ConfigMtimeResponse,
   ConfigSetResponse,
   ConfigVoiceConfig,
-  SetupStatusResponse,
-  ThemeListResponse,
-  ThemeOption,
+  // agents / delegation / subagents / spawn-tree
+  DelegationPauseResponse,
+  DelegationStatusResponse,
+  // gateway / skin / completion / transcript
+  GatewayCompletionItem,
+  GatewaySkin,
+  GatewayTranscriptMessage,
+  ImageAttachResponse,
+  InputDetectDropResponse,
+  ModelOptionProvider,
+  ModelOptionsResponse,
+  // obsidian
+  ObsidianNote,
+  ObsidianNoteResponse,
+  ObsidianSearchResponse,
+  ObsidianSearchResult,
+  ObsidianStatusResponse,
+  ProcessStopResponse,
+  PromptSubmitResponse,
+  ReloadEnvResponse,
+  ReloadMcpResponse,
+  // rollback
+  RollbackCheckpoint,
+  RollbackDiffResponse,
+  RollbackListResponse,
+  RollbackRestoreResponse,
+  SecretRespondResponse,
   // session lifecycle
   SessionBranchResponse,
   SessionCloseResponse,
@@ -56,57 +78,22 @@ export type {
   SessionTitleResponse,
   SessionUndoResponse,
   SessionUsageResponse,
-  // prompt / blocking-prompt acks / shell / clipboard / input / image
-  ApprovalRespondResponse,
-  BackgroundStartResponse,
-  ClarifyRespondResponse,
-  ClipboardPasteResponse,
-  ImageAttachResponse,
-  InputDetectDropResponse,
-  PromptSubmitResponse,
-  SecretRespondResponse,
+  SetupStatusResponse,
   ShellExecResponse,
-  SudoRespondResponse,
-  TerminalResizeResponse,
-  // voice / model / tools / reload / process / browser
-  BrowserManageResponse,
-  ModelOptionProvider,
-  ModelOptionsResponse,
-  ProcessStopResponse,
-  ReloadEnvResponse,
-  ReloadMcpResponse,
-  ToolsConfigureResponse,
-  VoiceRecordResponse,
-  VoiceToggleResponse,
-  // rollback
-  RollbackCheckpoint,
-  RollbackDiffResponse,
-  RollbackListResponse,
-  RollbackRestoreResponse,
-  // agents / delegation / subagents / spawn-tree
-  DelegationPauseResponse,
-  DelegationStatusResponse,
+  SlashExecResponse,
   SpawnTreeListEntry,
   SpawnTreeListResponse,
   SpawnTreeLoadResponse,
   SubagentEventPayload,
   SubagentInterruptResponse,
-  // obsidian
-  ObsidianNote,
-  ObsidianNoteResponse,
-  ObsidianSearchResponse,
-  ObsidianSearchResult,
-  ObsidianStatusResponse,
+  SudoRespondResponse,
+  TerminalResizeResponse,
+  ThemeListResponse,
+  ThemeOption,
+  ToolsConfigureResponse,
+  VoiceRecordResponse,
+  VoiceToggleResponse,
 } from './protocol/generated.js'
-
-// ── TS-ONLY ALIAS #1: command.dispatch's 4-arm discriminated union ────────────
-// No single pydantic-model form (the arms carry disjoint keys keyed on `type`);
-// stays hand-written as a `type` alias.
-export type CommandDispatchResponse =
-  | { output?: string; type: 'exec' | 'plugin' }
-  | { target: string; type: 'alias' }
-  | { message?: string; name: string; type: 'skill' }
-  | { message: string; notice?: string; type: 'send' }
 
 // ── Arc A3: forecast.* / forecast.warnings.* wire shapes are GENERATED ─────────
 // The hand-written mirrors were deleted; these types now have ONE source of truth
@@ -128,14 +115,12 @@ export type {
   ForecastCalibrationTrend,
   ForecastCalibrationTrendWindow,
   ForecastCohortScoreboard,
-  ForecastContinuousScorecard,
-  ForecastPooledDiagnostic,
-  ForecastQuarantineSummary,
   ForecastCommandResponse,
   ForecastConfigDecision,
   ForecastConfigGate,
   ForecastConfigResponse,
   ForecastConfigThreshold,
+  ForecastContinuousScorecard,
   ForecastDashboardAlert,
   ForecastDashboardBacktest,
   ForecastDashboardCalibration,
@@ -159,6 +144,8 @@ export type {
   ForecastFactor,
   ForecastFactorConstituent,
   ForecastFactorHistoryPoint,
+  ForecastPooledDiagnostic,
+  ForecastQuarantineSummary,
   ForecastQuestionPacket,
   ForecastQuestionPacketAssumption,
   ForecastQuestionPacketEvidence,
@@ -219,13 +206,26 @@ export type {
   ForecastWorkspaceScores,
   ForecastWorkspaceTrigger,
 } from './protocol/generated.js'
+
+// ── TS-ONLY ALIAS #1: command.dispatch's 4-arm discriminated union ────────────
+// No single pydantic-model form (the arms carry disjoint keys keyed on `type`);
+// stays hand-written as a `type` alias.
+export type CommandDispatchResponse =
+  | { output?: string; type: 'exec' | 'plugin' }
+  | { target: string; type: 'alias' }
+  | { message?: string; name: string; type: 'skill' }
+  | { message: string; notice?: string; type: 'send' }
+
 // The automode job events keep their legacy TUI names, aliased onto the generated
 // jobs-runtime payloads (protocol/events/warnings.py).
 export type {
-  AutomodeProgressPayload as ForecastWarningsAutomodeProgress,
   AutomodeCompletePayload as ForecastWarningsAutomodeComplete,
   AutomodeErrorPayload as ForecastWarningsAutomodeError,
+  AutomodeProgressPayload as ForecastWarningsAutomodeProgress,
 } from './protocol/generated.js'
+// ── the forecast-desk value enums (moved to types.ts; re-exported here so the
+// historical `from '../gatewayTypes.js'` import sites keep resolving) ─────────
+export type { ForecastTailClassification, ForecastTriageLabel } from './types.js'
 
 // ── TS-ONLY ALIAS #2: the GatewayEvent discriminated union ────────────────────
 // One union over EVERY server→client event, discriminated on the generated

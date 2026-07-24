@@ -1,5 +1,5 @@
-import { isTermuxTuiMode } from '../lib/termux.js'
 import { tuiEnvValue } from '../lib/envAlias.js'
+import { isTermuxTuiMode } from '../lib/termux.js'
 
 const truthy = (v?: string) => /^(?:1|true|yes|on)$/i.test((v ?? '').trim())
 const falsy = (v?: string) => /^(?:0|false|no|off)$/i.test((v ?? '').trim())

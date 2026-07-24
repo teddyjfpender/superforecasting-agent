@@ -60,6 +60,7 @@ class GitHubPublisher:
         fork_owner_login: str | None = None,
         fork_owner_github_user_id: str | None = None,
         fork_client: GitHubCaller | None = None,
+        promotion_checks: Any | None = None,
     ) -> None:
         if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository_slug):
             raise ValidationError("repository_slug must use owner/repository form")
@@ -73,6 +74,7 @@ class GitHubPublisher:
         self.fork_owner_login = fork_owner_login
         self.fork_owner_github_user_id = fork_owner_github_user_id
         self.fork_client = fork_client
+        self.promotion_checks = promotion_checks
         fork_values = (
             fork_repository_slug,
             fork_owner_login,
@@ -197,6 +199,14 @@ class GitHubPublisher:
                 "checks_running",
                 expected_status="blocked",
             )
+        check_result = None
+        if self.promotion_checks is not None:
+            try:
+                check_result = self.promotion_checks.publish(changeset_id, root)
+                updated = get_changeset(self.ledger, changeset_id)
+            except Exception as exc:
+                self._record_check_failure(changeset_id, exc)
+                raise
         return {
             "changeset_id": changeset_id,
             "repository": self.repository_slug,
@@ -210,6 +220,9 @@ class GitHubPublisher:
             "pr_url": pr.get("html_url"),
             "provenance_digest": bundle["digest"],
             "projection_digest": preview["projection_digest"],
+            "check_conclusion": (
+                check_result.get("conclusion") if check_result is not None else None
+            ),
             "status": updated["status"],
         }
 
@@ -414,6 +427,25 @@ class GitHubPublisher:
             self.ledger,
             changeset_id,
             status,
+            expected_status=current["status"],
+            fields={"metadata": metadata},
+        )
+
+    def _record_check_failure(self, changeset_id: str, exc: Exception) -> None:
+        current = get_changeset(self.ledger, changeset_id)
+        metadata = dict(current.get("metadata") or {})
+        metadata["promotion_check_error"] = {
+            "recoverable": True,
+            "category": (
+                "permission_denied"
+                if isinstance(exc, (GitHubPermissionError, PermissionError))
+                else "check_publication_failed"
+            ),
+        }
+        transition_changeset(
+            self.ledger,
+            changeset_id,
+            "blocked",
             expected_status=current["status"],
             fields={"metadata": metadata},
         )

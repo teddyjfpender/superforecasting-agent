@@ -136,6 +136,7 @@ describe('Home two-pane: Recent rail height is independent of composer growth', 
     // The composer text lives in $composerText now; growing it there is what
     // grows the input box (exactly like typing does in production).
     const composer = buildComposer(COLS)
+
     const App = () =>
       React.createElement(
         Box,

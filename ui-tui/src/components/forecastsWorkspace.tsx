@@ -17,7 +17,6 @@ import type {
   ForecastThesisComponent,
   ForecastThesisEntity,
   ForecastThesisTrigger,
-  ForecastWorkspaceHistoryPoint,
   ForecastWorkspaceItem,
   ForecastWorkspacePanel,
   ForecastWorkspacePanelEstimate,
@@ -28,18 +27,13 @@ import {
   type BandPoint,
   boxWhisker,
   clamp01,
-  compactNumber,
   deltaGlyph,
   dotTrack,
-  type DownsampleResult,
   downsampleSeries,
   histogram,
-  type HistogramBar,
   levelSparkline,
   multiSeriesChart,
   pct,
-  pctDelta,
-  type SeriesCell,
   shortDate,
   timeAxis,
   wrapLines
@@ -55,11 +49,11 @@ import {
   type TailSeverity,
   unearnedHeadline
 } from '../lib/forecastTail.js'
-import { type FieldSpec, filterRanked, rankItems } from '../lib/fuzzyRank.js'
+import { filterRanked } from '../lib/fuzzyRank.js'
 import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
 import { asRpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
-import type { PanelSection } from '../types.js'
+import type { PanelSection as PanelSectionData } from '../types.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
 import {
@@ -276,6 +270,13 @@ export const panelFromPacket = (packet: ForecastQuestionPacket | null | undefine
   }
 }
 
+export {
+  buildVoteShareSeries,
+  chartScale,
+  historyToBandPoints,
+  seriesRuns
+} from './forecast/charts.js'
+export type { VoteShareSeriesResult } from './forecast/charts.js'
 // The headline/format lib and chart/series builders now live in
 // ./forecast/headlines.js and ./forecast/charts.js; re-exported here so
 // callers (deskView) and the test suite keep importing them from this module.
@@ -293,13 +294,6 @@ export {
   truncate,
   unitSuffix
 } from './forecast/headlines.js'
-export {
-  buildVoteShareSeries,
-  chartScale,
-  historyToBandPoints,
-  seriesRuns
-} from './forecast/charts.js'
-export type { VoteShareSeriesResult } from './forecast/charts.js'
 
 export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: ForecastsWorkspaceProps) {
   const { stdout } = useStdout()
@@ -1346,6 +1340,7 @@ export function ForecastDetail({
     () => (isDistribution ? null : distributionBars(item.probability, item.candidate_intervals)),
     [isDistribution, item.probability, item.candidate_intervals]
   )
+
   const isVoteShare = !!voteBars && voteBars.length >= 2
   const leader = isVoteShare && voteBars ? voteBars[0]! : null
   const voteScale = voteBars && voteBars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
@@ -1355,6 +1350,7 @@ export function ForecastDetail({
     () => (isVoteShare && voteBars ? buildVoteShareSeries(item, voteBars) : null),
     [isVoteShare, voteBars, item]
   )
+
   const hasMulti = !!vote && vote.series.some(series => series.values.some(finite))
 
   const multiChart = useMemo(
@@ -1375,8 +1371,10 @@ export function ForecastDetail({
     if (!multiChart || !vote) {
       return null
     }
+
     const history = item.history ?? []
     const dates = vote.keptIndices.map(i => history[i]?.as_of ?? null)
+
     return timeAxis(dates, { gutterW: multiChart.gutterW, plotW: multiChart.plotW })
   }, [multiChart, vote, item.history])
 
@@ -1408,8 +1406,10 @@ export function ForecastDetail({
     if (!chart) {
       return null
     }
+
     const history = item.history ?? []
     const dates = preview.keptIndices.map(i => history[i]?.as_of ?? null)
+
     return timeAxis(dates, { gutterW: chart.gutterW, plotW: chart.plotW })
   }, [chart, item.history, preview])
 
@@ -2073,6 +2073,7 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
 
   const disagreement = panel.spread?.disagreement_index
   const disBand = finite(disagreement) ? disagreementBand(disagreement) : null
+
   const disColor =
     disBand === 'calm'
       ? t.color.ok
@@ -2081,6 +2082,7 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
         : disBand === 'high'
           ? t.color.warn
           : t.color.error
+
   const disFill = finite(disagreement) ? Math.max(0, Math.min(railW, Math.round(disagreement * railW))) : 0
   const disBar = '█'.repeat(disFill) + '░'.repeat(Math.max(0, railW - disFill))
 
@@ -2209,7 +2211,7 @@ export function PanelSection({ panel, t, width }: { panel: ForecastWorkspacePane
 // keymap, so the action rows are shown as a reference playbook, not links. Uses
 // the hanging-indent two-column pattern (fixed key column + flexGrow value with
 // minWidth={0}) so long rationales / URLs wrap instead of overflowing the pane.
-export function ForecastPacketTail({ sections, t, width }: { sections: PanelSection[]; t: Theme; width: number }) {
+export function ForecastPacketTail({ sections, t, width }: { sections: PanelSectionData[]; t: Theme; width: number }) {
   const keyWidth = Math.min(18, Math.max(8, Math.floor(width * 0.34)))
 
   return (
@@ -2592,10 +2594,13 @@ export const scoreText = (
   if (!finite(score)) {
     return '—'
   }
+
   const head = `${score.toFixed(0)}/100`
+
   if (band && finite(band.q05) && finite(band.q95)) {
     return `${head} (${band.q05.toFixed(0)}–${band.q95.toFixed(0)})`
   }
+
   return head
 }
 

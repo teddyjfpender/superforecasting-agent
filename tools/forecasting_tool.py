@@ -725,7 +725,14 @@ FORECAST_LEDGER_SCHEMA = {
             "forecasting_protocol_version": {"type": "string"},
             "protocol_version": {"type": "string"},
             "toolset_version": {"type": "string"},
-            "source_or_note": {"type": "string"},
+            "source_or_note": {
+                "type": "string",
+                "description": (
+                    "add_evidence: REQUIRED source URL or a durable note identifying the evidence. "
+                    "For a raw web page use action='ingest' or add_evidence with this field; do not "
+                    "send source_type='url' to import_source_evidence."
+                ),
+            },
             "source": {"type": "string"},
             "watches": {
                 "type": "array",
@@ -804,6 +811,11 @@ FORECAST_LEDGER_SCHEMA = {
             "only_media": {"type": "boolean"},
             "source_type": {
                 "type": "string",
+                "description": (
+                    "Action-dependent source kind. import_source_evidence accepts structured adapters "
+                    "such as fred, polymarket, kalshi, rss, and SEC—not raw 'url'. For a raw URL use "
+                    "action='ingest'. add_watched_source may use url, file, or manual."
+                ),
                 "enum": [
                     "file",
                     "url",
@@ -1106,7 +1118,9 @@ FORECAST_LEDGER_SCHEMA = {
                     "For action='bayes': the inputs for the chosen bayes_action "
                     "(e.g. {prior_p, lrs} for lr_update; {components, method, "
                     "extremize, correlation_matrix} for combine; {previous, current, "
-                    "components} for forecast_diff)."
+                    "components} for forecast_diff). sensitivity requires "
+                    "{components:[{name, probability, weight?}], "
+                    "parameter_ranges:{component_name:[low, high]}}."
                 ),
             },
             "predictions": {
@@ -1325,13 +1339,20 @@ def _market_query_refs(args: dict[str, Any]) -> list[SeriesRef]:
 
 
 @allow_ledger_writes_decorator("forecast_ledger_tool")
-def forecast_ledger_tool(args: dict[str, Any]) -> str:
+def forecast_ledger_tool(
+    args: dict[str, Any],
+    *,
+    main_runtime: dict[str, Any] | None = None,
+) -> str:
     # This IS the gated commit flow: every forecast-producing action here runs
     # through create_snapshot / create_question / record_panel_run, which apply
     # the calibration / panel / evidence gates. Opening the write context for the
     # whole dispatch is what lets those gated writes through; an ad-hoc script
     # that imports ForecastLedger and calls them directly stays refused.
     ledger = ForecastLedger(args.get("db"))
+    args = dict(args)
+    if main_runtime:
+        args["_main_runtime"] = dict(main_runtime)
     action = args.get("action")
     # Lazy import breaks the facade<->action-module import cycle: the
     # tools.forecast_actions submodules import helpers from THIS module, so
@@ -2891,7 +2912,9 @@ registry.register(
     name="forecast_ledger",
     toolset="forecasting",
     schema=FORECAST_LEDGER_SCHEMA,
-    handler=lambda args, **kw: forecast_ledger_tool(args),
+    handler=lambda args, **kw: forecast_ledger_tool(
+        args, main_runtime=kw.get("main_runtime")
+    ),
     check_fn=check_forecasting_requirements,
     emoji="F",
 )

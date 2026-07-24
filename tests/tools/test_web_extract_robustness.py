@@ -7,9 +7,23 @@ Covers two robustness gaps left unaddressed when #54843 merged:
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import re
 
 import tools.web_tools as wt
+
+
+def test_extract_rejects_malformed_url_lists_before_dispatch():
+    wrong_shape = json.loads(asyncio.run(wt.web_extract_tool("https://example.com")))
+    concatenated = json.loads(
+        asyncio.run(wt.web_extract_tool(["https://example.com\nhttps://second.test"]))
+    )
+
+    assert wrong_shape["success"] is False
+    assert "non-empty array" in wrong_shape["error"]
+    assert concatenated["success"] is False
+    assert "one absolute HTTP(S) URL" in concatenated["error"]
 
 
 def test_store_full_text_is_bounded(tmp_path, monkeypatch):

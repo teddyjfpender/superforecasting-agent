@@ -60,6 +60,7 @@ describe('rankItems', () => {
       { title: 'A', tags: ['macro'] },
       { title: 'B', tags: ['macro'] }
     ]
+
     const ranked = rankItems(pool, 'macro', FIELDS)
     expect(ranked.map(r => r.item.title)).toEqual(['A', 'B'])
   })

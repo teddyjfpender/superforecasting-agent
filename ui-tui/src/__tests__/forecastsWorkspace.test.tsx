@@ -3,6 +3,7 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import type * as ForecastWorkspaceModule from '../components/forecastsWorkspace.js'
 import type {
   ForecastFactor,
   ForecastTailAudit,
@@ -485,7 +486,7 @@ const renderTail = async (packet: Record<string, unknown>, width = 70) => {
 }
 
 describe('ForecastsWorkspace pure transforms', () => {
-  let mod: typeof import('../components/forecastsWorkspace.js')
+  let mod: typeof ForecastWorkspaceModule
 
   it('imports helpers', async () => {
     mod = await import('../components/forecastsWorkspace.js')
@@ -511,6 +512,7 @@ describe('ForecastsWorkspace pure transforms', () => {
     expect(distributionBars(0.52)).toBeNull()
     expect(distributionBars({ mean: 3.1, sd: 0.4 })).toBeNull()
     expect(distributionBars(null)).toBeNull()
+
     // hybrid payload (candidate shares + bolted-on leader distribution): show ONLY
     // the candidate bars, never the quantile/interval fields as spurious candidates.
     const hybrid = distributionBars({
@@ -518,16 +520,19 @@ describe('ForecastsWorkspace pure transforms', () => {
       mean: 64, median: 63.36, q05: 43.29, q25: 55.35, q50: 63.36, q75: 70.6, q95: 79.32,
       interval_90_low: 43.29, interval_90_high: 79.32, interval_50_low: 55.35, interval_50_high: 70.6,
     })
+
     expect(hybrid).not.toBeNull()
     expect(hybrid!.map(b => b.label).sort()).toEqual(['Andy Biggs', 'David Schweikert', 'Other'])
   })
 
   it('distributionBars attaches per-candidate intervals by label', async () => {
     const { distributionBars } = await import('../components/forecastsWorkspace.js')
+
     const bars = distributionBars(
       { Pappas: 72, Jarvis: 6, Other: 22 },
       { Pappas: { lo: 50, hi: 85 }, Jarvis: { lo: 2, hi: 14 } }
     )
+
     const byLabel = Object.fromEntries((bars ?? []).map(b => [b.label, b.interval]))
     expect(byLabel.Pappas).toEqual({ lo: 50, hi: 85 })
     expect(byLabel.Jarvis).toEqual({ lo: 2, hi: 14 })
@@ -536,10 +541,12 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('distributionHeadline shows the LEADER 90% interval where published, tail point-only', async () => {
     const { distributionHeadline } = await import('../components/forecastsWorkspace.js')
+
     const head = distributionHeadline(
       { 'Nigel Farage': 67, 'Count Binface': 16.5, 'Laurence Fox': 4 },
       { intervals: { 'Nigel Farage': { lo: 61, hi: 73 }, 'Count Binface': { lo: 12, hi: 22 } } }
     )
+
     // leader carries "67.0 [61-73]"; the tail (Binface) stays a bare point.
     expect(head).toContain('Farage 67.0 [61-73]')
     expect(head).toContain('Binface 16.5')
@@ -603,12 +610,14 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('chartScale domain includes EVERY drawn artifact — band edges, not just markers', async () => {
     const { chartScale } = await import('../components/forecastsWorkspace.js')
+
     // A tight marker series with a much wider band (e.g. the event interval): the
     // domain must contain the band edges too, or the band would be clipped/pinned.
     const scale = chartScale([
       { y: 0.5, lo: 0.2, hi: 0.85 },
       { y: 0.52, lo: 0.22, hi: 0.9 }
     ])
+
     expect(scale.yMin).toBeLessThanOrEqual(0.2)
     expect(scale.yMax).toBeGreaterThanOrEqual(0.9)
   })
@@ -618,6 +627,7 @@ describe('ForecastsWorkspace pure transforms', () => {
       import('../lib/forecastCharts.js'),
       import('../components/forecastsWorkspace.js')
     ])
+
     // The real event-band shape: headline + p10/p90 lows/highs per snapshot.
     const points = thesisHealthBandPoints({
       history: [
@@ -626,7 +636,9 @@ describe('ForecastsWorkspace pure transforms', () => {
         { as_of: '2026-05-29T00:00:00Z', event_high: 0.4, event_low: 0.31, headline_probability: 0.352 }
       ]
     } as never)
+
     const chart = bandChart(points, { height: 7, width: 48, ...chartScale(points) })
+
     // Every drawn value sits strictly inside the domain the chart reports — the
     // clamp in rowFor is a proven no-op, so no dot escapes the axis.
     for (const p of points) {
@@ -641,6 +653,7 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('multiSeriesChart floors the axis at 0 (never a negative vote share) and expands the ceiling to the data', async () => {
     const { multiSeriesChart } = await import('../lib/forecastCharts.js')
+
     // The old single-series bug: 15% padding pushed the axis below 0. multiSeriesChart
     // keeps the caller's floor (0) and only ever raises yMax to contain the markers.
     const chart = multiSeriesChart(
@@ -650,6 +663,7 @@ describe('ForecastsWorkspace pure transforms', () => {
       ],
       { height: 7, width: 40, yMax: 10, yMin: 0 } // yMax deliberately below the data
     )
+
     expect(chart.yMin).toBe(0) // never negative
     expect(chart.yMax).toBeGreaterThanOrEqual(67) // expanded to contain the leader
     expect(chart.glyphs[0]).toBe('●') // leader gets the distinct filled marker
@@ -658,6 +672,7 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('multiSeriesChart draws the leader LAST so it wins a shared cell (leader visually distinct)', async () => {
     const { multiSeriesChart } = await import('../lib/forecastCharts.js')
+
     // Two series at the same value + only column → they collide on one cell; the
     // leader (index 0) is drawn last and overwrites, so ● shows, never ◆.
     const chart = multiSeriesChart(
@@ -667,6 +682,7 @@ describe('ForecastsWorkspace pure transforms', () => {
       ],
       { height: 5, width: 20, yMax: 12, yMin: 0 }
     )
+
     const flat = chart.rows.map(row => row.cells.map(cell => cell.ch).join('')).join('')
     expect(flat).toContain('●')
     expect(flat).not.toContain('◆') // leader overwrote the collision
@@ -674,12 +690,14 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('multiSeriesChart draws a per-candidate whisker on the latest column, point marker on top', async () => {
     const { multiSeriesChart } = await import('../lib/forecastCharts.js')
+
     // A wide interval [20, 85] around a latest point of 50, so the ┬/┴ caps sit clear
     // of the ● marker's own row (the marker legitimately wins any shared cell).
     const chart = multiSeriesChart(
       [{ label: 'lead', values: [30, 50], latestInterval: { lo: 20, hi: 85 } }],
       { height: 11, width: 24, yMax: 90, yMin: 0 }
     )
+
     const flat = chart.rows.map(row => row.cells.map(cell => cell.ch).join('')).join('')
     expect(flat).toContain('┬') // p95 cap
     expect(flat).toContain('┴') // p05 cap
@@ -706,6 +724,7 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('buildVoteShareSeries pivots history into top-K candidate series + an aggregated Other (leader first)', async () => {
     const { buildVoteShareSeries, distributionBars } = await import('../components/forecastsWorkspace.js')
+
     const item = {
       headline_kind: 'probability',
       history: [
@@ -714,6 +733,7 @@ describe('ForecastsWorkspace pure transforms', () => {
       ],
       probability: { A: 40, B: 25, C: 15, D: 10, E: 6, F: 4 }
     } as unknown as ForecastWorkspaceItem
+
     const bars = distributionBars(item.probability)!
     const result = buildVoteShareSeries(item, bars)
     // Top-4 candidates (value DESC, leader first) then a single Other for the tail.
@@ -728,6 +748,7 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('buildVoteShareSeries scales a fraction-scale payload ×100 and gaps a missing candidate', async () => {
     const { buildVoteShareSeries, distributionBars } = await import('../components/forecastsWorkspace.js')
+
     const item = {
       headline_kind: 'probability',
       history: [
@@ -737,6 +758,7 @@ describe('ForecastsWorkspace pure transforms', () => {
       ],
       probability: { No: 0.4, Yes: 0.6 }
     } as unknown as ForecastWorkspaceItem
+
     const bars = distributionBars(item.probability)!
     const result = buildVoteShareSeries(item, bars)
     const round = (values: (null | number)[]) => values.map(v => (v == null ? null : Math.round(v)))
@@ -765,12 +787,14 @@ describe('ForecastsWorkspace pure transforms', () => {
 
   it('headlineLabel renders a categorical vote-share as a value-sorted, leader-first list — never JSON', async () => {
     const { headlineLabel } = await import('../components/forecastsWorkspace.js')
+
     // The Clacton bug: insertion-ordered JSON that truncated the leader (Farage 67).
     const clacton = headlineLabel({
       headline_kind: 'probability',
       probability: { 'Count Binface': 16.5, 'Laurence Fox': 4.0, 'Nigel Farage': 67.0, 'Other official candidates': 12.5 },
       probability_display: '{"Count Binface": 16.5, ...}'
     } as ForecastWorkspaceItem)
+
     expect(clacton).not.toContain('{')
     expect(clacton).not.toContain('"')
     // Leader FIRST (Farage 67 — the value that got truncated before), strict value
@@ -966,6 +990,7 @@ describe('ForecastsWorkspace render', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const item = texasItem()
     // A causal-path link (reasons_up) long enough that a narrow detail pane MUST
     // wrap it. The tail token survives in the output only if the line wrapped,
@@ -1012,6 +1037,7 @@ describe('ForecastsWorkspace render', () => {
     ])
 
     const item = { ...texasItem(), panel: null }
+
     const packetPanel = panelFromPacket({
       forecast_history: [
         {
@@ -1338,6 +1364,7 @@ describe('ForecastsWorkspace render', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const { ThesisDeskRead, thesisHealthBandPoints } = mod
 
     // A joint-threshold thesis (all-binary members): the mean-index score band is
@@ -1384,6 +1411,7 @@ describe('ForecastsWorkspace render', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const { ThesisDeskRead } = mod
 
     // 84 snapshots — the exact "dozens of dots in clumps" case the operator hit.
@@ -1392,6 +1420,7 @@ describe('ForecastsWorkspace render', () => {
       headline_probability: 0.3 + 0.2 * Math.sin(i / 4),
       headline_regime: 'event'
     }))
+
     const thesis = { ...inflationThesis(), event_band: null, history, score_band: null }
 
     const stdout = writeStream(120, 90)
@@ -1597,6 +1626,7 @@ describe('forecasts workspace tail audit + ensemble', () => {
       { name: 'kalshi market', probability: 0.58, source: 'kalshi:tx-senate', weight: 0.2 },
       { name: 'liquid market', probability: 0.54, source: 'polymarket:tx-senate', weight: 1.0 }
     ]
+
     const text = await renderDetailProps({ ensembleRows: rows, item: texasItem() })
     expect(text).toContain('ensemble components (3)')
     expect(text).toContain('kalshi market')
@@ -1627,13 +1657,16 @@ describe('distribution-aware vote-share detail', () => {
     expect(text).toContain('● Farage')
     expect(text).toContain('◆') // a second, distinct series marker
     expect(text).toContain('Binface')
+
     // Every y-axis gutter label is >= 0 — a vote share is never negative (the bug).
     const axisNums = text
       .split('\n')
       .filter(line => line.includes('│'))
       .map(line => Number.parseFloat(line.split('│')[0]!.trim()))
       .filter(n => Number.isFinite(n))
+
     expect(axisNums.length).toBeGreaterThan(0)
+
     for (const n of axisNums) {
       expect(n).toBeGreaterThanOrEqual(0)
     }
@@ -1734,6 +1767,7 @@ describe('question-detail modal formatting law', () => {
       { name: 'kalshi market', probability: 0.58, source: 'kalshi:tx-senate-2026-general-election', weight: 0.2 },
       { name: 'liquid market', probability: 0.54, source: 'polymarket:tx-senate', weight: 1.0 }
     ]
+
     const text = await renderDetailProps({ ensembleRows: rows, item: texasItem() })
     expect(text).toContain('ensemble components (3)')
     // Full slugs, in full — the old truncate(…, 20) would have cut all three.

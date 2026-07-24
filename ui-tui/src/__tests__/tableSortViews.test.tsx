@@ -70,6 +70,7 @@ describe('MarketsView column sort', () => {
     home = mkdtempSync(join(tmpdir(), 'mkt-sort-'))
     process.env.FORECAST_HOME = home
     process.env.FORECAST_TUI_INLINE = '1'
+
     // A watchlist so the quote table renders without any network, plus a fresh
     // quote cache (recent asOf → the mount refresh skips fetching).
     const watchlist = [
@@ -77,8 +78,10 @@ describe('MarketsView column sort', () => {
       { category: 'Stocks', name: 'Microsoft', provider: 'yahoo', symbol: 'MSFT' },
       { category: 'Stocks', name: 'Nvidia', provider: 'yahoo', symbol: 'NVDA' }
     ]
+
     writeFileSync(join(home, 'markets.json'), JSON.stringify({ categories: [], custom: [], providers: [], watchlist }))
     const now = Date.now()
+
     const q = (symbol: string, name: string, value: number, changePct: number) => ({
       asOf: now,
       change: changePct,
@@ -89,6 +92,7 @@ describe('MarketsView column sort', () => {
       value,
       volume: value * 1000
     })
+
     writeFileSync(
       join(home, 'markets_cache.json'),
       JSON.stringify({
@@ -111,13 +115,16 @@ describe('MarketsView column sort', () => {
       import('../theme.js'),
       import('../lib/text.js')
     ])
+
     const stdout = writeStream(columns, 40)
     const stdin = writeStream(columns, 40, true)
     const gw = { off: () => undefined, on: () => undefined, request: () => Promise.resolve({}) } as never
+
     const instance = render(
       React.createElement(MarketsView, { gw, onAsk: () => undefined, onClose: () => undefined, t: DARK_THEME }),
       { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
     )
+
     await tick(60)
 
     return {
@@ -209,11 +216,13 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
 
   it('Desk shows exactly one (chips) shortcuts row — the prose duplicate is gone', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
+
     const [{ DeskView }, { DARK_THEME }, { clearOverlayCache }] = await Promise.all([
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/overlayCache.js')
     ])
+
     clearOverlayCache()
     const gw = { request: () => Promise.resolve(deskFixture()) } as never
     const view = await mountView(React.createElement(DeskView, { gw, onClose: () => undefined, t: DARK_THEME }))
@@ -258,6 +267,7 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
   it('Warnings (Alerts) shows exactly one (chips) shortcuts row — the prose row was converted', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
     const [{ AlertsView }, { DARK_THEME }] = await Promise.all([import('../components/alertsView.js'), import('../theme.js')])
+
     // A non-empty aggregate so the tree footer (its full chip set) renders — the
     // empty backlog would show only [r Refresh] [q Close].
     const aggregate = {
@@ -266,7 +276,9 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
       headline: { agent: 1, free: 1, manual: 0, total: 2 },
       manual: { reasons: [], total: 0 }
     }
+
     const dashboard = { summary: { alerts: [], open_alert_count: 2, review_queue: [] } }
+
     const gw = {
       off: () => undefined,
       on: () => undefined,
@@ -275,6 +287,7 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
           method === 'forecast.warnings.aggregate' ? aggregate : method === 'forecast.dashboard' ? dashboard : {}
         )
     } as never
+
     const view = await mountView(React.createElement(AlertsView, { gw, onClose: () => undefined, sessionId: '', t: DARK_THEME }))
     const text = view.text()
     // The tree footer is now the single bracketed chips row; the old prose row
@@ -288,11 +301,13 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
   // must render EXACTLY ONE (chips) shortcuts row and ZERO prose shortcut rows.
   it('Calibration shows exactly one (chips) shortcuts row', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
+
     const [{ CalibrationView }, { DARK_THEME }, { clearOverlayCache }] = await Promise.all([
       import('../components/calibrationView.js'),
       import('../theme.js'),
       import('../lib/overlayCache.js')
     ])
+
     clearOverlayCache()
     const gw = { request: () => Promise.resolve({}) } as never
     const view = await mountView(React.createElement(CalibrationView, { gw, onClose: () => undefined, t: DARK_THEME }))
@@ -322,6 +337,7 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
   it('Hooks shows exactly one (chips) shortcuts row — the inspector prose row is gone', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
     const [{ HooksView }, { DARK_THEME }] = await Promise.all([import('../components/hooksView.js'), import('../theme.js')])
+
     const rule = {
       check: 'saturation < 40',
       default: 'warn',
@@ -331,6 +347,7 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
       severity: 'warn',
       source: 'built-in'
     }
+
     const gw = { request: () => Promise.resolve({ enabled: true, profile: 'default', rules: [rule] }) } as never
     const view = await mountView(React.createElement(HooksView, { gw, onClose: () => undefined, t: DARK_THEME }))
     const text = view.text()

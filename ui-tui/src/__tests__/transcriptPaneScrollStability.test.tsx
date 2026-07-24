@@ -29,6 +29,7 @@ const writeStream = (columns: number, rows: number, isTTY = true) => {
 }
 
 const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
+
 const noop = () => {}
 
 const actions: any = {
@@ -83,6 +84,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
       import('../app/gatewayContext.js'),
       import('@hermes/ink')
     ])
+
     const { resetOverlayState } = await import('../app/overlayStore.js')
     const { resetUiState } = await import('../app/uiStore.js')
     resetOverlayState()
@@ -96,6 +98,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
       started_at: 10 - i,
       title: `chat ${i + 1}`
     }))
+
     const gw: any = {
       off: noop,
       on: noop,
@@ -111,6 +114,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
 
     const railScrollRef = React.createRef<any>()
     const scrollRef = React.createRef<any>()
+
     const transcript: any = {
       historyItems: items,
       railScrollRef,
@@ -127,6 +131,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
     }
 
     const gwValue = { gw, rpc: gw.rpc }
+
     const App = ({ input }: { input: string }) =>
       React.createElement(
         Box,
@@ -151,6 +156,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
       stdin: writeStream(COLS, ROWS, true).stream,
       stdout: writeStream(COLS, ROWS).stream
     })
+
     await tick(200)
 
     // A real, overflowing transcript viewport.
@@ -175,10 +181,11 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
     // clamped to the TOP of the chat, and the recovery frame then read "grew
     // while at bottom" and yanked the reader to the BOTTOM, restoring sticky.)
     let v = 'hi'
+
     for (let k = 0; k < 5; k++) {
       v += 'a'
       instance.rerender(React.createElement(App, { input: v }))
-      // eslint-disable-next-line no-await-in-loop
+
       await tick(80)
       expect(scrollRef.current?.getScrollTop()).toBe(before)
       expect(scrollRef.current?.isSticky()).toBe(false)

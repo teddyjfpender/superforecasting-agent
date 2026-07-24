@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -196,9 +197,10 @@ def _review_sweeper_state_path(state_path: "str | Path | None" = None) -> Path:
 def read_review_sweeper_state(state_path: "str | Path | None" = None) -> dict[str, Any]:
     """The last gateway due-sweep tick's result (or ``{}`` when none ran yet).
 
-    Shape: ``{"last_tick_at", "last_sweep_at", "ran", "due_count", "refreshed",
-    "alerts", "duration_ms", "skipped_reason"}``. Read by ``forecast doctor`` so an
-    operator can see the sweeper acting BETWEEN nightly runs (or why it skipped).
+    Shape includes ``last_tick_at``, the last sweep's start/completion timestamps,
+    an in-flight ``running`` flag, terminal counts, duration, and skip reason. Read
+    by ``forecast doctor`` so an operator can distinguish a long healthy sweep
+    acting BETWEEN nightly runs from a dead ticker.
     Best-effort: a missing / unreadable state file degrades to ``{}``."""
     path = _review_sweeper_state_path(state_path)
     try:
@@ -289,6 +291,32 @@ def run_due_reviews(
     """
 
     ledger = ForecastLedger(db_path)
+    try:
+        resolution_finalization = ledger.run_resolution_finalization_tasks(
+            owner=f"scheduled-resolution-finalizer:{os.getpid()}", now=now, limit=100
+        )
+    except Exception:
+        resolution_finalization = []
+    try:
+        dead_letter_recovery = ledger.reconcile_operational_dead_letters(
+            owner=f"scheduled-dead-letter-recovery:{os.getpid()}", now=now
+        )
+    except Exception:
+        dead_letter_recovery = []
+    try:
+        source_routes = ledger.run_source_change_router(
+            owner=f"scheduled-router:{os.getpid()}", now=now, limit=500
+        )
+    except Exception:
+        source_routes = []
+    try:
+        unsupported_proposals = ledger.reject_unsupported_source_proposals()
+    except Exception:
+        unsupported_proposals = []
+    try:
+        expired_proposals = ledger.expire_forecast_update_proposals(now=now)
+    except Exception:
+        expired_proposals = []
 
     # DETERMINISTIC self-refresh (no LLM): inject the watched-source fetcher so the
     # cadence sweep re-pulls + re-pools + auto-commits every refreshable due question.
@@ -316,6 +344,37 @@ def run_due_reviews(
             alert_rows.append(alert)
 
     sections: list[str] = []
+    if resolution_finalization:
+        completed = sum(row.get("status") == "completed" for row in resolution_finalization)
+        sections.append(
+            "Resolution finalization\n"
+            f"completed {completed}/{len(resolution_finalization)} score + postmortem follow-up(s)\n"
+        )
+    if dead_letter_recovery:
+        actions: dict[str, int] = {}
+        for row in dead_letter_recovery:
+            action = str(row.get("action") or "unknown")
+            actions[action] = actions.get(action, 0) + 1
+        sections.append(
+            "Dead-letter recovery\n"
+            + ", ".join(f"{key} {value}" for key, value in sorted(actions.items()))
+            + "\n"
+        )
+    if source_routes:
+        sections.append(
+            "Source-change handoff\n"
+            f"routed {len(source_routes)} immutable observation(s) without re-fetching\n"
+        )
+    if unsupported_proposals:
+        sections.append(
+            "Proposal lifecycle\n"
+            f"rejected {len(unsupported_proposals)} signature-only proposal(s) lacking reviewable evidence\n"
+        )
+    if expired_proposals:
+        sections.append(
+            "Proposal lifecycle\n"
+            f"expired {len(expired_proposals)} stale proposal(s); refresh before approval\n"
+        )
     score_events = [alert for alert in alert_rows if alert.reason.startswith("score_created:")]
     postmortem_events = [alert for alert in alert_rows if alert.reason.startswith("postmortem_created:")]
     if results and alert_rows:
@@ -1016,7 +1075,13 @@ def build_warning_runners(
         # Real gated work = autopilot re-checked the watched source(s), recorded a
         # source snapshot, and possibly proposed/committed an update. A hard
         # "failed" status (required source down) leaves the alert OPEN to resurface.
-        if not result or result.get("status") == "failed":
+        run_status = result.get("status") or (result.get("run") or {}).get("status")
+        diagnostics = (result.get("run") or {}).get("diagnostics") or {}
+        if (
+            not result
+            or run_status in {"failed", "partial", "partial_source_failure", "needs_estimation"}
+            or diagnostics.get("source_failures")
+        ):
             return None
         # No-bare-ack guard for the policy-less re-check: it counts as real work ONLY
         # when it recorded >= 1 source snapshot. A question whose watched source has
@@ -1179,6 +1244,47 @@ def run_warning_resolution(
         led, scope=scope, reason=reason, limit=limit, kinds=kinds, tier=tier,
         cooldown=cooldown, now=now,
     )
+    # Source-backed material-change alerts are owned by the durable source-event
+    # queue. Running the generic warning action as well would re-fetch the whole
+    # question and let one transient failure poison unrelated immutable events.
+    if open_warnings:
+        with led._connect() as conn:
+            source_owned = {
+                row["alert_id"]
+                for row in conn.execute(
+                    "SELECT DISTINCT task.alert_id FROM operational_tasks AS task "
+                    "JOIN source_change_events AS event ON event.id = task.source_change_event_id "
+                    "WHERE event.status = 'pending' "
+                    "AND json_extract(event.new_state, '$.status') = 'success' "
+                    "AND task.alert_id IS NOT NULL"
+                ).fetchall()
+            }
+            source_owned_questions = {
+                row["question_id"]
+                for row in conn.execute(
+                    """
+                    SELECT DISTINCT question_id FROM operational_tasks
+                    WHERE task_type = 'process_source_change'
+                      AND status IN ('pending', 'leased') AND question_id IS NOT NULL
+                    """
+                ).fetchall()
+            }
+        filtered_warnings = []
+        estimation_questions = set()
+        for warning in open_warnings:
+            estimation_required = warning.reason.startswith(
+                "forecast_estimation_required:"
+            )
+            if warning.id in source_owned or (
+                estimation_required and warning.scope_ref in source_owned_questions
+            ):
+                continue
+            if estimation_required and warning.scope_ref in estimation_questions:
+                continue
+            if estimation_required:
+                estimation_questions.add(warning.scope_ref)
+            filtered_warnings.append(warning)
+        open_warnings = filtered_warnings
     total = len(open_warnings)
 
     def _emit(payload: dict[str, Any]) -> None:
@@ -1200,6 +1306,7 @@ def run_warning_resolution(
 
     results: list[dict[str, Any]] = []
     cancelled = False
+    task_owner = f"warning-worker:{uuid.uuid4().hex[:12]}"
 
     if dry_run:
         # Pure preview: no write context, no acks, no runner spend.
@@ -1248,9 +1355,74 @@ def run_warning_resolution(
             if spend_cap is not None and spent >= spend_cap:
                 budget_exhausted = True
                 break
+            if warning.severity in {"critical", "high"}:
+                task_lane = "urgent_forecast"
+            elif warning.kind in {
+                fwarn.ResolutionKind.REFORECAST,
+                fwarn.ResolutionKind.EVIDENCE_COLLECTION,
+            }:
+                task_lane = "normal_reforecast"
+            else:
+                task_lane = "deterministic_critical"
+            task = led.claim_alert_operational_task(
+                warning,
+                owner=task_owner,
+                lane=task_lane,
+                now=now,
+            )
+            if task is None:
+                result = {
+                    "alert_id": warning.id,
+                    "reason": warning.reason,
+                    "scope_ref": warning.scope_ref,
+                    "kind": warning.kind.value,
+                    "status": "claimed_elsewhere",
+                    "acknowledged": False,
+                    "detail": "durable alert task is owned by another worker or already completed",
+                }
+                results.append(result)
+                _emit(
+                    {
+                        "phase": "alert",
+                        "done": index,
+                        "total": total,
+                        "remaining": total - index,
+                        "alert_id": warning.id,
+                        "reason": warning.reason,
+                        "status": "claimed_elsewhere",
+                    }
+                )
+                continue
             result = fwarn.resolve_alert(led, warning, runners=runners, now=now)
+            result["operational_task_id"] = task["id"]
             results.append(result)
             status = result.get("status")
+            try:
+                if status == "resolved":
+                    led.complete_operational_task(
+                        task["id"],
+                        owner=task_owner,
+                        disposition="warning_resolved",
+                        result={"alert_id": warning.id, "resolution": result},
+                        now=now,
+                    )
+                elif status == "surfaced":
+                    led.complete_operational_task(
+                        task["id"],
+                        owner=task_owner,
+                        disposition="surfaced_for_review",
+                        result={"alert_id": warning.id, "resolution": result},
+                        now=now,
+                    )
+                else:
+                    led.fail_operational_task(
+                        task["id"],
+                        owner=task_owner,
+                        error=str(result.get("detail") or status or "warning action failed"),
+                        now=now,
+                    )
+            except Exception as exc:
+                result["task_recording_error"] = str(exc)
             # A "resolved"/"failed" on an auto-resolvable (non-bookkeeping) kind means
             # the injected runner actually fired — i.e. a real (paid) spend.
             ran_runner = (
@@ -1335,8 +1507,8 @@ def run_warning_resolution(
 # WHICH gated sweep runs WHEN; the dispatcher still acks ONLY on real gated work.
 # ---------------------------------------------------------------------------
 
-_AUTOMODE_PAID_BUDGET_DEFAULT = 3
-_AUTOMODE_PAID_MIN_INTERVAL_HOURS_DEFAULT = 6.0
+_AUTOMODE_PAID_BUDGET_DEFAULT = 1
+_AUTOMODE_PAID_MIN_INTERVAL_HOURS_DEFAULT = 0.5
 
 _AUTOMODE_BUDGET_ENV_NAMES = (
     "FORECAST_WARNINGS_PAID_BUDGET",
@@ -1369,11 +1541,53 @@ def _automode_config() -> dict[str, Any]:
         return {}
 
 
+def _source_estimator_config() -> dict[str, Any]:
+    """Read the dedicated source-estimator worker settings."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
+        block = cron_cfg.get("source_estimator", {}) if isinstance(cron_cfg, dict) else {}
+        return block if isinstance(block, dict) else {}
+    except Exception:
+        return {}
+
+
+def _source_estimator_state_path(state_path: str | Path | None = None) -> Path:
+    if state_path is not None:
+        return Path(state_path)
+    from hermes_constants import get_hermes_home
+
+    return get_hermes_home() / "cron" / "source_estimator_state.json"
+
+
+def read_source_estimator_state(
+    state_path: str | Path | None = None,
+) -> dict[str, Any]:
+    try:
+        data = json.loads(_source_estimator_state_path(state_path).read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_source_estimator_state(
+    state: dict[str, Any], state_path: str | Path | None = None
+) -> None:
+    path = _source_estimator_state_path(state_path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(state, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        pass
+
+
 def resolve_paid_budget(explicit: int | None = None) -> int:
     """Resolve the per-cycle paid-tier agent-run budget.
 
     Precedence: explicit arg > env (``FORECAST_WARNINGS_PAID_BUDGET``) >
-    ``cron.warning_automode.paid_budget`` in config > default (3). A value of 0
+    ``cron.warning_automode.paid_budget`` in config > default (1). A value of 0
     disables the paid tier entirely (free-tier-only continuous mode).
     """
     if explicit is not None:
@@ -1403,7 +1617,7 @@ def resolve_paid_budget(explicit: int | None = None) -> int:
 
 
 def resolve_paid_min_interval_hours(explicit: float | None = None) -> float:
-    """Resolve the minimum hours between paid-tier passes (default 6h).
+    """Resolve the minimum hours between paid-tier passes (default 0.5h).
 
     Precedence: explicit arg > env > ``cron.warning_automode.paid_min_interval_hours``
     in config > default. A value of 0 means "no interval gate" (paid runs every
@@ -1449,6 +1663,13 @@ def _read_automode_state(state_path: str | Path | None = None) -> dict[str, Any]
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def read_warning_automode_state(
+    state_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Return the last warning-worker checkpoint, including in-flight state."""
+    return _read_automode_state(state_path)
 
 
 def _write_automode_state(state: dict[str, Any], state_path: str | Path | None = None) -> None:
@@ -1528,6 +1749,38 @@ def run_warning_automode(
     results plus the paid gating decision.
     """
     led = ledger if ledger is not None else ForecastLedger(db_path)
+    started_at = _now_dt(now).isoformat()
+    prior_state = _read_automode_state(state_path)
+    _write_automode_state(
+        {
+            **prior_state,
+            "running": True,
+            "started_at": started_at,
+            "completed_at": None,
+            "error": None,
+        },
+        state_path,
+    )
+    try:
+        resolution_finalization = led.run_resolution_finalization_tasks(
+            owner=f"warning-resolution-finalizer:{uuid.uuid4().hex[:12]}",
+            now=now,
+            limit=100,
+        )
+    except Exception as exc:
+        resolution_finalization = [{"error": str(exc)}]
+    try:
+        dead_letter_recovery = led.reconcile_operational_dead_letters(
+            owner=f"warning-dead-letter-recovery:{uuid.uuid4().hex[:12]}", now=now
+        )
+    except Exception as exc:
+        dead_letter_recovery = [{"error": str(exc)}]
+    try:
+        source_routes = led.run_source_change_router(
+            owner=f"warning-router:{uuid.uuid4().hex[:12]}", now=now, limit=500
+        )
+    except Exception as exc:
+        source_routes = [{"error": str(exc)}]
     budget = resolve_paid_budget(paid_budget)
     interval = resolve_paid_min_interval_hours(paid_min_interval_hours)
 
@@ -1553,10 +1806,20 @@ def run_warning_automode(
         getattr(runners, "reforecast_runner", None) is not None
         or getattr(runners, "evidence_runner", None) is not None
     )
-    state = _read_automode_state(state_path)
-    last_iso = state.get("last_paid_run_at")
     now_dt = _now_dt(now)
-    interval_ok = force_paid or _paid_interval_elapsed(last_iso, now_dt, interval)
+    budget_owner = f"warning-automode:{uuid.uuid4().hex[:12]}"
+    budget_lease: dict[str, Any] | None = None
+    if has_agent and budget > 0:
+        budget_lease = led.claim_automation_budget(
+            "warning_automode_paid",
+            owner=budget_owner,
+            now=now_dt.isoformat(),
+            min_interval_hours=interval,
+            reserved_spend=budget,
+            force=force_paid,
+        )
+    last_iso = budget_lease.get("last_run_at") if budget_lease else None
+    interval_ok = bool(budget_lease and budget_lease.get("claimed"))
 
     paid: dict[str, Any] | None = None
     paid_ran = False
@@ -1566,9 +1829,12 @@ def run_warning_automode(
     elif budget <= 0:
         paid_skipped_reason = "paid budget is 0 (paid tier disabled)"
     elif not interval_ok:
-        paid_skipped_reason = (
-            f"min interval {interval}h not elapsed since last paid run {last_iso}"
-        )
+        if budget_lease and budget_lease.get("blocked_reason") == "already_claimed":
+            paid_skipped_reason = "paid budget is already claimed by another worker"
+        else:
+            paid_skipped_reason = (
+                f"min interval {interval}h not elapsed since last paid run {last_iso}"
+            )
     else:
         # BOUNDED paid pass: the tier filter restricts to the LLM kinds. The cap is
         # enforced two ways that agree at ``budget``: ``limit`` bounds the SELECTED
@@ -1578,21 +1844,29 @@ def run_warning_automode(
         # any spendy alert still inside its post-failure backoff window — so this pass
         # never re-spends on the same gated/failing alert every cycle. This pass owns
         # the cycle's reconcile.
-        paid = run_warning_resolution(
-            ledger=led,
-            now=now,
-            tier="reforecast",
-            limit=budget,
-            spend_cap=budget,
-            cooldown=True,
-            reconcile=reconcile,
-            runners=runners,
-            progress=progress,
-            should_cancel=should_cancel,
-        )
-        paid_ran = True
-        state["last_paid_run_at"] = now_dt.isoformat()
-        _write_automode_state(state, state_path)
+        try:
+            paid = run_warning_resolution(
+                ledger=led,
+                now=now,
+                tier="reforecast",
+                limit=budget,
+                spend_cap=budget,
+                cooldown=True,
+                reconcile=reconcile,
+                runners=runners,
+                progress=progress,
+                should_cancel=should_cancel,
+            )
+            paid_ran = True
+        finally:
+            state = led.release_automation_budget(
+                "warning_automode_paid",
+                owner=budget_owner,
+                spent=int((paid or {}).get("spent") or 0),
+                now=now_dt.isoformat(),
+                completed=paid is not None,
+            )
+            last_iso = state.get("last_run_at")
 
     # When the paid tier did NOT run (so it could not reconcile), still close the
     # alert lifecycle once after the free sweep — auto-ack any already-consumed
@@ -1609,16 +1883,40 @@ def run_warning_automode(
             except Exception:
                 reconcile_result = None
 
-    return {
+    cycle = {
+        "resolution_finalization": resolution_finalization,
+        "dead_letter_recovery": dead_letter_recovery,
+        "source_routes": source_routes,
         "free": free,
         "paid": paid,
         "paid_ran": paid_ran,
         "paid_skipped_reason": paid_skipped_reason,
         "paid_budget": budget,
         "paid_min_interval_hours": interval,
-        "last_paid_run_at": state.get("last_paid_run_at"),
+        "last_paid_run_at": last_iso,
         "reconcile": reconcile_result,
     }
+    _write_automode_state(
+        {
+            "running": False,
+            "started_at": started_at,
+            "completed_at": _now_dt().isoformat(),
+            "error": None,
+            "paid_ran": paid_ran,
+            "paid_skipped_reason": paid_skipped_reason,
+            "paid_budget": budget,
+            "last_paid_run_at": last_iso,
+            "source_routes": len(source_routes),
+            "resolution_finalization": len(resolution_finalization),
+            "dead_letter_recovery": len(dead_letter_recovery),
+            "free_processed": int(free.get("processed") or 0),
+            "free_total": int(free.get("total") or 0),
+            "paid_processed": int((paid or {}).get("processed") or 0),
+            "paid_total": int((paid or {}).get("total") or 0),
+        },
+        state_path,
+    )
+    return cycle
 
 
 def _fmt_tally(tally: dict[str, int]) -> str:
@@ -1635,10 +1933,35 @@ def _automode_report(result: dict[str, Any]) -> str:
     reconcile = result.get("reconcile") or {}
     free_processed = int(free.get("processed", 0) or 0)
     reconciled = int(reconcile.get("reconciled_count", 0) or 0)
-    if free_processed == 0 and not result.get("paid_ran") and reconciled == 0:
+    routes = result.get("source_routes") or []
+    finalization = result.get("resolution_finalization") or []
+    dead_recovery = result.get("dead_letter_recovery") or []
+    estimator_tasks = result.get("estimator_tasks") or []
+    learned_error_reviews = result.get("learned_error_reviews") or []
+    if (
+        free_processed == 0
+        and not result.get("paid_ran")
+        and reconciled == 0
+        and not routes
+        and not finalization
+        and not dead_recovery
+        and not estimator_tasks
+        and not learned_error_reviews
+    ):
         return ""  # nothing happened — stay silent
 
     lines = ["Warning automode"]
+    if routes:
+        lines.append(f"source handoff: routed {len(routes)} immutable observation(s)")
+    if finalization:
+        lines.append(f"resolution finalization: handled {len(finalization)} task(s)")
+    if dead_recovery:
+        lines.append(f"dead-letter recovery: classified {len(dead_recovery)} task(s)")
+    if estimator_tasks:
+        lines.append(f"source estimator: processed {len(estimator_tasks)} task(s)")
+    if learned_error_reviews:
+        reviewed = sum(row.get("status") == "reviewed" for row in learned_error_reviews)
+        lines.append(f"learned-error review: completed {reviewed}/{len(learned_error_reviews)}")
     lines.append(
         f"free: processed {free_processed}/{int(free.get('total', 0) or 0)} "
         f"({_fmt_tally(free.get('tally', {}))})"
@@ -1654,6 +1977,199 @@ def _automode_report(result: dict[str, Any]) -> str:
     if reconciled:
         lines.append(f"reconcile: acknowledged {reconciled} consumed alert(s)")
     return "\n".join(lines) + "\n"
+
+
+def run_source_estimator_cycle(
+    *,
+    db_path: str | None = None,
+    now: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    max_iterations: int | None = None,
+    force: bool = False,
+    state_path: str | Path | None = None,
+) -> dict[str, Any]:
+    """Route and estimate source changes on an independent adaptive budget."""
+    from forecasting.estimator_worker import run_hosted_estimator_worker
+
+    ledger = ForecastLedger(db_path)
+    cfg = _source_estimator_config()
+    stamp = _now_dt(now).isoformat()
+    owner = f"source-estimator:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+    prior_state = read_source_estimator_state(state_path)
+    ledger.reclaim_expired_operational_tasks(owner=f"{owner}:reclaimer", now=stamp)
+    routes = ledger.run_source_change_router(
+        owner=f"{owner}:router", now=stamp, limit=500
+    )
+    suspended = ledger.suspend_unhealthy_watched_sources(now=stamp)
+    cockpit = ledger.operational_cockpit(now=stamp)
+    source = cockpit.get("source_changes") or {}
+    flow = source.get("flow") or {}
+    backlog = max(int(source.get("estimator_required") or 0), 0)
+    maximum = max(int(cfg.get("max_tasks_per_cycle", 8)), 0)
+    daily_ceiling = max(int(cfg.get("daily_task_budget", 48)), 0)
+    day_start = f"{stamp[:10]}T00:00:00"
+    with ledger._connect() as conn:
+        used_today = int(
+            conn.execute(
+                """
+                SELECT COUNT(DISTINCT task_id) FROM operational_task_attempts
+                WHERE owner LIKE 'source-estimator:%' AND claimed_at >= ?
+                """,
+                (day_start,),
+            ).fetchone()[0]
+            or 0
+        )
+    remaining = max(daily_ceiling - used_today, 0)
+    # Eight 15-minute cycles span the oldest-age target. Drain a fair share of
+    # current debt now, while one new task remains the cheap steady-state tick.
+    adaptive = 0 if backlog == 0 else max(1, (backlog + 7) // 8)
+    budget = min(maximum, remaining, adaptive)
+    lease = {"claimed": False, "reason": "no_budget_or_backlog"}
+    results: list[dict[str, Any]] = []
+    if budget:
+        lease = ledger.claim_automation_budget(
+            "source_estimator_paid",
+            owner=owner,
+            now=stamp,
+            min_interval_hours=max(float(cfg.get("interval_minutes", 15)), 0.0) / 60.0,
+            reserved_spend=budget,
+            force=force,
+        )
+        if lease.get("claimed"):
+            try:
+                results = run_hosted_estimator_worker(
+                    ledger,
+                    owner=owner,
+                    model=model,
+                    provider=provider,
+                    limit=budget,
+                    max_iterations=max(
+                        int(max_iterations or cfg.get("max_iterations", 12)), 1
+                    ),
+                    now=stamp,
+                )
+            finally:
+                ledger.release_automation_budget(
+                    "source_estimator_paid",
+                    owner=owner,
+                    spent=len(results),
+                    now=stamp,
+                    completed=True,
+                )
+
+    after = ledger.operational_cockpit(now=stamp)
+    after_source = after.get("source_changes") or {}
+    after_flow = after_source.get("flow") or {}
+    after_backlog = max(int(after_source.get("estimator_required") or 0), 0)
+    flow_24h = after_flow.get("24h") or {}
+    oldest = float(after_flow.get("oldest_pending_hours") or 0)
+    p90 = float(after_flow.get("p90_pending_hours") or 0)
+    bad = (
+        oldest > float(cfg.get("target_oldest_hours", 2))
+        or p90 > float(cfg.get("target_p90_hours", 4))
+        or (
+            after_backlog > 0
+            and
+            int(flow_24h.get("arrivals") or 0) > 0
+            and int(flow_24h.get("terminal") or 0) <= int(flow_24h.get("arrivals") or 0)
+        )
+    )
+    streak = int(prior_state.get("bad_cycle_streak") or 0) + 1 if bad else 0
+    alert_after = max(int(cfg.get("alert_after_bad_cycles", 2)), 1)
+    if streak >= alert_after:
+        ledger.create_alert(
+            severity="high",
+            scope_type="system",
+            scope_ref="source-estimator",
+            reason="source_estimator_sla_breach",
+            recommended_action=(
+                "Inspect source content yield and estimator capacity; arrivals have "
+                "outpaced terminal service or pending-age targets are breached."
+            ),
+            now=stamp,
+        )
+    elif not bad:
+        with ledger._connect() as conn:
+            conn.execute(
+                """
+                UPDATE alert_events SET acknowledged_at = COALESCE(acknowledged_at, ?),
+                    disposition = COALESCE(disposition, 'source_estimator_sla_recovered'),
+                    ack_note = COALESCE(ack_note, 'auto_close:source_estimator_sla_recovered')
+                WHERE scope_type = 'system' AND scope_ref = 'source-estimator'
+                  AND alert_key = 'source_estimator_sla_breach'
+                  AND acknowledged_at IS NULL
+                """,
+                (stamp,),
+            )
+    state = {
+        "running": False,
+        "completed_at": stamp,
+        "routes": len(routes),
+        "suspended_watches": suspended,
+        "backlog_before": backlog,
+        "processed": len(results),
+        "budget": budget,
+        "daily_task_budget": daily_ceiling,
+        "used_today_before_cycle": used_today,
+        "lease": lease.get("reason") if not lease.get("claimed") else "claimed",
+        "flow": after_flow,
+        "bad_cycle_streak": streak,
+    }
+    _write_source_estimator_state(state, state_path)
+    return state
+
+
+def main_source_estimator(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run the dedicated source estimator worker")
+    parser.add_argument("--db")
+    parser.add_argument("--now")
+    parser.add_argument("--model")
+    parser.add_argument("--provider")
+    parser.add_argument("--max-iterations", type=int)
+    parser.add_argument("--force", action="store_true")
+    args = parser.parse_args(argv)
+    result = run_source_estimator_cycle(
+        db_path=args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None,
+        now=args.now,
+        model=args.model,
+        provider=args.provider,
+        max_iterations=args.max_iterations,
+        force=args.force,
+    )
+    print(json.dumps(result, sort_keys=True))
+    return 0
+
+
+def install_source_estimator_script(
+    script_path: Path,
+    *,
+    db_path: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    max_iterations: int | None = None,
+) -> None:
+    args: list[str] = []
+    if db_path:
+        args.extend(["--db", db_path])
+    if model:
+        args.extend(["--model", model])
+    if provider:
+        args.extend(["--provider", provider])
+    if max_iterations is not None:
+        args.extend(["--max-iterations", str(int(max_iterations))])
+    body = "\n".join(
+        [
+            "from forecasting.cron_runner import main_source_estimator",
+            "",
+            "if __name__ == '__main__':",
+            f"    raise SystemExit(main_source_estimator({args!r}))",
+            "",
+        ]
+    )
+    script_path.parent.mkdir(parents=True, exist_ok=True)
+    if not script_path.exists() or script_path.read_text(encoding="utf-8") != body:
+        script_path.write_text(body, encoding="utf-8")
 
 
 def main_warning_automode(argv: list[str] | None = None) -> int:
@@ -1689,7 +2205,8 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
 
     reforecast_runner = None
     evidence_search = None
-    if args.agent or _env_flag("FORECAST_WARNINGS_AUTOMODE_AGENT"):
+    agent_enabled = args.agent or _env_flag("FORECAST_WARNINGS_AUTOMODE_AGENT")
+    if agent_enabled:
         try:
             from forecasting.cli import build_cron_warning_agent_runners
 
@@ -1716,6 +2233,57 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
         evidence_search=evidence_search,
         force_paid=args.force_paid,
     )
+    # Learned-error review remains independent of warning capacity. Source
+    # estimation has its own cron worker and is deliberately absent here.
+    if agent_enabled:
+        worker_cfg = _automode_config()
+        try:
+            review_budget = max(int(worker_cfg.get("learned_error_review_budget", 2)), 0)
+            review_interval = max(
+                float(worker_cfg.get("learned_error_review_min_interval_hours", 1)), 0.0
+            )
+            if review_budget:
+                from forecasting.learned_error_worker import (
+                    build_agent_learned_error_reviewer,
+                    run_learned_error_reviews,
+                )
+
+                review_ledger = ForecastLedger(db_path)
+                review_owner = f"learned-error-reviewer:{os.getpid()}:{uuid.uuid4().hex[:8]}"
+                lease = review_ledger.claim_automation_budget(
+                    "learned_error_review_paid",
+                    owner=review_owner,
+                    now=_now_dt(args.now).isoformat(),
+                    min_interval_hours=review_interval,
+                    reserved_spend=review_budget,
+                    force=args.force_paid,
+                )
+                if lease.get("claimed"):
+                    review_results: list[dict[str, Any]] = []
+                    try:
+                        reviewer = build_agent_learned_error_reviewer(
+                            model=args.model,
+                            provider=args.provider,
+                            max_iterations=max(int(args.max_iterations or 8), 1),
+                        )
+                        review_results = run_learned_error_reviews(
+                            review_ledger,
+                            owner=review_owner,
+                            reviewer=reviewer,
+                            limit=review_budget,
+                            now=args.now,
+                        )
+                        result["learned_error_reviews"] = review_results
+                    finally:
+                        review_ledger.release_automation_budget(
+                            "learned_error_review_paid",
+                            owner=review_owner,
+                            spent=len(review_results),
+                            now=_now_dt(args.now).isoformat(),
+                            completed=True,
+                        )
+        except Exception as exc:
+            result["learned_error_review_error"] = str(exc)
     text = _automode_report(result)
     if text:
         print(text, end="")
@@ -1751,8 +2319,7 @@ def install_warning_automode_script(
         args.extend(["--provider", provider])
     if max_iterations is not None:
         args.extend(["--max-iterations", str(int(max_iterations))])
-    script_path.write_text(
-        "\n".join(
+    body = "\n".join(
             [
                 "from forecasting.cron_runner import main_warning_automode",
                 "",
@@ -1760,9 +2327,9 @@ def install_warning_automode_script(
                 f"    raise SystemExit(main_warning_automode({args!r}))",
                 "",
             ]
-        ),
-        encoding="utf-8",
-    )
+        )
+    if not script_path.exists() or script_path.read_text(encoding="utf-8") != body:
+        script_path.write_text(body, encoding="utf-8")
 
 
 # Default relative-move threshold for a "material" Market Model projection move.
@@ -1913,6 +2480,20 @@ def main(argv: list[str] | None = None) -> int:
         "--refresh-market-models", action="store_true",
         help="Re-pull + recompute Market Models linked to open questions; alert on a material projection move",
     )
+    parser.add_argument(
+        "--estimate-source-changes",
+        action="store_true",
+        help="Run the paid estimator worker for queued immutable source-change events",
+    )
+    parser.add_argument("--estimator-model")
+    parser.add_argument("--estimator-provider")
+    parser.add_argument("--estimator-limit", type=int, default=5)
+    parser.add_argument("--estimator-max-iterations", type=int, default=12)
+    parser.add_argument(
+        "--calibrate-utility",
+        action="store_true",
+        help="Fit the task utility model when enough mixed completed outcomes exist",
+    )
     args = parser.parse_args(argv)
     db_path = args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None
     synthesize: bool | None = None
@@ -1934,6 +2515,22 @@ def main(argv: list[str] | None = None) -> int:
     )
     if text:
         print(text, end="")
+    if args.estimate_source_changes:
+        from forecasting.estimator_worker import run_hosted_estimator_worker
+
+        results = run_hosted_estimator_worker(
+            ForecastLedger(db_path),
+            owner=f"cron-estimator:{os.getpid()}",
+            model=args.estimator_model,
+            provider=args.estimator_provider,
+            limit=max(args.estimator_limit, 1),
+            max_iterations=max(args.estimator_max_iterations, 1),
+            now=args.now,
+        )
+        print(json.dumps({"estimator_tasks": results}, default=str))
+    if args.calibrate_utility:
+        report = ForecastLedger(db_path).calibrate_task_utility()
+        print(json.dumps({"utility_calibration": report}, default=str))
     return 0
 
 
@@ -1946,6 +2543,12 @@ def install_script(
     thesis_aggregate: bool = False,
     synthesize_lessons: bool = False,
     refresh_market_models: bool = False,
+    estimate_source_changes: bool = False,
+    estimator_model: str | None = None,
+    estimator_provider: str | None = None,
+    estimator_limit: int = 5,
+    estimator_max_iterations: int = 12,
+    calibrate_utility: bool = False,
 ) -> None:
     """Install the small script used by no-agent forecast cron jobs."""
 
@@ -1963,8 +2566,17 @@ def install_script(
         args.append("--synthesize-lessons")
     if refresh_market_models:
         args.append("--refresh-market-models")
-    script_path.write_text(
-        "\n".join(
+    if estimate_source_changes:
+        args.append("--estimate-source-changes")
+        args.extend(["--estimator-limit", str(max(int(estimator_limit), 1))])
+        args.extend(["--estimator-max-iterations", str(max(int(estimator_max_iterations), 1))])
+        if estimator_model:
+            args.extend(["--estimator-model", estimator_model])
+        if estimator_provider:
+            args.extend(["--estimator-provider", estimator_provider])
+    if calibrate_utility:
+        args.append("--calibrate-utility")
+    body = "\n".join(
             [
                 "from forecasting.cron_runner import main",
                 "",
@@ -1972,9 +2584,9 @@ def install_script(
                 f"    raise SystemExit(main({args!r}))",
                 "",
             ]
-        ),
-        encoding="utf-8",
-    )
+        )
+    if not script_path.exists() or script_path.read_text(encoding="utf-8") != body:
+        script_path.write_text(body, encoding="utf-8")
 
 
 if __name__ == "__main__":

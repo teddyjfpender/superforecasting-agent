@@ -24,6 +24,7 @@ import { forecastPerfLogPath } from './forecastHome.js'
 
 const perfFlag =
   process.env.SUPERFORECASTING_AGENT_DEV_PERF ?? process.env.FORECAST_DEV_PERF ?? process.env.HERMES_DEV_PERF ?? ''
+
 const threshold =
   process.env.SUPERFORECASTING_AGENT_DEV_PERF_MS ??
   process.env.FORECAST_DEV_PERF_MS ??

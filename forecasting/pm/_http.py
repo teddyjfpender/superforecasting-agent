@@ -48,21 +48,35 @@ def http_get_json(
     Raises :class:`PMHTTPError` on any network/HTTP/decode failure — callers
     degrade politely rather than crashing the desk.
     """
-    request_headers = {"User-Agent": _UA, "Accept": "application/json"}
+    json_headers = {"Accept": "application/json"}
     if headers:
-        request_headers.update(headers)
-    request = Request(url, headers=request_headers)
-    try:
-        with urlopen(request, timeout=timeout or http_timeout()) as response:
-            data = response.read(_READ_CAP)
-    except HTTPError as exc:  # pragma: no cover - network path
-        raise PMHTTPError(f"{label} fetch failed: HTTP {exc.code} for {url}") from exc
-    except (URLError, OSError) as exc:  # pragma: no cover - network path
-        raise PMHTTPError(f"{label} fetch failed: {exc} for {url}") from exc
+        json_headers.update(headers)
+    data = http_get_bytes(url, label=label, timeout=timeout, headers=json_headers)
     try:
         return json.loads(data.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise PMHTTPError(f"{label} response was not valid JSON") from exc
 
 
-__all__ = ["PMHTTPError", "http_get_json", "http_timeout"]
+def http_get_bytes(
+    url: str,
+    *,
+    label: str = "prediction-market",
+    timeout: float | None = None,
+    headers: dict[str, str] | None = None,
+) -> bytes:
+    """GET ``url`` with the same bounds as :func:`http_get_json`."""
+    request_headers = {"User-Agent": _UA, "Accept": "*/*"}
+    if headers:
+        request_headers.update(headers)
+    request = Request(url, headers=request_headers)
+    try:
+        with urlopen(request, timeout=timeout or http_timeout()) as response:
+            return response.read(_READ_CAP)
+    except HTTPError as exc:  # pragma: no cover - network path
+        raise PMHTTPError(f"{label} fetch failed: HTTP {exc.code} for {url}") from exc
+    except (URLError, OSError) as exc:  # pragma: no cover - network path
+        raise PMHTTPError(f"{label} fetch failed: {exc} for {url}") from exc
+
+
+__all__ = ["PMHTTPError", "http_get_bytes", "http_get_json", "http_timeout"]

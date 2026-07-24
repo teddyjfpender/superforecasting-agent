@@ -393,6 +393,79 @@ class KalshiClient:
         events = parse_events(self._fetch(f"{self._base}/events?{params}"))
         return events
 
+    def catalog_events(self) -> list[dict[str, Any]]:
+        """Return a lightweight index of every open Kalshi event."""
+        rows: list[dict[str, Any]] = []
+        cursor: str | None = None
+        seen_cursors: set[str] = set()
+        while True:
+            params = {"status": "open", "limit": "200", "with_nested_markets": "true"}
+            if cursor:
+                params["cursor"] = cursor
+            raw = self._fetch(f"{self._base}/events?{urlencode(params)}")
+            page = raw.get("events") if isinstance(raw, dict) else None
+            if not isinstance(page, list) or not page:
+                break
+            for event in page:
+                if not isinstance(event, dict):
+                    continue
+                event_id = str(event.get("event_ticker") or "")
+                if not event_id:
+                    continue
+                title = str(event.get("title") or "").strip()
+                series = str(event.get("series_ticker") or "")
+                subtitle = str(event.get("sub_title") or "").strip()
+                markets = [market for market in (event.get("markets") or []) if isinstance(market, dict)]
+                market_text = " ".join(
+                    " ".join(
+                        (
+                            str(market.get("ticker") or ""),
+                            str(market.get("title") or ""),
+                            str(market.get("yes_sub_title") or ""),
+                            str(market.get("no_sub_title") or ""),
+                        )
+                    )
+                    for market in markets
+                )
+                volume = sum(
+                    _to_float(market.get("volume_fp") if market.get("volume_fp") is not None else market.get("volume")) or 0.0
+                    for market in markets
+                ) or None
+                close_times = [str(market.get("close_time")) for market in markets if market.get("close_time")]
+                rows.append(
+                    {
+                        "venue": VENUE,
+                        "event_id": event_id,
+                        "title": title,
+                        "sub_title": subtitle,
+                        "slug": series,
+                        "category": str(event.get("category") or ""),
+                        "close_time": min(close_times) if close_times else str(event.get("close_time") or event.get("end_date") or ""),
+                        "volume": volume,
+                        "url": f"https://kalshi.com/markets/{series}" if series else "",
+                        "market_count": len(markets),
+                        "search": " ".join(
+                            (
+                                title,
+                                event_id,
+                                series,
+                                subtitle,
+                                str(event.get("category") or ""),
+                                market_text,
+                            )
+                        ).casefold(),
+                    }
+                )
+            next_cursor = str(raw.get("cursor") or "") if isinstance(raw, dict) else ""
+            if not next_cursor or next_cursor in seen_cursors:
+                break
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        return rows
+
+    def catalog_event(self, event_ref: str) -> PMEvent:
+        return self.event(event_ref)
+
     def event(self, event_ticker: str) -> PMEvent:
         params = urlencode({"with_nested_markets": "true"})
         raw = self._fetch(f"{self._base}/events/{event_ticker}?{params}")

@@ -187,6 +187,12 @@ def _get_extract_backend() -> str:
     return _get_capability_backend("extract")
 
 
+def check_web_extract_available() -> bool:
+    from agent.web_search_registry import get_active_extract_provider
+
+    return get_active_extract_provider() is not None
+
+
 def _get_capability_backend(capability: str) -> str:
     """Shared helper for per-capability backend selection.
 
@@ -600,6 +606,26 @@ async def web_extract_tool(
     Raises:
         Exception: If extraction fails or API key is not set
     """
+    if not isinstance(urls, list) or not urls:
+        return tool_error(
+            "urls must be a non-empty array of absolute HTTP(S) URLs", success=False
+        )
+    from urllib.parse import urlparse
+
+    for value in urls:
+        if not isinstance(value, str):
+            return tool_error("every urls item must be a string", success=False)
+        parsed = urlparse(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.netloc
+            or any(ord(char) < 33 for char in value)
+            or value.count("http://") + value.count("https://") != 1
+        ):
+            return tool_error(
+                "every urls item must be one absolute HTTP(S) URL with no spaces or control characters",
+                success=False,
+            )
     # Block URLs containing embedded secrets (exfiltration prevention).
     # URL-decode first so percent-encoded secrets (%73k- = sk-) are caught.
     from agent.redact import _PREFIX_RE
@@ -646,8 +672,6 @@ async def web_extract_tool(
         if not safe_urls:
             results = []
         else:
-            backend = _get_extract_backend()
-
             # All seven providers (brave-free, ddgs, searxng, exa, parallel,
             # tavily, firecrawl) now live as plugins. The dispatcher is a
             # registry lookup + delegation. Some providers' extract() is
@@ -657,43 +681,28 @@ async def web_extract_tool(
             # provider itself for the firecrawl per-URL loop).
             from agent.web_search_registry import (
                 get_active_extract_provider,
-                get_provider as _wsp_get_provider,
             )
 
-            provider = _wsp_get_provider(backend) if backend else None
-            if provider is None or not provider.supports_extract():
-                # When the configured name IS registered but doesn't support
-                # extract (search-only providers like brave-free / ddgs /
-                # searxng), surface that as a typed "search-only" error
-                # rather than silently switching backends. When the name
-                # isn't registered at all (typo / uninstalled plugin), fall
-                # through to the active-provider walk.
-                if provider is not None and not provider.supports_extract():
-                    return json.dumps(
-                        {
-                            "success": False,
-                            "error": (
-                                f"{provider.display_name} is a search-only "
-                                "backend and cannot extract URL content. "
-                                "Set web.extract_backend to firecrawl, "
-                                "tavily, exa, or parallel."
-                            ),
-                        },
-                        ensure_ascii=False,
-                    )
-                provider = get_active_extract_provider()
-                if provider is None:
-                    return json.dumps(
-                        {
-                            "success": False,
-                            "error": (
-                                "No web extract provider configured. "
-                                "Set web.extract_backend to firecrawl, "
-                                "tavily, exa, or parallel."
-                            ),
-                        },
-                        ensure_ascii=False,
-                    )
+            provider = get_active_extract_provider()
+            if provider is None:
+                configured = str(_load_web_config().get("backend") or "").strip().lower()
+                qualifier = (
+                    f"The configured {configured} backend is search-only. "
+                    if configured in {"ddgs", "brave-free", "searxng"}
+                    else ""
+                )
+                return json.dumps(
+                    {
+                        "success": False,
+                        "error": (
+                            qualifier
+                            + "No web extract provider configured. "
+                            "Set web.extract_backend to firecrawl, "
+                            "tavily, exa, or parallel."
+                        ),
+                    },
+                    ensure_ascii=False,
+                )
 
             logger.info(
                 "Web extract via %s: %d URL(s)", provider.name, len(safe_urls)
@@ -1173,7 +1182,7 @@ registry.register(
         "markdown",
         char_limit=args.get("char_limit"),
     ),
-    check_fn=check_web_api_key,
+    check_fn=check_web_extract_available,
     requires_env=_web_requires_env(),
     is_async=True,
     emoji="📄",

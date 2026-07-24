@@ -129,19 +129,24 @@ const fakeGw = (
   const gw = new EventEmitter() as EventEmitter & {
     request: (method: string, params?: Record<string, unknown>) => Promise<unknown>
   }
+
   gw.setMaxListeners(50)
+
   gw.request = (method: string, params: Record<string, unknown> = {}) => {
     calls.push({ method, params })
 
     if (method === 'forecast.warnings.aggregate') {
       return Promise.resolve(aggregate())
     }
+
     if (method === 'forecast.dashboard') {
       return Promise.resolve(dashboard())
     }
+
     if (method === 'forecast.triage.contested') {
       return Promise.resolve({ contested: [...contestedStore], count: contestedStore.length })
     }
+
     if (method === 'forecast.triage.relabel') {
       const idx = contestedStore.findIndex(row => row.id === params.label_id)
 
@@ -151,15 +156,19 @@ const fakeGw = (
 
       return Promise.resolve({ count: idx >= 0 ? 1 : 0, success: true })
     }
+
     if (method === 'jobs.active') {
       return Promise.resolve({ count: activeJobs.length, jobs: activeJobs })
     }
+
     if (method === 'forecast.warnings.automode.run') {
       return Promise.resolve({ dry_run: false, job_id: 'wj_test' })
     }
+
     if (method === 'forecast.warnings.automode.cancel') {
       return Promise.resolve({ cancelled: true, found: true, job_id: params.job_id })
     }
+
     if (method === 'forecast.warnings.dismiss') {
       return Promise.resolve({ count: 1, dismissed: [], matched: 1 })
     }
@@ -472,12 +481,14 @@ describe('AlertsView warning resolution', () => {
     // renders inline, so a collapsed tier the cursor sits on shows "▸ ▸ ● LABEL".
     const ACTIVE_COLLAPSED = (label: string) => `▸ ▸ ● ${label}`
     const m = await mount()
+
     // Walk the cursor down to the LAST node of the fully-expanded tree (the STALE
     // reason row). Six downs: free reason → AGENT → agent reason → MANUAL → STALE →
     // stale reason.
     for (let n = 0; n < 6; n++) {
       await m.press(`${ESC}[B`)
     }
+
     // Collapse every tier: the flat list shrinks from 7 nodes to 4 headers, which is
     // exactly the condition that used to strand `sel` past the end (the bug that made
     // the next keypress a no-op). The cursor parks on the last visible node (STALE).
@@ -611,10 +622,12 @@ describe('free-pass progress coalescing (the operator flash bug)', () => {
     // fakeGw's canned run response job id (read it from what the view stored by
     // emitting a matching complete later) — emit the burst under that id.
     const jobId = 'wj_test' // fakeGw returns this fixed id (assert via behavior below)
+
     // 60 events in a tight burst — one per alert, the real dispatcher shape.
     for (let done = 1; done <= 60; done += 1) {
       m.emit('forecast.warnings.automode.progress', { done, job_id: jobId, phase: 'alert', total: 60 })
     }
+
     await tick(400) // > trailing window: the final value must have landed
     const text = m.text()
     // The backlog headline never left the frame, and the chip shows the FINAL
@@ -695,6 +708,7 @@ describe('R free-pass — fixed inline bar + honest error fold (no scrolling)', 
     const m = await mount({
       activeJobs: [{ current: 'evidence_stale', done_count: 12, job_id: 'wj_live', status: 'running', total: 130, type: 'warnings' }]
     })
+
     await tick(80)
     // Adopted the live job without the operator re-triggering it.
     expect(isWarningsRunActive()).toBe(true)

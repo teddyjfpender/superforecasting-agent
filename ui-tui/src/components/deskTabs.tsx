@@ -10,8 +10,10 @@ import type { Theme } from '../theme.js'
 
 function labelFor(tab: DeskTab, max = 22): string {
   let name = tab.label
-  if (name.length > max) name = `${name.slice(0, max - 1)}…`
+
+  if (name.length > max) {name = `${name.slice(0, max - 1)}…`}
   const count = tab.kind === 'tag' || tab.kind === 'all' || tab.kind === 'bench' ? ` ${tab.forecastIds.length}` : ''
+
   return `${name}${count}`
 }
 
@@ -28,19 +30,21 @@ export function DeskTabs({
   width: number
   onSelect: (i: number) => void
 }) {
-  if (tabs.length === 0) return null
+  if (tabs.length === 0) {return null}
   const labels = tabs.map((tab) => labelFor(tab))
   const widths = labels.map((l) => l.length)
   const { start, end } = tabWindow(widths, active, Math.max(20, width))
   const shown = tabs.slice(start, end)
+
   return (
     <NoSelect flexShrink={0} marginBottom={1}>
       <Box flexWrap="nowrap" overflow="hidden" width={Math.max(20, width)}>
         {start > 0 ? <Text color={t.color.muted}>{'‹ '}</Text> : null}
         {shown.map((tab, idx) => {
           const i = start + idx
+
           return (
-            <Box key={tab.key} flexShrink={0} onClick={() => onSelect(i)}>
+            <Box flexShrink={0} key={tab.key} onClick={() => onSelect(i)}>
               {idx > 0 ? <Text color={t.color.border}>{' · '}</Text> : null}
               <Text bold={i === active} color={i === active ? t.color.accent : t.color.muted}>
                 {labels[i]}

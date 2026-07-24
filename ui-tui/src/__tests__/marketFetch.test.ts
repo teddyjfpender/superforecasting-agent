@@ -40,11 +40,13 @@ describe('fetchQuotes routing (Arc C3: every provider goes through market.quotes
   it('batches EVERY provider (incl. yahoo) into ONE market.quotes call, never fetch', async () => {
     const fetchFn = vi.fn()
     vi.stubGlobal('fetch', fetchFn)
+
     const request = vi.fn().mockResolvedValue({
       quotes: [
         { asOf: 0, category: 'Indices', change: null, changePct: null, currency: null, dayHigh: null, dayLow: null, exchange: null, history: [], name: 'S&P 500', prevClose: null, provider: 'yahoo', symbol: '^GSPC', unit: '', value: 7420.1, volume: null, week52High: null, week52Low: null }
       ]
     })
+
     const batches: unknown[] = []
 
     await fetchQuotes(

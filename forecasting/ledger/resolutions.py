@@ -94,6 +94,14 @@ def resolve_question(
             )
     confirmed_at = now if resolution_status == "confirmed" and criteria_satisfied else None
     disputed_at = now if resolution_status == "disputed" else None
+    from forecasting.ledger.workflow import calculate_task_utility
+
+    resolution_utility = calculate_task_utility(
+        ledger,
+        question_id=question_id,
+        task_type="finalize_resolution",
+        now=now,
+    )
     with ledger._connect() as conn:
         conn.execute(
             """
@@ -130,6 +138,63 @@ def resolve_question(
             conn.execute(
                 "UPDATE forecast_questions SET status = 'resolved' WHERE id = ?",
                 (question_id,),
+            )
+            # A confirmed resolution is also the transactional stop signal for
+            # every producer attached to this question. Keeping teardown in the
+            # SAME transaction prevents a scheduler/watch worker from observing
+            # `resolved` while still finding executable work for the question.
+            conn.execute(
+                "UPDATE watched_sources SET status = 'inactive' "
+                "WHERE scope_type = 'question' AND scope_ref = ? AND status = 'active'",
+                (question_id,),
+            )
+            conn.execute(
+                "UPDATE scheduled_reviews SET enabled = 0 "
+                "WHERE scope_type = 'question' AND scope_ref = ? AND enabled = 1",
+                (question_id,),
+            )
+            conn.execute(
+                "UPDATE autopilot_policies SET enabled = 0, updated_at = ? "
+                "WHERE question_id = ? AND enabled = 1",
+                (now, question_id),
+            )
+            conn.execute(
+                "UPDATE forecast_update_proposals "
+                "SET status = 'rejected', reviewed_at = ?, "
+                "    reviewed_by = COALESCE(reviewed_by, 'lifecycle:resolved') "
+                "WHERE question_id = ? AND status = 'pending'",
+                (now, question_id),
+            )
+            conn.execute(
+                "UPDATE alert_events "
+                "SET acknowledged_at = ?, "
+                "    ack_note = COALESCE(ack_note, 'auto_close:question_resolved'), "
+                "    disposition = COALESCE(disposition, 'resolved_by_resolution') "
+                "WHERE scope_type = 'question' AND scope_ref = ? "
+                "  AND acknowledged_at IS NULL "
+                "  AND reason NOT IN ('score_due', 'high_impact_score_due', "
+                "                     'postmortem_due', 'high_impact_postmortem_due')",
+                (now, question_id),
+            )
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO operational_tasks (
+                    id, task_type, lane, question_id, status, priority,
+                    utility_score, utility_components, available_at,
+                    idempotency_key, created_at, updated_at
+                ) VALUES (?, 'finalize_resolution', 'deterministic_critical', ?,
+                          'pending', 100, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    f"ot_{uuid.uuid4().hex[:12]}",
+                    question_id,
+                    resolution_utility["score"],
+                    json_dumps(resolution_utility["components"]),
+                    now,
+                    f"finalize-resolution:{resolution_id}",
+                    now,
+                    now,
+                ),
             )
         elif resolution_status == "proposed":
             conn.execute(
@@ -660,6 +725,80 @@ def list_corrections(
     return [ledger.get_correction(row["id"]) for row in rows]
 
 
+def apply_correction(
+    ledger, correction_id: str, *, applied_by: str | None = None
+) -> dict[str, Any]:
+    """Apply a proposed correction and invalidate every derived learning row."""
+    correction = ledger.get_correction(correction_id)
+    if correction["status"] == "applied":
+        return correction
+    if correction["status"] != "proposed":
+        raise ValidationError("only proposed corrections can be applied")
+    patch: dict[str, Any] = {}
+    if isinstance(correction.get("new_value"), dict):
+        patch.update(correction["new_value"])
+    if isinstance(correction.get("patch"), dict):
+        patch.update(correction["patch"])
+    with ledger._connect() as conn:
+        if correction["target_type"] == "score_record":
+            allowed = {"calibration_eligible", "calibration_weight", "notes"}
+            unknown = set(patch) - allowed - {"reason"}
+            if unknown:
+                raise ValidationError(
+                    "unsupported score correction fields: " + ", ".join(sorted(unknown))
+                )
+            assignments: list[str] = []
+            params: list[Any] = []
+            if "calibration_eligible" in patch:
+                assignments.append("calibration_eligible = ?")
+                params.append(1 if patch["calibration_eligible"] else 0)
+            if "calibration_weight" in patch:
+                weight = float(patch["calibration_weight"])
+                if weight < 0:
+                    raise ValidationError("calibration_weight must be non-negative")
+                assignments.append("calibration_weight = ?")
+                params.append(weight)
+            if "notes" in patch:
+                assignments.append("notes = ?")
+                params.append(str(patch["notes"]))
+            if assignments:
+                params.append(correction["target_id"])
+                conn.execute(
+                    f"UPDATE score_records SET {', '.join(assignments)} WHERE id = ?",
+                    params,
+                )
+        ledger._invalidate_learning_records_for_correction(
+            conn,
+            correction_id=correction_id,
+            score_refs=correction["affected_score_record_refs"],
+            postmortem_refs=correction["affected_postmortem_refs"],
+            lesson_refs=correction["affected_calibration_lesson_refs"],
+        )
+        conn.execute(
+            "UPDATE forecast_corrections SET status = 'applied', "
+            "created_by = COALESCE(?, created_by) WHERE id = ? AND status = 'proposed'",
+            (applied_by, correction_id),
+        )
+        conn.execute(
+            """
+            UPDATE forecast_corrections SET status = 'rejected'
+            WHERE target_type = ? AND target_id = ? AND id != ? AND status = 'proposed'
+            """,
+            (correction["target_type"], correction["target_id"], correction_id),
+        )
+        conn.execute(
+            """
+            UPDATE alert_events
+            SET acknowledged_at = ?, disposition = 'correction_applied',
+                ack_note = COALESCE(ack_note, 'auto_close:correction_applied')
+            WHERE scope_type = ? AND scope_ref = ? AND acknowledged_at IS NULL
+              AND reason = 'correction_affects_learning_records'
+            """,
+            (utc_now_iso(), correction["target_type"], correction["target_id"]),
+        )
+    return ledger.get_correction(correction_id)
+
+
 def _corrections_for_question(
     ledger,
     *,
@@ -802,6 +941,17 @@ def create_postmortem(
     score = ledger.score_question(question_id)
     snapshot = ledger.get_snapshot(score.forecast_id)
     resolution = ledger.get_resolution(score.resolution_id)
+    with ledger._connect() as conn:
+        existing = conn.execute(
+            """
+            SELECT id FROM postmortems
+            WHERE score_record_id = ? AND invalidated_by_correction_id IS NULL
+            ORDER BY created_at ASC, id ASC LIMIT 1
+            """,
+            (score.id,),
+        ).fetchone()
+    if existing is not None:
+        return ledger.get_postmortem(existing["id"])
     postmortem_id = f"pm_{uuid.uuid4().hex[:12]}"
     with ledger._connect() as conn:
         conn.execute(

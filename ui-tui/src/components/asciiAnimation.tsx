@@ -13,6 +13,7 @@ const DISABLED = (() => {
     'HERMES_TUI_DESK_ANIMATION'
   ]) {
     const v = (process.env[key] ?? '').trim().toLowerCase()
+
     if (v === '0' || v === 'off' || v === 'false' || v === 'no') {
       return true
     }
@@ -41,6 +42,7 @@ export function AsciiAnimation({ active = true, animation = BERNARD_ANIMATION }:
     }
 
     const intervalMs = Math.max(40, Math.round(1000 / (animation.fps || 12)))
+
     const timer = setInterval(() => {
       setFrameIdx(i => (i + 1) % frameCount)
     }, intervalMs)
@@ -60,6 +62,7 @@ export function AsciiAnimation({ active = true, animation = BERNARD_ANIMATION }:
         <Text key={y} wrap="truncate-end">
           {row.map((span, i) => {
             const color = span.c >= 0 ? animation.palette[span.c] : undefined
+
             // Half-block cells carry an optional background color (the lower
             // sub-pixel) so a `▀` paints two stacked colors in one cell — 2x
             // vertical resolution. Plain full-block cells omit `b`.

@@ -21,6 +21,7 @@ def _ledger(tmp_path) -> ForecastLedger:
     return lg
 
 
+@pytest.mark.timeout(90)
 def test_run_safe_benchmarks_runs_offline_suite(tmp_path):
     lg = _ledger(tmp_path)
     ran = _run_safe_benchmarks(lg, "forecast-engine")

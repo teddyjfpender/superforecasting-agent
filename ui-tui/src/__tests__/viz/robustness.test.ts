@@ -28,6 +28,7 @@ const widthSafe = (rows: StyledRow[], w: number): void => {
     expect(stringWidth(text(row))).toBeLessThanOrEqual(w)
   }
 }
+
 const gutterAligned = (rows: StyledRow[]): void => {
   const widths = rows.map(r => (r[0] ? stringWidth(r[0].text) : 0))
   expect(new Set(widths).size).toBeLessThanOrEqual(1) // every gutter same visual width

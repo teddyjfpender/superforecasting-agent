@@ -7,7 +7,11 @@ from typing import Any
 
 from hermes_constants import get_hermes_home
 
-from forecasting.cron_runner import install_script, install_warning_automode_script
+from forecasting.cron_runner import (
+    install_script,
+    install_source_estimator_script,
+    install_warning_automode_script,
+)
 
 
 FORECAST_CRON_SCRIPT = "forecast_self_check.py"
@@ -18,6 +22,8 @@ FORECAST_CRON_NAME = "Forecast self-check"
 DEFAULT_FORECAST_CRON_SCHEDULE = "0 8 * * *"
 WARNING_AUTOMODE_CRON_SCRIPT = "forecast_warning_automode.py"
 WARNING_AUTOMODE_CRON_NAME = "Forecast warning automode"
+SOURCE_ESTIMATOR_CRON_SCRIPT = "forecast_source_estimator.py"
+SOURCE_ESTIMATOR_CRON_NAME = "Forecast source estimator"
 BACKUP_CRON_SCRIPT = "forecast_backup.py"
 BACKUP_CRON_NAME = "Forecast ledger backup"
 # Daily at 07:30 — half an hour BEFORE the 08:00 self-check refresh, so the backup
@@ -62,6 +68,12 @@ def install_forecast_cron(
     thesis_aggregate: bool = False,
     synthesize_lessons: bool = False,
     refresh_market_models: bool = False,
+    estimate_source_changes: bool = False,
+    estimator_model: str | None = None,
+    estimator_provider: str | None = None,
+    estimator_limit: int = 5,
+    estimator_max_iterations: int = 12,
+    calibrate_utility: bool = False,
 ) -> dict[str, Any]:
     """Install a no-agent cron job for forecast schedule execution.
 
@@ -82,6 +94,12 @@ def install_forecast_cron(
         thesis_aggregate=thesis_aggregate,
         synthesize_lessons=synthesize_lessons,
         refresh_market_models=refresh_market_models,
+        estimate_source_changes=estimate_source_changes,
+        estimator_model=estimator_model,
+        estimator_provider=estimator_provider,
+        estimator_limit=estimator_limit,
+        estimator_max_iterations=estimator_max_iterations,
+        calibrate_utility=calibrate_utility,
     )
 
     from cron.jobs import create_job
@@ -137,16 +155,40 @@ def ensure_default_routines(
     """Idempotently install the nightly self-check cron (auto-score + auto-postmortem
     + thesis-aggregate + lesson-synthesis).
 
-    Cheap + silent when already installed: returns ``{"installed", "created",
-    "job", "reason"}`` and does NO work (a single ``list_jobs`` read) when a
-    self-check job already exists. Gated behind ``forecasting.cron.auto_install``
+    Existing jobs keep their identity and schedule, but their generated script is
+    refreshed to the current feature set. Gated behind ``forecasting.cron.auto_install``
     (default TRUE); pass ``force=True`` to bypass the config gate (the explicit
     ``freshen`` / ``keep_fresh`` operator intent). Fail-open callers wrap this so
     a cron hiccup never blocks a forecast commit."""
     if not force and not _auto_install_enabled():
         return {"installed": False, "created": False, "job": None, "reason": "auto_install disabled"}
+    scripts_dir = get_hermes_home() / "scripts"
     if default_routines_installed(name=name):
-        return {"installed": True, "created": False, "job": None, "reason": "already installed"}
+        install_script(
+            scripts_dir / FORECAST_CRON_SCRIPT,
+            db_path=db_path,
+            auto_score=True,
+            auto_postmortem=True,
+            thesis_aggregate=True,
+            synthesize_lessons=True,
+            refresh_market_models=True,
+            estimate_source_changes=False,
+            calibrate_utility=True,
+        )
+        warning = ensure_default_warning_automode_routine(
+            db_path=db_path, deliver=deliver, profile=profile, force=force
+        )
+        estimator = ensure_default_source_estimator_routine(
+            db_path=db_path, deliver=deliver, profile=profile, force=force
+        )
+        return {
+            "installed": True,
+            "created": False,
+            "job": None,
+            "reason": "already installed; script current",
+            "warning_automode": warning,
+            "source_estimator": estimator,
+        }
     job = install_forecast_cron(
         schedule=schedule,
         name=name,
@@ -162,6 +204,98 @@ def ensure_default_routines(
         # (only active models on active questions) and deduped by the standard
         # _has_open_alert guard, so it never re-alerts every sweep.
         refresh_market_models=True,
+        estimate_source_changes=False,
+        calibrate_utility=True,
+    )
+    warning = ensure_default_warning_automode_routine(
+        db_path=db_path, deliver=deliver, profile=profile, force=force
+    )
+    estimator = ensure_default_source_estimator_routine(
+        db_path=db_path, deliver=deliver, profile=profile, force=force
+    )
+    return {
+        "installed": True,
+        "created": True,
+        "job": job,
+        "reason": "installed",
+        "warning_automode": warning,
+        "source_estimator": estimator,
+    }
+
+
+def ensure_default_warning_automode_routine(
+    *,
+    db_path: str | None = None,
+    schedule: str = "every 30 minutes",
+    deliver: str = "local",
+    profile: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Ensure the bounded warning worker exists alongside the nightly sweep."""
+    if not force and not _warning_automode_auto_install_enabled():
+        return {"installed": False, "created": False, "job": None, "reason": "auto_install disabled"}
+    status = warning_automode_cron_status()
+    if status["installed"]:
+        return {"installed": True, "created": False, "job": status["job"], "reason": "already installed"}
+    job = install_warning_automode_cron(
+        schedule=schedule,
+        deliver=deliver,
+        profile=profile,
+        db_path=db_path,
+        agent=True,
+    )
+    return {"installed": True, "created": True, "job": job, "reason": "installed"}
+
+
+def _warning_automode_auto_install_enabled() -> bool:
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        block = ((cfg.get("forecasting") or {}).get("cron") or {})
+        return bool(block.get("warning_automode_auto_install", True))
+    except Exception:
+        return True
+
+
+def ensure_default_source_estimator_routine(
+    *,
+    db_path: str | None = None,
+    schedule: str = "every 15 minutes",
+    deliver: str = "local",
+    profile: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Ensure source estimation has a cadence independent of warning work."""
+    try:
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        block = ((cfg.get("cron") or {}).get("source_estimator") or {})
+        enabled = bool(block.get("enabled", True))
+        minutes = max(int(block.get("interval_minutes", 15)), 1)
+        schedule = f"every {minutes} minutes"
+    except Exception:
+        enabled = True
+    if not force and not enabled:
+        return {"installed": False, "created": False, "job": None, "reason": "disabled"}
+    status = source_estimator_cron_status()
+    if status["installed"]:
+        install_source_estimator_script(
+            get_hermes_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT,
+            db_path=db_path,
+        )
+        return {
+            "installed": True,
+            "created": False,
+            "job": status["job"],
+            "reason": "already installed; script current",
+        }
+    job = install_source_estimator_cron(
+        schedule=schedule,
+        deliver=deliver,
+        profile=profile,
+        db_path=db_path,
     )
     return {"installed": True, "created": True, "job": job, "reason": "installed"}
 
@@ -242,7 +376,14 @@ def forecast_cron_health(*, now: str | None = None) -> dict[str, Any]:
     errored: list[str] = []
     missed: list[str] = []
     for job in list_jobs(include_disabled=True):
-        if job.get("script") not in {FORECAST_CRON_SCRIPT, WARNING_AUTOMODE_CRON_SCRIPT}:
+        is_forecast_job = job.get("script") in {
+            FORECAST_CRON_SCRIPT,
+            WARNING_AUTOMODE_CRON_SCRIPT,
+            SOURCE_ESTIMATOR_CRON_SCRIPT,
+        } or "forecast" in " ".join(
+            str(job.get(field) or "").lower() for field in ("name", "prompt")
+        )
+        if not is_forecast_job:
             continue
         status = job.get("last_status")
         last_error = job.get("last_error")
@@ -272,6 +413,9 @@ def forecast_cron_health(*, now: str | None = None) -> dict[str, Any]:
             "last_run_at": last_run_at,
             "errored": is_errored,
             "missed": is_missed,
+            "failure_retry_count": int(job.get("failure_retry_count") or 0),
+            "retry_backoff_minutes": job.get("retry_backoff_minutes"),
+            "recurrence_next_run_at": job.get("recurrence_next_run_at"),
         }
         jobs_out.append(entry)
         if is_errored:
@@ -307,8 +451,9 @@ def install_warning_automode_cron(
     no-agent job whose script drives :func:`forecasting.cron_runner.run_warning_automode`
     on every tick — the FREE tier sweeps unbudgeted at zero token spend, while the
     PAID tier (reforecast + evidence_collection) runs BOUNDED by ``paid_budget``
-    (per-cycle agent-run cap, default 3) and ``paid_min_interval_hours`` (default
-    6h), both config-tunable.
+    (per-cycle agent-run cap, default 1) and ``paid_min_interval_hours`` (default
+    0.5h), both config-tunable. Source estimation and learned-error review use
+    separate leased budgets so warning demand cannot starve them.
 
     ``agent`` wires the paid (LLM) tier; pass ``agent=False`` for a free-tier-only
     continuous loop. Idempotent START: any prior job with the same name is removed
@@ -365,9 +510,8 @@ def warning_automode_cron_status(*, name: str = WARNING_AUTOMODE_CRON_NAME) -> d
     """STATUS of the continuous warning-automode cron job.
 
     Returns ``{"installed": bool, "job": <job or None>, "last_paid_run_at": <iso
-    or None>}`` — the last-paid-run timestamp is read from the same state file the
-    runner's min-interval gate uses, so an operator can see when the paid tier last
-    spent budget.
+    or None>}`` — the last-paid-run timestamp is read from the same transactional
+    SQLite budget lease the runner uses, so concurrent processes cannot double-spend.
     """
     from cron.jobs import list_jobs
 
@@ -377,13 +521,81 @@ def warning_automode_cron_status(*, name: str = WARNING_AUTOMODE_CRON_NAME) -> d
             job = candidate
             break
 
-    from forecasting.cron_runner import _read_automode_state
+    from forecasting.cron_runner import read_warning_automode_state
+    from forecasting.ledger import ForecastLedger
 
-    state = _read_automode_state()
+    state = ForecastLedger().automation_budget_status("warning_automode_paid") or {}
     return {
         "installed": job is not None,
         "job": job,
-        "last_paid_run_at": state.get("last_paid_run_at"),
+        "last_paid_run_at": state.get("last_run_at"),
+        "runtime": read_warning_automode_state() or None,
+    }
+
+
+def install_source_estimator_cron(
+    *,
+    schedule: str = "every 15 minutes",
+    name: str = SOURCE_ESTIMATOR_CRON_NAME,
+    deliver: str = "local",
+    profile: str | None = None,
+    db_path: str | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    max_iterations: int | None = None,
+) -> dict[str, Any]:
+    """Install the independent adaptive source-estimation worker."""
+    remove_source_estimator_cron(name=name)
+    install_source_estimator_script(
+        get_hermes_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT,
+        db_path=db_path,
+        model=model,
+        provider=provider,
+        max_iterations=max_iterations,
+    )
+    from cron.jobs import create_job
+
+    return create_job(
+        prompt="Route and estimate immutable source-change events.",
+        schedule=schedule,
+        name=name,
+        deliver=deliver,
+        script=SOURCE_ESTIMATOR_CRON_SCRIPT,
+        profile=profile,
+        no_agent=True,
+    )
+
+
+def remove_source_estimator_cron(*, name: str = SOURCE_ESTIMATOR_CRON_NAME) -> int:
+    from cron.jobs import list_jobs, remove_job
+
+    removed = 0
+    for job in list_jobs(include_disabled=True):
+        if (job.get("name") or "") == name or job.get("script") == SOURCE_ESTIMATOR_CRON_SCRIPT:
+            if remove_job(job["id"]):
+                removed += 1
+    return removed
+
+
+def source_estimator_cron_status(
+    *, name: str = SOURCE_ESTIMATOR_CRON_NAME
+) -> dict[str, Any]:
+    from cron.jobs import list_jobs
+    from forecasting.cron_runner import read_source_estimator_state
+
+    job = next(
+        (
+            candidate
+            for candidate in list_jobs(include_disabled=True)
+            if (candidate.get("name") or "") == name
+            or candidate.get("script") == SOURCE_ESTIMATOR_CRON_SCRIPT
+        ),
+        None,
+    )
+    return {
+        "installed": job is not None,
+        "job": job,
+        "runtime": read_source_estimator_state() or None,
     }
 
 

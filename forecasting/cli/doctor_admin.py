@@ -274,6 +274,40 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
     except Exception:
         cron_health = None
 
+    # Runtime conservation/liveness gates. Unit tests can prove individual
+    # transitions while a production ledger still accumulates orphaned events or
+    # runs without a worker; fold the live queue invariants into doctor explicitly.
+    try:
+        operations = ledger.operational_cockpit()
+        operational_issues: list[dict[str, Any]] = []
+        source_changes = operations.get("source_changes") or {}
+        coverage = operations.get("coverage") or {}
+        high = operations.get("high_severity") or {}
+        installed_scripts = {
+            row.get("script") for row in (cron_health or {}).get("jobs", [])
+        }
+        checks = (
+            ("stranded_source_events", int(source_changes.get("stranded") or 0)),
+            ("open_source_failures", int(source_changes.get("open_failed") or 0)),
+            ("service_mode_coverage_gaps", int(coverage.get("service_mode_coverage_gaps") or 0)),
+            ("unowned_high_severity", int(high.get("unclaimed") or 0)),
+        )
+        for issue_id, observed in checks:
+            if observed:
+                operational_issues.append({"id": issue_id, "observed": observed})
+        if "forecast_warning_automode.py" not in installed_scripts:
+            operational_issues.append({"id": "warning_worker_not_installed", "observed": 1})
+        operational_health = {
+            "healthy": not operational_issues,
+            "issues": operational_issues,
+            "operations": operations,
+        }
+        from forecasting.cron_runner import read_warning_automode_state
+
+        operational_health["warning_worker"] = read_warning_automode_state() or None
+    except Exception:
+        operational_health = None
+
     # Free-tier warning DRAIN (nightly): the last drain count (from the state file
     # the run_due_reviews free-tier phase writes) + the LIVE remaining free-tier
     # backlog, so an operator can see the "free" alerts draining themselves at zero
@@ -381,6 +415,7 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         "claim_live_superforecasting": evidence_status.get("can_claim_live_superforecasting"),
         "triage_gate": triage_gate,
         "cron_health": cron_health,
+        "operational_health": operational_health,
         "free_tier_drain": free_tier_drain,
         "review_sweeper": review_sweeper,
         "prediction_markets": prediction_markets,
@@ -497,6 +532,14 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
         )
     )
     print(f"claim_live_superforecasting: {report['claim_live_superforecasting']}")
+    operational = report.get("operational_health") or {}
+    if operational:
+        issues = operational.get("issues") or []
+        print(
+            "operational_health: "
+            + ("healthy" if operational.get("healthy") else "degraded")
+            + (" — " + ", ".join(f"{row['id']}={row['observed']}" for row in issues) if issues else "")
+        )
 
     # SLICE 5 fold: one unified "warnings" line that folds all three models —
     # the alert_events backlog (by reason), the saturation/hook issues, and the
@@ -547,7 +590,9 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
             due_now = rsweep.get("due_now", 0)
             last = rsweep.get("last") or {}
             if last:
-                if last.get("ran"):
+                if last.get("running"):
+                    tail = f"sweep running since {last.get('last_sweep_started_at') or 'unknown'}"
+                elif last.get("ran"):
                     tail = (
                         f"last sweep refreshed {last.get('refreshed', 0)}, "
                         f"alerts {last.get('alerts', 0)}"

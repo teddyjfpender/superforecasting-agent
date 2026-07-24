@@ -113,11 +113,13 @@ class TestEndToEnd:
                 return [{"url": urls[0], "title": "Big Page", "content": big,
                          "raw_content": big, "metadata": {}}]
 
-        # The fork dispatches through agent.web_search_registry.get_provider and
-        # uses a synchronous is_safe_url SSRF gate (no async_is_safe_url here).
-        with patch("tools.web_tools._get_extract_backend", return_value="fake"), \
-             patch("tools.web_tools.is_safe_url", return_value=True), \
-             patch("agent.web_search_registry.get_provider", return_value=FakeProvider()):
+        # The fork dispatches through the capability-aware active extract
+        # provider and uses a synchronous is_safe_url SSRF gate.
+        with patch("tools.web_tools.is_safe_url", return_value=True), \
+             patch(
+                 "agent.web_search_registry.get_active_extract_provider",
+                 return_value=FakeProvider(),
+             ):
             result = json.loads(asyncio.new_event_loop().run_until_complete(
                 wt.web_extract_tool(["https://example.com/big"], char_limit=5000)
             ))

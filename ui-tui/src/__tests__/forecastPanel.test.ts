@@ -1033,9 +1033,11 @@ describe('forecast desk unearned-tail heuristics', () => {
 
   it('marks the unearned-tail book row and surfaces a triage row', () => {
     const sections = forecastDashboardSections(responseWithUnearnedTail())
+
     const senateRow = sections
       .find(section => section.title === 'Active Forecasts')
       ?.rows?.find(row => row[2] === '/questions fq_senate')
+
     expect(senateRow?.[1]).toContain('unearned tail 1.7%')
     expect(senateRow?.[1]).toContain('Conway')
 
@@ -1059,6 +1061,7 @@ describe('forecast desk unearned-tail heuristics', () => {
         ]
       }
     }
+
     expect(forecastDeskStatusLabel(clean)).not.toContain('unearned tail')
     const triage = forecastDashboardSections(clean).find(section => section.title === 'Triage')
     expect(triage?.rows?.some(row => /unearned tail/.test(row[1]))).toBe(false)
@@ -1085,6 +1088,7 @@ describe('forecast desk unearned-tail heuristics', () => {
         question: { id: 'fq_senate', status: 'active', title: 'Texas Senate' }
       }
     })
+
     const current = sections.find(section => section.title === 'Current Forecast')
     const tailRow = current?.rows?.find(row => row[0] === 'tail audit')
     expect(tailRow?.[1]).toContain('FAIL')

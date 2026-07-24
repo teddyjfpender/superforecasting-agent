@@ -115,7 +115,12 @@ def resolve(args: dict[str, Any], ledger) -> str:
             from forecasting.writeup import write_retrospective
 
             _qid = args.get("question_id")
-            write_retrospective(ledger, _qid, score=ledger.get_current_score(_qid))
+            write_retrospective(
+                ledger,
+                _qid,
+                score=ledger.get_current_score(_qid),
+                main_runtime=args.get("_main_runtime"),
+            )
     except Exception:
         pass
     return tool_result(success=True, resolution=resolution.__dict__)

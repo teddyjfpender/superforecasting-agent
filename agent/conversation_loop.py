@@ -957,6 +957,39 @@ def run_conversation(
         api_kwargs = None  # Guard against UnboundLocalError in except handler
 
         while retry_count < max_retries:
+            # Hard Gemini project/free-tier quotas do not recover within this
+            # retry loop. Share the first failure across gateway, cron, and CLI
+            # sessions so later work falls back without another doomed request.
+            from agent.gemini_quota_guard import (
+                gemini_quota_remaining,
+                is_gemini_endpoint,
+            )
+
+            if is_gemini_endpoint(agent.provider, getattr(agent, "base_url", None)):
+                _gemini_remaining = gemini_quota_remaining()
+                if _gemini_remaining is not None:
+                    _gemini_msg = (
+                        "Gemini hard-quota circuit is open for about "
+                        f"{max(int(_gemini_remaining // 60) + 1, 1)} minute(s)."
+                    )
+                    agent._buffer_status(f"⏳ {_gemini_msg} Trying fallback...")
+                    if agent._try_activate_fallback(reason=FailoverReason.rate_limit):
+                        retry_count = 0
+                        compression_attempts = 0
+                        primary_recovery_attempted = False
+                        continue
+                    agent._flush_status_buffer()
+                    agent._persist_session(messages, conversation_history)
+                    return {
+                        "final_response": (
+                            f"⏳ {_gemini_msg}\n\nNo fallback provider is available."
+                        ),
+                        "messages": messages,
+                        "api_calls": api_call_count,
+                        "completed": False,
+                        "failed": True,
+                        "error": _gemini_msg,
+                    }
             # ── Nous Portal rate limit guard ──────────────────────
             # If another session already recorded that Nous is rate-
             # limited, skip the API call entirely.  Each attempt
@@ -1705,6 +1738,13 @@ def run_conversation(
                         clear_nous_rate_limit()
                     except Exception:
                         pass
+                from agent.gemini_quota_guard import (
+                    clear_gemini_quota,
+                    is_gemini_endpoint,
+                )
+
+                if is_gemini_endpoint(agent.provider, getattr(agent, "base_url", None)):
+                    clear_gemini_quota()
                 agent._touch_activity(f"API call #{api_call_count} completed")
                 break  # Success, exit retry loop
 
@@ -2766,8 +2806,34 @@ def run_conversation(
                     # retryable=True mapping takes effect instead.
                     and not isinstance(api_error, ssl.SSLError)
                 )
+                error_text_lower = str(api_error).lower()
+                is_hard_gemini_quota = (
+                    status_code == 429
+                    and (
+                        str(_provider or "").lower() in {"gemini", "google", "google-gemini"}
+                        or "generativelanguage.googleapis.com" in str(_base or "").lower()
+                    )
+                    and any(
+                        marker in error_text_lower
+                        for marker in (
+                            "free_tier",
+                            "free tier",
+                            "quota exceeded",
+                            "exceeded your current quota",
+                            "generate_content_free_tier_requests",
+                        )
+                    )
+                )
+                if is_hard_gemini_quota:
+                    try:
+                        from agent.gemini_quota_guard import record_gemini_quota
+
+                        record_gemini_quota()
+                    except Exception:
+                        logging.debug("Could not persist Gemini quota circuit state", exc_info=True)
                 is_client_error = (
                     is_local_validation_error
+                    or is_hard_gemini_quota
                     or (
                         not classified.retryable
                         and not classified.should_compress

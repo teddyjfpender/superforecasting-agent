@@ -531,7 +531,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
 
     hooks_promotions = hooks_sub.add_parser(
         "promotions",
-        help="Standing WARN->ERROR promotion queue: WARN-in-standard rules at 100% live pass (read-only advisor)",
+        help="Standing WARN->ERROR promotion queue: WARN-in-standard rules at 100%% live pass (read-only advisor)",
     )
     hooks_promotions.add_argument("--json", action="store_true")
     hooks_promotions.set_defaults(_forecast_handler=_cmd_hooks_promotions)
@@ -1604,6 +1604,10 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     correction_add.add_argument("--patch-json", default="{}")
     correction_add.add_argument("--status", choices=["proposed", "applied", "rejected"], default="proposed")
     correction_add.set_defaults(_forecast_handler=_cmd_correction_add)
+    correction_apply = correction_sub.add_parser("apply", help="Apply a proposed correction")
+    correction_apply.add_argument("id")
+    correction_apply.add_argument("--applied-by")
+    correction_apply.set_defaults(_forecast_handler=_cmd_correction_apply)
     correction_list = correction_sub.add_parser("list", help="List correction records")
     correction_list.add_argument("--target-type")
     correction_list.add_argument("--target-id")
@@ -2015,6 +2019,14 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     alerts_parser = forecast_sub.add_parser("alerts", help="List + reconcile forecast alerts")
     alerts_parser.add_argument("--all", action="store_true")
     alerts_parser.add_argument("--ack", dest="ack_alert_id")
+    alerts_parser.add_argument("--task", dest="human_task_id")
+    alerts_parser.add_argument(
+        "--action",
+        choices=("acknowledge", "defer", "resolve", "reforecast"),
+        help="Act on an awaiting-human operational task selected by --task.",
+    )
+    alerts_parser.add_argument("--defer-hours", type=float, default=24.0)
+    alerts_parser.add_argument("--note")
     alerts_parser.add_argument(
         "--reconcile",
         action="store_true",
@@ -7815,6 +7827,13 @@ def _cmd_correction_list(args: argparse.Namespace) -> None:
         print(f"{correction['id']:<14} {correction['status']:<9} {target:<22} {affected}")
 
 
+def _cmd_correction_apply(args: argparse.Namespace) -> None:
+    correction = _ledger(args).apply_correction(args.id, applied_by=args.applied_by)
+    print(f"correction: {correction['id']}")
+    print(f"status: {correction['status']}")
+    print(f"target: {correction['target_type']} {correction['target_id']}")
+
+
 def _cmd_resolver_trust(args: argparse.Namespace) -> None:
     policy = _ledger(args).create_trusted_resolver_policy(
         resolver_plugin=args.resolver_plugin,
@@ -8958,7 +8977,13 @@ def build_triage_runner(*, model: str | None = None):
     """
     from forecasting import appconfig, quorum
 
-    resolved = model or appconfig.get_str("FORECAST_TRIAGE_MODEL") or quorum.DEFAULT_JUDGE_MODEL
+    configured = appconfig.get_str("FORECAST_TRIAGE_MODEL")
+    if model or configured:
+        resolved = model or configured
+    else:
+        from hermes_cli.config import load_config
+
+        resolved = _resolve_active_model_id(load_config().get("model")) or quorum.DEFAULT_JUDGE_MODEL
     runner = quorum.make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)
     return runner, resolved
 
@@ -9566,6 +9591,20 @@ def _cmd_freshen(args: argparse.Namespace) -> None:
 
 def _cmd_alerts(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    if getattr(args, "human_task_id", None):
+        if not getattr(args, "action", None):
+            raise SystemExit("forecast alerts --task requires --action")
+        result = ledger.act_on_human_task(
+            args.human_task_id,
+            action=args.action,
+            defer_hours=args.defer_hours,
+            note=args.note,
+        )
+        if getattr(args, "json", False):
+            print(json.dumps(result, indent=2))
+        else:
+            print(f"{result['id']}: {result['status']} ({result['disposition']})")
+        return
     if getattr(args, "collapse", False):
         result = ledger.collapse_duplicate_alerts(dry_run=getattr(args, "dry_run", False))
         if getattr(args, "json", False):

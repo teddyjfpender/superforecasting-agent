@@ -486,6 +486,7 @@ class ForecastDashboardQuestion(WireModel):
     latest_evidence_summary: str | None = wire_optional(nullable=True)
     latest_rationale: str | None = wire_optional(nullable=True)
     open_alert_count: int | None = wire_optional()
+    operations: dict[str, Any] | None = wire_optional()
     open_assumption_count: int | None = wire_optional()
     open_reference_class_count: int | None = wire_optional()
     probability: _ProbOrDist | None = wire_optional(nullable=True)
@@ -1518,6 +1519,7 @@ class ForecastWorkspaceResponse(WireModel):
     # whole book (each {question_id, title, action, reason, score}).
     next_actions: list[ForecastNextAction] | None = wire_optional()
     open_alert_count: int | None = wire_optional()
+    operations: dict[str, Any] | None = wire_optional()
     output: str | None = wire_optional()
     product: str | None = wire_optional()
     thesis_count: int | None = wire_optional()

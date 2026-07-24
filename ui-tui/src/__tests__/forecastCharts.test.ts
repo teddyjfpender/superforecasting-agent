@@ -24,14 +24,17 @@ import {
 // present), i.e. every artifact bandChart actually paints.
 const drawnValues = (points: ReadonlyArray<{ y: number | null; lo?: number | null; hi?: number | null }>): number[] => {
   const out: number[] = []
+
   for (const p of points) {
     if (typeof p.y === 'number' && Number.isFinite(p.y)) {
       out.push(p.y)
+
       if (typeof p.lo === 'number' && Number.isFinite(p.lo) && typeof p.hi === 'number' && Number.isFinite(p.hi)) {
         out.push(p.lo, p.hi)
       }
     }
   }
+
   return out
 }
 
@@ -40,12 +43,14 @@ const glyphCells = (chart: { rows: string[]; gutterW: number }, glyph: string): 
   const cells: Array<{ row: number; col: number }> = []
   chart.rows.forEach((row, r) => {
     const plot = row.slice(chart.gutterW)
+
     ;[...plot].forEach((ch, c) => {
       if (ch === glyph) {
         cells.push({ row: r, col: c })
       }
     })
   })
+
   return cells
 }
 
@@ -95,6 +100,7 @@ describe('windowDelta', () => {
       { as_of: day(10), headline_probability: 0.5 }, // ≤ now−7d → the 1W anchor
       { as_of: day(2), headline_probability: 0.58 } // current
     ]
+
     // 0.58 − 0.5 = +0.08
     expect(windowDelta(history, NOW, 7)).toBeCloseTo(0.08, 6)
   })
@@ -104,6 +110,7 @@ describe('windowDelta', () => {
       { as_of: day(3), headline_probability: 0.5 },
       { as_of: day(1), headline_probability: 0.55 }
     ]
+
     // No point is ≤ now−7d, so the 1W window has no anchor.
     expect(windowDelta(history, NOW, 7)).toBeNull()
   })
@@ -121,6 +128,7 @@ describe('windowDelta', () => {
       { as_of: day(5), headline_probability: 0.5 },
       { as_of: day(0.5), headline_probability: 0.6 } // inside today, NOT ≤ now−1d
     ]
+
     // current 0.6; the only point ≤ now−1d is the day-5 one → +0.1
     expect(windowDelta(history, NOW, 1)).toBeCloseTo(0.1, 6)
   })
@@ -131,6 +139,7 @@ describe('windowDelta', () => {
       { as_of: day(10), headline_probability: null }, // in-window but non-finite → skip
       { as_of: day(1), headline_probability: 0.55 }
     ]
+
     // 0.55 − 0.42 = +0.13 (the null day-10 point is skipped)
     expect(windowDelta(history, NOW, 7)).toBeCloseTo(0.13, 6)
   })
@@ -141,6 +150,7 @@ describe('windowDelta', () => {
       { as_of: day(10), headline_probability: 4.3 },
       { as_of: day(1), headline_probability: 4.232 }
     ]
+
     // 4.232 − 4.3 = −0.068 (raw outcome units; caller renders as Δμ)
     expect(windowDelta(history, NOW, 7)).toBeCloseTo(-0.068, 6)
   })
@@ -153,6 +163,7 @@ describe('windowDelta', () => {
       { as_of: day(10), headline_probability: 0.35, headline_regime: 'event' }, // 1W anchor (same regime)
       { as_of: day(1), headline_probability: 0.38, headline_regime: 'event' } // current
     ]
+
     // +0.03 vs the same-regime event point, NOT −0.13 vs the health baseline.
     expect(windowDelta(history, NOW, 7)).toBeCloseTo(0.03, 6)
     expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: expect.closeTo(0.03, 6), newSeries: false })
@@ -165,6 +176,7 @@ describe('windowDelta', () => {
       { as_of: day(2), headline_probability: 0.35, headline_regime: 'event' },
       { as_of: day(1), headline_probability: 0.36, headline_regime: 'event' } // current (event)
     ]
+
     // A delta across the health→event switch is a lie → null, flagged newSeries.
     expect(windowDelta(history, NOW, 7)).toBeNull()
     expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: null, newSeries: true })
@@ -175,6 +187,7 @@ describe('windowDelta', () => {
       { as_of: day(2), headline_probability: 0.35, headline_regime: 'event' },
       { as_of: day(1), headline_probability: 0.36, headline_regime: 'event' }
     ]
+
     // No point ≤ now−7d → a bare absence, not a regime boundary.
     expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: null, newSeries: false })
   })
@@ -185,6 +198,7 @@ describe('windowDelta', () => {
       { as_of: day(10), headline_probability: 0.5 },
       { as_of: day(2), headline_probability: 0.58 }
     ]
+
     // Byte-identical to the non-regime path: +0.08, never flagged newSeries.
     expect(windowDeltaDetail(history, NOW, 7)).toEqual({ delta: expect.closeTo(0.08, 6), newSeries: false })
   })
@@ -254,9 +268,11 @@ describe('bandChart', () => {
   it('produces height rows each with a y-gutter', () => {
     const chart = bandChart([{ y: 0.5 }], { width: 20, height: 5 })
     expect(chart.rows).toHaveLength(5)
+
     for (const row of chart.rows) {
       expect(row).toContain('│')
     }
+
     // All three labels share one decimal count (the mid 0.5 forces 1 decimal).
     expect(chart.axis.top).toBe('1.0')
     expect(chart.axis.bottom).toBe('0.0')
@@ -297,10 +313,12 @@ describe('bandChart', () => {
   it('spreads multiple points across columns (first left, last right)', () => {
     const chart = bandChart([{ y: 0.2 }, { y: 0.5 }, { y: 0.8 }], { width: 20, height: 7 })
     const plot = chart.rows.map(r => r.split('│')[1] ?? '')
+
     const markerCols = plot
       .flatMap(row => [...row].map((ch, i) => (ch === '●' ? i : -1)))
       .filter(i => i >= 0)
       .sort((a, b) => a - b)
+
     expect(markerCols.length).toBe(3)
     expect(markerCols[0]).toBe(0)
     expect(markerCols[markerCols.length - 1]).toBe((plot[0] ?? '').length - 1)
@@ -323,6 +341,7 @@ describe('histogram', () => {
       ],
       { width: 10, labelWidth: 8 }
     )
+
     expect(rows).toHaveLength(3)
     // mode (0.45) fills the whole track
     expect(rows[1]).toContain('██████████')
@@ -347,6 +366,7 @@ describe('histogram', () => {
       ],
       { width: 10, labelWidth: 8 }
     )
+
     expect(rows[0]).toContain('72 [50–85]')
     expect(rows[1]!.includes('[')).toBe(false) // no interval -> no suffix
   })
@@ -359,6 +379,7 @@ describe('histogram', () => {
       ],
       { width: 24, labelWidth: 8 }
     )
+
     // Both bars carry the bracket glyphs on the track and the numeric suffix.
     expect(rows[0]).toContain('├')
     expect(rows[0]).toContain('┤')
@@ -373,6 +394,7 @@ describe('histogram', () => {
       [{ label: 'A', value: 60, interval: { lo: 40, hi: 95 } }],
       { width: 20, labelWidth: 4 }
     )
+
     // ┤ sits at the far right (p95 is the widest artifact), never off the track.
     const cell = rows[0]!.split(' ').find(seg => seg.includes('┤'))
     expect(cell?.endsWith('┤')).toBe(true)
@@ -385,6 +407,7 @@ describe('boxWhisker', () => {
       { min: 0.2, p25: 0.4, median: 0.5, p75: 0.6, max: 0.8 },
       { width: 20 }
     )
+
     expect(line).toContain('├')
     expect(line).toContain('┤')
     expect(line).toContain('┃')
@@ -439,6 +462,7 @@ describe('edge cases & defect scenarios', () => {
   describe('bandChart edge cases', () => {
     it('handles width <= gutter (plotW becomes 1)', () => {
       const chart = bandChart([{ y: 0.5 }], { width: 3, height: 7 })
+
       // plotW = Math.max(1, 3 - 5) = 1
       for (const row of chart.rows) {
         const plot = row.split('│')[1] ?? ''
@@ -500,6 +524,7 @@ describe('edge cases & defect scenarios', () => {
         [{ label: 'a', value: Number.NaN }, { label: 'b', value: Number.NaN }],
         { width: 10 }
       )
+
       expect(rows).toEqual([])
     })
 
@@ -535,6 +560,7 @@ describe('edge cases & defect scenarios', () => {
         [{ label: 'normal', value: 0.5 }, { label: 'inf', value: Number.POSITIVE_INFINITY }],
         { width: 10 }
       )
+
       expect(rows).toHaveLength(1)
       expect(rows[0]).toContain('normal')
     })
@@ -565,6 +591,7 @@ describe('edge cases & defect scenarios', () => {
         { min: 0.2, max: 0.8, p25: 0.7, p75: 0.3 },
         { width: 20 }
       )
+
       // for (let i = Math.min(p25, p75); i <= Math.max(p25, p75); i++) handles inversion
       expect(line).toContain('▒')
       expect(line.length).toBe(20)
@@ -590,6 +617,7 @@ describe('edge cases & defect scenarios', () => {
         { min: 0.5, max: 0.5 },
         { width: 20, yMin: 0.5, yMax: 0.5 }
       )
+
       // span = 0.5 - 0.5 || 1 = 1
       // col() will clamp to [0, 19]
       expect(line.length).toBe(20)
@@ -650,6 +678,7 @@ describe('timeAxis', () => {
       gutterW: 6,
       plotW: 48
     })!
+
     expect(axis).not.toBeNull()
     // Both endpoints are labelled...
     expect(axis.labels).toContain('2026-05-01')
@@ -784,25 +813,34 @@ describe('bandChart domain containment (dots never escape the axis)', () => {
   it('PROPERTY: for arbitrary series + bands + domains, every glyph stays inside the axis', () => {
     // A deterministic LCG so the property is reproducible.
     let seed = 0x2545f491
+
     const rnd = () => {
       seed = (seed * 1103515245 + 12345) & 0x7fffffff
+
       return seed / 0x7fffffff
     }
+
     const span = (a: number, b: number) => a + rnd() * (b - a)
 
     for (let trial = 0; trial < 300; trial += 1) {
       const n = 1 + Math.floor(rnd() * 12)
+
       const points = Array.from({ length: n }, () => {
         if (rnd() < 0.15) {
           return { y: null as number | null }
         }
+
         const y = span(-2, 3)
+
         if (rnd() < 0.5) {
           const half = rnd() * 0.8
+
           return { y, lo: y - half, hi: y + half }
         }
+
         return { y }
       })
+
       const h = 3 + Math.floor(rnd() * 8)
       // Sometimes an adversarial (subset / degenerate / inverted) domain.
       const a = span(-1, 2)
@@ -810,20 +848,24 @@ describe('bandChart domain containment (dots never escape the axis)', () => {
       const chart = bandChart(points, { width: 8 + Math.floor(rnd() * 40), height: h, yMin: Math.min(a, b), yMax: Math.max(a, b) })
 
       const values = drawnValues(points)
+
       // 1) Containment: the reported domain includes every drawn artifact.
       for (const v of values) {
         expect(v).toBeGreaterThanOrEqual(chart.yMin)
         expect(v).toBeLessThanOrEqual(chart.yMax)
       }
+
       // 2) Every glyph occupies a real axis row: 0..rows.length-1, and the honest
       //    (un-clamped) projection of each drawn value lands in that range too.
       const rowCount = chart.rows.length
       const dsp = chart.yMax - chart.yMin || 1
+
       for (const v of values) {
         const honestRow = Math.round((1 - (v - chart.yMin) / dsp) * (rowCount - 1))
         expect(honestRow).toBeGreaterThanOrEqual(0)
         expect(honestRow).toBeLessThanOrEqual(rowCount - 1)
       }
+
       for (const glyph of ['●', '░']) {
         for (const cell of glyphCells(chart, glyph)) {
           expect(cell.row).toBeGreaterThanOrEqual(0)
@@ -854,6 +896,7 @@ describe('downsampleSeries (change-aware dot-plot thinning)', () => {
     expect(ds.keptIndices).toHaveLength(15)
     expect(ds.keptIndices[0]).toBe(0)
     expect(ds.keptIndices[ds.keptIndices.length - 1]).toBe(83)
+
     // strictly increasing (chronological order preserved)
     for (let i = 1; i < ds.keptIndices.length; i += 1) {
       expect(ds.keptIndices[i]!).toBeGreaterThan(ds.keptIndices[i - 1]!)
@@ -895,10 +938,12 @@ describe('downsampleSeries (change-aware dot-plot thinning)', () => {
     const ds = downsampleSeries(values, { cap: 3 })
     // total counts the 5 finite points, not the 8 slots.
     expect(ds.total).toBe(5)
+
     // Every kept index points at a finite value.
     for (const i of ds.keptIndices) {
       expect(Number.isFinite(values[i])).toBe(true)
     }
+
     // first/last kept are the first/last FINITE indices.
     expect(ds.keptIndices[0]).toBe(0)
     expect(ds.keptIndices[ds.keptIndices.length - 1]).toBe(7)

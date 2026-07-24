@@ -54,6 +54,7 @@ describe('session vitals on the conversation bar', () => {
       stream.isTTY = false
       let out = ''
       stream.on('data', (c: Buffer) => (out += c.toString()))
+
       const inst = render(
         React.createElement(HomeStatusBar, {
           agents: null, cols: 120, cwdLabel: '~/x', deskStatus: null,
@@ -63,6 +64,7 @@ describe('session vitals on the conversation bar', () => {
         } as never),
         { exitOnCtrlC: false, patchConsole: false, stdout: stream as never }
       )
+
       return new Promise(res => setTimeout(() => { inst.unmount?.(); res(out) }, 80))
     }
 

@@ -754,6 +754,7 @@ def handle_function_call(
     user_task: Optional[str] = None,
     enabled_tools: Optional[List[str]] = None,
     skip_pre_tool_call_hook: bool = False,
+    main_runtime: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Main function call dispatcher that routes calls to the tool registry.
@@ -767,6 +768,9 @@ def handle_function_call(
                        execute_code uses this list to determine which sandbox
                        tools to generate.  Falls back to the process-global
                        ``_last_resolved_tool_names`` for backward compat.
+        main_runtime: Live provider/model credentials for auxiliary work
+                      started inside a tool. This keeps side calls pinned to
+                      the invoking agent instead of a process-global default.
 
     Returns:
         Function result as a JSON string.
@@ -850,6 +854,7 @@ def handle_function_call(
                 function_name, function_args,
                 task_id=task_id,
                 user_task=user_task,
+                main_runtime=main_runtime,
             )
         duration_ms = int((time.monotonic() - _dispatch_start) * 1000)
 

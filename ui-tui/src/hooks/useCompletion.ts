@@ -83,6 +83,7 @@ export function useCompletion(input: string, blocked: boolean, gw: GatewayClient
     }
 
     const request = completionRequestForInput(input)
+
     if (!request) {
       armed.current = false
       clear()

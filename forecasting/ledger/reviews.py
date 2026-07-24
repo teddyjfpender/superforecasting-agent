@@ -33,8 +33,10 @@ from __future__ import annotations
 
 import re
 import sqlite3
+import threading
+import time
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from forecasting.ledger.gate import allow_ledger_writes
@@ -311,9 +313,9 @@ def schedule_review(
             # upserted auto_*/stale_days/filters would be invisible).
             result_id = existing["id"]
         else:
-            conn.execute(
+            cursor = conn.execute(
                 """
-                INSERT INTO scheduled_reviews (
+                INSERT OR IGNORE INTO scheduled_reviews (
                     id, scope_type, scope_ref, cadence, stale_days, next_run_at,
                     trigger_reason, enabled, auto_score, auto_postmortem,
                     confidence_below, confidence_above, large_delta_threshold
@@ -336,7 +338,20 @@ def schedule_review(
                     large_delta_threshold,
                 ),
             )
-            result_id = review_id
+            if cursor.rowcount:
+                result_id = review_id
+            else:
+                raced = conn.execute(
+                    """
+                    SELECT id FROM scheduled_reviews
+                    WHERE scope_type = ? AND cadence = ? AND trigger_reason = ?
+                      AND ((scope_ref IS NULL AND ? IS NULL) OR scope_ref = ?)
+                      AND enabled = 1
+                    LIMIT 1
+                    """,
+                    (scope_type, cadence, trigger_reason, scope_ref, scope_ref),
+                ).fetchone()
+                result_id = raced["id"]
     return ledger.get_scheduled_review(result_id)
 
 
@@ -498,6 +513,18 @@ def list_scheduled_review_runs(
     return [ledger._row_to_scheduled_review_run(row) for row in rows]
 
 
+def count_scheduled_review_runs(
+    ledger, *, scheduled_review_id: str | None = None
+) -> int:
+    where = "WHERE scheduled_review_id = ?" if scheduled_review_id else ""
+    params = (scheduled_review_id,) if scheduled_review_id else ()
+    with ledger._connect() as conn:
+        row = conn.execute(
+            f"SELECT COUNT(*) AS n FROM scheduled_review_runs {where}", params
+        ).fetchone()
+    return int(row["n"] or 0)
+
+
 def run_due_scheduled_reviews(
     ledger,
     *,
@@ -505,6 +532,10 @@ def run_due_scheduled_reviews(
     auto_score: bool = False,
     auto_postmortem: bool = False,
     refresh_fetcher: Any = None,
+    worker_id: str | None = None,
+    lease_seconds: int = 300,
+    limit: int = 100,
+    max_wall_seconds: float = 60.0,
 ) -> list[dict[str, Any]]:
     """Run every due scheduled-review row, advancing each row's cadence.
 
@@ -518,19 +549,102 @@ def run_due_scheduled_reviews(
     question's next run is escalated (never slowed) as its close/resolution/
     decision deadline nears."""
     now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
-    with ledger._connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT * FROM scheduled_reviews
-            WHERE enabled = 1 AND next_run_at <= ?
-            ORDER BY next_run_at ASC
-            """,
-            (now_ts,),
-        ).fetchall()
+    owner = (worker_id or f"review-worker:{uuid.uuid4().hex[:12]}").strip()
+    if not owner:
+        raise ValidationError("worker_id must not be empty")
+    lease_seconds = max(int(lease_seconds), 1)
+    limit = max(int(limit), 1)
+    max_wall_seconds = max(float(max_wall_seconds), 0.01)
+    started = time.monotonic()
+    now_dt = timestamp_to_datetime(now_ts)
+    assert now_dt is not None
+    def lease_clock() -> tuple[str, str]:
+        real_dt = datetime.now(timezone.utc)
+        base = max(now_dt, real_dt)
+        stamp = base.isoformat(timespec="microseconds").replace("+00:00", "Z")
+        expires = (base + timedelta(seconds=lease_seconds)).isoformat(
+            timespec="microseconds"
+        ).replace("+00:00", "Z")
+        return stamp, expires
+
+    def claimed_rows():
+        """Claim exactly one row when the consumer is ready to process it."""
+        for _ in range(limit):
+            if time.monotonic() - started >= max_wall_seconds:
+                return
+            claim_stamp, lease_expires_at = lease_clock()
+            with ledger._connect() as conn:
+                candidate = conn.execute(
+                    """
+                    SELECT id FROM scheduled_reviews
+                    WHERE enabled = 1 AND next_run_at <= ?
+                      AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+                    ORDER BY next_run_at ASC, id ASC
+                    LIMIT 1
+                    """,
+                    (now_ts, claim_stamp),
+                ).fetchone()
+                if candidate is None:
+                    return
+                claimed = conn.execute(
+                    """
+                    UPDATE scheduled_reviews
+                    SET lease_owner = ?, lease_expires_at = ?,
+                        attempt_count = COALESCE(attempt_count, 0) + 1
+                    WHERE id = ? AND enabled = 1 AND next_run_at <= ?
+                      AND (lease_expires_at IS NULL OR lease_expires_at <= ?)
+                    """,
+                    (
+                        owner,
+                        lease_expires_at,
+                        candidate["id"],
+                        now_ts,
+                        claim_stamp,
+                    ),
+                )
+                if claimed.rowcount != 1:
+                    continue
+                row = conn.execute(
+                    "SELECT * FROM scheduled_reviews WHERE id = ?", (candidate["id"],)
+                ).fetchone()
+            yield row
 
     results: list[dict[str, Any]] = []
-    for row in rows:
+    for row in claimed_rows():
         review = dict(row)
+        fence_token = int(review.get("attempt_count") or 0)
+        heartbeat_stop = threading.Event()
+        lease_lost = threading.Event()
+
+        def heartbeat() -> None:
+            interval = max(min(lease_seconds / 3.0, 30.0), 0.1)
+            while not heartbeat_stop.wait(interval):
+                beat_stamp, beat_expires = lease_clock()
+                with ledger._connect() as conn:
+                    renewed = conn.execute(
+                        """
+                        UPDATE scheduled_reviews SET lease_expires_at = ?
+                        WHERE id = ? AND lease_owner = ? AND attempt_count = ?
+                          AND lease_expires_at > ?
+                        """,
+                        (
+                            beat_expires,
+                            review["id"],
+                            owner,
+                            fence_token,
+                            beat_stamp,
+                        ),
+                    )
+                if renewed.rowcount != 1:
+                    lease_lost.set()
+                    return
+
+        heartbeat_thread = threading.Thread(
+            target=heartbeat,
+            name=f"forecast-review-heartbeat-{review['id']}",
+            daemon=True,
+        )
+        heartbeat_thread.start()
         scope_type = review["scope_type"]
         scope_ref = review["scope_ref"]
         stale_days = int(review.get("stale_days") or 7)
@@ -539,11 +653,29 @@ def run_due_scheduled_reviews(
         large_delta_threshold = review.get("large_delta_threshold")
         refresh_result: dict[str, Any] | None = None
         refresh_error: str | None = None
+        review_errors: list[str] = []
         deadlines: list[str | None] | None = None
+        with ledger._connect() as conn:
+            preexisting_alert_ids = {
+                row["id"]
+                for row in conn.execute(
+                    "SELECT id FROM alert_events WHERE acknowledged_at IS NULL"
+                ).fetchall()
+            }
+
+        def safe_self_check(**kwargs) -> list[AlertEvent]:
+            try:
+                return ledger.self_check(**kwargs)
+            except Exception as exc:
+                review_errors.append(str(exc))
+                return []
+
         if scope_type == "question":
-            alerts = ledger.self_check(
+            resolution_only = review.get("trigger_reason") == "resolution_only"
+            alerts = safe_self_check(
                 question_id=scope_ref,
                 stale_days=stale_days,
+                stale=not resolution_only,
                 now=now_ts,
                 auto_score=auto_score or bool(review.get("auto_score")),
                 auto_postmortem=auto_postmortem or bool(review.get("auto_postmortem")),
@@ -563,15 +695,16 @@ def run_due_scheduled_reviews(
             except Exception:
                 deadlines = None
             # Deterministic self-refresh (no LLM) for a refreshable question.
-            if refresh_fetcher is not None:
+            if refresh_fetcher is not None and not resolution_only:
                 try:
                     refresh_result = ledger._refresh_due_question(
                         scope_ref, fetcher=refresh_fetcher, now=now_ts
                     )
+                    alerts.extend((refresh_result or {}).get("alerts") or [])
                 except Exception as exc:  # never abort the sweep on one question
                     refresh_error = str(exc)
         elif scope_type == "domain":
-            alerts = ledger.self_check(
+            alerts = safe_self_check(
                 domain=scope_ref,
                 stale_days=stale_days,
                 now=now_ts,
@@ -582,7 +715,7 @@ def run_due_scheduled_reviews(
                 large_delta_threshold=large_delta_threshold,
             )
         elif scope_type == "topic":
-            alerts = ledger.self_check(
+            alerts = safe_self_check(
                 topic=scope_ref,
                 stale_days=stale_days,
                 now=now_ts,
@@ -594,7 +727,7 @@ def run_due_scheduled_reviews(
             )
         elif scope_type == "domain_topic":
             scope_filter = json_loads(scope_ref, {})
-            alerts = ledger.self_check(
+            alerts = safe_self_check(
                 domain=scope_filter.get("domain"),
                 topic=scope_filter.get("topic"),
                 stale_days=stale_days,
@@ -606,7 +739,7 @@ def run_due_scheduled_reviews(
                 large_delta_threshold=large_delta_threshold,
             )
         elif scope_type == "portfolio":
-            alerts = ledger.self_check(
+            alerts = safe_self_check(
                 portfolio=scope_ref,
                 stale_days=stale_days,
                 now=now_ts,
@@ -617,7 +750,7 @@ def run_due_scheduled_reviews(
                 large_delta_threshold=large_delta_threshold,
             )
         else:
-            alerts = ledger.self_check(
+            alerts = safe_self_check(
                 horizon=scope_ref,
                 stale_days=stale_days,
                 now=now_ts,
@@ -627,29 +760,130 @@ def run_due_scheduled_reviews(
                 confidence_above=confidence_above,
                 large_delta_threshold=large_delta_threshold,
             )
+        heartbeat_stop.set()
+        heartbeat_thread.join(timeout=1.0)
+        if lease_lost.is_set():
+            continue
         next_run_at = ledger._advance_cadence(
             now_ts, review["cadence"], deadlines=deadlines
         )
+        refresh_status = str((refresh_result or {}).get("status") or "skipped")
+        observed_alerts = list({alert.id: alert for alert in alerts}.values())
+        created_alerts = [
+            alert for alert in observed_alerts if alert.id not in preexisting_alert_ids
+        ]
+        observed_alert_ids = [alert.id for alert in observed_alerts]
+        source_event_ids: list[str] = []
+        estimator_task_ids: list[str] = []
+        if observed_alert_ids:
+            placeholders = ",".join("?" for _ in observed_alert_ids)
+            with ledger._connect() as conn:
+                source_links = conn.execute(
+                    f"""
+                    SELECT source_change_event_id, id, task_type
+                    FROM operational_tasks
+                    WHERE alert_id IN ({placeholders})
+                      AND task_type IN ('process_source_change', 'resolve_warning')
+                    ORDER BY created_at, id
+                    """,
+                    observed_alert_ids,
+                ).fetchall()
+            source_event_ids = list(
+                dict.fromkeys(
+                    row["source_change_event_id"]
+                    for row in source_links
+                    if row["source_change_event_id"] is not None
+                )
+            )
+            estimator_task_ids = list(dict.fromkeys(row["id"] for row in source_links))
+        refresh_estimator_task_id = (refresh_result or {}).get("estimator_task_id")
+        if refresh_estimator_task_id:
+            estimator_task_ids = list(
+                dict.fromkeys([*estimator_task_ids, refresh_estimator_task_id])
+            )
+        reasons = [alert.reason for alert in observed_alerts]
+        if review_errors:
+            run_status = "failed_retryable"
+        elif refresh_error:
+            run_status = "partial_source_failure"
+        elif refresh_status == "committed":
+            run_status = "forecast_committed"
+        elif refresh_status == "needs_estimation":
+            run_status = "estimation_required"
+        elif any(reason.startswith("resolution_") for reason in reasons) and any(
+            reason.startswith("score_created:") for reason in reasons
+        ):
+            run_status = "resolved_and_scored"
+        elif any(reason.startswith("new_evidence:") for reason in reasons):
+            run_status = "evidence_imported"
+        elif any(reason.startswith("autopilot_update_proposed:") for reason in reasons):
+            run_status = "proposal_created"
+        else:
+            run_status = "completed_no_change"
+        if scope_type == "question" and run_status == "completed_no_change":
+            unchanged_streak = int(review.get("unchanged_streak") or 0) + 1
+            adaptive_multiplier = min(4, 2 ** (unchanged_streak // 3))
+        else:
+            unchanged_streak = 0
+            adaptive_multiplier = 1
+        if scope_type == "question" and adaptive_multiplier > 1:
+            adaptive_delta = ledger._cadence_delta(review["cadence"]) * adaptive_multiplier
+            adaptive_delta = ledger._clamp_cadence_to_deadline(
+                now_dt, adaptive_delta, deadlines
+            )
+            next_run_at = (now_dt + adaptive_delta).replace(microsecond=0).isoformat().replace(
+                "+00:00", "Z"
+            )
         with ledger._connect() as conn:
-            conn.execute(
+            finalized = conn.execute(
                 """
                 UPDATE scheduled_reviews
-                SET last_run_at = ?, next_run_at = ?
-                WHERE id = ?
+                SET last_run_at = ?, next_run_at = ?, unchanged_streak = ?,
+                    adaptive_multiplier = ?, lease_owner = NULL,
+                    lease_expires_at = NULL
+                WHERE id = ? AND lease_owner = ? AND attempt_count = ?
                 """,
-                (now_ts, next_run_at, review["id"]),
+                (
+                    now_ts,
+                    next_run_at,
+                    unchanged_streak,
+                    adaptive_multiplier,
+                    review["id"],
+                    owner,
+                    fence_token,
+                ),
             )
+        if finalized.rowcount != 1:
+            continue
         run = ledger._record_scheduled_review_run(
             review=review,
             run_at=now_ts,
             next_run_at=next_run_at,
-            alerts=alerts,
+            alerts=created_alerts,
+            status=run_status,
+            metadata={
+                "worker_id": owner,
+                "lease_seconds": lease_seconds,
+                "attempt_count": int(review.get("attempt_count") or 0),
+                "refresh_status": "failed" if refresh_error else refresh_status,
+                "refresh_model_run_id": (refresh_result or {}).get("model_run", {}).get("id"),
+                "refresh_error": refresh_error,
+                "review_errors": review_errors,
+                "unchanged_streak": unchanged_streak,
+                "adaptive_multiplier": adaptive_multiplier,
+                "alert_count_semantics": "created_unique_v2",
+                "observed_alert_count": len(observed_alerts),
+                "observed_alert_ids": observed_alert_ids,
+                "observed_alert_reasons": [alert.reason for alert in observed_alerts],
+                "source_change_event_ids": source_event_ids,
+                "estimator_task_ids": estimator_task_ids,
+            },
         )
         results.append(
             {
                 "review": ledger.get_scheduled_review(review["id"]),
                 "run": run,
-                "alerts": alerts,
+                "alerts": observed_alerts,
                 "refresh": refresh_result,
                 "refresh_error": refresh_error,
             }
@@ -694,12 +928,14 @@ def _record_scheduled_review_run(
     run_at: str,
     next_run_at: str,
     alerts: list[AlertEvent],
+    status: str = "completed",
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     score_count = sum(1 for alert in alerts if alert.reason.startswith("score_created:"))
     postmortem_count = sum(1 for alert in alerts if alert.reason.startswith("postmortem_created:"))
     learning_review_count = sum(1 for alert in alerts if ledger._is_learning_alert_reason(alert.reason))
     run_id = f"srr_{uuid.uuid4().hex[:12]}"
-    metadata = {
+    run_metadata = {
         "scope_type": review.get("scope_type"),
         "scope_ref": review.get("scope_ref"),
         "cadence": review.get("cadence"),
@@ -708,6 +944,7 @@ def _record_scheduled_review_run(
         "auto_postmortem": bool(review.get("auto_postmortem")),
         "alert_reasons": [alert.reason for alert in alerts],
         "alert_ids": [alert.id for alert in alerts],
+        **(metadata or {}),
     }
     with ledger._connect() as conn:
         conn.execute(
@@ -728,8 +965,8 @@ def _record_scheduled_review_run(
                 score_count,
                 postmortem_count,
                 learning_review_count,
-                "completed",
-                json_dumps(metadata),
+                status,
+                json_dumps(run_metadata),
             ),
         )
     return ledger.list_scheduled_review_runs(scheduled_review_id=review["id"], limit=1)[0]

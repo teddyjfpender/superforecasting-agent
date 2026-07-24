@@ -639,7 +639,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
               justifyContent="space-between"
               key={src}
               onClick={() => {
-                if (adding || globalModal) return
+                if (adding || globalModal) {return}
                 setSource(i)
                 setSel(0)
               }}
@@ -690,7 +690,7 @@ export function NewsView({ gw, initialQuery, onClose, t }: NewsViewProps) {
             const provider = providerName(article.feedTitle)
 
             return (
-              <Box key={`${article.feedUrl}:${idx}`} onClick={() => { if (!adding && !globalModal) setSel(idx) }} width="100%">
+              <Box key={`${article.feedUrl}:${idx}`} onClick={() => { if (!adding && !globalModal) {setSel(idx)} }} width="100%">
                 <Text wrap="truncate-end">
                   <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                   <Text color={sem.subtle}>{when} </Text>

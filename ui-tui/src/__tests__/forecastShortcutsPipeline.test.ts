@@ -16,14 +16,17 @@ import { forecastShortcutForKey } from '../lib/forecastShortcuts.js'
 const parseFirstKey = (bytes: string) => {
   const [keys] = parseMultipleKeypresses({} as never, Buffer.from(bytes, 'utf8'))
   const key = keys.find(k => (k as { kind?: string }).kind === 'key')
+
   if (!key) {
     throw new Error(`no keypress parsed from ${JSON.stringify(bytes)}`)
   }
+
   return new InputEvent(key as never)
 }
 
 const resolve = (bytes: string, composer = '') => {
   const ev = parseFirstKey(bytes)
+
   return {
     passThrough: shouldPassThroughToGlobalHandler(ev.input, ev.key as never, undefined, composer, ev.keypress.raw),
     shortcut: forecastShortcutForKey(ev.input, ev.key as never, composer, ev.keypress.raw)

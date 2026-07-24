@@ -53,6 +53,7 @@ describe('pollAgentsActive', () => {
       .fn()
       .mockResolvedValueOnce({ count: 1, headline: '1 agent running · quorum · fq_x' })
       .mockResolvedValue({ count: 0, headline: '' })
+
     const stop = pollAgentsActive({ request } as never)
 
     await flush()

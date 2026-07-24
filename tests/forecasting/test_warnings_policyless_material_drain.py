@@ -121,6 +121,19 @@ def test_explicit_run_autopilot_still_requires_a_policy(tmp_path):
         lg.run_autopilot(qid)
 
 
+def test_source_failure_stays_open_without_redundant_free_tier_repoll(tmp_path):
+    lg = _ledger(tmp_path)
+    qid, watch_id = _question_with_file_watch(lg, tmp_path, name="recoverable")
+    (tmp_path / "recoverable.txt").unlink()
+    alert = lg.check_watched_sources(scope_type="question", scope_ref=qid)[0]
+
+    first = run_warning_resolution(ledger=lg, tier="free", reconcile=False)
+
+    assert all(row["alert_id"] != alert.id for row in first["results"])
+    assert alert.id in {row.id for row in lg.list_alerts(unresolved_only=True)}
+
+
+
 def test_policy_present_behaviour_unchanged(tmp_path):
     """A question WITH an active policy runs the FULL autopilot machinery through the
     drain (records an autopilot_run) — the policy path is untouched by the fix."""

@@ -325,6 +325,77 @@ class PolymarketClient:
             events = [e for e in events if needle in e.title.lower()]
         return events
 
+    def catalog_events(self) -> list[dict[str, Any]]:
+        """Return every open event via Gamma's stable keyset pagination.
+
+        The public sitemap contains only a small promoted subset. The keyset
+        endpoint is the venue's complete, cursor-paginated event source and
+        includes nested markets, whose questions must also be searchable.
+        """
+        rows: list[dict[str, Any]] = []
+        cursor = ""
+        seen_cursors: set[str] = set()
+        while True:
+            params = {"closed": "false", "limit": "100"}
+            if cursor:
+                params["after_cursor"] = cursor
+            raw = self._fetch(f"{self._gamma}/events/keyset?{urlencode(params)}")
+            page = raw.get("events") if isinstance(raw, dict) else None
+            if not isinstance(page, list) or not page:
+                break
+            for event in page:
+                if not isinstance(event, dict):
+                    continue
+                event_id = str(event.get("id") or event.get("slug") or "")
+                if not event_id:
+                    continue
+                slug = str(event.get("slug") or "")
+                title = str(event.get("title") or "").strip()
+                markets = [market for market in (event.get("markets") or []) if isinstance(market, dict)]
+                tags = [tag for tag in (event.get("tags") or []) if isinstance(tag, dict)]
+                market_text = " ".join(
+                    " ".join(
+                        (
+                            str(market.get("question") or ""),
+                            str(market.get("groupItemTitle") or ""),
+                            " ".join(str(value) for value in _json_list(market.get("outcomes"))),
+                        )
+                    )
+                    for market in markets
+                )
+                rows.append(
+                    {
+                        "venue": VENUE,
+                        "event_id": event_id,
+                        "title": title,
+                        "sub_title": str(event.get("subtitle") or "").strip(),
+                        "slug": slug,
+                        "category": str(event.get("category") or (tags[0].get("label") if tags else "")),
+                        "close_time": str(event.get("endDate") or ""),
+                        "volume": _to_float(event.get("volume")),
+                        "url": f"https://polymarket.com/event/{slug}" if slug else "",
+                        "market_count": len(markets),
+                        "search": " ".join(
+                            (
+                                title,
+                                str(event.get("subtitle") or ""),
+                                slug,
+                                " ".join(str(tag.get("label") or "") for tag in tags),
+                                market_text,
+                            )
+                        ).casefold(),
+                    }
+                )
+            next_cursor = str(raw.get("next_cursor") or "") if isinstance(raw, dict) else ""
+            if not next_cursor or next_cursor in seen_cursors:
+                break
+            seen_cursors.add(next_cursor)
+            cursor = next_cursor
+        return rows
+
+    def catalog_event(self, event_ref: str) -> PMEvent:
+        return self.event(event_ref)
+
     def event(self, event_id: str) -> PMEvent:
         raw = self._fetch(f"{self._gamma}/events/{event_id}")
         if isinstance(raw, list) and raw:

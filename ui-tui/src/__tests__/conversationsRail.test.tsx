@@ -74,6 +74,7 @@ describe('ConversationsRail', () => {
       started_at: 1,
       title: `Session ${i}`
     }))
+
     const gw: any = { request: async () => ({ sessions }) }
 
     const [{ render }, { ConversationsRail }, { DARK_THEME }] = await Promise.all([
@@ -113,6 +114,7 @@ describe('ConversationsRail', () => {
       { id: 'a1', message_count: 3, preview: '', source: 'tui', started_at: 2, title: 'Fed cut September' },
       { id: 'b2', message_count: 2, preview: '', source: 'tui', started_at: 1, title: 'CPI above 3' }
     ]
+
     const gw: any = { request: async () => ({ sessions }) }
 
     const [{ render }, { ConversationsRail }, { DARK_THEME }, { stripAnsi }] = await Promise.all([

@@ -245,6 +245,7 @@ describe('help overlay', () => {
 
   it('defaults to the active view and Tab expands to the full registry', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
+
     const [{ Box, render }, { HelpOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
       import('@hermes/ink'),
       import('../components/helpOverlay.js'),
@@ -291,6 +292,7 @@ describe('help overlay', () => {
 
   it('closes on Esc, h, ? and q — but not on an unrelated key', async () => {
     process.env.FORECAST_TUI_INLINE = '1'
+
     const [{ Box, render }, { HelpOverlay }, { DARK_THEME }] = await Promise.all([
       import('@hermes/ink'),
       import('../components/helpOverlay.js'),
@@ -301,6 +303,7 @@ describe('help overlay', () => {
       let closed = 0
       const stdout = writeStream(120, 40)
       const stdin = writeStream(120, 40, true)
+
       const instance = render(
         React.createElement(
           Box,

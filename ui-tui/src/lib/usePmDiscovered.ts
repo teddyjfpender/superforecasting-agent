@@ -35,15 +35,18 @@ export async function runHydrationPool<T, R>(
 ): Promise<void> {
   let cursor = 0
   const width = Math.max(1, Math.min(limit, items.length))
+
   const runner = async (): Promise<void> => {
     while (!isCancelled()) {
       const i = cursor++
+
       if (i >= items.length) {
         return
       }
 
       try {
         const result = await worker(items[i])
+
         if (!isCancelled()) {
           onResult(result, items[i])
         }
@@ -82,12 +85,15 @@ export function usePmDiscovered(gw: PMHookGateway | undefined, active: boolean):
   const foldDiscovered = (found: PMListItem[]) => {
     setDiscovered(prev => {
       const next = new Map(prev)
+
       for (const item of found) {
         next.set(item.event.event_id, item)
       }
+
       if (next.size === prev.size) {
         return prev
       }
+
       persist(next)
 
       return next
@@ -120,14 +126,17 @@ export function usePmDiscovered(gw: PMHookGateway | undefined, active: boolean):
 
     hydratedRef.current = true
     const refs = loadMarketConfig().pmSaved ?? []
+
     if (!refs.length) {
       return
     }
 
     let cancelled = false
+
     void (async () => {
       const live = new Set<string>()
       let buffer: PMListItem[] = []
+
       const flush = () => {
         if (buffer.length) {
           foldDiscovered(buffer)
@@ -143,6 +152,7 @@ export function usePmDiscovered(gw: PMHookGateway | undefined, active: boolean):
           if (item) {
             live.add(ref.event_id)
             buffer.push(item)
+
             if (buffer.length >= HYDRATE_FLUSH) {
               flush()
             }
@@ -155,6 +165,7 @@ export function usePmDiscovered(gw: PMHookGateway | undefined, active: boolean):
       if (cancelled) {
         return
       }
+
       // Prune refs that failed to hydrate (closed/gone) from the store.
       if (live.size < refs.length) {
         const cfg = loadMarketConfig()

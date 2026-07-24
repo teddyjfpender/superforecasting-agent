@@ -66,6 +66,8 @@ describe('caps: resolution + blitter selection', () => {
     const prev = { ...process.env }
 
     try {
+      delete process.env.NO_COLOR
+      delete process.env.FORCE_COLOR
       process.env.COLORTERM = 'truecolor'
       process.env.HERMES_VIZ_BLITTER = 'braille'
       delete process.env.TMUX

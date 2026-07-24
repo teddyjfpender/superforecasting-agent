@@ -103,21 +103,27 @@ export const estimatedMsgHeight = (
     // border (top+bottom = 2) + paddingY (top+bottom = 2) + centered title row
     // + the title's marginBottom = 6 rows of chrome before any section content.
     let h = 6
+
     for (const s of sections) {
       if (s.title) {
         h += 1
       }
+
       for (const r of s.rows ?? []) {
         h += wrappedLines(r[1] || ' ', valueWidth)
       }
+
       for (const it of s.items ?? []) {
         h += wrappedLines(it || ' ', Math.max(10, valueWidth + 18))
       }
+
       if (s.text) {
         h += wrappedLines(s.text, Math.max(10, bodyCols - 6))
       }
+
       h += 1 // marginTop between sections
     }
+
     return Math.max(3, h)
   }
 

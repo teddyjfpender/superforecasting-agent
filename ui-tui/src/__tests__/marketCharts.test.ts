@@ -10,15 +10,19 @@ describe('scatterPlot', () => {
       { x: 2, y: 2 },
       { x: 3, y: 3 }
     ]
+
     const fit = [
       { x: 0, y: 0 },
       { x: 3, y: 3 }
     ]
+
     const { rows, axis } = scatterPlot(points, fit, { height: 8, width: 40 })
     expect(rows).toHaveLength(8)
+
     for (const r of rows) {
       expect(r).toContain('│')
     }
+
     const joined = rows.join('\n')
     expect(joined).toContain('●') // data points
     expect(joined).toContain('·') // fit line
@@ -34,6 +38,7 @@ describe('scatterPlot', () => {
       { x: 5, y: 5 },
       { x: 5, y: 5 }
     ], undefined, { height: 5, width: 20 })
+
     expect(rows).toHaveLength(5)
   })
 })
@@ -43,6 +48,7 @@ describe('asciiTable', () => {
     { key: 'metric', label: 'Metric' },
     { align: 'right' as const, key: 'value', label: 'Value' }
   ]
+
   const rows = [
     { metric: 'Total return', value: '12.5%' },
     { metric: 'Sharpe', value: 1.84 }

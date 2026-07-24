@@ -65,6 +65,7 @@ export function append(line: string) {
 
   try {
     const dir = dirname(file)
+
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true })
     }

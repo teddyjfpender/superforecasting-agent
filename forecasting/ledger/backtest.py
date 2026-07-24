@@ -160,6 +160,7 @@ def score_baseline_comparisons(ledger, question_id: str, *, force: bool = False)
                     "baseline_source": baseline.get("source"),
                 },
                 set_current=False,
+                allow_resolved_backfill=True,
             )
             forecast_id = snapshot.forecast_id
         score = ledger.score_snapshot(forecast_id, force=force)
@@ -685,6 +686,7 @@ def _run_backtest_case(
             calibration_eligible=calibration_eligible,
             calibration_weight=1.0 if calibration_eligible else 0.0,
             metadata=snapshot_metadata,
+            allow_resolved_backfill="outcome" in case,
         )
         generated_forecast_id = snapshot.forecast_id
         if "outcome" in case:
@@ -708,6 +710,7 @@ def _run_backtest_case(
                 calibration_eligible=False,
                 calibration_weight=0.0,
                 set_current=False,
+                allow_resolved_backfill=True,
             )
             baseline_forecast_id = baseline_snapshot.forecast_id
             baseline_score_id = ledger.score_snapshot(baseline_forecast_id).id

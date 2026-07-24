@@ -5,5 +5,7 @@
 // sibling suites (which would enlarge frame buffers and worsen keypress-timing
 // flakes elsewhere).
 export const PRIOR_FORCE_COLOR = process.env.FORCE_COLOR
+export const PRIOR_NO_COLOR = process.env.NO_COLOR
 
+delete process.env.NO_COLOR
 process.env.FORCE_COLOR = '3'

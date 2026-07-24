@@ -54,7 +54,8 @@ export const headlineLabel = (item: ForecastWorkspaceItem): string => {
   if (item.headline_kind !== 'distribution') {
     // The sidebar/detail one-line surfaces the LEADER's 90% interval where published.
     const distHead = distributionHeadline(item.probability, { compact: true, max: 3, intervals: item.candidate_intervals })
-    if (distHead) return distHead
+
+    if (distHead) {return distHead}
   }
 
   const headline = item.headline_probability
@@ -79,7 +80,8 @@ export const headlineCompact = (item: ForecastWorkspaceItem, probDigits = 0): st
 
   if (item.headline_kind !== 'distribution') {
     const distHead = distributionHeadline(item.probability, { compact: true, max: 3 })
-    if (distHead) return distHead
+
+    if (distHead) {return distHead}
   }
 
   const headline = item.headline_probability
@@ -130,12 +132,15 @@ export const intervalForLabel = (
   intervals: ForecastWorkspaceItem['candidate_intervals'] | undefined,
   label: string
 ): { hi: number; lo: number } | null => {
-  if (!intervals) return null
-  if (intervals[label]) return intervals[label]
+  if (!intervals) {return null}
+
+  if (intervals[label]) {return intervals[label]}
   const norm = label.trim().toLowerCase()
+
   for (const key of Object.keys(intervals)) {
-    if (key.trim().toLowerCase() === norm) return intervals[key]
+    if (key.trim().toLowerCase() === norm) {return intervals[key]}
   }
+
   return null
 }
 
@@ -157,8 +162,10 @@ export const distributionBars = (
     'mean', 'mu', 'sd', 'sigma', 'std', 'stdev', 'variance', 'expected', 'value',
     'median', 'mode', 'lower', 'upper', 'low', 'high', 'min', 'max',
   ])
+
   const isStatKey = (key: string): boolean => {
     const k = key.toLowerCase()
+
     return distributionalKeys.has(k) || /^[qp]\d/.test(k) || k.startsWith('ci') || k.startsWith('interval')
   }
 
@@ -179,10 +186,13 @@ export const distributionBars = (
  *  ("Other official candidates") and single long tokens just tail-truncate. */
 export const shortCandidateLabel = (name: string, max = 11): string => {
   const trimmed = (name ?? '').trim()
-  if (trimmed.length <= max) return trimmed
+
+  if (trimmed.length <= max) {return trimmed}
   const words = trimmed.split(/\s+/)
   const last = words[words.length - 1] ?? ''
-  if (words.length === 2 && last.length > 0 && last.length <= max) return last
+
+  if (words.length === 2 && last.length > 0 && last.length <= max) {return last}
+
   return truncate(trimmed, max)
 }
 
@@ -202,22 +212,28 @@ export const distributionHeadline = (
   opts: { compact?: boolean; max?: number; intervals?: ForecastWorkspaceItem['candidate_intervals'] } = {}
 ): null | string => {
   const bars = distributionBars(probability, opts.intervals)
+
   if (!bars) {
     return null
   }
+
   const scale = bars.every(bar => bar.value >= 0 && bar.value <= 1) ? 100 : 1
   const fmt1 = (n: number): string => (Number.isInteger(n) ? String(n) : n.toFixed(1))
+
   // The LEADER (index 0) shows its 90% interval where one is published — "67.0 [61-73]"
   // — so the row/sidebar surfaces the leading candidate's uncertainty, not just a point.
   // The tail stays point-only so the line does not blow its width budget.
   const fmt = (bar: HistogramBar, index: number): string => {
     const point = `${shortCandidateLabel(bar.label)} ${(bar.value * scale).toFixed(1)}`
     const iv = index === 0 ? bar.interval : null
+
     if (iv && finite(iv.lo) && finite(iv.hi)) {
       return `${point} [${fmt1(iv.lo * scale)}-${fmt1(iv.hi * scale)}]`
     }
+
     return point
   }
+
   const max = Math.max(1, opts.max ?? 3)
 
   if (opts.compact && bars.length > max) {

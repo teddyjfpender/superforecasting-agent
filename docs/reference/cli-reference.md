@@ -2866,6 +2866,14 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | `--no-synthesize-lessons` | Do NOT synthesize calibration lessons in the nightly sweep |
 | `--refresh-market-models` | Re-pull + recompute Market Models linked to open questions in the nightly sweep |
 | `--no-refresh-market-models` | Do NOT refresh Market Models in the nightly sweep |
+| `--estimate-source-changes` | Estimate queued immutable source changes in the nightly sweep |
+| `--no-estimate-source-changes` | Do NOT run the source-change estimator in the nightly sweep |
+| `--estimator-model` | Model override for source-change estimation |
+| `--estimator-provider` | Provider override for source-change estimation |
+| `--estimator-limit` | Maximum source-change estimates per nightly sweep |
+| `--estimator-max-iterations` | Maximum tool iterations for each source-change estimate |
+| `--calibrate-utility` | Fit the task-utility model when enough labelled outcomes exist |
+| `--no-calibrate-utility` | Do NOT fit task utility in the nightly sweep |
 
 ### `forecast schedule list`
 

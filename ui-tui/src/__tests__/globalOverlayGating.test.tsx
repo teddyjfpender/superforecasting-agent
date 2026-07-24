@@ -65,6 +65,7 @@ const fakeGw = () => {
     request: () => Promise<unknown>
     rpc: () => Promise<unknown>
   }
+
   gw.setMaxListeners(50)
   gw.request = () => Promise.resolve(null)
   gw.rpc = () => Promise.resolve(null)
@@ -75,10 +76,12 @@ const fakeGw = () => {
 describe('global palette / cheat-sheet gating over fullscreen views', () => {
   beforeEach(async () => {
     process.env.FORECAST_TUI_INLINE = '1'
+
     const [{ resetOverlayState }, { clearOverlayCache }] = await Promise.all([
       import('../app/overlayStore.js'),
       import('../lib/overlayCache.js')
     ])
+
     resetOverlayState()
     clearOverlayCache()
   })
@@ -169,6 +172,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   it('Desk: palette top coexists with the FORECASTS body in one frame', async () => {
     const { DeskView } = await import('../components/deskView.js')
     const { DARK_THEME } = await import('../theme.js')
+
     const text = await renderCoexistence(
       React.createElement(DeskView, { gw: fakeGw(), onClose: () => undefined, t: DARK_THEME })
     )
@@ -180,6 +184,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   it('Desk: q is trapped while the palette is open, but closes the view otherwise', async () => {
     const { DeskView } = await import('../components/deskView.js')
     const { DARK_THEME } = await import('../theme.js')
+
     const view = (onClose: () => void) =>
       React.createElement(DeskView, { gw: fakeGw(), onClose, t: DARK_THEME })
 
@@ -194,6 +199,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   it('Markets: palette top coexists with the MARKETS body in one frame', async () => {
     const { MarketsView } = await import('../components/marketsView.js')
     const { DARK_THEME } = await import('../theme.js')
+
     const text = await renderCoexistence(
       React.createElement(MarketsView, {
         gw: fakeGw(),
@@ -211,6 +217,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   it('Markets: q is trapped while the palette is open, but closes the view otherwise', async () => {
     const { MarketsView } = await import('../components/marketsView.js')
     const { DARK_THEME } = await import('../theme.js')
+
     const view = (onClose: () => void) =>
       React.createElement(MarketsView, { gw: fakeGw(), onAsk: () => undefined, onClose, sessionId: '', t: DARK_THEME })
 
@@ -225,6 +232,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   it('Warnings: palette top coexists with the WARNINGS body in one frame', async () => {
     const { AlertsView } = await import('../components/alertsView.js')
     const { DARK_THEME } = await import('../theme.js')
+
     const text = await renderCoexistence(
       React.createElement(AlertsView, { gw: fakeGw(), onClose: () => undefined, sessionId: '', t: DARK_THEME })
     )
@@ -236,6 +244,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   it('Warnings: q is trapped while the palette is open, but closes the view otherwise', async () => {
     const { AlertsView } = await import('../components/alertsView.js')
     const { DARK_THEME } = await import('../theme.js')
+
     const view = (onClose: () => void) =>
       React.createElement(AlertsView, { gw: fakeGw(), onClose, sessionId: '', t: DARK_THEME })
 

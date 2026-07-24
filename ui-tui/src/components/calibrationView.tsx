@@ -474,12 +474,14 @@ interface CohortRow {
 
 function CohortScoreboardSection({ board, t }: { board: ForecastCohortScoreboard; t: Theme }) {
   const cohorts = (board.cohorts ?? {}) as Record<string, CohortRow>
+
   const rows: Array<{ key: string; label: string; tone: 'ok' | 'muted' }> = [
     { key: 'live_calibration_eligible', label: 'live (calibration-eligible)', tone: 'ok' },
     { key: 'backtest', label: 'backtest (market-visible)', tone: 'muted' },
     { key: 'imported_baseline', label: 'imported baseline (market-visible)', tone: 'muted' },
     { key: 'market_nightly', label: 'market_nightly (market-hidden)', tone: 'muted' }
   ]
+
   const cont = board.continuous_scorecard
   const pooled = board.pooled_diagnostic
   const quarantined = board.quarantined

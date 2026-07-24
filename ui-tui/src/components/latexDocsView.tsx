@@ -26,7 +26,7 @@ import { sortIndicator, sortRows, useTableSort } from '../lib/tableSort.js'
 import { semantics } from '../lib/visualSemantics.js'
 import type { Theme } from '../theme.js'
 
-import { DocsHeader, DocsKindTabs, docAge, sizeChip, titlePath } from './docsShell.js'
+import { docAge, DocsHeader, DocsKindTabs, sizeChip, titlePath } from './docsShell.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 
 // LaTeX side of Docs: browse local .tex files, render them readably, and sync
@@ -42,6 +42,7 @@ const LATEX_SEARCH_FIELDS: FieldSpec<TexFile>[] = [{ get: f => f.rel, weight: 1 
 // Sortable columns (o cycles, O toggles) — mirrors the Desk/Markets sort verbs.
 // Referentially stable so useTableSort's callbacks stay stable across renders.
 const LATEX_SORT_KEYS = ['name', 'modified'] as const
+
 const latexSortValue = (f: TexFile, key: string): null | number | string =>
   key === 'modified' ? f.mtime : f.rel.toLowerCase()
 
@@ -126,6 +127,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
   // explicit sort is chosen (o/O) it takes over the ordering; otherwise the rank
   // order stands (relevance while filtering, freshest-first when unfiltered).
   const ranked = useMemo(() => filterRanked(files, query, LATEX_SEARCH_FIELDS), [files, query])
+
   const filtered = useMemo(
     () => (sort.state.key ? sortRows(ranked, sort.state.key, sort.state.dir, latexSortValue) : ranked),
     [ranked, sort.state.key, sort.state.dir]
@@ -153,7 +155,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
     if (idx >= 0) {
       setSel(idx)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [filtered])
 
   const armReselect = () => {
@@ -737,7 +739,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
             const { base, dir } = titlePath(name, nameW)
 
             return (
-              <Box key={f.rel} onClick={() => { if (globalModal) return; setSel(idx); setScroll(0); setFocus('reader') }} width="100%">
+              <Box key={f.rel} onClick={() => { if (globalModal) {return;} setSel(idx); setScroll(0); setFocus('reader') }} width="100%">
                 <Text color={on ? t.color.accent : t.color.border}>{on ? '▸ ' : '  '}</Text>
                 <Box flexGrow={1} minWidth={0}>
                   <Text wrap="truncate-end">
@@ -872,6 +874,7 @@ export function LatexDocsView({ docKind, onClose, onDraft, onSelectKind, t }: La
   // core verbs only (every chip shown is still a LIVE key; the `?` cheat-sheet
   // carries the rest) so the row never overflows and corrupts.
   const narrow = cols < 100
+
   const chips: FooterChip[] = editing
     ? [
         { k: '⎋', label: dirty ? 'Save & exit' : 'Exit' },

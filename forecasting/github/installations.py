@@ -20,6 +20,7 @@ _ACTION_PERMISSION = {
     "review.write": ("pull_requests", "write"),
     "comment.write": ("issues", "write"),
     "repository.fork": ("contents", "read"),
+    "check.write": ("checks", "write"),
 }
 _LEVEL = {"read": 1, "write": 2, "admin": 3}
 
@@ -51,7 +52,7 @@ class GitHubInstallationRegistry:
         else:
             self._repositories(installation_id, action, installation, payload)
 
-    def authorize(self, repository_slug: str, action: str) -> None:
+    def authorize(self, repository_slug: str, action: str) -> str:
         """Require the App-side half of a delegated user capability."""
 
         if repository_slug.lower() != self.repository_slug:
@@ -79,12 +80,12 @@ class GitHubInstallationRegistry:
                 "GitHub App is not actively installed for the workspace repository"
             )
         name, required = permission
-        if not any(
-            _permits(json.loads(row["permissions"]), name, required) for row in rows
-        ):
-            raise PermissionError(
-                f"GitHub App installation lacks required {name}:{required} permission"
-            )
+        for row in rows:
+            if _permits(json.loads(row["permissions"]), name, required):
+                return str(row["installation_id"])
+        raise PermissionError(
+            f"GitHub App installation lacks required {name}:{required} permission"
+        )
 
     def status(self) -> list[dict[str, Any]]:
         with self.ledger._connect() as conn:

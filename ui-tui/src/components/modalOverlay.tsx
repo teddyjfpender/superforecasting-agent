@@ -56,6 +56,7 @@ export function ModalOverlay({
   // footer(1). A ScrollBox needs an EXPLICIT height (flexGrow doesn't resolve under
   // absolute positioning); forms render directly and manage their own layout.
   const contentH = Math.max(3, modalH - 4 - (title ? 1 : 0) - (footerHint ? 1 : 0))
+
   const body = scrollRef ? (
     <Box flexDirection="row" flexShrink={0} height={contentH} minHeight={0}>
       <ScrollBox decstbm={false} flexDirection="column" flexGrow={1} flexShrink={1} ref={scrollRef}>

@@ -13,6 +13,7 @@ describe('normalizePresentation', () => {
         { type: 'regression', r2: 0.9 }
       ]
     })
+
     expect(p).not.toBeNull()
     expect(p!.title).toBe('GPU vs NVDA')
     expect(p!.blocks).toHaveLength(2)

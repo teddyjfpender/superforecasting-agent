@@ -1,8 +1,9 @@
 """P0 #4: per-session runtime-toggle isolation. The model a session switches to is
 stored per session and seeded into the tenant_runtime contextvar on each run thread, so
-concurrent sessions in one gateway don't clobber each other's model. os.environ stays as
-the fallback. (The cross-THREAD behaviour is verified by a manual two-session smoke; the
-seed/read/isolation logic is unit-tested here, same-thread.)"""
+concurrent sessions in one gateway don't clobber each other's model. Existing
+``os.environ`` values remain startup fallbacks but session changes never rewrite them.
+(The cross-THREAD behaviour is verified by a manual two-session smoke; the seed/read/
+isolation logic is unit-tested here, same-thread.)"""
 
 from __future__ import annotations
 
@@ -33,21 +34,24 @@ def _clean(monkeypatch):
             os.environ[k] = v
 
 
-def test_store_writes_per_session_and_env_fallback():
+def test_store_writes_per_session_without_mutating_env_fallback():
+    os.environ["SUPERFORECASTING_AGENT_MODEL"] = "process-default"
     srv._store_session_toggle("A", "MODEL", "model-A")
     assert srv._session_toggles["A"]["MODEL"] == "model-A"
-    assert os.environ["SUPERFORECASTING_AGENT_MODEL"] == "model-A"  # fallback alias still written
+    assert os.environ["SUPERFORECASTING_AGENT_MODEL"] == "process-default"
 
 
-def test_store_with_no_key_writes_only_env():
+def test_store_with_no_key_is_a_noop():
+    os.environ["SUPERFORECASTING_AGENT_MODEL"] = "process-default"
     srv._store_session_toggle(None, "MODEL", "m")
     assert srv._session_toggles == {}
-    assert os.environ["SUPERFORECASTING_AGENT_MODEL"] == "m"
+    assert os.environ["SUPERFORECASTING_AGENT_MODEL"] == "process-default"
 
 
 def test_two_sessions_read_their_own_model():
+    os.environ["SUPERFORECASTING_AGENT_MODEL"] = "process-default"
     srv._store_session_toggle("A", "MODEL", "model-A")
-    srv._store_session_toggle("B", "MODEL", "model-B")  # os.environ now globally 'model-B'
+    srv._store_session_toggle("B", "MODEL", "model-B")
     tok = srv._set_session_context("A")
     try:
         assert srv._runtime_env("MODEL") == "model-A"  # A's context wins over the global
@@ -59,6 +63,7 @@ def test_two_sessions_read_their_own_model():
         assert srv._runtime_env("MODEL") == "model-B"
     finally:
         srv._clear_session_context(tok)
+    assert srv._runtime_env("MODEL") == "process-default"
 
 
 def test_outside_a_session_context_falls_back_to_env():
@@ -67,14 +72,15 @@ def test_outside_a_session_context_falls_back_to_env():
 
 
 def test_tui_provider_isolated_per_session():
+    os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] = "process-default"
     srv._store_session_toggle("A", "TUI_PROVIDER", "prov-A")
     tok = srv._set_session_context("A")
     try:
         assert srv._tui_env("PROVIDER") == "prov-A"
     finally:
         srv._clear_session_context(tok)
-    # cleared -> back to whatever os.environ holds (the alias _store wrote)
-    assert srv._tui_env("PROVIDER") == "prov-A"  # os.environ fallback
+    # Cleared context returns to the unchanged process startup default.
+    assert srv._tui_env("PROVIDER") == "process-default"
 
 
 # ── Voice flags (one-mic feature; per-session when each session sets its own) ──

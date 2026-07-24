@@ -63,7 +63,7 @@ class GitHubCapabilityBroker:
         api_url: str = "https://api.github.com",
         api_version: str = "2026-03-10",
         additional_repository_slugs: Iterable[str] = (),
-        installation_authorizer: Callable[[str, str], None] | None = None,
+        installation_authorizer: Callable[[str, str], object] | None = None,
     ) -> None:
         if len(signing_key) < 32:
             raise ValidationError("GitHub capability signing key must be at least 32 bytes")

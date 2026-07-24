@@ -98,6 +98,7 @@ const fakeGw = (payload: ModelOptionsResponse) =>
       if (method === 'model.options') {
         return Promise.resolve(payload)
       }
+
       return Promise.resolve({})
     }
   }) as never
@@ -161,7 +162,20 @@ describe('ModelPicker reasoning-effort step', () => {
     await m.press('\r')
     expect(m.selected.length).toBe(1)
     expect(m.selected[0].value).toContain('gpt-5.4 --provider openai-codex')
+    expect(m.selected[0].value).toContain('--global')
     expect(m.selected[0].effort).toBe('high')
+    m.cleanup()
+  })
+
+  it('can toggle the picker back to a session-only model switch', async () => {
+    const m = await mountPicker(options())
+    await m.press('g')
+    expect(m.text()).toContain('persist: session')
+    await m.press('\r')
+    await m.press('\r')
+    await m.press('\r')
+    expect(m.selected[0].value).toContain('--tui-session')
+    expect(m.selected[0].value).not.toContain('--global')
     m.cleanup()
   })
 

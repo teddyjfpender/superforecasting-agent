@@ -74,6 +74,7 @@ describe('runHydrationPool', () => {
       },
       r => {
         seen.push(r)
+
         if (seen.length >= 4) {
           cancelled = true
         }

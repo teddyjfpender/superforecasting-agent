@@ -70,9 +70,11 @@ export function sortRows<T>(
     if (aMissing && bMissing) {
       return a.index - b.index // both missing → keep original order (stable, last)
     }
+
     if (aMissing) {
       return 1 // missing always last, regardless of direction
     }
+
     if (bMissing) {
       return -1
     }

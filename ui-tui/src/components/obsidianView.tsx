@@ -19,7 +19,7 @@ import { WireEvent } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
 import { OverlayScrollbar } from './agentsOverlay.js'
-import { DocsHeader, DocsKindTabs, docAge, sizeChip, titlePath } from './docsShell.js'
+import { docAge, DocsHeader, DocsKindTabs, sizeChip, titlePath } from './docsShell.js'
 import { type FooterChip, FooterChips } from './footerChips.js'
 import { INLINE_RE, Md, stripInlineMarkup, wikiLinkLabel } from './markdown.js'
 import { ModalOverlay } from './modalOverlay.js'
@@ -226,6 +226,7 @@ export const buildNoteRows = (
   const walk = (node: TreeNode, depth: number) => {
     const entries = [...node.children.values()]
     const folders = entries.filter(e => e.noteIndex < 0).sort((a, b) => a.name.localeCompare(b.name))
+
     const leaves = entries
       .filter(e => e.noteIndex >= 0)
       .sort(sortLeaf ?? ((a, b) => a.name.localeCompare(b.name)))
@@ -379,6 +380,7 @@ const OBSIDIAN_SEARCH_FIELDS: FieldSpec<ObsidianNote>[] = [
 // the Desk/Markets tables use. `modified` reads the note's mtime; `name` the
 // title. Referentially stable so useTableSort's callbacks stay stable.
 const OBSIDIAN_SORT_KEYS = ['name', 'modified'] as const
+
 const noteSortValue = (n: ObsidianNote | undefined, key: string): null | number | string => {
   if (!n) {
     return null
@@ -500,6 +502,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
         }
 
         const factor = sort.state.dir === 'desc' ? -1 : 1
+
         const cmp = typeof av === 'number' && typeof bv === 'number'
           ? av - bv
           : String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' })
@@ -519,6 +522,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
     }
 
     const matched = rankItems(notes, filterQ, OBSIDIAN_SEARCH_FIELDS).map(r => r.item)
+
     const ordered = sort.state.key
       ? sortRows(matched, sort.state.key, sort.state.dir, (n, k) => noteSortValue(n, k))
       : matched
@@ -2097,7 +2101,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
                                 : undefined
                             }
                             cols={Math.max(10, docWidth - 2)}
-                            onWikiLink={(target: string) => { if (!chat) jumpTo(resolveTarget(target)) }}
+                            onWikiLink={(target: string) => { if (!chat) {jumpTo(resolveTarget(target))} }}
                             t={t}
                             text={b.text}
                           />
@@ -2242,6 +2246,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
   // corrupts — every chip shown is still a LIVE key; the `?` cheat-sheet carries
   // the rest.
   const narrow = cols < 100
+
   const actions: Action[] = !hasVault
     ? [
         { k: 's', label: 'Set up vault', run: runSetup },

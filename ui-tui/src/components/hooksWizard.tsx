@@ -117,6 +117,7 @@ export function HooksWizard({
   // (overlay caps width at maxWidth on wide terminals, full-bleed when narrow).
   const overlayW = cols < 100 ? Math.max(40, cols - 2) : Math.max(48, Math.min(cols - 6, 104))
   const contentW = Math.max(20, overlayW - 6)
+
   // Per-step height so the box hugs the current step (long choice lists get more).
   const stepRows =
     step === 'signal'
@@ -128,6 +129,7 @@ export function HooksWizard({
           : step === 'severity' || step === 'op'
             ? 5
             : 3
+
   const maxHeight = Math.min(rows - 4, 9 + stepRows + (conditions.length ? 1 : 0) + (error ? 2 : 0))
 
   const sigKind = (name: string): string => glossary.find(g => g.name === name)?.kind ?? 'number'

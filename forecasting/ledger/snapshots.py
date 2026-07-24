@@ -436,6 +436,7 @@ def create_snapshot(
     require_output_structure: bool = True,
     distribution_autofix: bool = False,
     enforce_resolved_hooks: bool = False,
+    allow_resolved_backfill: bool = False,
     preview: bool = False,
 ) -> "ForecastSnapshot | dict[str, Any]":
     # PREVIEW (preview=True): run every gate + saturation/observe scoring
@@ -452,6 +453,11 @@ def create_snapshot(
         _enforce_write_gate("create_snapshot")
     try:
         question = ledger.get_question(question_id)
+        if question.status == "resolved" and not allow_resolved_backfill:
+            raise ValidationError(
+                "cannot create a forecast snapshot after resolution; use an explicit "
+                "correction or allow_resolved_backfill=True for a historical backfill"
+            )
         # Forecast hooks: saturation/style gates raise SaturationBlocked (a
         # ValidationError subclass with a byte-identical message) so the report —
         # the failing rule + its remediation — propagates to the interactive tool

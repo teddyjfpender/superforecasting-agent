@@ -1,13 +1,9 @@
 import type {
-  ForecastDashboardBacktest,
   ForecastDashboardCalibration,
-  ForecastDashboardClaimStatus,
   ForecastDashboardDoctor,
-  ForecastDashboardLiveBaseline,
   ForecastDashboardQuestion,
   ForecastDashboardResponse,
   ForecastDashboardReview,
-  ForecastDashboardScheduleRun,
   ForecastQuestionPacket,
   ForecastQuestionPacketResponse,
   ForecastQuestionPacketSnapshot
@@ -17,8 +13,9 @@ import {
   FORECAST_TUI_VIEW_SHORTCUTS,
   forecastShortcutDisplayHotkey
 } from '../lib/forecastShortcuts.js'
-import { snapshotTailAudit, tailAuditChip, tailAuditFails, unearnedOutcomes } from '../lib/forecastTail.js'
+import { snapshotTailAudit, tailAuditChip } from '../lib/forecastTail.js'
 import type { PanelSection } from '../types.js'
+
 import {
   countUnearnedTail,
   draftTarget,

@@ -105,13 +105,17 @@ const fakeGw = (cfg: ForecastConfigResponse, sink: Record<string, unknown>[], re
       if (method === 'forecast.config') {
         return Promise.resolve(cfg)
       }
+
       if (method === 'forecast.question.readiness') {
         return Promise.resolve(readiness)
       }
+
       if (method === 'forecast.config.set') {
         sink.push(params)
+
         return Promise.resolve(cfg)
       }
+
       return Promise.resolve({})
     }
   }) as never
@@ -208,10 +212,12 @@ describe('ForecastSettingsModal', () => {
 
   it('Save writes forecast.config.set with the cadence, decision, and overrides', async () => {
     const m = await mountModal(config())
+
     // Down-arrow clamps at the last field (the Save row); press plenty, then ⏎.
     for (let i = 0; i < 20; i += 1) {
       await m.press(`${ESC}[B`)
     }
+
     await m.press('\r')
     // Give the async save a beat.
     await tick(40)

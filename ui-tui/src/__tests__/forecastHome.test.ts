@@ -36,6 +36,7 @@ describe('forecast home paths', () => {
 
   afterEach(() => {
     rmSync(root, { force: true, recursive: true })
+
     for (const [key, value] of Object.entries(original)) {
       if (value === undefined) {
         delete process.env[key]

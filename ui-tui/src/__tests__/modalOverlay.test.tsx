@@ -10,6 +10,7 @@ const mk = (cols: number, rows: number) => {
   s.on('data', (c) => {
     out += String(c)
   })
+
   return { s, text: () => out }
 }
 
@@ -21,7 +22,9 @@ describe('ModalOverlay', () => {
       import('../theme.js'),
       import('../lib/text.js'),
     ])
+
     const sink = mk(120, 40)
+
     // Mount like a real view: a sized body container with the overlay stacked last.
     const app = React.createElement(
       Box as never,
@@ -33,6 +36,7 @@ describe('ModalOverlay', () => {
         React.createElement(Text as never, {} as never, 'a form field'),
       ),
     )
+
     renderSync(app, { exitOnCtrlC: false, patchConsole: false, stdout: sink.s } as never)
     const text = stripAnsi(sink.text())
     expect(text).toContain('BODY ROW behind the modal') // body stays visible

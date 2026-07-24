@@ -782,3 +782,110 @@ def _domain_error_profiles_for_question(ledger, question: ForecastQuestion) -> l
             continue
         profiles.append(profile)
     return profiles
+
+
+def review_learned_error_alerts(
+    ledger,
+    question_id: str,
+    *,
+    reviewed_by: str,
+    assessment: str,
+    decision: str = "reviewed_no_change",
+    now: str | None = None,
+) -> dict[str, Any]:
+    """Persist a substantive profile review before closing its manual alerts."""
+    from forecasting.learning import is_learned_error_review_reason, learned_error_profile_id
+
+    reviewer = reviewed_by.strip()
+    review_text = assessment.strip()
+    if not reviewer:
+        raise ValidationError("reviewed_by is required")
+    if len(review_text) < 20:
+        raise ValidationError("learned-error assessment must be substantive")
+    if decision not in {"reviewed_no_change", "update_required"}:
+        raise ValidationError("decision must be reviewed_no_change or update_required")
+    question = ledger.get_question(question_id)
+    current = ledger.get_current_snapshot(question_id)
+    if current is None:
+        raise ValidationError("learned-error review requires a current forecast")
+    alerts = [
+        alert
+        for alert in ledger.list_alerts(unresolved_only=True)
+        if alert.scope_type == "question"
+        and alert.scope_ref == question_id
+        and is_learned_error_review_reason(alert.reason)
+    ]
+    if not alerts:
+        raise ValidationError("question has no open learned-error review alerts")
+    profile_ids = list(
+        dict.fromkeys(
+            profile_id
+            for alert in alerts
+            if (profile_id := learned_error_profile_id(alert.reason)) is not None
+        )
+    )
+    profiles = [ledger.get_domain_error_profile(profile_id) for profile_id in profile_ids]
+    adjustments = list(
+        dict.fromkeys(
+            adjustment
+            for profile in profiles
+            for adjustment in profile.get("recommended_adjustments", [])
+        )
+    )
+    references = ledger.list_reference_classes(question_id)
+    run = ledger.record_model_run(
+        question_id=question_id,
+        model_type="learned_error_profile_review",
+        inputs={
+            "current_forecast_id": current.forecast_id,
+            "alert_ids": [alert.id for alert in alerts],
+            "profile_ids": profile_ids,
+            "recurring_errors": {
+                profile["id"]: profile.get("recurring_errors", []) for profile in profiles
+            },
+        },
+        parameters={
+            "reviewed_by": reviewer,
+            "decision": decision,
+            "protocol": "learned-error-review-v1",
+        },
+        output={
+            "assessment": review_text,
+            "recommended_adjustments_considered": adjustments,
+            "decision": decision,
+        },
+        diagnostics={
+            "evidence_count": len(current.evidence_refs),
+            "snapshot_reference_class_refs": list(current.reference_class_refs),
+            "active_reference_class_refs": [row["id"] for row in references],
+            "calibration_lesson_refs": list(current.calibration_lesson_refs),
+        },
+        evidence_cutoff=current.evidence_cutoff or current.as_of,
+    )
+    stamped = now or utc_now_iso()
+    closed = [
+        ledger.acknowledge_alert(
+            alert.id,
+            acknowledged_at=stamped,
+            ack_note=f"learned_error_review:{run['id']}:{decision}",
+            disposition=decision,
+        )
+        for alert in alerts
+    ]
+    follow_up = None
+    if decision == "update_required":
+        follow_up = ledger.create_alert(
+            severity="high" if question.impact in {"high", "critical"} else "warning",
+            scope_type="question",
+            scope_ref=question_id,
+            reason=f"learned_error_update_required:{run['id']}",
+            recommended_action=review_text,
+            now=stamped,
+        )
+    return {
+        "question_id": question_id,
+        "decision": decision,
+        "model_run": run,
+        "closed_alert_ids": [alert.id for alert in closed],
+        "follow_up_alert_id": follow_up.id if follow_up else None,
+    }

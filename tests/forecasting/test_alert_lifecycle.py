@@ -8,6 +8,8 @@ condition) against a seeded ledger, then pin the fixes."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+
 from datetime import timedelta
 
 from forecasting.ledger import ForecastLedger
@@ -237,7 +239,58 @@ def test_reconcile_resolution_check_due_closes_on_confirmed_resolution(tmp_path)
     # Not resolved yet -> stays open (it was previously NO_AUTO/immortal).
     assert lg.reconcile_alerts()["reconciled_count"] == 0
     lg.resolve_question(question_id=q.id, outcome="yes")
-    assert [e["id"] for e in lg.reconcile_alerts()["reconciled"]] == [a.id]
+    # The resolution transaction closes the alert immediately; reconciliation
+    # has no later cleanup window to race.
+    assert lg.reconcile_alerts()["reconciled"] == []
+    assert lg.get_alert(a.id).ack_note == "auto_close:question_resolved"
+
+
+def test_alert_key_folds_changing_display_detail(tmp_path):
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Resolvable?", resolution_criteria=CRIT)
+
+    first = lg.create_alert(
+        severity="info",
+        scope_type="question",
+        scope_ref=q.id,
+        reason="resolution proposed: YES — first rationale",
+        recommended_action="inspect first",
+    )
+    second = lg.create_alert(
+        severity="warning",
+        scope_type="question",
+        scope_ref=q.id,
+        reason="resolution proposed: YES — updated rationale",
+        recommended_action="inspect updated",
+        refresh_action=True,
+    )
+
+    assert second.id == first.id
+    assert second.alert_key == "resolution_proposed:yes"
+    assert second.seen_count == 2
+    assert second.reason.endswith("updated rationale")
+
+
+def test_alert_database_key_survives_concurrent_enqueue(tmp_path):
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Concurrent?", resolution_criteria=CRIT)
+
+    def enqueue(_index: int):
+        return lg.create_alert(
+            severity="warning",
+            scope_type="question",
+            scope_ref=q.id,
+            reason="same_condition",
+            recommended_action="review",
+        ).id
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        ids = list(pool.map(enqueue, range(16)))
+
+    assert len(set(ids)) == 1
+    alerts = [alert for alert in lg.list_alerts() if alert.reason == "same_condition"]
+    assert len(alerts) == 1
+    assert alerts[0].seen_count == 16
 
 
 def test_reconcile_resolution_check_due_closes_on_open_proposal(tmp_path):
@@ -285,11 +338,11 @@ def test_escalation_thresholds(tmp_path):
     lg = _ledger(tmp_path)
     q = lg.create_question(title="Aging?", resolution_criteria=CRIT)
     fresh = lg.create_alert(severity="info", scope_type="question", scope_ref=q.id,
-                            reason="new_evidence:ev_fresh", recommended_action="x")
+                            reason="escalation_probe:fresh", recommended_action="x")
     week = lg.create_alert(severity="info", scope_type="question", scope_ref=q.id,
-                           reason="new_evidence:ev_week", recommended_action="x")
+                           reason="escalation_probe:week", recommended_action="x")
     old = lg.create_alert(severity="info", scope_type="question", scope_ref=q.id,
-                          reason="new_evidence:ev_old", recommended_action="x")
+                          reason="escalation_probe:old", recommended_action="x")
     _age_alert(lg, week.id, _days_ago(8))
     _age_alert(lg, old.id, _days_ago(15))
 
@@ -304,14 +357,14 @@ def test_escalation_only_raises_and_is_idempotent(tmp_path):
     lg = _ledger(tmp_path)
     q = lg.create_question(title="Idempotent?", resolution_criteria=CRIT)
     a = lg.create_alert(severity="high", scope_type="question", scope_ref=q.id,
-                        reason="new_evidence:ev_x", recommended_action="x")
+                        reason="escalation_probe:x", recommended_action="x")
     _age_alert(lg, a.id, _days_ago(8))
     # Already 'high' at 8d — escalation never downgrades to 'warning'.
     assert lg.escalate_aged_alerts()["escalated_count"] == 0
     assert lg.get_alert(a.id).severity == "high"
 
     b = lg.create_alert(severity="info", scope_type="question", scope_ref=q.id,
-                        reason="new_evidence:ev_y", recommended_action="x")
+                        reason="escalation_probe:y", recommended_action="x")
     _age_alert(lg, b.id, _days_ago(20))
     assert lg.escalate_aged_alerts()["escalated_count"] == 1
     # Second pass is a no-op (already escalated).
@@ -322,10 +375,41 @@ def test_escalation_skips_acknowledged(tmp_path):
     lg = _ledger(tmp_path)
     q = lg.create_question(title="Closed?", resolution_criteria=CRIT)
     a = lg.create_alert(severity="info", scope_type="question", scope_ref=q.id,
-                        reason="new_evidence:ev_z", recommended_action="x")
+                        reason="escalation_probe:z", recommended_action="x")
     _age_alert(lg, a.id, _days_ago(30))
     lg.acknowledge_alert(a.id)
     assert lg.escalate_aged_alerts()["escalated_count"] == 0
+
+
+def test_new_evidence_alerts_batch_by_question_and_prior_forecast(tmp_path):
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="Batch evidence?", resolution_criteria=CRIT)
+    baseline = lg.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution=0.5,
+        rationale="Baseline.",
+    )
+
+    first = lg.create_alert(
+        severity="info",
+        scope_type="question",
+        scope_ref=q.id,
+        reason="new_evidence:ev_one",
+        recommended_action="Review the batch.",
+    )
+    second = lg.create_alert(
+        severity="warning",
+        scope_type="question",
+        scope_ref=q.id,
+        reason="new_evidence:ev_two",
+        recommended_action="Review the batch.",
+    )
+
+    assert first.id == second.id
+    stored = lg.get_alert(first.id)
+    assert stored.alert_key == f"new_evidence_batch:{baseline.forecast_id}"
+    assert stored.seen_count == 2
+    assert stored.severity == "warning"
 
 
 # ---------------------------------------------------------------------------
@@ -396,3 +480,26 @@ def test_collapse_migration_is_idempotent(tmp_path):
     assert second["groups_collapsed"] == 0
     assert second["rows_folded"] == 0
     assert len(lg.list_alerts(unresolved_only=True)) == 1
+
+
+def test_collapse_migration_coalesces_estimation_run_family(tmp_path):
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title="One estimation condition?", resolution_criteria=CRIT)
+    for index, run_id in enumerate(("mr_first", "mr_second", "mr_third")):
+        _raw_insert_alert(
+            lg,
+            alert_id=f"al_est_{index}",
+            created_at=_days_ago(3 - index),
+            severity="warning",
+            scope_type="question",
+            scope_ref=q.id,
+            reason=f"forecast_estimation_required:{run_id}",
+        )
+
+    result = lg.collapse_duplicate_alerts()
+
+    assert result["groups_collapsed"] == 1
+    assert result["rows_folded"] == 2
+    remaining = lg.list_alerts(unresolved_only=True)
+    assert len(remaining) == 1
+    assert remaining[0].alert_key == "forecast_estimation_required"

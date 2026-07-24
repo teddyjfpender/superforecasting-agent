@@ -42,7 +42,7 @@ DEFAULT_CONCURRENCY = 4
 # re-pool committed a new snapshot; ``unchanged`` = nothing moved; ``no_sources`` =
 # the question has no active watched sources (NOT a completed update); ``error`` =
 # the deterministic refresh raised (fail-open per question).
-OUTCOMES = ("refreshed", "unchanged", "no_sources", "error")
+OUTCOMES = ("refreshed", "needs_estimation", "unchanged", "no_sources", "error")
 
 
 def classify_refresh_status(status: Any) -> str:
@@ -58,6 +58,8 @@ def classify_refresh_status(status: Any) -> str:
         return "no_sources"
     if status == "no_change":
         return "unchanged"
+    if status == "needs_estimation":
+        return "needs_estimation"
     return "refreshed"
 
 

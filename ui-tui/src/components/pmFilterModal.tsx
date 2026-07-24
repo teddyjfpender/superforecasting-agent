@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 
 import { $globalModal } from '../app/overlayStore.js'
 import { venueLabel } from '../lib/pmData.js'
-import { type PmFilter, parseMoneyShorthand, parseProbPercent } from '../lib/pmRows.js'
+import { parseMoneyShorthand, parseProbPercent, type PmFilter } from '../lib/pmRows.js'
 import type { Theme } from '../theme.js'
 
 import { type FooterChip, FooterChips } from './footerChips.js'
@@ -64,15 +64,20 @@ export function PmFilterModal({
   }, [])
 
   const values: Record<FieldKey, string> = { hideDead: '', hideSports: '', maxProb, minProb, minVolume, topic, venue }
+
   const toggles: Partial<Record<FieldKey, [boolean, (v: (b: boolean) => boolean) => void]>> = {
     hideDead: [hideDead, setHideDead],
     hideSports: [hideSports, setHideSports]
   }
+
   const setText = (key: FieldKey, updater: (s: string) => string) => {
-    if (key === 'topic') return setTopic(updater)
-    if (key === 'minVolume') return setMinVolume(updater)
-    if (key === 'minProb') return setMinProb(updater)
-    if (key === 'maxProb') return setMaxProb(updater)
+    if (key === 'topic') {return setTopic(updater)}
+
+    if (key === 'minVolume') {return setMinVolume(updater)}
+
+    if (key === 'minProb') {return setMinProb(updater)}
+
+    if (key === 'maxProb') {return setMaxProb(updater)}
   }
 
   const apply = () => {
@@ -115,8 +120,9 @@ export function PmFilterModal({
       const field = FIELDS[sel]!
 
       if (field.kind === 'venue') {
-        if (key.leftArrow) return cycleVenue(-1)
-        if (key.rightArrow) return cycleVenue(1)
+        if (key.leftArrow) {return cycleVenue(-1)}
+
+        if (key.rightArrow) {return cycleVenue(1)}
 
         return
       }

@@ -95,6 +95,28 @@ def test_text_query_uses_full_catalog_search():
     assert len(found2) == 1
 
 
+def test_catalog_keyset_paginates_and_indexes_child_markets():
+    event = load_fixture("polymarket_event_categorical.json")
+    second = {**event, "id": "second", "slug": "second-event", "title": "Second event"}
+    calls: list[str] = []
+
+    def fetch(url):
+        calls.append(url)
+        return (
+            {"events": [second], "next_cursor": ""}
+            if "after_cursor=next" in url
+            else {"events": [event], "next_cursor": "next"}
+        )
+
+    client = poly.PolymarketClient(fetch=fetch)
+    rows = client.catalog_events()
+    assert [row["event_id"] for row in rows] == [str(event["id"]), "second"]
+    assert len(calls) == 2 and all("/events/keyset?" in url for url in calls)
+    assert all("closed=false" in url for url in calls)
+    assert rows[0]["market_count"] == len(event["markets"])
+    assert event["markets"][0]["question"].casefold() in rows[0]["search"]
+
+
 def test_dead_placeholder_market_yields_no_estimate():
     """The RFK dead-twin RAW shape, straight through the parser: no bid, a lone
     98c ask, placeholder outcomePrices [0.49, 0.51], zero volume. Without the

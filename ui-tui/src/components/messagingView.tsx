@@ -967,12 +967,14 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     contactView && activeConv
       ? (() => {
           const saved = contactBook[activeConv.chatId]
+
           const row = (label: string, value: string, color = t.color.text) => (
             <Text wrap="truncate-end">
               <Text color={t.color.label}>{label.padEnd(9)}</Text>
               <Text color={value ? color : t.color.muted}>{value || '—'}</Text>
             </Text>
           )
+
           return (
             <ModalOverlay cols={cols} footerHint="⏎ save name · Esc cancel" maxHeight={12} maxWidth={70} rows={termRows} t={t} title="Contact">
               <Box flexDirection="column">
@@ -1066,7 +1068,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
             const prefix = on ? '▸ ' : isUnread ? '● ' : '  '
 
             return (
-              <Box key={conv.chatId} onClick={() => { if (setup || newChat || contactView || globalModal) return; setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
+              <Box key={conv.chatId} onClick={() => { if (setup || newChat || contactView || globalModal) {return;} setSelectedChatId(conv.chatId); setThreadScroll(0); setFocus('thread') }} width="100%">
                 <Text wrap="truncate-end">
                   <Text bold={isUnread} color={on ? t.color.accent : isUnread ? t.color.ok : t.color.border}>
                     {prefix}
@@ -1149,7 +1151,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
                     </Text>
                   ) : null}
                   {m.attachments > 0 ? (
-                    <Box onClick={() => { if (!setup && !newChat && !contactView && !globalModal) openMessageAttachment(m) }}>
+                    <Box onClick={() => { if (!setup && !newChat && !contactView && !globalModal) {openMessageAttachment(m)} }}>
                       <Text color={t.color.accent} wrap="truncate-end">
                         {attachmentLabel(m)}
                         {(m.files ?? []).some(f => f.id) ? <Text color={t.color.muted}> · open</Text> : null}

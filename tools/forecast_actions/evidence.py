@@ -35,7 +35,13 @@ def add_evidence(args: dict[str, Any], ledger) -> str:
         from forecasting.writeup import write_brief
 
         _qid = args.get("question_id")
-        write_brief(ledger, _qid, ledger.get_current_snapshot(_qid), evidence_only=True)
+        write_brief(
+            ledger,
+            _qid,
+            ledger.get_current_snapshot(_qid),
+            evidence_only=True,
+            main_runtime=args.get("_main_runtime"),
+        )
     except Exception:
         pass
     return tool_result(success=True, evidence=item.__dict__)

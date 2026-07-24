@@ -446,6 +446,22 @@ class TestMarkJobRun:
         updated = get_job(job["id"])
         assert updated["last_status"] == "error"
         assert updated["last_error"] == "timeout"
+        assert updated["retry_backoff_minutes"] == 15
+
+    def test_periodic_failures_retry_at_15m_1h_4h_then_resume_recurrence(
+        self, tmp_cron_dir
+    ):
+        job = create_job(prompt="Weekly", schedule="0 8 * * 1")
+        expected = (15, 60, 240)
+        for count, minutes in enumerate(expected, start=1):
+            mark_job_run(job["id"], success=False, error="provider unavailable")
+            updated = get_job(job["id"])
+            assert updated["failure_retry_count"] == count
+            assert updated["retry_backoff_minutes"] == minutes
+        mark_job_run(job["id"], success=False, error="provider unavailable")
+        updated = get_job(job["id"])
+        assert updated["failure_retry_count"] == 0
+        assert updated["retry_backoff_minutes"] is None
 
     def test_delivery_error_tracked_separately(self, tmp_cron_dir):
         """Agent succeeds but delivery fails — both tracked independently."""

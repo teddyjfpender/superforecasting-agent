@@ -8,8 +8,12 @@ leaves the alert OPEN.
 
 from __future__ import annotations
 
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 import pytest
 
+from forecasting.cron_runner import run_warning_resolution
 from forecasting.ledger import ForecastLedger
 from forecasting.warnings import (
     WARNING_TIERS,
@@ -57,13 +61,14 @@ def _alert(lg, *, reason: str, severity: str = "warning", scope_ref: str = "fq_x
         # MATERIAL_CHANGE
         ("watched_source_changed", ResolutionKind.MATERIAL_CHANGE),
         ("watched_source_changed:w1", ResolutionKind.MATERIAL_CHANGE),
-        ("watched_source_unavailable", ResolutionKind.MATERIAL_CHANGE),
-        ("trigger_fired:fred:DGS10", ResolutionKind.MATERIAL_CHANGE),
+        ("watched_source_unavailable", ResolutionKind.NO_AUTO),
         # REFORECAST
         ("evidence_stale_7d_plus", ResolutionKind.REFORECAST),
         ("last_update_30d", ResolutionKind.REFORECAST),
         ("new_evidence:ev_123", ResolutionKind.REFORECAST),
         ("close_time_within_7d", ResolutionKind.REFORECAST),
+        ("trigger_fired:fred:DGS10", ResolutionKind.REFORECAST),
+        ("learned_error_update_required:dep_1", ResolutionKind.REFORECAST),
         # EVIDENCE_COLLECTION — no evidence / no snapshot yet: collect first, then
         # (re)forecast. Routed to its own kind so the zero-evidence-gated REFORECAST
         # runner never silently swallows them as "skipped: update gated".
@@ -71,7 +76,7 @@ def _alert(lg, *, reason: str, severity: str = "warning", scope_ref: str = "fq_x
         ("no_forecast_snapshot", ResolutionKind.EVIDENCE_COLLECTION),
         # BOOKKEEPING
         ("autopilot_enabled:pol_1", ResolutionKind.BOOKKEEPING),
-        ("autopilot_source_failed:w2", ResolutionKind.BOOKKEEPING),
+        ("autopilot_source_failed:w2", ResolutionKind.MATERIAL_CHANGE),
         ("review_due", ResolutionKind.BOOKKEEPING),
         # SCORE — a resolved question due a Brier score is REAL gated work, not a
         # bookkeeping notice (it must never be bare-acked).
@@ -430,3 +435,72 @@ def test_select_open_warnings_kind_filter_applies_before_limit(tmp_path):
     assert len(got) == 1
     assert got[0].kind is ResolutionKind.SCORE
     assert got[0].id in {s1.id, s2.id}
+
+
+def test_concurrent_warning_workers_share_one_durable_alert_task(tmp_path):
+    first_ledger = _ledger(tmp_path)
+    second_ledger = ForecastLedger(first_ledger.db_path)
+    alert = _alert(
+        first_ledger,
+        reason="evidence_stale_7d_plus",
+        scope_ref="fq_concurrent",
+    )
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    def runner(_ledger, _warning):
+        nonlocal calls
+        calls += 1
+        started.set()
+        release.wait(timeout=5)
+        return {"status": "committed"}
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(
+            run_warning_resolution,
+            ledger=first_ledger,
+            tier="reforecast",
+            reforecast_runner=runner,
+            reconcile=False,
+        )
+        assert started.wait(timeout=5)
+        second = pool.submit(
+            run_warning_resolution,
+            ledger=second_ledger,
+            tier="reforecast",
+            reforecast_runner=runner,
+            reconcile=False,
+        )
+        second_result = second.result(timeout=5)
+        release.set()
+        first_result = first.result(timeout=5)
+
+    assert calls == 1
+    assert first_result["tally"] == {"resolved": 1}
+    assert second_result["tally"] == {"claimed_elsewhere": 1}
+    tasks = first_ledger.list_operational_tasks()
+    assert len(tasks) == 1
+    assert tasks[0]["alert_id"] == alert.id
+    assert tasks[0]["status"] == "completed"
+
+
+def test_estimation_alerts_for_one_question_consume_one_paid_run(tmp_path):
+    ledger = _ledger(tmp_path)
+    for model_run_id in ("mr_old", "mr_new"):
+        _alert(
+            ledger,
+            reason=f"forecast_estimation_required:{model_run_id}",
+            scope_ref="fq_same_question",
+        )
+    calls = []
+
+    result = run_warning_resolution(
+        ledger=ledger,
+        tier="reforecast",
+        reforecast_runner=lambda _ledger, warning: calls.append(warning.id) or True,
+        reconcile=False,
+    )
+
+    assert result["processed"] == 1
+    assert len(calls) == 1

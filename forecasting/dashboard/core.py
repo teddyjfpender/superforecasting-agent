@@ -367,7 +367,8 @@ def build_dashboard_summary(
         "evidence_status": evidence_status,
         "live_performance": live_performance,
         "learning": build_learning_summary(ledger=ledger),
-        "scheduled_review_run_count": len(scheduled_review_runs),
+        "operations": ledger.operational_cockpit(now=now),
+        "scheduled_review_run_count": ledger.count_scheduled_review_runs(),
         "scheduled_review_runs": scheduled_review_runs,
         "questions": rows,
         "theses": build_thesis_summary(ledger=ledger),
@@ -806,9 +807,18 @@ def build_workspace_payload(
 
         outcome_type = question.outcome_space.type
         distribution = _distribution_view(probability) if current else None
-        # A distribution forecast tracks a continuous central tendency (a mean
-        # in the outcome's units); binary/categorical track a probability.
-        headline_kind = "distribution" if (outcome_type == "distribution" and distribution) else "probability"
+        # Numeric questions commonly store a continuous summary (mean / SD /
+        # intervals) even though their outcome-space type is ``numeric`` rather
+        # than the older ``distribution`` label. Render both continuous types in
+        # outcome units when a mean is present. Otherwise a value such as 0.93
+        # is misleadingly displayed as P=93%, and its actual-unit interval is
+        # omitted from the history chart.
+        is_continuous_distribution = (
+            outcome_type in {"numeric", "distribution"}
+            and distribution is not None
+            and distribution.get("mean") is not None
+        )
+        headline_kind = "distribution" if is_continuous_distribution else "probability"
 
         # Lessons that should STRUCTURE this forecast (scope-matched: domain / topic /
         # domain_topic / question_type) — the same retrieval the agent reads + that
@@ -976,6 +986,7 @@ def build_workspace_payload(
         # continuous scorecard, with the pooled Brier retained only as a labelled
         # diagnostic. Never a pooled all-artifact number as the headline.
         "cohort_scoreboard": ledger.cohort_scoreboard(),
+        "operations": ledger.operational_cockpit(now=now),
     }
 
 

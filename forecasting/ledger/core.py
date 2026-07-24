@@ -222,7 +222,15 @@ def _crux_text_hash(text: str) -> str:
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 AUTOPILOT_MODES = {"propose", "auto_commit", "alert_only"}
-AUTOPILOT_PROPOSAL_STATUSES = {"pending", "approved", "rejected", "expired", "auto_committed"}
+AUTOPILOT_PROPOSAL_STATUSES = {
+    "pending",
+    "committing",
+    "approved",
+    "rejected",
+    "superseded",
+    "expired",
+    "auto_committed",
+}
 
 
 class _IngestHTMLParser(HTMLParser):
@@ -1180,7 +1188,12 @@ class ForecastLedger:
                     trigger_reason TEXT NOT NULL DEFAULT 'scheduled',
                     enabled INTEGER NOT NULL DEFAULT 1,
                     auto_score INTEGER NOT NULL DEFAULT 0,
-                    auto_postmortem INTEGER NOT NULL DEFAULT 0
+                    auto_postmortem INTEGER NOT NULL DEFAULT 0,
+                    lease_owner TEXT,
+                    lease_expires_at TEXT,
+                    attempt_count INTEGER NOT NULL DEFAULT 0,
+                    unchanged_streak INTEGER NOT NULL DEFAULT 0,
+                    adaptive_multiplier INTEGER NOT NULL DEFAULT 1
                 );
 
                 CREATE TABLE IF NOT EXISTS scheduled_review_runs (
@@ -1252,7 +1265,9 @@ class ForecastLedger:
                     attempt_count INTEGER NOT NULL DEFAULT 0,
                     seen_count INTEGER NOT NULL DEFAULT 1,
                     last_seen_at TEXT,
-                    ack_note TEXT
+                    ack_note TEXT,
+                    alert_key TEXT,
+                    disposition TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS autopilot_policies (
@@ -1308,7 +1323,9 @@ class ForecastLedger:
                     status TEXT NOT NULL DEFAULT 'pending',
                     created_at TEXT NOT NULL,
                     reviewed_at TEXT,
-                    reviewed_by TEXT
+                    reviewed_by TEXT,
+                    resulting_forecast_id TEXT REFERENCES forecast_snapshots(forecast_id) ON DELETE SET NULL,
+                    expires_at TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_forecast_update_proposals_question
@@ -1702,6 +1719,11 @@ class ForecastLedger:
             self._ensure_column(conn, "scheduled_reviews", "confidence_below", "REAL")
             self._ensure_column(conn, "scheduled_reviews", "confidence_above", "REAL")
             self._ensure_column(conn, "scheduled_reviews", "large_delta_threshold", "REAL")
+            self._ensure_column(conn, "scheduled_reviews", "lease_owner", "TEXT")
+            self._ensure_column(conn, "scheduled_reviews", "lease_expires_at", "TEXT")
+            self._ensure_column(conn, "scheduled_reviews", "attempt_count", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "scheduled_reviews", "unchanged_streak", "INTEGER NOT NULL DEFAULT 0")
+            self._ensure_column(conn, "scheduled_reviews", "adaptive_multiplier", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "forecast_questions", "decision_owner", "TEXT")
             self._ensure_column(conn, "forecast_questions", "decision_deadline", "TEXT")
             self._ensure_column(conn, "forecast_questions", "action_threshold", "TEXT")
@@ -1749,6 +1771,11 @@ class ForecastLedger:
             self._ensure_column(conn, "alert_events", "seen_count", "INTEGER NOT NULL DEFAULT 1")
             self._ensure_column(conn, "alert_events", "last_seen_at", "TEXT")
             self._ensure_column(conn, "alert_events", "ack_note", "TEXT")
+            self._ensure_column(conn, "alert_events", "alert_key", "TEXT")
+            self._ensure_column(conn, "alert_events", "disposition", "TEXT")
+            self._ensure_column(conn, "forecast_update_proposals", "resulting_forecast_id", "TEXT")
+            self._ensure_column(conn, "forecast_update_proposals", "expires_at", "TEXT")
+            self._ensure_operational_uniqueness(conn)
             # R2 operator practice loop — defensive migrations for the scoring
             # columns (idempotent; a fresh CREATE already carries them).
             self._ensure_column(conn, "operator_estimates", "resolved_outcome", "TEXT")
@@ -1761,6 +1788,9 @@ class ForecastLedger:
             from forecasting.change_control.store import initialize_schema
 
             initialize_schema(conn)
+            from forecasting.ledger.workflow import initialize_schema as initialize_workflow_schema
+
+            initialize_workflow_schema(conn)
 
     def _ensure_column(
         self,
@@ -1772,6 +1802,216 @@ class ForecastLedger:
         existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
         if column not in existing:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
+
+    def _ensure_operational_uniqueness(self, conn: sqlite3.Connection) -> None:
+        """Backfill stable keys, collapse legacy duplicates, then enforce them in SQLite."""
+        # Repair legacy databases on open: a resolved question is a hard stop for
+        # active forecast-maintenance producers. New resolutions perform the same
+        # teardown transactionally in ``resolve_question``.
+        stamp = utc_now_iso()
+        conn.execute(
+            """
+            UPDATE forecast_update_proposals
+            SET expires_at = strftime('%Y-%m-%dT%H:%M:%SZ', created_at, '+24 hours')
+            WHERE status = 'pending' AND expires_at IS NULL
+            """
+        )
+        conn.execute(
+            """
+            UPDATE scheduled_reviews SET enabled = 0, lease_owner = NULL, lease_expires_at = NULL
+            WHERE enabled = 1 AND scope_type = 'question' AND scope_ref IN (
+                SELECT id FROM forecast_questions WHERE status = 'resolved'
+            )
+            """
+        )
+        conn.execute(
+            """
+            UPDATE watched_sources SET status = 'inactive'
+            WHERE status = 'active' AND scope_type = 'question' AND scope_ref IN (
+                SELECT id FROM forecast_questions WHERE status = 'resolved'
+            )
+            """
+        )
+        conn.execute(
+            """
+            UPDATE autopilot_policies SET enabled = 0, updated_at = ?
+            WHERE enabled = 1 AND question_id IN (
+                SELECT id FROM forecast_questions WHERE status = 'resolved'
+            )
+            """,
+            (stamp,),
+        )
+        conn.execute(
+            """
+            UPDATE forecast_update_proposals
+            SET status = 'rejected', reviewed_at = ?,
+                reviewed_by = COALESCE(reviewed_by, 'lifecycle:resolved')
+            WHERE status IN ('pending', 'committing') AND question_id IN (
+                SELECT id FROM forecast_questions WHERE status = 'resolved'
+            )
+            """,
+            (stamp,),
+        )
+        conn.execute(
+            """
+            UPDATE alert_events SET acknowledged_at = ?,
+                ack_note = COALESCE(ack_note, 'auto_close:question_resolved'),
+                disposition = COALESCE(disposition, 'resolved_by_resolution')
+            WHERE acknowledged_at IS NULL AND scope_type = 'question' AND scope_ref IN (
+                SELECT id FROM forecast_questions WHERE status = 'resolved'
+            )
+              AND reason NOT IN ('score_due', 'high_impact_score_due',
+                                 'postmortem_due', 'high_impact_postmortem_due')
+            """,
+            (stamp,),
+        )
+        rows = conn.execute(
+            "SELECT id, scope_type, scope_ref, reason FROM alert_events "
+            "WHERE alert_key IS NULL OR alert_key = ''"
+        ).fetchall()
+        for row in rows:
+            prior_forecast_id = None
+            if row["scope_type"] == "question" and str(row["reason"]).startswith("new_evidence:"):
+                question = conn.execute(
+                    "SELECT current_forecast_id FROM forecast_questions WHERE id = ?",
+                    (row["scope_ref"],),
+                ).fetchone()
+                prior_forecast_id = question["current_forecast_id"] if question else None
+            conn.execute(
+                "UPDATE alert_events SET alert_key = ? WHERE id = ?",
+                (
+                    _alerts.normalized_alert_key(
+                        row["reason"], prior_forecast_id=prior_forecast_id
+                    ),
+                    row["id"],
+                ),
+            )
+
+        duplicate_alerts = conn.execute(
+            """
+            SELECT scope_type, scope_ref, alert_key
+            FROM alert_events
+            WHERE acknowledged_at IS NULL
+            GROUP BY scope_type, scope_ref, alert_key
+            HAVING COUNT(*) > 1
+            """
+        ).fetchall()
+        for group in duplicate_alerts:
+            members = conn.execute(
+                """
+                SELECT id, severity, seen_count FROM alert_events
+                WHERE scope_type = ? AND scope_ref = ? AND alert_key = ?
+                  AND acknowledged_at IS NULL
+                ORDER BY created_at ASC, id ASC
+                """,
+                (group["scope_type"], group["scope_ref"], group["alert_key"]),
+            ).fetchall()
+            survivor = members[0]
+            severity = "high" if any(row["severity"] == "high" for row in members) else (
+                "warning" if any(row["severity"] == "warning" for row in members) else "info"
+            )
+            seen_count = sum(int(row["seen_count"] or 1) for row in members)
+            conn.execute(
+                "UPDATE alert_events SET severity = ?, seen_count = ? WHERE id = ?",
+                (severity, seen_count, survivor["id"]),
+            )
+            for duplicate in members[1:]:
+                conn.execute(
+                    "UPDATE alert_events SET acknowledged_at = COALESCE(acknowledged_at, created_at), "
+                    "ack_note = COALESCE(ack_note, ?), "
+                    "disposition = COALESCE(disposition, 'duplicate') WHERE id = ?",
+                    (f"collapsed:{survivor['id']}", duplicate["id"]),
+                )
+
+        def disable_duplicates(table: str, key_columns: str, active_where: str, disable_sql: str) -> None:
+            groups = conn.execute(
+                f"SELECT {key_columns} FROM {table} WHERE {active_where} "
+                f"GROUP BY {key_columns} HAVING COUNT(*) > 1"
+            ).fetchall()
+            key_names = [part.strip() for part in key_columns.split(",")]
+            for group in groups:
+                predicates = " AND ".join(
+                    f"{name} IS ?" if group[name] is None else f"{name} = ?"
+                    for name in key_names
+                )
+                values = [group[name] for name in key_names]
+                members = conn.execute(
+                    f"SELECT id FROM {table} WHERE {active_where} AND {predicates} "
+                    "ORDER BY rowid ASC",
+                    values,
+                ).fetchall()
+                for duplicate in members[1:]:
+                    conn.execute(disable_sql, (duplicate["id"],))
+
+        disable_duplicates(
+            "scheduled_reviews",
+            "scope_type, scope_ref, cadence, trigger_reason",
+            "enabled = 1",
+            "UPDATE scheduled_reviews SET enabled = 0 WHERE id = ?",
+        )
+        disable_duplicates(
+            "watched_sources",
+            "scope_type, scope_ref, source, source_type",
+            "status = 'active'",
+            "UPDATE watched_sources SET status = 'inactive' WHERE id = ?",
+        )
+        disable_duplicates(
+            "autopilot_policies",
+            "question_id",
+            "enabled = 1",
+            "UPDATE autopilot_policies SET enabled = 0 WHERE id = ?",
+        )
+        disable_duplicates(
+            "forecast_update_proposals",
+            "question_id, prior_forecast_id",
+            "status IN ('pending', 'committing')",
+            "UPDATE forecast_update_proposals SET status = 'rejected' WHERE id = ?",
+        )
+
+        duplicate_postmortems = conn.execute(
+            """
+            SELECT score_record_id FROM postmortems
+            WHERE invalidated_by_correction_id IS NULL
+            GROUP BY score_record_id HAVING COUNT(*) > 1
+            """
+        ).fetchall()
+        for group in duplicate_postmortems:
+            members = conn.execute(
+                """
+                SELECT id FROM postmortems
+                WHERE score_record_id = ? AND invalidated_by_correction_id IS NULL
+                ORDER BY created_at ASC, id ASC
+                """,
+                (group["score_record_id"],),
+            ).fetchall()
+            for duplicate in members[1:]:
+                conn.execute(
+                    "UPDATE postmortems SET invalidated_by_correction_id = ? WHERE id = ?",
+                    (f"duplicate:{members[0]['id']}", duplicate["id"]),
+                )
+
+        conn.executescript(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_alert_events_open_key
+                ON alert_events(scope_type, scope_ref, alert_key)
+                WHERE acknowledged_at IS NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_scheduled_reviews_active
+                ON scheduled_reviews(scope_type, IFNULL(scope_ref, ''), cadence, trigger_reason)
+                WHERE enabled = 1;
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_watched_sources_active
+                ON watched_sources(scope_type, IFNULL(scope_ref, ''), source, source_type)
+                WHERE status = 'active';
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_autopilot_policies_active
+                ON autopilot_policies(question_id)
+                WHERE enabled = 1;
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_forecast_update_proposals_active
+                ON forecast_update_proposals(question_id, IFNULL(prior_forecast_id, ''))
+                WHERE status IN ('pending', 'committing');
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_postmortems_active_score
+                ON postmortems(score_record_id)
+                WHERE invalidated_by_correction_id IS NULL;
+            """
+        )
 
     def _is_auto_review_eligible(
         self,
@@ -2017,9 +2257,10 @@ class ForecastLedger:
         require_output_structure: bool = True,
         distribution_autofix: bool = False,
         enforce_resolved_hooks: bool = False,
+        allow_resolved_backfill: bool = False,
         preview: bool = False,
     ) -> "ForecastSnapshot | dict[str, Any]":
-        return _snapshots.create_snapshot(self, question_id=question_id, probability_or_distribution=probability_or_distribution, rationale=rationale, as_of=as_of, confidence=confidence, method=method, ensemble_components=ensemble_components, key_assumptions=key_assumptions, assumption_refs=assumption_refs, reference_class_refs=reference_class_refs, evidence_refs=evidence_refs, model_run_refs=model_run_refs, forecast_origin=forecast_origin, agent_model=agent_model, prompt_version=prompt_version, forecasting_protocol_version=forecasting_protocol_version, toolset_version=toolset_version, source_snapshot_refs=source_snapshot_refs, evidence_cutoff=evidence_cutoff, backtest_run_id=backtest_run_id, calibration_eligible=calibration_eligible, calibration_weight=calibration_weight, calibration_lesson_refs=calibration_lesson_refs, calibration_adjustment=calibration_adjustment, stale_evidence_days=stale_evidence_days, acknowledge_stale_evidence=acknowledge_stale_evidence, stale_evidence_reason=stale_evidence_reason, require_citations=require_citations, metadata=metadata, set_current=set_current, reasons_up=reasons_up, reasons_down=reasons_down, change_my_mind=change_my_mind, require_decision_readiness=require_decision_readiness, require_structured_reasoning=require_structured_reasoning, require_components=require_components, require_fresh_evidence=require_fresh_evidence, require_panel=require_panel, panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason, outcome_paths=outcome_paths, require_outcome_paths=require_outcome_paths, style_autofix=style_autofix, require_style=require_style, reasoning_methods=reasoning_methods, require_output_structure=require_output_structure, distribution_autofix=distribution_autofix, enforce_resolved_hooks=enforce_resolved_hooks, preview=preview)
+        return _snapshots.create_snapshot(self, question_id=question_id, probability_or_distribution=probability_or_distribution, rationale=rationale, as_of=as_of, confidence=confidence, method=method, ensemble_components=ensemble_components, key_assumptions=key_assumptions, assumption_refs=assumption_refs, reference_class_refs=reference_class_refs, evidence_refs=evidence_refs, model_run_refs=model_run_refs, forecast_origin=forecast_origin, agent_model=agent_model, prompt_version=prompt_version, forecasting_protocol_version=forecasting_protocol_version, toolset_version=toolset_version, source_snapshot_refs=source_snapshot_refs, evidence_cutoff=evidence_cutoff, backtest_run_id=backtest_run_id, calibration_eligible=calibration_eligible, calibration_weight=calibration_weight, calibration_lesson_refs=calibration_lesson_refs, calibration_adjustment=calibration_adjustment, stale_evidence_days=stale_evidence_days, acknowledge_stale_evidence=acknowledge_stale_evidence, stale_evidence_reason=stale_evidence_reason, require_citations=require_citations, metadata=metadata, set_current=set_current, reasons_up=reasons_up, reasons_down=reasons_down, change_my_mind=change_my_mind, require_decision_readiness=require_decision_readiness, require_structured_reasoning=require_structured_reasoning, require_components=require_components, require_fresh_evidence=require_fresh_evidence, require_panel=require_panel, panel_run_ref=panel_run_ref, panel_skipped_reason=panel_skipped_reason, outcome_paths=outcome_paths, require_outcome_paths=require_outcome_paths, style_autofix=style_autofix, require_style=require_style, reasoning_methods=reasoning_methods, require_output_structure=require_output_structure, distribution_autofix=distribution_autofix, enforce_resolved_hooks=enforce_resolved_hooks, allow_resolved_backfill=allow_resolved_backfill, preview=preview)
 
     def _thesis_auto_aggregate_enabled(self, thesis_id: str) -> bool:
         return _theses._thesis_auto_aggregate_enabled(self, thesis_id=thesis_id)
@@ -3500,6 +3741,13 @@ class ForecastLedger:
     def get_correction(self, correction_id: str) -> dict[str, Any]:
         return _resolutions.get_correction(self, correction_id=correction_id)
 
+    def apply_correction(
+        self, correction_id: str, *, applied_by: str | None = None
+    ) -> dict[str, Any]:
+        return _resolutions.apply_correction(
+            self, correction_id, applied_by=applied_by
+        )
+
     def list_corrections(
         self,
         *,
@@ -3579,6 +3827,24 @@ class ForecastLedger:
         topic: str | None = None,
     ) -> list[dict[str, Any]]:
         return _lessons.list_domain_error_profiles(self, domain=domain, topic=topic)
+
+    def review_learned_error_alerts(
+        self,
+        question_id: str,
+        *,
+        reviewed_by: str,
+        assessment: str,
+        decision: str = "reviewed_no_change",
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        return _lessons.review_learned_error_alerts(
+            self,
+            question_id,
+            reviewed_by=reviewed_by,
+            assessment=assessment,
+            decision=decision,
+            now=now,
+        )
 
     def add_baseline_comparison(
         self,
@@ -3714,6 +3980,13 @@ class ForecastLedger:
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         return _reviews.list_scheduled_review_runs(self, scheduled_review_id=scheduled_review_id, limit=limit)
+
+    def count_scheduled_review_runs(
+        self, *, scheduled_review_id: str | None = None
+    ) -> int:
+        return _reviews.count_scheduled_review_runs(
+            self, scheduled_review_id=scheduled_review_id
+        )
 
     def add_watched_source(
         self,
@@ -4092,8 +4365,9 @@ class ForecastLedger:
         assumption_refs: list[str] | None = None,
         reference_class_refs: list[str] | None = None,
         status: str = "pending",
+        expires_at: str | None = None,
     ) -> dict[str, Any]:
-        return _autopilot.create_forecast_update_proposal(self, question_id=question_id, run_id=run_id, prior_forecast_id=prior_forecast_id, proposed_probability_or_distribution=proposed_probability_or_distribution, rationale=rationale, evidence_refs=evidence_refs, source_snapshot_refs=source_snapshot_refs, model_run_refs=model_run_refs, assumption_refs=assumption_refs, reference_class_refs=reference_class_refs, status=status)
+        return _autopilot.create_forecast_update_proposal(self, question_id=question_id, run_id=run_id, prior_forecast_id=prior_forecast_id, proposed_probability_or_distribution=proposed_probability_or_distribution, rationale=rationale, evidence_refs=evidence_refs, source_snapshot_refs=source_snapshot_refs, model_run_refs=model_run_refs, assumption_refs=assumption_refs, reference_class_refs=reference_class_refs, status=status, expires_at=expires_at)
 
     def get_forecast_update_proposal(self, proposal_id: str) -> dict[str, Any]:
         return _autopilot.get_forecast_update_proposal(self, proposal_id=proposal_id)
@@ -4114,6 +4388,23 @@ class ForecastLedger:
         reviewed_by: str | None = None,
     ) -> dict[str, Any]:
         return _autopilot.reject_forecast_update_proposal(self, proposal_id=proposal_id, reviewed_by=reviewed_by)
+
+    def expire_forecast_update_proposals(
+        self,
+        *,
+        now: str | None = None,
+        question_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        return _autopilot.expire_forecast_update_proposals(
+            self, now=now, question_id=question_id
+        )
+
+    def reject_unsupported_source_proposals(
+        self, *, reviewed_by: str = "lifecycle:insufficient_source_content"
+    ) -> list[dict[str, Any]]:
+        return _autopilot.reject_unsupported_source_proposals(
+            self, reviewed_by=reviewed_by
+        )
 
     # Canonical pooling-method aliases so a re-pool matches the snapshot's
     # original recipe. Mirrors the CLI's bayes-method handling.
@@ -4251,6 +4542,391 @@ class ForecastLedger:
     ) -> list[AlertEvent]:
         return _watches.check_watched_sources(self, scope_type=scope_type, scope_ref=scope_ref, now=now)
 
+    def list_source_change_events(
+        self,
+        *,
+        question_id: str | None = None,
+        status: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import list_source_change_events
+
+        return list_source_change_events(
+            self, question_id=question_id, status=status, limit=limit
+        )
+
+    def list_source_change_event_transitions(
+        self, source_change_event_id: str
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import list_source_change_event_transitions
+
+        return list_source_change_event_transitions(self, source_change_event_id)
+
+    def list_operational_tasks(
+        self,
+        *,
+        status: str | None = None,
+        lane: str | None = None,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import list_operational_tasks
+
+        return list_operational_tasks(self, status=status, lane=lane, limit=limit)
+
+    def claim_alert_operational_task(
+        self,
+        alert: AlertEvent,
+        *,
+        owner: str,
+        lane: str,
+        now: str | None = None,
+        lease_seconds: int = 300,
+    ) -> dict[str, Any] | None:
+        from forecasting.ledger.workflow import claim_alert_operational_task
+
+        return claim_alert_operational_task(
+            self,
+            alert,
+            owner=owner,
+            lane=lane,
+            now=now,
+            lease_seconds=lease_seconds,
+        )
+
+    def enqueue_alert_operational_task(
+        self,
+        alert: AlertEvent,
+        *,
+        lane: str,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import enqueue_alert_operational_task
+
+        return enqueue_alert_operational_task(self, alert, lane=lane, now=now)
+
+    def claim_operational_tasks(
+        self,
+        *,
+        owner: str,
+        lane: str = "deterministic_critical",
+        now: str | None = None,
+        lease_seconds: int = 300,
+        limit: int = 10,
+        task_type: str | None = None,
+        question_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import claim_operational_tasks
+
+        return claim_operational_tasks(
+            self,
+            owner=owner,
+            lane=lane,
+            now=now,
+            lease_seconds=lease_seconds,
+            limit=limit,
+            task_type=task_type,
+            question_id=question_id,
+        )
+
+    def heartbeat_operational_task(
+        self,
+        task_id: str,
+        *,
+        owner: str,
+        now: str | None = None,
+        lease_seconds: int = 300,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import heartbeat_operational_task
+
+        return heartbeat_operational_task(
+            self,
+            task_id,
+            owner=owner,
+            now=now,
+            lease_seconds=lease_seconds,
+        )
+
+    def reclaim_expired_operational_tasks(
+        self, *, owner: str = "lease-reclaimer", now: str | None = None
+    ) -> dict[str, int]:
+        from forecasting.ledger.workflow import reclaim_expired_operational_tasks
+
+        return reclaim_expired_operational_tasks(self, owner=owner, now=now)
+
+    def suspend_unhealthy_watched_sources(
+        self,
+        *,
+        now: str | None = None,
+        failure_threshold: int = 3,
+        low_yield_min_events: int = 5,
+        low_yield_ratio: float = 0.95,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import suspend_unhealthy_watched_sources
+
+        return suspend_unhealthy_watched_sources(
+            self,
+            now=now,
+            failure_threshold=failure_threshold,
+            low_yield_min_events=low_yield_min_events,
+            low_yield_ratio=low_yield_ratio,
+        )
+
+    def act_on_human_task(
+        self,
+        task_id: str,
+        *,
+        action: str,
+        owner: str = "human:forecast-duty",
+        defer_hours: float = 24.0,
+        note: str | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import act_on_human_task
+
+        return act_on_human_task(
+            self,
+            task_id,
+            action=action,
+            owner=owner,
+            defer_hours=defer_hours,
+            note=note,
+            now=now,
+        )
+
+    def complete_operational_task(
+        self,
+        task_id: str,
+        *,
+        owner: str,
+        disposition: str,
+        result: dict[str, Any] | None = None,
+        usage: dict[str, Any] | None = None,
+        now: str | None = None,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import complete_operational_task
+
+        return complete_operational_task(
+            self,
+            task_id,
+            owner=owner,
+            disposition=disposition,
+            result=result,
+            usage=usage,
+            now=now,
+        )
+
+    def run_estimator_tasks(
+        self,
+        *,
+        owner: str,
+        estimator,
+        now: str | None = None,
+        limit: int = 5,
+        lease_seconds: int = 900,
+        question_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import run_estimator_tasks
+
+        return run_estimator_tasks(
+            self,
+            owner=owner,
+            estimator=estimator,
+            now=now,
+            limit=limit,
+            lease_seconds=lease_seconds,
+            question_id=question_id,
+        )
+
+    def run_source_change_router(
+        self,
+        *,
+        owner: str,
+        now: str | None = None,
+        limit: int = 100,
+        lease_seconds: int = 300,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import run_source_change_router
+
+        return run_source_change_router(
+            self,
+            owner=owner,
+            now=now,
+            limit=limit,
+            lease_seconds=lease_seconds,
+        )
+
+    def run_resolution_finalization_tasks(
+        self,
+        *,
+        owner: str,
+        now: str | None = None,
+        limit: int = 25,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import run_resolution_finalization_tasks
+
+        return run_resolution_finalization_tasks(
+            self, owner=owner, now=now, limit=limit
+        )
+
+    def reconcile_operational_dead_letters(
+        self,
+        *,
+        owner: str,
+        now: str | None = None,
+        transient_retry_delay_seconds: int = 86400,
+    ) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import reconcile_operational_dead_letters
+
+        return reconcile_operational_dead_letters(
+            self,
+            owner=owner,
+            now=now,
+            transient_retry_delay_seconds=transient_retry_delay_seconds,
+        )
+
+    def fail_operational_task(
+        self,
+        task_id: str,
+        *,
+        owner: str,
+        error: str,
+        usage: dict[str, Any] | None = None,
+        now: str | None = None,
+        retry_delay_seconds: int = 60,
+        retryable: bool = True,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import fail_operational_task
+
+        return fail_operational_task(
+            self,
+            task_id,
+            owner=owner,
+            error=error,
+            usage=usage,
+            now=now,
+            retry_delay_seconds=retry_delay_seconds,
+            retryable=retryable,
+        )
+
+    def set_operational_lane_policy(
+        self,
+        lane: str,
+        *,
+        daily_claim_budget: int,
+        slo_minutes: int,
+        enabled: bool = True,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import set_operational_lane_policy
+
+        return set_operational_lane_policy(
+            self,
+            lane,
+            daily_claim_budget=daily_claim_budget,
+            slo_minutes=slo_minutes,
+            enabled=enabled,
+        )
+
+    def operational_cockpit(self, *, now: str | None = None) -> dict[str, Any]:
+        from forecasting.ledger.workflow import operational_cockpit
+
+        return operational_cockpit(self, now=now)
+
+    def escalate_overdue_high_severity_tasks(
+        self, *, now: str | None = None
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import escalate_overdue_high_severity_tasks
+
+        return escalate_overdue_high_severity_tasks(self, now=now)
+
+    def utility_backtest(self) -> dict[str, Any]:
+        from forecasting.ledger.workflow import utility_backtest
+
+        return utility_backtest(self)
+
+    def calibrate_task_utility(
+        self, *, min_samples: int = 20, iterations: int = 400
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import calibrate_task_utility
+
+        return calibrate_task_utility(
+            self, min_samples=min_samples, iterations=iterations
+        )
+
+    def claim_automation_budget(
+        self,
+        bucket: str,
+        *,
+        owner: str,
+        now: str | None = None,
+        min_interval_hours: float = 0.0,
+        lease_seconds: int = 3600,
+        reserved_spend: int = 0,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import claim_automation_budget
+
+        return claim_automation_budget(
+            self,
+            bucket,
+            owner=owner,
+            now=now,
+            min_interval_hours=min_interval_hours,
+            lease_seconds=lease_seconds,
+            reserved_spend=reserved_spend,
+            force=force,
+        )
+
+    def release_automation_budget(
+        self,
+        bucket: str,
+        *,
+        owner: str,
+        spent: int,
+        now: str | None = None,
+        completed: bool = True,
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import release_automation_budget
+
+        return release_automation_budget(
+            self,
+            bucket,
+            owner=owner,
+            spent=spent,
+            now=now,
+            completed=completed,
+        )
+
+    def automation_budget_status(self, bucket: str) -> dict[str, Any] | None:
+        from forecasting.ledger.workflow import automation_budget_status
+
+        return automation_budget_status(self, bucket)
+
+    def acquire_watch_source_token(
+        self, watch: dict[str, Any], *, now: str | None = None
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import acquire_watch_source_token
+
+        return acquire_watch_source_token(self, watch, now=now)
+
+    def list_source_token_buckets(self) -> list[dict[str, Any]]:
+        from forecasting.ledger.workflow import list_source_token_buckets
+
+        return list_source_token_buckets(self)
+
+    def set_question_service_mode(
+        self, question_id: str, mode: str
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import set_question_service_mode
+
+        return set_question_service_mode(self, question_id, mode)
+
+    def classify_active_question_service_modes(
+        self, *, dry_run: bool = True
+    ) -> dict[str, Any]:
+        from forecasting.ledger.workflow import classify_active_question_service_modes
+
+        return classify_active_question_service_modes(self, dry_run=dry_run)
+
     # Canonical numeric-value keys an adapter item may expose, newest-relevant
     # first. Used to derive the latest observation for an executable trigger and
     # for refresh change-detection. "probability" covers market/crowd adapters
@@ -4290,8 +4966,22 @@ class ForecastLedger:
         auto_score: bool = False,
         auto_postmortem: bool = False,
         refresh_fetcher: Any = None,
+        worker_id: str | None = None,
+        lease_seconds: int = 300,
+        limit: int = 100,
+        max_wall_seconds: float = 60.0,
     ) -> list[dict[str, Any]]:
-        return _reviews.run_due_scheduled_reviews(self, now=now, auto_score=auto_score, auto_postmortem=auto_postmortem, refresh_fetcher=refresh_fetcher)
+        return _reviews.run_due_scheduled_reviews(
+            self,
+            now=now,
+            auto_score=auto_score,
+            auto_postmortem=auto_postmortem,
+            refresh_fetcher=refresh_fetcher,
+            worker_id=worker_id,
+            lease_seconds=lease_seconds,
+            limit=limit,
+            max_wall_seconds=max_wall_seconds,
+        )
 
     def _refresh_due_question(
         self, question_id: str, *, fetcher: Any, now: str | None
@@ -4305,8 +4995,18 @@ class ForecastLedger:
         run_at: str,
         next_run_at: str,
         alerts: list[AlertEvent],
+        status: str = "completed",
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return _reviews._record_scheduled_review_run(self, review=review, run_at=run_at, next_run_at=next_run_at, alerts=alerts)
+        return _reviews._record_scheduled_review_run(
+            self,
+            review=review,
+            run_at=run_at,
+            next_run_at=next_run_at,
+            alerts=alerts,
+            status=status,
+            metadata=metadata,
+        )
 
     def _record_source_snapshot(
         self,
@@ -4319,8 +5019,9 @@ class ForecastLedger:
         changed: bool,
         status: str,
         error_message: str | None,
+        observed_content: Any | None = None,
     ) -> dict[str, Any]:
-        return _refresh._record_source_snapshot(self, question_id=question_id, watch=watch, retrieved_at=retrieved_at, signature=signature, previous_signature=previous_signature, changed=changed, status=status, error_message=error_message)
+        return _refresh._record_source_snapshot(self, question_id=question_id, watch=watch, retrieved_at=retrieved_at, signature=signature, previous_signature=previous_signature, changed=changed, status=status, error_message=error_message, observed_content=observed_content)
 
     def _record_autopilot_run(
         self,
@@ -4392,8 +5093,8 @@ class ForecastLedger:
     def list_alerts(self, *, unresolved_only: bool = True) -> list[AlertEvent]:
         return _alerts.list_alerts(self, unresolved_only=unresolved_only)
 
-    def acknowledge_alert(self, alert_id: str, *, acknowledged_at: str | None = None, ack_note: str | None = None) -> AlertEvent:
-        return _alerts.acknowledge_alert(self, alert_id=alert_id, acknowledged_at=acknowledged_at, ack_note=ack_note)
+    def acknowledge_alert(self, alert_id: str, *, acknowledged_at: str | None = None, ack_note: str | None = None, disposition: str | None = None) -> AlertEvent:
+        return _alerts.acknowledge_alert(self, alert_id=alert_id, acknowledged_at=acknowledged_at, ack_note=ack_note, disposition=disposition)
 
     def record_alert_attempt(self, alert_id: str, *, now: str | None = None) -> AlertEvent:
         return _alerts.record_alert_attempt(self, alert_id=alert_id, now=now)
@@ -4431,6 +5132,7 @@ class ForecastLedger:
         horizon: str | None = None,
         portfolio: str | None = None,
         stale_days: int = 7,
+        stale: bool = True,
         now: str | None = None,
         auto_score: bool = False,
         auto_postmortem: bool = False,
@@ -4438,7 +5140,7 @@ class ForecastLedger:
         confidence_above: float | None = None,
         large_delta_threshold: float | None = None,
     ) -> list[AlertEvent]:
-        return _alerts.self_check(self, question_id=question_id, domain=domain, topic=topic, horizon=horizon, portfolio=portfolio, stale_days=stale_days, now=now, auto_score=auto_score, auto_postmortem=auto_postmortem, confidence_below=confidence_below, confidence_above=confidence_above, large_delta_threshold=large_delta_threshold)
+        return _alerts.self_check(self, question_id=question_id, domain=domain, topic=topic, horizon=horizon, portfolio=portfolio, stale_days=stale_days, stale=stale, now=now, auto_score=auto_score, auto_postmortem=auto_postmortem, confidence_below=confidence_below, confidence_above=confidence_above, large_delta_threshold=large_delta_threshold)
 
     def pilot_report(
         self,
@@ -4472,29 +5174,111 @@ class ForecastLedger:
         questions_with_models = 0
         questions_with_reference_classes = 0
 
+        scores = self.list_scores()
+        score_counts_by_question = Counter(score.question_id for score in scores)
+        score_origin_counts.update(score.forecast_origin for score in scores)
+        evidence_sources_by_question: defaultdict[str, Counter[str]] = defaultdict(Counter)
+        with self._connect() as conn:
+            snapshot_counts = {
+                row["question_id"]: int(row["n"])
+                for row in conn.execute(
+                    "SELECT question_id, COUNT(*) AS n FROM forecast_snapshots GROUP BY question_id"
+                ).fetchall()
+            }
+            for row in conn.execute(
+                "SELECT question_id, source_type, COUNT(*) AS n "
+                "FROM evidence_items GROUP BY question_id, source_type"
+            ).fetchall():
+                evidence_sources_by_question[row["question_id"]][
+                    row["source_type"] or "unknown"
+                ] = int(row["n"])
+            model_run_counts = {
+                row["question_id"]: int(row["n"])
+                for row in conn.execute(
+                    "SELECT question_id, COUNT(*) AS n FROM model_runs GROUP BY question_id"
+                ).fetchall()
+            }
+            reference_class_counts = {
+                row["question_id"]: int(row["n"])
+                for row in conn.execute(
+                    "SELECT question_id, COUNT(*) AS n FROM reference_classes GROUP BY question_id"
+                ).fetchall()
+            }
+            postmortem_counts = {
+                row["question_id"]: int(row["n"])
+                for row in conn.execute(
+                    "SELECT question_id, COUNT(*) AS n FROM postmortems GROUP BY question_id"
+                ).fetchall()
+            }
+            resolved_question_ids = {
+                row["question_id"]
+                for row in conn.execute("SELECT DISTINCT question_id FROM resolutions").fetchall()
+            }
+            scheduled_review_count = int(
+                conn.execute("SELECT COUNT(*) AS n FROM scheduled_reviews").fetchone()["n"]
+            )
+            enabled_scheduled_review_count = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS n FROM scheduled_reviews WHERE enabled = 1"
+                ).fetchone()["n"]
+            )
+            scheduled_review_run_count = int(
+                conn.execute("SELECT COUNT(*) AS n FROM scheduled_review_runs").fetchone()["n"]
+            )
+            watched_source_count = int(
+                conn.execute("SELECT COUNT(*) AS n FROM watched_sources").fetchone()["n"]
+            )
+            autopilot_policy_count = int(
+                conn.execute("SELECT COUNT(*) AS n FROM autopilot_policies").fetchone()["n"]
+            )
+            active_autopilot_policy_count = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS n FROM autopilot_policies WHERE enabled = 1"
+                ).fetchone()["n"]
+            )
+            autopilot_run_count = int(
+                conn.execute("SELECT COUNT(*) AS n FROM autopilot_runs").fetchone()["n"]
+            )
+            pending_autopilot_proposal_count = int(
+                conn.execute(
+                    "SELECT COUNT(*) AS n FROM forecast_update_proposals WHERE status = 'pending'"
+                ).fetchone()["n"]
+            )
+            alert_counts = conn.execute(
+                "SELECT COUNT(*) AS total, "
+                "SUM(CASE WHEN acknowledged_at IS NULL THEN 1 ELSE 0 END) AS open, "
+                "SUM(CASE WHEN acknowledged_at IS NULL AND "
+                "reason LIKE 'domain_error_profile_applies:%' THEN 1 ELSE 0 END) AS learned "
+                "FROM alert_events"
+            ).fetchone()
+            lesson_counts = conn.execute(
+                "SELECT COUNT(*) AS total, "
+                "SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active "
+                "FROM calibration_lessons"
+            ).fetchone()
+            postmortem_count = sum(postmortem_counts.values())
+
         non_manual_source_types = {"manual_note", "note"}
         for question in questions:
-            snapshots = self.list_snapshots(question.id)
-            evidence = self.list_evidence(question.id)
-            model_runs = self.list_model_runs(question.id)
-            reference_classes = self.list_reference_classes(question.id)
-            resolution = self.get_latest_resolution(question.id, confirmed_only=False)
-            postmortems = self.list_postmortems(question.id)
-            scores = [score for score in self.list_scores() if score.question_id == question.id]
-            source_types = Counter(item.source_type or "unknown" for item in evidence)
+            snapshot_count = snapshot_counts.get(question.id, 0)
+            source_types = evidence_sources_by_question[question.id]
+            model_run_count = model_run_counts.get(question.id, 0)
+            reference_class_count = reference_class_counts.get(question.id, 0)
+            question_postmortem_count = postmortem_counts.get(question.id, 0)
+            question_score_count = score_counts_by_question.get(question.id, 0)
             structured_source_types = sorted(
                 source_type for source_type in source_types if source_type not in non_manual_source_types
             )
 
-            if snapshots:
+            if snapshot_count:
                 questions_with_forecasts += 1
-            if evidence:
+            if source_types:
                 questions_with_evidence += 1
             if structured_source_types:
                 questions_with_structured_sources += 1
-            if model_runs:
+            if model_run_count:
                 questions_with_models += 1
-            if reference_classes:
+            if reference_class_count:
                 questions_with_reference_classes += 1
             for topic in question.topics:
                 topic_counts[topic] += 1
@@ -4507,37 +5291,23 @@ class ForecastLedger:
                     "status": question.status,
                     "domain": question.domain,
                     "topics": question.topics,
-                    "forecast_count": len(snapshots),
-                    "evidence_count": len(evidence),
+                    "forecast_count": snapshot_count,
+                    "evidence_count": sum(source_types.values()),
                     "source_types": dict(sorted(source_types.items())),
                     "structured_source_types": structured_source_types,
-                    "reference_class_count": len(reference_classes),
-                    "model_run_count": len(model_runs),
-                    "score_count": len(scores),
-                    "postmortem_count": len(postmortems),
-                    "resolved": resolution is not None,
+                    "reference_class_count": reference_class_count,
+                    "model_run_count": model_run_count,
+                    "score_count": question_score_count,
+                    "postmortem_count": question_postmortem_count,
+                    "resolved": question.id in resolved_question_ids,
                 }
             )
 
-        scores = self.list_scores()
-        score_origin_counts.update(score.forecast_origin for score in scores)
-        postmortems = self.list_postmortems()
-        schedules = self.list_scheduled_reviews()
-        scheduled_review_runs = self.list_scheduled_review_runs(limit=1000)
-        watched_sources = self.list_watched_sources(status=None)
-        autopilot_policies = self.list_autopilot_policies(enabled_only=False)
-        autopilot_runs = self.list_autopilot_runs(limit=1000)
-        forecast_update_proposals = self.list_forecast_update_proposals(status=None, limit=1000)
-        alerts = self.list_alerts(unresolved_only=False)
-        open_alert_count = sum(1 for alert in alerts if alert.acknowledged_at is None)
-        open_learned_error_review_alerts = [
-            alert
-            for alert in alerts
-            if alert.acknowledged_at is None
-            and str(alert.reason or "").startswith("domain_error_profile_applies:")
-        ]
-        lessons = self.list_calibration_lessons()
-        active_lessons = [lesson for lesson in lessons if lesson["status"] == "active"]
+        alert_count = int(alert_counts["total"] or 0)
+        open_alert_count = int(alert_counts["open"] or 0)
+        open_learned_error_review_alert_count = int(alert_counts["learned"] or 0)
+        calibration_lesson_count = int(lesson_counts["total"] or 0)
+        active_calibration_lesson_count = int(lesson_counts["active"] or 0)
 
         def check(
             check_id: str,
@@ -4605,14 +5375,14 @@ class ForecastLedger:
             check(
                 "scheduled_self_checks",
                 "scheduled self-checks configured",
-                len([row for row in schedules if row.get("enabled")]),
+                scheduled_review_count,
                 min_scheduled_reviews,
                 "Schedule review work with `forecast schedule add --question <id> ...`.",
             ),
             check(
                 "scheduled_self_check_runs",
                 "scheduled self-checks run",
-                len(scheduled_review_runs),
+                scheduled_review_run_count,
                 min_scheduled_review_runs,
                 "Run due schedule rows with `forecast schedule run --due`, or install the cron bridge with `forecast schedule install-cron`.",
             ),
@@ -4626,16 +5396,16 @@ class ForecastLedger:
             check(
                 "postmortems_recorded",
                 "postmortems recorded",
-                len(postmortems),
+                postmortem_count,
                 min_postmortems,
                 "Write at least one postmortem with `forecast postmortem <id> ...`.",
             ),
             max_check(
                 "learned_error_reviews_cleared",
                 "open learned-error profile review alerts",
-                len(open_learned_error_review_alerts),
+                open_learned_error_review_alert_count,
                 0,
-                "Review active forecasts flagged by learned error profiles, then acknowledge the alerts with `forecast alerts --ack <id>`.",
+                "Run the bounded warning automode worker; its learned-error reviewer persists a substantive assessment and decision before closing each alert. Do not bare-ack these reviews.",
             ),
         ]
         passed_count = sum(1 for row in checks if row["passed"])
@@ -4659,24 +5429,20 @@ class ForecastLedger:
                 "questions_with_models": questions_with_models,
                 "questions_with_reference_classes": questions_with_reference_classes,
                 "score_counts_by_origin": dict(sorted(score_origin_counts.items())),
-                "postmortem_count": len(postmortems),
-                "scheduled_review_count": len(schedules),
-                "enabled_scheduled_review_count": len([row for row in schedules if row.get("enabled")]),
-                "scheduled_review_run_count": len(scheduled_review_runs),
-                "watched_source_count": len(watched_sources),
-                "autopilot_policy_count": len(autopilot_policies),
-                "active_autopilot_policy_count": len(
-                    [row for row in autopilot_policies if row.get("enabled")]
-                ),
-                "autopilot_run_count": len(autopilot_runs),
-                "pending_autopilot_proposal_count": len(
-                    [row for row in forecast_update_proposals if row.get("status") == "pending"]
-                ),
-                "alert_count": len(alerts),
+                "postmortem_count": postmortem_count,
+                "scheduled_review_count": scheduled_review_count,
+                "enabled_scheduled_review_count": enabled_scheduled_review_count,
+                "scheduled_review_run_count": scheduled_review_run_count,
+                "watched_source_count": watched_source_count,
+                "autopilot_policy_count": autopilot_policy_count,
+                "active_autopilot_policy_count": active_autopilot_policy_count,
+                "autopilot_run_count": autopilot_run_count,
+                "pending_autopilot_proposal_count": pending_autopilot_proposal_count,
+                "alert_count": alert_count,
                 "open_alert_count": open_alert_count,
-                "open_learned_error_review_alert_count": len(open_learned_error_review_alerts),
-                "calibration_lesson_count": len(lessons),
-                "active_calibration_lesson_count": len(active_lessons),
+                "open_learned_error_review_alert_count": open_learned_error_review_alert_count,
+                "calibration_lesson_count": calibration_lesson_count,
+                "active_calibration_lesson_count": active_calibration_lesson_count,
             },
             "domains": dict(sorted(domain_counts.items())),
             "topics": dict(sorted(topic_counts.items())),

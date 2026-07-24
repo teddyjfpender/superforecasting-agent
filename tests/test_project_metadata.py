@@ -1323,6 +1323,7 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     gateway = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
     relaunch = (root / "hermes_cli" / "relaunch.py").read_text(encoding="utf-8")
     tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
+    tui_commands = (root / "tui_gateway" / "commands_rpc.py").read_text(encoding="utf-8")
     callbacks = (root / "hermes_cli" / "callbacks.py").read_text(encoding="utf-8")
     cli = (root / "cli.py").read_text(encoding="utf-8")
     tips = (root / "hermes_cli" / "tips.py").read_text(encoding="utf-8")
@@ -1366,13 +1367,13 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "cleared the forecast style overlay" in tui_gateway
     assert "could not enumerate active forecast sessions" in tui_gateway
     assert "cannot delete an active forecast session" in tui_gateway
-    assert "no active forecast session to retry" in tui_gateway
+    assert "no active forecast session to retry" in tui_commands
     assert "changed the assistant's personality" not in tui_gateway
     assert "Unknown personality" not in tui_gateway
     assert "cleared the personality overlay" not in tui_gateway
     assert "could not enumerate active sessions" not in tui_gateway
     assert "cannot delete an active session" not in tui_gateway
-    assert "no active session to retry" not in tui_gateway
+    assert "no active session to retry" not in tui_commands
     assert 'CommandDef("style"' in commands
     assert 'aliases=("personality",)' in commands
     assert "Switch forecast style overlay" in commands

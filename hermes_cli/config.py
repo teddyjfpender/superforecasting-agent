@@ -768,6 +768,9 @@ DEFAULT_CONFIG = {
             # False -> never auto-install the nightly cron at commit time (explicit
             # `forecast freshen` / `keep_fresh` still install it on demand).
             "auto_install": True,
+            # Install the bounded warning worker with the nightly routine. It owns
+            # high-severity alert liveness and uses transactional spend leases.
+            "warning_automode_auto_install": True,
         },
         # Gateway DUE-SWEEPER: the Desk shows a review as "due now" the instant its
         # next_run_at passes, but historically only the NIGHTLY self-check cron
@@ -2002,6 +2005,29 @@ DEFAULT_CONFIG = {
         # Also overridable via SUPERFORECASTING_AGENT_CRON_MAX_PARALLEL
         # / FORECAST_CRON_MAX_PARALLEL / HERMES_CRON_MAX_PARALLEL env vars.
         "max_parallel_jobs": None,
+        # Forecast maintenance scripts can contain several bounded agent calls.
+        # Two minutes was short enough to kill healthy estimator batches midway.
+        "script_timeout_seconds": 900,
+        "warning_automode": {
+            # One action every half-hour gives 48/day of throughput while keeping
+            # each no-agent cron tick comfortably inside its wall-clock limit.
+            "paid_budget": 1,
+            "paid_min_interval_hours": 0.5,
+            "learned_error_review_budget": 1,
+            "learned_error_review_min_interval_hours": 0.5,
+        },
+        "source_estimator": {
+            # A dedicated worker may burst when arrivals outrun completions, but
+            # its daily model-task ceiling makes the spend boundary explicit.
+            "enabled": True,
+            "interval_minutes": 15,
+            "max_tasks_per_cycle": 8,
+            "daily_task_budget": 48,
+            "max_iterations": 12,
+            "target_oldest_hours": 2,
+            "target_p90_hours": 4,
+            "alert_after_bad_cycles": 2,
+        },
     },
 
     # Kanban multi-agent coordination — controls the dispatcher loop that

@@ -1393,7 +1393,7 @@ def test_export_all_includes_questions_candidates_and_alerts(tmp_path):
     assert packet["product"]["product_slug"] == "superforecasting-agent"
     assert packet["questions"][0]["question"]["id"] == question.id
     assert packet["ingest_candidates"][0]["id"] == candidate["id"]
-    assert packet["alerts"][0]["reason"] == "test_alert"
+    assert any(alert["reason"] == "test_alert" for alert in packet["alerts"])
     assert packet["scheduled_reviews"][0]["id"] == schedule["id"]
     assert packet["scheduled_review_runs"][0]["scheduled_review_id"] == schedule["id"]
 
@@ -1464,10 +1464,9 @@ def test_import_packet_round_trips_export_all(tmp_path):
     assert restored.list_ingest_candidates()[0]["id"] == candidate["id"]
     assert restored.list_watched_sources(status=None)[0]["id"] == watch["id"]
     assert restored.list_scheduled_reviews()[0]["id"] == schedule["id"]
-    assert (
-        restored.list_scheduled_review_runs(scheduled_review_id=schedule["id"])[0]["scheduled_review_id"]
-        == schedule["id"]
-    )
+    # Confirmed resolution transactionally disables recurring question work, so
+    # the post-resolution sweep correctly records no obsolete schedule run.
+    assert restored.list_scheduled_review_runs(scheduled_review_id=schedule["id"]) == []
     restored_profiles = restored.list_domain_error_profiles(domain="software")
     assert len(restored_profiles) == len(source_profiles)
     assert any("base_rate_error" in profile["recurring_errors"] for profile in restored_profiles)
@@ -1558,7 +1557,9 @@ def test_pilot_report_blocks_unresolved_learned_error_reviews(tmp_path):
     assert check["observed"] == 1
     assert check["required"] == 0
     assert not check["passed"]
-    assert "forecast alerts --ack" in check["recommended_action"]
+    assert "bounded warning automode worker" in check["recommended_action"]
+    assert "substantive assessment" in check["recommended_action"]
+    assert "Do not bare-ack" in check["recommended_action"]
 
     ledger.acknowledge_alert(alert.id)
     cleared = ledger.pilot_report(
@@ -2059,7 +2060,10 @@ def test_due_scheduled_review_runs_self_check_and_advances_next_run(tmp_path):
     assert result["run"]["scheduled_review_id"] == review["id"]
     assert result["run"]["run_at"] == "2026-01-10T00:00:00Z"
     assert result["run"]["next_run_at"] == "2026-01-11T00:00:00Z"
-    assert result["run"]["alert_count"] == len(result["alerts"])
+    assert result["run"]["alert_count"] == 1
+    assert result["run"]["metadata"]["observed_alert_count"] == len(result["alerts"])
+    assert len(result["run"]["metadata"]["alert_ids"]) == 1
+    assert len(result["run"]["metadata"]["observed_alert_ids"]) == len(result["alerts"])
     assert result["run"]["metadata"]["scope_type"] == "domain"
     assert ledger.list_scheduled_review_runs(scheduled_review_id=review["id"])[0]["id"] == result["run"]["id"]
 
@@ -2092,7 +2096,9 @@ def test_watched_file_source_creates_alert_on_change(tmp_path):
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-01-10T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    # Detection persists an immutable handoff before a worker consumes it. The
+    # source cursor advances only after that worker records a disposition.
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_autopilot_enable_run_propose_and_approve(tmp_path):
@@ -2144,7 +2150,12 @@ def test_autopilot_enable_run_propose_and_approve(tmp_path):
     proposal = changed["proposal"]
     assert changed["run"]["sources_changed"] == 1
     assert changed["run"]["material_changes"] == 1
-    assert changed["model_run"]["model_type"] == "autopilot_refresh"
+    assert changed["model_run"]["model_type"] == "autopilot_estimation"
+    artifact = changed["model_run"]["output"]["estimation_artifact"]
+    assert artifact["prior_probability"] == 0.40
+    assert artifact["proposed_probability"] == 0.47
+    assert artifact["evidence_updates"]
+    assert artifact["estimator_provenance"] == "explicit_run_input"
     assert proposal["status"] == "pending"
     assert proposal["prior_forecast_id"] == baseline.forecast_id
     assert proposal["proposed_probability_or_distribution"] == 0.47
@@ -2352,7 +2363,7 @@ def test_watched_url_source_creates_alert_on_content_change(tmp_path):
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-01-10T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_rss_source_creates_alert_on_feed_change(tmp_path):
@@ -2398,7 +2409,7 @@ def test_watched_rss_source_creates_alert_on_feed_change(tmp_path):
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_gdelt_source_creates_alert_on_article_change(tmp_path, monkeypatch):
@@ -2452,7 +2463,7 @@ def test_watched_gdelt_source_creates_alert_on_article_change(tmp_path, monkeypa
     assert f'forecast import gdelt "policy bill" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_fivethirtyeight_source_creates_alert_on_poll_change(tmp_path, monkeypatch):
@@ -2518,7 +2529,7 @@ def test_watched_fivethirtyeight_source_creates_alert_on_poll_change(tmp_path, m
     assert f"forecast import fivethirtyeight president --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_github_source_creates_alert_on_release_change(tmp_path, monkeypatch):
@@ -2575,7 +2586,7 @@ def test_watched_github_source_creates_alert_on_release_change(tmp_path, monkeyp
     assert f"forecast import github acme/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_githubissues_source_creates_alert_on_issue_change(tmp_path, monkeypatch):
@@ -2634,7 +2645,7 @@ def test_watched_githubissues_source_creates_alert_on_issue_change(tmp_path, mon
     assert f"forecast import githubissues acme/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_githubcommits_source_creates_alert_on_commit_change(tmp_path, monkeypatch):
@@ -2692,7 +2703,7 @@ def test_watched_githubcommits_source_creates_alert_on_commit_change(tmp_path, m
     assert f"forecast import githubcommits acme/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_githubactions_source_creates_alert_on_workflow_change(tmp_path, monkeypatch):
@@ -2757,7 +2768,7 @@ def test_watched_githubactions_source_creates_alert_on_workflow_change(tmp_path,
     assert f"forecast import githubactions acme/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_coingecko_source_creates_alert_on_market_change(tmp_path, monkeypatch):
@@ -2814,7 +2825,7 @@ def test_watched_coingecko_source_creates_alert_on_market_change(tmp_path, monke
     assert f"forecast import coingecko bitcoin --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_hackernews_source_creates_alert_on_story_change(tmp_path, monkeypatch):
@@ -2870,7 +2881,7 @@ def test_watched_hackernews_source_creates_alert_on_story_change(tmp_path, monke
     assert f'forecast import hackernews "forecast desk" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_reddit_source_creates_alert_on_post_change(tmp_path, monkeypatch):
@@ -2927,7 +2938,7 @@ def test_watched_reddit_source_creates_alert_on_post_change(tmp_path, monkeypatc
     assert f'forecast import reddit "forecast desk" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_bluesky_source_creates_alert_on_post_change(tmp_path, monkeypatch):
@@ -2986,7 +2997,7 @@ def test_watched_bluesky_source_creates_alert_on_post_change(tmp_path, monkeypat
     assert f'forecast import bluesky "forecast desk" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_mastodon_source_creates_alert_on_status_change(tmp_path, monkeypatch):
@@ -3049,7 +3060,7 @@ def test_watched_mastodon_source_creates_alert_on_status_change(tmp_path, monkey
     assert f'forecast import mastodon "mastodon.social/forecasting" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_reliefweb_source_creates_alert_on_report_change(tmp_path, monkeypatch):
@@ -3106,7 +3117,7 @@ def test_watched_reliefweb_source_creates_alert_on_report_change(tmp_path, monke
     assert f'forecast import reliefweb "Kenya floods" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_federalregister_source_creates_alert_on_document_change(tmp_path, monkeypatch):
@@ -3167,7 +3178,7 @@ def test_watched_federalregister_source_creates_alert_on_document_change(tmp_pat
     )
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_courtlistener_source_creates_alert_on_result_change(tmp_path, monkeypatch):
@@ -3233,7 +3244,7 @@ def test_watched_courtlistener_source_creates_alert_on_result_change(tmp_path, m
     )
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_nvd_source_creates_alert_on_cve_change(tmp_path, monkeypatch):
@@ -3290,7 +3301,7 @@ def test_watched_nvd_source_creates_alert_on_cve_change(tmp_path, monkeypatch):
     assert f'forecast import nvd "forecast product" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_cisa_kev_source_creates_alert_on_vulnerability_change(tmp_path, monkeypatch):
@@ -3351,7 +3362,7 @@ def test_watched_cisa_kev_source_creates_alert_on_vulnerability_change(tmp_path,
     assert f'forecast import cisakev "ForecastSoft" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_openmeteo_source_creates_alert_on_forecast_change(tmp_path, monkeypatch):
@@ -3407,7 +3418,7 @@ def test_watched_openmeteo_source_creates_alert_on_forecast_change(tmp_path, mon
     assert f"forecast import openmeteo 37.77,-122.42 --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_airquality_source_creates_alert_on_forecast_change(tmp_path, monkeypatch):
@@ -3466,7 +3477,7 @@ def test_watched_airquality_source_creates_alert_on_forecast_change(tmp_path, mo
     assert f"forecast import airquality 37.77,-122.42 --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_weatherhistory_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -3526,7 +3537,7 @@ def test_watched_weatherhistory_source_creates_alert_on_observation_change(tmp_p
     ) in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_usgs_source_creates_alert_on_event_change(tmp_path, monkeypatch):
@@ -3586,7 +3597,7 @@ def test_watched_usgs_source_creates_alert_on_event_change(tmp_path, monkeypatch
     assert f'forecast import usgs "minmagnitude=5" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_eonet_source_creates_alert_on_event_change(tmp_path, monkeypatch):
@@ -3644,7 +3655,7 @@ def test_watched_eonet_source_creates_alert_on_event_change(tmp_path, monkeypatc
     assert f'forecast import eonet "category=wildfires&status=open" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_nws_source_creates_alert_on_weather_alert_change(tmp_path, monkeypatch):
@@ -3709,7 +3720,7 @@ def test_watched_nws_source_creates_alert_on_weather_alert_change(tmp_path, monk
     assert f'forecast import nws "area=CA&event=Flood Warning" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_clinicaltrials_source_creates_alert_on_study_change(tmp_path, monkeypatch):
@@ -3774,7 +3785,7 @@ def test_watched_clinicaltrials_source_creates_alert_on_study_change(tmp_path, m
     assert f'forecast import clinicaltrials "NCT01234567" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_openfda_source_creates_alert_on_application_change(tmp_path, monkeypatch):
@@ -3836,7 +3847,7 @@ def test_watched_openfda_source_creates_alert_on_application_change(tmp_path, mo
     assert f'forecast import openfda "BLA125514" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_pubmed_source_creates_alert_on_article_change(tmp_path, monkeypatch):
@@ -3892,7 +3903,7 @@ def test_watched_pubmed_source_creates_alert_on_article_change(tmp_path, monkeyp
     assert f'forecast import pubmed "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_pypi_source_creates_alert_on_release_change(tmp_path, monkeypatch):
@@ -3950,7 +3961,7 @@ def test_watched_pypi_source_creates_alert_on_release_change(tmp_path, monkeypat
     assert f"forecast import pypi forecast-desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_npm_source_creates_alert_on_version_change(tmp_path, monkeypatch):
@@ -4007,7 +4018,7 @@ def test_watched_npm_source_creates_alert_on_version_change(tmp_path, monkeypatc
     assert f"forecast import npm @forecast/desk --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_owid_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -4061,7 +4072,7 @@ def test_watched_owid_source_creates_alert_on_observation_change(tmp_path, monke
     assert f"forecast import owid gdp-per-capita --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_who_gho_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -4122,7 +4133,7 @@ def test_watched_who_gho_source_creates_alert_on_observation_change(tmp_path, mo
     assert f"forecast import whogho WHOSIS_000001 --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_fema_source_creates_alert_on_declaration_change(tmp_path, monkeypatch):
@@ -4187,7 +4198,7 @@ def test_watched_fema_source_creates_alert_on_declaration_change(tmp_path, monke
     assert f'forecast import fema "state=CA&incidentType=Fire" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_fred_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -4238,7 +4249,7 @@ def test_watched_fred_source_creates_alert_on_observation_change(tmp_path, monke
     assert f"forecast import fred UNRATE --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_eia_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -4291,7 +4302,7 @@ def test_watched_eia_source_creates_alert_on_observation_change(tmp_path, monkey
     assert f"forecast import eia PET.RWTC.M --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_treasury_source_creates_alert_on_record_change(tmp_path, monkeypatch):
@@ -4344,7 +4355,7 @@ def test_watched_treasury_source_creates_alert_on_record_change(tmp_path, monkey
     assert f"forecast import treasury v2/accounting/od/avg_interest_rates --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_bls_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -4397,7 +4408,7 @@ def test_watched_bls_source_creates_alert_on_observation_change(tmp_path, monkey
     assert f"forecast import bls LNS14000000 --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_worldbank_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -4451,7 +4462,7 @@ def test_watched_worldbank_source_creates_alert_on_observation_change(tmp_path, 
     assert f"forecast import worldbank USA/NY.GDP.MKTP.CD --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_census_source_creates_alert_on_record_change(tmp_path, monkeypatch):
@@ -4507,7 +4518,7 @@ def test_watched_census_source_creates_alert_on_record_change(tmp_path, monkeypa
     )
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_socrata_source_creates_alert_on_record_change(tmp_path, monkeypatch):
@@ -4563,7 +4574,7 @@ def test_watched_socrata_source_creates_alert_on_record_change(tmp_path, monkeyp
     )
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_ckan_source_creates_alert_on_dataset_change(tmp_path, monkeypatch):
@@ -4623,7 +4634,7 @@ def test_watched_ckan_source_creates_alert_on_dataset_change(tmp_path, monkeypat
     assert f"forecast import ckan data.gov/energy --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-24T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_stooq_source_creates_alert_on_price_change(tmp_path, monkeypatch):
@@ -4679,7 +4690,7 @@ def test_watched_stooq_source_creates_alert_on_price_change(tmp_path, monkeypatc
     assert f"forecast import stooq AAPL.US --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-23T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_yahoo_source_creates_alert_on_price_change(tmp_path, monkeypatch):
@@ -4735,7 +4746,7 @@ def test_watched_yahoo_source_creates_alert_on_price_change(tmp_path, monkeypatc
     assert f"forecast import yahoo AAPL --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-24T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_sec_source_creates_alert_on_filing_change(tmp_path, monkeypatch):
@@ -4793,7 +4804,7 @@ def test_watched_sec_source_creates_alert_on_filing_change(tmp_path, monkeypatch
     assert f"forecast import sec 0000320193 --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_sec_company_facts_source_creates_alert_on_observation_change(tmp_path, monkeypatch):
@@ -4856,7 +4867,7 @@ def test_watched_sec_company_facts_source_creates_alert_on_observation_change(tm
     assert f"forecast import secfacts 0000320193/Revenues --question {question.id}" in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-02T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_arxiv_source_creates_alert_on_paper_change(tmp_path, monkeypatch):
@@ -4911,7 +4922,7 @@ def test_watched_arxiv_source_creates_alert_on_paper_change(tmp_path, monkeypatc
     assert f'forecast import arxiv "cat:cs.AI AND forecasting" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_openalex_source_creates_alert_on_work_change(tmp_path, monkeypatch):
@@ -4966,7 +4977,7 @@ def test_watched_openalex_source_creates_alert_on_work_change(tmp_path, monkeypa
     assert f'forecast import openalex "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_crossref_source_creates_alert_on_work_change(tmp_path, monkeypatch):
@@ -5025,7 +5036,7 @@ def test_watched_crossref_source_creates_alert_on_work_change(tmp_path, monkeypa
     assert f'forecast import crossref "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_wikipedia_source_creates_alert_on_page_change(tmp_path, monkeypatch):
@@ -5076,7 +5087,7 @@ def test_watched_wikipedia_source_creates_alert_on_page_change(tmp_path, monkeyp
     assert f'forecast import wikipedia "forecasting calibration" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_watched_wikimedia_pageviews_source_creates_alert_on_view_change(tmp_path, monkeypatch):
@@ -5134,7 +5145,7 @@ def test_watched_wikimedia_pageviews_source_creates_alert_on_view_change(tmp_pat
     )
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 @pytest.mark.parametrize(
@@ -5189,7 +5200,7 @@ def test_watched_market_prior_source_creates_alert_on_probability_change(
     assert f'forecast import {source_type} "{source_value}" --question {question.id}' in alerts[0].recommended_action
     updated = ledger.get_watched_source(watch["id"])
     assert updated["last_checked_at"] == "2026-05-22T00:00:00Z"
-    assert updated["last_seen_signature"] != watch["last_seen_signature"]
+    assert updated["last_seen_signature"] == watch["last_seen_signature"]
 
 
 def test_scheduled_review_includes_watched_source_alerts(tmp_path):
@@ -5259,7 +5270,7 @@ def test_portfolio_scheduled_review_only_checks_matching_questions(tmp_path):
         tags=["portfolio:beta"],
         next_review_at="2026-01-01T00:00:00Z",
     )
-    ledger.schedule_review(
+    schedule = ledger.schedule_review(
         scope_type="portfolio",
         scope_ref="alpha",
         cadence="1d",
@@ -5267,7 +5278,8 @@ def test_portfolio_scheduled_review_only_checks_matching_questions(tmp_path):
     )
 
     results = ledger.run_due_scheduled_reviews(now="2026-01-10T00:00:00Z")
-    alert_refs = {alert.scope_ref for alert in results[0]["alerts"]}
+    result = next(item for item in results if item["review"]["id"] == schedule["id"])
+    alert_refs = {alert.scope_ref for alert in result["alerts"]}
 
     assert alpha.id in alert_refs
     assert beta.id not in alert_refs
@@ -5296,7 +5308,7 @@ def test_domain_topic_scheduled_review_filters_on_both_fields(tmp_path):
         topics=["regulatory"],
         next_review_at="2026-01-01T00:00:00Z",
     )
-    ledger.schedule_review(
+    schedule = ledger.schedule_review(
         scope_type="domain_topic",
         scope_ref='{"domain":"biotech","topic":"regulatory"}',
         cadence="1d",
@@ -5304,7 +5316,8 @@ def test_domain_topic_scheduled_review_filters_on_both_fields(tmp_path):
     )
 
     results = ledger.run_due_scheduled_reviews(now="2026-01-10T00:00:00Z")
-    alert_refs = {alert.scope_ref for alert in results[0]["alerts"]}
+    result = next(item for item in results if item["review"]["id"] == schedule["id"])
+    alert_refs = {alert.scope_ref for alert in result["alerts"]}
 
     assert matching.id in alert_refs
     assert wrong_topic.id not in alert_refs
@@ -5330,7 +5343,7 @@ def test_horizon_scheduled_review_filters_on_forecast_horizon(tmp_path):
             rationale="Initial forecast.",
             as_of="2026-01-01T00:00:00Z",
         )
-    ledger.schedule_review(
+    schedule = ledger.schedule_review(
         scope_type="horizon",
         scope_ref="30",
         cadence="1d",
@@ -5338,7 +5351,8 @@ def test_horizon_scheduled_review_filters_on_forecast_horizon(tmp_path):
     )
 
     results = ledger.run_due_scheduled_reviews(now="2026-01-10T00:00:00Z")
-    alert_refs = {alert.scope_ref for alert in results[0]["alerts"]}
+    result = next(item for item in results if item["review"]["id"] == schedule["id"])
+    alert_refs = {alert.scope_ref for alert in result["alerts"]}
 
     assert results[0]["review"]["scope_type"] == "horizon"
     assert short_horizon.id in alert_refs
@@ -5382,7 +5396,8 @@ def test_scheduled_self_check_filters_by_confidence(tmp_path):
     )
 
     results = ledger.run_due_scheduled_reviews(now="2026-01-10T00:00:00Z")
-    alert_refs = {alert.scope_ref for alert in results[0]["alerts"]}
+    result = next(item for item in results if item["review"]["id"] == schedule["id"])
+    alert_refs = {alert.scope_ref for alert in result["alerts"]}
 
     assert schedule["confidence_below"] == pytest.approx(0.5)
     assert low_confidence.id in alert_refs
@@ -6289,6 +6304,76 @@ def test_correction_records_affected_learning_artifacts(tmp_path):
     assert packet["calibration_lessons"][0]["invalidated_by_correction_id"] == correction["id"]
     assert packet["corrections"][0]["id"] == correction["id"]
     assert ledger.list_alerts()[0].reason == "correction_affects_learning_records"
+
+
+def test_proposed_score_correction_can_be_applied_to_exclude_calibration(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will a leaked score be excluded from calibration?",
+        resolution_criteria="Resolves yes if the official outcome is confirmed.",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.8,
+        rationale="Forecast later found to miss the evidence cutoff.",
+    )
+    ledger.resolve_question(question_id=question.id, outcome="yes")
+    score = ledger.score_question(question.id)
+    correction = ledger.create_correction(
+        target_type="score_record",
+        target_id=score.id,
+        reason="Forecast was committed after the official release.",
+        patch={
+            "calibration_eligible": False,
+            "calibration_weight": 0.0,
+            "notes": "Excluded after cutoff audit.",
+        },
+    )
+
+    applied = ledger.apply_correction(correction["id"], applied_by="cutoff-audit")
+
+    corrected_score = ledger.get_score(score.id)
+    assert applied["status"] == "applied"
+    assert corrected_score.calibration_eligible is False
+    assert corrected_score.calibration_weight == 0
+    assert corrected_score.invalidated_by_correction_id == correction["id"]
+    assert corrected_score.notes == "Excluded after cutoff audit."
+
+
+def test_scheduled_review_summary_count_is_not_capped_by_detail_limit(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will run totals remain truthful above the detail cap?",
+        resolution_criteria="Resolves yes if all persisted review runs are counted.",
+        domain="forecastbench",
+    )
+    review = ledger.schedule_review(
+        scope_type="question", scope_ref=question.id, cadence="daily"
+    )
+    rows = [
+        (
+            f"srr_fixture_{index}",
+            review["id"],
+            "2026-05-01T00:00:00Z",
+            "2026-05-02T00:00:00Z",
+        )
+        for index in range(1005)
+    ]
+    with ledger._connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO scheduled_review_runs
+                (id, scheduled_review_id, run_at, next_run_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            rows,
+        )
+
+    assert len(ledger.list_scheduled_review_runs(limit=1000)) == 1000
+    assert ledger.count_scheduled_review_runs() == 1005
+    assert ledger.pilot_report(min_scheduled_review_runs=1001)["summary"][
+        "scheduled_review_run_count"
+    ] == 1005
 
 
 def test_trusted_resolver_policy_is_auditable(tmp_path):

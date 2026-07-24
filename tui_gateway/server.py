@@ -121,20 +121,16 @@ def _set_runtime_env(name: str, value: str) -> None:
 
 
 # Per-session runtime toggles (the model a session switched to), keyed by session_key.
-# The process-global os.environ writes above stay as the FALLBACK (cross-process child
-# inheritance + threads with no session context); this dict is the per-session truth
-# that _set_session_context seeds into the tenant_runtime contextvar on each run thread,
-# so concurrent TUI/Slack sessions in one gateway don't read each other's model.
+# They deliberately never write os.environ: doing so lets one TUI/Slack session become
+# another session's startup default. _set_session_context seeds this state into the
+# tenant_runtime contextvar on each run thread.
 _session_toggles: dict[str, dict[str, str]] = {}
 
 
 def _store_session_toggle(session_key: str, name: str, value: str) -> None:
-    """Set a session-scoped runtime toggle: into the per-session store (seeded into the
-    contextvar on each run thread) AND os.environ (the fallback). Use this instead of a
-    bare _set_runtime_env wherever the write belongs to ONE session."""
+    """Store a runtime toggle for exactly one session."""
     if session_key:
         _session_toggles.setdefault(session_key, {})[name] = value
-    _set_runtime_env(name, value)
 
 
 def _session_toggle_value(name: str) -> str | None:
@@ -269,8 +265,16 @@ _LONG_HANDLERS = frozenset(
         "forecast.theses",
         "forecast.workspace",
         "llm.oneshot",
+        "market.quotes",
+        "market.search",
         "markets.model.renarrate",
         "news.search",
+        "pm.book",
+        "pm.detail",
+        "pm.history",
+        "pm.list",
+        "pm.stream.start",
+        "pm.stream.stop",
         "session.branch",
         "session.compress",
         "session.resume",
@@ -641,6 +645,16 @@ def _persist_review_sweep_state(result: dict) -> None:
             "last_tick_at": result.get("last_tick_at"),
             # Preserve the last time a sweep ACTUALLY ran across skip-writes.
             "last_sweep_at": result.get("last_sweep_at") or prior.get("last_sweep_at"),
+            "last_sweep_started_at": (
+                result.get("started_at") or prior.get("last_sweep_started_at")
+            ),
+            "last_sweep_completed_at": (
+                result.get("completed_at") or prior.get("last_sweep_completed_at")
+            ),
+            # Persist the in-flight edge, not just the terminal result. A long
+            # deterministic sweep can otherwise look indistinguishable from a
+            # dead ticker to `forecast doctor` in another process.
+            "running": bool(result.get("running")),
             "ran": bool(result.get("ran")),
             "due_count": int(result.get("due_count") or 0),
             "refreshed": int(result.get("refreshed") or 0),
@@ -672,6 +686,9 @@ def _run_review_sweep(now: str | None = None) -> dict:
         "alerts": 0,
         "duration_ms": 0,
         "last_tick_at": now_iso,
+        "started_at": None,
+        "completed_at": None,
+        "running": False,
     }
 
     if interval <= 0:
@@ -708,6 +725,9 @@ def _run_review_sweep(now: str | None = None) -> dict:
         _review_sweep_running = True
 
     started = time.monotonic()
+    result["started_at"] = now_iso
+    result["running"] = True
+    _persist_review_sweep_state(result)
     _emit_review_sweep("started", {"due_count": int(due_count)})
     try:
         # The SAME sweep the nightly runs — NO reforecast_runner → no LLM/agent.
@@ -724,6 +744,8 @@ def _run_review_sweep(now: str | None = None) -> dict:
         with _review_sweep_state_lock:
             _review_sweep_running = False
     result["duration_ms"] = int((time.monotonic() - started) * 1000)
+    result["running"] = False
+    result["completed_at"] = _review_sweep_now_iso()
     _emit_review_sweep(
         "done",
         {
@@ -1705,28 +1727,12 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
         _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
 
-    # Per-session: the switched model is THIS session's (seeded into the contextvar on
-    # each run thread); the os.environ writes inside _store_session_toggle stay as the
-    # cross-process / unseeded-thread fallback. Fixes concurrent sessions clobbering it.
+    # The switched model belongs to this session. New sessions use the persisted
+    # config default; they must never inherit whichever session switched most recently.
     _sess_key = (session or {}).get("session_key")
     _store_session_toggle(_sess_key, "MODEL", result.new_model)
     _store_session_toggle(_sess_key, "INFERENCE_MODEL", result.new_model)
-    # Keep the process-level provider env vars in sync with the user's
-    # explicit choice so any ambient re-resolution (credential pool refresh,
-    # compressor rebuild, aux clients) and startup re-resolution on /new
-    # both pick up the new provider instead of the original one persisted
-    # in config or env.
-    #
-    # SUPERFORECASTING_AGENT_TUI_PROVIDER is the fork-native
-    # "explicit-this-process" carrier consumed by _resolve_startup_runtime();
-    # keep compatibility aliases in sync so /new cannot fall through to
-    # static-catalog detection and pick a coincidentally-matching native
-    # provider (fixes #16857).
     if result.target_provider:
-        # Both provider read-paths per-session: TUI_PROVIDER (via _tui_env in
-        # _resolve_startup_runtime) + INFERENCE_PROVIDER (via _runtime_env).
-        # _store_session_toggle also writes the SUPERFORECASTING_AGENT_/FORECAST_/HERMES_
-        # aliases (the fallback), so cross-process readers are unchanged.
         _store_session_toggle(_sess_key, "TUI_PROVIDER", result.target_provider)
         _store_session_toggle(_sess_key, "INFERENCE_PROVIDER", result.target_provider)
     if persist_global:
@@ -3365,6 +3371,7 @@ def _(rid, params: dict) -> dict:
     session = _sessions.pop(sid, None)
     if not session:
         return _ok(rid, {"closed": False})
+    _session_toggles.pop(session.get("session_key", ""), None)
     _finalize_session(session)
     try:
         from tools.approval import unregister_gateway_notify
@@ -5604,19 +5611,51 @@ def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
     Mirrors what `_apply_model_switch` does (same model/provider, freshly
     resolved key) — the long-lived agent caches its api_key/base_url at
     construction, so newly-written Codex tokens are otherwise invisible until
-    the process restarts. Returns True when the live agent was updated.
+    the process restarts. If the pre-auth agent build failed, it is reset and
+    retried. Returns True when credentials were applied or a rebuild started.
     """
     session = _sessions.get(sid or "")
     if not session:
-        return False
-    agent = session.get("agent")
-    if not agent:
         return False
     # Don't mutate the agent mid-turn; the user just signed in interactively,
     # so this is virtually never contended, but stay consistent with the
     # /model running-guard rather than risk a torn client swap.
     if session.get("running"):
         return False
+    agent = session.get("agent")
+    if not agent:
+        # A new TUI session starts building its agent shortly after the shell
+        # appears. When Codex is not authenticated yet that build completes
+        # with ``agent_error`` and ``agent_ready`` stays set. Merely writing
+        # fresh tokens cannot revive it: later prompts see the completed event
+        # and replay the cached pre-auth error. Reset the one-shot build state
+        # and retry against the credentials that were just persisted.
+        ready = session.get("agent_ready")
+        if ready is None:
+            return False
+        if session.get("agent_build_started") and not ready.is_set():
+            # Finish this recovery before auth.poll reports success. Otherwise
+            # an immediately submitted prompt can race the old failing build,
+            # observe its cached error, and miss the scheduled retry.
+            if not ready.wait(timeout=30.0):
+                return False
+            agent = session.get("agent")
+            if agent:
+                return _refresh_agent_credentials_after_auth(sid, provider)
+        if not session.get("agent_build_started"):
+            session["agent_error"] = None
+            _start_agent_build(sid, session)
+            return True
+        lock = session.setdefault("agent_build_lock", threading.Lock())
+        with lock:
+            current_ready = session.get("agent_ready")
+            if current_ready is None or not current_ready.is_set():
+                return False
+            session["agent_error"] = None
+            session["agent_ready"] = threading.Event()
+            session["agent_build_started"] = False
+        _start_agent_build(sid, session)
+        return True
     current_provider = (getattr(agent, "provider", "") or "").strip()
     # Only refresh when the agent is actually on the provider we re-authed
     # (or an alias of it) — otherwise leave the agent's current creds alone.
@@ -5634,6 +5673,10 @@ def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
             base_url=runtime.get("base_url", "") or "",
             api_mode=runtime.get("api_mode", "") or "",
         )
+        # switch_model replaces the client and scalar credential fields, but
+        # recovery also consults the pool captured when the agent was built.
+        # Replace that stale pre-auth pool with the freshly resolved one.
+        agent._credential_pool = runtime.get("credential_pool")
         _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
         return True

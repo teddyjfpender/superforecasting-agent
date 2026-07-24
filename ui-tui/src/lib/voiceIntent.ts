@@ -44,14 +44,18 @@ export const normalizeTranscript = (text: string): string =>
 
 export const classifyVoiceIntent = (text: string): VoiceIntent => {
   const raw = (text ?? '').trim()
-  if (!raw) return { kind: 'dictation' }
+
+  if (!raw) {return { kind: 'dictation' }}
+
   // an explicitly spoken/typed slash command passes straight through
-  if (raw.startsWith('/')) return { kind: 'command', command: raw, destructive: false }
+  if (raw.startsWith('/')) {return { kind: 'command', command: raw, destructive: false }}
 
   const norm = normalizeTranscript(raw)
   const safe = SAFE_COMMANDS[norm]
-  if (safe) return { kind: 'command', command: safe, destructive: false }
-  if (DESTRUCTIVE.has(norm)) return { kind: 'command', command: `/${norm.replace(/\s+/u, '-')}`, destructive: true }
+
+  if (safe) {return { kind: 'command', command: safe, destructive: false }}
+
+  if (DESTRUCTIVE.has(norm)) {return { kind: 'command', command: `/${norm.replace(/\s+/u, '-')}`, destructive: true }}
 
   return { kind: 'dictation' }
 }
@@ -63,8 +67,10 @@ export const classifyVoiceIntent = (text: string): VoiceIntent => {
  */
 export const resolveVoiceSubmission = (text: string): { submit: string; isCommand: boolean } => {
   const intent = classifyVoiceIntent(text)
+
   if (intent.kind === 'command' && !intent.destructive) {
     return { submit: intent.command, isCommand: true }
   }
+
   return { submit: text.trim(), isCommand: false }
 }

@@ -44,6 +44,7 @@ describe('protocol event names (A2 grep-proof)', () => {
   it('registers every event name the TUI consumers dispatch', () => {
     // Sanity: the generated list is non-trivial and spans the A2 families.
     expect(DOTTED.length).toBeGreaterThan(30)
+
     for (const n of ['pm.tick', 'review.sweep', 'cron.fired', 'markets.model.progress', 'forecast.warnings.automode.progress']) {
       expect(WIRE_EVENT_NAMES).toContain(n)
     }

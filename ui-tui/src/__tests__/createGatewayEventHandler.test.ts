@@ -190,6 +190,7 @@ describe('createGatewayEventHandler', () => {
     const verdict = '✓ Goal achieved: long judge reason goes only in transcript, not merged with cwd label.'
 
     vi.useFakeTimers()
+
     try {
       onEvent({
         payload: { kind: 'goal', text: verdict },
@@ -1275,6 +1276,7 @@ describe('createGatewayEventHandler', () => {
       const dashboardCalls: string[] = []
       ctx.gateway.rpc = vi.fn(async (method: string) => {
         dashboardCalls.push(method)
+
         if (method === 'forecast.dashboard') {
           return { summary: { active_count: 1, questions: [] } }
         }
@@ -1320,6 +1322,7 @@ describe('createGatewayEventHandler', () => {
       const rpcCalls: string[] = []
       ctx.gateway.rpc = vi.fn(async (method: string) => {
         rpcCalls.push(method)
+
         if (method === 'forecast.dashboard') {
           return { summary: { active_count: 1, questions: [] } }
         }
@@ -1363,6 +1366,7 @@ describe('createGatewayEventHandler', () => {
       const onEvent = createGatewayEventHandler(buildCtx([]))
       const spy = vi.spyOn(turnController, 'pushActivity')
       vi.useFakeTimers()
+
       try {
         onEvent(stderr('gateway ready'))
         expect(spy).toHaveBeenCalledTimes(1)
@@ -1380,12 +1384,14 @@ describe('createGatewayEventHandler', () => {
       const onEvent = createGatewayEventHandler(buildCtx([]))
       const spy = vi.spyOn(turnController, 'pushActivity')
       vi.useFakeTimers()
+
       try {
         // A free-tier failure storm: 130 alerts fail loudly, each a distinct line
         // (varying id/provider) so the consecutive-identical dedup can't collapse them.
         for (let i = 0; i < 100; i += 1) {
           onEvent(stderr(`aux provider unavailable #${i}`))
         }
+
         // Only the FIRST line rendered synchronously — the other 99 are coalesced,
         // so the terminal does NOT repaint 100 times.
         expect(spy).toHaveBeenCalledTimes(1)
@@ -1409,14 +1415,17 @@ describe('createGatewayEventHandler', () => {
       const onEvent = createGatewayEventHandler(buildCtx([]))
       const spy = vi.spyOn(turnController, 'pushActivity')
       vi.useFakeTimers()
+
       try {
         // A failing free pass owns the Warnings view: its 130 per-alert stderr lines
         // (the LedgerNotFound storm) must NOT reach the transcript — the bar + the
         // folded error line are the whole progress UI, so the view never scrolls.
         setWarningsRunActive(true)
+
         for (let i = 0; i < 130; i += 1) {
           onEvent({ payload: { line: `LedgerNotFoundError: no active autopilot policy #${i}` }, type: 'gateway.stderr' } as any)
         }
+
         vi.advanceTimersByTime(1000)
         expect(spy).not.toHaveBeenCalled()
 
@@ -1436,6 +1445,7 @@ describe('createGatewayEventHandler', () => {
       const onEvent = createGatewayEventHandler(buildCtx([]))
       const spy = vi.spyOn(turnController, 'pushActivity')
       vi.useFakeTimers()
+
       try {
         onEvent(stderr('burst-1 line'))
         expect(spy).toHaveBeenCalledTimes(1)

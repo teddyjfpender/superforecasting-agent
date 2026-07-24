@@ -2278,6 +2278,19 @@ def provider_model_ids(provider: Optional[str], *, force_refresh: bool = False) 
                     return live
         except Exception:
             pass
+        # GMI already completed its dedicated live probe above. Do not fall
+        # through to the generic profile branch, which would issue a second
+        # network request through ``ProviderProfile.fetch_models`` and could
+        # turn a deterministic static fallback into a live result.
+        try:
+            from providers import get_provider_profile
+
+            profile = get_provider_profile("gmi")
+            if profile and profile.fallback_models:
+                return list(profile.fallback_models)
+        except Exception:
+            pass
+        return list(_PROVIDER_MODELS.get("gmi", []))
     if normalized == "custom":
         base_url = _get_custom_base_url()
         if base_url:

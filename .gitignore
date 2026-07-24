@@ -20,6 +20,7 @@ data/
 !forecasting/data/
 !forecasting/data/**
 .pytest_cache/
+.test-results/
 tmp/
 temp_vision_images/
 hermes-*/*

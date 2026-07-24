@@ -316,7 +316,12 @@ def update_forecast(args: dict[str, Any], ledger) -> str:
     try:
         from forecasting.writeup import write_brief
 
-        write_brief(ledger, question_id, snapshot)
+        write_brief(
+            ledger,
+            question_id,
+            snapshot,
+            main_runtime=args.get("_main_runtime"),
+        )
     except Exception:
         pass
     # Saturation visibility (Wave 3 H4): surface the observe-mode score +

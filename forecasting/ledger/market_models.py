@@ -527,12 +527,22 @@ def _extract_ingest_metadata(ledger, source: str, source_type: str) -> dict[str,
 
 
 def _extract_url_ingest_metadata(ledger, source: str) -> dict[str, Any]:
+    parsed = urlparse(source)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or any(ord(char) < 33 for char in source)
+        or source.count("http://") + source.count("https://") != 1
+    ):
+        raise ValidationError(
+            "ingest source must be one absolute HTTP(S) URL with no spaces or control characters"
+        )
     request = Request(source, headers={"User-Agent": "superforecasting-agent/0.1"})
     try:
         with _core.urlopen(request, timeout=8) as response:
             content_type = response.headers.get("content-type", "")
             raw = response.read(512 * 1024)
-    except (OSError, URLError) as exc:
+    except (OSError, URLError, ValueError) as exc:
         return {"metadata": {"source_fetch_error": str(exc)}}
     try:
         text = raw.decode("utf-8")

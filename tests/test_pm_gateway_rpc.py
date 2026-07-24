@@ -119,6 +119,20 @@ def test_pm_list_omits_stale_marker_when_fresh():
         pm_rpc.set_service(None)
 
 
+def test_pm_list_carries_catalog_liveness():
+    class CatalogStub(StubService):
+        def catalog_status(self):
+            return {"ready": True, "refreshing": False, "events": 123, "markets": 456, "venues": {"polymarket": 23, "kalshi": 100}}
+
+    pm_rpc.set_service(CatalogStub())
+    try:
+        result = _call("pm.list", {})["result"]
+        assert result["catalog"]["events"] == 123
+        assert result["catalog"]["venues"]["kalshi"] == 100
+    finally:
+        pm_rpc.set_service(None)
+
+
 def test_pm_list_clamps_and_defaults_limit(wired):
     svc, _ = wired
     _call("pm.list", {"limit": 9999})

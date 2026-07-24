@@ -19,6 +19,7 @@ stays in core and, like every cross-domain read, is reached through the
 
 from __future__ import annotations
 
+import hashlib
 from forecasting.models import AlertEvent
 from typing import Any
 from forecasting.models import ValidationError
@@ -53,12 +54,11 @@ def refresh_forecast(
     the adapter/tool layer; ``payloads`` are kwargs for :meth:`add_evidence`.
     ``re_estimate="deterministic"`` re-pools the prior snapshot's
     probability-bearing components after refreshing market/crowd readings;
-    ``"carry_forward"`` keeps the prior probability and flags that agent /
-    manual re-reasoning is needed (also the automatic fallback for
-    non-binary questions or raw-data-only sources). With ``commit`` and not
-    ``dry_run`` the re-estimate is written through :meth:`create_snapshot`
-    as a scored ``forecast_origin="live"`` snapshot; otherwise nothing is
-    persisted and a preview is returned.
+    ``"carry_forward"`` keeps the prior probability only as a preview and flags
+    that agent/manual re-reasoning is needed (also the automatic fallback for
+    non-binary questions or raw-data-only sources). Persisted evidence and its
+    model-run audit are retained, but an unchanged probability is never presented
+    as a newly committed forecast.
     """
     if re_estimate not in {"deterministic", "carry_forward"}:
         raise ValidationError("re_estimate must be 'deterministic' or 'carry_forward'")
@@ -271,7 +271,8 @@ def refresh_forecast(
     if not persist:
         preview["message"] = "preview only — re-run without --dry-run/--no-commit to commit."
         return preview
-    # 7) Record a model run as the audit + citation anchor, then commit.
+    # 7) Record a model run as the audit + citation anchor. A deterministic
+    # re-pool may commit; a carry-forward may not impersonate fresh judgment.
     change_my_mind = [
         "A reversal in the strongest refreshed driver would move this back",
         "A watched source going stale or failing on the next refresh",
@@ -292,6 +293,53 @@ def refresh_forecast(
         output={"proposed_probability": new_prob, "diff": diff_dict},
         diagnostics={"changed_readings": len(changed_readings), "fetch_failures": fetch_failures},
     )
+    if needs_agent:
+        alert = ledger.create_alert(
+            severity="warning",
+            scope_type="question",
+            scope_ref=question_id,
+            reason=f"forecast_estimation_required:{model_run['id']}",
+            recommended_action=(
+                "New source evidence was imported, but it cannot be deterministically "
+                "re-pooled. Re-estimate the forecast before committing a new snapshot."
+            ),
+            now=run_at,
+        )
+        with ledger._connect() as conn:
+            source_task = conn.execute(
+                """
+                SELECT task.id FROM operational_tasks AS task
+                LEFT JOIN alert_events AS alert ON alert.id = task.alert_id
+                WHERE task.question_id = ? AND task.status IN ('pending', 'leased')
+                  AND (
+                    task.task_type = 'process_source_change'
+                    OR (task.task_type = 'resolve_warning'
+                        AND alert.reason LIKE 'forecast_estimation_required:%')
+                  )
+                ORDER BY CASE WHEN task.task_type = 'process_source_change' THEN 0 ELSE 1 END,
+                         task.utility_score DESC, task.available_at, task.id
+                LIMIT 1
+                """,
+                (question_id,),
+            ).fetchone()
+        estimator_task_id = (
+            source_task["id"]
+            if source_task is not None
+            else ledger.enqueue_alert_operational_task(
+                alert, lane="normal_reforecast", now=run_at
+            )["id"]
+        )
+        return {
+            **preview,
+            "status": "needs_estimation",
+            "committed": None,
+            "forecast_id": None,
+            "model_run": model_run,
+            "new_evidence_ids": new_evidence_ids,
+            "alerts": [alert],
+            "estimator_task_id": estimator_task_id,
+            "message": "evidence imported; estimation required — no forecast committed.",
+        }
     snapshot = ledger.create_snapshot(
         question_id=question_id,
         probability_or_distribution=new_prob,
@@ -454,14 +502,32 @@ def _record_source_snapshot(
     changed: bool,
     status: str,
     error_message: str | None,
+    observed_content: Any | None = None,
 ) -> dict[str, Any]:
     snapshot_id = f"ss_{uuid.uuid4().hex[:12]}"
     parsed_values = {
         "signature": signature,
         "previous_signature": previous_signature,
         "changed": changed,
+        "parser_version": "changed-items-v1",
     }
     with ledger._connect() as conn:
+        prior_row = conn.execute(
+            """
+            SELECT parsed_values FROM source_snapshots
+            WHERE watched_source_id = ? ORDER BY retrieved_at DESC, rowid DESC LIMIT 1
+            """,
+            (watch["id"],),
+        ).fetchone()
+        prior_values = json_loads(prior_row["parsed_values"], {}) if prior_row else {}
+        changed_items = _immutable_changed_items(
+            observed_content,
+            prior_values.get("observation_payload"),
+            observed_at=retrieved_at,
+        )
+        parsed_values["observation_payload"] = observed_content
+        parsed_values["changed_items"] = changed_items
+        parsed_values["content_available"] = bool(changed_items)
         conn.execute(
             """
             INSERT INTO source_snapshots (
@@ -492,6 +558,76 @@ def _record_source_snapshot(
             ),
         )
     return ledger.list_source_snapshots(watched_source_id=watch["id"], limit=1)[0]
+
+
+def _immutable_changed_items(
+    current: Any,
+    previous: Any,
+    *,
+    observed_at: str,
+) -> list[dict[str, Any]]:
+    """Produce reviewable item-level deltas from the payload used for hashing."""
+
+    def rows(value: Any) -> list[dict[str, Any]]:
+        if isinstance(value, dict) and isinstance(value.get("items"), list):
+            value = value["items"]
+        elif isinstance(value, dict):
+            value = [value]
+        if not isinstance(value, list):
+            return []
+        return [dict(item) for item in value[:50] if isinstance(item, dict)]
+
+    def identity(item: dict[str, Any]) -> str:
+        return str(
+            item.get("entry_id")
+            or item.get("id")
+            or item.get("canonical_url")
+            or item.get("url")
+            or item.get("title")
+            or ""
+        )
+
+    def value(item: dict[str, Any]) -> Any:
+        for key in (
+            "value",
+            "probability",
+            "current_price",
+            "close_price",
+            "pct",
+            "status",
+            "title",
+            "summary",
+        ):
+            if item.get(key) not in (None, ""):
+                return item[key]
+        return item
+
+    previous_by_id = {identity(item): item for item in rows(previous) if identity(item)}
+    changed: list[dict[str, Any]] = []
+    for item in rows(current):
+        item_id = identity(item)
+        prior = previous_by_id.get(item_id)
+        serialized = json_dumps(item)
+        if prior is not None and json_dumps(prior) == serialized:
+            continue
+        changed.append(
+            {
+                "entry_id": item.get("entry_id") or item.get("id") or item_id,
+                "headline": item.get("headline") or item.get("title"),
+                "published_at": item.get("published_at") or item.get("created_at"),
+                "canonical_url": item.get("canonical_url") or item.get("url"),
+                "summary": item.get("summary")
+                or item.get("description")
+                or item.get("claim")
+                or item.get("text"),
+                "old_value": value(prior) if prior is not None else None,
+                "new_value": value(item),
+                "content_hash": hashlib.sha256(serialized.encode()).hexdigest(),
+                "source_observation_time": observed_at,
+                "raw": item,
+            }
+        )
+    return changed
 
 
 def list_source_snapshots(

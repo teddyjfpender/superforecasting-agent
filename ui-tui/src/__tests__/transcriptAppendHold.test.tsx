@@ -39,6 +39,7 @@ const writeStream = (columns: number, rows: number, isTTY = true) => {
     setRawMode: (m: boolean) => (stream.isRaw = m),
     unref: () => stream
   })
+
   return stream
 }
 
@@ -48,16 +49,20 @@ const tick = (ms = 60) => new Promise(r => setTimeout(r, ms))
 // is taller than the streaming preview it replaces; a tool-trail grows with its
 // tool count; the intro grows once session info populates it.
 const REAL_H = 3
+
 const heightFor = (m: Msg): number => {
   if (m.kind === 'intro') {
     return m.info ? 6 : 2
   }
+
   if (m.kind === 'trail' && m.tools?.length) {
     return 1 + m.tools.length
   }
+
   if (typeof m.text === 'string' && m.text.startsWith('FINAL')) {
     return 8
   }
+
   return REAL_H
 }
 
@@ -70,12 +75,15 @@ type HeightsRef = { current: null | ReadonlyMap<string, number> }
 // rebuild the offsets in production. Index keys would falsely stabilize them.
 let keySeq = 0
 const keyOfMap = new WeakMap<Msg, string>()
+
 const keyOf = (m: Msg): string => {
   let k = keyOfMap.get(m)
+
   if (!k) {
     k = `k${keySeq++}`
     keyOfMap.set(m, k)
   }
+
   return k
 }
 
@@ -88,14 +96,17 @@ type OffsetsRef = { current: null | ArrayLike<number> }
 const topAt = (handle: Handle, offsetsRef: OffsetsRef): { index: number; intra: number } => {
   const top = handle.current?.getScrollTop() ?? 0
   const offs = offsetsRef.current
+
   if (!offs) {
     return { index: 0, intra: top }
   }
+
   for (let i = 0; i + 1 < offs.length; i++) {
     if (offs[i]! <= top && top < offs[i + 1]!) {
       return { index: i, intra: top - offs[i]! }
     }
   }
+
   return { index: Math.max(0, offs.length - 1), intra: 0 }
 }
 
@@ -114,12 +125,14 @@ const App = ({
 }) => {
   const ref = useRef<null | ScrollBoxHandle>(null)
   const keyed = items.map(m => ({ key: keyOf(m) }))
+
   const vh = useVirtualHistory(ref, keyed, 40, {
     estimateHeight: i => heightFor(items[i]!),
     onHeightsChange: h => {
       heightsRef.current = h
     }
   })
+
   offsetsRef.current = vh.offsets
   const mounted = keyed.slice(vh.start, vh.end)
 
@@ -144,6 +157,7 @@ const App = ({
         vh.topSpacer > 0 ? React.createElement(Box, { height: vh.topSpacer, key: 'top' }) : null,
         ...mounted.map((it, i) => {
           const idx = vh.start + i
+
           return React.createElement(
             Box,
             { flexDirection: 'column', height: heightFor(items[idx]!), key: it.key, ref: vh.measureRef(it.key) },
@@ -164,10 +178,12 @@ const App = ({
 
 const makeConversation = (turns: number): Msg[] => {
   const out: Msg[] = [{ info: { model: 'm' } as any, kind: 'intro', role: 'system', text: '' }]
+
   for (let i = 0; i < turns; i++) {
     out.push({ role: 'user', text: `question ${i}` })
     out.push({ role: 'assistant', text: `answer ${i} with a few words of body` })
   }
+
   return out
 }
 
@@ -183,15 +199,19 @@ const mount = async (items: Msg[]): Promise<Ctx> => {
   const handle: Handle = { current: null }
   const heightsRef: HeightsRef = { current: null }
   const offsetsRef: OffsetsRef = { current: null }
+
   const el = (its: Msg[], tailH = 0) =>
     React.createElement(App, { handle, heightsRef, items: its, offsetsRef, tailH })
+
   const instance: any = await render(el(items), {
     exitOnCtrlC: false,
     patchConsole: false,
     stdin: writeStream(40, 24, true),
     stdout: writeStream(40, 24)
   })
+
   await tick(140)
+
   return { handle, heightsRef, instance, offsetsRef, show: (its, tailH) => instance.rerender(el(its, tailH)) }
 }
 
@@ -206,6 +226,7 @@ const parkMidHistory = async (ctx: Ctx) => {
   ctx.handle.current?.scrollTo(target)
   await tick(160)
   expect(ctx.handle.current?.isSticky()).toBe(false)
+
   return {
     topAtBefore: topAt(ctx.handle, ctx.offsetsRef),
     topBefore: ctx.handle.current?.getScrollTop() ?? -1
@@ -254,6 +275,7 @@ describe('append-path hold: a parked reader is never moved by an agent update', 
       ...makeConversation(30),
       { kind: 'trail', role: 'system', text: '', tools: [{ label: 'read', line: 'read a.ts' }] } as any
     ]
+
     const ctx = await mount(items)
     const { topBefore, topAtBefore } = await parkMidHistory(ctx)
 
@@ -280,12 +302,13 @@ describe('append-path hold: a parked reader is never moved by an agent update', 
     // StreamingAssistant region at the very bottom of the ScrollBox. Grow it.
     for (const h of [2, 5, 9]) {
       ctx.show(items, h)
-      // eslint-disable-next-line no-await-in-loop
+
       await tick(120)
       expect(ctx.handle.current?.getScrollTop()).toBe(topBefore)
       expect(topAt(ctx.handle, ctx.offsetsRef)).toEqual(topAtBefore)
       expect(ctx.handle.current?.isSticky()).toBe(false)
     }
+
     ctx.instance.unmount?.()
   })
 

@@ -9,6 +9,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 const ESC = String.fromCharCode(27)
 
+const PRIOR_COLOR_ENV = {
+  COLORTERM: process.env.COLORTERM,
+  FORCE_COLOR: process.env.FORCE_COLOR,
+  NO_COLOR: process.env.NO_COLOR
+}
+
 const writeStream = (columns: number, rows: number, isTTY = false) => {
   const stream = new PassThrough() as PassThrough & Record<string, unknown>
   let output = ''
@@ -33,6 +39,9 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
 const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
 
 const renderChart = async (props: Record<string, unknown>) => {
+  delete process.env.NO_COLOR
+  process.env.COLORTERM = 'truecolor'
+  process.env.FORCE_COLOR = '3'
   process.env.FORECAST_TUI_INLINE = '1'
   process.env.HERMES_VIZ_BLITTER = 'braille'
 
@@ -62,6 +71,14 @@ const renderChart = async (props: Record<string, unknown>) => {
 afterEach(() => {
   delete process.env.FORECAST_TUI_INLINE
   delete process.env.HERMES_VIZ_BLITTER
+
+  for (const [key, value] of Object.entries(PRIOR_COLOR_ENV)) {
+    if (value === undefined) {
+      delete process.env[key]
+    } else {
+      process.env[key] = value
+    }
+  }
 })
 
 describe('Chart render (Ink)', () => {

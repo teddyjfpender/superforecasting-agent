@@ -1,21 +1,17 @@
-// MUST be first: forces truecolor so the render emits theme-token SGR under the
-// non-TTY test stream (chalk reads FORCE_COLOR at import time).
-import {
-  PRIOR_FORCE_COLOR } from './pmForceColor.js'
+/* eslint-disable perfectionist/sort-imports -- the color env must be set before Ink/chalk loads */
+import { PRIOR_FORCE_COLOR, PRIOR_NO_COLOR } from './pmForceColor.js'
 
 import { PassThrough } from 'stream'
 
+import { Box, Text } from '@hermes/ink'
 import React, { useState } from 'react'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 
-import { Box, Text } from '@hermes/ink'
-
-import instances from '../../packages/hermes-ink/src/ink/instances.js'
 import { dispatchClick } from '../../packages/hermes-ink/src/ink/hit-test.js'
+import instances from '../../packages/hermes-ink/src/ink/instances.js'
 import { nodeCache } from '../../packages/hermes-ink/src/ink/node-cache.js'
 import { renderSync } from '../../packages/hermes-ink/src/ink/root.js'
 import { PredictionMarketsTable } from '../components/predictionMarketsTable.js'
-import { semantics } from '../lib/visualSemantics.js'
 import {
   DEFAULT_PM_FILTER,
   EMPTY_PM_FILTER,
@@ -31,6 +27,7 @@ import {
   pmWindow
 } from '../lib/pmRows.js'
 import { nextByKeyState, sortRows, type TableSortState } from '../lib/tableSort.js'
+import { semantics } from '../lib/visualSemantics.js'
 import { DARK_THEME } from '../theme.js'
 
 const tick = (ms: number) => new Promise(r => setTimeout(r, ms))
@@ -41,6 +38,12 @@ afterAll(() => {
     delete process.env.FORCE_COLOR
   } else {
     process.env.FORCE_COLOR = PRIOR_FORCE_COLOR
+  }
+
+  if (PRIOR_NO_COLOR === undefined) {
+    delete process.env.NO_COLOR
+  } else {
+    process.env.NO_COLOR = PRIOR_NO_COLOR
   }
 })
 
@@ -107,12 +110,15 @@ describe('pmWindow keeps the selected row on screen (variable-height sub-rows)',
   // Cumulative visual lines from the window start up to and including row i.
   const linesTo = (rows: PMDisplayRow[], start: number, i: number): number => {
     let lines = 0
+
     for (let k = start; k <= i; k++) {
       const groupStart =
         rows[k]!.kind === 'outcome' &&
         (k === 0 || rows[k - 1]!.kind !== 'outcome' || (rows[k - 1] as any).parentId !== (rows[k] as any).parentId)
+
       lines += rows[k]!.kind === 'outcome' && (k === start || groupStart) ? 2 : 1
     }
+
     return lines
   }
 
@@ -203,6 +209,7 @@ describe('filterPMSection + parsers', () => {
 // ── presentational: direction labels + full-row highlight (raw ANSI) ─────────
 const hexTrue = (hex: string, layer: 38 | 48): string => {
   const n = parseInt(hex.replace('#', ''), 16)
+
   return `${layer};2;${(n >> 16) & 255};${(n >> 8) & 255};${n & 255}`
 }
 
@@ -237,9 +244,11 @@ const renderRaw = async (windowed: PMDisplayRow[], clampedSel: number, sortState
     ),
     { exitOnCtrlC: false, patchConsole: false, stdout: stdout as never }
   )
+
   await tick(50)
   instance.unmount?.()
   instance.cleanup?.()
+
   return raw
 }
 
@@ -247,6 +256,7 @@ describe('#4 direction labels + #5 precision + #6 full-row highlight', () => {
   it('a binary headline shows a colour-coded "YES" + a right-aligned 2dp probability', async () => {
     const rows = flattenPMRows([binaryEvt()] as any, new Set())
     const raw = await renderRaw(rows, 0)
+    // eslint-disable-next-line no-control-regex -- strips terminal SGR bytes from the captured frame
     const plain = raw.replace(/\x1b\[[0-9;]*m/g, '')
     // The "YES" tag sits in a FIXED 4-cell gutter; the % right-aligns after it
     // (a 6-char value leaves one pad space → "YES  13.00%").
@@ -278,8 +288,11 @@ describe('#4 direction labels + #5 precision + #6 full-row highlight', () => {
 // wiring for real — and proves the root cause: <Text onClick> is silently dropped.
 const clickable = (node: any, out: { node: any; rect: any }[] = []): { node: any; rect: any }[] => {
   const rect = nodeCache.get(node)
-  if (node._eventHandlers?.onClick && rect) out.push({ node, rect })
-  for (const c of node.childNodes ?? []) if (c.nodeName !== '#text') clickable(c, out)
+
+  if (node._eventHandlers?.onClick && rect) {out.push({ node, rect })}
+
+  for (const c of node.childNodes ?? []) {if (c.nodeName !== '#text') {clickable(c, out)}}
+
   return out
 }
 
@@ -324,6 +337,7 @@ describe('#3 header click-sort fires through the real hit-test', () => {
       const [sortState, setSortState] = useState<TableSortState>({ dir: 'asc', key: null })
       const sorted = sortRows(items, sortState.key, sortState.dir, pmSortValue)
       const rows = flattenPMRows(sorted, new Set())
+
       return React.createElement(
         Box as never,
         { flexDirection: 'column', height: 40, width: 84 } as never,
@@ -363,6 +377,7 @@ describe('#3 header click-sort fires through the real hit-test', () => {
 
     // The real handler fired with the PROB key…
     expect(fired).toContain('prob')
+    // eslint-disable-next-line no-control-regex -- strips terminal SGR/OSC bytes from the captured frame
     const plain = raw.replace(/\x1b\[[0-9;]*m/g, '').replace(/\x1b\][\s\S]*?(?:\x07|\x1b\\)/g, '')
     // …the header now carries the ascending indicator…
     expect(plain).toMatch(/PROB\s*▲/)

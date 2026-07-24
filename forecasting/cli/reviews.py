@@ -126,6 +126,16 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
                                help="Re-pull + recompute Market Models linked to open questions in the nightly sweep")
     schedule_cron.add_argument("--no-refresh-market-models", dest="refresh_market_models", action="store_false",
                                help="Do NOT refresh Market Models in the nightly sweep")
+    schedule_cron.add_argument("--estimate-source-changes", dest="estimate_source_changes", action="store_true",
+                               help="Also estimate queued source changes nightly (normally owned by automode)")
+    schedule_cron.add_argument("--no-estimate-source-changes", dest="estimate_source_changes", action="store_false",
+                               help="Do NOT run the source-change estimator in the nightly sweep")
+    schedule_cron.add_argument("--estimator-model")
+    schedule_cron.add_argument("--estimator-provider")
+    schedule_cron.add_argument("--estimator-limit", type=int, default=5)
+    schedule_cron.add_argument("--estimator-max-iterations", type=int, default=12)
+    schedule_cron.add_argument("--calibrate-utility", dest="calibrate_utility", action="store_true")
+    schedule_cron.add_argument("--no-calibrate-utility", dest="calibrate_utility", action="store_false")
     schedule_cron.set_defaults(
         _forecast_handler=_cmd_schedule_install_cron,
         auto_score=True,
@@ -133,6 +143,8 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
         thesis_aggregate=True,
         synthesize_lessons=True,
         refresh_market_models=True,
+        estimate_source_changes=False,
+        calibrate_utility=True,
     )
 
     automode_cron = schedule_sub.add_parser(
@@ -155,10 +167,10 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     )
     ac_start.set_defaults(agent=True)
     ac_start.add_argument(
-        "--paid-budget", type=int, help="Per-cycle paid-tier agent-run cap (default 3)"
+        "--paid-budget", type=int, help="Per-cycle paid-tier agent-run cap (default 1)"
     )
     ac_start.add_argument(
-        "--paid-min-interval-hours", type=float, help="Minimum hours between paid passes (default 6)"
+        "--paid-min-interval-hours", type=float, help="Minimum hours between paid passes (default 0.5)"
     )
     ac_start.add_argument("--model")
     ac_start.add_argument("--provider")
@@ -343,7 +355,12 @@ def _cmd_schedule_run(args: argparse.Namespace) -> None:
         review = result["review"]
         run = result.get("run") or {}
         run_suffix = f" run={run['id']}" if run.get("id") else ""
-        print(f"{review['id']} next_run_at={review['next_run_at']} alerts={len(result['alerts'])}{run_suffix}")
+        observed = len(result["alerts"])
+        created = int(run.get("alert_count") or 0)
+        print(
+            f"{review['id']} next_run_at={review['next_run_at']} "
+            f"alerts_created={created} alerts_observed={observed}{run_suffix}"
+        )
         for alert in result["alerts"]:
             print(f"  {alert.id} {alert.scope_type}:{alert.scope_ref} {alert.reason}")
 
@@ -386,6 +403,12 @@ def _cmd_schedule_install_cron(args: argparse.Namespace) -> None:
         thesis_aggregate=getattr(args, "thesis_aggregate", True),
         synthesize_lessons=getattr(args, "synthesize_lessons", True),
         refresh_market_models=getattr(args, "refresh_market_models", True),
+        estimate_source_changes=getattr(args, "estimate_source_changes", False),
+        estimator_model=getattr(args, "estimator_model", None),
+        estimator_provider=getattr(args, "estimator_provider", None),
+        estimator_limit=getattr(args, "estimator_limit", 5),
+        estimator_max_iterations=getattr(args, "estimator_max_iterations", 12),
+        calibrate_utility=getattr(args, "calibrate_utility", True),
     )
     print(f"cron_job: {job['id']}")
     print(f"name: {job['name']}")

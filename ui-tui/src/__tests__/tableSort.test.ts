@@ -69,6 +69,7 @@ describe('sortRows (pure comparison)', () => {
       { id: 'q', n: 1, s: 'x' },
       { id: 'r', n: 1, s: null }
     ]
+
     const out = sortRows(mixed, 'x', 'desc', str)
     // present 'x'(q) first; the two missing (p undefined, r null) trail in original order
     expect(out.map(r => r.id)).toEqual(['q', 'p', 'r'])
@@ -81,6 +82,7 @@ describe('sortRows (pure comparison)', () => {
       { id: 'c', v: 2 },
       { id: 'd', v: Infinity }
     ]
+
     const out = sortRows(mixed, 'x', 'asc', r => r.v)
     expect(out.map(r => r.id)).toEqual(['c', 'a', 'b', 'd'])
   })
@@ -92,6 +94,7 @@ describe('sortRows (pure comparison)', () => {
       { id: 'c', v: 'alpha' },
       { id: 'd', v: 2 }
     ]
+
     const out = sortRows(mixed, 'x', 'asc', r => r.v)
     expect(out.map(r => r.id)).toEqual(['d', 'b', 'c', 'a'])
   })

@@ -190,12 +190,27 @@ def test_refresh_raw_data_carries_forward_and_flags_agent(tmp_path):
     # Replace the watched market with a raw FRED-style series (no probability).
     ledger.add_watched_source(scope_type="question", scope_ref=q.id, source="CPIAUCSL", source_type="fred")
 
+    prior_id = ledger.get_current_snapshot(q.id).forecast_id
     result = ledger.refresh_forecast(q.id, fetcher=_raw_fetcher(3.5))
     # Raw reading imported, but a raw value cannot deterministically re-estimate.
     assert result["needs_agent"] is True
-    assert result["status"] == "committed"  # evidence changed -> still commits
+    assert result["status"] == "needs_estimation"
+    assert result["committed"] is None
+    assert ledger.get_current_snapshot(q.id).forecast_id == prior_id
     assert _current_p(ledger, q.id) == pytest.approx(0.55)  # probability carried forward
     assert result["new_evidence_ids"]
+    task = next(
+        task
+        for task in ledger.list_operational_tasks(limit=20)
+        if task["id"] == result["estimator_task_id"]
+    )
+    assert task["task_type"] == "resolve_warning"
+    assert task["lane"] == "normal_reforecast"
+    assert task["status"] == "pending"
+    assert any(
+        alert.reason.startswith("forecast_estimation_required:")
+        for alert in ledger.list_alerts(unresolved_only=True)
+    )
 
 
 def test_refresh_carry_forward_mode_skips_repool(tmp_path):
@@ -203,6 +218,8 @@ def test_refresh_carry_forward_mode_skips_repool(tmp_path):
     q = _market_question(ledger)
     result = ledger.refresh_forecast(q.id, fetcher=_market_fetcher(0.90), re_estimate="carry_forward")
     assert result["needs_agent"] is True
+    assert result["status"] == "needs_estimation"
+    assert result["committed"] is None
     assert _current_p(ledger, q.id) == pytest.approx(0.55)
 
 

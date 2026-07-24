@@ -382,7 +382,7 @@ function OverlaySection({
 
   return (
     <Box flexDirection="column" marginTop={1}>
-      <Box onClick={() => { if (!globalModal) toggleOverlaySection(title, defaultOpen) }}>
+      <Box onClick={() => { if (!globalModal) {toggleOverlaySection(title, defaultOpen)} }}>
         <Text color={t.color.label}>
           <Text color={t.color.accent}>{open ? '▾ ' : '▸ '}</Text>
           {title}

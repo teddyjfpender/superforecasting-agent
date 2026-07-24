@@ -54,6 +54,14 @@ export type PMHistoryRange = '1d' | '1w' | 'all'
 // carry their original honest estimates) while a live revalidate is in flight —
 // the UI can show that subtly. `stale` is absent (→ false) on a warm/fresh tape.
 export interface PMListResult {
+  catalog: null | {
+    events: number
+    markets: number
+    ready: boolean
+    refreshing: boolean
+    updated_at?: null | number
+    venues?: Record<string, number>
+  }
   items: PMListItem[]
   stale: boolean
 }
@@ -69,9 +77,10 @@ export async function fetchPMListResult(
     limit: opts.limit ?? 40
   })
 
-  const res = asRpcResult<{ events?: PMListItem[]; stale?: boolean }>(raw)
+  const res = asRpcResult<{ catalog?: PMListResult['catalog']; events?: PMListItem[]; stale?: boolean }>(raw)
 
   return {
+    catalog: res?.catalog ?? null,
     items: Array.isArray(res?.events) ? res!.events : [],
     stale: res?.stale === true
   }

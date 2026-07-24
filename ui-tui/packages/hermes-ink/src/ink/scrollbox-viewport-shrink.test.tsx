@@ -6,6 +6,7 @@
  * on content growth, so the composer slid over the last transcript lines.
  */
 import { EventEmitter } from 'events'
+
 import React, { useRef } from 'react'
 import { describe, expect, it } from 'vitest'
 
@@ -23,6 +24,7 @@ class FakeTty extends EventEmitter {
   write(chunk: string | Uint8Array, cb?: (err?: Error | null) => void): boolean {
     this.chunks.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8'))
     cb?.()
+
     return true
   }
 }
@@ -64,6 +66,7 @@ const makeInk = () => {
   const stdout = new FakeTty()
   const stdin = new FakeTty()
   const stderr = new FakeTty()
+
   const ink = new Ink({
     exitOnCtrlC: false,
     patchConsole: false,
@@ -73,6 +76,7 @@ const makeInk = () => {
   })
 
   ink.setAltScreenActive(true)
+
   return { ink, stdout }
 }
 

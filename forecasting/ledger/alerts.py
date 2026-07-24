@@ -136,6 +136,33 @@ def resolution_proposal_outcome(reason: str | None) -> str | None:
     return token or None
 
 
+def normalized_alert_key(
+    reason: str | None,
+    *,
+    prior_forecast_id: str | None = None,
+) -> str:
+    """Return a stable condition key while preserving ``reason`` as display text."""
+    text = " ".join(str(reason or "").strip().split())
+    if text.startswith("new_evidence:"):
+        return f"new_evidence_batch:{prior_forecast_id or 'unforecasted'}"
+    if text.startswith("learned_error_update_required:"):
+        # The run/profile suffix is evidence for the review, not a new operator
+        # condition. Scope already separates questions, so keep one open review
+        # family per question instead of manufacturing a task for every run.
+        return "learned_error_update_required"
+    if text.startswith("forecast_estimation_required:"):
+        return "forecast_estimation_required"
+    if text.startswith("autopilot_estimation_required:"):
+        return "autopilot_estimation_required"
+    outcome = resolution_proposal_outcome(text)
+    if outcome:
+        return f"resolution_proposed:{outcome}"
+    approval_class = approval_request_action_class(text)
+    if approval_class:
+        return f"approval_required:{approval_class}"
+    return text.lower()
+
+
 def enqueue_resolution_proposal(
     ledger,
     *,
@@ -428,59 +455,70 @@ def create_alert(
     alert is acked/dismissed a recurrence opens a fresh row, as it should.
     """
     stamp = parse_timestamp(now, field_name="now") or utc_now_iso()
+    target_id = f"al_{uuid.uuid4().hex[:12]}"
     with ledger._connect() as conn:
-        existing = conn.execute(
+        prior_forecast_id = None
+        if scope_type == "question" and str(reason).startswith("new_evidence:"):
+            question = conn.execute(
+                "SELECT current_forecast_id FROM forecast_questions WHERE id = ?",
+                (scope_ref,),
+            ).fetchone()
+            prior_forecast_id = question["current_forecast_id"] if question else None
+        alert_key = normalized_alert_key(reason, prior_forecast_id=prior_forecast_id)
+        conn.execute(
             """
-            SELECT * FROM alert_events
-             WHERE scope_type = ? AND scope_ref = ? AND reason = ?
-               AND acknowledged_at IS NULL
-             ORDER BY created_at ASC
-             LIMIT 1
+            INSERT INTO alert_events (
+                id, created_at, severity, scope_type, scope_ref, reason,
+                recommended_action, alert_key, last_seen_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(scope_type, scope_ref, alert_key)
+                WHERE acknowledged_at IS NULL
+            DO UPDATE SET
+                severity = CASE
+                    WHEN excluded.severity = 'high' THEN 'high'
+                    WHEN alert_events.severity = 'high' THEN 'high'
+                    WHEN excluded.severity = 'warning' THEN 'warning'
+                    WHEN alert_events.severity = 'warning' THEN 'warning'
+                    ELSE excluded.severity
+                END,
+                seen_count = COALESCE(alert_events.seen_count, 1) + 1,
+                last_seen_at = excluded.created_at,
+                reason = excluded.reason,
+                recommended_action = CASE
+                    WHEN ? THEN excluded.recommended_action
+                    ELSE alert_events.recommended_action
+                END
             """,
-            (scope_type, scope_ref, reason),
+            (
+                target_id,
+                stamp,
+                severity,
+                scope_type,
+                scope_ref,
+                reason,
+                recommended_action,
+                alert_key,
+                stamp,
+                1 if refresh_action else 0,
+            ),
+        )
+        row = conn.execute(
+            "SELECT id FROM alert_events WHERE scope_type = ? AND scope_ref = ? "
+            "AND alert_key = ? AND acknowledged_at IS NULL",
+            (scope_type, scope_ref, alert_key),
         ).fetchone()
-        if existing is not None:
-            # Touch, never a second row. Fold the re-fire into the oldest open row.
-            target_id = existing["id"]
-            new_severity = _more_severe(existing["severity"], severity)
-            if refresh_action:
-                conn.execute(
-                    "UPDATE alert_events "
-                    "SET severity = ?, seen_count = COALESCE(seen_count, 1) + 1, "
-                    "    last_seen_at = ?, recommended_action = ? WHERE id = ?",
-                    (new_severity, stamp, recommended_action, target_id),
-                )
-            else:
-                conn.execute(
-                    "UPDATE alert_events "
-                    "SET severity = ?, seen_count = COALESCE(seen_count, 1) + 1, "
-                    "    last_seen_at = ? WHERE id = ?",
-                    (new_severity, stamp, target_id),
-                )
-        else:
-            target_id = f"al_{uuid.uuid4().hex[:12]}"
-            conn.execute(
-                """
-                INSERT INTO alert_events (
-                    id, created_at, severity, scope_type, scope_ref, reason,
-                    recommended_action
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    target_id,
-                    stamp,
-                    severity,
-                    scope_type,
-                    scope_ref,
-                    reason,
-                    recommended_action,
-                ),
-            )
+        target_id = row["id"]
     # Re-read AFTER the write transaction commits so the returned object reflects the
     # persisted touch/insert (get_alert opens its own connection — it would not see an
     # uncommitted transaction's rows).
-    return ledger.get_alert(target_id)
+    alert = ledger.get_alert(target_id)
+    if alert.severity in {"critical", "high"}:
+        from forecasting.ledger.workflow import enqueue_alert_operational_task
+
+        enqueue_alert_operational_task(
+            ledger, alert, lane="urgent_forecast", now=stamp
+        )
+    return alert
 
 
 def get_alert(ledger, alert_id: str) -> AlertEvent:
@@ -506,6 +544,7 @@ def acknowledge_alert(
     *,
     acknowledged_at: str | None = None,
     ack_note: str | None = None,
+    disposition: str | None = None,
 ) -> AlertEvent:
     """Acknowledge (close) an alert. ``ack_note`` records WHY for an AUTOMATIC close
     (reconciliation / collapse) — it makes the close auditable and visibly distinct
@@ -513,16 +552,30 @@ def acknowledge_alert(
     stamps ``dismissed_at`` / ``dismiss_*``). An operator ack passes no note."""
     ledger.get_alert(alert_id)
     stamped = parse_timestamp(acknowledged_at, field_name="acknowledged_at") or utc_now_iso()
+    if disposition is None:
+        note = ack_note or ""
+        if "collapsed:" in note:
+            disposition = "duplicate"
+        elif "resolution" in note:
+            disposition = "resolved_by_resolution"
+        elif "source_recovery" in note:
+            disposition = "resolved_by_source_recovery"
+        elif ack_note:
+            disposition = "not_actionable"
+        else:
+            disposition = "operator_acknowledged"
     with ledger._connect() as conn:
         if ack_note is not None:
             conn.execute(
-                "UPDATE alert_events SET acknowledged_at = ?, ack_note = ? WHERE id = ?",
-                (stamped, ack_note, alert_id),
+                "UPDATE alert_events SET acknowledged_at = COALESCE(acknowledged_at, ?), "
+                "ack_note = COALESCE(ack_note, ?), disposition = COALESCE(disposition, ?) WHERE id = ?",
+                (stamped, ack_note, disposition, alert_id),
             )
         else:
             conn.execute(
-                "UPDATE alert_events SET acknowledged_at = ? WHERE id = ?",
-                (stamped, alert_id),
+                "UPDATE alert_events SET acknowledged_at = COALESCE(acknowledged_at, ?), "
+                "disposition = COALESCE(disposition, ?) WHERE id = ?",
+                (stamped, disposition, alert_id),
             )
     return ledger.get_alert(alert_id)
 
@@ -617,7 +670,8 @@ def dismiss_alerts(
                        dismiss_note = ?,
                        dismiss_actor = ?,
                        dismiss_reason = ?,
-                       dismiss_ttl_days = ?
+                       dismiss_ttl_days = ?,
+                       disposition = 'dismissed_by_policy'
                  WHERE id = ? AND acknowledged_at IS NULL
                 """,
                 (now_ts, now_ts, note_text, actor_text, reason_text, ttl, alert_id),
@@ -806,6 +860,34 @@ def reconcile_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -
                 _keep(alert, "no forecast update committed since the cadence alert")
             continue
 
+        # A refresh-generated estimation request is done when a newer forecast lands
+        # or the dedicated source estimator records a judgment (including an
+        # immaterial result or a reviewable proposal).
+        if reason.startswith("forecast_estimation_required:"):
+            estimated = False
+            try:
+                with ledger._connect() as conn:
+                    estimated = (
+                        conn.execute(
+                            """
+                            SELECT 1 FROM model_runs
+                            WHERE question_id = ?
+                              AND model_type = 'source_change_estimation'
+                              AND created_at > ?
+                            LIMIT 1
+                            """,
+                            (question_id, alert.created_at),
+                        ).fetchone()
+                        is not None
+                    )
+            except Exception:
+                estimated = False
+            if _snapshot_after() or estimated:
+                _close(alert, "estimation_completed")
+            else:
+                _keep(alert, "no estimator judgment or forecast update since the alert")
+            continue
+
         # Genuine human-judgment classes (domain-error profiles, assumption /
         # reference-class checks, central-in-band, calibration-lesson review,
         # contested labels) are NEVER auto-reconciled — a new forecast + fresh
@@ -935,6 +1017,15 @@ def escalate_aged_alerts(ledger, *, now: str | None = None, dry_run: bool = Fals
                     "UPDATE alert_events SET severity = ? WHERE id = ? AND acknowledged_at IS NULL",
                     (target, alert.id),
                 )
+            if target in {"critical", "high"}:
+                from forecasting.ledger.workflow import enqueue_alert_operational_task
+
+                enqueue_alert_operational_task(
+                    ledger,
+                    ledger.get_alert(alert.id),
+                    lane="urgent_forecast",
+                    now=now_dt.isoformat() if now_dt else None,
+                )
         escalated.append({
             "id": alert.id,
             "reason": alert.reason,
@@ -943,7 +1034,17 @@ def escalate_aged_alerts(ledger, *, now: str | None = None, dry_run: bool = Fals
             "to": target,
             "age_days": round(age_days, 1),
         })
-    return {"escalated": escalated, "escalated_count": len(escalated), "dry_run": dry_run}
+    task_escalation = {"escalated": [], "escalated_count": 0}
+    if not dry_run:
+        task_escalation = ledger.escalate_overdue_high_severity_tasks(
+            now=now_dt.isoformat() if now_dt else None
+        )
+    return {
+        "escalated": escalated,
+        "escalated_count": len(escalated),
+        "task_escalation": task_escalation,
+        "dry_run": dry_run,
+    }
 
 
 def collapse_duplicate_alerts(ledger, *, now: str | None = None, dry_run: bool = False) -> dict[str, Any]:
@@ -960,15 +1061,41 @@ def collapse_duplicate_alerts(ledger, *, now: str | None = None, dry_run: bool =
     group has more than one open row, so a second pass folds nothing."""
     now_ts = parse_timestamp(now, field_name="now") or utc_now_iso()
     open_alerts = ledger.list_alerts(unresolved_only=True)
+
+    def collapse_key(alert: AlertEvent) -> str:
+        if alert.reason.startswith(
+            (
+                "learned_error_update_required:",
+                "forecast_estimation_required:",
+                "autopilot_estimation_required:",
+            )
+        ):
+            return normalized_alert_key(alert.reason)
+        return alert.alert_key or normalized_alert_key(alert.reason)
+
     groups: dict[tuple[str, str, str], list[AlertEvent]] = {}
     for alert in open_alerts:
-        groups.setdefault((alert.scope_type, alert.scope_ref, alert.reason), []).append(alert)
+        groups.setdefault(
+            (
+                alert.scope_type,
+                alert.scope_ref,
+                collapse_key(alert),
+            ),
+            [],
+        ).append(alert)
 
     groups_collapsed = 0
     rows_folded = 0
     folded_ids: list[str] = []
     for members in groups.values():
         if len(members) < 2:
+            if not dry_run:
+                only = members[0]
+                with ledger._connect() as conn:
+                    conn.execute(
+                        "UPDATE alert_events SET alert_key = ? WHERE id = ?",
+                        (collapse_key(only), only.id),
+                    )
             continue
         groups_collapsed += 1
         ordered = sorted(members, key=lambda a: (a.created_at or "", a.id))
@@ -987,10 +1114,6 @@ def collapse_duplicate_alerts(ledger, *, now: str | None = None, dry_run: bool =
             folded_ids.extend(m.id for m in surplus)
             continue
         with ledger._connect() as conn:
-            conn.execute(
-                "UPDATE alert_events SET seen_count = ?, severity = ?, last_seen_at = ? WHERE id = ?",
-                (total_seen, max_severity, latest_seen, kept.id),
-            )
             for m in surplus:
                 conn.execute(
                     "UPDATE alert_events SET acknowledged_at = ?, ack_note = ? "
@@ -998,6 +1121,20 @@ def collapse_duplicate_alerts(ledger, *, now: str | None = None, dry_run: bool =
                     (now_ts, f"collapsed:{kept.id}", m.id),
                 )
                 folded_ids.append(m.id)
+            conn.execute(
+                """
+                UPDATE alert_events
+                SET seen_count = ?, severity = ?, last_seen_at = ?, alert_key = ?
+                WHERE id = ?
+                """,
+                (
+                    total_seen,
+                    max_severity,
+                    latest_seen,
+                    collapse_key(kept),
+                    kept.id,
+                ),
+            )
     return {
         "groups_collapsed": groups_collapsed,
         "rows_folded": rows_folded,
@@ -1015,6 +1152,7 @@ def self_check(
     horizon: str | None = None,
     portfolio: str | None = None,
     stale_days: int = 7,
+    stale: bool = True,
     now: str | None = None,
     auto_score: bool = False,
     auto_postmortem: bool = False,
@@ -1064,7 +1202,7 @@ def self_check(
 
     alerts: list[AlertEvent] = []
     for row in ledger.review_questions(
-        stale=True,
+        stale=stale,
         last_days=stale_days,
         domain=domain,
         topic=topic,
@@ -1533,4 +1671,6 @@ def _row_to_alert(ledger, row: sqlite3.Row) -> AlertEvent:
         seen_count=int(seen) if seen is not None else 1,
         last_seen_at=row["last_seen_at"] if "last_seen_at" in keys else None,
         ack_note=row["ack_note"] if "ack_note" in keys else None,
+        alert_key=row["alert_key"] if "alert_key" in keys else normalized_alert_key(row["reason"]),
+        disposition=row["disposition"] if "disposition" in keys else None,
     )

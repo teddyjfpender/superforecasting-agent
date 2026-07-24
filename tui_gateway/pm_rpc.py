@@ -22,6 +22,7 @@ returns ``{streaming: false, reason}`` and the TUI keeps its 30s list re-poll.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from pydantic import ValidationError
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Result keys that ride the wire additively even though the generated response
 # model doesn't declare them (see ``_rpc_model``). Kept tiny + explicit.
-_PASSTHROUGH_RESULT_KEYS = ("stale",)
+_PASSTHROUGH_RESULT_KEYS = ("stale", "catalog")
 
 
 def _field_error(exc: ValidationError) -> ValueError:
@@ -123,6 +124,7 @@ def register(server) -> None:
     # ── list / search ────────────────────────────────────────────────────────
 
     def pm_list(rid, params):
+        started = time.monotonic()
         venue = params.get("venue") or None
         query = params.get("query") or None
         tag = params.get("tag") or None
@@ -147,12 +149,24 @@ def register(server) -> None:
                 ]
                 stale = False
         except Exception as exc:
+            logger.warning("pm.list failed: %s", exc)
             return _err(rid, exc)
         result = {"events": events, "count": len(events)}
+        catalog_status = getattr(svc, "catalog_status", None)
+        if callable(catalog_status):
+            result["catalog"] = catalog_status()
         # Only present when actually stale — a warm/fresh tape stays byte-identical
         # to the pre-cache wire (and the UI shows the marker only when it's set).
         if stale:
             result["stale"] = True
+        logger.info(
+            "pm.list complete venue=%s query=%r events=%d stale=%s elapsed=%.3fs",
+            venue or "all",
+            query or "",
+            len(events),
+            stale,
+            time.monotonic() - started,
+        )
         return _ok(rid, result)
 
     # ── detail ───────────────────────────────────────────────────────────────

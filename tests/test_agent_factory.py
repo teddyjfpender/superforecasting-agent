@@ -4,6 +4,7 @@ importing the heavy run_agent module by patching the _aiagent_cls indirection.""
 from __future__ import annotations
 
 import agent.agent_factory as af
+import pytest
 
 
 def test_resolve_and_map_runtime_maps_and_drops_none():
@@ -54,6 +55,14 @@ def test_build_agent_explicit_kwarg_wins_over_runtime(monkeypatch):
     captured = _fake_agent(monkeypatch)
     af.build_agent({"api_key": "runtime-key", "provider": "p"}, model="m", api_key="explicit-key")
     assert captured["api_key"] == "explicit-key"  # caller override beats the mapped runtime value
+
+
+def test_build_agent_rejects_incompatible_codex_model_before_construction(monkeypatch):
+    _fake_agent(monkeypatch)
+    with pytest.raises(ValueError, match="not compatible with openai-codex"):
+        af.build_agent(
+            {"provider": "openai-codex"}, model="anthropic/claude-opus-4-8"
+        )
 
 
 def test_tenant_runtime_set_get_clear_isolated():

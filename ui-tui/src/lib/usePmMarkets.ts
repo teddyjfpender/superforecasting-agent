@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { WireEvent } from '../protocol/generated.js'
+
 import {
   applyBookTick,
   bookMarketId,
@@ -42,6 +43,8 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
   // Cold-start tape: rows served instantly from the gateway's disk cache while
   // the live revalidate runs — surfaced so the UI can mark the tape stale.
   const [stale, setStale] = useState(false)
+  const [catalog, setCatalog] = useState<Awaited<ReturnType<typeof fetchPMListResult>>['catalog']>(null)
+  const [error, setError] = useState('')
   // Has the FIRST list fetch settled (either way)? Lets the section show an
   // honest "loading venues…" line on first open instead of flashing "0 events"
   // before any items land. Distinct from `loading`, which toggles per refresh.
@@ -62,17 +65,20 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
     }
 
     setLoading(true)
+    setError('')
     fetchPMListResult(gw, { limit: 40, ...(venue === 'all' ? {} : { venue }) })
       .then(next => {
         if (aliveRef.current) {
+          setCatalog(next.catalog)
           setItems(next.items)
           setStale(next.stale)
           setLoading(false)
           setLoaded(true)
         }
       })
-      .catch(() => {
+      .catch(err => {
         if (aliveRef.current) {
+          setError(err instanceof Error ? err.message : String(err))
           setLoading(false)
           setLoaded(true)
         }
@@ -85,7 +91,7 @@ export function usePmList(gw: PMHookGateway | undefined, active: boolean, venue:
     }
   }, [active, reload])
 
-  return { items, loaded, loading, reload, stale }
+  return { catalog, error, items, loaded, loading, reload, stale }
 }
 
 // ── selection detail + streaming ──────────────────────────────────────────────
@@ -196,12 +202,15 @@ export function usePmSelectionData(
 
     // Remap: subscription id → outcome market_id (so ticks repaint the right row).
     const keyMap: Record<string, string> = {}
+
     for (const m of detailItem.event.markets) {
       const sub = bookMarketId(v, m, m.market_id)
+
       if (sub) {
         keyMap[sub] = m.market_id
       }
     }
+
     tickKeyRef.current = keyMap
 
     const ids = Object.keys(keyMap).slice(0, 12)

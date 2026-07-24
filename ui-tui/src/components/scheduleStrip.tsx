@@ -65,12 +65,14 @@ export const deriveScheduleHealth = (
   const nextStamps = [...jobs.map(j => j.next_run_at), ...reviews.map(r => r.next_run_at)]
     .map(s => (s ? Date.parse(s) : Number.NaN))
     .filter(n => !Number.isNaN(n) && n >= now)
+
   const nextRun = nextStamps.length ? relTime(new Date(Math.min(...nextStamps)).toISOString(), now) : ''
 
   // Latest last-run across the cron jobs (the most recent fire).
   const lastStamps = jobs
     .map(j => (j.last_run_at ? Date.parse(j.last_run_at) : Number.NaN))
     .filter(n => !Number.isNaN(n))
+
   const lastRun = lastStamps.length ? relTime(new Date(Math.max(...lastStamps)).toISOString(), now) : ''
 
   const erroredJob = jobs.find(j => j.errored)

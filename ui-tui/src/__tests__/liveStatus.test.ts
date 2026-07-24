@@ -101,6 +101,7 @@ describe('turnTokenCount — honest work delta (input+output), never usage.total
 
   it('a simulated 10-call turn reports the SUM of fresh input+output, not the last call', () => {
     const t = turn({ reasoningTokens: 0, streaming: '', toolTokens: 0 }) as never
+
     // Realistic per-call fresh (cache-excluded) work: call 1 pays full input,
     // later calls are mostly cache reads so their fresh input is small.
     const perCall: [number, number][] = [
@@ -115,6 +116,7 @@ describe('turnTokenCount — honest work delta (input+output), never usage.total
       [1_000, 700],
       [400, 300]
     ]
+
     const sumIn = perCall.reduce((a, [i]) => a + i, 0) // 20_350
     const sumOut = perCall.reduce((a, [, o]) => a + o, 0) // 6_800
     const [lastIn, lastOut] = perCall[perCall.length - 1]

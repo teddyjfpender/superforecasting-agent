@@ -43,6 +43,7 @@ const stdoutOnly = (diff: ReturnType<LogUpdate['render']>) =>
     .map(p => (p as { type: 'stdout'; content: string }).content)
     .join('')
 
+// eslint-disable-next-line no-control-regex -- verifies the emitted terminal escape sequence
 const hasDecstbm = (text: string) => /\x1b\[\d+;\d+r/.test(text)
 
 // Full emitted byte stream, including the pre-serialized style transitions
@@ -220,10 +221,12 @@ describe('LogUpdate.render diff contract', () => {
     paint(next, 1, 'row one')
 
     const prevFrame = mkFrame(prev, w, h)
+
     const nextFrame: Frame = {
       ...mkFrame(next, w, h),
       scrollHint: { top: 1, bottom: 4, delta: 1 }
     }
+
     const log = new LogUpdate({ isTTY: true, stylePool })
     const diff = log.render(prevFrame, nextFrame, true, true)
 
@@ -240,10 +243,12 @@ describe('LogUpdate.render diff contract', () => {
     paint(next, 1, 'row one')
 
     const prevFrame = mkFrame(prev, w, h)
+
     const nextFrame: Frame = {
       ...mkFrame(next, w, h),
       scrollHint: { top: 1, bottom: 5, delta: 1 }
     }
+
     const log = new LogUpdate({ isTTY: true, stylePool })
     const diff = log.render(prevFrame, nextFrame, true, true)
 

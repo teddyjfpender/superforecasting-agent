@@ -478,6 +478,18 @@ def test_forecast_workspace_is_routed_to_thread_pool():
     assert "forecast.workspace" in server._LONG_HANDLERS
 
 
+def test_network_market_rpcs_are_routed_to_thread_pool():
+    """Venue HTTP must never stall the stdin dispatcher or later searches."""
+    assert {
+        "market.quotes",
+        "market.search",
+        "pm.book",
+        "pm.detail",
+        "pm.history",
+        "pm.list",
+    } <= server._LONG_HANDLERS
+
+
 def test_forecast_theses_returns_standalone_thesis_list(monkeypatch):
     import forecasting.dashboard as dashboard_module
 
@@ -732,26 +744,39 @@ def test_voice_toggle_returns_configured_record_key(monkeypatch):
             check_voice_requirements=lambda: {"available": True, "details": ""}
         ),
     )
-    # ``voice.toggle`` action=on mutates runtime env aliases directly
-    # (CLI parity, runtime-only flag). Take monkeypatch ownership of
-    # the vars so the change is reverted at teardown and later tests
-    # don't inherit a stale ON state (Copilot round-5 review on #19835).
+    # Voice state belongs to the session that owns the mic. The process
+    # defaults must remain unchanged for other sessions and future launches.
     monkeypatch.setenv("SUPERFORECASTING_AGENT_VOICE", "0")
     monkeypatch.setenv("FORECAST_VOICE", "0")
     monkeypatch.setenv("HERMES_VOICE", "0")
+    server._sessions["voice-session"] = {"session_key": "voice-key"}
+    server._session_toggles.pop("voice-key", None)
+    try:
+        on_resp = server.dispatch(
+            {
+                "id": "voice-on",
+                "method": "voice.toggle",
+                "params": {"action": "on", "session_id": "voice-session"},
+            }
+        )
+        status_resp = server.dispatch(
+            {
+                "id": "voice-status",
+                "method": "voice.toggle",
+                "params": {"action": "status", "session_id": "voice-session"},
+            }
+        )
 
-    on_resp = server.dispatch(
-        {"id": "voice-on", "method": "voice.toggle", "params": {"action": "on"}}
-    )
-    status_resp = server.dispatch(
-        {"id": "voice-status", "method": "voice.toggle", "params": {"action": "status"}}
-    )
-
-    assert on_resp["result"]["record_key"] == "ctrl+o"
-    assert status_resp["result"]["record_key"] == "ctrl+o"
-    assert os.environ["SUPERFORECASTING_AGENT_VOICE"] == "1"
-    assert os.environ["FORECAST_VOICE"] == "1"
-    assert os.environ["HERMES_VOICE"] == "1"
+        assert on_resp["result"]["record_key"] == "ctrl+o"
+        assert status_resp["result"]["record_key"] == "ctrl+o"
+        assert status_resp["result"]["enabled"] is True
+        assert server._session_toggles["voice-key"]["VOICE"] == "1"
+        assert os.environ["SUPERFORECASTING_AGENT_VOICE"] == "0"
+        assert os.environ["FORECAST_VOICE"] == "0"
+        assert os.environ["HERMES_VOICE"] == "0"
+    finally:
+        server._sessions.pop("voice-session", None)
+        server._session_toggles.pop("voice-key", None)
 
 
 def test_voice_status_prefers_fork_native_runtime_env(monkeypatch):
@@ -994,22 +1019,32 @@ def test_voice_toggle_tts_branch_also_carries_record_key(monkeypatch):
             check_voice_requirements=lambda: {"available": True, "details": ""}
         ),
     )
-    monkeypatch.setenv("SUPERFORECASTING_AGENT_VOICE", "1")
-    monkeypatch.setenv("FORECAST_VOICE", "1")
-    monkeypatch.setenv("HERMES_VOICE", "1")
-    monkeypatch.delenv("SUPERFORECASTING_AGENT_VOICE_TTS", raising=False)
-    monkeypatch.delenv("FORECAST_VOICE_TTS", raising=False)
-    monkeypatch.delenv("HERMES_VOICE_TTS", raising=False)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_VOICE", "0")
+    monkeypatch.setenv("FORECAST_VOICE", "0")
+    monkeypatch.setenv("HERMES_VOICE", "0")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_VOICE_TTS", "0")
+    monkeypatch.setenv("FORECAST_VOICE_TTS", "0")
+    monkeypatch.setenv("HERMES_VOICE_TTS", "0")
+    server._sessions["voice-session"] = {"session_key": "voice-key"}
+    server._session_toggles["voice-key"] = {"VOICE": "1"}
+    try:
+        tts_resp = server.dispatch(
+            {
+                "id": "voice-tts",
+                "method": "voice.toggle",
+                "params": {"action": "tts", "session_id": "voice-session"},
+            }
+        )
 
-    tts_resp = server.dispatch(
-        {"id": "voice-tts", "method": "voice.toggle", "params": {"action": "tts"}}
-    )
-
-    assert tts_resp["result"]["record_key"] == "ctrl+space"
-    assert tts_resp["result"]["tts"] is True
-    assert os.environ["SUPERFORECASTING_AGENT_VOICE_TTS"] == "1"
-    assert os.environ["FORECAST_VOICE_TTS"] == "1"
-    assert os.environ["HERMES_VOICE_TTS"] == "1"
+        assert tts_resp["result"]["record_key"] == "ctrl+space"
+        assert tts_resp["result"]["tts"] is True
+        assert server._session_toggles["voice-key"]["VOICE_TTS"] == "1"
+        assert os.environ["SUPERFORECASTING_AGENT_VOICE_TTS"] == "0"
+        assert os.environ["FORECAST_VOICE_TTS"] == "0"
+        assert os.environ["HERMES_VOICE_TTS"] == "0"
+    finally:
+        server._sessions.pop("voice-session", None)
+        server._session_toggles.pop("voice-key", None)
 
 
 def test_load_enabled_toolsets_prefers_tui_env(monkeypatch):
@@ -2590,16 +2625,8 @@ def test_config_set_model_global_persists(monkeypatch):
     assert saved["model"]["base_url"] == "https://api.anthropic.com"
 
 
-def test_config_set_model_syncs_inference_provider_env(monkeypatch):
-    """After an explicit provider switch, HERMES_INFERENCE_PROVIDER must
-    reflect the user's choice so ambient re-resolution (credential pool
-    refresh, aux clients) picks up the new provider instead of the original
-    one persisted in config or shell env.
-
-    Regression: a TUI user switched openrouter → anthropic and the TUI kept
-    trying openrouter because the env-var-backed resolvers still saw the old
-    provider.
-    """
+def test_config_set_model_keeps_provider_switch_session_scoped(monkeypatch):
+    """One session's provider switch must not mutate another's environment."""
 
     class _Agent:
         provider = "openrouter"
@@ -2628,30 +2655,30 @@ def test_config_set_model_syncs_inference_provider_env(monkeypatch):
     monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
 
-    server.handle_request(
-        {
-            "id": "1",
-            "method": "config.set",
-            "params": {
-                "session_id": "sid",
-                "key": "model",
-                "value": "claude-sonnet-4.6 --provider anthropic",
-            },
-        }
-    )
+    server._session_toggles.pop("session-key", None)
+    try:
+        server.handle_request(
+            {
+                "id": "1",
+                "method": "config.set",
+                "params": {
+                    "session_id": "sid",
+                    "key": "model",
+                    "value": "claude-sonnet-4.6 --provider anthropic",
+                },
+            }
+        )
 
-    assert os.environ["SUPERFORECASTING_AGENT_INFERENCE_PROVIDER"] == "anthropic"
-    assert os.environ["FORECAST_INFERENCE_PROVIDER"] == "anthropic"
-    assert os.environ["HERMES_INFERENCE_PROVIDER"] == "anthropic"
+        assert os.environ["HERMES_INFERENCE_PROVIDER"] == "openrouter"
+        toggles = server._session_toggles["session-key"]
+        assert toggles["INFERENCE_PROVIDER"] == "anthropic"
+        assert toggles["TUI_PROVIDER"] == "anthropic"
+    finally:
+        server._sessions.pop("sid", None)
+        server._session_toggles.pop("session-key", None)
 
 
-def test_config_set_model_syncs_tui_provider_unconditionally(monkeypatch):
-    """Regression for #16857: /model must set the fork-native TUI provider
-    env even when it wasn't pre-set on launch, so a later /new (which re-runs
-    _resolve_startup_runtime) honours the user's explicit provider choice
-    instead of falling through to static-catalog detection and picking a
-    coincidentally-matching native provider.
-    """
+def test_config_set_model_stores_provider_without_process_env(monkeypatch):
 
     class _Agent:
         provider = "openrouter"
@@ -2683,30 +2710,38 @@ def test_config_set_model_syncs_tui_provider_unconditionally(monkeypatch):
     monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *args, **kwargs: None)
 
-    server.handle_request(
-        {
-            "id": "1",
-            "method": "config.set",
-            "params": {
-                "session_id": "sid",
-                "key": "model",
-                "value": "deepseek-v4-pro --provider custom:xuanji",
-            },
-        }
-    )
+    server._session_toggles.pop("session-key", None)
+    try:
+        server.handle_request(
+            {
+                "id": "1",
+                "method": "config.set",
+                "params": {
+                    "session_id": "sid",
+                    "key": "model",
+                    "value": "deepseek-v4-pro --provider custom:xuanji",
+                },
+            }
+        )
 
-    # The fork-native env var is the canonical explicit-this-process carrier
-    # consumed by _resolve_startup_runtime() on /new. Compatibility aliases
-    # stay in sync for inherited runtime helpers.
-    assert os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "custom:xuanji"
-    assert os.environ["FORECAST_TUI_PROVIDER"] == "custom:xuanji"
-    assert os.environ["HERMES_TUI_PROVIDER"] == "custom:xuanji"
-    assert os.environ["SUPERFORECASTING_AGENT_INFERENCE_PROVIDER"] == "custom:xuanji"
-    assert os.environ["FORECAST_INFERENCE_PROVIDER"] == "custom:xuanji"
-    assert os.environ["HERMES_INFERENCE_PROVIDER"] == "custom:xuanji"
+        for name in (
+            "SUPERFORECASTING_AGENT_TUI_PROVIDER",
+            "FORECAST_TUI_PROVIDER",
+            "HERMES_TUI_PROVIDER",
+            "SUPERFORECASTING_AGENT_INFERENCE_PROVIDER",
+            "FORECAST_INFERENCE_PROVIDER",
+            "HERMES_INFERENCE_PROVIDER",
+        ):
+            assert name not in os.environ
+        toggles = server._session_toggles["session-key"]
+        assert toggles["MODEL"] == "deepseek-v4-pro"
+        assert toggles["TUI_PROVIDER"] == "custom:xuanji"
+    finally:
+        server._sessions.pop("sid", None)
+        server._session_toggles.pop("session-key", None)
 
 
-def test_config_set_model_syncs_tui_provider_env(monkeypatch):
+def test_config_set_model_does_not_replace_process_default(monkeypatch):
     class Agent:
         model = "gpt-5.3-codex"
         provider = "openai-codex"
@@ -2750,17 +2785,15 @@ def test_config_set_model_syncs_tui_provider_env(monkeypatch):
         )
 
         assert resp["result"]["value"] == "anthropic/claude-sonnet-4.6"
-        assert os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "anthropic"
-        assert os.environ["FORECAST_TUI_PROVIDER"] == "anthropic"
-        assert os.environ["HERMES_TUI_PROVIDER"] == "anthropic"
-        assert os.environ["SUPERFORECASTING_AGENT_MODEL"] == "anthropic/claude-sonnet-4.6"
-        assert os.environ["FORECAST_MODEL"] == "anthropic/claude-sonnet-4.6"
-        assert os.environ["HERMES_MODEL"] == "anthropic/claude-sonnet-4.6"
-        assert os.environ["SUPERFORECASTING_AGENT_INFERENCE_MODEL"] == "anthropic/claude-sonnet-4.6"
-        assert os.environ["FORECAST_INFERENCE_MODEL"] == "anthropic/claude-sonnet-4.6"
-        assert os.environ["HERMES_INFERENCE_MODEL"] == "anthropic/claude-sonnet-4.6"
+        assert os.environ["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "openai-codex"
+        assert "SUPERFORECASTING_AGENT_MODEL" not in os.environ
+        assert "SUPERFORECASTING_AGENT_INFERENCE_MODEL" not in os.environ
+        toggles = server._session_toggles["session-key"]
+        assert toggles["MODEL"] == "anthropic/claude-sonnet-4.6"
+        assert toggles["TUI_PROVIDER"] == "anthropic"
     finally:
         server._sessions.clear()
+        server._session_toggles.pop("session-key", None)
 
 
 def test_config_set_personality_rejects_unknown_name(monkeypatch):

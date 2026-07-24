@@ -17,6 +17,7 @@ call-time hop; the watched-source enum constants come from the ``watches`` leaf.
 
 from __future__ import annotations
 
+from contextvars import ContextVar
 from forecasting.ledger import core as _core
 from typing import Any
 from forecasting.branding import PRODUCT_SLUG
@@ -25,9 +26,45 @@ from urllib.error import URLError
 from forecasting.ledger import watches as _watches
 import hashlib
 import json
-from forecasting.models import json_dumps
+from forecasting.models import json_dumps as _model_json_dumps
 import re
 from urllib.parse import urlparse
+
+
+_CAPTURED_OBSERVATION: ContextVar[Any | None] = ContextVar(
+    "forecast_source_observation", default=None
+)
+
+
+def begin_source_observation_capture() -> None:
+    _CAPTURED_OBSERVATION.set(None)
+
+
+def capture_source_observation(value: Any) -> None:
+    """Keep the exact bounded payload that produced a source signature."""
+    try:
+        encoded = _model_json_dumps(value)
+        if len(encoded) > 256_000:
+            candidates = value.get("items") if isinstance(value, dict) else value
+            if not isinstance(candidates, list):
+                candidates = [value]
+            encoded = _model_json_dumps(
+                {"truncated": True, "items": candidates[:50]}
+            )
+        _CAPTURED_OBSERVATION.set(json.loads(encoded))
+    except (TypeError, ValueError, AttributeError):
+        _CAPTURED_OBSERVATION.set(None)
+
+
+def take_source_observation() -> Any | None:
+    value = _CAPTURED_OBSERVATION.get()
+    _CAPTURED_OBSERVATION.set(None)
+    return value
+
+
+def json_dumps(value: Any) -> str:
+    capture_source_observation(value)
+    return _model_json_dumps(value)
 
 
 def _rss_relevance_filters(ledger, metadata: dict[str, Any]) -> dict[str, list[str]]:
@@ -85,6 +122,7 @@ def _url_source_signature(ledger, source: str) -> str:
     request = Request(source, headers={"User-Agent": f"{PRODUCT_SLUG}/forecast-watch"})
     digest = hashlib.sha256()
     total = 0
+    excerpt = bytearray()
     try:
         with _core.urlopen(request, timeout=10) as response:
             while total < 2 * 1024 * 1024:
@@ -93,7 +131,26 @@ def _url_source_signature(ledger, source: str) -> str:
                     break
                 total += len(chunk)
                 digest.update(chunk)
+                if len(excerpt) < 32_768:
+                    excerpt.extend(chunk[: 32_768 - len(excerpt)])
             headers = response.headers
+            decoded = bytes(excerpt).decode(
+                response.headers.get_content_charset() or "utf-8", errors="replace"
+            )
+            text_excerpt = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", decoded)).strip()
+            capture_source_observation(
+                {
+                    "entry_id": source,
+                    "canonical_url": source,
+                    "title": "",
+                    "published_at": None,
+                    "summary": text_excerpt[:8_000],
+                    "content_type": str(headers.get("Content-Type") or ""),
+                    "etag": str(headers.get("ETag") or ""),
+                    "last_modified": str(headers.get("Last-Modified") or ""),
+                    "content_hash": digest.hexdigest(),
+                }
+            )
             return ":".join(
                 [
                     "url",

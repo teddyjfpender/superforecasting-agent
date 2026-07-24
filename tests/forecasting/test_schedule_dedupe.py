@@ -4,7 +4,9 @@ fire independently — the exact pain reported in the first feedback pass."""
 
 from __future__ import annotations
 
-import uuid
+import sqlite3
+
+import pytest
 
 from forecasting.ledger import ForecastLedger
 
@@ -77,30 +79,19 @@ def test_schedule_review_reactivates_a_disabled_duplicate(tmp_path):
     assert lg.get_scheduled_review(a["id"])["enabled"] == 1
 
 
-def test_dedupe_collapses_preexisting_duplicates(tmp_path):
+def test_database_rejects_new_active_duplicates(tmp_path):
     lg = _ledger(tmp_path)
     qid = _question(lg)
     keep = lg.schedule_review(scope_type="question", scope_ref=qid, cadence="weekly")
-    # Inject raw duplicates (as the live ledger already had) bypassing the guard.
+    # The partial unique index is the final authority under concurrent writers.
     with lg._connect() as conn:
-        for _ in range(2):
+        with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO scheduled_reviews (id, scope_type, scope_ref, cadence, stale_days, "
                 "next_run_at, trigger_reason, enabled) VALUES (?,?,?,?,?,?,?,1)",
-                (f"sr_{uuid.uuid4().hex[:12]}", "question", qid, "weekly", 7, "2026-07-01T00:00:00Z", "scheduled"),
+                ("sr_duplicate", "question", qid, "weekly", 7, "2026-07-01T00:00:00Z", "scheduled"),
             )
-    assert len(_enabled(lg)) == 3
-
-    result = lg.dedupe_scheduled_reviews()
-    assert result["groups_collapsed"] == 1
-    assert result["disabled_count"] == 2
-    weekly_enabled = [r for r in _enabled(lg) if r["cadence"] == "weekly" and r["scope_ref"] == qid]
-    assert len(weekly_enabled) == 1
-
-    # Idempotent: a deduped ledger is a no-op on a second pass.
-    assert lg.dedupe_scheduled_reviews()["disabled_count"] == 0
-    # The kept row's run history is preserved (disable, not delete).
-    assert any(r["id"] == keep["id"] for r in lg.list_scheduled_reviews())
+    assert [row["id"] for row in _enabled(lg)] == [keep["id"]]
 
 
 def test_mark_question_review_due_creates_then_rearms(tmp_path):

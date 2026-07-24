@@ -20,10 +20,10 @@ const payload = {
 describe('deskGroups', () => {
   const tabs = buildDeskTabs(payload)
 
-  it('reduces the lens set to real theses + a single All catch-all (no factor/tag lenses)', () => {
-    expect(tabs.map((t) => t.kind)).toEqual(['thesis', 'all'])
+  it('keeps real theses, the operations cockpit, and a single All catch-all', () => {
+    expect(tabs.map((t) => t.kind)).toEqual(['thesis', 'all', 'operations'])
     // Labels are SHORT (kind-noise stripped). No "#tag" or factor lens survives.
-    expect(tabs.map((t) => t.label)).toEqual(['Fed Path', 'All'])
+    expect(tabs.map((t) => t.label)).toEqual(['Fed Path', 'All', 'Operations'])
     expect(tabs.some((t) => t.kind === 'factor')).toBe(false)
     expect(tabs.some((t) => t.kind === 'tag')).toBe(false)
     expect(tabs.some((t) => t.label.startsWith('#'))).toBe(false)
@@ -35,7 +35,7 @@ describe('deskGroups', () => {
   })
 
   it('All tab has every forecast in order (factor/ungrouped members included)', () => {
-    const all = tabs[tabs.length - 1]
+    const all = tabs.find(tab => tab.kind === 'all')!
     expect(all.kind).toBe('all')
     expect(all.forecastIds).toEqual(['q1', 'q2', 'q3', 'q4', 'q5'])
   })
@@ -48,8 +48,9 @@ describe('deskGroups', () => {
         { id: 'major', title: 'Major thesis', question_ids: ['a1', 'a2', 'a3'] },
       ],
     } as never)
-    expect(t.map((x) => x.kind)).toEqual(['thesis', 'thesis', 'all'])
-    expect(t.map((x) => x.refId)).toEqual(['major', 'minor', undefined])
+
+    expect(t.map((x) => x.kind)).toEqual(['thesis', 'thesis', 'all', 'operations'])
+    expect(t.map((x) => x.refId)).toEqual(['major', 'minor', undefined, undefined])
   })
 
   it('member_count field wins over present-id count for ordering', () => {
@@ -60,17 +61,17 @@ describe('deskGroups', () => {
         { id: 'big', title: 'Big', question_ids: ['a1'], member_count: 9 }, // fewer present, bigger book
       ],
     } as never)
-    expect(t.map((x) => x.refId)).toEqual(['big', 'small', undefined])
+
+    expect(t.map((x) => x.refId)).toEqual(['big', 'small', undefined, undefined])
   })
 
   it('forecastsForTab resolves ids to items in order', () => {
     expect(forecastsForTab(tabs[0], payload.forecasts).map((i) => i.id)).toEqual(['q1', 'q4'])
   })
 
-  it('empty payload yields just an All tab', () => {
+  it('empty payload still yields Operations and All', () => {
     const t = buildDeskTabs({ forecasts: [] } as never)
-    expect(t).toHaveLength(1)
-    expect(t[0].kind).toBe('all')
+    expect(t.map((x) => x.kind)).toEqual(['all', 'operations'])
   })
 })
 
@@ -92,12 +93,13 @@ describe('bench forecasts (no lens, still carved out of All)', () => {
       ],
       bench_count: 2,
     } as never
+
     const t = buildDeskTabs(benchPayload)
     // Only a single All lens (no theses here) — no Bench tab any more.
-    expect(t.map((x) => x.kind)).toEqual(['all'])
+    expect(t.map((x) => x.kind)).toEqual(['all', 'operations'])
     expect(t.some((x) => x.kind === 'bench')).toBe(false)
     // Bench replays are still excluded from All (live desk = organic forecasts only).
-    expect(t[t.length - 1].forecastIds).toEqual(['q1', 'q5'])
+    expect(t.find(tab => tab.kind === 'all')!.forecastIds).toEqual(['q1', 'q5'])
   })
 })
 

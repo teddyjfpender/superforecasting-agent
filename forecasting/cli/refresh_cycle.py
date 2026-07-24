@@ -587,7 +587,7 @@ def _cmd_refresh(args: argparse.Namespace) -> None:
     if result.get("triggers_fired"):
         print(f"  triggers_fired: {', '.join(result['triggers_fired'])}")
     if result.get("needs_agent"):
-        print("  note: raw-data change carried forward — re-run with --agent for a re-reasoned estimate.")
+        print("  note: evidence was imported, but no forecast was committed — re-run with --agent for a re-reasoned estimate.")
     committed = result.get("forecast_id")
     if committed:
         print(f"committed snapshot {committed}")
@@ -598,7 +598,7 @@ def _cmd_refresh(args: argparse.Namespace) -> None:
         except Exception:
             pass
     else:
-        print("(preview only — not committed)")
+        print("(not committed)")
 
 
 def _cmd_autopilot_run(args: argparse.Namespace) -> None:

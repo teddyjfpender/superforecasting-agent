@@ -296,6 +296,40 @@ def test_workspace_payload_marks_distribution_kind_and_band(tmp_path):
     assert last["headline_probability"] == pytest.approx(4.23195)
 
 
+def test_workspace_payload_numeric_summary_uses_outcome_units_and_band(tmp_path):
+    """A numeric mean below 1 is an outcome value, never a probability."""
+    ledger = _ledger(tmp_path)
+    q = ledger.create_question(
+        title="Q2 ECI total compensation QoQ",
+        resolution_criteria="BLS first-published Q2 ECI percent change.",
+        outcome_space=OutcomeSpace(type="numeric", units="percent QoQ", bounds=[-5, 5]),
+    )
+    ledger.create_snapshot(
+        question_id=q.id,
+        probability_or_distribution={
+            "mean": 0.93,
+            "median": 0.90,
+            "standard_deviation": 0.15,
+            "interval_50_low": 0.83,
+            "interval_50_high": 1.03,
+            "interval_90_low": 0.70,
+            "interval_90_high": 1.20,
+        },
+        rationale="component bridge",
+        as_of="2026-07-14T00:00:00Z",
+    )
+
+    forecast = build_workspace_payload(ledger=ledger)["forecasts"][0]
+    assert forecast["outcome_type"] == "numeric"
+    assert forecast["headline_kind"] == "distribution"
+    assert forecast["headline_probability"] == pytest.approx(0.93)
+    assert forecast["distribution"]["ci90"] == [pytest.approx(0.70), pytest.approx(1.20)]
+    last = forecast["history"][-1]
+    assert last["headline_probability"] == pytest.approx(0.93)
+    assert last["band_low"] == pytest.approx(0.70)
+    assert last["band_high"] == pytest.approx(1.20)
+
+
 def test_workspace_payload_categorical_stays_probability_kind(tmp_path):
     ledger = _ledger(tmp_path)
     q = ledger.create_question(

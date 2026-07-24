@@ -14,11 +14,13 @@ const BARS = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'] as const
  */
 export function audiogramFrame(frame: number, width = 7): string {
   let out = ''
+
   for (let i = 0; i < width; i++) {
     const v = (Math.sin(frame * 0.6 + i * 0.9) + 1) / 2 // 0..1
     const idx = Math.max(0, Math.min(BARS.length - 1, Math.round(v * (BARS.length - 1))))
     out += BARS[idx]
   }
+
   return out
 }
 

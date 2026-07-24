@@ -889,8 +889,32 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                         save_jobs(jobs)
                         return
                 
-                # Compute next run
-                job["next_run_at"] = compute_next_run(job["schedule"], now)
+                # Recurring failures retry independently of their normal cadence:
+                # 15m, 1h, then 4h. Preserve the recurrence target so a weekly
+                # job does not simply disappear for another week after one bad
+                # provider run. A substantive success clears the retry series.
+                kind = job.get("schedule", {}).get("kind")
+                regular_next = compute_next_run(job["schedule"], now)
+                if (
+                    not success
+                    and kind in {"cron", "interval"}
+                    and int(job.get("failure_retry_count") or 0) < 3
+                ):
+                    retry_count = int(job.get("failure_retry_count") or 0) + 1
+                    delays = (15, 60, 240)
+                    delay_minutes = delays[retry_count - 1]
+                    retry_at = (_hermes_now() + timedelta(minutes=delay_minutes)).isoformat()
+                    job["failure_retry_count"] = retry_count
+                    job["recurrence_next_run_at"] = (
+                        job.get("recurrence_next_run_at") or regular_next
+                    )
+                    job["next_run_at"] = retry_at
+                    job["retry_backoff_minutes"] = delay_minutes
+                else:
+                    job["next_run_at"] = regular_next
+                    job["failure_retry_count"] = 0
+                    job["retry_backoff_minutes"] = None
+                    job["recurrence_next_run_at"] = None
 
                 # If no next run, decide whether this is terminal completion
                 # (one-shot) or a transient failure (recurring schedule couldn't
@@ -899,7 +923,6 @@ def mark_job_run(job_id: str, success: bool, error: Optional[str] = None,
                 # missing runtime dep into "job completed" and the user's
                 # schedule quietly goes off. See issue #16265.
                 if job["next_run_at"] is None:
-                    kind = job.get("schedule", {}).get("kind")
                     if kind in {"cron", "interval"}:
                         job["state"] = "error"
                         if not job.get("last_error"):

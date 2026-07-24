@@ -153,9 +153,12 @@ forecast-native schedules:
 forecast schedule install-cron --schedule "every 1h" --auto-score --auto-postmortem
 ```
 
-The installed job runs `forecast_self_check.py` without invoking the LLM. It
-emits output only when the ledger produces review alerts, scores, postmortems,
-lessons, or error-profile updates. The report includes explicit
+The installed job runs `forecast_self_check.py` as a no-agent cron bridge. The
+default generated script performs deterministic reviews and also invokes a
+bounded hosted estimator for queued immutable source-change events; use
+`--no-estimate-source-changes` to opt out. It emits output only when the ledger
+produces review alerts, scores, postmortems, lessons, estimates, or error-profile
+updates. The report includes explicit
 `scores_created`, `postmortems_created`, and `learning_reviews` counts so
 operators can see when a scheduled check changed learning state without
 parsing every alert line.

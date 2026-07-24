@@ -16,6 +16,9 @@ from forecasting.cli import register_cli
 from forecasting.ledger import ForecastLedger
 from forecasting.models import timestamp_to_datetime, utc_now_iso
 
+SWEEP_NOW = "2026-01-10T00:00:00Z"
+EVIDENCE_AT = "2026-01-09T00:00:00Z"
+
 
 # ── fixtures / helpers ───────────────────────────────────────────────────────
 
@@ -55,6 +58,7 @@ def _market_question(ledger, *, close_time=None):
         probability_or_distribution=0.55,
         rationale="baseline ensemble",
         method="log_odds_pool",
+        as_of="2026-01-01T00:00:00Z",
         ensemble_components={
             "components": [
                 {"name": "markets", "source": "manifold:race", "probability": 0.55, "weight": 3},
@@ -80,6 +84,7 @@ def _market_fetcher(probability):
                         "source_type": f"adapter:{spec['source_type']}",
                         "claim": "market reading",
                         "summary": "",
+                        "available_at": EVIDENCE_AT,
                         "metadata": {
                             "adapter": spec["source_type"],
                             "source": spec["source"],
@@ -179,6 +184,8 @@ def test_cli_install_cron_defaults_to_full_feature_flags(tmp_path, cron_env):
     assert "--auto-postmortem" in script
     assert "--thesis-aggregate" in script
     assert "--synthesize-lessons" in script
+    assert "--estimate-source-changes" not in script
+    assert "--calibrate-utility" in script
 
 
 def test_cli_install_cron_no_flags_opt_out(tmp_path, cron_env):
@@ -228,14 +235,40 @@ def test_installed_routine_carries_learning_flags(cron_env):
     assert "--auto-postmortem" in script
     assert "--thesis-aggregate" in script
     assert "--synthesize-lessons" in script
+    assert "--estimate-source-changes" not in script
+    assert "--calibrate-utility" in script
+    assert scheduler.warning_automode_cron_status()["installed"] is True
+
+
+def test_existing_routine_script_is_upgraded_without_rearming_job(cron_env):
+    from cron.jobs import list_jobs
+    from hermes_constants import get_hermes_home
+
+    first = scheduler.ensure_default_routines()
+    job_id = first["job"]["id"]
+    script_path = get_hermes_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT
+    script_path.write_text(
+        "from forecasting.cron_runner import main\nraise SystemExit(main([]))\n",
+        encoding="utf-8",
+    )
+
+    second = scheduler.ensure_default_routines()
+
+    assert second["created"] is False
+    body = script_path.read_text(encoding="utf-8")
+    assert "--estimate-source-changes" not in body
+    assert "--calibrate-utility" in body
+    jobs = [
+        row for row in list_jobs(include_disabled=True)
+        if row.get("script") == scheduler.FORECAST_CRON_SCRIPT
+    ]
+    assert [row["id"] for row in jobs] == [job_id]
 
 
 # ── 3. deterministic refresh in the cadence sweep ────────────────────────────
 
 
 def _schedule_due(ledger, qid, *, cadence="daily"):
-    # Far-past next_run_at so the row is due under the sweep's real-clock `now`
-    # (a fixed past `now` would stamp fresh evidence after its own cutoff).
     ledger.schedule_review(
         scope_type="question",
         scope_ref=qid,
@@ -251,7 +284,9 @@ def test_due_sweep_refreshes_refreshable_question(tmp_path):
     _schedule_due(ledger, q.id)
     before = len(ledger.list_snapshots(q.id))
 
-    results = ledger.run_due_scheduled_reviews(refresh_fetcher=_market_fetcher(0.80))
+    results = ledger.run_due_scheduled_reviews(
+        now=SWEEP_NOW, refresh_fetcher=_market_fetcher(0.80)
+    )
 
     row = next(r for r in results if (r["review"] or {}).get("scope_ref") == q.id)
     assert row["refresh"] is not None
@@ -268,7 +303,7 @@ def test_due_sweep_records_refresh_error_but_continues(tmp_path):
     def boom(specs):
         raise RuntimeError("fetch down")
 
-    results = ledger.run_due_scheduled_reviews(refresh_fetcher=boom)
+    results = ledger.run_due_scheduled_reviews(now=SWEEP_NOW, refresh_fetcher=boom)
     row = next(r for r in results if (r["review"] or {}).get("scope_ref") == q.id)
     assert row["refresh"] is None
     assert "fetch down" in (row["refresh_error"] or "")
@@ -291,10 +326,82 @@ def test_due_sweep_skips_question_without_watched_sources(tmp_path):
         require_panel=False,
     )
     _schedule_due(ledger, q.id)
-    results = ledger.run_due_scheduled_reviews(refresh_fetcher=_market_fetcher(0.9))
+    results = ledger.run_due_scheduled_reviews(
+        now=SWEEP_NOW, refresh_fetcher=_market_fetcher(0.9)
+    )
     row = next(r for r in results if (r["review"] or {}).get("scope_ref") == q.id)
     assert row["refresh"] is None  # no watched sources -> skipped, no error
     assert row["refresh_error"] is None
+
+
+def test_estimation_required_run_links_to_its_source_event_and_task(tmp_path):
+    ledger = _ledger(tmp_path)
+    source = tmp_path / "source.txt"
+    source.write_text("before", encoding="utf-8")
+    question = ledger.create_question(
+        title="Will an unmatched source change reach the estimator queue?",
+        resolution_criteria="Resolves yes if the source change is durably linked for review.",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.5,
+        rationale="Prior estimate.",
+        method="log_odds_pool",
+        as_of="2026-01-01T00:00:00Z",
+        ensemble_components={
+            "components": [{"name": "base_rate", "probability": 0.5, "weight": 1}]
+        },
+        require_panel=False,
+    )
+    ledger.add_watched_source(
+        scope_type="question", scope_ref=question.id, source=str(source), source_type="file"
+    )
+    _schedule_due(ledger, question.id)
+    source.write_text("after", encoding="utf-8")
+
+    def fetch(specs):
+        return [
+            {
+                "source_type": spec["source_type"],
+                "source": spec["source"],
+                "success": True,
+                "payloads": [
+                    {
+                        "source_or_note": str(source),
+                        "source_type": "adapter:file",
+                        "claim": "changed source",
+                        "available_at": EVIDENCE_AT,
+                        "metadata": {
+                            "adapter": "file",
+                            "source": str(source),
+                            "adapter_item": {"value": 1},
+                        },
+                    }
+                ],
+                "error": None,
+            }
+            for spec in specs
+        ]
+
+    results = ledger.run_due_scheduled_reviews(now=SWEEP_NOW, refresh_fetcher=fetch)
+    result = next(row for row in results if row["review"]["scope_ref"] == question.id)
+    metadata = result["run"]["metadata"]
+
+    assert result["run"]["status"] == "estimation_required"
+    assert result["run"]["alert_count"] >= 2
+    assert result["run"]["alert_count"] == len(metadata["alert_ids"])
+    assert metadata["alert_count_semantics"] == "created_unique_v2"
+    assert metadata["observed_alert_count"] == len(result["alerts"])
+    assert len(metadata["source_change_event_ids"]) == 1
+    assert len(metadata["estimator_task_ids"]) == 1
+    assert result["refresh"]["estimator_task_id"] in metadata["estimator_task_ids"]
+    task = next(
+        row
+        for row in ledger.list_operational_tasks(limit=10)
+        if row["id"] == metadata["estimator_task_ids"][0]
+    )
+    assert task["source_change_event_id"] == metadata["source_change_event_ids"][0]
+    assert task["status"] == "pending"
 
 
 # ── 4. freshen CLI ───────────────────────────────────────────────────────────
@@ -360,6 +467,25 @@ def test_cron_health_flags_errored_job(cron_env):
     update_job(job["id"], {"last_status": "error", "last_error": "boom", "last_run_at": utc_now_iso()})
     health = scheduler.forecast_cron_health()
     assert health["installed"] == 1
+    assert job["id"] in health["errored"]
+    assert health["healthy"] is False
+
+
+def test_cron_health_includes_enabled_forecast_agent_jobs_without_scripts(cron_env):
+    from cron.jobs import create_job, update_job
+
+    job = create_job(
+        prompt="Run the weekly forecast desk review.",
+        name="Weekly primary forecast review",
+        schedule="0 9 * * 1",
+    )
+    update_job(
+        job["id"],
+        {"last_status": "error", "last_error": "provider unavailable", "last_run_at": utc_now_iso()},
+    )
+
+    health = scheduler.forecast_cron_health()
+
     assert job["id"] in health["errored"]
     assert health["healthy"] is False
 

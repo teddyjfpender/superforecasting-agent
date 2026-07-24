@@ -139,7 +139,9 @@ const barForLabel = (bars: HistogramBar[] | null, label: string): HistogramBar |
   if (!bars) {
     return null
   }
+
   const norm = label.trim().toLowerCase()
+
   return bars.find(bar => bar.label.trim().toLowerCase() === norm) ?? null
 }
 
@@ -174,8 +176,10 @@ export const buildVoteShareSeries = (
   // thinned x-axis), then every series is drawn from the SAME kept columns.
   const leaderValues = pointBars.map(bars => {
     const hit = barForLabel(bars, leaders[0]?.label ?? '')
+
     return hit ? hit.value * scale : null
   })
+
   const preview = downsampleSeries(leaderValues)
   const kept = preview.keptIndices
 
@@ -189,6 +193,7 @@ export const buildVoteShareSeries = (
         : null,
     values: kept.map(index => {
       const hit = barForLabel(pointBars[index] ?? null, leader.label)
+
       return hit ? hit.value * scale : null
     })
   }))
@@ -200,10 +205,13 @@ export const buildVoteShareSeries = (
       latestInterval: null, // the aggregated tail carries no single interval
       values: kept.map(index => {
         const bars = pointBars[index]
+
         if (!bars) {
           return null
         }
+
         const tail = bars.filter(bar => tailLabels.has(bar.label.trim().toLowerCase()))
+
         return tail.length ? tail.reduce((sum, bar) => sum + bar.value, 0) * scale : null
       })
     })
@@ -220,13 +228,16 @@ export const buildVoteShareSeries = (
  *  than one node per cell. */
 export const seriesRuns = (cells: SeriesCell[]): { series: number; text: string }[] => {
   const runs: { series: number; text: string }[] = []
+
   for (const cell of cells) {
     const last = runs[runs.length - 1]
+
     if (last && last.series === cell.series) {
       last.text += cell.ch
     } else {
       runs.push({ series: cell.series, text: cell.ch })
     }
   }
+
   return runs
 }

@@ -289,7 +289,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
               const keyWanted = p.needsKey || p.keyRecommended
 
               return (
-                <Box key={p.key} onClick={() => { if (globalModal) return; setFocus('providers'); setProvIdx(i) }} width="100%">
+                <Box key={p.key} onClick={() => { if (globalModal) {return;} setFocus('providers'); setProvIdx(i) }} width="100%">
                   <Text wrap="truncate-end">
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                     <Text bold color={enabled ? sem.up : sem.subtle}>
@@ -315,7 +315,7 @@ export function AddProviderModal({ cols, initial, onCancel, onSaved, onSearchSym
               const sel = categories.has(c)
 
               return (
-                <Box key={c} onClick={() => { if (globalModal) return; setFocus('categories'); setCatIdx(i) }} width="100%">
+                <Box key={c} onClick={() => { if (globalModal) {return;} setFocus('categories'); setCatIdx(i) }} width="100%">
                   <Text wrap="truncate-end">
                     <Text color={on ? sem.cursor : sem.faint}>{on ? '▸ ' : '  '}</Text>
                     <Text bold color={sel ? sem.up : sem.subtle}>

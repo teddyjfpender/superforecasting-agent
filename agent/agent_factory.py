@@ -28,6 +28,20 @@ _RUNTIME_TO_KWARG: dict[str, str] = {
 }
 
 
+def _validate_provider_model(provider: str | None, model: str) -> None:
+    """Reject combinations known to fail before any paid/network dispatch."""
+    normalized_provider = str(provider or "").strip().lower()
+    normalized_model = str(model or "").strip().lower()
+    if normalized_provider != "openai-codex" or not normalized_model:
+        return
+    if normalized_model.startswith(("gpt-", "o1", "o3", "o4", "codex-")):
+        return
+    raise ValueError(
+        f"model {model!r} is not compatible with openai-codex; "
+        "select that model's provider or use a Codex-supported GPT/o-series model"
+    )
+
+
 def _aiagent_cls():
     """Indirection so callers/tests can construct without importing run_agent eagerly
     (run_agent is heavy) and so the class is patchable in tests."""
@@ -96,4 +110,5 @@ def build_agent(
     )
     for kwarg, value in mapped.items():
         agent_kwargs.setdefault(kwarg, value)
+    _validate_provider_model(agent_kwargs.get("provider"), model)
     return _aiagent_cls()(model=model, **agent_kwargs)

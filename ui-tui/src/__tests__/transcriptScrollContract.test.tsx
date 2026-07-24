@@ -63,6 +63,7 @@ const App = ({
 }) => {
   const ref = useRef<null | ScrollBoxHandle>(null)
   const items = makeItems(count)
+
   const vh = useVirtualHistory(ref, items, 40, {
     estimate: WRONG_ESTIMATE,
     onHeightsChange: h => {
@@ -114,6 +115,7 @@ const mount = async (count: number) => {
     stdin: writeStream(40, 24, true),
     stdout: writeStream(40, 24)
   })
+
   await tick(120)
 
   return { handle, heightsRef, instance }
@@ -158,7 +160,7 @@ describe('transcript scroll contract', () => {
 
     for (let i = 0; i < 40; i++) {
       handle.current?.scrollBy(-STEP)
-      // eslint-disable-next-line no-await-in-loop
+
       await tick(60)
       positions.push(contentTopRow(handle, heightsRef, COUNT))
     }
@@ -243,7 +245,7 @@ describe('transcript scroll contract', () => {
       instance.rerender(
         React.createElement(App, { count: COUNT, handle, heightsRef: heightsRef as HeightsRef, version: v })
       )
-      // eslint-disable-next-line no-await-in-loop
+
       await tick(80)
     }
 

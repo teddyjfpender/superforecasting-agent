@@ -78,6 +78,7 @@ export const readinessColor = (t: Theme, score: null | number | undefined): stri
   if (score === null || score === undefined || !Number.isFinite(score)) {
     return t.color.muted
   }
+
   return score >= 80 ? t.color.ok : score >= 50 ? t.color.warn : t.color.error
 }
 

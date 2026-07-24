@@ -6,10 +6,12 @@ import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlay
 import { setWarningsRunActive } from '../app/warningsRunStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type { ForecastTriageLabel } from '../gatewayTypes.js'
+import { spinnerFrame } from '../lib/icons.js'
+import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
+import { asRpcResult } from '../lib/rpc.js'
+import { semantics } from '../lib/visualSemantics.js'
+import { isResolutionProposal, resolutionProposalOutcome } from '../lib/warningKind.js'
 import type {
-  AutomodeCompletePayload as ForecastWarningsAutomodeComplete,
-  AutomodeErrorPayload as ForecastWarningsAutomodeError,
-  AutomodeProgressPayload as ForecastWarningsAutomodeProgress,
   ForecastCommandResponse,
   ForecastDashboardResponse,
   ForecastDashboardReview,
@@ -18,14 +20,12 @@ import type {
   ForecastTriageRelabelResponse,
   ForecastWarningGroup,
   ForecastWarningsAggregateResponse,
+  AutomodeCompletePayload as ForecastWarningsAutomodeComplete,
+  AutomodeErrorPayload as ForecastWarningsAutomodeError,
+  AutomodeProgressPayload as ForecastWarningsAutomodeProgress,
   ForecastWarningsAutomodeRunResponse,
   ForecastWarningsDismissResponse
 } from '../protocol/generated.js'
-import { isResolutionProposal, resolutionProposalOutcome } from '../lib/warningKind.js'
-import { spinnerFrame } from '../lib/icons.js'
-import { getOverlayCache, setOverlayCache } from '../lib/overlayCache.js'
-import { asRpcResult } from '../lib/rpc.js'
-import { semantics } from '../lib/visualSemantics.js'
 import { WireEvent } from '../protocol/generated.js'
 import type { Theme } from '../theme.js'
 
@@ -273,9 +273,11 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   const [data, setData] = useState<ForecastDashboardResponse | null>(
     () => getOverlayCache<ForecastDashboardResponse>('forecast.dashboard:alerts') ?? null
   )
+
   const [aggregate, setAggregate] = useState<ForecastWarningsAggregateResponse | null>(
     () => getOverlayCache<ForecastWarningsAggregateResponse>('forecast.warnings.aggregate:alerts') ?? null
   )
+
   const [contested, setContested] = useState<ForecastTriageContestedRow[]>(
     () => getOverlayCache<ForecastTriageContestedRow[]>('forecast.triage.contested:alerts') ?? []
   )
@@ -394,7 +396,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
         }
       })
       .catch(() => undefined)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [gw])
 
   // Belt-and-braces: drop the ownership flag if the view unmounts mid-pass. The job
@@ -426,10 +428,12 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   // appended at the tail so one cursor walks the whole surface.
   const tiers = useMemo(() => buildTiers(aggregate), [aggregate])
   const tierFlat = useMemo(() => flattenTiers(tiers, collapsed), [tiers, collapsed])
+
   const contestedNodes = useMemo<FlatNode[]>(
     () => contested.map((row, idx) => ({ kind: 'contested', row, rowKey: `contested:${row.id ?? idx}` })),
     [contested]
   )
+
   const flat = useMemo(() => [...tierFlat, ...contestedNodes], [tierFlat, contestedNodes])
 
   // Render off a derived clamp so a shrunk list never indexes past the end (the
@@ -438,6 +442,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   // move relative to the VISIBLE position, so one keypress is always one move.
   const clampedSel = Math.min(sel, Math.max(0, flat.length - 1))
   const selectedNode = flat[clampedSel] ?? null
+
   const selectedKey =
     selectedNode && selectedNode.kind !== 'contested'
       ? selectedNode.kind === 'tier'
@@ -560,6 +565,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
         clearTimeout(progressTimerRef.current)
         progressTimerRef.current = null
       }
+
       gw.off?.(WireEvent.FORECAST_WARNINGS_AUTOMODE_PROGRESS, onProgress)
       gw.off?.(WireEvent.FORECAST_WARNINGS_AUTOMODE_COMPLETE, onComplete)
       gw.off?.(WireEvent.FORECAST_WARNINGS_AUTOMODE_ERROR, onError)
@@ -1040,6 +1046,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   const agentCount = headline?.agent ?? 0
   const manualCount = headline?.manual ?? 0
   const dot = <Text color={t.color.border}>{'  ·  '}</Text>
+
   const headlineLine = (
     <Text wrap="truncate-end">
       <Text bold color={openTotal ? t.color.text : t.color.muted}>{nf(openTotal)}</Text>
@@ -1305,6 +1312,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   // under it — is the WHOLE progress UI; the view never scrolls. The spinner rides
   // the 500ms `now` tick so the operator can SEE it working.
   const automodeFold = automode ? foldFailures(automode.failures) : null
+
   const automodeLine = automode ? (
     <Box flexDirection="column">
       <Text color={t.color.accent} wrap="truncate-end">
@@ -1342,6 +1350,7 @@ export function AlertsView({ gw, initialFocus, onClose, sessionId = '', t }: Ale
   // relevance verbs are always in view while adjudicating. Each state advertises
   // ONLY its live keys — as the single bracketed chips row (no prose duplicate).
   const onContested = selectedNode?.kind === 'contested'
+
   const footerChips: FooterChip[] = nothing
     ? [
         // Empty backlog: only the keys that still do something.

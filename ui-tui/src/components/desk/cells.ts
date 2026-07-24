@@ -1,11 +1,10 @@
-import type { ForecastWorkspaceItem } from '../../protocol/generated.js'
 import { sweepColor, sweepStops } from '../../lib/accentSweep.js'
 import { deltaGlyph, windowDelta } from '../../lib/forecastCharts.js'
 import { spinnerFrame } from '../../lib/icons.js'
 import type { SortValue } from '../../lib/tableSort.js'
 import { dirColor, readinessColor, type Semantics } from '../../lib/visualSemantics.js'
+import type { ForecastWorkspaceItem } from '../../protocol/generated.js'
 import type { Theme } from '../../theme.js'
-
 import { finite, headlineCompact, trimNum, truncate } from '../forecastsWorkspace.js'
 
 // ── Desk table: column specs, sort-key values, and per-cell colour+text ───────
@@ -87,19 +86,19 @@ export const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: n
 
     case '1w':
       return windowDelta(item.history, nowMs, 7)
-
     case 'age': {
       const at = Date.parse(item.as_of ?? '')
+
       return Number.isFinite(at) ? nowMs - at : null
     }
 
     case 'ev':
       return item.evidence_count ?? 0
-
     case 'next': {
       const at = item.next_review_at
         ? Date.parse(item.next_review_at)
         : Date.parse(item.resolution_time ?? item.close_time ?? '')
+
       return Number.isFinite(at) ? at : null
     }
 
@@ -133,21 +132,30 @@ export const deskSortValue = (item: ForecastWorkspaceItem, key: string, nowMs: n
 // freshness string only when as_of is unparseable.
 const shortAge = (nowMs: number, asOf: string | undefined, freshness: string | undefined): string => {
   const at = Date.parse(asOf ?? '')
+
   if (Number.isFinite(at)) {
     const ms = Math.max(0, nowMs - at)
-    if (ms < 60_000) return 'now'
+
+    if (ms < 60_000) {return 'now'}
     const mins = ms / 60_000
-    if (mins < 60) return `${Math.round(mins)}m`
+
+    if (mins < 60) {return `${Math.round(mins)}m`}
     const hours = mins / 60
-    if (hours < 24) return `${Math.round(hours)}h`
+
+    if (hours < 24) {return `${Math.round(hours)}h`}
     const days = hours / 24
-    if (days < 52) return `${Math.round(days)}d`
+
+    if (days < 52) {return `${Math.round(days)}d`}
+
     return `${Math.max(2, Math.round(days / 30))}mo`
   }
+
   if (!freshness) {
     return '—'
   }
+
   const m = /(\d+)\s*([a-z]+)/i.exec(freshness)
+
   return m ? `${m[1]}${m[2].toLowerCase().slice(0, 2)}` : truncate(freshness, 6)
 }
 
@@ -156,8 +164,11 @@ const shortAge = (nowMs: number, asOf: string | undefined, freshness: string | u
 // far-off resolution still fits the narrow column.
 const relTime = (ms: number): string => {
   const days = ms / 86400000
-  if (days < 1) return `${Math.max(1, Math.round(ms / 3600000))}h`
-  if (days < 52) return `${Math.round(days)}d`
+
+  if (days < 1) {return `${Math.max(1, Math.round(ms / 3600000))}h`}
+
+  if (days < 52) {return `${Math.round(days)}d`}
+
   return `${Math.max(2, Math.round(days / 30))}mo`
 }
 
@@ -174,21 +185,28 @@ export const dueText = (
   nowMs: number
 ): { status: 'none' | 'now' | 'ok' | 'res' | 'soon'; text: string } => {
   const at = item.next_review_at ? Date.parse(item.next_review_at) : NaN
+
   if (Number.isFinite(at)) {
     const ms = at - nowMs
-    if (ms <= 0) return { status: 'now', text: 'now' }
+
+    if (ms <= 0) {return { status: 'now', text: 'now' }}
     const days = ms / 86400000
-    if (days < 1) return { status: 'soon', text: `${Math.max(1, Math.round(ms / 3600000))}h` }
+
+    if (days < 1) {return { status: 'soon', text: `${Math.max(1, Math.round(ms / 3600000))}h` }}
     const d = Math.round(days)
+
     return { status: d <= 2 ? 'soon' : 'ok', text: `${d}d` }
   }
 
   // No scheduled review → show the next meaningful event (resolution), marked.
   const eventAt = Date.parse(item.resolution_time ?? item.close_time ?? '')
-  if (!Number.isFinite(eventAt)) return { status: 'none', text: '—' }
+
+  if (!Number.isFinite(eventAt)) {return { status: 'none', text: '—' }}
   const ms = eventAt - nowMs
+
   // Already resolved/closed but still on the desk → just flag it as due.
-  if (ms <= 0) return { status: 'res', text: '⤓now' }
+  if (ms <= 0) {return { status: 'res', text: '⤓now' }}
+
   return { status: 'res', text: `⤓${relTime(ms)}` }
 }
 
@@ -221,6 +239,7 @@ export const dueNowCell = (sweep: DeskSweepCtx | undefined, t: Theme): { color: 
   if (!sweep) {
     return { color: t.color.error, text: 'now' }
   }
+
   if (sweep.running) {
     // Match the Home chat's busy spinner: colour the glyph (+ its "running" label)
     // by sweeping the brand accent family via sweepColor(sweepStops(t), frame) — the
@@ -229,17 +248,23 @@ export const dueNowCell = (sweep: DeskSweepCtx | undefined, t: Theme): { color: 
     // summary line while the memo keeps idle rows frozen.
     return { color: sweepColor(sweepStops(t), sweep.frame), text: `${spinnerFrame(sweep.frame)} running` }
   }
+
   if (sweep.sweeperEnabled) {
     const imminent = !Number.isFinite(sweep.nextTickAt) || sweep.nextTickAt <= sweep.nowMs
+
     if (imminent) {
       return { color: t.color.warn, text: 'due · <1m' }
     }
+
     const diff = sweep.nextTickAt - sweep.nowMs
+
     return { color: t.color.warn, text: diff < 60000 ? 'due · <1m' : `due · ${Math.ceil(diff / 60000)}m` }
   }
+
   if (Number.isFinite(sweep.nightlyNextAt)) {
     return { color: t.color.warn, text: 'due · tonight' }
   }
+
   return { color: t.color.warn, text: 'due' }
 }
 
@@ -250,20 +275,26 @@ const windowChgText = (item: ForecastWorkspaceItem, value: number | null): strin
   if (value === null) {
     return '—'
   }
+
   const glyph = deltaGlyph(value)
+
   if (item.headline_kind === 'distribution') {
     if (!finite(value) || Math.abs(value) < 1e-6) {
       return '·'
     }
+
     return `${glyph}${value > 0 ? '+' : ''}${trimNum(value)}`
   }
+
   // 2dp point deltas (the operator's precision standard — an integer-only
   // column hides every sub-point move a fresh commit produces). '·' only when
   // the rendered value would read 0.00.
   if (!finite(value) || Math.abs(value) < 0.00005) {
     return '·'
   }
+
   const points = (value * 100).toFixed(2)
+
   return `${glyph}${value > 0 ? '+' : ''}${points}`
 }
 
@@ -276,6 +307,7 @@ const windowChgCell = (
 ): { color: string; text: string } => {
   const text = windowChgText(item, value)
   const color = text === '·' || text === '—' ? sem.subtle : dirColor(sem, value)
+
   return { color, text }
 }
 
@@ -303,29 +335,31 @@ export const deskCellText = (
 
     case 'age':
       return { color: sem.subtle, text: shortAge(nowMs, item.as_of ?? undefined, item.freshness ?? undefined) }
-
     case 'next': {
       const due = dueText(item, nowMs)
+
       // A DUE row ('now') no longer reads a static "now": spell out honest sweep
       // state (spinner while running, a countdown to the next tick, or the nightly
       // fallback). Every other status is unchanged.
       if (due.status === 'now') {
         return dueNowCell(sweep, t)
       }
+
       // A resolution-date fallback is informational (not an urgent review) → paint
       // it subtle so the "⤓" marker, not colour, signals the distinction.
       const color = due.status === 'soon' ? t.color.warn : sem.subtle
+
       return { color, text: due.text }
     }
 
     case 'ev':
       return { color: sem.subtle, text: String(item.evidence_count ?? 0) }
-
     case 'src': {
       // Active watched-source count. 0 is the "no fuel" signal — the autonomous
       // desk has nothing to refresh — so it paints in the warning colour; a
       // fuelled row stays subtle so only the empty ones draw the eye.
       const n = item.src_count ?? 0
+
       return { color: n > 0 ? sem.subtle : t.color.warn, text: String(n) }
     }
 
@@ -333,6 +367,7 @@ export const deskCellText = (
       // The 0-100 machine-readiness composite, banded by colour (≥80 ok, 50-79
       // warn, <50 danger). No composite (benchmark/market question) → subtle "—".
       const score = item.readiness?.score
+
       return finite(score)
         ? { color: readinessColor(t, score), text: String(Math.round(score)) }
         : { color: sem.subtle, text: '—' }

@@ -783,6 +783,7 @@ export interface ForecastDashboardQuestion {
   open_alert_count?: number
   open_assumption_count?: number
   open_reference_class_count?: number
+  operations?: Record<string, unknown>
   probability?: null | Record<string, unknown> | number | string
   resolution_time?: null | string
   stale_assumption_count?: number
@@ -1968,6 +1969,7 @@ export interface ForecastWorkspaceResponse {
   generated_at?: string
   next_actions?: ForecastNextAction[]
   open_alert_count?: number
+  operations?: Record<string, unknown>
   output?: string
   product?: string
   theses?: ForecastThesis[]

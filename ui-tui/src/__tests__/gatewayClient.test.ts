@@ -35,6 +35,7 @@ class FakeWebSocket {
       options !== null &&
       'once' in options &&
       Boolean((options as { once?: unknown }).once)
+
     const entries = this.listeners.get(type) ?? []
 
     entries.push({ callback, once })
@@ -85,6 +86,7 @@ class FakeWebSocket {
 
     for (const entry of entries) {
       entry.callback(event)
+
       if (entry.once) {
         this.removeEventListener(type, entry.callback)
       }
@@ -94,6 +96,7 @@ class FakeWebSocket {
 
 describe('GatewayClient websocket attach mode', () => {
   const originalWebSocket = globalThis.WebSocket
+
   const envKeys = [
     'SUPERFORECASTING_AGENT_TUI_GATEWAY_URL',
     'FORECAST_TUI_GATEWAY_URL',
@@ -102,6 +105,7 @@ describe('GatewayClient websocket attach mode', () => {
     'FORECAST_TUI_SIDECAR_URL',
     'HERMES_TUI_SIDECAR_URL'
   ] as const
+
   let originalEnv: Record<(typeof envKeys)[number], string | undefined>
 
   beforeEach(() => {
@@ -237,6 +241,7 @@ describe('GatewayClient websocket attach mode', () => {
       method: 'event',
       params: { type: 'tool.start', payload: { tool_id: 't1' } }
     })
+
     gatewaySocket.message(eventFrame)
 
     expect(seen).toContain('tool.start')
@@ -346,6 +351,7 @@ describe('GatewayClient websocket attach mode', () => {
     gw.drain()
 
     expect(stderrLines.length).toBeGreaterThan(0)
+
     for (const line of stderrLines) {
       expect(line).not.toContain('hunter2')
       expect(line).not.toContain('channel=secret')
@@ -437,6 +443,7 @@ describe('GatewayClient websocket attach mode', () => {
     gw.drain()
 
     expect(stderrLines.length).toBeGreaterThan(0)
+
     for (const line of stderrLines) {
       expect(line).not.toContain('alice')
       expect(line).not.toContain('hunter2')

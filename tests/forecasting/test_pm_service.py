@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from forecasting.pm.service import DETAIL_TTL, LIST_TTL, PMService, TTLCache
+from dataclasses import replace
+
+from forecasting.pm.service import BROWSE_OUTCOME_CAP, DETAIL_TTL, LIST_TTL, PMService, TTLCache, _serialize_pairs
 from forecasting.pm import kalshi as kal
 from forecasting.pm import polymarket as poly
 from tests.forecasting.pm_helpers import RecordedFetch, load_fixture
@@ -257,3 +259,135 @@ def test_list_events_rank_interleaves_venues():
     # nested markets, so the exact number is the fixture's, not ours).
     assert [e.venue for e, _ in rows3] == ["polymarket", "kalshi", "polymarket"]
     assert rows3[0][0].volume == 9_000_000.0 and rows3[2][0].volume == 8_000_000.0
+
+
+def test_full_catalog_persists_and_searches_locally(tmp_path):
+    """Catalog search hydrates local index hits, never venue search APIs."""
+    event = poly.parse_event(load_fixture("polymarket_event_binary.json"))
+
+    class CatalogClient:
+        def __init__(self, venue, title):
+            self.venue = venue
+            self.title = title
+            self.search_calls = 0
+
+        def catalog_events(self):
+            return [{
+                "venue": self.venue,
+                "event_id": event.event_id,
+                "title": self.title,
+                "search": self.title.casefold(),
+                "market_count": len(event.markets),
+            }]
+
+        def catalog_event(self, event_ref):
+            assert event_ref == event.event_id
+            return replace(event, venue=self.venue)
+
+        def list_events(self, **kwargs):
+            self.search_calls += 1
+            raise AssertionError("remote search must not run after catalog warm")
+
+    poly_client = CatalogClient("polymarket", "June CPI macro report")
+    kalshi_client = CatalogClient("kalshi", "July jobs macro report")
+    svc = PMService(
+        polymarket=poly_client,
+        kalshi=kalshi_client,
+        clock=FakeClock(),
+        spawn=_inline_spawn,
+        home=tmp_path,
+    )
+    assert svc.refresh_catalog_async(force=True) is True
+    status = svc.catalog_status()
+    assert status["ready"] is True and status["events"] == 2
+    assert (tmp_path / "pm_catalog.json").exists()
+
+    rows = svc.list_events(query="june cpi", limit=10)
+    assert len(rows) == 1 and rows[0][0].event_id == event.event_id
+    both = svc.list_events(query="macro report", limit=2)
+    assert [row[0].venue for row in both] == ["polymarket", "kalshi"]
+    assert poly_client.search_calls == kalshi_client.search_calls == 0
+
+    cold = PMService(
+        polymarket=poly_client,
+        kalshi=kalshi_client,
+        clock=FakeClock(),
+        spawn=_inline_spawn,
+        home=tmp_path,
+    )
+    assert cold.catalog_status()["events"] == 2
+
+
+def test_catalog_payload_paints_before_hydration_and_disambiguates(tmp_path):
+    """RPC payload search is local-first: no venue call before first paint."""
+    event = poly.parse_event(load_fixture("polymarket_event_binary.json"))
+    queued: list = []
+
+    class CatalogClient:
+        def __init__(self):
+            self.hydrated: list[str] = []
+
+        def catalog_event(self, event_ref):
+            self.hydrated.append(event_ref)
+            return replace(event, event_id=event_ref)
+
+        def list_events(self, **kwargs):
+            raise AssertionError("catalog-backed payload search must not call remote search")
+
+    client = CatalogClient()
+    svc = PMService(
+        polymarket=client,
+        kalshi=client,
+        clock=FakeClock(),
+        spawn=queued.append,
+        home=tmp_path,
+    )
+    svc._catalog = {
+        "polymarket": [
+            {
+                "venue": "polymarket",
+                "event_id": "game-14",
+                "title": "Team A vs Team B",
+                "sub_title": "Jul 14",
+                "search": "team a team b",
+            },
+            {
+                "venue": "polymarket",
+                "event_id": "game-15",
+                "title": "Team A vs Team B",
+                "sub_title": "Jul 15",
+                "search": "team a team b",
+            },
+        ]
+    }
+
+    rows, stale = svc.list_events_payload(query="team", limit=10)
+    assert stale is True and client.hydrated == []
+    assert [row["event"]["title"] for row in rows] == [
+        "Team A vs Team B — Jul 14",
+        "Team A vs Team B — Jul 15",
+    ]
+    assert all(row["event"]["markets"] == [] for row in rows)
+    assert len(queued) == 1
+
+    queued.pop()()
+    hydrated, stale = svc.list_events_payload(query="team", limit=10)
+    assert stale is False and len(client.hydrated) == 2
+    assert all(row["event"]["markets"] for row in hydrated)
+
+
+def test_browse_payload_caps_oversized_events_but_detail_stays_full():
+    event = poly.parse_event(load_fixture("polymarket_event_binary.json"))
+    market = event.markets[0]
+    from forecasting.pm.aggregate import build_distribution
+
+    oversized = replace(
+        event,
+        markets=tuple(replace(market, market_id=f"m{i}", label=f"Outcome {i}") for i in range(BROWSE_OUTCOME_CAP + 5)),
+    )
+    distribution = build_distribution(oversized)
+    row = _serialize_pairs([(oversized, distribution)])[0]
+    assert len(row["event"]["markets"]) == BROWSE_OUTCOME_CAP
+    assert len(row["distribution"]["outcomes"]) == BROWSE_OUTCOME_CAP
+    assert row["distribution"]["normalized"] is False
+    assert len(oversized.markets) == BROWSE_OUTCOME_CAP + 5, "typed detail remains complete"
