@@ -10,6 +10,7 @@ import type {
   ForecastWorkspaceItem,
   ForecastWorkspaceResponse
 } from '../gatewayTypes.js'
+import { type Match, waitForQuiet, waitForSettled, waitForText, waitUntil } from '../testing/settle.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -273,36 +274,31 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 
 const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-// Wait until the rendered frame has settled instead of sleeping a fixed number
-// of milliseconds. Fixed real-timer settles (the old `tick(100)` / `tick(60)`)
-// raced the DeskView's async data subscription under heavy PARALLEL vitest
-// load — the frame the assertion read was occasionally the pre-subscription
-// one, so the test flaked in wide runs while passing 3/3 in isolation. This
-// polls the rendered text and returns as soon as it has been non-empty and
-// byte-identical for `stableFor` ms (fast when the machine is idle, patient
-// when it is loaded), capped at `timeout`.
-const waitForStable = async (
-  read: () => string,
-  { stableFor = 40, timeout = 2000, interval = 8 }: { stableFor?: number; timeout?: number; interval?: number } = {}
-) => {
-  const start = Date.now()
-  let prev = read()
-  let lastChange = Date.now()
+// NOTE ON WHY THE OLD `waitForStable` WAS NOT ENOUGH.
+//
+// It returned once the output had been byte-identical for 40ms. But a component
+// blocked on an unresolved promise is perfectly quiet, so under parallel load a
+// 40ms quiet window opened BEFORE the workspace data landed and the assertion
+// read the `FORECASTS 0 active · 0 closing soon` loading frame. Quiescence
+// cannot distinguish "finished" from "still waiting"; only the content can.
+// Everything below therefore waits for the CONTENT (see src/testing/settle.ts).
 
-  for (;;) {
-    await tick(interval)
-    const cur = read()
-
-    if (cur !== prev) {
-      prev = cur
-      lastChange = Date.now()
-    }
-
-    const settled = cur.trim().length > 0 && Date.now() - lastChange >= stableFor
-
-    if (settled || Date.now() - start >= timeout) {return}
-  }
-}
+// The marker that proves THIS response has actually rendered, derived from the
+// fixture so it can never drift: a row title when the fixture has rows, the
+// header count when it does not, and the loaded-empty state for an empty book
+// (the loading frame says "Loading forecast desk…", never "No active forecasts",
+// so the two are unambiguous).
+// (Row titles are NOT usable here: the QUESTION column truncates them and the
+// lens grouping decides which row paints first, so the fixture's first title
+// need not appear at all. The header count always does.)
+const loadedMarker = (response: ForecastWorkspaceResponse): Match =>
+  (response.active_count ?? 0) > 0
+    ? // The loading header prints `0 active`, so any non-zero count is proof
+      // this response rendered.
+      `${response.active_count} active`
+    : // An empty book: the loaded state says "No active forecasts", the loading
+      // state says "Loading forecast desk…" — never confusable.
+      'No active forecasts'
 
 const fakeGw = (response: ForecastWorkspaceResponse) =>
   ({
@@ -401,10 +397,11 @@ const mountDesk = async (columns: number, response: ForecastWorkspaceResponse, g
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
-  // Wait for the initial async data subscription + first render to settle and
-  // for Ink to wire raw-mode input BEFORE any press. Condition-based (see
-  // waitForStable) so it never races the subscription under parallel load.
-  await waitForStable(() => normalize(stdout.text(), stripAnsi))
+  const read = () => normalize(stdout.text(), stripAnsi)
+
+  // Wait for the workspace data to have ACTUALLY rendered (not merely for the
+  // output to go quiet) and for Ink to wire raw-mode input, before any press.
+  await waitForSettled(read, loadedMarker(response), { label: 'the desk workspace to render' })
 
   return {
     cleanup: () => {
@@ -412,10 +409,28 @@ const mountDesk = async (columns: number, response: ForecastWorkspaceResponse, g
       instance.cleanup?.()
     },
     press: async (keys: string) => {
+      // Ink delivers stdin through its own async input pipeline, so the old
+      // `tick(60)` could return before the key had even been handled — and a
+      // bare quiet-wait is no better, because "nothing has rendered yet" and
+      // "nothing more will render" look identical. Wait for the repaint the key
+      // caused, then let it settle; a key that legitimately paints nothing
+      // falls through on the bounded timeout instead of hanging.
+      const before = read()
+
       stdin.stream.write(keys)
-      await tick(60)
+
+      try {
+        await waitForText(read, text => text !== before, { label: 'the keypress repaint', timeout: 2000 })
+      } catch {
+        // No visual change — fine for keys whose only effect is an RPC.
+      }
+
+      await waitForQuiet(read, { quietFor: 32, timeout: 1500 })
     },
-    text: () => normalize(stdout.text(), stripAnsi)
+    // Poll until `match` appears, so a test that depends on a LATER async
+    // source (reviews, packets, jobs) is never read on the pre-arrival frame.
+    text: () => read(),
+    waitFor: (match: Match, label?: string) => waitForText(read, match, { label })
   }
 }
 
@@ -1208,7 +1223,11 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
     const ws = dueWorkspace()
     const reviews = { due_count: 1, sweeper: { enabled: true, next_tick_at: null, running: true } }
     const desk = await mountDesk(120, ws, reviewsGw(ws, reviews))
-    const text = desk.text()
+    // 'running' comes from forecast.reviews.next — a SECOND async source that
+    // lands after the workspace, so wait for it rather than assuming the mount
+    // wait covered it.
+    const text = await desk.waitFor('running', 'the running-sweep NEXT cell')
+
     expect(text).toContain('running')
     desk.cleanup()
   })
@@ -1229,7 +1248,10 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
 
     const reviews = { due_count: 1, sweeper: { enabled: true, next_tick_at: null, running: true } }
     const desk = await mountDesk(120, ws, reviewsGw(ws, reviews))
-    const text = desk.text()
+    // Wait for the NEXT column to carry a real duration before asserting on it;
+    // the negative assertion below is only meaningful against a settled frame.
+    const text = await desk.waitFor(/\b\d+[dh]\b/, 'the plain countdown in the NEXT cell')
+
     // Its NEXT cell reads a plain forward duration, NOT the running/spinner text.
     expect(text).toMatch(/\b\d+[dh]\b/)
     expect(text).not.toMatch(/due · \d+m/)
@@ -1308,7 +1330,8 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     // The cumulative buffer holds both the 1-selected frame (after the first mark)
     // and the 2-selected frame (after the advance + second mark), proving marks
     // stack AND the cursor advanced onto a fresh row each time.
-    const text = desk.text()
+    const text = await desk.waitFor('2 selected', 'the header count after the second mark')
+
     expect(text).toContain('▎') // the leading accent mark glyph
     expect(text).toContain('1 selected') // header count after the first mark
     expect(text).toContain('2 selected') // header count after the second
@@ -1325,6 +1348,9 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     await desk.press('k') // cursor back to fq_b
     await desk.press(' ') // UN-mark fq_b → cursor fq_c
     await desk.press('U') // only fq_a remains marked
+    // The keypress handler fires the RPC asynchronously — wait for it to be
+    // recorded rather than assuming the press() settle covered it.
+    await waitUntil(() => calls.some(c => c.method === 'jobs.start'), { label: 'jobs.start to be recorded' })
     const starts = calls.filter(c => c.method === 'jobs.start')
     expect(starts).toHaveLength(1)
     expect((starts[0]?.params.spec as { question_ids?: string[] }).question_ids).toEqual(['fq_a'])
@@ -1356,6 +1382,9 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     // survived the Esc).
     await desk.press('\x1b')
     await desk.press('U')
+    // The keypress handler fires the RPC asynchronously — wait for it to be
+    // recorded rather than assuming the press() settle covered it.
+    await waitUntil(() => calls.some(c => c.method === 'jobs.start'), { label: 'jobs.start to be recorded' })
     const starts = calls.filter(c => c.method === 'jobs.start')
     expect(starts).toHaveLength(1)
     expect((starts[0]?.params.spec as { question_ids?: string[] }).question_ids).toHaveLength(1)
@@ -1380,6 +1409,9 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     await desk.press(' ') // mark fq_c
     await desk.press('U')
     await tick(120)
+    // The keypress handler fires the RPC asynchronously — wait for it to be
+    // recorded rather than assuming the press() settle covered it.
+    await waitUntil(() => calls.some(c => c.method === 'jobs.start'), { label: 'jobs.start to be recorded' })
     const starts = calls.filter(c => c.method === 'jobs.start')
     // ONE job over the whole batch — not a per-row client loop.
     expect(starts).toHaveLength(1)
@@ -1396,6 +1428,9 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     const desk = await mountDesk(120, twoMemberFixture(), recordingGw(twoMemberFixture(), calls))
     // Default thesis tab, cursor on the lens row (no marks) → U selects all members.
     await desk.press('U')
+    // The keypress handler fires the RPC asynchronously — wait for it to be
+    // recorded rather than assuming the press() settle covered it.
+    await waitUntil(() => calls.some(c => c.method === 'jobs.start'), { label: 'jobs.start to be recorded' })
     const starts = calls.filter(c => c.method === 'jobs.start')
     expect(starts).toHaveLength(1)
     expect(((starts[0]!.params.spec as { question_ids?: string[] }).question_ids ?? []).slice().sort()).toEqual([
@@ -1412,6 +1447,9 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     await desk.press(' ') // mark fq_b
     await desk.press('r') // force a workspace reload
     await desk.press('U') // marks persist → one job over both
+    // The keypress handler fires the RPC asynchronously — wait for it to be
+    // recorded rather than assuming the press() settle covered it.
+    await waitUntil(() => calls.some(c => c.method === 'jobs.start'), { label: 'jobs.start to be recorded' })
     const starts = calls.filter(c => c.method === 'jobs.start')
     expect(starts).toHaveLength(1)
     expect((starts[0]!.params.spec as { question_ids?: string[] }).question_ids).toEqual(['fq_a', 'fq_b'])
@@ -1442,6 +1480,9 @@ describe('DeskView mass forced re-run (selection + U/u fan-out)', () => {
     await tick(120)
     await desk.press('U') // in-flight → guarded (parks "already updating", no 2nd start)
     expect(desk.text()).toContain('already updating')
+    // The keypress handler fires the RPC asynchronously — wait for it to be
+    // recorded rather than assuming the press() settle covered it.
+    await waitUntil(() => calls.some(c => c.method === 'jobs.start'), { label: 'jobs.start to be recorded' })
     const starts = calls.filter(c => c.method === 'jobs.start')
     // Exactly ONE job — the guarded re-trigger started nothing.
     expect(starts).toHaveLength(1)
@@ -1925,6 +1966,7 @@ describe('DeskView detached agent jobs (A / T)', () => {
     await desk.press('A') // starts run_1 (status stays 'running')
     await tick(140)
     await desk.press('A') // guarded — no second start
+    await waitUntil(() => calls.some(c => c.method === 'forecast.reforecast.start'), { label: 'forecast.reforecast.start to be recorded' })
     const starts = calls.filter(c => c.method === 'forecast.reforecast.start')
     expect(starts).toHaveLength(1)
     expect(desk.text()).toContain('agent running')

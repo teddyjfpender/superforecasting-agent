@@ -4,6 +4,7 @@ import React from 'react'
 import { describe, expect, it } from 'vitest'
 
 import type { ModelOptionsResponse } from '../gatewayTypes.js'
+import { type Match, waitForQuiet, waitForSettled, waitForText } from '../testing/settle.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -133,7 +134,11 @@ const mountPicker = async (payload: ModelOptionsResponse) => {
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
-  await tick(80)
+  const read = () => normalize(stdout.text(), stripAnsi)
+
+  // model.options is async: a fixed `tick(80)` asserted against the
+  // `loading models…` frame under load. Wait for the provider stage to render.
+  await waitForSettled(read, 'Select provider', { label: 'the provider stage to render' })
 
   return {
     cleanup: () => {
@@ -141,11 +146,23 @@ const mountPicker = async (payload: ModelOptionsResponse) => {
       instance.cleanup?.()
     },
     press: async (keys: string) => {
+      // Wait for the repaint the key caused rather than a fixed 40ms, so a
+      // staged picker never receives the next key before it has advanced.
+      const before = read()
+
       stdin.stream.write(keys)
-      await tick(40)
+
+      try {
+        await waitForText(read, value => value !== before, { label: 'the keypress repaint', timeout: 2000 })
+      } catch {
+        // Some keys only commit (onSelect) without repainting.
+      }
+
+      await waitForQuiet(read, { quietFor: 24, timeout: 1000 })
     },
     selected,
-    text: () => normalize(stdout.text(), stripAnsi)
+    text: () => read(),
+    waitFor: (match: Match, label?: string) => waitForText(read, match, { label })
   }
 }
 
@@ -156,7 +173,9 @@ describe('ModelPicker reasoning-effort step', () => {
     await m.press('\r')
     // Model stage → first model (gpt-5.4) highlighted. Enter → effort step.
     await m.press('\r')
-    expect(m.text()).toContain('Select reasoning effort (step 3/3)')
+    expect(await m.waitFor('Select reasoning effort (step 3/3)', 'the effort stage')).toContain(
+      'Select reasoning effort (step 3/3)'
+    )
     // Move from medium (preselected) up to high, then commit.
     await m.press(`${ESC}[B`) // medium → high
     await m.press('\r')
@@ -170,7 +189,7 @@ describe('ModelPicker reasoning-effort step', () => {
   it('can toggle the picker back to a session-only model switch', async () => {
     const m = await mountPicker(options())
     await m.press('g')
-    expect(m.text()).toContain('persist: session')
+    expect(await m.waitFor('persist: session', 'the session-only toggle')).toContain('persist: session')
     await m.press('\r')
     await m.press('\r')
     await m.press('\r')
@@ -233,7 +252,9 @@ describe('ModelPicker reasoning-effort step', () => {
     // Model stage: move from grok-4 (0) to grok-3-mini (1), which IS capable.
     await m.press(`${ESC}[B`)
     await m.press('\r')
-    expect(m.text()).toContain('Select reasoning effort (step 3/3)')
+    expect(await m.waitFor('Select reasoning effort (step 3/3)', 'the effort stage')).toContain(
+      'Select reasoning effort (step 3/3)'
+    )
     expect(m.selected.length).toBe(0)
     m.cleanup()
   })

@@ -4,6 +4,7 @@ import React from 'react'
 import { describe, expect, it } from 'vitest'
 
 import type { ObsidianNoteResponse, ObsidianStatusResponse } from '../gatewayTypes.js'
+import { type Match, waitForQuiet, waitForSettled, waitForText } from '../testing/settle.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -124,9 +125,18 @@ const renderView = async () => {
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
-  await tick(80)
-
   const read = () => normalize(stdout.text(), stripAnsi)
+
+  // The view resolves obsidian.status THEN obsidian.note before it can paint the
+  // note. A fixed `tick(80)` asserted against whatever was on screen at 80ms,
+  // which under parallel load was the "not connected / Loading…" frame — the
+  // cause of this file's intermittent failures.
+  //
+  // Wait for the LAST thing the note produces, not the first: the `Outline` pane
+  // title paints as soon as the note pane exists, while the markdown body is
+  // still rendering, so waiting on it left the body assertions racing.
+  await waitForSettled(read, 'pool independent estimates', { label: 'the note body to render' })
+
   const text = read()
 
   return {
@@ -134,9 +144,27 @@ const renderView = async () => {
       instance.unmount?.()
       instance.cleanup?.()
     },
+    // Send a key and wait for the repaint it caused (bounded, so a key with no
+    // visual effect does not hang). Used where a step has no distinctive text
+    // of its own to wait for — sending keys back-to-back lets the view coalesce
+    // or drop them under load.
+    press: async (keys: string) => {
+      const before = read()
+
+      stdin.stream.write(keys)
+
+      try {
+        await waitForText(read, value => value !== before, { label: 'the keypress repaint', timeout: 2000 })
+      } catch {
+        // No visual change for this key — carry on.
+      }
+
+      await waitForQuiet(read, { quietFor: 24, timeout: 1000 })
+    },
     read,
     stdin: stdin.stream,
-    text
+    text,
+    waitFor: (match: Match, label?: string) => waitForText(read, match, { label })
   }
 }
 
@@ -170,11 +198,12 @@ describe('ObsidianView render', () => {
   })
 
   it('opens the centered search modal on "s"', async () => {
-    const { cleanup, read, stdin } = await renderView()
+    const { cleanup, stdin, waitFor } = await renderView()
 
     stdin.write('s')
-    await tick(60)
-    const text = read()
+    // Wait for the modal to paint rather than for a fixed 60ms — under load the
+    // keypress pipeline alone can outlast that.
+    const text = await waitFor('Search the vault', 'the search modal')
 
     expect(text).toContain('Search the vault')
     expect(text).toContain('Type to search')
@@ -183,17 +212,17 @@ describe('ObsidianView render', () => {
   })
 
   it('selects a multi-line range (v then move) and cites it as a range, not L1', async () => {
-    const { cleanup, read, stdin } = await renderView()
+    const { cleanup, press, waitFor } = await renderView()
 
-    stdin.write('v') // start a visual selection at the cursor (line 1)
-    await tick(20)
-    stdin.write('j') // extend down a block
-    await tick(20)
-    stdin.write('j') // extend further
-    await tick(20)
-    stdin.write('c') // comment on the selection
-    await tick(40)
-    const text = read()
+    // Each key waits for its own repaint, so the next one is never sent into a
+    // view that has not processed the previous one (which is how this test used
+    // to lose a keystroke under load and assert against a 1-line selection).
+    await press('v') // start a visual selection at the cursor (line 1)
+    await press('j') // extend down a block
+    await press('j') // extend further
+    await press('c') // comment on the selection
+
+    const text = await waitFor(/comment on L1-\d/, 'the comment prompt')
 
     // The comment prompt cites a line range (L1-N), not a single line.
     expect(text).toMatch(/comment on L1-\d/)
@@ -202,28 +231,27 @@ describe('ObsidianView render', () => {
   })
 
   it('moves pane focus left with ← (doc → outline → notes)', async () => {
-    const { cleanup, read, stdin } = await renderView()
+    const { cleanup, stdin, waitFor } = await renderView()
 
     // Default focus is the doc; left arrow steps doc → outline → notes.
     stdin.write('[D') // ← arrow
-    await tick(20)
-    expect(read()).toContain('▸ Outline')
+    expect(await waitFor('▸ Outline', 'focus to move to the outline')).toContain('▸ Outline')
 
     stdin.write('[D') // ← arrow again
-    await tick(20)
-    expect(read()).toContain('▸ Notes')
+    expect(await waitFor('▸ Notes', 'focus to move to the notes list')).toContain('▸ Notes')
 
     cleanup()
   })
 
   it('flips the notes list to a flat ranked Results pane on "/" filter', async () => {
-    const { cleanup, read, stdin } = await renderView()
+    const { cleanup, stdin, waitFor } = await renderView()
 
     stdin.write('/') // open the inline filter
-    await tick(40)
+    await waitFor('⌕', 'the inline filter to open')
     stdin.write('cal') // matches "Calibration and Scoring"
-    await tick(120)
-    const text = read()
+    // The flat Results pane is the settled state; the negative assertion below
+    // is only meaningful once it has painted.
+    const text = await waitFor('Results', 'the flat ranked Results pane')
 
     // Header shows the live filter query; the left pane switches tree → Results.
     expect(text).toContain('⌕ cal')
@@ -236,25 +264,22 @@ describe('ObsidianView render', () => {
   })
 
   it('surfaces the sort column in the header on "o"', async () => {
-    const { cleanup, read, stdin } = await renderView()
+    const { cleanup, stdin, waitFor } = await renderView()
 
     stdin.write('o') // cycle sort → name ascending
-    await tick(40)
-    expect(read()).toContain('name ▲')
+    expect(await waitFor('name ▲', 'the ascending sort header')).toContain('name ▲')
 
     stdin.write('O') // toggle direction → descending
-    await tick(40)
-    expect(read()).toContain('name ▼')
+    expect(await waitFor('name ▼', 'the descending sort header')).toContain('name ▼')
 
     cleanup()
   })
 
   it('opens the in-Obsidian chat modal on "a"', async () => {
-    const { cleanup, read, stdin } = await renderView()
+    const { cleanup, stdin, waitFor } = await renderView()
 
     stdin.write('a')
-    await tick(60)
-    const text = read()
+    const text = await waitFor('Ask the desk', 'the in-Obsidian chat modal')
 
     expect(text).toContain('Ask the desk')
     expect(text).toContain('⏎ send')
