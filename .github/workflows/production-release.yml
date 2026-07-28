@@ -184,11 +184,45 @@ jobs:
           HERMES_HOME: ${{ runner.temp }}/hermes-home
 
   # -------------------------------------------------------------------------
+  # TUI-green: type-check + full vitest suite + lint for ui-tui. The release
+  # job below builds and SHIPS ui-tui inside the wheel, so a red TUI suite
+  # blocks the release exactly like a red Python suite. Mirrors tests.yml's
+  # tui job.
+  # -------------------------------------------------------------------------
+  tui:
+    if: github.repository == 'teddyjfpender/superforecasting-agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui-tui/package-lock.json
+      - name: Install dependencies
+        run: cd ui-tui && npm ci
+      - name: Type-check
+        run: cd ui-tui && npm run type-check
+      - name: Run TUI tests
+        run: cd ui-tui && npm run test
+      - name: Lint (warning ratchet)
+        # --max-warnings pins the current warning count (0 errors) as a
+        # RATCHET: it may only ever go DOWN, never up. The residual warnings
+        # are React Compiler bailouts in ui-tui/src/lib/usePm*.ts plus one
+        # exhaustive-deps — a known, separately-tracked burn-down. Keep in
+        # sync with tests.yml's tui job.
+        run: cd ui-tui && npm run lint -- --max-warnings 54
+
+  # -------------------------------------------------------------------------
   # Build the formal set: wheel + multi-arch image + checksums + manifest,
   # then create the GitHub Release with everything attached.
   # -------------------------------------------------------------------------
   release:
-    needs: [gate, test]
+    needs: [gate, test, tui]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:

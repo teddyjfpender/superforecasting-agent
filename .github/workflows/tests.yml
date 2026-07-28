@@ -100,3 +100,39 @@ jobs:
           OPENROUTER_API_KEY: ""
           OPENAI_API_KEY: ""
           NOUS_API_KEY: ""
+
+  # TUI gate: type-check + full vitest suite + lint for ui-tui. The release
+  # pipeline bundles ui-tui into the wheel, so its suite must be as blocking
+  # as the Python one. Node 22 matches the release workflows' build jobs
+  # (root package.json engines requires >=20).
+  tui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui-tui/package-lock.json
+
+      - name: Install dependencies
+        run: cd ui-tui && npm ci
+
+      - name: Type-check
+        run: cd ui-tui && npm run type-check
+
+      - name: Run TUI tests
+        run: cd ui-tui && npm run test
+
+      - name: Lint (warning ratchet)
+        # --max-warnings pins the current warning count (0 errors) as a
+        # RATCHET: it may only ever go DOWN, never up. The residual warnings
+        # are React Compiler bailouts in ui-tui/src/lib/usePm*.ts plus one
+        # exhaustive-deps — a known, separately-tracked burn-down. Fixed a
+        # warning? Lower the number here AND in production-release.yml's
+        # tui job.
+        run: cd ui-tui && npm run lint -- --max-warnings 54
