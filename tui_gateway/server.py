@@ -2010,6 +2010,28 @@ def _current_profile_name() -> str:
         return "default"
 
 
+def build_info(timeout: float = 0.0) -> dict:
+    """The ``BuildInfo`` payload for ``gateway.ready`` / ``session.info``.
+
+    ``timeout=0.0`` (the startup default) makes this a pure memory + tiny-file
+    read: it only harvests whatever the module-level ``prefetch_update_check()``
+    background thread has already produced, so it can never delay first paint and
+    never touches the network itself. Offline it degrades to just the version.
+    """
+    try:
+        from hermes_cli.banner import get_update_state
+
+        return get_update_state(timeout=timeout)
+    except Exception:
+        # Last-resort: the version alone still beats showing nothing at all.
+        try:
+            from hermes_cli import __release_date__, __version__
+
+            return {"version": __version__, "release_date": __release_date__}
+        except Exception:
+            return {}
+
+
 def _session_info(agent) -> dict:
     reasoning_config = getattr(agent, "reasoning_config", None)
     reasoning_effort = ""
@@ -2081,6 +2103,15 @@ def _session_info(agent) -> dict:
 
         info["update_behind"] = get_update_result(timeout=0.5)
         info["update_command"] = recommended_update_command()
+    except Exception:
+        pass
+    try:
+        # session.info lands well after gateway.ready, by which point the
+        # background update check has usually finished — so this frame upgrades a
+        # cold-cache "version only" build into a real staleness verdict. The 0.5s
+        # budget is the one get_update_result already spent above, so it costs
+        # nothing extra.
+        info["build"] = build_info(timeout=0.5)
     except Exception:
         pass
     return info

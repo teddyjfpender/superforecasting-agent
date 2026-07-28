@@ -10,7 +10,7 @@
 // so the A4 grep-proof (no hand-written wire-shape INTERFACE outside
 // generated.ts) holds. The forecast value-enums re-export from ./types.js.
 import type { WireEvent } from './protocol/generated.js'
-import type { GatewaySkin, SubagentEventPayload } from './protocol/generated.js'
+import type { BuildInfoPayload, GatewaySkin, SubagentEventPayload } from './protocol/generated.js'
 import type { SessionInfo, Usage } from './types.js'
 
 // ── generated wire shapes — every hand-written interface mirror is DELETED; the
@@ -22,6 +22,8 @@ export type {
   BackgroundStartResponse,
   // voice / model / tools / reload / process / browser
   BrowserManageResponse,
+  // the running application build + staleness verdict (gateway.ready / session.info)
+  BuildInfoPayload,
   ClarifyRespondResponse,
   ClipboardPasteResponse,
   // commands / completion / slash
@@ -233,7 +235,11 @@ export type { ForecastTailClassification, ForecastTriageLabel } from './types.js
 // its own payload); the payloads reference generated shapes (GatewaySkin,
 // SubagentEventPayload, SessionInfo, Usage) where they are non-trivial.
 export type GatewayEvent =
-  | { payload?: { protocol_version?: number; skin?: GatewaySkin }; session_id?: string; type: typeof WireEvent.GATEWAY_READY }
+  | {
+      payload?: { build?: BuildInfoPayload; protocol_version?: number; skin?: GatewaySkin }
+      session_id?: string
+      type: typeof WireEvent.GATEWAY_READY
+    }
   | { payload?: GatewaySkin; session_id?: string; type: typeof WireEvent.SKIN_CHANGED }
   | { payload: SessionInfo; session_id?: string; type: typeof WireEvent.SESSION_INFO }
   | { payload?: { text?: string }; session_id?: string; type: typeof WireEvent.THINKING_DELTA }

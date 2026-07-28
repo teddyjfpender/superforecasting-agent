@@ -393,6 +393,11 @@ def main():
     # A4 version handshake: advertise the wire PROTOCOL_VERSION on the hello frame.
     # The TUI compares it against its generated const and WARNS (never hard-fails)
     # on a mismatch — see ui-tui/src/gatewayClient.ts.
+    #
+    # ``build`` rides the same frame so the TUI knows which APPLICATION build it is
+    # from its very first paint. server.build_info(0.0) never makes a network call
+    # of its own — it harvests the already-scheduled, 6-hour-cached update check —
+    # so this adds no latency here and degrades to just the version when offline.
     from protocol.version import PROTOCOL_VERSION
 
     if not write_json({
@@ -400,7 +405,11 @@ def main():
         "method": "event",
         "params": {
             "type": "gateway.ready",
-            "payload": {"skin": resolve_skin(), "protocol_version": PROTOCOL_VERSION},
+            "payload": {
+                "skin": resolve_skin(),
+                "protocol_version": PROTOCOL_VERSION,
+                "build": server.build_info(),
+            },
         },
     }):
         _log_exit("startup write failed (broken stdout pipe before first event)")

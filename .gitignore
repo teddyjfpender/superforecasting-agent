@@ -78,5 +78,11 @@ result
 website/static/api/skills-index.json
 models-dev-upstream/
 hermes_cli/tui_dist/*
+# ...except the two-line module marker. entry.js is an ES module, and without a
+# "type" beside it Node walks UP to the repo-root package.json (which has no
+# "type"), prints a 4-line MODULE_TYPELESS_PACKAGE_JSON warning to stderr before
+# first paint, and reparses the bundle as ESM anyway. The marker is a tracked
+# source file, not a build artifact, so it must survive the ignore above.
+!hermes_cli/tui_dist/package.json
 hermes_cli/scripts/
 docs/superpowers/*

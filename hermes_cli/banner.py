@@ -143,9 +143,33 @@ _UPDATE_CHECK_CACHE_SECONDS = 6 * 3600
 # (e.g. nix-built hermes — no local git history to count against).
 UPDATE_AVAILABLE_NO_COUNT = -1
 
-_UPSTREAM_REPO_URL = "https://github.com/teddyjfpender/superforecasting-agent.git"
+_UPSTREAM_REPO = "teddyjfpender/superforecasting-agent"
+_UPSTREAM_REPO_URL = f"https://github.com/{_UPSTREAM_REPO}.git"
 _UPSTREAM_BRANCH = "superforecasting-agent-snapshot"
 _HOME_REPO_DIR_NAMES = ("superforecasting-agent", "hermes-agent")
+
+# "Latest" resolves against the SAME release ``scripts/install-release.sh`` would
+# install, by two paths tried in order:
+#
+#   1. the machine-readable ``release-manifest.json`` every formal release ships
+#      (see scripts/release_manifest.py — the declared contract the one-line
+#      installer and the Hetzner bootstrap already resolve against). Served as a
+#      plain asset download, so it is NOT subject to the GitHub API's 60-req/hour
+#      unauthenticated limit — which a shared or NAT'd network exhausts easily,
+#      silently blinding the staleness check exactly when it matters.
+#   2. the releases API, for a release older than the manifest.
+_LATEST_MANIFEST_URL = (
+    f"https://github.com/{_UPSTREAM_REPO}/releases/latest/download/release-manifest.json"
+)
+_LATEST_RELEASE_API = f"https://api.github.com/repos/{_UPSTREAM_REPO}/releases/latest"
+_ONE_LINE_INSTALLER = (
+    f"curl -fsSL https://github.com/{_UPSTREAM_REPO}"
+    "/releases/latest/download/install.sh | bash"
+)
+# A git checkout must REBUILD the bundle and reinstall it: a plain `git pull`
+# leaves the pipx-installed binary — and the TUI it froze into its own venv at
+# hermes_cli/tui_dist/entry.js — completely untouched.
+_REBUILD_AND_REINSTALL = "scripts/build-release.sh && pipx install --force dist/*.whl"
 
 
 def _check_via_rev(local_rev: str) -> Optional[int]:
@@ -213,6 +237,20 @@ def _version_tuple(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
+# The newest version any resolution path (PyPI / GitHub release / cache) has
+# seen this process. Purely a display aid — the authoritative "am I behind?"
+# answer stays ``check_for_updates()``'s ``behind`` count.
+_latest_version: Optional[str] = None
+
+
+def _record_latest_version(value: Optional[str]) -> Optional[str]:
+    """Remember a resolved "latest" version so the TUI can name it."""
+    global _latest_version
+    if value:
+        _latest_version = value
+    return value
+
+
 def _fetch_pypi_latest(package: str = "superforecasting-agent") -> Optional[str]:
     """Fetch the latest version of a package from PyPI. Returns None on failure."""
     try:
@@ -231,7 +269,7 @@ def check_via_pypi() -> Optional[int]:
 
     Returns 0 if up-to-date, 1 if behind, None on failure.
     """
-    latest = _fetch_pypi_latest()
+    latest = _record_latest_version(_fetch_pypi_latest())
     if latest is None:
         return None
     if latest == VERSION:
@@ -242,6 +280,57 @@ def check_via_pypi() -> Optional[int]:
         return 0
     except Exception:
         return 1 if latest != VERSION else 0
+
+
+def _get_json(url: str, accept: str) -> Optional[dict]:
+    """GET a small JSON document. None on ANY failure — offline, DNS, timeout,
+    rate limit, non-JSON. Never raises, never retries, never blocks past 5s."""
+    try:
+        import urllib.request
+
+        req = urllib.request.Request(url, headers={"Accept": accept})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read())
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _fetch_release_latest() -> Optional[str]:
+    """Resolve the newest PUBLISHED release version, or None.
+
+    Returns a bare semver so it compares directly against ``__version__``. Tries
+    the shipped release manifest first (no API rate limit), then the releases API
+    (``vX.Y.Z`` tag, ``v`` stripped). Silent on every failure.
+    """
+    manifest = _get_json(_LATEST_MANIFEST_URL, "application/json")
+    if manifest and manifest.get("product") == "superforecasting-agent":
+        version = str(manifest.get("version") or "").strip()
+        if version:
+            return version
+
+    release = _get_json(_LATEST_RELEASE_API, "application/vnd.github+json")
+    tag = str((release or {}).get("tag_name") or "").strip().lstrip("v")
+    return tag or None
+
+
+def check_via_release() -> Optional[int]:
+    """Compare the installed version against the newest published GitHub release.
+
+    The release lane (a pipx-installed wheel, or the one-line installer) has no
+    git checkout AND this fork is not published to PyPI, so without this path a
+    wheel install can never learn that it is stale — which is exactly how an
+    operator ends up running a months-old bundled TUI. Returns 0 if up-to-date,
+    ``UPDATE_AVAILABLE_NO_COUNT`` if behind (there are no commits to count), or
+    None when the lookup failed.
+    """
+    latest = _record_latest_version(_fetch_release_latest())
+    if not latest:
+        return None
+    try:
+        return UPDATE_AVAILABLE_NO_COUNT if _version_tuple(latest) > _version_tuple(VERSION) else 0
+    except Exception:
+        return None
 
 
 def check_for_updates() -> Optional[int]:
@@ -268,6 +357,7 @@ def check_for_updates() -> Optional[int]:
                 now - cached.get("ts", 0) < _UPDATE_CHECK_CACHE_SECONDS
                 and cached.get("rev") == embedded_rev
             ):
+                _record_latest_version(cached.get("latest"))
                 return cached.get("behind")
     except Exception:
         pass
@@ -285,9 +375,18 @@ def check_for_updates() -> Optional[int]:
             behind = check_via_pypi()
         else:
             behind = _check_via_local_git(repo_dir)
+        if behind is None:
+            # Nothing local could answer — no checkout (the pipx / one-line
+            # installer lane), or a checkout whose remote isn't named `origin`,
+            # and this fork is not on PyPI. Fall back to the published GitHub
+            # release, which is the ground truth for the product version, so a
+            # bundled build can still learn that it is stale.
+            behind = check_via_release()
 
     try:
-        cache_file.write_text(json.dumps({"ts": now, "behind": behind, "rev": embedded_rev}))
+        cache_file.write_text(
+            json.dumps({"ts": now, "behind": behind, "rev": embedded_rev, "latest": _latest_version})
+        )
     except Exception:
         pass
 
@@ -443,6 +542,105 @@ def get_update_result(timeout: float = 0.5) -> Optional[int]:
     """Get result of prefetched check. Returns None if not ready."""
     _update_check_done.wait(timeout=timeout)
     return _update_result
+
+
+# =========================================================================
+# Build identity + staleness (the shape the TUI wire carries)
+# =========================================================================
+
+
+def _read_update_cache() -> dict:
+    """Read the on-disk update-check cache. ``{}`` when absent or unreadable."""
+    try:
+        cached = json.loads((get_hermes_home() / ".update_check").read_text())
+    except Exception:
+        return {}
+    return cached if isinstance(cached, dict) else {}
+
+
+def stale_build_remedy(install_method: Optional[str] = None) -> str:
+    """The concrete command that REPLACES a stale build, per install lane.
+
+    Deliberately not ``recommended_update_command()``: that answers "how do I
+    upgrade the package", which for the git lane is a ``git pull`` that leaves an
+    already-pipx-installed binary (and the TUI bundle frozen inside its venv)
+    exactly as stale as it was.
+    """
+    try:
+        from hermes_cli.config import (
+            detect_install_method,
+            get_managed_update_command,
+            recommended_update_command_for_method,
+        )
+    except Exception:
+        return _ONE_LINE_INSTALLER
+
+    try:
+        managed = get_managed_update_command()
+        if managed:
+            return managed
+        method = install_method or detect_install_method()
+    except Exception:
+        return _ONE_LINE_INSTALLER
+
+    if method in ("nixos", "homebrew", "docker"):
+        try:
+            return recommended_update_command_for_method(method)
+        except Exception:
+            return _ONE_LINE_INSTALLER
+    if method == "git" and _resolve_repo_dir() is not None:
+        return _REBUILD_AND_REINSTALL
+    return _ONE_LINE_INSTALLER
+
+
+def get_update_state(timeout: float = 0.0) -> dict:
+    """The running build's identity plus the (best-effort) staleness verdict.
+
+    NEVER performs a network call of its own. It reads whatever the already
+    scheduled background check (``prefetch_update_check`` → ``check_for_updates``,
+    itself cached on disk for 6 hours) has produced: the in-process result first,
+    then the on-disk cache. So the default ``timeout=0.0`` call is a pure
+    memory + one-small-file read and is safe on a startup path.
+
+    Offline, every remote-derived key simply stays ``None``/``False`` — there is
+    no error to surface and nothing to hang on.
+
+    Keys: ``version``, ``release_date``, ``install_method``, ``latest_version``,
+    ``behind`` (commits behind, ``-1`` when known-behind-but-uncountable),
+    ``stale``, ``remedy``.
+    """
+    behind = get_update_result(timeout=timeout)
+    cached = _read_update_cache()
+
+    if behind is None:
+        cached_behind = cached.get("behind")
+        behind = cached_behind if isinstance(cached_behind, int) else None
+
+    latest = _latest_version or (cached.get("latest") or None)
+
+    stale = bool(behind)
+    if not stale and latest:
+        try:
+            stale = _version_tuple(str(latest)) > _version_tuple(VERSION)
+        except Exception:
+            stale = False
+
+    try:
+        from hermes_cli.config import detect_install_method
+
+        method = detect_install_method()
+    except Exception:
+        method = None
+
+    return {
+        "version": VERSION,
+        "release_date": RELEASE_DATE,
+        "install_method": method,
+        "latest_version": str(latest) if latest else None,
+        "behind": behind,
+        "stale": stale,
+        "remedy": stale_build_remedy(method),
+    }
 
 
 # =========================================================================

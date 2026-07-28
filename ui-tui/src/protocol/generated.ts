@@ -159,6 +159,16 @@ export interface BrowserProgressPayload {
   message?: string
 }
 
+export interface BuildInfoPayload {
+  behind?: null | number
+  install_method?: string
+  latest_version?: string
+  release_date?: string
+  remedy?: string
+  stale?: boolean
+  version: string
+}
+
 export interface ClarifyRequestPayload {
   choices: null | string[]
   question: string
@@ -2004,6 +2014,7 @@ export interface GatewayProtocolErrorPayload {
 }
 
 export interface GatewayReadyPayload {
+  build?: BuildInfoPayload
   protocol_version?: number
   skin?: SkinPayload
 }
@@ -2644,6 +2655,7 @@ export interface SessionCompressSummary {
 }
 
 export interface SessionCreateInfo {
+  build?: BuildInfoPayload
   config_warning?: string
   credential_warning?: string
   cwd?: string
@@ -2691,6 +2703,7 @@ export interface SessionHistoryResponse {
 }
 
 export interface SessionInfo {
+  build?: BuildInfoPayload
   cwd?: string
   fast?: boolean
   lazy?: boolean
@@ -2711,6 +2724,7 @@ export interface SessionInfo {
 }
 
 export interface SessionInfoPayload {
+  build?: BuildInfoPayload
   cwd: string
   fast: boolean
   model: string

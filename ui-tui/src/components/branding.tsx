@@ -5,8 +5,10 @@ import unicodeSpinners from 'unicode-animations'
 
 import { canOpenGlobalOverlay } from '../app/navRoutes.js'
 import { $overlayState } from '../app/overlayStore.js'
+import { $uiBuild } from '../app/uiStore.js'
 import { artWidth, FORECAST_HERO_WIDTH, forecastHero } from '../banner.js'
 import { sweepColor, sweepStops } from '../lib/accentSweep.js'
+import { buildVersionLabel, isBuildStale, staleHeadline, staleRemedy } from '../lib/buildInfo.js'
 import { flat } from '../lib/text.js'
 import { $firstRunHintDismissed, dismissFirstRunHint } from '../lib/uiFlagsStore.js'
 import type { Theme } from '../theme.js'
@@ -136,7 +138,19 @@ export function HomeHero({ info, maxCols, t }: { info?: SessionInfo; maxCols?: n
   // wordmark alone carries the identity so the prompt stays in view. The
   // outrider scales to fit, so the gate just needs basic breathing room.
   const showOrb = rows >= 20 && cols >= 42
-  const context = [info?.model, shortenHomePath(info?.cwd)].filter(Boolean).join('  ·  ')
+  // WHICH BUILD AM I RUNNING — appended to the existing dim context line rather
+  // than given a row of its own, so the landing gains NO height and the Home
+  // status bar keeps its deliberate three items. Read from the store (not from
+  // `info`) because gateway.ready carries it a round trip before session.info
+  // does. Rendered from the very first paint; absent only on an older gateway.
+  const build = useStore($uiBuild)
+  const version = buildVersionLabel(build)
+  const context = [info?.model, shortenHomePath(info?.cwd), version].filter(Boolean).join('  ·  ')
+  // The stale banner is a MOUNTED-ONLY-WHEN-TRUE row: at rest (up to date, cold
+  // cache, or offline) the hero is byte-identical to before. It is the one place
+  // this can shout, since the three-item status-bar law forbids a fourth item.
+  const stale = isBuildStale(build)
+  const remedy = staleRemedy(build)
 
   return (
     <Box alignItems="center" flexDirection="column" marginTop={showOrb ? 1 : 1}>
@@ -151,6 +165,19 @@ export function HomeHero({ info, maxCols, t }: { info?: SessionInfo; maxCols?: n
       </Text>
 
       {context ? <Text color={t.color.muted}>{context}</Text> : null}
+
+      {stale ? (
+        <Box flexDirection="column" marginTop={1}>
+          <Text bold color={t.color.warn} wrap="truncate-end">
+            {`⚠ ${staleHeadline(build)}`}
+          </Text>
+          {remedy ? (
+            <Text color={t.color.warn} dimColor wrap="truncate-end">
+              {`  run: ${remedy}`}
+            </Text>
+          ) : null}
+        </Box>
+      ) : null}
 
       <Box marginTop={1}>
         <Text color={t.color.muted}>Ask a forecasting question to begin</Text>
