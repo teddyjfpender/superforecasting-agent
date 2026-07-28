@@ -114,10 +114,14 @@ case "$WHEEL" in
   *) die "wheel '$WHEEL' does not match version ${VERSION}" ;;
 esac
 
-# 3. Assemble the release directory.
+# 3. Assemble the release directory. The wheel/sdist are built into dist/, so
+#    with the default --out=dist they are already in place — `cp` onto the
+#    same file errors ("identical") on both BSD and GNU, killing the dry-run.
 mkdir -p "$OUT_DIR"
-cp -f "$WHEEL" "$OUT_DIR/"
-cp -f "$SDIST" "$OUT_DIR/"
+if [ "$(cd "$(dirname "$WHEEL")" && pwd)" != "$(cd "$OUT_DIR" && pwd)" ]; then
+  cp -f "$WHEEL" "$OUT_DIR/"
+  cp -f "$SDIST" "$OUT_DIR/"
+fi
 cp -f scripts/install-release.sh "$OUT_DIR/install.sh"
 WHEEL_NAME="$(basename "$WHEEL")"
 SDIST_NAME="$(basename "$SDIST")"
