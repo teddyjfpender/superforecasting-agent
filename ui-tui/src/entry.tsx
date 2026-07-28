@@ -61,12 +61,27 @@ setupGracefulExit({
   }
 })
 
+// How long the OOM guard will wait for the gateway child before exiting anyway.
+// Deliberately far shorter than the normal quit budget: under critical memory
+// pressure getting OUT is the priority. gw.kill() sends the stop signal
+// SYNCHRONOUSLY (and disarms the supervisor, so no respawn races the exit), so
+// even a zero-wait exit is strictly better than the previous behaviour, which
+// never signalled the child at all and always stranded it.
+const OOM_REAP_BUDGET_MS = 700
+
 const stopMemoryMonitor = startMemoryMonitor({
   onCritical: (snap, dump) => {
     resetTerminalModes()
     process.stderr.write(dumpNotice(snap, dump))
     process.stderr.write(`${APP_LABEL}: exiting to avoid OOM; restart to recover\n`)
-    process.exit(137)
+
+    const failsafe = setTimeout(() => process.exit(137), OOM_REAP_BUDGET_MS)
+
+    failsafe.unref?.()
+    void gw.kill().then(
+      () => process.exit(137),
+      () => process.exit(137)
+    )
   },
   onHigh: (snap, dump) => process.stderr.write(dumpNotice(snap, dump))
 })

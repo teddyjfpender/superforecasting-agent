@@ -8,6 +8,7 @@ import { DEFAULT_INDICATOR_STYLE, type UiState } from './interfaces.js'
 
 const buildUiState = (): UiState => ({
   bgTasks: new Set(),
+  build: null,
   busy: false,
   busyInputMode: 'queue',
   compact: false,
@@ -36,6 +37,11 @@ export const $uiState = atom<UiState>(buildUiState())
 
 export const $uiTheme = computed($uiState, state => state.theme)
 export const $uiSessionId = computed($uiState, state => state.sid)
+// The running build (version + staleness verdict). Scoped so the two surfaces
+// that show it — the Home hero and the Help overlay — subscribe to JUST this and
+// never re-render on the live status/usage/busy churn. It changes at most twice
+// per session (gateway.ready, then the session.info refresh).
+export const $uiBuild = computed($uiState, state => state.build)
 // The review-sweep in-flight marker, scoped so the Desk subscribes to JUST this
 // (not every status flash) — it re-renders only when a sweep starts/finishes.
 export const $reviewSweep = computed($uiState, state => state.reviewSweep)

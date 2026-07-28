@@ -29,6 +29,7 @@ import {
   forecastQuestionSearchSections,
   rankForecastQuestionMatches
 } from '../../forecastPanel.js'
+import { getGatewayLink, markLinkStarting } from '../../gatewayLinkStore.js'
 import type { StatusBarMode } from '../../interfaces.js'
 import { patchOverlayState, raisePrompt } from '../../overlayStore.js'
 import { patchUiState } from '../../uiStore.js'
@@ -1397,6 +1398,30 @@ export const coreCommands: SlashCommand[] = [
       const text = ctx.gateway.gw.getLogTail(Math.min(80, Math.max(1, parseInt(arg, 10) || 20)))
 
       text ? ctx.transcript.page(text, 'Logs') : ctx.transcript.sys('no gateway logs')
+    }
+  },
+
+  {
+    // The escape hatch out of the terminal `lost` state. The supervisor gives up
+    // after a bounded ladder precisely so a broken gateway can't respawn
+    // forever; a human asking again is fresh evidence, so this resets the ladder.
+    // Also usable to force a restart of a live-but-wedged gateway.
+    aliases: ['restart-gateway'],
+    help: 'restart the forecast gateway and reconnect',
+    name: 'reconnect',
+    run: (_arg, ctx) => {
+      const link = getGatewayLink()
+
+      if (link.phase === 'reconnecting' && ctx.gateway.gw.isRestartPending()) {
+        // Don't stack a manual restart on top of a scheduled one — jump the
+        // queue instead, so the user's key press is honoured immediately.
+        ctx.transcript.sys('reconnecting now (skipping the scheduled retry)…')
+      }
+
+      markLinkStarting()
+      patchUiState({ status: 'reconnecting to gateway…' })
+      ctx.gateway.gw.reconnect()
+      ctx.transcript.sys('restarting the forecast gateway…')
     }
   },
 

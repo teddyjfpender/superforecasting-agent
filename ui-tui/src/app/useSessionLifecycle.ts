@@ -211,10 +211,24 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
     [closeSession, colsRef, panel, resetSession, rpc, setHistoryItems, setSessionStartedAt, sys]
   )
 
+  // `onUnresumable` fires when the requested session could NOT be restored, so a
+  // caller that has no other session to fall back on (the gateway-recovery path)
+  // can open a fresh one instead of leaving the desk sid-less and mute. Callers
+  // that omit it keep the previous behaviour exactly.
   const resumeById = useCallback(
-    (id: string) => {
+    (id: string, onUnresumable?: (reason: string) => void) => {
       patchOverlayState({ picker: false })
       patchUiState({ status: 'resuming…' })
+
+      const failed = (reason: string) => {
+        patchUiState({ status: 'ready' })
+
+        if (onUnresumable) {
+          onUnresumable(reason)
+        } else {
+          sys(`error: ${reason}`)
+        }
+      }
 
       rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
         if (setup?.provider_configured === false) {
@@ -231,9 +245,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
               const r = asRpcResult<SessionResumeResponse>(raw)
 
               if (!r) {
-                sys('error: invalid response: session.resume')
-
-                return patchUiState({ status: 'ready' })
+                return failed('invalid response: session.resume')
               }
 
               resetSession()
@@ -251,10 +263,7 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
               })
               setTimeout(() => scrollRef.current?.scrollToBottom(), 0)
             })
-            .catch((e: Error) => {
-              sys(`error: ${e.message}`)
-              patchUiState({ status: 'ready' })
-            })
+            .catch((e: Error) => failed(e.message))
         )
       })
     },
