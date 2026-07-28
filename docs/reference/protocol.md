@@ -309,6 +309,18 @@ _(no fields)_
 | `level` | `string?` |
 | `message` | `string?` |
 
+### BuildInfoPayload
+
+| field | type |
+| --- | --- |
+| `behind` | `number? | null` |
+| `install_method` | `string?` |
+| `latest_version` | `string?` |
+| `release_date` | `string?` |
+| `remedy` | `string?` |
+| `stale` | `boolean?` |
+| `version` | `string` |
+
 ### ClarifyRequestPayload
 
 | field | type |
@@ -2557,6 +2569,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `build` | `BuildInfoPayload?` |
 | `protocol_version` | `number?` |
 | `skin` | `SkinPayload?` |
 
@@ -3390,6 +3403,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `build` | `BuildInfoPayload?` |
 | `config_warning` | `string?` |
 | `credential_warning` | `string?` |
 | `cwd` | `string?` |
@@ -3451,6 +3465,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `build` | `BuildInfoPayload?` |
 | `cwd` | `string?` |
 | `fast` | `boolean?` |
 | `lazy` | `boolean?` |
@@ -3473,6 +3488,7 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `build` | `BuildInfoPayload?` |
 | `cwd` | `string` |
 | `fast` | `boolean` |
 | `model` | `string` |

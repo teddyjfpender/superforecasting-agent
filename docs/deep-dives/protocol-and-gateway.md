@@ -51,8 +51,8 @@ wrapping a handler in validation changes no wire behaviour — a client sending 
 extra field still works exactly as before. The core fields a handler actually
 reads stay required; the tolerance is only at the edges. A field the server emits
 additively but the model doesn't declare survives via an explicit whitelist
-(`_PASSTHROUGH_RESULT_KEYS = ("stale",)` in `pm_rpc.py`) so `model_dump` can't
-silently swallow it.
+(`_PASSTHROUGH_RESULT_KEYS = ("stale", "catalog")` in `pm_rpc.py`) so
+`model_dump` can't silently swallow it.
 
 `wire_optional()` (in `types.py`) is the field helper for keys the server emits
 *conditionally*: it defaults to `None`, sets `wireOptional` in
@@ -82,8 +82,9 @@ What it produces:
   a raw event-name string literal is allowed to live; every `gw.on`/`emit`/switch
   in the TUI references `WireEvent.X`, so a renamed or removed event is a compile
   error, never a silent miss.
-- one `export interface` per collected model (**370** interfaces from 252
-  top-level models plus nested discovery)
+- one `export interface` per collected model (**399** interfaces at last count,
+  from 252 top-level models plus nested discovery; the count was 370 when the
+  arc closed at A4 and grows as models are added)
 
 The type mapping (`_ts_scalar`) handles `Literal` → string-literal union (sorted),
 `tuple[...]` → positional TS tuple (**never** sorted — a tuple's order is
@@ -196,14 +197,58 @@ per-message versioning** — the whole wire is one version, bumped only on a
 breaking change.
 
 The gateway advertises it on the `gateway.ready` hello frame
-(`tui_gateway/entry.py` emits `{"skin": …, "protocol_version": PROTOCOL_VERSION}`)
-and on `session.info`. The TUI's `GatewayClient.checkProtocolVersion`
+(`tui_gateway/entry.py` emits `{"skin": …, "protocol_version": PROTOCOL_VERSION,
+"build": …}`) and on `session.info`. The TUI's `GatewayClient.checkProtocolVersion`
 (`ui-tui/src/gatewayClient.ts`) compares the advertised value against the
 `PROTOCOL_VERSION` baked into its generated module and **warns once** (to the
 startup-log channel the status line drains) on a mismatch. A **missing** field (an
 older gateway predating the handshake) is silently tolerated; a mismatch **never
 hard-fails**. The point is to make protocol evolution *observable* rather than a
 silent shape-drift mystery.
+
+### The build-info rider
+
+The hello frame (and `session.info`) also carries a typed **`BuildInfo`**
+(`protocol/events/gateway.py`; declared `wire_optional()` on `session.info` in
+`protocol/rpc/session.py`): the running **application** version — deliberately
+distinct from `protocol_version`, which only versions the wire — plus, when the
+cached update check has landed, the newest published release and a staleness
+verdict. `tui_gateway.server.build_info()` fills it from the already-scheduled,
+6-hour-cached background update check — never its own network call, so it can
+neither delay `gateway.ready` nor fail offline; `version` is the only guaranteed
+key. The TUI consumes it through `ui-tui/src/lib/buildInfo.ts`: the version
+renders on the Home hero's context line (`branding.tsx`, `buildVersionLabel`)
+and as the first line of the `h` help overlay (`buildSummaryLine`), and
+`forecast doctor` prints the same verdict in its `◆ Build Version` section. The
+model exists because a pipx-installed build freezes its own TUI bundle inside
+its venv — a repo-side rebuild never reaches it, and the operator previously
+had no way to tell which binary they were in.
+
+### The client lifecycle: respawn and the reap
+
+Gateway death is recoverable, bounded, and visible
+(`ui-tui/src/gatewayClient.ts`). An unexpected exit triggers a respawn ladder —
+exponential backoff from 500 ms to an 8 s cap, at most
+`GATEWAY_MAX_RESTARTS = 5` attempts — with the attempt budget **earned back by
+uptime**: the stability clock starts at `gateway.ready`, not at spawn, so
+"crashes right after ready" still exhausts the ladder instead of looping
+forever. While reconnecting, the desk shows a reconnecting state; when the
+ladder is exhausted a **terminal** state renders the captured stderr tail plus
+the `/reconnect` · `/logs` · `/quit` escape hatches
+(`ui-tui/src/content/gatewayLost.ts`), and a successful respawn **resumes the
+prior session** on the ready path (`createGatewayEventHandler.ts`,
+`resumeById`) rather than landing in a blank one. A *deliberate* stop — quit,
+or the OOM guard — sets the one flag that separates a quit from a crash and
+never respawns.
+
+The reap is real: `kill()` was historically fire-and-forget — a bare SIGTERM
+with no await, so node exited in ~0.1 s while the gateway (whose own SIGTERM
+handler logs thread stacks first) took 0.6–1.1 s to die and was reparented to
+init: one leaked process per clean exit. `reapChild()` now EOFs stdin, sends
+SIGTERM, and escalates to SIGKILL after a bounded grace
+(`GATEWAY_KILL_GRACE_MS`, default 1500 ms, with a 500 ms hard floor); the
+terminal is restored first so the wait is never visible, and the OOM path stops
+the gateway the same way instead of orphaning it.
 
 ---
 
@@ -234,12 +279,15 @@ response via the bound transport when done).
 ### The `*_rpc.py` module pattern
 
 Families that are large or self-contained live in their own module that exposes a
-single `register(server)`. `server.py` only imports and calls it —
-`_jobs_rpc.register(...)`, `_pm_rpc.register(...)`, `_market_rpc.register(...)`.
+single `register(server)`; `server.py` only imports and calls it. **Fifteen**
+family modules register today (`tui_gateway/*_rpc.py`): `jobs`, `pm`, `market`,
+`obsidian`, `market_models`, `forecast`, `rollback`, `agents`, `subagents`,
+`completion`, `voice`, `browser`, `commands`, `tools`, and `cron_skills`.
 Each module's handlers are thin: they drive the one service (`PMService`,
 `MarketDataService`, the jobs `JobStore`/`runtime`) and never call a venue client
-directly. This keeps the 300k-line `server.py` from owning every family's logic
-and makes each family unit-testable against its service.
+directly. This is what keeps `server.py` (~6.3k lines after the carve) from
+owning every family's logic and makes each family unit-testable against its
+service.
 
 ### Transport + contextvars session isolation
 
@@ -264,8 +312,11 @@ through a callback).
 - `tui_gateway/pm_rpc.py`, `tui_gateway/market_rpc.py`, `tui_gateway/server.py`
   (`rpc_validated`, `register_method`, `dispatch`, `_LONG_HANDLERS`),
   `tui_gateway/entry.py`, `tui_gateway/transport.py`
-- `ui-tui/src/gatewayClient.ts` (`checkProtocolVersion`),
-  `ui-tui/src/protocol/generated.ts`
+- `ui-tui/src/gatewayClient.ts` (`checkProtocolVersion`, the respawn ladder,
+  `reapChild`), `ui-tui/src/protocol/generated.ts`,
+  `ui-tui/src/lib/buildInfo.ts`, `ui-tui/src/content/gatewayLost.ts`
+- Build info: `protocol/events/gateway.py` (`BuildInfo`),
+  `protocol/rpc/session.py`, `tui_gateway/server.py` (`build_info`)
 - Drift catalog mined from the ARC A1–A4 commit messages (`80ae3429f`,
   `6b13707a2`, `d69e9e5e4`, `13b9fdf93`) and `docs/plans/2026-07-03-architecture-delivery-plan.md`
-- Counts verified live: `RPC_SPECS`=101, `EVENT_SPECS`=46, 370 generated interfaces
+- Counts verified live: `RPC_SPECS`=101, `EVENT_SPECS`=46, 399 generated interfaces

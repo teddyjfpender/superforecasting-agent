@@ -32,7 +32,7 @@ the code, not inherited from upstream.
 | --- | --- |
 | [Overview](docs/index.md) | What the system is, honestly. |
 | [Architecture](docs/architecture.md) | The four arcs — protocol gateway, job runtime, market data plane, ledger — with diagrams. |
-| [Operating the desk (TUI)](docs/operating.md) | Views, the help system, the `u`/`U`/`A` desk tiers, mass-select, theses, markets, alerts, the agents chip. |
+| [Operating the desk (TUI)](docs/operating.md) | All 13 views (12 default + the dev-gated Demo Vis), the help system, the `u`/`U`/`A`/`T` desk tiers, mass-select, the Operations cockpit, theses, markets, alerts, the agents chip. |
 | [Forecasting methodology](docs/forecasting-methodology.md) | The desk process and how to let it learn. |
 | [CLI guide](docs/cli.md) | Task-oriented walkthroughs. |
 | [Development](docs/development.md) | Build, release, and the test/staleness gates. |
@@ -79,7 +79,8 @@ iex (irm https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/
 After install:
 
 ```bash
-forecast                 # open the forecast desk (TUI)
+forecast tui             # open the forecast desk TUI (also: superforecasting-agent --tui)
+forecast                 # bare invocation prints the desk dashboard summary
 superforecasting-agent   # fork-native command; forecast workflows are shorthand
 forecast status          # desk state, calibration, live baseline comparisons
 ```

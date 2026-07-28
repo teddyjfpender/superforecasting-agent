@@ -19,7 +19,7 @@ hcloud server create --name desk --type cax21 --image ubuntu-24.04 \
 # 2. Bootstrap it (idempotent; re-run to upgrade/repair). The desk key is the
 #    one that will LAND IN THE TUI.
 ssh root@<ip> 'curl -fsSL \
-  https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/main/scripts/hetzner-install.sh \
+  https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/hetzner-install.sh \
   | SSH_PUBKEY="'"$(cat ~/.ssh/id_ed25519.pub)"'" bash'
 
 # 3. Land straight in the desk.
@@ -137,7 +137,7 @@ command="/usr/local/bin/forecast-desk",no-agent-forwarding,no-X11-forwarding,no-
 
 ```bash
 ssh root@<ip> 'curl -fsSL \
-  https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/main/scripts/upgrade.sh | bash'
+  https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/superforecasting-agent-snapshot/scripts/upgrade.sh | bash'
 ```
 
 `scripts/upgrade.sh` does the safe thing in the safe order:

@@ -882,9 +882,12 @@ def test_docker_image_guidance_uses_fork_registry():
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
+    # docker-publish.yml names the Docker Hub MIRROR repo (a side-effect job);
+    # user-facing docs pull the published ghcr image — see
+    # test_docker_docs_pull_the_published_ghcr_image_not_docker_hub.
     assert "IMAGE_NAME: teddyjfpender/superforecasting-agent" in text
-    assert "docker pull teddyjfpender/superforecasting-agent:latest" in text
-    assert "docker run -it --rm teddyjfpender/superforecasting-agent:latest version" in text
+    assert "docker pull ghcr.io/teddyjfpender/superforecasting-agent:latest" in text
+    assert "docker run -it --rm ghcr.io/teddyjfpender/superforecasting-agent:latest version" in text
     assert "nousresearch/superforecasting-agent" not in text
     assert "ghcr.io/nousresearch/superforecasting-agent" not in text
     assert "ghcr.io/nousresearch/hermes-agent" not in text
@@ -4677,6 +4680,134 @@ def test_machine_readable_docs_metadata_points_to_forecast_snapshot():
     assert "bundled with Hermes" not in text
     assert "raw.githubusercontent.com/NousResearch/superforecasting-agent/main" not in text
     assert "github.com/NousResearch/superforecasting-agent" not in text
+
+
+def test_fork_repo_urls_pin_live_snapshot_branch_not_dead_main():
+    """The fork's live branch is `superforecasting-agent-snapshot`; its `main`
+    branch predates this work, so any fork raw/blob/tree URL whose ref segment
+    is `main` returns 404. docs/deploy/hetzner.md shipped exactly that rot: the
+    one-command Hetzner bootstrap curl'd `.../main/scripts/hetzner-install.sh`,
+    a command that could not run. Statically sweep every doc and script for
+    fork URLs pinned to `main` — offline by design (no network here; the ref
+    pin is the invariant, not liveness).
+
+    Deliberately owner-scoped to `teddyjfpender/`: the upstream
+    `NousResearch/superforecasting-agent/main/...` catalog URL that
+    test_model_catalog_default_url_is_forecast_native asserts ABSENT is a
+    different owner and can never match this pattern. tests/ are excluded from
+    the sweep because they carry deliberate legacy-URL negative fixtures.
+    """
+    root = Path(__file__).resolve().parents[1]
+    fork_main_ref = re.compile(
+        r"(?:raw\.githubusercontent\.com/teddyjfpender/superforecasting-agent/main(?:/|\b)"
+        r"|github\.com/teddyjfpender/superforecasting-agent/(?:blob|tree|raw)/main(?:/|\b)"
+        r"|github\.com/teddyjfpender/superforecasting-agent/archive/refs/heads/main(?:\.|/|\b))"
+    )
+    checked_files = [
+        *sorted(root.glob("*.md")),
+        *sorted((root / "docs").rglob("*")),
+        *sorted((root / "deploy").rglob("*")),
+        *sorted((root / "scripts").rglob("*")),
+        *sorted((root / "hermes_cli" / "scripts").rglob("*")),
+        *sorted((root / "website" / "scripts").rglob("*")),
+        *sorted((root / "website" / "docs").rglob("*")),
+        *sorted((root / ".github").rglob("*")),
+    ]
+
+    offenders = []
+    for path in checked_files:
+        if not path.is_file():
+            continue
+        if path.suffix in {".pdf", ".pyc"} or "__pycache__" in path.parts:
+            continue
+        # errors="replace": a stray non-UTF-8 byte must surface as an offender
+        # list, never as a UnicodeDecodeError masking the sweep.
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if fork_main_ref.search(line):
+                offenders.append(f"{path.relative_to(root)}:{lineno}")
+
+    assert offenders == [], (
+        "fork repo URLs must pin the live `superforecasting-agent-snapshot` "
+        "branch; refs to the fork's dead `main` branch 404: "
+        + ", ".join(offenders)
+    )
+
+    # Positive control: the Hetzner bootstrap + upgrade one-liners exist and
+    # pin the live branch (the two URLs that were shipped broken).
+    hetzner_doc = (root / "docs" / "deploy" / "hetzner.md").read_text(
+        encoding="utf-8"
+    )
+    assert (
+        "https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/"
+        "superforecasting-agent-snapshot/scripts/hetzner-install.sh"
+    ) in hetzner_doc
+    assert (
+        "https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/"
+        "superforecasting-agent-snapshot/scripts/upgrade.sh"
+    ) in hetzner_doc
+
+
+def test_docker_docs_pull_the_published_ghcr_image_not_docker_hub():
+    """The published container registry is ghcr:
+    `ghcr.io/teddyjfpender/superforecasting-agent` (multi-arch, anonymously
+    pullable, tags `latest` + `vX.Y.Z`). The bare image name
+    `teddyjfpender/superforecasting-agent` resolves to Docker Hub, where no such
+    repository exists — so every `docker pull` / `docker run` / compose `image:`
+    that uses it fails for a new user (website/docs/user-guide/docker.md shipped
+    22 such commands). Statically assert no user-facing doc instructs pulling
+    the bare Docker-Hub name. Offline by design: the registry prefix is the
+    invariant, not liveness.
+
+    Scope: user-facing docs (website/docs, docs/deploy, deploy, root READMEs).
+    docs/plans is excluded deliberately — dated planning records quote the old
+    broken commands as history. Plain repo URLs (github.com /
+    raw.githubusercontent / `github:` flake refs / `.git` clones) never match:
+    the patterns anchor on Docker command/compose contexts plus the docker-run
+    continuation-line form (`  teddyjfpender/... gateway run`).
+    """
+    root = Path(__file__).resolve().parents[1]
+    bare = "teddyjfpender/superforecasting-agent"
+    docker_context_patterns = (
+        # The image token alone on a `docker run \` continuation line.
+        re.compile(r"^\s*" + re.escape(bare) + r"(?=[\s:]|$)"),
+        re.compile(r"docker pull\s+" + re.escape(bare)),
+        re.compile(r"docker run[^\n]*\s" + re.escape(bare) + r"(?=[\s:]|$)"),
+        re.compile(r"image:\s*" + re.escape(bare)),
+    )
+    checked_files = [
+        *sorted(root.glob("README*.md")),
+        *sorted((root / "website" / "docs").rglob("*.md")),
+        *sorted((root / "website" / "docs").rglob("*.mdx")),
+        *sorted((root / "docs" / "deploy").rglob("*.md")),
+        *sorted((root / "deploy").rglob("*")),
+    ]
+
+    offenders = []
+    for path in checked_files:
+        if not path.is_file():
+            continue
+        text = path.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            if bare not in line or f"ghcr.io/{bare}" in line:
+                continue
+            if any(p.search(line) for p in docker_context_patterns):
+                offenders.append(f"{path.relative_to(root)}:{lineno}")
+
+    assert offenders == [], (
+        "Docker image references must use the published registry "
+        "(ghcr.io/teddyjfpender/superforecasting-agent); the bare name pulls "
+        "from Docker Hub, which does not exist: " + ", ".join(offenders)
+    )
+
+    # Positive control: the Docker guide pulls ghcr and says so.
+    docker_doc = (root / "website" / "docs" / "user-guide" / "docker.md").read_text(
+        encoding="utf-8"
+    )
+    ghcr = f"ghcr.io/{bare}"
+    assert docker_doc.count(ghcr) >= 20
+    assert f"docker pull {ghcr}:latest" in docker_doc
+    assert "GitHub Container Registry" in docker_doc
 
 
 def test_web_focused_forecast_panel_shows_probability_timing_context():

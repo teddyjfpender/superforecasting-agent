@@ -19,7 +19,7 @@ python3 scripts/forecast_smoke_test.py     # local tester-readiness smoke test
 
 | Area | Where |
 | --- | --- |
-| CLI entry point | `superforecasting_agent/cli.py` → `forecasting/cli.py` (`register_cli`) |
+| CLI entry point | `superforecasting_agent/cli.py` → the `forecasting/cli/` package (`register_cli`; the old single-module `forecasting/cli.py` was carved into subcommand modules behind an unchanged façade) |
 | Forecast engine + domains | `forecasting/` (ledger, hooks, jobs, marketdata, pm, quorum, triage, learning…) |
 | The agent's forecast tool | `tools/forecasting_tool.py` (`FORECAST_LEDGER_SCHEMA`) |
 | Wire protocol (source of truth) | `protocol/` — pydantic models + registry |
@@ -81,8 +81,30 @@ scripts/run_tests.sh tests/forecasting -q     # one area
 
 Run `scripts/run_tests.sh` rather than bare `pytest` — it pins the xdist worker
 count, timezone/locale/hash seed, and blanks credential env vars so your local run
-matches CI. Test config lives in `pyproject.toml` (`[tool.pytest.ini_options]`);
-`tests.yml` runs the suite plus the protocol gate on every PR.
+matches CI. Test config lives in `pyproject.toml` (`[tool.pytest.ini_options]`).
+
+**What CI blocks on** (`.github/workflows/tests.yml` + `lint.yml`):
+
+- `test` — the pytest suite plus the protocol staleness gate, on every PR.
+- `e2e` — the end-to-end suite.
+- `tui` — the TUI suite is **blocking, not advisory**: `npm run type-check`
+  (tsc), the **full** vitest suite (`npm run test`), and the lint warning
+  ratchet (`npm run lint -- --max-warnings 54` — the pinned count may only
+  ever go *down*; fix a warning, lower the number in `tests.yml` **and** in
+  `production-release.yml`'s tui job). Runs on Node 22, matching the release
+  build jobs. The release pipeline declares `needs: [gate, test, tui]`, so
+  **a red TUI suite blocks a release**.
+- `lint.yml` — blocking `ruff check .` enforcement plus a blocking, pinned
+  `actionlint` pass over everything in `.github/workflows/` (`needs:` edges,
+  `${{ }}` expressions, shellcheck on `run:` scripts), alongside an advisory
+  ruff + ty diff comment.
+
+**Local hooks vs CI.** `.githooks/pre-push` is the bounded (~2–3 min) local
+gate: targeted pytest for the changed Python domains, `vitest --changed` when
+`ui-tui/` was touched, and the codegen staleness checks again. It is
+deliberately weaker than CI on the TUI — changed-file vitest only, no
+type-check, no lint ratchet — so a green push does not guarantee a green `tui`
+job. CI is the authority.
 
 ## Build and release
 
