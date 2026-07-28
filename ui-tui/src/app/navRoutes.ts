@@ -1,14 +1,31 @@
+import { DEV_DEMO_VIZ } from '../config/env.js'
+
 import type { OverlayState } from './interfaces.js'
 import { patchOverlayState } from './overlayStore.js'
 
-// Single source of truth for the top-bar routes AND the keyboard/g-chord that
-// switches between them. NavBar (mouse) and useInputHandlers (keyboard) BOTH
-// route through `navPatchFor` / `selectNavView` so a click and a `g d` chord
-// land on byte-identical overlay state — key and click never drift.
+// Single source of truth for the top-bar routes AND the keyboard/Ctrl+G chord
+// that switches between them. NavBar (mouse) and useInputHandlers (keyboard)
+// BOTH route through `navPatchFor` / `selectNavView` so a click and a Ctrl+G d
+// chord land on byte-identical overlay state — key and click never drift.
 
 export type NavTab = { key: string; label: string }
 
-export const NAV_TABS: NavTab[] = [
+// Routes that ship ONLY behind a dev flag, keyed by NAV tab key. Off by default
+// means the route is ABSENT, not hidden: it drops out of NAV_TABS, and NAV_TABS
+// is the ONE gate every entry point reads — NavBar renders it, `navPatchFor`
+// refuses a key that is not in it (so a mouse click AND a Ctrl+G chord die on
+// the same check, never on two conditions that can drift), and the Help modal
+// builds its "all views" wall from it. There is no second route in.
+const DEV_GATED_NAV: Record<string, boolean> = { demoViz: DEV_DEMO_VIZ }
+
+// The names of every dev-gated route, independent of whether its flag is on.
+// The keymap registry keeps honest help rows for these views (they still ship —
+// just behind a flag), so it needs to say which entries are legitimately absent
+// from the shipped tab list. See __tests__/keymapTruthfulness.test.ts.
+export const DEV_GATED_NAV_KEYS: readonly string[] = Object.keys(DEV_GATED_NAV)
+
+// Every route the app knows how to render, in top-bar order.
+const ALL_NAV_TABS: NavTab[] = [
   { key: 'home', label: 'Home' },
   { key: 'desk', label: 'Desk' },
   { key: 'markets', label: 'Markets' },
@@ -23,6 +40,11 @@ export const NAV_TABS: NavTab[] = [
   { key: 'hooks', label: 'Hooks' },
   { key: 'help', label: 'Help' }
 ]
+
+// The routes this process actually offers.
+export const NAV_TABS: NavTab[] = ALL_NAV_TABS.filter(tab => DEV_GATED_NAV[tab.key] ?? true)
+
+const NAV_KEYS = new Set(NAV_TABS.map(tab => tab.key))
 
 // Clearing every view flag returns to the chat/home route.
 export const HOME_PATCH = {
@@ -48,10 +70,16 @@ export const HOME_PATCH = {
   palette: false
 } as const
 
-// The overlay patch a route selects. Returns null for an unknown key so the
-// caller can no-op safely (chords derive their key set from NAV_TABS, so this
-// only guards typos).
+// The overlay patch a route selects. Returns null for a key NAV_TABS does not
+// ship — a typo, or a dev-gated route whose flag is off. Every entry point (a
+// NavBar click, a Ctrl+G chord, `selectNavView` from anywhere) funnels through
+// this one membership check, which is what keeps mouse and keyboard from ever
+// disagreeing about which routes exist.
 export const navPatchFor = (key: string): null | Partial<OverlayState> => {
+  if (!NAV_KEYS.has(key)) {
+    return null
+  }
+
   switch (key) {
     case 'home':
       return { ...HOME_PATCH }

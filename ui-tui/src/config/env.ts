@@ -53,3 +53,13 @@ export const INLINE_MODE = inlineOverride ?? TERMUX_TUI_MODE
 // Live FPS counter overlay, fed by ink's onFrame (real render rate, not a
 // synthetic timer).
 export const SHOW_FPS = truthy(tuiEnvValue('FPS'))
+
+// Dev-only: the "Demo Vis" gallery of the terminal chart engine. It is
+// scaffolding for the viz engine — a place to eyeball rendering across terminals
+// — not an operator surface, so it is OFF by default and the route is genuinely
+// ABSENT rather than hidden (see app/navRoutes: it drops out of NAV_TABS, which
+// is the one gate the nav bar, the Ctrl+G chords and the Help wall all read).
+//
+// Turn it on with FORECAST_TUI_DEV_DEMO_VIZ=1 (or the
+// SUPERFORECASTING_AGENT_TUI_ / HERMES_TUI_ aliases).
+export const DEV_DEMO_VIZ = truthy(tuiEnvValue('DEV_DEMO_VIZ'))
