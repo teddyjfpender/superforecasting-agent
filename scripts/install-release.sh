@@ -6,14 +6,33 @@
 # venv to manage, no `npm run build` — the wheel bundles the prebuilt TUI and
 # the launcher auto-provisions Node and runs the gateway from pipx's own venv.
 #
+# Every install is INTEGRITY-CHECKED before anything touches the system: the
+# wheel is verified against the release's SHA256SUMS and, when the release
+# ships one, cross-checked against the sha256 pinned in release-manifest.json.
+# A checksum mismatch ABORTS with nothing installed — there is no
+# install-anyway path. (Same verify story as scripts/upgrade.sh.)
+#
 # Quick start (always installs the newest release):
 #
 #     curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/latest/download/install.sh | bash
 #
 # Pin a specific release, or re-run to upgrade in place:
 #
-#     curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/download/v2026.6.16/install.sh | bash
-#     TAG=v2026.6.16 bash install.sh
+#     curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/download/v0.19.0/install.sh | bash
+#     TAG=v0.19.0 bash install.sh
+#
+# Config:
+#   TAG=vX.Y.Z | latest    release to install (alias: SUPERFORECASTING_AGENT_RELEASE_TAG)
+#   MANIFEST=/path/release-manifest.json
+#                          pin the EXACT release a local manifest names: the
+#                          tag, the wheel filename, and the wheel sha256 all
+#                          come from the manifest (same pin scripts/upgrade.sh
+#                          takes with MANIFEST=…)
+#   ALLOW_UNVERIFIED=1     permit installing a release that predates the
+#                          SHA256SUMS artifact (pre-P0 releases only).
+#                          DANGEROUS: skips integrity verification entirely.
+#                          Never needed for v0.18.0+ releases, and never a
+#                          bypass for a FAILED check — a mismatch always aborts.
 #
 # Supported: macOS, Linux. Needs Python 3.10+ (the only prerequisite — pipx is
 # installed automatically if missing).
@@ -21,8 +40,12 @@
 set -euo pipefail
 
 REPO="teddyjfpender/superforecasting-agent"
-# Pin with TAG=v2026.6.16 (or SUPERFORECASTING_AGENT_RELEASE_TAG); default latest.
-TAG="${SUPERFORECASTING_AGENT_RELEASE_TAG:-${TAG:-latest}}"
+# Pin with TAG=v0.19.0 (or SUPERFORECASTING_AGENT_RELEASE_TAG); default latest.
+# TAG_SET remembers whether the user pinned explicitly, so a conflicting
+# MANIFEST= pin can be refused instead of silently winning.
+TAG_SET="${SUPERFORECASTING_AGENT_RELEASE_TAG:-${TAG:-}}"
+TAG="${TAG_SET:-latest}"
+ALLOW_UNVERIFIED="${SUPERFORECASTING_AGENT_ALLOW_UNVERIFIED:-${ALLOW_UNVERIFIED:-0}}"
 BIN="superforecasting-agent"
 
 # A leaked PYTHONPATH/PYTHONHOME (e.g. when launched from another tool's venv)
@@ -53,6 +76,45 @@ download() {
   fi
 }
 
+sha256_of() {  # <file> -> hex digest on stdout
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+
+# verify_checksum <file> <SHA256SUMS> -> 0 iff the recorded sha256 matches.
+# Kept in LOCKSTEP with scripts/upgrade.sh + scripts/hetzner-install.sh (the
+# three installers stay self-contained — each is fetched and run alone, so the
+# helper is duplicated deliberately, not factored into a shared file). A sums
+# file with NO entry for the file is a FAILURE: never trust a sums file that
+# does not mention the artifact it ships beside.
+verify_checksum() {  # <file> <SHA256SUMS>  -> 0 iff the recorded sha256 matches
+  local file="$1" sums="$2" name want got
+  name="$(basename "$file")"
+  want="$(grep -E "  ${name}\$| ${name}\$" "$sums" 2>/dev/null | awk '{print $1}' | head -n1)"
+  [ -n "$want" ] || { warn "SHA256SUMS has no entry for $name"; return 1; }
+  got="$(sha256_of "$file")"
+  if [ "$want" != "$got" ]; then
+    warn "expected sha256: $want"
+    warn "computed sha256: $got"
+    return 1
+  fi
+}
+
+read_manifest() {  # <path> -> sets MAN_VERSION MAN_TAG MAN_WHEEL_NAME MAN_WHEEL_SHA
+  local out
+  out="$("$PY" -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+w = m["artifacts"]["wheel"]
+print(m["version"]); print(m["tag"]); print(w["name"]); print(w["sha256"])
+' "$1" 2>/dev/null)" || return 1
+  MAN_VERSION="$(printf '%s\n' "$out" | sed -n 1p)"
+  MAN_TAG="$(printf '%s\n' "$out" | sed -n 2p)"
+  MAN_WHEEL_NAME="$(printf '%s\n' "$out" | sed -n 3p)"
+  MAN_WHEEL_SHA="$(printf '%s\n' "$out" | sed -n 4p)"
+  [ -n "$MAN_VERSION" ] && [ -n "$MAN_TAG" ] && [ -n "$MAN_WHEEL_NAME" ] && [ -n "$MAN_WHEEL_SHA" ]
+}
+
 printf '\n\033[1m✦ Outrider — Superforecasting Agent\033[0m\n\n'
 
 # 1. Locate a Python interpreter (the only hard prerequisite).
@@ -62,27 +124,85 @@ for c in python3 python; do
 done
 [ -n "$PY" ] || die "Python 3.10+ is required but was not found. Install Python and re-run."
 
-# 2. Resolve the wheel URL from the GitHub Releases API.
+# 2. Resolve the target release. A local release-manifest.json (MANIFEST=…)
+#    pins the exact tag; otherwise TAG (default: latest) resolves through the
+#    GitHub Releases API.
+MAN_VERSION="" MAN_TAG="" MAN_WHEEL_NAME="" MAN_WHEEL_SHA=""
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+if [ -n "${MANIFEST:-}" ]; then
+  [ -f "$MANIFEST" ] || die "MANIFEST=$MANIFEST does not exist."
+  read_manifest "$MANIFEST" || die "MANIFEST=$MANIFEST is not a readable release manifest."
+  if [ -n "$TAG_SET" ] && [ "$TAG_SET" != "latest" ] && [ "$TAG_SET" != "$MAN_TAG" ]; then
+    die "TAG=$TAG_SET conflicts with the MANIFEST pin ($MAN_TAG) — drop one of the two."
+  fi
+  TAG="$MAN_TAG"
+  say "Pinned by manifest: $TAG (wheel sha256 ${MAN_WHEEL_SHA:0:12}…)"
+fi
+
 if [ "$TAG" = "latest" ]; then
   API="https://api.github.com/repos/$REPO/releases/latest"
 else
   API="https://api.github.com/repos/$REPO/releases/tags/$TAG"
 fi
 say "Resolving release ($TAG)…"
-WHEEL_URL="$(fetch "$API" | grep -o 'https://[^"]*\.whl' | head -n1 || true)"
+META="$(fetch "$API")" || die "Could not reach the GitHub Releases API for the '$TAG' release of $REPO (network error, or no such release)."
+WHEEL_URL="$(printf '%s' "$META" | grep -o 'https://[^"]*\.whl' | head -n1 || true)"
+SUMS_URL="$(printf '%s' "$META" | grep -o 'https://[^"]*SHA256SUMS' | head -n1 || true)"
+MANIFEST_URL="$(printf '%s' "$META" | grep -o 'https://[^"]*release-manifest\.json' | head -n1 || true)"
 [ -n "$WHEEL_URL" ] || die "Could not find a .whl asset on the '$TAG' release of $REPO."
 WHEEL_NAME="${WHEEL_URL##*/}"
 ok "Found $WHEEL_NAME"
 
+# 2b. Without a local pin, take the pin from the release's own manifest
+#     (every formal release ships one; it names the wheel + its sha256).
+if [ -z "$MAN_WHEEL_SHA" ] && [ -n "$MANIFEST_URL" ]; then
+  download "$MANIFEST_URL" "$TMP/release-manifest.json" \
+    || die "release-manifest.json download failed (network error?) — aborting, nothing installed."
+  read_manifest "$TMP/release-manifest.json" \
+    || die "release $TAG ships an unreadable release-manifest.json — aborting, nothing installed."
+fi
+if [ -n "$MAN_WHEEL_NAME" ]; then
+  # The wheel the release serves must be the wheel the manifest pins.
+  [ "$WHEEL_NAME" = "$MAN_WHEEL_NAME" ] \
+    || die "release $TAG serves wheel '$WHEEL_NAME' but its manifest pins '$MAN_WHEEL_NAME' — aborting, nothing installed."
+  ok "Target v$MAN_VERSION (manifest pin)"
+fi
+
 # 3. Download the wheel to a temp file (more reliable than installing from a
 #    URL: pipx reads the package name straight from the local wheel).
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
 WHEEL="$TMP/$WHEEL_NAME"
 say "Downloading…"
-download "$WHEEL_URL" "$WHEEL"
+download "$WHEEL_URL" "$WHEEL" || die "wheel download failed (network error?) — aborting, nothing installed."
 
-# 4. Ensure pipx (isolated venv + clean, repeatable upgrades).
+# 4. INTEGRITY GATE — verify before anything is installed.
+#    TRUST RULE (lockstep with upgrade.sh + hetzner-install.sh): anything this
+#    script DOWNLOADS must verify, fatally. ALLOW_UNVERIFIED=1 only covers a
+#    release that genuinely ships no SHA256SUMS — never a FAILED check.
+#    * SHA256SUMS missing from the release: fatal (pre-P0 releases predate the
+#      checksum artifact; ALLOW_UNVERIFIED=1 is the explicit, loud opt-out).
+#    * Checksum mismatch: ALWAYS fatal. Never degrades to a warning.
+if [ -z "$SUMS_URL" ]; then
+  if [ "$ALLOW_UNVERIFIED" = "1" ]; then
+    warn "release $TAG ships no SHA256SUMS (pre-P0 release?) — ALLOW_UNVERIFIED=1 set, proceeding WITHOUT integrity verification. You own the risk."
+  else
+    die "release $TAG ships no SHA256SUMS (pre-P0 release?) — cannot verify the wheel. Pin a v0.18.0+ release, or re-run with ALLOW_UNVERIFIED=1 to accept an unverified install."
+  fi
+else
+  say "Verifying wheel integrity…"
+  download "$SUMS_URL" "$TMP/SHA256SUMS" \
+    || die "SHA256SUMS download failed (network error?) — refusing to install an unverified wheel."
+  verify_checksum "$WHEEL" "$TMP/SHA256SUMS" \
+    || die "wheel sha256 MISMATCH against the release's SHA256SUMS — the download is corrupt or tampered with. Aborting: NOTHING was installed."
+  ok "Wheel sha256 verified (SHA256SUMS)"
+  if [ -n "$MAN_WHEEL_SHA" ]; then
+    [ "$(sha256_of "$WHEEL")" = "$MAN_WHEEL_SHA" ] \
+      || die "wheel sha256 MISMATCH against the release-manifest.json pin. Aborting: NOTHING was installed."
+    ok "Wheel sha256 matches the release-manifest.json pin"
+  fi
+fi
+
+# 5. Ensure pipx (isolated venv + clean, repeatable upgrades).
 ensure_pipx() {
   command -v pipx >/dev/null 2>&1 && return 0
   say "Installing pipx…"
@@ -94,7 +214,7 @@ ensure_pipx() {
   command -v pipx >/dev/null 2>&1
 }
 
-# 5. Install (--force so re-running upgrades even at the same version number).
+# 6. Install (--force so re-running upgrades even at the same version number).
 if ensure_pipx; then
   say "Installing with pipx…"
   pipx install --force "$WHEEL"
@@ -105,11 +225,15 @@ else
   BIN_DIR="$("$PY" -c 'import site, os; print(os.path.join(site.getuserbase(), "bin"))')"
 fi
 
-# 6. Report and tell them how to launch (never auto-launch — stdin is the
+# 7. Report and tell them how to launch (never auto-launch — stdin is the
 #    piped script here, not a terminal, so the interactive TUI can't attach).
+#    Report the binary we JUST installed, not whatever happens to shadow it
+#    earlier on PATH.
+INSTALLED_BIN="$BIN_DIR/$BIN"
+[ -x "$INSTALLED_BIN" ] || INSTALLED_BIN="$BIN"
 echo
 if command -v "$BIN" >/dev/null 2>&1; then
-  ok "Installed $("$BIN" --version 2>/dev/null || echo "$BIN")"
+  ok "Installed $("$INSTALLED_BIN" --version 2>/dev/null || echo "$BIN")"
   printf '\n   Start the desk:  \033[1m%s --tui\033[0m\n\n' "$BIN"
 else
   ok "Installed."

@@ -20,6 +20,9 @@
 #   TAG=latest|vX.Y.Z            target release
 #   MANIFEST=/path/release-manifest.json   local manifest (skips download)
 #   FORECAST_WHEEL=/path.whl     local wheel (pipx lane; skips download)
+#   FORECAST_CHECKSUMS=/path/SHA256SUMS  verify a local FORECAST_WHEEL against this
+#   ALLOW_UNVERIFIED=1           permit a release that ships no SHA256SUMS
+#                                (pre-P0 only). NEVER bypasses a FAILED check.
 #   REPO=teddyjfpender/superforecasting-agent
 #   FORCE=1                      bypass the migration guard (DANGEROUS; audited)
 # ============================================================================
@@ -28,6 +31,7 @@ set -euo pipefail
 FORECAST_USER="${FORECAST_USER:-forecast}"
 FORECAST_HOME="${FORECAST_HOME:-/home/${FORECAST_USER}/.superforecasting-agent}"
 TAG="${TAG:-latest}"
+ALLOW_UNVERIFIED="${SUPERFORECASTING_AGENT_ALLOW_UNVERIFIED:-${ALLOW_UNVERIFIED:-0}}"
 REPO="${REPO:-teddyjfpender/superforecasting-agent}"
 SERVICE="superforecasting-agent-gateway"
 COMPOSE_DIR="/opt/superforecasting"
@@ -46,14 +50,28 @@ CURRENT="$(cat "$FORECAST_HOME/.release_version" 2>/dev/null || echo unknown)"
 
 printf '\n\033[1m✦ Superforecasting Agent — upgrade (lane: %s, current: %s)\033[0m\n\n' "$LANE" "$CURRENT"
 
-verify_checksum() {  # <file> <SHA256SUMS>
+sha256_of() {  # <file> -> hex digest on stdout
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+
+# verify_checksum <file> <SHA256SUMS> -> 0 iff the recorded sha256 matches.
+# Kept in LOCKSTEP with scripts/install-release.sh + scripts/hetzner-install.sh
+# (the three installers stay self-contained — each can be fetched and run
+# alone — so the helper is duplicated deliberately, not factored into a shared
+# file). A sums file with NO entry for the file is a FAILURE: never trust a
+# sums file that does not mention the artifact it ships beside.
+verify_checksum() {
   local file="$1" sums="$2" name want got
   name="$(basename "$file")"
   want="$(grep -E "  ${name}\$| ${name}\$" "$sums" 2>/dev/null | awk '{print $1}' | head -n1)"
-  [ -n "$want" ] || { warn "no checksum for $name"; return 0; }
-  if command -v sha256sum >/dev/null 2>&1; then got="$(sha256sum "$file" | awk '{print $1}')"
-  else got="$(shasum -a 256 "$file" | awk '{print $1}')"; fi
-  [ "$want" = "$got" ]
+  [ -n "$want" ] || { warn "SHA256SUMS has no entry for $name"; return 1; }
+  got="$(sha256_of "$file")"
+  if [ "$want" != "$got" ]; then
+    warn "expected sha256: $want"
+    warn "computed sha256: $got"
+    return 1
+  fi
 }
 
 # ── 1. resolve manifest (local or from the GitHub release) ─────────────────
@@ -113,8 +131,23 @@ if [ "$LANE" = "docker" ]; then
     sed -i.bak -E "s|^( *image: ).*|\\1${IMAGE}|" "$COMPOSE_DIR/compose.yml"
   fi
 else
+  # TRUST RULE (lockstep with install-release.sh + hetzner-install.sh; do not
+  # "helpfully" tighten the local path): an artifact this script DOWNLOADS must
+  # be checksum-verified, fatally — missing SHA256SUMS, a failed SHA256SUMS
+  # download, a sums file with no entry for the wheel, and a mismatch all
+  # refuse the upgrade with nothing changed. A LOCAL wheel the operator passed
+  # in (FORECAST_WHEEL=) is the operator's own trust decision — it installs
+  # unverified unless FORECAST_CHECKSUMS= is also given, in which case
+  # verification is mandatory and a failure is fatal.
   if [ -n "${FORECAST_WHEEL:-}" ]; then
     WHEEL="$FORECAST_WHEEL"
+    [ -f "$WHEEL" ] || die "FORECAST_WHEEL not found: $WHEEL"
+    if [ -n "${FORECAST_CHECKSUMS:-}" ]; then
+      [ -f "$FORECAST_CHECKSUMS" ] || die "FORECAST_CHECKSUMS not found: $FORECAST_CHECKSUMS"
+      verify_checksum "$WHEEL" "$FORECAST_CHECKSUMS" \
+        || die "local wheel failed verification against $(basename "$FORECAST_CHECKSUMS") — nothing changed."
+      ok "wheel checksum verified against $(basename "$FORECAST_CHECKSUMS")"
+    fi
   else
     if [ "$TAG" = "latest" ]; then api="https://api.github.com/repos/$REPO/releases/latest"
     else api="https://api.github.com/repos/$REPO/releases/tags/$TAG"; fi
@@ -124,9 +157,18 @@ else
     [ -n "$wheel_url" ] || die "no wheel on release $TAG"
     curl -fsSL -o "$TMP/$(basename "$wheel_url")" "$wheel_url" || die "wheel download failed"
     WHEEL="$TMP/$(basename "$wheel_url")"
-    if [ -n "$sums_url" ]; then
-      curl -fsSL -o "$TMP/SHA256SUMS" "$sums_url" && verify_checksum "$WHEEL" "$TMP/SHA256SUMS" \
-        && ok "wheel checksum verified" || die "wheel checksum mismatch"
+    if [ -z "$sums_url" ]; then
+      if [ "$ALLOW_UNVERIFIED" = "1" ]; then
+        warn "release $TAG ships no SHA256SUMS (pre-P0 release?) — ALLOW_UNVERIFIED=1 set, proceeding WITHOUT integrity verification. You own the risk."
+      else
+        die "release $TAG ships no SHA256SUMS (pre-P0 release?) — cannot verify the downloaded wheel. Pin a v0.18.0+ release, or re-run with ALLOW_UNVERIFIED=1 to accept an unverified upgrade. Nothing changed."
+      fi
+    else
+      curl -fsSL -o "$TMP/SHA256SUMS" "$sums_url" \
+        || die "SHA256SUMS download failed (network error?) — refusing to install an unverified wheel. Nothing changed."
+      verify_checksum "$WHEEL" "$TMP/SHA256SUMS" \
+        || die "wheel sha256 MISMATCH against the release's SHA256SUMS — the download is corrupt or tampered with. Aborting: nothing changed."
+      ok "wheel sha256 verified (SHA256SUMS)"
     fi
   fi
   say "Installing wheel via pipx --force"
