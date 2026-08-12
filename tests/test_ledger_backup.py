@@ -8,6 +8,7 @@ live home.
 from __future__ import annotations
 
 import sqlite3
+import stat
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -63,10 +64,19 @@ def _fold_wal_into_main(db_path: Path) -> None:
 def test_backup_produces_readable_db_with_matching_rows(tmp_path):
     ledger = _ledger(tmp_path)
     _seed_questions(ledger, 4)
+    backup_dir = ledger.default_backup_dir()
+    backup_dir.mkdir(mode=0o755)
+    old_backup = backup_dir / "forecast-20260101-000000.db"
+    old_backup.write_text("old")
+    old_backup.chmod(0o644)
 
     result = ledger.backup()
-    assert Path(result["path"]).exists()
+    backup_path = Path(result["path"])
+    assert backup_path.exists()
     assert result["bytes"] > 0
+    assert stat.S_IMODE(backup_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(backup_path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(old_backup.stat().st_mode) == 0o600
     # created_at parses as an aware UTC timestamp.
     assert datetime.fromisoformat(result["created_at"]).tzinfo is not None
 
