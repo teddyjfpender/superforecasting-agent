@@ -112,6 +112,23 @@ class TestRunJobScript:
         assert success is True
         assert output == "relative works"
 
+    def test_script_receives_explicit_job_model_and_provider(self, cron_env):
+        from cron.scheduler import _run_job_script
+
+        script = cron_env / "scripts" / "pinned.py"
+        script.write_text(
+            "import os\n"
+            "print(os.environ['SUPERFORECASTING_AGENT_INFERENCE_MODEL'])\n"
+            "print(os.environ['SUPERFORECASTING_AGENT_INFERENCE_PROVIDER'])\n"
+        )
+
+        success, output = _run_job_script(
+            str(script), model="gpt-4.1", provider="copilot"
+        )
+
+        assert success is True
+        assert output.splitlines() == ["gpt-4.1", "copilot"]
+
     def test_script_not_found(self, cron_env):
         from cron.scheduler import _run_job_script
 

@@ -441,6 +441,7 @@ class ForecastLedger:
         from forecasting import appconfig
 
         configured_db = (appconfig.get_str("FORECAST_LEDGER_DB", "") or "").strip()
+        default_path = not db_path and not configured_db
         self.db_path = (
             Path(db_path).expanduser()
             if db_path
@@ -449,7 +450,9 @@ class ForecastLedger:
             else get_hermes_home() / "forecasting" / "forecasting.db"
         )
         try:
-            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self.db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            if default_path:
+                self.db_path.parent.chmod(0o700)
         except OSError as exc:
             raise ForecastingError(
                 "could not create forecast ledger directory "
@@ -480,6 +483,16 @@ class ForecastLedger:
                 f"{self.db_path}: {exc}. Set FORECAST_LEDGER_DB or "
                 "pass --db with a writable path."
             ) from exc
+        self._secure_storage_permissions()
+
+    def _secure_storage_permissions(self) -> None:
+        """Keep the local ledger and SQLite sidecars owner-only."""
+        for path in (self.db_path, Path(f"{self.db_path}-wal"), Path(f"{self.db_path}-shm")):
+            try:
+                if path.is_file():
+                    path.chmod(0o600)
+            except OSError:
+                logger.debug("could not harden forecast ledger permissions: %s", path)
 
     class _BorrowedConnection:
         def __init__(self, connection: sqlite3.Connection) -> None:

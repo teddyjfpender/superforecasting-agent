@@ -39,7 +39,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from hermes_constants import get_hermes_home
 from hermes_cli._subprocess_compat import windows_hide_flags
-from hermes_cli.model_env import model_env
+from hermes_cli.model_env import (
+    INFERENCE_MODEL_ENV_NAMES,
+    INFERENCE_PROVIDER_ENV_NAMES,
+    model_env,
+    set_env_aliases,
+)
 from hermes_cli.config import load_config, _expand_env_vars
 from hermes_time import now as _hermes_now
 from utils import PREFILL_MESSAGES_FILE_ENV_NAMES, env_var_alias_value
@@ -860,7 +865,12 @@ def _get_cron_max_parallel() -> Optional[int]:
     return None
 
 
-def _run_job_script(script_path: str) -> tuple[bool, str]:
+def _run_job_script(
+    script_path: str,
+    *,
+    model: str | None = None,
+    provider: str | None = None,
+) -> tuple[bool, str]:
     """Execute a cron job's data-collection script and capture its output.
 
     Scripts must reside within the active agent home's ``scripts/``
@@ -941,6 +951,10 @@ def _run_job_script(script_path: str) -> tuple[bool, str]:
 
     run_env = os.environ.copy()
     run_env["HERMES_HOME"] = str(_get_hermes_home())
+    if str(model or "").strip():
+        set_env_aliases(run_env, INFERENCE_MODEL_ENV_NAMES, model)
+    if str(provider or "").strip():
+        set_env_aliases(run_env, INFERENCE_PROVIDER_ENV_NAMES, provider)
     try:
         from hermes_constants import get_subprocess_home
 
@@ -1034,7 +1048,11 @@ def _build_job_prompt(job: dict, prerun_script: Optional[tuple] = None) -> str:
         if prerun_script is not None:
             success, script_output = prerun_script
         else:
-            success, script_output = _run_job_script(script_path)
+            success, script_output = _run_job_script(
+                script_path,
+                model=job.get("model"),
+                provider=job.get("provider"),
+            )
         if success:
             if script_output:
                 prompt = (
@@ -1249,7 +1267,11 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
                 _prior_cwd = None
 
         try:
-            ok, output = _run_job_script(script_path)
+            ok, output = _run_job_script(
+                script_path,
+                model=job.get("model"),
+                provider=job.get("provider"),
+            )
         finally:
             if _prior_cwd is not None:
                 try:
@@ -1338,7 +1360,11 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
     prerun_script = None
     script_path = job.get("script")
     if script_path:
-        prerun_script = _run_job_script(script_path)
+        prerun_script = _run_job_script(
+            script_path,
+            model=job.get("model"),
+            provider=job.get("provider"),
+        )
         _ran_ok, _script_output = prerun_script
         if _ran_ok and not _parse_wake_gate(_script_output):
             logger.info(
