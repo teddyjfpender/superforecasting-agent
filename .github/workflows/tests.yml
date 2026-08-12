@@ -21,7 +21,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -41,7 +41,11 @@ jobs:
         run: |
           uv venv .venv --python 3.11
           source .venv/bin/activate
-          uv pip install -e ".[all,dev]"
+          # [all] deliberately excludes lazy backend SDKs from user installs.
+          # The full unit suite mocks these backends but still imports their SDKs.
+          uv sync --locked --extra all \
+            --extra anthropic --extra hindsight --extra parallel-web \
+            --extra fal --extra modal --extra daytona --extra vercel
 
       - name: Protocol codegen staleness gate
         run: |

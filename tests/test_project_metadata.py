@@ -121,6 +121,25 @@ def test_lazy_installable_extras_excluded_from_all():
         )
 
 
+def test_full_ci_installs_locked_lazy_sdk_extras_without_expanding_all():
+    workflow = (
+        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "tests.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 45" in workflow
+    assert "uv sync --locked --extra all" in workflow
+    for extra in (
+        "anthropic",
+        "hindsight",
+        "parallel-web",
+        "fal",
+        "modal",
+        "daytona",
+        "vercel",
+    ):
+        assert f"--extra {extra}" in workflow
+
+
 def test_messaging_extra_includes_qrcode_for_weixin_setup():
     optional_dependencies = _load_optional_dependencies()
 
