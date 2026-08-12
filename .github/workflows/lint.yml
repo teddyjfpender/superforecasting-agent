@@ -11,14 +11,8 @@ name: Lint (ruff + ty)
 on:
   push:
     branches: [main, superforecasting-agent-snapshot]
-    paths-ignore:
-      - "docs/**"
-      - "website/**"
   pull_request:
     branches: [main, superforecasting-agent-snapshot]
-    paths-ignore:
-      - "docs/**"
-      - "website/**"
 
 permissions:
   contents: read

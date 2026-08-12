@@ -106,6 +106,9 @@ def _forecast_argv(argv: Sequence[str]) -> list[str] | None:
     first = args[first_index]
     if first == "forecast":
         return args[:first_index] + args[first_index + 1 :]
+    # Forecast config owns only diagnostics; runtime config owns set/edit/show.
+    if first == "config" and args[first_index + 1 : first_index + 2] != ["doctor"]:
+        return None
     if first in _forecast_command_names():
         return args
     return None

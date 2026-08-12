@@ -7,12 +7,8 @@ on:
     - cron: '17 2 * * *'
   push:
     branches: [main, superforecasting-agent-snapshot]
-    paths-ignore:
-      - 'docs/**'
   pull_request:
     branches: [main, superforecasting-agent-snapshot]
-    paths-ignore:
-      - 'docs/**'
 
 permissions:
   contents: read

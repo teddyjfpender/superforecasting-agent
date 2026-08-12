@@ -4,6 +4,7 @@ import React from 'react'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
+import { waitForText } from '../testing/settle.js'
 
 // Smoke tests for the three "serious product" views — Markets, News, and
 // Messaging. They ship without a live data source wired yet, so these assert
@@ -480,7 +481,7 @@ describe('MessagingView', () => {
   const renderMessaging = async () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
-    const [{ render }, { MessagingView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
+    const [{ Box, render }, { MessagingView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
       import('@hermes/ink'),
       import('../components/messagingView.js'),
       import('../theme.js'),
@@ -490,12 +491,19 @@ describe('MessagingView', () => {
     const stdout = writeStream(120, 36)
     const stdin = writeStream(120, 36, true)
 
-    const instance = render(React.createElement(MessagingView, { onClose: () => undefined, t: DARK_THEME }), {
-      exitOnCtrlC: false,
-      patchConsole: false,
-      stdin: stdin.stream,
-      stdout: stdout.stream
-    })
+    const instance = render(
+      React.createElement(
+        Box,
+        { height: 36 },
+        React.createElement(MessagingView, { onClose: () => undefined, t: DARK_THEME })
+      ),
+      {
+        exitOnCtrlC: false,
+        patchConsole: false,
+        stdin: stdin.stream,
+        stdout: stdout.stream
+      }
+    )
 
     await tick(40)
 
@@ -531,11 +539,12 @@ describe('MessagingView', () => {
   it('opens the in-TUI onboarding modal on s with a prerequisites check', async () => {
     const m = await renderMessaging()
     await m.press('s')
-    // The setup modal is a tall (30-row) overlay whose lower rows (the register
-    // path) paint over a couple of frames plus an async prerequisite probe — let
-    // it settle before reading, so the assertion isn't racing the paint.
-    await tick(150)
-    const text = m.text()
+
+    const text = await waitForText(m.text, 'Register a new', {
+      label: 'the complete Signal onboarding menu',
+      timeout: 4000
+    })
+
     m.cleanup()
 
     expect(text).toContain('Connect Signal')
@@ -544,5 +553,5 @@ describe('MessagingView', () => {
     // both onboarding paths are offered
     expect(text).toContain('Link an existing')
     expect(text).toContain('Register a new')
-  })
+  }, 10000)
 })
