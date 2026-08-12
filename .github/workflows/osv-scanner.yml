@@ -1,14 +1,12 @@
 name: OSV-Scanner
 
 # Scans lockfiles (uv.lock, package-lock.json) against the OSV vulnerability
-# database. Runs on every PR that touches a lockfile and on a weekly schedule
-# against main.
+# database. Runs on every PR so its critical-vulnerability gate can be a
+# required check, and on a weekly schedule against the default branch.
 #
-# This is detection-only — OSV-Scanner does NOT open PRs or modify pins.
-# It reports known CVEs in currently-pinned dependency versions so we can
-# decide when and how to patch on our own schedule. Our pinning strategy
-# (full SHA / exact version) is preserved; only the notification signal
-# is added.
+# OSV-Scanner does not open PRs or modify pins. It reports known CVEs in
+# currently-pinned dependency versions and blocks merges only for CVSS 9.0+
+# findings. Our pinning strategy (full SHA / exact version) is preserved.
 #
 # Complements the existing supply-chain-audit.yml workflow (which scans
 # for malicious code patterns in PR diffs) by covering the orthogonal
@@ -22,16 +20,6 @@ name: OSV-Scanner
 on:
   pull_request:
     branches: [main, superforecasting-agent-snapshot]
-    paths:
-      - 'uv.lock'
-      - 'pyproject.toml'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'ui-tui/package.json'
-      - 'ui-tui/package-lock.json'
-      - 'website/package.json'
-      - 'website/package-lock.json'
-      - '.github/workflows/osv-scanner.yml'
   push:
     branches: [main, superforecasting-agent-snapshot]
     paths:
@@ -39,7 +27,15 @@ on:
       - 'pyproject.toml'
       - 'package.json'
       - 'package-lock.json'
+      - 'scripts/whatsapp-bridge/package.json'
+      - 'scripts/whatsapp-bridge/package-lock.json'
+      - 'ui-tui/package.json'
       - 'ui-tui/package-lock.json'
+      - 'ui-tui/packages/hermes-ink/package.json'
+      - 'ui-tui/packages/hermes-ink/package-lock.json'
+      - 'web/package.json'
+      - 'web/package-lock.json'
+      - 'website/package.json'
       - 'website/package-lock.json'
   schedule:
     # Weekly scan against main — catches CVEs published after merge for
@@ -58,10 +54,41 @@ jobs:
     name: Scan lockfiles
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2  # v2.3.8
     with:
-      # Scan explicit lockfiles rather than recursing, so we only look at
-      # the three sources of truth and skip vendored / test / worktree dirs.
+      # Scan every shipped lockfile explicitly so nested runtimes cannot fall
+      # outside the critical-vulnerability gate.
       scan-args: |-
         --lockfile=uv.lock
+        --lockfile=package-lock.json
+        --lockfile=scripts/whatsapp-bridge/package-lock.json
         --lockfile=ui-tui/package-lock.json
+        --lockfile=ui-tui/packages/hermes-ink/package-lock.json
+        --lockfile=web/package-lock.json
         --lockfile=website/package-lock.json
       fail-on-vuln: false
+
+  critical-gate:
+    name: Block critical vulnerabilities
+    needs: scan
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download scanner results
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3  # v8.0.0
+        with:
+          name: OSV Scanner SARIF file
+
+      - name: Fail on CVSS 9.0 or higher
+        run: |
+          set -euo pipefail
+          critical=$(jq -r '
+            [.runs[].tool.driver.rules[]?
+              | select((.properties["security-severity"] // "0" | tonumber) >= 9)
+              | .id]
+            | unique
+            | .[]
+          ' results.sarif)
+          if [ -n "$critical" ]; then
+            echo "::error::Critical dependency vulnerabilities found:"
+            echo "$critical"
+            exit 1
+          fi

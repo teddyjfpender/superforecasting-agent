@@ -4,7 +4,7 @@ let
   src = ../ui-tui;
   npmDeps = pkgs.fetchNpmDeps {
     inherit src;
-    hash = "sha256-F6cOfYsF2464AdK9v8c6PyfXMicdMVERYyfk4ZQZgpQ=";
+    hash = "sha256-B4T5suspYfLbaJKamFW0U7TBTG/KAvj8F2DQDGDwZ5k=";
   };
 
   npm = superforecastingAgentNpmLib.mkNpmPassthru { folder = "ui-tui"; attr = "tui"; pname = "superforecasting-agent-tui"; };

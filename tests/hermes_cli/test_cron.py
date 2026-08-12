@@ -136,3 +136,33 @@ class TestCronCommandLifecycle:
         assert jobs[0]["skills"] == ["blogwatcher", "maps"]
         assert jobs[0]["name"] == "Skill combo"
         assert jobs[0]["profile"] == "default"
+
+    def test_create_and_edit_model_pin(self, tmp_cron_dir, capsys):
+        cron_command(
+            Namespace(
+                cron_command="create",
+                schedule="every 1h",
+                prompt="Review forecasts",
+                provider="gemini",
+                model="gemini-3-flash-preview",
+                base_url=None,
+            )
+        )
+        job = list_jobs()[0]
+        assert (job["provider"], job["model"]) == ("gemini", "gemini-3-flash-preview")
+
+        cron_command(
+            Namespace(
+                cron_command="edit",
+                job_id=job["id"],
+                provider="copilot",
+                model="gpt-5.4",
+                base_url="",
+            )
+        )
+        updated = get_job(job["id"])
+        assert (updated["provider"], updated["model"], updated["base_url"]) == (
+            "copilot",
+            "gpt-5.4",
+            None,
+        )

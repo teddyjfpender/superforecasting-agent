@@ -101,6 +101,9 @@ def cron_list(show_all: bool = False):
         profile = job.get("profile")
         if profile:
             print(f"    Profile:   {profile}")
+        if job.get("provider") or job.get("model"):
+            model = "/".join(filter(None, (job.get("provider"), job.get("model"))))
+            print(f"    Model:     {model}")
 
         # Execution history
         last_status = job.get("last_status")
@@ -173,6 +176,9 @@ def cron_create(args):
         name=getattr(args, "name", None),
         deliver=getattr(args, "deliver", None),
         repeat=getattr(args, "repeat", None),
+        provider=getattr(args, "provider", None),
+        model=getattr(args, "model", None),
+        base_url=getattr(args, "base_url", None),
         skill=getattr(args, "skill", None),
         skills=_normalize_skills(getattr(args, "skill", None), getattr(args, "skills", None)),
         script=getattr(args, "script", None),
@@ -239,6 +245,9 @@ def cron_edit(args):
         name=getattr(args, "name", None),
         deliver=getattr(args, "deliver", None),
         repeat=getattr(args, "repeat", None),
+        provider=getattr(args, "provider", None),
+        model=getattr(args, "model", None),
+        base_url=getattr(args, "base_url", None),
         skills=final_skills,
         script=getattr(args, "script", None),
         workdir=getattr(args, "workdir", None),
