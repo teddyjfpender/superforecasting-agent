@@ -80,22 +80,13 @@ def _wrap_ascii_art_code_blocks(code_segment: str) -> str:
     )
 
 
-def mdx_escape_body(body: str) -> str:
-    """Escape MDX-dangerous characters in markdown body, leaving fenced code blocks alone.
+def _split_fenced_segments(body: str) -> list[tuple[str, str]]:
+    """Split a markdown body into ("text"|"code", content) segments.
 
-    Outside fenced code blocks:
-      * `{` -> `&#123;`  (prevents MDX from parsing JSX expressions)
-      * `}` -> `&#125;`
-      * `<tag>` for bare tags that aren't whitelisted HTML get HTML-entity-escaped
-      * inline `` `code` `` content is preserved (backticks handled naturally)
-    Inside fenced code blocks: untouched.
-
-    We also preserve `<br>`, `<br/>`, `<img ...>`, `<a ...>`, and a handful of
-    other markup-safe tags because Docusaurus/MDX accepts them as HTML.
+    Alternates (text, code, text, code, ...). A line like ``` or ~~~ opens a
+    fence; a matching marker closes it. Segments were split on newlines, so
+    callers must rejoin with "\\n".join(...).
     """
-    # Split the body into segments by fenced code blocks, alternating
-    # (text, code, text, code, ...). A line like ``` or ~~~ opens a fence;
-    # a matching marker closes it.
     lines = body.split("\n")
     segments: list[tuple[str, str]] = []  # ("text"|"code", content)
     buf: list[str] = []
@@ -130,6 +121,55 @@ def mdx_escape_body(body: str) -> str:
                 fence_len = 0
     if buf:
         segments.append((mode, "\n".join(buf)))
+    return segments
+
+
+def _map_outside_inline_code(text: str, transform) -> str:
+    """Apply ``transform`` to the spans of ``text`` outside inline-code runs.
+
+    Inline code (`...`, ``...``, any backtick-run length) is preserved
+    verbatim; an unbalanced run leaves the remainder untransformed rather
+    than guessing.
+    """
+    out: list[str] = []
+    i = 0
+    plain_start = 0
+    while i < len(text):
+        if text[i] == "`":
+            j = i
+            while j < len(text) and text[j] == "`":
+                j += 1
+            run = text[i:j]
+            end = text.find(run, j)
+            if end == -1:
+                # No closing run — keep the rest as-is (matches escape_text).
+                out.append(transform(text[plain_start:i]))
+                out.append(text[i:])
+                return "".join(out)
+            out.append(transform(text[plain_start:i]))
+            out.append(text[i : end + len(run)])
+            i = end + len(run)
+            plain_start = i
+        else:
+            i += 1
+    out.append(transform(text[plain_start:]))
+    return "".join(out)
+
+
+def mdx_escape_body(body: str) -> str:
+    """Escape MDX-dangerous characters in markdown body, leaving fenced code blocks alone.
+
+    Outside fenced code blocks:
+      * `{` -> `&#123;`  (prevents MDX from parsing JSX expressions)
+      * `}` -> `&#125;`
+      * `<tag>` for bare tags that aren't whitelisted HTML get HTML-entity-escaped
+      * inline `` `code` `` content is preserved (backticks handled naturally)
+    Inside fenced code blocks: untouched.
+
+    We also preserve `<br>`, `<br/>`, `<img ...>`, `<a ...>`, and a handful of
+    other markup-safe tags because Docusaurus/MDX accepts them as HTML.
+    """
+    segments = _split_fenced_segments(body)
 
     def escape_text(text: str) -> str:
         # Walk inline-code runs (backticks) and leave them alone.
@@ -248,10 +288,19 @@ def rewrite_relative_links(body: str, meta: dict[str, Any]) -> str:
     with paths like `references/foo.md` or `./templates/bar.md`. Those files
     are NOT copied into docs/, so we rewrite these to absolute GitHub URLs
     pointing to the file in the repo.
+
+    Two guards keep code samples intact (a ``[key](value)``-shaped Python or
+    placeholder fragment is NOT a markdown link):
+      * fenced code blocks and inline code spans are never rewritten;
+      * a target is only rewritten when it names a file/dir that actually
+        exists beside the SKILL.md — placeholder tokens (``url``) and code
+        fragments (``checkpoint="x.pth"``) stay as written instead of
+        becoming 404 repo blob links.
     """
     body = body.replace(LEGACY_REPO_BLOB_BASE, FORK_REPO_BLOB_BASE)
     source_dir = "skills" if meta["source_kind"] == "bundled" else "optional-skills"
     base = f"{FORK_REPO_BLOB_BASE}{source_dir}/{meta['rel_path']}"
+    skill_dir = REPO / source_dir / meta["rel_path"]
 
     def sub_link(m: re.Match) -> str:
         text = m.group(1)
@@ -264,10 +313,26 @@ def rewrite_relative_links(body: str, meta: dict[str, Any]) -> str:
             return m.group(0)
         # Strip leading ./
         url_clean = url[2:] if url.startswith("./") else url
+        # Only rewrite targets that resolve to a real sibling of the SKILL.md.
+        target = url_clean.split("#", 1)[0]
+        try:
+            is_real_path = bool(target) and (skill_dir / target).exists()
+        except (OSError, ValueError):
+            is_real_path = False
+        if not is_real_path:
+            return m.group(0)
         full = f"{base}/{url_clean}"
         return f"[{text}]({full})"
 
-    return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", sub_link, body)
+    def rewrite_text(text: str) -> str:
+        return re.sub(r"\[([^\]]+)\]\(([^)]+)\)", sub_link, text)
+
+    return "\n".join(
+        content
+        if kind == "code"
+        else _map_outside_inline_code(content, rewrite_text)
+        for kind, content in _split_fenced_segments(body)
+    )
 
 
 def parse_skill_md(path: Path) -> dict[str, Any]:

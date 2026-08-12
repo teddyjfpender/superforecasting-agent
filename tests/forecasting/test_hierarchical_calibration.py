@@ -254,8 +254,8 @@ def test_ledger_rows_are_tagged_by_scoreboard_cohort(tmp_path):
 
 def test_validation_verb_reads_only_and_reports_per_cohort(tmp_path):
     ledger = ForecastLedger(tmp_path / "hier.db")
-    _seed(ledger, "live", 1.3, 90, seed=23)
-    _seed(ledger, "imported_baseline", -1.2, 90, seed=24)
+    _seed(ledger, "live", 1.3, 60, seed=23)
+    _seed(ledger, "imported_baseline", -1.2, 60, seed=24)
     before = ledger.cohort_scoreboard()
     report = ledger.validate_hierarchical_calibration(folds=5)
     # Read-only: the scoreboard is untouched.

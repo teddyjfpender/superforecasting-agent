@@ -903,13 +903,17 @@ class AIAgent:
 
     def _current_main_runtime(self) -> Dict[str, str]:
         """Return the live main runtime for session-scoped auxiliary routing."""
-        return {
+        runtime = {
             "model": getattr(self, "model", "") or "",
             "provider": getattr(self, "provider", "") or "",
             "base_url": getattr(self, "base_url", "") or "",
             "api_key": getattr(self, "api_key", "") or "",
             "api_mode": getattr(self, "api_mode", "") or "",
         }
+        commit_policy = getattr(self, "forecast_commit_policy", "") or ""
+        if commit_policy:
+            runtime["forecast_commit_policy"] = commit_policy
+        return runtime
 
     def _check_compression_model_feasibility(self) -> None:
         """Forwarder — see ``agent.conversation_compression.check_compression_model_feasibility``."""

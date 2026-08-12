@@ -13,7 +13,11 @@ def _data_file_tree(root_name: str) -> list[tuple[str, list[str]]]:
     root = REPO_ROOT / root_name
     grouped: defaultdict[str, list[str]] = defaultdict(list)
     for path in sorted(root.rglob("*")):
-        if not path.is_file():
+        if (
+            not path.is_file()
+            or "__pycache__" in path.parts
+            or path.suffix in {".pyc", ".pyo"}
+        ):
             continue
         rel_path = path.relative_to(REPO_ROOT)
         grouped[str(rel_path.parent)].append(str(rel_path))

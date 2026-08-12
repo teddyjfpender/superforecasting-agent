@@ -1,11 +1,14 @@
-// The static keymap registry behind the global interaction chrome: the g-chord
-// view switches, the palette/help global keys, and the per-view key rows the
-// `?` cheat-sheet assembles. Views "register" their keys here (one small table)
-// so the cheat-sheet stays truthful without every view growing a help modal.
+// The static keymap registry behind the global interaction chrome: the Ctrl+G
+// view-switch chords, the palette/help global keys, and the per-view key rows
+// the `?` cheat-sheet assembles. Views "register" their keys here (one small
+// table) so the cheat-sheet stays truthful without every view growing a help
+// modal — which only works if every row here matches what actually ships.
 
-// A g-then-letter chord. `nav` is the NAV_TABS key it routes to (see navRoutes).
-// Letters prefer the tab's initial; collisions are resolved by hand (Markets
-// keeps `m`, Messaging is dropped from the chord set to avoid stealing it).
+// A `Ctrl+G`-then-letter chord: Ctrl+G arms the leader (app/useInputHandlers.ts
+// `armChord('g')`), the next letter picks the view. `nav` is the NAV_TABS key it
+// routes to (see navRoutes). Letters prefer the tab's initial; collisions are
+// resolved by hand (Markets keeps `m`, Messaging is dropped from the chord set
+// to avoid stealing it).
 export type ViewChord = { key: string; label: string; nav: string }
 
 export const VIEW_CHORDS: ViewChord[] = [
@@ -68,7 +71,15 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['o / O', 'sort column · toggle asc/desc (or click a header)'],
     ['m', 'switch Data ↔ Models'],
     ['i', 'data warnings — how to fix blank (missing-key) series'],
-    ['q / Esc', 'close the view']
+    ['q / Esc', 'close the view'],
+    // ── Models mode (m toggles into it) ──────────────────────────────────────
+    // Registered explicitly, and kept to three rows so the modal's first frame
+    // still shows the whole table. These are a DIFFERENT key set from the
+    // Data-mode rows above (x deletes a model here, not a saved market), and
+    // until now the cheat-sheet could not show them at all.
+    ['n / Enter / x', 'Models: new model · open · delete'],
+    ['r / R', 'Models: refresh the list · retry a failed build'],
+    ['c / w / e / F', 'open model: chat-refine · rewrite · export JSON · spin off a Desk forecast']
   ],
   news: [
     ['↑/↓', 'select a story'],
@@ -126,6 +137,10 @@ export const PER_VIEW_KEYS: Record<string, [string, string][]> = {
     ['↑/↓', 'select a thread'],
     ['q / Esc', 'close the view']
   ],
+  // Dev-gated (FORECAST_TUI_DEV_DEMO_VIZ) — absent from NAV_TABS unless the flag
+  // is on, so the Help modal's "all views" wall (built from NAV_TABS) never shows
+  // it to an ordinary operator. The rows stay registered because the view still
+  // ships: with the flag on, its help must be as truthful as every other view's.
   demoViz: [['q / Esc', 'close the view']],
   help: [['↑↓/jk', 'scroll · PgUp/PgDn page · g/G top/bottom · Esc/q close']]
 }
@@ -143,7 +158,10 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
     'Press h (or ?) any time — including here once you have stepped off the composer — for this help.'
   ],
   desk: [
-    'The Desk is your forecasts workspace. Lenses (Tab, or ←→) regroup the book by your real theses, largest ("major") first, plus a single All catch-all. Move with ↑↓ and press Enter to open a forecast in detail.',
+    // Kept to three wrapped lines on purpose: the Help modal shows the guide
+    // ABOVE the shortcut table, and a fourth line pushes the view's own keys
+    // below the fold of the first frame (globalChrome.test.tsx pins that).
+    'The Desk is your forecasts workspace. Lenses (Tab, ←→) regroup the book by your real theses, largest first, then All, then Operations — the desk\'s own cockpit, not a slice of the book. ↑↓ selects; Enter opens a forecast.',
     'Updating has three tiers: u re-arms the review schedule, U runs a real update now, and A hands the question to an agent for autonomous reforecasting. Mark rows with Space (⇧↑↓ extends the selection) to run a tier across many at once — with nothing marked, a lens applies the action to all of its questions.',
     'T opens a task over the selection; n creates a new question; R resolves one; s opens settings. The SRC / RDY columns flag readiness (evidence sourced, ready to score). Next best actions (below the inspected detail) ranks the book by value-of-information — what to touch next. Press / to filter, o to sort, and r to refresh.'
   ],
@@ -179,6 +197,7 @@ export const PER_VIEW_GUIDE: Record<string, string[]> = {
   messaging: [
     'Messaging bridges the desk to Signal so alerts and chat reach your phone. Move threads with ↑↓, press s to set up or link an account, and r to refresh. Open a thread to read and reply.'
   ],
+  // Dev-gated — see the PER_VIEW_KEYS note above.
   demoViz: [
     'A gallery of the terminal chart engine — candlesticks, fans, depth, heatmaps, scatter, and sparkgrids — used to eyeball rendering across terminals. Scroll to browse; press q or Esc to close.'
   ],

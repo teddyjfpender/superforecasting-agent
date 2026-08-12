@@ -1,6 +1,6 @@
-import { AlternateScreen, Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useStdout } from '@hermes/ink'
+import { AlternateScreen, Box, NoSelect, ScrollBox, Text, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { Fragment, memo, type RefObject, useCallback, useEffect, useMemo, useRef } from 'react'
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { $agentsActive } from '../app/agentsActiveStore.js'
 import { $chordPending } from '../app/chordStore.js'
@@ -24,7 +24,6 @@ import { INLINE_MODE, SHOW_FPS } from '../config/env.js'
 import { VIEW_CHORDS } from '../content/keymaps.js'
 import { PLACEHOLDER } from '../content/placeholders.js'
 import { useHideCursorWhileFullscreen } from '../lib/cursorVisibility.js'
-import { RAIL_WIDTH, showRailFor } from '../lib/homeLayout.js'
 import {
   COMPOSER_PROMPT_GAP_WIDTH,
   composerPromptWidth,
@@ -43,7 +42,6 @@ import { FloatingOverlays, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
-import { ConversationsRail } from './conversationsRail.js'
 import { DemoVizView } from './demoVizView.js'
 import { DeskView } from './deskView.js'
 import { DocsView } from './docsView.js'
@@ -109,7 +107,6 @@ const TranscriptPane = memo(function TranscriptPane({
   // (~7 KB/key) under the two-pane decstbm={false} + stickyScroll geometry — the
   // "right chat blinks while I type" flash. These computed atoms notify only on a
   // real change to a field the transcript actually uses, so typing leaves it put.
-  // (Same fix as the Recents rail — see ConversationsRailPane.)
   const theme = useStore($uiTheme)
   const sid = useStore($uiSessionId)
   const compact = useStore($uiCompact)
@@ -144,12 +141,9 @@ const TranscriptPane = memo(function TranscriptPane({
   return (
     <>
       <ScrollBox
-        // decstbm={false} only in the two-pane Home, where the conversation sits
-        // beside the rail and its full-width hardware scroll would move the rail's
-        // rows. Single-pane keeps the fast path (decstbm defaults true). The box
-        // stays a DIRECT child of the flex-grow row so it gets a clean bounded
-        // height — burying it deeper collapses the measured viewport and makes
-        // scroll stick to the top/bottom.
+        // The box stays a DIRECT child of the flex-grow row so it gets a clean
+        // bounded height. Burying it deeper collapses the measured viewport and
+        // makes scroll stick to the top/bottom.
         decstbm={decstbm}
         flexDirection="column"
         flexGrow={1}
@@ -254,9 +248,8 @@ const ComposerPane = memo(function ComposerPane({
     [actions]
   )
 
-  // The composer only owns the keyboard while the 'conversation' pane holds focus;
-  // when the conversations rail OR the landing "Today" panel holds it, the composer
-  // goes inactive so its keystrokes/cursor don't compete with that pane's navigation.
+  // The composer only owns the keyboard while the conversation pane holds focus;
+  // the landing "Today" panel can temporarily take it for keyboard navigation.
   const composerActive = useStore($homeFocus).pane === 'conversation'
   const sh = (inputBuf[0] ?? input).startsWith('!')
   const promptText = composerPromptText(ui.theme.brand.prompt, ui.info?.profile_name, sh)
@@ -596,48 +589,6 @@ const QuestionOnboardPane = memo(function QuestionOnboardPane() {
   return <QuestionOnboardModal gw={gw} onClose={() => patchOverlayState({ onboard: false })} t={ui.theme} />
 })
 
-const ConversationsRailPane = memo(function ConversationsRailPane({
-  onNewChat,
-  onSelect,
-  scrollRef
-}: {
-  onNewChat: () => void
-  onSelect: (id: string) => void
-  scrollRef: RefObject<null | ScrollBoxHandle>
-}) {
-  const { gw } = useGateway()
-  // Subscribe ONLY to the sid + theme this rail actually uses — NOT the whole
-  // $uiState. Typing in the composer re-renders the app (composer text lives in
-  // useMainApp), and a broad $uiState subscription dragged the Recents rail (and
-  // its ScrollBox) into every keystroke, making it drift. These computed atoms
-  // only notify on a real sid/theme change, so the rail stays put while you type.
-  const sid = useStore($uiSessionId)
-  const t = useStore($uiTheme)
-  const homeFocus = useStore($homeFocus)
-  const overlay = useStore($overlayState)
-  const onExitFocus = useCallback(() => setHomePane('conversation'), [])
-
-  // While the palette / cheat-sheet overlay paints above the still-mounted home
-  // body, the rail must yield BOTH its keyboard (drop `focused`) and its row
-  // clicks (`interactive={false}`) so nothing leaks past the overlay's trap.
-  const globalModal = overlay.palette || overlay.cheatSheet
-
-  return (
-    <ConversationsRail
-      currentSid={sid}
-      focused={homeFocus.pane === 'rail' && !globalModal}
-      gw={gw}
-      interactive={!globalModal}
-      onExitFocus={onExitFocus}
-      onNewChat={onNewChat}
-      onSelect={onSelect}
-      refreshKey={sid ?? ''}
-      scrollRef={scrollRef}
-      t={t}
-    />
-  )
-})
-
 const DocsViewPane = memo(function DocsViewPane({ onDraft }: { onDraft: (command: string) => void }) {
   const { gw } = useGateway()
   const ui = useStore($uiState)
@@ -787,23 +738,6 @@ export const AppLayout = memo(function AppLayout({
   const todaySoftFocus =
     landing && homeFocus.pane === 'conversation' && composerArmable && canOpenGlobalOverlay(overlay)
 
-  // Home is a persistent two-pane layout on wide terminals: a recent-conversations
-  // rail on the left (kept whether you're on a new chat or reading one), and the
-  // hero or the live transcript + composer on the right. The right pane does hard
-  // width math off `cols`, so when the rail is shown it gets a reduced `cols`
-  // matching its narrower column.
-  const showRail = !fullscreen && showRailFor(composer.cols)
-
-  const contentComposer = useMemo(
-    () => (showRail ? { ...composer, cols: Math.max(48, composer.cols - RAIL_WIDTH - 2) } : composer),
-    [composer, showRail]
-  )
-
-  // Stable so the memo'd rail pane doesn't re-render on every keystroke: an inline
-  // arrow here would be a fresh function each render, breaking ConversationsRailPane's
-  // memo (`actions` is itself a useMemo, so this stays referentially stable).
-  const onRailNewChat = useCallback(() => actions.runCommand('/new'), [actions])
-
   // Crash recovery: when a fullscreen view throws, close every fullscreen overlay
   // so we drop back to the safe home/chat (the crashed view can't re-throw).
   const recoverFromCrash = useCallback(() => {
@@ -842,14 +776,13 @@ export const AppLayout = memo(function AppLayout({
     [actions]
   )
 
-  // The rail can only hold focus while it's shown — when it hides (narrow
-  // terminal / fullscreen overlay), snap focus back so the composer never stays
-  // inert.
+  // Fullscreen views own the keyboard, so restore Home's default focus when one
+  // opens. This also prevents Today focus leaking across navigation.
   useEffect(() => {
-    if (!showRail) {
+    if (fullscreen) {
       setHomePane('conversation')
     }
-  }, [showRail])
+  }, [fullscreen])
 
   // Inline mode skips AlternateScreen so the host terminal's native
   // scrollback captures rows scrolled off the top; composer + progress
@@ -888,8 +821,7 @@ export const AppLayout = memo(function AppLayout({
   // room → the Outrider hero → the composer (the focal point, directly beneath
   // the hero) → the compact TODAY block → the SCHEDULE one-liner → more room →
   // ONE accent tip → a deliberately sparse 3-item status bar. `heroCols` sizes
-  // the column (the right-pane width when the rail shows, else full width); `bar`
-  // + `confined` carry the composer's matching columns.
+  // the column; `bar` + `confined` carry the composer's matching columns.
   const renderLanding = (heroCols: number, bar: typeof composer, confined: boolean) => (
     <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
       {/* Top breathing room — whitespace as structure. */}
@@ -1075,61 +1007,10 @@ export const AppLayout = memo(function AppLayout({
             </PerfPane>
           ) : null}
           </>
-        ) : showRail ? (
-          // Home two-pane (wide terminals): a full-height conversations rail on
-          // the left + the conversation on the right. On an ACTIVE conversation
-          // the RIGHT SIDE is its own flex column — the transcript grows to fill,
-          // the composer is pinned beneath it (flexShrink 0). The composer grows
-          // into the TRANSCRIPT's space, never the rail: the rail is a sibling of
-          // this whole column, so its measured height depends only on the terminal
-          // — NOT on how tall the composer is. (Previously the composer rode a
-          // separate footer row below the rail+transcript row, so every composer
-          // line shrank that row and stole a line from the rail's ScrollBox, which
-          // then scrolled the Recents list.) The rail's own borderRight spans the
-          // full height, so it still visually continues past the composer with no
-          // decorative filler needed. The transcript ScrollBox stays a DIRECT child
-          // of a bounded flex-grow row (the inner row here) so it scrolls cleanly.
-          // On the LANDING the composer lives INSIDE the hero column (renderLanding).
-          <>
-            <Box flexDirection="row" flexGrow={1} minHeight={0}>
-              <ConversationsRailPane
-                onNewChat={onRailNewChat}
-                onSelect={actions.resumeById}
-                scrollRef={transcript.railScrollRef}
-              />
-              {landing ? (
-                renderLanding(contentComposer.cols, contentComposer, true)
-              ) : (
-                <Box flexDirection="column" flexGrow={1} minHeight={0} minWidth={0}>
-                  <Box flexDirection="row" flexGrow={1} minHeight={0}>
-                    <PerfPane id="transcript">
-                      <TranscriptPane
-                        actions={actions}
-                        cols={contentComposer.cols}
-                        decstbm={false}
-                        progress={progress}
-                        transcript={transcript}
-                      />
-                    </PerfPane>
-                  </Box>
-                  {renderPromptBar(contentComposer, true)}
-                </Box>
-              )}
-            </Box>
-            {/* The palette / cheat-sheet stacks LAST as an absolute overlay above
-                the still-mounted home body (ModalOverlay recipe), so the landing
-                Today panel + hints stay visible around it. */}
-            {globalModal ? (
-              <PerfPane id="globalChrome">
-                <GlobalChromePane cols={composer.cols} onRun={actions.runCommand} rows={rows} />
-              </PerfPane>
-            ) : null}
-          </>
         ) : (
-          // Single-pane (rail hidden on narrow terminals): the proven full-width
-          // layout — on an active conversation the transcript fills the row and
-          // the prompt spans the bottom; on the LANDING the whole column
-          // (hero → composer → Today → Schedule → tip → status) is renderLanding.
+          // Home is always a full-width conversation surface. Session history is
+          // progressively disclosed by /resume instead of occupying a permanent
+          // sidebar. On the landing, the whole column is renderLanding.
           <>
             <Box flexDirection="row" flexGrow={1} minHeight={0}>
               {landing ? (

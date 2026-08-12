@@ -1,10 +1,12 @@
 # Operating the Desk (TUI)
 
 The TUI is the forecasting desk as a live surface: a set of full-screen views over
-the same ledger, gateway, and jobs the CLI drives. Launch it with bare `forecast`
-(or `superforecasting-agent --tui`). This guide covers navigation, the help
-system, the Desk workflow tiers, mass-select, theses, markets and prediction
-markets, warnings, and the agents chip — with the real keys.
+the same ledger, gateway, and jobs the CLI drives. Launch it with `forecast tui`
+(or `superforecasting-agent --tui`; bare `forecast` prints the plain-text desk
+dashboard instead). This guide covers navigation, the help
+system, the Desk workflow tiers, mass-select, the Operations cockpit, theses,
+markets and prediction markets, warnings, the agents chip, and the rest of the
+view strip — with the real keys.
 
 > Keys here are code-verified against `ui-tui/src/`. The definitive per-view
 > shortcut list is always the in-app help (`h`), which is generated from the same
@@ -14,13 +16,20 @@ markets, warnings, and the agents chip — with the real keys.
 
 The top-level views (registry: `ui-tui/src/app/navRoutes.ts`) are **Home, Desk,
 Markets, News, Messaging, Calendar, Warnings, Calibration, Docs, Agents, Hooks,
-Help**. Three ways to move between them:
+Help** — 12 by default. A 13th, **Demo Vis**, ships behind a dev flag: unless
+`FORECAST_TUI_DEV_DEMO_VIZ=1` is set (also honoured:
+`SUPERFORECASTING_AGENT_TUI_DEV_DEMO_VIZ` / `HERMES_TUI_DEV_DEMO_VIZ`, with the
+usual `1|true|yes|on` values) the route is **absent, not hidden** — it drops out
+of `NAV_TABS`, and every entry point (a NavBar click, a `Ctrl+G` chord) dies on
+that same one membership check. Three ways to move between the views:
 
 - **Click** a tab in the top view strip.
 - **`Ctrl+G` then a letter** — a leader chord (`ui-tui/src/content/keymaps.ts`):
   `h` Home, `d` Desk, `m` Markets, `n` News, `w` Warnings, `c` Calibration, `k`
   Hooks, `a` Agents, `o` Docs. It is `Ctrl+G` (not a bare `g`) so a message
-  starting "g…" is never hijacked.
+  starting "g…" is never hijacked. Messaging, Calendar, and Help have no chord
+  letter (Messaging is deliberately dropped from the chord set; Calendar's `c`
+  belongs to Calibration) — reach them by click or `Ctrl+K`.
 - **`Ctrl+K`** opens the command palette to run any `/` command from anywhere.
 
 **Do not confuse views with lenses.** `Alt/Option+1..9` (and the portable
@@ -57,7 +66,7 @@ These four keys are the heart of the desk, in ascending cost and autonomy:
 `U`, `A`, and `T` run as background jobs on the [one job runtime](architecture.md#arc-b--one-detached-job-runtime); in-flight rows show a marker in the gutter and you can leave and re-attach.
 
 **Selection scope** cascades: an explicit marked set wins; otherwise, on a
-thesis/factor **lens row** the action applies to **all member questions** of that
+thesis **lens row** the action applies to **all member questions** of that
 lens; otherwise it is the single cursor row.
 
 ### Mass-select
@@ -72,10 +81,47 @@ every marked row.
 ### Lens tabs
 
 The Desk groups the book into **lens tabs** (`ui-tui/src/lib/deskGroups.ts`):
-one lens per **Thesis**, then **Factor** lenses, then auto `#tag` groups, then a
-read-only **◇ Bench** scoreboard, then **All**. `Tab` / `→` / `l` move to the next
-lens, `←` to the previous. On a thesis or factor lens the top "lens row" opens the
-aggregate read.
+one lens per **real thesis** — ordered by member count, so the largest ("major")
+thesis leads — then **All**, then **Operations** (the [operations
+cockpit](#the-operations-cockpit)). The earlier factor/tag pseudo-lenses and the
+separate ◇ Bench lens were removed: ForecastBench backtest replays are still
+carved **out** of the All catch-all, they just no longer get a lens of their
+own. `Tab` / `→` / `l` move to the next lens, `←` to the previous. On a thesis
+lens the top "lens row" opens the aggregate read.
+
+### The Operations cockpit
+
+The last Desk lens is **Operations** — the v0.19.0 "operations cockpit"
+(`ui-tui/src/components/operationsCockpit.tsx`), a read-only reliability
+dashboard over the desk's autonomous machinery, rendered in place of the
+forecast table while its tab is active. It rides the same `forecast.workspace`
+payload as the rest of the Desk: the response carries an `operations` block
+built by the ledger's `operational_cockpit()` aggregate
+(`forecasting/dashboard/core.py`).
+
+What it shows, top to bottom:
+
+- **High-severity line** — open / awaiting-execution / unowned counts, SLA
+  breaches, oldest age, human escalations, and assigned owners.
+- **Source-event lifecycle** — pending / estimating / stranded / open-failure /
+  processed counts, the 24h arrivals-vs-terminal net, oldest and P90 pending
+  ages, and per-source low-content-yield warnings.
+- **Alert flow and human inbox** — 24h alert arrivals / closures / net, the
+  executable share, closure-latency P90, and the awaiting-human queue (each
+  item with its age, escalation owner, and available recovery actions).
+- **Lane table** — per work lane: backlog, oldest age against its SLO, breach
+  count, and today's claims against the daily budget.
+- **30-day flow** — arrivals and services sparklines from task history.
+- **Measured cost** — spend today and total, model and source call counts, cost
+  per material update and per resolution, and the measurement basis.
+- **Coverage and capacity** — active questions, service-mode invariant gaps,
+  unclassified actives; serviced / monitor-only / resolution-only / resolved /
+  archived counts; the active utility model with sample size and concordance.
+- **Rate-limit pressure** — shown only when a bucket has denied requests.
+
+It is a status surface, not an action surface: the recovery actions listed on
+human-inbox items run through the agent or the CLI, and the primary transcript
+is never replaced — the cockpit lives inside the Desk view.
 
 ## Theses and event-MC
 
@@ -99,7 +145,7 @@ The Markets view (`ui-tui/src/components/marketsView.tsx`) has two modes, toggle
 with **`m`**:
 
 - **Data** — live quotes by category from the [market-data plane](architecture.md#arc-c--server-side-market-data-plane). `Tab` / `←→` switch category, `d` adds a data provider, `i` shows data warnings (e.g. a missing key and how to fix it), `a` asks the agent, `/` filters.
-- **Models** — an agentic quant-research workspace: `n` new model, `Enter` open, `c` chat/refine, `w` rewrite on fresh data, `e` export JSON, `←→` browse versions, `F` spin the model off into a Desk forecast leg, `R` refresh, `x` delete.
+- **Models** — an agentic quant-research workspace: `n` new model, `Enter` open, `c` chat/refine, `w` rewrite on fresh data, `e` export JSON, `←→` browse versions, `F` spin the model off into a Desk forecast leg, `r` refresh, `R` retry a failed build, `x` delete.
 
 **Prediction Markets** is a pseudo-category on the Data tab (Polymarket + Kalshi);
 jump to it with **`p`** (`usePmSection.ts`, `predictionMarketsTable.tsx`):
@@ -146,6 +192,46 @@ aggregate. Click it (or `Ctrl+G a`) to open the **Agents** view
 status, history, and sort/filter modes. This is where delegated and background
 work (the detached jobs the Desk tiers launch, plus any subagents the agent
 spawns) is visible and interruptible.
+
+## The rest of the strip
+
+The remaining views, with their real keys (registry: `PER_VIEW_KEYS` /
+`PER_VIEW_GUIDE` in `ui-tui/src/content/keymaps.ts` — the same tables the in-app
+`h` help renders):
+
+- **News** (`newsView.tsx`) — a headline feed across your configured providers.
+  `↑↓` selects, `Enter` opens the story in the browser, `/` filters, `r`
+  refreshes.
+- **Messaging** (`messagingView.tsx`) — bridges the desk to Signal so alerts and
+  chat reach your phone. `↑↓` moves threads, `s` sets up or links an account,
+  `r` refreshes; open a thread to read and reply.
+- **Calendar** (`calendarView.tsx`) — upcoming market closes and resolutions by
+  date. On a wide terminal `Tab` switches month grid ↔ agenda. In the grid,
+  arrows move the day focus, `PgUp`/`PgDn` (or `[` `]`) page months, and `t`
+  jumps to today; in the agenda, `↑↓` selects, `o`/`O` sorts, `/` filters.
+  `Enter` opens the focused day or deep-links into the Desk; `r` refreshes.
+- **Calibration** (`calibrationView.tsx`) — the reliability curve, per-bucket
+  hit rates, and the signed-bias verdict (over- vs under-confident). `↑↓`
+  scrolls, `r` refreshes; `/calibration --visual` reaches it from anywhere.
+- **Docs** (`obsidianView.tsx`) — the write-ups and dossiers the desk publishes.
+  `1`/`2` switch collections (Markdown vault ↔ LaTeX workspace); `↑↓`/`j k`
+  move within a pane, `←→`/`l` cross the list · outline · doc panes. `Enter`
+  opens a note or follows the focused wikilink, `Tab` cycles a doc's wikilinks,
+  `/` filters, `o`/`O` sort, `s` searches the vault, `e` edits, `a` asks the
+  desk about the note, `n` makes a new note, `c` comments on selected lines; in
+  the LaTeX workspace `g`/`G`/`P` run git init / GitHub repo / commit-and-push.
+- **Demo Vis** (`demoVizView.tsx`, **dev-flag only**) — a gallery of the
+  terminal chart engine (candlesticks, fans, depth, heatmaps, scatter,
+  sparkgrids), used to eyeball rendering across terminals. Scroll to browse;
+  `q`/`Esc` closes. Absent by default — unreachable by click or chord unless
+  `FORECAST_TUI_DEV_DEMO_VIZ=1` is set (see the view list above).
+- **Hooks** (`hooksView.tsx`) — the saturation and style guardrails that score
+  every forecast snapshot. `↑↓` selects, `Enter` opens or toggles a hook, `c`
+  (or `←→`) collapses/expands, `r` refreshes; the wizard walks you through
+  authoring a new one.
+
+(The Agents view has its own section above. Help is the full-screen reference
+tab; `h`/`?` on any view opens the quick help modal instead.)
 
 ## Maintenance: ledger backups + integrity
 

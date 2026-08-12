@@ -227,22 +227,22 @@ def write_review_sweeper_state(
 
 
 def parse_review_sweep_report(report: str) -> dict[str, int]:
-    """Extract ``{refreshed, alerts}`` counts from a :func:`run_due_reviews` report.
+    """Extract ``{proposals, alerts}`` counts from a :func:`run_due_reviews` report.
 
     The sweep returns a formatted text report (the same one the nightly cron
     logs); the gateway needs two structured counts for its ``review.sweep`` done
     event. Fail-open: a missing section yields 0 for that count. Co-located with
-    ``run_due_reviews`` so the "committed:" / "alerts:" line formats stay in sync."""
-    refreshed = 0
+    ``run_due_reviews`` so the "proposals:" / "alerts:" line formats stay in sync."""
+    proposals = 0
     alerts = 0
     if isinstance(report, str):
-        m = re.search(r"^committed: (\d+)", report, re.MULTILINE)
+        m = re.search(r"^proposals: (\d+)", report, re.MULTILINE)
         if m:
-            refreshed = int(m.group(1))
+            proposals = int(m.group(1))
         m = re.search(r"^alerts: (\d+)", report, re.MULTILINE)
         if m:
             alerts = int(m.group(1))
-    return {"refreshed": refreshed, "alerts": alerts}
+    return {"proposals": proposals, "alerts": alerts}
 
 
 @allow_ledger_writes_decorator("cron_runner.run_due_reviews")
@@ -318,8 +318,8 @@ def run_due_reviews(
     except Exception:
         expired_proposals = []
 
-    # DETERMINISTIC self-refresh (no LLM): inject the watched-source fetcher so the
-    # cadence sweep re-pulls + re-pools + auto-commits every refreshable due question.
+    # Deterministic proposal pass (no LLM): inject the watched-source fetcher so the
+    # cadence sweep re-pulls, imports evidence, re-pools, and proposes an update.
     # The ledger (data layer) never imports the tool/adapter layer, so the fetcher is
     # built HERE and injected. A missing tool import degrades to "no refresh", not an
     # error — the alert self-check still runs.
@@ -396,29 +396,29 @@ def run_due_reviews(
             lines.append(f"  action: {alert.recommended_action}")
         sections.append("\n".join(lines) + "\n")
 
-    # Deterministic-refresh summary: how many due questions self-refreshed this
-    # sweep (committed a fresh snapshot) and which errored. Emitted only when the
+    # Deterministic-refresh summary: how many due questions produced reviewable
+    # proposals and which errored. Emitted only when the
     # refresh pass actually did something, so a quiet cron stays quiet.
     if refresh_fetcher is not None:
-        committed = 0
+        proposed = 0
         no_change = 0
         refresh_errors: list[str] = []
         for result in results:
             ref = result.get("refresh")
             if isinstance(ref, dict):
                 status = ref.get("status")
-                if ref.get("forecast_id") or status == "committed":
-                    committed += 1
+                if status == "proposal_created":
+                    proposed += 1
                 else:
                     no_change += 1
             err = result.get("refresh_error")
             if err:
                 qid = (result.get("review") or {}).get("scope_ref") or "?"
                 refresh_errors.append(f"{qid}: {err}")
-        if committed or refresh_errors:
+        if proposed or refresh_errors:
             lines = [
                 "Deterministic refresh",
-                f"committed: {committed}  no_change/skipped: {no_change}  errors: {len(refresh_errors)}",
+                f"proposals: {proposed}  no_change/skipped: {no_change}  errors: {len(refresh_errors)}",
                 "",
             ]
             for row in refresh_errors:
@@ -464,13 +464,12 @@ def run_due_reviews(
                     lines.append(f"- {r.get('status')} {r.get('question_id')}: {r.get('detail', '')}")
                 sections.append("\n".join(lines) + "\n")
 
-    # Trailing thesis-aggregation phase: theses (+ their entity suitabilities)
-    # re-aggregate after the member review sweep.
+    # Trailing read-only thesis preview after the member review sweep.
     if thesis_aggregate:
         try:
-            summary = ledger.aggregate_all_theses(now=now)
+            summary = ledger.aggregate_all_theses(now=now, commit=False)
         except Exception as exc:  # never break the unattended sweep on aggregation
-            sections.append(f"Thesis aggregation\nERROR: {exc}\n")
+            sections.append(f"Thesis aggregation preview\nERROR: {exc}\n")
             summary = {"count": 0, "results": []}
         if summary["count"]:
             rows = summary["results"]
@@ -478,8 +477,8 @@ def run_due_reviews(
             withheld = [row for row in ok if row.get("withheld")]
             failed = [row for row in rows if not row.get("ok")]
             lines = [
-                "Thesis aggregation",
-                f"theses: {summary['count']}  committed: {len(ok) - len(withheld)}  "
+                "Thesis aggregation preview",
+                f"theses: {summary['count']}  previewed: {len(ok) - len(withheld)}  "
                 f"withheld: {len(withheld)}  failed: {len(failed)}",
                 "",
             ]
@@ -1071,9 +1070,10 @@ def build_warning_runners(
             now=now,
             trigger_reason=f"warnings:{warning.reason}"[:120],
             require_policy=False,
+            allow_auto_commit=False,
         )
         # Real gated work = autopilot re-checked the watched source(s), recorded a
-        # source snapshot, and possibly proposed/committed an update. A hard
+        # source snapshot, and possibly proposed an update. A hard
         # "failed" status (required source down) leaves the alert OPEN to resurface.
         run_status = result.get("status") or (result.get("run") or {}).get("status")
         diagnostics = (result.get("run") or {}).get("diagnostics") or {}

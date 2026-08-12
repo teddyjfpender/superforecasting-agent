@@ -28,13 +28,13 @@ runtime the fork keeps but demotes.
                     ┌────────────────────────────────────────┐
                     │  Forecast ledger  (ARC D)               │
                     │  forecasting/ledger/  — SQLite + gate   │
-                    │  9 domain leaves behind one façade      │
+                    │  domain leaves behind one façade        │
                     └────────────────────────────────────────┘
 ```
 
 Two entry points reach the same core: the **CLI** (`forecast` /
 `superforecasting-agent`, dispatched by `superforecasting_agent/cli.py` into the
-big argparse tree in `forecasting/cli.py`) and the **TUI** (an Ink/TypeScript app
+big argparse tree in the `forecasting/cli/` package) and the **TUI** (an Ink/TypeScript app
 in `ui-tui/` talking to a Python gateway over stdio). The agent runtime
 (`run_agent.py`, `agent/`, the tools in `tools/`) is what actually drives a
 forecast when you ask in natural language; it operates the ledger through the one
@@ -92,9 +92,9 @@ jobs.start ─▶ JobStore (persist) ─▶ runtime.run(job_id)
               jobs.progress / jobs.complete / jobs.error  (events, ARC A)
 ```
 
-Five job types ship today — `quorum`, `reforecast`, `refresh`, `task`,
-`warnings` — each declaring a `spend_class` (`agent` jobs spend model budget;
-`free` jobs do not). The runtime is transport-agnostic: in the gateway it runs on
+Seven job types ship today — `backup`, `quorum`, `reforecast`, `refresh`,
+`task`, `warnings`, `wiki_prune` — each declaring a `spend_class` (`agent` jobs
+spend model budget; `free` jobs do not). The runtime is transport-agnostic: in the gateway it runs on
 a daemon thread with the progress/complete/error hooks wired to event emit; as a
 detached process (`python -m forecasting.jobs run <id>`) the persisted record IS
 the channel a poller reads. Legacy RPC names (`forecast.reforecast.*`,
@@ -121,32 +121,32 @@ agent.** Two services:
 
 Provider + venue registry: [reference/providers.md](reference/providers.md).
 (The much larger set of *evidence-import* adapters — FRED, GDELT, arXiv, SEC, and
-~70 more — is a different mechanism, driven by `forecast import` / `forecast
-sources` and the tool's `source_type` parameter, not the quote data plane.)
+dozens more (59 at last count) — is a different mechanism, driven by
+`forecast import` / `forecast sources` and the tool's `source_type` parameter,
+not the quote data plane.)
 
 ---
 
-## Arc D — The forecast ledger (nine domain leaves + a gate)
+## Arc D — The forecast ledger (domain leaves + a gate)
 
 The ledger is the durable core: a SQLite store behind
-`forecasting/ledger/`. What was one monolith is carved into **nine domain
+`forecasting/ledger/`. What was one monolith is carved into **focused domain
 leaves** behind an unchanged façade (`forecasting/ledger/__init__.py` re-exports
-`core`'s public surface, so `ForecastLedger` callers never changed):
+`core`'s public surface, so `ForecastLedger` callers never changed). The carve
+started at nine leaves and has kept going — 24 modules at last count:
 
 ```
 forecasting/ledger/
   core.py        the ForecastLedger façade + schema/migrations
   gate.py        the write-gate leaf (shared by every gated write)
-  watches.py     ┐
-  questions.py   │
-  evidence.py    │  the nine domain leaves —
-  snapshots.py   │  each owns its tables, CRUD, and invariants
-  panels.py      │
-  reviews.py     │
-  alerts.py      │
-  theses.py      │
-  scoring.py     ┘
+  watches.py  questions.py  evidence.py  snapshots.py  panels.py   ┐ the original
+  reviews.py  alerts.py  theses.py  scoring.py                     ┘ nine leaves
+  anchors.py  autopilot.py  backtest.py  deviation_bets.py  exports.py
+  lessons.py  market_models.py  model_scoring.py  question_meta.py
+  refresh.py  resolutions.py  source_signatures.py  workflow.py
 ```
+
+Each leaf owns its tables, CRUD, and invariants.
 
 The **write-gate** (`gate.py`) is the integrity backbone. The desk agent has, in
 the past, fabricated forecasts by scripting `ForecastLedger` directly —

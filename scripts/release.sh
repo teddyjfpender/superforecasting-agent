@@ -6,16 +6,16 @@
 #   1. the Python wheel  (bundled tui_dist; pipx-installable, node auto-provision)
 #   2. the sdist
 #   3. install.sh        (the one-line installer, staged from install-release.sh)
-#   4. SHA256SUMS        (checksums over 1-3)
-#   5. release-manifest.json  (machine-readable: names, versions, image digest,
+#   4. install.ps1       (native Windows release-wheel installer)
+#   5. SHA256SUMS        (checksums over 1-4)
+#   6. release-manifest.json  (machine-readable: names, versions, image digest,
 #                              min-migration version — the installer's contract)
-#   6. RELEASE_NOTES.md  (changelog scaffold for this version)
+#   7. RELEASE_NOTES.md  (changelog scaffold for this version)
 #
-# DRY-RUN BY DEFAULT.  It never touches git and never pushes.  This is the
+# DRY-RUN ONLY. It never touches git, a registry, or GitHub. This is the
 # offline dry-run-parity twin of .github/workflows/production-release.yml, so a
 # release is fully testable before a tag is ever pushed.  The image is described
-# in the manifest with digest=null in dry-run; --publish (needs docker + gh +
-# ghcr login) builds/pushes the multi-arch image and records the real digest.
+# in the manifest with digest=null. The formal workflow is the only publisher.
 #
 # Usage:
 #   scripts/release.sh                       # dry-run, version from pyproject
@@ -23,7 +23,6 @@
 #   scripts/release.sh --min-migration 0.17.0
 #   scripts/release.sh --out /tmp/rel        # write elsewhere
 #   scripts/release.sh --build-npm           # rebuild the TUI bundle from source
-#   scripts/release.sh --publish             # NOT dry-run: tag + build/push + release
 #
 # Env: SKIP_GATE=1 skips the readiness gate (tests/CI only).
 # ============================================================================
@@ -37,7 +36,6 @@ IMAGE_REGISTRY="ghcr.io"
 IMAGE_REPO="teddyjfpender/superforecasting-agent"
 IMAGE_PLATFORMS="linux/amd64,linux/arm64"
 
-PUBLISH=0
 BUILD_NPM=0
 WANT_VERSION=""
 MIN_MIGRATION="${RELEASE_MIN_MIGRATION:-0.17.0}"
@@ -45,7 +43,6 @@ OUT_DIR="dist"
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --publish) PUBLISH=1 ;;
     --build-npm) BUILD_NPM=1 ;;
     --version) WANT_VERSION="${2:-}"; shift ;;
     --version=*) WANT_VERSION="${1#*=}" ;;
@@ -72,17 +69,14 @@ VERSION="$(sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -n1)"
 [ -n "$VERSION" ] || die "could not read version from pyproject.toml"
 TAG="v${VERSION}"
 
-MODE="DRY-RUN"; [ "$PUBLISH" = "1" ] && MODE="PUBLISH"
-printf '\n\033[1m✦ Release %s (%s)\033[0m\n\n' "$TAG" "$MODE"
+printf '\n\033[1m✦ Release %s (DRY-RUN)\033[0m\n\n' "$TAG"
 
 # 1. Readiness gate (shared with the workflow + pre-tag hook).
 if [ "${SKIP_GATE:-0}" = "1" ]; then
   say "Readiness gate skipped (SKIP_GATE=1)"
 else
   say "Running readiness gate"
-  gate_args=(--version "$VERSION")
-  [ "$PUBLISH" = "1" ] && gate_args+=(--strict)
-  scripts/check-release-ready.sh "${gate_args[@]}" \
+  scripts/check-release-ready.sh --version "$VERSION" \
     || die "readiness gate failed — not releasing"
 fi
 
@@ -114,47 +108,34 @@ case "$WHEEL" in
   *) die "wheel '$WHEEL' does not match version ${VERSION}" ;;
 esac
 
-# 3. Assemble the release directory.
+# 3. Assemble the release directory. The wheel/sdist are built into dist/, so
+#    with the default --out=dist they are already in place — `cp` onto the
+#    same file errors ("identical") on both BSD and GNU, killing the dry-run.
 mkdir -p "$OUT_DIR"
-cp -f "$WHEEL" "$OUT_DIR/"
-cp -f "$SDIST" "$OUT_DIR/"
+if [ "$(cd "$(dirname "$WHEEL")" && pwd)" != "$(cd "$OUT_DIR" && pwd)" ]; then
+  cp -f "$WHEEL" "$OUT_DIR/"
+  cp -f "$SDIST" "$OUT_DIR/"
+fi
 cp -f scripts/install-release.sh "$OUT_DIR/install.sh"
+cp -f scripts/install-release.ps1 "$OUT_DIR/install.ps1"
 WHEEL_NAME="$(basename "$WHEEL")"
 SDIST_NAME="$(basename "$SDIST")"
 
-# 4. SHA256SUMS over the three shippable artifacts.
+# 4. SHA256SUMS over the four shippable artifacts.
 say "Computing SHA256SUMS"
 (
   cd "$OUT_DIR"
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$WHEEL_NAME" "$SDIST_NAME" install.sh > SHA256SUMS
+    sha256sum "$WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 > SHA256SUMS
   else
-    shasum -a 256 "$WHEEL_NAME" "$SDIST_NAME" install.sh > SHA256SUMS
+    shasum -a 256 "$WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 > SHA256SUMS
   fi
 )
 ok "wrote $OUT_DIR/SHA256SUMS"
 
-# 5. Image build/push (publish only) → digest for the manifest.
+# 5. Describe the image without publishing it.
 IMAGE_DIGEST="null"
-if [ "$PUBLISH" = "1" ]; then
-  command -v docker >/dev/null 2>&1 || die "--publish needs docker for the image"
-  say "Building + pushing multi-arch image to ${IMAGE_REGISTRY}/${IMAGE_REPO}"
-  IMAGE_REF="${IMAGE_REGISTRY}/${IMAGE_REPO}"
-  METADATA="$(mktemp)"
-  docker buildx build \
-    --platform "$IMAGE_PLATFORMS" \
-    --file Dockerfile \
-    --tag "${IMAGE_REF}:${TAG}" \
-    --tag "${IMAGE_REF}:latest" \
-    --label "org.opencontainers.image.revision=$(git rev-parse HEAD)" \
-    --metadata-file "$METADATA" \
-    --push .
-  IMAGE_DIGEST="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1])).get("containerimage.digest",""))' "$METADATA")"
-  [ -n "$IMAGE_DIGEST" ] || die "could not read image digest from buildx metadata"
-  ok "pushed image digest $IMAGE_DIGEST"
-else
-  say "Image: dry-run — would build+push ${IMAGE_REGISTRY}/${IMAGE_REPO}:${TAG},latest ($IMAGE_PLATFORMS)"
-fi
+say "Image: dry-run — workflow will publish ${IMAGE_REGISTRY}/${IMAGE_REPO}:${TAG},latest ($IMAGE_PLATFORMS)"
 
 # 6. Machine-readable release manifest.
 say "Writing release-manifest.json"
@@ -167,6 +148,7 @@ plat_b="${IMAGE_PLATFORMS#*,}"
   --artifact "wheel=$OUT_DIR/$WHEEL_NAME" \
   --artifact "sdist=$OUT_DIR/$SDIST_NAME" \
   --artifact "installer=$OUT_DIR/install.sh" \
+  --artifact "windows_installer=$OUT_DIR/install.ps1" \
   --artifact "checksums=$OUT_DIR/SHA256SUMS" \
   --image-registry "$IMAGE_REGISTRY" \
   --image-repo "$IMAGE_REPO" \
@@ -195,23 +177,8 @@ ok "wrote $NOTES"
 # --- Summary ---------------------------------------------------------------
 echo
 printf '\033[1mArtifact set (%s):\033[0m\n' "$OUT_DIR"
-for f in "$WHEEL_NAME" "$SDIST_NAME" install.sh SHA256SUMS release-manifest.json RELEASE_NOTES.md; do
+for f in "$WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 SHA256SUMS release-manifest.json RELEASE_NOTES.md; do
   [ -f "$OUT_DIR/$f" ] && printf '    %s\n' "$f"
 done
 echo
-if [ "$PUBLISH" = "1" ]; then
-  say "Tagging + creating GitHub release $TAG"
-  git tag -a "$TAG" -m "$TAG" || die "git tag failed"
-  git push origin "$TAG" || die "git push tag failed"
-  gh release create "$TAG" \
-    "$OUT_DIR/$WHEEL_NAME" "$OUT_DIR/$SDIST_NAME" "$OUT_DIR/install.sh" \
-    "$OUT_DIR/SHA256SUMS" "$OUT_DIR/release-manifest.json" \
-    --title "$TAG" --notes-file "$NOTES" --verify-tag \
-    || gh release upload "$TAG" \
-       "$OUT_DIR/$WHEEL_NAME" "$OUT_DIR/$SDIST_NAME" "$OUT_DIR/install.sh" \
-       "$OUT_DIR/SHA256SUMS" "$OUT_DIR/release-manifest.json" --clobber
-  ok "Released $TAG"
-else
-  printf '\033[32mDRY-RUN complete.\033[0m Re-run with --publish to tag + build/push + release.\n'
-  printf 'Next (manual): git tag %s && git push origin %s  (or scripts/release.sh --publish)\n' "$TAG" "$TAG"
-fi
+printf '\033[32mDRY-RUN complete.\033[0m Publish only through .github/workflows/production-release.yml.\n'

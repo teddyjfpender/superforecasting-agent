@@ -1,7 +1,9 @@
 import { PassThrough } from 'stream'
 
 import React from 'react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+
+import { waitForQuiet } from '../testing/settle.js'
 
 // COMPLETION-OVERLAY FLASH CONTRACT.
 //
@@ -27,7 +29,6 @@ import { describe, expect, it, vi } from 'vitest'
 //   3. Tab (armPath) STILL opens path completion for a path-like token — the
 //      feature is preserved, just no longer auto-firing.
 
-vi.mock('../components/conversationsRail.js', () => ({ ConversationsRail: () => null }))
 vi.mock('../components/streamingAssistant.js', () => ({
   LiveTodoPanel: () => null,
   StreamingAssistant: () => null
@@ -117,7 +118,6 @@ const mount = async () => {
 
   const transcript: any = {
     historyItems: [msg],
-    railScrollRef: React.createRef(),
     scrollRef: React.createRef(),
     virtualHistory: { bottomSpacer: 0, end: 1, measureRef: () => () => {}, offsets: [0], start: 0, topSpacer: 0 },
     virtualRows: [{ index: 0, key: 'm0', msg }]
@@ -165,7 +165,11 @@ const mount = async () => {
     exitOnCtrlC: false, patchConsole: false, stdin: writeStream(COLS, ROWS, true).stream, stdout: out.stream
   })
 
-  await tick(200)
+  // Wait for the real AppLayout to have PAINTED rather than sleeping a flat
+  // 200ms. Same principle as everywhere else in this suite, and it also buys
+  // back ~150ms per mount — this file mounts the whole layout 9 times, and its
+  // per-keystroke debounce waits leave it close to the default test budget.
+  await waitForQuiet(() => out.text(), { quietFor: 40, timeout: 4000 })
 
   return { drive, instance, out }
 }
@@ -202,6 +206,17 @@ const type = async (phrase: string): Promise<RunResult> => {
 }
 
 describe('composer completion-overlay flash: real matcher + real AppLayout', () => {
+  // Cold start — resolving the module graph, the first AppLayout mount and Ink's
+  // first render — costs ~4s, and it lands inside whichever test runs FIRST.
+  // Measured: test 1 took 5.8s while the identical test 2 took 1.6s, so the
+  // first test was timing out on setup it happened to be standing next to, not
+  // on its own work. Pay it once here, where a hook timeout covers it.
+  beforeAll(async () => {
+    const warm = await mount()
+
+    warm.instance.unmount?.()
+  }, 60_000)
+
   it('plain prose never mounts the completion overlay', async () => {
     const r = await type('what is the base rate')
     expect(r.mountedOverlay).toBe(false)

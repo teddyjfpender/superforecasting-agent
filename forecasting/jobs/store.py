@@ -12,8 +12,15 @@ import json
 import os
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 from hermes_constants import get_hermes_home
 
@@ -123,6 +130,9 @@ class JobStore:
     def stop_path(self, job_id: str) -> Path:
         return self.jobs_dir() / f"{self._validate_id(job_id)}.stop"
 
+    def lock_path(self, job_id: str) -> Path:
+        return self.jobs_dir() / f"{self._validate_id(job_id)}.lock"
+
     # ── lifecycle ────────────────────────────────────────────────────────────
     def exists(self, job_id: str) -> bool:
         try:
@@ -131,15 +141,76 @@ class JobStore:
             return False
 
     def write(self, record: JobRecord) -> None:
-        """Atomically persist a record (temp file + ``os.replace``)."""
+        """Atomically persist a record through a writer-unique temporary file."""
 
         record.updated_at = _now_iso()
         path = self.path(record.job_id)
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(
-            json.dumps(record.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
-        )
-        os.replace(tmp, path)
+        payload = json.dumps(record.to_dict(), indent=2, sort_keys=True)
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                fd = -1
+                handle.write(payload)
+            os.replace(tmp, path)
+        finally:
+            if fd >= 0:
+                os.close(fd)
+            tmp.unlink(missing_ok=True)
+
+    @contextmanager
+    def claim(self, job_id: str) -> Iterator[JobRecord | None]:
+        """Try to claim one queued or crash-stranded running job.
+
+        The non-blocking kernel lock is held for the whole execution. A second
+        runner therefore gets ``None`` without executing side effects, while an
+        abrupt process exit releases the lock so a later runner can reclaim the
+        persisted ``running`` record.
+        """
+
+        lock_path = self.lock_path(job_id)
+        handle = lock_path.open("a+b")
+        acquired = False
+        try:
+            try:
+                if os.name == "nt":
+                    handle.seek(0, os.SEEK_END)
+                    if handle.tell() == 0:
+                        handle.write(b"\0")
+                        handle.flush()
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                acquired = True
+            except BlockingIOError:
+                yield None
+                return
+            except OSError:
+                if os.name != "nt":
+                    raise
+                yield None
+                return
+
+            record = self.read(job_id)
+            if record.status not in _ACTIVE_STATUSES:
+                yield None
+                return
+            record.status = "running"
+            record.error = None
+            self.write(record)
+            yield record
+        finally:
+            if acquired:
+                try:
+                    if os.name == "nt":
+                        handle.seek(0)
+                        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+                    else:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            handle.close()
 
     def read(self, job_id: str, *, include_legacy: bool = True) -> JobRecord:
         path = self.path(job_id)

@@ -3,6 +3,7 @@ import { GATEWAY_STDERR_COALESCE_MS, STREAM_BATCH_MS } from '../config/timing.js
 import { AUTH_EXPIRED_RE, AUTH_EXPIRED_TITLE, buildAuthExpiredSections } from '../content/auth.js'
 import { buildSetupRequiredSections, SETUP_REQUIRED_TITLE } from '../content/setup.js'
 import type {
+  BuildInfoPayload,
   CommandsCatalogResponse,
   ConfigFullResponse,
   DelegationStatusResponse,
@@ -22,6 +23,7 @@ import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 import { agentsActiveFromResult, setAgentsActive } from './agentsActiveStore.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
+import { markLinkLive, takeResumeSid } from './gatewayLinkStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { raisePrompt } from './overlayStore.js'
 import { turnController } from './turnController.js'
@@ -302,8 +304,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     scheduleStartupPrompt()
   }
 
-  const startResume = (id: string) => {
-    resumeById(id)
+  const startResume = (id: string, onUnresumable?: (reason: string) => void) => {
+    // Only the gateway-recovery path has a fallback to offer. Every other caller
+    // keeps the original single-argument call shape exactly.
+    if (onUnresumable) {
+      resumeById(id, onUnresumable)
+    } else {
+      resumeById(id)
+    }
+
     setTimeout(showStartupForecastDashboard, 250)
     scheduleStartupPrompt()
   }
@@ -316,10 +325,25 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
   const keepTerminalElseRunning = (s: SubagentProgress['status']) => (isTerminalStatus(s) ? s : 'running')
 
+  // The running application build. Emitted on gateway.ready AND (refreshed) on
+  // session.info; an older gateway omits it entirely, so a missing payload must
+  // leave whatever we already learned in place rather than blanking it.
+  const applyBuild = (build?: BuildInfoPayload | null) => {
+    if (build?.version) {
+      patchUiState({ build })
+    }
+  }
+
   const handleReady = (skin?: GatewaySkin) => {
     if (skin) {
       applySkin(skin)
     }
+
+    // Was this ready a RECOVERY rather than a cold start? markLinkLive answers
+    // that and flips the link back to 'live' in one step.
+    const recovered = markLinkLive()
+    // The session that was live when the transport died (single-use).
+    const resumeSid = takeResumeSid()
 
     rpc<CommandsCatalogResponse>('commands.catalog', {})
       .then(r => {
@@ -340,6 +364,38 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         }
       })
       .catch((e: unknown) => turnController.pushActivity(`command catalog unavailable: ${rpcErrorMessage(e)}`, 'info'))
+
+    // ── recovery path ────────────────────────────────────────────────────────
+    // A respawned gateway must come back as the SAME desk. Resuming the captured
+    // session is what makes the recovery honest: the transcript, usage and info
+    // the operator was looking at are genuinely re-established, not quietly
+    // replaced by a blank session that merely looks healthy.
+    if (recovered) {
+      if (resumeSid) {
+        patchUiState({ status: 'gateway reconnected · restoring session…' })
+        turnController.pushActivity('gateway reconnected · restoring session', 'info')
+        // If the session cannot be restored (the gateway died mid-write, the
+        // ledger rolled back), open a fresh one and SAY the old one is gone —
+        // never leave the desk sid-less and mute.
+        startResume(resumeSid, reason => {
+          turnController.pushActivity(
+            `gateway reconnected · previous session could not be restored (${reason}) · starting a new one`,
+            'warn'
+          )
+          startNewSession()
+        })
+
+        return
+      }
+
+      // Nothing to restore (the crash landed before a session existed). Say so
+      // out loud rather than letting a fresh session pass for the old one.
+      patchUiState({ status: 'gateway reconnected · new session' })
+      turnController.pushActivity('gateway reconnected · session was reset', 'warn')
+      startNewSession()
+
+      return
+    }
 
     if (STARTUP_RESUME_ID) {
       patchUiState({ status: 'resuming…' })
@@ -393,6 +449,9 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
     switch (ev.type) {
       case WireEvent.GATEWAY_READY:
+        // The build identity rides the FIRST frame, so the version is on screen
+        // from first paint — no round trip, no waiting on session.info.
+        applyBuild(ev.payload?.build)
         handleReady(ev.payload?.skin)
 
         return
@@ -405,6 +464,11 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         return
       case WireEvent.SESSION_INFO: {
         const info = ev.payload
+
+        // session.info lands after the background update check has usually
+        // finished, so it UPGRADES a cold-cache "version only" build into a real
+        // staleness verdict. Same store slot, same reducer — one source of truth.
+        applyBuild(info.build)
 
         patchUiState(state => ({
           ...state,
@@ -751,8 +815,8 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         // The gateway due-sweeper acted on due-ness (mirrors cron.fired). 'started'
         // arms a running marker (with the due count) that the Desk turns into a
         // spinner; 'done' clears it, flashes a transient toast built from the REAL
-        // payload fields (refreshed / alerts / wall time), and re-pulls the desk
-        // rail so the Home "Today" panel reflects any forecasts that just refreshed.
+        // payload fields (proposals / alerts / wall time), and re-pulls the desk
+        // rail so the Home "Today" panel reflects the proposed updates.
         // Sessionless (no session_id).
         const payload = ev.payload
 
@@ -765,10 +829,10 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         if (payload?.phase === 'done') {
           patchUiState({ reviewSweep: null })
 
-          const refreshed = Number(payload.refreshed ?? 0)
+          const proposals = Number(payload.proposals ?? 0)
           const alerts = Number(payload.alerts ?? 0)
           const secs = (Number(payload.duration_ms ?? 0) / 1000).toFixed(1)
-          const label = `review sweep: ${refreshed} refreshed${alerts > 0 ? ` · ${alerts} alert${alerts === 1 ? '' : 's'}` : ''} · ${secs}s`
+          const label = `review sweep: ${proposals} proposed${alerts > 0 ? ` · ${alerts} alert${alerts === 1 ? '' : 's'}` : ''} · ${secs}s`
           setStatus(label)
           turnController.pushActivity(label, 'info')
           restoreStatusAfter(6000)

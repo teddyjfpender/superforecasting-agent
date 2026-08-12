@@ -23,6 +23,14 @@ def test_run_status_and_events_survive_reopen(tmp_path):
     assert reopened.list_events("run_1", after_event_id=first["event_id"]) == []
 
 
+def test_close_releases_connection(tmp_path):
+    store = ExecutionStore(tmp_path / "executions.db")
+    store.close()
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        store.get_run("run_1")
+
+
 def test_only_one_active_execution_per_thread(tmp_path):
     store = ExecutionStore(tmp_path / "executions.db")
     store.create_run(

@@ -1,14 +1,12 @@
 import { atom } from 'nanostores'
 
 // Which Home pane has keyboard focus. 'conversation' is the default: typing
-// goes to the composer and ↑↓/PageUp scroll the conversation. 'rail' hands the
-// keyboard to the conversations rail (↑↓ to move the selection, Enter to open)
-// and deactivates the composer's input. 'today' hands the keyboard to the
-// landing "Today" attention panel (↑↓ select, ⏎ open, a alerts, n new) and
-// likewise deactivates the composer. Only the wide two-pane Home shows the rail;
-// 'today' is meaningful only on the landing where the Today panel is mounted.
+// goes to the composer and ↑↓/PageUp scroll the conversation. 'today' hands the
+// keyboard to the landing "Today" attention panel (↑↓ select, ⏎ open, a alerts,
+// n new) and deactivates the composer's input. 'today' is meaningful only on the
+// landing where the Today panel is mounted.
 // Reset to 'conversation' whenever the owning pane isn't shown.
-export type HomePane = 'conversation' | 'rail' | 'today'
+export type HomePane = 'conversation' | 'today'
 
 export interface HomeFocusState {
   pane: HomePane

@@ -1,8 +1,11 @@
 import { Box, type ScrollBoxHandle, Text, useInput } from '@hermes/ink'
+import { useStore } from '@nanostores/react'
 import { useEffect, useRef, useState } from 'react'
 
 import { NAV_TABS } from '../app/navRoutes.js'
+import { $uiBuild } from '../app/uiStore.js'
 import { GLOBAL_KEYS, guideFor, PER_VIEW_KEYS } from '../content/keymaps.js'
+import { buildSummaryLine, isBuildStale, staleRemedy } from '../lib/buildInfo.js'
 import type { Theme } from '../theme.js'
 
 import { ModalOverlay } from './modalOverlay.js'
@@ -102,6 +105,14 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
 
   const guide = guideFor(activeView)
   const viewRows = PER_VIEW_KEYS[activeView] ?? PER_VIEW_KEYS.home ?? []
+  // The build banner. This modal is the ONE surface reachable with `h` / `?` from
+  // every view, so it is where "which build am I running?" has to be answerable
+  // mid-session — the Home hero's copy scrolls away the moment a conversation
+  // starts. Empty (and unmounted) until gateway.ready lands the build.
+  const build = useStore($uiBuild)
+  const buildLine = buildSummaryLine(build)
+  const buildStale = isBuildStale(build)
+  const buildRemedy = staleRemedy(build)
 
   const widthOf = (items: [string, string][]) => items.map(([k]) => k.length)
 
@@ -140,6 +151,21 @@ export function HelpOverlay({ activeView, cols, onClose, rows, t }: HelpOverlayP
       title={`${labelFor(activeView)} · Help`}
     >
       <Box flexDirection="column">
+        {/* Which build this is — first line of the modal, warn-coloured with the
+            concrete remedy when the gateway says it is behind a release. */}
+        {buildLine ? (
+          <Box flexDirection="column" marginBottom={1}>
+            <Text color={buildStale ? t.color.warn : t.color.muted} wrap="truncate-end">
+              {buildStale ? `⚠ ${buildLine}` : buildLine}
+            </Text>
+            {buildRemedy ? (
+              <Text color={t.color.warn} dimColor wrap="truncate-end">
+                {`  run: ${buildRemedy}`}
+              </Text>
+            ) : null}
+          </Box>
+        ) : null}
+
         {/* The "how to use this view" guide — wrapped prose, never truncated. */}
         {guide.map((para, i) => (
           <Box key={`g${i}`} marginBottom={1}>

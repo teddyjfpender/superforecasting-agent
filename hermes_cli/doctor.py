@@ -239,6 +239,73 @@ def _check_gateway_service_linger(issues: list[str]) -> None:
         check_warn("Could not verify systemd linger", f"({linger_detail})")
 
 
+def _check_build_version(issues: list[str]) -> None:
+    """Report which BUILD is installed, and whether it is behind a release.
+
+    The anti-stale-binary check. A pipx-installed wheel freezes its own TUI
+    bundle inside its venv, so repo-side rebuilds never reach it and an operator
+    can run a months-old binary while watching fixes land in git. Doctor is the
+    thing they already run when something looks wrong, so it is where the
+    mismatch has to be named.
+
+    Blocks for at most ~5s on the very first run (doctor is an explicit,
+    interactive command — unlike the TUI startup path, which only ever reads the
+    cache) and degrades to "could not check" when offline.
+    """
+    _section("Build Version")
+    try:
+        from hermes_cli.banner import get_update_state, prefetch_update_check
+    except Exception as e:
+        check_warn("Could not resolve the running build", f"({e})")
+        return
+
+    try:
+        # Kick the shared check and give it a bounded window. Everything below
+        # rides that ONE resolution (and its 6-hour on-disk cache) — doctor never
+        # opens a second network path of its own.
+        prefetch_update_check()
+        state = get_update_state(timeout=6.0)
+    except Exception as e:
+        check_warn("Could not resolve the running build", f"({e})")
+        return
+
+    version = state.get("version") or "?"
+    released = state.get("release_date")
+    method = state.get("install_method") or "unknown"
+    check_ok(
+        f"Running v{version}" + (f" ({released})" if released else ""),
+        f"(installed via {method})",
+    )
+
+    latest = state.get("latest_version")
+    if not state.get("stale"):
+        if latest:
+            check_ok("Up to date with the latest release", f"(latest v{latest})")
+        else:
+            # Offline / rate-limited / cold cache — say so plainly rather than
+            # implying the build was verified as current.
+            check_warn("Could not reach the release feed", "(staleness unknown — offline?)")
+        return
+
+    behind = state.get("behind")
+    detail = f"(latest v{latest})" if latest else (
+        f"({behind} commits behind)" if isinstance(behind, int) and behind > 0 else ""
+    )
+    check_fail("This build is BEHIND the latest release", detail)
+    remedy = state.get("remedy") or ""
+    if remedy:
+        check_info(f"Run: {remedy}")
+    check_info(
+        "A repo-side rebuild alone does NOT update an installed binary — the "
+        "bundled TUI is frozen inside its own venv."
+    )
+    issues.append(
+        f"Update the installed build (running v{version}"
+        + (f", latest v{latest}" if latest else "")
+        + (f"): {remedy}" if remedy else ")")
+    )
+
+
 _APIKEY_PROVIDERS_CACHE: list | None = None
 
 
@@ -432,7 +499,9 @@ def run_doctor(args):
     except Exception as e:
         # Never let a bug in the advisory check block the rest of doctor.
         check_warn(f"Security advisory check failed: {e}")
-    
+
+    _check_build_version(issues)
+
     _section("Python Environment")
     py_version = sys.version_info
     if py_version >= (3, 11):

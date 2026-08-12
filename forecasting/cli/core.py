@@ -7225,9 +7225,8 @@ def _run_update_agent(
     `refresh --agent`, and the autonomous `cycle run --agent` sweep (run_agent is
     imported lazily here so the ledger/cron layers never depend on it).
 
-    ``commit_policy="commit_material"`` is set by the autonomous re-forecast paths so
-    the update stage COMMITS a material move instead of stopping at a preview (see
-    ``forecasting.protocol._COMMIT_MATERIAL_POLICY``). ``supplemental`` injects a
+    ``commit_policy="commit_material"`` commits a material move for an explicit run;
+    ``"proposal_only"`` forces unattended work through review. ``supplemental`` injects a
     stage-scoped note (the chain's research re-run passes the adequacy gap list)."""
     messages = build_protocol_messages(
         ledger, question_id, stage=stage, commit_policy=commit_policy,
@@ -7243,6 +7242,7 @@ def _run_update_agent(
         enabled_toolsets=enabled_toolsets,
         platform="cli",
     )
+    agent.forecast_commit_policy = commit_policy or ""
     return agent.run_conversation(messages[1].content, system_message=messages[0].content)
 
 
@@ -8775,24 +8775,18 @@ def _review_alert_matches_filters(
     return True
 
 
-def _build_cycle_reforecast_runner(args: argparse.Namespace):
+def _build_cycle_reforecast_runner(
+    args: argparse.Namespace, *, commit_policy: str = "commit_material"
+):
     """The CLI-layer callable the cron cycle invokes to autonomously re-forecast the
     questions a sweep flagged. It validates each candidate is a LIVE question, honors
     the pipeline update gate (skip + report blockers unless --force), caps the count
     (--max-questions), runs the LLM update stage, and returns per-question result
     dicts. Lives here so run_agent is never imported by cron_runner/ledger.
 
-    NOTE (deliberate deferred follow-up): the commit-material policy is enforced at
-    the PROMPT layer (the agent owns the gated `update_forecast` commit) and this
-    runner only REPORTS the outcome honestly — it classifies a committed snapshot by
-    is_material_move and surfaces a marginal-delta commit as status "marginal", not
-    as a material-move success. We intentionally do NOT build a flow-forces-commit
-    HARD gate that captures the agent's freeform preview number and auto-commits it:
-    that would have to parse a probability out of free text (brittle), could not
-    re-run the saturation/structured-reasoning/panel gates the real commit path
-    enforces, and would write a number the agent never actually decided to commit. A
-    deterministic commit gate, if ever wanted, is a separate carefully-designed
-    change — out of scope for a sweep. See _COMMIT_MATERIAL_POLICY in protocol.py."""
+    ``commit_policy="proposal_only"`` is used by cron: the agent tool is forced through
+    the normal gates but cannot write a snapshot. The default remains the explicit
+    operator-run material-commit behavior."""
     from forecasting.warnings import is_material_move
 
     ledger = _ledger(args)
@@ -8845,7 +8839,7 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
                         boot = run_forecast_chain(
                             ledger, qid, model=model, provider=provider,
                             max_iterations=max_iter, stages=prereq_stages,
-                            commit_policy="commit_material",
+                            commit_policy=commit_policy,
                         )
                         errored = [s["stage"] for s in boot["stages"] if s.get("status") == "error"]
                         pstatus = build_pipeline_status(ledger, qid)
@@ -8857,6 +8851,16 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
                         results.append({"question_id": qid, "status": "skipped", "detail": detail})
                         continue
             prior = ledger.get_current_snapshot(qid)
+            prior_proposals = (
+                {
+                    proposal["id"]
+                    for proposal in ledger.list_forecast_update_proposals(
+                        question_id=qid, status="pending", limit=100
+                    )
+                }
+                if commit_policy == "proposal_only"
+                else set()
+            )
             # Count BEFORE the agent runs: the cap bounds expensive multi-minute LLM
             # sessions, so a question that ran but declined to commit still counts.
             # A question that already paid for its budget in the bootstrap above
@@ -8866,12 +8870,40 @@ def _build_cycle_reforecast_runner(args: argparse.Namespace):
             try:
                 _run_update_agent(
                     ledger, qid, model=model, provider=provider,
-                    max_iterations=max_iter, commit_policy="commit_material",
+                    max_iterations=max_iter, commit_policy=commit_policy,
                 )
             except Exception as exc:  # one failure must not abort the sweep
                 results.append({"question_id": qid, "status": "error", "detail": str(exc)[:160]})
                 continue
             post = ledger.get_current_snapshot(qid)
+            if commit_policy == "proposal_only":
+                proposal = next(
+                    (
+                        item
+                        for item in ledger.list_forecast_update_proposals(
+                            question_id=qid, status="pending", limit=100
+                        )
+                        if item["id"] not in prior_proposals
+                    ),
+                    None,
+                )
+                if proposal is not None:
+                    results.append(
+                        {
+                            "question_id": qid,
+                            "status": "proposed",
+                            "detail": f"pending proposal {proposal['id']}; no snapshot committed",
+                        }
+                    )
+                else:
+                    results.append(
+                        {
+                            "question_id": qid,
+                            "status": "skipped",
+                            "detail": "agent created no material proposal; no snapshot committed",
+                        }
+                    )
+                continue
             new_commit = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
             if new_commit:
                 # Classify the commit by MATERIALITY (the same is_material_move
@@ -9022,11 +9054,10 @@ def build_cron_warning_agent_runners(
 
     Lives in the CLI layer so ``run_agent`` is NEVER imported by
     ``forecasting.cron_runner`` (layer purity). ``cron_runner.main_warning_automode``
-    imports this lazily only when ``--agent`` is set. The closures mirror the
-    ``--agent`` wiring in :func:`_build_warning_runners` exactly (the reforecast
-    closure is truthy ONLY when the agent committed a fresh snapshot; the evidence
+    imports this lazily only when ``--agent`` is set. The reforecast closure is
+    truthy only when the agent created a fresh pending proposal; the evidence
     search is the research-stage import pass cron_runner wraps in its >=1-new-row
-    ack gate)."""
+    ack gate."""
     args = argparse.Namespace(
         db=db_path,
         model=model,
@@ -9037,17 +9068,14 @@ def build_cron_warning_agent_runners(
         force=False,
         max_questions=None,
     )
-    _inner = _build_cycle_reforecast_runner(args)
+    _inner = _build_cycle_reforecast_runner(args, commit_policy="proposal_only")
 
     def reforecast_runner(_led, warning):  # noqa: ARG001 — uses the closed-over runner
         if not warning.scope_ref:
             return None
         results = _inner([warning.scope_ref])
-        # A landed snapshot is real gated work regardless of materiality (mirrors the
-        # --agent wiring above): resolve the alert on a "committed" OR "marginal"
-        # commit, leave it OPEN only when no snapshot landed.
-        landed = [r for r in results if r.get("status") in {"committed", "marginal"}]
-        return landed[0] if landed else None
+        proposed = [r for r in results if r.get("status") == "proposed"]
+        return proposed[0] if proposed else None
 
     evidence_search = _build_evidence_search(args)
     return reforecast_runner, evidence_search

@@ -13,7 +13,6 @@ import type {
 } from '../gatewayTypes.js'
 import { completionRequestForInput } from '../hooks/useCompletion.js'
 import { forecastFindDraft, forecastShortcutForKey } from '../lib/forecastShortcuts.js'
-import { RAIL_WIDTH } from '../lib/homeLayout.js'
 import { isAction, isCopyShortcut, isMac, isVoiceToggleKey } from '../lib/platform.js'
 import { computePrecisionWheelStep, initPrecisionWheel } from '../lib/precisionWheel.js'
 import { dismissFirstRunHint } from '../lib/uiFlagsStore.js'
@@ -76,7 +75,7 @@ export function shouldFallThroughForScroll(key: {
  * (every printable char still flows to the composer). Returns true only where
  * that routing should win; false everywhere history recall must stay live
  * (typing started → chromeArmable false, no Today rows → todayCount 0, the
- * rail/Today pane holds focus, or an overlay owns the keys → chromeArmable false).
+ * Today pane holds focus, or an overlay owns the keys → chromeArmable false).
  */
 export const shouldSoftFocusToday = (chromeArmable: boolean, pane: HomePane, todayCount: number): boolean =>
   chromeArmable && pane === 'conversation' && todayCount > 0
@@ -84,7 +83,7 @@ export const shouldSoftFocusToday = (chromeArmable: boolean, pane: HomePane, tod
 /**
  * `h` is the unified Help key on every view. Over a fullscreen VIEW the view's
  * own useInput raises Help; on the Home route the GLOBAL handler does — but ONLY
- * when the composer is NOT focused (soft-focus sits on the Today/rail pane), so a
+ * when the composer is NOT focused (soft-focus sits on the Today pane), so a
  * message that starts with `h` (the common case) is never hijacked. `onHome` is
  * `activeNavKey(overlay) === 'home'`; `canOpenOverlay` is `canOpenGlobalOverlay`.
  */
@@ -363,7 +362,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // Over a fullscreen VIEW the view's own useInput raises it (so `h` yields to
     // that view's chat/filter text modes first); HERE we cover ONLY the Home
     // route, and only when the composer is NOT focused (soft-focus sits on the
-    // Today / rail pane). That keeps a message that starts with `h` — the common
+    // Today pane). That keeps a message that starts with `h` — the common
     // case — from ever being hijacked, while `h` still summons help off-composer.
     if (
       ch === 'h' &&
@@ -527,8 +526,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // While the landing "Today" panel holds focus, its own useInput drives
     // ↑↓/⏎/a/n; swallow non-wheel keys here so the global handler can't
     // double-handle them (Tab/Esc hand the keyboard back to the composer).
-    // Placed BEFORE the rail switch so Tab from Today returns to the composer
-    // rather than falling into the rail-entry branch. Wheel still flows below.
+    // Tab/Esc return focus to the composer. Wheel still flows below.
     if (getHomeFocus().pane === 'today') {
       if (key.tab || key.escape) {
         setHomePane('conversation')
@@ -544,8 +542,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // dropdown on every "and/or" or "@name" — see useCompletion), so Tab is the
     // trigger. Only when the composer is focused, no menu is already open, and
     // the trailing token actually is path-like; otherwise Tab keeps its
-    // rail-focus (below) and completion-accept (further down) roles. Plain Tab
-    // only — shift+Tab stays the yolo toggle.
+    // completion-accept role. Plain Tab only — shift+Tab stays the yolo toggle.
     if (
       key.tab &&
       !key.shift &&
@@ -554,35 +551,6 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
       completionRequestForInput(cState.input)?.method === 'complete.path'
     ) {
       cActions.armPath()
-
-      return
-    }
-
-    // --- Home conversations rail: keyboard focus switching ---
-    // railScrollRef.current is attached only while the rail is shown (wide
-    // two-pane Home, no overlay), so it doubles as "rail is available". While
-    // the rail holds focus, swallow keyboard input here — the rail's own
-    // handler drives ↑↓/Enter — but let wheel/trackpad scroll keep flowing to
-    // the pointer-routed handlers below.
-    const railAvailable = terminal.railScrollRef.current != null
-
-    if (railAvailable && getHomeFocus().pane === 'rail') {
-      if (key.tab || key.escape || key.rightArrow) {
-        setHomePane('conversation')
-      }
-
-      if (!key.wheelUp && !key.wheelDown) {
-        return
-      }
-    } else if (
-      railAvailable &&
-      !cState.completions.length &&
-      (key.tab || (key.leftArrow && !cState.input && !cState.inputBuf.length))
-    ) {
-      // Tab (or ← on an empty composer) hands the keyboard to the rail. The
-      // composer ignores Tab and a no-op empty-input ← anyway, so there's
-      // nothing to suppress on the still-active TextInput this frame.
-      setHomePane('rail')
 
       return
     }
@@ -598,29 +566,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     if (key.wheelUp || key.wheelDown) {
       const dir: -1 | 1 = key.wheelUp ? -1 : 1
       const now = Date.now()
-      // Route the wheel to whichever Home pane sits under the pointer. The rail
-      // carries its own scroll handle; when the pointer is over it (and it's
-      // actually mounted), scroll the rail instead of the transcript. The
-      // null-check makes overlays / narrow terminals fall back automatically.
-      // Rail scroll needs no selection tracking, so it bypasses scrollTranscript.
-      // railScrollRef.current is non-null only in the wide two-pane Home, so it
-      // is the authoritative "rail is shown" signal — no need to re-derive the
-      // width from stdout (which can disagree with the app's column math and
-      // wrongly suppress rail scrolling). mouseCol is 1-indexed; the rail spans
-      // columns 1..RAIL_WIDTH.
-      const mouseCol = key.mouseCol
-
-      const overRail = mouseCol != null && mouseCol <= RAIL_WIDTH && terminal.railScrollRef.current != null
-
-      const applyWheel = (delta: number) => {
-        if (overRail) {
-          terminal.railScrollRef.current?.scrollBy(delta)
-
-          return
-        }
-
-        scrollTranscript(delta)
-      }
+      const applyWheel = (delta: number) => scrollTranscript(delta)
 
       // Modifier-held wheel = precision mode: one row per frame, no accel.
       // Smooth mice / trackpads emit tiny same-frame bursts; coalesce those
@@ -693,7 +639,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
     // untouched — printable chars never reach this branch, so the first letter of
     // a message always lands in the composer. ⏎ is left to the panel + a no-op
     // empty submit; Esc is left to the panel (it clears its own highlight).
-    // Reached only when pane === 'conversation' (the Ctrl+T / rail branches above
+    // Reached only when pane === 'conversation' (the Ctrl+T branch above
     // already returned for their panes) and shift+arrow already scrolled above.
     const homeFocusNow = getHomeFocus()
 

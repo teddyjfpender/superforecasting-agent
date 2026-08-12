@@ -11,6 +11,7 @@ import type {
   ForecastTriageContestedRow,
   ForecastWarningsAggregateResponse
 } from '../gatewayTypes.js'
+import { type Match, trackRequests, waitForQuiet, waitForText } from '../testing/settle.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -190,6 +191,10 @@ const mount = async (opts: MountOpts = {}) => {
   const calls: Call[] = []
   const contestedStore: ForecastTriageContestedRow[] = [...(opts.contested ?? [])]
   const gw = fakeGw(calls, contestedStore, opts.activeJobs ?? [])
+  // Track every RPC the view issues so the mount/press waits can drain them.
+  const rpc = trackRequests(gw.request.bind(gw))
+
+  gw.request = rpc.request
 
   const [{ Box, render }, { AlertsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
     import('@hermes/ink'),
@@ -216,7 +221,15 @@ const mount = async (opts: MountOpts = {}) => {
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
-  await tick(80)
+  const read = () => normalize(stdout.text(), stripAnsi)
+
+  // forecast.warnings.* are async. A fixed `tick(80)` asserted against whatever
+  // was painted at 80ms — under load the `WARNINGS attention backlog` header-only
+  // frame, before any tier had rendered. Wait for the RPCs the view issued to
+  // have settled (sound: a component blocked on a promise cannot be mistaken for
+  // a finished one), then for the resulting frame to settle.
+  await rpc.drain()
+  await waitForQuiet(read, { quietFor: 40, timeout: 4000 })
 
   return {
     calls,
@@ -228,10 +241,23 @@ const mount = async (opts: MountOpts = {}) => {
     clear: () => stdout.reset(),
     emit: (event: string, payload: unknown) => gw.emit(event, payload),
     press: async (keys: string) => {
+      // Wait for the key's own repaint plus any RPC it fired, instead of a flat
+      // 50ms that the keypress pipeline alone can outlast under load.
+      const before = read()
+
       stdin.stream.write(keys)
-      await tick(50)
+
+      try {
+        await waitForText(read, value => value !== before, { label: 'the keypress repaint', timeout: 2000 })
+      } catch {
+        // Keys whose only effect is an RPC paint nothing.
+      }
+
+      await rpc.drain()
+      await waitForQuiet(read, { quietFor: 24, timeout: 1500 })
     },
-    text: () => normalize(stdout.text(), stripAnsi)
+    text: () => read(),
+    waitFor: (match: Match, label?: string) => waitForText(read, match, { label })
   }
 }
 

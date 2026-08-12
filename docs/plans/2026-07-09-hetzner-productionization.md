@@ -1,6 +1,17 @@
 # Hetzner Productionization — Feature-Complete and Deployable
 
-Date: 2026-07-09 · Branch: `superforecasting-agent-snapshot` · Status: PLAN (research-grounded, live-probed)
+Date: 2026-07-09 · Branch: `superforecasting-agent-snapshot` · Status: PARTIALLY SHIPPED — reconciled against the tree 2026-07-28
+
+> **Reconciliation 2026-07-28:** P0 and the P1–P3 core shipped (commits `df8117136`
+> "P1+P2 — deployable core proven", `61594d90f` "P3 hardening"). Every acceptance
+> criterion below now carries an inline status. A box is ticked ONLY where a named
+> file/test/artifact mechanically evidences it today (tests re-run green 2026-07-28);
+> anything needing a real Hetzner box, a live external account, or an overnight run is
+> left unchecked with an explicit marker. Also fixed the same day: `docs/deploy/hetzner.md`
+> pinned its install/upgrade one-liners to the fork's dead `main` branch (both 404'd);
+> they now pin `superforecasting-agent-snapshot`, and a regression test
+> (`tests/test_project_metadata.py::test_fork_repo_urls_pin_live_snapshot_branch_not_dead_main`)
+> sweeps docs+scripts so the ref cannot silently rot again.
 
 **The operator's target (verbatim intent):** a user can easily deploy the system on
 Hetzner, easily wire it to their Telegram / Slack / Signal (etc.), and SSH into it
@@ -33,6 +44,14 @@ WhatsApp/Slack adapters, pairing security, in-process cron) — and the real gap
 | Docker Hub `teddyjfpender/superforecasting-agent` | **404 — NOT PUBLISHED.** `website/docs/user-guide/docker.md` documents pulling this image; that is currently marketing, not reality |
 | Repo-root `./superforecasting-agent gateway --help` on bare system python | Fails wanting `dotenv` — an artifact of running outside the venv; `python-dotenv` IS a base wheel dep. But messaging adapters live in the `[messaging]` extra (`python-telegram-bot`, `slack-bolt`, `discord.py`, …) — a plain pipx install relies on `tools/lazy_deps.py` first-use installs |
 | Docker image build | **NOT PROBED** (heavy). `Dockerfile` is fork-branded and complete on paper; treat the build as unverified until CI proves it |
+
+> **Delta re-probed 2026-07-28** (the rows above stay as the 2026-07-09 historical
+> record): `ghcr.io/teddyjfpender/superforecasting-agent` is now **published and
+> anonymously pullable** — tags `v0.18.0`, `v0.19.0`, `latest`; multi-arch
+> `linux/amd64 + linux/arm64` (manifest list fetched and verified). Docker Hub
+> (`teddyjfpender/superforecasting-agent`) still does **not** exist (404), and
+> `website/docs/user-guide/docker.md` still pulls the bare Docker-Hub image name on
+> every example — that doc must move to the ghcr name.
 
 ### 0.2 Exists-vs-gap map per pillar
 
@@ -204,7 +223,7 @@ whatever `scripts/build-release.sh` happened to emit. P0 makes a release a
 downstream — the Hetzner bootstrap, the one-line installer, the compose pull —
 resolves against a pinned contract instead of a floating `:latest`.
 
-**Research findings (2026-07-09, this repo):**
+**Research findings at the 2026-07-09 baseline (superseded by status updates below):**
 - `scripts/build-release.sh` → `uv build` wheel+sdist with the bundled TUI
   (`hermes_cli/tui_dist/entry.js`, 4.4 MB) + install scripts; `SKIP_NPM=1`
   reuses `ui-tui/dist/entry.js` for an offline build (verified).
@@ -212,7 +231,7 @@ resolves against a pinned contract instead of a floating `:latest`.
   (`0.17.0`) and CalVer git tags (`v2026.*`). `scripts/release.py` bumps SemVer
   **and** stamps a CalVer `__release_date__` and keeps `acp_registry/agent.json`
   version-locked (a lint test enforces the ACP lock).
-- CI today: `release.yml` (`v*` push → GitHub Release bundled wheel),
+- CI at that baseline: `release.yml` (`v*` push → GitHub Release bundled wheel),
   `upload_to_pypi.yml` (`v20*` CalVer → PyPI trusted-publish, opt-in/dormant),
   `docker-publish.yml` (main push + `release: published` → **Docker Hub**
   `teddyjfpender/superforecasting-agent`, native amd64 + native-arm64-runner
@@ -253,9 +272,8 @@ Every release produces exactly these, all attached to the GitHub Release:
 ### P0.2 Versioning discipline
 - **Single source of truth: `pyproject.toml` `version`.** `hermes_cli/__init__.py`
   and `acp_registry/agent.json` are kept byte-locked to it; the readiness gate
-  fails on any drift. SemVer `vX.Y.Z` is now **the** release scheme;
-  `release.py`'s CalVer lane and `upload_to_pypi.yml` (`v20*`) are legacy/opt-in
-  and untouched.
+  fails on any drift. SemVer `vX.Y.Z` is now **the** release scheme. The dormant
+  CalVer/PyPI publisher has been removed; GitHub Releases is the wheel authority.
 - **Bump rules:** `feat` → minor, `fix`/`perf` → patch, breaking → major. The
   `wip(...)`/`checkpoint` reality is honored — those commits never trigger a
   release by themselves; a release is only ever a deliberate tag on a version
@@ -269,19 +287,16 @@ Every release produces exactly these, all attached to the GitHub Release:
   job gates `release` via `needs:`), and locally by `--with-tests`.
 
 ### P0.3 The pipeline
-- **`.github/workflows/production-release.yml`** — on a strict-SemVer tag push
-  (`v[0-9]+.[0-9]+.[0-9]+`, so CalVer `v20YY.*` never matches): `gate` (assert
-  `tag == v<pyproject>` + strict readiness) → `test` (fast suite) → `release`
-  (build wheel + web, build+push the multi-arch image to ghcr, checksums,
-  manifest with the real image digest, create the GitHub Release with 1–5
-  attached). It **supersedes** `release.yml`, whose `push: tags` trigger is
-  removed (kept as a manual `workflow_dispatch` escape hatch) so a SemVer tag
-  can't race two workflows to create the same Release.
-- **`scripts/release.sh`** — the **offline dry-run twin** (dry-run by default):
+- **`.github/workflows/production-release.yml`** — on a version-tag push, the
+  gate enforces strict SemVer and `tag == v<pyproject>`, then Python/E2E/TUI,
+  compatibility, container-smoke, artifact, image-digest, and draft-release
+  verification run before the Release is published and `latest` advances. It
+  is the only publisher; the legacy `release.yml` workflow is deleted.
+- **`scripts/release.sh`** — the **offline dry-run twin**:
   same gate → same wheel build → checksums → manifest (image `digest: null`,
   "would push ghcr.io/…:vX.Y.Z,latest") → changelog-scaffold `RELEASE_NOTES.md`.
-  `--publish` does the real tag + multi-arch build/push + GitHub Release. This
-  is what makes a release **testable before any tag exists**.
+  It never tags or publishes; this makes a release testable before any public
+  state changes while keeping publication in one gated workflow.
 
 **Operator config the pipeline needs (not faked in the workflow):**
 - **ghcr.io push needs no secret** — it uses the built-in `GITHUB_TOKEN` with
@@ -294,8 +309,7 @@ Every release produces exactly these, all attached to the GitHub Release:
   fires `docker-publish.yml` (`release: published`), which needs the operator's
   `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets. If those aren't set, that
   mirror job fails harmlessly while the ghcr image (the P0 primary) still ships.
-- **PyPI** stays opt-in via `upload_to_pypi.yml`'s trusted publisher; P0 does
-  not couple to it.
+- **PyPI is not a release lane.** GitHub Releases owns the signed wheel and installer.
 
 ### P0.4 Status — what's BUILT NOW vs what remains
 - **Built + tested this arc (repo-only, no external accounts):**
@@ -311,6 +325,13 @@ Every release produces exactly these, all attached to the GitHub Release:
   build on ghcr (P1.1's first run is the Docker-build probe this research
   skipped); the installer's manifest-pin + `SHA256SUMS` verify (P1.2); wiring
   `min_migration_version` to a real `PRAGMA user_version` stamp + refusal (P1.4).
+- **Status 2026-07-28:** the first deferred item is DONE — the ghcr multi-arch
+  image is live and anonymously pullable (`v0.18.0`, `v0.19.0`, `latest`;
+  amd64+arm64 manifest verified). The upgrade lane resolves the release manifest
+  and verifies `SHA256SUMS` (`scripts/upgrade.sh::verify_checksum`);
+  `min_migration_version` is enforced at upgrade time by
+  `scripts/migration_guard.py` (`tests/scripts/test_migration_guard.py` green) —
+  the in-DB `PRAGMA user_version` open-time stamp remains unbuilt.
 
 ---
 
@@ -328,13 +349,23 @@ The docs already sell `docker pull teddyjfpender/superforecasting-agent`; make i
 - Consider (not required for P1): a slim headless image variant without Playwright
   Chromium + web build for ~⅓ the size; measure first.
 
+**Status 2026-07-28:** the artifact side is done — the ghcr multi-arch image is live,
+anonymously pullable (`v0.18.0`, `v0.19.0`, `latest`; amd64+arm64 manifest verified).
+The on-a-real-Hetzner-box runs and the docker.md cleanup remain open.
+
 **Acceptance criteria**
 - [ ] `docker pull ghcr.io/teddyjfpender/superforecasting-agent:latest` succeeds on a
-      fresh Hetzner CX (amd64) AND CAX (arm64) box.
+      fresh Hetzner CX (amd64) AND CAX (arm64) box. *(the image itself is live,
+      multi-arch, anon-pullable — verified 2026-07-28; the pull on real Hetzner
+      boxes requires a real box — unverified)*
 - [ ] `docker compose up -d` from the repo compose file boots the gateway; `docker
       logs` shows the cron scheduler banner; container survives reboot
-      (`restart: unless-stopped`).
+      (`restart: unless-stopped`). *(requires a real box with a Docker daemon +
+      reboot — unverified)*
 - [ ] `website/docs/user-guide/docker.md` image references resolve to a real image.
+      *(STILL FALSE as of 2026-07-28 — every docker.md example uses the bare
+      Docker-Hub name, which 404s; move them to
+      `ghcr.io/teddyjfpender/superforecasting-agent`)*
 
 ### P1.2 One-command Hetzner bootstrap (`scripts/hetzner-install.sh` + cloud-init)
 A single idempotent script (curl-able from the GitHub release, same lane as
@@ -354,14 +385,29 @@ A single idempotent script (curl-able from the GitHub release, same lane as
    exact `ssh forecast@<ip>` line to use next.
 5. Idempotent re-run = upgrade/repair.
 
+**Status 2026-07-28:** shipped in-tree — `scripts/hetzner-install.sh` (idempotent
+bootstrap, lane pick, acceptance checks), `deploy/cloud-init.yaml`, and the container
+proof `scripts/test-fresh-box.sh` (stages 0–5). Static installer guards green in
+`tests/deploy/test_deploy_hardening.py`. No real Hetzner box has run any of it.
+
 **Acceptance criteria**
 - [ ] Fresh Ubuntu 24.04 Hetzner box: `curl -fsSL …/hetzner-install.sh | bash` then
       `ssh forecast@ip` → TUI. **Operator commands ≤ 3 total** (create server, run
-      installer, ssh).
+      installer, ssh). *(the chain is scripted end-to-end by
+      `scripts/test-fresh-box.sh` in a container; requires a real box — unverified.
+      NB the documented curl URL 404'd until 2026-07-28 — it pinned the fork's dead
+      `main` branch; fixed to `superforecasting-agent-snapshot` + regression-tested)*
 - [ ] Same result via cloud-init user-data with zero interactive steps (secrets via
-      user-data env).
-- [ ] Installer exits non-zero with a named failing check when doctor/status fail.
+      user-data env). *(`deploy/cloud-init.yaml` exists and runs the same bootstrap;
+      requires a real box — unverified)*
+- [x] Installer exits non-zero with a named failing check when doctor/status fail.
+      *(shipped: `acceptance()` in `scripts/hetzner-install.sh` — doctor JSON is
+      parsed and hard-fails on typo'd/unknown vars + precedence conflicts, gateway
+      health and the landing are checked, every failure is recorded by name and the
+      script exits 1 listing them)*
 - [ ] Re-running the installer on a provisioned box is a no-op/upgrade, never a wipe.
+      *(the script is written guard-idempotent at every step, but no automated
+      re-run-on-a-provisioned-box proof exists; requires a real box — unverified)*
 
 ### P1.3 The SSH story: land IN the TUI (designed properly)
 **Design — `forecast` user, per-key ForceCommand, tmux attach-or-create:**
@@ -400,14 +446,30 @@ A single idempotent script (curl-able from the GitHub release, same lane as
   buys the same UX for zero new code; revisit only if true multi-device concurrent
   independent desks become a want (P3 note).
 
+**Status 2026-07-28:** shipped — `scripts/forecast-desk` (desk/deskN/shell/one-off
+routing) + per-key ForceCommand wiring in the installer; the container proof scripts
+the landing, both escape hatches, and reconnect-resume (test-fresh-box stages 4a–5).
+The container run was not re-executed in this reconciliation; no real box yet.
+
 **Acceptance criteria**
 - [ ] `ssh forecast@ip` → TUI visible in <10s on a CX32; no intermediate shell.
+      *(landing scripted as test-fresh-box stage 4d; the <10s-on-CX32 number
+      requires a real box — unverified)*
 - [ ] Kill the SSH connection; `ssh` back → same TUI session, scrollback intact.
+      *(scripted as test-fresh-box stage 5 — client killed, tmux session survives;
+      not re-run in this pass; real box — unverified)*
 - [ ] `ssh forecast@ip shell` → login shell; `scp` a file → works (escape hatches).
+      *(scripted as test-fresh-box stages 4b/4c; real box — unverified)*
 - [ ] `ssh -t forecast@ip desk2` → second independent TUI; ledger stays uncorrupted
       (run the suite invariant: `forecast doctor` clean after concurrent use).
+      *(`forecast-desk` routes `deskN` to independent tmux sessions, but no
+      automated concurrent-desk + doctor stage exists anywhere — unverified)*
 - [ ] Landing self-test in the installer verifies the whole chain non-interactively
-      (`ssh -o BatchMode … 'true'` + tmux session creation).
+      (`ssh -o BatchMode … 'true'` + tmux session creation). *(partial: installer
+      acceptance check (d) verifies forecast-desk + a non-interactive tmux session
+      create/kill as the desk user; the in-installer loopback `ssh -o BatchMode` hop
+      was not built — the full ssh chain lives in `scripts/test-fresh-box.sh`
+      instead)*
 
 ### P1.4 Service supervision, volume, and backup (make the nightly loop unkillable)
 - systemd: use the existing `gateway install --system` unit (native lane) /
@@ -427,13 +489,31 @@ A single idempotent script (curl-able from the GitHub release, same lane as
   DB with an older binary (clear error naming the versions), and take an automatic
   pre-open backup when the stamp advances.
 
+**Status 2026-07-28:** the upgrade/downgrade guard is shipped and tested
+(`scripts/upgrade.sh` + `scripts/migration_guard.py`;
+`tests/scripts/test_migration_guard.py` green). `forecast backup run|list` exist
+(`forecasting/cli/doctor_admin.py`); a `backup verify` verb was never built.
+Supervision/reboot behavior needs a real box.
+
 **Acceptance criteria**
 - [ ] `kill -9` the gateway → systemd restarts it; nightly self-check fires the same
-      night (assert via `forecast doctor` cron-health panel).
+      night (assert via `forecast doctor` cron-health panel). *(requires a real box
+      + an overnight run — unverified)*
 - [ ] Box reboot → gateway + landing both come back with no operator action.
+      *(requires a real box — unverified)*
 - [ ] Nightly backup file appears; `forecast backup verify` green; documented restore
       drill executed once for real (fresh box + backup → working desk).
-- [ ] Old binary vs newer DB → loud refusal, zero writes (new test).
+      *(`forecast backup run|list` shipped; the `backup verify` verb was NOT built
+      and the restore drill has not been executed — requires a real box/overnight —
+      unverified)*
+- [x] Old binary vs newer DB → loud refusal, zero writes (new test). *(shipped as
+      the upgrade-time migration guard: `scripts/upgrade.sh` runs
+      `scripts/migration_guard.py` BEFORE switching anything — refuses a downgrade
+      or a below-`min_migration_version` build with exit 3 and zero writes;
+      `tests/scripts/test_migration_guard.py` green 2026-07-28. Precision: the
+      in-DB `PRAGMA user_version` open-time refusal was NOT built — the guard
+      prevents the state at upgrade time; a manually-installed old binary would not
+      be refused at DB open)*
 
 ### P1.5 Secrets + headless auth (no browser on the box, ever required)
 - All secrets via env or `{home}/.env`/`auth.json` (exists). `forecast config
@@ -443,12 +523,25 @@ A single idempotent script (curl-able from the GitHub release, same lane as
   flow), and for browser-bound providers (xai/qwen/gemini) the existing manual
   callback-paste + `oauth-over-ssh.md` port-forward recipe.
 
+**Status 2026-07-28:** doctor-side guarantees are tested and green
+(`tests/forecasting/test_appconfig.py`, 24 passed 2026-07-28); the headless
+device-flow code paths exist. The on-a-fresh-box auth run and the installer-output
+secrecy regression test remain open.
+
 **Acceptance criteria**
 - [ ] On a fresh box with no browser: complete provider auth entirely inside the SSH
       session for nous AND openai-codex; token lands in `{home}/auth.json` (0600).
-- [ ] `forecast config doctor` red on a missing/typo'd key names the key and layer.
+      *(device flows exist in code — `nous` device-code,
+      `hermes_cli/codex_device_flow.py`; completing them needs a fresh box + live
+      provider accounts — unverified)*
+- [x] `forecast config doctor` red on a missing/typo'd key names the key and layer.
+      *(`test_doctor_flags_unknown_typo_var` +
+      `test_doctor_reports_file_vs_env_precedence_conflict` green; the installer's
+      acceptance parses doctor JSON and hard-fails on exactly these by name)*
 - [ ] No secret value ever printed by installer or doctor (presence-only — existing
-      behavior, add a regression test on the installer output).
+      behavior, add a regression test on the installer output). *(doctor half
+      proven — `test_doctor_secret_presence_never_leaks_value` green; the
+      regression test on the INSTALLER's output was not added — unverified)*
 
 ---
 
@@ -468,12 +561,24 @@ flags), built almost entirely from existing seams:
 - registration of the binding as a **notification destination** (P2.4's store).
 `gateway setup` (the inherited generic wizard) remains for exotic platforms.
 
+**Status 2026-07-28:** shipped — the `forecast connect` framework
+(`forecasting/cli/connect_admin.py`) + notify destination registration; suites green
+2026-07-28 (`tests/forecasting/test_connect_flow.py`, `test_notify_cli.py`).
+
 **Acceptance criteria**
-- [ ] `forecast connect` with no args lists surfaces with an honest status column
+- [x] `forecast connect` with no args lists surfaces with an honest status column
       (connected / available / expert-only).
+      *(`test_connect_list_shows_all_surfaces`,
+      `test_connect_listing_marks_available_and_deferred`,
+      `test_connect_listing_marks_connected` — green)*
 - [ ] Each productized surface: wall-clock ≤5 min from command to received test
-      message, measured on a fresh box.
-- [ ] Doctor gains a `connections` section (surface, bound chat, last delivery).
+      message, measured on a fresh box. *(the flows are tested end-to-end with the
+      HTTP seam stubbed; the wall-clock measurement needs a fresh box + live
+      accounts — unverified)*
+- [x] Doctor gains a `connections` section (surface, bound chat, last delivery).
+      *(`forecasting/appconfig.py::_connections_report` — surfaces with
+      token-presence, bound routes, per-route last delivery status/health;
+      `test_config_doctor_has_connections_section` green)*
 
 ### P2.2 Telegram (the action surface this plan adopts as "the #136 intent")
 The in-repo referent for "task #136 / §12" does not exist (see §0.2); this slice is
@@ -491,14 +596,26 @@ written to be that spec.
 - The 2026-05-02 multisession-topics plan stays orthogonal/deferred — it's chat-UX
   lanes, not productionization; sequence it only after the action surface earns use.
 
+**Status 2026-07-28:** the connect flow + digest transport shipped
+(`forecasting/transports/telegram.py`; connect-flow suite green incl.
+`test_acceptance_connect_telegram_one_command_then_digest`, HTTP stubbed). The
+`/forecast list|show|why` action surface was NOT built — that half of this slice
+remains open.
+
 **Acceptance criteria**
 - [ ] Fresh box: `forecast connect telegram` → paste token → DM bot → approve code →
-      test card arrives. ≤5 min.
+      test card arrives. ≤5 min. *(flow + stubbed-transport acceptance test green;
+      the fresh-box run with a live bot requires a real box + live account —
+      unverified)*
 - [ ] Nightly self-check digest arrives in the bound chat (assert next morning).
+      *(requires an overnight run on a live binding — unverified)*
 - [ ] `/forecast show <id>` returns the card; unknown users get denied (allowlist/
-      pairing enforced — probe with a second Telegram account).
+      pairing enforced — probe with a second Telegram account). *(NOT BUILT — no
+      `/forecast` command surface exists in the transport or the gateway adapter)*
 - [ ] Gateway offline → commands queue nothing silently; bot down is visible in
-      `forecast doctor` connections.
+      `forecast doctor` connections. *(partial: doctor connections rows carry
+      last-delivery status and a `healthy` flag; no offline-queue behavior test
+      exists — unverified)*
 
 ### P2.3 Slack (finish the user-facing story on the existing OAuth)
 - Wrap the shipped pieces into `forecast connect slack`:
@@ -514,12 +631,22 @@ written to be that spec.
 - Multiplayer M3–M6 (import pipeline, Delphi-in-Slack, provisioning automation,
   slash parity) remain a separate track — not required for "wired up."
 
+**Status 2026-07-28:** `forecast connect slack` shipped (manifest → whoami-green
+gate → test card; `test_slack_connect_*` green, HTTP stubbed). File upload is STILL
+on the deprecated `files.upload` (`tools/slack_tool.py` marks the migration a
+fast-follow) — that criterion is honestly unmet.
+
 **Acceptance criteria**
 - [ ] One command + one browser paste (on the operator's laptop, not the box) →
-      `forecast slack whoami` green, test card in the chosen channel.
+      `forecast slack whoami` green, test card in the chosen channel. *(flow tested
+      with stubbed HTTP — `test_slack_connect_happy_path` green; the live run needs
+      a real Slack workspace — unverified)*
 - [ ] Inbound `@agent` mention in a thread starts a working session (already ships —
-      keep a regression check in the connect verifier).
-- [ ] File upload works against the non-deprecated API.
+      keep a regression check in the connect verifier). *(the inbound path is
+      inherited and unchanged — `gateway/platforms/slack.py`; the regression check
+      inside the connect verifier was NOT added)*
+- [ ] File upload works against the non-deprecated API. *(NOT DONE —
+      `tools/slack_tool.py` still calls `files.upload`)*
 
 ### P2.4 Unified notification routing (close the dead-end)
 The one genuinely missing subsystem. Build `forecasting/notify.py`:
@@ -536,12 +663,28 @@ The one genuinely missing subsystem. Build `forecasting/notify.py`:
 - **Wire the callers:** nightly self-check digest, alert sweeps (respecting the
   free-tier drain), resolution/scoring events, quorum verdicts, `cycle --notify`.
 
+**Status 2026-07-28:** SHIPPED — `forecasting/notify.py` router (event classes,
+multi-surface fan-out, failure isolation, `event_id` dedupe, dead-destination
+alerts), wired into autopilot (`forecasting/cli/refresh_cycle.py`) and the nightly
+cron digest (`forecasting/cron_runner.py`); router/CLI suites green 2026-07-28
+(`tests/forecasting/test_notify_router.py`, `test_notify_cli.py`).
+
 **Acceptance criteria**
-- [ ] `forecast autopilot enable --notify telegram:<chat>` actually delivers (the
-      current silent no-op becomes a test).
-- [ ] One nightly digest per destination, not per question; dedupe proven by test.
-- [ ] A dead destination (revoked token) produces a ledger alert within one cycle,
+- [x] `forecast autopilot enable --notify telegram:<chat>` actually delivers (the
+      current silent no-op becomes a test). *(the dead-end is closed: autopilot
+      enable registers a real router binding —
+      `forecasting/cli/refresh_cycle.py` → `notify.register_destination`; binding +
+      delivery covered by `test_register_destination_persists_readable_binding` and
+      the router fan-out/delivery tests, green. Delivery to a live Telegram chat is
+      exercised through the stubbed wire, not a live bot)*
+- [x] One nightly digest per destination, not per question; dedupe proven by test.
+      *(`forecasting/cron_runner.py` delivers the sweep digest once per destination
+      with a per-sweep `event_id`; `test_dedupe_by_event_id` green)*
+- [x] A dead destination (revoked token) produces a ledger alert within one cycle,
       never a crash of the routine.
+      *(`test_deliver_digest_alerts_on_dead_destination`,
+      `test_failure_is_isolated_and_recorded`,
+      `test_sender_exception_does_not_crash_router` — green)*
 
 ### P2.5 Signal + WhatsApp: the honest call — DEFER the guided flows
 - **Signal:** the adapter is real (`gateway/platforms/signal.py`, signal-cli
@@ -555,10 +698,19 @@ The one genuinely missing subsystem. Build `forecasting/notify.py`:
 - **WhatsApp:** Baileys bridge works but is an unofficial-API account-ban risk with
   a second Node process; same verdict, same doc treatment.
 
+**Status 2026-07-28:** honored as written — `forecast connect signal|whatsapp` print
+the one-line deferred/expert notice (tests green); the once-for-real wiring of each
+on a test box has not happened.
+
 **Acceptance criteria**
 - [ ] `forecast connect signal|whatsapp` prints the expert path + status instead of
       pretending; docs verified once by actually wiring each on a test box.
-- [ ] Decision recorded here; revisit trigger = operator asks twice.
+      *(the honest print is shipped and tested —
+      `test_connect_signal_prints_deferred`,
+      `test_deferred_notice_is_one_honest_line`; verifying the expert docs by
+      actually wiring each needs a test box + live accounts — unverified)*
+- [x] Decision recorded here; revisit trigger = operator asks twice. *(recorded in
+      this section and enforced in the connect listing's deferred status)*
 
 ---
 
@@ -577,11 +729,23 @@ The one genuinely missing subsystem. Build `forecasting/notify.py`:
   webbridge (`forecasting/webbridge.py`, no auth) stays hard-pinned loopback and
   dev-only; dashboard `--insecure` never appears in any shipped unit/compose.
 
+**Status 2026-07-28:** recipe + gates shipped — `deploy/caddy/` (Caddyfile + `tls`
+compose profile, SSE-safe) and the shipped-artifact gates in
+`tests/deploy/test_deploy_hardening.py` (green). The nmap and live-TLS checks need a
+real box + domain.
+
 **Acceptance criteria**
-- [ ] `nmap` a default P1 box from outside: port 22 only.
+- [ ] `nmap` a default P1 box from outside: port 22 only. *(requires a real box —
+      unverified)*
 - [ ] With the Caddy profile: dashboard reachable over HTTPS with auth; SSE events
-      stream (no proxy buffering); certificate auto-renews.
-- [ ] Grep-gate in CI: no `--insecure`, no `0.0.0.0` binds in shipped units/compose.
+      stream (no proxy buffering); certificate auto-renews. *(the recipe exists and
+      is statically tested — `test_caddy_recipe_present_and_sse_safe`; a live
+      domain, cert issuance, and renewal need a real box — unverified)*
+- [x] Grep-gate in CI: no `--insecure`, no `0.0.0.0` binds in shipped units/compose.
+      *(shipped as pytest rather than a literal grep step:
+      `test_no_insecure_flag_in_shipped_artifacts` +
+      `test_no_public_bind_in_shipped_artifacts` sweep the shipped units/compose
+      and run in the CI test suite — green)*
 
 ### P3.2 Spend and rate guards for an unattended box
 - Flip the unattended default: bootstrap sets `FORECAST_POLICY_CRON_LLM_SPEND`
@@ -593,10 +757,24 @@ The one genuinely missing subsystem. Build `forecasting/notify.py`:
 - `forecast config doctor` warns when policy is all-`auto` on a box whose install
   method is `docker`/server (the `.install_method` stamp exists).
 
+**Status 2026-07-28:** SHIPPED — `forecasting/budget.py` daily/monthly token+USD
+ceilings enforced at the `authorize(LLM_SPEND)` chokepoint (`BudgetExceeded` is
+`PolicyRefused`), breach → high-severity ledger alert + notify; the bootstrap seeds
+the guards (`test_installer_seeds_spend_guards`); `tests/forecasting/test_budget.py`
+green 2026-07-28.
+
 **Acceptance criteria**
-- [ ] Simulated runaway (looping paid reforecast) halts at the cap with an alert;
+- [x] Simulated runaway (looping paid reforecast) halts at the cap with an alert;
       free-tier drain continues unaffected.
-- [ ] Doctor shows current month spend estimate + cap headroom.
+      *(`test_authorize_llm_spend_refused_over_budget`,
+      `test_enforce_over_budget_fires_alert_and_notify`,
+      `test_budget_exceeded_is_policy_refused` — green. The zero-spend drain never
+      enters the `authorize(LLM_SPEND)` chokepoint, so it is structurally outside
+      the gate rather than separately tested)*
+- [x] Doctor shows current month spend estimate + cap headroom. *(doctor `budgets`
+      section — `forecasting/appconfig.py::_budgets_report` →
+      `budget.status_report()` usage vs ceilings + headroom;
+      `test_status_report_shape` green)*
 
 ### P3.3 Observability (enough, not a platform)
 - Logs: journald (native) / `docker logs` (compose) already structured; add log
@@ -608,9 +786,19 @@ The one genuinely missing subsystem. Build `forecasting/notify.py`:
   possible "the box went quiet" alarm for a lazy operator.
 - Keep `/health` on the B4 server and api_server as-is.
 
+**Status 2026-07-28:** shipped DIFFERENTLY than written — observability landed as
+the token-gated HTTP `GET /status` + enriched `/health`
+(`tui_gateway/http_server.py`: version, uptime, ledger_ok, cron last/next-run,
+jobs_active, spend-today; pinned by `tests/tui_gateway/test_http_server.py`, green
+2026-07-28) plus a structured per-request log line. The `gateway status --json` CLI
+verb and the dead-man ping were not built.
+
 **Acceptance criteria**
-- [ ] `gateway status --json | jq` returns all fields above.
-- [ ] Stop the gateway for 26h on a test box → dead-man ping alarm fires.
+- [ ] `gateway status --json | jq` returns all fields above. *(superseded in
+      substance by the token-gated `GET /status` carrying these fields; the literal
+      CLI verb was not built — left unticked for that reason)*
+- [ ] Stop the gateway for 26h on a test box → dead-man ping alarm fires. *(the
+      dead-man ping was not built; would also require a 26h live run — unverified)*
 
 ### P3.4 Auth on the HTTP gateway + the multi-user statement
 - B4 HTTP+SSE already refuses non-loopback without a bearer token (probed/verified);
@@ -625,10 +813,18 @@ The one genuinely missing subsystem. Build `forecasting/notify.py`:
   `os.environ`-reader migration is tracked in the capability-hardening arc, not
   promised here.
 
+**Status 2026-07-28:** the tenancy statement shipped
+(`docs/deploy/hetzner.md` §"One box = one operator" + `SECURITY.md` §2). The
+two-instance smoke test does not exist.
+
 **Acceptance criteria**
-- [ ] Docs state the tenancy model in one paragraph; no surface implies otherwise.
+- [x] Docs state the tenancy model in one paragraph; no surface implies otherwise.
+      *(`docs/deploy/hetzner.md` closes with exactly this paragraph, consistent
+      with `SECURITY.md` §2; no shipped surface promises multi-tenancy —
+      `tenant_runtime` remains an internal seam)*
 - [ ] Two-instance-one-box pattern documented and smoke-tested (distinct homes,
-      ports, service names; both nightly loops fire).
+      ports, service names; both nightly loops fire). *(only a passing mention in
+      hetzner.md; neither fully documented nor smoke-tested — unverified)*
 
 ---
 
@@ -640,11 +836,23 @@ verbs; deny-by-default platform allowlists + pairing; Slack inbound/outbound wit
 sfp/1 + provision/whoami/share; Telegram/Signal/WhatsApp/Discord generic adapters;
 typed config + config doctor; WAL ledger + online backup + retention; ledger write
 gates; B4 HTTP+SSE with token enforcement; device-code LLM auth suitable for SSH.
+**Shipped since and test-evidenced (2026-07-28):** the Hetzner bootstrap + SSH→TUI
+landing + fresh-box container proof (P1.2/P1.3 scripts); the upgrade/migration
+guard; the notify router + `forecast connect` telegram/slack; box-level spend
+ceilings + doctor budgets/connections sections; gateway HTTP bearer auth on every
+route; the ghcr multi-arch image, live and anonymously pullable.
 
-**Marketing vs reality:** the Docker image the docs pull is unpublished (404);
-`schedule install-cron` never touches the OS crontab; `autopilot --notify` writes a
-destination nothing reads; `tenant_runtime` is plumbing, not tenancy; the forecast
-webbridge is dev-only loopback; multiplayer M3–M6 are plans.
+**Marketing vs reality (corrected 2026-07-28):** the container image IS now
+published — `ghcr.io/teddyjfpender/superforecasting-agent` (`v0.18.0`, `v0.19.0`,
+`latest`; multi-arch amd64+arm64; anonymously pullable — token + tags-list +
+manifest verified 2026-07-28), so the original "unpublished (404)" claim is stale.
+What is STILL marketing: `website/docs/user-guide/docker.md` pulls the bare
+Docker-Hub image name in every example, and that registry entry does not exist
+(404) — the doc must move to the ghcr name. Also corrected: `autopilot --notify` is
+no longer a dead-end — it registers a real router binding (P2.4, shipped + tested).
+Still true: `schedule install-cron` never touches the OS crontab; `tenant_runtime`
+is plumbing, not tenancy; the forecast webbridge is dev-only loopback; multiplayer
+M3–M6 are plans.
 
 **Maintenance surface each choice adds:** tmux+ForceCommand ≈ zero. Telegram
 long-poll ≈ low (one token, official API). Slack ≈ medium (manifest scope drift,
@@ -652,13 +860,16 @@ files API migration). Caddy ≈ low (only if opted in). GHCR multi-arch image �
 medium (base bumps, Playwright weight). Signal ≈ HIGH (Java daemon + registration +
 churn) — the reason it's deferred. WhatsApp ≈ high + ban risk — deferred.
 
-**Riskiest unknowns:** (1) the fresh-box chain has never run end-to-end — installer,
-arm64 wheels, node auto-provision on headless Debian, device-code auth over SSH,
-systemd + overnight cron are individually proven but unproven as a sequence; P1.2's
-AC is the test. (2) The Docker image build/publish is unverified (probe skipped for
-cost) — P1.1's first CI run answers it. (3) Unattended spend: the all-`auto` policy
-matrix on a box nobody watches is the failure that costs money, not uptime — P3.2
-exists because of it, and the bootstrap applies its defaults from day one.
+**Riskiest unknowns (re-stated 2026-07-28):** (1) the chain is container-proven in
+script form (`scripts/test-fresh-box.sh`) but has still never run on a REAL Hetzner
+box — cloud-init, boot-time systemd units, volumes, UFW, and overnight cron on real
+hardware remain the open risk; P1.2's AC is the test. (2) The Docker image
+build/publish question is RESOLVED — the ghcr multi-arch image is live and
+anonymously pullable (verified 2026-07-28). (3) Unattended spend: P3.2 shipped —
+box-level ceilings are enforced at `authorize(LLM_SPEND)` and the bootstrap seeds
+the guards (`test_installer_seeds_spend_guards`); the residual risk is an operator
+raising or unsetting them, plus the still-default-`auto` policy matrix beneath the
+ceilings.
 
 ## Suggested sequence
 - **Week 1:** P1.1 (CI image) + P1.2 (bootstrap) + P1.3 (SSH landing) — a usable box.

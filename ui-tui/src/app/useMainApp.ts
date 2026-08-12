@@ -4,10 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { STARTUP_RESUME_ID } from '../config/env.js'
 import { MAX_HISTORY, WHEEL_SCROLL_STEP } from '../config/limits.js'
+import { buildGatewayLostSections, GATEWAY_LOST_TITLE, reconnectingStatus } from '../content/gatewayLost.js'
 import { SECTION_NAMES, sectionMode } from '../domain/details.js'
 import { attachedImageNotice, imageTokenMeta } from '../domain/messages.js'
 import { fmtCwdBranch, shortCwd } from '../domain/paths.js'
-import { type GatewayClient } from '../gatewayClient.js'
+import { type GatewayClient, type GatewayExitInfo, type GatewayReconnectInfo } from '../gatewayClient.js'
 import type {
   ClarifyRespondResponse,
   ClipboardPasteResponse,
@@ -33,6 +34,7 @@ import type { Msg, PanelSection, SlashCatalog } from '../types.js'
 import { createGatewayEventHandler } from './createGatewayEventHandler.js'
 import { createSlashHandler } from './createSlashHandler.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
+import { markLinkReconnecting as captureLinkReconnect, markLinkLost } from './gatewayLinkStore.js'
 import { getInputSelection } from './inputSelectionStore.js'
 import { type GatewayRpc, type TranscriptRow } from './interfaces.js'
 import { clearMarketJob, setMarketJob } from './marketJobsStore.js'
@@ -52,6 +54,11 @@ const FORECAST_PULSE_RE = /\b(forecast|probability|base[- ]rate|calibration|cali
 const BRACKET_PASTE_ON = '\x1b[?2004h'
 const BRACKET_PASTE_OFF = '\x1b[?2004l'
 const MAX_HEIGHT_CACHE_BUCKETS = 12
+// Hard ceiling on how long a quit will wait for the gateway child to be reaped.
+// gw.kill() escalates SIGTERM → SIGKILL well inside this, so hitting it means
+// something is badly wedged — and the operator still gets their shell back,
+// because Ink has already unmounted by then.
+const QUIT_REAP_FAILSAFE_MS = 2500
 
 const capHistory = (items: Msg[]): Msg[] => {
   if (items.length <= MAX_HISTORY) {
@@ -153,9 +160,6 @@ export function useMainApp(gw: GatewayClient) {
   const slashRef = useRef<(cmd: string) => boolean>(() => false)
   const colsRef = useRef(cols)
   const scrollRef = useRef<null | ScrollBoxHandle>(null)
-  // The Home conversations rail's scroll handle. Lives here (not just in the
-  // rail) so the wheel router can scroll it when the pointer is over the rail.
-  const railScrollRef = useRef<null | ScrollBoxHandle>(null)
   const onEventRef = useRef<(ev: GatewayEvent) => void>(() => {})
   const clipboardPasteRef = useRef<(quiet?: boolean) => Promise<void> | void>(() => {})
   const submitRef = useRef<(value: string) => void>(() => {})
@@ -430,23 +434,37 @@ export function useMainApp(gw: GatewayClient) {
     return () => clearInterval(id)
   }, [rpc])
 
-  const die = useCallback(() => {
-    gw.kill()
-    exit()
-    // Ink's exit() calls unmount() which resets terminal modes but does NOT
-    // call process.exit().  Without an explicit exit the Node process stays
-    // alive (stdin listener keeps the event loop open), so the process.on('exit')
-    // handler in entry.tsx — which sends the final resetTerminalModes() — never
-    // fires.  This leaves kitty keyboard protocol, mouse modes, etc. enabled
-    // in the parent shell.  See issue #19194.
-    process.exit(0)
-  }, [exit, gw])
+  // Quit. Order matters and is deliberate:
+  //
+  //   1. exit() FIRST — Ink's unmount resets terminal modes, so `q` feels
+  //      instant and the operator never waits on the gateway to get their shell
+  //      back. Ink's exit() does NOT call process.exit(): without the explicit
+  //      call below the Node process stays alive (the stdin listener keeps the
+  //      event loop open) and entry.tsx's final resetTerminalModes() never
+  //      fires, leaving kitty keyboard protocol / mouse modes on. See #19194.
+  //   2. AWAIT gw.kill() — it now reaps the child (EOF stdin → SIGTERM →
+  //      SIGKILL). Exiting without awaiting is exactly what stranded a
+  //      `tui_gateway.entry` on PPID 1 after every quit, each holding the
+  //      WAL-mode ledger open.
+  //   3. A failsafe so a wedged child can never keep the TUI from exiting.
+  const quit = useCallback(
+    (code: number) => {
+      exit()
 
-  const dieWithCode = useCallback((code: number) => {
-    gw.kill()
-    exit()
-    process.exit(code)
-  }, [exit, gw])
+      const failsafe = setTimeout(() => process.exit(code), QUIT_REAP_FAILSAFE_MS)
+
+      failsafe.unref?.()
+      void gw.kill().then(
+        () => process.exit(code),
+        () => process.exit(code)
+      )
+    },
+    [exit, gw]
+  )
+
+  const die = useCallback(() => quit(0), [quit])
+
+  const dieWithCode = useCallback((code: number) => quit(code), [quit])
 
   const session = useSessionLifecycle({
     colsRef,
@@ -614,7 +632,7 @@ export function useMainApp(gw: GatewayClient) {
     },
     composer: { actions: composerActions, refs: composerRefs, state: composerState },
     gateway,
-    terminal: { hasSelection, railScrollRef, scrollRef, scrollWithSelection, selection, stdout },
+    terminal: { hasSelection, scrollRef, scrollWithSelection, selection, stdout },
     voice: {
       enabled: voiceEnabled,
       recordKey: voiceRecordKey,
@@ -674,11 +692,56 @@ export function useMainApp(gw: GatewayClient) {
   useEffect(() => {
     const handler = (ev: GatewayEvent) => onEventRef.current(ev)
 
-    const exitHandler = () => {
+    // ── gateway supervision ──────────────────────────────────────────────────
+    // The transport died. GatewayClient decides whether that is recoverable; the
+    // two handlers below are the two answers. Neither ever leaves the desk
+    // looking alive while it is not.
+
+    // Recoverable: a respawn is already scheduled. Park the turn, surface the
+    // countdown in the ready-state slot, and CAPTURE the live session id so the
+    // reconnect restores this desk instead of silently opening a blank one.
+    const reconnectHandler = (info: GatewayReconnectInfo) => {
       turnController.reset()
-      patchUiState({ busy: false, sid: null, status: 'gateway exited' })
-      turnController.pushActivity('gateway exited · /logs to inspect', 'error')
-      sys('error: gateway exited')
+      captureLinkReconnect({
+        attempt: info.attempt,
+        detail: info.reason,
+        max: info.max,
+        nextRetryMs: info.delayMs,
+        sid: getUiState().sid
+      })
+      patchUiState({
+        busy: false,
+        sid: null,
+        status: reconnectingStatus(info.attempt, info.max, info.delayMs)
+      })
+      turnController.pushActivity(
+        `gateway lost (${info.reason}) · reconnecting ${info.attempt}/${info.max}`,
+        'warn'
+      )
+    }
+
+    // Terminal: the retry budget is spent (or this was a deliberate stop). Name
+    // the failure, show what the gateway actually printed, and offer the retry.
+    const exitHandler = (_code?: null | number, info?: GatewayExitInfo) => {
+      turnController.reset()
+      markLinkLost({ attempts: info?.attempts ?? 0, detail: info?.reason ?? 'gateway exited' })
+      patchUiState({ busy: false, sid: null, status: 'gateway lost' })
+      turnController.pushActivity('gateway lost · /reconnect to retry', 'error')
+
+      if (info?.unexpected === false) {
+        // A deliberate stop (quit / OOM guard) — no panel, the process is going.
+        return
+      }
+
+      panel(
+        GATEWAY_LOST_TITLE,
+        buildGatewayLostSections({
+          attempts: info?.attempts ?? 0,
+          reason: info?.reason ?? 'gateway exited',
+          stderrTail: info?.stderrTail ?? gw.getLogTail(20)
+        })
+      )
+      sys('error: gateway lost — /reconnect to retry')
     }
 
     // Market-model build/refine jobs run as detached gateway daemon threads.
@@ -729,6 +792,7 @@ export function useMainApp(gw: GatewayClient) {
 
     gw.on('event', handler)
     gw.on('exit', exitHandler)
+    gw.on('reconnecting', reconnectHandler)
     gw.on(WireEvent.MARKETS_MODEL_PROGRESS, onMarketProgress)
     gw.on(WireEvent.MARKETS_MODEL_COMPLETE, onMarketComplete)
     gw.on(WireEvent.MARKETS_MODEL_ERROR, onMarketError)
@@ -738,11 +802,16 @@ export function useMainApp(gw: GatewayClient) {
     return () => {
       gw.off('event', handler)
       gw.off('exit', exitHandler)
+      gw.off('reconnecting', reconnectHandler)
       gw.off?.(WireEvent.MARKETS_MODEL_PROGRESS, onMarketProgress)
       gw.off?.(WireEvent.MARKETS_MODEL_COMPLETE, onMarketComplete)
       gw.off?.(WireEvent.MARKETS_MODEL_ERROR, onMarketError)
     }
-  }, [gw, sys])
+    // `panel` (the gateway-lost report) joins `sys` here: both are useCallbacks
+    // over the dep-free `appendMessage`, so their identity never changes and
+    // listing them cannot re-run this effect — which matters, because a re-run
+    // re-attaches every gateway listener and calls gw.drain() again.
+  }, [gw, panel, sys])
 
   useLongRunToolCharms()
 
@@ -1022,7 +1091,7 @@ export function useMainApp(gw: GatewayClient) {
   )
 
   const appTranscript = useMemo(
-    () => ({ historyItems, railScrollRef, scrollRef, virtualHistory, virtualRows }),
+    () => ({ historyItems, scrollRef, virtualHistory, virtualRows }),
     [historyItems, virtualHistory, virtualRows]
   )
 

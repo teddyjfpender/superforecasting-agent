@@ -1880,6 +1880,7 @@ def run_estimator_tasks(
     limit: int = 5,
     lease_seconds: int = 900,
     question_id: str | None = None,
+    allow_auto_commit: bool = False,
 ) -> list[dict[str, Any]]:
     """Consume immutable source-change events with an injected estimator.
 
@@ -1914,7 +1915,12 @@ def run_estimator_tasks(
                 # a model call.
                 results.append(
                     apply_estimation_result(
-                        ledger, task_id=task["id"], owner=owner, estimate={}, now=stamp
+                        ledger,
+                        task_id=task["id"],
+                        owner=owner,
+                        estimate={},
+                        now=stamp,
+                        allow_auto_commit=allow_auto_commit,
                     )
                 )
                 continue
@@ -1987,6 +1993,7 @@ def run_estimator_tasks(
                 owner=owner,
                 estimate=estimate,
                 now=stamp,
+                allow_auto_commit=allow_auto_commit,
             )
             results.append(result)
         except Exception as exc:  # one event must not poison the worker batch
@@ -2115,6 +2122,7 @@ def apply_estimation_result(
     owner: str,
     estimate: dict[str, Any],
     now: str | None = None,
+    allow_auto_commit: bool = False,
 ) -> dict[str, Any]:
     stamp = parse_timestamp(now, field_name="now") or utc_now_iso()
     with ledger._connect() as conn:
@@ -2431,7 +2439,7 @@ def apply_estimation_result(
     snapshot = None
     disposition = "proposed"
     event_state = "proposed"
-    if policy["mode"] == "auto_commit" and not violations:
+    if allow_auto_commit and policy["mode"] == "auto_commit" and not violations:
         snapshot = ledger.approve_forecast_update_proposal(
             proposal["id"], reviewed_by=f"estimator:{owner}", status="auto_committed"
         )

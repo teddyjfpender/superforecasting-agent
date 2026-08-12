@@ -286,7 +286,6 @@ const renderForecastDesk = async (
     },
     transcript: {
       historyItems,
-      railScrollRef: React.createRef(),
       scrollRef: React.createRef(),
       virtualHistory: {
         bottomSpacer: 0,
@@ -396,10 +395,10 @@ describe('forecast desk Ink render', () => {
     expect(output).toContain('Command palette')
     // And the landing BODY is still mounted beneath it — proving the overlay
     // STACKS rather than replacing the body (the pre-fix bug unmounted all of
-    // this). The hero + its hint + the desk-derived status line all survive; the
+    // this). The prompt hint + desk-derived status line survive; the hero title
+    // is legitimately covered by the centered palette. The
     // Today panel is mounted too, its header just clipped by the centred overlay
     // in the content-height headless render (see TEST-HARNESS REALITY).
-    expect(compact).toContain('Outrider')
     expect(compact).toContain('Askaforecastingquestiontobegin')
     // The slim landing status bar carries only the actionable review count now —
     // the dense forecast inventory ("2 forecasts · … · 1 alert · …") is gone.

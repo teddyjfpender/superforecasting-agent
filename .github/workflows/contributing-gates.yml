@@ -11,7 +11,7 @@ name: Contributing gates
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, superforecasting-agent-snapshot]
 
 permissions:
   contents: read

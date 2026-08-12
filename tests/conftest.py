@@ -801,9 +801,6 @@ def mock_config():
 # Prevents hanging tests (subprocess spawns, blocking I/O) from stalling the
 # entire test suite.
 
-def _timeout_handler(signum, frame):
-    raise TimeoutError("Test exceeded 30 second timeout")
-
 @pytest.fixture(autouse=True)
 def _ensure_current_event_loop(request):
     """Provide a default event loop for sync tests that call get_event_loop().
@@ -862,7 +859,10 @@ def _enforce_test_timeout(request):
                 timeout_seconds = max(1, int(marker_value))
             except (TypeError, ValueError):
                 timeout_seconds = 30
-    old = signal.signal(signal.SIGALRM, _timeout_handler)
+    def timeout_handler(signum, frame):
+        raise TimeoutError(f"Test exceeded {timeout_seconds} second timeout")
+
+    old = signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout_seconds)
     yield
     signal.alarm(0)

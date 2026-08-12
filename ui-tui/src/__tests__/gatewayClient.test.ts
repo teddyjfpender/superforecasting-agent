@@ -250,12 +250,18 @@ describe('GatewayClient websocket attach mode', () => {
     gw.kill()
   })
 
-  it('emits exit when attached websocket closes', () => {
+  // A closed socket is a CRASH, not a quit — so it now enters the bounded
+  // reconnect ladder instead of going straight to a terminal `exit`. The desk
+  // used to be told "gateway exited" and left there with no way back; see
+  // gatewayRecovery.test.ts for the ladder itself.
+  it('treats an attached-socket close as recoverable, then exits once the ladder is spent', () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
     const exits: Array<null | number> = []
+    const reconnects: { attempt: number }[] = []
 
     gw.on('exit', code => exits.push(code))
+    gw.on('reconnecting', info => reconnects.push(info))
     gw.start()
 
     const gatewaySocket = FakeWebSocket.instances[0]!
@@ -264,7 +270,31 @@ describe('GatewayClient websocket attach mode', () => {
     gw.drain()
     gatewaySocket.close(1011)
 
-    expect(exits).toEqual([1011])
+    // Recoverable: a respawn is scheduled, nothing terminal has been announced.
+    expect(reconnects).toHaveLength(1)
+    expect(exits).toEqual([])
+    expect(gw.isRestartPending()).toBe(true)
+
+    // With the budget already spent, the same close is terminal and carries the
+    // close code through unchanged.
+    const spent = new GatewayClient()
+
+    const spentExits: Array<null | number> = []
+
+    ;(spent as unknown as { restartAttempt: number }).restartAttempt = spent.maxRestarts
+    spent.on('exit', code => spentExits.push(code))
+    spent.start()
+
+    const spentSocket = FakeWebSocket.instances[1]!
+
+    spentSocket.open()
+    spent.drain()
+    spentSocket.close(1011)
+
+    expect(spentExits).toEqual([1011])
+
+    gw.kill()
+    spent.kill()
   })
 
   it('rejects pending RPCs with websocket wording when the attached socket closes', async () => {

@@ -35,6 +35,7 @@ def _run_terminal(
     invoke_hook=_UNSET,
     approval=None,
     command="echo hello",
+    forecast_commit_policy=None,
 ):
     mock_env = MagicMock()
     mock_env.execute.return_value = {"output": output, "returncode": returncode}
@@ -54,7 +55,12 @@ def _run_terminal(
     if invoke_hook is not _UNSET:
         monkeypatch.setattr("hermes_cli.plugins.invoke_hook", invoke_hook)
 
-    result = json.loads(terminal_tool_module.terminal_tool(command=command))
+    result = json.loads(
+        terminal_tool_module.terminal_tool(
+            command=command,
+            forecast_commit_policy=forecast_commit_policy,
+        )
+    )
     return result, mock_env
 
 
@@ -64,6 +70,20 @@ def test_terminal_output_unchanged_when_transform_hook_not_registered(monkeypatc
     assert result["output"] == "plain output"
     assert result["exit_code"] == 0
     assert result["error"] is None
+
+
+def test_terminal_scopes_proposal_only_policy_to_subprocess(monkeypatch, tmp_path):
+    _result, mock_env = _run_terminal(
+        monkeypatch,
+        tmp_path,
+        output="proposal_only",
+        command="printf %s \"$FORECAST_COMMIT_POLICY\"",
+        forecast_commit_policy="proposal_only",
+    )
+
+    assert mock_env.execute.call_args.args[0].startswith(
+        "FORECAST_COMMIT_POLICY=proposal_only "
+    )
 
 
 def test_terminal_output_unchanged_for_none_hook_result(monkeypatch, tmp_path):

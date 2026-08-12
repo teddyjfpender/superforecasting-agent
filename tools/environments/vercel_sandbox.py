@@ -262,10 +262,16 @@ class VercelSandboxEnvironment(BaseEnvironment):
         self._sync_manager: FileSyncManager | None = None
         self._create_params = self._build_create_params(cpu=cpu, memory=memory, disk=disk)
 
-        self._sandbox = self._create_sandbox()
-        self._configure_attached_sandbox(requested_cwd=requested_cwd)
-        self._sync_manager.sync(force=True)
-        self.init_session()
+        try:
+            self._sandbox = self._create_sandbox()
+            self._configure_attached_sandbox(requested_cwd=requested_cwd)
+            self._sync_manager.sync(force=True)
+            self.init_session()
+        except Exception:
+            # A half-initialized sandbox is not a valid persistence source.
+            self._persistent = False
+            self.cleanup()
+            raise
 
     def _build_create_params(self, *, cpu: float, memory: int, disk: int) -> _SandboxCreateParams:
         if disk not in {0, _DEFAULT_CONTAINER_DISK_MB}:

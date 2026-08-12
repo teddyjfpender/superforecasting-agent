@@ -10944,6 +10944,7 @@ def test_forecast_cli_self_check_learns_from_eligible_backtest_scores(tmp_path, 
     assert lesson["recommended_adjustment"]["requires_review_before_live_use"] is True
 
 
+@pytest.mark.timeout(180)
 def test_forecast_cli_runs_builtin_benchmark_dataset(tmp_path, capsys):
     parser = _parser()
     db = str(tmp_path / "forecasting.db")

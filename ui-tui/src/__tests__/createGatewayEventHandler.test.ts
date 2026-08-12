@@ -1335,12 +1335,12 @@ describe('createGatewayEventHandler', () => {
       onEvent({ payload: { due_count: 3, phase: 'started' }, type: 'review.sweep' } as any)
       expect(getUiState().reviewSweep).toEqual({ dueCount: 3 })
 
-      onEvent({ payload: { alerts: 1, duration_ms: 1200, phase: 'done', refreshed: 3 }, type: 'review.sweep' } as any)
+      onEvent({ payload: { alerts: 1, duration_ms: 1200, phase: 'done', proposals: 3 }, type: 'review.sweep' } as any)
 
       // Marker cleared.
       expect(getUiState().reviewSweep).toBeNull()
-      // Toast built from the REAL payload fields (refreshed · alerts · wall time).
-      expect(getUiState().status).toContain('review sweep: 3 refreshed')
+      // Toast built from the REAL payload fields (proposals · alerts · wall time).
+      expect(getUiState().status).toContain('review sweep: 3 proposed')
       expect(getUiState().status).toContain('1 alert')
       expect(getUiState().status).toContain('1.2s')
       // …and it re-pulls the dashboard so the Home "Today" panel reflects the refresh.
@@ -1352,9 +1352,9 @@ describe('createGatewayEventHandler', () => {
       ctx.gateway.rpc = vi.fn(async () => null)
       const onEvent = createGatewayEventHandler(ctx)
 
-      onEvent({ payload: { alerts: 0, duration_ms: 800, phase: 'done', refreshed: 2 }, type: 'review.sweep' } as any)
+      onEvent({ payload: { alerts: 0, duration_ms: 800, phase: 'done', proposals: 2 }, type: 'review.sweep' } as any)
 
-      expect(getUiState().status).toContain('review sweep: 2 refreshed · 0.8s')
+      expect(getUiState().status).toContain('review sweep: 2 proposed · 0.8s')
       expect(getUiState().status).not.toContain('alert')
     })
   })
@@ -1459,6 +1459,49 @@ describe('createGatewayEventHandler', () => {
         vi.useRealTimers()
         spy.mockRestore()
       }
+    })
+  })
+  // ── the build/version signal on the wire ────────────────────────────────────
+
+  describe('build identity', () => {
+    const READY_BUILD = { release_date: '2026.7.24', stale: false, version: '0.19.0' }
+
+    const STALE_BUILD = {
+      behind: -1,
+      latest_version: '0.19.0',
+      remedy: 'curl -fsSL https://example.invalid/install.sh | bash',
+      stale: true,
+      version: '0.17.0'
+    }
+
+    it('stores the build from gateway.ready — the FIRST frame, before any RPC', () => {
+      const onEvent = createGatewayEventHandler(buildCtx([]))
+
+      expect(getUiState().build).toBeNull()
+      onEvent({ payload: { build: READY_BUILD, protocol_version: 1 }, type: 'gateway.ready' } as any)
+      expect(getUiState().build).toEqual(READY_BUILD)
+    })
+
+    it('lets session.info UPGRADE a cold-cache verdict into a stale one', () => {
+      const onEvent = createGatewayEventHandler(buildCtx([]))
+
+      onEvent({ payload: { build: { version: '0.17.0' } }, type: 'gateway.ready' } as any)
+      expect(getUiState().build?.stale).toBeUndefined()
+
+      onEvent({
+        payload: { build: STALE_BUILD, model: 'gpt-5.5', skills: {}, tools: {} },
+        type: 'session.info'
+      } as any)
+      expect(getUiState().build?.stale).toBe(true)
+      expect(getUiState().build?.latest_version).toBe('0.19.0')
+    })
+
+    it('never blanks a known build when an older gateway omits it', () => {
+      const onEvent = createGatewayEventHandler(buildCtx([]))
+
+      onEvent({ payload: { build: READY_BUILD }, type: 'gateway.ready' } as any)
+      onEvent({ payload: { model: 'gpt-5.5', skills: {}, tools: {} }, type: 'session.info' } as any)
+      expect(getUiState().build).toEqual(READY_BUILD)
     })
   })
 })

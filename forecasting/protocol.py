@@ -259,9 +259,9 @@ def build_protocol_messages(
 
     ``commit_policy`` selects how the update stage should close out. ``None`` (the
     default, used by interactive ``forecast agent``) keeps the recommend-and-preview
-    posture. ``"commit_material"`` (set by the autonomous re-forecast paths —
-    ``forecast refresh --agent`` and the ``cycle run --agent`` sweep) instructs the
-    agent to COMMIT a material move rather than stop at a preview.
+    posture. ``"commit_material"`` lets an explicit operator-run refresh/cycle commit
+    a material move. ``"proposal_only"`` is the unattended posture: the tool boundary
+    validates the estimate but can only create a pending proposal.
 
     ``supplemental`` appends a stage-scoped note AFTER the stage task (the chain
     loop uses it to inject the research-adequacy gap list when re-running the
@@ -684,6 +684,13 @@ _COMMIT_MATERIAL_POLICY = (
     "delta, and which branch (commit vs preview) you took and why."
 )
 
+_PROPOSAL_ONLY_POLICY = (
+    "\n\nPROPOSAL-ONLY POLICY (unattended run): evaluate the fresh evidence and call "
+    "`update_forecast` with your best estimate. The runtime forces that call through every "
+    "normal preview/gate and creates a pending proposal only for a MATERIAL move; it cannot "
+    "commit a snapshot. Report the proposal id, or state that the move was marginal/blocked."
+)
+
 
 def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
     tasks = {
@@ -878,6 +885,8 @@ def _stage_task(stage: str, *, commit_policy: str | None = None) -> str:
     task = tasks[stage]
     if stage == "update" and commit_policy == "commit_material":
         task = task + _COMMIT_MATERIAL_POLICY
+    elif stage == "update" and commit_policy == "proposal_only":
+        task = task + _PROPOSAL_ONLY_POLICY
     # Operator practice loop (R2): opt-in elicitation on the update stage only,
     # gated on config (default OFF -> byte-identical task text).
     if stage == "update" and _estimate_first_enabled():

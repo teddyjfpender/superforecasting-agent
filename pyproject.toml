@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "superforecasting-agent"
-version = "0.19.0"
+version = "0.20.0"
 description = "Superforecasting Agent — a command-line forecasting desk that compounds judgment over time"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 authors = [{ name = "Superforecasting Agent Contributors" }]
-license = { text = "MIT" }
+license = "MIT"
 dependencies = [
   # Core — every direct dep is exact-pinned to ==X.Y.Z (no ranges).
   # Rationale: ranges allow PyPI to ship a fresh version of a transitive
@@ -202,6 +202,11 @@ all = [
   "superforecasting-agent[youtube]",
 ]
 
+[dependency-groups]
+# NumPy is optional at runtime (it otherwise arrives through the heavy [voice]
+# extra), but the full suite must exercise both thesis Monte Carlo backends.
+full-test = ["numpy==2.4.3"]
+
 [project.scripts]
 forecast = "superforecasting_agent.cli:main"
 superforecast = "superforecasting_agent.cli:main"
@@ -255,7 +260,7 @@ filterwarnings = [
     # SelectableGroups dict interface under Python 3.11 when imported by acp.
     'ignore:SelectableGroups dict interface is deprecated. Use select.:DeprecationWarning',
     # Starlette/FastAPI currently warns about its httpx-backed TestClient on import.
-    'ignore:Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.:starlette.exceptions.StarletteDeprecationWarning',
+    'ignore:Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.:UserWarning',
 ]
 # pytest-timeout: per-test 60s hard cap with thread method.
 # Discovered May 2026: the suite reliably hangs at ~96% on full runs even
@@ -385,23 +390,26 @@ allow_indirect_imports = "true"
 ignore_imports = [
     "forecasting.api_keys -> hermes_cli.env_loader",
     "forecasting.appconfig -> hermes_cli.config",
+    "forecasting.cli.collaboration_admin -> hermes_cli.config",
     "forecasting.cli.core -> hermes_cli.config",
     "forecasting.cli.core -> hermes_cli.env_loader",
     "forecasting.cli.markets_pm -> hermes_cli.config",
     "forecasting.cli.quorum_panel -> hermes_cli.config",
     "forecasting.cli.refresh_cycle -> hermes_cli.config",
     "forecasting.cron_runner -> hermes_cli.config",
+    "forecasting.estimator_worker -> hermes_cli.config",
     "forecasting.hooks.engine -> hermes_cli.config",
     "forecasting.hooks.loader -> hermes_cli.config",
     "forecasting.hooks.store -> hermes_cli.config",
     "forecasting.jobs.__main__ -> hermes_cli.plugins",
     "forecasting.jobs.types.quorum -> hermes_cli.config",
+    "forecasting.learned_error_worker -> hermes_cli.config",
     "forecasting.ledger.model_scoring -> hermes_cli.config",
     "forecasting.ledger.snapshots -> hermes_cli.config",
     "forecasting.market_nightly_forecaster -> hermes_cli.config",
     "forecasting.market_nightly_forecaster -> hermes_cli.plugins",
     "forecasting.protocol -> hermes_cli.config",
-    "forecasting.quorum -> hermes_cli.models",
+    "forecasting.quorum.panels -> hermes_cli.models",
     "forecasting.quorum_autorun -> hermes_cli.config",
     "forecasting.research_audit -> hermes_cli.config",
     "forecasting.scheduler -> hermes_cli.config",

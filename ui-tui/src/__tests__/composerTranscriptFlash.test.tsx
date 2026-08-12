@@ -92,7 +92,7 @@ const DESK_LINES = [
 // legitimate composer-line diff + cursor moves (matches keystroke-flash.test).
 const PER_KEYSTROKE_CEILING = 500
 
-describe('Home two-pane: a background $uiState notify must not re-blit the transcript while typing', () => {
+describe('Home: a background $uiState notify must not re-blit the transcript while typing', () => {
   it('keeps the transcript window stable and the frame at composer scale', async () => {
     const ROWS = 56
     const COLS = 202
@@ -144,7 +144,6 @@ describe('Home two-pane: a background $uiState notify must not re-blit the trans
 
     const virtualRows = historyItems.map((msg, index) => ({ index, key: `m${index}`, msg }))
 
-    const railScrollRef = React.createRef<any>()
     const mainScrollRef = React.createRef<any>()
 
     // Harness parent: composer text in React state, re-rendered on every key
@@ -170,7 +169,7 @@ describe('Home two-pane: a background $uiState notify must not re-blit the trans
       windows.push({ start: virtualHistory.start, ts: virtualHistory.topSpacer })
 
       const transcript = React.useMemo(
-        () => ({ historyItems, railScrollRef, scrollRef, virtualHistory, virtualRows: rows }),
+        () => ({ historyItems, scrollRef, virtualHistory, virtualRows: rows }),
         [virtualHistory, rows]
       )
 

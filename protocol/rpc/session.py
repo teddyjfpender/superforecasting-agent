@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from protocol.events.gateway import BuildInfo
 from protocol.types import WireModel, wire_optional
 
 # ── composite app-types (single source of truth; re-exported by types.ts) ──────
@@ -72,6 +73,10 @@ class SessionInfo(WireModel):
     version: str | None = wire_optional()
     # A4 version handshake — echoed on the rich descriptor too (see _session_info).
     protocol_version: int | None = wire_optional()
+    # The running application build + staleness verdict (see BuildInfo). The rich
+    # descriptor carries it so a resume / model-switch frame refreshes the verdict
+    # the TUI first learned from gateway.ready.
+    build: BuildInfo | None = wire_optional()
 
 
 class SessionCreateInfo(SessionInfo):
@@ -118,6 +123,7 @@ class SessionResumeRequest(WireModel):
 
     session_id: str
     cols: int | None = None
+    replace_session_id: str | None = None
 
 
 class SessionResumeResponse(WireModel):

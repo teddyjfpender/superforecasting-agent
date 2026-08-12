@@ -46,7 +46,7 @@ residue, not the product.
 | Guide | For |
 | --- | --- |
 | [architecture.md](architecture.md) | How the system is built — the four arcs (protocol gateway, job runtime, market data plane, ledger) with diagrams. |
-| [operating.md](operating.md) | Driving the TUI desk — views, the help system, the `u`/`U`/`A` desk tiers, mass-select, theses, markets & prediction markets, alerts, the agents chip. |
+| [operating.md](operating.md) | Driving the TUI desk — all 13 views (12 default + the dev-gated Demo Vis), the help system, the `u`/`U`/`A`/`T` desk tiers, mass-select, the Operations cockpit, theses, markets & prediction markets, alerts, the agents chip. |
 | [forecasting-methodology.md](forecasting-methodology.md) | The desk process and **how to let it learn** — questions → evidence/triage → panels → quorum/Delphi → commit gates → calibration → lessons. |
 | [cli.md](cli.md) | Task-oriented CLI walkthroughs — the laziest path and the hand-driven path. |
 | [development.md](development.md) | Contributing, the build/release path, the test and staleness gates. |

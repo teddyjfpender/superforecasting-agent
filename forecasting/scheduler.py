@@ -153,7 +153,7 @@ def ensure_default_routines(
     force: bool = False,
 ) -> dict[str, Any]:
     """Idempotently install the nightly self-check cron (auto-score + auto-postmortem
-    + thesis-aggregate + lesson-synthesis).
+    + read-only thesis preview + lesson-synthesis).
 
     Existing jobs keep their identity and schedule, but their generated script is
     refreshed to the current feature set. Gated behind ``forecasting.cron.auto_install``

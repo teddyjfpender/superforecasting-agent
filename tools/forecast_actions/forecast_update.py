@@ -119,10 +119,11 @@ def full_forecast(args: dict[str, Any], ledger) -> str:
 def update_forecast(args: dict[str, Any], ledger) -> str:
     question_id = _required(args, "question_id")
     # PREVIEW FIRST: when set, run the full gate/saturation pass WITHOUT writing
-    # a snapshot (no brief, no quorum, no annotate, no inline reference-class
-    # write) and return the verdict so the agent fixes advisories/blockers and
-    # commits ONCE — never commit-then-remediate.
-    preview_flag = bool(args.get("preview", False))
+    # a snapshot (no brief, no quorum, no annotate) and return the verdict so
+    # the agent fixes advisories/blockers and commits ONCE — never
+    # commit-then-remediate.
+    proposal_only = bool(args.get("proposal_only", False))
+    preview_flag = bool(args.get("preview", False) or proposal_only)
     components = args.get("components") or {}
     # Accept the schema-advertised aliases so an agent can pass
     # probability_or_distribution / proposed_probability_or_distribution
@@ -235,9 +236,10 @@ def update_forecast(args: dict[str, Any], ledger) -> str:
     # Read BEFORE the commit: whether a prior snapshot existed feeds the
     # auto-quorum indication below (should_run_panel treats a first
     # forecast differently from a re-forecast).
-    _had_prior_snapshot = ledger.get_current_snapshot(question_id) is not None
+    _prior_snapshot = ledger.get_current_snapshot(question_id)
+    _had_prior_snapshot = _prior_snapshot is not None
 
-    snapshot = ledger.create_snapshot(
+    snapshot_args = dict(
         question_id=question_id,
         probability_or_distribution=probability,
         rationale=_required(args, "rationale"),
@@ -298,8 +300,8 @@ def update_forecast(args: dict[str, Any], ledger) -> str:
         # commit — the evidence floor + profile promotions become real for the
         # agent path, while direct/programmatic callers stay observe-only.
         enforce_resolved_hooks=True,
-        preview=preview_flag,
     )
+    snapshot = ledger.create_snapshot(**snapshot_args, preview=preview_flag)
     if preview_flag:
         # snapshot is a preview record (dict), NOT a committed snapshot. Nothing
         # was written: skip the brief, the auto-quorum, and annotate_snapshot —
@@ -308,6 +310,58 @@ def update_forecast(args: dict[str, Any], ledger) -> str:
         # advisories" (or the blockers) and commits ONCE after fixing them.
         _pv = snapshot if isinstance(snapshot, dict) else {}
         _pv_sat = _ft.saturation_summary(_pv.get("saturation")) if _pv.get("would_commit") else None
+        if proposal_only and _pv.get("would_commit"):
+            from forecasting.warnings import is_material_move
+
+            proposed_probability = _pv.get("probability_or_distribution", probability)
+            prior_probability = (
+                _prior_snapshot.probability_or_distribution
+                if _prior_snapshot is not None
+                else None
+            )
+            if is_material_move(prior_probability, proposed_probability):
+                proposal_snapshot_args = dict(snapshot_args)
+                proposal_snapshot_args["probability_or_distribution"] = proposed_probability
+                proposal = ledger.create_forecast_update_proposal(
+                    question_id=question_id,
+                    run_id=None,
+                    prior_forecast_id=(
+                        _prior_snapshot.forecast_id if _prior_snapshot is not None else None
+                    ),
+                    proposed_probability_or_distribution=proposed_probability,
+                    rationale=_required(args, "rationale"),
+                    evidence_refs=args.get("evidence_refs") or [],
+                    source_snapshot_refs=args.get("source_snapshot_refs") or [],
+                    model_run_refs=args.get("model_run_refs") or [],
+                    assumption_refs=args.get("assumption_refs") or [],
+                    reference_class_refs=_rc_refs,
+                    snapshot_args=proposal_snapshot_args,
+                )
+                ledger.create_alert(
+                    severity="info",
+                    scope_type="question",
+                    scope_ref=question_id,
+                    reason=f"autopilot_update_proposed:{proposal['id']}",
+                    recommended_action=(
+                        f"Review with `forecast autopilot approve {proposal['id']}` or reject it."
+                    ),
+                )
+                return tool_result(
+                    success=True,
+                    status="proposal_created",
+                    proposal=proposal,
+                    preview=_pv,
+                    committed=None,
+                    **({"saturation": _pv_sat} if _pv_sat is not None else {}),
+                )
+            return tool_result(
+                success=True,
+                status="marginal",
+                proposal=None,
+                preview=_pv,
+                committed=None,
+                **({"saturation": _pv_sat} if _pv_sat is not None else {}),
+            )
         return tool_result(
             success=True,
             preview=_pv,

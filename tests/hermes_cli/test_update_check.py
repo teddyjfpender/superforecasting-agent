@@ -97,7 +97,7 @@ def test_check_for_updates_preserves_legacy_revision_env_alias(tmp_path, monkeyp
 
 
 def test_check_for_updates_no_git_dir(tmp_path, monkeypatch):
-    """Falls back to PyPI check when .git directory doesn't exist anywhere."""
+    """Uses GitHub Releases when .git does not exist anywhere."""
     import hermes_cli.banner as banner
 
     # Create a fake banner.py so the fallback path also has no .git
@@ -108,7 +108,7 @@ def test_check_for_updates_no_git_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(banner, "__file__", str(fake_banner))
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     with patch("hermes_cli.banner.subprocess.run") as mock_run:
-        with patch("hermes_cli.banner.check_via_pypi", return_value=0):
+        with patch("hermes_cli.banner.check_via_release", return_value=0):
             result = banner.check_for_updates()
     assert result == 0
     mock_run.assert_not_called()

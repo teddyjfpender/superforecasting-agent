@@ -40,4 +40,12 @@ describe('writeActiveSessionFile', () => {
       })
     ).toBe('/tmp/forecast.json')
   })
+
+  it('creates a replacement before closing the active session', () => {
+    const source = readFileSync(new URL('../app/useSessionLifecycle.ts', import.meta.url), 'utf8')
+
+    expect(source.indexOf("rpc<SessionCreateResponse>('session.create'")).toBeLessThan(
+      source.indexOf('await closeSession(previousSid)')
+    )
+  })
 })

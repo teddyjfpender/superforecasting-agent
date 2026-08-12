@@ -86,7 +86,7 @@ const DESK_LINES = [
 // The scrollbar draws │ (track) and ┃ (thumb). Count them in a frame.
 const scrollbarCells = (frame: string) => (frame.match(/[│┃]/g) ?? []).length
 
-describe('Home two-pane: a gateway heartbeat must not re-blit the transcript scrollbar while typing', () => {
+describe('Home: a gateway heartbeat must not re-blit the transcript scrollbar while typing', () => {
   it('writes ZERO scrollbar cells per key when thumb geometry is unchanged', async () => {
     const ROWS = 56
     const COLS = 202
@@ -134,7 +134,6 @@ describe('Home two-pane: a gateway heartbeat must not re-blit the transcript scr
 
     const virtualRows = historyItems.map((msg, index) => ({ index, key: `m${index}`, msg }))
 
-    const railScrollRef = React.createRef<any>()
     const mainScrollRef = React.createRef<any>()
 
     let typeExternal: (v: string) => void = noop
@@ -152,7 +151,7 @@ describe('Home two-pane: a gateway heartbeat must not re-blit the transcript scr
       const virtualHistory = useVirtualHistory(scrollRef, rows, COLS - 32)
 
       const transcript = React.useMemo(
-        () => ({ historyItems, railScrollRef, scrollRef, virtualHistory, virtualRows: rows }),
+        () => ({ historyItems, scrollRef, virtualHistory, virtualRows: rows }),
         [virtualHistory, rows]
       )
 

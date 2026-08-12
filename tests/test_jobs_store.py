@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -61,6 +64,97 @@ def test_write_is_atomic_no_partial_file(tmp_path):
     # The persisted bytes are valid JSON with the full record shape.
     data = json.loads((store.jobs_dir() / "job_atom.json").read_text())
     assert set(data) >= {"job_id", "type", "status", "spec", "created_at", "progress"}
+
+
+def test_concurrent_writes_use_distinct_temp_files(tmp_path, monkeypatch):
+    """Two writers for one record both complete and leave valid JSON."""
+    store = _store(tmp_path)
+    barrier = threading.Barrier(2)
+    real_replace = os.replace
+
+    def synchronized_replace(source, destination):
+        barrier.wait(timeout=5)
+        real_replace(source, destination)
+
+    monkeypatch.setattr("forecasting.jobs.store.os.replace", synchronized_replace)
+    records = [
+        JobRecord(job_id="job_race", type="warnings", annotations={"writer": writer})
+        for writer in ("a", "b")
+    ]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(store.write, records))
+
+    assert store.read("job_race").annotations["writer"] in {"a", "b"}
+    assert not list(store.jobs_dir().glob("*.tmp"))
+
+
+def test_runtime_claim_executes_side_effect_once(tmp_path):
+    from forecasting.jobs import runtime
+    from forecasting.jobs.types import JobType, register
+
+    store = _store(tmp_path)
+    started = threading.Event()
+    release = threading.Event()
+    executions: list[int] = []
+
+    def execute(_spec, _ctx):
+        executions.append(threading.get_ident())
+        started.set()
+        assert release.wait(timeout=5)
+        return {"ok": True}
+
+    register(JobType(name="test_atomic_claim", execute=execute, min_interval_s=0))
+    store.write(JobRecord(job_id="job_claim", type="test_atomic_claim"))
+
+    first = threading.Thread(target=runtime.run, args=("job_claim",), kwargs={"store": store})
+    first.start()
+    assert started.wait(timeout=5)
+    competing = runtime.run("job_claim", store=store)
+    release.set()
+    first.join(timeout=5)
+
+    assert not first.is_alive()
+    assert competing.status == "running"
+    assert executions == [first.ident]
+    assert store.read("job_claim").status == "done"
+
+
+def test_runtime_reclaims_crash_stranded_running_job(tmp_path):
+    from forecasting.jobs import runtime
+    from forecasting.jobs.types import JobType, register
+
+    store = _store(tmp_path)
+    executions: list[bool] = []
+    register(
+        JobType(
+            name="test_reclaim_stranded",
+            execute=lambda _spec, _ctx: executions.append(True) or {"ok": True},
+            min_interval_s=0,
+        )
+    )
+    store.write(
+        JobRecord(job_id="job_stranded", type="test_reclaim_stranded", status="running")
+    )
+
+    result = runtime.run("job_stranded", store=store)
+
+    assert result.status == "done"
+    assert executions == [True]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX flock error contract")
+def test_claim_does_not_hide_unexpected_lock_failure(tmp_path, monkeypatch):
+    store = _store(tmp_path)
+    store.write(JobRecord(job_id="job_lock_error", type="warnings"))
+
+    def fail_lock(*_args):
+        raise OSError("lock service unavailable")
+
+    monkeypatch.setattr("forecasting.jobs.store.fcntl.flock", fail_lock)
+
+    with pytest.raises(OSError, match="lock service unavailable"):
+        with store.claim("job_lock_error"):
+            pass
 
 
 def test_list_newest_first_and_globs_only_job_files(tmp_path):

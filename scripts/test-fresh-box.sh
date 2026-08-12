@@ -204,6 +204,42 @@ else
   inx "sudo -u forecast tmux ls 2>/dev/null" || true
   stage FAIL "4d-ssh-lands-in-tui"
 fi
+
+# 4e. THE PAINT: 4d proves a TUI *process* exists — not that the operator sees
+#     anything. A bundle that boots and then throws leaves a live node process
+#     in front of a blank screen and 4d still goes green. `tmux capture-pane`
+#     renders the pane to plain text (tmux IS the terminal emulator, so no
+#     escape-code parsing here), which is the cheapest possible proof that the
+#     first frame actually landed on a real box.
+#
+#     Deliberately WARN-only: this stage was added without a docker daemon
+#     available to run the proof even once, so it must not be able to turn a
+#     green fresh-box run red. Promote it to a hard gate — replace the warn
+#     branch with `stage FAIL "4e-tui-first-paint"` — after one observed pass.
+#
+#     The Python-side equivalent (which IS a hard gate) is tests/tui_pty/:
+#     same idea, own pty, asserts against a reconstructed screen.
+if [ "$LANDED" = PASS ]; then
+  PANE="$(inx "sudo -u forecast tmux capture-pane -p -t desk 2>/dev/null" || true)"
+  PANE_CHARS="$(printf '%s' "$PANE" | tr -d '[:space:]' | wc -c | tr -d '[:space:]')"
+  PANE_CHARS="${PANE_CHARS:-0}"
+  # "Superforecasting Agent" is the landing hero (ui-tui/src/components/branding.tsx);
+  # "Setup Required" is the panel a box with no provider configured lands on
+  # (ui-tui/src/content/setup.ts). Either one means React painted a real frame.
+  if printf '%s' "$PANE" | grep -qE 'Superforecasting Agent|Setup Required'; then
+    stage PASS "4e-tui-first-paint (${PANE_CHARS} chars on the pane)"
+  elif [ "$PANE_CHARS" -ge 100 ]; then
+    warn "pane has ${PANE_CHARS} chars but no known TUI anchor — first frame may have changed"
+    printf '%s\n' "$PANE" | head -n 20
+    stage PASS "4e-tui-first-paint (unrecognised frame; see dump above)"
+  else
+    warn "tmux pane is effectively BLANK (${PANE_CHARS} printable chars) — the TUI"
+    warn "process is alive but nothing was painted. This is the failure 4d cannot see."
+    inx "tail -n 15 /tmp/desk.out 2>/dev/null" || true
+    stage PASS "4e-tui-first-paint (BLANK — warn-only, see comment)"
+  fi
+fi
+
 # Tear the desk session down so cleanup is clean.
 inx "sudo -u forecast tmux kill-server 2>/dev/null" || true
 

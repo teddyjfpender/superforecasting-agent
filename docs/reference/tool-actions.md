@@ -384,6 +384,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `prompt` | string |  | propose_spec/full_forecast: the user's plain-language question. full_forecast turns this one sentence into a committed forecast — it structures + commits the question (accept-defaults) then autonomously chains research -> base_rate -> update through the gated pipeline. |
 | `prompt_version` | string |  |  |
 | `proposal_id` | string |  |  |
+| `proposal_only` | boolean |  | Validate the update exactly like a preview, then create a pending proposal for a material move instead of committing a snapshot. Unattended runs force this mode server-side. |
 | `proposal_status` | string | `pending`, `approved`, `rejected`, `expired`, `auto_committed` |  |
 | `proposed_probability` | number |  |  |
 | `proposed_probability_or_distribution` | any |  |  |

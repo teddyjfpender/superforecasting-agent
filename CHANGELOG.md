@@ -13,6 +13,144 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-07-28
+
+This release makes the terminal desk's own delivery path trustworthy: the TUI
+suite gates releases, the artifacts a user installs are verified, the desk can
+say which build it is and recover when its gateway dies, and the behaviour a
+real terminal exercises is finally covered by tests.
+
+### Added
+- **A non-publishing nightly release candidate.** The scheduled CI lane runs
+  the Python, E2E, and TUI gates before a clean formal-artifact build, checksum
+  verification, fresh-wheel install, and seven-day artifact upload.
+- **Grounded citation verification.** The upstream citation ledger and
+  fact-checking skill now ships under the active forecast home, with stable
+  source ids, draft/source consistency checks, coverage, and verbatim evidence
+  validation.
+- **The TUI suite is now release-blocking.** A `tui` CI job (type-check, the
+  full vitest suite, and a down-only `--max-warnings` lint ratchet) runs in
+  `tests.yml`, and `production-release.yml` declares `needs: [gate, test,
+  python-compat, tui]` — a red TUI or supported-runtime suite blocks a release.
+  The release test job now runs E2E directly as well. A
+  blocking, version-pinned and checksum-verified `actionlint` job now lints
+  every workflow.
+- **A build-version signal.** A typed `BuildInfo` rides `gateway.ready` and
+  `session.info`: the running version shows on the Home hero context line and
+  as the first line of the help overlay, and `forecast doctor` gained a
+  `◆ Build Version` section that names the stale-install trap explicitly.
+- **Gateway supervision.** Gateway death is now recoverable: a bounded respawn
+  ladder (500 ms → 8 s backoff, five attempts, budget earned back by uptime
+  since `gateway.ready`) with a visible reconnecting state, a terminal state
+  carrying the captured stderr tail plus `/reconnect` · `/logs` · `/quit`, and
+  session resume so a reconnect never lands in a blank session. Previously a
+  dead gateway left the desk rendering normally with every RPC rejecting and
+  no recovery but quitting.
+- **A real-terminal test harness.** `tests/tui_pty/` boots the actual TUI
+  bundle on a pty and covers what headless tests structurally cannot — first
+  paint, the alt-screen/mouse/bracketed-paste enable and restore sequences,
+  and an 80→120 column resize — on a VT screen emulator with its own tests.
+  A Desk load budget (`test_desk_load_budget.py`) gates the
+  `forecast.workspace` fetch on an invariant — same SQLite connection and
+  statement count regardless of book size — rather than wall-clock.
+
+### Changed
+- **Unattended forecast maintenance is proposal-only.** Scheduled reviews,
+  warning automation, and hosted source estimation may import evidence, run
+  models, and raise alerts, but they cannot approve their own probability
+  changes—even when an `auto_commit` policy exists. Explicit operator actions
+  remain the commit boundary, and the Desk reports proposals rather than
+  claiming background forecasts were refreshed.
+- **One gated workflow owns publication.** The legacy release workflow is
+  deleted and both local release scripts are non-publishing previews. The
+  formal workflow runs E2E, Python 3.13 compatibility, and an amd64 container
+  smoke; it signs the wheel and sdist, creates a draft release, verifies assets
+  plus the immutable image, publishes the draft, and only then advances `latest`.
+- **Skill and nightly CI cannot silently disappear.** Skill Markdown changes
+  now trigger the test/lint lanes and skills index, while scheduled and main
+  runs use separate concurrency groups. Python 3.12/3.13 compatibility checks
+  cover the supported package range.
+- **Home is a full-width forecast surface.** The permanent recent-conversations
+  rail is gone; `/resume` is the single history surface and supports arrows,
+  scrolling, `j/k`, and page jumps.
+- **Release inputs are immutable.** GitHub Actions and `uv` are pinned, Python
+  support is bounded to 3.11–3.13, the lockfile is tag-gated, and license
+  metadata uses the PEP 639 form.
+- **Installer integrity is fatal-by-default.** The one-line installer
+  (`install.sh` release asset) verifies the wheel against `SHA256SUMS` and
+  cross-checks the `release-manifest.json` pin, aborting with nothing
+  installed on a mismatch; `upgrade.sh` and `hetzner-install.sh` share the
+  same posture. This closes a silent degrade where a failed checksum download
+  was swallowed and a missing `SHA256SUMS` merely warned before installing
+  anyway. An explicitly operator-supplied local wheel remains a trust decision
+  and still installs unverified.
+- **The Docker Hub mirror skips cleanly when unconfigured** instead of failing
+  on every published release; ghcr remains the canonical registry, and the
+  Docker guide now pulls `ghcr.io/teddyjfpender/superforecasting-agent`
+  (the bare Docker-Hub name it previously documented does not exist).
+- **Demo Vis is dev-gated.** The chart-engine demo view no longer ships in the
+  operator nav bar: `NAV_TABS` filters it out unless
+  `FORECAST_TUI_DEV_DEMO_VIZ=1` is set, and `navPatchFor` refuses the route, so
+  it is unreachable by click or chord — absent, not hidden. The view and its
+  tests still ship behind the flag.
+- **Docs re-audited against the code.** The Hetzner deploy one-liners now pin
+  the live branch (both previously 404'd); `docs/operating.md` documents the
+  Operations cockpit, every view, and the current Desk lens model;
+  architecture/CLI/development counts (job types, ledger leaves, hook rules,
+  import adapters) and the CI gating story were corrected; offline regression
+  tests now pin the branch refs and the container registry so both rots fail
+  tests instead of readers.
+
+### Fixed
+- **Failed `/resume` no longer destroys the live session.** `session.resume`
+  creates the replacement runtime first and closes the previous runtime only
+  after success; lookup or agent-initialization failure leaves the old session
+  usable.
+- **Installers enforce the declared Python boundary.** POSIX and PowerShell
+  installers accept Python 3.11–3.13 and reject 3.10 before downloading or
+  installing artifacts.
+- **Classic CLI configuration now really deep-merges.** Nested overrides reuse
+  the canonical recursive merge, preserving sibling defaults across CLI,
+  gateway, and subcommand loaders.
+- **SQLite handles now close deterministically.** Forecast-ledger context
+  managers close owned connections, API adapter teardown closes response and
+  execution stores, and the gateway test harness closes every per-test store
+  before long xdist runs exhaust file descriptors.
+- **The release suite no longer hides two forecast failures.** The domain-error
+  profile test was already green; the remaining hook-preview N+1 now reuses its
+  batched snapshot. Both release deselections are removed.
+- **Wheel builds captured local Python caches.** Recursive skill packaging now
+  excludes `__pycache__`, `.pyc`, and `.pyo`; the regression check exercises the
+  package-data collector and archive smoke tests cover wheel and sdist output.
+- **The canonical test runner failed with no arguments.** Its documented
+  full-suite invocation now defaults to `tests/` under `set -u`.
+- **The first quickstart command was wrong.** README and CLI docs claimed bare
+  `forecast` opens the TUI; it prints the plain-text desk dashboard. The docs
+  now lead with `forecast tui` and document the bare behaviour.
+- **The update check could never fire for this fork** — a pipx venv has no
+  `.git`, the fork is not on PyPI, and the git lane compared against the
+  upstream remote — so a release-manifest-based check replaces it. Also
+  silenced the Node `MODULE_TYPELESS_PACKAGE_JSON` warning that printed before
+  first paint in the checkout lane.
+- **Every clean TUI exit leaked its gateway process.** `kill()` sent a bare
+  SIGTERM without awaiting; node exited in ~0.1 s while the child took
+  0.6–1.1 s to die and was reparented to init. The client now reaps (EOF
+  stdin → SIGTERM → bounded SIGKILL escalation), and the OOM path stops the
+  gateway instead of orphaning it.
+- **A script-injection vector in `lint.yml`** — attacker-controlled
+  `github.head_ref` interpolated inline into a `run:` block — caught by the
+  new actionlint gate and routed through an environment variable.
+- **`scripts/release.sh` was broken for its own default `--out=dist`** (it
+  copied the wheel onto itself and `set -e` aborted the dry run), and the
+  installer reported the version of whatever binary `PATH` resolved rather
+  than the one it had just installed.
+- **`generate-skill-docs.py` rewrote link-like tokens inside fenced and inline
+  code** into repo URLs, producing 404s in three published skill pages.
+- **The TUI help registry contradicted the implementation** (the Operations
+  lens was missing, the view chord is `Ctrl+G` not `g`, and Models-mode keys
+  were unregistered); the registry, the in-app help, and the operator's guide
+  now match the code.
+
 ## [0.19.0] - 2026-07-24
 
 This release turns the forecasting desk into a durable operating system for

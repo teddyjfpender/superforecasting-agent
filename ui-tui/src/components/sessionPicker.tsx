@@ -12,6 +12,9 @@ const VISIBLE = 15
 const MIN_WIDTH = 60
 const MAX_WIDTH = 120
 
+export const moveSessionSelection = (selected: number, delta: number, count: number) =>
+  Math.max(0, Math.min(selected + delta, Math.max(0, count - 1)))
+
 const age = (ts: number) => {
   const d = (Date.now() / 1000 - ts) / 86400
 
@@ -114,12 +117,30 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
       return
     }
 
-    if (key.upArrow && sel > 0) {
-      setSel(s => s - 1)
+    const move = (delta: number) => setSel(s => moveSessionSelection(s, delta, items.length))
+
+    if (key.pageUp) {
+      move(-VISIBLE)
+
+      return
     }
 
-    if (key.downArrow && sel < items.length - 1) {
-      setSel(s => s + 1)
+    if (key.pageDown) {
+      move(VISIBLE)
+
+      return
+    }
+
+    if (key.upArrow || key.wheelUp || ch === 'k') {
+      move(-1)
+
+      return
+    }
+
+    if (key.downArrow || key.wheelDown || ch === 'j') {
+      move(1)
+
+      return
     }
 
     if (key.return && items[sel]) {
@@ -213,7 +234,7 @@ export function SessionPicker({ gw, onCancel, onSelect, t }: SessionPickerProps)
       {deleting ? (
         <OverlayHint t={t}>deleting…</OverlayHint>
       ) : (
-        <OverlayHint t={t}>↑/↓ select · Enter resume · 1-9 quick · d delete · Esc/q cancel</OverlayHint>
+        <OverlayHint t={t}>↑/↓ or scroll select · PgUp/PgDn jump · Enter resume · d delete · Esc/q cancel</OverlayHint>
       )}
     </Box>
   )

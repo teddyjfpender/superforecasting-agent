@@ -13,6 +13,7 @@ import {
   startOfDay
 } from '../components/calendarView.js'
 import type { ForecastDashboardResponse } from '../gatewayTypes.js'
+import { type Match, waitForQuiet, waitForSettled, waitForText } from '../testing/settle.js'
 
 const ESC = String.fromCharCode(27)
 const BEL = String.fromCharCode(7)
@@ -212,7 +213,13 @@ const mount = async (columns: number, response: ForecastDashboardResponse) => {
     { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream }
   )
 
-  await tick(60)
+  const read = () => normalize(stdout.text(), stripAnsi)
+
+  // The dashboard RPC is async, so a fixed `tick(60)` asserted against whatever
+  // was painted at 60ms — under load the `July 2026 · 0 deadlines` header-only
+  // frame, before the grid existed. Wait for the weekday header, which only the
+  // rendered grid (wide) or the agenda (narrow) produces.
+  await waitForSettled(read, columns >= 100 ? 'Mon' : /\d/, { label: 'the calendar body to render' })
 
   return {
     cleanup: () => {
@@ -220,10 +227,20 @@ const mount = async (columns: number, response: ForecastDashboardResponse) => {
       instance.cleanup?.()
     },
     press: async (keys: string) => {
+      const before = read()
+
       stdin.stream.write(keys)
-      await tick(60)
+
+      try {
+        await waitForText(read, value => value !== before, { label: 'the keypress repaint', timeout: 2000 })
+      } catch {
+        // Some keys only change internal state.
+      }
+
+      await waitForQuiet(read, { quietFor: 24, timeout: 1000 })
     },
-    text: () => normalize(stdout.text(), stripAnsi)
+    text: () => read(),
+    waitFor: (match: Match, label?: string) => waitForText(read, match, { label })
   }
 }
 

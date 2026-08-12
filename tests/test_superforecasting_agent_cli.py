@@ -44,6 +44,24 @@ def test_fork_native_main_sets_native_home_before_forecast_dispatch(tmp_path, mo
     assert os.environ["HERMES_HOME"] == str(tmp_path / ".superforecasting-agent")
 
 
+def test_config_set_routes_to_inherited_runtime(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(fork_cli, "_run_inherited_runtime", lambda argv: seen.update(argv=argv))
+
+    fork_cli.main(["config", "set", "model.default", "example/model"])
+
+    assert seen == {"argv": ["config", "set", "model.default", "example/model"]}
+
+
+def test_config_doctor_remains_a_forecast_shorthand(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(fork_cli, "forecast_main", lambda argv, prog: seen.update(argv=argv, prog=prog))
+
+    fork_cli.main(["config", "doctor"])
+
+    assert seen == {"argv": ["config", "doctor"], "prog": "superforecasting-agent"}
+
+
 def test_source_tree_superforecasting_launcher_renders_forecast_help():
     root = Path(__file__).resolve().parents[1]
     result = subprocess.run(

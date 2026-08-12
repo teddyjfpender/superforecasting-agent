@@ -1,5 +1,5 @@
-"""Tests for `forecast refresh`: pull latest watched-source readings -> import
-as evidence -> deterministically re-pool -> auto-commit a new live snapshot."""
+"""Tests for `forecast refresh`: import watched-source evidence, re-pool, and
+either explicitly commit or create a reviewable proposal."""
 
 from __future__ import annotations
 
@@ -157,6 +157,37 @@ def test_refresh_auto_commits_live_snapshot_satisfying_formalities(tmp_path):
     assert current.evidence_refs  # fresh import -> citations satisfied
     assert current.model_run_refs
     assert "refresh" in current.metadata
+
+
+def test_refresh_proposal_only_persists_evidence_without_moving_forecast(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _market_question(ledger)
+    prior = ledger.get_current_snapshot(q.id)
+
+    result = ledger.refresh_forecast(
+        q.id,
+        fetcher=_market_fetcher(0.72),
+        commit=False,
+        proposal_only=True,
+        trigger_reason="scheduled_refresh",
+    )
+
+    assert result["status"] == "proposal_created"
+    assert result["committed"] is None
+    assert result["new_evidence_ids"]
+    assert result["proposal"]["status"] == "pending"
+    assert result["proposal"]["prior_forecast_id"] == prior.forecast_id
+    assert result["proposal"]["evidence_refs"] == result["new_evidence_ids"]
+    assert ledger.get_current_snapshot(q.id).forecast_id == prior.forecast_id
+    assert len(ledger.list_snapshots(q.id)) == 1
+
+
+def test_refresh_rejects_commit_and_proposal_only_together(tmp_path):
+    ledger = _ledger(tmp_path)
+    q = _market_question(ledger)
+
+    with pytest.raises(Exception, match="mutually exclusive"):
+        ledger.refresh_forecast(q.id, fetcher=_market_fetcher(0.72), proposal_only=True)
 
 
 def test_refresh_no_op_when_reading_and_probability_unchanged(tmp_path):

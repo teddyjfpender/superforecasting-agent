@@ -18,19 +18,25 @@ superforecasting-agent update
 
 This pulls the latest code from `superforecasting-agent-snapshot`, updates dependencies, and prompts you to configure any new options that were added since your last update.
 
-### pip installs
+### Release-wheel installs
 
-PyPI releases track **tagged versions** (major and minor releases), not every commit on `superforecasting-agent-snapshot`. Check for updates and upgrade with:
+GitHub Releases is the authority for prebuilt wheels. Check for updates and upgrade with:
 
 ```bash
-superforecasting-agent update --check    # see if a newer release is on PyPI
-superforecasting-agent update            # runs pip install --upgrade superforecasting-agent
+superforecasting-agent update --check    # see if a newer GitHub Release exists
+superforecasting-agent update            # runs the checksum-verifying release installer
 ```
 
-Or manually:
+Or manually on macOS/Linux:
 
 ```bash
-pip install --upgrade superforecasting-agent    # or: uv pip install --upgrade superforecasting-agent
+curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/latest/download/install.sh | bash
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://github.com/teddyjfpender/superforecasting-agent/releases/latest/download/install.ps1 | iex
 ```
 
 :::tip
@@ -49,7 +55,7 @@ When you run `superforecasting-agent update`, the following steps occur:
 
 ### Preview-only: `superforecasting-agent update --check`
 
-Want to know if an update is available before pulling? Run `superforecasting-agent update --check` — for git installs it fetches and compares commits against `origin/superforecasting-agent-snapshot`; for pip installs it queries PyPI for the latest release. No files are modified, no gateway is restarted. Useful in scripts and cron jobs that gate on "is there an update".
+Want to know if an update is available before pulling? Run `superforecasting-agent update --check` — for git installs it fetches and compares commits against `origin/superforecasting-agent-snapshot`; for release-wheel installs it checks the latest published GitHub Release. No files are modified and no gateway is restarted.
 
 ### Full pre-update backup: `--backup`
 

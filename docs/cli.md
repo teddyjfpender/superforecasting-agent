@@ -5,11 +5,14 @@ for the exhaustive command tree (every subcommand and flag, introspected from th
 code) see [reference/cli-reference.md](reference/cli-reference.md).
 
 `forecast`, `superforecasting-agent`, and `superforecast` are the same entry point
-(`superforecasting_agent/cli.py` → the argparse tree in `forecasting/cli.py`).
-Bare `forecast` opens the desk; `forecast <command>` runs a workflow.
+(`superforecasting_agent/cli.py` → the argparse tree in the `forecasting/cli/`
+package).
+Bare `forecast` prints the desk dashboard summary; `forecast tui` opens the TUI;
+`forecast <command>` runs a workflow.
 
 ```bash
-forecast                 # open the forecast desk (TUI)
+forecast tui             # open the forecast desk TUI (also: superforecasting-agent --tui)
+forecast                 # bare invocation prints the desk dashboard summary
 forecast status          # desk state, calibration, live baseline comparisons
 forecast doctor          # one-shot operational / pilot / readiness gate
 forecast about           # fork identity and forecast-first scope
@@ -52,7 +55,8 @@ forecast base-rate <id> ...                          # anchor on a reference cla
 ### Import external context as evidence
 
 The `import` family runs source adapters (RSS, econ/fiscal data, filings, papers,
-weather, and ~70 more — see the full list in `forecast import --help`):
+weather, and dozens more — 59 adapters at last count; the full list is
+`forecast import --help`):
 
 ```bash
 forecast import news <rss-or-atom-url> --question <id> --materiality high
@@ -129,8 +133,9 @@ forecast hooks set-severity <rule> off|warn|error
 forecast hooks add <spec.json>                  # validate + save a custom rule
 ```
 
-The 25 built-in rules are documented in
-[reference/hooks-rules.md](reference/hooks-rules.md).
+The built-in rules (43 at last count) are documented in
+[reference/hooks-rules.md](reference/hooks-rules.md), which is regenerated from
+the rule registry.
 
 ---
 

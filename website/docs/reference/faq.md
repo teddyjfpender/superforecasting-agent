@@ -243,18 +243,18 @@ The installer adds `~/.local/bin` to your PATH. If you use a non-standard shell 
 
 #### Python version too old
 
-**Cause:** Superforecasting Agent requires Python 3.11 or newer.
+**Cause:** Superforecasting Agent requires Python 3.11, 3.12, or 3.13.
 
 **Solution:**
 ```bash
 python3 --version   # Check current version
 
-# Install a newer Python
+# Install a supported Python
 sudo apt install python3.12   # Ubuntu/Debian
 brew install python@3.12      # macOS
 ```
 
-The installer handles this automatically — if you see this error during manual installation, upgrade Python first.
+The installer handles this automatically. Python 3.14 and later are not supported yet; use Python 3.13 or earlier.
 
 #### Terminal commands say `node: command not found` (or `nvm`, `pyenv`, `asdf`, …)
 

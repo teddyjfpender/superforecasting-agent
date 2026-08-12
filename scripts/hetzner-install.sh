@@ -38,6 +38,9 @@
 #   TAG=latest|vX.Y.Z                   release to install (pipx lane)
 #   FORECAST_WHEEL=/path/to.whl         install a LOCAL wheel (skips download)
 #   FORECAST_CHECKSUMS=/path/SHA256SUMS verify FORECAST_WHEEL against this
+#   ALLOW_UNVERIFIED=1                  permit installing from a release that
+#                                       ships no SHA256SUMS (pre-P0 releases
+#                                       only). NEVER bypasses a FAILED check.
 #   FORECAST_IMAGE=ghcr.io/...:tag      image ref (docker lane); local ok
 #   FORECAST_BUILD_IMAGE=1              build the image locally if pull fails
 #   AUTH_JSON_BOOTSTRAP='{...}'         seed {home}/auth.json non-interactively
@@ -54,6 +57,7 @@ FORECAST_USER="${FORECAST_USER:-forecast}"
 FORECAST_HOME="${FORECAST_HOME:-/home/${FORECAST_USER}/.superforecasting-agent}"
 LANE="${LANE:-auto}"
 TAG="${TAG:-latest}"
+ALLOW_UNVERIFIED="${SUPERFORECASTING_AGENT_ALLOW_UNVERIFIED:-${ALLOW_UNVERIFIED:-0}}"
 REPO="${REPO:-teddyjfpender/superforecasting-agent}"
 SUPERVISOR="${SUPERVISOR:-auto}"
 FORECAST_IMAGE="${FORECAST_IMAGE:-ghcr.io/${REPO}:${TAG}}"
@@ -220,11 +224,20 @@ install_pipx_lane() {
   command -v pipx >/dev/null 2>&1 || die "pipx unavailable and could not be installed"
 
   local wheel="" tmp=""
+  # TRUST RULE (do not "helpfully" tighten this — scripts/test-fresh-box.sh
+  # depends on it): an artifact this script DOWNLOADS must be checksum-verified,
+  # fatally (see resolve_and_verify_wheel). A LOCAL wheel the operator passed in
+  # (FORECAST_WHEEL=) is the operator's own trust decision — it installs
+  # unverified unless FORECAST_CHECKSUMS= is also given, in which case
+  # verification is mandatory and a failure is fatal. test-fresh-box.sh builds
+  # its wheel locally in STAGE 0 and feeds it here in STAGE 2.
   if [ -n "${FORECAST_WHEEL:-}" ]; then
     wheel="$FORECAST_WHEEL"
     [ -f "$wheel" ] || die "FORECAST_WHEEL not found: $wheel"
-    if [ -n "${FORECAST_CHECKSUMS:-}" ] && [ -f "$FORECAST_CHECKSUMS" ]; then
-      verify_checksum "$wheel" "$FORECAST_CHECKSUMS" || die "wheel checksum mismatch"
+    if [ -n "${FORECAST_CHECKSUMS:-}" ]; then
+      [ -f "$FORECAST_CHECKSUMS" ] || die "FORECAST_CHECKSUMS not found: $FORECAST_CHECKSUMS"
+      verify_checksum "$wheel" "$FORECAST_CHECKSUMS" \
+        || die "local wheel failed verification against $(basename "$FORECAST_CHECKSUMS") — aborting, nothing installed."
       ok "wheel checksum verified against $(basename "$FORECAST_CHECKSUMS")"
     fi
   else
@@ -252,6 +265,11 @@ install_pipx_lane() {
 }
 
 # Resolve wheel + SHA256SUMS from the GitHub release, verify, into $1.
+# TRUST RULE: everything this function DOWNLOADS must verify. A release with no
+# SHA256SUMS, a failed SHA256SUMS download, a sums file with no entry for the
+# wheel, or a mismatch are all FATAL — nothing is installed. The only opt-out
+# is an explicit ALLOW_UNVERIFIED=1, and it only covers a release that
+# genuinely ships no SHA256SUMS (pre-P0), never a FAILED check.
 resolve_and_verify_wheel() {
   local dest="$1" api
   if [ "$TAG" = "latest" ]; then
@@ -265,32 +283,46 @@ resolve_and_verify_wheel() {
   wheel_url="$(printf '%s' "$meta" | grep -o 'https://[^"]*\.whl' | head -n1 || true)"
   sums_url="$(printf '%s' "$meta" | grep -o 'https://[^"]*SHA256SUMS' | head -n1 || true)"
   [ -n "$wheel_url" ] || return 1
-  curl -fsSL -o "$dest/$(basename "$wheel_url")" "$wheel_url" || return 1
-  if [ -n "$sums_url" ]; then
-    curl -fsSL -o "$dest/SHA256SUMS" "$sums_url" || true
-    if [ -f "$dest/SHA256SUMS" ]; then
-      verify_checksum "$dest/$(basename "$wheel_url")" "$dest/SHA256SUMS" \
-        && ok "wheel checksum verified against release SHA256SUMS" \
-        || return 1
+  curl -fsSL -o "$dest/$(basename "$wheel_url")" "$wheel_url" \
+    || die "wheel download failed (network error?) — aborting, nothing installed."
+  if [ -z "$sums_url" ]; then
+    if [ "$ALLOW_UNVERIFIED" = "1" ]; then
+      warn "release $TAG ships no SHA256SUMS (pre-P0 release?) — ALLOW_UNVERIFIED=1 set, proceeding WITHOUT integrity verification. You own the risk."
+    else
+      die "release $TAG ships no SHA256SUMS (pre-P0 release?) — cannot verify the downloaded wheel. Pin a v0.18.0+ release, or re-run with ALLOW_UNVERIFIED=1 to accept an unverified install."
     fi
   else
-    warn "release has no SHA256SUMS — installing unverified wheel"
+    curl -fsSL -o "$dest/SHA256SUMS" "$sums_url" \
+      || die "SHA256SUMS download failed (network error?) — refusing to install an unverified wheel."
+    verify_checksum "$dest/$(basename "$wheel_url")" "$dest/SHA256SUMS" \
+      || die "wheel sha256 MISMATCH against the release's SHA256SUMS — the download is corrupt or tampered with. Aborting: NOTHING was installed."
+    ok "wheel sha256 verified (SHA256SUMS)"
   fi
   return 0
 }
 
-# verify_checksum <file> <SHA256SUMS>  — SHA256SUMS lines are "<hash>  <name>".
+sha256_of() {  # <file> -> hex digest on stdout
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'
+  else shasum -a 256 "$1" | awk '{print $1}'; fi
+}
+
+# verify_checksum <file> <SHA256SUMS> -> 0 iff the recorded sha256 matches.
+# Kept in LOCKSTEP with scripts/install-release.sh + scripts/upgrade.sh (the
+# three installers stay self-contained — each can be fetched and run alone —
+# so the helper is duplicated deliberately, not factored into a shared file).
+# A sums file with NO entry for the file is a FAILURE: never trust a sums file
+# that does not mention the artifact it ships beside.
 verify_checksum() {
   local file="$1" sums="$2" name want got
   name="$(basename "$file")"
   want="$(grep -E "  ${name}\$| ${name}\$" "$sums" 2>/dev/null | awk '{print $1}' | head -n1)"
-  [ -n "$want" ] || { warn "no checksum line for $name in $(basename "$sums")"; return 0; }
-  if command -v sha256sum >/dev/null 2>&1; then
-    got="$(sha256sum "$file" | awk '{print $1}')"
-  else
-    got="$(shasum -a 256 "$file" | awk '{print $1}')"
+  [ -n "$want" ] || { warn "SHA256SUMS has no entry for $name"; return 1; }
+  got="$(sha256_of "$file")"
+  if [ "$want" != "$got" ]; then
+    warn "expected sha256: $want"
+    warn "computed sha256: $got"
+    return 1
   fi
-  [ "$want" = "$got" ]
 }
 
 # ── 4b. docker compose lane ───────────────────────────────────────────────

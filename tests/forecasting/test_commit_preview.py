@@ -20,6 +20,7 @@ import sqlite3
 import pytest
 
 from forecasting.ledger import ForecastLedger, allow_ledger_writes
+from forecasting.models import ValidationError
 from tools.forecasting_tool import forecast_ledger_tool
 
 
@@ -87,6 +88,30 @@ def test_preview_writes_nothing_even_when_inserts_are_denied(ledger):
     # Nothing was written: count pinned, no current snapshot.
     assert len(ledger.list_snapshots(qid)) == before
     assert ledger.get_current_snapshot(qid) is None
+
+
+def test_proposal_only_environment_blocks_snapshot_even_in_write_context(ledger, monkeypatch):
+    monkeypatch.setenv("FORECAST_COMMIT_POLICY", "proposal_only")
+    with allow_ledger_writes("would normally permit a snapshot"):
+        with pytest.raises(
+            ValidationError,
+            match="snapshot commits are disabled for this unattended proposal-only run",
+        ):
+            ledger.create_snapshot(
+                question_id=_qid(ledger),
+                probability_or_distribution=0.4,
+                rationale="This unattended subprocess must not commit.",
+            )
+        with pytest.raises(sqlite3.DatabaseError, match="not authorized"):
+            with ledger._connect() as conn:
+                conn.execute(
+                    "INSERT INTO forecast_snapshots "
+                    "(forecast_id, question_id, created_at, as_of) "
+                    "VALUES ('fs_denied_by_policy', ?, '2026-01-01T00:00:00Z', "
+                    "'2026-01-01T00:00:00Z')",
+                    (_qid(ledger),),
+                )
+    assert ledger.get_current_snapshot(_qid(ledger)) is None
 
 
 # --- 2. PREVIEW PARITY ------------------------------------------------------
@@ -266,3 +291,73 @@ def test_tool_real_commit_still_writes_after_a_preview(tmp_path):
     led = ForecastLedger(db)
     assert len(led.list_snapshots(qid)) == 1
     assert led.get_current_snapshot(qid) is not None
+
+
+def test_unattended_runtime_forces_material_update_to_pending_proposal(tmp_path):
+    db = str(tmp_path / "proposal.db")
+    created = _tool(
+        db,
+        action="create_question",
+        title="Will unattended forecast updates require review?",
+        resolution_criteria="Resolves YES if scheduled updates require approval by 2026-12-31.",
+        close_time="2026-12-31T00:00:00Z",
+    )
+    qid = created["question"]["id"]
+    _tool(db, action="add_evidence", question_id=qid, source_or_note="seed", claim="baseline")
+    reference_class = {
+        "name": "base",
+        "inclusion_criteria": "prior comparable cases",
+        "base_rate": 0.5,
+    }
+    common = {
+        "db": db,
+        "action": "update_forecast",
+        "question_id": qid,
+        "rationale": "Clean evidence-based rationale.",
+        "reference_class": reference_class,
+        "require_components": False,
+        "require_structured_reasoning": False,
+        "require_panel": False,
+    }
+    _tool(db, **{k: v for k, v in common.items() if k != "db"}, probability=0.45)
+
+    result = json.loads(
+        forecast_ledger_tool(
+            {
+                **common,
+                "probability": 0.60,
+                "components": {
+                    "base_rate": {"probability": 0.55, "weight": 1},
+                    "fresh_signal": {"probability": 0.65, "weight": 1},
+                },
+                "reasons_up": ["fresh signal strengthened"],
+                "reasons_down": ["base rate remains lower"],
+                "change_my_mind": ["the next release reverses the signal"],
+                "reasoning_methods": ["outside_view", "bayesian"],
+                "ack_stale_evidence": True,
+            },
+            main_runtime={"forecast_commit_policy": "proposal_only"},
+        )
+    )
+
+    ledger = ForecastLedger(db)
+    assert result["status"] == "proposal_created"
+    assert result["proposal"]["status"] == "pending"
+    assert len(ledger.list_snapshots(qid)) == 1
+    assert ledger.get_current_snapshot(qid).probability_or_distribution == 0.45
+
+    approved = _tool(
+        db,
+        action="approve_forecast_update_proposal",
+        proposal_id=result["proposal"]["id"],
+        reviewed_by="tester",
+    )
+    snapshot = ledger.get_snapshot(approved["forecast_snapshot"]["forecast_id"])
+    assert snapshot.ensemble_components == {
+        "base_rate": {"probability": 0.55, "weight": 1},
+        "fresh_signal": {"probability": 0.65, "weight": 1},
+    }
+    assert snapshot.reasons_up == ["fresh signal strengthened"]
+    assert snapshot.reasons_down == ["base rate remains lower"]
+    assert snapshot.change_my_mind == ["the next release reverses the signal"]
+    assert snapshot.metadata["reasoning_methods"] == ["outside_view", "bayesian"]

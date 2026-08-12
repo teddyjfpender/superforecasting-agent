@@ -79,8 +79,7 @@ describe('shouldSoftFocusToday — the landing Today panel borrows ↑↓/⏎ on
     expect(shouldSoftFocusToday(true, 'conversation', 0)).toBe(false)
   })
 
-  it('is INACTIVE when the rail or full Ctrl+T Today pane owns the keyboard', () => {
-    expect(shouldSoftFocusToday(true, 'rail', 3)).toBe(false)
+  it('is INACTIVE when the full Ctrl+T Today pane owns the keyboard', () => {
     expect(shouldSoftFocusToday(true, 'today', 3)).toBe(false)
   })
 })
@@ -90,9 +89,8 @@ describe('shouldOpenHomeHelp — `h` opens Help on Home ONLY off the composer (s
     expect(shouldOpenHomeHelp(true, true, 'conversation')).toBe(false)
   })
 
-  it('opens when soft-focus sits on the Today or rail pane (composer deactivated)', () => {
+  it('opens when focus sits on the Today pane (composer deactivated)', () => {
     expect(shouldOpenHomeHelp(true, true, 'today')).toBe(true)
-    expect(shouldOpenHomeHelp(true, true, 'rail')).toBe(true)
   })
 
   it('does NOT open when off the Home route — a fullscreen view raises Help itself', () => {

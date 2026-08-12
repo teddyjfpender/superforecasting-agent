@@ -15,7 +15,7 @@ name: History Check
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, superforecasting-agent-snapshot]
 
 permissions:
   contents: read
@@ -28,15 +28,17 @@ jobs:
         with:
           fetch-depth: 0  # full history both sides for merge-base
 
-      - name: Reject PRs with no common ancestor on main
+      - name: Reject PRs with no common ancestor on the target branch
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
         run: |
           # `git merge-base` exits non-zero AND prints nothing when the two
           # commits share no ancestor.  We check both conditions explicitly
           # so the failure message is clear regardless of which signal fires
           # first.
-          if ! BASE=$(git merge-base origin/main HEAD 2>/dev/null) || [ -z "$BASE" ]; then
+          if ! BASE=$(git merge-base "$BASE_REF" HEAD 2>/dev/null) || [ -z "$BASE" ]; then
             echo ""
-            echo "::error::This PR has no common ancestor with main."
+            echo "::error::This PR has no common ancestor with $BASE_REF."
             echo ""
             echo "Your branch's history is disconnected from main.  Common causes:"
             echo "  - the branch was created with 'git checkout --orphan'"
@@ -55,4 +57,4 @@ jobs:
             echo "  git push -f origin fix-branch"
             exit 1
           fi
-          echo "::notice::Common ancestor with main: $BASE"
+          echo "::notice::Common ancestor with $BASE_REF: $BASE"

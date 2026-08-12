@@ -3,7 +3,7 @@ import type { MutableRefObject, ReactNode, RefObject, SetStateAction } from 'rea
 
 import type { PasteEvent } from '../components/textInput.js'
 import type { GatewayClient } from '../gatewayClient.js'
-import type { ImageAttachResponse } from '../gatewayTypes.js'
+import type { BuildInfoPayload, ImageAttachResponse } from '../gatewayTypes.js'
 import type { ParsedVoiceRecordKey } from '../lib/platform.js'
 import type { RpcResult } from '../lib/rpc.js'
 import type { Theme } from '../theme.js'
@@ -129,6 +129,10 @@ export interface ReviewSweepState {
 
 export interface UiState {
   bgTasks: Set<string>
+  // WHICH BUILD AM I RUNNING — the app version + the server's staleness verdict,
+  // set from gateway.ready (first frame) and refreshed from session.info. null
+  // until the first frame lands, and on an older gateway that omits it.
+  build: BuildInfoPayload | null
   busy: boolean
   busyInputMode: BusyInputMode
   compact: boolean
@@ -248,10 +252,6 @@ export interface InputHandlerContext {
   gateway: GatewayServices
   terminal: {
     hasSelection: boolean
-    // The conversations rail's own scroll handle (Home view); null when the
-    // rail is unmounted. Wheel events over the rail target this instead of the
-    // transcript.
-    railScrollRef: RefObject<null | ScrollBoxHandle>
     scrollRef: RefObject<null | ScrollBoxHandle>
     scrollWithSelection: (delta: number) => void
     selection: SelectionApi
@@ -283,7 +283,7 @@ export interface GatewayEventHandlerContext {
     colsRef: MutableRefObject<number>
     newSession: (msg?: string, title?: string) => void
     resetSession: () => void
-    resumeById: (id: string) => void
+    resumeById: (id: string, onUnresumable?: (reason: string) => void) => void
     setCatalog: StateSetter<null | SlashCatalog>
   }
   submission: {
@@ -331,7 +331,7 @@ export interface SlashHandlerContext {
     guardBusySessionSwitch: (what?: string) => boolean
     newSession: (msg?: string, title?: string) => void
     resetVisibleHistory: (info?: null | SessionInfo) => void
-    resumeById: (id: string) => void
+    resumeById: (id: string, onUnresumable?: (reason: string) => void) => void
     setSessionStartedAt: StateSetter<number>
   }
   slashFlightRef: MutableRefObject<number>
@@ -357,7 +357,7 @@ export interface AppLayoutActions {
   clearSelection: () => void
   draftCommand: (command: string) => void
   onModelSelect: (value: string, effort?: string) => void
-  resumeById: (id: string) => void
+  resumeById: (id: string, onUnresumable?: (reason: string) => void) => void
   runCommand: (command: string) => void
   setStickyPrompt: (value: string) => void
 }
@@ -396,9 +396,6 @@ export interface AppLayoutStatusProps {
 
 export interface AppLayoutTranscriptProps {
   historyItems: Msg[]
-  // Scroll handle for the Home conversations rail; the rail attaches it so
-  // wheel-over-rail can scroll it independently of the transcript.
-  railScrollRef: RefObject<null | ScrollBoxHandle>
   scrollRef: RefObject<null | ScrollBoxHandle>
   virtualHistory: VirtualHistoryState
   virtualRows: TranscriptRow[]

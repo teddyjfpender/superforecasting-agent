@@ -1422,13 +1422,14 @@ def aggregate_all_theses(
     now: str | None = None,
     rho: float | str = 0.4,
     limit: int = 500,
+    commit: bool = True,
 ) -> dict[str, Any]:
     """Aggregate every active thesis (the trailing lag phase of a sweep).
 
     Runs nested theses last (a thesis whose members include another thesis
     re-aggregates after that member). Used by ``run-all`` Phase 2 and the
-    daily cron so theses + their entity suitabilities refresh after the
-    members. Each thesis is isolated: one failing thesis does not abort the rest.
+    daily cron preview so theses + their entity suitabilities are evaluated after
+    the members. Each thesis is isolated: one failing thesis does not abort the rest.
     """
 
     now = now or utc_now_iso()
@@ -1444,14 +1445,18 @@ def aggregate_all_theses(
     results: list[dict[str, Any]] = []
     for thesis in ordered:
         try:
-            result = ledger.aggregate_thesis(thesis.id, rho=rho, now=now)
+            result = ledger.aggregate_thesis(thesis.id, rho=rho, now=now, commit=commit)
             results.append(
                 {
                     "id": thesis.id,
                     "title": thesis.title,
                     "ok": True,
                     "snapshot_id": result.get("snapshot_id"),
-                    "withheld": result.get("snapshot_id") is None,
+                    "withheld": (
+                        result.get("snapshot_id") is None
+                        if commit
+                        else (result.get("payload") or {}).get("health") is None
+                    ),
                     "health": (result.get("payload") or {}).get("health"),
                     "entity_count": len(result.get("entities") or []),
                     "trigger_count": len(result.get("triggers") or []),

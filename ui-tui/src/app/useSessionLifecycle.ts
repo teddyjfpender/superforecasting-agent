@@ -146,12 +146,18 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         return
       }
 
-      await closeSession(getUiState().sid)
-
+      const previousSid = getUiState().sid
       const r = await rpc<SessionCreateResponse>('session.create', { cols: colsRef.current })
 
       if (!r) {
         return patchUiState({ status: 'ready' })
+      }
+
+      try {
+        await closeSession(previousSid)
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        sys(`warning: new forecast session created, but the previous session did not close: ${message}`)
       }
 
       const info = r.info ?? null
@@ -211,10 +217,24 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
     [closeSession, colsRef, panel, resetSession, rpc, setHistoryItems, setSessionStartedAt, sys]
   )
 
+  // `onUnresumable` fires when the requested session could NOT be restored, so a
+  // caller that has no other session to fall back on (the gateway-recovery path)
+  // can open a fresh one instead of leaving the desk sid-less and mute. Callers
+  // that omit it keep the previous behaviour exactly.
   const resumeById = useCallback(
-    (id: string) => {
+    (id: string, onUnresumable?: (reason: string) => void) => {
       patchOverlayState({ picker: false })
       patchUiState({ status: 'resuming…' })
+
+      const failed = (reason: string) => {
+        patchUiState({ status: 'ready' })
+
+        if (onUnresumable) {
+          onUnresumable(reason)
+        } else {
+          sys(`error: ${reason}`)
+        }
+      }
 
       rpc<SetupStatusResponse>('setup.status', {}).then(setup => {
         if (setup?.provider_configured === false) {
@@ -224,16 +244,19 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           return
         }
 
-        closeSession(getUiState().sid === id ? null : getUiState().sid).then(() =>
-          gw
-            .request<SessionResumeResponse>('session.resume', { cols: colsRef.current, session_id: id })
+        const previousSid = getUiState().sid
+
+        gw
+          .request<SessionResumeResponse>('session.resume', {
+            cols: colsRef.current,
+            replace_session_id: previousSid,
+            session_id: id
+          })
             .then(raw => {
               const r = asRpcResult<SessionResumeResponse>(raw)
 
               if (!r) {
-                sys('error: invalid response: session.resume')
-
-                return patchUiState({ status: 'ready' })
+                return failed('invalid response: session.resume')
               }
 
               resetSession()
@@ -251,14 +274,10 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
               })
               setTimeout(() => scrollRef.current?.scrollToBottom(), 0)
             })
-            .catch((e: Error) => {
-              sys(`error: ${e.message}`)
-              patchUiState({ status: 'ready' })
-            })
-        )
+            .catch((e: Error) => failed(e.message))
       })
     },
-    [closeSession, colsRef, gw, panel, resetSession, rpc, scrollRef, setHistoryItems, setSessionStartedAt, sys]
+    [colsRef, gw, panel, resetSession, rpc, scrollRef, setHistoryItems, setSessionStartedAt, sys]
   )
 
   const guardBusySessionSwitch = useCallback(

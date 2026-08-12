@@ -693,9 +693,9 @@ def run_uninstall(args):
         print()
         print("To reinstall later with your existing settings:")
         if _is_windows():
-            print(color("  py -m pip install --upgrade superforecasting-agent", Colors.DIM))
+            print(color("  https://github.com/teddyjfpender/superforecasting-agent/releases/latest", Colors.DIM))
         else:
-            print(color("  python3 -m pip install --upgrade superforecasting-agent", Colors.DIM))
+            print(color("  curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/latest/download/install.sh | bash", Colors.DIM))
         print()
 
     if _is_windows():

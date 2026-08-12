@@ -119,12 +119,21 @@ CASES: list[tuple[type, dict, bool]] = [
             "tool_prefix": "◇", "help_header": "?", "colors": {"fg": "#fff"}, "branding": {"x": "y"}}, True),
     (Skin, {}, True),  # resolve_skin() returns {} on failure
     (GatewayReady, {"skin": {"name": "aurora", "appearance": "auto"}}, True),
+    (GatewayReady, {"skin": {"name": "aurora"}, "protocol_version": 1,
+                    "build": {"version": "0.19.0", "release_date": "2026.7.24",
+                              "install_method": "git", "latest_version": "0.19.0",
+                              "behind": 0, "stale": False, "remedy": "x"}}, True),
+    # A cold-cache / offline gateway.ready: the version alone, nothing resolved.
+    (GatewayReady, {"build": {"version": "0.19.0"}}, True),
     (GatewayReady, {}, True),
     (SessionInfo, {"model": "anthropic/claude-sonnet-4", "reasoning_effort": "", "service_tier": "",
                    "fast": False, "cwd": "/x", "version": "1.2.3", "release_date": "2026-07-04",
                    "update_behind": None, "update_command": "", "profile_name": "default",
                    "usage": {"input_tokens": 10}, "tools": {}, "skills": {},
-                   "protocol_version": 1}, False),
+                   "protocol_version": 1,
+                   "build": {"version": "1.2.3", "release_date": "2026-07-04",
+                             "install_method": "pip", "latest_version": "1.3.0",
+                             "behind": -1, "stale": True, "remedy": "curl … | bash"}}, False),
     (GatewayStderr, {"line": "traceback…"}, False),
     (GatewayStartTimeout, {"cwd": "/x", "python": "/py", "stderr_tail": "boom"}, True),
     (GatewayStartTimeout, {}, True),
@@ -184,7 +193,7 @@ CASES: list[tuple[type, dict, bool]] = [
     # ── forecast desk (sessionless) ──────────────────────────────────────────
     (CronFired, {"count": 3}, True),
     (ReviewSweep, {"phase": "started", "due_count": 5}, True),
-    (ReviewSweep, {"phase": "done", "refreshed": 4, "alerts": 1, "duration_ms": 1200}, True),
+    (ReviewSweep, {"phase": "done", "proposals": 4, "alerts": 1, "duration_ms": 1200}, True),
     (ReviewSummary, {"text": "💾 Self-improvement review: …"}, True),
     # ── markets "Models" tab ─────────────────────────────────────────────────
     (MarketModelProgress, {"id": "m1", "phase": "starting", "message": "starting"}, True),
@@ -234,8 +243,8 @@ def test_review_sweep_started_and_done_share_one_model():
     """The phase-discriminated review.sweep folds both shapes into one model."""
 
     started = ReviewSweep.model_validate({"phase": "started", "due_count": 2})
-    done = ReviewSweep.model_validate({"phase": "done", "refreshed": 1, "alerts": 0, "duration_ms": 9})
+    done = ReviewSweep.model_validate({"phase": "done", "proposals": 1, "alerts": 0, "duration_ms": 9})
     assert started.model_dump(mode="json", exclude_none=True) == {"phase": "started", "due_count": 2}
     assert done.model_dump(mode="json", exclude_none=True) == {
-        "phase": "done", "refreshed": 1, "alerts": 0, "duration_ms": 9,
+        "phase": "done", "proposals": 1, "alerts": 0, "duration_ms": 9,
     }

@@ -75,6 +75,7 @@ npm run test:watch
 
 - `createGatewayEventHandler.ts` — maps gateway events to state updates
 - `createSlashHandler.ts` — local slash command dispatch
+- `navRoutes.ts` — the nav-tab registry: routes, overlay patches, active-view derivation (single source of truth for the top bar and the `Ctrl+G` view chords)
 - `useComposerState.ts` — draft, multiline buffer, queue editing
 - `useInputHandlers.ts` — keypress routing
 - `useTurnState.ts` — agent turn lifecycle
@@ -101,7 +102,11 @@ The intro panel is driven by `session.info` and rendered through `branding.tsx`.
 
 ## Hotkeys and interactions
 
-Current input behavior is split across `app.tsx`, `components/textInput.tsx`, and the prompt/picker components.
+Current input behavior is split across `src/app/useInputHandlers.ts` (global
+routing, the `Ctrl+G` view chords, the `Ctrl+K` palette), `components/textInput.tsx`,
+the full-screen views' own `useInput` handlers, and the prompt/picker components.
+The static shortcut registry the in-app help and cheat-sheet render is
+`src/content/keymaps.ts`.
 
 ### Forecast composer
 
@@ -294,8 +299,9 @@ ui-tui/
     app/
       createGatewayEventHandler.ts  event → state mapping
       createSlashHandler.ts         local slash dispatch
+      navRoutes.ts                  nav-tab registry + overlay patches (routes)
       useComposerState.ts           draft + multiline + queue editing
-      useInputHandlers.ts           keypress routing
+      useInputHandlers.ts           keypress routing + Ctrl+G view chords
       useTurnState.ts               agent turn lifecycle
       overlayStore.ts               nanostores for overlays
       uiStore.ts                    nanostores for UI flags
@@ -304,10 +310,17 @@ ui-tui/
       helpers.ts                    pure helpers
       interfaces.ts                 internal interfaces
 
+    content/
+      keymaps.ts         static shortcut + per-view guide registry (the
+                         cheat-sheet / in-app help source of truth)
+      hotkeys.ts, marketProviders.ts, newsFeedCatalog.ts, …  static content
+
     components/
+      # chrome + chat spine
       appChrome.tsx      status bar, input row, completions
-      appLayout.tsx      top-level layout composition
+      appLayout.tsx      top-level layout composition + the per-view panes
       appOverlays.tsx    overlay routing (pickers, prompts)
+      navBar.tsx         clickable top view strip (routes via app/navRoutes.ts)
       branding.tsx       banner + session summary
       markdown.tsx       Markdown-to-Ink renderer
       maskedPrompt.tsx   masked input for sudo / secrets
@@ -318,6 +331,33 @@ ui-tui/
       sessionPicker.tsx  session resume picker
       textInput.tsx      custom line editor
       thinking.tsx       spinner, reasoning, tool activity
+      paletteOverlay.tsx Ctrl+K command palette
+      helpOverlay.tsx    the h / ? quick-help modal (renders content/keymaps.ts)
+
+      # full-screen views (one per nav tab — see app/navRoutes.ts)
+      homeLanding.tsx        Home landing + the agents chip
+      deskView.tsx           the live Desk (redesigned forecast workspace)
+      deskTabs.tsx           the Desk lens-tab strip (built by lib/deskGroups.ts)
+      forecastsWorkspace.tsx exported Desk building blocks (ThesisDeskRead,
+                             panel/chart helpers) that deskView imports; its
+                             old full-view orchestrator is no longer rendered —
+                             deskView IS the Desk
+      operationsCockpit.tsx  the Operations lens (v0.19.0 operations cockpit)
+      marketsView.tsx        Markets: data tape, Models mode, prediction markets
+      newsView.tsx           News headline feed
+      messagingView.tsx      Signal messaging bridge
+      calendarView.tsx       market-close / resolution calendar
+      alertsView.tsx         Warnings: tiered alert queue + automode passes
+      calibrationView.tsx    calibration report
+      obsidianView.tsx       Docs: Markdown vault + LaTeX workspace
+      agentsOverlay.tsx      subagent / spawn-tree monitor
+      demoVizView.tsx        chart-engine demo gallery (dev-flag only:
+                             FORECAST_TUI_DEV_DEMO_VIZ=1)
+      hooksView.tsx          forecast hooks browser (+ hooksWizard.tsx)
+      helpView.tsx           full-screen Help reference
+      …plus view-specific modals/panes (prediction-market tables + detail,
+      model chat/list modals, feed + provider modals, LaTeX docs shell, desk/
+      and forecast/ subdirectories, and more)
 
     hooks/
       useCompletion.ts   tab completion (slash + path)
@@ -331,6 +371,9 @@ ui-tui/
       osc52.ts           OSC 52 clipboard copy
       rpc.ts             JSON-RPC type helpers
       text.ts            text helpers, ANSI detection, previews
+      deskGroups.ts      Desk lens-tab builder (thesis lenses → All → Operations)
+      …plus many view-support modules (market data/charts, prediction-market
+      stores, news feeds, Signal client, LaTeX rendering, viz engine, etc.)
 
     types/
       hermes-ink.d.ts    compatibility declarations for the inherited @hermes/ink package name

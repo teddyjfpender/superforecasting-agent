@@ -16,6 +16,75 @@ const MAX_BUFFERED_EVENTS = 2000
 const MAX_LOG_PREVIEW = 240
 const STARTUP_TIMEOUT_MS = Math.max(5000, parseInt(tuiEnvValue('STARTUP_TIMEOUT_MS') || '15000', 10) || 15000)
 const REQUEST_TIMEOUT_MS = Math.max(30000, parseInt(tuiEnvValue('RPC_TIMEOUT_MS') || '120000', 10) || 120000)
+
+// ── Transport supervision ────────────────────────────────────────────────────
+// A gateway death used to be terminal: the desk kept rendering, every RPC
+// rejected, and the only recovery was for the operator to KNOW to quit and
+// relaunch. Under the shipped deploy story (a long-lived tmux session over ssh)
+// that reads as a desk that is alive and is not.
+//
+// `start()` was already a complete, idempotent restart — it rejects in-flight
+// RPCs with 'gateway restarting', tears down the old child/socket and re-spawns
+// — and `gateway.ready` already drives the full session bootstrap. Nothing ever
+// called it a second time. The supervisor below is that missing caller.
+//
+// BOUNDED on purpose. A gateway that dies instantly on every launch (bad config,
+// corrupt ledger, port conflict) must walk off the end of the ladder into a
+// clear terminal state naming the failure, not respawn forever.
+const parsePositive = (raw: null | string | undefined, fallback: number) => {
+  const value = parseInt(raw || '', 10)
+
+  return Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+const GATEWAY_MAX_RESTARTS = parsePositive(tuiEnvValue('GATEWAY_MAX_RESTARTS'), 5)
+const GATEWAY_RESTART_BASE_MS = 500
+const GATEWAY_RESTART_CAP_MS = 8000
+// Uptime that EARNS BACK the retry budget. A crash after hours of healthy use
+// gets the full ladder; a gateway that dies 200ms after every ready keeps
+// accumulating attempts and terminates. Without this, "crashes immediately,
+// always" and "crashed once after a week" are indistinguishable.
+const GATEWAY_STABLE_MS = parsePositive(tuiEnvValue('GATEWAY_STABLE_MS'), 30_000)
+
+export const gatewayRestartDelayMs = (attempt: number) =>
+  Math.min(GATEWAY_RESTART_CAP_MS, GATEWAY_RESTART_BASE_MS * 2 ** Math.max(0, attempt - 1))
+
+// ── Reaping the child on a deliberate stop ───────────────────────────────────
+// `kill()` used to be fire-and-forget: it sent a bare SIGTERM and returned, and
+// every caller then ran `process.exit()` on the next line. But the gateway
+// installs its OWN SIGTERM handler (tui_gateway/entry.py `_log_signal`) that
+// dumps every thread's stack to the crash log, unwinds atexit, and only
+// os._exit(0)s after a 1s grace — measured here at 0.6–1.1s to die. Node was
+// gone microseconds after the signal, so the child got reparented to init and
+// lingered, each one holding the WAL-mode ledger open. On a box where the
+// shipped flow is ssh → tmux → TUI, every quit-and-relaunch stranded another.
+//
+// So: wait for the child, and escalate if it does not go. The deadline is
+// deliberately just past the gateway's own 1s grace, because an operator
+// pressing `q` has to get their terminal back promptly — callers restore the
+// terminal FIRST and reap after, so this wait is never visible.
+const GATEWAY_KILL_GRACE_MS = parsePositive(tuiEnvValue('GATEWAY_KILL_GRACE_MS'), 1500)
+// After SIGKILL the kernel reaps promptly; this is only a floor so `kill()`
+// always settles even if the 'exit' event somehow never arrives.
+const GATEWAY_KILL_HARD_MS = 500
+
+/** Payload of the `reconnecting` event — everything the UI needs to say why + how long. */
+export interface GatewayReconnectInfo {
+  attempt: number
+  delayMs: number
+  max: number
+  reason: string
+}
+
+/** Payload of the terminal `exit` event. */
+export interface GatewayExitInfo {
+  attempts: number
+  reason: string
+  /** Captured gateway stderr — the whole point of getLogTail for this case. */
+  stderrTail: string
+  /** False when the transport was stopped deliberately (quit / OOM guard). */
+  unexpected: boolean
+}
 const WS_CONNECTING = 0
 const WS_OPEN = 1
 const WS_CLOSING = 2
@@ -136,11 +205,28 @@ export class GatewayClient extends EventEmitter {
   private pending = new Map<string, Pending>()
   private bufferedEvents = new CircularBuffer<GatewayEvent>(MAX_BUFFERED_EVENTS)
   private pendingExit: number | null | undefined
+  private pendingExitInfo: GatewayExitInfo | undefined
   private ready = false
   private readyTimer: ReturnType<typeof setTimeout> | null = null
   private subscribed = false
   private stdoutRl: ReturnType<typeof createInterface> | null = null
   private stderrRl: ReturnType<typeof createInterface> | null = null
+
+  // ── supervision state ──────────────────────────────────────────────────────
+  // Set by kill(): a deliberate stop (the user pressing `q`, the OOM guard) must
+  // never respawn. This is the single flag that separates a quit from a crash.
+  private stopped = false
+  private restartAttempt = 0
+  private restartTimer: ReturnType<typeof setTimeout> | null = null
+  // When the current transport last reached gateway.ready — the clock behind the
+  // "earned back the budget" rule above. 0 while not ready.
+  private readyAt = 0
+  // Replayed by drain() so a death DURING startup (before the UI subscribes) is
+  // not swallowed; the UI mounts a tick after the transport starts.
+  private pendingReconnect: GatewayReconnectInfo | undefined
+
+  /** Max respawns before the link is declared lost. 0 disables supervision. */
+  readonly maxRestarts = GATEWAY_MAX_RESTARTS
 
   constructor() {
     super()
@@ -152,6 +238,9 @@ export class GatewayClient extends EventEmitter {
   private publish(ev: GatewayEvent) {
     if (ev.type === WireEvent.GATEWAY_READY) {
       this.ready = true
+      // Start the stability clock: uptime measured from READY (not from spawn)
+      // is what tells a healthy gateway apart from one that boots and dies.
+      this.readyAt = Date.now()
       this.checkProtocolVersion(ev.payload?.protocol_version)
 
       if (this.readyTimer) {
@@ -241,16 +330,88 @@ export class GatewayClient extends EventEmitter {
     }, STARTUP_TIMEOUT_MS)
   }
 
+  private clearRestartTimer() {
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer)
+      this.restartTimer = null
+    }
+  }
+
+  /** Emit (or buffer) the TERMINAL exit — no further respawn will be attempted. */
+  private emitExit(code: null | number, info: GatewayExitInfo) {
+    if (this.subscribed) {
+      this.emit('exit', code, info)
+    } else {
+      this.pendingExit = code
+      this.pendingExitInfo = info
+    }
+  }
+
   private handleTransportExit(code: null | number, reason?: string) {
     this.clearReadyTimer()
     this.closeSidecarSocket()
-    this.rejectPending(new Error(reason || `gateway exited${code === null ? '' : ` (${code})`}`))
+
+    const message = reason || `gateway exited${code === null ? '' : ` (${code})`}`
+
+    this.rejectPending(new Error(message))
+
+    const wasReady = this.ready
+    const uptimeMs = this.readyAt ? Date.now() - this.readyAt : 0
+
+    this.ready = false
+    this.readyAt = 0
+
+    // A deliberate stop (`q`, the OOM guard, teardown) is NOT a crash.
+    if (this.stopped || this.maxRestarts <= 0) {
+      return this.emitExit(code, {
+        attempts: this.restartAttempt,
+        reason: message,
+        stderrTail: this.getLogTail(20),
+        unexpected: !this.stopped
+      })
+    }
+
+    // A transport that stayed up long enough earns its retry budget back.
+    if (wasReady && uptimeMs >= GATEWAY_STABLE_MS) {
+      this.restartAttempt = 0
+    }
+
+    if (this.restartAttempt >= this.maxRestarts) {
+      return this.emitExit(code, {
+        attempts: this.restartAttempt,
+        reason: message,
+        stderrTail: this.getLogTail(20),
+        unexpected: true
+      })
+    }
+
+    const attempt = ++this.restartAttempt
+
+    const info: GatewayReconnectInfo = {
+      attempt,
+      delayMs: gatewayRestartDelayMs(attempt),
+      max: this.maxRestarts,
+      reason: message
+    }
 
     if (this.subscribed) {
-      this.emit('exit', code)
+      this.emit('reconnecting', info)
     } else {
-      this.pendingExit = code
+      this.pendingReconnect = info
     }
+
+    this.clearRestartTimer()
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = null
+
+      if (!this.stopped) {
+        this.start()
+      }
+    }, info.delayMs)
+    // Never let a scheduled respawn hold the Node event loop open — the process
+    // must still be able to exit (including entry.tsx's OOM `process.exit(137)`)
+    // while a backoff is pending.
+    this.restartTimer.unref?.()
   }
 
   private connectSidecarMirror() {
@@ -485,6 +646,10 @@ export class GatewayClient extends EventEmitter {
     const attachUrl = resolveGatewayAttachUrl()
     const sidecarUrl = resolveSidecarUrl()
 
+    // Starting again supersedes any scheduled respawn (a manual /reconnect
+    // during a backoff wait must not double-spawn) and re-arms supervision.
+    this.clearRestartTimer()
+    this.stopped = false
     this.attachUrl = attachUrl
     this.sidecarUrl = sidecarUrl
     this.resetStartupState()
@@ -504,6 +669,21 @@ export class GatewayClient extends EventEmitter {
     }
 
     this.startSpawnedGateway(root)
+  }
+
+  /**
+   * Operator-driven retry from the terminal `lost` state. Resets the ladder so
+   * the full budget is available again — the user asking for a reconnect is
+   * fresh evidence that a retry is worth attempting.
+   */
+  reconnect() {
+    this.restartAttempt = 0
+    this.start()
+  }
+
+  /** True while a respawn is scheduled — used by tests and the `/reconnect` guard. */
+  isRestartPending() {
+    return this.restartTimer !== null
   }
 
   private dispatch(msg: Record<string, unknown>) {
@@ -593,11 +773,23 @@ export class GatewayClient extends EventEmitter {
       this.emit('event', ev)
     }
 
+    // A transport that died DURING startup supervises itself before the UI has
+    // subscribed; replay that so the desk shows "reconnecting" rather than
+    // sitting on a silent "starting…" until the respawn happens to succeed.
+    if (this.pendingReconnect !== undefined) {
+      const info = this.pendingReconnect
+
+      this.pendingReconnect = undefined
+      this.emit('reconnecting', info)
+    }
+
     if (this.pendingExit !== undefined) {
       const code = this.pendingExit
+      const info = this.pendingExitInfo
 
       this.pendingExit = undefined
-      this.emit('exit', code)
+      this.pendingExitInfo = undefined
+      this.emit('exit', code, info)
     }
   }
 
@@ -715,8 +907,88 @@ export class GatewayClient extends EventEmitter {
     })
   }
 
-  kill() {
-    this.proc?.kill()
+  /**
+   * Reap the child process: EOF its stdin, SIGTERM, and escalate to SIGKILL if
+   * it has not gone by the deadline. Always settles — a wedged child can never
+   * hang the quit path.
+   */
+  private reapChild(proc: ChildProcess): Promise<void> {
+    return new Promise<void>(resolve => {
+      let settled = false
+      let escalate: null | ReturnType<typeof setTimeout> = null
+      let floor: null | ReturnType<typeof setTimeout> = null
+
+      const finish = () => {
+        if (settled) {
+          return
+        }
+
+        settled = true
+
+        if (escalate) {
+          clearTimeout(escalate)
+        }
+
+        if (floor) {
+          clearTimeout(floor)
+        }
+
+        resolve()
+      }
+
+      proc.once('exit', finish)
+      proc.once('close', finish)
+      proc.once('error', finish)
+
+      // Politest stop first: the gateway's main loop is `for raw in sys.stdin`,
+      // so an EOF ends it without going through the signal handler at all.
+      try {
+        proc.stdin?.end()
+      } catch {
+        // best effort
+      }
+
+      try {
+        proc.kill('SIGTERM')
+      } catch {
+        return finish()
+      }
+
+      escalate = setTimeout(() => {
+        try {
+          proc.kill('SIGKILL')
+        } catch {
+          finish()
+        }
+      }, GATEWAY_KILL_GRACE_MS)
+
+      floor = setTimeout(finish, GATEWAY_KILL_GRACE_MS + GATEWAY_KILL_HARD_MS)
+      // Neither timer may hold the event loop open — a caller that decides to
+      // exit early must always be able to.
+      escalate.unref?.()
+      floor.unref?.()
+    })
+  }
+
+  /**
+   * Stop the gateway deliberately (quit, teardown, the OOM guard).
+   *
+   * Returns a promise that settles once the child is actually gone — callers
+   * that `process.exit()` afterwards MUST await it, or the child is orphaned.
+   * `entry.tsx`'s graceful-exit cleanup was already written as though this were
+   * awaitable; now it is.
+   */
+  kill(): Promise<void> {
+    // THE quit-vs-crash switch. Set before tearing anything down so the child's
+    // own 'exit' event — which fires as a direct result of this kill — takes the
+    // deliberate-stop branch in handleTransportExit and never respawns.
+    this.stopped = true
+    this.clearRestartTimer()
+
+    const proc = this.proc
+    const alive = !!proc && proc.exitCode === null && proc.signalCode === null
+    const reaped = alive ? this.reapChild(proc!) : Promise.resolve()
+
     this.closeGatewaySocket()
     this.closeSidecarSocket()
     this.clearReadyTimer()
@@ -725,5 +997,7 @@ export class GatewayClient extends EventEmitter {
     // skip handleTransportExit. Reject pending RPCs explicitly so
     // attach-mode promises do not hang after an intentional kill.
     this.rejectPending(new Error('gateway closed'))
+
+    return reaped
   }
 }

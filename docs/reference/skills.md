@@ -9,7 +9,7 @@
 
 > **Source of truth:** `skills/**/SKILL.md frontmatter (parsed with agent.skill_utils.parse_frontmatter)`
 
-The agent loads **skills** — self-contained capability bundles — on demand. There are **97 skills** in **19 categories**, indexed here straight from each `SKILL.md`'s frontmatter. *When to use* is the skill's declared `triggers` list when it has one, otherwise the `Use when…` guidance mined from its description. Skills directly under `skills/` (the forecasting desk's own) are listed first.
+The agent loads **skills** — self-contained capability bundles — on demand. There are **98 skills** in **19 categories**, indexed here straight from each `SKILL.md`'s frontmatter. *When to use* is the skill's declared `triggers` list when it has one, otherwise the `Use when…` guidance mined from its description. Skills directly under `skills/` (the forecasting desk's own) are listed first.
 
 
 | category | count |
@@ -29,7 +29,7 @@ The agent loads **skills** — self-contained capability bundles — on demand. 
 | `note-taking` | 1 |
 | `productivity` | 9 |
 | `red-teaming` | 1 |
-| `research` | 5 |
+| `research` | 6 |
 | `smart-home` | 1 |
 | `social-media` | 1 |
 | `software-development` | 11 |
@@ -194,6 +194,7 @@ The agent loads **skills** — self-contained capability bundles — on demand. 
 | --- | --- | --- |
 | `arxiv`<br>`skills/research/arxiv` | — | Search arXiv papers by keyword, author, category, or ID. |
 | `blogwatcher`<br>`skills/research/blogwatcher` | — | Monitor blogs and RSS/Atom feeds via blogwatcher-cli tool. |
+| `grounded-citations`<br>`skills/research/grounded-citations` | — | Ground answers and documents in cited, verifiable sources. |
 | `llm-wiki`<br>`skills/research/llm-wiki` | — | Karpathy's LLM Wiki: build/query interlinked markdown KB. |
 | `polymarket`<br>`skills/research/polymarket` | — | Query Polymarket: markets, prices, orderbooks, history. |
 | `research-paper-writing`<br>`skills/research/research-paper-writing` | — | Write ML papers for NeurIPS/ICML/ICLR: design→submit. |

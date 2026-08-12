@@ -135,20 +135,21 @@ def test_the_whole_journey(desk, monkeypatch):
     # Wave-3 visibility: the agent SEES the saturation read on success
     assert "saturation" in committed and 0 <= committed["saturation"]["score"] <= 100
 
-    # ── 3. DETERMINISTIC REFRESH: the desk keeps itself current with no LLM ─────
+    # ── 3. DETERMINISTIC PROPOSAL: background work never mutates probability ────
     ledger.add_watched_source(scope_type="question", scope_ref=qid, source="fed-cut", source_type="manifold")
-    # five days before the close deadline: refresh must fire AND cadence must escalate
+    # five days before the close deadline: proposal pass fires and cadence escalates
     now = "2026-09-25T08:00:00Z"
     results = ledger.run_due_scheduled_reviews(now=now, refresh_fetcher=_market_fetcher(0.80))
     ours = [r for r in results if (r["review"] or {}).get("scope_ref") == qid]
     assert ours, "the scheduled review row must be due and swept"
     row = ours[0]
     assert row.get("refresh_error") is None
-    assert row.get("refresh"), "a watched+componentized question must deterministically refresh"
+    assert row.get("refresh"), "a watched+componentized question must deterministically propose"
     fresh = ledger.get_current_snapshot(qid)
-    assert fresh.forecast_id != snap_id, "the refresh must commit a NEW snapshot"
-    # the market moved to 0.80 — the re-pooled number must move toward it
-    assert float(fresh.probability_or_distribution) > 0.55
+    assert fresh.forecast_id == snap_id, "background refresh must not mutate the active forecast"
+    proposal = row["refresh"]["proposal"]
+    assert proposal["status"] == "pending"
+    assert float(proposal["proposed_probability_or_distribution"]) > 0.55
     # deadline-aware escalation: within 7 days of close → next run at most daily
     next_run = row["review"]["next_run_at"]
     assert next_run <= "2026-09-26T08:00:01Z", f"cadence must escalate near the deadline, got {next_run}"

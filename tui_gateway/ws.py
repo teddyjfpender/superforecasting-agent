@@ -130,6 +130,9 @@ async def handle_ws(ws: Any) -> None:
                 "payload": {
                     "skin": server.resolve_skin(),
                     "protocol_version": PROTOCOL_VERSION,
+                    # Same non-blocking build identity the stdio entry advertises,
+                    # so a websocket-attached TUI shows the same version banner.
+                    "build": server.build_info(),
                 },
             },
         }

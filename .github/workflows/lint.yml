@@ -10,17 +10,9 @@ name: Lint (ruff + ty)
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "website/**"
+    branches: [main, superforecasting-agent-snapshot]
   pull_request:
-    branches: [main]
-    paths-ignore:
-      - "**/*.md"
-      - "docs/**"
-      - "website/**"
+    branches: [main, superforecasting-agent-snapshot]
 
 permissions:
   contents: read
@@ -103,6 +95,11 @@ jobs:
           echo "base ty:   $(wc -c < .lint-reports/base/ty.json) bytes"
 
       - name: Generate diff summary
+        env:
+          # github.head_ref is attacker-controlled on fork PRs; route it
+          # through env (not ${{ }} inline in the script) so a crafted branch
+          # name can never be parsed as shell.
+          HEAD_REF: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
         run: |
           python scripts/lint_diff.py \
             --base-ruff .lint-reports/base/ruff.json \
@@ -110,7 +107,7 @@ jobs:
             --base-ty   .lint-reports/base/ty.json \
             --head-ty   .lint-reports/head/ty.json \
             --base-ref  "${{ steps.base.outputs.ref }}" \
-            --head-ref  "${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}" \
+            --head-ref  "$HEAD_REF" \
             --output    .lint-reports/summary.md
           cat .lint-reports/summary.md >> "$GITHUB_STEP_SUMMARY"
 
@@ -233,3 +230,39 @@ jobs:
       - name: lint-imports
         # No --exit-zero: a broken contract (or a ratchet that grew) fails here.
         run: uv run lint-imports
+
+  actionlint:
+    # Workflow lint (rhysd/actionlint) over ALL of .github/workflows/.
+    # YAML-parse proves a file is well-formed; actionlint proves the things
+    # that actually break CI: `needs:` edges point at jobs that exist,
+    # ${{ }} expressions are valid and reference declared outputs, action
+    # inputs match, and `run:` scripts pass shellcheck. Blocking, like the
+    # ruff enforcement above.
+    #
+    # SHELLCHECK_OPTS pins the shellcheck floor at `warning`: info-level
+    # style notes (e.g. SC2012 `ls`-vs-`find` on our own dist/ globs in
+    # production-release.yml) stay visible in local runs but don't gate CI.
+    # actionlint's own (non-shellcheck) checks are fully strict — the tree
+    # is clean today; keep it that way rather than growing an ignore list.
+    # The binary is version-pinned + sha256-verified (same discipline as the
+    # release installers).
+    name: actionlint (blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install actionlint (pinned + checksum-verified)
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/actionlint.tar.gz \
+            "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  /tmp/actionlint.tar.gz" | sha256sum -c -
+          tar -C /tmp -xzf /tmp/actionlint.tar.gz actionlint
+          /tmp/actionlint --version
+
+      - name: actionlint
+        env:
+          SHELLCHECK_OPTS: --severity=warning
+        run: /tmp/actionlint -color

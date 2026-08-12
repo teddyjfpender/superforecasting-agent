@@ -43,12 +43,15 @@ def refresh_forecast(
     correlation: Any | None = None,
     dry_run: bool = False,
     commit: bool = True,
+    proposal_only: bool = False,
     trigger_reason: str = "manual_refresh",
     skill_weights: bool | None = None,
 ) -> dict[str, Any]:
     """Pull the latest watched-source readings, import the new values as
     evidence, deterministically re-pool the forecast, and (by default)
-    auto-commit a new live snapshot.
+    commit a new live snapshot. ``proposal_only`` persists the evidence and
+    model run but requires an explicit proposal approval before the probability
+    changes; unattended callers must use that mode.
     ``fetcher(specs) -> [{source_type, source, success, payloads, error}]``
     is injected by the caller (CLI / tool layer) so the ledger never imports
     the adapter/tool layer; ``payloads`` are kwargs for :meth:`add_evidence`.
@@ -62,12 +65,14 @@ def refresh_forecast(
     """
     if re_estimate not in {"deterministic", "carry_forward"}:
         raise ValidationError("re_estimate must be 'deterministic' or 'carry_forward'")
+    if commit and proposal_only:
+        raise ValidationError("commit and proposal_only are mutually exclusive")
     question = ledger.get_question(question_id)
     current = ledger.get_current_snapshot(question_id)
     if current is None:
         raise ValidationError("refresh requires a baseline forecast snapshot")
     run_at = parse_timestamp(now, field_name="now") or utc_now_iso()
-    persist = bool(commit) and not dry_run
+    persist = bool(commit or proposal_only) and not dry_run
     watches = ledger.list_watched_sources(
         scope_type="question", scope_ref=question_id, status="active"
     )
@@ -339,6 +344,35 @@ def refresh_forecast(
             "alerts": [alert],
             "estimator_task_id": estimator_task_id,
             "message": "evidence imported; estimation required — no forecast committed.",
+        }
+    if proposal_only:
+        proposal = ledger.create_forecast_update_proposal(
+            question_id=question_id,
+            run_id=None,
+            prior_forecast_id=current.forecast_id,
+            proposed_probability_or_distribution=new_prob,
+            rationale=rationale,
+            evidence_refs=new_evidence_ids,
+            model_run_refs=[model_run["id"]],
+        )
+        alert = ledger.create_alert(
+            severity="info",
+            scope_type="question",
+            scope_ref=question_id,
+            reason=f"autopilot_update_proposed:{proposal['id']}",
+            recommended_action=(
+                f"Review with `forecast autopilot approve {proposal['id']}` or reject it."
+            ),
+            now=run_at,
+        )
+        return {
+            **preview,
+            "status": "proposal_created",
+            "proposal": proposal,
+            "model_run": model_run,
+            "new_evidence_ids": new_evidence_ids,
+            "alerts": [*trigger_alerts, alert],
+            "message": "evidence imported and proposal created; no forecast committed.",
         }
     snapshot = ledger.create_snapshot(
         question_id=question_id,

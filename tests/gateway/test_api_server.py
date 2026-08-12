@@ -233,6 +233,17 @@ class TestAdapterInit:
         assert adapter._api_key == ""
         assert adapter.platform == Platform.API_SERVER
 
+    @pytest.mark.asyncio
+    async def test_disconnect_closes_durable_stores(self):
+        adapter = APIServerAdapter(PlatformConfig(enabled=True))
+        adapter._response_store = MagicMock()
+        adapter._run_store = MagicMock()
+
+        await adapter.disconnect()
+
+        adapter._response_store.close.assert_called_once_with()
+        adapter._run_store.close.assert_called_once_with()
+
     def test_custom_config_from_extra(self):
         config = PlatformConfig(
             enabled=True,

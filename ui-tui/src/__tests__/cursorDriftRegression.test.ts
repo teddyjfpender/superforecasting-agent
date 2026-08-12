@@ -68,7 +68,16 @@ describe('cursor-drift regression — composer cursorLayout matches Ink renderin
         ).toEqual(expected)
       }
     }
-  })
+    // EXPLICIT per-test budget, not a global timeout bump. This test is purely
+    // CPU-bound and fully deterministic — no timers, no I/O, no async — but it
+    // is exhaustive by design: 7 widths x ~440 typing-prefixes, each re-wrapping
+    // the whole accumulated string, which measures ~2.1s on an idle machine.
+    // That is 43% of vitest's default 5s budget with zero contention, so under a
+    // loaded parallel run it blew the deadline deterministically (6/6 in a
+    // load-amplified survey). The exhaustiveness IS the value of the test — the
+    // original bug only showed at particular lengths and widths — so the right
+    // answer is to price it honestly rather than to sample fewer prefixes.
+  }, 60_000)
 
   it('keeps cursor on the same row when text exactly fills the terminal width', () => {
     // wrap-ansi does NOT push exact-fill text onto a phantom next line.

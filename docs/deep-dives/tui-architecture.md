@@ -58,10 +58,15 @@ tree; heavy logic is split into `src/app/` (hooks + nanostores) and `src/compone
   `turnStore`, …). React context (`gatewayContext.tsx`) carries the gateway client.
 - **The one nav source of truth.** `src/app/navRoutes.ts` holds `NAV_TABS` and the
   overlay patch each route selects. `NavBar` (mouse) and `useInputHandlers`
-  (keyboard `g`-chord) **both** route through `navPatchFor`/`selectNavView`, so a
-  click and a `g d` chord land on byte-identical overlay state — key and click can
-  never drift. A tab click also clears the global overlays, so it closes an open
-  palette/cheat-sheet as it navigates.
+  (the `Ctrl+G`-then-letter view chord) **both** route through
+  `navPatchFor`/`selectNavView`, so a click and a `Ctrl+G d` chord land on
+  byte-identical overlay state — key and click can never drift. A tab click also
+  clears the global overlays, so it closes an open palette/cheat-sheet as it
+  navigates. `NAV_TABS` is also where the **dev gate** is applied: it is a
+  filtered view of a private `ALL_NAV_TABS` (`demoViz` ships behind
+  `FORECAST_TUI_DEV_DEMO_VIZ`), and `navPatchFor` refuses any key not in it —
+  so a gated route is genuinely unreachable by click *or* chord, on the same
+  single membership check rather than two conditions that could diverge.
 - **The event handler on generated names.** `src/app/createGatewayEventHandler.ts`
   maps gateway events to state updates, switching on `WireEvent.X` constants from
   the generated protocol module — not raw strings (see
@@ -83,13 +88,18 @@ Two halves render the same theme and **must** agree:
   palette: `BRAND_GRADIENT` = blue → lavender-purple → rose-pink) and **merges in**
   the gateway skin data on `gateway.ready` / `skin.changed`.
 
-> **The sync law: `theme.ts`'s `DEFAULT_THEME` and `skin_engine.py`'s `default`
+> **The sync law: `theme.ts`'s `DARK_THEME` and `skin_engine.py`'s `default`
 > skin must stay in sync.** They are two independent encodings of the same
 > palette; a colour changed on one side and not the other produces a first-paint
 > flash (the TS default) that then snaps to the merged Python skin. `theme.ts`
-> also enforces a 4.5:1 dark-contrast floor (`enforceDarkContrastFloor`) and
-> preserves the `DEFAULT_THEME === DARK_THEME` aliasing invariant other code
-> relies on.
+> also enforces a 4.5:1 dark-contrast floor (`enforceDarkContrastFloor`); on
+> dark-designed palettes the floor is a no-op, which is what preserves the
+> `DEFAULT_THEME === DARK_THEME` aliasing invariant other code relies on.
+> Nuance since the light-terminal work: `DEFAULT_THEME` is now
+> `enforceDarkContrastFloor(DEFAULT_LIGHT_MODE ? LIGHT_THEME : DARK_THEME)` —
+> `detectLightMode()` picks a darker-ink `LIGHT_THEME` variant on light
+> terminals, so the aliasing invariant is a property of the (default) dark
+> path, not of a light-mode launch.
 
 ---
 
@@ -108,9 +118,11 @@ performant. Each is enforced by a component and, where noted, a named test.
   (`lib/pmData.ts`, `lib/forecastCharts.ts`). Whole counts render without decimals;
   the split is explicit, not incidental.
 - **Whole-row highlight.** A selected row's highlight carries across its **full
-  width** — a trailing filler cell extends the background to the row edge
-  (`predictionMarketsTable.tsx`, `alertsView.tsx`, `marketsView.tsx`, all noting
-  "desk-view parity"). No half-highlighted rows.
+  width** — no half-highlighted rows. Two implementations of the one law:
+  `alertsView.tsx` appends a trailing filler cell that carries the selection
+  background to the row edge, while `marketsView.tsx` and
+  `predictionMarketsTable.tsx` render the row as one full-width background
+  ("the background IS the cursor", both noting desk-view parity).
 - **Memo-safe animation with bucketed `nowMs`.** Time-derived labels ("next sweep
   in 3m", elapsed) would re-render memoized rows on every frame if fed a raw
   `Date.now()`. The desk passes a **bucketed** now — `nowMs={Math.floor(Date.now()
