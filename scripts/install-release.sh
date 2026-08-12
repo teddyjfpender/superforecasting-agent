@@ -34,7 +34,7 @@
 #                          Never needed for v0.18.0+ releases, and never a
 #                          bypass for a FAILED check — a mismatch always aborts.
 #
-# Supported: macOS, Linux. Needs Python 3.10+ (the only prerequisite — pipx is
+# Supported: macOS, Linux. Needs Python 3.11-3.13 (the only prerequisite — pipx is
 # installed automatically if missing).
 # ============================================================================
 set -euo pipefail
@@ -120,9 +120,13 @@ printf '\n\033[1m✦ Outrider — Superforecasting Agent\033[0m\n\n'
 # 1. Locate a Python interpreter (the only hard prerequisite).
 PY=""
 for c in python3 python; do
-  if command -v "$c" >/dev/null 2>&1; then PY="$c"; break; fi
+  if command -v "$c" >/dev/null 2>&1 \
+      && "$c" -c 'import sys; raise SystemExit(not ((3, 11) <= sys.version_info[:2] < (3, 14)))' 2>/dev/null; then
+    PY="$c"
+    break
+  fi
 done
-[ -n "$PY" ] || die "Python 3.10+ is required but was not found. Install Python and re-run."
+[ -n "$PY" ] || die "Python 3.11-3.13 is required but was not found. Install a supported Python and re-run."
 
 # 2. Resolve the target release. A local release-manifest.json (MANIFEST=…)
 #    pins the exact tag; otherwise TAG (default: latest) resolves through the
@@ -223,6 +227,15 @@ else
   warn "pipx unavailable — falling back to 'pip install --user'."
   "$PY" -m pip install --user --force-reinstall "$WHEEL"
   BIN_DIR="$("$PY" -c 'import site, os; print(os.path.join(site.getuserbase(), "bin"))')"
+fi
+
+# Stamp the release lane so future update checks use GitHub Releases rather
+# than looking for a package this fork does not publish to PyPI.
+AGENT_HOME="${SUPERFORECASTING_AGENT_HOME:-${FORECAST_HOME:-${HERMES_HOME:-$HOME/.superforecasting-agent}}}"
+if mkdir -p "$AGENT_HOME" && printf 'release\n' > "$AGENT_HOME/.install_method"; then
+  :
+else
+  warn "Could not stamp $AGENT_HOME/.install_method; updates will still work via the release installer."
 fi
 
 # 7. Report and tell them how to launch (never auto-launch — stdin is the

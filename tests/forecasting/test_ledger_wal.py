@@ -37,6 +37,15 @@ def test_foreign_keys_still_on(tmp_path):
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
 
+def test_connection_context_closes_owned_connection(tmp_path):
+    ledger = ForecastLedger(str(tmp_path / "wal.db"))
+    with ledger._connect() as conn:
+        conn.execute("SELECT 1")
+
+    with pytest.raises(sqlite3.ProgrammingError):
+        conn.execute("SELECT 1")
+
+
 def test_reader_not_blocked_by_open_writer_txn(tmp_path):
     ledger = ForecastLedger(str(tmp_path / "wal.db"))
     writer = ledger._connect()

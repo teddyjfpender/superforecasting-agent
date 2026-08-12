@@ -114,10 +114,10 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
         "--thesis-aggregate",
         dest="thesis_aggregate",
         action="store_true",
-        help="Re-aggregate all theses (+ entity suitabilities) after each member review sweep",
+        help="Preview all thesis aggregates (+ entity suitabilities) after each member review sweep",
     )
     schedule_cron.add_argument("--no-thesis-aggregate", dest="thesis_aggregate", action="store_false",
-                               help="Do NOT re-aggregate theses in the nightly sweep")
+                               help="Do NOT preview thesis aggregates in the nightly sweep")
     schedule_cron.add_argument("--synthesize-lessons", dest="synthesize_lessons", action="store_true",
                                help="Synthesize calibration lessons after the nightly sweep")
     schedule_cron.add_argument("--no-synthesize-lessons", dest="synthesize_lessons", action="store_false",

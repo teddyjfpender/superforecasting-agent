@@ -123,6 +123,7 @@ class SessionResumeRequest(WireModel):
 
     session_id: str
     cols: int | None = None
+    replace_session_id: str | None = None
 
 
 class SessionResumeResponse(WireModel):

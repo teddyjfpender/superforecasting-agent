@@ -22,14 +22,14 @@ class ReviewSweep(WireModel):
     """``review.sweep`` — the due-sweeper lifecycle, discriminated on ``phase``.
 
     ``phase='started'`` carries ``due_count``; ``phase='done'`` carries
-    ``refreshed`` / ``alerts`` / ``duration_ms`` (``_emit_review_sweep``).
+    ``proposals`` / ``alerts`` / ``duration_ms`` (``_emit_review_sweep``).
     """
 
     TS_NAME = "ReviewSweepPayload"
 
     phase: str
     due_count: int | None = wire_optional()
-    refreshed: int | None = wire_optional()
+    proposals: int | None = wire_optional()
     alerts: int | None = wire_optional()
     duration_ms: int | None = wire_optional()
 

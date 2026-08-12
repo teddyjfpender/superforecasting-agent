@@ -12,10 +12,9 @@ Three consequences, all of them holes this file fills:
    has no test at all.
 2. A headless Ink render sizes the root box to CONTENT height, so overlays and
    lower rows are clipped and cannot be asserted on.
-3. Headless tests default to 80 columns, so every wide-layout branch (the Home
-   conversations rail at >=84 columns, the Desk's skinny summary panel at
-   >=100) never mounts in a test.  ``test_wide_terminal_mounts_the_home_rail``
-   below is the first automated coverage of any of them.
+3. Headless tests default to 80 columns, so they cannot prove the full-width
+   Home layout survives a real terminal resize.  The resize test below covers
+   that PTY-only path.
 
 WHAT ONE BOOT ACTUALLY PROVES
 -----------------------------
@@ -50,22 +49,13 @@ from .pty_session import PtySession
 from .vt import VTScreen
 
 # ── Layout constants mirrored from the TUI source ───────────────────────────
-# ui-tui/src/lib/homeLayout.ts: RAIL_MIN_COLS = 84, RAIL_WIDTH = 30.  The Home
-# screen splits into a conversations rail + conversation pane at or above
-# RAIL_MIN_COLS.  NARROW_COLS is deliberately the width headless vitest uses,
-# so the two suites meet exactly at the boundary neither can cross alone.
 NARROW_COLS, NARROW_ROWS = 80, 30
 WIDE_COLS, WIDE_ROWS = 120, 44
-RAIL_WIDTH = 30
 
 # ui-tui/src/content/setup.ts: SETUP_REQUIRED_TITLE.  Shown when the gateway's
 # `setup.status` RPC reports no provider configured -- always true for the
 # pristine `tui_home` fixture.
 SETUP_REQUIRED_TITLE = "Setup Required"
-
-# ui-tui/src/components/conversationsRail.tsx -- the rail's new-chat affordance
-# and its section header.  Rail-only: neither can appear below RAIL_MIN_COLS.
-RAIL_ANCHORS = ("New chat", "Recent")
 
 # ui-tui/src/lib/terminalModes.ts: TERMINAL_MODE_RESET.  The subset that leaves
 # a terminal unusable if it is not restored -- a tab stuck in mouse-tracking
@@ -90,16 +80,6 @@ MODE_ENABLE_SEQUENCES = {
 }
 
 CTRL_C = b"\x03"
-
-
-def rail_region(screen: VTScreen) -> str:
-    """Text of the leftmost RAIL_WIDTH columns -- where the rail lives."""
-    return screen.region_text(col_end=RAIL_WIDTH)
-
-
-def has_rail(screen: VTScreen) -> bool:
-    region = rail_region(screen)
-    return all(anchor in region for anchor in RAIL_ANCHORS)
 
 
 def make_session(bundle: Path, env: dict[str, str]) -> PtySession:
@@ -196,50 +176,33 @@ def test_first_paint_under_a_real_pty(tui: PtySession, record_property):
 
 @pytest.mark.live_system_guard_bypass
 @pytest.mark.timeout(120)
-def test_wide_terminal_mounts_the_home_rail(tui: PtySession, record_property):
-    """Resize 80 -> 120 columns and watch a wide-only component mount.
-
-    This is the assertion the headless suite structurally cannot make.  At 80
-    columns (the vitest default) ``showRailFor`` is false and the Home
-    conversations rail does not exist in the tree; above RAIL_MIN_COLS (84) it
-    does.  Driving the transition over a real SIGWINCH proves three things at
-    once: the resize is handled, the app survives it, and the wide branch
-    actually renders.
-    """
+def test_wide_terminal_keeps_home_full_width(tui: PtySession, record_property):
+    """Resize 80 -> 120 columns without reviving the removed chat rail."""
     tui.wait_for(
         lambda s: SETUP_REQUIRED_TITLE in s.text(),
         timeout=FIRST_PAINT_BUDGET_S,
         what="first paint before resizing",
     )
 
-    # Narrow: no rail.  Settle first -- a negative assertion against a
-    # half-painted frame proves nothing.
     tui.settle()
-    assert not has_rail(tui.screen), (
-        f"the conversations rail must not mount at {NARROW_COLS} columns "
-        f"(RAIL_MIN_COLS=84 in ui-tui/src/lib/homeLayout.ts)" + tui.diagnostics()
-    )
 
     before = tui.elapsed
     tui.resize(WIDE_ROWS, WIDE_COLS)
     latency = tui.wait_for(
-        has_rail,
+        lambda s: s.cols == WIDE_COLS and SETUP_REQUIRED_TITLE in s.text(),
         timeout=30,
-        what=f"the Home rail ({' + '.join(map(repr, RAIL_ANCHORS))}) after resizing "
-        f"to {WIDE_COLS} columns",
+        what=f"the full-width Home layout after resizing to {WIDE_COLS} columns",
     ) - before
-    record_property("resize_to_rail_seconds", round(latency, 3))
-    print(f"[tui-pty] rail mounted {latency:.2f}s after SIGWINCH")
+    record_property("resize_home_seconds", round(latency, 3))
+    print(f"[tui-pty] Home resized {latency:.2f}s after SIGWINCH")
 
-    # Still alive and still coherent after the resize: the rail is there AND
-    # the pre-existing panel survived the reflow (i.e. the app re-rendered
-    # rather than crashed into a partial screen).
     assert tui.returncode is None, "the TUI exited during the resize" + tui.diagnostics()
     tui.settle()
-    assert has_rail(tui.screen), "the rail vanished after settling" + tui.diagnostics()
     assert SETUP_REQUIRED_TITLE in tui.screen.text(), (
         "the app lost its panel across the resize" + tui.diagnostics()
     )
+    assert "New chat" not in tui.screen.text()
+    assert "Recent" not in tui.screen.text()
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -19,7 +19,7 @@ import type * as HomeLandingModule from '../components/homeLanding.js'
 //      budget. Regression baseline: with the transcript re-rendering per key the
 //      active conversation cost ~4,900 B/keystroke (~24 KB / 5 keys); isolated it
 //      is ~110 B/keystroke.
-//   2. RENDER COUNTS +0: the rail, the transcript, the status bar, the NavBar,
+//   2. RENDER COUNTS +0: the transcript, the status bar, the NavBar,
 //      the hero, the Today panel and the tip re-render ZERO times while typing.
 //      The mocked leaves below bump a counter on each render, so +0 == the
 //      memoized subtree never re-rendered.
@@ -34,9 +34,6 @@ const bump = (k: string) => {
   return null
 }
 
-vi.mock('../components/conversationsRail.js', () => ({
-  ConversationsRail: () => bump('rail')
-}))
 vi.mock('../components/streamingAssistant.js', () => ({
   LiveTodoPanel: () => null,
   StreamingAssistant: () => bump('transcript')
@@ -129,17 +126,12 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
   const { AppLayout, Box, GatewayProvider, render, store, useVirtualHistory } = await setup()
   store.$composerText.set({ input: 'hi', inputBuf: [] })
 
-  const sessions = Array.from({ length: 40 }, (_, i) => ({
-    id: `s${i}`, message_count: 1, preview: '', source: 'tui', started_at: 40 - i, title: `chat ${i + 1}`
-  }))
-
   const gw: any = {
     off: noop, on: noop,
-    request: async (m: string) => (m === 'session.list' ? { sessions } : null),
+    request: async () => null,
     rpc: async () => null
   }
 
-  const railScrollRef = React.createRef<any>()
   const gwValue = { gw, rpc: gw.rpc }
   const composer = buildComposer(COLS)
 
@@ -151,7 +143,7 @@ const runBudget = async (historyItems: any[], virtualRows: any[]) => {
     const virtualHistory = useVirtualHistory(scrollRef, rows, COLS)
 
     const transcript = React.useMemo(
-      () => ({ historyItems, railScrollRef, scrollRef, virtualHistory, virtualRows: rows }),
+      () => ({ historyItems, scrollRef, virtualHistory, virtualRows: rows }),
       [virtualHistory, rows]
     )
 
@@ -212,7 +204,6 @@ describe('Home composer: whole-frame keystroke budget', () => {
     )
 
     // The pinned invariant: nothing above the composer re-renders while typing.
-    expect(c.rail ?? 0).toBe(0)
     expect(c.transcript ?? 0).toBe(0)
     expect(c.statusBar ?? 0).toBe(0)
     expect(c.navbar ?? 0).toBe(0)
@@ -227,7 +218,6 @@ describe('Home composer: whole-frame keystroke budget', () => {
   it('landing (hero visible) — 5 keystrokes under budget, chrome renders +0', async () => {
     const { counts: c, perKey, total } = await runBudget([{ kind: 'intro', role: 'system', text: '' }], [])
 
-    expect(c.rail ?? 0).toBe(0)
     expect(c.transcript ?? 0).toBe(0)
     expect(c.statusBar ?? 0).toBe(0)
     expect(c.navbar ?? 0).toBe(0)

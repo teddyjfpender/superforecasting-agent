@@ -237,7 +237,7 @@ def _version_tuple(v: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-# The newest version any resolution path (PyPI / GitHub release / cache) has
+# The newest version any resolution path (GitHub release / cache) has
 # seen this process. Purely a display aid — the authoritative "am I behind?"
 # answer stays ``check_for_updates()``'s ``behind`` count.
 _latest_version: Optional[str] = None
@@ -249,37 +249,6 @@ def _record_latest_version(value: Optional[str]) -> Optional[str]:
     if value:
         _latest_version = value
     return value
-
-
-def _fetch_pypi_latest(package: str = "superforecasting-agent") -> Optional[str]:
-    """Fetch the latest version of a package from PyPI. Returns None on failure."""
-    try:
-        import urllib.request
-        url = f"https://pypi.org/pypi/{package}/json"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read())
-            return data.get("info", {}).get("version")
-    except Exception:
-        return None
-
-
-def check_via_pypi() -> Optional[int]:
-    """Compare installed version against PyPI latest.
-
-    Returns 0 if up-to-date, 1 if behind, None on failure.
-    """
-    latest = _record_latest_version(_fetch_pypi_latest())
-    if latest is None:
-        return None
-    if latest == VERSION:
-        return 0
-    try:
-        if _version_tuple(latest) > _version_tuple(VERSION):
-            return 1
-        return 0
-    except Exception:
-        return 1 if latest != VERSION else 0
 
 
 def _get_json(url: str, accept: str) -> Optional[dict]:
@@ -372,15 +341,12 @@ def check_for_updates() -> Optional[int]:
         if not (repo_dir / ".git").exists():
             repo_dir = _resolve_home_repo_dir(hermes_home)
         if repo_dir is None or not (repo_dir / ".git").exists():
-            behind = check_via_pypi()
+            behind = check_via_release()
         else:
             behind = _check_via_local_git(repo_dir)
         if behind is None:
-            # Nothing local could answer — no checkout (the pipx / one-line
-            # installer lane), or a checkout whose remote isn't named `origin`,
-            # and this fork is not on PyPI. Fall back to the published GitHub
-            # release, which is the ground truth for the product version, so a
-            # bundled build can still learn that it is stale.
+            # A checkout whose remote isn't named `origin` still falls back to
+            # the published GitHub release, the product-version authority.
             behind = check_via_release()
 
     try:

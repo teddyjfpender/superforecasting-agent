@@ -3108,8 +3108,8 @@ def test_github_actions_metadata_is_forecast_native():
         root / ".github" / "dependabot.yml",
         root / ".github" / "workflows" / "deploy-site.yml",
         root / ".github" / "workflows" / "docker-publish.yml",
+        root / ".github" / "workflows" / "production-release.yml",
         root / ".github" / "workflows" / "skills-index.yml",
-        root / ".github" / "workflows" / "upload_to_pypi.yml",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
@@ -3120,7 +3120,7 @@ def test_github_actions_metadata_is_forecast_native():
     assert "image=teddyjfpender/superforecasting-agent" in text
     assert "/tmp/superforecasting-agent-test" in text
     assert "name: superforecasting-agent" in text
-    assert "https://pypi.org/p/superforecasting-agent" in text
+    assert "GitHub Releases is the wheel authority" in text
     assert "https://teddyjfpender.github.io/superforecasting-agent/llms.txt" in text
     assert "Dependabot configuration for Superforecasting Agent" in text
     assert "Hermes smoke test" not in text

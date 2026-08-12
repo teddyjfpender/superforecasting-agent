@@ -594,7 +594,7 @@ def _cmd_doctor(args: argparse.Namespace) -> None:
                     tail = f"sweep running since {last.get('last_sweep_started_at') or 'unknown'}"
                 elif last.get("ran"):
                     tail = (
-                        f"last sweep refreshed {last.get('refreshed', 0)}, "
+                        f"last sweep proposed {last.get('proposals', last.get('refreshed', 0))}, "
                         f"alerts {last.get('alerts', 0)}"
                     )
                 else:

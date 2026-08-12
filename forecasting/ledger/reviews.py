@@ -540,10 +540,11 @@ def run_due_scheduled_reviews(
     """Run every due scheduled-review row, advancing each row's cadence.
 
     ``refresh_fetcher`` (injected by the cron layer — the ledger never imports
-    the tool/adapter layer) turns the sweep into a DETERMINISTIC self-refresh:
+    the tool/adapter layer) turns the sweep into a deterministic proposal pass:
     for each due QUESTION-scoped review that is refreshable (has a baseline
     snapshot with structured ensemble_components AND active watched sources) we
-    re-pull the sources, re-pool, and auto-commit a fresh snapshot — no LLM.
+    re-pull the sources, import evidence, re-pool, and create a reviewable
+    proposal — no LLM and no unattended probability mutation.
     Fail-open per question: one broken source records an error in the row's
     result and never aborts the sweep. The cadence is also DEADLINE-AWARE — a
     question's next run is escalated (never slowed) as its close/resolution/
@@ -694,7 +695,7 @@ def run_due_scheduled_reviews(
                 ]
             except Exception:
                 deadlines = None
-            # Deterministic self-refresh (no LLM) for a refreshable question.
+            # Deterministic proposal pass (no LLM) for a refreshable question.
             if refresh_fetcher is not None and not resolution_only:
                 try:
                     refresh_result = ledger._refresh_due_question(
@@ -806,8 +807,8 @@ def run_due_scheduled_reviews(
             run_status = "failed_retryable"
         elif refresh_error:
             run_status = "partial_source_failure"
-        elif refresh_status == "committed":
-            run_status = "forecast_committed"
+        elif refresh_status == "proposal_created":
+            run_status = "proposal_created"
         elif refresh_status == "needs_estimation":
             run_status = "estimation_required"
         elif any(reason.startswith("resolution_") for reason in reasons) and any(
@@ -894,13 +895,13 @@ def run_due_scheduled_reviews(
 def _refresh_due_question(
     ledger, question_id: str, *, fetcher: Any, now: str | None
 ) -> dict[str, Any] | None:
-    """Deterministically self-refresh a due question when it is refreshable.
+    """Deterministically propose an update for a refreshable due question.
 
     Refreshable = a baseline snapshot with structured ensemble_components AND
     at least one active watched source. Returns ``None`` (skipped) otherwise,
     so a bare/no-source question is quietly left for the agent-tier re-reason.
-    Opens its own write context so the commit is permitted even when the caller
-    did not (e.g. the tool's direct ``run_scheduled_reviews``)."""
+    Opens its own write context so evidence and the proposal can be persisted
+    even when the caller did not open one. The active probability is unchanged."""
     current = ledger.get_current_snapshot(question_id)
     if current is None:
         return None
@@ -912,11 +913,13 @@ def _refresh_due_question(
     )
     if not watches:
         return None
-    with allow_ledger_writes(reason="scheduled_refresh"):
+    with allow_ledger_writes(reason="scheduled_refresh_proposal"):
         return ledger.refresh_forecast(
             question_id,
             fetcher=fetcher,
             now=now,
+            commit=False,
+            proposal_only=True,
             trigger_reason="scheduled_refresh",
         )
 

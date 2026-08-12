@@ -9,7 +9,7 @@
 
 > **Source of truth:** `os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, hermes_cli/`
 
-Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **215 variables** (50 flagged as secrets, 165 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
+Every environment variable the server, tools, and CLI actually **read** — harvested by walking the AST of every module under `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for `os.getenv` / `os.environ.get` / `os.environ[...]`. There are **216 variables** (50 flagged as secrets, 166 configuration/runtime). The **default** column shows the fallback passed at the call site — `None` means a bare `os.getenv` (unset → `None`), `(required)` means a subscript that raises `KeyError` when unset, `(computed)` means a non-literal default. A variable read in several modules lists each; differing defaults are all shown.
 
 
 > **Secrets** are classified by name (any variable whose name contains `KEY`, `TOKEN`, `SECRET`, `PASSWORD`, `PASSWD`, `CREDENTIAL`). This is a conservative naming heuristic, not a data-flow analysis — treat the list as "never log or commit these", and audit the source before assuming a variable *not* listed here is safe to print.
@@ -75,7 +75,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 ## Configuration & runtime
 
 
-**165 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
+**166 variables** tune runtime behaviour, endpoints, paths, and feature flags, or are inherited from the surrounding shell/OS. Everything here is read directly from the environment at the call site shown.
 
 | variable | default | read in |
 | --- | --- | --- |
@@ -110,6 +110,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `FAL_IMAGE_MODEL` | `''` | `tools.image_generation_tool` |
 | `FIRECRAWL_API_URL` | `''`, `None` | `tools.web_tools` |
 | `FORECAST_BIN` | `''` | `hermes_cli.kanban_db` |
+| `FORECAST_COMMIT_POLICY` | `''` | `forecasting.ledger.gate` |
 | `FORECAST_HOME` | `''` | `hermes_cli.main` |
 | `FORECAST_RESOLUTION_MODEL` | `None` | `tools.forecast_actions.resolution` |
 | `FORECAST_TIMEZONE` | `''` | `hermes_cli.config` |

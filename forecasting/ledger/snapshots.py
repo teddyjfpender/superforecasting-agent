@@ -50,7 +50,11 @@ from forecasting.models import (
 
 from forecasting import appconfig
 from forecasting.ledger import core as _core
-from forecasting.ledger.gate import _enforce_write_gate, allow_ledger_writes
+from forecasting.ledger.gate import (
+    _enforce_write_gate,
+    allow_ledger_writes,
+    snapshot_writes_allowed,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -449,6 +453,10 @@ def create_snapshot(
     # writes nothing; the connection-level authorizer is the backstop for any
     # accidental INSERT). All pre-insert work here is read-only/in-memory and
     # all post-insert machinery is naturally skipped by returning before it.
+    if not preview and not snapshot_writes_allowed():
+        raise ValidationError(
+            "snapshot commits are disabled for this unattended proposal-only run"
+        )
     if not preview:
         _enforce_write_gate("create_snapshot")
     try:

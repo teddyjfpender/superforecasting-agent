@@ -58,6 +58,12 @@ def test_commit_material_policy_only_under_autonomous_policy():
     assert "MATERIAL move" in autonomous and "MARGINAL" in autonomous
 
 
+def test_scheduled_policy_is_proposal_only():
+    scheduled = _stage_task("update", commit_policy="proposal_only")
+    assert "PROPOSAL-ONLY POLICY" in scheduled
+    assert "cannot commit a snapshot" in scheduled
+
+
 # ---------------------------------------------------------------------------
 # the cron reforecast runner classifies the commit by materiality
 # ---------------------------------------------------------------------------
@@ -151,6 +157,37 @@ def test_marginal_move_reforecast_does_not_commit(tmp_path, monkeypatch):
     assert after.forecast_id == before  # no new snapshot — marginal stays preview
     assert res[q.id]["status"] == "skipped"
     assert "no new snapshot" in res[q.id]["detail"]
+
+
+def test_scheduled_reforecast_creates_proposal_without_snapshot(tmp_path, monkeypatch):
+    import forecasting.cli as cli
+
+    ledger = _ledger(tmp_path)
+    question = _seed_with_prior(ledger, 0.46)
+    before = ledger.get_current_snapshot(question.id)
+
+    def _proposal_stub(active_ledger, qid, **kwargs):
+        assert kwargs.get("commit_policy") == "proposal_only"
+        current = active_ledger.get_current_snapshot(qid)
+        active_ledger.create_forecast_update_proposal(
+            question_id=qid,
+            run_id=None,
+            prior_forecast_id=current.forecast_id,
+            proposed_probability_or_distribution=0.56,
+            rationale="Fresh evidence supports a material move.",
+        )
+        return {}
+
+    monkeypatch.setattr(cli, "_run_update_agent", _proposal_stub)
+    runner = cli._build_cycle_reforecast_runner(
+        _args(tmp_path), commit_policy="proposal_only"
+    )
+    result = runner([question.id])[0]
+
+    after = ledger.get_current_snapshot(question.id)
+    assert result["status"] == "proposed"
+    assert after.forecast_id == before.forecast_id
+    assert len(ledger.list_forecast_update_proposals(question_id=question.id)) == 1
 
 
 def _always_commit_stub(target_prob):

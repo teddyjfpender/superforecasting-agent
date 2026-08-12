@@ -690,7 +690,7 @@ class TestEnvVarFiltering(unittest.TestCase):
     It should receive safe vars like PATH, HOME, LANG, etc.
     """
 
-    def _get_child_env(self, extra_env=None):
+    def _get_child_env(self, extra_env=None, forecast_commit_policy=None):
         """Run a script that dumps its environment and return the env dict."""
         code = (
             "import os, json\n"
@@ -704,7 +704,8 @@ class TestEnvVarFiltering(unittest.TestCase):
                  patch("tools.code_execution_tool._load_config",
                        return_value={"timeout": 10, "max_tool_calls": 50}):
                 raw = execute_code(code, task_id="test-env",
-                                   enabled_tools=list(SANDBOX_ALLOWED_TOOLS))
+                                   enabled_tools=list(SANDBOX_ALLOWED_TOOLS),
+                                   forecast_commit_policy=forecast_commit_policy)
         finally:
             os.environ.clear()
             os.environ.update(env_backup)
@@ -756,6 +757,10 @@ class TestEnvVarFiltering(unittest.TestCase):
         self.assertIn("SUPERFORECASTING_AGENT_RPC_SOCKET", child_env)
         self.assertIn("FORECAST_RPC_SOCKET", child_env)
         self.assertIn("HERMES_RPC_SOCKET", child_env)
+
+    def test_proposal_only_policy_injected(self):
+        child_env = self._get_child_env(forecast_commit_policy="proposal_only")
+        self.assertEqual(child_env.get("FORECAST_COMMIT_POLICY"), "proposal_only")
 
     def test_pythondontwritebytecode_set(self):
         child_env = self._get_child_env()

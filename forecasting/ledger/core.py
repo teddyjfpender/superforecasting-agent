@@ -366,6 +366,7 @@ _PACKET_JSON_FIELDS = {
         "model_run_refs",
         "assumption_refs",
         "reference_class_refs",
+        "snapshot_args",
     },
 }
 _PACKET_BOOL_FIELDS = {
@@ -493,6 +494,13 @@ class ForecastLedger:
         def __getattr__(self, name: str) -> Any:
             return getattr(self._connection, name)
 
+    class _OwnedConnection(_BorrowedConnection):
+        def __exit__(self, exc_type, exc, traceback) -> bool:
+            try:
+                return self._connection.__exit__(exc_type, exc, traceback)
+            finally:
+                self._connection.close()
+
     def _new_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
@@ -531,7 +539,7 @@ class ForecastLedger:
         active = self._transaction_connection.get()
         if active is not None:
             return self._BorrowedConnection(active)  # type: ignore[return-value]
-        return self._new_connection()
+        return self._OwnedConnection(self._new_connection())  # type: ignore[return-value]
 
     @contextlib.contextmanager
     def transaction(self, *, immediate: bool = False):
@@ -1320,6 +1328,7 @@ class ForecastLedger:
                     model_run_refs TEXT NOT NULL DEFAULT '[]',
                     assumption_refs TEXT NOT NULL DEFAULT '[]',
                     reference_class_refs TEXT NOT NULL DEFAULT '[]',
+                    snapshot_args TEXT NOT NULL DEFAULT '{}',
                     status TEXT NOT NULL DEFAULT 'pending',
                     created_at TEXT NOT NULL,
                     reviewed_at TEXT,
@@ -1775,6 +1784,7 @@ class ForecastLedger:
             self._ensure_column(conn, "alert_events", "disposition", "TEXT")
             self._ensure_column(conn, "forecast_update_proposals", "resulting_forecast_id", "TEXT")
             self._ensure_column(conn, "forecast_update_proposals", "expires_at", "TEXT")
+            self._ensure_column(conn, "forecast_update_proposals", "snapshot_args", "TEXT NOT NULL DEFAULT '{}'")
             self._ensure_operational_uniqueness(conn)
             # R2 operator practice loop — defensive migrations for the scoring
             # columns (idempotent; a fresh CREATE already carries them).
@@ -4250,8 +4260,9 @@ class ForecastLedger:
         now: str | None = None,
         rho: float | str = 0.4,
         limit: int = 500,
+        commit: bool = True,
     ) -> dict[str, Any]:
-        return _theses.aggregate_all_theses(self, now=now, rho=rho, limit=limit)
+        return _theses.aggregate_all_theses(self, now=now, rho=rho, limit=limit, commit=commit)
 
     def backfill_thesis_member_intervals(
         self,
@@ -4364,10 +4375,11 @@ class ForecastLedger:
         model_run_refs: list[str] | None = None,
         assumption_refs: list[str] | None = None,
         reference_class_refs: list[str] | None = None,
+        snapshot_args: dict[str, Any] | None = None,
         status: str = "pending",
         expires_at: str | None = None,
     ) -> dict[str, Any]:
-        return _autopilot.create_forecast_update_proposal(self, question_id=question_id, run_id=run_id, prior_forecast_id=prior_forecast_id, proposed_probability_or_distribution=proposed_probability_or_distribution, rationale=rationale, evidence_refs=evidence_refs, source_snapshot_refs=source_snapshot_refs, model_run_refs=model_run_refs, assumption_refs=assumption_refs, reference_class_refs=reference_class_refs, status=status, expires_at=expires_at)
+        return _autopilot.create_forecast_update_proposal(self, question_id=question_id, run_id=run_id, prior_forecast_id=prior_forecast_id, proposed_probability_or_distribution=proposed_probability_or_distribution, rationale=rationale, evidence_refs=evidence_refs, source_snapshot_refs=source_snapshot_refs, model_run_refs=model_run_refs, assumption_refs=assumption_refs, reference_class_refs=reference_class_refs, snapshot_args=snapshot_args, status=status, expires_at=expires_at)
 
     def get_forecast_update_proposal(self, proposal_id: str) -> dict[str, Any]:
         return _autopilot.get_forecast_update_proposal(self, proposal_id=proposal_id)
@@ -4442,10 +4454,11 @@ class ForecastLedger:
         correlation: Any | None = None,
         dry_run: bool = False,
         commit: bool = True,
+        proposal_only: bool = False,
         trigger_reason: str = "manual_refresh",
         skill_weights: bool | None = None,
     ) -> dict[str, Any]:
-        return _refresh.refresh_forecast(self, question_id=question_id, fetcher=fetcher, now=now, re_estimate=re_estimate, extremize=extremize, correlation=correlation, dry_run=dry_run, commit=commit, trigger_reason=trigger_reason, skill_weights=skill_weights)
+        return _refresh.refresh_forecast(self, question_id=question_id, fetcher=fetcher, now=now, re_estimate=re_estimate, extremize=extremize, correlation=correlation, dry_run=dry_run, commit=commit, proposal_only=proposal_only, trigger_reason=trigger_reason, skill_weights=skill_weights)
 
     # A market-model id is ``mm_<hex12>`` (create_market_model). A component is
     # "model-sourced" when it carries that id explicitly or references it in its
@@ -4518,6 +4531,7 @@ class ForecastLedger:
         proposed_probability_or_distribution: Any | None = None,
         rationale: str | None = None,
         require_policy: bool = True,
+        allow_auto_commit: bool = True,
     ) -> dict[str, Any]:
         # The autopilot POLICY governs only the MATERIALITY threshold and the
         # auto-commit MODE (whether a watched-source change becomes a proposal /
@@ -4531,7 +4545,7 @@ class ForecastLedger:
         # /commit nothing). The explicit `forecast autopilot run` path keeps the
         # default ``require_policy=True`` so an operator asking to autopilot a
         # policy-less question still gets a loud, actionable error.
-        return _autopilot.run_autopilot(self, question_id=question_id, now=now, trigger_reason=trigger_reason, proposed_probability_or_distribution=proposed_probability_or_distribution, rationale=rationale, require_policy=require_policy)
+        return _autopilot.run_autopilot(self, question_id=question_id, now=now, trigger_reason=trigger_reason, proposed_probability_or_distribution=proposed_probability_or_distribution, rationale=rationale, require_policy=require_policy, allow_auto_commit=allow_auto_commit)
 
     def check_watched_sources(
         self,
@@ -4724,6 +4738,7 @@ class ForecastLedger:
         limit: int = 5,
         lease_seconds: int = 900,
         question_id: str | None = None,
+        allow_auto_commit: bool = False,
     ) -> list[dict[str, Any]]:
         from forecasting.ledger.workflow import run_estimator_tasks
 
@@ -4735,6 +4750,7 @@ class ForecastLedger:
             limit=limit,
             lease_seconds=lease_seconds,
             question_id=question_id,
+            allow_auto_commit=allow_auto_commit,
         )
 
     def run_source_change_router(

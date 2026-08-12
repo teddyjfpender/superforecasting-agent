@@ -37,7 +37,7 @@ def _reset(monkeypatch, tmp_path, *, interval=10, due=0, nightly=None):
     events: list[dict] = []
     monkeypatch.setattr(server, "write_json", lambda obj: events.append(obj) or True)
     calls: list[bool] = []
-    monkeypatch.setattr(cr, "run_due_reviews", lambda *a, **k: (calls.append(True) or "alerts: 2\ncommitted: 1\n"))
+    monkeypatch.setattr(cr, "run_due_reviews", lambda *a, **k: (calls.append(True) or "alerts: 2\nproposals: 1\n"))
     return events, calls
 
 
@@ -51,14 +51,14 @@ def test_runs_the_sweep_when_due_and_emits_events(monkeypatch, tmp_path):
 
     assert result["ran"] is True
     assert result["due_count"] == 2
-    assert result["refreshed"] == 1 and result["alerts"] == 2
+    assert result["proposals"] == 1 and result["alerts"] == 2
     assert calls == [True], "the deterministic sweep must run exactly once"
 
     sweeps = _sweep_events(events)
     assert [(e["params"]["payload"]["phase"]) for e in sweeps] == ["started", "done"]
     assert sweeps[0]["params"]["payload"]["due_count"] == 2
     done = sweeps[1]["params"]["payload"]
-    assert done["refreshed"] == 1 and done["alerts"] == 2
+    assert done["proposals"] == 1 and done["alerts"] == 2
     assert "duration_ms" in done
 
     # State file recorded the run for `forecast doctor`.
@@ -77,7 +77,7 @@ def test_persists_in_flight_state_before_slow_sweep(monkeypatch, tmp_path):
         assert state["running"] is True
         assert state["last_sweep_started_at"] == "2026-07-02T12:00:00Z"
         calls.append(True)
-        return "alerts: 0\ncommitted: 0\n"
+        return "alerts: 0\nproposals: 0\n"
 
     monkeypatch.setattr(cr, "run_due_reviews", inspect_in_flight)
     result = server._run_review_sweep(now="2026-07-02T12:00:00Z")

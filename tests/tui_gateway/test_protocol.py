@@ -332,6 +332,176 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
     ]
 
 
+def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypatch):
+    class _DB:
+        def get_session(self, _sid):
+            return {"id": "saved"}
+
+        def reopen_session(self, _sid):
+            return None
+
+        def get_messages_as_conversation(self, _sid, include_ancestors=False):
+            return []
+
+    server._sessions["old-runtime"] = {"session_key": "old", "agent": None}
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
+    monkeypatch.setattr(server, "_session_info", lambda _agent: {})
+
+    resp = server.handle_request(
+        {
+            "id": "r1",
+            "method": "session.resume",
+            "params": {
+                "session_id": "saved",
+                "replace_session_id": "old-runtime",
+            },
+        }
+    )
+
+    assert "error" not in resp
+    assert "old-runtime" not in server._sessions
+    assert resp["result"]["session_id"] in server._sessions
+
+
+def test_session_resume_failure_preserves_old_runtime(server, monkeypatch):
+    class _DB:
+        def get_session(self, _sid):
+            return {"id": "saved"}
+
+        def reopen_session(self, _sid):
+            return None
+
+        def get_messages_as_conversation(self, _sid, include_ancestors=False):
+            return []
+
+    old = {"session_key": "old", "agent": None}
+    server._sessions["old-runtime"] = old
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+    monkeypatch.setattr(
+        server,
+        "_make_agent",
+        lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    resp = server.handle_request(
+        {
+            "id": "r1",
+            "method": "session.resume",
+            "params": {
+                "session_id": "saved",
+                "replace_session_id": "old-runtime",
+            },
+        }
+    )
+
+    assert resp["error"]["code"] == 5000
+    assert server._sessions["old-runtime"] is old
+    assert old.get("running") is False
+
+
+def test_session_resume_rolls_back_partial_new_runtime(server, monkeypatch):
+    class _DB:
+        def __init__(self):
+            self.ended = []
+
+        def get_session(self, _sid):
+            return {"id": "saved"}
+
+        def reopen_session(self, _sid):
+            return None
+
+        def get_messages_as_conversation(self, _sid, include_ancestors=False):
+            return []
+
+        def end_session(self, session_id, reason):
+            self.ended.append((session_id, reason))
+
+    old = {"session_key": "old", "agent": None}
+    db = _DB()
+    server._sessions["old-runtime"] = old
+    monkeypatch.setattr(server, "_get_db", lambda: db)
+    monkeypatch.setattr(server, "_make_agent", lambda *args, **kwargs: object())
+
+    def fail_after_insert(sid, *_args, **_kwargs):
+        server._sessions[sid] = {"session_key": "saved", "agent": None}
+        raise RuntimeError("partial init")
+
+    monkeypatch.setattr(server, "_init_session", fail_after_insert)
+
+    resp = server.handle_request(
+        {
+            "id": "r1",
+            "method": "session.resume",
+            "params": {
+                "session_id": "saved",
+                "replace_session_id": "old-runtime",
+            },
+        }
+    )
+
+    assert resp["error"]["code"] == 5000
+    assert server._sessions == {"old-runtime": old}
+    assert old.get("running") is False
+    assert db.ended == []
+
+
+def test_session_resume_refuses_to_replace_busy_runtime(server, monkeypatch):
+    class _DB:
+        def get_session(self, _sid):
+            return {"id": "saved"}
+
+    old = {"session_key": "old", "agent": None, "running": True}
+    server._sessions["old-runtime"] = old
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+
+    resp = server.handle_request(
+        {
+            "id": "r1",
+            "method": "session.resume",
+            "params": {"session_id": "saved", "replace_session_id": "old-runtime"},
+        }
+    )
+
+    assert resp["error"]["code"] == 4009
+    assert server._sessions == {"old-runtime": old}
+
+
+def test_session_resume_refuses_already_active_durable_session(server, monkeypatch):
+    class _DB:
+        def get_session(self, _sid):
+            return {"id": "saved"}
+
+    active = {"session_key": "saved", "agent": None, "running": False}
+    server._sessions["active-runtime"] = active
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+
+    resp = server.handle_request(
+        {"id": "r1", "method": "session.resume", "params": {"session_id": "saved"}}
+    )
+
+    assert resp["error"]["code"] == 4010
+    assert server._sessions == {"active-runtime": active}
+
+
+def test_session_list_omits_active_durable_sessions(server, monkeypatch):
+    class _DB:
+        def list_sessions_rich(self, source=None, limit=200):
+            return [
+                {"id": "active", "title": "Active", "source": "tui"},
+                {"id": "saved", "title": "Saved", "source": "cli"},
+            ]
+
+    server._sessions["runtime"] = {"session_key": "active", "running": False}
+    monkeypatch.setattr(server, "_get_db", lambda: _DB())
+
+    resp = server.handle_request(
+        {"id": "r1", "method": "session.list", "params": {"limit": 20}}
+    )
+
+    assert [item["id"] for item in resp["result"]["sessions"]] == ["saved"]
+
+
 # ── Config I/O ───────────────────────────────────────────────────────
 
 

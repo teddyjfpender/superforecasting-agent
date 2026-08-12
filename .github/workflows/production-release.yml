@@ -2,10 +2,10 @@ name: Production Release (formal artifact set)
 
 # Cuts the FORMAL ARTIFACT SET for one release on a SemVer tag push (vX.Y.Z):
 #   1. Python wheel (bundled TUI, node auto-provision)  2. sdist
-#   3. install.sh (pinned one-line installer)           4. SHA256SUMS
-#   5. release-manifest.json (names, versions, image digest, min-migration)
-#   6. multi-arch image → ghcr.io (linux/amd64 + linux/arm64), tags vX.Y.Z + latest
-# and attaches 1-5 to the GitHub Release.  Mirrors scripts/release.sh so a
+#   3. install.sh (macOS/Linux)  4. install.ps1 (Windows)  5. SHA256SUMS
+#   6. release-manifest.json (names, versions, image digest, min-migration)
+#   7. multi-arch image → ghcr.io (linux/amd64 + linux/arm64), tags vX.Y.Z + latest
+# and attaches 1-6 to the GitHub Release.  Mirrors scripts/release.sh so a
 # local dry-run matches CI exactly.
 #
 # ── OPERATOR CONFIG (must be set once; this workflow does NOT fake them) ──
@@ -15,19 +15,19 @@ name: Production Release (formal artifact set)
 #     release, set the ghcr package visibility to Public if the docs' one-line
 #     `docker pull ghcr.io/...` is meant to work unauthenticated.
 #   * The wheel + release are created with GITHUB_TOKEN (permissions below).
-#   * PyPI publishing is intentionally NOT part of this workflow (see
-#     upload_to_pypi.yml — a separate, opt-in, trusted-publisher path).
-#   * Docker Hub mirroring stays owned by docker-publish.yml (which fires on
-#     `release: published` and needs DOCKERHUB_USERNAME/DOCKERHUB_TOKEN); this
-#     workflow's `release: published` event will trigger it as a side effect.
+#   * This fork is not published to PyPI. GitHub Releases is the wheel authority.
+#   * Docker Hub mirroring is optional. When DOCKERHUB_USERNAME and
+#     DOCKERHUB_TOKEN are configured, this job copies the already-verified GHCR
+#     digest directly; it does not rely on a GITHUB_TOKEN-created release event
+#     starting another workflow.
 #
-# This SUPERSEDES release.yml (kept as a manual escape hatch) for tag-triggered
-# releases.  SemVer vX.Y.Z is now the single release scheme.
+# This is the only GitHub Release publisher. SemVer vX.Y.Z is the single release
+# scheme; workflow_dispatch is the gated recovery path for an existing tag.
 
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'   # strict SemVer only (excludes CalVer v20YY.*)
+      - 'v*'   # the gate below performs the strict version/tag validation
   workflow_dispatch:
     inputs:
       tag:
@@ -53,20 +53,23 @@ jobs:
     timeout-minutes: 20
     outputs:
       version: ${{ steps.resolve.outputs.version }}
+      revision: ${{ steps.resolve.outputs.revision }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-tags: true
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.11'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # 8.2.0
+        with:
+          version: '0.10.9'
 
       - name: Install dependencies
         run: |
@@ -84,6 +87,35 @@ jobs:
             exit 1
           fi
           echo "version=${VER}" >> "$GITHUB_OUTPUT"
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release commit is on the default branch
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git fetch origin \
+            "refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}"
+          git merge-base --is-ancestor HEAD "origin/${DEFAULT_BRANCH}" || {
+            echo "::error::release tag must point to a commit reachable from origin/${DEFAULT_BRANCH}"
+            exit 1
+          }
+
+      - name: Refuse mutation of a published release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${{ inputs.tag || github.ref_name }}"
+          if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true || {
+              echo "::error::release $TAG is already published and immutable"
+              exit 1
+            }
+          fi
+
+      - name: Verify lockfile
+        run: uv lock --check
 
       - name: Readiness gate (strict)
         run: |
@@ -106,13 +138,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.tag || github.ref }}
       - name: Install system dependencies
         run: sudo apt-get update && sudo apt-get install -y ripgrep
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # 8.2.0
+        with:
+          version: '0.10.9'
       - name: Set up Python 3.11
         run: uv python install 3.11
       - name: Install dependencies
@@ -159,17 +193,8 @@ jobs:
             -m "requires_network or requires_credentials" 2>/dev/null \
             | grep -cE '::' || true)
           echo "excluded ${EXCLUDED} env-coupled tests (requires_network / requires_credentials)"
-          # KNOWN PRE-EXISTING REDS (documented prod bugs, filed — not release
-          # regressions; each deselect is visible here, never a silent skip):
-          # - test_self_check_applies_domain_error_profiles_to_active_forecasts
-          #   + test_hooks_preview_snapshot_matches_get_current_snapshot:
-          #   the hooks-preview batched-vs-per-question snapshot bug (filed
-          #   2026-07-10 during the pollution eradication).
-          echo "deselecting 2 documented pre-existing reds (see comments)"
           python -m pytest tests/ -q --ignore=tests/integration --ignore=tests/e2e \
             -m "not integration and not requires_network and not requires_credentials" \
-            --deselect "tests/forecasting/test_ledger.py::test_self_check_applies_domain_error_profiles_to_active_forecasts" \
-            --deselect "tests/test_tui_gateway_server.py::test_hooks_preview_snapshot_matches_get_current_snapshot" \
             --tb=short -n auto --timeout=60 --timeout-method=signal
         env:
           OPENROUTER_API_KEY: ""
@@ -183,6 +208,16 @@ jobs:
           # HOME is not writable.
           HERMES_HOME: ${{ runner.temp }}/hermes-home
 
+      - name: Run E2E tests
+        run: |
+          source .venv/bin/activate
+          python -m pytest tests/e2e/ -v --tb=short
+        env:
+          OPENROUTER_API_KEY: ""
+          OPENAI_API_KEY: ""
+          NOUS_API_KEY: ""
+          HERMES_HOME: ${{ runner.temp }}/hermes-home
+
   # -------------------------------------------------------------------------
   # TUI-green: type-check + full vitest suite + lint for ui-tui. The release
   # job below builds and SHIPS ui-tui inside the wheel, so a red TUI suite
@@ -194,11 +229,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.tag || github.ref }}
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '22'
           cache: 'npm'
@@ -217,38 +252,95 @@ jobs:
         # sync with tests.yml's tui job.
         run: cd ui-tui && npm run lint -- --max-warnings 54
 
+  python-compat:
+    name: Python ${{ matrix.python-version }} compatibility
+    if: github.repository == 'teddyjfpender/superforecasting-agent'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.12', '3.13']
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # 8.2.0
+        with:
+          version: '0.10.9'
+      - name: Install package and focused compatibility suite
+        run: |
+          uv python install ${{ matrix.python-version }}
+          uv venv .venv --python ${{ matrix.python-version }}
+          uv pip install --python .venv -e ".[dev]"
+          .venv/bin/python -m pytest -q \
+            tests/test_packaging_metadata.py \
+            tests/hermes_cli/test_build_version_signal.py \
+            tests/forecasting/test_refresh.py
+
+  windows-release-installer:
+    if: github.repository == 'teddyjfpender/superforecasting-agent'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+      - name: Parse native release installer
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path scripts/install-release.ps1),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            exit 1
+          }
+      - name: Verify a published release asset set without installing
+        shell: powershell
+        run: scripts/install-release.ps1 -Tag v0.19.0 -VerifyOnly
+
   # -------------------------------------------------------------------------
   # Build the formal set: wheel + multi-arch image + checksums + manifest,
   # then create the GitHub Release with everything attached.
   # -------------------------------------------------------------------------
   release:
-    needs: [gate, test, tui]
+    needs: [gate, test, python-compat, windows-release-installer, tui]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: write   # create the Release + upload assets
       packages: write   # push the image to ghcr.io (built-in GITHUB_TOKEN)
+      id-token: write   # keyless Sigstore bundles for wheel + sdist
     env:
       VERSION: ${{ needs.gate.outputs.version }}
       TAG: ${{ inputs.tag || github.ref_name }}
       IMAGE: ghcr.io/${{ github.repository }}
+      REVISION: ${{ needs.gate.outputs.revision }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           ref: ${{ inputs.tag || github.ref }}
           fetch-tags: true
           submodules: recursive
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.11'
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # 8.2.0
+        with:
+          version: '0.10.9'
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4
         with:
           node-version: '22'
 
@@ -269,15 +361,41 @@ jobs:
       - name: Build wheel + sdist
         run: uv build --sdist --wheel
 
+      - name: Sign wheel + sdist with Sigstore
+        uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc  # v3.3.0
+        with:
+          inputs: >-
+            ./dist/*.tar.gz
+            ./dist/*.whl
+
       # ---- multi-arch image → ghcr.io (digest captured for the manifest) ----
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130  # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3
+
+      - name: Build amd64 image for smoke test
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
+        with:
+          context: .
+          file: Dockerfile
+          load: true
+          platforms: linux/amd64
+          tags: ${{ env.IMAGE }}:release-smoke-${{ github.run_id }}
+          labels: |
+            org.opencontainers.image.revision=${{ env.REVISION }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+          cache-from: type=gha,scope=release
+          cache-to: type=gha,mode=max,scope=release
+
+      - name: Smoke test image
+        uses: ./.github/actions/hermes-smoke-test
+        with:
+          image: ${{ env.IMAGE }}:release-smoke-${{ github.run_id }}
 
       - name: Log in to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -285,17 +403,15 @@ jobs:
 
       - name: Build + push multi-arch image
         id: image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: |
-            ${{ env.IMAGE }}:${{ env.TAG }}
-            ${{ env.IMAGE }}:latest
+          tags: ${{ env.IMAGE }}:${{ env.TAG }}
           labels: |
-            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.revision=${{ env.REVISION }}
             org.opencontainers.image.version=${{ env.VERSION }}
           cache-from: type=gha,scope=release
           cache-to: type=gha,mode=max,scope=release
@@ -305,16 +421,19 @@ jobs:
         run: |
           set -euo pipefail
           cp scripts/install-release.sh dist/install.sh
-          WHEEL="$(ls dist/superforecasting_agent-*.whl | head -n1)"
-          SDIST="$(ls dist/superforecasting_agent-*.tar.gz | head -n1)"
+          cp scripts/install-release.ps1 dist/install.ps1
+          WHEEL="$(find dist -maxdepth 1 -type f -name 'superforecasting_agent-*.whl' -print -quit)"
+          SDIST="$(find dist -maxdepth 1 -type f -name 'superforecasting_agent-*.tar.gz' -print -quit)"
+          test -n "$WHEEL" && test -n "$SDIST"
           ( cd dist && sha256sum \
-              "$(basename "$WHEEL")" "$(basename "$SDIST")" install.sh > SHA256SUMS )
+              "$(basename "$WHEEL")" "$(basename "$SDIST")" install.sh install.ps1 > SHA256SUMS )
           python -m scripts.release_manifest build \
             --version "$VERSION" --tag "$TAG" \
             --min-migration "${RELEASE_MIN_MIGRATION:-0.17.0}" \
             --artifact "wheel=$WHEEL" \
             --artifact "sdist=$SDIST" \
             --artifact "installer=dist/install.sh" \
+            --artifact "windows_installer=dist/install.ps1" \
             --artifact "checksums=dist/SHA256SUMS" \
             --image-registry ghcr.io \
             --image-repo "${{ github.repository }}" \
@@ -334,16 +453,98 @@ jobs:
             ' CHANGELOG.md
           } > dist/RELEASE_NOTES.md
 
-      - name: Create GitHub Release
+      - name: Create draft GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG" \
-            dist/superforecasting_agent-*.whl \
-            dist/superforecasting_agent-*.tar.gz \
-            dist/install.sh dist/SHA256SUMS dist/release-manifest.json \
-            --title "$TAG" --notes-file dist/RELEASE_NOTES.md --verify-tag \
-          || gh release upload "$TAG" \
-            dist/superforecasting_agent-*.whl \
-            dist/superforecasting_agent-*.tar.gz \
-            dist/install.sh dist/SHA256SUMS dist/release-manifest.json --clobber
+          set -euo pipefail
+          if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
+            test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
+            gh release edit "$TAG" --title "$TAG" --notes-file dist/RELEASE_NOTES.md
+            gh release upload "$TAG" \
+              dist/superforecasting_agent-*.whl \
+              dist/superforecasting_agent-*.tar.gz \
+              dist/*.sigstore.json \
+              dist/install.sh dist/install.ps1 dist/SHA256SUMS dist/release-manifest.json --clobber
+          else
+            gh release create "$TAG" \
+              dist/superforecasting_agent-*.whl \
+              dist/superforecasting_agent-*.tar.gz \
+              dist/*.sigstore.json \
+              dist/install.sh dist/install.ps1 dist/SHA256SUMS dist/release-manifest.json \
+              --title "$TAG" --notes-file dist/RELEASE_NOTES.md --verify-tag --draft
+          fi
+          find dist -maxdepth 1 -type f \( \
+            -name 'superforecasting_agent-*.whl' -o \
+            -name 'superforecasting_agent-*.tar.gz' -o \
+            -name '*.sigstore.json' -o \
+            -name 'install.sh' -o -name 'install.ps1' -o \
+            -name 'SHA256SUMS' -o -name 'release-manifest.json' \
+          \) -printf '%f\n' | sort -u > /tmp/expected-release-assets
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort -u > /tmp/release-assets
+          comm -23 /tmp/release-assets /tmp/expected-release-assets | while IFS= read -r stale; do
+            test -z "$stale" || gh release delete-asset "$TAG" "$stale" --yes
+          done
+
+      - name: Verify immutable release assets and image
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          VERIFY_DIR="$(mktemp -d)"
+          trap 'rm -rf "$VERIFY_DIR"' EXIT
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort -u > /tmp/release-assets
+          diff -u /tmp/expected-release-assets /tmp/release-assets
+          gh release download "$TAG" --dir "$VERIFY_DIR"
+          while IFS= read -r asset; do
+            cmp "dist/$asset" "$VERIFY_DIR/$asset"
+          done < /tmp/expected-release-assets
+          docker buildx imagetools inspect "$IMAGE:$TAG" | grep -F "$IMAGE_DIGEST"
+
+      - name: Move latest after the formal release verifies
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE@$IMAGE_DIGEST"
+          docker buildx imagetools inspect "$IMAGE:latest" | grep -F "$IMAGE_DIGEST"
+
+      - name: Detect optional Docker Hub mirror
+        id: dockerhub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Docker Hub mirror skipped: credentials are not configured"
+          fi
+
+      - name: Log in to Docker Hub for formal mirror
+        if: steps.dockerhub.outputs.enabled == 'true'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Mirror verified image digest to Docker Hub
+        if: steps.dockerhub.outputs.enabled == 'true'
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          DOCKERHUB_IMAGE: teddyjfpender/superforecasting-agent
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "$DOCKERHUB_IMAGE:$TAG" \
+            --tag "$DOCKERHUB_IMAGE:latest" \
+            "$IMAGE@$IMAGE_DIGEST"
+          docker buildx imagetools inspect "$DOCKERHUB_IMAGE:$TAG" | grep -F "$IMAGE_DIGEST"
+          docker buildx imagetools inspect "$DOCKERHUB_IMAGE:latest" | grep -F "$IMAGE_DIGEST"
+
+      - name: Publish verified GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=false --latest

@@ -282,7 +282,9 @@ def build_context_from_ledger(ledger, question_id: str, *, event: str = "lint", 
     try:
         from forecasting.readiness_lens import build_question_readiness
 
-        readiness_score = build_question_readiness(ledger, question_id).get("score")
+        readiness_score = build_question_readiness(
+            ledger, question_id, snapshot=snap
+        ).get("score")
     except Exception:
         readiness_score = None
 

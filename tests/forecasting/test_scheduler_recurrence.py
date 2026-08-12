@@ -1,6 +1,6 @@
 """Slice S4 — recurrence by default.
 
-Idempotent cron install, config-gated default routines, deterministic self-refresh
+Idempotent cron install, config-gated default routines, deterministic update proposals
 in the cadence sweep, deadline-aware cadence escalation, `freshen`, and cron health.
 """
 
@@ -278,7 +278,7 @@ def _schedule_due(ledger, qid, *, cadence="daily"):
     )
 
 
-def test_due_sweep_refreshes_refreshable_question(tmp_path):
+def test_due_sweep_proposes_without_mutating_refreshable_question(tmp_path):
     ledger = _ledger(tmp_path)
     q = _market_question(ledger)
     _schedule_due(ledger, q.id)
@@ -290,9 +290,12 @@ def test_due_sweep_refreshes_refreshable_question(tmp_path):
 
     row = next(r for r in results if (r["review"] or {}).get("scope_ref") == q.id)
     assert row["refresh"] is not None
-    assert row["refresh"]["status"] == "committed"
+    assert row["refresh"]["status"] == "proposal_created"
     assert row["refresh_error"] is None
-    assert len(ledger.list_snapshots(q.id)) == before + 1  # a fresh snapshot landed
+    assert len(ledger.list_snapshots(q.id)) == before
+    proposal = row["refresh"]["proposal"]
+    assert proposal["status"] == "pending"
+    assert proposal["evidence_refs"] == row["refresh"]["new_evidence_ids"]
 
 
 def test_due_sweep_records_refresh_error_but_continues(tmp_path):

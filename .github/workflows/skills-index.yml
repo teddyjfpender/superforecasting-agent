@@ -6,8 +6,10 @@ on:
     - cron: '0 6,18 * * *'
   workflow_dispatch:  # Manual trigger
   push:
-    branches: [main]
+    branches: [main, superforecasting-agent-snapshot]
     paths:
+      - 'skills/**'
+      - 'optional-skills/**'
       - 'scripts/build_skills_index.py'
       - '.github/workflows/skills-index.yml'
 

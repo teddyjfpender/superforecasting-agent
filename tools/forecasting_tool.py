@@ -446,6 +446,14 @@ FORECAST_LEDGER_SCHEMA = {
                     "snapshot count. Returns {preview:true, would_commit, saturation, blockers}."
                 ),
             },
+            "proposal_only": {
+                "type": "boolean",
+                "description": (
+                    "Validate the update exactly like a preview, then create a pending proposal "
+                    "for a material move instead of committing a snapshot. Unattended runs force "
+                    "this mode server-side."
+                ),
+            },
             "panel_run_ref": {
                 "type": "string",
                 "description": (
@@ -1353,6 +1361,9 @@ def forecast_ledger_tool(
     args = dict(args)
     if main_runtime:
         args["_main_runtime"] = dict(main_runtime)
+    proposal_only = (main_runtime or {}).get("forecast_commit_policy") == "proposal_only"
+    if proposal_only and args.get("action") == "update_forecast":
+        args["proposal_only"] = True
     action = args.get("action")
     # Lazy import breaks the facade<->action-module import cycle: the
     # tools.forecast_actions submodules import helpers from THIS module, so
@@ -1362,6 +1373,11 @@ def forecast_ledger_tool(
     try:
         handler = ACTIONS.get(action)
         if handler is not None:
+            if proposal_only:
+                from forecasting.ledger.gate import forbid_snapshot_writes
+
+                with forbid_snapshot_writes():
+                    return handler(args, ledger)
             return handler(args, ledger)
         return tool_error(f"unknown forecast_ledger action: {action}", success=False)
     except SaturationBlocked as blocked:

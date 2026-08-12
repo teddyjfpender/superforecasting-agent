@@ -2,7 +2,7 @@ name: Nix
 
 on:
   push:
-    branches: [main]
+    branches: [main, superforecasting-agent-snapshot]
   pull_request:
 
 permissions:

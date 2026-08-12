@@ -602,6 +602,8 @@ def load_cli_config() -> Dict[str, Any]:
                 if root_base_url:
                     defaults["model"]["base_url"] = root_base_url
             
+            from hermes_cli.config import _deep_merge
+
             # Deep merge file_config into defaults.
             # First: merge keys that exist in both (deep-merge dicts, overwrite scalars)
             for key in defaults:
@@ -609,7 +611,7 @@ def load_cli_config() -> Dict[str, Any]:
                     continue  # Already handled above
                 if key in file_config:
                     if isinstance(defaults[key], dict) and isinstance(file_config[key], dict):
-                        defaults[key].update(file_config[key])
+                        defaults[key] = _deep_merge(defaults[key], file_config[key])
                     else:
                         defaults[key] = file_config[key]
             

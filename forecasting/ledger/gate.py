@@ -56,6 +56,9 @@ logger = logging.getLogger(__name__)
 _FORECAST_COMMIT_ACTIVE: "contextvars.ContextVar[bool]" = contextvars.ContextVar(
     "forecasting_tool_commit_active", default=False
 )
+_FORECAST_SNAPSHOT_WRITES_ALLOWED: "contextvars.ContextVar[bool]" = contextvars.ContextVar(
+    "forecasting_snapshot_writes_allowed", default=True
+)
 
 # The three forecast-producing write methods the gate protects by name.
 GATED_LEDGER_WRITES = ("create_question", "create_snapshot", "record_panel_run")
@@ -117,6 +120,12 @@ def _ledger_write_authorizer(action, arg1, arg2, db_name, trigger_or_view):
         return sqlite3.SQLITE_OK
     if arg1 not in GATED_LEDGER_TABLES:
         return sqlite3.SQLITE_OK
+    if (
+        arg1 == "forecast_snapshots"
+        and os.environ.get("FORECAST_COMMIT_POLICY", "").strip().lower()
+        == "proposal_only"
+    ):
+        return sqlite3.SQLITE_DENY
     if _FORECAST_COMMIT_ACTIVE.get():
         return sqlite3.SQLITE_OK
     # warn/off never block at the connection level (the method-level
@@ -148,6 +157,24 @@ def ledger_write_gate_mode() -> str:
 def forecast_commit_active() -> bool:
     """True iff a recognised forecast-commit context is currently open."""
     return bool(_FORECAST_COMMIT_ACTIVE.get())
+
+
+def snapshot_writes_allowed() -> bool:
+    """False inside an unattended proposal-only forecast pass."""
+    return bool(_FORECAST_SNAPSHOT_WRITES_ALLOWED.get()) and (
+        os.environ.get("FORECAST_COMMIT_POLICY", "").strip().lower()
+        != "proposal_only"
+    )
+
+
+@contextlib.contextmanager
+def forbid_snapshot_writes():
+    """Make snapshot commits fail closed while still allowing proposals/evidence."""
+    token = _FORECAST_SNAPSHOT_WRITES_ALLOWED.set(False)
+    try:
+        yield
+    finally:
+        _FORECAST_SNAPSHOT_WRITES_ALLOWED.reset(token)
 
 
 @contextlib.contextmanager

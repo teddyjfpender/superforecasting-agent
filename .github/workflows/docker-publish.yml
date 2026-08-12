@@ -1,9 +1,10 @@
 name: Docker Build and Publish
 
 # Docker Hub MIRROR — OPTIONAL.  ghcr.io is the PRIMARY registry: every formal
-# release ships its multi-arch image to ghcr.io via production-release.yml
-# using the built-in GITHUB_TOKEN.  This workflow additionally mirrors images
-# to Docker Hub, but ONLY when DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are
+# release ships its multi-arch image to ghcr.io and directly mirrors that
+# verified digest when configured. This workflow independently publishes default-branch
+# and PR images, and handles human-created release events, but ONLY when
+# DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are
 # configured.  When they are not, the dockerhub-preflight job says so loudly
 # and every Hub login/push step and the merge/move jobs SKIP CLEANLY — the
 # build + smoke-test jobs still run and the workflow ends GREEN.  A skipped
@@ -11,7 +12,7 @@ name: Docker Build and Publish
 
 on:
   push:
-    branches: [main]
+    branches: [main, superforecasting-agent-snapshot]
     paths:
       - '**/*.py'
       - 'pyproject.toml'
@@ -21,7 +22,7 @@ on:
       - '.github/workflows/docker-publish.yml'
       - '.github/actions/hermes-smoke-test/**'
   pull_request:
-    branches: [main]
+    branches: [main, superforecasting-agent-snapshot]
     paths:
       - '**/*.py'
       - 'pyproject.toml'
@@ -70,6 +71,7 @@ jobs:
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
             echo "configured=true" >> "$GITHUB_OUTPUT"
@@ -77,7 +79,7 @@ jobs:
             exit 0
           fi
           echo "configured=false" >> "$GITHUB_OUTPUT"
-          if { [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/main" ]; } \
+          if { [ "$GITHUB_EVENT_NAME" = "push" ] && [ "$GITHUB_REF" = "refs/heads/${DEFAULT_BRANCH}" ]; } \
              || [ "$GITHUB_EVENT_NAME" = "release" ]; then
             echo "::notice title=Docker Hub mirror skipped (not configured)::DOCKERHUB_USERNAME / DOCKERHUB_TOKEN are not set, so the OPTIONAL Docker Hub mirror was skipped. The image still ships to ghcr.io — the primary registry — via production-release.yml. This is not a failure."
             {
@@ -132,7 +134,7 @@ jobs:
           image: ${{ env.IMAGE_NAME }}:test
 
       - name: Log in to Docker Hub
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -149,7 +151,7 @@ jobs:
       # lists themselves don't carry image config labels.
       - name: Push amd64 by digest
         id: push
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
@@ -164,14 +166,14 @@ jobs:
       # Write the digest to a file and upload it as an artifact so the
       # merge job can stitch both per-arch digests into a manifest list.
       - name: Export digest
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.push.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest artifact
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: digest-amd64
@@ -221,7 +223,7 @@ jobs:
           image: ${{ env.IMAGE_NAME }}:test
 
       - name: Log in to Docker Hub
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121  # v4.1.0
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -229,7 +231,7 @@ jobs:
 
       - name: Push arm64 by digest
         id: push
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
@@ -242,14 +244,14 @@ jobs:
           cache-to: type=gha,mode=max,scope=docker-arm64
 
       - name: Export digest
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.push.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest artifact
-        if: (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+        if: (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: digest-arm64
@@ -266,7 +268,7 @@ jobs:
   merge:
     # Skips cleanly (not red) when the optional Docker Hub mirror is
     # unconfigured — see dockerhub-preflight. ghcr.io is the primary registry.
-    if: github.repository == 'teddyjfpender/superforecasting-agent' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
+    if: github.repository == 'teddyjfpender/superforecasting-agent' && (github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || github.event_name == 'release') && needs.dockerhub-preflight.outputs.configured == 'true'
     runs-on: ubuntu-latest
     needs: [dockerhub-preflight, build-amd64, build-arm64]
     timeout-minutes: 10
@@ -332,7 +334,7 @@ jobs:
       # releases set pushed_release_tag instead.
       - name: Mark SHA tag pushed
         id: mark_pushed
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
         run: echo "pushed=true" >> "$GITHUB_OUTPUT"
 
       # Signal to move-latest that the release tag is live.
@@ -368,7 +370,7 @@ jobs:
     if: |
       github.repository == 'teddyjfpender/superforecasting-agent'
       && github.event_name == 'push'
-      && github.ref == 'refs/heads/main'
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
       && needs.merge.outputs.pushed_sha_tag == 'true'
     needs: merge
     runs-on: ubuntu-latest
@@ -398,6 +400,8 @@ jobs:
       # advanced :main past us (or diverged), we skip and leave it alone.
       - name: Decide whether to move :main
         id: main_check
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           image=teddyjfpender/superforecasting-agent
@@ -440,7 +444,7 @@ jobs:
           # Make sure we have the :main commit locally for merge-base.
           if ! git cat-file -e "${current_sha}^{commit}" 2>/dev/null; then
             git fetch --no-tags --prune origin \
-              "+refs/heads/main:refs/remotes/origin/main" \
+              "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}" \
               || true
           fi
 
@@ -514,6 +518,8 @@ jobs:
 
       - name: Decide whether to move :latest
         id: latest_check
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
           image=teddyjfpender/superforecasting-agent
@@ -554,7 +560,7 @@ jobs:
           # Releases can be cut from any branch, so fetch broadly.
           if ! git cat-file -e "${current_sha}^{commit}" 2>/dev/null; then
             git fetch --no-tags --prune origin \
-              "+refs/heads/main:refs/remotes/origin/main" \
+              "+refs/heads/${DEFAULT_BRANCH}:refs/remotes/origin/${DEFAULT_BRANCH}" \
               || true
           fi
 

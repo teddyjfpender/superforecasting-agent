@@ -27,7 +27,28 @@ def run(
     on_error: Callable[[str], None] | None = None,
 ) -> JobRecord:
     store = store or JobStore()
-    record = store.read(job_id)
+    with store.claim(job_id) as record:
+        if record is None:
+            return store.read(job_id)
+        return _run_claimed(
+            record,
+            store,
+            sink=sink,
+            extra_should_cancel=extra_should_cancel,
+            on_complete=on_complete,
+            on_error=on_error,
+        )
+
+
+def _run_claimed(
+    record: JobRecord,
+    store: JobStore,
+    *,
+    sink: Callable[[dict[str, Any]], None] | None,
+    extra_should_cancel: Callable[[], bool] | None,
+    on_complete: Callable[[dict[str, Any]], None] | None,
+    on_error: Callable[[str], None] | None,
+) -> JobRecord:
 
     try:
         job_type = resolve_type(record.type)
@@ -38,10 +59,6 @@ def run(
         if on_error is not None:
             on_error(record.error)
         return record
-
-    record.status = "running"
-    record.error = None
-    store.write(record)
 
     ctx = JobContext(
         record,
@@ -95,7 +112,7 @@ def run(
         if on_error is not None:
             on_error(record.error)
     finally:
-        store.clear_stop(job_id)
+        store.clear_stop(record.job_id)
 
     return record
 

@@ -226,6 +226,7 @@ except Exception:
 from tui_gateway.render import make_stream_renderer, render_diff, render_message
 
 _sessions: dict[str, dict] = {}
+_session_resume_lock = threading.RLock()
 _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
 _answers: dict[str, str] = {}
@@ -657,7 +658,7 @@ def _persist_review_sweep_state(result: dict) -> None:
             "running": bool(result.get("running")),
             "ran": bool(result.get("ran")),
             "due_count": int(result.get("due_count") or 0),
-            "refreshed": int(result.get("refreshed") or 0),
+            "proposals": int(result.get("proposals") or 0),
             "alerts": int(result.get("alerts") or 0),
             "duration_ms": int(result.get("duration_ms") or 0),
             "skipped_reason": result.get("skipped_reason"),
@@ -682,7 +683,7 @@ def _run_review_sweep(now: str | None = None) -> dict:
         "ran": False,
         "due_count": 0,
         "skipped_reason": None,
-        "refreshed": 0,
+        "proposals": 0,
         "alerts": 0,
         "duration_ms": 0,
         "last_tick_at": now_iso,
@@ -733,7 +734,7 @@ def _run_review_sweep(now: str | None = None) -> dict:
         # The SAME sweep the nightly runs — NO reforecast_runner → no LLM/agent.
         report = run_due_reviews()
         counts = parse_review_sweep_report(report)
-        result["refreshed"] = int(counts.get("refreshed", 0))
+        result["proposals"] = int(counts.get("proposals", 0))
         result["alerts"] = int(counts.get("alerts", 0))
         result["ran"] = True
         result["last_sweep_at"] = now_iso
@@ -749,7 +750,7 @@ def _run_review_sweep(now: str | None = None) -> dict:
     _emit_review_sweep(
         "done",
         {
-            "refreshed": result["refreshed"],
+            "proposals": result["proposals"],
             "alerts": result["alerts"],
             "duration_ms": result["duration_ms"],
         },
@@ -2914,10 +2915,16 @@ def _(rid, params: dict) -> dict:
         # short; the compression-tip projection in ``list_sessions_rich``
         # can also merge rows.
         fetch_limit = max(limit * 2, 200)
+        active_keys = {
+            session.get("session_key")
+            for session in list(_sessions.values())
+            if session.get("session_key")
+        }
         rows = [
             s
             for s in db.list_sessions_rich(source=None, limit=fetch_limit)
             if (s.get("source") or "").strip().lower() not in deny
+            and s.get("id") not in active_keys
         ][:limit]
         return _ok(
             rid,
@@ -2964,9 +2971,16 @@ def _(rid, params: dict) -> dict:
         # "no eligible session" answer.  ``session.list`` uses a
         # similar over-fetch strategy.
         rows = db.list_sessions_rich(source=None, limit=200)
+        active_keys = {
+            session.get("session_key")
+            for session in list(_sessions.values())
+            if session.get("session_key")
+        }
         for row in rows:
             src = (row.get("source") or "").strip().lower()
             if src in deny:
+                continue
+            if row.get("id") in active_keys:
                 continue
             return _ok(
                 rid,
@@ -2998,33 +3012,79 @@ def _(rid, params: dict) -> dict:
             target = found["id"]
         else:
             return _err(rid, 4007, "session not found")
-    sid = uuid.uuid4().hex[:8]
-    _enable_gateway_prompts()
-    try:
-        db.reopen_session(target)
-        history = db.get_messages_as_conversation(target)
-        display_history = db.get_messages_as_conversation(
-            target, include_ancestors=True
-        )
-        messages = _history_to_messages(display_history)
-        tokens = _set_session_context(target)
+    with _session_resume_lock:
+        replace_sid = str(params.get("replace_session_id") or "").strip()
+        replace_session = _sessions.get(replace_sid) if replace_sid else None
         try:
-            agent = _make_agent(sid, target, session_id=target)
-        finally:
-            _clear_session_context(tokens)
-        _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)))
-    except Exception as e:
-        return _err(rid, 5000, f"resume failed: {e}")
-    return _ok(
-        rid,
-        {
-            "session_id": sid,
-            "resumed": target,
-            "message_count": len(messages),
-            "messages": messages,
-            "info": _session_info(agent),
-        },
-    )
+            live_sessions = list(_sessions.items())
+        except RuntimeError:
+            return _err(rid, 5000, "session registry changed during resume; retry")
+        active_sid = next(
+            (
+                sid
+                for sid, session in live_sessions
+                if session.get("session_key") == target
+            ),
+            None,
+        )
+        if active_sid is not None:
+            return _err(rid, 4010, "session is already active")
+        if replace_session:
+            replace_lock = replace_session.get("history_lock")
+            if replace_lock is None:
+                replace_lock = contextlib.nullcontext()
+            with replace_lock:
+                if replace_session.get("running"):
+                    return _err(
+                        rid,
+                        4009,
+                        "current session is busy; wait for the response before resuming",
+                    )
+                # Reserve the old runtime so prompt/notification dispatch cannot
+                # start work while its replacement is being constructed.
+                replace_session["running"] = True
+        sid = uuid.uuid4().hex[:8]
+        _enable_gateway_prompts()
+        try:
+            history = db.get_messages_as_conversation(target)
+            display_history = db.get_messages_as_conversation(
+                target, include_ancestors=True
+            )
+            messages = _history_to_messages(display_history)
+            tokens = _set_session_context(target)
+            try:
+                agent = _make_agent(sid, target, session_id=target)
+            finally:
+                _clear_session_context(tokens)
+            _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)))
+            db.reopen_session(target)
+        except Exception as e:
+            try:
+                _close_runtime_session(sid, mark_ended=False)
+            except Exception:
+                logger.exception("failed to roll back partial resumed session %s", sid)
+            if replace_session and _sessions.get(replace_sid) is replace_session:
+                replace_lock = replace_session.get("history_lock")
+                if replace_lock is None:
+                    replace_lock = contextlib.nullcontext()
+                with replace_lock:
+                    replace_session["running"] = False
+            return _err(rid, 5000, f"resume failed: {e}")
+        if replace_sid and replace_sid != sid:
+            try:
+                _close_runtime_session(replace_sid)
+            except Exception:
+                logger.exception("failed to close replaced session %s", replace_sid)
+        return _ok(
+            rid,
+            {
+                "session_id": sid,
+                "resumed": target,
+                "message_count": len(messages),
+                "messages": messages,
+                "info": _session_info(agent),
+            },
+        )
 
 
 @rpc_validated("session.delete")
@@ -3396,14 +3456,15 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5011, str(e))
 
 
-@rpc_validated("session.close")
-def _(rid, params: dict) -> dict:
-    sid = params.get("session_id", "")
+def _close_runtime_session(sid: str, *, mark_ended: bool = True) -> bool:
     session = _sessions.pop(sid, None)
     if not session:
-        return _ok(rid, {"closed": False})
+        return False
     _session_toggles.pop(session.get("session_key", ""), None)
-    _finalize_session(session)
+    try:
+        _finalize_session(session, mark_ended=mark_ended)
+    except Exception:
+        logger.exception("failed to finalize runtime session %s", sid)
     try:
         from tools.approval import unregister_gateway_notify
 
@@ -3422,7 +3483,12 @@ def _(rid, params: dict) -> dict:
             worker.close()
     except Exception:
         pass
-    return _ok(rid, {"closed": True})
+    return True
+
+
+@rpc_validated("session.close")
+def _(rid, params: dict) -> dict:
+    return _ok(rid, {"closed": _close_runtime_session(params.get("session_id", ""))})
 
 
 @rpc_validated("session.branch")

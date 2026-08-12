@@ -223,7 +223,7 @@ whatever `scripts/build-release.sh` happened to emit. P0 makes a release a
 downstream — the Hetzner bootstrap, the one-line installer, the compose pull —
 resolves against a pinned contract instead of a floating `:latest`.
 
-**Research findings (2026-07-09, this repo):**
+**Research findings at the 2026-07-09 baseline (superseded by status updates below):**
 - `scripts/build-release.sh` → `uv build` wheel+sdist with the bundled TUI
   (`hermes_cli/tui_dist/entry.js`, 4.4 MB) + install scripts; `SKIP_NPM=1`
   reuses `ui-tui/dist/entry.js` for an offline build (verified).
@@ -231,7 +231,7 @@ resolves against a pinned contract instead of a floating `:latest`.
   (`0.17.0`) and CalVer git tags (`v2026.*`). `scripts/release.py` bumps SemVer
   **and** stamps a CalVer `__release_date__` and keeps `acp_registry/agent.json`
   version-locked (a lint test enforces the ACP lock).
-- CI today: `release.yml` (`v*` push → GitHub Release bundled wheel),
+- CI at that baseline: `release.yml` (`v*` push → GitHub Release bundled wheel),
   `upload_to_pypi.yml` (`v20*` CalVer → PyPI trusted-publish, opt-in/dormant),
   `docker-publish.yml` (main push + `release: published` → **Docker Hub**
   `teddyjfpender/superforecasting-agent`, native amd64 + native-arm64-runner
@@ -272,9 +272,8 @@ Every release produces exactly these, all attached to the GitHub Release:
 ### P0.2 Versioning discipline
 - **Single source of truth: `pyproject.toml` `version`.** `hermes_cli/__init__.py`
   and `acp_registry/agent.json` are kept byte-locked to it; the readiness gate
-  fails on any drift. SemVer `vX.Y.Z` is now **the** release scheme;
-  `release.py`'s CalVer lane and `upload_to_pypi.yml` (`v20*`) are legacy/opt-in
-  and untouched.
+  fails on any drift. SemVer `vX.Y.Z` is now **the** release scheme. The dormant
+  CalVer/PyPI publisher has been removed; GitHub Releases is the wheel authority.
 - **Bump rules:** `feat` → minor, `fix`/`perf` → patch, breaking → major. The
   `wip(...)`/`checkpoint` reality is honored — those commits never trigger a
   release by themselves; a release is only ever a deliberate tag on a version
@@ -288,19 +287,16 @@ Every release produces exactly these, all attached to the GitHub Release:
   job gates `release` via `needs:`), and locally by `--with-tests`.
 
 ### P0.3 The pipeline
-- **`.github/workflows/production-release.yml`** — on a strict-SemVer tag push
-  (`v[0-9]+.[0-9]+.[0-9]+`, so CalVer `v20YY.*` never matches): `gate` (assert
-  `tag == v<pyproject>` + strict readiness) → `test` (fast suite) → `release`
-  (build wheel + web, build+push the multi-arch image to ghcr, checksums,
-  manifest with the real image digest, create the GitHub Release with 1–5
-  attached). It **supersedes** `release.yml`, whose `push: tags` trigger is
-  removed (kept as a manual `workflow_dispatch` escape hatch) so a SemVer tag
-  can't race two workflows to create the same Release.
-- **`scripts/release.sh`** — the **offline dry-run twin** (dry-run by default):
+- **`.github/workflows/production-release.yml`** — on a version-tag push, the
+  gate enforces strict SemVer and `tag == v<pyproject>`, then Python/E2E/TUI,
+  compatibility, container-smoke, artifact, image-digest, and draft-release
+  verification run before the Release is published and `latest` advances. It
+  is the only publisher; the legacy `release.yml` workflow is deleted.
+- **`scripts/release.sh`** — the **offline dry-run twin**:
   same gate → same wheel build → checksums → manifest (image `digest: null`,
   "would push ghcr.io/…:vX.Y.Z,latest") → changelog-scaffold `RELEASE_NOTES.md`.
-  `--publish` does the real tag + multi-arch build/push + GitHub Release. This
-  is what makes a release **testable before any tag exists**.
+  It never tags or publishes; this makes a release testable before any public
+  state changes while keeping publication in one gated workflow.
 
 **Operator config the pipeline needs (not faked in the workflow):**
 - **ghcr.io push needs no secret** — it uses the built-in `GITHUB_TOKEN` with
@@ -313,8 +309,7 @@ Every release produces exactly these, all attached to the GitHub Release:
   fires `docker-publish.yml` (`release: published`), which needs the operator's
   `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets. If those aren't set, that
   mirror job fails harmlessly while the ghcr image (the P0 primary) still ships.
-- **PyPI** stays opt-in via `upload_to_pypi.yml`'s trusted publisher; P0 does
-  not couple to it.
+- **PyPI is not a release lane.** GitHub Releases owns the signed wheel and installer.
 
 ### P0.4 Status — what's BUILT NOW vs what remains
 - **Built + tested this arc (repo-only, no external accounts):**

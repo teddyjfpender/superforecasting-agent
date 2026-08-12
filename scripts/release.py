@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Superforecasting Agent Release Script
 
-Generates changelogs and creates GitHub releases with CalVer tags.
+Generates a legacy CalVer changelog preview. It never publishes.
 
 Usage:
     # Preview changelog (dry run)
@@ -10,20 +10,13 @@ Usage:
     # Preview with semver bump
     python scripts/release.py --bump minor
 
-    # Create the release
-    python scripts/release.py --bump minor --publish
-
-    # First release (no previous tag)
-    python scripts/release.py --bump minor --publish --first-release
-
-    # Override CalVer date (e.g. for a belated release)
-    python scripts/release.py --bump minor --publish --date 2026.3.15
+    # First-release preview
+    python scripts/release.py --bump minor --first-release
 """
 
 import argparse
 import json
 import re
-import shutil
 import subprocess
 import sys
 from collections import defaultdict
@@ -1381,47 +1374,6 @@ def _update_acp_registry_versions(semver: str) -> None:
         )
 
 
-def build_release_artifacts(semver: str) -> list[Path]:
-    """Build sdist/wheel artifacts for the current release.
-
-    Tries ``uv build`` first (matching the CI workflow), falls back to
-    ``python -m build`` if uv is unavailable.
-    """
-    dist_dir = REPO_ROOT / "dist"
-    shutil.rmtree(dist_dir, ignore_errors=True)
-
-    # Prefer uv build (matches CI workflow), fall back to python -m build.
-    uv_bin = shutil.which("uv")
-    if uv_bin:
-        cmd = [uv_bin, "build", "--sdist", "--wheel"]
-    else:
-        cmd = [sys.executable, "-m", "build", "--sdist", "--wheel"]
-
-    result = subprocess.run(
-        cmd,
-        cwd=str(REPO_ROOT),
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        print("  ⚠ Could not build Python release artifacts.")
-        stderr = result.stderr.strip()
-        stdout = result.stdout.strip()
-        if stderr:
-            print(f"    {stderr.splitlines()[-1]}")
-        elif stdout:
-            print(f"    {stdout.splitlines()[-1]}")
-        print("    Install uv or the 'build' package to attach sdist/wheel assets.")
-        return []
-
-    artifacts = sorted(p for p in dist_dir.iterdir() if p.is_file())
-    matching = [p for p in artifacts if semver in p.name]
-    if not matching:
-        print("  ⚠ Built artifacts did not match the expected release version.")
-        return []
-    return matching
-
-
 def resolve_author(name: str, email: str) -> str:
     """Resolve a git author to a GitHub @mention."""
     # Try email lookup first
@@ -1679,8 +1631,6 @@ def main():
     parser = argparse.ArgumentParser(description="Superforecasting Agent Release Tool")
     parser.add_argument("--bump", choices=["major", "minor", "patch"],
                         help="Which semver component to bump")
-    parser.add_argument("--publish", action="store_true",
-                        help="Actually create the tag and GitHub release (otherwise dry run)")
     parser.add_argument("--date", type=str,
                         help="Override CalVer date (format: YYYY.M.D)")
     parser.add_argument("--first-release", action="store_true",
@@ -1731,7 +1681,7 @@ def main():
     print(f"  Previous tag:    {prev_tag or '(none — first release)'}")
     print(f"  Commits:         {len(commits)}")
     print(f"  Unique authors:  {len({c['github_author'] for c in commits})}")
-    print(f"  Mode:            {'PUBLISH' if args.publish else 'DRY RUN'}")
+    print("  Mode:            DRY RUN")
     print(f"{'='*60}")
     print()
 
@@ -1748,102 +1698,9 @@ def main():
     else:
         print(changelog)
 
-    if args.publish:
-        print(f"\n{'='*60}")
-        print("  Publishing release...")
-        print(f"{'='*60}")
-
-        # Update version files
-        if args.bump:
-            update_version_files(new_version, calver_date)
-            print(f"  ✓ Updated version files to v{new_version} ({calver_date})")
-
-            # Commit version bump
-            add_files = [str(VERSION_FILE), str(PYPROJECT_FILE)]
-            if ACP_REGISTRY_MANIFEST.exists():
-                add_files.append(str(ACP_REGISTRY_MANIFEST))
-            add_result = git_result("add", *add_files)
-            if add_result.returncode != 0:
-                print(f"  ✗ Failed to stage version files: {add_result.stderr.strip()}")
-                return
-
-            commit_result = git_result(
-                "commit", "-m", f"chore: bump version to v{new_version} ({calver_date})"
-            )
-            if commit_result.returncode != 0:
-                print(f"  ✗ Failed to commit version bump: {commit_result.stderr.strip()}")
-                return
-            print(f"  ✓ Committed version bump")
-
-        # Create annotated tag
-        tag_result = git_result(
-            "tag", "-a", tag_name, "-m",
-            f"Superforecasting Agent v{new_version} ({calver_date})\n\nWeekly release"
-        )
-        if tag_result.returncode != 0:
-            print(f"  ✗ Failed to create tag {tag_name}: {tag_result.stderr.strip()}")
-            return
-        print(f"  ✓ Created tag {tag_name}")
-
-        # Push
-        push_result = git_result("push", "origin", "HEAD", "--tags")
-        if push_result.returncode == 0:
-            print(f"  ✓ Pushed to origin")
-        else:
-            print(f"  ✗ Failed to push to origin: {push_result.stderr.strip()}")
-            print("    Continue manually after fixing access:")
-            print("    git push origin HEAD --tags")
-
-        # Build semver-named Python artifacts so downstream packagers
-        # (e.g. Homebrew) can target them without relying on CalVer tag names.
-        artifacts = build_release_artifacts(new_version)
-        if artifacts:
-            print("  ✓ Built release artifacts:")
-            for artifact in artifacts:
-                print(f"    - {artifact.relative_to(REPO_ROOT)}")
-
-        # Create GitHub release
-        changelog_file = REPO_ROOT / ".release_notes.md"
-        changelog_file.write_text(changelog, encoding="utf-8")
-
-        gh_cmd = [
-            "gh", "release", "create", tag_name,
-            "--title", f"Superforecasting Agent v{new_version} ({calver_date})",
-            "--notes-file", str(changelog_file),
-        ]
-        gh_cmd.extend(str(path) for path in artifacts)
-
-        gh_bin = shutil.which("gh")
-        if gh_bin:
-            result = subprocess.run(
-                gh_cmd,
-                capture_output=True, text=True,
-                cwd=str(REPO_ROOT),
-            )
-        else:
-            result = None
-
-        if result and result.returncode == 0:
-            changelog_file.unlink(missing_ok=True)
-            print(f"  ✓ GitHub release created: {result.stdout.strip()}")
-            print(f"\n  🎉 Release v{new_version} ({tag_name}) published!")
-        else:
-            if result is None:
-                print("  ✗ GitHub release skipped: `gh` CLI not found.")
-            else:
-                print(f"  ✗ GitHub release failed: {result.stderr.strip()}")
-            print(f"    Release notes kept at: {changelog_file}")
-            print(f"    Tag was created locally. Create the release manually:")
-            print(
-                f"    gh release create {tag_name} --title 'Superforecasting Agent v{new_version} ({calver_date})' "
-                f"--notes-file .release_notes.md {' '.join(str(path) for path in artifacts)}"
-            )
-            print(f"\n  ✓ Release artifacts prepared for manual publish: v{new_version} ({tag_name})")
-    else:
-        print(f"\n{'='*60}")
-        print(f"  Dry run complete. To publish, add --publish")
-        print(f"  Example: python scripts/release.py --bump minor --publish")
-        print(f"{'='*60}")
+    print(f"\n{'='*60}")
+    print("  Dry run complete. Publish only through production-release.yml.")
+    print(f"{'='*60}")
 
 
 if __name__ == "__main__":

@@ -21,7 +21,9 @@ CLI:
         --version 0.18.0 --tag v0.18.0 \
         --min-migration 0.17.0 \
         --artifact wheel=dist/foo.whl --artifact sdist=dist/foo.tar.gz \
-        --artifact installer=dist/install.sh --artifact checksums=dist/SHA256SUMS \
+        --artifact installer=dist/install.sh \
+        --artifact windows_installer=dist/install.ps1 \
+        --artifact checksums=dist/SHA256SUMS \
         --image-registry ghcr.io --image-repo teddyjfpender/superforecasting-agent \
         --image-tag v0.18.0 --image-tag latest \
         --image-digest sha256:... \

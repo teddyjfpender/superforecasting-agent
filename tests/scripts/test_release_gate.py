@@ -8,8 +8,10 @@ twin. These tests pin the red/green cases so a broken gate can't silently green.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,6 +19,94 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GATE = REPO_ROOT / "scripts" / "check-release-ready.sh"
 RELEASE = REPO_ROOT / "scripts" / "release.sh"
+WINDOWS_INSTALLER = REPO_ROOT / "scripts" / "install-release.ps1"
+
+
+def test_github_actions_are_pinned_to_commits():
+    unpinned = []
+    for workflow in sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml")):
+        for lineno, line in enumerate(workflow.read_text().splitlines(), 1):
+            match = re.match(r"\s*-?\s*uses:\s*([^\s#]+)", line)
+            if not match or match.group(1).startswith("./"):
+                continue
+            ref = match.group(1).rpartition("@")[2]
+            if not re.fullmatch(r"[0-9a-f]{40}", ref):
+                unpinned.append(f"{workflow.name}:{lineno}: {match.group(1)}")
+    assert not unpinned, "unpinned GitHub Actions:\n" + "\n".join(unpinned)
+
+
+def test_formal_workflow_is_the_only_release_publisher():
+    assert not (REPO_ROOT / ".github" / "workflows" / "release.yml").exists()
+    production = (REPO_ROOT / ".github" / "workflows" / "production-release.yml").read_text()
+    local = RELEASE.read_text()
+    legacy = (REPO_ROOT / "scripts" / "release.py").read_text()
+
+    assert "python -m pytest tests/e2e/" in production
+    assert "uses: ./.github/actions/hermes-smoke-test" in production
+    assert '--verify-tag --draft' in production
+    assert 'gh release edit "$TAG" --draft=false --latest' in production
+    assert "Move latest after the formal release verifies" in production
+    assert "Mirror verified image digest to Docker Hub" in production
+    assert '"$IMAGE@$IMAGE_DIGEST"' in production
+    assert "it does not rely on a GITHUB_TOKEN-created release event" in production
+    assert "org.opencontainers.image.revision=${{ env.REVISION }}" in production
+    assert "--json isDraft" in production
+    assert "github.event.repository.default_branch" in production
+    assert 'git merge-base --is-ancestor HEAD "origin/${DEFAULT_BRANCH}"' in production
+    assert "already published and immutable" in production
+    assert "diff -u /tmp/expected-release-assets /tmp/release-assets" in production
+    assert 'cmp "dist/$asset" "$VERIFY_DIR/$asset"' in production
+    assert "sigstore/gh-action-sigstore-python" in production
+    assert production.index("Create draft GitHub Release") < production.index(
+        "Verify immutable release assets and image"
+    ) < production.index("Move latest after the formal release verifies") < production.index(
+        "Mirror verified image digest to Docker Hub"
+    ) < production.index(
+        "Publish verified GitHub Release"
+    )
+    assert production.index("Refuse mutation of a published release") < production.index(
+        "Build + push multi-arch image"
+    )
+    assert "python-version: ['3.12', '3.13']" in production
+    assert "windows-release-installer" in production
+    assert "needs: [gate, test, python-compat, windows-release-installer, tui]" in production
+    image_push = production.split("Build + push multi-arch image", 1)[1].split(
+        "# ---- assemble", 1
+    )[0]
+    assert "${{ env.IMAGE }}:latest" not in image_push
+    assert "--publish" not in local
+    assert "git push" not in local
+    assert "gh release" not in local
+    assert 'parser.add_argument("--publish"' not in legacy
+    assert 'git_result("push", "origin"' not in legacy
+    for workflow in (REPO_ROOT / ".github" / "workflows").glob("*.y*ml"):
+        if workflow.name != "production-release.yml":
+            contents = workflow.read_text()
+            assert "gh release create" not in contents
+            assert "gh release edit" not in contents
+            assert "gh release upload" not in contents
+
+
+def test_windows_release_installer_verifies_before_installing():
+    source = WINDOWS_INSTALLER.read_text(encoding="utf-8")
+
+    assert "Get-FileHash -Algorithm SHA256" in source
+    assert 'release-manifest.json' in source
+    assert "Python 3.11-3.13 is required" in source
+    assert 'Set-Content -LiteralPath (Join-Path $agentHome ".install_method")' in source
+    assert source.index("Get-FileHash -Algorithm SHA256") < source.index(
+        "-m pipx install --force"
+    )
+    assert "[switch]$VerifyOnly" in source
+
+
+def test_main_ci_filters_also_cover_the_fork_default_branch():
+    missing = []
+    for workflow in sorted((REPO_ROOT / ".github" / "workflows").glob("*.y*ml")):
+        for lineno, line in enumerate(workflow.read_text().splitlines(), 1):
+            if "branches:" in line and "main" in line and "superforecasting-agent-snapshot" not in line:
+                missing.append(f"{workflow.name}:{lineno}: {line.strip()}")
+    assert not missing, "CI branch filters miss the production branch:\n" + "\n".join(missing)
 
 
 def test_required_ledger_exports_module_is_tracked():
@@ -66,7 +156,7 @@ def test_gate_green_for_current_version(tmp_path):
     gate = clone / "scripts" / "check-release-ready.sh"
     r = _run_in(clone, ["bash", str(gate), "--version", ver], GITHUB_REF=None)
     assert r.returncode == 0, r.stdout + r.stderr
-    assert "READY" in r.stdout
+    assert "CHECKS PASSED" in r.stdout
     assert "version consistent" in r.stdout
 
 
@@ -118,7 +208,33 @@ def _clone_repo(dest: Path) -> Path:
     )
     if r.returncode != 0:
         pytest.skip(f"git clone --local unavailable: {r.stderr.strip()}")
+    # Local clones include committed objects only. Copy the gate under test so
+    # these tests exercise the current worktree implementation before commit.
+    shutil.copy2(GATE, dest / "scripts" / GATE.name)
     return dest
+
+
+def test_strict_gate_rejects_a_dirty_release_candidate(tmp_path):
+    clone = _clone_repo(tmp_path / "clone")
+    ver = _pyproject_version()
+    subprocess.run(
+        ["git", "-C", str(clone), "tag", "-d", f"v{ver}"],
+        check=False,
+        capture_output=True,
+    )
+    (clone / "uncommitted-release-file.txt").write_text("not in the candidate\n")
+    gate = clone / "scripts" / "check-release-ready.sh"
+
+    r = _run_in(
+        clone,
+        ["bash", str(gate), "--strict", "--version", ver],
+        GITHUB_REF=None,
+        PYTHON=sys.executable,
+    )
+
+    assert r.returncode == 1
+    assert "worktree dirty" in r.stdout
+    assert "NOT READY" in r.stdout
 
 
 def _run_in(repo: Path, cmd, **env):
@@ -149,7 +265,7 @@ def test_gate_tag_run_ready_when_tag_points_at_head(tmp_path):
                 GITHUB_REF=f"refs/tags/{tag}")
     assert r.returncode == 0, r.stdout + r.stderr
     assert "tag-run" in r.stdout and "points at HEAD" in r.stdout
-    assert "READY" in r.stdout
+    assert "CHECKS PASSED" in r.stdout
 
 
 def test_gate_tag_run_not_ready_when_tag_points_elsewhere(tmp_path):
@@ -225,6 +341,7 @@ def test_release_dry_run_produces_full_artifact_set(tmp_path):
         f"superforecasting_agent-{ver}-py3-none-any.whl",
         f"superforecasting_agent-{ver}.tar.gz",
         "install.sh",
+        "install.ps1",
         "SHA256SUMS",
         "release-manifest.json",
         "RELEASE_NOTES.md",
@@ -245,6 +362,7 @@ def test_release_dry_run_produces_full_artifact_set(tmp_path):
     assert manifest["image"]["registry"] == "ghcr.io"
     assert manifest["image"]["digest"] is None
     assert set(manifest["artifacts"]) >= set(rm.REQUIRED_ARTIFACT_ROLES)
+    assert manifest["artifacts"]["windows_installer"]["name"] == "install.ps1"
 
     # SHA256SUMS entries must match the manifest hashes.
     sums = {}
@@ -254,3 +372,9 @@ def test_release_dry_run_produces_full_artifact_set(tmp_path):
     assert sums[manifest["artifacts"]["wheel"]["name"]] == (
         manifest["artifacts"]["wheel"]["sha256"]
     )
+
+
+def test_release_script_rejects_publish_mode():
+    result = _run(["bash", str(RELEASE), "--publish"])
+    assert result.returncode == 2
+    assert "unknown arg: --publish" in result.stderr

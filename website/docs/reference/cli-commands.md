@@ -1312,11 +1312,11 @@ superforecasting-agent update [--check] [--backup] [--restart-gateway]
 
 Pulls the latest Superforecasting Agent fork code and reinstalls dependencies in your venv, then re-runs the post-install hooks (MCP servers, skills sync, completion install). Safe to run on a live install.
 
-**pip installs:** `superforecasting-agent update` detects pip-based installations automatically — it queries PyPI for the latest release and runs `pip install --upgrade superforecasting-agent` instead of `git pull`. PyPI releases track tagged versions (major/minor releases), not every commit on `main`. Use `--check` to see if a newer PyPI release is available without installing.
+**release-wheel installs:** `superforecasting-agent update` checks GitHub Releases and runs the checksum-verifying release installer instead of `git pull`. Old unstamped pipx wheels are routed to the same release lane. Use `--check` to query the latest published release without installing.
 
 | Option | Description |
 |--------|-------------|
-| `--check` | Print the current commit and the latest `origin/main` commit side by side, and exit 0 if in sync or 1 if behind. Does not pull, install, or restart anything. |
+| `--check` | Report whether the active git checkout or installed GitHub Release is current. Does not pull, install, or restart anything. |
 | `--backup` | Create a labeled pre-update snapshot of the active profile home (config, auth, sessions, skills, pairing data) before pulling. Default is **off** — the previous always-backup behavior was adding minutes to every update on large homes. Flip it on permanently via `update.backup: true` in `config.yaml`. |
 | `--restart-gateway` | After a successful update, restart the running gateway service. Implies `--all` semantics if multiple profiles are installed. |
 

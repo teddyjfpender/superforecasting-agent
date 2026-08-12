@@ -299,10 +299,10 @@ export type GatewayEvent =
   | {
       // The gateway due-sweeper acting on due-ness (mirrors cron.fired). 'started'
       // carries how many reviews are due; 'done' carries the deterministic sweep's
-      // result (refreshed count, opened alerts, wall time). Sessionless.
+      // result (proposal count, opened alerts, wall time). Sessionless.
       payload:
         | { due_count?: number; phase: 'started' }
-        | { alerts?: number; duration_ms?: number; phase: 'done'; refreshed?: number }
+        | { alerts?: number; duration_ms?: number; phase: 'done'; proposals?: number }
       session_id?: string
       type: typeof WireEvent.REVIEW_SWEEP
     }

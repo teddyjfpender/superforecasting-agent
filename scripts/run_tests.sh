@@ -189,6 +189,7 @@ PYTEST_LOG="${JUNIT_XML%.xml}.log"
 
 # If the first argument starts with `-` treat all args as pytest flags;
 # otherwise treat them as test paths.
+[ "$#" -gt 0 ] || set -- tests/
 ARGS=("$@")
 
 echo "▶ running pytest with $WORKERS workers, hermetic env, in $REPO_ROOT"

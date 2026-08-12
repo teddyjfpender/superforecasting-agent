@@ -3278,7 +3278,7 @@ _(no fields)_
 | `due_count` | `number?` |
 | `duration_ms` | `number?` |
 | `phase` | `string` |
-| `refreshed` | `number?` |
+| `proposals` | `number?` |
 
 ### RollbackCheckpoint
 
@@ -3555,6 +3555,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `cols` | `number | null` |
+| `replace_session_id` | `string | null` |
 | `session_id` | `string` |
 
 ### SessionResumeResponse

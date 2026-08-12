@@ -1,5 +1,15 @@
 # Upstream sync — harvesting value from `hermes-agent`
 
+> **2026-08-11 spot audit:** fetched `origin/main` at `a31be48030f6`; the fork
+> is 1,305 commits ahead and 12,640 behind from `edb2d910577b`. This is not a
+> full incremental audit, so the reviewed-through audit head below is unchanged.
+> Ported the forecast-relevant `grounded-citations` chain from upstream v0.20.0
+> (`43c79cd84a`, `4660673a3c`, `a6defd4f15`) and the Python `<3.14`
+> compatibility boundary (`475ecea3e0`). The next bounded candidates are live-tail
+> preservation (`1e8339a48c`), dropped-tool-call recovery (`63954d508c`), signed
+> outbound webhooks (`3829e34e23`), and the SecretSource chain. See
+> [`docs/plans/2026-08-11-release-production-roadmap.md`](plans/2026-08-11-release-production-roadmap.md).
+
 This fork (**Superforecasting Agent**) is a CLI-first forecasting desk forked from
 [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent) at
 `edb2d910` (PR #28814, 2026-05-20). Upstream iterates fast (≈900 commits in the

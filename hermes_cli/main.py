@@ -8306,17 +8306,17 @@ def _cmd_update_check():
     """Implement ``superforecasting-agent update --check``."""
     from hermes_cli.config import detect_install_method
     method = detect_install_method(PROJECT_ROOT)
-    if method == "pip":
+    if method in {"pip", "pipx", "release"}:
         from hermes_cli.config import recommended_update_command
-        from hermes_cli.banner import check_via_pypi
-        result = check_via_pypi()
+        from hermes_cli.banner import check_via_release
+        result = check_via_release()
         if result is None:
-            print("✗ Could not reach PyPI to check for updates.")
+            print("✗ Could not reach GitHub Releases to check for updates.")
             sys.exit(1)
         elif result == 0:
             print("✓ Already up to date.")
         else:
-            print("⚕ Update available on PyPI.")
+            print("⚕ Update available on GitHub Releases.")
             print(f"  Run '{recommended_update_command()}' to install.")
         return
 
@@ -8598,21 +8598,45 @@ def cmd_update(args):
         _finalize_update_output(_update_io_state)
 
 
-def _cmd_update_pip(args):
-    """Update Superforecasting Agent via pip (for PyPI installs)."""
+def _cmd_update_release(args):
+    """Update a wheel install through the verified GitHub release installer."""
     from hermes_cli import __version__
+    import tempfile
+    import urllib.request
 
     print(f"→ Current version: {__version__}")
-    print("→ Checking PyPI for updates...")
-
-    uv = shutil.which("uv")
-    if uv:
-        cmd = [uv, "pip", "install", "--upgrade", "superforecasting-agent"]
+    print("→ Downloading the verified GitHub release installer...")
+    if _is_windows():
+        shell = shutil.which("powershell") or shutil.which("pwsh")
+        installer_name = "install.ps1"
+        if not shell:
+            print("✗ The Windows release installer requires PowerShell.")
+            sys.exit(1)
     else:
-        cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "superforecasting-agent"]
-
-    print(f"→ Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd)
+        shell = shutil.which("bash")
+        installer_name = "install.sh"
+        if not shell:
+            print("✗ The release installer requires bash (macOS/Linux).")
+            sys.exit(1)
+    url = (
+        "https://github.com/teddyjfpender/superforecasting-agent/"
+        f"releases/latest/download/{installer_name}"
+    )
+    try:
+        with tempfile.TemporaryDirectory(prefix="superforecasting-update-") as temp_dir:
+            installer = Path(temp_dir) / installer_name
+            request = urllib.request.Request(url, headers={"Accept": "application/octet-stream"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                installer.write_bytes(response.read())
+            command = (
+                [shell, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(installer)]
+                if _is_windows()
+                else [shell, str(installer)]
+            )
+            result = subprocess.run(command)
+    except Exception as exc:
+        print(f"✗ Update failed: {exc}")
+        sys.exit(1)
     if result.returncode != 0:
         print("✗ Update failed")
         sys.exit(1)
@@ -8657,16 +8681,16 @@ def _cmd_update_impl(args, gateway_mode: bool):
     git_dir = PROJECT_ROOT / ".git"
 
     if not git_dir.exists():
+        from hermes_cli.config import detect_install_method
+        method = detect_install_method(PROJECT_ROOT)
+        if method in {"pip", "pipx", "release"}:
+            _cmd_update_release(args)
+            return
         if sys.platform == "win32":
             use_zip_update = True
         else:
-            from hermes_cli.config import detect_install_method
-            method = detect_install_method(PROJECT_ROOT)
-            if method == "pip":
-                _cmd_update_pip(args)
-                return
             print("✗ Not a git repository. Please reinstall:")
-            print("  python3 -m pip install --upgrade superforecasting-agent")
+            print("  curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/releases/latest/download/install.sh | bash")
             sys.exit(1)
 
     # On Windows, git can fail with "unable to write loose object file: Invalid argument"

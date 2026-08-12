@@ -41,6 +41,11 @@ class ExecutionStore:
         apply_wal_with_fallback(self._conn, db_label="execution_store.db")
         self._init_schema()
 
+    def close(self) -> None:
+        """Close the underlying SQLite connection."""
+        with self._lock:
+            self._conn.close()
+
     def _init_schema(self) -> None:
         with self._lock, self._conn:
             self._conn.executescript(

@@ -400,12 +400,16 @@ def recommended_update_command_for_method(method: str) -> str:
         return "brew upgrade superforecasting-agent"
     if method == "docker":
         return "docker pull teddyjfpender/superforecasting-agent:latest"
-    if method == "pip":
-        import shutil
-        uv = shutil.which("uv")
-        if uv:
-            return "uv pip install --upgrade superforecasting-agent"
-        return "pip install --upgrade superforecasting-agent"
+    if method in {"pip", "pipx", "release"}:
+        if _IS_WINDOWS:
+            return (
+                "irm https://github.com/teddyjfpender/superforecasting-agent/"
+                "releases/latest/download/install.ps1 | iex"
+            )
+        return (
+            "curl -fsSL https://github.com/teddyjfpender/superforecasting-agent/"
+            "releases/latest/download/install.sh | bash"
+        )
     return "superforecasting-agent update"
 
 

@@ -274,6 +274,10 @@ class TestStartup:
         with pytest.raises(RuntimeError, match="Sandbox did not reach running state"):
             make_env()
 
+        assert sandbox.snapshot_calls == []
+        assert len(sandbox.stop_calls) == 1
+        assert sandbox.closed == 1
+
 
 class TestFileSync:
     def test_initial_sync_uploads_managed_files_under_remote_home(

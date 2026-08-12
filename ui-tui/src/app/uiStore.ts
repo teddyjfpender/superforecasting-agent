@@ -54,7 +54,7 @@ export const $reviewSweep = computed($uiState, state => state.reviewSweep)
 // keystroke that re-render walks the virtualized window through a transient
 // full-history mount and re-blits the entire transcript region under the two-pane
 // decstbm={false} + stickyScroll geometry — the visible "right chat blinks while
-// I type" flash. Same fix as the Recents rail ($uiSessionId/$uiTheme).
+// I type" flash. These narrow atoms keep unrelated state updates isolated.
 export const $uiCompact = computed($uiState, state => state.compact)
 export const $uiDetailsMode = computed($uiState, state => state.detailsMode)
 export const $uiDetailsCommandOverride = computed($uiState, state => state.detailsModeCommandOverride)

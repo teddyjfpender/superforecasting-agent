@@ -2,7 +2,7 @@ name: Nix Lockfile Fix
 
 on:
   push:
-    branches: [main]
+    branches: [main, superforecasting-agent-snapshot]
     paths:
       - 'ui-tui/package-lock.json'
       - 'ui-tui/package.json'
@@ -42,7 +42,7 @@ jobs:
   #   4. Uses a GitHub App token (not GITHUB_TOKEN) so the fix commit
   #      triggers downstream nix.yml verification.
   auto-fix-main:
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     concurrency:
@@ -58,7 +58,7 @@ jobs:
 
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          ref: main
+          ref: ${{ github.event.repository.default_branch }}
           token: ${{ steps.app-token.outputs.token }}
 
       - uses: ./.github/actions/nix-setup
@@ -72,6 +72,8 @@ jobs:
       - name: Commit & push
         if: steps.apply.outputs.changed == 'true'
         shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
           set -euo pipefail
 
@@ -99,16 +101,16 @@ jobs:
           # rejection silently loses the fix. If package files changed during
           # the rebase, abort — a fresh auto-fix run will handle the new state.
           for attempt in 1 2 3; do
-            if git push origin HEAD:main; then
+            if git push origin "HEAD:${DEFAULT_BRANCH}"; then
               exit 0
             fi
             echo "::warning::Push attempt $attempt failed (non-fast-forward?), rebasing…"
-            git fetch origin main
+            git fetch origin "$DEFAULT_BRANCH"
 
             # If package files changed between our base and the new main,
             # our computed hashes are stale. Abort and let the next triggered
             # run recompute from the correct package-lock state.
-            pkg_changed="$(git diff --name-only "$BASE_SHA"..origin/main -- \
+            pkg_changed="$(git diff --name-only "${BASE_SHA}..origin/${DEFAULT_BRANCH}" -- \
               'ui-tui/package-lock.json' 'ui-tui/package.json' \
               'web/package-lock.json' 'web/package.json' || true)"
             if [ -n "$pkg_changed" ]; then
@@ -116,7 +118,7 @@ jobs:
               exit 0
             fi
 
-            git rebase origin/main
+            git rebase "origin/${DEFAULT_BRANCH}"
           done
           echo "::error::Failed to push after 3 rebase attempts"
           exit 1

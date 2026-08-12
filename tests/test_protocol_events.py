@@ -193,7 +193,7 @@ CASES: list[tuple[type, dict, bool]] = [
     # ── forecast desk (sessionless) ──────────────────────────────────────────
     (CronFired, {"count": 3}, True),
     (ReviewSweep, {"phase": "started", "due_count": 5}, True),
-    (ReviewSweep, {"phase": "done", "refreshed": 4, "alerts": 1, "duration_ms": 1200}, True),
+    (ReviewSweep, {"phase": "done", "proposals": 4, "alerts": 1, "duration_ms": 1200}, True),
     (ReviewSummary, {"text": "💾 Self-improvement review: …"}, True),
     # ── markets "Models" tab ─────────────────────────────────────────────────
     (MarketModelProgress, {"id": "m1", "phase": "starting", "message": "starting"}, True),
@@ -243,8 +243,8 @@ def test_review_sweep_started_and_done_share_one_model():
     """The phase-discriminated review.sweep folds both shapes into one model."""
 
     started = ReviewSweep.model_validate({"phase": "started", "due_count": 2})
-    done = ReviewSweep.model_validate({"phase": "done", "refreshed": 1, "alerts": 0, "duration_ms": 9})
+    done = ReviewSweep.model_validate({"phase": "done", "proposals": 1, "alerts": 0, "duration_ms": 9})
     assert started.model_dump(mode="json", exclude_none=True) == {"phase": "started", "due_count": 2}
     assert done.model_dump(mode="json", exclude_none=True) == {
-        "phase": "done", "refreshed": 1, "alerts": 0, "duration_ms": 9,
+        "phase": "done", "proposals": 1, "alerts": 0, "duration_ms": 9,
     }

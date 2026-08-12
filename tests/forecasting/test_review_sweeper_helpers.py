@@ -41,12 +41,12 @@ def test_parse_review_sweep_report():
         "scheduled_reviews: 2\n"
         "alerts: 3\n\n"
         "Deterministic refresh\n"
-        "committed: 4  no_change/skipped: 1  errors: 0\n"
+        "proposals: 4  no_change/skipped: 1  errors: 0\n"
     )
-    assert cr.parse_review_sweep_report(report) == {"refreshed": 4, "alerts": 3}
+    assert cr.parse_review_sweep_report(report) == {"proposals": 4, "alerts": 3}
     # Fail-open: a quiet sweep (no sections) → zeros.
-    assert cr.parse_review_sweep_report("nothing here") == {"refreshed": 0, "alerts": 0}
-    assert cr.parse_review_sweep_report(None) == {"refreshed": 0, "alerts": 0}
+    assert cr.parse_review_sweep_report("nothing here") == {"proposals": 0, "alerts": 0}
+    assert cr.parse_review_sweep_report(None) == {"proposals": 0, "alerts": 0}
 
 
 def test_state_roundtrip(tmp_path):

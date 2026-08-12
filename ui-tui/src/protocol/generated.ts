@@ -2563,7 +2563,7 @@ export interface ReviewSweepPayload {
   due_count?: number
   duration_ms?: number
   phase: string
-  refreshed?: number
+  proposals?: number
 }
 
 export interface RollbackCheckpoint {
@@ -2777,6 +2777,7 @@ export interface SessionMostRecentResponse {
 
 export interface SessionResumeRequest {
   cols: null | number
+  replace_session_id: null | string
   session_id: string
 }
 

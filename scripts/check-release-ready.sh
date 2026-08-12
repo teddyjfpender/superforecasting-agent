@@ -12,6 +12,7 @@
 # Strict checks (--strict; need the full venv/toolchain — CI and pre-tag):
 #   5. protocol codegen is not stale         (scripts/check-protocol.sh)
 #   6. generated docs are not stale          (python -m scripts.docgen --check)
+#   7. worktree is clean                      (tracked + untracked files)
 #
 # Suites-green is enforced by the *workflow* (the test job gates the release
 # job via needs:), and locally by `--with-tests` here.  Keeping the heavy run
@@ -148,6 +149,14 @@ if [ "$STRICT" = "1" ]; then
   else
     c_skip "docgen check skipped (docgen toolchain unavailable)"
   fi
+
+  dirty="$(git status --porcelain=v1 --untracked-files=all)"
+  if [ -z "$dirty" ]; then
+    c_ok "worktree clean"
+  else
+    printf '%s\n' "$dirty" >&2
+    c_bad "worktree dirty — commit the exact release candidate first"
+  fi
 else
   c_skip "strict codegen checks skipped (pass --strict to enforce)"
 fi
@@ -169,7 +178,11 @@ fi
 
 echo
 if [ "$RED" = "0" ]; then
-  printf '\033[32mREADY\033[0m — %s can be released\n' "$TAG"
+  if [ "$WITH_TESTS" = "1" ]; then
+    printf '\033[32mREADY\033[0m — %s can be released\n' "$TAG"
+  else
+    printf '\033[32mCHECKS PASSED\033[0m — run with --with-tests before tagging %s\n' "$TAG"
+  fi
   exit 0
 else
   printf '\033[31mNOT READY\033[0m — resolve the ✗ items above\n'

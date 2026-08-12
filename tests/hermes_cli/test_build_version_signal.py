@@ -116,39 +116,24 @@ def test_get_json_never_raises(banner):
         assert banner._get_json("https://example.invalid/x.json", "application/json") is None
 
 
-def test_wheel_lane_falls_back_from_pypi_to_the_release_feed(banner, tmp_path, monkeypatch):
-    """THE regression: no .git, nothing on PyPI — the release feed must answer."""
+def test_wheel_lane_uses_the_release_feed(banner, tmp_path, monkeypatch):
+    """THE regression: no .git — the release feed must answer."""
     fake = tmp_path / "site-packages" / "hermes_cli" / "banner.py"
     fake.parent.mkdir(parents=True)
     fake.touch()
     monkeypatch.setattr(banner, "__file__", str(fake))
 
-    with patch.object(banner, "check_via_pypi", return_value=None):
-        with patch.object(banner, "check_via_release", return_value=banner.UPDATE_AVAILABLE_NO_COUNT) as rel:
-            assert banner.check_for_updates() == banner.UPDATE_AVAILABLE_NO_COUNT
+    with patch.object(banner, "check_via_release", return_value=banner.UPDATE_AVAILABLE_NO_COUNT) as rel:
+        assert banner.check_for_updates() == banner.UPDATE_AVAILABLE_NO_COUNT
     rel.assert_called_once()
-
-
-def test_pypi_answer_short_circuits_the_release_feed(banner, tmp_path, monkeypatch):
-    """One resolution per check — the release feed is a FALLBACK, not a second path."""
-    fake = tmp_path / "site-packages" / "hermes_cli" / "banner.py"
-    fake.parent.mkdir(parents=True)
-    fake.touch()
-    monkeypatch.setattr(banner, "__file__", str(fake))
-
-    with patch.object(banner, "check_via_pypi", return_value=0):
-        with patch.object(banner, "check_via_release") as rel:
-            assert banner.check_for_updates() == 0
-    rel.assert_not_called()
 
 
 def test_resolved_latest_survives_in_the_shared_cache(banner, tmp_path):
     """The 6-hour cache carries the version string, so a warm start needs no I/O."""
-    with patch.object(banner, "check_via_pypi", return_value=None):
-        with patch.object(banner, "_fetch_release_latest", return_value="0.19.0"):
-            with patch.object(banner, "VERSION", "0.17.0"):
-                with patch.object(banner, "_check_via_local_git", return_value=None):
-                    banner.check_for_updates()
+    with patch.object(banner, "_fetch_release_latest", return_value="0.19.0"):
+        with patch.object(banner, "VERSION", "0.17.0"):
+            with patch.object(banner, "_check_via_local_git", return_value=None):
+                banner.check_for_updates()
 
     cached = json.loads((tmp_path / ".update_check").read_text())
     assert cached["latest"] == "0.19.0"
@@ -198,10 +183,9 @@ def test_remedy_defers_to_the_package_manager_when_managed(banner):
 def test_update_state_never_blocks_and_never_opens_a_network_path(banner):
     """The startup contract: pure memory + one tiny file read, no sockets."""
     with patch.object(banner, "_fetch_release_latest", side_effect=AssertionError("no network!")):
-        with patch.object(banner, "_fetch_pypi_latest", side_effect=AssertionError("no network!")):
-            start = time.monotonic()
-            state = banner.get_update_state()
-            elapsed = time.monotonic() - start
+        start = time.monotonic()
+        state = banner.get_update_state()
+        elapsed = time.monotonic() - start
 
     assert elapsed < 0.2, f"get_update_state() blocked for {elapsed:.3f}s"
     assert state["version"]

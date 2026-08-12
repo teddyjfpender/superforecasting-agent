@@ -210,7 +210,7 @@ def test_estimator_worker_consumes_exact_event_without_repolling(tmp_path, monke
         question_id=question.id,
         sources=[str(source)],
         cadence="1d",
-        mode="propose",
+        mode="auto_commit",
     )
     source.write_text("after", encoding="utf-8")
     ledger.run_autopilot(question.id, now="2026-05-01T00:00:00Z")
@@ -276,6 +276,7 @@ def test_estimator_worker_consumes_exact_event_without_repolling(tmp_path, monke
     assert result["task"]["status"] == "completed"
     assert result["event"]["status"] == "processed"
     assert result["event"]["state"] == "reconciled"
+    assert ledger.get_current_snapshot(question.id).forecast_id == baseline.forecast_id
     assert ledger.get_watched_source(watch_id)["last_seen_signature"] == event["new_state"]["signature"]
     transitions = ledger.list_source_change_event_transitions(event["id"])
     assert [row["to_state"] for row in transitions] == [
@@ -1326,6 +1327,49 @@ def test_pending_proposal_is_superseded_by_newer_committed_forecast(tmp_path):
     assert updated["reviewed_by"] == "lifecycle:newer_forecast"
     assert review_task["status"] == "completed"
     assert review_task["disposition"] == "superseded"
+
+
+def test_proposal_approval_is_atomic_and_rejects_a_stale_empty_parent(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will approval stay atomic?",
+        resolution_criteria="Resolves yes if proposal approval is atomic.",
+    )
+    proposal = ledger.create_forecast_update_proposal(
+        question_id=question.id,
+        run_id=None,
+        prior_forecast_id=None,
+        proposed_probability_or_distribution=0.55,
+        rationale="Proposed first snapshot.",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.45,
+        rationale="A first snapshot landed before approval.",
+    )
+
+    with pytest.raises(ValidationError, match="superseded"):
+        ledger.approve_forecast_update_proposal(proposal["id"])
+    assert ledger.get_forecast_update_proposal(proposal["id"])["status"] == "superseded"
+    assert len(ledger.list_snapshots(question.id)) == 1
+
+    current = ledger.get_current_snapshot(question.id)
+    retry = ledger.create_forecast_update_proposal(
+        question_id=question.id,
+        run_id=None,
+        prior_forecast_id=current.forecast_id,
+        proposed_probability_or_distribution=0.60,
+        rationale="A second proposed update.",
+    )
+
+    def _fail_snapshot(**kwargs):
+        raise RuntimeError("injected snapshot failure")
+
+    monkeypatch.setattr(ledger, "create_snapshot", _fail_snapshot)
+    with pytest.raises(RuntimeError, match="injected snapshot failure"):
+        ledger.approve_forecast_update_proposal(retry["id"])
+    assert ledger.get_forecast_update_proposal(retry["id"])["status"] == "pending"
+    assert len(ledger.list_snapshots(question.id)) == 1
 
 
 def test_service_modes_and_operational_cockpit_enforce_capacity_policy(tmp_path):

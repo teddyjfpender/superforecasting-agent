@@ -482,6 +482,7 @@ def _rpc_server_loop(
     tool_call_counter: list,   # mutable [int] so the thread can increment
     max_tool_calls: int,
     allowed_tools: frozenset,
+    forecast_commit_policy: str | None = None,
 ):
     """
     Accept one client connection and dispatch tool-call requests until
@@ -560,9 +561,12 @@ def _rpc_server_loop(
                     try:
                         sys.stdout = devnull
                         sys.stderr = devnull
-                        result = handle_function_call(
-                            tool_name, tool_args, task_id=task_id
-                        )
+                        call_kwargs: dict[str, Any] = {"task_id": task_id}
+                        if forecast_commit_policy:
+                            call_kwargs["main_runtime"] = {
+                                "forecast_commit_policy": forecast_commit_policy
+                            }
+                        result = handle_function_call(tool_name, tool_args, **call_kwargs)
                     finally:
                         sys.stdout, sys.stderr = _real_stdout, _real_stderr
                         devnull.close()
@@ -743,6 +747,7 @@ def _rpc_poll_loop(
     tool_call_counter: list,
     max_tool_calls: int,
     allowed_tools: frozenset,
+    forecast_commit_policy: str | None,
     stop_event: threading.Event,
 ):
     """Poll the remote filesystem for tool call requests and dispatch them.
@@ -834,8 +839,13 @@ def _rpc_poll_loop(
                         try:
                             sys.stdout = devnull
                             sys.stderr = devnull
+                            call_kwargs: dict[str, Any] = {"task_id": task_id}
+                            if forecast_commit_policy:
+                                call_kwargs["main_runtime"] = {
+                                    "forecast_commit_policy": forecast_commit_policy
+                                }
                             tool_result = handle_function_call(
-                                tool_name, tool_args, task_id=task_id
+                                tool_name, tool_args, **call_kwargs
                             )
                         finally:
                             sys.stdout, sys.stderr = _real_stdout, _real_stderr
@@ -881,6 +891,7 @@ def _execute_remote(
     code: str,
     task_id: Optional[str],
     enabled_tools: Optional[List[str]],
+    forecast_commit_policy: Optional[str] = None,
 ) -> str:
     """Run a script on the remote terminal backend via file-based RPC.
 
@@ -949,7 +960,7 @@ def _execute_remote(
             args=(
                 env, f"{sandbox_dir}/rpc", effective_task_id,
                 tool_call_log, tool_call_counter, max_tool_calls,
-                sandbox_tools, stop_event,
+                sandbox_tools, forecast_commit_policy, stop_event,
             ),
             daemon=True,
         )
@@ -967,6 +978,8 @@ def _execute_remote(
         tz = _timezone_env_value()
         if tz:
             env_prefix += f" TZ={tz}"
+        if (forecast_commit_policy or "").strip().lower() == "proposal_only":
+            env_prefix += " FORECAST_COMMIT_POLICY=proposal_only"
 
         # Execute the script on the remote backend
         logger.info("Executing code on %s backend (task %s)...",
@@ -1080,6 +1093,7 @@ def execute_code(
     code: str,
     task_id: Optional[str] = None,
     enabled_tools: Optional[List[str]] = None,
+    forecast_commit_policy: Optional[str] = None,
 ) -> str:
     """
     Run a Python script in a sandboxed child process with RPC access
@@ -1110,7 +1124,9 @@ def execute_code(
     from tools.terminal_tool import _get_env_config
     env_type = _get_env_config()["env_type"]
     if env_type != "local":
-        return _execute_remote(code, task_id, enabled_tools)
+        return _execute_remote(
+            code, task_id, enabled_tools, forecast_commit_policy
+        )
 
     # --- Local execution path (UDS) --- below this line is unchanged ---
 
@@ -1205,6 +1221,7 @@ def execute_code(
             args=(
                 server_sock, task_id, tool_call_log,
                 tool_call_counter, max_tool_calls, sandbox_tools,
+                forecast_commit_policy,
             ),
             daemon=True,
         )
@@ -1225,6 +1242,8 @@ def execute_code(
         child_env["FORECAST_RPC_SOCKET"] = rpc_endpoint
         child_env["HERMES_RPC_SOCKET"] = rpc_endpoint
         child_env["PYTHONDONTWRITEBYTECODE"] = "1"
+        if (forecast_commit_policy or "").strip().lower() == "proposal_only":
+            child_env["FORECAST_COMMIT_POLICY"] = "proposal_only"
         # Force UTF-8 for the child's stdio and default file encoding.
         #
         # Without this, on Windows sys.stdout is bound to the console code
@@ -1913,7 +1932,10 @@ registry.register(
     handler=lambda args, **kw: execute_code(
         code=args.get("code", ""),
         task_id=kw.get("task_id"),
-        enabled_tools=kw.get("enabled_tools")),
+        enabled_tools=kw.get("enabled_tools"),
+        forecast_commit_policy=(kw.get("main_runtime") or {}).get(
+            "forecast_commit_policy"
+        )),
     check_fn=check_sandbox_requirements,
     emoji="🐍",
     max_result_size_chars=100_000,

@@ -848,6 +848,7 @@ def handle_function_call(
                 function_name, function_args,
                 task_id=task_id,
                 enabled_tools=sandbox_enabled,
+                main_runtime=main_runtime,
             )
         else:
             result = registry.dispatch(

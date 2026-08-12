@@ -16,9 +16,8 @@
 # tree, no .venv, no `npm run build` on every pull.
 #
 # Mirrors the wheel build in .github/workflows/production-release.yml — the
-# primary tag-triggered release pipeline — so a local build matches CI
-# (upload_to_pypi.yml is the dormant opt-in CalVer path and no longer the
-# reference). One deliberate difference: CI relies on the TRACKED
+# primary tag-triggered release pipeline — so a local build matches CI.
+# One deliberate difference: CI relies on the TRACKED
 # hermes_cli/tui_dist/package.json ES-module marker surviving checkout (its
 # bundle step only copies entry.js over it), while this script REWRITES the
 # marker below so even a clean-room build holds the invariant.

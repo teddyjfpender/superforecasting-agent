@@ -29,7 +29,6 @@ import { waitForQuiet } from '../testing/settle.js'
 //   3. Tab (armPath) STILL opens path completion for a path-like token — the
 //      feature is preserved, just no longer auto-firing.
 
-vi.mock('../components/conversationsRail.js', () => ({ ConversationsRail: () => null }))
 vi.mock('../components/streamingAssistant.js', () => ({
   LiveTodoPanel: () => null,
   StreamingAssistant: () => null
@@ -119,7 +118,6 @@ const mount = async () => {
 
   const transcript: any = {
     historyItems: [msg],
-    railScrollRef: React.createRef(),
     scrollRef: React.createRef(),
     virtualHistory: { bottomSpacer: 0, end: 1, measureRef: () => () => {}, offsets: [0], start: 0, topSpacer: 0 },
     virtualRows: [{ index: 0, key: 'm0', msg }]

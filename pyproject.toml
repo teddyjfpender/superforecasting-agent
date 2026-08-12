@@ -7,9 +7,9 @@ name = "superforecasting-agent"
 version = "0.20.0"
 description = "Superforecasting Agent — a command-line forecasting desk that compounds judgment over time"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 authors = [{ name = "Superforecasting Agent Contributors" }]
-license = { text = "MIT" }
+license = "MIT"
 dependencies = [
   # Core — every direct dep is exact-pinned to ==X.Y.Z (no ranges).
   # Rationale: ranges allow PyPI to ship a fresh version of a transitive

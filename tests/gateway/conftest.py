@@ -54,6 +54,28 @@ _ensure_telegram_mock()
 _ensure_discord_mock()
 
 
+@pytest.fixture(autouse=True)
+def _close_gateway_sqlite_stores(monkeypatch):
+    """Close per-test API stores before xdist workers exhaust file descriptors."""
+    from gateway.execution_store import ExecutionStore
+    from gateway.platforms.api_server import ResponseStore
+
+    stores = []
+    for store_type in (ExecutionStore, ResponseStore):
+        original_init = store_type.__init__
+
+        def tracked_init(self, *args, _init=original_init, **kwargs):
+            _init(self, *args, **kwargs)
+            stores.append(self)
+
+        monkeypatch.setattr(store_type, "__init__", tracked_init)
+
+    yield
+
+    for store in reversed(stores):
+        store.close()
+
+
 # ---------------------------------------------------------------------------
 # Plugin-adapter anti-pattern guard
 # ---------------------------------------------------------------------------
@@ -176,4 +198,3 @@ def pytest_configure(config):
             + "\n\n"
             + _GUARD_HINT
         )
-

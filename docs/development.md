@@ -92,7 +92,7 @@ matches CI. Test config lives in `pyproject.toml` (`[tool.pytest.ini_options]`).
   ratchet (`npm run lint -- --max-warnings 54` — the pinned count may only
   ever go *down*; fix a warning, lower the number in `tests.yml` **and** in
   `production-release.yml`'s tui job). Runs on Node 22, matching the release
-  build jobs. The release pipeline declares `needs: [gate, test, tui]`, so
+  build jobs. The release pipeline declares `needs: [gate, test, python-compat, tui]`, so
   **a red TUI suite blocks a release**.
 - `lint.yml` — blocking `ruff check .` enforcement plus a blocking, pinned
   `actionlint` pass over everything in `.github/workflows/` (`needs:` edges,
@@ -119,7 +119,7 @@ superforecasting-agent --tui
 
 The launcher finds the bundled TUI, runs it on Node (auto-provisioning Node via
 fnm/nvm/brew if needed), and spawns the gateway from the installed package's own
-Python. `scripts/build-release.sh` mirrors `.github/workflows/upload_to_pypi.yml`
+Python. `scripts/build-release.sh` mirrors `.github/workflows/production-release.yml`
 so a local build matches CI; `SKIP_NPM=1` reuses an existing
 `ui-tui/dist/entry.js`.
 

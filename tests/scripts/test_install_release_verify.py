@@ -130,6 +130,27 @@ def test_installer_parses():
     subprocess.run(["bash", "-n", str(SCRIPT)], check=True, timeout=15)
 
 
+def test_unsupported_python_fails_before_network(tmp_path):
+    shim = tmp_path / "shim"
+    shim.mkdir()
+    fake_python = "#!/usr/bin/env bash\nexit 1\n"
+    for name in ("python3", "python"):
+        path = shim / name
+        path.write_text(fake_python, encoding="utf-8")
+        path.chmod(0o755)
+
+    result = subprocess.run(
+        ["bash", str(SCRIPT)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        env={"PATH": f"{shim}:/usr/bin:/bin", "HOME": str(tmp_path)},
+    )
+
+    assert result.returncode != 0
+    assert "Python 3.11-3.13 is required" in result.stderr
+
+
 def test_verified_wheel_installs(tmp_path):
     fixdir = tmp_path / "fix"
     _write_fixtures(fixdir)
@@ -139,6 +160,7 @@ def test_verified_wheel_installs(tmp_path):
     assert "matches the release-manifest.json pin" in result.stdout
     log = _pipx_log(fixdir)
     assert log is not None and "install --force" in log and WHEEL_NAME in log
+    assert (tmp_path / "home" / ".superforecasting-agent" / ".install_method").read_text() == "release\n"
 
 
 def test_corrupted_wheel_aborts_and_installs_nothing(tmp_path):

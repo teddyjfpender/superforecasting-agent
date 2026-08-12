@@ -421,9 +421,9 @@ function Test-Python {
         Write-Warn "uv python install error: $_"
     }
 
-    # Fallback: check if ANY Python 3.10+ is already available on the system
-    Write-Info "Trying to find any existing Python 3.10+..."
-    foreach ($fallbackVer in @("3.12", "3.13", "3.10")) {
+    # Fallback: check for any package-supported Python on the system.
+    Write-Info "Trying to find an existing Python 3.11-3.13..."
+    foreach ($fallbackVer in @("3.11", "3.12", "3.13")) {
         try {
             $pythonPath = & $UvCmd python find $fallbackVer 2>$null
             if ($pythonPath) {
@@ -461,7 +461,7 @@ function Test-Python {
                 $ErrorActionPreference = "Continue"
                 $sysVer = & python --version 2>&1
                 $ErrorActionPreference = $prevEAP2
-                if ($sysVer -match "Python 3\.(1[0-9]|[1-9][0-9])") {
+                if ($sysVer -match "Python 3\.(11|12|13)(\.|$)") {
                     Write-Success "Using system Python: $sysVer"
                     return $true
                 }

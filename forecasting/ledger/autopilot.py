@@ -316,6 +316,7 @@ def run_autopilot(
     proposed_probability_or_distribution: Any | None = None,
     rationale: str | None = None,
     require_policy: bool = True,
+    allow_auto_commit: bool = True,
 ) -> dict[str, Any]:
     # The autopilot POLICY governs only the MATERIALITY threshold and the
     # auto-commit MODE (whether a watched-source change becomes a proposal /
@@ -619,7 +620,7 @@ def run_autopilot(
                         recommended_action=f"Review proposal {proposal['id']} before updating the forecast.",
                     )
                 )
-            elif policy["mode"] == "auto_commit":
+            elif policy["mode"] == "auto_commit" and allow_auto_commit:
                 violations = guardrail_violations
                 diagnostics["guardrail_violations"] = violations
                 if violations:
@@ -642,6 +643,8 @@ def run_autopilot(
                         status="auto_committed",
                     )
             else:
+                if policy["mode"] == "auto_commit":
+                    diagnostics["auto_commit_suppressed"] = True
                 alerts.append(
                     ledger.create_alert(
                         severity="info",
@@ -975,6 +978,7 @@ def create_forecast_update_proposal(
     model_run_refs: list[str] | None = None,
     assumption_refs: list[str] | None = None,
     reference_class_refs: list[str] | None = None,
+    snapshot_args: dict[str, Any] | None = None,
     status: str = "pending",
     expires_at: str | None = None,
 ) -> dict[str, Any]:
@@ -1004,9 +1008,9 @@ def create_forecast_update_proposal(
                 id, question_id, run_id, prior_forecast_id,
                 proposed_probability_or_distribution, rationale, evidence_refs,
                 source_snapshot_refs, model_run_refs, assumption_refs,
-                reference_class_refs, status, created_at, expires_at
+                reference_class_refs, snapshot_args, status, created_at, expires_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 proposal_id,
@@ -1020,6 +1024,7 @@ def create_forecast_update_proposal(
                 json_dumps(model_run_refs or []),
                 json_dumps(assumption_refs or []),
                 json_dumps(reference_class_refs or []),
+                json_dumps(snapshot_args or {}),
                 status,
                 created_at,
                 expires_at,
@@ -1112,62 +1117,124 @@ def approve_forecast_update_proposal(
         raise ValidationError("approved proposal status must be approved or auto_committed")
     ledger.expire_forecast_update_proposals()
     proposal = ledger.get_forecast_update_proposal(proposal_id)
+    if proposal["status"] == "superseded":
+        raise ValidationError("proposal is superseded by a newer forecast")
     if proposal["status"] in {"approved", "auto_committed"} and proposal.get(
         "resulting_forecast_id"
     ):
         return ledger.get_snapshot(proposal["resulting_forecast_id"])
     reviewed_at = utc_now_iso()
-    with ledger._connect() as conn:
-        claimed = conn.execute(
-            """
-            UPDATE forecast_update_proposals
-            SET status = 'committing', reviewed_at = ?, reviewed_by = ?
-            WHERE id = ? AND status = 'pending'
-            """,
-            (reviewed_at, reviewed_by, proposal_id),
-        )
-        if claimed.rowcount != 1:
+    stale = False
+    snapshot = None
+    with ledger.transaction(immediate=True) as conn:
+        row = conn.execute(
+            "SELECT * FROM forecast_update_proposals WHERE id = ?",
+            (proposal_id,),
+        ).fetchone()
+        if row is None:
+            raise LedgerNotFoundError(f"forecast update proposal not found: {proposal_id}")
+        proposal = ledger._row_to_forecast_update_proposal(row)
+        if proposal["status"] in {"approved", "auto_committed"} and proposal.get(
+            "resulting_forecast_id"
+        ):
+            snapshot = ledger.get_snapshot(proposal["resulting_forecast_id"])
+        elif proposal["status"] != "pending":
             raise ValidationError("proposal is already claimed or no longer pending")
-    try:
-        snapshot = ledger.create_snapshot(
-            question_id=proposal["question_id"],
-            probability_or_distribution=proposal["proposed_probability_or_distribution"],
-            rationale=proposal["rationale"],
-            method="autopilot",
-            style_autofix=True,
-            distribution_autofix=True,
-            evidence_refs=proposal["evidence_refs"],
-            source_snapshot_refs=proposal["source_snapshot_refs"],
-            model_run_refs=proposal["model_run_refs"],
-            assumption_refs=proposal["assumption_refs"],
-            reference_class_refs=proposal["reference_class_refs"],
-            require_citations=True,
-            metadata={"autopilot_proposal_id": proposal_id},
+        else:
+            current = ledger.get_current_snapshot(proposal["question_id"])
+            current_id = current.forecast_id if current is not None else None
+            if current_id != proposal.get("prior_forecast_id"):
+                conn.execute(
+                    """
+                    UPDATE forecast_update_proposals
+                    SET status = 'superseded', reviewed_at = ?,
+                        reviewed_by = 'lifecycle:newer_forecast'
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (reviewed_at, proposal_id),
+                )
+                conn.execute(
+                    """
+                    UPDATE alert_events
+                    SET acknowledged_at = COALESCE(acknowledged_at, ?),
+                        disposition = COALESCE(disposition, 'superseded'),
+                        ack_note = COALESCE(ack_note, 'auto_close:proposal_superseded')
+                    WHERE scope_type = 'question' AND scope_ref = ?
+                      AND reason IN (?, ?) AND acknowledged_at IS NULL
+                    """,
+                    (
+                        reviewed_at,
+                        proposal["question_id"],
+                        f"autopilot_update_proposed:{proposal_id}",
+                        f"forecast_update_proposal_expiring:{proposal_id}",
+                    ),
+                )
+                stale = True
+            else:
+                claimed = conn.execute(
+                    """
+                    UPDATE forecast_update_proposals
+                    SET status = 'committing', reviewed_at = ?, reviewed_by = ?
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (reviewed_at, reviewed_by, proposal_id),
+                )
+                if claimed.rowcount != 1:
+                    raise ValidationError("proposal is already claimed or no longer pending")
+                snapshot_args = dict(proposal.get("snapshot_args") or {})
+                if not snapshot_args:
+                    snapshot_args = {
+                        "method": "autopilot",
+                        "style_autofix": True,
+                        "distribution_autofix": True,
+                        "evidence_refs": proposal["evidence_refs"],
+                        "source_snapshot_refs": proposal["source_snapshot_refs"],
+                        "model_run_refs": proposal["model_run_refs"],
+                        "assumption_refs": proposal["assumption_refs"],
+                        "reference_class_refs": proposal["reference_class_refs"],
+                        "require_citations": True,
+                    }
+                snapshot_args.pop("preview", None)
+                metadata = dict(snapshot_args.get("metadata") or {})
+                metadata["autopilot_proposal_id"] = proposal_id
+                snapshot_args.update(
+                    question_id=proposal["question_id"],
+                    probability_or_distribution=proposal[
+                        "proposed_probability_or_distribution"
+                    ],
+                    rationale=proposal["rationale"],
+                    metadata=metadata,
+                )
+                snapshot = ledger.create_snapshot(**snapshot_args)
+                finalized = conn.execute(
+                    """
+                    UPDATE forecast_update_proposals
+                    SET status = ?, reviewed_at = ?, reviewed_by = ?, resulting_forecast_id = ?
+                    WHERE id = ? AND status = 'committing'
+                    """,
+                    (status, reviewed_at, reviewed_by, snapshot.forecast_id, proposal_id),
+                )
+                if finalized.rowcount != 1:
+                    raise ValidationError("proposal commit claim was lost")
+                if proposal.get("run_id"):
+                    conn.execute(
+                        "UPDATE autopilot_runs SET forecast_snapshot_id = ? WHERE id = ?",
+                        (snapshot.forecast_id, proposal["run_id"]),
+                    )
+    if stale:
+        _close_proposal_review_task(
+            ledger, proposal_id, disposition="superseded", now=reviewed_at
         )
-    except Exception:
-        with ledger._connect() as conn:
-            conn.execute(
-                "UPDATE forecast_update_proposals SET status = 'pending' "
-                "WHERE id = ? AND status = 'committing'",
-                (proposal_id,),
-            )
-        raise
-    with ledger._connect() as conn:
-        finalized = conn.execute(
-            """
-            UPDATE forecast_update_proposals
-            SET status = ?, reviewed_at = ?, reviewed_by = ?, resulting_forecast_id = ?
-            WHERE id = ? AND status = 'committing'
-            """,
-            (status, reviewed_at, reviewed_by, snapshot.forecast_id, proposal_id),
+        from forecasting.ledger.workflow import reconcile_source_events_for_proposal
+
+        reconcile_source_events_for_proposal(
+            ledger,
+            proposal_id,
+            outcome="rejected",
+            actor="lifecycle:newer_forecast",
         )
-        if finalized.rowcount != 1:
-            raise ValidationError("proposal commit claim was lost")
-        if proposal.get("run_id"):
-            conn.execute(
-                "UPDATE autopilot_runs SET forecast_snapshot_id = ? WHERE id = ?",
-                (snapshot.forecast_id, proposal["run_id"]),
-            )
+        raise ValidationError("proposal is superseded by a newer forecast")
+    assert snapshot is not None
     _close_proposal_review_task(
         ledger, proposal_id, disposition=status, now=reviewed_at
     )
@@ -1198,7 +1265,8 @@ def expire_forecast_update_proposals(
     for proposal in pending:
         current = ledger.get_current_snapshot(proposal["question_id"])
         prior_id = proposal.get("prior_forecast_id")
-        if current is None or not prior_id or current.forecast_id == prior_id:
+        current_id = current.forecast_id if current is not None else None
+        if current_id == prior_id:
             continue
         with ledger._connect() as conn:
             conn.execute(
@@ -1413,4 +1481,5 @@ def _row_to_forecast_update_proposal(ledger, row: sqlite3.Row) -> dict[str, Any]
         "reference_class_refs",
     ):
         data[field] = json_loads(data[field], [])
+    data["snapshot_args"] = json_loads(data.get("snapshot_args"), {})
     return data

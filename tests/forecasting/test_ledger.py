@@ -2229,6 +2229,42 @@ def test_autopilot_auto_commit_respects_guardrails(tmp_path):
     assert "guardrail_violations" in result["run"]["diagnostics"]
 
 
+def test_background_autopilot_suppresses_valid_auto_commit(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    question = ledger.create_question(
+        title="Will unattended source refreshes remain proposal-only?",
+        resolution_criteria="Resolved yes if background automation cannot commit.",
+        resolution_source="fixture resolver",
+    )
+    baseline = ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.30,
+        rationale="Baseline.",
+    )
+    source = tmp_path / "market.txt"
+    source.write_text("initial", encoding="utf-8")
+    ledger.enable_autopilot(
+        question_id=question.id,
+        sources=[str(source)],
+        cadence="1d",
+        mode="auto_commit",
+        guardrail_policy={"max_single_run_probability_delta": 0.50},
+    )
+    source.write_text("changed", encoding="utf-8")
+
+    result = ledger.run_autopilot(
+        question.id,
+        proposed_probability_or_distribution=0.40,
+        rationale="A safe but unattended move.",
+        allow_auto_commit=False,
+    )
+
+    assert result["forecast_snapshot"] is None
+    assert result["proposal"]["status"] == "pending"
+    assert result["run"]["diagnostics"]["auto_commit_suppressed"] is True
+    assert ledger.get_current_snapshot(question.id).forecast_id == baseline.forecast_id
+
+
 def test_autopilot_required_source_failure_blocks_refresh_proposal(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     optional_source = tmp_path / "optional-source.txt"

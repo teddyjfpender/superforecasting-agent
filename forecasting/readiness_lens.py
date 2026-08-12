@@ -158,18 +158,21 @@ def question_machine_readiness(
     return {"score": score, "gaps": gaps}
 
 
-def build_question_readiness(ledger: Any, question_id: str) -> dict[str, Any]:
+def build_question_readiness(
+    ledger: Any, question_id: str, *, snapshot: Any = None
+) -> dict[str, Any]:
     """Full machine-readiness composite for ONE question (the settings-modal RPC).
 
-    Fetches the single-question values directly (this is not the batched book path,
-    so a handful of per-question reads is correct here) and returns the composite
-    plus ``question_id``/``title`` for display. Raises through ``ledger.get_question``
-    when the id is unknown."""
+    Fetches the single-question values directly and returns the composite plus
+    ``question_id``/``title`` for display. A caller that already loaded the current
+    snapshot can pass it to avoid a redundant lookup. Raises through
+    ``ledger.get_question`` when the id is unknown."""
     question = ledger.get_question(question_id)
-    try:
-        snapshot = ledger.get_current_snapshot(question_id)
-    except Exception:  # noqa: BLE001 — a missing snapshot just means no components
-        snapshot = None
+    if snapshot is None:
+        try:
+            snapshot = ledger.get_current_snapshot(question_id)
+        except Exception:  # noqa: BLE001 — a missing snapshot just means no components
+            snapshot = None
     components = getattr(snapshot, "ensemble_components", None)
     has_components = bool(components) if isinstance(components, dict) else False
 

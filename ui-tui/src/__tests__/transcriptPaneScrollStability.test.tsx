@@ -112,12 +112,10 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
       text: `message number ${i} with several words to force some real height`
     }))
 
-    const railScrollRef = React.createRef<any>()
     const scrollRef = React.createRef<any>()
 
     const transcript: any = {
       historyItems: items,
-      railScrollRef,
       scrollRef,
       virtualHistory: {
         bottomSpacer: 0,

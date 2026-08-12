@@ -16,7 +16,7 @@ import type * as HomeLandingModule from '../components/homeLanding.js'
 //   1. LIVENESS (red before the heartbeat): while busy, the terminal keeps
 //      receiving frames — each ~100ms tick writes the one status row. On the
 //      frozen bar the busy window emits ZERO bytes.
-//   2. ISOLATION: those ticks re-render the status row ALONE — rail, transcript
+//   2. ISOLATION: those ticks re-render the status row ALONE — transcript
 //      and navbar render +0, and the per-tick byte damage is one small row.
 //   3. IDLE: the instant the turn ends the ticker stops — zero bytes, zero
 //      renders across a quiet window (no background churn from this fix).
@@ -30,9 +30,6 @@ const bump = (k: string) => {
   return null
 }
 
-vi.mock('../components/conversationsRail.js', () => ({
-  ConversationsRail: () => bump('rail')
-}))
 vi.mock('../components/streamingAssistant.js', () => ({
   LiveTodoPanel: () => null,
   StreamingAssistant: () => bump('transcript')
@@ -142,7 +139,6 @@ const mountBusyApp = async () => {
     rpc: async () => null
   }
 
-  const railScrollRef = React.createRef<any>()
   const gwValue = { gw, rpc: gw.rpc }
   const composer = buildComposer(COLS)
 
@@ -152,7 +148,7 @@ const mountBusyApp = async () => {
     const virtualHistory = useVirtualHistory(scrollRef, rows, COLS)
 
     const transcript = React.useMemo(
-      () => ({ historyItems: items, railScrollRef, scrollRef, virtualHistory, virtualRows: rows }),
+      () => ({ historyItems: items, scrollRef, virtualHistory, virtualRows: rows }),
       [virtualHistory, rows]
     )
 
@@ -196,7 +192,7 @@ const sampleWindows = async (out: { clear: () => void; text: () => string }) => 
 }
 
 describe('running status bar: liveness + isolation', () => {
-  it('while busy the bar animates every tick — rail/transcript/navbar render +0', async () => {
+  it('while busy the bar animates every tick — transcript/navbar render +0', async () => {
     const { instance, patchTurnState, patchUiState, out } = await mountBusyApp()
 
     // Enter a real running state; a concrete activity makes the verb deterministic.
@@ -217,7 +213,6 @@ describe('running status bar: liveness + isolation', () => {
 
     // ISOLATION: the chrome above the status row never re-renders on a tick, and
     // each tick's damage is one small row.
-    expect(counts.rail ?? 0).toBe(0)
     expect(counts.transcript ?? 0).toBe(0)
     expect(counts.navbar ?? 0).toBe(0)
 
@@ -243,7 +238,6 @@ describe('running status bar: liveness + isolation', () => {
 
     // Idle = the ticker is torn down: no bytes, no chrome re-renders.
     expect(out.text().length).toBe(0)
-    expect(counts.rail ?? 0).toBe(0)
     expect(counts.transcript ?? 0).toBe(0)
     expect(counts.navbar ?? 0).toBe(0)
 

@@ -1708,6 +1708,7 @@ def terminal_tool(
     pty: bool = False,
     notify_on_complete: bool = False,
     watch_patterns: Optional[List[str]] = None,
+    forecast_commit_policy: Optional[str] = None,
 ) -> str:
     """
     Execute a command in the configured terminal environment.
@@ -1988,6 +1989,8 @@ def terminal_tool(
                 }, ensure_ascii=False)
 
         # Prepare command for execution
+        if (forecast_commit_policy or "").strip().lower() == "proposal_only":
+            command = "FORECAST_COMMIT_POLICY=proposal_only " + command
         pty_disabled_reason = None
         effective_pty = pty
         if pty and _command_requires_pipe_stdin(command):
@@ -2447,6 +2450,9 @@ def _handle_terminal(args, **kw):
         pty=args.get("pty", False),
         notify_on_complete=args.get("notify_on_complete", False),
         watch_patterns=args.get("watch_patterns"),
+        forecast_commit_policy=(kw.get("main_runtime") or {}).get(
+            "forecast_commit_policy"
+        ),
     )
 
 

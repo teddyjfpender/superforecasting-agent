@@ -3,28 +3,18 @@ import { PassThrough } from 'stream'
 import React from 'react'
 import { describe, expect, it, vi } from 'vitest'
 
-// The composer moved into the right column of the Home two-pane (commit
-// ae97fe508). Regression: because the transcript pane received the whole
+// Regression: because the transcript pane received the whole
 // `composer` object — a fresh identity on every keystroke — it re-rendered on
 // each keypress, re-blitting the transcript region and full-repainting the
-// screen (the "flash"). The rail pane was already memo-safe.
+// screen (the "flash").
 //
-// This pins BOTH subtrees: after the fix (transcript keyed on `cols`, a stable
-// number), typing 5 characters must re-render NEITHER the Recents rail NOR the
-// transcript. Counting proxies: the mocked leaf components below are called
+// This pins the transcript subtree: after the fix (transcript keyed on `cols`,
+// a stable number), typing 5 characters must not re-render it. Counting proxies:
+// the mocked leaf component below is called
 // once per render of their memoised parent pane, so a stable count == the pane
 // did not re-render.
 
-let railRenders = 0
 let streamRenders = 0
-
-vi.mock('../components/conversationsRail.js', () => ({
-  ConversationsRail: (_props: any) => {
-    railRenders++
-
-    return null
-  }
-}))
 
 vi.mock('../components/streamingAssistant.js', () => ({
   LiveTodoPanel: () => null,
@@ -84,8 +74,8 @@ const status: any = {
 
 const progress: any = { showProgressArea: false }
 
-describe('Home two-pane: composer keystrokes do not re-render the rail or transcript', () => {
-  it('typing 5 characters re-renders neither subtree', async () => {
+describe('Home composer: keystrokes do not re-render the transcript', () => {
+  it('typing 5 characters leaves the transcript subtree stable', async () => {
     const ROWS = 24
     const COLS = 120
 
@@ -102,29 +92,18 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
     resetUiState()
     $composerText.set({ input: 'hi', inputBuf: [] })
 
-    const sessions = Array.from({ length: 40 }, (_, i) => ({
-      id: `s${i}`,
-      message_count: 1,
-      preview: '',
-      source: 'tui',
-      started_at: 40 - i,
-      title: `chat ${i + 1}`
-    }))
-
     const gw: any = {
       off: noop,
       on: noop,
-      request: async (m: string) => (m === 'session.list' ? { sessions } : null),
+      request: async () => null,
       rpc: async () => null
     }
 
-    const railScrollRef = React.createRef<any>()
     const scrollRef = React.createRef<any>()
     const msg = { role: 'user' as const, text: 'hello world' }
 
     const transcript: any = {
       historyItems: [msg],
-      railScrollRef,
       scrollRef,
       virtualHistory: { bottomSpacer: 0, end: 1, measureRef: () => () => {}, offsets: [0], start: 0, topSpacer: 0 },
       virtualRows: [{ index: 0, key: 'm0', msg }]
@@ -183,7 +162,6 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
 
     await tick(200)
 
-    const railBaseline = railRenders
     const streamBaseline = streamRenders
 
     let v = 'hi'
@@ -194,8 +172,7 @@ describe('Home two-pane: composer keystrokes do not re-render the rail or transc
       await tick(70)
     }
 
-    // Zero additional renders of either memoised subtree.
-    expect(railRenders - railBaseline).toBe(0)
+    // Zero additional renders of the memoised transcript subtree.
     expect(streamRenders - streamBaseline).toBe(0)
 
     instance.unmount?.()

@@ -2872,8 +2872,8 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | `--no-auto-score` | Do NOT auto-score resolved questions in the nightly sweep |
 | `--auto-postmortem` |  |
 | `--no-auto-postmortem` | Do NOT auto-write postmortems in the nightly sweep |
-| `--thesis-aggregate` | Re-aggregate all theses (+ entity suitabilities) after each member review sweep |
-| `--no-thesis-aggregate` | Do NOT re-aggregate theses in the nightly sweep |
+| `--thesis-aggregate` | Preview all thesis aggregates (+ entity suitabilities) after each member review sweep |
+| `--no-thesis-aggregate` | Do NOT preview thesis aggregates in the nightly sweep |
 | `--synthesize-lessons` | Synthesize calibration lessons after the nightly sweep |
 | `--no-synthesize-lessons` | Do NOT synthesize calibration lessons in the nightly sweep |
 | `--refresh-market-models` | Re-pull + recompute Market Models linked to open questions in the nightly sweep |

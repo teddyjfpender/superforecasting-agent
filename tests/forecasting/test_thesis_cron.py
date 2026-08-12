@@ -45,8 +45,9 @@ def test_cron_flag_gates_thesis_aggregation(tmp_path):
     # without the flag the cron commits no thesis snapshot
     run_due_reviews(db_path=db_path, thesis_aggregate=False)
     assert ledger.get_current_snapshot(thesis.id) is None
-    # with the flag it aggregates + reports
+    # with the flag it previews + reports, but never mutates the active forecast
     report = run_due_reviews(db_path=db_path, thesis_aggregate=True)
-    assert ledger.get_current_snapshot(thesis.id) is not None
+    assert ledger.get_current_snapshot(thesis.id) is None
     assert "Thesis aggregation" in report
+    assert "previewed: 1" in report
     assert "health 60%" in report

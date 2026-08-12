@@ -146,12 +146,18 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
         return
       }
 
-      await closeSession(getUiState().sid)
-
+      const previousSid = getUiState().sid
       const r = await rpc<SessionCreateResponse>('session.create', { cols: colsRef.current })
 
       if (!r) {
         return patchUiState({ status: 'ready' })
+      }
+
+      try {
+        await closeSession(previousSid)
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        sys(`warning: new forecast session created, but the previous session did not close: ${message}`)
       }
 
       const info = r.info ?? null
@@ -238,9 +244,14 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
           return
         }
 
-        closeSession(getUiState().sid === id ? null : getUiState().sid).then(() =>
-          gw
-            .request<SessionResumeResponse>('session.resume', { cols: colsRef.current, session_id: id })
+        const previousSid = getUiState().sid
+
+        gw
+          .request<SessionResumeResponse>('session.resume', {
+            cols: colsRef.current,
+            replace_session_id: previousSid,
+            session_id: id
+          })
             .then(raw => {
               const r = asRpcResult<SessionResumeResponse>(raw)
 
@@ -264,10 +275,9 @@ export function useSessionLifecycle(opts: UseSessionLifecycleOptions) {
               setTimeout(() => scrollRef.current?.scrollToBottom(), 0)
             })
             .catch((e: Error) => failed(e.message))
-        )
       })
     },
-    [closeSession, colsRef, gw, panel, resetSession, rpc, scrollRef, setHistoryItems, setSessionStartedAt, sys]
+    [colsRef, gw, panel, resetSession, rpc, scrollRef, setHistoryItems, setSessionStartedAt, sys]
   )
 
   const guardBusySessionSwitch = useCallback(
