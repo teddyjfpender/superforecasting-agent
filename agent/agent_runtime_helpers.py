@@ -2027,7 +2027,7 @@ def extract_api_error_context(error: Exception) -> Dict[str, Any]:
                 context["reset_at"] = time.time() + seconds
             else:
                 sec_match = re.search(
-                    r"retry\s+(?:after\s+)?(\d+(?:\.\d+)?)\s*(?:sec|secs|seconds|s\b)",
+                    r"retry\s+(?:(?:after|in)\s+)?(\d+(?:\.\d+)?)\s*(?:sec|secs|seconds|s\b)",
                     message,
                     re.IGNORECASE,
                 )

@@ -2828,7 +2828,13 @@ def run_conversation(
                     try:
                         from agent.gemini_quota_guard import record_gemini_quota
 
-                        record_gemini_quota()
+                        reset_at = error_context.get("reset_at")
+                        try:
+                            cooldown = max(float(reset_at) - time.time(), 1.0)
+                        except (TypeError, ValueError):
+                            record_gemini_quota()
+                        else:
+                            record_gemini_quota(cooldown_seconds=cooldown)
                     except Exception:
                         logging.debug("Could not persist Gemini quota circuit state", exc_info=True)
                 is_client_error = (

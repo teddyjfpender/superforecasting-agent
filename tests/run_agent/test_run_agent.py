@@ -4016,6 +4016,17 @@ class TestCredentialPoolRecovery:
         assert context["reason"] == "usage_limit_reached"
         assert context["message"] == "The usage limit has been reached"
 
+    def test_extract_api_error_context_understands_retry_in(self, agent):
+        error = SimpleNamespace(
+            body={"error": {"message": "Please retry in 53.5s."}},
+            response=SimpleNamespace(headers={}),
+        )
+
+        with patch("agent.agent_runtime_helpers.time.time", return_value=1_000.0):
+            context = agent._extract_api_error_context(error)
+
+        assert context["reset_at"] == 1_053.5
+
     def test_recover_with_pool_passes_error_context_on_rotated_429(self, agent):
         next_entry = SimpleNamespace(label="secondary")
         captured = {}
