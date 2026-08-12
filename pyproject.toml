@@ -202,6 +202,11 @@ all = [
   "superforecasting-agent[youtube]",
 ]
 
+[dependency-groups]
+# NumPy is optional at runtime (it otherwise arrives through the heavy [voice]
+# extra), but the full suite must exercise both thesis Monte Carlo backends.
+full-test = ["numpy==2.4.3"]
+
 [project.scripts]
 forecast = "superforecasting_agent.cli:main"
 superforecast = "superforecasting_agent.cli:main"

@@ -122,22 +122,31 @@ def test_lazy_installable_extras_excluded_from_all():
 
 
 def test_full_ci_installs_locked_lazy_sdk_extras_without_expanding_all():
-    workflow = (
-        Path(__file__).resolve().parents[1] / ".github" / "workflows" / "tests.yml"
-    ).read_text(encoding="utf-8")
+    root = Path(__file__).resolve().parents[1]
+    workflows = [
+        root / ".github" / "workflows" / "tests.yml",
+        root / ".github" / "workflows" / "production-release.yml",
+    ]
+    for path in workflows:
+        workflow = path.read_text(encoding="utf-8")
+        assert "uv sync --locked --group full-test --extra all" in workflow
+        for extra in (
+            "anthropic",
+            "hindsight",
+            "parallel-web",
+            "fal",
+            "modal",
+            "daytona",
+            "vercel",
+        ):
+            assert f"--extra {extra}" in workflow
 
-    assert "test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 45" in workflow
-    assert "uv sync --locked --extra all" in workflow
-    for extra in (
-        "anthropic",
-        "hindsight",
-        "parallel-web",
-        "fal",
-        "modal",
-        "daytona",
-        "vercel",
-    ):
-        assert f"--extra {extra}" in workflow
+    tests_workflow = workflows[0].read_text(encoding="utf-8")
+    assert "test:\n    runs-on: ubuntu-latest\n    timeout-minutes: 45" in tests_workflow
+
+    with (root / "pyproject.toml").open("rb") as handle:
+        dependency_groups = tomllib.load(handle)["dependency-groups"]
+    assert dependency_groups["full-test"] == ["numpy==2.4.3"]
 
 
 def test_pytest_starlette_warning_filter_supports_locked_version():

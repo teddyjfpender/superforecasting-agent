@@ -43,7 +43,7 @@ jobs:
           source .venv/bin/activate
           # [all] deliberately excludes lazy backend SDKs from user installs.
           # The full unit suite mocks these backends but still imports their SDKs.
-          uv sync --locked --extra all \
+          uv sync --locked --group full-test --extra all \
             --extra anthropic --extra hindsight --extra parallel-web \
             --extra fal --extra modal --extra daytona --extra vercel
 
