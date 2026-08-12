@@ -686,7 +686,14 @@ class ForecastLedger:
 
         moment = now or datetime.now(timezone.utc)
         target_dir = Path(dest_dir).expanduser() if dest_dir else self.default_backup_dir()
-        target_dir.mkdir(parents=True, exist_ok=True)
+        target_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if dest_dir is None:
+            target_dir.chmod(0o700)
+            for existing in target_dir.glob(
+                f"{self._BACKUP_PREFIX}*{self._BACKUP_SUFFIX}"
+            ):
+                if existing.is_file() and not existing.is_symlink():
+                    existing.chmod(0o600)
 
         stamp = moment.strftime(self._BACKUP_TS_FORMAT)
         dest = target_dir / f"{self._BACKUP_PREFIX}{stamp}{self._BACKUP_SUFFIX}"
@@ -694,23 +701,35 @@ class ForecastLedger:
         # suffix so neither is clobbered. The timestamp parser reads only the leading
         # 15 chars, so a suffixed file still buckets into the right second/week.
         counter = 1
-        while dest.exists():
-            dest = target_dir / f"{self._BACKUP_PREFIX}{stamp}-{counter}{self._BACKUP_SUFFIX}"
-            counter += 1
+        while True:
+            try:
+                fd = os.open(dest, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                dest = target_dir / (
+                    f"{self._BACKUP_PREFIX}{stamp}-{counter}{self._BACKUP_SUFFIX}"
+                )
+                counter += 1
+                continue
+            os.close(fd)
+            break
 
         # A plain connection reads the fully-committed logical state (WAL frames
         # included). The online backup restarts internally if a writer commits
         # mid-copy, so it is safe to run against the live ledger.
-        src = sqlite3.connect(self.db_path)
         try:
-            dst = sqlite3.connect(dest)
+            src = sqlite3.connect(self.db_path)
             try:
-                with dst:
-                    src.backup(dst)
+                dst = sqlite3.connect(dest)
+                try:
+                    with dst:
+                        src.backup(dst)
+                finally:
+                    dst.close()
             finally:
-                dst.close()
-        finally:
-            src.close()
+                src.close()
+        except BaseException:
+            dest.unlink(missing_ok=True)
+            raise
 
         result: dict[str, Any] = {
             "path": str(dest),
