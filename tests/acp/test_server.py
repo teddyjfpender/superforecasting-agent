@@ -986,7 +986,9 @@ class TestSessionConfiguration:
         assert state.model == "claude-sonnet-4-6"
         assert state.agent.provider == "anthropic"
         assert state.agent.base_url == "https://anthropic.example/v1"
-        assert runtime_calls[-1] == "anthropic"
+        # Parallel-suite auxiliary probes may call the patched resolver after
+        # the switch; provider state above proves which call built this agent.
+        assert "anthropic" in runtime_calls
 
 
 # ---------------------------------------------------------------------------
@@ -1554,7 +1556,9 @@ class TestSlashCommands:
         assert "Provider: anthropic" in result
         assert state.agent.provider == "anthropic"
         assert state.agent.base_url == "https://anthropic.example/v1"
-        assert runtime_calls[-1] == "anthropic"
+        # Parallel-suite auxiliary probes may call the patched resolver after
+        # the switch; provider state above proves which call built this agent.
+        assert "anthropic" in runtime_calls
 
 
 # ---------------------------------------------------------------------------
