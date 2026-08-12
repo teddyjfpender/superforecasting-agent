@@ -4,7 +4,7 @@ let
   src = ../web;
   npmDeps = pkgs.fetchNpmDeps {
     inherit src;
-    hash = "sha256-wAO6UcHs3GHtFGYGzpY5Y5qJFWGvMpAV84gpXjgGTHU=";
+    hash = "sha256-XDxoZ/FxienSOef3wywFrymgv5AYlKkjrOQpSe8mN/Y=";
   };
 
   npm = superforecastingAgentNpmLib.mkNpmPassthru { folder = "web"; attr = "web"; pname = "superforecasting-agent-web"; };
