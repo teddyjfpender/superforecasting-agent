@@ -140,6 +140,15 @@ def test_full_ci_installs_locked_lazy_sdk_extras_without_expanding_all():
         assert f"--extra {extra}" in workflow
 
 
+def test_pytest_starlette_warning_filter_supports_locked_version():
+    pyproject_path = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    with pyproject_path.open("rb") as handle:
+        filters = tomllib.load(handle)["tool"]["pytest"]["ini_options"]["filterwarnings"]
+
+    starlette_filter = next(rule for rule in filters if "starlette.testclient" in rule)
+    assert starlette_filter.endswith(":UserWarning")
+
+
 def test_messaging_extra_includes_qrcode_for_weixin_setup():
     optional_dependencies = _load_optional_dependencies()
 

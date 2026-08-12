@@ -255,7 +255,7 @@ filterwarnings = [
     # SelectableGroups dict interface under Python 3.11 when imported by acp.
     'ignore:SelectableGroups dict interface is deprecated. Use select.:DeprecationWarning',
     # Starlette/FastAPI currently warns about its httpx-backed TestClient on import.
-    'ignore:Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.:starlette.exceptions.StarletteDeprecationWarning',
+    'ignore:Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.:UserWarning',
 ]
 # pytest-timeout: per-test 60s hard cap with thread method.
 # Discovered May 2026: the suite reliably hangs at ~96% on full runs even
