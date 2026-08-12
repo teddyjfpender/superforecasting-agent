@@ -11535,6 +11535,9 @@ def main():
         help="Delivery target: origin, local, telegram, discord, signal, or platform:chat_id",
     )
     cron_create.add_argument("--repeat", type=int, help="Optional repeat count")
+    cron_create.add_argument("--provider", help="Pin this job to an inference provider")
+    cron_create.add_argument("--model", help="Pin this job to a model")
+    cron_create.add_argument("--base-url", help="Optional provider endpoint override")
     cron_create.add_argument(
         "--skill",
         dest="skills",
@@ -11581,6 +11584,9 @@ def main():
     cron_edit.add_argument("--name", help="New job name")
     cron_edit.add_argument("--deliver", help="New delivery target")
     cron_edit.add_argument("--repeat", type=int, help="New repeat count")
+    cron_edit.add_argument("--provider", help="Pin to a provider; pass an empty string to clear")
+    cron_edit.add_argument("--model", help="Pin to a model; pass an empty string to clear")
+    cron_edit.add_argument("--base-url", help="Set an endpoint override; pass an empty string to clear")
     cron_edit.add_argument(
         "--skill",
         dest="skills",
