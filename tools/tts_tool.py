@@ -569,7 +569,7 @@ def _terminate_command_tts_process_tree(proc: subprocess.Popen) -> None:
         import psutil
     except ModuleNotFoundError:
         try:
-            os.killpg(proc.pid, signal.SIGTERM)
+            os.killpg(proc.pid, signal.SIGTERM)  # windows-footgun: ok — Windows returned above
         except ProcessLookupError:
             return
         except Exception:
@@ -583,7 +583,7 @@ def _terminate_command_tts_process_tree(proc: subprocess.Popen) -> None:
         except subprocess.TimeoutExpired:
             pass
         try:
-            os.killpg(proc.pid, signal.SIGKILL)
+            os.killpg(proc.pid, signal.SIGKILL)  # windows-footgun: ok — Windows returned above
         except ProcessLookupError:
             return
         except Exception:

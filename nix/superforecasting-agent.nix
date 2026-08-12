@@ -148,44 +148,36 @@ stdenv.mkDerivation {
     mkdir -p $out/ui-tui
     cp -r ${superforecastingAgentTui}/lib/superforecasting-agent-tui/* $out/ui-tui/
 
-    ${lib.concatMapStringsSep "\n"
-      (name: ''
-        makeWrapper ${superforecastingAgentVenv}/bin/${name} $out/bin/${name} \
-          --suffix PATH : "${runtimePath}" \
-          --set SUPERFORECASTING_AGENT_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
-          --set FORECAST_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
-          --set HERMES_BUNDLED_SKILLS $out/share/superforecasting-agent/skills \
-          --set SUPERFORECASTING_AGENT_BUNDLED_PLUGINS $out/share/superforecasting-agent/plugins \
-          --set FORECAST_BUNDLED_PLUGINS $out/share/superforecasting-agent/plugins \
-          --set HERMES_BUNDLED_PLUGINS $out/share/superforecasting-agent/plugins \
-          --set SUPERFORECASTING_AGENT_WEB_DIST $out/share/superforecasting-agent/web_dist \
-          --set FORECAST_WEB_DIST $out/share/superforecasting-agent/web_dist \
-          --set HERMES_WEB_DIST $out/share/superforecasting-agent/web_dist \
-          --set SUPERFORECASTING_AGENT_TUI_DIR $out/ui-tui \
-          --set FORECAST_TUI_DIR $out/ui-tui \
-          --set HERMES_TUI_DIR $out/ui-tui \
-          --set SUPERFORECASTING_AGENT_PYTHON ${superforecastingAgentVenv}/bin/python3 \
-          --set FORECAST_PYTHON ${superforecastingAgentVenv}/bin/python3 \
-          --set HERMES_PYTHON ${superforecastingAgentVenv}/bin/python3 \
-          --set SUPERFORECASTING_AGENT_NODE ${lib.getExe nodejs} \
-          --set FORECAST_NODE ${lib.getExe nodejs} \
-          --set HERMES_NODE ${lib.getExe nodejs} \
-          ${lib.optionalString (rev != null) ''
-            --set SUPERFORECASTING_AGENT_REVISION ${rev} \
-            --set FORECAST_REVISION ${rev} \
-            --set HERMES_REVISION ${rev} \
-          ''}
-          ${lib.optionalString (extraPythonPackages != [ ]) ''--suffix PYTHONPATH : "${pythonPath}"''}
-      '')
-      [
-        "forecast"
-        "superforecast"
-        "superforecasting-agent"
-        "hermes"
-        "hermes-agent"
-        "hermes-acp"
-      ]
-    }
+    wrapperArgs=(
+      --suffix PATH : "${runtimePath}"
+      --set SUPERFORECASTING_AGENT_BUNDLED_SKILLS "$out/share/superforecasting-agent/skills"
+      --set FORECAST_BUNDLED_SKILLS "$out/share/superforecasting-agent/skills"
+      --set HERMES_BUNDLED_SKILLS "$out/share/superforecasting-agent/skills"
+      --set SUPERFORECASTING_AGENT_BUNDLED_PLUGINS "$out/share/superforecasting-agent/plugins"
+      --set FORECAST_BUNDLED_PLUGINS "$out/share/superforecasting-agent/plugins"
+      --set HERMES_BUNDLED_PLUGINS "$out/share/superforecasting-agent/plugins"
+      --set SUPERFORECASTING_AGENT_WEB_DIST "$out/share/superforecasting-agent/web_dist"
+      --set FORECAST_WEB_DIST "$out/share/superforecasting-agent/web_dist"
+      --set HERMES_WEB_DIST "$out/share/superforecasting-agent/web_dist"
+      --set SUPERFORECASTING_AGENT_TUI_DIR "$out/ui-tui"
+      --set FORECAST_TUI_DIR "$out/ui-tui"
+      --set HERMES_TUI_DIR "$out/ui-tui"
+      --set SUPERFORECASTING_AGENT_PYTHON "${superforecastingAgentVenv}/bin/python3"
+      --set FORECAST_PYTHON "${superforecastingAgentVenv}/bin/python3"
+      --set HERMES_PYTHON "${superforecastingAgentVenv}/bin/python3"
+      --set SUPERFORECASTING_AGENT_NODE "${lib.getExe nodejs}"
+      --set FORECAST_NODE "${lib.getExe nodejs}"
+      --set HERMES_NODE "${lib.getExe nodejs}"
+      ${lib.optionalString (rev != null) ''
+        --set SUPERFORECASTING_AGENT_REVISION "${rev}"
+        --set FORECAST_REVISION "${rev}"
+        --set HERMES_REVISION "${rev}"
+      ''}
+      ${lib.optionalString (extraPythonPackages != [ ]) ''--suffix PYTHONPATH : "${pythonPath}"''}
+    )
+    for name in forecast superforecast superforecasting-agent hermes hermes-agent hermes-acp; do
+      makeWrapper "${superforecastingAgentVenv}/bin/$name" "$out/bin/$name" "''${wrapperArgs[@]}"
+    done
 
     ${lib.optionalString (extraPythonPackages != [ ]) ''
       echo "=== Checking for plugin/core package collisions ==="

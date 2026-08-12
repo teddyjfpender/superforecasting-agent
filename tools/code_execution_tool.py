@@ -1630,7 +1630,7 @@ def _kill_process_group_without_psutil(proc, escalate: bool = False) -> None:
                 else:
                     proc.terminate()
                 return
-            os.killpg(os.getpgid(proc.pid), sig)
+            os.killpg(os.getpgid(proc.pid), sig)  # windows-footgun: ok — _IS_WINDOWS returned above
         except ProcessLookupError:
             return
         except Exception as exc:

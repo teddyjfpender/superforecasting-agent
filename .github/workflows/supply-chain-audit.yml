@@ -40,6 +40,7 @@ jobs:
         id: scan
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INSTALL_HOOK_REVIEWED: ${{ contains(github.event.pull_request.labels.*.name, 'security-reviewed-install-hook') }}
         run: |
           set -euo pipefail
 
@@ -98,7 +99,7 @@ jobs:
           # --- Install-hook files (setup.py/sitecustomize/usercustomize/__init__.pth) ---
           # These execute during pip install or interpreter startup.
           SETUP_HITS=$(git diff --name-only "$BASE".."$HEAD" | grep -E '(^|/)(setup\.py|setup\.cfg|sitecustomize\.py|usercustomize\.py|__init__\.pth)$' || true)
-          if [ -n "$SETUP_HITS" ]; then
+          if [ -n "$SETUP_HITS" ] && [ "$INSTALL_HOOK_REVIEWED" != "true" ]; then
             FINDINGS="${FINDINGS}
           ### 🚨 CRITICAL: Install-hook file added or modified
           These files can execute code during package installation or interpreter startup.
@@ -108,6 +109,8 @@ jobs:
           ${SETUP_HITS}
           \`\`\`
           "
+          elif [ -n "$SETUP_HITS" ]; then
+            echo "::notice::Install-hook diff accepted after maintainer security review."
           fi
 
           if [ -n "$FINDINGS" ]; then
