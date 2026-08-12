@@ -76,6 +76,7 @@ jobs:
         run: |
           mkdir -p _site/docs
           cp -r website/build/* _site/docs/
+          printf '%s\n' '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=/superforecasting-agent/docs/"><link rel="canonical" href="https://teddyjfpender.github.io/superforecasting-agent/docs/"><title>Superforecasting Agent</title></head><body><a href="/superforecasting-agent/docs/">Open documentation</a></body></html>' > _site/index.html
           # llms.txt / llms-full.txt are also published at the site root
           # (https://teddyjfpender.github.io/superforecasting-agent/llms.txt) because some
           # agents and IDE plugins probe the classic root-level path rather
