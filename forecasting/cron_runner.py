@@ -16,6 +16,11 @@ from typing import Any
 from forecasting import appconfig
 from forecasting.learning import is_learning_review_reason
 from forecasting.ledger import ForecastLedger, allow_ledger_writes_decorator
+from utils import (
+    INFERENCE_MODEL_ENV_NAMES,
+    INFERENCE_PROVIDER_ENV_NAMES,
+    env_var_alias_nonempty_value,
+)
 
 
 def _env_flag(name: str) -> bool:
@@ -2129,13 +2134,14 @@ def main_source_estimator(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-iterations", type=int)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args(argv)
-    from hermes_cli.model_env import inference_model_env, inference_provider_env
 
     result = run_source_estimator_cycle(
         db_path=args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None,
         now=args.now,
-        model=args.model or inference_model_env() or None,
-        provider=args.provider or inference_provider_env() or None,
+        model=args.model or env_var_alias_nonempty_value(INFERENCE_MODEL_ENV_NAMES) or None,
+        provider=args.provider
+        or env_var_alias_nonempty_value(INFERENCE_PROVIDER_ENV_NAMES)
+        or None,
         max_iterations=args.max_iterations,
         force=args.force,
     )
@@ -2204,10 +2210,12 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-iterations", type=int)
     args = parser.parse_args(argv)
     db_path = args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None
-    from hermes_cli.model_env import inference_model_env, inference_provider_env
-
-    model = args.model or inference_model_env() or None
-    provider = args.provider or inference_provider_env() or None
+    model = args.model or env_var_alias_nonempty_value(INFERENCE_MODEL_ENV_NAMES) or None
+    provider = (
+        args.provider
+        or env_var_alias_nonempty_value(INFERENCE_PROVIDER_ENV_NAMES)
+        or None
+    )
 
     reforecast_runner = None
     evidence_search = None

@@ -35,6 +35,21 @@ SESSION_SOURCE_ENV_NAMES = (
     "FORECAST_SESSION_SOURCE",
     "HERMES_SESSION_SOURCE",
 )
+MODEL_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_MODEL",
+    "FORECAST_MODEL",
+    "HERMES_MODEL",
+)
+INFERENCE_MODEL_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_INFERENCE_MODEL",
+    "FORECAST_INFERENCE_MODEL",
+    "HERMES_INFERENCE_MODEL",
+)
+INFERENCE_PROVIDER_ENV_NAMES = (
+    "SUPERFORECASTING_AGENT_INFERENCE_PROVIDER",
+    "FORECAST_INFERENCE_PROVIDER",
+    "HERMES_INFERENCE_PROVIDER",
+)
 
 
 def is_truthy_value(value: Any, default: bool = False) -> bool:
@@ -68,6 +83,15 @@ def env_var_alias_value(names: tuple[str, ...], default: str | None = None) -> s
         value = os.getenv(name)
         if value is not None:
             return value
+    return default
+
+
+def env_var_alias_nonempty_value(names: tuple[str, ...], default: str = "") -> str:
+    """Return the first non-empty, stripped value in an env alias set."""
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
     return default
 
 
