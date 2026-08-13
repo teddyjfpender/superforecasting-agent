@@ -95,6 +95,10 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+# Keep the orphan-reaper delay patchable without replacing the process-wide
+# stdlib function while unrelated background threads are still running.
+_sleep = time.sleep
+
 
 # ---------------------------------------------------------------------------
 # Stdio subprocess stderr redirection
@@ -3735,7 +3739,7 @@ def _kill_orphaned_mcp_children(include_active: bool = False) -> None:
             pass
 
     # Phase 2: Wait for graceful exit
-    time.sleep(2)
+    _sleep(2)
 
     # Phase 3: SIGKILL any survivors
     _sigkill = getattr(_signal, "SIGKILL", _signal.SIGTERM)

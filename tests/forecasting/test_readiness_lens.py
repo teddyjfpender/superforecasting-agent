@@ -16,6 +16,7 @@ import time
 import pytest
 
 from forecasting.ledger import ForecastLedger
+from forecasting.models import OutcomeSpace
 from forecasting.readiness_lens import (
     READINESS_WEIGHTS,
     build_question_readiness,
@@ -271,7 +272,55 @@ def test_payload_readiness_added_cost_within_budget(tmp_path):
     + the pure scorer over the whole book stay far under the <15ms added budget.
     Generous ceiling so the guard flags an accidental N+1 regression, never flakes."""
     ledger = ForecastLedger(tmp_path / "b.db")
-    ids = _seed_book(ledger, 120)
+    # Seed only the rows this query benchmark reads, in one transaction. Running
+    # 120 full create/schedule/snapshot workflows measures unrelated setup work.
+    ids = [f"fq_bench_{i:03d}" for i in range(120)]
+    created_at = "2026-01-01T00:00:00Z"
+    outcome_space = OutcomeSpace().to_json()
+    with ledger._connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO forecast_questions (
+                id, title, resolution_criteria, created_at, close_time,
+                outcome_space, status, impact
+            ) VALUES (?, ?, ?, ?, '2026-12-31T00:00:00Z', ?, 'active', ?)
+            """,
+            [
+                (
+                    qid,
+                    f"Will metric #{i} clear its bar in 2026?",
+                    f"Resolves yes if metric #{i} clears the bar by 2026-12-31.",
+                    created_at,
+                    outcome_space,
+                    "high" if i % 2 else None,
+                )
+                for i, qid in enumerate(ids)
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO watched_sources (
+                id, scope_type, scope_ref, source, source_type, created_at
+            ) VALUES (?, 'question', ?, ?, 'fred', ?)
+            """,
+            [
+                (f"ws_bench_{i:03d}", qid, f"fred:{i}", created_at)
+                for i, qid in enumerate(ids)
+                if i % 2 == 0
+            ],
+        )
+        conn.executemany(
+            """
+            INSERT INTO reference_classes (
+                id, question_id, name, inclusion_criteria, base_rate, created_at
+            ) VALUES (?, ?, 'rc', 'x', 0.3, ?)
+            """,
+            [
+                (f"rc_bench_{i:03d}", qid, created_at)
+                for i, qid in enumerate(ids)
+                if i % 2 == 0
+            ],
+        )
     next_reviews = ledger.next_review_by_question()
     questions = ledger.list_questions(status="active", limit=1000)
 
