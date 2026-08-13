@@ -2114,6 +2114,8 @@ def run_source_estimator_cycle(
         "suspended_watches": suspended,
         "backlog_before": backlog,
         "processed": len(results),
+        "succeeded": sum("error" not in row for row in results),
+        "failed": sum("error" in row for row in results),
         "budget": budget,
         "daily_task_budget": daily_ceiling,
         "used_today_before_cycle": used_today,
@@ -2146,7 +2148,7 @@ def main_source_estimator(argv: list[str] | None = None) -> int:
         force=args.force,
     )
     print(json.dumps(result, sort_keys=True))
-    return 0
+    return 1 if result.get("failed") else 0
 
 
 def install_source_estimator_script(

@@ -1418,6 +1418,17 @@ def claim_operational_tasks(
               AND attempt_count < max_attempts
               AND (? IS NULL OR task_type = ?)
               AND (? IS NULL OR question_id = ?)
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM forecast_update_proposals AS proposal
+                  JOIN source_change_events AS candidate_event
+                    ON candidate_event.id = operational_tasks.source_change_event_id
+                  WHERE operational_tasks.task_type = 'process_source_change'
+                    AND operational_tasks.lane = 'normal_reforecast'
+                    AND proposal.question_id = operational_tasks.question_id
+                    AND proposal.status = 'pending'
+                    AND proposal.prior_forecast_id IS candidate_event.prior_forecast_id
+              )
             ORDER BY
                 CASE WHEN ? = 'urgent_forecast' THEN available_at END ASC,
                 CASE WHEN ? != 'urgent_forecast' THEN utility_score END DESC,
@@ -2096,6 +2107,7 @@ def _estimator_batch_rows(
               )
             ORDER BY CASE WHEN task.id = ? THEN 0 ELSE 1 END,
                      event.detected_at, event.id
+            LIMIT 6
             """,
             (
                 event_row["question_id"],
@@ -2760,6 +2772,100 @@ def reconcile_operational_dead_letters(
     stamp_dt = timestamp_to_datetime(stamp)
     assert stamp_dt is not None
     results: list[dict[str, Any]] = []
+    # Older workers could spend an estimate and then dead-letter the next event
+    # because a proposal for the same prior forecast was still awaiting review.
+    # The claim query above now leaves that work pending until the decision lands.
+    with ledger._connect() as conn:
+        proposal_blocked = conn.execute(
+            """
+            SELECT * FROM operational_tasks
+            WHERE task_type = 'process_source_change' AND status = 'dead_letter'
+              AND error LIKE 'pending proposal % must be reviewed before this event can propose'
+            ORDER BY created_at
+            """
+        ).fetchall()
+        for task in proposal_blocked:
+            conn.execute(
+                """
+                UPDATE operational_tasks
+                SET status = 'pending', attempt_count = 0,
+                    disposition = 'blocked_on_pending_proposal', error = NULL,
+                    lease_owner = NULL, lease_expires_at = NULL,
+                    available_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'dead_letter'
+                """,
+                (stamp, stamp, task["id"]),
+            )
+            _transition_source_change_event_conn(
+                conn,
+                task["source_change_event_id"],
+                to_state="triaged",
+                actor=owner,
+                reason="wait for pending proposal review before estimating new event",
+                now=stamp,
+                allowed_from={"failed"},
+            )
+            conn.execute(
+                """
+                UPDATE source_change_events
+                SET status = 'pending', disposition = 'estimator_required', error = NULL,
+                    claim_owner = NULL, claim_expires_at = NULL
+                WHERE id = ?
+                """,
+                (task["source_change_event_id"],),
+            )
+            results.append(
+                {"task_id": task["id"], "action": "wait_for_pending_proposal_review"}
+            )
+    # The hosted estimator now projects source batches into a provider-safe prompt.
+    # Give context-overflow dead letters one fresh retry under that bounded payload,
+    # and persist a marker so a genuinely incompatible task cannot loop forever.
+    with ledger._connect() as conn:
+        context_overflow = conn.execute(
+            """
+            SELECT * FROM operational_tasks
+            WHERE task_type = 'process_source_change' AND status = 'dead_letter'
+              AND error LIKE 'Context length exceeded:%'
+            ORDER BY created_at
+            """
+        ).fetchall()
+        for task in context_overflow:
+            prior_result = json_loads(task["result"], {})
+            if prior_result.get("recovery") == "bounded_estimator_payload_v1":
+                continue
+            prior_result["recovery"] = "bounded_estimator_payload_v1"
+            conn.execute(
+                """
+                UPDATE operational_tasks
+                SET status = 'pending', attempt_count = 0,
+                    disposition = 'recovered_after_estimator_payload_bound',
+                    result = ?, error = NULL, lease_owner = NULL,
+                    lease_expires_at = NULL, available_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'dead_letter'
+                """,
+                (json_dumps(prior_result), stamp, stamp, task["id"]),
+            )
+            _transition_source_change_event_conn(
+                conn,
+                task["source_change_event_id"],
+                to_state="detected",
+                actor=owner,
+                reason="retry after bounded estimator payload deployment",
+                now=stamp,
+                allowed_from={"failed"},
+            )
+            conn.execute(
+                """
+                UPDATE source_change_events
+                SET status = 'pending', disposition = 'estimator_required', error = NULL,
+                    claim_owner = NULL, claim_expires_at = NULL
+                WHERE id = ?
+                """,
+                (task["source_change_event_id"],),
+            )
+            results.append(
+                {"task_id": task["id"], "action": "retry_bounded_estimator_payload"}
+            )
     # One-time replay for the legacy typed numeric envelope bug. Reuse the last
     # persisted estimate so recovery neither re-polls the source nor pays for a
     # sixth identical model call.

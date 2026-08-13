@@ -19,6 +19,12 @@ evidence_cutoff, change_my_mind, and guardrail_results. Do not commit or edit th
 ledger. Do not substitute the prior forecast when evidence is insufficient; report
 that uncertainty in the estimate and rationale."""
 
+_MODEL_PAYLOAD_MAX_CHARS = 60_000
+_MODEL_QUESTION_MAX_CHARS = 8_000
+_MODEL_PRIOR_MAX_CHARS = 8_000
+_MODEL_EVENT_MAX_CHARS = 1_000
+_MODEL_WATCH_MAX_CHARS = 500
+
 
 class EstimatorExecutionError(RuntimeError):
     def __init__(self, message: str, *, usage: dict[str, Any]):
@@ -28,6 +34,152 @@ class EstimatorExecutionError(RuntimeError):
 
 class EstimatorOutputError(EstimatorExecutionError):
     """A deterministic estimator response error that retries cannot repair."""
+
+
+def _bounded_model_value(value: Any, max_chars: int) -> Any:
+    """Keep model context bounded while retaining an auditable truncation marker."""
+    encoded = json_dumps(value)
+    if len(encoded) <= max_chars:
+        return value
+    if isinstance(value, str):
+        return value[:max_chars] + "...[truncated]"
+    return {
+        "truncated_json": encoded[:max_chars] + "...[truncated]",
+        "original_chars": len(encoded),
+    }
+
+
+def _model_changed_item(value: Any) -> Any:
+    if not isinstance(value, dict):
+        return _bounded_model_value(value, 1_000)
+    limits = {
+        "headline": 600,
+        "summary": 1_200,
+        "canonical_url": 500,
+        "published_at": 100,
+        "source_observation_time": 100,
+        "old_value": 600,
+        "new_value": 600,
+        "entry_id": 200,
+        "content_hash": 200,
+    }
+    return {
+        key: _bounded_model_value(value[key], limit)
+        for key, limit in limits.items()
+        if value.get(key) is not None
+    }
+
+
+def _model_source_snapshot(snapshot: dict[str, Any], *, max_chars: int) -> dict[str, Any]:
+    parsed = snapshot.get("parsed_values") or {}
+    if not isinstance(parsed, dict):
+        parsed = {}
+    items = parsed.get("changed_items") or []
+    if not isinstance(items, list):
+        items = []
+    compact_parsed = {
+        key: _bounded_model_value(parsed[key], 300)
+        for key in (
+            "changed",
+            "content_available",
+            "parser_version",
+            "previous_signature",
+            "signature",
+        )
+        if parsed.get(key) is not None
+    }
+    compact_parsed["changed_items_total"] = len(items)
+    compact = {
+        key: _bounded_model_value(snapshot[key], 1_000 if key == "source_url" else 300)
+        for key in (
+            "id",
+            "watched_source_id",
+            "source_type",
+            "source_url",
+            "retrieved_at",
+            "adapter_version",
+            "raw_payload_sha256",
+            "status",
+        )
+        if snapshot.get(key) is not None
+    }
+    compact["parsed_values"] = compact_parsed
+
+    kept: list[Any] = []
+    for item in items:
+        candidate = [*kept, _model_changed_item(item)]
+        compact_parsed["changed_items"] = candidate
+        compact_parsed["changed_items_omitted"] = len(items) - len(candidate)
+        if len(json_dumps(compact)) > max_chars:
+            break
+        kept = candidate
+    compact_parsed["changed_items"] = kept
+    compact_parsed["changed_items_omitted"] = len(items) - len(kept)
+    if not items and parsed.get("observation_payload") is not None:
+        compact_parsed["observation_payload"] = _bounded_model_value(
+            parsed["observation_payload"], max(max_chars - len(json_dumps(compact)) - 200, 200)
+        )
+    return compact
+
+
+def _model_estimator_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Project the durable ledger payload into a provider-safe model prompt."""
+    events = payload.get("source_change_events") or [payload["source_change_event"]]
+    snapshots = payload.get("source_snapshots") or (
+        [payload["source_snapshot"]] if payload.get("source_snapshot") else []
+    )
+    watches = payload.get("watched_sources") or (
+        [payload["watched_source"]] if payload.get("watched_source") else []
+    )
+    event_fields = (
+        "id",
+        "detected_at",
+        "source_observed_at",
+        "watched_source_id",
+        "prior_forecast_id",
+        "new_source_snapshot_id",
+        "materiality",
+        "old_state",
+        "new_state",
+    )
+    watch_fields = ("id", "source", "source_type", "role")
+    projected = {
+        "task_id": payload.get("task_id"),
+        "required_event_ids": [str(event["id"]) for event in events],
+        "question": _bounded_model_value(
+            payload.get("question") or {}, _MODEL_QUESTION_MAX_CHARS
+        ),
+        "prior_forecast": _bounded_model_value(
+            payload.get("prior_forecast"), _MODEL_PRIOR_MAX_CHARS
+        ),
+        "source_change_events": [
+            _bounded_model_value(
+                {key: event[key] for key in event_fields if event.get(key) is not None},
+                _MODEL_EVENT_MAX_CHARS,
+            )
+            for event in events
+        ],
+        "watched_sources": [
+            _bounded_model_value(
+                {key: watch[key] for key in watch_fields if watch.get(key) is not None},
+                _MODEL_WATCH_MAX_CHARS,
+            )
+            for watch in watches
+        ],
+        "source_snapshots": [],
+    }
+    fixed_chars = len(json_dumps(projected))
+    snapshot_budget = max(
+        (_MODEL_PAYLOAD_MAX_CHARS - fixed_chars - 1_000) // max(len(snapshots), 1),
+        1_000,
+    )
+    projected["source_snapshots"] = [
+        _model_source_snapshot(snapshot, max_chars=snapshot_budget)
+        for snapshot in snapshots
+    ]
+    if len(json_dumps(projected)) > _MODEL_PAYLOAD_MAX_CHARS:
+        raise ValidationError("bounded estimator model payload exceeded its safety limit")
+    return projected
 
 
 def build_agent_estimator(
@@ -54,7 +206,7 @@ def build_agent_estimator(
             "Estimate this immutable batch of source-change events for one forecast. "
             "The sources must not be "
             "polled again by the queue worker.\n\n"
-            + json_dumps(payload)
+            + json_dumps(_model_estimator_payload(payload))
             + "\n\nThe evidence_updates array must cite every event_id exactly once: "
             + ", ".join(event_ids)
             + "."
