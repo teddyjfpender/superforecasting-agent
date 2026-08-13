@@ -1555,6 +1555,69 @@ def test_high_severity_alerts_get_urgent_sla_tasks_oldest_first(tmp_path):
     assert cockpit["high_severity"]["unclaimed"] == 0
 
 
+def test_surfaced_high_severity_task_remains_owned_by_human(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    alert = ledger.create_alert(
+        severity="high",
+        scope_type="global",
+        scope_ref="manual-review",
+        reason="manual_review_required",
+        recommended_action="Review manually.",
+        now="2026-05-01T00:00:00Z",
+    )
+    task = ledger.claim_alert_operational_task(
+        alert,
+        owner="warning-worker",
+        lane="urgent_forecast",
+        now="2026-05-01T00:01:00Z",
+    )
+
+    surfaced = ledger.complete_operational_task(
+        task["id"],
+        owner="warning-worker",
+        disposition="surfaced_for_review",
+        now="2026-05-01T00:02:00Z",
+    )
+
+    assert surfaced["status"] == "awaiting_human"
+    assert surfaced["escalation_owner"] == "human:forecast-duty"
+    assert surfaced["completed_at"] is None
+    cockpit = ledger.operational_cockpit(now="2026-05-01T00:03:00Z")
+    assert cockpit["high_severity"]["awaiting_human"] == 1
+    assert cockpit["high_severity"]["unclaimed"] == 0
+
+
+def test_schema_repairs_completed_open_high_severity_task_ownership(tmp_path):
+    db_path = tmp_path / "forecasting.db"
+    ledger = ForecastLedger(db_path)
+    alert = ledger.create_alert(
+        severity="high",
+        scope_type="global",
+        scope_ref="historical-review",
+        reason="historical_manual_review",
+        recommended_action="Review manually.",
+    )
+    task = ledger.claim_alert_operational_task(
+        alert,
+        owner="legacy-worker",
+        lane="urgent_forecast",
+    )
+    ledger.complete_operational_task(
+        task["id"],
+        owner="legacy-worker",
+        disposition="legacy_surfaced_for_review",
+    )
+
+    repaired = ForecastLedger(db_path)
+    task = next(
+        row for row in repaired.list_operational_tasks() if row["alert_id"] == alert.id
+    )
+
+    assert task["status"] == "awaiting_human"
+    assert task["escalation_owner"] == "human:forecast-duty"
+    assert repaired.operational_cockpit()["high_severity"]["unclaimed"] == 0
+
+
 def test_expired_human_escalation_lease_is_not_reclaimed_by_worker(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     alert = ledger.create_alert(

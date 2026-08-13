@@ -386,6 +386,31 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
         ) AND status IN ('pending', 'leased')
         """
     )
+    conn.execute(
+        """
+        UPDATE operational_tasks
+        SET status = 'awaiting_human',
+            escalation_owner = COALESCE(
+                (SELECT NULLIF(owner, '') FROM forecast_questions
+                 WHERE id = operational_tasks.question_id),
+                'human:forecast-duty'
+            ),
+            escalated_at = COALESCE(escalated_at, completed_at, updated_at),
+            completed_at = NULL
+        WHERE task_type = 'resolve_warning' AND status = 'completed'
+          AND alert_id IN (
+              SELECT id FROM alert_events
+              WHERE acknowledged_at IS NULL AND severity IN ('critical', 'high')
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM operational_tasks AS sibling
+              WHERE sibling.alert_id = operational_tasks.alert_id
+                AND sibling.id != operational_tasks.id
+                AND (sibling.status IN ('pending', 'leased', 'awaiting_human')
+                     OR sibling.escalation_owner IS NOT NULL)
+          )
+        """
+    )
     # Older warning workers re-polled whole questions after a durable successful
     # observation had already been captured. A transient fetch failure then marked
     # every pending event for the question failed without ever claiming its task.
@@ -1572,16 +1597,33 @@ def complete_operational_task(
 ) -> dict[str, Any]:
     stamp = parse_timestamp(now, field_name="now") or utc_now_iso()
     with ledger._connect() as conn:
-        updated = conn.execute(
-            """
-            UPDATE operational_tasks
-            SET status = 'completed', disposition = ?, result = ?, error = NULL,
-                lease_owner = NULL, lease_expires_at = NULL,
-                completed_at = ?, updated_at = ?
-            WHERE id = ? AND status = 'leased' AND lease_owner = ?
-            """,
-            (disposition, json_dumps(result or {}), stamp, stamp, task_id, owner),
-        )
+        if disposition == "surfaced_for_review":
+            updated = conn.execute(
+                """
+                UPDATE operational_tasks
+                SET status = 'awaiting_human', disposition = ?, result = ?, error = NULL,
+                    escalation_owner = COALESCE(
+                        (SELECT NULLIF(owner, '') FROM forecast_questions
+                         WHERE id = operational_tasks.question_id),
+                        'human:forecast-duty'
+                    ),
+                    escalated_at = ?, lease_owner = NULL, lease_expires_at = NULL,
+                    completed_at = NULL, updated_at = ?
+                WHERE id = ? AND status = 'leased' AND lease_owner = ?
+                """,
+                (disposition, json_dumps(result or {}), stamp, stamp, task_id, owner),
+            )
+        else:
+            updated = conn.execute(
+                """
+                UPDATE operational_tasks
+                SET status = 'completed', disposition = ?, result = ?, error = NULL,
+                    lease_owner = NULL, lease_expires_at = NULL,
+                    completed_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'leased' AND lease_owner = ?
+                """,
+                (disposition, json_dumps(result or {}), stamp, stamp, task_id, owner),
+            )
         if updated.rowcount != 1:
             raise ValueError("operational task is not leased by this worker")
         conn.execute(
