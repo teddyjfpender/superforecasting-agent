@@ -805,6 +805,123 @@ def test_estimator_caps_one_model_batch_at_six_events(tmp_path):
     ].count("pending") == 1
 
 
+def test_estimator_waits_for_pending_proposal_without_spending_or_retrying(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    source = tmp_path / "source.txt"
+    source.write_text("before", encoding="utf-8")
+    question = ledger.create_question(
+        title="Will source work wait for a proposal decision?",
+        resolution_criteria="Resolves yes when a pending proposal blocks a second estimate.",
+        resolution_source="fixture",
+    )
+    prior = ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.4,
+        rationale="Baseline.",
+    )
+    ledger.enable_autopilot(question_id=question.id, sources=[str(source)], cadence="1d")
+    proposal = ledger.create_forecast_update_proposal(
+        question_id=question.id,
+        run_id=None,
+        prior_forecast_id=prior.forecast_id,
+        proposed_probability_or_distribution=0.55,
+        rationale="Awaiting review.",
+    )
+    source.write_text("after", encoding="utf-8")
+    ledger.run_autopilot(question.id, now="2026-05-01T00:00:00Z")
+    ledger.run_source_change_router(owner="router", now="2026-05-01T00:01:00Z")
+
+    assert ledger.claim_operational_tasks(
+        owner="estimator-a",
+        lane="normal_reforecast",
+        task_type="process_source_change",
+        now="2026-05-01T00:02:00Z",
+    ) == []
+    task = next(
+        row
+        for row in ledger.list_operational_tasks(limit=20)
+        if row["task_type"] == "process_source_change"
+    )
+    assert task["status"] == "pending"
+    assert task["attempt_count"] == 0
+
+    ledger.reject_forecast_update_proposal(proposal["id"], reviewed_by="reviewer-a")
+    claimed = ledger.claim_operational_tasks(
+        owner="estimator-b",
+        lane="normal_reforecast",
+        task_type="process_source_change",
+        now="2026-05-01T00:03:00Z",
+    )
+    assert [row["id"] for row in claimed] == [task["id"]]
+
+
+def test_recovery_restores_proposal_blocked_dead_letter_to_waiting_queue(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    source = tmp_path / "source.txt"
+    source.write_text("before", encoding="utf-8")
+    question = ledger.create_question(
+        title="Will a proposal-blocked dead letter recover safely?",
+        resolution_criteria="Resolves yes when old worker failures return to the gated queue.",
+        resolution_source="fixture",
+    )
+    prior = ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.4,
+        rationale="Baseline.",
+    )
+    ledger.enable_autopilot(question_id=question.id, sources=[str(source)], cadence="1d")
+    proposal = ledger.create_forecast_update_proposal(
+        question_id=question.id,
+        run_id=None,
+        prior_forecast_id=prior.forecast_id,
+        proposed_probability_or_distribution=0.55,
+        rationale="Awaiting review.",
+    )
+    source.write_text("after", encoding="utf-8")
+    ledger.run_autopilot(question.id, now="2026-05-01T00:00:00Z")
+    ledger.run_source_change_router(owner="router", now="2026-05-01T00:01:00Z")
+    task = next(
+        row
+        for row in ledger.list_operational_tasks(limit=20)
+        if row["task_type"] == "process_source_change"
+    )
+    event = ledger.list_source_change_events(question_id=question.id)[0]
+    with ledger._connect() as conn:
+        conn.execute(
+            """
+            UPDATE operational_tasks
+            SET status = 'dead_letter', attempt_count = max_attempts,
+                error = ?, disposition = 'invalid_payload_dead_letter'
+            WHERE id = ?
+            """,
+            (
+                f"pending proposal {proposal['id']} must be reviewed before this event can propose",
+                task["id"],
+            ),
+        )
+        conn.execute(
+            "UPDATE source_change_events SET status = 'failed', state = 'failed' WHERE id = ?",
+            (event["id"],),
+        )
+
+    recovered = ledger.reconcile_operational_dead_letters(
+        owner="reconciler", now="2026-05-01T00:02:00Z"
+    )
+    assert {row["action"] for row in recovered} >= {"wait_for_pending_proposal_review"}
+    task = next(
+        row for row in ledger.list_operational_tasks(limit=20) if row["id"] == task["id"]
+    )
+    assert task["status"] == "pending"
+    assert task["attempt_count"] == 0
+    assert task["disposition"] == "blocked_on_pending_proposal"
+    assert ledger.claim_operational_tasks(
+        owner="estimator-a",
+        lane="normal_reforecast",
+        task_type="process_source_change",
+        now="2026-05-01T00:03:00Z",
+    ) == []
+
+
 def test_context_overflow_dead_letter_gets_one_bounded_payload_retry(tmp_path):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     source = tmp_path / "source.txt"
