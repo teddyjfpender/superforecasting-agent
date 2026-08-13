@@ -199,9 +199,15 @@ def build_dashboard_summary(
                 reasons = existing.setdefault("reasons", [])
                 if alert.reason not in reasons:
                     reasons.append(alert.reason)
+                alert_priority = alert_review_priority(alert.reason)
+                if alert_priority <= int(existing.get("priority") or 9):
+                    existing["next_action"] = (
+                        alert.recommended_action
+                        or review_next_action(question_id, reasons)
+                    )
                 existing["priority"] = min(
                     int(existing.get("priority") or 9),
-                    alert_review_priority(alert.reason),
+                    alert_priority,
                 )
                 continue
             try:
