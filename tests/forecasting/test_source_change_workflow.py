@@ -810,6 +810,23 @@ def test_cron_hosts_estimator_and_guarded_utility_calibration(
     assert '"activated": false' in output.lower()
 
 
+def test_source_estimator_uses_explicit_cron_environment_pin(monkeypatch):
+    from forecasting import cron_runner
+
+    captured = {}
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_MODEL", "gpt-4.1")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_PROVIDER", "copilot")
+    monkeypatch.setattr(
+        cron_runner,
+        "run_source_estimator_cycle",
+        lambda **kwargs: captured.update(kwargs) or {},
+    )
+
+    assert cron_runner.main_source_estimator([]) == 0
+    assert captured["model"] == "gpt-4.1"
+    assert captured["provider"] == "copilot"
+
+
 def test_watched_sources_share_adapter_account_token_bucket(tmp_path, monkeypatch):
     ledger = ForecastLedger(tmp_path / "forecasting.db")
     question = ledger.create_question(

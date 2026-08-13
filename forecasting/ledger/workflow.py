@@ -161,7 +161,7 @@ def initialize_schema(conn: sqlite3.Connection) -> None:
             ON operational_tasks(status, lane, priority, available_at);
 
         DROP TRIGGER IF EXISTS close_pending_task_when_alert_closed;
-        CREATE TRIGGER close_pending_task_when_alert_closed
+        CREATE TRIGGER IF NOT EXISTS close_pending_task_when_alert_closed
         AFTER UPDATE OF acknowledged_at ON alert_events
         WHEN OLD.acknowledged_at IS NULL AND NEW.acknowledged_at IS NOT NULL
         BEGIN

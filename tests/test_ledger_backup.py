@@ -101,6 +101,15 @@ def test_default_backup_dir_is_colocated_with_ledger(tmp_path):
     assert list(other.glob("forecast-*.db"))
 
 
+def test_ledger_storage_is_owner_only(tmp_path: Path) -> None:
+    db_path = tmp_path / "ledger.db"
+    db_path.touch(mode=0o644)
+
+    ForecastLedger(db_path)
+
+    assert stat.S_IMODE(db_path.stat().st_mode) == 0o600
+
+
 # ── online backup is safe under a concurrent writer ──────────────────────────
 
 

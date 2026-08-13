@@ -16,6 +16,11 @@ from typing import Any
 from forecasting import appconfig
 from forecasting.learning import is_learning_review_reason
 from forecasting.ledger import ForecastLedger, allow_ledger_writes_decorator
+from utils import (
+    INFERENCE_MODEL_ENV_NAMES,
+    INFERENCE_PROVIDER_ENV_NAMES,
+    env_var_alias_nonempty_value,
+)
 
 
 def _env_flag(name: str) -> bool:
@@ -2129,11 +2134,14 @@ def main_source_estimator(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-iterations", type=int)
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args(argv)
+
     result = run_source_estimator_cycle(
         db_path=args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None,
         now=args.now,
-        model=args.model,
-        provider=args.provider,
+        model=args.model or env_var_alias_nonempty_value(INFERENCE_MODEL_ENV_NAMES) or None,
+        provider=args.provider
+        or env_var_alias_nonempty_value(INFERENCE_PROVIDER_ENV_NAMES)
+        or None,
         max_iterations=args.max_iterations,
         force=args.force,
     )
@@ -2202,6 +2210,12 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-iterations", type=int)
     args = parser.parse_args(argv)
     db_path = args.db or appconfig.get_str("FORECAST_LEDGER_DB") or None
+    model = args.model or env_var_alias_nonempty_value(INFERENCE_MODEL_ENV_NAMES) or None
+    provider = (
+        args.provider
+        or env_var_alias_nonempty_value(INFERENCE_PROVIDER_ENV_NAMES)
+        or None
+    )
 
     reforecast_runner = None
     evidence_search = None
@@ -2212,8 +2226,8 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
 
             reforecast_runner, evidence_search = build_cron_warning_agent_runners(
                 db_path=db_path,
-                model=args.model,
-                provider=args.provider,
+                model=model,
+                provider=provider,
                 max_iterations=args.max_iterations,
                 now=args.now,
             )
@@ -2262,8 +2276,8 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
                     review_results: list[dict[str, Any]] = []
                     try:
                         reviewer = build_agent_learned_error_reviewer(
-                            model=args.model,
-                            provider=args.provider,
+                            model=model,
+                            provider=provider,
                             max_iterations=max(int(args.max_iterations or 8), 1),
                         )
                         review_results = run_learned_error_reviews(

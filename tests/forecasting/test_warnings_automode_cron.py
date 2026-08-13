@@ -263,6 +263,44 @@ def test_main_keeps_learned_reviews_but_leaves_estimation_to_dedicated_worker(
     assert calls == [("learned", 1)]
 
 
+def test_warning_automode_uses_explicit_cron_environment_pin(
+    tmp_path, monkeypatch
+):
+    from forecasting import cli as forecast_cli
+
+    captured = {}
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_MODEL", "gpt-4.1")
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_PROVIDER", "copilot")
+    monkeypatch.setattr(
+        forecast_cli,
+        "build_cron_warning_agent_runners",
+        lambda **kwargs: captured.update(kwargs)
+        or (lambda *_args: True, lambda *_args: True),
+    )
+    monkeypatch.setattr(
+        cr,
+        "run_warning_automode",
+        lambda **_kwargs: {
+            "source_routes": [],
+            "resolution_finalization": [],
+            "dead_letter_recovery": [],
+            "free": {"processed": 0, "total": 0, "tally": {}},
+            "paid": None,
+            "paid_ran": False,
+            "paid_budget": 0,
+            "paid_skipped_reason": "no work",
+            "reconcile": {},
+        },
+    )
+    monkeypatch.setattr(cr, "_automode_config", lambda: {"learned_error_review_budget": 0})
+
+    assert cr.main_warning_automode(
+        ["--agent", "--db", str(tmp_path / "forecasting.db")]
+    ) == 0
+    assert captured["model"] == "gpt-4.1"
+    assert captured["provider"] == "copilot"
+
+
 def test_paid_budget_is_reserved_before_work_and_survives_worker_crash(tmp_path):
     ledger = _ledger(tmp_path)
 

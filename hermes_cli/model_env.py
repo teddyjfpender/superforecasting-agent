@@ -2,32 +2,18 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import MutableMapping
 
-MODEL_ENV_NAMES = (
-    "SUPERFORECASTING_AGENT_MODEL",
-    "FORECAST_MODEL",
-    "HERMES_MODEL",
-)
-INFERENCE_MODEL_ENV_NAMES = (
-    "SUPERFORECASTING_AGENT_INFERENCE_MODEL",
-    "FORECAST_INFERENCE_MODEL",
-    "HERMES_INFERENCE_MODEL",
-)
-INFERENCE_PROVIDER_ENV_NAMES = (
-    "SUPERFORECASTING_AGENT_INFERENCE_PROVIDER",
-    "FORECAST_INFERENCE_PROVIDER",
-    "HERMES_INFERENCE_PROVIDER",
+from utils import (
+    INFERENCE_MODEL_ENV_NAMES,
+    INFERENCE_PROVIDER_ENV_NAMES,
+    MODEL_ENV_NAMES,
+    env_var_alias_nonempty_value,
 )
 
 
 def first_env(names: tuple[str, ...], default: str = "") -> str:
-    for name in names:
-        value = os.getenv(name)
-        if value and value.strip():
-            return value.strip()
-    return default
+    return env_var_alias_nonempty_value(names, default)
 
 
 def model_env(default: str = "") -> str:
