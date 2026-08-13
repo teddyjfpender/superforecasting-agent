@@ -2096,6 +2096,7 @@ def _estimator_batch_rows(
               )
             ORDER BY CASE WHEN task.id = ? THEN 0 ELSE 1 END,
                      event.detected_at, event.id
+            LIMIT 6
             """,
             (
                 event_row["question_id"],
@@ -2760,6 +2761,55 @@ def reconcile_operational_dead_letters(
     stamp_dt = timestamp_to_datetime(stamp)
     assert stamp_dt is not None
     results: list[dict[str, Any]] = []
+    # The hosted estimator now projects source batches into a provider-safe prompt.
+    # Give context-overflow dead letters one fresh retry under that bounded payload,
+    # and persist a marker so a genuinely incompatible task cannot loop forever.
+    with ledger._connect() as conn:
+        context_overflow = conn.execute(
+            """
+            SELECT * FROM operational_tasks
+            WHERE task_type = 'process_source_change' AND status = 'dead_letter'
+              AND error LIKE 'Context length exceeded:%'
+            ORDER BY created_at
+            """
+        ).fetchall()
+        for task in context_overflow:
+            prior_result = json_loads(task["result"], {})
+            if prior_result.get("recovery") == "bounded_estimator_payload_v1":
+                continue
+            prior_result["recovery"] = "bounded_estimator_payload_v1"
+            conn.execute(
+                """
+                UPDATE operational_tasks
+                SET status = 'pending', attempt_count = 0,
+                    disposition = 'recovered_after_estimator_payload_bound',
+                    result = ?, error = NULL, lease_owner = NULL,
+                    lease_expires_at = NULL, available_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'dead_letter'
+                """,
+                (json_dumps(prior_result), stamp, stamp, task["id"]),
+            )
+            _transition_source_change_event_conn(
+                conn,
+                task["source_change_event_id"],
+                to_state="detected",
+                actor=owner,
+                reason="retry after bounded estimator payload deployment",
+                now=stamp,
+                allowed_from={"failed"},
+            )
+            conn.execute(
+                """
+                UPDATE source_change_events
+                SET status = 'pending', disposition = 'estimator_required', error = NULL,
+                    claim_owner = NULL, claim_expires_at = NULL
+                WHERE id = ?
+                """,
+                (task["source_change_event_id"],),
+            )
+            results.append(
+                {"task_id": task["id"], "action": "retry_bounded_estimator_payload"}
+            )
     # One-time replay for the legacy typed numeric envelope bug. Reuse the last
     # persisted estimate so recovery neither re-polls the source nor pays for a
     # sixth identical model call.

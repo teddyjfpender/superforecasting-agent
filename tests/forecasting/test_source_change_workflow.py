@@ -675,6 +675,207 @@ def test_hosted_estimator_preserves_configured_model_and_measured_usage(monkeypa
     }
 
 
+def test_hosted_estimator_bounds_large_source_batch_prompt(monkeypatch):
+    from forecasting.estimator_worker import build_agent_estimator
+
+    captured = {}
+
+    class FakeAgent:
+        def run_conversation(self, user, system_message=None):
+            captured["user"] = user
+            return {
+                "final_response": json.dumps(
+                    {
+                        "proposed_probability_or_distribution": 0.6,
+                        "rationale": "Fixture estimate.",
+                        "estimation_artifact": {},
+                    }
+                ),
+                "model": "configured-model",
+            }
+
+    monkeypatch.setattr(
+        "agent.agent_factory.build_agent", lambda **_kwargs: FakeAgent()
+    )
+    event_ids = [f"sce_{index}" for index in range(6)]
+    payload = {
+        "task_id": "ot_fixture",
+        "question": {"outcome_space": {"type": "binary"}, "description": "q" * 20_000},
+        "prior_forecast": {"rationale": "p" * 20_000},
+        "source_change_event": {"id": event_ids[0]},
+        "source_change_events": [{"id": event_id} for event_id in event_ids],
+        "source_snapshots": [
+            {
+                "id": f"ss_{index}",
+                "source_url": f"https://example.test/{index}",
+                "parsed_values": {
+                    "content_available": True,
+                    "changed_items": [
+                        {
+                            "headline": f"item {item}",
+                            "summary": "s" * 2_000,
+                            "raw": "must-not-reach-model" * 2_000,
+                        }
+                        for item in range(50)
+                    ],
+                },
+            }
+            for index in range(6)
+        ],
+        "watched_sources": [
+            {"id": f"ws_{index}", "source": f"https://example.test/{index}"}
+            for index in range(6)
+        ],
+    }
+
+    build_agent_estimator(model="configured-model")(payload)
+
+    assert len(captured["user"]) < 65_000
+    assert all(event_id in captured["user"] for event_id in event_ids)
+    assert "changed_items_omitted" in captured["user"]
+    assert "must-not-reach-model" not in captured["user"]
+
+
+def test_estimator_caps_one_model_batch_at_six_events(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    sources = [tmp_path / f"source-{index}.txt" for index in range(7)]
+    for source in sources:
+        source.write_text("before", encoding="utf-8")
+    question = ledger.create_question(
+        title="Will estimator batches stay within the provider context?",
+        resolution_criteria="Resolves yes when oversized source batches are split safely.",
+        resolution_source="fixture",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.4,
+        rationale="Baseline.",
+    )
+    ledger.enable_autopilot(
+        question_id=question.id,
+        sources=[str(source) for source in sources],
+        cadence="1d",
+        mode="propose",
+    )
+    for source in sources:
+        source.write_text("after", encoding="utf-8")
+    ledger.run_autopilot(question.id, now="2026-05-01T00:00:00Z")
+
+    def estimator(payload):
+        event_ids = [event["id"] for event in payload["source_change_events"]]
+        assert len(event_ids) == 6
+        return {
+            "proposed_probability_or_distribution": 0.56,
+            "rationale": "The bounded source batch increases the estimate.",
+            "model_version": "fixture-estimator",
+            "estimation_artifact": {
+                "prior_probability": 0.4,
+                "evidence_updates": [
+                    {
+                        "event_id": event_id,
+                        "likelihood_ratio": 1.4,
+                        "correlation_cluster": "fixture-batch",
+                        "reliability_weight": 0.7,
+                    }
+                    for event_id in event_ids
+                ],
+                "raw_posterior": 0.56,
+                "ensemble_components": {"bayesian_update": 0.56},
+                "panel_result": {"status": "not_required"},
+                "proposed_probability": 0.56,
+                "materiality": "medium",
+                "evidence_cutoff": "2026-05-01T00:00:00Z",
+                "change_my_mind": ["The source revisions are reversed."],
+                "guardrail_results": {},
+            },
+        }
+
+    result = ledger.run_estimator_tasks(
+        owner="estimator-a",
+        estimator=estimator,
+        now="2026-05-01T00:01:00Z",
+        limit=1,
+        question_id=question.id,
+    )[0]
+
+    assert result["coalesced_event_count"] == 5
+    assert [
+        event["status"]
+        for event in ledger.list_source_change_events(question_id=question.id)
+    ].count("pending") == 1
+
+
+def test_context_overflow_dead_letter_gets_one_bounded_payload_retry(tmp_path):
+    ledger = ForecastLedger(tmp_path / "forecasting.db")
+    source = tmp_path / "source.txt"
+    source.write_text("before", encoding="utf-8")
+    question = ledger.create_question(
+        title="Will a context overflow receive one safe recovery?",
+        resolution_criteria="Resolves yes when bounded payload deployment recovers the task once.",
+        resolution_source="fixture",
+    )
+    ledger.create_snapshot(
+        question_id=question.id,
+        probability_or_distribution=0.5,
+        rationale="Baseline.",
+    )
+    ledger.enable_autopilot(question_id=question.id, sources=[str(source)], cadence="1d")
+    source.write_text("after", encoding="utf-8")
+    ledger.run_autopilot(question.id, now="2026-05-01T00:00:00Z")
+    task = ledger.claim_operational_tasks(
+        owner="estimator-a",
+        lane="normal_reforecast",
+        task_type="process_source_change",
+        now="2026-05-01T00:01:00Z",
+        limit=1,
+    )[0]
+    with ledger._connect() as conn:
+        conn.execute("UPDATE operational_tasks SET max_attempts = 1 WHERE id = ?", (task["id"],))
+    failed = ledger.fail_operational_task(
+        task["id"],
+        owner="estimator-a",
+        error="Context length exceeded: max compression attempts (3) reached.",
+        now="2026-05-01T00:01:00Z",
+    )
+    assert failed["status"] == "dead_letter"
+
+    recovered = ledger.reconcile_operational_dead_letters(
+        owner="reconciler", now="2026-05-01T00:02:00Z"
+    )
+    assert {row["action"] for row in recovered} >= {"retry_bounded_estimator_payload"}
+    task = next(
+        row for row in ledger.list_operational_tasks(limit=20) if row["id"] == task["id"]
+    )
+    assert task["status"] == "pending"
+    assert task["attempt_count"] == 0
+    assert task["result"]["recovery"] == "bounded_estimator_payload_v1"
+    event = ledger.list_source_change_events(question_id=question.id)[0]
+    assert event["status"] == "pending"
+    assert event["state"] == "detected"
+
+    task = ledger.claim_operational_tasks(
+        owner="estimator-b",
+        lane="normal_reforecast",
+        task_type="process_source_change",
+        now="2026-05-01T00:03:00Z",
+        limit=1,
+    )[0]
+    ledger.fail_operational_task(
+        task["id"],
+        owner="estimator-b",
+        error="Context length exceeded: max compression attempts (3) reached.",
+        now="2026-05-01T00:03:00Z",
+    )
+    second = ledger.reconcile_operational_dead_letters(
+        owner="reconciler", now="2026-05-01T00:04:00Z"
+    )
+    assert "retry_bounded_estimator_payload" not in {row["action"] for row in second}
+    task = next(
+        row for row in ledger.list_operational_tasks(limit=20) if row["id"] == task["id"]
+    )
+    assert task["status"] == "dead_letter"
+
+
 def test_numeric_estimator_envelope_strips_structural_fields():
     from forecasting.estimator_worker import normalize_estimator_forecast
 
@@ -825,6 +1026,18 @@ def test_source_estimator_uses_explicit_cron_environment_pin(monkeypatch):
     assert cron_runner.main_source_estimator([]) == 0
     assert captured["model"] == "gpt-4.1"
     assert captured["provider"] == "copilot"
+
+
+def test_source_estimator_cron_fails_when_a_task_failed(monkeypatch):
+    from forecasting import cron_runner
+
+    monkeypatch.setattr(
+        cron_runner,
+        "run_source_estimator_cycle",
+        lambda **_kwargs: {"processed": 1, "succeeded": 0, "failed": 1},
+    )
+
+    assert cron_runner.main_source_estimator([]) == 1
 
 
 def test_watched_sources_share_adapter_account_token_bucket(tmp_path, monkeypatch):
