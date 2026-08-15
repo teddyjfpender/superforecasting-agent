@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 import signal
 import shutil
+import socket
 import subprocess
 
 import pytest
@@ -27,6 +28,16 @@ import pytest
 # A guaranteed-foreign PID: PID 1 (init).  Owned by root, not us, and
 # always exists. A sane guard refuses to signal it.
 FOREIGN_PID = 1
+
+
+def test_external_network_is_blocked():
+    sock = socket.socket()
+    sock.settimeout(0.1)
+    try:
+        with pytest.raises(OSError, match="test attempted external network"):
+            sock.connect(("192.0.2.1", 443))
+    finally:
+        sock.close()
 
 
 # ──────────────────── kill primitives ─────────────────────────

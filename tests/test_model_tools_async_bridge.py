@@ -124,7 +124,7 @@ class TestRunAsyncWorkerThread:
             "Worker thread created different loops for consecutive calls — "
             "cached clients from the first call would be orphaned"
         )
-        assert not loop1.is_closed()
+        assert loop1.is_closed(), "worker loop must close when its thread exits"
 
     def test_parallel_workers_get_separate_loops(self):
         """Different worker threads must get their own loops to avoid

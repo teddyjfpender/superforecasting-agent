@@ -1,0 +1,17 @@
+{
+  "name": "image-size",
+  "version": "2.0.3",
+  "private": true,
+  "description": "Docusaurus-compatible image sizing without vulnerable legacy parsers.",
+  "license": "MIT",
+  "main": "fromFile.cjs",
+  "exports": {
+    "./fromFile": "./fromFile.cjs"
+  },
+  "dependencies": {
+    "image-dimensions": "2.5.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

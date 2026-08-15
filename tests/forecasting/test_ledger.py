@@ -94,6 +94,7 @@ def _serve_snapshot_source():
     server = ThreadingHTTPServer(("127.0.0.1", 0), _SnapshotHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    server._test_thread = thread
     return server
 
 
@@ -115,6 +116,7 @@ def _serve_mutable_source():
     server = ThreadingHTTPServer(("127.0.0.1", 0), _MutableSourceHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    server._test_thread = thread
     return server
 
 
@@ -604,6 +606,7 @@ def test_url_evidence_snapshot_is_archived_when_fetchable(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+        server._test_thread.join(timeout=5)
 
 
 def test_ingest_candidate_requires_confirmation_before_active_forecast(tmp_path):
@@ -2394,6 +2397,8 @@ def test_watched_url_source_creates_alert_on_content_change(tmp_path):
         )
     finally:
         server.shutdown()
+        server.server_close()
+        server._test_thread.join(timeout=5)
 
     assert [alert.scope_ref for alert in alerts] == [question.id]
     assert alerts[0].reason == f"watched_source_changed:{watch['id']}"

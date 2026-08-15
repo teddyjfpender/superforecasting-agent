@@ -344,6 +344,7 @@ class MatrixAdapter(BasePlatformAdapter):
         )
 
         self._client: Any = None  # mautrix.client.Client
+        self._http_session: Any = None  # aiohttp.ClientSession
         self._crypto_db: Any = None  # mautrix.util.async_db.Database
         self._sync_task: Optional[asyncio.Task] = None
         self._closing = False
@@ -604,6 +605,17 @@ class MatrixAdapter(BasePlatformAdapter):
     # Required overrides
     # ------------------------------------------------------------------
 
+    async def _close_http_session(self) -> None:
+        session = self._http_session
+        if session is None and self._client is not None:
+            session = getattr(getattr(self._client, "api", None), "session", None)
+        self._http_session = None
+        if session is not None:
+            try:
+                await session.close()
+            except Exception:
+                pass
+
     async def connect(self) -> bool:
         """Connect to the Matrix homeserver and start syncing."""
         from mautrix.api import HTTPAPI
@@ -619,6 +631,7 @@ class MatrixAdapter(BasePlatformAdapter):
 
         # Create the HTTP API layer.
         client_session = _create_matrix_session(self._proxy_url)
+        self._http_session = client_session
         api = HTTPAPI(
             base_url=self._homeserver,
             token=self._access_token or "",
@@ -667,7 +680,7 @@ class MatrixAdapter(BasePlatformAdapter):
                     exc,
                     exc_info=True,
                 )
-                await api.session.close()
+                await self._close_http_session()
                 return False
         elif self._password and self._user_id:
             try:
@@ -682,13 +695,13 @@ class MatrixAdapter(BasePlatformAdapter):
                 logger.info("Matrix: logged in as %s", self._user_id)
             except Exception as exc:
                 logger.error("Matrix: login failed — %s", exc)
-                await api.session.close()
+                await self._close_http_session()
                 return False
         else:
             logger.error(
                 "Matrix: need MATRIX_ACCESS_TOKEN or MATRIX_USER_ID + MATRIX_PASSWORD"
             )
-            await api.session.close()
+            await self._close_http_session()
             return False
 
         # Set up E2EE if requested.
@@ -699,7 +712,7 @@ class MatrixAdapter(BasePlatformAdapter):
                     "Refusing to connect — encrypted rooms would silently fail.",
                     _E2EE_INSTALL_HINT,
                 )
-                await api.session.close()
+                await self._close_http_session()
                 return False
             try:
                 from mautrix.crypto import OlmMachine
@@ -760,7 +773,7 @@ class MatrixAdapter(BasePlatformAdapter):
                 # Verify our device keys are still on the homeserver.
                 if not await self._verify_device_keys_on_server(client, olm):
                     await crypto_db.stop()
-                    await api.session.close()
+                    await self._close_http_session()
                     return False
 
                 # Proactively flush one-time keys to detect stale OTK
@@ -785,7 +798,7 @@ class MatrixAdapter(BasePlatformAdapter):
                             client.device_id,
                         )
                         await crypto_db.stop()
-                        await api.session.close()
+                        await self._close_http_session()
                         return False
                     # Non-OTK errors are transient (network, etc.) — log
                     # but allow startup to continue.
@@ -859,7 +872,7 @@ class MatrixAdapter(BasePlatformAdapter):
                     exc,
                     _E2EE_INSTALL_HINT,
                 )
-                await api.session.close()
+                await self._close_http_session()
                 return False
 
         # Register event handlers.
@@ -955,11 +968,8 @@ class MatrixAdapter(BasePlatformAdapter):
             except Exception as exc:
                 logger.debug("Matrix: could not close crypto DB on disconnect: %s", exc)
 
+        await self._close_http_session()
         if self._client:
-            try:
-                await self._client.api.session.close()
-            except Exception:
-                pass
             self._client = None
 
         logger.info("Matrix: disconnected")

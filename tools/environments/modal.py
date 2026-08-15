@@ -142,7 +142,17 @@ class _AsyncWorker:
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         self._started.set()
-        self._loop.run_forever()
+        try:
+            self._loop.run_forever()
+        finally:
+            pending = asyncio.all_tasks(self._loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                self._loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            self._loop.close()
 
     def run_coroutine(self, coro, timeout=600):
         from agent.async_utils import safe_schedule_threadsafe

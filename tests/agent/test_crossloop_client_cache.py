@@ -79,7 +79,7 @@ class TestCrossLoopCacheIsolation:
                 client, _ = _get_cached_client("custom", "m1", async_mode=True,
                                                  base_url="http://localhost:8081/v1")
             results[name] = (id(client), id(loop))
-            # Don't close loop — simulates real usage where loops persist
+            loop.close()
 
         t1 = threading.Thread(target=_get_client_on_new_loop, args=("a",))
         t2 = threading.Thread(target=_get_client_on_new_loop, args=("b",))
@@ -110,6 +110,7 @@ class TestCrossLoopCacheIsolation:
                 client, _ = _get_cached_client("custom", "m1", async_mode=False,
                                                  base_url="http://localhost:8081/v1")
             results[name] = id(client)
+            loop.close()
 
         t1 = threading.Thread(target=_get_sync_client, args=("a",))
         t2 = threading.Thread(target=_get_sync_client, args=("b",))

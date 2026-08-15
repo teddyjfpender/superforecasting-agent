@@ -183,6 +183,15 @@ class CodexAppServerClient:
                 self._proc.wait(timeout=1.0)
             except Exception:
                 pass
+        finally:
+            self._reader.join(timeout=timeout)
+            self._stderr_reader.join(timeout=timeout)
+            for stream in (self._proc.stdout, self._proc.stderr):
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
 
     def __enter__(self) -> "CodexAppServerClient":
         return self

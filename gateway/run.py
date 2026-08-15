@@ -8245,13 +8245,30 @@ class GatewayRunner:
                             # has all API keys in os.environ.
                             from tools.environments.local import _sanitize_subprocess_env
                             sanitized_env = _sanitize_subprocess_env(os.environ.copy())
+                            process_kwargs = {} if os.name == "nt" else {"start_new_session": True}
                             proc = await asyncio.create_subprocess_shell(
                                 exec_cmd,
                                 stdout=asyncio.subprocess.PIPE,
                                 stderr=asyncio.subprocess.PIPE,
                                 env=sanitized_env,
+                                **process_kwargs,
                             )
-                            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+                            communicate = asyncio.create_task(proc.communicate())
+                            try:
+                                stdout, stderr = await asyncio.wait_for(
+                                    asyncio.shield(communicate), timeout=30
+                                )
+                            except (asyncio.CancelledError, asyncio.TimeoutError):
+                                try:
+                                    if os.name == "nt":
+                                        from gateway.status import terminate_pid
+                                        terminate_pid(proc.pid, force=True)
+                                    else:
+                                        os.killpg(proc.pid, signal.SIGKILL)  # windows-footgun: ok — os.name guard above
+                                except (ProcessLookupError, OSError):
+                                    pass
+                                await communicate
+                                raise
                             output = (stdout or stderr).decode().strip()
                             # Redact any remaining sensitive patterns in output
                             if output:
@@ -11851,7 +11868,7 @@ class GatewayRunner:
             if "pynacl" in err_lower or "nacl" in err_lower or "davey" in err_lower:
                 return (
                     "Voice dependencies are missing (PyNaCl / davey). "
-                    f"Install with: `{sys.executable} -m pip install PyNaCl`"
+                    f"Install with: `{sys.executable} -m pip install PyNaCl==1.6.2 davey==0.1.4`"
                 )
             return f"Failed to join voice channel: {e}"
 
@@ -18931,33 +18948,6 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     from hermes_logging import setup_logging
     setup_logging(hermes_home=_hermes_home, mode="gateway")
 
-    # Periodic process memory usage logging (gateway only) — emits a
-    # grep-friendly "[MEMORY] rss=...MB ..." line every N minutes so
-    # slow leaks in the long-lived gateway process show up as a time
-    # series in agent.log / gateway.log.  Ported from cline/cline#10343.
-    # Controlled by the logging.memory_monitor section in config.yaml.
-    try:
-        from gateway import memory_monitor as _memory_monitor
-
-        _mm_cfg = {}
-        try:
-            # config is loaded a few lines up; re-read the logging section
-            # here so we pick up user overrides without coupling to local
-            # variable names inside the start_gateway body.
-            from hermes_cli.config import load_config as _load_cli_config
-
-            _mm_cfg = (_load_cli_config() or {}).get("logging", {}).get("memory_monitor", {}) or {}
-        except Exception:
-            _mm_cfg = {}
-        if _mm_cfg.get("enabled", True):
-            try:
-                _mm_interval = float(_mm_cfg.get("interval_seconds", 300))
-            except (TypeError, ValueError):
-                _mm_interval = 300.0
-            _memory_monitor.start_memory_monitoring(interval_seconds=_mm_interval)
-    except Exception as _mm_exc:
-        logger.debug("Failed to start memory monitor: %s", _mm_exc)
-
     # Optional stderr handler — level driven by -v/-q flags on the CLI.
     # verbosity=None (-q/--quiet): no stderr output
     # verbosity=0    (default):    WARNING and above
@@ -19150,6 +19140,22 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         if runner.exit_reason:
             logger.error("Gateway exiting cleanly: %s", runner.exit_reason)
         return True
+
+    # Start monitoring only after startup has succeeded. Every earlier return is
+    # intentionally side-effect free, which also makes embedded retries safe.
+    try:
+        from gateway import memory_monitor as _memory_monitor
+        from hermes_cli.config import load_config as _load_cli_config
+
+        _mm_cfg = (_load_cli_config() or {}).get("logging", {}).get("memory_monitor", {}) or {}
+        if _mm_cfg.get("enabled", True):
+            try:
+                _mm_interval = float(_mm_cfg.get("interval_seconds", 300))
+            except (TypeError, ValueError):
+                _mm_interval = 300.0
+            _memory_monitor.start_memory_monitoring(interval_seconds=_mm_interval)
+    except Exception as _mm_exc:
+        logger.debug("Failed to start memory monitor: %s", _mm_exc)
     
     # Start background cron ticker so scheduled jobs fire automatically.
     # Pass the event loop so cron delivery can use live adapters (E2EE support).
@@ -19166,10 +19172,10 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     # Wait for shutdown
     await runner.wait_for_shutdown()
 
-    if runner.should_exit_with_failure:
+    _shutdown_failed = runner.should_exit_with_failure
+    if _shutdown_failed:
         if runner.exit_reason:
             logger.error("Gateway exiting with failure: %s", runner.exit_reason)
-        return False
     
     # Stop cron ticker cleanly
     cron_stop.set()
@@ -19191,6 +19197,9 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         _memory_monitor.stop_memory_monitoring(timeout=2.0)
     except Exception:
         pass
+
+    if _shutdown_failed:
+        return False
 
     if runner.exit_code is not None:
         raise SystemExit(runner.exit_code)

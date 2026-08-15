@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+from unittest.mock import patch
 
 import pytest
 
@@ -77,7 +78,8 @@ def _run(parser: argparse.ArgumentParser, argv: list[str]) -> None:
     ):
         argv = [*argv, "--no-require-structured-reasoning"]
     args = parser.parse_args(argv)
-    args.func(args)
+    with patch("forecasting.cli.questions_admin._write_analyst_brief", return_value=None):
+        args.func(args)
 
 
 # ── PANEL_PERSPECTIVES catalog ──────────────────────────────────────────────

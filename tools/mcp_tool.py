@@ -77,6 +77,7 @@ Thread safety:
     free-threading).
 """
 
+import atexit
 import asyncio
 import concurrent.futures
 import inspect
@@ -119,6 +120,22 @@ _sleep = time.sleep
 
 _mcp_stderr_log_fh: Optional[Any] = None
 _mcp_stderr_log_lock = threading.Lock()
+
+
+def _close_mcp_stderr_log() -> None:
+    """Close the process-owned MCP stderr log handle."""
+    global _mcp_stderr_log_fh
+    with _mcp_stderr_log_lock:
+        fh = _mcp_stderr_log_fh
+        _mcp_stderr_log_fh = None
+    if fh is not None and fh is not sys.stderr and fh is not sys.__stderr__:
+        try:
+            fh.close()
+        except Exception:
+            pass
+
+
+atexit.register(_close_mcp_stderr_log)
 
 
 def _get_mcp_stderr_log() -> Any:

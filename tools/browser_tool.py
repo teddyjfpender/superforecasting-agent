@@ -1291,7 +1291,17 @@ def _emergency_cleanup_all_sessions():
 # corrupts the coroutine state and makes the process unkillable.  atexit
 # handlers run on any normal exit (including sys.exit), so browser sessions
 # are still cleaned up without hijacking signals.
-atexit.register(_emergency_cleanup_all_sessions)
+def _atexit_cleanup_browser_sessions() -> None:
+    """Run final cleanup without writing through already-closed log streams."""
+    previous_disable = logging.root.manager.disable
+    logging.disable(logging.CRITICAL)
+    try:
+        _emergency_cleanup_all_sessions()
+    finally:
+        logging.disable(previous_disable)
+
+
+atexit.register(_atexit_cleanup_browser_sessions)
 
 
 # =============================================================================
@@ -1931,6 +1941,7 @@ def _run_browser_command(
     args: List[str] = None,
     timeout: Optional[int] = None,
     _engine_override: Optional[str] = None,
+    _session_info: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Run an agent-browser CLI command using our pre-created Browserbase session.
@@ -1944,6 +1955,8 @@ def _run_browser_command(
         _engine_override: Force a specific engine for this call only.  Used
                           internally by the Lightpanda fallback to retry with
                           Chrome without touching global state.
+        _session_info: Reuse an existing session during cleanup instead of
+                       starting the inactivity machinery again.
 
     Returns:
         Parsed JSON response from agent-browser
@@ -1988,11 +2001,14 @@ def _run_browser_command(
         return {"success": False, "error": "Interrupted"}
 
     # Get session info (creates Browserbase session with proxies if needed)
-    try:
-        session_info = _get_session_info(task_id)
-    except Exception as e:
-        logger.warning("Failed to create browser session for task=%s: %s", task_id, e)
-        return {"success": False, "error": f"Failed to create browser session: {str(e)}"}
+    if _session_info is not None:
+        session_info = _session_info
+    else:
+        try:
+            session_info = _get_session_info(task_id)
+        except Exception as e:
+            logger.warning("Failed to create browser session for task=%s: %s", task_id, e)
+            return {"success": False, "error": f"Failed to create browser session: {str(e)}"}
 
     # Build the command with the appropriate backend flag.
     # Cloud mode: --cdp <websocket_url> connects to Browserbase.
@@ -3479,7 +3495,7 @@ def _cleanup_single_browser_session(task_id: str) -> None:
 
         # Try to close via agent-browser first (needs session in _active_sessions)
         try:
-            _run_browser_command(task_id, "close", [], timeout=10)
+            _run_browser_command(task_id, "close", [], timeout=10, _session_info=session_info)
             logger.debug("agent-browser close command completed for task %s", task_id)
         except Exception as e:
             logger.warning("agent-browser close failed for task %s: %s", task_id, e)

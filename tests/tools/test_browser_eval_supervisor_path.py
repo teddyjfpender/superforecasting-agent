@@ -234,6 +234,7 @@ def _make_supervisor_with_cdp(cdp_response):
 def _stop_supervisor(sup):
     sup._loop.call_soon_threadsafe(sup._loop.stop)
     sup._thread.join(timeout=2)
+    sup._loop.close()
 
 
 class TestEvaluateRuntimeResponseShaping:
@@ -361,3 +362,4 @@ class TestEvaluateRuntimeResponseShaping:
         finally:
             loop.call_soon_threadsafe(loop.stop)
             thread.join(timeout=2)
+            loop.close()

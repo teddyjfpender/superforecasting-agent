@@ -64,11 +64,11 @@ pip install "superforecasting-agent[all]"
 | Extra | Packages | Required for |
 | --- | --- | --- |
 | `voice` | `sounddevice`, `numpy` | CLI/TUI microphone mode. |
-| `messaging` | `discord.py[voice]`, `python-telegram-bot`, `aiohttp` | Discord and Telegram bots. |
+| `messaging` | `discord.py`, `PyNaCl`, `davey`, `python-telegram-bot`, `aiohttp` | Discord and Telegram bots. |
 | `tts-premium` | `elevenlabs` | ElevenLabs TTS provider. |
 
-`discord.py[voice]` installs the PyNaCl and Opus bindings needed for Discord
-voice-channel support.
+The `messaging` extra installs the pinned PyNaCl and davey dependencies needed
+for Discord voice-channel support. Opus remains a system dependency.
 
 ## System Dependencies
 

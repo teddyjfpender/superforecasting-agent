@@ -21,20 +21,12 @@ record. There is NO legacy alias family (a net-new capability) and NO LLM spend.
 
 from __future__ import annotations
 
-import os
-import subprocess
-import sys
-from pathlib import Path
 from typing import Any
 
+from forecasting.jobs.detached import spawn_detached_job
 from forecasting.jobs.model import JobRecord
 from forecasting.jobs.store import JobStore
 from forecasting.jobs.types import JobType, register
-
-
-def _repo_root() -> Path:
-    # forecasting/jobs/types/backup.py → repo root is three parents up.
-    return Path(__file__).resolve().parents[3]
 
 
 def _coerce_optional_int(value: Any, field: str) -> int | None:
@@ -129,20 +121,7 @@ def start_job(spec: dict[str, Any], *, wait: bool = True) -> str:
         runtime.run(job_id, store=store)
         return job_id
 
-    env = dict(os.environ)
-    popen_kwargs: dict[str, Any] = {}
-    if hasattr(os, "setsid"):
-        popen_kwargs["start_new_session"] = True
-    subprocess.Popen(  # noqa: S603 — fixed argv, no shell
-        [sys.executable, "-m", "forecasting.jobs", "run", job_id],
-        cwd=str(_repo_root()),
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        **popen_kwargs,
-    )
+    spawn_detached_job(job_id)
     return job_id
 
 

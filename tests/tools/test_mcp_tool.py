@@ -829,6 +829,20 @@ class TestMCPServerTask:
             mock_read, mock_write,
         )
 
+    def test_stderr_log_handle_closes(self, tmp_path):
+        """The process-owned MCP stderr log must not leak at shutdown."""
+        import tools.mcp_tool as mcp_tool
+
+        log = (tmp_path / "mcp-stderr.log").open("a", encoding="utf-8")
+        original = mcp_tool._mcp_stderr_log_fh
+        try:
+            mcp_tool._mcp_stderr_log_fh = log
+            mcp_tool._close_mcp_stderr_log()
+            assert log.closed
+            assert mcp_tool._mcp_stderr_log_fh is None
+        finally:
+            mcp_tool._mcp_stderr_log_fh = original
+
     def test_start_connects_and_discovers_tools(self):
         """start() creates a Task that connects, discovers tools, and waits."""
         from tools.mcp_tool import MCPServerTask

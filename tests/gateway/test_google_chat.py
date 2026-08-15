@@ -540,7 +540,7 @@ class TestOnPubsubMessage:
             "message_name": "spaces/RELAY/messages/M.M",
         }
         msg = _make_pubsub_message(envelope)
-        with patch.object(adapter, "_submit_on_loop") as submit:
+        with patch.object(adapter, "_submit_on_loop", side_effect=lambda coro: coro.close()) as submit:
             adapter._on_pubsub_message(msg)
             submit.assert_called_once()
         msg.ack.assert_called_once()
@@ -558,7 +558,7 @@ class TestOnPubsubMessage:
     def test_text_message_submits_to_loop(self, adapter):
         env = _make_chat_envelope(text="hola")
         msg = _make_pubsub_message(env)
-        with patch.object(adapter, "_submit_on_loop") as submit:
+        with patch.object(adapter, "_submit_on_loop", side_effect=lambda coro: coro.close()) as submit:
             adapter._on_pubsub_message(msg)
             submit.assert_called_once()
         msg.ack.assert_called_once()

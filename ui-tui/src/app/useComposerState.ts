@@ -161,7 +161,7 @@ export function useComposerState({
     setQueueEdit(null)
     setHistoryIdx(null)
     historyDraftRef.current = ''
-  }, [historyDraftRef, setQueueEdit, setHistoryIdx])
+  }, [historyDraftRef, setInput, setInputBuf, setQueueEdit, setHistoryIdx])
 
   const handleResolvedPaste = useCallback(
     async ({
@@ -322,7 +322,7 @@ export function useComposerState({
     } finally {
       rmSync(dir, { force: true, recursive: true })
     }
-  }, [input, inputBuf, submitRef])
+  }, [input, inputBuf, setInput, setInputBuf, submitRef])
 
   const actions = useMemo(
     () => ({
@@ -355,6 +355,8 @@ export function useComposerState({
       replaceQ,
       setCompIdx,
       setHistoryIdx,
+      setInput,
+      setInputBuf,
       setQueueEdit,
       syncQueue
     ]

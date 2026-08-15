@@ -590,7 +590,7 @@ export function useVirtualHistory(
     if (heightDirty) {
       bumpMeasuredHeightVersion(n => n + 1)
     }
-  }, [effEnd, effStart, items, liveTailActive, measuredHeightVersion, n, offsets, scrollRef, sticky, total, vp])
+  }, [effEnd, effStart, items, liveTailActive, measuredHeightVersion, n, offsets, pendingDelta, scrollRef, sticky, total, vp])
 
   // Memoize the returned window so a re-render that leaves the geometry
   // unchanged (the common case: a composer keystroke re-renders useMainApp, but

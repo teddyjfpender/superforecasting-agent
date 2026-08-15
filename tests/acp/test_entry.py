@@ -54,10 +54,15 @@ def test_main_enables_unstable_protocol(monkeypatch):
     monkeypatch.setattr(entry, "_setup_logging", lambda: None)
     monkeypatch.setattr(entry, "_load_env", lambda: None)
     monkeypatch.setattr(acp, "run_agent", fake_run_agent)
+    monkeypatch.setattr(
+        "agent.auxiliary_client.shutdown_cached_clients",
+        lambda: calls.setdefault("closed", True),
+    )
 
     entry.main([])
 
     assert calls["kwargs"]["use_unstable_protocol"] is True
+    assert calls["closed"] is True
 
 
 def test_main_version_prints_without_starting_server(monkeypatch, capsys):

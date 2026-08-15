@@ -24,6 +24,7 @@ import os
 import json
 import re
 import asyncio
+import atexit
 import logging
 import threading
 import time
@@ -42,6 +43,25 @@ logger = logging.getLogger(__name__)
 _tool_loop = None          # persistent loop for the main (CLI) thread
 _tool_loop_lock = threading.Lock()
 _worker_thread_local = threading.local()  # per-worker-thread persistent loops
+
+
+class _WorkerLoop:
+    """Keep a loop alive for one worker thread and close it when that thread exits."""
+
+    def __init__(self) -> None:
+        self.loop = asyncio.new_event_loop()
+
+    def __del__(self) -> None:
+        if not self.loop.is_closed():
+            self.loop.close()
+
+
+def _close_tool_loop() -> None:
+    if _tool_loop is not None and not _tool_loop.is_closed():
+        _tool_loop.close()
+
+
+atexit.register(_close_tool_loop)
 
 
 def _get_tool_loop():
@@ -73,12 +93,13 @@ def _get_worker_loop():
     By keeping the loop alive for the thread's lifetime, cached clients
     stay valid and their cleanup runs on a live loop.
     """
-    loop = getattr(_worker_thread_local, 'loop', None)
-    if loop is None or loop.is_closed():
-        loop = asyncio.new_event_loop()
+    holder = getattr(_worker_thread_local, "holder", None)
+    if holder is None or holder.loop.is_closed():
+        holder = _WorkerLoop()
+        loop = holder.loop
         asyncio.set_event_loop(loop)
-        _worker_thread_local.loop = loop
-    return loop
+        _worker_thread_local.holder = holder
+    return holder.loop
 
 
 def _run_async(coro):

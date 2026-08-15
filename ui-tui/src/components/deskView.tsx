@@ -541,7 +541,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
 
     // Not found in any tab (filtered out / unknown) — leave the cursor be.
     initialIdRef.current = null
-  }, [tabs])
+  }, [factors, tabs, theses])
 
   // ── Per-selection detail packet (modal-only) ──────────────────────────────
   // The packet (tail audit, ensemble, packet-tail sections, cross-refs/lessons)
