@@ -1,4 +1,6 @@
-"""Telegram-specific gateway filtering for noisy status/error output."""
+"""Gateway filtering for noisy status and secret-bearing output."""
+
+import pytest
 
 from gateway.config import Platform
 from gateway.run import (
@@ -22,12 +24,18 @@ def test_telegram_status_suppresses_auxiliary_and_retry_noise():
         assert _prepare_gateway_status_message(Platform.TELEGRAM, "warn", message) is None
 
 
-def test_non_telegram_status_is_unchanged():
-    """The Telegram quieting policy must not hide CLI/Discord diagnostics."""
+def test_programmatic_status_is_unchanged():
     message = "⏳ Retrying in 4.2s (attempt 1/3)..."
 
-    assert _prepare_gateway_status_message(Platform.DISCORD, "lifecycle", message) == message
-    assert _prepare_gateway_status_message("local", "lifecycle", message) == message
+    for platform in ("local", "api_server", "webhook", "msgraph_webhook"):
+        assert _prepare_gateway_status_message(platform, "lifecycle", message) == message
+
+
+@pytest.mark.parametrize("platform", [Platform.DISCORD, Platform.SLACK, "matrix", "irc"])
+def test_chat_status_suppresses_operational_noise(platform):
+    message = "⏳ Retrying in 4.2s (attempt 1/3)..."
+
+    assert _prepare_gateway_status_message(platform, "lifecycle", message) is None
 
 
 def test_telegram_status_sanitizes_raw_provider_security_errors():
@@ -80,3 +88,21 @@ def test_telegram_final_response_keeps_normal_answers():
     answer = "Here is the clean summary you asked for."
 
     assert _sanitize_gateway_final_response(Platform.TELEGRAM, answer) == answer
+
+
+@pytest.mark.parametrize("platform", ["telegram", "discord", "slack", "matrix", "irc"])
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "github_pat_" + "1A" * 41,
+        "bot1234567890:" + "AAH" * 13 + "x",
+        "OPENAI_API_KEY=opaque-secret-value",
+    ],
+)
+def test_chat_surfaces_force_authoritative_secret_redaction(platform, secret):
+    sanitized = _sanitize_gateway_final_response(
+        platform, f"Result contains {secret} and should stay otherwise readable."
+    )
+
+    assert secret not in sanitized
+    assert "should stay otherwise readable" in sanitized

@@ -3,6 +3,7 @@
 import json
 import os
 import sqlite3
+import stat
 import zipfile
 from argparse import Namespace
 from pathlib import Path
@@ -244,6 +245,24 @@ class TestBackup:
             pid_files = [n for n in names if n.endswith(".pid")]
             assert pid_files == []
 
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX symlinks")
+    def test_skips_symlinked_files(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        _make_hermes_tree(hermes_home)
+        outside = tmp_path / "outside-secret.txt"
+        outside.write_text("outside secret\n")
+        (hermes_home / "skills" / "outside-link.txt").symlink_to(outside)
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+
+        out_zip = tmp_path / "backup.zip"
+        from hermes_cli.backup import run_backup
+        run_backup(Namespace(output=str(out_zip)))
+
+        with zipfile.ZipFile(out_zip) as zf:
+            assert "skills/outside-link.txt" not in zf.namelist()
+
     def test_default_output_path(self, tmp_path, monkeypatch):
         """When no output path given, zip goes to ~/superforecasting-agent-backup-*.zip."""
         hermes_home = tmp_path / ".hermes"
@@ -460,6 +479,86 @@ class TestImport:
         assert (hermes_home / "config.yaml").exists()
         # traversal file should NOT exist outside hermes home
         assert not (tmp_path / "etc" / "passwd").exists()
+
+    def test_preserves_machine_local_runtime_state(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        live = '{"gateway_state":"running"}'
+        (hermes_home / "gateway_state.json").write_text(live)
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        zip_path = tmp_path / "backup.zip"
+        self._make_backup_zip(
+            zip_path,
+            {
+                "config.yaml": "model: test\n",
+                "gateway_state.json": '{"gateway_state":"stopped"}',
+                "processes.json": '{"stale":true}',
+            },
+        )
+
+        from hermes_cli.backup import run_import
+        run_import(Namespace(zipfile=str(zip_path), force=True))
+
+        assert (hermes_home / "gateway_state.json").read_text() == live
+        assert not (hermes_home / "processes.json").exists()
+
+    def test_failed_member_does_not_truncate_existing_file(
+        self, tmp_path, monkeypatch
+    ):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        target = hermes_home / "config.yaml"
+        target.write_text("model: original\n")
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        zip_path = tmp_path / "backup.zip"
+        self._make_backup_zip(zip_path, {"config.yaml": "model: replacement\n"})
+        real_open = zipfile.ZipFile.open
+
+        class BrokenMember:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_exc):
+                return False
+
+            def read(self, *_args):
+                raise OSError(28, "No space left on device")
+
+        def broken_open(archive, member, *args, **kwargs):
+            name = member.filename if isinstance(member, zipfile.ZipInfo) else member
+            if name == "config.yaml":
+                return BrokenMember()
+            return real_open(archive, member, *args, **kwargs)
+
+        monkeypatch.setattr(zipfile.ZipFile, "open", broken_open)
+
+        from hermes_cli.backup import run_import
+        run_import(Namespace(zipfile=str(zip_path), force=True))
+
+        assert target.read_text() == "model: original\n"
+        assert not list(hermes_home.glob(".config.yaml.*.partial"))
+
+    @pytest.mark.skipif(os.name != "posix", reason="POSIX file modes")
+    def test_import_drops_setid_bits_from_replaced_files(self, tmp_path, monkeypatch):
+        hermes_home = tmp_path / ".hermes"
+        hermes_home.mkdir()
+        target = hermes_home / "notes.txt"
+        target.write_text("old")
+        target.chmod(0o6755)
+        monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+        monkeypatch.setattr(Path, "home", lambda: tmp_path)
+        zip_path = tmp_path / "backup.zip"
+        self._make_backup_zip(
+            zip_path, {"config.yaml": "model: test\n", "notes.txt": "new"}
+        )
+
+        from hermes_cli.backup import run_import
+        run_import(Namespace(zipfile=str(zip_path), force=True))
+
+        assert target.read_text() == "new"
+        assert target.stat().st_mode & (stat.S_ISUID | stat.S_ISGID) == 0
 
     def test_confirmation_prompt_abort(self, tmp_path, monkeypatch):
         """Import aborts when user says no to confirmation."""

@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import stat
 import sys
 import tempfile
 import time
@@ -22,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from hermes_constants import get_default_hermes_root, get_hermes_home, display_hermes_home
+from utils import atomic_replace
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,14 @@ _EXCLUDED_NAMES = {
     "cron.pid",
 }
 
+_IMPORT_SKIP_NAMES = {
+    "gateway_state.json",
+    "gateway.pid",
+    "cron.pid",
+    "gateway.lock",
+    "processes.json",
+}
+
 # zipfile.open() drops Unix mode bits on extract; restore tightens these to 0600.
 _SECRET_FILE_NAMES = {".env", "auth.json", "state.db"}
 
@@ -90,6 +100,16 @@ def _should_exclude(rel_path: Path) -> bool:
         return True
 
     return False
+
+
+def _should_skip_backup_file(abs_path: Path, rel_path: Path, out_path: Path) -> bool:
+    """Reject excluded files, symlinks, and the output archive itself."""
+    if _should_exclude(rel_path) or abs_path.is_symlink():
+        return True
+    try:
+        return abs_path.resolve() == out_path.resolve()
+    except (OSError, ValueError):
+        return False
 
 
 def _has_codebase_checkout(hermes_root: Path) -> bool:
@@ -185,15 +205,8 @@ def run_backup(args) -> None:
             fpath = dp / fname
             rel = fpath.relative_to(hermes_root)
 
-            if _should_exclude(rel):
+            if _should_skip_backup_file(fpath, rel, out_path):
                 continue
-
-            # Skip the output zip itself if it happens to be inside agent home.
-            try:
-                if fpath.resolve() == out_path.resolve():
-                    continue
-            except (OSError, ValueError):
-                pass
 
             files_to_add.append((fpath, rel))
 
@@ -317,6 +330,66 @@ def _detect_prefix(zf: zipfile.ZipFile) -> str:
     return ""
 
 
+def _default_new_file_mode() -> Optional[int]:
+    """Return the create mode implied by the current process umask."""
+    try:
+        current = os.umask(0o077)
+        os.umask(current)
+    except OSError:
+        return None
+    return 0o666 & ~current
+
+
+def _extract_member_atomically(
+    zf: zipfile.ZipFile,
+    member: str,
+    target: Path,
+    new_file_mode: Optional[int],
+) -> None:
+    """Publish one complete zip member without truncating the old target."""
+    mode = new_file_mode
+    owner = None
+    try:
+        target_stat = target.stat()
+        mode = stat.S_IMODE(target_stat.st_mode) & ~(stat.S_ISUID | stat.S_ISGID)
+        owner = (target_stat.st_uid, target_stat.st_gid)
+    except OSError:
+        pass
+
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(target.parent), prefix=f".{target.name[:80]}.", suffix=".partial"
+    )
+    try:
+        with os.fdopen(fd, "wb") as dst:
+            if mode is not None:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(dst.fileno(), mode)
+                else:
+                    os.chmod(tmp_name, mode)
+            with zf.open(member) as src:
+                shutil.copyfileobj(src, dst)
+            dst.flush()
+            os.fsync(dst.fileno())
+
+        real_path = Path(atomic_replace(tmp_name, target))
+        if owner is not None and hasattr(os, "chown"):
+            try:
+                os.chown(real_path, *owner)
+            except OSError:
+                pass
+        if mode is not None:
+            try:
+                os.chmod(real_path, mode)
+            except OSError:
+                pass
+    except BaseException:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
+
+
 def run_import(args) -> None:
     """Restore a Superforecasting Agent backup from a zip file."""
     zip_path = Path(args.zipfile).expanduser().resolve()
@@ -372,6 +445,8 @@ def run_import(args) -> None:
 
         errors = []
         restored = 0
+        skipped_runtime = []
+        new_file_mode = _default_new_file_mode()
         t0 = time.monotonic()
 
         for member in members:
@@ -382,6 +457,10 @@ def run_import(args) -> None:
                 rel = member
 
             if not rel:
+                continue
+
+            if Path(rel).name in _IMPORT_SKIP_NAMES:
+                skipped_runtime.append(rel)
                 continue
 
             target = hermes_root / rel
@@ -395,8 +474,7 @@ def run_import(args) -> None:
 
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                with zf.open(member) as src, open(target, "wb") as dst:
-                    dst.write(src.read())
+                _extract_member_atomically(zf, member, target, new_file_mode)
                 if target.name in _SECRET_FILE_NAMES:
                     os.chmod(target, 0o600)
                 restored += 1
@@ -419,6 +497,12 @@ def run_import(args) -> None:
                 print(e)
             if len(errors) > 10:
                 print(f"  ... and {len(errors) - 10} more")
+
+        if skipped_runtime:
+            print(
+                f"\n  Preserved {len(skipped_runtime)} machine-local runtime "
+                "state file(s)."
+            )
 
         # Post-import: restore profile wrapper scripts
         profiles_dir = hermes_root / "profiles"
@@ -740,15 +824,8 @@ def _write_full_zip_backup(out_path: Path, hermes_root: Path) -> Optional[Path]:
                 except ValueError:
                     continue
 
-                if _should_exclude(rel):
+                if _should_skip_backup_file(fpath, rel, out_path):
                     continue
-
-                # Skip the output zip itself if it already exists inside root.
-                try:
-                    if fpath.resolve() == out_path.resolve():
-                        continue
-                except (OSError, ValueError):
-                    pass
 
                 files_to_add.append((fpath, rel))
     except OSError as exc:

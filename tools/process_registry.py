@@ -300,7 +300,7 @@ class ProcessRegistry:
         if not self._global_watch_admit(now):
             return
 
-        self.completion_queue.put({
+        notification = {
             "session_id": session.id,
             "session_key": session.session_key,
             "command": session.command,
@@ -314,7 +314,9 @@ class ProcessRegistry:
             "user_name": session.watcher_user_name,
             "thread_id": session.watcher_thread_id,
             "message_id": session.watcher_message_id,
-        })
+        }
+        _redact_process_result(notification, session.id)
+        self.completion_queue.put(notification)
 
     def _global_watch_admit(self, now: float) -> bool:
         """Return True if this watch_match event is allowed through the global breaker.
@@ -819,13 +821,15 @@ class ProcessRegistry:
         if was_running and session.notify_on_complete:
             from tools.ansi_strip import strip_ansi
             output_tail = strip_ansi(session.output_buffer[-2000:]) if session.output_buffer else ""
-            self.completion_queue.put({
+            notification = {
                 "type": "completion",
                 "session_id": session.id,
                 "command": session.command,
                 "exit_code": session.exit_code,
                 "output": output_tail,
-            })
+            }
+            _redact_process_result(notification, session.id)
+            self.completion_queue.put(notification)
 
     # ----- Query Methods -----
 
@@ -1608,13 +1612,17 @@ def _redact_process_result(result: dict, session_id: str) -> dict:
     if not isinstance(result, dict):
         return result
     try:
-        from agent.redact import redact_terminal_output
-        sess = process_registry.get(session_id)
-        command = getattr(sess, "command", "") if sess is not None else ""
+        from agent.redact import redact_sensitive_text, redact_terminal_output
+        command = result.get("command") or ""
+        if not command:
+            sess = process_registry.get(session_id)
+            command = getattr(sess, "command", "") if sess is not None else ""
         for field in ("output", "output_preview"):
             value = result.get(field)
             if isinstance(value, str) and value:
                 result[field] = redact_terminal_output(value, command or "")
+        if isinstance(result.get("command"), str) and result["command"]:
+            result["command"] = redact_sensitive_text(result["command"], code_file=True)
     except Exception:
         # Redaction failed — never return the raw text. Replace any
         # output-bearing field that still holds a string with a placeholder.
@@ -1622,6 +1630,8 @@ def _redact_process_result(result: dict, session_id: str) -> dict:
             value = result.get(field)
             if isinstance(value, str) and value:
                 result[field] = "[output withheld: redaction error]"
+        if isinstance(result.get("command"), str) and result["command"]:
+            result["command"] = "[command withheld: redaction error]"
     return result
 
 

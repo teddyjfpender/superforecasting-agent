@@ -275,6 +275,68 @@ async def test_no_thread_id_sends_no_metadata(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_direct_completion_force_redacts_when_global_redaction_is_off(
+    monkeypatch, tmp_path
+):
+    import agent.redact as redact
+    import tools.process_registry as pr_module
+
+    secret = "github_pat_" + "1A" * 41
+    monkeypatch.setattr(redact, "_REDACT_ENABLED", False)
+    sessions = [
+        SimpleNamespace(
+            output_buffer=f"result={secret}\n",
+            exited=True,
+            exit_code=0,
+            command="worker",
+        )
+    ]
+    monkeypatch.setattr(pr_module, "process_registry", _FakeRegistry(sessions))
+
+    async def _instant_sleep(*_a, **_kw):
+        pass
+
+    monkeypatch.setattr(asyncio, "sleep", _instant_sleep)
+    runner = _build_runner(monkeypatch, tmp_path, "result")
+
+    await runner._run_process_watcher(_watcher_dict())
+
+    message = runner.adapters[Platform.TELEGRAM].send.await_args.args[1]
+    assert secret not in message
+
+
+@pytest.mark.asyncio
+async def test_watch_injection_force_redacts_when_global_redaction_is_off(
+    monkeypatch, tmp_path
+):
+    import agent.redact as redact
+    from gateway.session import SessionSource
+
+    secret = "bot1234567890:" + "AAH" * 13 + "x"
+    monkeypatch.setattr(redact, "_REDACT_ENABLED", False)
+    runner = _build_runner(monkeypatch, tmp_path, "all")
+    runner.session_store._entries["agent:main:telegram:dm:123"] = SimpleNamespace(
+        origin=SessionSource(
+            platform=Platform.TELEGRAM,
+            chat_id="123",
+            chat_type="dm",
+            user_id="123",
+        )
+    )
+
+    await runner._inject_watch_notification(
+        f"[SYSTEM: process emitted {secret}]",
+        {
+            "session_id": "proc_secret",
+            "session_key": "agent:main:telegram:dm:123",
+        },
+    )
+
+    event = runner.adapters[Platform.TELEGRAM].handle_message.await_args.args[0]
+    assert secret not in event.text
+
+
+@pytest.mark.asyncio
 async def test_inject_watch_notification_routes_from_session_store_origin(monkeypatch, tmp_path):
     from gateway.session import SessionSource
 
