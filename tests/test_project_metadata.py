@@ -3172,6 +3172,17 @@ def test_github_actions_metadata_is_forecast_native():
     assert "Dependabot configuration for hermes-agent" not in text
 
 
+def test_skills_index_deploy_stages_existing_site_inputs():
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github" / "workflows" / "skills-index.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert "landingpage/" not in workflow
+    assert "cp -r website/build/* _site/docs/" in workflow
+    assert "> _site/index.html" in workflow
+
+
 def test_root_node_package_metadata_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     package_json = json.loads((root / "package.json").read_text(encoding="utf-8"))

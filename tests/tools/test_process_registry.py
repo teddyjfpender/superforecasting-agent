@@ -986,6 +986,22 @@ def test_drain_notifications_returns_pending_events():
         process_registry._completion_consumed.discard("proc_drain2")
 
 
+def test_completion_notification_redacts_secret(monkeypatch):
+    import agent.redact as redact
+
+    monkeypatch.setattr(redact, "_REDACT_ENABLED", True)
+    registry = ProcessRegistry()
+    session = _make_session(command="env", output="OPENAI_API_KEY=sk-proj-secret123")
+    session.notify_on_complete = True
+    registry._running[session.id] = session
+
+    registry._move_to_finished(session)
+
+    event, text = registry.drain_notifications()[0]
+    assert "sk-proj-secret123" not in event["output"]
+    assert "sk-proj-secret123" not in text
+
+
 def test_drain_notifications_skips_consumed():
     from tools.process_registry import process_registry
 

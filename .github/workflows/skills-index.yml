@@ -89,10 +89,14 @@ jobs:
       - name: Stage deployment
         run: |
           mkdir -p _site/docs
-          cp -r landingpage/* _site/
           cp -r website/build/* _site/docs/
-          # Use the repository's default GitHub Pages domain unless a custom
-          # Superforecasting Agent CNAME is configured separately.
+          printf '%s\n' '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=/superforecasting-agent/docs/"><link rel="canonical" href="https://teddyjfpender.github.io/superforecasting-agent/docs/"><title>Superforecasting Agent</title></head><body><a href="/superforecasting-agent/docs/">Open documentation</a></body></html>' > _site/index.html
+          if [ -f website/build/llms.txt ]; then
+            cp website/build/llms.txt _site/llms.txt
+          fi
+          if [ -f website/build/llms-full.txt ]; then
+            cp website/build/llms-full.txt _site/llms-full.txt
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa  # v3

@@ -94,6 +94,19 @@ class TestCheckWatchPatterns:
         assert "disk full" in evt["output"]
         assert evt["session_id"] == "proc_test_watch"
 
+    def test_match_redacts_secret_before_queueing(self, registry, monkeypatch):
+        import agent.redact as redact
+
+        monkeypatch.setattr(redact, "_REDACT_ENABLED", True)
+        session = _make_session(command="env", watch_patterns=["API_TOKEN"])
+
+        registry._check_watch_patterns(
+            session, "API_TOKEN=ghp_abc123def456\n"
+        )
+
+        event = registry.completion_queue.get_nowait()
+        assert "ghp_abc123def456" not in event["output"]
+
     def test_match_carries_session_key_and_watcher_routing_metadata(self, registry):
         session = _make_session(watch_patterns=["ERROR"])
         session.session_key = "agent:main:telegram:group:-100:42"

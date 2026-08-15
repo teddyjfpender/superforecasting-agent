@@ -539,7 +539,7 @@ check_git() {
 check_node() {
     log_info "Checking Node.js (for browser tools)..."
 
-    if command -v node &> /dev/null; then
+    if command -v node &> /dev/null && command -v npm &> /dev/null; then
         local found_ver=$(node --version)
         log_success "Node.js $found_ver found"
         HAS_NODE=true
@@ -547,7 +547,7 @@ check_node() {
     fi
 
     # Check our own managed install from a previous run
-    if [ -x "$HERMES_HOME/node/bin/node" ]; then
+    if [ -x "$HERMES_HOME/node/bin/node" ] && [ -x "$HERMES_HOME/node/bin/npm" ]; then
         export PATH="$HERMES_HOME/node/bin:$PATH"
         local found_ver=$("$HERMES_HOME/node/bin/node" --version)
         log_success "Node.js $found_ver found (Superforecasting Agent-managed)"
@@ -1612,9 +1612,10 @@ install_node_deps() {
     if [ -f "$INSTALL_DIR/package.json" ]; then
         log_info "Installing Node.js dependencies (browser tools)..."
         cd "$INSTALL_DIR"
-        npm install --silent 2>/dev/null || {
-            log_warn "npm install failed (browser tools may not work)"
-        }
+        if ! npm install --silent; then
+            log_error "npm install failed; Node.js dependencies were not installed"
+            return 1
+        fi
         log_success "Node.js dependencies installed"
 
         # Install Playwright browser + system dependencies.
@@ -1712,9 +1713,10 @@ install_node_deps() {
     if [ -f "$INSTALL_DIR/ui-tui/package.json" ]; then
         log_info "Installing TUI dependencies..."
         cd "$INSTALL_DIR/ui-tui"
-        npm install --silent 2>/dev/null || {
-            log_warn "TUI npm install failed (superforecasting-agent --tui may not work)"
-        }
+        if ! npm install --silent; then
+            log_error "TUI npm install failed; TUI dependencies were not installed"
+            return 1
+        fi
         log_success "TUI dependencies installed"
     fi
 
