@@ -112,7 +112,7 @@ export function MarketSearchModal({
     }, 250)
 
     return () => clearTimeout(id)
-  }, [query])
+  }, [gw, query])
 
   // Mirror ModalOverlay's box sizing so inner widths + the explicit list height
   // line up with the overlay this renders through.

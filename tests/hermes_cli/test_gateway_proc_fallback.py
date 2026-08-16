@@ -62,12 +62,18 @@ class TestProcFallback:
             99999: _OTHER_CMD,
         }
         _isdir, _listdir, _open = _fake_proc_dir(entries)
+        opened = []
+
+        def _tracked_open(*args, **kwargs):
+            handle = _open(*args, **kwargs)
+            opened.append(handle)
+            return handle
 
         with (
             patch("hermes_cli.gateway.is_windows", return_value=False),
             patch("os.path.isdir", side_effect=_isdir),
             patch("os.listdir", side_effect=_listdir),
-            patch("builtins.open", side_effect=_open),
+            patch("builtins.open", side_effect=_tracked_open),
             patch("hermes_cli.gateway._get_ancestor_pids", return_value=set()),
             patch("subprocess.run") as mock_ps,
         ):
@@ -75,6 +81,7 @@ class TestProcFallback:
 
         assert 12345 in pids
         assert 99999 not in pids
+        assert all(handle.__exit__.called for handle in opened)
         mock_ps.assert_not_called()  # ps must NOT be called when /proc worked
 
     def test_excludes_own_pid_from_proc_scan(self):

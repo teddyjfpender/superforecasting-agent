@@ -5432,16 +5432,13 @@ def _default_spawn(
             creationflags=subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0,
         )
     except FileNotFoundError:
-        log_f.close()
         raise RuntimeError(
             "`superforecasting-agent` executable not found on PATH. "
             "Install Superforecasting Agent or activate its venv before running the kanban dispatcher."
         )
-    # NOTE: we intentionally do NOT close log_f here — we want Popen's
-    # child process to keep writing after this function returns.  The
-    # handle is kept alive by the child's inheritance.  The parent's
-    # reference goes out of scope and is GC'd, but the OS-level FD stays
-    # open in the child until the child exits.
+    finally:
+        # Popen gives the child its own descriptor; the parent must release its copy.
+        log_f.close()
     return proc.pid
 
 

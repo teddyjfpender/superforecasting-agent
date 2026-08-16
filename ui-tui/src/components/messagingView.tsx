@@ -351,7 +351,7 @@ export function MessagingView({ onClose, t }: MessagingViewProps) {
     }
 
     markChatRead(activeConv.chatId)
-  }, [focus, activeConv?.chatId, cacheVersion])
+  }, [activeConv, cacheVersion, focus])
 
   // Start a conversation with a typed number: validate, save it to the address
   // book (so the name persists), then select + open it (chatId selection means

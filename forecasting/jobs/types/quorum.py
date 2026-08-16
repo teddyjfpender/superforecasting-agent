@@ -33,8 +33,6 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
@@ -42,17 +40,13 @@ from typing import Any
 
 from hermes_constants import get_hermes_home
 
+from forecasting.jobs.detached import spawn_detached_job
 from forecasting.jobs.store import JobStore
 from forecasting.jobs.types import JobType, register
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-def _repo_root() -> Path:
-    # forecasting/jobs/types/quorum.py → repo root is three parents up.
-    return Path(__file__).resolve().parents[3]
 
 
 # ── legacy qr_ store (read-shim + test/back-compat seeding) ───────────────────
@@ -226,21 +220,7 @@ def start_job(spec: dict[str, Any], *, wait: bool = False) -> str:
         runtime.run(job_id, store=store)
         return job_id
 
-    env = dict(os.environ)
-    # Propagate the agent-home override so the child writes to the same place.
-    popen_kwargs: dict[str, Any] = {}
-    if hasattr(os, "setsid"):
-        popen_kwargs["start_new_session"] = True
-    subprocess.Popen(  # noqa: S603 — fixed argv, no shell
-        [sys.executable, "-m", "forecasting.jobs", "run", job_id],
-        cwd=str(_repo_root()),
-        env=env,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        close_fds=True,
-        **popen_kwargs,
-    )
+    spawn_detached_job(job_id)
     return job_id
 
 

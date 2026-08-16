@@ -221,6 +221,7 @@ def http_factory():
     finally:
         for srv, t in started:
             srv.shutdown()
+            srv.restore_transport()
             srv.server_close()
             t.join(timeout=5)
         server._stdio_transport = original_stdio

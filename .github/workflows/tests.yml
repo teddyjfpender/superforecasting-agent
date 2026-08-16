@@ -181,14 +181,8 @@ jobs:
       - name: Run TUI tests
         run: cd ui-tui && npm run test
 
-      - name: Lint (warning ratchet)
-        # --max-warnings pins the current warning count (0 errors) as a
-        # RATCHET: it may only ever go DOWN, never up. The residual warnings
-        # are React Compiler bailouts in ui-tui/src/lib/usePm*.ts plus one
-        # exhaustive-deps — a known, separately-tracked burn-down. Fixed a
-        # warning? Lower the number here AND in production-release.yml's
-        # tui job.
-        run: cd ui-tui && npm run lint -- --max-warnings 54
+      - name: Lint (zero warnings)
+        run: cd ui-tui && npm run lint
 
   nightly-release-smoke:
     if: github.event_name == 'schedule'

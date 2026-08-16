@@ -325,7 +325,7 @@ class TestModalCleanup:
         env._sandbox.terminate.aio = mock_terminate
         env._worker.run_coroutine = lambda coro, **kw: (
             call_order.append("terminate"),
-            asyncio.new_event_loop().run_until_complete(coro),
+            asyncio.run(coro),
         )
         env._worker.stop = lambda: None
 

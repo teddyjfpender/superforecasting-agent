@@ -8,6 +8,7 @@
     "start": "docusaurus start",
     "prebuild": "node scripts/prebuild.mjs",
     "build": "docusaurus build",
+    "test:security": "node --test scripts/secure-image-size.test.mjs",
     "swizzle": "docusaurus swizzle",
     "deploy": "docusaurus deploy",
     "clear": "docusaurus clear",
@@ -24,6 +25,7 @@
     "@easyops-cn/docusaurus-search-local": "^0.55.1",
     "@mdx-js/react": "^3.0.0",
     "clsx": "^2.0.0",
+    "image-size": "file:vendor/image-size",
     "prism-react-renderer": "^2.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
@@ -48,5 +50,11 @@
   },
   "engines": {
     "node": ">=20.0"
+  },
+  "overrides": {
+    "serialize-javascript": "7.0.5",
+    "sockjs": {
+      "uuid": "11.1.1"
+    }
   }
 }

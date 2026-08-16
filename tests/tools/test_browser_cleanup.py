@@ -1,5 +1,6 @@
 """Regression tests for browser session cleanup and screenshot recovery."""
 
+import logging
 from unittest.mock import patch
 
 
@@ -63,7 +64,13 @@ class TestBrowserCleanup:
         assert "task-1" not in browser_tool._active_sessions
         assert "task-1" not in browser_tool._session_last_activity
         mock_stop.assert_called_once_with("task-1")
-        mock_run.assert_called_once_with("task-1", "close", [], timeout=10)
+        mock_run.assert_called_once_with(
+            "task-1",
+            "close",
+            [],
+            timeout=10,
+            _session_info={"session_name": "sess-1", "bb_session_id": None},
+        )
 
     def test_cleanup_camofox_managed_persistence_skips_close(self):
         """When camofox mode + managed persistence, soft_cleanup fires instead of close."""
@@ -138,3 +145,13 @@ class TestBrowserCleanup:
         assert browser_tool._session_last_activity == {}
         assert browser_tool._recording_sessions == set()
         assert browser_tool._cleanup_done is True
+
+    def test_atexit_cleanup_restores_logging_state(self):
+        browser_tool = self.browser_tool
+        previous_disable = logging.root.manager.disable
+
+        with patch("tools.browser_tool._emergency_cleanup_all_sessions") as cleanup:
+            browser_tool._atexit_cleanup_browser_sessions()
+
+        cleanup.assert_called_once_with()
+        assert logging.root.manager.disable == previous_disable

@@ -251,7 +251,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ReadTimeout")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -263,7 +263,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ConnectTimeout")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -275,7 +275,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("PoolTimeout")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -287,7 +287,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("APIConnectionError")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -299,7 +299,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("APITimeoutError")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -351,7 +351,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ConnectError")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -363,7 +363,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ConnectTimeout")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -375,7 +375,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ReadTimeout")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep") as mock_sleep:
+             patch("agent.agent_runtime_helpers._sleep") as mock_sleep:
             agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )
@@ -387,7 +387,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ReadTimeout")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep") as mock_sleep:
+             patch("agent.agent_runtime_helpers._sleep") as mock_sleep:
             agent._try_recover_primary_transport(
                 error, retry_count=10, max_retries=3,
             )
@@ -400,7 +400,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ReadTimeout")
 
         with patch("run_agent.OpenAI", return_value=MagicMock()), \
-             patch("time.sleep"), \
+             patch("agent.agent_runtime_helpers._sleep"), \
              patch.object(agent, "_close_openai_client") as mock_close:
             agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
@@ -415,7 +415,7 @@ class TestTryRecoverPrimaryTransport:
         error = _make_transport_error("ReadTimeout")
 
         with patch("run_agent.OpenAI", side_effect=Exception("socket error")), \
-             patch("time.sleep"):
+             patch("agent.agent_runtime_helpers._sleep"):
             result = agent._try_recover_primary_transport(
                 error, retry_count=3, max_retries=3,
             )

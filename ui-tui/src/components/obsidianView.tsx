@@ -1,6 +1,6 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
-import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
@@ -468,7 +468,7 @@ export function ObsidianView({ docKind, gw, onClose, onDraft, onSelectKind, sid,
    
   const blockRefs = useRef<any[]>([])
 
-  const notes: ObsidianNote[] = data?.notes ?? []
+  const notes: ObsidianNote[] = useMemo(() => data?.notes ?? [], [data?.notes])
   const hasVault = Boolean(data?.exists && data?.vault)
   const currentRel = notes[selected]?.rel_path
 

@@ -243,13 +243,8 @@ jobs:
         run: cd ui-tui && npm run type-check
       - name: Run TUI tests
         run: cd ui-tui && npm run test
-      - name: Lint (warning ratchet)
-        # --max-warnings pins the current warning count (0 errors) as a
-        # RATCHET: it may only ever go DOWN, never up. The residual warnings
-        # are React Compiler bailouts in ui-tui/src/lib/usePm*.ts plus one
-        # exhaustive-deps — a known, separately-tracked burn-down. Keep in
-        # sync with tests.yml's tui job.
-        run: cd ui-tui && npm run lint -- --max-warnings 54
+      - name: Lint (zero warnings)
+        run: cd ui-tui && npm run lint
 
   python-compat:
     name: Python ${{ matrix.python-version }} compatibility

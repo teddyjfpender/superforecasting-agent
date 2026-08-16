@@ -35,6 +35,7 @@ from __future__ import annotations
 import concurrent.futures
 import contextvars
 import threading
+from pathlib import Path
 
 
 def test_executor_submit_without_copy_context_does_not_propagate():
@@ -162,7 +163,7 @@ def test_run_agent_concurrent_executor_wraps_submit_with_copy_context():
     for mod in (run_agent, tool_executor_module):
         src_path = inspect.getsourcefile(mod)
         assert src_path is not None
-        sources.append((src_path, open(src_path, encoding="utf-8").read()))
+        sources.append((src_path, Path(src_path).read_text(encoding="utf-8")))
 
     submit_calls_in_agent: list[ast.Call] = []
     for _src_path, src_text in sources:

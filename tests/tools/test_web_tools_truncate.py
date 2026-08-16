@@ -6,6 +6,7 @@ _get_extract_char_limit, and the end-to-end web_extract_tool truncation behavior
 import asyncio
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -74,7 +75,7 @@ class TestTruncation:
         path_line = next(ln for ln in out.splitlines() if "Full text saved to:" in ln)
         stored_path = path_line.split("Full text saved to:", 1)[1].strip()
         assert os.path.exists(stored_path)
-        full = open(stored_path).read()
+        full = Path(stored_path).read_text()
         assert "UNIQUE_MIDDLE_MARKER" in full
         assert "row 2500" in full  # the omitted-middle row is in the stored file
 
@@ -120,9 +121,9 @@ class TestEndToEnd:
                  "agent.web_search_registry.get_active_extract_provider",
                  return_value=FakeProvider(),
              ):
-            result = json.loads(asyncio.new_event_loop().run_until_complete(
-                wt.web_extract_tool(["https://example.com/big"], char_limit=5000)
-            ))
+            result = json.loads(
+                asyncio.run(wt.web_extract_tool(["https://example.com/big"], char_limit=5000))
+            )
 
         assert "results" in result
         content = result["results"][0]["content"]

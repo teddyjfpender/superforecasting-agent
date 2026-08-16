@@ -152,7 +152,7 @@ describe('Home: a gateway heartbeat must not re-blit the transcript scrollbar wh
 
       const transcript = React.useMemo(
         () => ({ historyItems, scrollRef, virtualHistory, virtualRows: rows }),
-        [virtualHistory, rows]
+        [rows, scrollRef, virtualHistory]
       )
 
       const composer = React.useMemo(

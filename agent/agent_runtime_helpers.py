@@ -32,6 +32,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from time import sleep as _sleep
 from typing import Any, Dict, List, Optional, Tuple
 
 from hermes_cli.timeouts import get_provider_request_timeout
@@ -749,7 +750,7 @@ def try_recover_primary_transport(
             f"rebuilt client, waiting {wait_time}s before one last primary attempt.",
             force=True,
         )
-        time.sleep(wait_time)
+        _sleep(wait_time)
         return True
     except Exception as e:
         logging.warning("Primary transport recovery failed: %s", e)

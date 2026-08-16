@@ -598,7 +598,7 @@ class DiscordAdapter(BasePlatformAdapter):
     async def connect(self) -> bool:
         """Connect to Discord and start receiving events."""
         if not DISCORD_AVAILABLE:
-            logger.error("[%s] discord.py not installed. Run: pip install discord.py", self.name)
+            logger.error("[%s] discord.py not installed. Run: pip install discord.py==2.7.1", self.name)
             return False
 
         # Load opus codec for voice channel support

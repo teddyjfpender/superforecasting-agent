@@ -20,10 +20,12 @@ test runner at ``scripts/run_tests.sh``.
 """
 
 import asyncio
+import ipaddress
 import logging
 import os
 import re
 import signal
+import socket
 import sys
 import tempfile
 import warnings
@@ -55,6 +57,43 @@ def _install_third_party_warning_filters() -> None:
 
 
 _install_third_party_warning_filters()
+
+
+@pytest.fixture(autouse=True)
+def _block_unmarked_external_network(monkeypatch, request):
+    """Keep hermetic tests off the public network."""
+    if any(
+        request.node.get_closest_marker(name) is not None
+        for name in ("integration", "requires_credentials")
+    ):
+        yield
+        return
+
+    real_connect = socket.socket.connect
+
+    def guarded_connect(sock, address):
+        if sock.family in {socket.AF_INET, socket.AF_INET6}:
+            host = address[0]
+            try:
+                loopback = ipaddress.ip_address(host).is_loopback
+            except ValueError:
+                loopback = host == "localhost"
+            if not loopback:
+                raise OSError(f"test attempted external network connection to {host}")
+        return real_connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _disable_detached_auto_titles(request):
+    """Keep tests from launching provider calls after fixture teardown."""
+    if request.node.path.name == "test_title_generator.py":
+        yield
+        return
+    with patch("agent.title_generator.maybe_auto_title"):
+        yield
 
 
 # ── Credential env-var filter ──────────────────────────────────────────────
@@ -508,6 +547,8 @@ def _hermetic_environment(tmp_path, monkeypatch):
     (fake_hermes_home / "cron").mkdir()
     (fake_hermes_home / "memories").mkdir()
     (fake_hermes_home / "skills").mkdir()
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_HOME", raising=False)
+    monkeypatch.delenv("FORECAST_HOME", raising=False)
     monkeypatch.setenv("HERMES_HOME", str(fake_hermes_home))
 
     # 4. Deterministic locale / timezone / hashseed. CI runs in UTC with
@@ -539,6 +580,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
     #     Tests that specifically exercise the install path manage this flag
     #     themselves (see tests/tools/test_lazy_deps.py).
     monkeypatch.setenv("HERMES_DISABLE_LAZY_INSTALLS", "1")
+    monkeypatch.setenv("TIRITH_ENABLED", "0")
 
     # 4c. Direct-ledger-write gate (forecasting/ledger.py) defaults ON in
     #     PRODUCTION, refusing forecast-producing writes (create_snapshot /
@@ -618,6 +660,18 @@ def _reset_module_state():
     for _existing in list(logging.root.manager.loggerDict.values()):
         if isinstance(_existing, logging.Logger) and _existing.disabled:
             _existing.disabled = False
+
+    # --- tui_gateway.server --- process-global JSON-RPC/session state ---
+    # Tests import this module through two different fixtures.  Clear its
+    # mutable protocol state here so xdist scheduling cannot leak a session
+    # from one test module into another on the same worker.
+    try:
+        from tui_gateway import server as _tui_server
+        _tui_server._sessions.clear()
+        _tui_server._pending.clear()
+        _tui_server._answers.clear()
+    except Exception:
+        pass
 
     # --- tools.approval — the single biggest source of cross-test pollution ---
     try:
@@ -801,6 +855,18 @@ def mock_config():
 # Prevents hanging tests (subprocess spawns, blocking I/O) from stalling the
 # entire test suite.
 
+@pytest.fixture(scope="session", autouse=True)
+def _session_default_event_loop():
+    """Keep pytest-asyncio from lazily creating an unowned policy loop."""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        yield
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
+
 @pytest.fixture(autouse=True)
 def _ensure_current_event_loop(request):
     """Provide a default event loop for sync tests that call get_event_loop().
@@ -818,11 +884,12 @@ def _ensure_current_event_loop(request):
         yield
         return
 
-    loop = None
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        pass
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = None
 
     created = loop is None or loop.is_closed()
     if created:

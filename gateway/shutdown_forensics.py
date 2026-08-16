@@ -23,6 +23,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -269,6 +270,7 @@ def spawn_async_diagnostic(
             start_new_session=True,
             close_fds=True,
         )
+        threading.Thread(target=proc.wait, daemon=True).start()
     except (FileNotFoundError, OSError):
         try:
             os.close(fd)

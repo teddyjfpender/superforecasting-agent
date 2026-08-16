@@ -170,7 +170,7 @@ describe('Home: a background $uiState notify must not re-blit the transcript whi
 
       const transcript = React.useMemo(
         () => ({ historyItems, scrollRef, virtualHistory, virtualRows: rows }),
-        [virtualHistory, rows]
+        [rows, scrollRef, virtualHistory]
       )
 
       const composer = React.useMemo(

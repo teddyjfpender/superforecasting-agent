@@ -155,7 +155,9 @@ async def test_bare_ping_request_produces_proper_response_and_no_stderr_noise(
         # Agent reads its input from this StreamReader:
         agent_input = asyncio.StreamReader(limit=1024 * 1024, loop=loop)
         agent_input_proto = asyncio.StreamReaderProtocol(agent_input, loop=loop)
-        await loop.connect_read_pipe(lambda: agent_input_proto, in_read_file)
+        agent_input_transport, _ = await loop.connect_read_pipe(
+            lambda: agent_input_proto, in_read_file
+        )
 
         # Agent writes its output via this StreamWriter:
         out_transport, out_protocol = await loop.connect_write_pipe(
@@ -166,7 +168,9 @@ async def test_bare_ping_request_produces_proper_response_and_no_stderr_noise(
         # Test harness reads agent output via this StreamReader:
         client_input = asyncio.StreamReader(limit=1024 * 1024, loop=loop)
         client_input_proto = asyncio.StreamReaderProtocol(client_input, loop=loop)
-        await loop.connect_read_pipe(lambda: client_input_proto, out_read_file)
+        client_input_transport, _ = await loop.connect_read_pipe(
+            lambda: client_input_proto, out_read_file
+        )
 
         agent_task = asyncio.create_task(
             acp.run_agent(
@@ -177,34 +181,38 @@ async def test_bare_ping_request_produces_proper_response_and_no_stderr_noise(
             )
         )
 
-        # Send a bare `ping`
-        request = {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}
-        in_write_file.write((json.dumps(request) + "\n").encode())
-        in_write_file.flush()
-
-        response_line = await asyncio.wait_for(client_input.readline(), timeout=5.0)
-        # Give the supervisor task a tick to fire (filter should eat it)
-        await asyncio.sleep(0.2)
-
-        response = json.loads(response_line.decode())
-        assert response["error"]["code"] == -32601, response
-        assert response["error"]["data"] == {"method": "ping"}, response
-
-        logs = stream.getvalue()
-        assert "Background task failed" not in logs, (
-            f"ping noise leaked to stderr:\n{logs}"
-        )
-
-        # Clean shutdown
-        in_write_file.close()
         try:
-            await asyncio.wait_for(agent_task, timeout=2.0)
-        except (asyncio.TimeoutError, Exception):
-            agent_task.cancel()
+            # Send a bare `ping`
+            request = {"jsonrpc": "2.0", "id": 1, "method": "ping", "params": {}}
+            in_write_file.write((json.dumps(request) + "\n").encode())
+            in_write_file.flush()
+
+            response_line = await asyncio.wait_for(client_input.readline(), timeout=5.0)
+            # Give the supervisor task a tick to fire (filter should eat it)
+            await asyncio.sleep(0.2)
+
+            response = json.loads(response_line.decode())
+            assert response["error"]["code"] == -32601, response
+            assert response["error"]["data"] == {"method": "ping"}, response
+
+            logs = stream.getvalue()
+            assert "Background task failed" not in logs, (
+                f"ping noise leaked to stderr:\n{logs}"
+            )
+        finally:
+            in_write_file.close()
             try:
-                await agent_task
-            except BaseException:  # noqa: BLE001
-                pass
+                await asyncio.wait_for(agent_task, timeout=2.0)
+            except (asyncio.TimeoutError, Exception):
+                agent_task.cancel()
+                try:
+                    await agent_task
+                except BaseException:  # noqa: BLE001
+                    pass
+            agent_output.close()
+            agent_input_transport.close()
+            client_input_transport.close()
+            await asyncio.sleep(0)
     finally:
         root.handlers = prior_handlers
         root.setLevel(prior_level)

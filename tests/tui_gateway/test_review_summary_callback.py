@@ -12,6 +12,7 @@ transcript line.
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -23,7 +24,7 @@ def server():
         "sys.modules",
         {
             "hermes_constants": MagicMock(
-                get_hermes_home=MagicMock(return_value="/tmp/hermes_test_review_summary")
+                get_hermes_home=MagicMock(return_value=Path("/tmp/hermes_test_review_summary"))
             ),
             "hermes_cli.env_loader": MagicMock(),
             "hermes_cli.banner": MagicMock(),
@@ -45,7 +46,7 @@ def server():
         mod._pending.clear()
         mod._answers.clear()
         mod._methods.clear()
-        importlib.reload(mod)
+    importlib.reload(mod)
 
 
 def test_init_session_attaches_background_review_callback(server, monkeypatch):
