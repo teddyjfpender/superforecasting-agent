@@ -1,0 +1,81 @@
+{
+  "implementation_commit": "40928ffc640ee797f958e201499d670a7dc7db87",
+  "wheel_sha256": "8568dcc5988e7c0fb46d7e3af33f57cda74602143f5f6ef392b8eee9fe521691",
+  "verified_wheel_source_files": [
+    "cli.py",
+    "forecasting/cli/doctor_admin.py",
+    "forecasting/cli/triage_calibration.py",
+    "forecasting/cron_runner.py",
+    "forecasting/evaluation.py",
+    "forecasting/learning.py",
+    "forecasting/ledger/lessons.py",
+    "forecasting/ledger/resolutions.py",
+    "forecasting/ledger/scoring.py",
+    "forecasting/ledger/snapshots.py",
+    "forecasting/ledger/workflow.py",
+    "forecasting/lifecycle.py",
+    "forecasting/market_nightly.py",
+    "forecasting/protocol.py",
+    "tui_gateway/server.py"
+  ],
+  "installed_python": "Python 3.11.15",
+  "before": {
+    "forecast_snapshots": 7403,
+    "resolutions": 1806,
+    "score_records": 5216,
+    "postmortems": 1718
+  },
+  "after": {
+    "forecast_snapshots": 7403,
+    "resolutions": 1806,
+    "score_records": 5228,
+    "postmortems": 1814
+  },
+  "recovered_handoffs": 96,
+  "repeat_run_tasks": 0,
+  "remaining": {
+    "settlement_review": 121,
+    "review_overdue": 58,
+    "unfinished": 2,
+    "ready_tasks": 0,
+    "missing_tasks": 0,
+    "failed_tasks": 0
+  },
+  "live_instance_mutated": false,
+  "installed_tui_checks": [
+    "Installed TUI renders shared lifecycle status",
+    "Installed TUI renders unverified historical lesson applications",
+    {
+      "clean_exit": 0
+    }
+  ],
+  "evaluation": {
+    "total": 292,
+    "valid_pairs": 103,
+    "excluded": {
+      "unresolved_or_invalid_outcome": 189
+    },
+    "agent_brier": 0.06427621281553397,
+    "market_brier": 0.10585563161574797
+  },
+  "tests": {
+    "full_initial": {
+      "passed": 30157,
+      "skipped": 141,
+      "failed": 5
+    },
+    "all_initial_failures_fixed_and_affected_files_rerun": {
+      "passed": 174,
+      "skipped": 1,
+      "failed": 0
+    },
+    "final_focused": {
+      "passed": 109,
+      "failed": 0
+    },
+    "full_suite_repeated_after_fixes": false,
+    "ruff": "passed",
+    "docgen": "passed",
+    "protocol": "passed"
+  }
+}
