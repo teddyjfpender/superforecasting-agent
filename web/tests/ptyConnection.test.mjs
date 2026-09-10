@@ -38,6 +38,7 @@ test('reconnect preserves byte offsets, output and resize; stale callbacks are i
   assert.equal(connection.send('paused input'), false);
   t.mock.timers.tick(250);
   assert.equal(new URL(sockets[1].url).searchParams.get('cursor'), '2');
+  assert.equal(new URL(sockets[1].url).searchParams.get('reconnect'), '1');
   sockets[1].open();
   sockets[0].bytes('stale');
   sockets[0].close();
@@ -82,4 +83,15 @@ test('a stalled handshake closes and retries', t => {
   assert.equal(sockets[0].readyState, 3);
   t.mock.timers.tick(250);
   assert.equal(sockets.length, 2);
+  assert.equal(new URL(sockets[1].url).searchParams.get('reconnect'), '0');
+});
+
+test('an opened terminal with no output still requires the original session', t => {
+  const { sockets } = fixture(t);
+  sockets[0].open();
+  sockets[0].close();
+  t.mock.timers.tick(250);
+  const url = new URL(sockets[1].url);
+  assert.equal(url.searchParams.get('cursor'), '0');
+  assert.equal(url.searchParams.get('reconnect'), '1');
 });

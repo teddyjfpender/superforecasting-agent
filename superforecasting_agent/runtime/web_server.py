@@ -3619,7 +3619,8 @@ async def pty_ws(ws: WebSocket) -> None:
         return
     try:
         session = _pty_sessions.attach(
-            channel, resume, cursor, lambda: PtyBridge.spawn(argv, cwd=cwd, env=env)
+            channel, resume, cursor, lambda: PtyBridge.spawn(argv, cwd=cwd, env=env),
+            require_existing=ws.query_params.get("reconnect") == "1",
         )
     except PtyReplayUnavailable as exc:
         await ws.send_text(f"\r\n{exc}\r\n")

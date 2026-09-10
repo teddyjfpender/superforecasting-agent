@@ -86,10 +86,10 @@ class PtySessions:
     def __init__(self):
         self.sessions: dict[str, RetainedPty] = {}
 
-    def attach(self, channel: str, resume: str | None, cursor: int, spawn: Callable[[], Any]) -> RetainedPty:
+    def attach(self, channel: str, resume: str | None, cursor: int, spawn: Callable[[], Any], *, require_existing: bool = False) -> RetainedPty:
         session = self.sessions.get(channel)
         if session is None:
-            if cursor:
+            if cursor or require_existing:
                 raise PtyReplayUnavailable("Terminal session expired. Resume it from Forecast Sessions.")
             if len(self.sessions) >= MAX_SESSIONS:
                 raise PtyReplayUnavailable("Too many terminal sessions. Close another desk and retry.")

@@ -993,13 +993,13 @@ def _exercise_lifecycle(repo_root: Path, db_path: Path, *, skip_backtest: bool, 
         raise SmokeError("smoke readiness should still list evidence gaps for tester handoff")
     backtest_status = evidence_status.get("backtests") or {}
     agent_protocol_scored_count = int(backtest_status.get("agent_protocol_scored_count") or 0)
-    if agent_protocol_scored_count < 100:
+    if not skip_backtest and agent_protocol_scored_count < 100:
         raise SmokeError(
             "smoke readiness did not count suite-scale agent-protocol replay:\n"
             f"{json.dumps(readiness, indent=2)}"
         )
     gap_ids = {str(gap.get("id")) for gap in gaps if isinstance(gap, dict)}
-    if "agent_protocol_scored_cases" in gap_ids:
+    if not skip_backtest and "agent_protocol_scored_cases" in gap_ids:
         raise SmokeError(
             "smoke readiness should not list agent_protocol_scored_cases after suite replay:\n"
             f"{json.dumps(readiness, indent=2)}"

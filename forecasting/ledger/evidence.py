@@ -131,11 +131,14 @@ def add_evidence(
         inferred_type = inferred_type or "manual_note"
 
     now = utc_now_iso()
+    published = parse_timestamp(published_at, field_name="published_at")
     available = (
         parse_timestamp(available_at, field_name="available_at")
-        or parse_timestamp(published_at, field_name="published_at")
+        or published
         or now
     )
+    if published and timestamp_to_datetime(available) < timestamp_to_datetime(published):
+        raise ValidationError("available_at cannot precede the source's published_at")
     evidence_id = f"ev_{uuid.uuid4().hex[:12]}"
     evidence_metadata = dict(metadata or {})
     if source_file_path is not None and snapshot_path is None:
@@ -219,7 +222,7 @@ def add_evidence(
                 inferred_url,
                 source_name,
                 inferred_type or "manual_note",
-                parse_timestamp(published_at, field_name="published_at"),
+                published,
                 claim,
                 inferred_summary,
                 reliability_rating,
@@ -262,33 +265,9 @@ def list_evidence(ledger, question_id: str) -> list[EvidenceItem]:
 # the readiness payload) and a ledger-level monoculture metric (into doctor).
 
 
-def _source_domain(url: Any) -> str | None:
-    """The registrable-ish host of an evidence URL (``www.`` stripped), or None."""
-    if not url or not isinstance(url, str):
-        return None
-    from urllib.parse import urlparse
-
-    try:
-        netloc = urlparse(url).netloc.strip().lower()
-    except Exception:  # noqa: BLE001 — a malformed URL just yields no domain
-        return None
-    if netloc.startswith("www."):
-        netloc = netloc[4:]
-    return netloc or None
-
-
-def _evidence_source_key(item: EvidenceItem) -> str | None:
-    """The distinct-source identity of one evidence item: its ``source_name``
-    when set, else the URL host, else the ``source_type`` — so a single-adapter
-    firehose (all FRED, all Yahoo) still counts as ONE source, not many rows."""
-    name = (item.source_name or "").strip().lower()
-    if name:
-        return name
-    domain = _source_domain(item.source_url)
-    if domain:
-        return domain
-    stype = (item.source_type or "").strip().lower()
-    return stype or None
+# Audits and readiness use the same conservative source grouping.
+from forecasting.evidence_quality import source_domain as _source_domain
+from forecasting.evidence_quality import source_identity as _evidence_source_key
 
 
 def question_source_diversity(ledger, question_id: str) -> dict[str, Any]:

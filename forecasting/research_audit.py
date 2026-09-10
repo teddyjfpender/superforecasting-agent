@@ -83,7 +83,7 @@ def _days_since(iso: str | None, *, now: datetime | None = None) -> int | None:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
         ref = now or datetime.now(timezone.utc)
-        return max(0, (ref - dt).days)
+        return (ref - dt).days if dt <= ref else None
     except Exception:
         return None
 
@@ -258,15 +258,11 @@ def build_research_plan(question: Any, *, snapshot: Any = None) -> dict[str, Any
 
 
 # ── (1b) DETERMINISTIC adequacy checks ────────────────────────────────────────
+from forecasting.evidence_quality import observation_identity, source_identity
+
+
 def _source_identity(item: Any) -> str:
-    """A best-effort distinct-source key for one evidence row. Prefer the concrete
-    source (url/name) over the mere source_type so two RSS pulls from different
-    outlets count as independent, while two rows sharing a url do not."""
-    for attr in ("source_url", "source_name"):
-        val = _text(getattr(item, attr, None))
-        if val:
-            return val.lower()
-    return _text(getattr(item, "source_type", None)).lower() or "unknown"
+    return source_identity(item) or "unknown"
 
 
 def deterministic_research_checks(
@@ -312,17 +308,18 @@ def deterministic_research_checks(
         })
 
     # evidence_floor (ERROR-weight)
-    floor_ok = len(evidence) >= EVIDENCE_FLOOR
+    observation_count = len({observation_identity(item) for item in evidence})
+    floor_ok = observation_count >= EVIDENCE_FLOOR
     checks["evidence_floor"] = floor_ok
     if not floor_ok:
         gaps.append({
             "kind": "evidence_floor",
-            "detail": f"only {len(evidence)} evidence row(s); a serious live forecast wants >= {EVIDENCE_FLOOR}.",
+            "detail": f"only {observation_count} distinct observation(s); a serious live forecast wants >= {EVIDENCE_FLOOR}.",
             "suggested_queries": [f"{title} analysis", f"{title_kw} expert forecast"],
         })
 
     # source_independence (>= 2 distinct sources)
-    distinct_sources = {_source_identity(item) for item in evidence}
+    distinct_sources = {source_identity(item) for item in evidence} - {None}
     indep_ok = len(distinct_sources) >= INDEPENDENCE_FLOOR
     checks["source_independence"] = indep_ok
     if not indep_ok:
@@ -330,7 +327,7 @@ def deterministic_research_checks(
             "kind": "source_independence",
             "detail": (
                 f"evidence traces to {len(distinct_sources)} distinct source(s); need >= "
-                f"{INDEPENDENCE_FLOOR} independent sources so the estimate is not one signal echoed."
+                f"{INDEPENDENCE_FLOOR} source groups. Verify original provenance; host diversity alone does not prove independence."
             ),
             "suggested_queries": [f"{title_kw} independent second source", f"{title_kw} alternative data"],
         })

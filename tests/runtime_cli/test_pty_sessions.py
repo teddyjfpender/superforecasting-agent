@@ -61,6 +61,8 @@ async def test_expiry_reaps_child_and_requires_explicit_resume(monkeypatch):
     assert bridge.closed and not manager.sessions
     with pytest.raises(ps.PtyReplayUnavailable, match="expired"):
         manager.attach("desk", None, 1, lambda: pytest.fail("silent replacement"))
+    with pytest.raises(ps.PtyReplayUnavailable, match="expired"):
+        manager.attach("desk", None, 0, lambda: pytest.fail("silent zero-byte replacement"), require_existing=True)
 
 
 @pytest.mark.asyncio

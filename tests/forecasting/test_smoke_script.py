@@ -75,3 +75,16 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     assert "[forecast-smoke] pilot_bundle_export_included: true" in result.stdout
     assert "[forecast-smoke] forecast smoke test passed" in result.stdout
     assert db_path.exists()
+
+
+@pytest.mark.timeout(480)
+def test_lifecycle_without_backtest_preserves_readiness_gaps(tmp_path):
+    repo_root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [sys.executable, "scripts/forecast_smoke_test.py", "--db", str(tmp_path / "ledger.db"), "--skip-backtest"],
+        cwd=repo_root, capture_output=True, text=True, timeout=420,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "[forecast-smoke] forecast smoke test passed" in result.stdout
+    assert "[forecast-smoke] readiness_agent_protocol_scores: 0" in result.stdout
+    assert "live_claim_unproven" in result.stdout

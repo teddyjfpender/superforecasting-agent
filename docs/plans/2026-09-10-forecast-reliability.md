@@ -90,3 +90,29 @@ Commit and push coherent verified increments, as previously requested.
 - Complete final integrated gates and publish the reviewable branch/PR evidence.
 - Keep forecasting-skill claims unproven: synthetic outcomes and local-model
   transport rehearsals do not establish prospective performance.
+
+### Evidence and release checkpoint
+
+- Research adequacy and readiness now share conservative source identities: one
+  publisher is not multiple independent sources because article URLs/names differ.
+  `metadata.independence_group` and `original_source_url` capture known shared
+  origins. Host diversity remains a proxy, not proof of independence.
+- Tracking parameters/fragments no longer inflate the distinct-observation floor;
+  original rows remain intact. Future observations do not satisfy recency.
+  Publication/availability chronology is validated after UTC normalization.
+- USGS imports now use revision timestamps for availability and preserve earthquake
+  time separately as `observed_at`; previously revised magnitudes could leak into
+  earlier cutoffs. USGS/NWS repeated imports skip identical raw revisions while
+  retaining changed revisions. Missing NWS publication uses capture time.
+- Public USGS/NWS feeds captured at 2026-09-10 11:46 UTC: 11 events and 353 alerts.
+  Three records from each were ingested per installed profile and duplicate imports
+  skipped. Raw bytes, URLs, timestamps and SHA-256 are preserved with the rehearsal.
+- `scripts/verify_forecast_release.py` creates fresh virtualenvs and homes, installs
+  an old wheel then upgrades, checks configuration/question/evidence preservation,
+  and executes the full public CLI lifecycle in both upgraded and fresh installs.
+  Model calls are not needed; the rehearsal marks snapshots calibration-ineligible.
+- Full forecasting suite: 3,386 passed, 3 skipped (320.82s).
+  Integrated runtime/gateway/terminal suite: 5,643 passed, 8 skipped (66.94s).
+  Full agent suite: 1,368 passed, 3 skipped (14.27s).
+  Zero-byte reconnect guard: 159 passed. Browser connection helper: 12 passed.
+  Dashboard build, Ruff, generated docs and protocol checks pass.

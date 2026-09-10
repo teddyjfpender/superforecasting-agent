@@ -10,6 +10,7 @@ export function connectPty(options: {
   let stopped = false;
   let cursor = 0;
   let attempts = 0;
+  let connected = false;
   let retry: ReturnType<typeof setTimeout> | undefined;
   let opening: ReturnType<typeof setTimeout> | undefined;
 
@@ -17,6 +18,7 @@ export function connectPty(options: {
     if (stopped) return;
     const url = new URL(options.url);
     url.searchParams.set("cursor", String(cursor));
+    url.searchParams.set("reconnect", connected ? "1" : "0");
     const current = new WebSocket(url.toString());
     current.binaryType = "arraybuffer";
     socket = current;
@@ -26,6 +28,7 @@ export function connectPty(options: {
     current.onopen = () => {
       if (stopped || current !== socket) return;
       clearTimeout(opening);
+      connected = true;
       options.onStatus(null);
       options.onReady(current);
     };
