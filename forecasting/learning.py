@@ -90,6 +90,23 @@ def apply_active_lesson_adjustments(
     probability_delta = 0.0
     logit_shift = 0.0
     logit_scale = 1.0
+    # Global and domain bias reports share outcomes (and the global prior).
+    # Consult both, but apply only the most specific learned numeric correction.
+    bias_scales = [
+        lesson for lesson in selected
+        if (lesson.get("metadata") or {}).get("source") == "calibration_bias"
+        and (lesson.get("recommended_adjustment") or {}).get("basis") == "signed_calibration_error"
+        and (_optional_float((lesson.get("recommended_adjustment") or {}).get("logit_scale")) or 0) > 0
+    ]
+    chosen_bias = max(
+        bias_scales,
+        key=lambda lesson: (
+            lesson.get("scope_type") == "domain",
+            lesson.get("created_at") or "",
+            lesson["id"],
+        ),
+        default=None,
+    )
     for lesson in selected:
         recommended = dict(lesson.get("recommended_adjustment") or {})
         item = {
@@ -97,6 +114,10 @@ def apply_active_lesson_adjustments(
             "scope_type": lesson.get("scope_type"),
             "scope_ref": lesson.get("scope_ref"),
         }
+        if lesson in bias_scales and lesson is not chosen_bias:
+            item["numeric_adjustment_skipped"] = "more_specific_calibration_bias_applied"
+            applied_lessons.append(item)
+            continue
         delta = _optional_float(recommended.get("probability_delta"))
         if delta is not None:
             probability_delta += delta

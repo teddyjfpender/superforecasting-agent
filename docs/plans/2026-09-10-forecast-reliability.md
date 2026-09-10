@@ -1,0 +1,61 @@
+# Forecast reliability and release verification
+
+Base: merged PR #24, `80eaec132b2bd48edbfc5f7e74de8638574a06c1`.
+Branch: `codex/forecast-reliability-20260910`.
+
+## Required outcomes
+
+1. Verify fresh installation and upgrade with isolated profiles, then execute
+   create → research → update → resolve → score → postmortem through the installed
+   public CLI. Preserve profile data across upgrade and record artifact provenance.
+2. Show that scored outcomes produce traceable learning and subsequent forecasts
+   consult it. Verify small-sample, leakage, duplicate-outcome and overcorrection
+   safeguards, including negative controls.
+3. Verify and harden interruption, cancellation, resume, terminal resize and
+   dashboard reconnect through real terminal/browser interaction as appropriate.
+4. Reduce provider/configuration and CLI/gateway dispatch coupling using focused
+   shared components, preserving behavior and registry ownership.
+5. Verify evidence timestamps, independence, duplication, staleness and resolution
+   criteria against public sources and adversarial fixtures; fix observed gaps.
+
+## Execution discipline
+
+Each outcome needs executable evidence, observed gaps, fixes and verification.
+Passing fixtures is not proof of live service availability or forecasting skill.
+Use disposable homes and ledgers. Paid model calls await the user's spending
+preference. Preserve the existing Ink transcript/composer and dashboard PTY.
+Commit and push coherent verified increments, as previously requested.
+
+## Checkpoints
+
+- PR #24 merge confirmed through GitHub; clean worktree before branching.
+- Initial investigation found existing calibration-bias and lesson machinery,
+  evidence diversity/staleness helpers, and TUI recovery tests. Their end-to-end
+  coverage is under review; no requirement is marked complete yet.
+
+### Learning provenance and correction safeguards
+
+- Reproduced missing score references on synthesized bias lessons and sample
+  inflation: 50 snapshots of two outcomes counted as 50 observations (2 failures).
+- Bias observations now use one latest scored forecast per question. Reports
+  carry scored-source references; domain lessons also retain sources supporting
+  the global shrinkage prior. Corrections invalidate dependent lessons through
+  the existing correction mechanism.
+- Context packets show scored-source count, effective sample size and bounded
+  source references. Advisory learning leaves the submitted probability unchanged.
+- Reproduced overlapping global/domain numeric corrections multiplying to 1.392.
+  Both lessons remain consulted and recorded, but only the most specific generated
+  numerical bias adjustment applies; the skipped adjustment has an audit reason.
+- Negative controls cover neutral/zero-weight/lesson-exposed rows, thin samples,
+  corrected global-prior sources, and no advisory probability change.
+- Targeted suite: 62 passed. Full forecasting suite: 3,381 passed, 3 skipped in
+  320.04 seconds. JUnit: `.test-results/pytest-20260910T111507Z-61553.xml`.
+
+### Release and dashboard observations still being addressed
+
+- Isolated lifecycle smoke with `--skip-backtest` failed because its readiness
+  check still demanded the skipped benchmark replay. This is not a completed
+  installed-release rehearsal; fix and verify it before relying on that option.
+- Real browser at `/desk` showed gateway loss with the packaged TUI. Two failing
+  tests establish the dashboard does not propagate CLI Python/source-root/CWD
+  settings. Shared launch-environment fix is next.

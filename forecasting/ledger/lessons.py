@@ -360,6 +360,8 @@ def synthesize_bias_lessons(
         benjamini_hochberg,
         decide_disposition,
     )
+    from dataclasses import replace
+
     # Resolve the scope family.
     targets: list[tuple[str, str | None]] = []
     if scope in ("all", "global"):
@@ -401,6 +403,8 @@ def synthesize_bias_lessons(
             prior_scale=prior_scale,
             shrink_prior=0.0 if scope_type == "global" else global_prior,
         )
+        if scope_type != "global":
+            report = replace(report, shrink_prior_score_record_refs=global_report.source_score_record_refs)
         reports.append((report, prior_lessons))
     # Benjamini-Hochberg FDR across the family of detectable scopes.
     pvalues = [rep.pvalue if rep.has_detectable_bias else None for rep, _ in reports]
@@ -476,6 +480,8 @@ def _apply_bias_disposition(
         "horizon_label": report.horizon_label,
         "sce_trajectory": new_trajectory,
         "suppressed": status == "suppressed",
+        "measurement_score_record_refs": report.source_score_record_refs,
+        "shrink_prior_score_record_refs": report.shrink_prior_score_record_refs,
     }
     confidence = None
     if report.pvalue is not None:
@@ -507,6 +513,9 @@ def _apply_bias_disposition(
         recommended_adjustment=report.recommended_adjustment or {},
         status=write_status,
         supersedes_lesson_id=supersedes,
+        source_score_record_refs=sorted(set(
+            report.source_score_record_refs + report.shrink_prior_score_record_refs
+        )),
         metadata=metadata,
     )
     return {
