@@ -17,12 +17,12 @@ Usage::
     hermes-acp
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
-# on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
+# IMPORTANT: superforecasting_agent.bootstrap must be the very first import — UTF-8 stdio
+# on Windows.  No-op on POSIX.  See superforecasting_agent.bootstrap.py for full rationale.
 try:
-    import hermes_bootstrap  # noqa: F401
+    import superforecasting_agent.bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    # Graceful fallback when hermes_bootstrap isn't registered in the venv
+    # Graceful fallback when superforecasting_agent.bootstrap isn't registered in the venv
     # yet — happens during partial ``superforecasting-agent update`` where
     # git-reset landed new code but ``uv pip install -e .`` didn't finish.
     # Missing bootstrap means UTF-8 stdio setup is skipped on Windows; POSIX
@@ -34,7 +34,7 @@ import asyncio
 import logging
 import sys
 from pathlib import Path
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 
 # Methods clients send as periodic liveness probes. They are not part of the
@@ -100,16 +100,16 @@ def _setup_logging() -> None:
 
 def _load_env() -> None:
     """Load .env from the active Superforecasting Agent home."""
-    from hermes_cli.env_loader import load_hermes_dotenv
+    from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
 
-    hermes_home = get_hermes_home()
-    loaded = load_hermes_dotenv(hermes_home=hermes_home)
+    agent_home = get_agent_home()
+    loaded = load_forecast_dotenv(hermes_home=agent_home)
     if loaded:
         for env_file in loaded:
             logging.getLogger(__name__).info("Loaded env from %s", env_file)
     else:
         logging.getLogger(__name__).info(
-            "No .env found at %s, using system env", hermes_home / ".env"
+            "No .env found at %s, using system env", agent_home / ".env"
         )
 
 
@@ -153,25 +153,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _print_version() -> None:
-    from hermes_cli import __version__ as hermes_version
+    from superforecasting_agent.runtime import __version__ as agent_version
 
-    print(hermes_version)
+    print(agent_version)
 
 
 def _run_check() -> None:
     import acp  # noqa: F401
-    from acp_adapter.server import HermesACPAgent  # noqa: F401
+    from acp_adapter.server import ForecastACPAgent  # noqa: F401
 
     print("Superforecasting Agent ACP check OK")
 
 
 def _run_setup() -> None:
-    from hermes_cli.main import main as hermes_main
+    from superforecasting_agent.runtime.main import main as agent_main
 
     old_argv = sys.argv[:]
     try:
         sys.argv = ["superforecasting-agent", "model"]
-        hermes_main()
+        agent_main()
     finally:
         sys.argv = old_argv
 
@@ -196,11 +196,11 @@ def _run_setup_browser(assume_yes: bool = False) -> int:
     """Bootstrap agent-browser + Chromium.
 
     Routes through dep_ensure -> install.{sh,ps1} --ensure, sharing code
-    with ``hermes postinstall`` and the runtime lazy installer.
+    with ``superforecasting-agent postinstall`` and the runtime lazy installer.
 
     Returns 0 on success, 1 on failure.
     """
-    from hermes_cli.dep_ensure import ensure_dependency
+    from superforecasting_agent.runtime.dep_ensure import ensure_dependency
 
     try:
         node_ok = ensure_dependency("node", interactive=not assume_yes)
@@ -250,12 +250,12 @@ def main(argv: list[str] | None = None) -> None:
         sys.path.insert(0, project_root)
 
     import acp
-    from .server import HermesACPAgent
+    from .server import ForecastACPAgent
 
     # MCP tool discovery from config.yaml — run before asyncio.run() so
     # it's safe to use blocking waits.  (ACP also registers per-session
     # MCP servers dynamically via asyncio.to_thread inside the event
-    # loop; that path is unaffected.)  Moved from model_tools.py module
+    # loop; that path is unaffected.)  Moved from superforecasting_agent/tooling/runtime.py module
     # scope to avoid freezing the gateway's loop on lazy import (#16856).
     try:
         from tools.mcp_tool import discover_mcp_tools
@@ -263,7 +263,7 @@ def main(argv: list[str] | None = None) -> None:
     except Exception:
         logger.debug("MCP tool discovery failed at ACP startup", exc_info=True)
 
-    agent = HermesACPAgent()
+    agent = ForecastACPAgent()
     try:
         asyncio.run(acp.run_agent(agent, use_unstable_protocol=True))
     except KeyboardInterrupt:

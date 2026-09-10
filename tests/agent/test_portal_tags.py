@@ -4,8 +4,8 @@ from __future__ import annotations
 
 
 def test_superforecasting_client_tag_includes_current_version():
-    """The client tag must reflect hermes_cli.__version__ verbatim."""
-    from hermes_cli import __version__
+    """The client tag must reflect superforecasting_agent.runtime.__version__ verbatim."""
+    from superforecasting_agent.runtime import __version__
     from agent.portal_tags import superforecasting_client_tag
 
     assert superforecasting_client_tag() == f"client=superforecasting-client-v{__version__}"

@@ -11,7 +11,7 @@ import { performance } from 'node:perf_hooks'
 import { PassThrough } from 'node:stream'
 
 import React from 'react'
-import { render } from '@hermes/ink'
+import { render } from '@superforecasting/ink'
 import { DeskView } from '../src/components/deskView.tsx'
 import { DARK_THEME } from '../src/theme.ts'
 import { clearOverlayCache } from '../src/lib/overlayCache.ts'

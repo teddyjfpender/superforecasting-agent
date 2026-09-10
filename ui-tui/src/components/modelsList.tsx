@@ -1,4 +1,4 @@
-import { Box, Text } from '@hermes/ink'
+import { Box, Text } from '@superforecasting/ink'
 
 import { spinnerFrame, statusGlyph } from '../lib/icons.js'
 import type { MarketModelListItem } from '../lib/presentation.js'

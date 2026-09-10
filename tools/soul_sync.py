@@ -18,8 +18,8 @@ import hashlib
 import logging
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
-from utils import atomic_replace
+from superforecasting_agent.constants import get_agent_home
+from superforecasting_agent.storage.files import atomic_replace
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +36,13 @@ def sync_soul(quiet: bool = False) -> dict:
     """
 
     try:
-        from hermes_cli.default_soul import DEFAULT_SOUL_MD
+        from superforecasting_agent.runtime.default_soul import DEFAULT_SOUL_MD
     except Exception as exc:  # pragma: no cover — defensive
         logger.debug("soul sync skipped: cannot import template: %s", exc)
         return {"action": "skipped", "reason": "no_template"}
 
     try:
-        home = get_hermes_home()
+        home = get_agent_home()
         soul_path = home / "SOUL.md"
         manifest_path = home / ".soul_manifest"
         template = DEFAULT_SOUL_MD

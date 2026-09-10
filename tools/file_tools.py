@@ -47,7 +47,7 @@ def _get_max_read_chars() -> int:
     if _max_read_chars_cached is not None:
         return _max_read_chars_cached
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         cfg = load_config()
         val = cfg.get("file_read_max_chars")
         if isinstance(val, (int, float)) and val > 0:
@@ -827,7 +827,7 @@ def reset_file_dedup(task_id: str = None):
 def notify_other_tool_call(task_id: str = "default"):
     """Reset consecutive read/search counter for a task.
 
-    Called by the tool dispatcher (model_tools.py) whenever a tool OTHER
+    Called by the tool dispatcher (superforecasting_agent/tooling/runtime.py) whenever a tool OTHER
     than read_file / search_files is executed.  This ensures we only warn
     or block on *truly consecutive* repeated reads — if the agent does
     anything else in between (write, patch, terminal, etc.) the counter

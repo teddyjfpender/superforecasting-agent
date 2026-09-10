@@ -541,7 +541,7 @@ def _coerce_now_dt(now: "str | datetime | None") -> datetime:
         parsed = timestamp_to_datetime(now.strip())
         if parsed is not None:
             return parsed
-    from hermes_time import now as hermes_now
+    from superforecasting_agent.clock import now as hermes_now
 
     dt = hermes_now()
     if dt.tzinfo is None:

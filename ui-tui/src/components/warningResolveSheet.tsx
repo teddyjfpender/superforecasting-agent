@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from '@hermes/ink'
+import { Box, Text, useInput } from '@superforecasting/ink'
 import { useRef, useState } from 'react'
 
 import type { GatewayClient } from '../gatewayClient.js'

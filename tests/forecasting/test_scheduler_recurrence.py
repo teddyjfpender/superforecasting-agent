@@ -173,13 +173,13 @@ def test_remove_forecast_cron_match_script_is_opt_in(cron_env):
 def test_cli_install_cron_defaults_to_full_feature_flags(tmp_path, cron_env):
     """A bare `forecast schedule install-cron` must be as capable as the auto-installed
     nightly routine — every learning flag ON by default (not a feature-poor downgrade)."""
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
     parser = _parser()
     args = parser.parse_args(["forecast", "--db", str(tmp_path / "recurrence.db"), "schedule", "install-cron"])
     args._forecast_handler(args)
 
-    script = (get_hermes_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT).read_text()
+    script = (get_agent_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT).read_text()
     assert "--auto-score" in script
     assert "--auto-postmortem" in script
     assert "--thesis-aggregate" in script
@@ -190,7 +190,7 @@ def test_cli_install_cron_defaults_to_full_feature_flags(tmp_path, cron_env):
 
 def test_cli_install_cron_no_flags_opt_out(tmp_path, cron_env):
     """The `--no-*` opt-outs turn individual features off without touching the rest."""
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
     parser = _parser()
     args = parser.parse_args([
@@ -199,7 +199,7 @@ def test_cli_install_cron_no_flags_opt_out(tmp_path, cron_env):
     ])
     args._forecast_handler(args)
 
-    script = (get_hermes_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT).read_text()
+    script = (get_agent_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT).read_text()
     assert "--auto-score" in script          # still on by default
     assert "--auto-postmortem" in script     # still on by default
     assert "--synthesize-lessons" not in script
@@ -227,10 +227,10 @@ def test_ensure_default_routines_respects_config_flag(cron_env, monkeypatch):
 
 
 def test_installed_routine_carries_learning_flags(cron_env):
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
     scheduler.ensure_default_routines()
-    script = (get_hermes_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT).read_text()
+    script = (get_agent_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT).read_text()
     assert "--auto-score" in script
     assert "--auto-postmortem" in script
     assert "--thesis-aggregate" in script
@@ -242,11 +242,11 @@ def test_installed_routine_carries_learning_flags(cron_env):
 
 def test_existing_routine_script_is_upgraded_without_rearming_job(cron_env):
     from cron.jobs import list_jobs
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
     first = scheduler.ensure_default_routines()
     job_id = first["job"]["id"]
-    script_path = get_hermes_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT
+    script_path = get_agent_home() / "scripts" / scheduler.FORECAST_CRON_SCRIPT
     script_path.write_text(
         "from forecasting.cron_runner import main\nraise SystemExit(main([]))\n",
         encoding="utf-8",

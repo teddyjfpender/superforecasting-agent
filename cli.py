@@ -12,13 +12,13 @@ Usage:
     python cli.py --list-tools             # List available tools and exit
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
-# on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
+# IMPORTANT: superforecasting_agent.bootstrap must be the very first import — UTF-8 stdio
+# on Windows.  No-op on POSIX.  See superforecasting_agent.bootstrap.py for full rationale.
 try:
-    import hermes_bootstrap  # noqa: F401
+    import superforecasting_agent.bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
+    # Graceful fallback when superforecasting_agent.bootstrap isn't registered in the venv
+    # yet — happens during partial ``superforecasting-agent update`` where git-reset landed
     # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
     # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
     pass
@@ -38,13 +38,35 @@ import tempfile
 import time
 import uuid
 import textwrap
-from collections import deque
 from urllib.parse import unquote, urlparse
 from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
-from hermes_cli.model_env import inference_provider_env
+from superforecasting_agent.runtime.model_env import inference_provider_env
+from superforecasting_agent.runtime.assistant_text import (
+    _strip_reasoning_tags as _strip_reasoning_tags,
+    _assistant_content_as_text as _assistant_content_as_text,
+    _assistant_copy_text as _assistant_copy_text,
+)
+from superforecasting_agent.runtime.session_maintenance import (
+    _run_state_db_auto_maintenance as _run_state_db_auto_maintenance,
+    _run_checkpoint_auto_maintenance as _run_checkpoint_auto_maintenance,
+)
+from superforecasting_agent.runtime import worktrees as _worktrees
+from superforecasting_agent.runtime.worktree_setup import (
+    _normalize_git_bash_path as _normalize_git_bash_path,
+    _git_repo_root as _git_repo_root,
+    _path_is_within_root as _path_is_within_root,
+    _setup_worktree as _setup_worktree,
+)
+from superforecasting_agent.runtime.worktrees import (
+    _worktree_has_unpushed_commits as _worktree_has_unpushed_commits,
+    _worktree_has_local_changes as _worktree_has_local_changes,
+    _cleanup_worktree as _cleanup_worktree,
+    _prune_stale_worktrees as _prune_stale_worktrees,
+    _prune_orphaned_branches as _prune_orphaned_branches,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -151,8 +173,6 @@ from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
 from prompt_toolkit.widgets import TextArea
 from prompt_toolkit.key_binding import KeyBindings
-from prompt_toolkit import print_formatted_text as _pt_print
-from prompt_toolkit.formatted_text import ANSI as _PT_ANSI
 try:
     from prompt_toolkit.cursor_shapes import CursorShape
     _STEADY_CURSOR = CursorShape.BLOCK  # Non-blinking block cursor
@@ -160,7 +180,7 @@ except (ImportError, AttributeError):
     _STEADY_CURSOR = None
 
 try:
-    from hermes_cli.pt_input_extras import install_shift_enter_alias, install_ctrl_enter_alias
+    from superforecasting_agent.runtime.pt_input_extras import install_shift_enter_alias, install_ctrl_enter_alias
     install_shift_enter_alias()
     install_ctrl_enter_alias()
     del install_shift_enter_alias, install_ctrl_enter_alias
@@ -183,133 +203,28 @@ from agent.markdown_tables import (
 # NOTE: `from agent.account_usage import ...` is deliberately NOT at module
 # top — it transitively pulls the OpenAI SDK chain (~230 ms cold) and is only
 # needed when the user runs `/limits`. Lazy-imported inside the handler below.
-from hermes_cli.banner import _format_context_length, format_banner_version_label
+from superforecasting_agent.runtime.banner import _format_context_length, format_banner_version_label
 
 _COMMAND_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
 # Load .env from the active forecast home first, then project root as dev fallback.
 # User-managed env files should override stale shell exports on restart.
-from hermes_constants import get_hermes_home, display_hermes_home
-from hermes_cli.browser_connect import (
-    DEFAULT_BROWSER_CDP_URL,
-    is_browser_debug_ready,
-    manual_chrome_debug_command,
-    try_launch_chrome_debug,
-)
-from hermes_cli.env_loader import load_forecast_dotenv
-from utils import (
+from superforecasting_agent.constants import get_agent_home, display_agent_home
+
+from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
+from superforecasting_agent.environment import (
     EPHEMERAL_SYSTEM_PROMPT_ENV_NAMES,
     INTERACTIVE_ENV_NAMES,
     PREFILL_MESSAGES_FILE_ENV_NAMES,
     SESSION_SOURCE_ENV_NAMES,
-    base_url_host_matches,
     env_var_alias_value,
 )
+from superforecasting_agent.urls import base_url_host_matches
 
-_hermes_home = get_hermes_home()
+_hermes_home = get_agent_home()
 _project_env = Path(__file__).parent / '.env'
 load_forecast_dotenv(hermes_home=_hermes_home, project_env=_project_env)
-
-
-_REASONING_TAGS = (
-    "REASONING_SCRATCHPAD",
-    "think",
-    "thinking",
-    "reasoning",
-    "thought",
-)
-
-
-def _strip_reasoning_tags(text: str) -> str:
-    """Remove reasoning/thinking blocks from displayed text.
-
-    Handles every case:
-      * Closed pairs ``<tag>…</tag>`` (case-insensitive, multi-line).
-      * Unterminated open tags that run to end-of-text (e.g. truncated
-        generations on NIM/MiniMax where the close tag is dropped).
-      * Stray orphan close tags (``stuff</think>answer``) left behind by
-        partial-content dumps.
-
-    Covers the variants emitted by reasoning models today: ``<think>``,
-    ``<thinking>``, ``<reasoning>``, ``<REASONING_SCRATCHPAD>``, and
-    ``<thought>`` (Gemma 4).  Must stay in sync with
-    ``run_agent.py::_strip_think_blocks`` and the stream consumer's
-    ``_OPEN_THINK_TAGS`` / ``_CLOSE_THINK_TAGS`` tuples.
-
-    Also strips tool-call XML blocks some open models leak into visible
-    content (``<tool_call>``, ``<function_calls>``, Gemma-style
-    ``<function name="…">…</function>``). Ported from
-    openclaw/openclaw#67318.
-    """
-    cleaned = text
-    for tag in _REASONING_TAGS:
-        # Closed pair — case-insensitive so <THINK>…</THINK> is handled too.
-        cleaned = re.sub(
-            rf"<{tag}>.*?</{tag}>\s*",
-            "",
-            cleaned,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-        # Unterminated open tag — strip from the tag to end of text.
-        cleaned = re.sub(
-            rf"<{tag}>.*$",
-            "",
-            cleaned,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-        # Stray orphan close tag left behind by partial dumps.
-        cleaned = re.sub(
-            rf"</{tag}>\s*",
-            "",
-            cleaned,
-            flags=re.IGNORECASE,
-        )
-    # Tool-call XML blocks (openclaw/openclaw#67318).
-    for tc_tag in ("tool_call", "tool_calls", "tool_result",
-                   "function_call", "function_calls"):
-        cleaned = re.sub(
-            rf"<{tc_tag}\b[^>]*>.*?</{tc_tag}>\s*",
-            "",
-            cleaned,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-    # <function name="..."> — boundary + attribute gated to avoid prose FPs.
-    cleaned = re.sub(
-        r'(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*'
-        r'<function\b[^>]*\bname\s*=[^>]*>'
-        r'(?:(?:(?!</function>).)*)</function>\s*',
-        '',
-        cleaned,
-        flags=re.DOTALL | re.IGNORECASE,
-    )
-    # Stray tool-call close tags.
-    cleaned = re.sub(
-        r'</(?:tool_call|tool_calls|tool_result|function_call|function_calls|function)>\s*',
-        '',
-        cleaned,
-        flags=re.IGNORECASE,
-    )
-    return cleaned.strip()
-
-
-def _assistant_content_as_text(content: Any) -> str:
-    if content is None:
-        return ""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = [
-            str(part.get("text", ""))
-            for part in content
-            if isinstance(part, dict) and part.get("type") == "text"
-        ]
-        return "\n".join(p for p in parts if p)
-    return str(content)
-
-
-def _assistant_copy_text(content: Any) -> str:
-    return _strip_reasoning_tags(_assistant_content_as_text(content))
 
 
 # =============================================================================
@@ -347,7 +262,7 @@ def _load_prefill_messages(file_path: str) -> List[Dict[str, Any]]:
 
 def _parse_reasoning_config(effort: str) -> dict | None:
     """Parse a reasoning effort level into an OpenRouter reasoning config dict."""
-    from hermes_constants import parse_reasoning_effort
+    from superforecasting_agent.constants import parse_reasoning_effort
     result = parse_reasoning_effort(effort)
     if effort and effort.strip() and result is None:
         logger.warning("Unknown reasoning_effort '%s', using default (medium)", effort)
@@ -381,399 +296,15 @@ def _parse_service_tier_config(raw: str) -> str | None:
     return None
 
 def load_cli_config() -> Dict[str, Any]:
-    """
-    Load CLI configuration from config files.
-    
-    Config lookup order:
-    1. ~/.superforecasting-agent/config.yaml (user config - preferred)
-    2. ./cli-config.yaml (project config - fallback)
-    
-    Environment variables take precedence over config file values.
-    Returns default values if no config file exists.
+    """Load interactive settings using this CLI's active home and project root."""
+    from superforecasting_agent.runtime.interactive_config import load_cli_config as load
 
-    If SUPERFORECASTING_AGENT_IGNORE_USER_CONFIG=1 is set (via
-    ``superforecasting-agent chat --ignore-user-config``), with
-    FORECAST_IGNORE_USER_CONFIG and HERMES_IGNORE_USER_CONFIG as compatibility
-    aliases, the user config at ``~/.superforecasting-agent/config.yaml`` is
-    skipped entirely and only the built-in defaults plus the project-level
-    ``cli-config.yaml`` (if any) are used.
-    Credentials in ``.env`` are still loaded — this flag only suppresses
-    behavioral/config settings.
-    """
-    # Check user config first ({HERMES_HOME}/config.yaml)
-    user_config_path = _hermes_home / 'config.yaml'
-    project_config_path = Path(__file__).parent / 'cli-config.yaml'
-
-    # --ignore-user-config: force-skip the user config.yaml (still honor project
-    # config as a fallback so defaults stay sensible).
-    ignore_user_config = _env_flag_exact_one(_IGNORE_USER_CONFIG_ENV_NAMES)
-
-    # Use user config if it exists, otherwise project config
-    if user_config_path.exists() and not ignore_user_config:
-        config_path = user_config_path
-    else:
-        config_path = project_config_path
-
-    # Default configuration
-    defaults = {
-        "model": {
-            "default": "",
-            "base_url": "",
-            "provider": "auto",
-        },
-        "terminal": {
-            "env_type": "local",
-            "cwd": ".",  # "." is resolved to os.getcwd() at runtime
-            "timeout": 60,
-            "lifetime_seconds": 300,
-            "docker_image": "nikolaik/python-nodejs:python3.11-nodejs20",
-            "docker_forward_env": [],
-            "singularity_image": "docker://nikolaik/python-nodejs:python3.11-nodejs20",
-            "modal_image": "nikolaik/python-nodejs:python3.11-nodejs20",
-            "daytona_image": "nikolaik/python-nodejs:python3.11-nodejs20",
-            "docker_volumes": [],  # host:container volume mounts for Docker backend
-            "docker_mount_cwd_to_workspace": False,  # explicit opt-in only; default off for sandbox isolation
-        },
-        "browser": {
-            "inactivity_timeout": 120,  # Auto-cleanup inactive browser sessions after 2 min
-            "record_sessions": False,  # Auto-record browser sessions as WebM videos
-            "engine": "auto",  # Browser engine: auto (Chrome), lightpanda, chrome
-        },
-        "compression": {
-            "enabled": True,      # Auto-compress when approaching context limit
-            "threshold": 0.50,    # Compress at 50% of model's context limit
-        },
-        "agent": {
-            "max_turns": 200,  # Soft cap per turn; a breach checkpoints + continues, not a hard stop
-            "verbose": False,
-            "system_prompt": "",
-            "prefill_messages_file": "",
-            "reasoning_effort": "",
-            "service_tier": "",
-            "personalities": {
-                "forecaster": "You are a disciplined probabilistic forecaster. State probabilities, uncertainty, key evidence, base rates, assumptions, and what would change your mind.",
-                "concise": "You are a concise forecasting desk operator. Keep responses brief, quantify when possible, and separate facts from judgments.",
-                "technical": "You are a quantitative forecasting researcher. Use careful decomposition, reference classes, simple models, sensitivity checks, and calibration-aware reasoning.",
-                "research": "You are an evidence-focused research analyst. Prioritize timestamped sources, source reliability, claim type, and gaps in the evidence record.",
-                "skeptical": "You are a skeptical forecast reviewer. Stress-test assumptions, ambiguity, incentives, data quality, and alternative explanations before updating probabilities.",
-                "calibration": "You are a calibration coach. Compare confidence to historical error patterns, call out overconfidence, and recommend explicit update rules.",
-                "teacher": "You are a forecasting teacher. Explain concepts clearly with examples while preserving the forecast desk's probability discipline.",
-                "creative": "You are a hypothesis generator for forecast work. Suggest non-obvious scenarios, mechanisms, reference classes, and indicators without overstating confidence.",
-                "executive": "You are a decision-support forecaster. Summarize probabilities, deltas, drivers, deadlines, and action-relevant caveats for a busy operator.",
-            },
-        },
-
-        "display": {
-            "compact": False,
-            "resume_display": "full",
-            "show_reasoning": False,
-            "streaming": True,
-            "busy_input_mode": "interrupt",
-            "persistent_output": True,
-            "persistent_output_max_lines": 200,
-
-            "skin": "forecast",
-        },
-        "clarify": {
-            "timeout": 120,  # Seconds to wait for a clarify answer before auto-proceeding
-        },
-        "code_execution": {
-            "timeout": 300,    # Max seconds a sandbox script can run before being killed (5 min)
-            "max_tool_calls": 50,  # Max RPC tool calls per execution
-        },
-        "auxiliary": {
-            "vision": {
-                "provider": "auto",
-                "model": "",
-                "base_url": "",
-                "api_key": "",
-            },
-            "web_extract": {
-                "provider": "auto",
-                "model": "",
-                "base_url": "",
-                "api_key": "",
-            },
-        },
-        "delegation": {
-            "max_iterations": 45,  # Max tool-calling turns per child agent
-            "model": "",       # Subagent model override (empty = inherit parent model)
-            "provider": "",    # Subagent provider override (empty = inherit parent provider)
-            "base_url": "",    # Direct OpenAI-compatible endpoint for subagents
-            "api_key": "",     # API key for delegation.base_url (falls back to OPENAI_API_KEY)
-        },
-        "onboarding": {
-            # First-touch hint flags (see agent/onboarding.py).  Each hint is
-            # shown once per install then latched here.
-            "seen": {},
-        },
-        # Keep the classic CLI's local defaults aligned with DEFAULT_CONFIG;
-        # user config still deep-merges below.
-        "collaboration": {
-            "enabled": False,
-            "github": {
-                "enabled": False,
-                "api_url": "https://api.github.com",
-                "upload_url": "https://uploads.github.com",
-                "app_id": "",
-                "app_slug": "",
-                "client_id": "",
-                "public_base_url": "",
-                "installation_begin_path": "/api/install/github/begin",
-                "installation_callback_path": "/api/install/github/callback",
-                "installation_state_ttl_seconds": 600,
-                "oauth_callback_path": "/api/oauth/github/callback",
-                "oauth_state_ttl_seconds": 600,
-                "api_version": "2026-03-10",
-                "webhook_path": "/api/webhooks/github",
-            },
-            "repository": {
-                "slug": "",
-                "workspace_id": "",
-                "default_branch": "main",
-            },
-            "review": {
-                "materiality_threshold": 0.10,
-                "medium_required_humans": 1,
-                "high_required_humans": 2,
-                "high_requires_owner_or_steward": True,
-                "risk_overrides": {},
-            },
-            "discussion": {
-                "max_comments": 12,
-                "max_rounds": 6,
-                "max_tokens": 16000,
-                "max_elapsed_seconds": 1800,
-                "max_concurrent_tasks": 2,
-                "agent_loop_threshold": 4,
-                "max_comment_bytes": 32768,
-            },
-            "transcripts": {
-                "raw_retention_days": 90,
-                "require_publish_consent": True,
-                "max_publish_bytes": 262144,
-            },
-        },
-    }
-    
-    # Track whether the config file explicitly set terminal config.
-    # When using defaults (no config file / no terminal section), we should NOT
-    # overwrite env vars that were already set by .env -- only a user's config
-    # file should be authoritative.
-    _file_has_terminal_config = False
-
-    # Load from file if exists
-    if config_path.exists():
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                file_config = yaml.safe_load(f) or {}
-            
-            _file_has_terminal_config = "terminal" in file_config
-
-            # Handle model config - can be string (new format) or dict (old format)
-            if "model" in file_config:
-                if isinstance(file_config["model"], str):
-                    # New format: model is just a string, convert to dict structure
-                    defaults["model"]["default"] = file_config["model"]
-                elif isinstance(file_config["model"], dict):
-                    # Old format: model is a dict with default/base_url
-                    defaults["model"].update(file_config["model"])
-                    # If the user config sets model.model but not model.default,
-                    # promote model.model to model.default so the user's explicit
-                    # choice isn't shadowed by the hardcoded default.  Without this,
-                    # profile configs that only set "model:" (not "default:") silently
-                    # fall back to claude-opus because the merge preserves the
-                    # hardcoded default and HermesCLI.__init__ checks "default" first.
-                    if "model" in file_config["model"] and "default" not in file_config["model"]:
-                        defaults["model"]["default"] = file_config["model"]["model"]
-
-            # Legacy root-level provider/base_url fallback.
-            # Some users (or old code) put provider: / base_url: at the
-            # config root instead of inside the model: section.  These are
-            # only used as a FALLBACK when model.provider / model.base_url
-            # is not already set — never as an override.  The canonical
-            # location is model.provider (written by `superforecasting-agent model`).
-            if not defaults["model"].get("provider"):
-                root_provider = file_config.get("provider")
-                if root_provider:
-                    defaults["model"]["provider"] = root_provider
-            if not defaults["model"].get("base_url"):
-                root_base_url = file_config.get("base_url")
-                if root_base_url:
-                    defaults["model"]["base_url"] = root_base_url
-            
-            from hermes_cli.config import _deep_merge
-
-            # Deep merge file_config into defaults.
-            # First: merge keys that exist in both (deep-merge dicts, overwrite scalars)
-            for key in defaults:
-                if key == "model":
-                    continue  # Already handled above
-                if key in file_config:
-                    if isinstance(defaults[key], dict) and isinstance(file_config[key], dict):
-                        defaults[key] = _deep_merge(defaults[key], file_config[key])
-                    else:
-                        defaults[key] = file_config[key]
-            
-            # Second: carry over keys from file_config that aren't in defaults
-            # (e.g. platform_toolsets, provider_routing, memory, honcho, etc.)
-            for key in file_config:
-                if key not in defaults and key != "model":
-                    defaults[key] = file_config[key]
-            
-            # Handle legacy root-level max_turns (backwards compat) - copy to
-            # agent.max_turns whenever the nested key is missing.
-            agent_file_config = file_config.get("agent")
-            if "max_turns" in file_config and not (
-                isinstance(agent_file_config, dict)
-                and agent_file_config.get("max_turns") is not None
-            ):
-                defaults["agent"]["max_turns"] = file_config["max_turns"]
-        except Exception as e:
-            logger.warning("Failed to load cli-config.yaml: %s", e)
-
-    # Expand ${ENV_VAR} references in config values before bridging to env vars.
-    from hermes_cli.config import _expand_env_vars
-    defaults = _expand_env_vars(defaults)
-
-    # Apply terminal config to environment variables (so terminal_tool picks them up)
-    terminal_config = defaults.get("terminal", {})
-    
-    # Normalize config key: the new config system (hermes_cli/config.py) and all
-    # documentation use "backend", the legacy cli-config.yaml uses "env_type".
-    # Accept both, with "backend" taking precedence (it's the documented key).
-    if "backend" in terminal_config:
-        terminal_config["env_type"] = terminal_config["backend"]
-    
-    # CWD resolution for CLI/TUI. The gateway has its own config bridge in
-    # gateway/run.py but may lazily import cli.py (triggering this code).
-    # Local backend: always os.getcwd(). Use `cd /dir && hermes` to control it.
-    # Non-local with placeholder: pop so terminal_tool uses its per-backend default.
-    # Non-local with explicit path: keep as-is.
-    _CWD_PLACEHOLDERS = (".", "auto", "cwd")
-    effective_backend = terminal_config.get("env_type", "local")
-
-    if effective_backend == "local":
-        terminal_config["cwd"] = os.getcwd()
-        defaults["terminal"]["cwd"] = terminal_config["cwd"]
-    elif terminal_config.get("cwd") in _CWD_PLACEHOLDERS:
-        terminal_config.pop("cwd", None)
-    
-    env_mappings = {
-        "env_type": "TERMINAL_ENV",
-        "cwd": "TERMINAL_CWD",
-        "timeout": "TERMINAL_TIMEOUT",
-        "lifetime_seconds": "TERMINAL_LIFETIME_SECONDS",
-        "docker_image": "TERMINAL_DOCKER_IMAGE",
-        "docker_forward_env": "TERMINAL_DOCKER_FORWARD_ENV",
-        "singularity_image": "TERMINAL_SINGULARITY_IMAGE",
-        "modal_image": "TERMINAL_MODAL_IMAGE",
-        "daytona_image": "TERMINAL_DAYTONA_IMAGE",
-        "vercel_runtime": "TERMINAL_VERCEL_RUNTIME",
-        # SSH config
-        "ssh_host": "TERMINAL_SSH_HOST",
-        "ssh_user": "TERMINAL_SSH_USER",
-        "ssh_port": "TERMINAL_SSH_PORT",
-        "ssh_key": "TERMINAL_SSH_KEY",
-        # Container resource config (docker, singularity, modal, daytona, vercel_sandbox -- ignored for local/ssh)
-        "container_cpu": "TERMINAL_CONTAINER_CPU",
-        "container_memory": "TERMINAL_CONTAINER_MEMORY",
-        "container_disk": "TERMINAL_CONTAINER_DISK",
-        "container_persistent": "TERMINAL_CONTAINER_PERSISTENT",
-        "docker_volumes": "TERMINAL_DOCKER_VOLUMES",
-        "docker_env": "TERMINAL_DOCKER_ENV",
-        "docker_mount_cwd_to_workspace": "TERMINAL_DOCKER_MOUNT_CWD_TO_WORKSPACE",
-        "docker_run_as_host_user": "TERMINAL_DOCKER_RUN_AS_HOST_USER",
-        "sandbox_dir": "TERMINAL_SANDBOX_DIR",
-        # Persistent shell (non-local backends)
-        "persistent_shell": "TERMINAL_PERSISTENT_SHELL",
-        # Sudo support (works with all backends)
-        "sudo_password": "SUDO_PASSWORD",
-    }
-    
-    # Bridge config → env vars for terminal_tool. TERMINAL_CWD is force-exported
-    # UNLESS we're inside a gateway process (detected by _HERMES_GATEWAY marker)
-    # where it was already set correctly by gateway/run.py's config bridge.
-    _is_gateway = os.environ.get("_HERMES_GATEWAY") == "1"
-    for config_key, env_var in env_mappings.items():
-        if config_key in terminal_config:
-            if env_var == "TERMINAL_CWD":
-                if _is_gateway:
-                    continue
-                # CLI: always export (overrides stale .env or inherited values)
-                os.environ[env_var] = str(terminal_config[config_key])
-                continue
-            if _file_has_terminal_config or env_var not in os.environ:
-                val = terminal_config[config_key]
-                if isinstance(val, (list, dict)):
-                    os.environ[env_var] = json.dumps(val)
-                else:
-                    os.environ[env_var] = str(val)
-    
-    # Apply browser config to environment variables
-    browser_config = defaults.get("browser", {})
-    browser_env_mappings = {
-        "inactivity_timeout": "BROWSER_INACTIVITY_TIMEOUT",
-    }
-    
-    for config_key, env_var in browser_env_mappings.items():
-        if config_key in browser_config:
-            os.environ[env_var] = str(browser_config[config_key])
-    
-    # Apply auxiliary model/direct-endpoint overrides to environment variables.
-    # Vision and web_extract each have their own provider/model/base_url/api_key tuple.
-    # Compression config is read directly from config.yaml by run_agent.py and
-    # auxiliary_client.py — no env var bridging needed.
-    # Only set env vars for non-empty / non-default values so auto-detection
-    # still works.
-    auxiliary_config = defaults.get("auxiliary", {})
-    auxiliary_task_env = {
-        # config key → env var mapping
-        "vision": {
-            "provider": "AUXILIARY_VISION_PROVIDER",
-            "model": "AUXILIARY_VISION_MODEL",
-            "base_url": "AUXILIARY_VISION_BASE_URL",
-            "api_key": "AUXILIARY_VISION_API_KEY",
-        },
-        "web_extract": {
-            "provider": "AUXILIARY_WEB_EXTRACT_PROVIDER",
-            "model": "AUXILIARY_WEB_EXTRACT_MODEL",
-            "base_url": "AUXILIARY_WEB_EXTRACT_BASE_URL",
-            "api_key": "AUXILIARY_WEB_EXTRACT_API_KEY",
-        },
-        "approval": {
-            "provider": "AUXILIARY_APPROVAL_PROVIDER",
-            "model": "AUXILIARY_APPROVAL_MODEL",
-            "base_url": "AUXILIARY_APPROVAL_BASE_URL",
-            "api_key": "AUXILIARY_APPROVAL_API_KEY",
-        },
-    }
-    
-    for task_key, env_map in auxiliary_task_env.items():
-        task_cfg = auxiliary_config.get(task_key, {})
-        if not isinstance(task_cfg, dict):
-            continue
-        prov = str(task_cfg.get("provider", "")).strip()
-        model = str(task_cfg.get("model", "")).strip()
-        base_url = str(task_cfg.get("base_url", "")).strip()
-        api_key = str(task_cfg.get("api_key", "")).strip()
-        if prov and prov != "auto":
-            os.environ[env_map["provider"]] = prov
-        if model:
-            os.environ[env_map["model"]] = model
-        if base_url:
-            os.environ[env_map["base_url"]] = base_url
-        if api_key:
-            os.environ[env_map["api_key"]] = api_key
-    
-    # Security settings
-    security_config = defaults.get("security", {})
-    if isinstance(security_config, dict):
-        redact = security_config.get("redact_secrets")
-        if redact is not None:
-            _set_redact_env_aliases(redact)
-
-    return defaults
+    return load(
+        _hermes_home,
+        Path(__file__).parent / 'cli-config.yaml',
+        _env_flag_exact_one(_IGNORE_USER_CONFIG_ENV_NAMES),
+        _set_redact_env_aliases,
+    )
 
 # Load configuration at module startup
 CLI_CONFIG = load_cli_config()
@@ -782,21 +313,21 @@ CLI_CONFIG = load_cli_config()
 # Initialize centralized logging early — agent.log + errors.log in the active home logs/.
 # This ensures CLI sessions produce a log trail even before AIAgent is instantiated.
 try:
-    from hermes_logging import setup_logging
+    from superforecasting_agent.logging import setup_logging
     setup_logging(mode="cli")
 except Exception:
     pass  # Logging setup is best-effort — don't crash the CLI
 
 # Validate config structure early — print warnings before user hits cryptic errors
 try:
-    from hermes_cli.config import print_config_warnings
+    from superforecasting_agent.runtime.config import print_config_warnings
     print_config_warnings()
 except Exception:
     pass
 
 # Initialize the skin engine from config
 try:
-    from hermes_cli.skin_engine import init_skin_from_config
+    from superforecasting_agent.runtime.skin_engine import init_skin_from_config
     init_skin_from_config(CLI_CONFIG)
 except Exception:
     pass  # Skin engine is optional — default skin used if unavailable
@@ -831,7 +362,7 @@ try:
         """Defer ``AsyncHttpxClientWrapper.__del__`` neutering until import.
 
         Saves ~166ms on cold CLI start where openai is never used (e.g.
-        ``hermes --help`` paths inside the chat command flow).  See
+        ``superforecasting-agent --help`` paths inside the chat command flow).  See
         ``agent.auxiliary_client.neuter_async_httpx_del`` for full rationale
         on why ``__del__`` must be a no-op.
         """
@@ -879,21 +410,20 @@ import fire
 
 # Import the agent and tool systems
 from run_agent import AIAgent
-from model_tools import get_tool_definitions, get_toolset_for_tool
+from superforecasting_agent.tooling.runtime import get_tool_definitions, get_toolset_for_tool
 
 # Extracted CLI modules (Phase 3)
-from hermes_cli.banner import build_welcome_banner
-from hermes_cli.commands import SlashCommandCompleter, SlashCommandAutoSuggest
-from toolsets import get_public_toolset_names, get_toolset_info, validate_toolset
+from superforecasting_agent.runtime.banner import build_welcome_banner
+from superforecasting_agent.runtime.commands import SlashCommandCompleter, SlashCommandAutoSuggest
+from superforecasting_agent.tooling.toolsets import get_public_toolset_names, get_toolset_info, validate_toolset
 
 # Cron job system for scheduled tasks (execution is handled by the gateway)
-from cron import get_job
 
 # Resource cleanup imports for safe shutdown (terminal VMs, browser sessions)
 from tools.terminal_tool import cleanup_all_environments as _cleanup_all_terminals
 from tools.terminal_tool import set_sudo_password_callback, set_approval_callback
 from tools.skills_tool import set_secret_capture_callback
-from hermes_cli.callbacks import prompt_for_secret
+from superforecasting_agent.runtime.callbacks import prompt_for_secret
 from tools.browser_tool import _emergency_cleanup_all_sessions as _cleanup_all_browsers
 
 # Guard to prevent cleanup from running multiple times on exit
@@ -939,7 +469,7 @@ def _run_cleanup():
     # Shut down memory provider (on_session_end + shutdown_all) at actual
     # session boundary — NOT per-turn inside run_conversation().
     try:
-        from hermes_cli.plugins import invoke_hook as _invoke_hook
+        from superforecasting_agent.runtime.plugins import invoke_hook as _invoke_hook
         _invoke_hook("on_session_finalize", session_id=_active_agent_ref.session_id if _active_agent_ref else None, platform="cli")
     except Exception:
         pass
@@ -960,507 +490,6 @@ def _run_cleanup():
         pass
 
 
-# =============================================================================
-# Git Worktree Isolation (#652)
-# =============================================================================
-
-# Tracks the active worktree for cleanup on exit
-_active_worktree: Optional[Dict[str, str]] = None
-_FORECAST_WORKTREE_PREFIX = "forecast-"
-_LEGACY_WORKTREE_PREFIX = "hermes-"
-_FORECAST_WORKTREE_BRANCH_PREFIX = "forecast/forecast-"
-_LEGACY_WORKTREE_BRANCH_PREFIX = "hermes/hermes-"
-
-
-def _normalize_git_bash_path(p: Optional[str]) -> Optional[str]:
-    """Translate a Git Bash-style path (``/c/Users/...``) to the native
-    Windows form (``C:\\Users\\...``) that Python's ``subprocess.Popen``
-    and ``pathlib.Path`` accept.
-
-    No-op on non-Windows and for paths that already look native.  Git on
-    native Windows normally emits forward-slash Windows paths
-    (``C:/Users/...``) which both bash and Python handle, but certain
-    configurations (Git Bash shells, MSYS2, WSL-mounted repos) surface
-    ``/c/...`` or ``/cygdrive/c/...`` variants.
-    """
-    if not p:
-        return p
-    if sys.platform != "win32":
-        return p
-    import re as _re
-    # /c/Users/... or /C/Users/...
-    m = _re.match(r"^/([a-zA-Z])/(.*)$", p)
-    if m:
-        drive, rest = m.group(1), m.group(2)
-        return f"{drive.upper()}:\\{rest.replace('/', chr(92))}"
-    # /cygdrive/c/... or /mnt/c/...
-    m = _re.match(r"^/(?:cygdrive|mnt)/([a-zA-Z])/(.*)$", p)
-    if m:
-        drive, rest = m.group(1), m.group(2)
-        return f"{drive.upper()}:\\{rest.replace('/', chr(92))}"
-    return p
-
-
-def _git_repo_root() -> Optional[str]:
-    """Return the git repo root for CWD, or None if not in a repo.
-
-    Runs through :func:`_normalize_git_bash_path` so callers can pass
-    the result directly to ``Path``/``subprocess.Popen(cwd=...)`` on
-    Windows without hitting ``C:\\c\\Users\\...`` style resolution
-    mistakes.
-    """
-    import subprocess
-    try:
-        result = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5,
-        )
-        if result.returncode == 0:
-            return _normalize_git_bash_path(result.stdout.strip())
-    except Exception:
-        pass
-    return None
-
-
-def _path_is_within_root(path: Path, root: Path) -> bool:
-    """Return True when a resolved path stays within the expected root."""
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
-
-
-def _setup_worktree(repo_root: str = None) -> Optional[Dict[str, str]]:
-    """Create an isolated git worktree for this CLI session.
-
-    Returns a dict with worktree metadata on success, None on failure.
-    The dict contains: path, branch, repo_root.
-    """
-    import subprocess
-
-    repo_root = repo_root or _git_repo_root()
-    if not repo_root:
-        print("\033[31m✗ --worktree requires being inside a git repository.\033[0m")
-        print("  cd into your project repo first, then run superforecasting-agent chat --worktree")
-        return None
-
-    short_id = uuid.uuid4().hex[:8]
-    wt_name = f"{_FORECAST_WORKTREE_PREFIX}{short_id}"
-    branch_name = f"forecast/{wt_name}"
-
-    worktrees_dir = Path(repo_root) / ".worktrees"
-    worktrees_dir.mkdir(parents=True, exist_ok=True)
-
-    wt_path = worktrees_dir / wt_name
-
-    # Ensure .worktrees/ is in .gitignore
-    gitignore = Path(repo_root) / ".gitignore"
-    _ignore_entry = ".worktrees/"
-    try:
-        existing = gitignore.read_text() if gitignore.exists() else ""
-        if _ignore_entry not in existing.splitlines():
-            with open(gitignore, "a", encoding="utf-8") as f:
-                if existing and not existing.endswith("\n"):
-                    f.write("\n")
-                f.write(f"{_ignore_entry}\n")
-    except Exception as e:
-        logger.debug("Could not update .gitignore: %s", e)
-
-    # Create the worktree
-    try:
-        result = subprocess.run(
-            ["git", "worktree", "add", str(wt_path), "-b", branch_name, "HEAD"],
-            capture_output=True, text=True, timeout=30, cwd=repo_root,
-        )
-        if result.returncode != 0:
-            print(f"\033[31m✗ Failed to create worktree: {result.stderr.strip()}\033[0m")
-            return None
-    except Exception as e:
-        print(f"\033[31m✗ Failed to create worktree: {e}\033[0m")
-        return None
-
-    # Copy files listed in .worktreeinclude (gitignored files the agent needs)
-    include_file = Path(repo_root) / ".worktreeinclude"
-    if include_file.exists():
-        try:
-            repo_root_resolved = Path(repo_root).resolve()
-            wt_path_resolved = wt_path.resolve()
-            for line in include_file.read_text().splitlines():
-                entry = line.strip()
-                if not entry or entry.startswith("#"):
-                    continue
-                src = Path(repo_root) / entry
-                dst = wt_path / entry
-                # Prevent path traversal and symlink escapes: both the resolved
-                # source and the resolved destination must stay inside their
-                # expected roots before any file or symlink operation happens.
-                try:
-                    src_resolved = src.resolve(strict=False)
-                    dst_resolved = dst.resolve(strict=False)
-                except (OSError, ValueError):
-                    logger.debug("Skipping invalid .worktreeinclude entry: %s", entry)
-                    continue
-                if not _path_is_within_root(src_resolved, repo_root_resolved):
-                    logger.warning("Skipping .worktreeinclude entry outside repo root: %s", entry)
-                    continue
-                if not _path_is_within_root(dst_resolved, wt_path_resolved):
-                    logger.warning("Skipping .worktreeinclude entry that escapes worktree: %s", entry)
-                    continue
-                if src.is_file():
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(str(src), str(dst))
-                elif src.is_dir():
-                    # Symlink directories (faster, saves disk).  On Windows,
-                    # symlink creation requires Developer Mode or elevation,
-                    # and fails with OSError otherwise — fall back to a
-                    # recursive copy so the worktree is still usable.  The
-                    # copy is slower and uses disk, but it doesn't require
-                    # admin and matches the Linux/macOS symlink outcome
-                    # functionally.
-                    if not dst.exists():
-                        dst.parent.mkdir(parents=True, exist_ok=True)
-                        try:
-                            os.symlink(str(src_resolved), str(dst))
-                        except (OSError, NotImplementedError) as _sym_err:
-                            if sys.platform == "win32":
-                                logger.info(
-                                    ".worktreeinclude: symlink failed (%s) — "
-                                    "falling back to copytree on Windows.",
-                                    _sym_err,
-                                )
-                                try:
-                                    shutil.copytree(
-                                        str(src_resolved),
-                                        str(dst),
-                                        symlinks=True,
-                                        dirs_exist_ok=False,
-                                    )
-                                except Exception as _copy_err:
-                                    logger.warning(
-                                        ".worktreeinclude: copy fallback "
-                                        "also failed for %s -> %s: %s",
-                                        src, dst, _copy_err,
-                                    )
-                            else:
-                                raise
-        except Exception as e:
-            logger.debug("Error copying .worktreeinclude entries: %s", e)
-
-    info = {
-        "path": str(wt_path),
-        "branch": branch_name,
-        "repo_root": repo_root,
-    }
-
-    print(f"\033[32m✓ Worktree created:\033[0m {wt_path}")
-    print(f"  Branch: {branch_name}")
-
-    return info
-
-
-def _worktree_has_unpushed_commits(worktree_path: str, timeout: int = 10) -> bool:
-    """Return whether a worktree has commits not reachable from any remote branch.
-
-    ``git log HEAD --not --remotes`` compares against remote-tracking refs under
-    ``refs/remotes/*``. If a repo has no remote-tracking refs yet, there is no
-    usable remote baseline to compare against, so treat it as having no
-    "unpushed" commits.
-    """
-    import subprocess
-
-    try:
-        remote_refs = subprocess.run(
-            ["git", "for-each-ref", "--format=%(refname)", "refs/remotes"],
-            capture_output=True, text=True, timeout=timeout, cwd=worktree_path,
-        )
-        if remote_refs.returncode != 0:
-            return True
-        if not remote_refs.stdout.strip():
-            return False
-
-        result = subprocess.run(
-            ["git", "log", "--oneline", "HEAD", "--not", "--remotes"],
-            capture_output=True, text=True, timeout=timeout, cwd=worktree_path,
-        )
-        if result.returncode != 0:
-            return True
-        return bool(result.stdout.strip())
-    except Exception:
-        return True
-
-
-def _cleanup_worktree(info: Dict[str, str] = None) -> None:
-    """Remove a worktree and its branch on exit.
-
-    Preserves the worktree only if it has unpushed commits (real work
-    that hasn't been pushed to any remote).  Uncommitted changes alone
-    (untracked files, test artifacts) are not enough to keep it — agent
-    work lives in commits/PRs, not the working tree.
-    """
-    global _active_worktree
-    info = info or _active_worktree
-    if not info:
-        return
-
-    import subprocess
-
-    wt_path = info["path"]
-    branch = info["branch"]
-    repo_root = info["repo_root"]
-
-    if not Path(wt_path).exists():
-        return
-
-    has_unpushed = _worktree_has_unpushed_commits(wt_path, timeout=10)
-
-    if has_unpushed:
-        print(f"\n\033[33m⚠ Worktree has unpushed commits, keeping: {wt_path}\033[0m")
-        print(f"  To clean up manually: git worktree remove --force {wt_path}")
-        _active_worktree = None
-        return
-
-    # Remove worktree (even if working tree is dirty — uncommitted
-    # changes without unpushed commits are just artifacts)
-    try:
-        subprocess.run(
-            ["git", "worktree", "remove", wt_path, "--force"],
-            capture_output=True, text=True, timeout=15, cwd=repo_root,
-        )
-    except Exception as e:
-        logger.debug("Failed to remove worktree: %s", e)
-
-    # Delete the branch
-    try:
-        subprocess.run(
-            ["git", "branch", "-D", branch],
-            capture_output=True, text=True, timeout=10, cwd=repo_root,
-        )
-    except Exception as e:
-        logger.debug("Failed to delete branch %s: %s", branch, e)
-
-    _active_worktree = None
-    print(f"\033[32m✓ Worktree cleaned up: {wt_path}\033[0m")
-
-
-def _run_state_db_auto_maintenance(session_db) -> None:
-    """Call ``SessionDB.maybe_auto_prune_and_vacuum`` using current config.
-
-    Reads the ``sessions:`` section from config.yaml via
-    :func:`hermes_cli.config.load_config` (the authoritative loader that
-    deep-merges DEFAULT_CONFIG, so unmigrated configs still get default
-    values). Honours ``auto_prune`` / ``retention_days`` /
-    ``vacuum_after_prune`` / ``min_interval_hours``, and delegates to the
-    DB. Never raises — maintenance must never block interactive startup.
-    """
-    if session_db is None:
-        return
-    try:
-        from hermes_cli.config import load_config as _load_full_config
-        from hermes_constants import get_hermes_home as _get_hermes_home
-        _hermes_home_maint = _get_hermes_home()
-
-        # One-time prune of empty TUI ghost sessions.
-        try:
-            if not session_db.get_meta("ghost_session_prune_v1"):
-                pruned = session_db.prune_empty_ghost_sessions(
-                    sessions_dir=_hermes_home_maint / "sessions"
-                )
-                session_db.set_meta("ghost_session_prune_v1", "1")
-                if pruned:
-                    logger.info("Pruned %d empty TUI ghost sessions", pruned)
-        except Exception as _prune_exc:
-            logger.debug("Ghost session prune skipped: %s", _prune_exc)
-
-        # One-time finalize of orphaned compression continuations (#20001).
-        try:
-            if not session_db.get_meta("orphaned_compression_finalize_v1"):
-                finalized = session_db.finalize_orphaned_compression_sessions()
-                session_db.set_meta("orphaned_compression_finalize_v1", "1")
-                if finalized:
-                    logger.info(
-                        "Finalized %d orphaned compression sessions", finalized
-                    )
-        except Exception as _finalize_exc:
-            logger.debug("Orphan compression finalize skipped: %s", _finalize_exc)
-
-        cfg = (_load_full_config().get("sessions") or {})
-        if not cfg.get("auto_prune", False):
-            return
-        session_db.maybe_auto_prune_and_vacuum(
-            retention_days=int(cfg.get("retention_days", 90)),
-            min_interval_hours=int(cfg.get("min_interval_hours", 24)),
-            vacuum=bool(cfg.get("vacuum_after_prune", True)),
-            sessions_dir=_hermes_home_maint / "sessions",
-        )
-    except Exception as exc:
-        logger.debug("state.db auto-maintenance skipped: %s", exc)
-
-
-def _run_checkpoint_auto_maintenance() -> None:
-    """Call ``checkpoint_manager.maybe_auto_prune_checkpoints`` using current config.
-
-    Reads the ``checkpoints:`` section from config.yaml via
-    :func:`hermes_cli.config.load_config`. Honours ``auto_prune`` /
-    ``retention_days`` / ``delete_orphans`` / ``min_interval_hours``.
-    Never raises — maintenance must never block interactive startup.
-    """
-    try:
-        from hermes_cli.config import load_config as _load_full_config
-        cfg = (_load_full_config().get("checkpoints") or {})
-        if not cfg.get("auto_prune", False):
-            return
-        from tools.checkpoint_manager import maybe_auto_prune_checkpoints
-        maybe_auto_prune_checkpoints(
-            retention_days=int(cfg.get("retention_days", 7)),
-            min_interval_hours=int(cfg.get("min_interval_hours", 24)),
-            delete_orphans=bool(cfg.get("delete_orphans", True)),
-            max_total_size_mb=int(cfg.get("max_total_size_mb", 500)),
-        )
-    except Exception as exc:
-        logger.debug("checkpoint auto-maintenance skipped: %s", exc)
-
-
-def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
-    """Remove stale worktrees and orphaned branches on startup.
-
-    Age-based tiers:
-    - Under max_age_hours (24h): skip — session may still be active.
-    - 24h–72h: remove if no unpushed commits.
-    - Over 72h: force remove regardless (nothing should sit this long).
-
-    Also prunes orphaned forecast worktree branches, legacy ``hermes/*``
-    worktree branches, and ``pr-*`` local branches that have no corresponding
-    worktree.
-    """
-    import subprocess
-    import time
-
-    worktrees_dir = Path(repo_root) / ".worktrees"
-    if not worktrees_dir.exists():
-        _prune_orphaned_branches(repo_root)
-        return
-
-    now = time.time()
-    soft_cutoff = now - (max_age_hours * 3600)       # 24h default
-    hard_cutoff = now - (max_age_hours * 3 * 3600)   # 72h default
-
-    worktree_prefixes = (_FORECAST_WORKTREE_PREFIX, _LEGACY_WORKTREE_PREFIX)
-    for entry in worktrees_dir.iterdir():
-        if not entry.is_dir() or not entry.name.startswith(worktree_prefixes):
-            continue
-
-        # Check age
-        try:
-            mtime = entry.stat().st_mtime
-            if mtime > soft_cutoff:
-                continue  # Too recent — skip
-        except Exception:
-            continue
-
-        force = mtime <= hard_cutoff  # Over 72h — force remove
-
-        if not force:
-            # 24h–72h tier: only remove if no unpushed commits
-            if _worktree_has_unpushed_commits(str(entry), timeout=5):
-                continue  # Has unpushed commits or can't check — skip
-
-        # Safe to remove
-        try:
-            branch_result = subprocess.run(
-                ["git", "branch", "--show-current"],
-                capture_output=True, text=True, timeout=5, cwd=str(entry),
-            )
-            branch = branch_result.stdout.strip()
-
-            subprocess.run(
-                ["git", "worktree", "remove", str(entry), "--force"],
-                capture_output=True, text=True, timeout=15, cwd=repo_root,
-            )
-            if branch:
-                subprocess.run(
-                    ["git", "branch", "-D", branch],
-                    capture_output=True, text=True, timeout=10, cwd=repo_root,
-                )
-            logger.debug("Pruned stale worktree: %s (force=%s)", entry.name, force)
-        except Exception as e:
-            logger.debug("Failed to prune worktree %s: %s", entry.name, e)
-
-    _prune_orphaned_branches(repo_root)
-
-
-def _prune_orphaned_branches(repo_root: str) -> None:
-    """Delete generated worktree and ``pr-*`` branches with no worktree.
-
-    Forecast-prefixed branches are created by ``superforecasting-agent chat --worktree``.
-    Legacy ``hermes/hermes-*`` branches are still recognized so existing fork
-    transition checkouts do not leak old worktree refs.
-    """
-    import subprocess
-
-    try:
-        result = subprocess.run(
-            ["git", "branch", "--format=%(refname:short)"],
-            capture_output=True, text=True, timeout=10, cwd=repo_root,
-        )
-        if result.returncode != 0:
-            return
-        all_branches = [b.strip() for b in result.stdout.strip().split("\n") if b.strip()]
-    except Exception:
-        return
-
-    # Collect branches that are actively checked out in a worktree
-    active_branches: set = set()
-    try:
-        wt_result = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            capture_output=True, text=True, timeout=10, cwd=repo_root,
-        )
-        for line in wt_result.stdout.split("\n"):
-            if line.startswith("branch refs/heads/"):
-                active_branches.add(line.split("branch refs/heads/", 1)[-1].strip())
-    except Exception:
-        return  # Can't determine active branches — bail
-
-    # Also protect the currently checked-out branch and main
-    try:
-        head_result = subprocess.run(
-            ["git", "branch", "--show-current"],
-            capture_output=True, text=True, timeout=5, cwd=repo_root,
-        )
-        current = head_result.stdout.strip()
-        if current:
-            active_branches.add(current)
-    except Exception:
-        pass
-    active_branches.add("main")
-
-    orphaned = [
-        b for b in all_branches
-        if b not in active_branches
-        and (
-            b.startswith(_FORECAST_WORKTREE_BRANCH_PREFIX)
-            or b.startswith(_LEGACY_WORKTREE_BRANCH_PREFIX)
-            or b.startswith("pr-")
-        )
-    ]
-
-    if not orphaned:
-        return
-
-    # Delete in batches
-    for i in range(0, len(orphaned), 50):
-        batch = orphaned[i:i + 50]
-        try:
-            subprocess.run(
-                ["git", "branch", "-D"] + batch,
-                capture_output=True, text=True, timeout=30, cwd=repo_root,
-            )
-        except Exception as e:
-            logger.debug("Failed to prune orphaned branches: %s", e)
-
-    logger.debug("Pruned %d orphaned branches", len(orphaned))
-
 # ============================================================================
 # ASCII Art & Branding
 # ============================================================================
@@ -1475,7 +504,7 @@ def _prune_orphaned_branches(repo_root: str) -> None:
 # ANSI building blocks for conversation display
 _ACCENT_ANSI_DEFAULT = "\033[1;38;2;255;215;0m"  # True-color #FFD700 bold — fallback
 _BOLD = "\033[1m"
-_RST = "\033[0m"
+from superforecasting_agent.runtime.console_output import _RST as _RST
 _STREAM_PAD = "    "  # 4-space indent for streamed response text (matches Panel padding)
 
 
@@ -1731,7 +760,7 @@ def _install_skin_light_mode_hook() -> None:
     """Wrap SkinConfig.get_color at import time so EVERY skin color read goes
     through the light-mode remap.  Idempotent."""
     try:
-        from hermes_cli.skin_engine import SkinConfig  # type: ignore[import]
+        from superforecasting_agent.runtime.skin_engine import SkinConfig  # type: ignore[import]
     except Exception:
         return
     if getattr(SkinConfig, "_hermes_light_mode_hook_installed", False):
@@ -1762,7 +791,6 @@ except Exception:
     pass
 
 
-
 class _SkinAwareAnsi:
     """Lazy ANSI escape that resolves from the skin engine on first use.
 
@@ -1779,7 +807,7 @@ class _SkinAwareAnsi:
     def __str__(self) -> str:
         if self._cached is None:
             try:
-                from hermes_cli.skin_engine import get_active_skin
+                from superforecasting_agent.runtime.skin_engine import get_active_skin
                 self._cached = _hex_to_ansi(
                     get_active_skin().get_color(self._skin_key, self._fallback_hex),
                     bold=self._bold,
@@ -1800,18 +828,13 @@ class _SkinAwareAnsi:
 
 
 _ACCENT = _SkinAwareAnsi("response_border", "#FFD700", bold=True)
-# Use ANSI dim+italic attributes (\x1b[2;3m) instead of a hardcoded
-# hex color so dim/thinking text inherits the terminal's default
-# foreground color and stays readable in both light and dark
-# Terminal.app modes.  Hardcoded skin colors like #B8860B
-# (dark goldenrod) become invisible against light cream backgrounds.
-_DIM = "\x1b[2;3m"
+from superforecasting_agent.runtime.console_output import _DIM as _DIM
 
 
 def _accent_hex() -> str:
     """Return the active skin accent color for legacy CLI output lines."""
     try:
-        from hermes_cli.skin_engine import get_active_skin
+        from superforecasting_agent.runtime.skin_engine import get_active_skin
         return get_active_skin().get_color("ui_accent", "#FFBF00")
     except Exception:
         return "#FFBF00"
@@ -1934,195 +957,16 @@ def _render_final_assistant_content(text: str, mode: str = "render"):
     return Markdown(plain)
 
 
-_OUTPUT_HISTORY_ENABLED = True
-_OUTPUT_HISTORY_REPLAYING = False
-_OUTPUT_HISTORY_SUPPRESSED = False
-_OUTPUT_HISTORY_MAX_LINES = 200
-_OUTPUT_HISTORY = deque(maxlen=_OUTPUT_HISTORY_MAX_LINES)
-
-
-def _coerce_output_history_limit(value) -> int:
-    try:
-        return max(10, int(value))
-    except (TypeError, ValueError):
-        return 200
-
-
-def _configure_output_history(enabled: bool, max_lines=200) -> None:
-    """Configure recent CLI output replayed after terminal redraws."""
-    global _OUTPUT_HISTORY_ENABLED, _OUTPUT_HISTORY_MAX_LINES, _OUTPUT_HISTORY
-    _OUTPUT_HISTORY_ENABLED = bool(enabled)
-    _OUTPUT_HISTORY_MAX_LINES = _coerce_output_history_limit(max_lines)
-    _OUTPUT_HISTORY = deque(maxlen=_OUTPUT_HISTORY_MAX_LINES)
-
-
-def _clear_output_history() -> None:
-    _OUTPUT_HISTORY.clear()
-
-
-@contextmanager
-def _suspend_output_history():
-    global _OUTPUT_HISTORY_SUPPRESSED
-    old_value = _OUTPUT_HISTORY_SUPPRESSED
-    _OUTPUT_HISTORY_SUPPRESSED = True
-    try:
-        yield
-    finally:
-        _OUTPUT_HISTORY_SUPPRESSED = old_value
-
-
-def _record_output_history_entry(entry) -> None:
-    if not _OUTPUT_HISTORY_ENABLED or _OUTPUT_HISTORY_REPLAYING or _OUTPUT_HISTORY_SUPPRESSED:
-        return
-    _OUTPUT_HISTORY.append(entry)
-
-
-def _record_output_history(text: str) -> None:
-    if not _OUTPUT_HISTORY_ENABLED or _OUTPUT_HISTORY_REPLAYING or _OUTPUT_HISTORY_SUPPRESSED:
-        return
-    normalized = str(text).replace("\r", "").rstrip("\n")
-    if not normalized:
-        return
-    for line in normalized.splitlines():
-        _record_output_history_entry(line)
-
-
-def _replay_output_history() -> None:
-    """Repaint recent output above the prompt after a full screen clear."""
-    global _OUTPUT_HISTORY_REPLAYING
-    if not _OUTPUT_HISTORY_ENABLED or not _OUTPUT_HISTORY:
-        return
-    _OUTPUT_HISTORY_REPLAYING = True
-    try:
-        rendered_lines = []
-        for entry in tuple(_OUTPUT_HISTORY):
-            if callable(entry):
-                try:
-                    lines = entry()
-                except Exception:
-                    continue
-                if isinstance(lines, str):
-                    lines = lines.splitlines()
-            else:
-                lines = [entry]
-            rendered_lines.extend(str(line) for line in lines)
-        if rendered_lines:
-            # Replay after resize can contain hundreds of history lines. A
-            # per-line prompt_toolkit print forces one synchronous terminal I/O
-            # and redraw cycle per line, which users perceive as a waterfall of
-            # old output. Keep the existing history contents unchanged, but
-            # emit the replay as one ANSI payload so resize recovery does a
-            # single prompt_toolkit print/redraw.
-            _pt_print(_PT_ANSI("\n".join(rendered_lines)))
-    except Exception:
-        pass
-    finally:
-        _OUTPUT_HISTORY_REPLAYING = False
-
-
-def _cprint(text: str):
-    """Print ANSI-colored text through prompt_toolkit's native renderer.
-
-    Raw ANSI escapes written via print() are swallowed by patch_stdout's
-    StdoutProxy.  Routing through print_formatted_text(ANSI(...)) lets
-    prompt_toolkit parse the escapes and render real colors.
-
-    When called from a background thread while a prompt_toolkit
-    ``Application`` is running (the common case for the self-improvement
-    background review's ``💾 …`` summary, curator summaries, and other
-    bg-thread emissions), a direct ``_pt_print`` races with the input
-    area's redraw and the line can end up visually buried behind the
-    prompt.  Route those cases through ``run_in_terminal`` via
-    ``loop.call_soon_threadsafe``, which pauses the input area, prints
-    the line above it, and redraws the prompt cleanly.
-    """
-    _record_output_history(text)
-
-    try:
-        from prompt_toolkit.application import get_app_or_none, run_in_terminal
-    except Exception:
-        _pt_print(_PT_ANSI(text))
-        return
-
-    app = None
-    try:
-        app = get_app_or_none()
-    except Exception:
-        app = None
-
-    # No active app, or we're already on the app's main thread: the
-    # direct prompt_toolkit print is safe and matches existing behavior
-    # (spinner frames, streamed tokens, tool activity prefixes, …).
-    if app is None or not getattr(app, "_is_running", False):
-        try:
-            _pt_print(_PT_ANSI(text))
-        except Exception:
-            # Fallback when stdout is not a real console (e.g. subprocess
-            # worker logging to a file). prompt_toolkit raises
-            # NoConsoleScreenBufferError (Windows) or OSError (other).
-            try:
-                print(text)
-            except Exception:
-                pass
-        return
-
-    try:
-        loop = app.loop  # type: ignore[attr-defined]
-    except Exception:
-        loop = None
-    if loop is None:
-        _pt_print(_PT_ANSI(text))
-        return
-
-    import asyncio as _asyncio
-    try:
-        # Use get_running_loop() instead of get_event_loop() to avoid the
-        # DeprecationWarning / RuntimeWarning emitted by Python 3.10+ when
-        # get_event_loop() is called from a thread that has no current event
-        # loop set (e.g. the process_loop background thread).  Fixes #19285.
-        current_loop = _asyncio.get_running_loop()
-    except RuntimeError:
-        current_loop = None
-    except Exception:
-        current_loop = None
-    # Same thread as the app's loop → safe to print directly.
-    if current_loop is loop and loop.is_running():
-        _pt_print(_PT_ANSI(text))
-        return
-
-    # Cross-thread emission: ask the app's event loop to schedule a
-    # ``run_in_terminal`` that wraps ``_pt_print``.  This hides the
-    # prompt, prints, and redraws.  Fire-and-forget — if scheduling
-    # fails we fall back to a direct print so the line isn't lost.
-    def _schedule():
-        # run_in_terminal() may return either:
-        #   • a coroutine / Future (prompt_toolkit ≥ 3.0) — must be scheduled
-        #     via ensure_future so the coroutine is actually awaited; calling
-        #     it bare would leave it unawaited and silently drop the output
-        #     (fixes #23185 Bug A).
-        #   • None (some mocks / older PT builds) — just call the inner
-        #     function directly since PT already executed it synchronously.
-        # Do NOT fall back to a bare _pt_print when ensure_future raises,
-        # because run_in_terminal already invoked the lambda in that case
-        # (the mock path), which would double-print the line.
-        try:
-            import asyncio as _aio
-            import inspect as _inspect
-            coro = run_in_terminal(lambda: _pt_print(_PT_ANSI(text)))
-            if coro is not None and (_inspect.isawaitable(coro) or _inspect.iscoroutine(coro)):
-                _aio.ensure_future(coro)
-            # else: run_in_terminal ran the lambda synchronously; nothing more
-            # to do (double-scheduling would print twice).
-        except Exception:
-            pass  # best-effort; the line may already have been printed
-
-    try:
-        loop.call_soon_threadsafe(_schedule)
-    except Exception:
-        try:
-            _pt_print(_PT_ANSI(text))
-        except Exception:
-            pass
+from superforecasting_agent.runtime.console_output import (
+    _coerce_output_history_limit as _coerce_output_history_limit,
+    _configure_output_history as _configure_output_history,
+    _clear_output_history as _clear_output_history,
+    _suspend_output_history as _suspend_output_history,
+    _record_output_history_entry as _record_output_history_entry,
+    _record_output_history as _record_output_history,
+    _replay_output_history as _replay_output_history,
+    _cprint as _cprint,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -2134,7 +978,7 @@ def _cprint(text: str):
 # WITHOUT pulling in cli.py's heavy import graph (prompt_toolkit/fire/rich) on
 # the serial dispatch thread. Re-exported here so cli.py's public API is
 # unchanged for every existing caller.
-from hermes_cli.file_drop import (  # noqa: F401
+from superforecasting_agent.runtime.file_drop import (  # noqa: F401
     _IMAGE_EXTENSIONS,
     _detect_file_drop,
     _resolve_attachment_path,
@@ -2142,7 +986,7 @@ from hermes_cli.file_drop import (  # noqa: F401
 )
 
 
-from hermes_constants import is_termux as _is_termux_environment
+from superforecasting_agent.constants import is_termux as _is_termux_environment
 
 
 def _termux_example_image_path(filename: str = "cat.png") -> str:
@@ -2159,8 +1003,7 @@ def _termux_example_image_path(filename: str = "cat.png") -> str:
     return os.path.join("~/storage/shared", "Pictures", filename)
 
 
-
-# _detect_file_drop is imported from hermes_cli.file_drop at the top of this
+# _detect_file_drop is imported from superforecasting_agent.runtime.file_drop at the top of this
 # module (kept off the gateway's serial dispatch hot path).
 
 
@@ -2395,69 +1238,15 @@ def _collect_query_images(query: str | None, image_arg: str | None = None) -> tu
     return message, deduped
 
 
-class ChatConsole:
-    """Rich Console adapter for prompt_toolkit's patch_stdout context.
+from superforecasting_agent.runtime.console_output import ChatConsole as ChatConsole
 
-    Captures Rich's rendered ANSI output and routes it through _cprint
-    so colors and markup render correctly inside the interactive chat loop.
-    Drop-in replacement for Rich Console — just pass this to any function
-    that expects a console.print() interface.
-    """
-
-    def __init__(self):
-        from io import StringIO
-        self._buffer = StringIO()
-        self._inner = Console(
-            file=self._buffer,
-            force_terminal=True,
-            color_system="truecolor",
-            highlight=False,
-        )
-
-    def print(self, *args, **kwargs):
-        self._buffer.seek(0)
-        self._buffer.truncate()
-        # Read terminal width at render time so panels adapt to current size
-        self._inner.width = shutil.get_terminal_size((80, 24)).columns
-        self._inner.print(*args, **kwargs)
-        output = self._buffer.getvalue()
-        for line in output.rstrip("\n").split("\n"):
-            _cprint(line)
-
-    @contextmanager
-    def status(self, *_args, **_kwargs):
-        """Provide a no-op Rich-compatible status context.
-
-        Some slash command helpers use ``console.status(...)`` when running in
-        the standalone CLI. Interactive chat routes those helpers through
-        ``ChatConsole()``, which historically only implemented ``print()``.
-        Returning a silent context manager keeps slash commands compatible
-        without duplicating the higher-level busy indicator already shown by
-        ``HermesCLI._busy_command()``.
-        """
-        yield self
-
-# ASCII Art - Superforecasting Agent logo (full width, single line - requires ~95 char terminal)
-HERMES_AGENT_LOGO = """[bold #FFD700]┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓[/]
-[bold #FFD700]┃ SUPERFORECASTING AGENT                                                           ┃[/]
-[#FFBF00]┃ CLI forecasting desk · forecast ledger · calibration · backtests · alerts          ┃[/]
-[#CD7F32]┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛[/]"""
-
-# Forecast desk mark (compact, fits in left panel)
-FORECAST_DESK_MARK = """[#CD7F32]        as-of timeline          probability[/]
-[#FFBF00]   ┌────────────────────┬──────────────────┐[/]
-[#FFD700]   │ evidence freshness  │ 0.10 ▁▂▃▅▇ 0.90 │[/]
-[#FFD700]   │ reference classes   │ base rate + view │[/]
-[#FFBF00]   │ model runs          │ ensemble update │[/]
-[#CD7F32]   └────────────────────┴──────────────────┘[/]
-[#B8860B]      ledger · score · postmortem · learn[/]"""
 
 
 
 def _build_compact_banner() -> str:
     """Build a compact banner that fits the current terminal width."""
     try:
-        from hermes_cli.skin_engine import get_active_skin
+        from superforecasting_agent.runtime.skin_engine import get_active_skin
         _skin = get_active_skin()
     except Exception:
         _skin = None
@@ -2501,27 +1290,11 @@ def _build_compact_banner() -> str:
     )
 
 
-
 # ============================================================================
 # Slash-command detection helper
 # ============================================================================
 
-def _looks_like_slash_command(text: str) -> bool:
-    """Return True if *text* looks like a slash command, not a file path.
-
-    Slash commands are ``/help``, ``/model gpt-4``, ``/q``, etc.
-    File paths like ``/Users/ironin/file.md:45-46 can you fix this?``
-    also start with ``/`` but contain additional ``/`` characters in
-    the first whitespace-delimited word.  This helper distinguishes
-    the two so that pasted paths are sent to the agent instead of
-    triggering "Unknown command".
-    """
-    if not text or not text.startswith("/"):
-        return False
-    first_word = text.split()[0]
-    # After stripping the leading /, a command name has no slashes.
-    # A path like /Users/foo/bar.md always does.
-    return "/" not in first_word[1:]
+from superforecasting_agent.runtime.commands import _looks_like_slash_command as _looks_like_slash_command
 
 
 # ============================================================================
@@ -2546,7 +1319,7 @@ _skill_bundles = get_skill_bundles()
 def _get_plugin_cmd_handler_names() -> set:
     """Return plugin command names (without slash prefix) for dispatch matching."""
     try:
-        from hermes_cli.plugins import get_plugin_commands
+        from superforecasting_agent.runtime.plugins import get_plugin_commands
         return set(get_plugin_commands().keys())
     except Exception:
         return set()
@@ -2602,7 +1375,7 @@ def save_config_value(key_path: str, value: any) -> bool:
         
         # Save back atomically while preserving comments, ordering, quotes, and
         # readable Unicode in user-edited config.yaml.
-        from utils import atomic_roundtrip_yaml_update
+        from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
         atomic_roundtrip_yaml_update(config_path, key_path, value)
         
         # Enforce owner-only permissions on config files (contain API keys)
@@ -2617,13 +1390,11 @@ def save_config_value(key_path: str, value: any) -> bool:
         return False
 
 
-
-
 # ============================================================================
 # Forecast CLI implementation
 # ============================================================================
 
-class HermesCLI:
+class ForecastCLI:
     """
     Interactive CLI for Superforecasting Agent.
     
@@ -2748,7 +1519,7 @@ class HermesCLI:
         if self.model == _DEFAULT_CONFIG_MODEL:
             _base_url = (_model_config.get("base_url") or "") if isinstance(_model_config, dict) else ""
             if "localhost" in _base_url or "127.0.0.1" in _base_url:
-                from hermes_cli.runtime_provider import _auto_detect_local_model
+                from superforecasting_agent.runtime.runtime_provider import _auto_detect_local_model
                 _detected = _auto_detect_local_model(_base_url)
                 if _detected:
                     self.model = _detected
@@ -2826,7 +1597,7 @@ class HermesCLI:
         self.checkpoint_max_file_size_mb = cp_cfg.get("max_file_size_mb", 10)
         self.pass_session_id = pass_session_id
         # --ignore-rules: honor either the constructor flag or the env var set
-        # by `superforecasting-agent chat --ignore-rules` in hermes_cli/main.py. When true we
+        # by `superforecasting-agent chat --ignore-rules` in superforecasting_agent/runtime/main.py. When true we
         # pass skip_context_files=True and skip_memory=True to AIAgent so
         # AGENTS.md/SOUL.md/.cursorrules and persistent memory are not loaded.
         self.ignore_rules = ignore_rules or _env_flag_exact_one(_IGNORE_RULES_ENV_NAMES)
@@ -2912,7 +1683,7 @@ class HermesCLI:
         # Initialize SQLite session store early so /title works before first message
         self._session_db = None
         try:
-            from hermes_state import SessionDB
+            from superforecasting_agent.storage.session import SessionDB
             self._session_db = SessionDB()
         except Exception as e:
             logger.warning("Failed to initialize SessionDB — session will NOT be indexed for search: %s", e)
@@ -3454,7 +2225,7 @@ class HermesCLI:
         registered so the cached label always matches the live binding.
         """
         try:
-            from hermes_cli.voice import format_voice_record_key_for_status
+            from superforecasting_agent.runtime.voice import format_voice_record_key_for_status
             self._voice_record_key_display_cache = format_voice_record_key_for_status(raw_key)
         except Exception:
             self._voice_record_key_display_cache = "Ctrl+B"
@@ -3634,108 +2405,7 @@ class HermesCLI:
         except Exception:
             return [("class:status-bar", f" {self._build_status_bar_text()} ")]
 
-    def _normalize_model_for_provider(self, resolved_provider: str) -> bool:
-        """Normalize provider-specific model IDs and routing."""
-        current_model = (self.model or "").strip()
-        changed = False
-
-        try:
-            from hermes_cli.model_normalize import (
-                _AGGREGATOR_PROVIDERS,
-                normalize_model_for_provider,
-            )
-
-            if resolved_provider not in _AGGREGATOR_PROVIDERS:
-                normalized_model = normalize_model_for_provider(current_model, resolved_provider)
-                if normalized_model and normalized_model != current_model:
-                    if not self._model_is_default:
-                        self._console_print(
-                            f"[yellow]⚠️  Normalized model '{current_model}' to '{normalized_model}' for {resolved_provider}.[/]"
-                        )
-                    self.model = normalized_model
-                    current_model = normalized_model
-                    changed = True
-        except Exception:
-            pass
-
-        if resolved_provider == "copilot":
-            try:
-                from hermes_cli.models import copilot_model_api_mode, normalize_copilot_model_id
-
-                canonical = normalize_copilot_model_id(current_model, api_key=self.api_key)
-                if canonical and canonical != current_model:
-                    if not self._model_is_default:
-                        self._console_print(
-                            f"[yellow]⚠️  Normalized Copilot model '{current_model}' to '{canonical}'.[/]"
-                        )
-                    self.model = canonical
-                    current_model = canonical
-                    changed = True
-
-                resolved_mode = copilot_model_api_mode(current_model, api_key=self.api_key)
-                if resolved_mode != self.api_mode:
-                    self.api_mode = resolved_mode
-                    changed = True
-            except Exception:
-                pass
-            return changed
-
-        if resolved_provider in {"opencode-zen", "opencode-go"}:
-            try:
-                from hermes_cli.models import normalize_opencode_model_id, opencode_model_api_mode
-
-                canonical = normalize_opencode_model_id(resolved_provider, current_model)
-                if canonical and canonical != current_model:
-                    if not self._model_is_default:
-                        self._console_print(
-                            f"[yellow]⚠️  Stripped provider prefix from '{current_model}'; using '{canonical}' for {resolved_provider}.[/]"
-                        )
-                    self.model = canonical
-                    current_model = canonical
-                    changed = True
-
-                resolved_mode = opencode_model_api_mode(resolved_provider, current_model)
-                if resolved_mode != self.api_mode:
-                    self.api_mode = resolved_mode
-                    changed = True
-            except Exception:
-                pass
-            return changed
-
-        if resolved_provider != "openai-codex":
-            return changed
-
-        # 1. Strip provider prefix ("openai/gpt-5.4" → "gpt-5.4")
-        if "/" in current_model:
-            slug = current_model.split("/", 1)[1]
-            if not self._model_is_default:
-                self._console_print(
-                    f"[yellow]⚠️  Stripped provider prefix from '{current_model}'; "
-                    f"using '{slug}' for OpenAI Codex.[/]"
-                )
-            self.model = slug
-            current_model = slug
-            changed = True
-
-        # 2. Replace untouched default with a Codex model
-        if self._model_is_default:
-            fallback_model = "gpt-5.3-codex"
-            try:
-                from hermes_cli.codex_models import get_codex_model_ids
-
-                available = get_codex_model_ids(
-                    access_token=self.api_key if self.api_key else None,
-                )
-                if available:
-                    fallback_model = available[0]
-            except Exception:
-                pass
-
-            if current_model != fallback_model:
-                self.model = fallback_model
-                changed = True
-
-        return changed
+    from superforecasting_agent.runtime.interactive_routing import _normalize_model_for_provider as _normalize_model_for_provider
 
     def _on_thinking(self, text: str) -> None:
         """Called by agent when thinking starts/stops. Updates TUI spinner."""
@@ -4120,7 +2790,7 @@ class HermesCLI:
                 return
             self._stream_box_opened = True
             try:
-                from hermes_cli.skin_engine import get_active_skin
+                from superforecasting_agent.runtime.skin_engine import get_active_skin
                 _skin = get_active_skin()
                 label = _skin.get_branding("response_label", " Forecast ")
                 _text_hex = _skin.get_color("banner_text", "#FFF8DC")
@@ -4139,7 +2809,7 @@ class HermesCLI:
             if self.show_timestamps:
                 label = f"{label} {datetime.now().strftime('%H:%M')}"
             w = self._scrollback_box_width()
-            fill = w - 2 - HermesCLI._status_bar_display_width(label)
+            fill = w - 2 - ForecastCLI._status_bar_display_width(label)
             _cprint(f"\n{_ACCENT}╭─{label}{'─' * max(fill - 1, 0)}╮{_RST}")
 
         self._stream_buf += text
@@ -4331,197 +3001,9 @@ class HermesCLI:
             _cprint(f"{_DIM}Failed to open external editor: {exc}{_RST}")
             return False
 
-    def _ensure_runtime_credentials(self) -> bool:
-        """
-        Ensure runtime credentials are resolved before agent use.
-        Re-resolves provider credentials so key rotation and token refresh
-        are picked up without restarting the CLI.
-        Returns True if credentials are ready, False on auth failure.
-        """
-        from hermes_cli.runtime_provider import (
-            resolve_runtime_provider,
-            format_runtime_provider_error,
-        )
+    from superforecasting_agent.runtime.interactive_routing import _ensure_runtime_credentials as _ensure_runtime_credentials
 
-        _primary_exc = None
-        runtime = None
-        try:
-            runtime = resolve_runtime_provider(
-                requested=self.requested_provider,
-                explicit_api_key=self._explicit_api_key,
-                explicit_base_url=self._explicit_base_url,
-            )
-        except Exception as exc:
-            _primary_exc = exc
-
-        # Primary provider auth failed — try fallback providers before giving up.
-        if runtime is None and _primary_exc is not None:
-            from hermes_cli.auth import AuthError
-            if isinstance(_primary_exc, AuthError):
-                _fb_chain = self._fallback_model if isinstance(self._fallback_model, list) else []
-                for _fb in _fb_chain:
-                    _fb_provider = (_fb.get("provider") or "").strip().lower()
-                    _fb_model = (_fb.get("model") or "").strip()
-                    if not _fb_provider or not _fb_model:
-                        continue
-                    try:
-                        runtime = resolve_runtime_provider(requested=_fb_provider)
-                        logger.warning(
-                            "Primary provider auth failed (%s). Falling through to fallback: %s/%s",
-                            _primary_exc, _fb_provider, _fb_model,
-                        )
-                        _cprint(f"⚠️  Primary auth failed — switching to fallback: {_fb_provider} / {_fb_model}")
-                        self.requested_provider = _fb_provider
-                        self.model = _fb_model
-                        _primary_exc = None
-                        break
-                    except Exception:
-                        continue
-
-        if runtime is None:
-            message = format_runtime_provider_error(_primary_exc) if _primary_exc else "Provider resolution failed."
-            ChatConsole().print(f"[bold red]{message}[/]")
-            return False
-
-        api_key = runtime.get("api_key")
-        base_url = runtime.get("base_url")
-        resolved_provider = runtime.get("provider", "openrouter")
-        resolved_api_mode = runtime.get("api_mode", self.api_mode)
-        resolved_acp_command = runtime.get("command")
-        resolved_acp_args = list(runtime.get("args") or [])
-        resolved_credential_pool = runtime.get("credential_pool")
-        # A callable api_key is a bearer-token provider (Azure Foundry
-        # Entra ID — ``azure_identity_adapter.build_token_provider``).
-        # The OpenAI SDK accepts ``Callable[[], str]`` for ``api_key`` and
-        # invokes it before every request. Skip the string-only validation
-        # and placeholder substitution for callables.
-        _is_callable_provider = callable(api_key) and not isinstance(api_key, str)
-        if not _is_callable_provider and (not isinstance(api_key, str) or not api_key):
-            # Custom / local endpoints (llama.cpp, ollama, vLLM, etc.) often
-            # don't require authentication.  When a base_url IS configured but
-            # no API key was found, use a placeholder so the OpenAI SDK
-            # doesn't reject the request and local servers just ignore it.
-            _source = runtime.get("source", "")
-            _has_custom_base = isinstance(base_url, str) and base_url and "openrouter.ai" not in base_url
-            if _has_custom_base:
-                api_key = "no-key-required"
-                logger.debug(
-                    "No API key for custom endpoint %s (source=%s), "
-                    "using placeholder — local servers typically ignore auth",
-                    base_url, _source,
-                )
-            else:
-                print("\n⚠️  Provider resolver returned an empty API key. "
-                      "Set OPENROUTER_API_KEY or run: superforecasting-agent setup")
-                return False
-        if not isinstance(base_url, str) or not base_url:
-            print("\n⚠️  Provider resolver returned an empty base URL. "
-                  "Check your provider config or run: superforecasting-agent setup")
-            return False
-
-        credentials_changed = api_key != self.api_key or base_url != self.base_url
-        routing_changed = (
-            resolved_provider != self.provider
-            or resolved_api_mode != self.api_mode
-            or resolved_acp_command != self.acp_command
-            or resolved_acp_args != self.acp_args
-        )
-        self.provider = resolved_provider
-        self.api_mode = resolved_api_mode
-        self.acp_command = resolved_acp_command
-        self.acp_args = resolved_acp_args
-        self._credential_pool = resolved_credential_pool
-        self._provider_source = runtime.get("source")
-        self.api_key = api_key
-        self.base_url = base_url
-
-        # When a custom_provider entry carries an explicit `model` field,
-        # use it as the effective model name. Without this, running
-        # `superforecasting-agent chat --model <provider-name>` sends the provider name
-        # (e.g. "my-provider") as the model string to the API instead of
-        # the configured model (e.g. "qwen3.6-plus"), causing 400 errors.
-        runtime_model = runtime.get("model")
-        if runtime_model and isinstance(runtime_model, str):
-            # Only use runtime model if: model is unset, or model equals provider name
-            should_use_runtime_model = (
-                not self.model or  # No model configured yet
-                self.model == self.provider or  # Model is the provider slug
-                self.model == runtime.get("name")  # Model matches provider display name
-            )
-            if should_use_runtime_model:
-                self.model = runtime_model
-
-        # If model is still empty (e.g. user ran `superforecasting-agent auth add openai-codex`
-        # without `superforecasting-agent model`), fall back to the provider's first catalog
-        # model so the API call doesn't fail with "model must be non-empty".
-        if not self.model and resolved_provider:
-            try:
-                from hermes_cli.models import get_default_model_for_provider
-                _default = get_default_model_for_provider(resolved_provider)
-                if _default:
-                    self.model = _default
-                    logger.info(
-                        "No model configured — defaulting to %s for provider %s",
-                        _default, resolved_provider,
-                    )
-            except Exception:
-                pass
-
-        # Normalize model for the resolved provider (e.g. swap non-Codex
-        # models when provider is openai-codex).  Fixes #651.
-        model_changed = self._normalize_model_for_provider(resolved_provider)
-
-        # AIAgent/OpenAI client holds auth at init time, so rebuild if key,
-        # routing, or the effective model changed.
-        if (credentials_changed or routing_changed or model_changed) and self.agent is not None:
-            self.agent = None
-            self._active_agent_route_signature = None
-
-        return True
-
-    def _resolve_turn_agent_config(self, user_message: str) -> dict:
-        """Build the effective model/runtime config for a single user turn.
-
-        Always uses the session's primary model/provider.  If the user has
-        toggled `/fast` on and the current model supports Priority
-        Processing / Anthropic fast mode, attach `request_overrides` so the
-        API call is marked accordingly.
-        """
-        from hermes_cli.models import resolve_fast_mode_overrides
-
-        runtime = {
-            "api_key": self.api_key,
-            "base_url": self.base_url,
-            "provider": self.provider,
-            "api_mode": self.api_mode,
-            "command": self.acp_command,
-            "args": list(self.acp_args or []),
-            "credential_pool": getattr(self, "_credential_pool", None),
-        }
-        route = {
-            "model": self.model,
-            "runtime": runtime,
-            "signature": (
-                self.model,
-                runtime["provider"],
-                runtime["base_url"],
-                runtime["api_mode"],
-                runtime["command"],
-                tuple(runtime["args"]),
-            ),
-        }
-
-        service_tier = getattr(self, "service_tier", None)
-        if not service_tier:
-            route["request_overrides"] = None
-            return route
-
-        try:
-            overrides = resolve_fast_mode_overrides(route["model"])
-        except Exception:
-            overrides = None
-        route["request_overrides"] = overrides
-        return route
+    from superforecasting_agent.runtime.interactive_routing import _resolve_turn_agent_config as _resolve_turn_agent_config
 
     def _init_agent(self, *, model_override: str = None, runtime_override: dict = None, request_overrides: dict | None = None) -> bool:
         """
@@ -4540,7 +3022,7 @@ class HermesCLI:
         # Initialize SQLite session store for CLI sessions (if not already done in __init__)
         if self._session_db is None:
             try:
-                from hermes_state import SessionDB
+                from superforecasting_agent.storage.session import SessionDB
                 self._session_db = SessionDB()
             except Exception as e:
                 logger.warning("SQLite session store not available — session will NOT be indexed: %s", e)
@@ -4709,7 +3191,7 @@ class HermesCLI:
         small.
         """
         try:
-            from hermes_cli.security_advisories import (
+            from superforecasting_agent.runtime.security_advisories import (
                 detect_compromised,
                 startup_banner,
             )
@@ -4785,7 +3267,7 @@ class HermesCLI:
                 )
 
         # Warn if the configured model is a Nous Hermes LLM (not agentic)
-        from hermes_cli.model_switch import is_nous_hermes_non_agentic
+        from superforecasting_agent.runtime.model_switch import is_nous_hermes_non_agentic
 
         model_name = getattr(self, "model", "") or ""
         if is_nous_hermes_non_agentic(model_name):
@@ -4881,182 +3363,9 @@ class HermesCLI:
 
         return True
 
-    def _display_resumed_history(self):
-        """Render a compact recap of previous forecast-session messages.
+    from superforecasting_agent.runtime.resume_display import _display_resumed_history as _display_resumed_history
 
-        Uses Rich markup with dim/muted styling so the recap is visually
-        distinct from the active conversation.  Caps the display at the
-        last ``MAX_DISPLAY_EXCHANGES`` user/forecaster exchanges and shows
-        an indicator for earlier hidden messages.
-        """
-        if not self.conversation_history:
-            return
-
-        # Check config: resume_display setting
-        if self.resume_display == "minimal":
-            return
-
-        MAX_DISPLAY_EXCHANGES = 10   # max user+assistant pairs to show
-        MAX_USER_LEN = 300           # truncate user messages
-        MAX_ASST_LEN = 200           # truncate assistant text
-        MAX_ASST_LINES = 3           # max lines of assistant text
-
-        # Collect displayable entries (skip system, tool-result messages)
-        entries = []  # list of (role, display_text)
-        _last_asst_idx = None       # index of last assistant entry
-        _last_asst_full = None      # un-truncated display text for last assistant
-        for msg in self.conversation_history:
-            role = msg.get("role", "")
-            content = msg.get("content")
-            tool_calls = msg.get("tool_calls") or []
-
-            if role == "system":
-                continue
-            if role == "tool":
-                continue
-
-            if role == "user":
-                text = "" if content is None else str(content)
-                # Handle multimodal content (list of dicts)
-                if isinstance(content, list):
-                    parts = []
-                    for part in content:
-                        if isinstance(part, dict) and part.get("type") == "text":
-                            parts.append(part.get("text", ""))
-                        elif isinstance(part, dict) and part.get("type") == "image_url":
-                            parts.append("[image]")
-                    text = " ".join(parts)
-                if len(text) > MAX_USER_LEN:
-                    text = text[:MAX_USER_LEN] + "..."
-                entries.append(("user", text))
-
-            elif role == "assistant":
-                text = "" if content is None else str(content)
-                text = _strip_reasoning_tags(text)
-                parts = []
-                full_parts = []  # un-truncated version
-                if text:
-                    full_parts.append(text)
-                    lines = text.splitlines()
-                    if len(lines) > MAX_ASST_LINES:
-                        text = "\n".join(lines[:MAX_ASST_LINES]) + " ..."
-                    if len(text) > MAX_ASST_LEN:
-                        text = text[:MAX_ASST_LEN] + "..."
-                    parts.append(text)
-                if tool_calls:
-                    tc_count = len(tool_calls)
-                    # Extract tool names
-                    names = []
-                    for tc in tool_calls:
-                        fn = tc.get("function", {})
-                        name = fn.get("name", "unknown") if isinstance(fn, dict) else "unknown"
-                        if name not in names:
-                            names.append(name)
-                    names_str = ", ".join(names[:4])
-                    if len(names) > 4:
-                        names_str += ", ..."
-                    noun = "call" if tc_count == 1 else "calls"
-                    tc_summary = f"[{tc_count} tool {noun}: {names_str}]"
-                    parts.append(tc_summary)
-                    full_parts.append(tc_summary)
-                if not parts:
-                    # Skip pure-reasoning messages that have no visible output
-                    continue
-                entries.append(("assistant", " ".join(parts)))
-                _last_asst_idx = len(entries) - 1
-                _last_asst_full = " ".join(full_parts)
-
-        if not entries:
-            return
-
-        # Determine if we need to truncate
-        skipped = 0
-        if len(entries) > MAX_DISPLAY_EXCHANGES * 2:
-            skipped = len(entries) - MAX_DISPLAY_EXCHANGES * 2
-            entries = entries[skipped:]
-
-        # Replace last assistant entry with full (un-truncated) text
-        # so the user can see where they left off without wasting tokens.
-        if _last_asst_idx is not None and _last_asst_full:
-            adj_idx = _last_asst_idx - skipped
-            if 0 <= adj_idx < len(entries):
-                entries[adj_idx] = ("assistant_last", _last_asst_full)
-
-        # Build the display using Rich
-        from rich.panel import Panel
-        from rich.text import Text
-
-        try:
-            from hermes_cli.skin_engine import get_active_skin
-            _skin = get_active_skin()
-            _history_text_c = _skin.get_color("banner_text", "#FFF8DC")
-            _session_label_c = _skin.get_color("session_label", "#DAA520")
-            _session_border_c = _skin.get_color("session_border", "#8B8682")
-            _assistant_label_c = _skin.get_color("ui_ok", "#8FBC8F")
-        except Exception:
-            _history_text_c = "#FFF8DC"
-            _session_label_c = "#DAA520"
-            _session_border_c = "#8B8682"
-            _assistant_label_c = "#8FBC8F"
-
-        lines = Text()
-        if skipped:
-            lines.append(
-                f"  ... {skipped} earlier messages ...\n\n",
-                style="dim italic",
-            )
-
-        for i, (role, text) in enumerate(entries):
-            if role == "user":
-                lines.append("  ● You: ", style=f"dim bold {_session_label_c}")
-                # Show first line inline, indent rest
-                msg_lines = text.splitlines()
-                lines.append(msg_lines[0] + "\n", style="dim")
-                for ml in msg_lines[1:]:
-                    lines.append(f"         {ml}\n", style="dim")
-            elif role == "assistant_last":
-                # Last forecaster response shown in full, non-dim
-                lines.append("  ◆ Forecaster: ", style=f"bold {_assistant_label_c}")
-                msg_lines = text.splitlines()
-                lines.append(msg_lines[0] + "\n", style="")
-                for ml in msg_lines[1:]:
-                    lines.append(f"            {ml}\n", style="")
-            else:
-                lines.append("  ◆ Forecaster: ", style=f"dim bold {_assistant_label_c}")
-                msg_lines = text.splitlines()
-                lines.append(msg_lines[0] + "\n", style="dim")
-                for ml in msg_lines[1:]:
-                    lines.append(f"            {ml}\n", style="dim")
-            if i < len(entries) - 1:
-                lines.append("")  # small gap
-
-        panel = Panel(
-            lines,
-            title=f"[dim {_session_label_c}]Previous Forecast Session[/]",
-            border_style=f"dim {_session_border_c}",
-            padding=(0, 1),
-            style=_history_text_c,
-        )
-        _record_output_history_entry(lambda: self._render_resume_history_panel_lines(panel))
-        with _suspend_output_history():
-            self._console_print(panel)
-
-    def _render_resume_history_panel_lines(self, panel) -> list[str]:
-        """Render the resume panel at the current terminal width for resize replay."""
-        from io import StringIO
-
-        buf = StringIO()
-        width = shutil.get_terminal_size((80, 24)).columns
-        console = Console(
-            file=buf,
-            force_terminal=True,
-            color_system="truecolor",
-            highlight=False,
-            width=width,
-        )
-        with _suspend_output_history():
-            console.print(panel)
-        return buf.getvalue().rstrip("\n").splitlines()
+    from superforecasting_agent.runtime.resume_display import _render_resume_history_panel_lines as _render_resume_history_panel_lines
 
     def _try_attach_clipboard_image(self) -> bool:
         """Check clipboard for an image and attach it if found.
@@ -5064,9 +3373,9 @@ class HermesCLI:
         Saves the image to the active agent-home images/ directory and appends the path to
         ``_attached_images``.  Returns True if an image was attached.
         """
-        from hermes_cli.clipboard import save_clipboard_image
+        from superforecasting_agent.runtime.clipboard import save_clipboard_image
 
-        img_dir = get_hermes_home() / "images"
+        img_dir = get_agent_home() / "images"
         self._image_counter += 1
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         img_path = img_dir / f"clip_{ts}_{self._image_counter}.png"
@@ -5077,199 +3386,11 @@ class HermesCLI:
         self._image_counter -= 1
         return False
 
-    def _handle_rollback_command(self, command: str):
-        """Handle /rollback — list, diff, or restore filesystem checkpoints.
+    from superforecasting_agent.runtime.checkpoint_commands import _handle_rollback_command as _handle_rollback_command
 
-        Syntax:
-            /rollback                 — list checkpoints
-            /rollback <N>             — restore checkpoint N (also undoes last chat turn)
-            /rollback diff <N>        — preview changes since checkpoint N
-            /rollback <N> <file>      — restore a single file from checkpoint N
-        """
-        from tools.checkpoint_manager import format_checkpoint_list
+    from superforecasting_agent.runtime.checkpoint_commands import _resolve_checkpoint_ref as _resolve_checkpoint_ref
 
-        if not hasattr(self, 'agent') or not self.agent:
-            print("  No active agent session.")
-            return
-
-        mgr = self.agent._checkpoint_mgr
-        if not mgr.enabled:
-            print("  Checkpoints are not enabled.")
-            print("  Enable with: superforecasting-agent --checkpoints")
-            print("  Or in config.yaml: checkpoints: { enabled: true }")
-            return
-
-        cwd = os.getenv("TERMINAL_CWD", os.getcwd())
-        parts = command.split()
-        args = parts[1:] if len(parts) > 1 else []
-
-        if not args:
-            # List checkpoints
-            checkpoints = mgr.list_checkpoints(cwd)
-            print(format_checkpoint_list(checkpoints, cwd))
-            return
-
-        # Handle /rollback diff <N>
-        if args[0].lower() == "diff":
-            if len(args) < 2:
-                print("  Usage: /rollback diff <N>")
-                return
-            checkpoints = mgr.list_checkpoints(cwd)
-            if not checkpoints:
-                print(f"  No checkpoints found for {cwd}")
-                return
-            target_hash = self._resolve_checkpoint_ref(args[1], checkpoints)
-            if not target_hash:
-                return
-            result = mgr.diff(cwd, target_hash)
-            if result["success"]:
-                stat = result.get("stat", "")
-                diff = result.get("diff", "")
-                if not stat and not diff:
-                    print("  No changes since this checkpoint.")
-                else:
-                    if stat:
-                        print(f"\n{stat}")
-                    if diff:
-                        # Limit diff output to avoid terminal flood
-                        diff_lines = diff.splitlines()
-                        if len(diff_lines) > 80:
-                            print("\n".join(diff_lines[:80]))
-                            print(f"\n  ... ({len(diff_lines) - 80} more lines, showing first 80)")
-                        else:
-                            print(f"\n{diff}")
-            else:
-                print(f"  ❌ {result['error']}")
-            return
-
-        # Resolve checkpoint reference (number or hash)
-        checkpoints = mgr.list_checkpoints(cwd)
-        if not checkpoints:
-            print(f"  No checkpoints found for {cwd}")
-            return
-
-        target_hash = self._resolve_checkpoint_ref(args[0], checkpoints)
-        if not target_hash:
-            return
-
-        # Check for file-level restore: /rollback <N> <file>
-        file_path = args[1] if len(args) > 1 else None
-
-        result = mgr.restore(cwd, target_hash, file_path=file_path)
-        if result["success"]:
-            if file_path:
-                print(f"  ✅ Restored {file_path} from checkpoint {result['restored_to']}: {result['reason']}")
-            else:
-                print(f"  ✅ Restored to checkpoint {result['restored_to']}: {result['reason']}")
-            print("  A pre-rollback snapshot was saved automatically.")
-
-                    # Also undo the last forecast-support turn so the agent's context
-            # matches the restored filesystem state
-            if self.conversation_history:
-                self.undo_last()
-                print("  Forecast turn undone to match restored file state.")
-        else:
-            print(f"  ❌ {result['error']}")
-
-    def _resolve_checkpoint_ref(self, ref: str, checkpoints: list) -> str | None:
-        """Resolve a checkpoint number or hash to a full commit hash."""
-        try:
-            idx = int(ref) - 1  # 1-indexed for user
-            if 0 <= idx < len(checkpoints):
-                return checkpoints[idx]["hash"]
-            else:
-                print(f"  Invalid checkpoint number. Use 1-{len(checkpoints)}.")
-                return None
-        except ValueError:
-            # Treat as a git hash
-            return ref
-
-    def _handle_snapshot_command(self, command: str):
-        """Handle /snapshot — lightweight state snapshots for runtime config/state.
-
-        Syntax:
-            /snapshot                  — list recent snapshots
-            /snapshot create [label]   — create a snapshot
-            /snapshot restore <id>     — restore state from snapshot
-            /snapshot prune [N]        — prune to N snapshots (default 20)
-        """
-        from hermes_cli.backup import (
-            create_quick_snapshot, list_quick_snapshots,
-            restore_quick_snapshot, prune_quick_snapshots,
-        )
-        from hermes_constants import display_hermes_home
-
-        parts = command.split()
-        subcmd = parts[1].lower() if len(parts) > 1 else "list"
-
-        if subcmd in {"list", "ls"}:
-            snaps = list_quick_snapshots()
-            if not snaps:
-                print("  No state snapshots yet.")
-                print("  Create one: /snapshot create [label]")
-                return
-            print(f"  State snapshots ({display_hermes_home()}/state-snapshots/):\n")
-            print(f"  {'#':>3}  {'ID':<35} {'Files':>5} {'Size':>10} {'Label'}")
-            print(f"  {'─'*3}  {'─'*35} {'─'*5} {'─'*10} {'─'*20}")
-            for i, s in enumerate(snaps, 1):
-                size = s.get("total_size", 0)
-                if size < 1024:
-                    size_str = f"{size} B"
-                elif size < 1024 * 1024:
-                    size_str = f"{size / 1024:.0f} KB"
-                else:
-                    size_str = f"{size / 1024 / 1024:.1f} MB"
-                label = s.get("label") or ""
-                print(f"  {i:3}  {s['id']:<35} {s.get('file_count', 0):>5} {size_str:>10} {label}")
-
-        elif subcmd == "create":
-            label = " ".join(parts[2:]) if len(parts) > 2 else None
-            snap_id = create_quick_snapshot(label=label)
-            if snap_id:
-                print(f"  Snapshot created: {snap_id}")
-            else:
-                print("  No state files found to snapshot.")
-
-        elif subcmd in {"restore", "rewind"}:
-            if len(parts) < 3:
-                print("  Usage: /snapshot restore <snapshot-id>")
-                # Show hint with most recent snapshot
-                snaps = list_quick_snapshots(limit=1)
-                if snaps:
-                    print(f"  Most recent: {snaps[0]['id']}")
-                return
-            snap_id = parts[2]
-            # Allow restore by number (1-indexed)
-            try:
-                idx = int(snap_id)
-                snaps = list_quick_snapshots()
-                if 1 <= idx <= len(snaps):
-                    snap_id = snaps[idx - 1]["id"]
-                else:
-                    print(f"  Invalid snapshot number. Use 1-{len(snaps)}.")
-                    return
-            except ValueError:
-                pass
-            if restore_quick_snapshot(snap_id):
-                print(f"  Restored state from: {snap_id}")
-                print("  Restart recommended for state.db changes to take effect.")
-            else:
-                print(f"  Snapshot not found: {snap_id}")
-
-        elif subcmd == "prune":
-            keep = 20
-            if len(parts) > 2:
-                try:
-                    keep = int(parts[2])
-                except ValueError:
-                    print("  Usage: /snapshot prune [keep-count]")
-                    return
-            deleted = prune_quick_snapshots(keep=keep)
-            print(f"  Pruned {deleted} old snapshot(s) (keeping {keep}).")
-
-        else:
-            print(f"  Unknown subcommand: {subcmd}")
-            print("  Usage: /snapshot [list|create [label]|restore <id>|prune [N]]")
+    from superforecasting_agent.runtime.checkpoint_commands import _handle_snapshot_command as _handle_snapshot_command
 
     def _handle_stop_command(self):
         """Handle /stop — kill all running background processes.
@@ -5349,7 +3470,7 @@ class HermesCLI:
             )
             return
 
-        from hermes_cli.clipboard import has_clipboard_image
+        from superforecasting_agent.runtime.clipboard import has_clipboard_image
         if has_clipboard_image():
             if self._try_attach_clipboard_image():
                 n = len(self._attached_images)
@@ -5538,7 +3659,7 @@ class HermesCLI:
     def _show_tool_availability_warnings(self):
         """Show warnings about disabled tools due to missing API keys."""
         try:
-            from model_tools import check_tool_availability
+            from superforecasting_agent.tooling.runtime import check_tool_availability
             
             available, unavailable = check_tool_availability()
             
@@ -5576,7 +3697,7 @@ class HermesCLI:
 
         # Build status line with proper markup — skin-aware colors
         try:
-            from hermes_cli.skin_engine import get_active_skin
+            from superforecasting_agent.runtime.skin_engine import get_active_skin
             skin = get_active_skin()
             separator_color = skin.get_color("banner_dim", "#B8860B")
             accent_color = skin.get_color("ui_accent", "#FFBF00")
@@ -5637,7 +3758,7 @@ class HermesCLI:
             "Superforecasting Agent CLI Status",
             "",
             f"Session ID: {self.session_id}",
-            f"Path: {display_hermes_home()}",
+            f"Path: {display_agent_home()}",
         ]
         if title:
             lines.append(f"Title: {title}")
@@ -5654,7 +3775,7 @@ class HermesCLI:
         # No LLM call, no prompt-cache impact. Inspired by Claude Code
         # 2.1.114's /recap.
         try:
-            from hermes_cli.session_recap import build_recap
+            from superforecasting_agent.runtime.session_recap import build_recap
             recap = build_recap(
                 self.conversation_history or [],
                 session_title=title or None,
@@ -5670,7 +3791,7 @@ class HermesCLI:
     
     def _fast_command_available(self) -> bool:
         try:
-            from hermes_cli.models import model_supports_fast_mode
+            from superforecasting_agent.runtime.models import model_supports_fast_mode
         except Exception:
             return False
         agent = getattr(self, "agent", None)
@@ -5684,10 +3805,10 @@ class HermesCLI:
 
     def show_help(self):
         """Display help information with categorized commands."""
-        from hermes_cli.commands import COMMANDS_BY_CATEGORY
+        from superforecasting_agent.runtime.commands import COMMANDS_BY_CATEGORY
 
         try:
-            from hermes_cli.skin_engine import get_active_help_header
+            from superforecasting_agent.runtime.skin_engine import get_active_help_header
             header = get_active_help_header("Forecast Desk Commands")
         except Exception:
             header = "Forecast Desk Commands"
@@ -5787,7 +3908,7 @@ class HermesCLI:
         from argparse import Namespace
         from contextlib import redirect_stdout
         from io import StringIO
-        from hermes_cli.tools_config import tools_disable_enable_command
+        from superforecasting_agent.runtime.tools_config import tools_disable_enable_command
 
         def _run_capture(ns: Namespace) -> None:
             """Run tools_disable_enable_command, routing its ANSI-colored
@@ -5803,7 +3924,7 @@ class HermesCLI:
                 tools_disable_enable_command(ns)
                 return
 
-            # Buffer reports isatty()=True so color() in hermes_cli/colors.py
+            # Buffer reports isatty()=True so color() in superforecasting_agent/runtime/colors.py
             # still emits ANSI escapes. StringIO.isatty() is False, which
             # would otherwise strip all colors before we re-render them.
             class _TTYBuf(StringIO):
@@ -5847,8 +3968,8 @@ class HermesCLI:
         _run_capture(Namespace(tools_action=subcommand, names=names, platform="cli"))
 
         # Reset session so the new tool config is picked up from a clean state
-        from hermes_cli.tools_config import _get_platform_tools
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.runtime.config import load_config
         self.enabled_toolsets = _get_platform_tools(load_config(), "cli")
         self.new_session()
         _cprint(f"{_DIM}Forecast session reset. New tool configuration is active.{_RST}")
@@ -5885,18 +4006,7 @@ class HermesCLI:
         print("  Example: python cli.py --toolsets forecast-desk")
         print()
     
-    def _handle_profile_command(self):
-        """Display active profile name and home directory."""
-        from hermes_constants import display_hermes_home
-        from hermes_cli.profiles import get_active_profile_name
-
-        display = display_hermes_home()
-        profile_name = get_active_profile_name()
-
-        print()
-        print(f"  Profile: {profile_name}")
-        print(f"  Home:    {display}")
-        print()
+    from superforecasting_agent.runtime.maintenance_commands import _handle_profile_command as _handle_profile_command
 
     def show_config(self):
         """Display current configuration with forecast-desk ASCII framing."""
@@ -5979,7 +4089,7 @@ class HermesCLI:
         if not sessions:
             return False
 
-        from hermes_cli.main import _relative_time
+        from superforecasting_agent.runtime.main import _relative_time
 
         print()
         if reason == "history":
@@ -6076,7 +4186,7 @@ class HermesCLI:
         lifecycle point (shutdown, /new, /reset).
         """
         try:
-            from hermes_cli.plugins import invoke_hook as _invoke_hook
+            from superforecasting_agent.runtime.plugins import invoke_hook as _invoke_hook
             _invoke_hook(
                 event_type,
                 session_id=self.agent.session_id if self.agent else None,
@@ -6141,7 +4251,7 @@ class HermesCLI:
                 except Exception:
                     pass
                 if title and self._session_db:
-                    from hermes_state import SessionDB
+                    from superforecasting_agent.storage.session import SessionDB
                     try:
                         sanitized = SessionDB.sanitize_title(title)
                     except ValueError as e:
@@ -6186,155 +4296,7 @@ class HermesCLI:
             else:
                 print("New forecast session started!")
 
-    def _handle_handoff_command(self, cmd_original: str) -> bool:
-        """Handle ``/handoff <platform>`` — transfer this CLI session to a gateway platform.
-
-        Flow:
-          1. Validate platform name + the gateway has a home channel for it.
-          2. Reject if the agent is currently running (the in-flight turn
-             would race with the gateway's switch_session).
-          3. Write ``handoff_state='pending'`` on this session row.
-          4. Block-poll ``state.db`` for terminal state (timeout 60s).
-          5. On ``completed`` → print resume hint and signal CLI exit by
-             returning False (the caller honors that like ``/quit``).
-          6. On ``failed`` / timeout → print error and return True so the
-             user keeps their CLI session.
-
-        Returns:
-            False to signal CLI exit, True to keep going.
-        """
-        from hermes_state import format_session_db_unavailable
-
-        parts = cmd_original.split(maxsplit=1)
-        if len(parts) < 2 or not parts[1].strip():
-            _cprint("  Usage: /handoff <platform>")
-            _cprint("  Hands the current forecast session off to that platform's home channel.")
-            _cprint("  The CLI forecast session ends here; resume it later with /resume.")
-            return True
-
-        platform_name = parts[1].strip().lower()
-
-        # Validate platform name + home channel via the live gateway config.
-        try:
-            from gateway.config import load_gateway_config, Platform
-        except Exception as exc:  # pragma: no cover — gateway pkg always shipped
-            _cprint(f"  Could not load gateway config: {exc}")
-            return True
-
-        try:
-            platform = Platform(platform_name)
-        except (ValueError, KeyError):
-            _cprint(f"  Unknown platform '{platform_name}'.")
-            return True
-
-        try:
-            gw_config = load_gateway_config()
-        except Exception as exc:
-            _cprint(f"  Could not load gateway config: {exc}")
-            return True
-
-        pcfg = gw_config.platforms.get(platform)
-        if not pcfg or not pcfg.enabled:
-            _cprint(f"  Platform '{platform_name}' is not configured/enabled in the gateway.")
-            return True
-
-        home = gw_config.get_home_channel(platform)
-        if not home or not home.chat_id:
-            _cprint(f"  No home channel configured for {platform_name}.")
-            _cprint(f"  Set one with /sethome on the destination forecast conversation first.")
-            return True
-
-        # Refuse mid-turn: an in-flight agent run would race with the
-        # gateway's switch_session and the synthetic turn dispatch.
-        if getattr(self, "_agent_running", False):
-            _cprint("  Forecast agent is busy. Wait for the current turn to finish, then retry /handoff.")
-            return True
-
-        # Make sure we have a SessionDB handle.
-        if not self._session_db:
-            try:
-                from hermes_state import SessionDB
-                self._session_db = SessionDB()
-            except Exception:
-                pass
-        if not self._session_db:
-            _cprint(f"  {format_session_db_unavailable()}")
-            return True
-
-        # Make sure the session row exists in state.db. Most CLI sessions
-        # are written via _flush_messages_to_session_db on the first turn
-        # already, but if the user tries to hand off an empty session we
-        # still want a row to mark.
-        try:
-            row = self._session_db.get_session(self.session_id)
-            if not row:
-                # Nothing has flushed yet. Create a stub so the gateway has
-                # something to switch_session onto. Inserting via title-set
-                # is the simplest path because set_session_title's INSERT OR
-                # IGNORE creates the row.
-                placeholder_title = f"handoff-{self.session_id[:8]}"
-                self._session_db.set_session_title(self.session_id, placeholder_title)
-        except Exception as exc:
-            _cprint(f"  Could not ensure session row in state.db: {exc}")
-            return True
-
-        # Display title for messaging.
-        session_title = ""
-        try:
-            row = self._session_db.get_session(self.session_id)
-            if row:
-                session_title = row.get("title") or ""
-        except Exception:
-            pass
-        if not session_title:
-            session_title = self.session_id[:8]
-
-        # Mark pending — gateway watcher will pick this up.
-        ok = self._session_db.request_handoff(self.session_id, platform_name)
-        if not ok:
-            _cprint("  Session is already in flight for handoff. Wait for it to settle, then retry.")
-            return True
-
-        _cprint(f"  Queued handoff of '{session_title}' → {platform_name} (home: {home.name}).")
-        _cprint(f"  Waiting for the gateway to pick it up...")
-
-        # Poll-block on terminal state. Tick every 0.5s; bail at ~60s.
-        import time as _time
-        deadline = _time.time() + 60.0
-        last_state = "pending"
-        while _time.time() < deadline:
-            try:
-                state_row = self._session_db.get_handoff_state(self.session_id)
-            except Exception:
-                state_row = None
-            current = (state_row or {}).get("state") or "pending"
-            if current != last_state:
-                if current == "running":
-                    _cprint("  Gateway picked it up; transferring...")
-                last_state = current
-            if current == "completed":
-                _cprint("")
-                _cprint(f"  ↻ Handoff complete. The session is now active on {platform_name}.")
-                _cprint(f"  Resume it on this CLI later with: /resume {session_title}")
-                _cprint("")
-                # End the CLI cleanly — same exit semantics as /quit.
-                self._should_exit = True
-                return False
-            if current == "failed":
-                err = (state_row or {}).get("error") or "unknown error"
-                _cprint(f"  Handoff failed: {err}")
-                _cprint("  Your CLI session is intact. Try /handoff again, or /resume on the platform manually.")
-                return True
-            _time.sleep(0.5)
-
-        # Timed out. Clear the pending flag so the user can retry.
-        try:
-            self._session_db.fail_handoff(self.session_id, "timed out waiting for gateway")
-        except Exception:
-            pass
-        _cprint("  Timed out waiting for the gateway. Is `superforecasting-agent gateway` running?")
-        _cprint("  Your CLI session is intact.")
-        return True
+    from superforecasting_agent.runtime.handoff_commands import _handle_handoff_command as _handle_handoff_command
 
     def _handle_resume_command(self, cmd_original: str) -> None:
         """Handle /resume <session_id_or_title> — switch to a previous session mid-conversation."""
@@ -6349,12 +4311,12 @@ class HermesCLI:
             return
 
         if not self._session_db:
-            from hermes_state import format_session_db_unavailable
+            from superforecasting_agent.storage.session import format_session_db_unavailable
             _cprint(f"  {format_session_db_unavailable()}")
             return
 
         # Resolve title or ID
-        from hermes_cli.main import _resolve_session_by_name_or_id
+        from superforecasting_agent.runtime.main import _resolve_session_by_name_or_id
         resolved = _resolve_session_by_name_or_id(target)
         target_id = resolved or target
 
@@ -6471,7 +4433,7 @@ class HermesCLI:
         # Bare /sessions or /sessions list — show recent sessions inline.
         if not arg or sub in {"list", "ls", "browse"}:
             if not self._session_db:
-                from hermes_state import format_session_db_unavailable
+                from superforecasting_agent.storage.session import format_session_db_unavailable
                 _cprint(f"  {format_session_db_unavailable()}")
                 return
             if not self._show_recent_sessions(reason="sessions"):
@@ -6481,337 +4443,37 @@ class HermesCLI:
         # /sessions <id_or_title> behaves the same as /resume <id_or_title>.
         self._handle_resume_command(f"/resume {arg}")
 
-    def _handle_forecast_command(self, cmd_original: str) -> None:
-        """Handle /forecast by delegating to the forecast desk CLI."""
-        parts = cmd_original.split(None, 1)
-        raw_arg = parts[1].strip() if len(parts) > 1 else ""
-        try:
-            from forecasting.argv import split_forecast_cli_args
+    from superforecasting_agent.runtime.forecast_commands import _handle_forecast_command as _handle_forecast_command
 
-            argv = split_forecast_cli_args(raw_arg)
-        except ValueError as exc:
-            _cprint(f"  forecast: {exc}")
-            return
+    from superforecasting_agent.runtime.forecast_search import _forecast_search_normalize as _forecast_search_normalize
+    _forecast_search_normalize = staticmethod(_forecast_search_normalize)
 
-        try:
-            from forecasting.cli import main as forecast_main
+    from superforecasting_agent.runtime.forecast_search import _forecast_dashboard_rows as _forecast_dashboard_rows
+    _forecast_dashboard_rows = classmethod(_forecast_dashboard_rows)
 
-            forecast_main(argv)
-        except SystemExit as exc:
-            if exc.code not in (None, 0) and not isinstance(exc.code, int):
-                print(str(exc.code), file=sys.stderr)
-        except Exception as exc:
-            _cprint(f"  forecast: {exc}")
+    from superforecasting_agent.runtime.forecast_search import _forecast_search_matches as _forecast_search_matches
+    _forecast_search_matches = classmethod(_forecast_search_matches)
 
-    @staticmethod
-    def _forecast_search_normalize(value: object) -> str:
-        return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9_ -]+", " ", str(value or "").lower())).strip()
+    from superforecasting_agent.runtime.forecast_search import _print_forecast_search as _print_forecast_search
+    _print_forecast_search = classmethod(_print_forecast_search)
 
-    @classmethod
-    def _forecast_dashboard_rows(cls, summary: dict) -> list[tuple[int, dict]]:
-        rows: list[tuple[int, dict]] = []
-        seen: set[str] = set()
-        for index, row in enumerate(summary.get("questions") or [], start=1):
-            row_id = str(row.get("id") or "")
-            if not row_id or row_id in seen:
-                continue
-            seen.add(row_id)
-            rows.append((index, row))
-        for row in summary.get("review_queue") or []:
-            row_id = str(row.get("id") or "")
-            if not row_id or row_id in seen:
-                continue
-            seen.add(row_id)
-            rows.append((len(rows) + 1, row))
-        return rows
+    from superforecasting_agent.runtime.forecast_commands import _resolve_forecast_ref as _resolve_forecast_ref
+    _resolve_forecast_ref = classmethod(_resolve_forecast_ref)
 
-    @classmethod
-    def _forecast_search_matches(cls, summary: dict, query: str, *, limit: int = 12) -> list[dict]:
-        full_query = cls._forecast_search_normalize(query)
-        tokens = [token for token in full_query.split() if len(token) >= 2]
-        if not full_query:
-            return []
+    from superforecasting_agent.runtime.forecast_commands import _handle_forecast_book_command as _handle_forecast_book_command
 
-        matches: list[dict] = []
-        for index, row in cls._forecast_dashboard_rows(summary):
-            row_id = str(row.get("id") or "")
-            short_id = re.sub(r"^fq_", "", row_id)[:8]
-            title = str(row.get("title") or "")
-            domain = str(row.get("domain") or "")
-            raw_topics = row.get("topics") or []
-            topics = raw_topics if isinstance(raw_topics, str) else " ".join(str(topic) for topic in raw_topics)
-            status = str(row.get("status") or "")
-            rationale = str(row.get("latest_rationale") or "")
-            evidence = " ".join(
-                [
-                    str(row.get("latest_evidence_claim") or ""),
-                    str(row.get("latest_evidence_summary") or ""),
-                ]
-            )
-            text = cls._forecast_search_normalize(
-                " ".join([row_id, short_id, title, domain, topics, status, rationale, evidence])
-            )
-            title_text = cls._forecast_search_normalize(title)
-            rationale_text = cls._forecast_search_normalize(rationale)
-            evidence_text = cls._forecast_search_normalize(evidence)
-            score = 0
+    from superforecasting_agent.runtime.forecast_commands import _handle_forecast_ledger_command as _handle_forecast_ledger_command
 
-            if cls._forecast_search_normalize(row_id) == full_query or cls._forecast_search_normalize(short_id) == full_query:
-                score += 40
-            elif full_query in cls._forecast_search_normalize(row_id) or full_query in cls._forecast_search_normalize(short_id):
-                score += 24
-            if full_query in title_text:
-                score += 14
-            if domain and full_query in cls._forecast_search_normalize(domain):
-                score += 8
-            if topics and full_query in cls._forecast_search_normalize(topics):
-                score += 8
-            if rationale and full_query in rationale_text:
-                score += 6
-            if evidence and full_query in evidence_text:
-                score += 6
-            for token in tokens:
-                if token not in text:
-                    continue
-                score += 4 if token in title_text else 2
-            if tokens and all(token in text for token in tokens):
-                score += 6
+    from superforecasting_agent.runtime.forecast_commands import _handle_forecast_find_command as _handle_forecast_find_command
 
-            if score > 0:
-                matches.append({"index": index, "row": row, "score": score})
+    from superforecasting_agent.runtime.forecast_commands import _handle_forecast_open_command as _handle_forecast_open_command
 
-        matches.sort(key=lambda item: (-int(item["score"]), int(item["index"])))
-        return matches[: max(limit, 0)]
+    from superforecasting_agent.runtime.forecast_search import _split_forecast_ref_and_rest as _split_forecast_ref_and_rest
+    _split_forecast_ref_and_rest = staticmethod(_split_forecast_ref_and_rest)
 
-    @classmethod
-    def _print_forecast_search(cls, summary: dict, query: str) -> None:
-        from forecasting.dashboard import (
-            format_confidence,
-            format_delta,
-            format_freshness,
-            format_probability,
-            question_status,
-            short_date,
-        )
+    from superforecasting_agent.runtime.forecast_commands import _handle_forecast_evidence_for_command as _handle_forecast_evidence_for_command
 
-        matches = cls._forecast_search_matches(summary, query, limit=12)
-        print("FORECAST SEARCH")
-        print(f"query: {query}")
-        print(f"matches: {len(matches)}")
-        if not matches:
-            print("No matching active forecasts or review-queue items. Try fewer words, a topic, or a domain.")
-            return
-
-        print(
-            f"{'Rank':<5} {'ID':<14} {'P(now)':<12} {'Delta':<8} {'Freshness':<12} "
-            f"{'Close':<12} {'Conf':<6} {'Ev':>3} {'Status':<12} Question"
-        )
-        for rank, match in enumerate(matches, start=1):
-            row = match["row"]
-            row_id = str(row.get("id") or "")
-            print(
-                f"{rank:<5} "
-                f"{row_id:<14.14} "
-                f"{format_probability(row.get('probability')):<12} "
-                f"{format_delta(row.get('delta')):<8} "
-                f"{format_freshness(row.get('as_of')):<12} "
-                f"{short_date(row.get('close_time')):<12} "
-                f"{format_confidence(row.get('confidence')):<6} "
-                f"{int(row.get('evidence_count') or 0):>3} "
-                f"{question_status(row):<12} "
-                f"{row.get('title') or ''}"
-            )
-        print("")
-        print("Open one match with /open <row|id|words>.")
-        print("Append evidence with /note <row|words> -- <evidence>.")
-        print("Append an update with /revise <row|words> -- --probability <p> --rationale <why>.")
-
-    @classmethod
-    def _resolve_forecast_ref(cls, ref: str, *, limit: int = 75) -> str | None:
-        from forecasting.dashboard import build_dashboard_summary
-
-        trimmed = ref.strip()
-        if not trimmed:
-            return None
-
-        try:
-            summary = build_dashboard_summary(limit=limit)
-        except Exception as exc:
-            _cprint(f"  forecast lookup: {exc}")
-            return None
-
-        questions = list(summary.get("questions") or [])
-        review_queue = list(summary.get("review_queue") or [])
-        if trimmed.isdigit():
-            index = int(trimmed)
-            if index <= 0:
-                _cprint("  Forecast row numbers start at 1.")
-                return None
-            try:
-                return str(questions[index - 1]["id"])
-            except (IndexError, KeyError, TypeError):
-                _cprint(f"  No forecast row {index}. Run /questions to inspect current forecast questions.")
-                return None
-
-        lowered = trimmed.lower()
-        for row in [*questions, *review_queue]:
-            row_id = str(row.get("id") or "")
-            if row_id.lower() == lowered or re.sub(r"^fq_", "", row_id).lower().startswith(lowered):
-                return row_id
-
-        matches = cls._forecast_search_matches(summary, trimmed, limit=8)
-        top = matches[0] if matches else None
-        next_match = matches[1] if len(matches) > 1 else None
-        if top and top["row"].get("id") and (not next_match or int(top["score"]) >= int(next_match["score"]) + 10):
-            return str(top["row"]["id"])
-
-        if matches:
-            cls._print_forecast_search(summary, trimmed)
-        else:
-            _cprint(f'  No forecast matched "{trimmed}". Try /find {trimmed}')
-        return None
-
-    def _handle_forecast_book_command(self, cmd_original: str) -> None:
-        """Handle /questions as a forecast-question summary and numbered drill-down."""
-        parts = cmd_original.split(None, 1)
-        raw_arg = parts[1].strip() if len(parts) > 1 else ""
-        try:
-            from forecasting.cli import main as forecast_main
-            from forecasting.dashboard import build_dashboard_summary, render_forecast_book_text
-        except Exception as exc:
-            _cprint(f"  book: {exc}")
-            return
-
-        forecast_id_arg = re.match(r"^fq_[a-z0-9][a-z0-9_:-]*$", raw_arg, flags=re.IGNORECASE)
-        if raw_arg and raw_arg.isdigit():
-            question_id = self._resolve_forecast_ref(raw_arg, limit=max(int(raw_arg), 20))
-            if question_id:
-                forecast_main(["show", question_id])
-            return
-
-        if raw_arg and forecast_id_arg:
-            forecast_main(["show", raw_arg])
-            return
-
-        if raw_arg and not raw_arg.lower().startswith("list"):
-            try:
-                self._print_forecast_search(build_dashboard_summary(limit=75), raw_arg)
-            except Exception as exc:
-                _cprint(f"  book: {exc}")
-            return
-
-        limit = 20
-        if raw_arg:
-            try:
-                argv = shlex.split(raw_arg)
-                if len(argv) > 1:
-                    limit = max(int(argv[1]), 1)
-            except (ValueError, IndexError) as exc:
-                _cprint(f"  book: {exc}")
-                return
-
-        try:
-            print(render_forecast_book_text(build_dashboard_summary(limit=limit)))
-        except Exception as exc:
-            _cprint(f"  book: {exc}")
-
-    def _handle_forecast_ledger_command(self, cmd_original: str) -> None:
-        """Handle /ledger as a compact forecast-store navigation shortcut."""
-        parts = cmd_original.split(None, 1)
-        raw_arg = parts[1].strip() if len(parts) > 1 else "book"
-        view = raw_arg.lower().split(maxsplit=1)[0] if raw_arg else "book"
-        try:
-            from forecasting.dashboard import (
-                build_dashboard_summary,
-                render_dashboard_text,
-                render_forecast_book_text,
-            )
-
-            summary = build_dashboard_summary(limit=75 if view == "search" else 20)
-            if view in {"", "book", "questions", "desk", "state", "store"}:
-                print(render_forecast_book_text(summary))
-                return
-            if view in {"all", "overview", "dashboard"}:
-                print(render_dashboard_text(summary))
-                return
-            if view == "search":
-                query = raw_arg.split(maxsplit=1)[1] if len(raw_arg.split(maxsplit=1)) > 1 else ""
-                if not query:
-                    _cprint("  Usage: /ledger search <forecast words>")
-                    return
-                self._print_forecast_search(summary, query)
-                return
-
-            self._print_forecast_search(build_dashboard_summary(limit=75), raw_arg)
-        except Exception as exc:
-            _cprint(f"  ledger: {exc}")
-
-    def _handle_forecast_find_command(self, cmd_original: str) -> None:
-        parts = cmd_original.split(None, 1)
-        query = parts[1].strip() if len(parts) > 1 else ""
-        if not query:
-            _cprint("  Usage: /find <forecast words>")
-            return
-        try:
-            from forecasting.dashboard import build_dashboard_summary
-
-            self._print_forecast_search(build_dashboard_summary(limit=75), query)
-        except Exception as exc:
-            _cprint(f"  find: {exc}")
-
-    def _handle_forecast_open_command(self, cmd_original: str) -> None:
-        parts = cmd_original.split(None, 1)
-        ref = parts[1].strip() if len(parts) > 1 else ""
-        if not ref:
-            _cprint("  Usage: /open <row|id|forecast words>")
-            return
-        question_id = self._resolve_forecast_ref(ref)
-        if question_id:
-            from forecasting.cli import main as forecast_main
-
-            forecast_main(["show", question_id])
-
-    @staticmethod
-    def _split_forecast_ref_and_rest(raw_arg: str) -> tuple[str, str]:
-        separator = raw_arg.find(" -- ")
-        if separator >= 0:
-            return raw_arg[:separator].strip(), raw_arg[separator + 4:].strip()
-        parts = raw_arg.split(maxsplit=1)
-        return (parts[0].strip(), parts[1].strip()) if len(parts) > 1 else (raw_arg.strip(), "")
-
-    def _handle_forecast_evidence_for_command(self, cmd_original: str) -> None:
-        parts = cmd_original.split(None, 1)
-        raw_arg = parts[1].strip() if len(parts) > 1 else ""
-        ref, note = self._split_forecast_ref_and_rest(raw_arg)
-        if not ref or not note:
-            _cprint("  Usage: /note <row|id|forecast words> -- <evidence note>")
-            return
-        question_id = self._resolve_forecast_ref(ref)
-        if question_id:
-            from forecasting.cli import main as forecast_main
-
-            forecast_main(["research", question_id, note])
-
-    def _handle_forecast_update_for_command(self, cmd_original: str) -> None:
-        parts = cmd_original.split(None, 1)
-        raw_arg = parts[1].strip() if len(parts) > 1 else ""
-        ref, rest = self._split_forecast_ref_and_rest(raw_arg)
-        if not ref or not rest:
-            _cprint("  Usage: /revise <row|id|forecast words> -- --probability <0-1> --rationale <why>")
-            return
-        question_id = self._resolve_forecast_ref(ref)
-        if not question_id:
-            return
-        try:
-            from forecasting.argv import split_forecast_cli_args
-
-            argv = split_forecast_cli_args(rest)
-        except ValueError as exc:
-            _cprint(f"  revise: {exc}")
-            return
-        from forecasting.cli import main as forecast_main
-
-        forecast_main(["update", question_id, *argv])
+    from superforecasting_agent.runtime.forecast_commands import _handle_forecast_update_for_command as _handle_forecast_update_for_command
 
     def _handle_branch_command(self, cmd_original: str) -> None:
         """Handle /branch [name] — fork the current session into a new independent copy.
@@ -6826,7 +4488,7 @@ class HermesCLI:
             return
 
         if not self._session_db:
-            from hermes_state import format_session_db_unavailable
+            from superforecasting_agent.storage.session import format_session_db_unavailable
             _cprint(f"  {format_session_db_unavailable()}")
             return
 
@@ -6961,7 +4623,7 @@ class HermesCLI:
             return
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        saved_dir = get_hermes_home() / "sessions" / "saved"
+        saved_dir = get_agent_home() / "sessions" / "saved"
         try:
             saved_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
@@ -7050,7 +4712,7 @@ class HermesCLI:
     def _run_curses_picker(self, title: str, items: list[str], default_index: int = 0) -> int | None:
         """Run curses_single_select via run_in_terminal so prompt_toolkit handles terminal ownership cleanly."""
         import threading
-        from hermes_cli.curses_ui import curses_single_select
+        from superforecasting_agent.runtime.curses_ui import curses_single_select
 
         result = [None]
 
@@ -7405,7 +5067,7 @@ class HermesCLI:
         # (e.g. gpt-5.5 is 1.05M on openai but 272K on Codex OAuth).
         mi = result.model_info
         try:
-            from hermes_cli.model_switch import resolve_display_context_length
+            from superforecasting_agent.runtime.model_switch import resolve_display_context_length
             ctx = resolve_display_context_length(
                 result.new_model,
                 result.target_provider,
@@ -7460,7 +5122,7 @@ class HermesCLI:
             model_list = provider_data.get("models", [])
             if not model_list:
                 try:
-                    from hermes_cli.models import provider_model_ids
+                    from superforecasting_agent.runtime.models import provider_model_ids
                     live = provider_model_ids(provider_data["slug"])
                     if live:
                         model_list = live
@@ -7486,7 +5148,7 @@ class HermesCLI:
                 self._close_model_picker()
                 return
             if selected < len(model_list):
-                from hermes_cli.model_switch import switch_model
+                from superforecasting_agent.runtime.model_switch import switch_model
                 chosen_model = model_list[selected]
                 result = switch_model(
                     raw_input=chosen_model,
@@ -7514,8 +5176,8 @@ class HermesCLI:
           /model <name> --provider <provider> — switch provider + model
           /model --provider <provider>        — switch to provider, auto-detect model
         """
-        from hermes_cli.model_switch import switch_model, parse_model_flags
-        from hermes_cli.providers import get_label
+        from superforecasting_agent.runtime.model_switch import switch_model, parse_model_flags
+        from superforecasting_agent.runtime.providers import get_label
 
         # Parse args from the original command
         parts = cmd_original.split(None, 1)  # split off '/model'
@@ -7529,7 +5191,7 @@ class HermesCLI:
         # /v1/models endpoint on this open.
         if force_refresh:
             try:
-                from hermes_cli.models import clear_provider_models_cache
+                from superforecasting_agent.runtime.models import clear_provider_models_cache
                 clear_provider_models_cache()
                 _cprint("  Cleared model picker cache. Refreshing...")
             except Exception:
@@ -7539,7 +5201,7 @@ class HermesCLI:
         # dashboard / TUI used to duplicate. Overlay live session state
         # via with_overrides (truthy-only) so empty self.* attrs don't
         # clobber disk config.
-        from hermes_cli.inventory import build_models_payload, load_picker_context
+        from superforecasting_agent.runtime.inventory import build_models_payload, load_picker_context
 
         try:
             ctx = load_picker_context().with_overrides(
@@ -7651,7 +5313,7 @@ class HermesCLI:
         # Copilot, and Nous-enforced caps win over the raw models.dev entry
         # (e.g. gpt-5.5 is 1.05M on openai but 272K on Codex OAuth).
         mi = result.model_info
-        from hermes_cli.model_switch import resolve_display_context_length
+        from superforecasting_agent.runtime.model_switch import resolve_display_context_length
         ctx = resolve_display_context_length(
             result.new_model,
             result.target_provider,
@@ -7699,7 +5361,7 @@ class HermesCLI:
             /codex-runtime codex_app_server      — hand turns to codex subprocess
             /codex-runtime on / off              — synonyms for the above
         """
-        from hermes_cli import codex_runtime_switch as crs
+        from superforecasting_agent.runtime import codex_runtime_switch as crs
 
         parts = cmd_original.split(None, 1)
         raw_args = parts[1].strip() if len(parts) > 1 else ""
@@ -7711,7 +5373,7 @@ class HermesCLI:
 
         # Load + persist via the existing config helpers
         try:
-            from hermes_cli.config import load_config, save_config
+            from superforecasting_agent.runtime.config import load_config, save_config
         except Exception as exc:
             _cprint(f"❌ could not load config: {exc}")
             return
@@ -7735,7 +5397,7 @@ class HermesCLI:
         if not text or has_images or not _looks_like_slash_command(text):
             return False
         try:
-            from hermes_cli.commands import resolve_command
+            from superforecasting_agent.runtime.commands import resolve_command
             base = text.split(None, 1)[0].lower().lstrip('/')
             cmd = resolve_command(base)
             return bool(cmd and cmd.name == "model")
@@ -7759,7 +5421,7 @@ class HermesCLI:
         if not getattr(self, "_agent_running", False):
             return False
         try:
-            from hermes_cli.commands import resolve_command
+            from superforecasting_agent.runtime.commands import resolve_command
             base = text.split(None, 1)[0].lower().lstrip('/')
             cmd = resolve_command(base)
             return bool(cmd and cmd.name == "steer")
@@ -7879,272 +5541,9 @@ class HermesCLI:
             print("  Usage: /style <name>  (legacy alias: /personality)")
             print()
     
-    def _handle_cron_command(self, cmd: str):
-        """Handle the /cron command to manage scheduled tasks."""
-        import shlex
-        from tools.cronjob_tools import cronjob as cronjob_tool
+    from superforecasting_agent.runtime.cron_commands import _handle_cron_command as _handle_cron_command
 
-        def _cron_api(**kwargs):
-            return json.loads(cronjob_tool(**kwargs))
-
-        def _normalize_skills(values):
-            normalized = []
-            for value in values:
-                text = str(value or "").strip()
-                if text and text not in normalized:
-                    normalized.append(text)
-            return normalized
-
-        def _parse_flags(tokens):
-            opts = {
-                "name": None,
-                "deliver": None,
-                "repeat": None,
-                "skills": [],
-                "add_skills": [],
-                "remove_skills": [],
-                "clear_skills": False,
-                "all": False,
-                "prompt": None,
-                "schedule": None,
-                "positionals": [],
-            }
-            i = 0
-            while i < len(tokens):
-                token = tokens[i]
-                if token == "--name" and i + 1 < len(tokens):
-                    opts["name"] = tokens[i + 1]
-                    i += 2
-                elif token == "--deliver" and i + 1 < len(tokens):
-                    opts["deliver"] = tokens[i + 1]
-                    i += 2
-                elif token == "--repeat" and i + 1 < len(tokens):
-                    try:
-                        opts["repeat"] = int(tokens[i + 1])
-                    except ValueError:
-                        print("--repeat must be an integer")
-                        return None
-                    i += 2
-                elif token == "--skill" and i + 1 < len(tokens):
-                    opts["skills"].append(tokens[i + 1])
-                    i += 2
-                elif token == "--add-skill" and i + 1 < len(tokens):
-                    opts["add_skills"].append(tokens[i + 1])
-                    i += 2
-                elif token == "--remove-skill" and i + 1 < len(tokens):
-                    opts["remove_skills"].append(tokens[i + 1])
-                    i += 2
-                elif token == "--clear-skills":
-                    opts["clear_skills"] = True
-                    i += 1
-                elif token == "--all":
-                    opts["all"] = True
-                    i += 1
-                elif token == "--prompt" and i + 1 < len(tokens):
-                    opts["prompt"] = tokens[i + 1]
-                    i += 2
-                elif token == "--schedule" and i + 1 < len(tokens):
-                    opts["schedule"] = tokens[i + 1]
-                    i += 2
-                else:
-                    opts["positionals"].append(token)
-                    i += 1
-            return opts
-
-        tokens = shlex.split(cmd)
-
-        if len(tokens) == 1:
-            print()
-            print("+" + "-" * 68 + "+")
-            print("|" + " " * 26 + "Scheduled Tasks" + " " * 27 + "|")
-            print("+" + "-" * 68 + "+")
-            print()
-            print("  Commands:")
-            print("    /cron list")
-            print('    /cron add "every 2h" "Check server status" [--skill blogwatcher]')
-            print('    /cron edit <job_id> --schedule "every 4h" --prompt "New task"')
-            print("    /cron edit <job_id> --skill blogwatcher --skill maps")
-            print("    /cron edit <job_id> --remove-skill blogwatcher")
-            print("    /cron edit <job_id> --clear-skills")
-            print("    /cron pause <job_id>")
-            print("    /cron resume <job_id>")
-            print("    /cron run <job_id>")
-            print("    /cron remove <job_id>")
-            print()
-            result = _cron_api(action="list")
-            jobs = result.get("jobs", []) if result.get("success") else []
-            if jobs:
-                print("  Current Jobs:")
-                print("  " + "-" * 63)
-                for job in jobs:
-                    repeat_str = job.get("repeat", "?")
-                    print(f"    {job['job_id'][:12]:<12} | {job['schedule']:<15} | {repeat_str:<8}")
-                    if job.get("skills"):
-                        print(f"      Skills: {', '.join(job['skills'])}")
-                    print(f"      {job.get('prompt_preview', '')}")
-                    if job.get("next_run_at"):
-                        print(f"      Next: {job['next_run_at']}")
-                    print()
-            else:
-                print("  No scheduled jobs. Use '/cron add' to create one.")
-            print()
-            return
-
-        subcommand = tokens[1].lower()
-        opts = _parse_flags(tokens[2:])
-        if opts is None:
-            return
-
-        if subcommand == "list":
-            result = _cron_api(action="list", include_disabled=opts["all"])
-            jobs = result.get("jobs", []) if result.get("success") else []
-            if not jobs:
-                print("No scheduled jobs.")
-                return
-
-            print()
-            print("Scheduled Jobs:")
-            print("-" * 80)
-            for job in jobs:
-                print(f"  ID: {job['job_id']}")
-                print(f"  Name: {job['name']}")
-                print(f"  State: {job.get('state', '?')}")
-                print(f"  Schedule: {job['schedule']} ({job.get('repeat', '?')})")
-                print(f"  Next run: {job.get('next_run_at', 'N/A')}")
-                if job.get("skills"):
-                    print(f"  Skills: {', '.join(job['skills'])}")
-                print(f"  Prompt: {job.get('prompt_preview', '')}")
-                if job.get("last_run_at"):
-                    print(f"  Last run: {job['last_run_at']} ({job.get('last_status', '?')})")
-                print()
-            return
-
-        if subcommand in {"add", "create"}:
-            positionals = opts["positionals"]
-            if not positionals:
-                print("Usage: /cron add <schedule> <prompt>")
-                return
-            schedule = opts["schedule"] or positionals[0]
-            prompt = opts["prompt"] or " ".join(positionals[1:])
-            skills = _normalize_skills(opts["skills"])
-            if not prompt and not skills:
-                print("Please provide a prompt or at least one skill")
-                return
-            result = _cron_api(
-                action="create",
-                schedule=schedule,
-                prompt=prompt or None,
-                name=opts["name"],
-                deliver=opts["deliver"],
-                repeat=opts["repeat"],
-                skills=skills or None,
-            )
-            if result.get("success"):
-                print(f"Created job: {result['job_id']}")
-                print(f"  Schedule: {result['schedule']}")
-                if result.get("skills"):
-                    print(f"  Skills: {', '.join(result['skills'])}")
-                print(f"  Next run: {result['next_run_at']}")
-            else:
-                print(f"Failed to create job: {result.get('error')}")
-            return
-
-        if subcommand == "edit":
-            positionals = opts["positionals"]
-            if not positionals:
-                print("Usage: /cron edit <job_id> [--schedule ...] [--prompt ...] [--skill ...]")
-                return
-            job_id = positionals[0]
-            existing = get_job(job_id)
-            if not existing:
-                print(f"Job not found: {job_id}")
-                return
-
-            final_skills = None
-            replacement_skills = _normalize_skills(opts["skills"])
-            add_skills = _normalize_skills(opts["add_skills"])
-            remove_skills = set(_normalize_skills(opts["remove_skills"]))
-            existing_skills = list(existing.get("skills") or ([] if not existing.get("skill") else [existing.get("skill")]))
-            if opts["clear_skills"]:
-                final_skills = []
-            elif replacement_skills:
-                final_skills = replacement_skills
-            elif add_skills or remove_skills:
-                final_skills = [skill for skill in existing_skills if skill not in remove_skills]
-                for skill in add_skills:
-                    if skill not in final_skills:
-                        final_skills.append(skill)
-
-            result = _cron_api(
-                action="update",
-                job_id=job_id,
-                schedule=opts["schedule"],
-                prompt=opts["prompt"],
-                name=opts["name"],
-                deliver=opts["deliver"],
-                repeat=opts["repeat"],
-                skills=final_skills,
-            )
-            if result.get("success"):
-                job = result["job"]
-                print(f"Updated job: {job['job_id']}")
-                print(f"  Schedule: {job['schedule']}")
-                if job.get("skills"):
-                    print(f"  Skills: {', '.join(job['skills'])}")
-                else:
-                    print("  Skills: none")
-            else:
-                print(f"Failed to update job: {result.get('error')}")
-            return
-
-        if subcommand in {"pause", "resume", "run", "remove", "rm", "delete"}:
-            positionals = opts["positionals"]
-            if not positionals:
-                print(f"Usage: /cron {subcommand} <job_id>")
-                return
-            job_id = positionals[0]
-            action = "remove" if subcommand in {"remove", "rm", "delete"} else subcommand
-            result = _cron_api(action=action, job_id=job_id, reason="paused from /cron" if action == "pause" else None)
-            if not result.get("success"):
-                print(f"Failed to {action} job: {result.get('error')}")
-                return
-            if action == "pause":
-                print(f"Paused job: {result['job']['name']} ({job_id})")
-            elif action == "resume":
-                print(f"Resumed job: {result['job']['name']} ({job_id})")
-                print(f"  Next run: {result['job'].get('next_run_at')}")
-            elif action == "run":
-                print(f"Triggered job: {result['job']['name']} ({job_id})")
-                print("  It will run on the next scheduler tick.")
-            else:
-                removed = result.get("removed_job", {})
-                print(f"Removed job: {removed.get('name', job_id)} ({job_id})")
-            return
-
-        print(f"Unknown cron command: {subcommand}")
-        print("  Available: list, add, edit, pause, resume, run, remove")
-
-    def _handle_curator_command(self, cmd: str):
-        """Handle /curator slash command.
-
-        Delegates to hermes_cli.curator so the CLI and the `hermes curator`
-        subcommand share the same handler set.
-        """
-        import shlex
-
-        tokens = shlex.split(cmd)[1:] if cmd else []
-        if not tokens:
-            tokens = ["status"]
-
-        try:
-            from hermes_cli.curator import cli_main
-            cli_main(tokens)
-        except SystemExit:
-            # argparse calls sys.exit() on --help or errors; swallow so we
-            # don't kill the interactive session.
-            pass
-        except Exception as exc:
-            print(f"curator: {exc}")
+    from superforecasting_agent.runtime.maintenance_commands import _handle_curator_command as _handle_curator_command
 
     def _handle_kanban_command(self, cmd: str):
         """Handle the /kanban command — delegate to the shared kanban CLI.
@@ -8153,7 +5552,7 @@ class HermesCLI:
         including the leading slash; we strip it and hand the remainder
         to ``kanban.run_slash`` which returns a single formatted string.
         """
-        from hermes_cli.kanban import run_slash
+        from superforecasting_agent.runtime.kanban import run_slash
 
         rest = cmd.strip()
         if rest.startswith("/"):
@@ -8168,8 +5567,8 @@ class HermesCLI:
             print(output)
 
     def _handle_skills_command(self, cmd: str):
-        """Handle /skills slash command — delegates to hermes_cli.skills_hub."""
-        from hermes_cli.skills_hub import handle_skills_slash
+        """Handle /skills slash command — delegates to superforecasting_agent.runtime.skills_hub."""
+        from superforecasting_agent.runtime.skills_hub import handle_skills_slash
         handle_skills_slash(cmd, ChatConsole())
 
     def _handle_learn_command(self, cmd: str):
@@ -8242,7 +5641,7 @@ class HermesCLI:
             print("  To start the gateway:")
             print("    python cli.py --gateway")
             print()
-            print(f"  Configuration file: {display_hermes_home()}/config.yaml")
+            print(f"  Configuration file: {display_agent_home()}/config.yaml")
             print()
             
         except Exception as e:
@@ -8252,7 +5651,7 @@ class HermesCLI:
             print("    1. Set environment variables:")
             print("       TELEGRAM_BOT_TOKEN=your_token")
             print("       DISCORD_BOT_TOKEN=your_token")
-            print(f"    2. Or configure settings in {display_hermes_home()}/config.yaml")
+            print(f"    2. Or configure settings in {display_agent_home()}/config.yaml")
             print()
     
     def process_command(self, command: str) -> bool:
@@ -8270,8 +5669,8 @@ class HermesCLI:
         cmd_original = command.strip()
 
         # Resolve aliases via central registry so adding an alias is a one-line
-        # change in hermes_cli/commands.py instead of touching every dispatch site.
-        from hermes_cli.commands import resolve_command as _resolve_cmd
+        # change in superforecasting_agent/runtime/commands.py instead of touching every dispatch site.
+        from superforecasting_agent.runtime.commands import resolve_command as _resolve_cmd
         _base_word = cmd_lower.split()[0].lstrip("/")
         _cmd_def = _resolve_cmd(_base_word)
         canonical = _cmd_def.name if _cmd_def else _base_word
@@ -8351,10 +5750,10 @@ class HermesCLI:
                 _cprint("  Fresh forecast session. Screen cleared and transcript reset.\n")
                 # Show a random tip on new session
                 try:
-                    from hermes_cli.tips import get_random_tip
+                    from superforecasting_agent.runtime.tips import get_random_tip
                     _tip = get_random_tip()
                     try:
-                        from hermes_cli.skin_engine import get_active_skin
+                        from superforecasting_agent.runtime.skin_engine import get_active_skin
                         _tip_color = get_active_skin().get_color("banner_dim", "#B8860B")
                     except Exception:
                         _tip_color = "#B8860B"
@@ -8366,10 +5765,10 @@ class HermesCLI:
                 print("  Fresh forecast session. Screen cleared and transcript reset.\n")
                 # Show a random tip on new session
                 try:
-                    from hermes_cli.tips import get_random_tip
+                    from superforecasting_agent.runtime.tips import get_random_tip
                     _tip = get_random_tip()
                     try:
-                        from hermes_cli.skin_engine import get_active_skin
+                        from superforecasting_agent.runtime.skin_engine import get_active_skin
                         _tip_color = get_active_skin().get_color("banner_dim", "#B8860B")
                     except Exception:
                         _tip_color = "#B8860B"
@@ -8386,7 +5785,7 @@ class HermesCLI:
                     if self._session_db:
                         # Sanitize the title early so feedback matches what gets stored
                         try:
-                            from hermes_state import SessionDB
+                            from superforecasting_agent.storage.session import SessionDB
                             new_title = SessionDB.sanitize_title(raw_title)
                         except ValueError as e:
                             _cprint(f"  {e}")
@@ -8412,7 +5811,7 @@ class HermesCLI:
                                 self._pending_title = new_title
                                 _cprint(f"  Forecast session title queued: {new_title} (will be saved on first message)")
                     else:
-                        from hermes_state import format_session_db_unavailable
+                        from superforecasting_agent.storage.session import format_session_db_unavailable
                         _cprint(f"  {format_session_db_unavailable()}")
                 else:
                     _cprint("  Usage: /title <your forecast session title>")
@@ -8427,7 +5826,7 @@ class HermesCLI:
                 else:
                     _cprint("  No title set. Usage: /title <your forecast session title>")
             else:
-                from hermes_state import format_session_db_unavailable
+                from superforecasting_agent.storage.session import format_session_db_unavailable
                 _cprint(f"  {format_session_db_unavailable()}")
         elif canonical == "handoff":
             if not self._handle_handoff_command(cmd_original):
@@ -8537,7 +5936,7 @@ class HermesCLI:
         elif canonical == "image":
             self._handle_image_command(cmd_original)
         elif canonical == "reload":
-            from hermes_cli.config import reload_env
+            from superforecasting_agent.runtime.config import reload_env
             count = reload_env()
             print(f"  Reloaded .env ({count} var(s) updated)")
         elif canonical == "reload-mcp":
@@ -8554,12 +5953,12 @@ class HermesCLI:
             self._handle_browser_command(cmd_original)
         elif canonical == "plugins":
             try:
-                from hermes_cli.plugins import get_plugin_manager
+                from superforecasting_agent.runtime.plugins import get_plugin_manager
                 mgr = get_plugin_manager()
                 plugins = mgr.list_plugins()
                 if not plugins:
                     print("No plugins installed.")
-                    print(f"Drop plugin directories into {display_hermes_home()}/plugins/ to get started.")
+                    print(f"Drop plugin directories into {display_agent_home()}/plugins/ to get started.")
                 else:
                     print(f"Plugins ({len(plugins)}):")
                     for p in plugins:
@@ -8671,7 +6070,7 @@ class HermesCLI:
                     self._console_print(f"[bold red]Quick command '{base_cmd}' has unsupported type (supported: 'exec', 'alias')[/]")
             # Check for plugin-registered slash commands
             elif base_cmd.lstrip("/") in _get_plugin_cmd_handler_names():
-                from hermes_cli.plugins import (
+                from superforecasting_agent.runtime.plugins import (
                     get_plugin_command_handler,
                     resolve_plugin_command_result,
                 )
@@ -8727,7 +6126,7 @@ class HermesCLI:
                 # Prefix matching: if input uniquely identifies one command, execute it.
                 # Matches against both built-in COMMANDS and installed skill commands so
                 # that execution-time resolution agrees with tab-completion.
-                from hermes_cli.commands import COMMANDS
+                from superforecasting_agent.runtime.commands import COMMANDS
                 typed_base = cmd_lower.split()[0]
                 all_known = set(COMMANDS) | set(_skill_commands) | set(get_skill_bundles())
                 matches = [c for c in all_known if c.startswith(typed_base)]
@@ -8866,7 +6265,7 @@ class HermesCLI:
                 ChatConsole().print(f"[{_accent_hex()}]{'─' * 40}[/]")
                 if response:
                     try:
-                        from hermes_cli.skin_engine import get_active_skin
+                        from superforecasting_agent.runtime.skin_engine import get_active_skin
                         _skin = get_active_skin()
                         label = _skin.get_branding("response_label", " Forecast ")
                         _resp_color = _maybe_remap_for_light_mode(_skin.get_color("response_border", "#CD7F32"))
@@ -8920,21 +6319,13 @@ class HermesCLI:
         self._background_tasks[task_id] = thread
         thread.start()
 
-    @staticmethod
-    def _try_launch_chrome_debug(port: int, system: str) -> bool:
-        """Try to launch a Chromium-family browser with remote debugging enabled.
-
-        Uses a dedicated user-data-dir so the debug instance doesn't conflict
-        with an already-running browser using the default profile.
-
-        Returns True if a launch command was executed (doesn't guarantee success).
-        """
-        return try_launch_chrome_debug(port, system)
+    from superforecasting_agent.runtime.browser_commands import _try_launch_chrome_debug as _try_launch_chrome_debug
+    _try_launch_chrome_debug = staticmethod(_try_launch_chrome_debug)
 
     def _handle_bundles_command(self, cmd: str) -> None:
         """In-session ``/bundles`` — show installed skill bundles.
 
-        Mirrors ``hermes bundles list`` but renders inside the running
+        Mirrors ``superforecasting-agent bundles list`` but renders inside the running
         CLI so users can discover what's available without dropping out
         of their session. Bundles are loaded via ``/<bundle-name>``.
         """
@@ -8969,507 +6360,23 @@ class HermesCLI:
             f"Manage with `superforecasting-agent bundles`.{_RST}"
         )
 
-    def _handle_browser_command(self, cmd: str):
-        """Handle /browser connect|disconnect|status — manage live Chromium-family CDP connection."""
-        import platform as _plat
-
-        parts = cmd.strip().split(None, 1)
-        sub = parts[1].lower().strip() if len(parts) > 1 else "status"
-
-        _DEFAULT_CDP = DEFAULT_BROWSER_CDP_URL
-        current = os.environ.get("BROWSER_CDP_URL", "").strip()
-
-        if sub.startswith("connect"):
-            # Optionally accept a custom CDP URL: /browser connect ws://host:port
-            connect_parts = cmd.strip().split(None, 2)  # ["/browser", "connect", "ws://..."]
-            cdp_url = connect_parts[2].strip() if len(connect_parts) > 2 else _DEFAULT_CDP
-            parsed_cdp = urlparse(cdp_url if "://" in cdp_url else f"http://{cdp_url}")
-            if parsed_cdp.scheme not in {"http", "https", "ws", "wss"}:
-                print()
-                print(
-                    f"   ⚠ Unsupported browser url scheme: {parsed_cdp.scheme or '(missing)'} "
-                    "(expected one of: http, https, ws, wss)"
-                )
-                print()
-                return
-            try:
-                _port = parsed_cdp.port or (443 if parsed_cdp.scheme in {"https", "wss"} else 80)
-            except ValueError:
-                print()
-                print(f"   ⚠ Invalid port in browser url: {cdp_url}")
-                print()
-                return
-            if not parsed_cdp.hostname:
-                print()
-                print(f"   ⚠ Missing host in browser url: {cdp_url}")
-                print()
-                return
-            _host = parsed_cdp.hostname
-            if parsed_cdp.path.startswith("/devtools/browser/"):
-                cdp_url = parsed_cdp.geturl()
-            else:
-                cdp_url = parsed_cdp._replace(
-                    path="",
-                    params="",
-                    query="",
-                    fragment="",
-                ).geturl()
-
-            # Clear any existing browser sessions so the next tool call uses the new backend
-            try:
-                from tools.browser_tool import cleanup_all_browsers
-                cleanup_all_browsers()
-            except Exception:
-                pass
-
-            print()
-
-            # Check if a Chromium-family browser is already serving CDP on the debug port
-            _already_open = is_browser_debug_ready(cdp_url, timeout=1.0)
-
-            if _already_open:
-                print(f"   ✓ Chromium-family browser is already listening on port {_port}")
-            elif cdp_url == _DEFAULT_CDP:
-                # Try to auto-launch a Chromium-family browser with remote debugging
-                print("   Chromium-family browser isn't running with remote debugging — attempting to launch...")
-                _launched = self._try_launch_chrome_debug(_port, _plat.system())
-                if _launched:
-                    # Wait for the DevTools discovery endpoint to come up
-                    for _wait in range(10):
-                        if is_browser_debug_ready(cdp_url, timeout=1.0):
-                            _already_open = True
-                            break
-                        time.sleep(0.5)
-                    if _already_open:
-                        print(f"   ✓ Chromium-family browser launched and listening on port {_port}")
-                    else:
-                        print(f"   ⚠ Browser launched but port {_port} isn't responding yet")
-                        print("     Try again in a few seconds — the debug instance may still be starting")
-                else:
-                    print("   ⚠ Could not auto-launch a Chromium-family browser")
-                    sys_name = _plat.system()
-                    chrome_cmd = manual_chrome_debug_command(_port, sys_name)
-                    if chrome_cmd:
-                        print(f"     Launch a Chromium-family browser manually:")
-                        print(f"     {chrome_cmd}")
-                    else:
-                        print("     No supported Chromium-family browser executable found in this environment")
-            else:
-                print(f"   ⚠ Port {_port} is not reachable at {cdp_url}")
-
-            if not _already_open:
-                print()
-                print("Browser not connected — start a Chromium-family browser with remote debugging and retry /browser connect")
-                print()
-                return
-
-            os.environ["BROWSER_CDP_URL"] = cdp_url
-            # Eagerly start the CDP supervisor so pending_dialogs + frame_tree
-            # show up in the next browser_snapshot.  No-op if already started.
-            try:
-                from tools.browser_tool import _ensure_cdp_supervisor  # type: ignore[import-not-found]
-                _ensure_cdp_supervisor("default")
-            except Exception:
-                pass
-            print()
-            print("🌐 Browser connected to live Chromium-family browser via CDP")
-            print(f"   Endpoint: {cdp_url}")
-            print()
-
-            # Inject context message so the model knows this slash command
-            # intentionally makes the dev/debug CDP browser available for use.
-            if hasattr(self, '_pending_input'):
-                self._pending_input.put(
-                    "[System note: The user invoked /browser connect and connected your browser tools to "
-                    "a Chromium-family dev/debug browser via Chrome DevTools Protocol. "
-                    "Your browser_navigate, browser_snapshot, browser_click, and other browser tools now "
-                    "control that CDP browser. The command itself is a signal that using browser tools for "
-                    "their current browser-related request is expected; do not wait for separate permission "
-                    "just because CDP is connected. This is typically a Superforecasting Agent-managed isolated debug "
-                    "profile, not the user's main everyday browser. It is still user-visible and may contain "
-                    "pages, logged-in sessions, or cookies in that debug profile, so avoid destructive actions, "
-                    "closing tabs, or navigating away unless the user's task calls for it.]"
-                )
-
-        elif sub == "disconnect":
-            if current:
-                os.environ.pop("BROWSER_CDP_URL", None)
-                try:
-                    from tools.browser_tool import cleanup_all_browsers, _stop_cdp_supervisor
-                    _stop_cdp_supervisor("default")
-                    cleanup_all_browsers()
-                except Exception:
-                    pass
-                print()
-                print("🌐 Browser disconnected from live Chromium-family browser")
-                print("   Browser tools reverted to default mode (local headless or cloud provider)")
-                print()
-
-                if hasattr(self, '_pending_input'):
-                    self._pending_input.put(
-                        "[System note: The user has disconnected the browser tools from their live Chromium-family browser. "
-                        "Browser tools are back to default mode (headless local browser or cloud provider).]"
-                    )
-            else:
-                print()
-                print("Browser is not connected to a live Chromium-family browser (already using default mode)")
-                print()
-
-        elif sub == "status":
-            print()
-            if current:
-                print("🌐 Browser: connected to live Chromium-family browser via CDP")
-                print(f"   Endpoint: {current}")
-
-                _port = 9222
-                try:
-                    _port = int(current.rsplit(":", 1)[-1].split("/")[0])
-                except (ValueError, IndexError):
-                    pass
-                try:
-                    import socket
-                    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    s.settimeout(1)
-                    s.connect(("127.0.0.1", _port))
-                    s.close()
-                    print("   Status: ✓ reachable")
-                except (OSError, Exception):
-                    print("   Status: ⚠ not reachable (browser may not be running)")
-            else:
-                try:
-                    from tools.browser_tool import _get_cloud_provider
-                    provider = _get_cloud_provider()
-                except Exception:
-                    provider = None
-
-                if provider is not None:
-                    print(f"🌐 Browser: {provider.provider_name()} (cloud)")
-                else:
-                    # Show engine info for local mode
-                    try:
-                        from tools.browser_tool import _get_browser_engine
-                        engine = _get_browser_engine()
-                    except Exception:
-                        engine = "auto"
-                    if engine == "lightpanda":
-                        print("🌐 Browser: local Lightpanda (agent-browser --engine lightpanda)")
-                        print("   ⚡ Lightpanda: faster navigation, no screenshot support")
-                        print("   Automatic Chromium fallback for screenshots and failed commands")
-                    elif engine == "chrome":
-                        print("🌐 Browser: local headless Chromium (agent-browser --engine chrome)")
-                    else:
-                        print("🌐 Browser: local headless Chromium (agent-browser)")
-            print()
-            print("   /browser connect      — connect to your live Chromium-family browser")
-            print("   /browser disconnect   — revert to default")
-            print()
-
-        else:
-            print()
-            print("Usage: /browser connect|disconnect|status")
-            print()
-            print("   connect      Connect browser tools to your live Chromium-family browser session")
-            print("   disconnect   Revert to default browser backend")
-            print("   status       Show current browser mode")
-            print()
+    from superforecasting_agent.runtime.browser_commands import _handle_browser_command as _handle_browser_command
 
     # ────────────────────────────────────────────────────────────────
     # /goal — persistent cross-turn goals (Ralph-style loop)
     # ────────────────────────────────────────────────────────────────
-    def _get_goal_manager(self):
-        """Return the GoalManager bound to the current session_id.
+    from superforecasting_agent.runtime.goal_commands import _get_goal_manager as _get_goal_manager
 
-        Cached on ``self._goal_manager`` and rebound lazily when
-        ``session_id`` changes (e.g. after /new or a compression-driven
-        session split).
-        """
-        try:
-            from hermes_cli.goals import GoalManager
-            from hermes_cli.config import load_config
-        except Exception as exc:
-            logging.debug("goal manager unavailable: %s", exc)
-            return None
+    from superforecasting_agent.runtime.goal_commands import _handle_goal_command as _handle_goal_command
 
-        sid = getattr(self, "session_id", None) or ""
-        if not sid:
-            return None
+    from superforecasting_agent.runtime.goal_commands import _handle_subgoal_command as _handle_subgoal_command
 
-        existing = getattr(self, "_goal_manager", None)
-        if existing is not None and getattr(existing, "session_id", None) == sid:
-            return existing
-
-        try:
-            cfg = load_config() or {}
-            goals_cfg = cfg.get("goals") or {}
-            max_turns = int(goals_cfg.get("max_turns", 20) or 20)
-        except Exception:
-            max_turns = 20
-
-        mgr = GoalManager(session_id=sid, default_max_turns=max_turns)
-        self._goal_manager = mgr
-        return mgr
-
-    def _handle_goal_command(self, cmd: str) -> None:
-        """Dispatch /goal subcommands: set / status / pause / resume / clear."""
-        parts = (cmd or "").strip().split(None, 1)
-        arg = parts[1].strip() if len(parts) > 1 else ""
-
-        mgr = self._get_goal_manager()
-        if mgr is None:
-            _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
-            return
-
-        lower = arg.lower()
-
-        # Bare /goal or /goal status → show current state
-        if not arg or lower == "status":
-            _cprint(f"  {mgr.status_line()}")
-            return
-
-        if lower == "pause":
-            state = mgr.pause(reason="user-paused")
-            if state is None:
-                _cprint(f"  {_DIM}No goal set.{_RST}")
-            else:
-                _cprint(f"  ⏸ Goal paused: {state.goal}")
-            return
-
-        if lower == "resume":
-            state = mgr.resume()
-            if state is None:
-                _cprint(f"  {_DIM}No goal to resume.{_RST}")
-            else:
-                _cprint(f"  ▶ Goal resumed: {state.goal}")
-                _cprint(
-                    f"  {_DIM}Send any message (or press Enter on an empty prompt "
-                    f"is a no-op; type 'continue' to kick it off).{_RST}"
-                )
-            return
-
-        if lower in {"clear", "stop", "done"}:
-            had = mgr.has_goal()
-            mgr.clear()
-            if had:
-                _cprint("  ✓ Goal cleared.")
-            else:
-                _cprint(f"  {_DIM}No active goal.{_RST}")
-            return
-
-        # Otherwise treat the arg as the goal text.
-        try:
-            state = mgr.set(arg)
-        except ValueError as exc:
-            _cprint(f"  Invalid goal: {exc}")
-            return
-
-        _cprint(f"  ⊙ Goal set ({state.max_turns}-turn budget): {state.goal}")
-        _cprint(
-            f"  {_DIM}After each turn, a judge model will check if the goal is done. "
-            f"Superforecasting Agent keeps working until it is, you pause/clear it, or the budget is "
-            f"exhausted. Use /goal status, /goal pause, /goal resume, /goal clear.{_RST}"
-        )
-        # Kick the loop off immediately so the user doesn't have to send a
-        # separate message after setting the goal.
-        try:
-            self._pending_input.put(state.goal)
-        except Exception:
-            pass
-
-    def _handle_subgoal_command(self, cmd: str) -> None:
-        """Dispatch /subgoal subcommands.
-
-        Forms:
-          /subgoal                              show current subgoals
-          /subgoal <text>                       append a criterion
-          /subgoal remove <n>                   drop subgoal n (1-based)
-          /subgoal clear                        wipe all subgoals
-
-        Subgoals are extra criteria the user adds mid-loop. They get
-        appended to both the judge prompt (verdict must consider them)
-        and the continuation prompt (agent sees them) on the next turn
-        boundary. No special kick — the running turn finishes, the next
-        judge call includes them.
-        """
-        parts = (cmd or "").strip().split(None, 2)
-        arg = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
-
-        mgr = self._get_goal_manager()
-        if mgr is None:
-            _cprint(f"  {_DIM}Goals unavailable (no active forecast session).{_RST}")
-            return
-
-        if not mgr.has_goal():
-            _cprint(f"  {_DIM}No active goal. Set one with /goal <text>.{_RST}")
-            return
-
-        # No args → list current subgoals.
-        if not arg:
-            _cprint(f"  {mgr.status_line()}")
-            _cprint(f"  {mgr.render_subgoals()}")
-            return
-
-        tokens = arg.split(None, 1)
-        verb = tokens[0].lower()
-        rest = tokens[1].strip() if len(tokens) > 1 else ""
-
-        if verb == "remove":
-            if not rest:
-                _cprint("  Usage: /subgoal remove <n>")
-                return
-            try:
-                idx = int(rest.split()[0])
-            except ValueError:
-                _cprint("  /subgoal remove: <n> must be an integer (1-based index).")
-                return
-            try:
-                removed = mgr.remove_subgoal(idx)
-            except (IndexError, RuntimeError) as exc:
-                _cprint(f"  /subgoal remove: {exc}")
-                return
-            _cprint(f"  ✓ Removed subgoal {idx}: {removed}")
-            return
-
-        if verb == "clear":
-            try:
-                prev = mgr.clear_subgoals()
-            except RuntimeError as exc:
-                _cprint(f"  /subgoal clear: {exc}")
-                return
-            if prev:
-                _cprint(f"  ✓ Cleared {prev} subgoal{'s' if prev != 1 else ''}.")
-            else:
-                _cprint(f"  {_DIM}No subgoals to clear.{_RST}")
-            return
-
-        # Otherwise — append the whole arg as a new subgoal.
-        try:
-            text = mgr.add_subgoal(arg)
-        except (ValueError, RuntimeError) as exc:
-            _cprint(f"  /subgoal: {exc}")
-            return
-        idx = len(mgr.state.subgoals) if mgr.state else 0
-        _cprint(f"  ✓ Added subgoal {idx}: {text}")
-
-    def _maybe_continue_goal_after_turn(self) -> None:
-        """Hook run after every CLI turn. Judges + maybe re-queues.
-
-        Safe to call when no goal is set — returns quickly.
-
-        Preemption is automatic: if a real user message is already in
-        ``_pending_input`` we skip judging (the user's new input takes
-        priority and we'll re-judge after that turn). If judge says done,
-        mark it done and tell the user. If judge says continue and we're
-        under budget, push the continuation prompt onto the queue.
-
-        Interrupt handling: if the turn was user-cancelled (Ctrl+C), we
-        AUTO-PAUSE the goal instead of judging + re-queuing. Otherwise
-        Ctrl+C feels like it did nothing — the judge runs on whatever
-        partial output landed, almost always says "continue", and the
-        loop keeps going. Auto-pause keeps the goal recoverable via
-        ``/goal resume`` once the user has sorted out what they want.
-        The empty-response skip mirrors the gateway guard at
-        ``_handle_message`` in ``gateway/run.py``.
-        """
-        mgr = self._get_goal_manager()
-        if mgr is None or not mgr.is_active():
-            return
-
-        # If a real user message is already queued, don't inject a
-        # continuation prompt on top — let the user's turn go first.
-        # Slash commands don't count as "real user messages" for this
-        # check: they're inspection/mutation (e.g. /subgoal added mid-
-        # run) and the process_loop dispatches them via process_command,
-        # not via chat(). If we treat a queued /subgoal as preempting,
-        # the goal loop silently stalls — we'd return here, then the
-        # slash command consumes its queue slot via process_command()
-        # which never re-fires the goal hook. Peek at all queued entries
-        # and only defer when there's a non-slash payload.
-        try:
-            pending = getattr(self, "_pending_input", None)
-            if pending is not None and not pending.empty():
-                has_real_message = False
-                try:
-                    # Queue.queue is the underlying deque — direct peek
-                    # without disturbing FIFO order.
-                    for entry in list(pending.queue):
-                        # Bundled payloads are (text, images) tuples;
-                        # unpack for inspection.
-                        if isinstance(entry, tuple) and entry:
-                            entry = entry[0]
-                        if isinstance(entry, str) and _looks_like_slash_command(entry):
-                            continue
-                        has_real_message = True
-                        break
-                except Exception:
-                    # Fallback: if we can't introspect the queue, behave
-                    # like the old check and defer to be safe.
-                    has_real_message = True
-                if has_real_message:
-                    return
-        except Exception:
-            pass
-
-        # If the turn was user-interrupted (Ctrl+C), auto-pause the goal
-        # and bail. The judge call would almost always return "continue"
-        # on the partial output and immediately re-queue another turn,
-        # which is exactly what the user cancelled. Pausing (rather than
-        # silently skipping) is the observable, recoverable behavior.
-        if getattr(self, "_last_turn_interrupted", False):
-            try:
-                mgr.pause(reason="user-interrupted (Ctrl+C)")
-            except Exception as exc:
-                logging.debug("goal pause-on-interrupt failed: %s", exc)
-            _cprint(
-                f"  {_DIM}⏸ Goal paused — turn was interrupted. "
-                f"Use /goal resume to continue, or /goal clear to stop.{_RST}"
-            )
-            return
-
-        # Extract the agent's final response for this turn.
-        last_response = ""
-        try:
-            hist = self.conversation_history or []
-            for msg in reversed(hist):
-                if msg.get("role") == "assistant":
-                    content = msg.get("content", "")
-                    if isinstance(content, list):
-                        # Multimodal content — flatten text parts.
-                        parts = [
-                            p.get("text", "")
-                            for p in content
-                            if isinstance(p, dict) and p.get("type") in {"text", "output_text"}
-                        ]
-                        last_response = "\n".join(t for t in parts if t)
-                    else:
-                        last_response = str(content or "")
-                    break
-        except Exception:
-            last_response = ""
-
-        # Skip judging on empty/whitespace-only responses. These are almost
-        # always transient failures (API error, empty stream) where the
-        # judge would say "continue" and trip the consecutive-parse-failures
-        # backstop unnecessarily. Mirrors the gateway guard.
-        if not last_response.strip():
-            return
-
-        decision = mgr.evaluate_after_turn(last_response, user_initiated=True)
-        msg = decision.get("message") or ""
-        if msg:
-            _cprint(f"  {msg}")
-
-        if decision.get("should_continue"):
-            prompt = decision.get("continuation_prompt")
-            if prompt:
-                try:
-                    self._pending_input.put(prompt)
-                except Exception as exc:
-                    logging.debug("goal continuation enqueue failed: %s", exc)
+    from superforecasting_agent.runtime.goal_commands import _maybe_continue_goal_after_turn as _maybe_continue_goal_after_turn
 
     def _handle_skin_command(self, cmd: str):
         """Handle /skin [name] — show or change the display skin."""
         try:
-            from hermes_cli.skin_engine import list_skins, set_active_skin, get_active_skin_name
+            from superforecasting_agent.runtime.skin_engine import list_skins, set_active_skin, get_active_skin_name
         except ImportError:
             print("Skin engine not available.")
             return
@@ -9486,7 +6393,7 @@ class HermesCLI:
                 source = f" ({s['source']})" if s["source"] == "user" else ""
                 print(f"   {marker} {s['name']}{source} — {s['description']}")
             print("\n  Usage: /skin <name>")
-            print(f"  Custom skins: drop a YAML file in {display_hermes_home()}/skins/\n")
+            print(f"  Custom skins: drop a YAML file in {display_agent_home()}/skins/\n")
             return
 
         new_skin = parts[1].strip().lower()
@@ -9516,8 +6423,8 @@ class HermesCLI:
             /footer on|off    → explicit
             /footer status    → show current state
         """
-        from hermes_cli.config import load_config
-        from hermes_cli.colors import Colors as _Colors
+        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.runtime.colors import Colors as _Colors
 
         # Parse arg
         arg = ""
@@ -9579,7 +6486,7 @@ class HermesCLI:
         # prompt_toolkit's renderer.  self.console.print() with Rich markup
         # writes directly to stdout which patch_stdout's StdoutProxy mangles
         # into garbled sequences like '?[33mTool progress: NEW?[0m' (#2262).
-        from hermes_cli.colors import Colors as _Colors
+        from superforecasting_agent.runtime.colors import Colors as _Colors
         labels = {
             "off": f"{_Colors.DIM}Tool progress: OFF{_Colors.RESET} — silent mode, just the final response.",
             "new": f"{_Colors.YELLOW}Tool progress: NEW{_Colors.RESET} — show each new tool (skip repeats).",
@@ -9590,7 +6497,7 @@ class HermesCLI:
 
     def _toggle_yolo(self):
         """Toggle YOLO mode — skip all dangerous command approval prompts."""
-        from hermes_cli.colors import Colors as _Colors
+        from superforecasting_agent.runtime.colors import Colors as _Colors
         from tools.approval import is_process_yolo_enabled, set_process_yolo_enabled
 
         current = is_process_yolo_enabled()
@@ -9718,7 +6625,7 @@ class HermesCLI:
 
         # Determine the branding for the current model
         try:
-            from hermes_cli.models import _is_anthropic_fast_model
+            from superforecasting_agent.runtime.models import _is_anthropic_fast_model
             agent = getattr(self, "agent", None)
             model = getattr(agent, "model", None) or getattr(self, "model", None)
             feature_name = "Anthropic Fast Mode" if _is_anthropic_fast_model(model) else "Priority Processing"
@@ -9860,69 +6767,9 @@ class HermesCLI:
             except Exception as e:
                 print(f"  ❌ Compression failed: {e}")
 
-    def _handle_debug_command(self):
-        """Handle /debug — upload debug report + logs and print paste URLs."""
-        from hermes_cli.debug import run_debug_share
-        from types import SimpleNamespace
+    from superforecasting_agent.runtime.maintenance_commands import _handle_debug_command as _handle_debug_command
 
-        args = SimpleNamespace(lines=200, expire=7, local=False)
-        run_debug_share(args)
-
-    def _handle_update_command(self) -> bool:
-        """Handle /update — update Superforecasting Agent to the latest version.
-
-        In the classic CLI this exits the session and relaunches as
-        ``hermes update`` so the user sees update output directly and gets
-        the new version on next launch.
-
-        Returns ``True`` when the update was confirmed (caller should trigger
-        app exit so the relaunch is deferred to the main thread after
-        prompt_toolkit cleans up terminal modes).  Returns ``False`` / falsy
-        when cancelled.
-        """
-        from hermes_cli.config import is_managed, format_managed_message
-
-        if is_managed():
-            print(f"  ✗ {format_managed_message('update Superforecasting Agent')}")
-            return False
-
-        # Use the prompt_toolkit-native modal so the confirmation panel
-        # renders properly above the composer and avoids raw input() races
-        # with the prompt_toolkit event loop (same pattern as
-        # _confirm_destructive_slash).
-        choices = [
-            (
-                "once",
-                "Update Now",
-                "exit the current session and update Superforecasting Agent",
-            ),
-            ("cancel", "Cancel", "keep the current session"),
-        ]
-        raw = self._prompt_text_input_modal(
-            title="Update Superforecasting Agent",
-            detail="This will exit the current session and run `superforecasting-agent update`.",
-            choices=choices,
-        )
-        if raw is None:
-            print("  🟡 /update cancelled.")
-            return False
-        choice = self._normalize_slash_confirm_choice(raw, choices)
-        if choice != "once":
-            print("  🟡 /update cancelled.")
-            return False
-
-        print()
-        print("  Launching update...")
-        print()
-
-        # Store the relaunch args so run() can exec them from the main thread
-        # after prompt_toolkit exits and restores terminal modes.  Calling
-        # relaunch() directly here (from the process_loop daemon thread) would
-        # skip terminal cleanup on POSIX (execvp replaces the process mid-TUI)
-        # and only exit the worker thread on Windows (subprocess.run +
-        # sys.exit inside a non-main thread does not exit the process).
-        self._pending_relaunch = ["update"]
-        return True
+    from superforecasting_agent.runtime.maintenance_commands import _handle_update_command as _handle_update_command
 
     def _show_usage(self):
         """Show rate limits (if available) and session token usage."""
@@ -10039,7 +6886,7 @@ class HermesCLI:
             # above the file handler level filters records before they
             # reach handlers, so agent.log / errors.log lose visibility
             # into stream-retry events, credential rotations, etc.
-            # Console quietness is enforced by hermes_logging not
+            # Console quietness is enforced by superforecasting_agent.logging not
             # installing a console StreamHandler in non-verbose mode.
 
     def _show_insights(self, command: str = "/insights"):
@@ -10067,7 +6914,7 @@ class HermesCLI:
                 i += 1
 
         try:
-            from hermes_state import SessionDB
+            from superforecasting_agent.storage.session import SessionDB
             from agent.insights import InsightsEngine
 
             db = SessionDB()
@@ -10095,7 +6942,7 @@ class HermesCLI:
             return
         self._last_config_check = now
 
-        from hermes_cli.config import get_config_path as _get_config_path
+        from superforecasting_agent.runtime.config import get_config_path as _get_config_path
         cfg_path = _get_config_path()
         if not cfg_path.exists():
             return
@@ -10617,7 +7464,7 @@ class HermesCLI:
         # instead of crashing on ``.get()``.
         voice_cfg: dict = {}
         try:
-            from hermes_cli.config import load_config
+            from superforecasting_agent.runtime.config import load_config
             _cfg = load_config().get("voice")
             voice_cfg = _cfg if isinstance(_cfg, dict) else {}
         except Exception:
@@ -10727,7 +7574,7 @@ class HermesCLI:
             # Get STT model from config
             stt_model = None
             try:
-                from hermes_cli.config import load_config
+                from superforecasting_agent.runtime.config import load_config
                 stt_config = load_config().get("stt", {})
                 stt_model = stt_config.get("model")
             except Exception:
@@ -10877,7 +7724,7 @@ class HermesCLI:
     def _voice_beeps_enabled(self) -> bool:
         """Return whether CLI voice mode should play record start/stop beeps."""
         try:
-            from hermes_cli.config import load_config
+            from superforecasting_agent.runtime.config import load_config
             voice_cfg = load_config().get("voice", {})
             if isinstance(voice_cfg, dict):
                 return bool(voice_cfg.get("beep_enabled", True))
@@ -10923,7 +7770,7 @@ class HermesCLI:
         # Check config for auto_tts (shape-safe — malformed ``voice:`` YAML
         # leaves ``voice_config`` as a non-dict, so guard before .get()).
         try:
-            from hermes_cli.config import load_config
+            from superforecasting_agent.runtime.config import load_config
             _raw_voice = load_config().get("voice")
             voice_config = _raw_voice if isinstance(_raw_voice, dict) else {}
             if voice_config.get("auto_tts", False):
@@ -11508,7 +8355,7 @@ class HermesCLI:
                     build_native_content_parts,
                     decide_image_input_mode,
                 )
-                from hermes_cli.config import load_config
+                from superforecasting_agent.runtime.config import load_config
 
                 _img_mode = decide_image_input_mode(
                     (self.provider or "").strip(),
@@ -11644,7 +8491,7 @@ class HermesCLI:
                         label = " Forecast "
                         if self.show_timestamps:
                             label = f"{label}{datetime.now().strftime('%H:%M')} "
-                        fill = w - 2 - HermesCLI._status_bar_display_width(label)
+                        fill = w - 2 - ForecastCLI._status_bar_display_width(label)
                         _cprint(f"\n{_ACCENT}╭─{label}{'─' * max(fill - 1, 0)}╮{_RST}")
                     _cprint(f"{_STREAM_PAD}{sentence.rstrip()}")
 
@@ -11942,7 +8789,7 @@ class HermesCLI:
             if response and not response_previewed:
                 # Use skin engine for label/color with fallback
                 try:
-                    from hermes_cli.skin_engine import get_active_skin
+                    from superforecasting_agent.runtime.skin_engine import get_active_skin
                     _skin = get_active_skin()
                     label = _skin.get_branding("response_label", " Forecast ")
                     _resp_color = _maybe_remap_for_light_mode(_skin.get_color("response_border", "#CD7F32"))
@@ -12087,7 +8934,7 @@ class HermesCLI:
             print(f"Messages:       {msg_count} ({user_msgs} user, {tool_calls} tool calls)")
         else:
             try:
-                from hermes_cli.skin_engine import get_active_goodbye
+                from superforecasting_agent.runtime.skin_engine import get_active_goodbye
                 goodbye = get_active_goodbye("Goodbye.")
             except Exception:
                 goodbye = "Goodbye."
@@ -12104,7 +8951,7 @@ class HermesCLI:
         prepended to the prompt symbol: ``coder ❯`` instead of ``❯``.
         """
         try:
-            from hermes_cli.skin_engine import get_active_prompt_symbol
+            from superforecasting_agent.runtime.skin_engine import get_active_prompt_symbol
             symbol = get_active_prompt_symbol("❯ ")
         except Exception:
             symbol = "❯ "
@@ -12113,7 +8960,7 @@ class HermesCLI:
 
         # Prepend profile name when not default
         try:
-            from hermes_cli.profiles import get_active_profile_name
+            from superforecasting_agent.runtime.profiles import get_active_profile_name
             profile = get_active_profile_name()
             if profile not in {"default", "custom"}:
                 symbol = f"{profile} {symbol}"
@@ -12198,7 +9045,7 @@ class HermesCLI:
         """
         style_dict = dict(getattr(self, "_tui_style_base", {}) or {})
         try:
-            from hermes_cli.skin_engine import get_prompt_toolkit_style_overrides
+            from superforecasting_agent.runtime.skin_engine import get_prompt_toolkit_style_overrides
             style_dict.update(get_prompt_toolkit_style_overrides())
         except Exception:
             pass
@@ -12345,7 +9192,7 @@ class HermesCLI:
                 self._display_resumed_history()
 
         try:
-            from hermes_cli.skin_engine import get_active_skin
+            from superforecasting_agent.runtime.skin_engine import get_active_skin
             _welcome_skin = get_active_skin()
             _welcome_text = _welcome_skin.get_branding("welcome", "Welcome to Superforecasting Agent. Type /forecast to inspect the desk or /help for commands.")
             _welcome_color = _welcome_skin.get_color("banner_text", "#FFF8DC")
@@ -12389,7 +9236,7 @@ class HermesCLI:
                     _resid_color = "#B8860B"
                 self._console_print(f"[{_resid_color}]{openclaw_residue_hint_cli()}[/]")
                 try:
-                    from hermes_cli.config import get_config_path as _get_cfg_path_resid
+                    from superforecasting_agent.runtime.config import get_config_path as _get_cfg_path_resid
                     mark_seen(_get_cfg_path_resid(), OPENCLAW_RESIDUE_FLAG)
                 except Exception:
                     pass  # best-effort — banner will fire again next session
@@ -12397,7 +9244,7 @@ class HermesCLI:
             pass  # banner is non-critical — never break startup
         # Show a random tip to help users discover features
         try:
-            from hermes_cli.tips import get_random_tip
+            from superforecasting_agent.runtime.tips import get_random_tip
             _tip = get_random_tip()
             try:
                 _tip_color = _welcome_skin.get_color("banner_dim", "#B8860B")
@@ -12440,11 +9287,11 @@ class HermesCLI:
         self._last_ctrl_c_time = 0  # Track double Ctrl+C for force exit
 
         # Give plugin manager a CLI reference so plugins can inject messages
-        from hermes_cli.plugins import get_plugin_manager
+        from superforecasting_agent.runtime.plugins import get_plugin_manager
         get_plugin_manager()._cli_ref = self
 
         # Config file watcher — detect mcp_servers changes and auto-reload
-        from hermes_cli.config import get_config_path as _get_config_path
+        from superforecasting_agent.runtime.config import get_config_path as _get_config_path
         _cfg_path = _get_config_path()
         self._config_mtime: float = _cfg_path.stat().st_mtime if _cfg_path.exists() else 0.0
         self._config_mcp_servers: dict = self.config.get("mcp_servers") or {}
@@ -13175,7 +10022,7 @@ class HermesCLI:
                 return
             import signal as _sig
             from prompt_toolkit.application import run_in_terminal
-            from hermes_cli.skin_engine import get_active_skin
+            from superforecasting_agent.runtime.skin_engine import get_active_skin
             agent_name = get_active_skin().get_branding(
                 "agent_name", "Superforecasting Agent"
             )
@@ -13196,8 +10043,8 @@ class HermesCLI:
         # TUI/CLI split instead of a silent mismatch (round-11).
         _raw_key: object = "ctrl+b"
         try:
-            from hermes_cli.config import load_config
-            from hermes_cli.voice import (
+            from superforecasting_agent.runtime.config import load_config
+            from superforecasting_agent.runtime.voice import (
                 normalize_voice_record_key_for_prompt_toolkit,
                 voice_record_key_from_config,
             )
@@ -13968,7 +10815,7 @@ class HermesCLI:
                 term_rows = get_app().output.get_size().rows
             except Exception:
                 term_rows = shutil.get_terminal_size((100, 24)).lines
-            scroll_offset, visible = HermesCLI._compute_model_picker_viewport(
+            scroll_offset, visible = ForecastCLI._compute_model_picker_viewport(
                 selected, state.get("_scroll_offset", 0), len(choices), term_rows,
             )
             state["_scroll_offset"] = scroll_offset
@@ -14470,7 +11317,7 @@ class HermesCLI:
             # Windows: install a SIGINT handler that absorbs the signal
             # instead of letting Python's default handler raise
             # KeyboardInterrupt in MainThread. Windows Terminal / Win32
-            # delivers spurious CTRL_C_EVENT to the hermes process when
+            # delivers spurious CTRL_C_EVENT to the forecast process when
             # child processes are spawned from background threads (agent
             # subprocess Popen path). The default Python SIGINT handler
             # would then unwind prompt_toolkit's app.run(), trigger
@@ -14632,7 +11479,7 @@ class HermesCLI:
                 # and SQLite history. Ported from google-gemini/gemini-cli#19332.
                 if getattr(self, '_delete_session_on_exit', False):
                     try:
-                        from hermes_constants import get_hermes_home as _ghh
+                        from superforecasting_agent.constants import get_agent_home as _ghh
                         _sessions_dir = _ghh() / "sessions"
                         _sid = self.agent.session_id
                         if self._session_db.delete_session(_sid, sessions_dir=_sessions_dir):
@@ -14647,7 +11494,7 @@ class HermesCLI:
             # the exit occurred, meaning run_conversation's hook didn't fire.
             if self.agent and getattr(self, '_agent_running', False):
                 try:
-                    from hermes_cli.plugins import invoke_hook as _invoke_hook
+                    from superforecasting_agent.runtime.plugins import invoke_hook as _invoke_hook
                     _invoke_hook(
                         "on_session_end",
                         session_id=self.agent.session_id,
@@ -14667,20 +11514,12 @@ class HermesCLI:
         # thread (which would skip terminal cleanup on POSIX and only exit
         # the worker thread on Windows).
         if getattr(self, '_pending_relaunch', None):
-            from hermes_cli.relaunch import relaunch
+            from superforecasting_agent.runtime.relaunch import relaunch
             relaunch(self._pending_relaunch, preserve_inherited=False)
 
 
-class ForecastCLI(HermesCLI):
-    """Fork-native public name for the interactive forecast CLI.
-
-    ``HermesCLI`` remains the inherited compatibility class name used by
-    older wrappers and internal tests. New extension code should import
-    ``ForecastCLI`` so public examples do not bake in the upstream product
-    name.
-    """
-
-    pass
+# Legacy extension imports resolve to the native implementation.
+HermesCLI = ForecastCLI
 
 
 # ============================================================================
@@ -14745,13 +11584,12 @@ def main(
         python cli.py -w                         # Start forecast support in an isolated git worktree
         python cli.py -w -q "Backtest this scoring-rule change"  # Single support query in worktree
     """
-    global _active_worktree
 
     # Force UTF-8 stdio on Windows before any banner/print() runs — the
     # Rich console prints Unicode box-drawing characters that would
     # UnicodeEncodeError on cp1252.  No-op on Linux/macOS.
     try:
-        from hermes_cli.stdio import configure_windows_stdio
+        from superforecasting_agent.runtime.stdio import configure_windows_stdio
         configure_windows_stdio()
     except Exception:
         pass
@@ -14783,7 +11621,7 @@ def main(
                 _prune_stale_worktrees(_repo)
             wt_info = _setup_worktree()
             if wt_info:
-                _active_worktree = wt_info
+                _worktrees._active_worktree = wt_info
                 os.environ["TERMINAL_CWD"] = wt_info["path"]
                 atexit.register(_cleanup_worktree, wt_info)
             else:
@@ -14812,7 +11650,7 @@ def main(
                     toolsets_list.append(str(t))
     else:
         # Use the shared resolver so MCP servers are included at runtime
-        from hermes_cli.tools_config import _get_platform_tools
+        from superforecasting_agent.runtime.tools_config import _get_platform_tools
         toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
     
     parsed_skills = _parse_skills_argument(skills)

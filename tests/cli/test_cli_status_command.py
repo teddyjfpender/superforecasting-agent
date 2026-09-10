@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from cli import HermesCLI
-from hermes_cli.commands import resolve_command
+from superforecasting_agent.runtime.commands import resolve_command
 from tools.approval import YOLO_MODE_ENV_NAMES
 
 
@@ -107,7 +107,7 @@ def test_show_session_status_prints_gateway_style_summary():
         "started_at": 1775791440,
     }
 
-    with patch("cli.display_hermes_home", return_value="~/.hermes"):
+    with patch("cli.display_agent_home", return_value="~/.hermes"):
         cli_obj._show_session_status()
 
     printed = "\n".join(str(call.args[0]) for call in cli_obj.console.print.call_args_list)

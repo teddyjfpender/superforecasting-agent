@@ -13,7 +13,7 @@ from agent.model_metadata import (
     PICKER_REASONING_EFFORTS,
     model_supports_reasoning_effort,
 )
-from hermes_constants import parse_reasoning_effort
+from superforecasting_agent.constants import parse_reasoning_effort
 
 
 class TestModelSupportsReasoningEffort:
@@ -101,7 +101,7 @@ class TestChosenEffortReachesCodexTransport:
 
 class TestInventoryPayloadHints:
     def test_picker_payload_carries_effort_capability(self):
-        from hermes_cli.inventory import _apply_reasoning_hints
+        from superforecasting_agent.runtime.inventory import _apply_reasoning_hints
 
         rows = [
             {"slug": "openai-codex", "models": ["gpt-5.4", "gpt-5.4-mini"]},

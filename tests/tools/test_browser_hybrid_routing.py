@@ -38,7 +38,13 @@ class TestNavigationSessionKey:
 
     def test_public_url_uses_bare_task_id(self, monkeypatch):
         """Public URL with cloud provider configured → bare task_id (cloud)."""
+        import socket
+
         monkeypatch.setattr(browser_tool, "_get_cloud_provider", lambda: Mock())
+        monkeypatch.setattr(
+            socket, "getaddrinfo",
+            lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("8.8.8.8", 0))],
+        )
         key = browser_tool._navigation_session_key("default", "https://github.com/x/y")
         assert key == "default"
 

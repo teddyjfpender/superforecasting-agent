@@ -46,7 +46,7 @@ const renderChart = async (props: Record<string, unknown>) => {
   process.env.HERMES_VIZ_BLITTER = 'braille'
 
   const [{ render }, { DARK_THEME }, { Chart }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../../theme.js'),
     import('../../components/viz/Chart.js')
   ])

@@ -129,7 +129,7 @@ const renderView = async (response: ForecastCalibrationResponse) => {
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { CalibrationView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/calibrationView.js'),
     import('../theme.js'),
     import('../lib/text.js')

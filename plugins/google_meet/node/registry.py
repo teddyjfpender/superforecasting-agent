@@ -24,11 +24,11 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 
 def _default_path() -> Path:
-    return Path(get_hermes_home()) / "workspace" / "meetings" / "nodes.json"
+    return Path(get_agent_home()) / "workspace" / "meetings" / "nodes.json"
 
 
 class NodeRegistry:

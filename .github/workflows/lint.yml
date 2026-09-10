@@ -202,7 +202,7 @@ jobs:
     # Architecture contracts (import-linter / grimp). Enforces the import
     # directions declared in pyproject.toml [tool.importlinter]: protocol
     # purity, ledger↛cli, forecasting↛tui_gateway (Tier 1), and the frozen
-    # ratchets (*↛run_agent, forecasting↛hermes_cli, forecasting↛tools) whose
+    # ratchets (*↛run_agent, forecasting↛superforecasting_agent.runtime, forecasting↛tools) whose
     # ignore lists may only shrink. Exit code propagates to the required-check
     # gate. See docs/plans/2026-07-10-modularization-program.md §W0.1.
     name: architecture contracts (blocking)

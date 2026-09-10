@@ -35,18 +35,18 @@ class TestWriteDenyExactPaths:
     def test_hermes_env(self):
         # ``.env`` under the active HERMES_HOME (profile-aware, not just
         # ``~/.hermes``) must be write-denied. The hermetic test conftest
-        # points HERMES_HOME at a tempdir — resolve via get_hermes_home()
+        # points HERMES_HOME at a tempdir — resolve via get_agent_home()
         # to match the denylist.
-        from hermes_constants import get_hermes_home
-        path = str(get_hermes_home() / ".env")
+        from superforecasting_agent.constants import get_agent_home
+        path = str(get_agent_home() / ".env")
         assert _is_write_denied(path) is True
 
     def test_anthropic_oauth_json_denied(self):
         # The Anthropic PKCE credential store under the active home must be
         # write-denied so a session can't clobber its OAuth tokens. Mirrors
         # the read-deny in agent.file_safety.get_read_block_error.
-        from hermes_constants import get_hermes_home
-        path = str(get_hermes_home() / ".anthropic_oauth.json")
+        from superforecasting_agent.constants import get_agent_home
+        path = str(get_agent_home() / ".anthropic_oauth.json")
         assert _is_write_denied(path) is True
 
     def test_anthropic_oauth_json_denied_at_root_under_profile(self, monkeypatch):

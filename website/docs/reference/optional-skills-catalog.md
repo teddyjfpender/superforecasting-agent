@@ -109,7 +109,7 @@ superforecasting-agent skills uninstall <skill-name>
 
 | Skill | Description |
 |-------|-------------|
-| [**openclaw-migration**](/user-guide/skills/optional/migration/migration-openclaw-migration) | Migrate a user's OpenClaw customization footprint into Superforecasting Agent. Imports Superforecasting Agent-compatible memories, SOUL.md, command allowlists, user skills, and selected workspace assets from ~/.openclaw, then reports exa... |
+| [**openclaw-migration**](/user-guide/skills/optional/migration/migration-openclaw-migration) | Import OpenClaw settings into Superforecasting Agent. |
 
 ## mlops
 

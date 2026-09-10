@@ -292,7 +292,7 @@ non-interactively at bootstrap with `AUTH_JSON_BOOTSTRAP`, or authenticate
 entirely inside the SSH session afterward:
 
 - `nous` — device-code flow
-- `openai-codex` — device flow (`hermes_cli/codex_device_flow.py`)
+- `openai-codex` — device flow (`superforecasting_agent/runtime/codex_device_flow.py`)
 - browser-bound providers (xai/qwen/gemini) — manual callback-paste over an
   `ssh -L` port-forward (see `website/docs/guides/oauth-over-ssh.md`)
 

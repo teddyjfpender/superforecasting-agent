@@ -1,4 +1,4 @@
-import { withInkSuspended } from '@hermes/ink'
+import { withInkSuspended } from '@superforecasting/ink'
 
 import { forecastCommandDisplayName, launchForecastCommand } from '../../../lib/externalCli.js'
 import { patchOverlayState } from '../../overlayStore.js'

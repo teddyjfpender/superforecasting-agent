@@ -1,4 +1,4 @@
-"""Tests for acp_adapter.server — HermesACPAgent ACP server."""
+"""Tests for acp_adapter.server — ForecastACPAgent ACP server."""
 
 import asyncio
 import os
@@ -38,9 +38,9 @@ from acp.schema import (
     UserMessageChunk,
 )
 from acp_adapter.auth import TERMINAL_SETUP_AUTH_METHOD_ID
-from acp_adapter.server import HermesACPAgent, HERMES_VERSION
+from acp_adapter.server import ForecastACPAgent, AGENT_VERSION
 from acp_adapter.session import SessionManager
-from hermes_state import SessionDB
+from superforecasting_agent.storage.session import SessionDB
 
 
 @pytest.fixture()
@@ -51,8 +51,8 @@ def mock_manager():
 
 @pytest.fixture()
 def agent(mock_manager):
-    """HermesACPAgent backed by a mock session manager."""
-    return HermesACPAgent(session_manager=mock_manager)
+    """ForecastACPAgent backed by a mock session manager."""
+    return ForecastACPAgent(session_manager=mock_manager)
 
 
 @pytest.mark.asyncio
@@ -102,7 +102,7 @@ class TestInitialize:
         assert resp.agent_info is not None
         assert isinstance(resp.agent_info, Implementation)
         assert resp.agent_info.name == "superforecasting-agent"
-        assert resp.agent_info.version == HERMES_VERSION
+        assert resp.agent_info.version == AGENT_VERSION
 
     @pytest.mark.asyncio
     async def test_initialize_returns_capabilities(self, agent):
@@ -245,10 +245,10 @@ class TestSessionOps:
         manager = SessionManager(
             agent_factory=lambda: SimpleNamespace(model="gpt-5.4", provider="openai-codex")
         )
-        acp_agent = HermesACPAgent(session_manager=manager)
+        acp_agent = ForecastACPAgent(session_manager=manager)
 
         with patch(
-            "hermes_cli.models.curated_models_for_provider",
+            "superforecasting_agent.runtime.models.curated_models_for_provider",
             return_value=[("gpt-5.4", "recommended"), ("gpt-5.4-mini", "")],
         ):
             resp = await acp_agent.new_session(cwd="/tmp")
@@ -965,17 +965,17 @@ class TestSessionConfiguration:
                 api_mode=kwargs.get("api_mode"),
             )
 
-        monkeypatch.setattr("hermes_cli.config.load_config", lambda: {
+        monkeypatch.setattr("superforecasting_agent.runtime.config.load_config", lambda: {
             "model": {"provider": "openrouter", "default": "openrouter/gpt-5"}
         })
         monkeypatch.setattr(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
             fake_resolve_runtime_provider,
         )
         manager = SessionManager(db=SessionDB(tmp_path / "state.db"))
 
         with patch("run_agent.AIAgent", side_effect=fake_agent):
-            acp_agent = HermesACPAgent(session_manager=manager)
+            acp_agent = ForecastACPAgent(session_manager=manager)
             state = manager.create_session(cwd="/tmp")
             result = await acp_agent.set_session_model(
                 model_id="anthropic:claude-sonnet-4-6",
@@ -1419,7 +1419,7 @@ class TestSlashCommands:
     def test_version(self, agent, mock_manager):
         state = self._make_state(mock_manager)
         result = agent._handle_slash_command("/version", state)
-        assert HERMES_VERSION in result
+        assert AGENT_VERSION in result
 
     def test_compact_compresses_context(self, agent, mock_manager):
         state = self._make_state(mock_manager)
@@ -1539,17 +1539,17 @@ class TestSlashCommands:
                 api_mode=kwargs.get("api_mode"),
             )
 
-        monkeypatch.setattr("hermes_cli.config.load_config", lambda: {
+        monkeypatch.setattr("superforecasting_agent.runtime.config.load_config", lambda: {
             "model": {"provider": "openrouter", "default": "openrouter/gpt-5"}
         })
         monkeypatch.setattr(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
             fake_resolve_runtime_provider,
         )
         manager = SessionManager(db=SessionDB(tmp_path / "state.db"))
 
         with patch("run_agent.AIAgent", side_effect=fake_agent):
-            acp_agent = HermesACPAgent(session_manager=manager)
+            acp_agent = ForecastACPAgent(session_manager=manager)
             state = manager.create_session(cwd="/tmp")
             result = acp_agent._cmd_model("anthropic:claude-sonnet-4-6", state)
 
@@ -1601,8 +1601,8 @@ class TestRegisterSessionMcpServers:
             registered_config.update(config_map)
             return ["mcp_test_server_tool1"]
 
-        with patch("tools.mcp_tool.register_mcp_servers", side_effect=capture_register), \
-             patch("model_tools.get_tool_definitions", return_value=[]):
+        with patch("tools.mcp_tool.register_mcp_servers", side_effect=capture_register),\
+             patch("superforecasting_agent.tooling.runtime.get_tool_definitions", return_value=[]):
             await agent._register_session_mcp_servers(state, [server])
 
         assert "test-server" in registered_config
@@ -1633,8 +1633,8 @@ class TestRegisterSessionMcpServers:
             registered_config.update(config_map)
             return []
 
-        with patch("tools.mcp_tool.register_mcp_servers", side_effect=capture_register), \
-             patch("model_tools.get_tool_definitions", return_value=[]):
+        with patch("tools.mcp_tool.register_mcp_servers", side_effect=capture_register),\
+             patch("superforecasting_agent.tooling.runtime.get_tool_definitions", return_value=[]):
             await agent._register_session_mcp_servers(state, [server])
 
         assert "http-server" in registered_config
@@ -1666,8 +1666,8 @@ class TestRegisterSessionMcpServers:
             {"function": {"name": "terminal"}},
         ]
 
-        with patch("tools.mcp_tool.register_mcp_servers", return_value=["mcp_srv_search"]), \
-             patch("model_tools.get_tool_definitions", return_value=fake_tools) as mock_defs:
+        with patch("tools.mcp_tool.register_mcp_servers", return_value=["mcp_srv_search"]),\
+             patch("superforecasting_agent.tooling.runtime.get_tool_definitions", return_value=fake_tools) as mock_defs:
             await agent._register_session_mcp_servers(state, [server])
 
         mock_defs.assert_called_once_with(
@@ -1697,3 +1697,10 @@ class TestRegisterSessionMcpServers:
         with patch("tools.mcp_tool.register_mcp_servers", side_effect=RuntimeError("boom")):
             # Should not raise
             await agent._register_session_mcp_servers(state, [server])
+
+
+def test_inherited_acp_imports_alias_native_implementation():
+    from acp_adapter.server import HermesACPAgent, HERMES_VERSION
+
+    assert HermesACPAgent is ForecastACPAgent
+    assert HERMES_VERSION == AGENT_VERSION

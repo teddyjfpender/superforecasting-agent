@@ -22,10 +22,10 @@ def test_source_estimator_has_its_own_no_agent_job_and_script(tmp_path):
     job = install_source_estimator_cron(schedule="every 15 minutes")
     assert job["no_agent"] is True
     assert job["script"] == SOURCE_ESTIMATOR_CRON_SCRIPT
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
     body = (
-        get_hermes_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT
+        get_agent_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT
     ).read_text(encoding="utf-8")
     assert "main_source_estimator" in body
     assert source_estimator_cron_status()["installed"] is True
@@ -43,9 +43,9 @@ def test_start_installs_a_no_agent_job_and_script(tmp_path):
     assert job["no_agent"] is True
     assert job["script"] == WARNING_AUTOMODE_CRON_SCRIPT
 
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    script = get_hermes_home() / "scripts" / WARNING_AUTOMODE_CRON_SCRIPT
+    script = get_agent_home() / "scripts" / WARNING_AUTOMODE_CRON_SCRIPT
     body = Path(script).read_text(encoding="utf-8")
     assert "main_warning_automode" in body
     assert "--agent" in body
@@ -82,7 +82,7 @@ def test_stop_removes_the_job(tmp_path):
 
 def test_free_only_start_omits_agent_flag(tmp_path):
     install_warning_automode_cron(schedule="every 30 minutes", agent=False)
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    body = (get_hermes_home() / "scripts" / WARNING_AUTOMODE_CRON_SCRIPT).read_text(encoding="utf-8")
+    body = (get_agent_home() / "scripts" / WARNING_AUTOMODE_CRON_SCRIPT).read_text(encoding="utf-8")
     assert "--agent" not in body

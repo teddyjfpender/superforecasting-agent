@@ -113,9 +113,9 @@ class TestGatewayRunnerRegistration:
         # Stub out heavy dependencies if not already present
         stubs = [
             "dotenv",
-            "hermes_cli.env_loader",
-            "hermes_cli.config",
-            "hermes_constants",
+            "superforecasting_agent.runtime.env_loader",
+            "superforecasting_agent.runtime.config",
+            "superforecasting_agent.constants",
         ]
         _orig = {}
         for mod in stubs:
@@ -288,9 +288,9 @@ class TestMediaModule:
 
 class TestToolset:
     def test_yuanbao_toolset_registered(self):
-        """toolsets.py 中存在 hermes-yuanbao 键"""
+        """superforecasting_agent.tooling.toolsets.py 中存在 hermes-yuanbao 键"""
         import importlib
-        ts = importlib.import_module("toolsets")
+        ts = importlib.import_module("superforecasting_agent.tooling.toolsets")
         assert hasattr(ts, "TOOLSETS") or hasattr(ts, "toolsets")
         toolsets_dict = getattr(ts, "TOOLSETS", getattr(ts, "toolsets", {}))
         assert "hermes-yuanbao" in toolsets_dict

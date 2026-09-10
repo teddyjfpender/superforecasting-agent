@@ -1,4 +1,4 @@
-import { Box, Text } from '@hermes/ink'
+import { Box, Text } from '@superforecasting/ink'
 
 import { levelSparkline } from '../lib/forecastCharts.js'
 import {

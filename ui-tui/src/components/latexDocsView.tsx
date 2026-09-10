@@ -1,5 +1,5 @@
-import { Box, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, Text, useInput, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $globalModal, openHelpOverlay } from '../app/overlayStore.js'

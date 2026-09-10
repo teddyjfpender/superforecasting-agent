@@ -41,7 +41,7 @@ class BuildInfo(WireModel):
     version, and it exists because a pipx-installed build freezes its own TUI
     bundle inside its venv, so a repo-side rebuild never reaches it and the
     operator has no way to tell. ``tui_gateway.server.build_info`` fills it from
-    ``hermes_cli.banner.get_update_state()``, which reads only the ALREADY
+    ``superforecasting_agent.runtime.banner.get_update_state()``, which reads only the ALREADY
     scheduled + 6-hour-cached background update check — never its own network
     call, so it cannot delay ``gateway.ready`` or fail when offline.
 

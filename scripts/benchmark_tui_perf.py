@@ -27,7 +27,7 @@ Phases timed
                       history_limit=40).
   ledger-gate         the SQLite write-gate authorizer overhead: workspace-rpc
                       WITH the authorizer installed minus WITHOUT it (delta).
-  plugin-discovery    ``hermes_cli.plugins.discover_plugins()`` (only runs on a
+  plugin-discovery    ``superforecasting_agent.runtime.plugins.discover_plugins()`` (only runs on a
                       real desk boot when unresolved explicit TOOLSETS are set;
                       timed here for completeness).
   e2e-gateway-stdio   spawn ``python -m tui_gateway.entry`` and time from spawn
@@ -180,7 +180,7 @@ def phase_ledger_gate(repeat: int) -> float:
 
 
 def phase_plugin_discovery(repeat: int) -> float:
-    from hermes_cli.plugins import discover_plugins
+    from superforecasting_agent.runtime.plugins import discover_plugins
 
     # First call does the real work; force=True keeps each sample comparable.
     return _time(lambda: discover_plugins(force=True), repeat, warmup=0)

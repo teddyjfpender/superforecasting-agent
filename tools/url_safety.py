@@ -29,7 +29,7 @@ import os
 import socket
 from urllib.parse import urlparse
 
-from utils import is_truthy_value
+from superforecasting_agent.environment import is_truthy_value
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +124,7 @@ def _global_allow_private_urls() -> bool:
 
     # 2. Config file
     try:
-        from hermes_cli.config import read_raw_config
+        from superforecasting_agent.runtime.config import read_raw_config
         cfg = read_raw_config()
         # security.allow_private_urls (preferred)
         sec = cfg.get("security", {})

@@ -1,4 +1,4 @@
-import { Box, Text } from '@hermes/ink'
+import { Box, Text } from '@superforecasting/ink'
 
 import { fmtBidAsk, fmtClose, fmtPMVol, fmtProb, venueChip } from '../lib/pmData.js'
 import { packPmHead, packPmOutcome, type PMDisplayRow, pmExpandable } from '../lib/pmRows.js'

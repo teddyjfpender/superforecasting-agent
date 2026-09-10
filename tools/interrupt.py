@@ -17,7 +17,7 @@ Usage in tools:
 import logging
 import threading
 
-from utils import env_var_alias_enabled
+from superforecasting_agent.environment import env_var_alias_enabled
 
 logger = logging.getLogger(__name__)
 

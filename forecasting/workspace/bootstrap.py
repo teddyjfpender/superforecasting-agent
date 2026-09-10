@@ -9,7 +9,7 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.change_control.models import LedgerOperation, changeset_digest, content_digest
 from forecasting.ledger.gate import allow_ledger_writes
@@ -114,7 +114,7 @@ def _import_provenance(conn: Any, ledger: Any, root: Path, packet: dict[str, Any
     locator: str | None = None
     if transcript_manifest.get("content_included") and safe_content.is_file():
         destination = (
-            get_hermes_home()
+            get_agent_home()
             / "provenance"
             / "safe-transcripts"
             / changeset_id

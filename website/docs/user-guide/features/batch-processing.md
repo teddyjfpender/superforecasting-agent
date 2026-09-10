@@ -14,7 +14,7 @@ changes before trusting them on live questions.
 There are two batch paths:
 
 - `forecast backtest` writes scoreable replay runs into the forecast ledger.
-- `batch_runner.py` runs raw prompts in parallel and writes trajectory data for
+- `superforecasting_agent/trajectories/batch.py` runs raw prompts in parallel and writes trajectory data for
   protocol evaluation, tooling checks, or training data.
 
 For forecasting quality, prefer `forecast backtest`. Raw trajectories are useful
@@ -49,7 +49,7 @@ forecast performance --last 10
 Run a raw parallel trajectory batch:
 
 ```bash
-python batch_runner.py \
+python -m superforecasting_agent.trajectories.batch \
   --dataset_file=data/forecast_prompts.jsonl \
   --batch_size=10 \
   --run_name=forecast_protocol_eval_v1 \
@@ -278,7 +278,7 @@ and postmortem learning over time.
 
 ## Raw Trajectory Batches
 
-`batch_runner.py` remains available for inherited runtime evaluation. It runs a
+`superforecasting_agent/trajectories/batch.py` remains available for inherited runtime evaluation. It runs a
 JSONL set of prompts through full agent sessions, samples toolset distributions,
 and writes ShareGPT-like trajectories plus tool and reasoning statistics.
 
@@ -340,7 +340,7 @@ OpenRouter routing flags are also supported:
 
 ### Toolset Distributions
 
-Use `python batch_runner.py --list_distributions` to inspect available
+Use `python -m superforecasting_agent.trajectories.batch --list_distributions` to inspect available
 distributions. Common choices for forecast-oriented testing:
 
 | Distribution | Use when |
@@ -391,7 +391,7 @@ The raw runner writes checkpoints after each completed batch.
 - Final output merges all batch files into `trajectories.jsonl`.
 
 ```bash
-python batch_runner.py \
+python -m superforecasting_agent.trajectories.batch \
   --dataset_file=data/forecast_prompts.jsonl \
   --batch_size=10 \
   --run_name=forecast_protocol_eval_v1 \

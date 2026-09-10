@@ -135,7 +135,7 @@ audit head moves.
 | #aa283d1e4 + #40fcb9658 | Credential isolation: re-key model picker custom-provider grouping by (api_url, credential_identity, api_mode) so same-host env-keyed providers don't collapse/misroute; `set_runtime_main` records base_url/api_key/api_mode for aux routing | `4926dda6` |
 | #912e6e227 | TUI: suppress mouse-residue scrollback leaks during launcher startup (env-guard honors `*_TUI`/`*_TUI_NO_EARLY_DISABLE` alias triples) | `72cfcacf` |
 | #c42edd805 | TUI: fix linux/wayland clipboard copy (`resolveOnExit` in `execFileNoThrow` so daemonizing wl-copy/xclip/xsel settle on child exit, not stdio drain); kept our rebranded debug branches; `StdioOptions` annotation for newer node types | `cc4fee8e` |
-| #3a9bc9d88 | Model picker: unify /model + CLI lists, add credential-fingerprinted disk cache (cache path auto-rebrands via `get_hermes_home`; only the digest is persisted) + `--refresh` | `e98c91e0` |
+| #3a9bc9d88 | Model picker: unify /model + CLI lists, add credential-fingerprinted disk cache (cache path auto-rebrands via `get_agent_home`; only the digest is persisted) + `--refresh` | `e98c91e0` |
 | **Security batch (14 commits, triaged 2026-05-30 → ported)** | | |
 | #b7b8bec80 | Block `/proc/*/{environ,cmdline,maps}` from `read_file` (was leaking the agent's own provider keys) | `76c50c84` |
 | #4694524de | Write-deny `.anthropic_oauth.json` (home+root) — read-deny already had it; closes the write-clobber half | `5c4849a5` |
@@ -170,7 +170,7 @@ audit head moves.
 | #5affecb44 | Capability-gate tools/list for prompt-only MCP servers (+ping keepalive, list_changed guard) | `284370da0` |
 | #73dd58499 | Propagate agent home onto the MCP event loop via the contextvar override (alias-agnostic) | `d21efbb6a` |
 | #e71d674682 | 5-state MCP server status (connected/disabled/connecting/failed/configured) — no more false "failed" before startup. Consumer hunks (banner.py, ui-tui) NOT yet ported — additive keys, safe | `919e3a68b` |
-| #dca11b665 | Case-insensitive Windows location-var allowlist in `_build_safe_env` (Docker Desktop MCP launchers). The `mcp add -- argv` hermes_cli half NOT ported | `9aec125e0` |
+| #dca11b665 | Case-insensitive Windows location-var allowlist in `_build_safe_env` (Docker Desktop MCP launchers). The `mcp add -- argv` superforecasting_agent.runtime half NOT ported | `9aec125e0` |
 | #a942bfd9c | Reset `_last_flushed_db_idx` on cached-agent reuse (depth-0 only) | `170e7fa50` |
 | #13650ab7f | Audio attachment note clarification | `40d480883` |
 | #782681f90 | Atomic private (0600) writes for google_chat OAuth credentials | `302500df` |
@@ -200,10 +200,10 @@ audit head moves.
 ### Deferred (valuable; needs a focused pass or a prerequisite)
 
 - **Remaining halves of two ported MCP commits** (owner-boundary, not
-  difficulty): `e71d674682`'s status-consumer hunks (`hermes_cli/banner.py`,
+  difficulty): `e71d674682`'s status-consumer hunks (`superforecasting_agent/runtime/banner.py`,
   ui-tui branding/types) so not-yet-started MCP servers stop rendering as
   "failed"; `dca11b665`'s `mcp add -- argv` passthrough half
-  (`hermes_cli/main.py`, `mcp_config.py`, `subcommands/mcp.py`).
+  (`superforecasting_agent/runtime/main.py`, `mcp_config.py`, `subcommands/mcp.py`).
 
 ### Skip (off-target for a forecasting CLI/TUI fork)
 
@@ -212,7 +212,7 @@ audit head moves.
   through ~18 files but **inert without a Nous account**. Upstream is deleting it;
   excising it from our fork is high-risk / low-value. Leave it.
 - **Termux startup-perf PRs** (#a3beee47 etc.): they reorganize the 15k-line root
-  `cli.py` / `hermes_cli.main`; our `forecast`/`superforecast` entry uses a
+  `cli.py` / `superforecasting_agent.runtime.main`; our `forecast`/`superforecast` entry uses a
   separate shim (`superforecasting_agent.cli` → `forecasting.cli`), so the diffs
   don't apply. The *principle* (lazy-load OpenAI SDK / toolsets behind the paths
   that need them; a `--version` fast-path — `forecast --version` still costs ~1s of

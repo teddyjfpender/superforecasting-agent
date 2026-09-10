@@ -10,7 +10,7 @@
 #     pipx install dist/superforecasting_agent-*.whl
 #     superforecasting-agent --tui
 #
-# The launcher finds the bundled TUI (hermes_cli/tui_dist/entry.js), runs it on
+# The launcher finds the bundled TUI (superforecasting_agent/runtime/tui_dist/entry.js), runs it on
 # Node — auto-provisioning Node via fnm/nvm/brew if it isn't already present —
 # and spawns the gateway from the installed package's own Python. No source
 # tree, no .venv, no `npm run build` on every pull.
@@ -18,7 +18,7 @@
 # Mirrors the wheel build in .github/workflows/production-release.yml — the
 # primary tag-triggered release pipeline — so a local build matches CI.
 # One deliberate difference: CI relies on the TRACKED
-# hermes_cli/tui_dist/package.json ES-module marker surviving checkout (its
+# superforecasting_agent/runtime/tui_dist/package.json ES-module marker surviving checkout (its
 # bundle step only copies entry.js over it), while this script REWRITES the
 # marker below so even a clean-room build holds the invariant.
 #
@@ -38,15 +38,15 @@ else
 fi
 test -f ui-tui/dist/entry.js || { echo "ERROR: ui-tui/dist/entry.js was not built"; exit 1; }
 
-echo "==> [2/4] Bundling TUI into hermes_cli/tui_dist/"
-mkdir -p hermes_cli/tui_dist
-cp ui-tui/dist/entry.js hermes_cli/tui_dist/entry.js
+echo "==> [2/4] Bundling TUI into superforecasting_agent/runtime/tui_dist/"
+mkdir -p superforecasting_agent/runtime/tui_dist
+cp ui-tui/dist/entry.js superforecasting_agent/runtime/tui_dist/entry.js
 # entry.js is an ES module. Without a "type" marker beside it Node walks UP
 # looking for a package.json — finding the repo root's (which has none), warning
 # MODULE_TYPELESS_PACKAGE_JSON to stderr before first paint and reparsing the
 # bundle as ESM anyway. The file is tracked (see the .gitignore negation); this
 # rewrite just keeps the invariant true for a clean-room build.
-printf '{ "type": "module" }\n' > hermes_cli/tui_dist/package.json
+printf '{ "type": "module" }\n' > superforecasting_agent/runtime/tui_dist/package.json
 
 if [ "${RELEASE_WITH_WEB:-0}" = "1" ]; then
   echo "    Building web dashboard (RELEASE_WITH_WEB=1)"
@@ -54,9 +54,9 @@ if [ "${RELEASE_WITH_WEB:-0}" = "1" ]; then
 fi
 
 echo "==> [3/4] Bundling install scripts"
-mkdir -p hermes_cli/scripts
-cp -f scripts/install.sh hermes_cli/scripts/install.sh 2>/dev/null || true
-cp -f scripts/install.ps1 hermes_cli/scripts/install.ps1 2>/dev/null || true
+mkdir -p superforecasting_agent/runtime/scripts
+cp -f scripts/install.sh superforecasting_agent/runtime/scripts/install.sh 2>/dev/null || true
+cp -f scripts/install.ps1 superforecasting_agent/runtime/scripts/install.ps1 2>/dev/null || true
 
 echo "==> [4/4] Building wheel + sdist (dist/)"
 rm -f dist/superforecasting_agent-*.whl dist/superforecasting_agent-*.tar.gz 2>/dev/null || true

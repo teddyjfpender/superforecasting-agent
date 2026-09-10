@@ -1,14 +1,13 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Superforecasting Agent" width="100%">
+  <img src="assets/banner.svg" alt="Superforecasting Agent" width="100%">
 </p>
 
 # Superforecasting Agent
 
 <p align="center">
-  <a href="docs/plans/2026-05-20-superforecasting-agent-fork-prd.md"><img src="https://img.shields.io/badge/Docs-forecasting%20PRD-FFD700?style=for-the-badge" alt="Documentation"></a>
+  <a href="docs/index.md"><img src="https://img.shields.io/badge/Docs-read%20the%20docs-FFD700?style=for-the-badge" alt="Documentation"></a>
   <a href="https://github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot"><img src="https://img.shields.io/badge/GitHub-superforecasting--agent-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub repository"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://github.com/NousResearch/hermes-agent"><img src="https://img.shields.io/badge/Upstream-Hermes%20Agent-blueviolet?style=for-the-badge" alt="Upstream Hermes Agent"></a>
   <a href="README.md"><img src="https://img.shields.io/badge/Lang-English-lightgrey?style=for-the-badge" alt="English"></a>
 </p>
 
@@ -33,7 +32,9 @@
 ## 快速安装
 
 ```bash
-git clone <this-fork-url> superforecasting-agent
+git clone --branch superforecasting-agent-snapshot \
+  https://github.com/teddyjfpender/superforecasting-agent.git \
+  superforecasting-agent
 cd superforecasting-agent
 uv venv .venv --python 3.11
 source .venv/bin/activate
@@ -43,10 +44,9 @@ uv pip install -e ".[all,dev]"
 安装后：
 
 ```bash
-forecast                  # 打开预测台
-superforecasting-agent    # fork-native 命令，默认进入 forecast desk
+superforecasting-agent tui  # 打开交互式预测终端
+forecast status            # 查看预测台状态
 python -m superforecasting_agent status
-hermes                    # 兼容入口；fork 过渡期也会进入预测台
 ```
 
 ## 快速开始
@@ -68,7 +68,7 @@ superforecasting-agent dashboard
 
 | 操作 | 命令 |
 |------|------|
-| 打开预测台 | `forecast` 或裸 `superforecasting-agent` |
+| 打开预测台 | `superforecasting-agent tui` 或 `forecast tui` |
 | 创建问题 | `forecast new "Will X happen?" --resolution-criteria "Resolved by ..."` |
 | 添加证据 | `forecast evidence add <id> <url-or-note>` |
 | 研究但不移动概率 | `forecast research <id> <source...>` |
@@ -124,15 +124,17 @@ FORECAST_HOME=/path/to/home
 
 Dashboard 和 Docker 覆盖项也优先支持 `SUPERFORECASTING_AGENT_DASHBOARD`、`SUPERFORECASTING_AGENT_DASHBOARD_HOST`、`SUPERFORECASTING_AGENT_DASHBOARD_PORT`、`SUPERFORECASTING_AGENT_WEB_DIST`、`SUPERFORECASTING_AGENT_DASHBOARD_TUI`，以及较短的 `FORECAST_*` 别名。
 
-## Fork 文档
+## 文档
 
-- [PRD](docs/plans/2026-05-20-superforecasting-agent-fork-prd.md)
-- [Context](docs/plans/2026-05-20-superforecasting-agent-fork-context.md)
-- [Implementation audit](docs/plans/2026-05-20-superforecasting-agent-fork-implementation-audit.md)
+- [文档首页](docs/index.md)
+- [操作指南](docs/operating.md)
+- [命令行指南](docs/cli.md)
+- [架构](docs/architecture.md)
+- [开发指南](docs/development.md)
 
 ## 贡献
 
-预测领域工作请优先遵循 PRD、Context 和 implementation audit。继承运行时相关改动仍可参考上游架构，但默认产品面应保持 forecast-first。
+请先阅读 [贡献指南](CONTRIBUTING.md) 和 [开发指南](docs/development.md)。新功能应优先改善证据质量、概率估计、复盘或校准。
 
 ```bash
 uv venv .venv --python 3.11

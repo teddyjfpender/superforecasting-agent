@@ -5,7 +5,7 @@ tenant. Explicit args always win; an unset contextvar is byte-identical to befor
 from __future__ import annotations
 
 import agent.tenant_runtime as tr
-from hermes_cli.runtime_provider import resolve_runtime_provider
+from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
 
 def test_tenant_contextvar_supplies_credentials_when_args_absent():

@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hermes_constants import _NATIVE_HOME_DIRNAME
+from superforecasting_agent.constants import _NATIVE_HOME_DIRNAME
 from forecasting.hooks import by_rule_sweep, promotion_queue
 from forecasting.hooks.profiles import profile_severities
 from forecasting.hooks.spec import Severity

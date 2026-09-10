@@ -20,8 +20,8 @@ import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
-from hermes_cli.profiles import _get_default_hermes_home
+from superforecasting_agent.constants import get_agent_home
+from superforecasting_agent.runtime.profiles import _get_default_hermes_home
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ def resolve_active_host() -> str:
         return explicit
 
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from superforecasting_agent.runtime.profiles import get_active_profile_name
         profile = get_active_profile_name()
         if profile and profile not in {"default", "custom"}:
             return f"{HOST}.{profile}"
@@ -69,7 +69,7 @@ def resolve_config_path() -> Path:
 
     Returns the global path if none exist (for first-time setup writes).
     """
-    local_path = get_hermes_home() / "honcho.json"
+    local_path = get_agent_home() / "honcho.json"
     if local_path.exists():
         return local_path
 
@@ -720,7 +720,7 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
     resolved_timeout = config.timeout
     if not resolved_base_url or resolved_timeout is None:
         try:
-            from hermes_cli.config import load_config
+            from superforecasting_agent.runtime.config import load_config
             hermes_cfg = load_config()
             honcho_cfg = hermes_cfg.get("honcho", {})
             if isinstance(honcho_cfg, dict):

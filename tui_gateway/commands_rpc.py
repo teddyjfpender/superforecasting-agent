@@ -54,7 +54,7 @@ __all__ = ["register"]
 def _(rid, params: dict) -> dict:
     """Registry-backed slash metadata for the TUI — categorized, no aliases."""
     try:
-        from hermes_cli.commands import (
+        from superforecasting_agent.runtime.commands import (
             COMMAND_REGISTRY,
             SUBCOMMANDS,
             _build_description,
@@ -167,7 +167,7 @@ def _cli_exec_blocked(argv: list[str]) -> str | None:
 
 @method("cli.exec")
 def _(rid, params: dict) -> dict:
-    """Run `python -m hermes_cli.main` with argv; capture stdout/stderr (non-interactive only)."""
+    """Run `python -m superforecasting_agent.runtime.main` with argv; capture stdout/stderr (non-interactive only)."""
     argv = params.get("argv", [])
     if not isinstance(argv, list) or not all(isinstance(x, str) for x in argv):
         return _err(rid, 4003, "argv must be list[str]")
@@ -176,7 +176,7 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"blocked": True, "hint": hint, "code": -1, "output": ""})
     try:
         r = subprocess.run(
-            [sys.executable, "-m", "hermes_cli.main", *argv],
+            [sys.executable, "-m", "superforecasting_agent.runtime.main", *argv],
             capture_output=True,
             text=True,
             timeout=min(int(params.get("timeout", 240)), 600),
@@ -197,7 +197,7 @@ def _(rid, params: dict) -> dict:
 @method("command.resolve")
 def _(rid, params: dict) -> dict:
     try:
-        from hermes_cli.commands import resolve_command
+        from superforecasting_agent.runtime.commands import resolve_command
 
         r = resolve_command(params.get("name", ""))
         if r:
@@ -216,7 +216,7 @@ def _(rid, params: dict) -> dict:
 
 def _resolve_name(name: str) -> str:
     try:
-        from hermes_cli.commands import resolve_command
+        from superforecasting_agent.runtime.commands import resolve_command
 
         r = resolve_command(name)
         return r.name if r else name
@@ -259,7 +259,7 @@ def _(rid, params: dict) -> dict:
             return _ok(rid, {"type": "alias", "target": qc.get("target", "")})
 
     try:
-        from hermes_cli.plugins import (
+        from superforecasting_agent.runtime.plugins import (
             get_plugin_command_handler,
             resolve_plugin_command_result,
         )
@@ -371,7 +371,7 @@ def _(rid, params: dict) -> dict:
         if not session:
             return _err(rid, 4001, "no active forecast session")
         try:
-            from hermes_cli.goals import GoalManager
+            from superforecasting_agent.runtime.goals import GoalManager
         except Exception as exc:
             return _err(rid, 5030, f"goals unavailable: {exc}")
 

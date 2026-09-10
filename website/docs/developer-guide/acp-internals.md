@@ -27,7 +27,7 @@ superforecasting-agent acp / superforecasting-agent-acp / superforecast-acp / he
   -> parse --version / --check / --setup before server startup
   -> load ~/.superforecasting-agent/.env (legacy ~/.hermes/.env accepted)
   -> configure stderr logging
-  -> construct the ACP agent implementation (legacy class name: HermesACPAgent)
+  -> construct ForecastACPAgent
   -> acp.run_agent(agent, use_unstable_protocol=True)
 ```
 
@@ -39,9 +39,9 @@ Stdout is reserved for ACP JSON-RPC transport. Human-readable logs go to stderr.
 
 ### ACP Agent Implementation
 
-`acp_adapter/server.py` implements the ACP agent protocol. The Python class is
-still named `HermesACPAgent` for compatibility with inherited tests and import
-paths; the product-facing ACP server is Superforecasting Agent.
+`acp_adapter/server.py` implements the ACP agent protocol. The canonical Python class is
+`ForecastACPAgent`. The inherited `HermesACPAgent` import remains an alias to
+the same implementation for existing integrations.
 
 Responsibilities:
 
@@ -50,6 +50,20 @@ Responsibilities:
 - prompt execution
 - session model switching
 - wiring sync AIAgent callbacks into ACP async notifications
+
+### Prompt content
+
+`acp_adapter/content.py` converts text, images, file links, and embedded resources
+into model content. Text-only prompts retain their string form for slash commands;
+image prompts use multimodal parts. Resource limits live with these converters,
+and local image reads remain bounded if a file grows after its initial size check.
+Existing helper imports through `acp_adapter.server` remain available.
+
+### History replay
+
+`acp_adapter/history.py` restores persisted messages, thoughts, tool activity, and
+plans when an editor loads or resumes a session. The server binds these methods
+directly, preserving subclass overrides and the existing awaited replay flow.
 
 ### `SessionManager`
 
@@ -149,7 +163,7 @@ ACP does not implement its own auth store.
 Instead it reuses the inherited runtime resolver:
 
 - `acp_adapter/auth.py`
-- `hermes_cli/runtime_provider.py`
+- `superforecasting_agent/runtime/runtime_provider.py`
 
 So ACP advertises and uses the currently configured Superforecasting Agent provider/credentials. It also keeps inherited terminal setup identifiers (`hermes-setup`, args `--setup`) for ACP registry compatibility, so first-run clients can open interactive model/provider configuration before starting a normal ACP session.
 
@@ -182,6 +196,6 @@ ACP temporarily installs an approval callback on the terminal tool during prompt
 ## Related files
 
 - `tests/acp/` — ACP test suite
-- `toolsets.py` — `forecast-acp` alias and inherited `hermes-acp` toolset definition
-- `hermes_cli/main.py` — `superforecasting-agent acp` CLI subcommand plus inherited aliases
+- `superforecasting_agent/tooling/toolsets.py` — `forecast-acp` alias and inherited `hermes-acp` toolset definition
+- `superforecasting_agent/runtime/main.py` — `superforecasting-agent acp` CLI subcommand plus inherited aliases
 - `pyproject.toml` — `[acp]` optional dependency plus fork-native and compatibility ACP scripts

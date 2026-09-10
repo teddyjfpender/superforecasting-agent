@@ -1208,3 +1208,50 @@ async def test_verbose_mode_respects_explicit_tool_preview_length(monkeypatch, t
     assert VerboseAgent.LONG_CODE not in all_content
     # But should still contain the truncated portion with "..."
     assert "..." in all_content
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_event,queued", [(False, False), (True, False), (True, True)])
+async def test_run_agent_keeps_progress_event_context(monkeypatch, tmp_path, with_event, queued):
+    """Tool and heartbeat callbacks retain each turn's own inbound event."""
+    class CallbackAgent:
+        def __init__(self, **kwargs):
+            self.tools = []
+
+        def run_conversation(self, message, conversation_history=None, task_id=None):
+            self.tool_progress_callback("tool.started", "terminal", "pwd", {})
+            self.tool_progress_callback("tool.completed", "terminal", "pwd", {})
+            self.status_callback("context_pressure", "fixture heartbeat")
+            return {"final_response": "done", "messages": [], "api_calls": 1}
+
+    monkeypatch.setitem(sys.modules, "run_agent", SimpleNamespace(AIAgent=CallbackAgent))
+    gateway_run = importlib.import_module("gateway.run")
+    monkeypatch.setattr(gateway_run, "_hermes_home", tmp_path)
+    monkeypatch.setattr(gateway_run, "_resolve_runtime_agent_kwargs", lambda: {"api_key": "fake"})
+    adapter = ProgressCaptureAdapter(platform=Platform.SLACK)
+    runner = _make_runner(adapter)
+    source = SessionSource(platform=Platform.SLACK, chat_id="C1", chat_type="group", thread_id="1.0")
+    event = MessageEvent(text="hello", message_type=MessageType.TEXT, source=source,
+                         message_id="1.1", raw_message={"team": "T1"}) if with_event else None
+    followup = MessageEvent(text="next", message_type=MessageType.TEXT, source=source,
+                            message_id="1.2", raw_message={"team": "T2"})
+    session_key = "agent:main:slack:group:C1:1.0"
+    if queued:
+        adapter._pending_messages[session_key] = followup
+    calls = []
+    monkeypatch.setattr(runner, "_update_slack_changeset_progress",
+                        lambda event, source, **kw: calls.append((event, source, kw)))
+    kwargs = {"event": event} if with_event else {}
+    result = await runner._run_agent(message="hello", context_prompt="", history=[], source=source,
+                                     session_id="event-context", session_key=session_key, **kwargs)
+    assert result["final_response"] == "done"
+    expected = [event, followup] if queued else [event]
+    assert len(calls) == 3 * len(expected)
+    for index, expected_event in enumerate(expected):
+        turn = calls[index * 3:index * 3 + 3]
+        assert all(item[0] is expected_event and item[1] is source for item in turn)
+        assert [item[2] for item in turn] == [
+            {"event_type": "tool.started", "tool_name": "terminal"},
+            {"event_type": "tool.completed", "tool_name": "terminal"},
+            {"event_type": "heartbeat", "tool_name": None},
+        ]

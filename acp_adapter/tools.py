@@ -15,7 +15,7 @@ from acp.schema import (
 )
 
 # ---------------------------------------------------------------------------
-# Map hermes tool names -> ACP ToolKind
+# Map agent tool names -> ACP ToolKind
 # ---------------------------------------------------------------------------
 
 TOOL_KIND_MAP: Dict[str, ToolKind] = {
@@ -79,7 +79,7 @@ _POLISHED_TOOLS = {
 
 
 def get_tool_kind(tool_name: str) -> ToolKind:
-    """Return the ACP ToolKind for a hermes tool, defaulting to 'other'."""
+    """Return the ACP ToolKind for an agent tool, defaulting to 'other'."""
     return TOOL_KIND_MAP.get(tool_name, "other")
 
 
@@ -907,72 +907,6 @@ def _build_polished_completion_content(
     return [_text(text)]
 
 
-def _build_patch_mode_content(patch_text: str) -> List[Any]:
-    """Parse V4A patch mode input into ACP diff blocks when possible."""
-    if not patch_text:
-        return [acp.tool_content(acp.text_block(""))]
-
-    try:
-        from tools.patch_parser import OperationType, parse_v4a_patch
-
-        operations, error = parse_v4a_patch(patch_text)
-        if error or not operations:
-            return [acp.tool_content(acp.text_block(patch_text))]
-
-        content: List[Any] = []
-        for op in operations:
-            if op.operation == OperationType.UPDATE:
-                old_chunks: list[str] = []
-                new_chunks: list[str] = []
-                for hunk in op.hunks:
-                    old_lines = [line.content for line in hunk.lines if line.prefix in {" ", "-"}]
-                    new_lines = [line.content for line in hunk.lines if line.prefix in {" ", "+"}]
-                    if old_lines or new_lines:
-                        old_chunks.append("\n".join(old_lines))
-                        new_chunks.append("\n".join(new_lines))
-
-                old_text = "\n...\n".join(chunk for chunk in old_chunks if chunk)
-                new_text = "\n...\n".join(chunk for chunk in new_chunks if chunk)
-                if old_text or new_text:
-                    content.append(
-                        acp.tool_diff_content(
-                            path=op.file_path,
-                            old_text=old_text or None,
-                            new_text=new_text or "",
-                        )
-                    )
-                continue
-
-            if op.operation == OperationType.ADD:
-                added_lines = [line.content for hunk in op.hunks for line in hunk.lines if line.prefix == "+"]
-                content.append(
-                    acp.tool_diff_content(
-                        path=op.file_path,
-                        new_text="\n".join(added_lines),
-                    )
-                )
-                continue
-
-            if op.operation == OperationType.DELETE:
-                content.append(
-                    acp.tool_diff_content(
-                        path=op.file_path,
-                        old_text=f"Delete file: {op.file_path}",
-                        new_text="",
-                    )
-                )
-                continue
-
-            if op.operation == OperationType.MOVE:
-                content.append(
-                    acp.tool_content(acp.text_block(f"Move file: {op.file_path} -> {op.new_path}"))
-                )
-
-        return content or [acp.tool_content(acp.text_block(patch_text))]
-    except Exception:
-        return [acp.tool_content(acp.text_block(patch_text))]
-
-
 def _strip_diff_prefix(path: str) -> str:
     raw = str(path or "").strip()
     if raw.startswith(("a/", "b/")):
@@ -1087,7 +1021,7 @@ def build_tool_start(
     *,
     edit_diff: Any = None,
 ) -> ToolCallStart:
-    """Create a ToolCallStart event for the given hermes tool invocation."""
+    """Create a ToolCallStart event for the given agent tool invocation."""
     kind = get_tool_kind(tool_name)
     title = build_tool_title(tool_name, arguments)
     locations = extract_locations(arguments)

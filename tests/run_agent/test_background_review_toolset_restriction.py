@@ -94,7 +94,7 @@ def test_background_review_installs_thread_local_whitelist():
     whitelist is set with exactly the memory+skills tool names.
     """
     import run_agent
-    from hermes_cli import plugins as _plugins
+    from superforecasting_agent.runtime import plugins as _plugins
 
     captured = {}
 
@@ -142,7 +142,7 @@ def test_background_review_agent_tools_are_limited():
     derived from — if a future PR adds e.g. `terminal` to the `memory`
     toolset, the review-fork safety contract silently breaks.
     """
-    from toolsets import resolve_multiple_toolsets
+    from superforecasting_agent.tooling.toolsets import resolve_multiple_toolsets
 
     expected_tools = set(resolve_multiple_toolsets(["memory", "skills"]))
 

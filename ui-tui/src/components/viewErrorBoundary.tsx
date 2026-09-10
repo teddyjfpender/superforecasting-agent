@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from '@hermes/ink'
+import { Box, Text, useInput } from '@superforecasting/ink'
 import { Component, type ReactNode } from 'react'
 
 import type { Theme } from '../theme.js'

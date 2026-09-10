@@ -226,7 +226,7 @@ The route mounts under:
 
 Backend routes run inside the dashboard process. Keep them small, authenticated through the dashboard's existing auth path, and careful about ledger writes. Prefer calling existing forecast services instead of duplicating ledger mutation logic in the plugin.
 
-Inherited module names such as `hermes_cli` and `hermes_state` may still appear in imports while the fork preserves compatibility with upstream internals.
+Inherited module names such as `superforecasting_agent.runtime` and `superforecasting_agent.storage.session` may still appear in imports while the fork preserves compatibility with upstream internals.
 
 ## Discovery and Reload
 
@@ -280,4 +280,4 @@ The primary workflow should stay: CLI forecast workflow first, dashboard support
 
 **Backend route returns 404**: restart `superforecasting-agent dashboard`; plugin API routes are mounted at startup.
 
-**Compatibility names look wrong**: `window.__HERMES_PLUGIN_SDK__`, `window.__HERMES_PLUGINS__`, `HERMES_ENABLE_PROJECT_PLUGINS`, and some `hermes_cli` module paths are inherited runtime identifiers. Prefer the forecast-native aliases for new plugins and document inherited names as compatibility support, not product identity.
+**Compatibility names look wrong**: `window.__HERMES_PLUGIN_SDK__`, `window.__HERMES_PLUGINS__`, `HERMES_ENABLE_PROJECT_PLUGINS`, and some `superforecasting_agent.runtime` module paths are inherited runtime identifiers. Prefer the forecast-native aliases for new plugins and document inherited names as compatibility support, not product identity.

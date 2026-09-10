@@ -19,7 +19,7 @@ Covered:
   * Serialization scrub: dumping a runtime dict via ``json.dumps`` with
     a callable api_key raises (default behaviour) — guards against
     silently leaking ``"<function ...>"`` strings into event logs.
-  * ``batch_runner`` strips the callable from the worker config dict
+  * ``superforecasting_agent.trajectories.batch`` strips the callable from the worker config dict
     so multiprocessing.Pool can pickle the rest.
 """
 
@@ -157,7 +157,7 @@ class TestTruncateTokenCallable:
     def test_callable_returns_placeholder(self):
         """Dashboard preview must render the Entra placeholder, NOT
         ``"<function ...>"``."""
-        from hermes_cli.web_server import _truncate_token
+        from superforecasting_agent.runtime.web_server import _truncate_token
 
         invoked = {"count": 0}
 
@@ -171,13 +171,13 @@ class TestTruncateTokenCallable:
         assert invoked["count"] == 0
 
     def test_string_jwt_still_truncated_to_signature_tail(self):
-        from hermes_cli.web_server import _truncate_token
+        from superforecasting_agent.runtime.web_server import _truncate_token
         # JWT shape: header.payload.signature → only signature tail shown.
         out = _truncate_token("aaaa.bbbb.cccccccsig", visible=4)
         assert out == "…csig"
 
     def test_empty_returns_empty(self):
-        from hermes_cli.web_server import _truncate_token
+        from superforecasting_agent.runtime.web_server import _truncate_token
         assert _truncate_token(None) == ""
         assert _truncate_token("") == ""
 
@@ -212,7 +212,7 @@ class TestRuntimeDictSerializationGuard:
 
 
 # ---------------------------------------------------------------------------
-# batch_runner strips callables from the worker config dict
+# superforecasting_agent.trajectories.batch strips callables from the worker config dict
 # ---------------------------------------------------------------------------
 
 
@@ -243,12 +243,12 @@ class TestBatchRunnerCallableHandling:
         assert worker_api_key_str == "sk-static"
 
     def test_batch_runner_source_uses_the_correct_predicate(self):
-        """Pin the predicate string in batch_runner so refactors that
+        """Pin the predicate string in superforecasting_agent.trajectories.batch so refactors that
         change it are caught here. Reading the source rather than
         importing avoids spinning up the full BatchRunner."""
         from pathlib import Path
         src = (Path(__file__).resolve().parent.parent.parent
-               / "batch_runner.py").read_text()
+               / "superforecasting_agent/trajectories/batch_run.py").read_text()
         assert "callable(self.api_key) and not isinstance(self.api_key, str)" in src, (
             "BatchRunner.api_key callable check changed — update test or "
             "verify the new predicate still routes Entra token providers "
@@ -275,9 +275,10 @@ class TestCliEnsureRuntimeCredentialsCallable:
     fix and is invariant under the surrounding orchestration code."""
 
     def test_callable_predicate_present_in_cli_runtime_validation(self):
-        from pathlib import Path
-        src = (Path(__file__).resolve().parent.parent.parent
-               / "cli.py").read_text()
+        import inspect
+        from cli import ForecastCLI
+
+        src = inspect.getsource(ForecastCLI._ensure_runtime_credentials)
         # The fix introduces ``_is_callable_provider`` which gates the
         # string-only check so callable token providers survive.
         assert "_is_callable_provider = callable(api_key)" in src, (
@@ -338,24 +339,14 @@ class TestInlinedDisplayMasks:
         )
 
     def test_mask_api_key_for_logs_handles_callable(self):
-        """``run_agent._mask_api_key_for_logs`` is called from the
-        request-dump JSON path. For Entra users, ``self.client.api_key``
-        is the SDK's empty string (callable stashed privately) — but
-        defensively the helper must also accept a callable directly
-        and return the placeholder rather than crashing on
-        ``len(callable)``."""
-        from pathlib import Path
-        src = (Path(__file__).resolve().parent.parent.parent
-               / "run_agent.py").read_text()
-        # The function now starts with a callable check.
-        assert (
-            "if callable(key) and not isinstance(key, str):" in src
-            and '"<entra-id-bearer>"' in src
-        ), (
-            "run_agent._mask_api_key_for_logs must short-circuit for "
-            "callable api_keys to avoid len(callable) crashes in "
-            "request-dump paths."
-        )
+        """Diagnostic formatting must not invoke a callable credential provider."""
+        from run_agent import AIAgent
+
+        def credential_provider():
+            raise AssertionError("Logging must never invoke the credential provider")
+
+        agent = AIAgent.__new__(AIAgent)
+        assert agent._mask_api_key_for_logs(credential_provider) == "<entra-id-bearer>"
 
     def test_anthropic_401_diagnostic_handles_callable(self):
         """The Anthropic 401 diagnostic path lives in

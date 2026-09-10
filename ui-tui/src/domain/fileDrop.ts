@@ -1,5 +1,5 @@
 // Cheap, side-effect-free mirror of the gateway's `starts_like_path` prefilter
-// (hermes_cli/file_drop.py :: _detect_file_drop). Used purely to decide whether
+// (superforecasting_agent/runtime/file_drop.py :: _detect_file_drop). Used purely to decide whether
 // a submission *could* be a dragged/pasted file path.
 //
 // When it could NOT (the overwhelmingly common case — ordinary prose / a

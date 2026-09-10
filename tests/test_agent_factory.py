@@ -89,7 +89,7 @@ def test_build_agent_reads_tenant_runtime_credential(monkeypatch):
         calls.update(requested=requested, explicit_api_key=explicit_api_key)
         return {"provider": requested, "api_key": "resolved", "base_url": "b", "api_mode": "messages"}
 
-    monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider", _fake_resolve)
+    monkeypatch.setattr("superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider", _fake_resolve)
     token = tr.set_tenant_runtime(credential={"provider": "anthropic", "api_key": "tenant-A-key"})
     try:
         af.build_agent(model="m")  # no explicit credential_context -> reads the contextvar
@@ -107,7 +107,7 @@ def test_build_agent_resolves_when_runtime_none(monkeypatch):
         calls.update(requested=requested, explicit_api_key=explicit_api_key, explicit_base_url=explicit_base_url, target_model=target_model)
         return {"provider": "anthropic", "api_key": "resolved", "base_url": "b", "api_mode": "messages"}
 
-    monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider", _fake_resolve)
+    monkeypatch.setattr("superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider", _fake_resolve)
     af.build_agent(model="m", requested_provider="anthropic", credential_context={"api_key": "tenant-key", "provider": "anthropic"})
     # credential_context feeds the resolver (per-tenant seam) and the resolved key is used
     assert calls["explicit_api_key"] == "tenant-key" and calls["requested"] == "anthropic"

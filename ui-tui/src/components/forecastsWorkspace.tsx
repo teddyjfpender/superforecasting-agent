@@ -1,4 +1,4 @@
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
+import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'

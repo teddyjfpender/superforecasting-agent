@@ -329,7 +329,7 @@ When you run a profile alias such as `macro forecast status`, the wrapper execut
 superforecasting-agent -p macro forecast status
 ```
 
-The startup path resolves the profile directory and sets the inherited internal home variable so modules that still call `get_hermes_home()` read and write inside the profile. Forecast-native env vars are preferred:
+The startup path resolves the profile directory and sets the inherited internal home variable so modules that still call `get_agent_home()` read and write inside the profile. Forecast-native env vars are preferred:
 
 - `SUPERFORECASTING_AGENT_HOME`
 - `FORECAST_HOME`

@@ -496,7 +496,7 @@ def test_existing_backtest_defaults_unchanged():
 def test_closed_book_toolset_has_no_reachable_tool():
     # The closed-book toolset is empty: no network fetch AND no file read of the
     # on-disk resolution-set cache.
-    from toolsets import resolve_multiple_toolsets
+    from superforecasting_agent.tooling.toolsets import resolve_multiple_toolsets
 
     closed_book_tools = set(resolve_multiple_toolsets([]))
     assert closed_book_tools == set()

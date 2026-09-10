@@ -11,14 +11,14 @@ law, the design laws the components hold to, and the keyboard/help system. The
 
 ---
 
-## The Ink fork (`@hermes/ink`)
+## The Ink fork (`@superforecasting/ink`)
 
-`ui-tui/packages/hermes-ink/` is a **forked Ink renderer**, a local workspace
-dependency (`@hermes/ink`, imported through the compatibility shim
-`ui-tui/src/types/hermes-ink.d.ts`). It is forked because stock Ink is a
+`ui-tui/packages/forecast-ink/` is a **forked Ink renderer**, a local workspace
+dependency (`@superforecasting/ink`, imported through the compatibility shim
+`ui-tui/src/types/forecast-ink.d.ts`). It is forked because stock Ink is a
 keyboard-and-layout renderer with no mouse and no incremental-diff control; the
 desk needs both. What the fork adds lives under
-`packages/hermes-ink/src/ink/`:
+`packages/forecast-ink/src/ink/`:
 
 - **Mouse.** `parse-keypress.ts` decodes SGR mouse sequences (`\x1b[<b;x;yM`,
   `SGR_MOUSE_RE`), including a fragment-recovery regex for sequences split across
@@ -80,7 +80,7 @@ tree; heavy logic is split into `src/app/` (hooks + nanostores) and `src/compone
 
 Two halves render the same theme and **must** agree:
 
-- **Python** — `hermes_cli/skin_engine.py` is the data-driven skin system
+- **Python** — `superforecasting_agent/runtime/skin_engine.py` is the data-driven skin system
   (built-in presets + user YAML under `~/.superforecasting-agent/skins/`). The
   runtime default is `_BUILTIN_SKINS["default"]` — *"Standard — Aurora (lavender +
   rose)"*. The gateway resolves the active skin and ships it on `gateway.ready`.
@@ -178,13 +178,13 @@ rule above).
 
 ## Sources
 
-- Ink fork: `ui-tui/packages/hermes-ink/src/ink/hit-test.ts`, `parse-keypress.ts`,
+- Ink fork: `ui-tui/packages/forecast-ink/src/ink/hit-test.ts`, `parse-keypress.ts`,
   `log-update.ts`, `output.ts`, `selection.ts`, `hyperlinkHover.ts`;
-  `ui-tui/packages/hermes-ink/package.json` (`@hermes/ink`)
+  `ui-tui/packages/forecast-ink/package.json` (`@superforecasting/ink`)
 - Structure: `ui-tui/src/entry.tsx`, `app.tsx`, `app/navRoutes.ts`,
   `app/createGatewayEventHandler.ts`, `components/appLayout.tsx`, `appChrome.tsx`;
   `ui-tui/README.md`
-- Theme: `hermes_cli/skin_engine.py` (`_BUILTIN_SKINS["default"]`),
+- Theme: `superforecasting_agent/runtime/skin_engine.py` (`_BUILTIN_SKINS["default"]`),
   `ui-tui/src/theme.ts` (`DEFAULT_THEME`, `BRAND_GRADIENT`,
   `enforceDarkContrastFloor`)
 - Design laws: `components/deskView.tsx` (bucketed `nowMs`),

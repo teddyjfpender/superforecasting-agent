@@ -1,6 +1,6 @@
 // Force truecolor so the ink render emits theme-token SGR under the non-TTY test
 // stream (chalk reads FORCE_COLOR at import time; this side-effect module MUST be
-// imported before chalk / @hermes/ink so supports-color picks it up). The prior
+// imported before chalk / @superforecasting/ink so supports-color picks it up). The prior
 // value is captured so the test file can restore it and not leak colour into
 // sibling suites (which would enlarge frame buffers and worsen keypress-timing
 // flakes elsewhere).

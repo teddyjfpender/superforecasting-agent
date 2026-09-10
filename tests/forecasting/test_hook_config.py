@@ -94,7 +94,7 @@ def test_no_watched_sources_profile_severities():
 def test_default_config_block_is_present_and_standard():
     # The shipped DEFAULT_CONFIG must carry forecasting.hooks at the standard
     # profile with no auto-bump, so adopting hooks is a no-op on upgrade.
-    from hermes_cli.config import DEFAULT_CONFIG
+    from superforecasting_agent.runtime.config import DEFAULT_CONFIG
     hooks = DEFAULT_CONFIG["forecasting"]["hooks"]
     assert hooks["enabled"] is True
     assert hooks["profile"] == "standard"

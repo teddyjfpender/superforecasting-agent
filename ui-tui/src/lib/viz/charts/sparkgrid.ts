@@ -2,7 +2,7 @@
 // value + colored delta) for a watchlist / portfolio. Composes the existing
 // sparkline + compactNumber + deltaGlyph primitives; no new glyph machinery.
 
-import { stringWidth } from '@hermes/ink'
+import { stringWidth } from '@superforecasting/ink'
 
 import { compactNumber, deltaGlyph } from '../../forecastCharts.js'
 import { sparkline } from '../../sparkline.js'

@@ -49,9 +49,9 @@ def identity_path(home: Optional[Path | str] = None) -> Path:
     """Resolve the ``identity.json`` path under the agent home (or *home*)."""
     if home is not None:
         return Path(home) / IDENTITY_FILE_NAME
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home() / IDENTITY_FILE_NAME
+    return get_agent_home() / IDENTITY_FILE_NAME
 
 
 def _read_identity(home: Optional[Path | str] = None) -> dict[str, Any]:
@@ -68,7 +68,7 @@ def _read_identity(home: Optional[Path | str] = None) -> dict[str, Any]:
 
 def _write_identity(data: dict[str, Any], home: Optional[Path | str] = None) -> None:
     """Persist the identity dict atomically (best-effort — never raises)."""
-    from utils import atomic_json_write
+    from superforecasting_agent.storage.files import atomic_json_write
 
     try:
         atomic_json_write(identity_path(home), data)
@@ -168,9 +168,9 @@ def resolve_team(team_id: Optional[str] = None, home: Optional[Path | str] = Non
 
 
 def _hermes_home() -> Path:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home()
+    return get_agent_home()
 
 
 # ── the resolved identity ────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from acp_adapter import session as acp_session
 from acp_adapter.session import SessionManager, SessionState
-from hermes_state import SessionDB
+from superforecasting_agent.storage.session import SessionDB
 
 
 def _mock_agent():
@@ -51,7 +51,7 @@ class TestCreateSession:
             captured["task_id"] = task_id
             captured["overrides"] = overrides
 
-        monkeypatch.setattr("hermes_constants._wsl_detected", True)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", True)
         monkeypatch.setattr(
             "tools.terminal_tool.register_task_env_overrides",
             fake_register_task_env_overrides,
@@ -87,34 +87,34 @@ class TestCreateSession:
 
 class TestWslCwdTranslation:
     def test_translate_acp_cwd_converts_windows_drive_path_when_wsl(self, monkeypatch):
-        monkeypatch.setattr("hermes_constants._wsl_detected", True)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", True)
 
         assert acp_session._translate_acp_cwd(r"E:\Projects\AI\paperclip") == "/mnt/e/Projects/AI/paperclip"
 
     def test_translate_acp_cwd_handles_forward_slashes_when_wsl(self, monkeypatch):
-        monkeypatch.setattr("hermes_constants._wsl_detected", True)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", True)
 
         assert acp_session._translate_acp_cwd("D:/work/project") == "/mnt/d/work/project"
 
     def test_translate_acp_cwd_leaves_windows_drive_path_unchanged_off_wsl(self, monkeypatch):
-        monkeypatch.setattr("hermes_constants._wsl_detected", False)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", False)
 
         assert acp_session._translate_acp_cwd(r"E:\Projects\AI\paperclip") == r"E:\Projects\AI\paperclip"
 
     def test_translate_acp_cwd_leaves_posix_path_unchanged_on_wsl(self, monkeypatch):
-        monkeypatch.setattr("hermes_constants._wsl_detected", True)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", True)
 
         assert acp_session._translate_acp_cwd("/mnt/e/Projects/AI/paperclip") == "/mnt/e/Projects/AI/paperclip"
 
     def test_create_session_stores_translated_cwd_on_wsl(self, manager, monkeypatch):
-        monkeypatch.setattr("hermes_constants._wsl_detected", True)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", True)
 
         state = manager.create_session(cwd=r"E:\Projects\AI\paperclip")
 
         assert state.cwd == "/mnt/e/Projects/AI/paperclip"
 
     def test_fork_session_stores_translated_cwd_on_wsl(self, manager, monkeypatch):
-        monkeypatch.setattr("hermes_constants._wsl_detected", True)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", True)
         original = manager.create_session(cwd="/tmp/base")
 
         forked = manager.fork_session(original.session_id, cwd=r"D:\work\project")
@@ -123,7 +123,7 @@ class TestWslCwdTranslation:
         assert forked.cwd == "/mnt/d/work/project"
 
     def test_update_cwd_stores_translated_cwd_on_wsl(self, manager, monkeypatch):
-        monkeypatch.setattr("hermes_constants._wsl_detected", True)
+        monkeypatch.setattr("superforecasting_agent.constants._wsl_detected", True)
         state = manager.create_session(cwd="/tmp/old")
 
         updated = manager.update_cwd(state.session_id, cwd=r"C:\Users\foo\project")
@@ -255,7 +255,7 @@ class TestPersistence:
             captured.update(kwargs)
             return SimpleNamespace(model=kwargs.get("model"), enabled_toolsets=kwargs.get("enabled_toolsets"))
 
-        monkeypatch.setattr("hermes_cli.config.load_config", lambda: {
+        monkeypatch.setattr("superforecasting_agent.runtime.config.load_config", lambda: {
             "model": {"provider": "openrouter", "default": "test-model"},
             "mcp_servers": {
                 "olympus": {"command": "python", "enabled": True},
@@ -264,7 +264,7 @@ class TestPersistence:
             },
         })
         monkeypatch.setattr(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
             fake_resolve_runtime_provider,
         )
         db = SessionDB(tmp_path / "state.db")
@@ -513,7 +513,8 @@ class TestPersistence:
             ],
         }]
 
-    def test_restore_preserves_persisted_provider_snapshot(self, tmp_path, monkeypatch):
+    @pytest.mark.parametrize("save_again", [False, True])
+    def test_restore_preserves_persisted_provider_snapshot(self, tmp_path, monkeypatch, save_again):
         """Restored ACP sessions should keep their original runtime provider."""
         runtime_choice = {"provider": "anthropic"}
 
@@ -536,19 +537,20 @@ class TestPersistence:
                 api_mode=kwargs.get("api_mode"),
             )
 
-        monkeypatch.setattr("hermes_cli.config.load_config", lambda: {
+        monkeypatch.setattr("superforecasting_agent.runtime.config.load_config", lambda: {
             "model": {"provider": runtime_choice["provider"], "default": "test-model"}
         })
         monkeypatch.setattr(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
             fake_resolve_runtime_provider,
         )
         db = SessionDB(tmp_path / "state.db")
 
-        with patch("run_agent.AIAgent", side_effect=fake_agent):
+        with contextlib.closing(db), patch("run_agent.AIAgent", side_effect=fake_agent):
             manager = SessionManager(db=db)
             state = manager.create_session(cwd="/work")
-            manager.save_session(state.session_id)
+            if save_again:
+                manager.save_session(state.session_id)
 
             with manager._lock:
                 del manager._sessions[state.session_id]
@@ -559,6 +561,7 @@ class TestPersistence:
         assert restored is not None
         assert restored.agent.provider == "anthropic"
         assert restored.agent.base_url == "https://anthropic.example/v1"
+        assert restored.agent.api_mode == "anthropic_messages"
 
     def test_acp_agents_route_human_output_to_stderr(self, tmp_path, monkeypatch):
         """ACP agents must keep stdout clean for JSON-RPC stdio transport."""
@@ -576,11 +579,11 @@ class TestPersistence:
         def fake_agent(**kwargs):
             return SimpleNamespace(model=kwargs.get("model"), _print_fn=None)
 
-        monkeypatch.setattr("hermes_cli.config.load_config", lambda: {
+        monkeypatch.setattr("superforecasting_agent.runtime.config.load_config", lambda: {
             "model": {"provider": "openrouter", "default": "test-model"}
         })
         monkeypatch.setattr(
-            "hermes_cli.runtime_provider.resolve_runtime_provider",
+            "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
             fake_resolve_runtime_provider,
         )
         db = SessionDB(tmp_path / "state.db")

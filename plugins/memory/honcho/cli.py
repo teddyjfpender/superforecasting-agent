@@ -11,9 +11,9 @@ import os
 import sys
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 from plugins.memory.honcho.client import resolve_active_host, resolve_config_path, HOST
-from hermes_cli.config import cfg_get
+from superforecasting_agent.runtime.config import cfg_get
 
 
 FORECAST_CLI_CMD = "superforecasting-agent"
@@ -165,7 +165,7 @@ def cmd_sync(args) -> None:
     any that don't have one yet. Inherits settings from the default host block.
     """
     try:
-        from hermes_cli.profiles import list_profiles
+        from superforecasting_agent.runtime.profiles import list_profiles
         profiles = list_profiles()
     except Exception as e:
         print(f"  Could not list profiles: {e}\n")
@@ -213,7 +213,7 @@ def sync_honcho_profiles_quiet() -> int:
     Called from `superforecasting-agent update` -- no output, no exceptions.
     """
     try:
-        from hermes_cli.profiles import list_profiles
+        from superforecasting_agent.runtime.profiles import list_profiles
         profiles = list_profiles()
     except Exception:
         return 0
@@ -261,7 +261,7 @@ def _local_config_path() -> Path:
     ``~/.honcho/config.json`` is only used as a read fallback via
     ``resolve_config_path`` for cross-app interop.
     """
-    return get_hermes_home() / "honcho.json"
+    return get_agent_home() / "honcho.json"
 
 
 def _read_config() -> dict:
@@ -324,7 +324,7 @@ def _prompt(label: str, default: str | None = None, secret: bool = False) -> str
     sys.stdout.flush()
     if secret:
         if sys.stdin.isatty():
-            from hermes_cli.secret_prompt import masked_secret_prompt
+            from superforecasting_agent.runtime.secret_prompt import masked_secret_prompt
             val = masked_secret_prompt("")
         else:
             # Non-TTY (piped input, test runners) — read plaintext
@@ -552,7 +552,7 @@ def cmd_setup(args) -> None:
 
     # --- Auto-enable Honcho as memory provider in config.yaml ---
     try:
-        from hermes_cli.config import load_config, save_config
+        from superforecasting_agent.runtime.config import load_config, save_config
         hermes_config = load_config()
         hermes_config.setdefault("memory", {})["provider"] = "honcho"
         save_config(hermes_config)
@@ -601,7 +601,7 @@ def _active_profile_name() -> str:
     if _profile_override:
         return _profile_override
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from superforecasting_agent.runtime.profiles import get_active_profile_name
         return get_active_profile_name()
     except Exception:
         return "default"
@@ -613,7 +613,7 @@ def _all_profile_host_configs() -> list[tuple[str, str, dict]]:
     Reads honcho.json once and maps each profile to its host block.
     """
     try:
-        from hermes_cli.profiles import list_profiles
+        from superforecasting_agent.runtime.profiles import list_profiles
         profiles = list_profiles()
     except Exception:
         return [(_active_profile_name(), _host_key(), {})]
@@ -1331,7 +1331,7 @@ def honcho_command(args) -> None:
         # Redirect to memory setup — honcho setup goes through the unified path
         print("\n  Honcho is configured via the memory provider system.")
         print(f"  Running '{FORECAST_MEMORY_SETUP_CMD}'...\n")
-        from hermes_cli.memory_setup import cmd_setup_provider
+        from superforecasting_agent.runtime.memory_setup import cmd_setup_provider
         cmd_setup_provider("honcho")
         return
     elif sub is None:

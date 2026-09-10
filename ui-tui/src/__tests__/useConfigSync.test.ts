@@ -208,7 +208,7 @@ describe('normalizeBusyInputMode', () => {
 
   it('defaults to queue for missing/unknown values (TUI-only override)', () => {
     // CLI / messaging adapters keep `interrupt` as the framework default
-    // (see hermes_cli/config.py + tui_gateway/server.py::_load_busy_input_mode);
+    // (see superforecasting_agent/runtime/config.py + tui_gateway/server.py::_load_busy_input_mode);
     // the TUI ships `queue` because typing a follow-up while the agent
     // streams is the common authoring pattern and an unintended interrupt
     // loses work.

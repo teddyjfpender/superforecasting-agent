@@ -1,5 +1,5 @@
-import { Box, NoSelect, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, NoSelect, Text } from '@superforecasting/ink'
 
 import { activeNavKey, NAV_TABS, selectNavView } from '../app/navRoutes.js'
 import { $overlayState } from '../app/overlayStore.js'

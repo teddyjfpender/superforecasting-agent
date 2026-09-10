@@ -31,7 +31,7 @@ from forecasting.ledger import ForecastLedger
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    # get_hermes_home() checks SUPERFORECASTING_AGENT_HOME first, then HERMES_HOME;
+    # get_agent_home() checks SUPERFORECASTING_AGENT_HOME first, then HERMES_HOME;
     # pin both so the JobStore, the legacy jobs_dir() AND the default ForecastLedger()
     # land in the tempdir.
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))

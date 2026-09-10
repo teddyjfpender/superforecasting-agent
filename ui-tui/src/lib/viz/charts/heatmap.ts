@@ -4,7 +4,7 @@
 // fg color (up/down) and magnitude as a glyph-intensity ramp. Rows are
 // coalesced via CellBuffer so a multi-color row is ONE <Text>, not one-per-cell.
 
-import { stringWidth } from '@hermes/ink'
+import { stringWidth } from '@superforecasting/ink'
 
 import { halfBlock } from '../blit.js'
 import { CellBuffer } from '../buffer.js'

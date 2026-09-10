@@ -126,7 +126,7 @@ maps changed files to their covering test dirs:
 | `protocol/**` | `tests/test_protocol_codegen.py` |
 | `gateway/**`, `tui_gateway/**` | `tests/gateway` |
 | `agent/**` | `tests/agent` |
-| `hermes_cli/**` | `tests/hermes_cli` |
+| `superforecasting_agent/runtime/**` | `tests/runtime_cli` |
 | `providers/**` | `tests/providers` |
 | `cron/**` | `tests/cron` |
 | `acp_adapter/**`, `acp_registry/**` | `tests/acp` |

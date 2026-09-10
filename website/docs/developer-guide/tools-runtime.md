@@ -11,8 +11,8 @@ Superforecasting Agent tools are self-registering functions grouped into toolset
 Primary files:
 
 - `tools/registry.py`
-- `model_tools.py`
-- `toolsets.py`
+- `superforecasting_agent/tooling/runtime.py`
+- `superforecasting_agent/tooling/toolsets.py`
 - `tools/terminal_tool.py`
 - `tools/environments/*`
 
@@ -20,7 +20,7 @@ Primary files:
 
 Each tool module calls `registry.register(...)` at import time.
 
-`model_tools.py` is responsible for importing/discovering tool modules and building the schema list used by the model.
+`superforecasting_agent/tooling/runtime.py` is responsible for importing/discovering tool modules and building the schema list used by the model.
 
 ### How `registry.register()` works
 
@@ -44,7 +44,7 @@ Each call creates a `ToolEntry` stored in the singleton `ToolRegistry._tools` di
 
 ### Discovery: `discover_builtin_tools()`
 
-When `model_tools.py` is imported, it calls `discover_builtin_tools()` from `tools/registry.py`. This function scans every `tools/*.py` file using AST parsing to find modules that contain top-level `registry.register()` calls, then imports them:
+When `superforecasting_agent/tooling/runtime.py` is imported, it calls `discover_builtin_tools()` from `tools/registry.py`. This function scans every `tools/*.py` file using AST parsing to find modules that contain top-level `registry.register()` calls, then imports them:
 
 ```python
 # tools/registry.py (simplified)
@@ -64,7 +64,7 @@ Each import triggers the module's `registry.register()` calls. Errors in optiona
 After core tool discovery, MCP tools and plugin tools are also discovered:
 
 1. **MCP tools** — `tools.mcp_tool.discover_mcp_tools()` reads MCP server config and registers tools from external servers.
-2. **Plugin tools** — `hermes_cli.plugins.discover_plugins()` loads user/project/pip plugins that may register additional tools. The `hermes_cli` module name is inherited.
+2. **Plugin tools** — `superforecasting_agent.runtime.plugins.discover_plugins()` loads user/project/pip plugins that may register additional tools. The `superforecasting_agent.runtime` module name is inherited.
 
 ## Tool availability checking (`check_fn`)
 

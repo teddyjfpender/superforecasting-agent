@@ -18,7 +18,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import cli
+import cli as cli_module
+from superforecasting_agent.runtime import console_output as cli
 
 
 @pytest.fixture(autouse=True)
@@ -283,7 +284,7 @@ def test_chat_console_records_rich_ansi_for_resize_replay(monkeypatch):
     cli._configure_output_history(True, 10)
     monkeypatch.setattr(cli, "_pt_print", lambda *_args, **_kwargs: None)
 
-    cli.ChatConsole().print("[bold red]Hello[/]")
+    cli_module.ChatConsole().print("[bold red]Hello[/]")
 
     assert cli._OUTPUT_HISTORY
     assert any("\x1b[" in line for line in cli._OUTPUT_HISTORY)

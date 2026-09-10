@@ -65,9 +65,9 @@ def collab_dir(home: Optional[Path | str] = None) -> Path:
     if home is not None:
         base = Path(home)
     else:
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
 
-        base = get_hermes_home()
+        base = get_agent_home()
     path = base / "collab"
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -95,7 +95,7 @@ def load_directory(home: Optional[Path | str] = None) -> dict[str, dict[str, Any
 
 
 def _write_directory(data: dict[str, Any], home: Optional[Path | str] = None) -> None:
-    from utils import atomic_json_write
+    from superforecasting_agent.storage.files import atomic_json_write
 
     try:
         atomic_json_write(directory_path(home), data)

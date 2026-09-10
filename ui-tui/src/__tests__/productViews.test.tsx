@@ -59,7 +59,7 @@ const renderComponent = async (component: React.ComponentType<{ onClose: () => v
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../theme.js'),
     import('../lib/text.js')
   ])
@@ -116,7 +116,7 @@ describe('MarketsView', () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ render }, { MarketsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/marketsView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -227,7 +227,7 @@ describe('AddProviderModal', () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ Box, render }, { AddProviderModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/addProviderModal.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -285,7 +285,7 @@ describe('MarketSearchModal', () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ Box, render }, { MarketSearchModal }, { DARK_THEME }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/marketSearchModal.js'),
       import('../theme.js')
     ])
@@ -361,7 +361,7 @@ describe('NewsView', () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ render }, { NewsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/newsView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -482,7 +482,7 @@ describe('MessagingView', () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ Box, render }, { MessagingView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/messagingView.js'),
       import('../theme.js'),
       import('../lib/text.js')

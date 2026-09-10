@@ -1,4 +1,4 @@
-import { forceRedraw } from '@hermes/ink'
+import { forceRedraw } from '@superforecasting/ink'
 
 import { NO_CONFIRM_DESTRUCTIVE } from '../../../config/env.js'
 import { dailyFortune, randomFortune } from '../../../content/fortunes.js'

@@ -34,7 +34,7 @@ cancel, its partial work durable) and `error` is a crash.
 `{home}/jobs/{job_id}.json`, written **atomically** (temp file + `os.replace`),
 with `sort_keys=True` so the file is diff-stable. A sibling `{job_id}.stop` file is
 the durable cross-process cancel signal (a cheap `stat` poll, unlike an in-memory
-Event). `home` resolves lazily per call from `get_hermes_home()`, so a test's
+Event). `home` resolves lazily per call from `get_agent_home()`, so a test's
 per-test `HERMES_HOME` and a subprocess's propagated home are both honoured.
 
 ### The legacy read-shim

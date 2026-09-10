@@ -50,7 +50,7 @@ describe('VOI desk sort', () => {
 describe('NextBestActions block', () => {
   const render = async (actions: ForecastNextAction[]) => {
     const [{ renderSync }, { NextBestActions }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -116,7 +116,7 @@ describe('thesis-lens sensitivity marker', () => {
 
   const renderList = async (items: ForecastWorkspaceItem[], props: Record<string, unknown>) => {
     const [{ renderSync }, { DeskForecastList }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')

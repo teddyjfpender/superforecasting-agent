@@ -27,7 +27,7 @@ from agent.memory_provider import MemoryProvider
 from tools.registry import tool_error
 from .store import MemoryStore
 from .retrieval import FactRetriever
-from hermes_cli.config import cfg_get
+from superforecasting_agent.runtime.config import cfg_get
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +105,8 @@ FACT_FEEDBACK_SCHEMA = {
 # ---------------------------------------------------------------------------
 
 def _load_plugin_config() -> dict:
-    from hermes_constants import get_hermes_home
-    config_path = get_hermes_home() / "config.yaml"
+    from superforecasting_agent.constants import get_agent_home
+    config_path = get_agent_home() / "config.yaml"
     if not config_path.exists():
         return {}
     try:
@@ -162,8 +162,8 @@ class HolographicMemoryProvider(MemoryProvider):
             pass
 
     def get_config_schema(self):
-        from hermes_constants import display_hermes_home
-        _default_db = f"{display_hermes_home()}/memory_store.db"
+        from superforecasting_agent.constants import display_agent_home
+        _default_db = f"{display_agent_home()}/memory_store.db"
         return [
             {"key": "db_path", "description": "SQLite database path", "default": _default_db},
             {"key": "auto_extract", "description": "Auto-extract facts at session end", "default": "false", "choices": ["true", "false"]},
@@ -172,8 +172,8 @@ class HolographicMemoryProvider(MemoryProvider):
         ]
 
     def initialize(self, session_id: str, **kwargs) -> None:
-        from hermes_constants import get_hermes_home
-        _hermes_home = str(get_hermes_home())
+        from superforecasting_agent.constants import get_agent_home
+        _hermes_home = str(get_agent_home())
         _default_db = _hermes_home + "/memory_store.db"
         db_path = self._config.get("db_path", _default_db)
         # Resolve fork-native and legacy home aliases against the active

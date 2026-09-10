@@ -1,5 +1,5 @@
-import { Box, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
 import { forecastQuestionDetailSections } from '../app/forecastPanel.js'

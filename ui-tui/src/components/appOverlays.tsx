@@ -1,5 +1,5 @@
-import { Box, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, Text } from '@superforecasting/ink'
 
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppOverlaysProps } from '../app/interfaces.js'

@@ -110,7 +110,7 @@ describe('MarketsView column sort', () => {
 
   const mount = async (columns: number) => {
     const [{ render }, { MarketsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/marketsView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -199,7 +199,7 @@ describe('single shortcuts row (no duplicate prose hint row)', () => {
   // Wide enough that the desk's full 11-chip FooterChips row fits on ONE line (a
   // narrower width wraps it, splitting chip labels across rows).
   const mountView = async (element: React.ReactElement, columns = 150) => {
-    const [{ render }, { stripAnsi }] = await Promise.all([import('@hermes/ink'), import('../lib/text.js')])
+    const [{ render }, { stripAnsi }] = await Promise.all([import('@superforecasting/ink'), import('../lib/text.js')])
     const stdout = writeStream(columns, 40)
     const stdin = writeStream(columns, 40, true)
     const instance = render(element, { exitOnCtrlC: false, patchConsole: false, stdin: stdin.stream, stdout: stdout.stream })

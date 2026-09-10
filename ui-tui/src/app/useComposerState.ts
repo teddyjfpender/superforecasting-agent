@@ -3,8 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { useStdin, withInkSuspended } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { useStdin, withInkSuspended } from '@superforecasting/ink'
 import { useCallback, useLayoutEffect, useMemo, useState } from 'react'
 
 import type { PasteEvent } from '../components/textInput.js'

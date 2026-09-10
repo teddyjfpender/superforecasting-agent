@@ -44,13 +44,13 @@ def _known_rule_ids() -> set[str]:
 
 
 def _save(config: dict) -> None:
-    from hermes_cli.config import save_config
+    from superforecasting_agent.runtime.config import save_config
 
     save_config(config)
 
 
 def _load() -> dict:
-    from hermes_cli.config import load_config
+    from superforecasting_agent.runtime.config import load_config
 
     return load_config()
 
@@ -104,7 +104,7 @@ def set_enabled(enabled: bool) -> dict[str, Any]:
 # ── user rules file ────────────────────────────────────────────────────────────
 def _rules_path() -> str:
     from forecasting.hooks.engine import load_hook_config
-    from hermes_cli.config import get_config_path
+    from superforecasting_agent.runtime.config import get_config_path
 
     rel = (load_hook_config().get("rules_file") or _DEFAULT_RULES_FILE)
     return os.path.join(str(get_config_path().parent), rel)
@@ -125,7 +125,7 @@ def _write_rules(rules: list[dict]) -> None:
     path = _rules_path()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
-        from utils import atomic_yaml_write
+        from superforecasting_agent.storage.files import atomic_yaml_write
 
         atomic_yaml_write(path, rules)
     except Exception:

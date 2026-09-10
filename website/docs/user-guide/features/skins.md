@@ -232,7 +232,7 @@ Hermes Mod writes to the inherited skin location by default. Use `HERMES_HOME` t
 
 ## Operational Notes
 
-- Built-in skins load from `hermes_cli/skin_engine.py`, which keeps the inherited module name for compatibility.
+- Built-in skins load from `superforecasting_agent/runtime/skin_engine.py`, which keeps the inherited module name for compatibility.
 - Unknown skins fall back to `default`.
 - `/skin` updates the active CLI theme immediately for the current session.
 - User skins under `~/.superforecasting-agent/skins/` should be preferred for new setups.

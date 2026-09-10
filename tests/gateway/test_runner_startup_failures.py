@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 from unittest.mock import AsyncMock
 
@@ -142,7 +144,9 @@ async def test_runner_records_connected_platform_state_on_success(monkeypatch, t
 
 
 @pytest.mark.asyncio
-async def test_start_gateway_verbosity_imports_redacting_formatter(monkeypatch, tmp_path):
+@pytest.mark.parametrize("outcome", ["clean", "failed", "exception"])
+@pytest.mark.parametrize("verbosity", [None, 0, 1, 2])
+async def test_start_gateway_verbosity_imports_redacting_formatter(monkeypatch, tmp_path, outcome, verbosity):
     """Verbosity != None must not crash with NameError on RedactingFormatter (#8044)."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
 
@@ -154,24 +158,44 @@ async def test_start_gateway_verbosity_imports_redacting_formatter(monkeypatch, 
             self.adapters = {}
 
         async def start(self):
-            return True
+            if outcome == "exception":
+                raise RuntimeError("fixture startup failure")
+            return outcome == "clean"
 
         async def stop(self):
             return None
 
     monkeypatch.setattr("gateway.status.get_running_pid", lambda: None)
     monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("superforecasting_agent.logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.logging._add_rotating_handler", lambda *args, **kwargs: None)
     monkeypatch.setattr("gateway.run.GatewayRunner", _CleanExitRunner)
 
     from gateway.run import start_gateway
 
-    # verbosity=1 triggers the code path that uses RedactingFormatter.
-    # Before the fix this raised NameError.
-    ok = await start_gateway(config=GatewayConfig(), replace=False, verbosity=1)
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
+    root.setLevel(logging.WARNING)
+    try:
+        if outcome == "exception":
+            with pytest.raises(RuntimeError, match="fixture startup failure"):
+                await start_gateway(config=GatewayConfig(), replace=False, verbosity=verbosity)
+        else:
+            ok = await start_gateway(config=GatewayConfig(), replace=False, verbosity=verbosity)
+            assert ok is (outcome == "clean")
+        remaining_handlers = list(root.handlers)
+        remaining_level = root.level
+    finally:
+        # Keep a failing regression from contaminating later tests.
+        for handler in list(root.handlers):
+            if handler not in original_handlers:
+                root.removeHandler(handler)
+                handler.close()
+        root.setLevel(original_level)
 
-    assert ok is True
+    assert remaining_handlers == original_handlers
+    assert remaining_level == logging.WARNING
 
 
 @pytest.mark.asyncio
@@ -211,8 +235,8 @@ async def test_start_gateway_replace_force_uses_terminate_pid(monkeypatch, tmp_p
     monkeypatch.setattr("gateway.run.os.kill", lambda pid, sig: None)
     monkeypatch.setattr("time.sleep", lambda _: None)
     monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("superforecasting_agent.logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.logging._add_rotating_handler", lambda *args, **kwargs: None)
     monkeypatch.setattr("gateway.run.GatewayRunner", _CleanExitRunner)
 
     from gateway.run import start_gateway
@@ -293,8 +317,8 @@ async def test_start_gateway_replace_writes_takeover_marker_before_sigterm(
     )
     monkeypatch.setattr("time.sleep", lambda _: None)
     monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("superforecasting_agent.logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.logging._add_rotating_handler", lambda *args, **kwargs: None)
     monkeypatch.setattr("gateway.run.GatewayRunner", _CleanExitRunner)
 
     from gateway.run import start_gateway
@@ -335,8 +359,8 @@ async def test_start_gateway_replace_clears_marker_on_permission_denied(
     monkeypatch.setattr("gateway.status.terminate_pid", raise_permission)
     monkeypatch.setattr("gateway.run.os.getpid", lambda: 100)
     monkeypatch.setattr("tools.skills_sync.sync_skills", lambda quiet=True: None)
-    monkeypatch.setattr("hermes_logging.setup_logging", lambda hermes_home, mode: tmp_path)
-    monkeypatch.setattr("hermes_logging._add_rotating_handler", lambda *args, **kwargs: None)
+    monkeypatch.setattr("superforecasting_agent.logging.setup_logging", lambda hermes_home, mode: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.logging._add_rotating_handler", lambda *args, **kwargs: None)
 
     from gateway.run import start_gateway
 

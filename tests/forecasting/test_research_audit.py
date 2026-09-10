@@ -334,7 +334,7 @@ def test_chain_respects_max_audit_rounds_zero(tmp_path, monkeypatch):
     # place would corrupt config for every later test.
     import copy
 
-    import hermes_cli.config as config
+    import superforecasting_agent.runtime.config as config
 
     real = config.load_config_readonly
 

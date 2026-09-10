@@ -13,7 +13,7 @@ import sys
 import cli as cli_mod
 from cli import ForecastCLI
 from rich.console import Console
-from utils import INTERACTIVE_ENV_NAMES
+from superforecasting_agent.environment import INTERACTIVE_ENV_NAMES
 
 
 def _run(cli: ForecastCLI, command: str) -> str:

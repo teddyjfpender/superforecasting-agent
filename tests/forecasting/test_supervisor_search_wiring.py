@@ -235,7 +235,7 @@ def test_live_default_on_fires_runner_without_any_config(home, tmp_path, monkeyp
         lambda **_k: (lambda queries: [{"title": "fresh"}]),
     )
     # Empty config (no quorum key at all) -> the code fallback must default ON.
-    import hermes_cli.config as hc
+    import superforecasting_agent.runtime.config as hc
 
     monkeypatch.setattr(hc, "load_config", lambda: {})
 
@@ -322,9 +322,9 @@ def test_gate_on_via_config_flag(home, tmp_path, monkeypatch):
     monkeypatch.setattr(
         ss, "build_supervisor_search_runner", lambda **_k: (lambda queries: [{"title": "cfg"}])
     )
-    # _supervisor_search_enabled does a function-local `from hermes_cli.config import
-    # load_config`, so the real seam is hermes_cli.config.load_config.
-    import hermes_cli.config as hc
+    # _supervisor_search_enabled does a function-local `from superforecasting_agent.runtime.config import
+    # load_config`, so the real seam is superforecasting_agent.runtime.config.load_config.
+    import superforecasting_agent.runtime.config as hc
 
     monkeypatch.setattr(hc, "load_config", lambda: {"quorum": {"supervisor_search": True}})
 

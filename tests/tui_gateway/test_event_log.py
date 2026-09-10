@@ -130,7 +130,7 @@ def test_read_events_filters_since_id_types_and_limit(tmp_path):
 
 
 def test_events_replay_rpc_end_to_end(monkeypatch):
-    # EventLog() with default root resolves get_hermes_home()/sessions, which the
+    # EventLog() with default root resolves get_agent_home()/sessions, which the
     # autouse hermetic fixture points at a per-test tempdir. Record there, then
     # replay through the real dispatcher.
     log = EL.EventLog()  # default (lazily-resolved) root

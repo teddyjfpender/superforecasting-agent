@@ -1,4 +1,4 @@
-import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { Box, Text, useInput, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { getUiState, patchUiState } from '../app/uiStore.js'

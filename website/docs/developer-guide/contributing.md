@@ -99,7 +99,7 @@ Run narrower tests for focused edits, then broaden based on blast radius. Use `n
 - **Comments**: Only when explaining non-obvious intent, trade-offs, or API quirks
 - **Error handling**: Catch specific exceptions. Use `logger.warning()`/`logger.error()` with `exc_info=True` for unexpected errors
 - **Cross-platform**: Never assume Unix (see below)
-- **Profile-safe paths**: Never hardcode `~/.hermes` unless you are explicitly documenting compatibility. Use `get_hermes_home()` from `hermes_constants` for code paths and `display_hermes_home()` for user-facing messages.
+- **Profile-safe paths**: Never hardcode `~/.hermes` unless you are explicitly documenting compatibility. Use `get_agent_home()` from `superforecasting_agent.constants` for code paths and `display_agent_home()` for user-facing messages.
 
 ## Cross-Platform Compatibility
 

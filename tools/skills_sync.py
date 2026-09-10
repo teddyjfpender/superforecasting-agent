@@ -27,14 +27,14 @@ import logging
 import os
 import shutil
 from pathlib import Path
-from hermes_constants import get_bundled_skills_dir, get_hermes_home, display_hermes_home
+from superforecasting_agent.constants import get_bundled_skills_dir, get_agent_home, display_agent_home
 from typing import Dict, List, Tuple
-from utils import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace
 
 logger = logging.getLogger(__name__)
 
 
-HERMES_HOME = get_hermes_home()
+HERMES_HOME = get_agent_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 MANIFEST_FILE = SKILLS_DIR / ".bundled_manifest"
 
@@ -416,7 +416,7 @@ def reset_bundled_skill(name: str, restore: bool = False) -> dict:
 
 
 if __name__ == "__main__":
-    print(f"Syncing bundled skills into {display_hermes_home()}/skills/ ...")
+    print(f"Syncing bundled skills into {display_agent_home()}/skills/ ...")
     result = sync_skills(quiet=False)
     parts = [
         f"{len(result['copied'])} new",

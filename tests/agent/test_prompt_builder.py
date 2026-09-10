@@ -32,7 +32,7 @@ from agent.prompt_builder import (
     PLATFORM_HINTS,
     WSL_ENVIRONMENT_HINT,
 )
-from hermes_cli.nous_subscription import NousFeatureState, NousSubscriptionFeatures
+from superforecasting_agent.runtime.nous_subscription import NousFeatureState, NousSubscriptionFeatures
 
 
 # =========================================================================
@@ -459,7 +459,7 @@ class TestBuildNousSubscriptionPrompt:
     def test_includes_active_subscription_features(self, monkeypatch):
         monkeypatch.setattr("tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: True)
         monkeypatch.setattr(
-            "hermes_cli.nous_subscription.get_nous_subscription_features",
+            "superforecasting_agent.runtime.nous_subscription.get_nous_subscription_features",
             lambda config=None: NousSubscriptionFeatures(
                 subscribed=True,
                 nous_auth_present=True,
@@ -483,7 +483,7 @@ class TestBuildNousSubscriptionPrompt:
     def test_non_subscriber_prompt_includes_relevant_upgrade_guidance(self, monkeypatch):
         monkeypatch.setattr("tools.tool_backend_helpers.managed_nous_tools_enabled", lambda: True)
         monkeypatch.setattr(
-            "hermes_cli.nous_subscription.get_nous_subscription_features",
+            "superforecasting_agent.runtime.nous_subscription.get_nous_subscription_features",
             lambda config=None: NousSubscriptionFeatures(
                 subscribed=False,
                 nous_auth_present=False,
@@ -1027,10 +1027,10 @@ class TestSoulNameInjection:
         import agent.prompt_builder as pb
         from forecasting import appconfig
         from forecasting.appconfig import AppConfig
-        from hermes_cli.default_soul import DEFAULT_SOUL_MD
+        from superforecasting_agent.runtime.default_soul import DEFAULT_SOUL_MD
 
         (tmp_path / "SOUL.md").write_text(DEFAULT_SOUL_MD, encoding="utf-8")
-        monkeypatch.setattr(pb, "get_hermes_home", lambda: tmp_path)
+        monkeypatch.setattr(pb, "get_agent_home", lambda: tmp_path)
         monkeypatch.setattr(appconfig, "_config", AppConfig(environ={"AGENT_NAME": "Ada"}, config_file={}))
 
         content = pb.load_soul_md()
@@ -1042,10 +1042,10 @@ class TestSoulNameInjection:
         import agent.prompt_builder as pb
         from forecasting import appconfig
         from forecasting.appconfig import AppConfig
-        from hermes_cli.default_soul import DEFAULT_SOUL_MD
+        from superforecasting_agent.runtime.default_soul import DEFAULT_SOUL_MD
 
         (tmp_path / "SOUL.md").write_text(DEFAULT_SOUL_MD, encoding="utf-8")
-        monkeypatch.setattr(pb, "get_hermes_home", lambda: tmp_path)
+        monkeypatch.setattr(pb, "get_agent_home", lambda: tmp_path)
         monkeypatch.setattr(appconfig, "_config", AppConfig(environ={}, config_file={}))
 
         content = pb.load_soul_md()

@@ -80,14 +80,14 @@ def test_source_tree_superforecasting_launcher_renders_forecast_help():
 def test_version_fast_path_skips_heavy_imports():
     """`superforecasting-agent --version` short-circuits in the entry shim:
     it must print version info without importing forecasting.cli (parser
-    build) or hermes_cli.main (inherited runtime)."""
+    build) or superforecasting_agent.runtime.main (inherited runtime)."""
     root = Path(__file__).resolve().parents[1]
     probe = (
         "import sys\n"
         "from superforecasting_agent.cli import main\n"
         "main(['--version'])\n"
         "assert 'forecasting.cli' not in sys.modules, 'forecasting.cli imported'\n"
-        "assert 'hermes_cli.main' not in sys.modules, 'hermes_cli.main imported'\n"
+        "assert 'superforecasting_agent.runtime.main' not in sys.modules, 'superforecasting_agent.runtime.main imported'\n"
     )
     result = subprocess.run(
         [sys.executable, "-c", probe],

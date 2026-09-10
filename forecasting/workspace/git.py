@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Callable, Iterator, Sequence
 from urllib.parse import urlparse
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.models import ValidationError
 
@@ -232,7 +232,7 @@ def _askpass_env(
 def managed_checkout_path(workspace_id: str) -> Path:
     if not _SAFE_ID.fullmatch(str(workspace_id or "")):
         raise ValidationError("workspace_id contains unsafe path characters")
-    return get_hermes_home() / "workspaces" / workspace_id / "repository"
+    return get_agent_home() / "workspaces" / workspace_id / "repository"
 
 
 __all__ = ["CredentialCallback", "GitResult", "ManagedGit", "managed_checkout_path"]

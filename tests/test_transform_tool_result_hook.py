@@ -10,8 +10,9 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import hermes_cli.plugins as plugins_mod
-import model_tools
+import superforecasting_agent.runtime.plugins as plugins_mod
+from superforecasting_agent.tooling import dispatch as tool_dispatch
+from superforecasting_agent.tooling import runtime as model_tools
 
 
 _UNSET = object()
@@ -33,11 +34,11 @@ def _run_handle_function_call(
         lambda name, args, **kw: dispatch_result,
     )
     # Skip unrelated side effects (read-loop tracker).
-    monkeypatch.setattr(model_tools, "_READ_SEARCH_TOOLS", frozenset())
+    monkeypatch.setattr(tool_dispatch, "_READ_SEARCH_TOOLS", frozenset({tool_name}))
 
     if invoke_hook is not _UNSET:
         # Patch the symbol actually imported inside handle_function_call.
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", invoke_hook)
+        monkeypatch.setattr("superforecasting_agent.runtime.plugins.invoke_hook", invoke_hook)
 
     return model_tools.handle_function_call(
         tool_name,

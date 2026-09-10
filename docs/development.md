@@ -25,10 +25,14 @@ python3 scripts/forecast_smoke_test.py     # local tester-readiness smoke test
 | Wire protocol (source of truth) | `protocol/` — pydantic models + registry |
 | Python gateway | `tui_gateway/`, `gateway/` |
 | TUI (TypeScript + Ink) | `ui-tui/src/` |
+| Runtime foundations | `superforecasting_agent/{bootstrap,constants,clock,logging}.py` |
+| Session persistence | `superforecasting_agent/storage/session.py` (`SessionDB`) with focused storage modules |
 | Agent runtime | `run_agent.py`, `agent/`, `tools/` |
 | Docs generator | `scripts/docgen/` |
 
 See [architecture.md](architecture.md) for how these fit together.
+For renamed Python modules and extension imports, see the
+[runtime layout and migration guide](architecture/runtime-layout.md).
 
 ## The gates (keep these green)
 

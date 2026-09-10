@@ -56,7 +56,7 @@ def test_workspace_clone_activates_only_after_validated_bootstrap(tmp_path, monk
             shutil.copytree(source, destination)
 
     monkeypatch.setattr(collaboration_admin, "ManagedGit", FakeGit)
-    monkeypatch.setattr(collaboration_admin, "get_hermes_home", lambda: home)
+    monkeypatch.setattr(collaboration_admin, "get_agent_home", lambda: home)
     monkeypatch.setattr(
         collaboration_admin,
         "managed_checkout_path",

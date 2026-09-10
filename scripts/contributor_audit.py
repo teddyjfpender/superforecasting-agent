@@ -15,7 +15,7 @@ Usage:
     python scripts/contributor_audit.py --since-tag v2026.4.8 --repo owner/name
 
     # Compare against a release notes file
-    python scripts/contributor_audit.py --since-tag v2026.4.8 --release-file RELEASE_v0.9.0.md
+    python scripts/contributor_audit.py --since-tag v2026.4.8 --release-file docs/releases/RELEASE_v0.9.0.md
 """
 
 import argparse

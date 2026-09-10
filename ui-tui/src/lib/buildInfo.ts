@@ -9,7 +9,7 @@ import type { BuildInfoPayload } from '../gatewayTypes.js'
 // drift between them.
 //
 // Why this exists at all: a pipx-installed build freezes its own TUI bundle
-// inside its venv (`hermes_cli/tui_dist/entry.js`), so repo-side rebuilds never
+// inside its venv (`superforecasting_agent/runtime/tui_dist/entry.js`), so repo-side rebuilds never
 // reach it. Without a version on screen an operator can run a months-old binary
 // while watching fixes land in git — which is exactly what happened.
 //

@@ -67,9 +67,9 @@ def _resolve_bot_token(team_id: str | None = None) -> str | None:
     if env:
         return env
     try:
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
 
-        path = get_hermes_home() / "slack_tokens.json"
+        path = get_agent_home() / "slack_tokens.json"
         if not path.exists():
             return None
         data = json.loads(path.read_text(encoding="utf-8"))

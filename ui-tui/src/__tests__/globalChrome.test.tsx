@@ -66,7 +66,7 @@ describe('command palette', () => {
     const ran: string[] = []
 
     const [{ Box, render }, { PaletteOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/paletteOverlay.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -168,7 +168,7 @@ describe('view chords', () => {
 describe('help overlay', () => {
   const renderHelp = async (activeView: string) => {
     const [{ Box, renderSync, Text }, { HelpOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/helpOverlay.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -247,7 +247,7 @@ describe('help overlay', () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ Box, render }, { HelpOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/helpOverlay.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -294,7 +294,7 @@ describe('help overlay', () => {
     process.env.FORECAST_TUI_INLINE = '1'
 
     const [{ Box, render }, { HelpOverlay }, { DARK_THEME }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/helpOverlay.js'),
       import('../theme.js')
     ])

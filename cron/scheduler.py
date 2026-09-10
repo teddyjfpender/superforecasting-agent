@@ -34,20 +34,20 @@ from typing import List, Optional
 # Add parent directory to path for imports BEFORE repo-level imports.
 # Without this, standalone invocations (e.g. after
 # `superforecasting-agent update` reloads the module) fail with
-# ModuleNotFoundError for hermes_time et al.
+# ModuleNotFoundError for superforecasting_agent.clock et al.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from hermes_constants import get_hermes_home
-from hermes_cli._subprocess_compat import windows_hide_flags
-from hermes_cli.model_env import (
+from superforecasting_agent.constants import get_agent_home
+from superforecasting_agent.runtime._subprocess_compat import windows_hide_flags
+from superforecasting_agent.runtime.model_env import (
     INFERENCE_MODEL_ENV_NAMES,
     INFERENCE_PROVIDER_ENV_NAMES,
     model_env,
     set_env_aliases,
 )
-from hermes_cli.config import load_config, _expand_env_vars
-from hermes_time import now as _hermes_now
-from utils import PREFILL_MESSAGES_FILE_ENV_NAMES, env_var_alias_value
+from superforecasting_agent.runtime.config import load_config, _expand_env_vars
+from superforecasting_agent.clock import now as _hermes_now
+from superforecasting_agent.environment import PREFILL_MESSAGES_FILE_ENV_NAMES, env_var_alias_value
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str] | None:
     if per_job:
         return per_job
     try:
-        from hermes_cli.tools_config import _get_platform_tools  # lazy: avoid heavy import at cron module load
+        from superforecasting_agent.runtime.tools_config import _get_platform_tools  # lazy: avoid heavy import at cron module load
         return sorted(_get_platform_tools(cfg or {}, "cron"))
     except Exception as exc:
         logger.warning(
@@ -144,14 +144,14 @@ SILENT_MARKER = "[SILENT]"
 _hermes_home: Path | None = None
 
 
-def _get_hermes_home() -> Path:
+def _get_agent_home() -> Path:
     """Resolve the active agent home while preserving test monkeypatch hooks."""
-    return _hermes_home or get_hermes_home()
+    return _hermes_home or get_agent_home()
 
 
 def _get_lock_paths() -> tuple[Path, Path]:
     """Resolve cron lock paths at call time so profile/env changes are honored."""
-    hermes_home = _get_hermes_home()
+    hermes_home = _get_agent_home()
     lock_dir = hermes_home / "cron"
     return lock_dir, lock_dir / ".tick.lock"
 
@@ -163,9 +163,9 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     Cron jobs are stored and scheduled by the profile running the scheduler, but
     an individual job can opt into a different runtime profile. While active,
     the scheduler's test/override hook and a context-local agent home override
-    both point at the resolved profile directory so _get_hermes_home(),
+    both point at the resolved profile directory so _get_agent_home(),
     .env/config loading, script resolution, AIAgent construction, and downstream
-    get_hermes_home() callers agree on the same home.
+    get_agent_home() callers agree on the same home.
 
     Some existing provider/config paths still load profile .env values through
     os.environ, so profile jobs also snapshot and restore the process
@@ -181,8 +181,8 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     prior_override = _hermes_home
     env_snapshot = os.environ.copy()
 
-    from hermes_cli.profiles import normalize_profile_name, resolve_profile_env
-    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+    from superforecasting_agent.runtime.profiles import normalize_profile_name, resolve_profile_env
+    from superforecasting_agent.constants import reset_agent_home_override, set_agent_home_override
 
     normalized_profile = normalize_profile_name(raw_profile)
     try:
@@ -198,7 +198,7 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
 
     override_token = None
     try:
-        override_token = set_hermes_home_override(profile_home)
+        override_token = set_agent_home_override(profile_home)
         _hermes_home = profile_home
         logger.info(
             "Job '%s': using agent profile '%s' (%s)",
@@ -210,7 +210,7 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     finally:
         _hermes_home = prior_override
         if override_token is not None:
-            reset_hermes_home_override(override_token)
+            reset_agent_home_override(override_token)
         # Delta-based restore: remove added keys, restore changed keys.
         # Avoids a brief window where other threads see an empty env.
         added = set(os.environ.keys()) - set(env_snapshot.keys())
@@ -251,7 +251,7 @@ def _plugin_cron_env_var(platform_name: str) -> str:
     support without editing this module.
     """
     try:
-        from hermes_cli.plugins import discover_plugins
+        from superforecasting_agent.runtime.plugins import discover_plugins
         discover_plugins()  # idempotent
         from gateway.platform_registry import platform_registry
         entry = platform_registry.get(platform_name.lower())
@@ -335,7 +335,7 @@ def _iter_home_target_platforms():
     for name in _HOME_TARGET_ENV_VARS:
         yield name
     try:
-        from hermes_cli.plugins import discover_plugins
+        from superforecasting_agent.runtime.plugins import discover_plugins
         discover_plugins()  # idempotent
         from gateway.platform_registry import platform_registry
         for entry in platform_registry.plugin_entries():
@@ -898,7 +898,7 @@ def _run_job_script(
         (success, output) — on failure *output* contains the error message so the
         LLM can report the problem to the user.
     """
-    scripts_dir = _get_hermes_home() / "scripts"
+    scripts_dir = _get_agent_home() / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
     scripts_dir_resolved = scripts_dir.resolve()
 
@@ -950,13 +950,13 @@ def _run_job_script(
         argv = [sys.executable, str(path)]
 
     run_env = os.environ.copy()
-    run_env["HERMES_HOME"] = str(_get_hermes_home())
+    run_env["HERMES_HOME"] = str(_get_agent_home())
     if str(model or "").strip():
         set_env_aliases(run_env, INFERENCE_MODEL_ENV_NAMES, model)
     if str(provider or "").strip():
         set_env_aliases(run_env, INFERENCE_PROVIDER_ENV_NAMES, provider)
     try:
-        from hermes_constants import get_subprocess_home
+        from superforecasting_agent.constants import get_subprocess_home
 
         profile_home = get_subprocess_home()
         if profile_home:
@@ -1348,7 +1348,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
     # and discoverable via session_search (same pattern as gateway/run.py).
     _session_db = None
     try:
-        from hermes_state import SessionDB
+        from superforecasting_agent.storage.session import SessionDB
         _session_db = SessionDB()
     except Exception as e:
         logger.debug("Job '%s': SQLite session store not available: %s", job.get("id", "?"), e)
@@ -1488,9 +1488,9 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
         # changes take effect without a gateway restart.
         from dotenv import load_dotenv
         try:
-            load_dotenv(str(_get_hermes_home() / ".env"), override=True, encoding="utf-8")
+            load_dotenv(str(_get_agent_home() / ".env"), override=True, encoding="utf-8")
         except UnicodeDecodeError:
-            load_dotenv(str(_get_hermes_home() / ".env"), override=True, encoding="latin-1")
+            load_dotenv(str(_get_agent_home() / ".env"), override=True, encoding="latin-1")
 
         delivery_target = _resolve_delivery_target(job)
         if delivery_target:
@@ -1508,7 +1508,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
         _cfg = {}
         try:
             import yaml
-            _cfg_path = str(_get_hermes_home() / "config.yaml")
+            _cfg_path = str(_get_agent_home() / "config.yaml")
             if os.path.exists(_cfg_path):
                 with open(_cfg_path, encoding="utf-8") as _f:
                     _cfg = yaml.safe_load(_f) or {}
@@ -1524,7 +1524,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
 
         # Apply IPv4 preference if configured.
         try:
-            from hermes_constants import apply_ipv4_preference
+            from superforecasting_agent.constants import apply_ipv4_preference
             _net_cfg = _cfg.get("network", {})
             if isinstance(_net_cfg, dict) and _net_cfg.get("force_ipv4"):
                 apply_ipv4_preference(force=True)
@@ -1532,7 +1532,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
             pass
 
         # Reasoning config from config.yaml
-        from hermes_constants import parse_reasoning_effort
+        from superforecasting_agent.constants import parse_reasoning_effort
         effort = str(_cfg.get("agent", {}).get("reasoning_effort", "")).strip()
         reasoning_config = parse_reasoning_effort(effort)
 
@@ -1545,7 +1545,7 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
         if prefill_file:
             pfpath = Path(prefill_file).expanduser()
             if not pfpath.is_absolute():
-                pfpath = _get_hermes_home() / pfpath
+                pfpath = _get_agent_home() / pfpath
             if pfpath.exists():
                 try:
                     with open(pfpath, "r", encoding="utf-8") as _pf:
@@ -1562,11 +1562,11 @@ def _run_job_impl(job: dict) -> tuple[bool, str, str, Optional[str]]:
         # Provider routing
         pr = _cfg.get("provider_routing", {})
 
-        from hermes_cli.runtime_provider import (
+        from superforecasting_agent.runtime.runtime_provider import (
             resolve_runtime_provider,
             format_runtime_provider_error,
         )
-        from hermes_cli.auth import AuthError
+        from superforecasting_agent.runtime.auth import AuthError
         try:
             # Do not inject HERMES_INFERENCE_PROVIDER here. resolve_runtime_provider()
             # already prefers persisted config over stale shell/env overrides when

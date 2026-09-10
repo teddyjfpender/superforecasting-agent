@@ -22,7 +22,7 @@ if os.name == "nt":
 else:
     import fcntl
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.jobs.model import JobRecord, _now_iso
 
@@ -91,7 +91,7 @@ def _legacy_type(data: dict, default_type: str) -> str:
 class JobStore:
     """Read/write/list JobRecords under ``{home}/jobs/``.
 
-    ``home`` is resolved LAZILY (per call) from :func:`get_hermes_home` when not
+    ``home`` is resolved LAZILY (per call) from :func:`get_agent_home` when not
     pinned, so a test's per-test ``HERMES_HOME`` and a subprocess's propagated
     home are both honoured — matching the legacy job stores.
     """
@@ -101,7 +101,7 @@ class JobStore:
 
     # ── paths ────────────────────────────────────────────────────────────────
     def _base(self) -> Path:
-        return self._home if self._home is not None else get_hermes_home()
+        return self._home if self._home is not None else get_agent_home()
 
     def jobs_dir(self) -> Path:
         path = self._base() / "jobs"

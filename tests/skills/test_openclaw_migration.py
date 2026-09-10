@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+
+import pytest
 from pathlib import Path
 
 
@@ -12,12 +14,12 @@ SCRIPT_PATH = (
     / "migration"
     / "openclaw-migration"
     / "scripts"
-    / "openclaw_to_hermes.py"
+    / "openclaw_to_forecast.py"
 )
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("openclaw_to_hermes", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location("openclaw_to_forecast", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -180,13 +182,14 @@ def test_migrator_optionally_imports_supported_secrets_and_messaging_settings(tm
     migrator.migrate()
 
     env_text = (target / ".env").read_text(encoding="utf-8")
-    assert "MESSAGING_CWD=/tmp/openclaw-workspace" in env_text
+    assert "MESSAGING_CWD" not in env_text
+    assert mod.load_yaml_file(target / "config.yaml")["terminal"]["cwd"] == "/tmp/openclaw-workspace"
     assert "TELEGRAM_ALLOWED_USERS=111,222" in env_text
     assert "TELEGRAM_BOT_TOKEN=123:abc" in env_text
 
 
 def test_messaging_cwd_skipped_when_inside_source(tmp_path: Path):
-    """MESSAGING_CWD pointing inside the OpenClaw source dir should be skipped."""
+    """Workspace settings pointing inside the OpenClaw source should be skipped."""
     mod = load_module()
     source = tmp_path / ".openclaw"
     target = tmp_path / ".hermes"
@@ -212,6 +215,7 @@ def test_messaging_cwd_skipped_when_inside_source(tmp_path: Path):
     )
     migrator.migrate()
 
+    assert not (target / "config.yaml").exists()
     env_path = target / ".env"
     if env_path.exists():
         assert "MESSAGING_CWD" not in env_path.read_text(encoding="utf-8")
@@ -483,7 +487,8 @@ def test_migrator_can_overwrite_conflicting_imported_skill_with_backup(tmp_path:
     assert any(item["details"].get("backup") for item in backup_items)
 
 
-def test_discord_settings_migrated(tmp_path: Path):
+@pytest.mark.parametrize("migrate_secrets", [False, True])
+def test_discord_settings_migrated(tmp_path: Path, migrate_secrets):
     """Discord bot token and allowlist migrate to .env."""
     mod = load_module()
     source = tmp_path / ".openclaw"
@@ -505,16 +510,17 @@ def test_discord_settings_migrated(tmp_path: Path):
 
     migrator = mod.Migrator(
         source_root=source, target_root=target, execute=True,
-        workspace_target=None, overwrite=False, migrate_secrets=False, output_dir=None,
+        workspace_target=None, overwrite=False, migrate_secrets=migrate_secrets, output_dir=None,
         selected_options={"discord-settings"},
     )
     report = migrator.migrate()
     env_text = (target / ".env").read_text(encoding="utf-8")
-    assert "DISCORD_BOT_TOKEN=discord-bot-token-123" in env_text
+    assert ("DISCORD_BOT_TOKEN=discord-bot-token-123" in env_text) is migrate_secrets
     assert "DISCORD_ALLOWED_USERS=111222333,444555666" in env_text
 
 
-def test_slack_settings_migrated(tmp_path: Path):
+@pytest.mark.parametrize("migrate_secrets", [False, True])
+def test_slack_settings_migrated(tmp_path: Path, migrate_secrets):
     """Slack bot/app tokens and allowlist migrate to .env."""
     mod = load_module()
     source = tmp_path / ".openclaw"
@@ -537,13 +543,13 @@ def test_slack_settings_migrated(tmp_path: Path):
 
     migrator = mod.Migrator(
         source_root=source, target_root=target, execute=True,
-        workspace_target=None, overwrite=False, migrate_secrets=False, output_dir=None,
+        workspace_target=None, overwrite=False, migrate_secrets=migrate_secrets, output_dir=None,
         selected_options={"slack-settings"},
     )
     report = migrator.migrate()
     env_text = (target / ".env").read_text(encoding="utf-8")
-    assert "SLACK_BOT_TOKEN=xoxb-slack-bot" in env_text
-    assert "SLACK_APP_TOKEN=xapp-slack-app" in env_text
+    assert ("SLACK_BOT_TOKEN=xoxb-slack-bot" in env_text) is migrate_secrets
+    assert ("SLACK_APP_TOKEN=xapp-slack-app" in env_text) is migrate_secrets
     assert "SLACK_ALLOWED_USERS=U111,U222" in env_text
 
 
@@ -1107,3 +1113,18 @@ def test_migrate_model_config_no_catalog_leaves_value_alone(tmp_path: Path):
         {"agents": {"defaults": {"model": "some-model-id"}}},
     )
     assert _extract_model(parsed) == "some-model-id"
+
+
+def test_legacy_launcher_loads_in_fresh_standalone_process(tmp_path):
+    import subprocess
+
+    loader = SCRIPT_PATH.parents[4] / "superforecasting_agent" / "runtime" / "openclaw_loader.py"
+    result = subprocess.run(
+        [sys.executable, "-S", "-c",
+         "import runpy, sys; from pathlib import Path; "
+         "load = runpy.run_path(sys.argv[1])['load_migration_module']; "
+         "mod = load(Path(sys.argv[2])); assert callable(mod.Migrator)",
+         str(loader), str(SCRIPT_PATH.with_name("openclaw_to_hermes.py"))],
+        cwd=tmp_path, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr

@@ -17,7 +17,7 @@ const mk = (cols: number, rows: number) => {
 describe('ModalOverlay', () => {
   it('paints an absolute box with a title + content + footer over a body', async () => {
     const [{ Box, renderSync, Text }, { ModalOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/modalOverlay.js'),
       import('../theme.js'),
       import('../lib/text.js'),

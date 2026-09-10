@@ -11,7 +11,7 @@ const BACKEND =
 
 /**
  * In production the Python `superforecasting-agent dashboard` server injects a one-shot
- * session token into `index.html` (see `hermes_cli/web_server.py`). The
+ * session token into `index.html` (see `superforecasting_agent/runtime/web_server.py`). The
  * Vite dev server serves its own `index.html`, so unless we forward that
  * token, every protected `/api/*` call 401s.
  *
@@ -122,7 +122,7 @@ export default defineConfig({
     ],
   },
   build: {
-    outDir: "../hermes_cli/web_dist",
+    outDir: "../superforecasting_agent/runtime/web_dist",
     emptyOutDir: true,
   },
   server: {

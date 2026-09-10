@@ -1,5 +1,5 @@
 """
-Tests for timezone support (hermes_time module + integration points).
+Tests for timezone support (superforecasting_agent.clock module + integration points).
 
 Covers:
   - Valid timezone applies correctly
@@ -17,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import patch, MagicMock
 from zoneinfo import ZoneInfo
 
-import hermes_time
+import superforecasting_agent.clock
 
 _TIMEZONE_ENV_NAMES = (
     "SUPERFORECASTING_AGENT_TIMEZONE",
@@ -26,11 +26,11 @@ _TIMEZONE_ENV_NAMES = (
 )
 
 
-def _reset_hermes_time_cache():
-    """Reset the hermes_time module cache (replacement for removed reset_cache)."""
-    hermes_time._cached_tz = None
-    hermes_time._cached_tz_name = None
-    hermes_time._cache_resolved = False
+def _reset_product_clock_cache():
+    """Reset the superforecasting_agent.clock module cache (replacement for removed reset_cache)."""
+    superforecasting_agent.clock._cached_tz = None
+    superforecasting_agent.clock._cached_tz_name = None
+    superforecasting_agent.clock._cache_resolved = False
 
 
 def _clear_timezone_env():
@@ -39,23 +39,23 @@ def _clear_timezone_env():
 
 
 # =========================================================================
-# hermes_time.now() — core helper
+# superforecasting_agent.clock.now() — core helper
 # =========================================================================
 
 class TestHermesTimeNow:
     """Test the timezone-aware now() helper."""
 
     def setup_method(self):
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
     def teardown_method(self):
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
         _clear_timezone_env()
 
     def test_valid_timezone_applies(self):
         """With a valid IANA timezone, now() returns time in that zone."""
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        result = hermes_time.now()
+        result = superforecasting_agent.clock.now()
         assert result.tzinfo is not None
         # IST is UTC+5:30
         offset = result.utcoffset()
@@ -64,13 +64,13 @@ class TestHermesTimeNow:
     def test_utc_timezone(self):
         """UTC timezone works."""
         os.environ["HERMES_TIMEZONE"] = "UTC"
-        result = hermes_time.now()
+        result = superforecasting_agent.clock.now()
         assert result.utcoffset() == timedelta(0)
 
     def test_us_eastern(self):
         """US/Eastern timezone works (DST-aware zone)."""
         os.environ["HERMES_TIMEZONE"] = "America/New_York"
-        result = hermes_time.now()
+        result = superforecasting_agent.clock.now()
         assert result.tzinfo is not None
         # Offset is -5h or -4h depending on DST
         offset_hours = result.utcoffset().total_seconds() / 3600
@@ -80,7 +80,7 @@ class TestHermesTimeNow:
         """Forecast-native timezone alias wins over legacy env."""
         os.environ["SUPERFORECASTING_AGENT_TIMEZONE"] = "Europe/London"
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        result = hermes_time.now()
+        result = superforecasting_agent.clock.now()
         assert result.tzinfo is not None
         assert str(result.tzinfo) == "Europe/London"
 
@@ -88,14 +88,14 @@ class TestHermesTimeNow:
         """Short forecast timezone alias wins when the long alias is unset."""
         os.environ["FORECAST_TIMEZONE"] = "UTC"
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        result = hermes_time.now()
+        result = superforecasting_agent.clock.now()
         assert result.utcoffset() == timedelta(0)
 
     def test_invalid_timezone_falls_back(self, caplog):
         """Invalid timezone logs warning and falls back to server-local."""
         os.environ["HERMES_TIMEZONE"] = "Mars/Olympus_Mons"
-        with caplog.at_level(logging.WARNING, logger="hermes_time"):
-            result = hermes_time.now()
+        with caplog.at_level(logging.WARNING, logger="superforecasting_agent.clock"):
+            result = superforecasting_agent.clock.now()
         assert result.tzinfo is not None  # Still tz-aware (server-local)
         assert "Invalid timezone" in caplog.text
         assert "Mars/Olympus_Mons" in caplog.text
@@ -103,13 +103,13 @@ class TestHermesTimeNow:
     def test_empty_timezone_uses_local(self):
         """No timezone configured → server-local time (still tz-aware)."""
         _clear_timezone_env()
-        result = hermes_time.now()
+        result = superforecasting_agent.clock.now()
         assert result.tzinfo is not None
 
     def test_format_unchanged(self):
         """Timestamp formatting matches original strftime pattern."""
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        result = hermes_time.now()
+        result = superforecasting_agent.clock.now()
         formatted = result.strftime("%A, %B %d, %Y %I:%M %p")
         # Should produce something like "Monday, March 03, 2026 05:30 PM"
         assert len(formatted) > 10
@@ -119,13 +119,13 @@ class TestHermesTimeNow:
     def test_cache_invalidation(self):
         """Changing env var + reset_cache picks up new timezone."""
         os.environ["HERMES_TIMEZONE"] = "UTC"
-        _reset_hermes_time_cache()
-        r1 = hermes_time.now()
+        _reset_product_clock_cache()
+        r1 = superforecasting_agent.clock.now()
         assert r1.utcoffset() == timedelta(0)
 
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        _reset_hermes_time_cache()
-        r2 = hermes_time.now()
+        _reset_product_clock_cache()
+        r2 = superforecasting_agent.clock.now()
         assert r2.utcoffset() == timedelta(hours=5, minutes=30)
 
 
@@ -133,26 +133,26 @@ class TestGetTimezone:
     """Test get_timezone()."""
 
     def setup_method(self):
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
     def teardown_method(self):
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
         _clear_timezone_env()
 
     def test_returns_zoneinfo_for_valid(self):
         os.environ["HERMES_TIMEZONE"] = "Europe/London"
-        tz = hermes_time.get_timezone()
+        tz = superforecasting_agent.clock.get_timezone()
         assert isinstance(tz, ZoneInfo)
         assert str(tz) == "Europe/London"
 
     def test_returns_none_for_empty(self):
         _clear_timezone_env()
-        tz = hermes_time.get_timezone()
+        tz = superforecasting_agent.clock.get_timezone()
         assert tz is None
 
     def test_returns_none_for_invalid(self):
         os.environ["HERMES_TIMEZONE"] = "Not/A/Timezone"
-        tz = hermes_time.get_timezone()
+        tz = superforecasting_agent.clock.get_timezone()
         assert tz is None
 
 
@@ -202,7 +202,7 @@ class TestCodeExecutionTZ:
             'print("TZ=" + os.environ.get("TZ", "NOT_SET")); '
             'print("HERMES_TIMEZONE=" + os.environ.get("HERMES_TIMEZONE", "NOT_SET"))'
         )
-        with patch("model_tools.handle_function_call", side_effect=self._mock_handle):
+        with patch("superforecasting_agent.tooling.runtime.handle_function_call", side_effect=self._mock_handle):
             result = _json.loads(self._execute_code(
                 code=probe,
                 task_id="tz-combined-test",
@@ -226,7 +226,7 @@ class TestCodeExecutionTZ:
             'print("SUPERFORECASTING_AGENT_TIMEZONE=" + '
             'os.environ.get("SUPERFORECASTING_AGENT_TIMEZONE", "NOT_SET"))'
         )
-        with patch("model_tools.handle_function_call", side_effect=self._mock_handle):
+        with patch("superforecasting_agent.tooling.runtime.handle_function_call", side_effect=self._mock_handle):
             result = _json.loads(self._execute_code(
                 code=probe,
                 task_id="tz-forecast-alias-test",
@@ -241,7 +241,7 @@ class TestCodeExecutionTZ:
         import json as _json
         _clear_timezone_env()
 
-        with patch("model_tools.handle_function_call", side_effect=self._mock_handle):
+        with patch("superforecasting_agent.tooling.runtime.handle_function_call", side_effect=self._mock_handle):
             result = _json.loads(self._execute_code(
                 code='import os; print(os.environ.get("TZ", "NOT_SET"))',
                 task_id="tz-test-empty",
@@ -259,10 +259,10 @@ class TestCronTimezone:
     """Verify cron paths use timezone-aware now()."""
 
     def setup_method(self):
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
     def teardown_method(self):
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
         _clear_timezone_env()
 
     def test_parse_schedule_duration_uses_tz_aware_now(self):
@@ -291,7 +291,7 @@ class TestCronTimezone:
         monkeypatch.setattr(jobs_module, "OUTPUT_DIR", tmp_path / "cron" / "output")
 
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
         # Create a job with a NAIVE past timestamp (simulating pre-tz data)
         from cron.jobs import create_job, load_jobs, save_jobs, get_due_jobs
@@ -316,7 +316,7 @@ class TestCronTimezone:
         from cron.jobs import _ensure_aware
 
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
         # Create a naive datetime — will be interpreted as system-local time
         naive_dt = datetime(2026, 3, 11, 12, 0, 0)
@@ -340,7 +340,7 @@ class TestCronTimezone:
         from cron.jobs import _ensure_aware
 
         os.environ["HERMES_TIMEZONE"] = "Asia/Kolkata"
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
         # Create an aware datetime in UTC
         utc_dt = datetime(2026, 3, 11, 15, 0, 0, tzinfo=timezone.utc)
@@ -366,7 +366,7 @@ class TestCronTimezone:
         monkeypatch.setattr(jobs_module, "OUTPUT_DIR", tmp_path / "cron" / "output")
 
         os.environ["HERMES_TIMEZONE"] = "UTC"
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
         from cron.jobs import create_job, load_jobs, save_jobs, get_due_jobs
 
@@ -397,7 +397,7 @@ class TestCronTimezone:
         # of the naive timestamp exceeds _hermes_now's wall time — this would
         # have caused a false "not due" with the old replace(tzinfo=...) approach.
         os.environ["HERMES_TIMEZONE"] = "Pacific/Midway"  # UTC-11
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
         from cron.jobs import create_job, load_jobs, save_jobs, get_due_jobs
         create_job(prompt="Cross-tz job", schedule="every 1h")
@@ -421,7 +421,7 @@ class TestCronTimezone:
         monkeypatch.setattr(jobs_module, "OUTPUT_DIR", tmp_path / "cron" / "output")
 
         os.environ["HERMES_TIMEZONE"] = "US/Eastern"
-        _reset_hermes_time_cache()
+        _reset_product_clock_cache()
 
         from cron.jobs import create_job
         job = create_job(prompt="TZ test", schedule="every 2h")

@@ -184,7 +184,7 @@ def test_gateway_wires_signed_github_ingress_before_connect(tmp_path, monkeypatc
             "repository": {"slug": "acme/forecasts", "workspace_id": "desk_1"},
         }
     }
-    monkeypatch.setattr("hermes_cli.config.load_config", lambda: config)
+    monkeypatch.setattr("superforecasting_agent.runtime.config.load_config", lambda: config)
     monkeypatch.setattr("forecasting.ForecastLedger", lambda: ledger)
     monkeypatch.setenv("GITHUB_WEBHOOK_SECRET", "webhook-secret")
     captured = {}

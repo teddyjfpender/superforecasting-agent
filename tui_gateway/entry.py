@@ -16,7 +16,7 @@ def _stop_audio_playback() -> None:
     except Exception:
         pass
     try:
-        from hermes_cli.voice import stop_continuous
+        from superforecasting_agent.runtime.voice import stop_continuous
 
         stop_continuous()
     except Exception:
@@ -358,12 +358,14 @@ def main():
         _run_http(http_cfg)
         return
 
+    server.start_build_check()
+
     _install_sidecar_publisher()
     _install_event_log()
 
     # MCP tool discovery — inline is safe here: TUI entry is a plain
     # sync loop with no asyncio event loop to block.  Previously ran as
-    # a model_tools.py module-level side effect; moved to explicit
+    # a superforecasting_agent/tooling/runtime.py module-level side effect; moved to explicit
     # startup calls to avoid freezing the gateway's loop on lazy import
     # (#16856).
     #
@@ -376,7 +378,7 @@ def main():
     # loaded once by ``_config_mtime`` elsewhere) and only pay the import
     # cost when there's actually MCP work to do.
     try:
-        from hermes_cli.config import read_raw_config
+        from superforecasting_agent.runtime.config import read_raw_config
         _mcp_servers = (read_raw_config() or {}).get("mcp_servers")
         _has_mcp_servers = isinstance(_mcp_servers, dict) and len(_mcp_servers) > 0
     except Exception:

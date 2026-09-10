@@ -92,7 +92,7 @@ const fakeGw = (status: unknown) => {
 
 const mount = async (status: unknown) => {
   const [{ render }, { ScheduleStrip }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/scheduleStrip.js'),
     import('../theme.js'),
     import('../lib/text.js')

@@ -30,15 +30,16 @@ from concurrent.futures import (
 )
 from typing import Any, Dict, List, Optional
 
-from toolsets import TOOLSETS
+from superforecasting_agent.tooling.toolsets import TOOLSETS
 
 # Sentinel value used by the runtime provider system for providers that are
 # not natively known (named custom providers, third-party aggregators, etc.).
-# Must match hermes_cli.runtime_provider.RUNTIME_PROVIDER_TYPE_CUSTOM.
+# Must match superforecasting_agent.runtime.runtime_provider.RUNTIME_PROVIDER_TYPE_CUSTOM.
 _RUNTIME_PROVIDER_CUSTOM = "custom"
 from tools import file_state
 from tools.terminal_tool import set_approval_callback as _set_subagent_approval_cb
-from utils import base_url_hostname, is_truthy_value
+from superforecasting_agent.urls import base_url_hostname
+from superforecasting_agent.environment import is_truthy_value
 
 
 # Tools that children must never have access to
@@ -978,7 +979,7 @@ def _build_child_agent(
         parent_toolsets = set(parent_enabled)
     elif parent_agent and hasattr(parent_agent, "valid_tool_names"):
         # enabled_toolsets is None (all tools) — derive from loaded tool names
-        import model_tools
+        from superforecasting_agent.tooling import runtime as model_tools
 
         parent_toolsets = {
             ts
@@ -1109,7 +1110,7 @@ def _build_child_agent(
     try:
         delegation_effort = str(delegation_cfg.get("reasoning_effort") or "").strip()
         if delegation_effort:
-            from hermes_constants import parse_reasoning_effort
+            from superforecasting_agent.constants import parse_reasoning_effort
 
             parsed = parse_reasoning_effort(delegation_effort)
             if parsed is not None:
@@ -1245,12 +1246,12 @@ def _dump_subagent_timeout_diagnostic(
     Returns the absolute path to the diagnostic file, or None on failure.
     """
     try:
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
         import datetime as _dt
         import sys as _sys
         import traceback as _traceback
 
-        hermes_home = get_hermes_home()
+        hermes_home = get_agent_home()
         logs_dir = hermes_home / "logs"
         try:
             logs_dir.mkdir(parents=True, exist_ok=True)
@@ -1379,10 +1380,10 @@ def _spill_summary_to_file(task_index: int, summary: str) -> Optional[str]:
     the trimmed head+tail is still returned to the parent regardless).
     """
     try:
-        from hermes_constants import get_hermes_dir
+        from superforecasting_agent.constants import get_agent_dir
         import datetime as _dt
 
-        cache_dir = get_hermes_dir("cache/delegation", "delegation_cache")
+        cache_dir = get_agent_dir("cache/delegation", "delegation_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
         ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         path = cache_dir / f"subagent-summary-{task_index}-{ts}.txt"
@@ -1566,10 +1567,10 @@ def _run_single_child(
 
     # Restore parent tool names using the value saved before child construction
     # mutated the global. This is the correct parent toolset, not the child's.
-    import model_tools
+    from superforecasting_agent.tooling import runtime as model_tools
 
     _saved_tool_names = getattr(
-        child, "_delegate_saved_tool_names", list(model_tools._last_resolved_tool_names)
+        child, "_delegate_saved_tool_names", list(model_tools.definitions._last_resolved_tool_names)
     )
 
     child_pool = getattr(child, "_credential_pool", None)
@@ -2092,11 +2093,11 @@ def _run_single_child(
 
         # Restore the parent's tool names so the process-global is correct
         # for any subsequent execute_code calls or other consumers.
-        import model_tools
+        from superforecasting_agent.tooling import runtime as model_tools
 
         saved_tool_names = getattr(child, "_delegate_saved_tool_names", None)
         if isinstance(saved_tool_names, list):
-            model_tools._last_resolved_tool_names = list(saved_tool_names)
+            model_tools.definitions._last_resolved_tool_names = list(saved_tool_names)
 
         # Remove child from active tracking
 
@@ -2287,10 +2288,10 @@ def delegate_task(
 
     # Save parent tool names BEFORE any child construction mutates the global.
     # _build_child_agent() calls AIAgent() which calls get_tool_definitions(),
-    # which overwrites model_tools._last_resolved_tool_names with child's toolset.
-    import model_tools as _model_tools
+    # which overwrites model_tools.definitions._last_resolved_tool_names with child's toolset.
+    from superforecasting_agent.tooling import runtime as _model_tools
 
-    _parent_tool_names = list(_model_tools._last_resolved_tool_names)
+    _parent_tool_names = list(_model_tools.definitions._last_resolved_tool_names)
 
     # Build all child agents on the main thread (thread-safe construction)
     # Wrapped in try/finally so the global is always restored even if a
@@ -2330,7 +2331,7 @@ def delegate_task(
             children.append((i, t, child))
     finally:
         # Authoritative restore: reset global to parent's tool names after all children built
-        _model_tools._last_resolved_tool_names = _parent_tool_names
+        _model_tools.definitions._last_resolved_tool_names = _parent_tool_names
 
     if n_tasks == 1:
         # Single task -- run directly (no thread pool overhead)
@@ -2599,7 +2600,7 @@ def delegate_task(
     # child was closed.
     _parent_session_id = getattr(parent_agent, "session_id", None)
     try:
-        from hermes_cli.plugins import invoke_hook as _invoke_hook
+        from superforecasting_agent.runtime.plugins import invoke_hook as _invoke_hook
     except Exception:
         _invoke_hook = None
     # Aggregate child spend here so the parent's footer/UI reflect the true
@@ -2738,7 +2739,7 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
         # proxies — pick the right transport automatically. Without this,
         # subagents would default to chat_completions and hit 404s on endpoints
         # that only speak the Anthropic Messages protocol. Fixes #10213.
-        from hermes_cli.runtime_provider import _detect_api_mode_for_url
+        from superforecasting_agent.runtime.runtime_provider import _detect_api_mode_for_url
 
         base_lower = configured_base_url.lower()
         provider = "custom"
@@ -2781,7 +2782,7 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
 
     # Provider is configured — resolve full credentials
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
         runtime = resolve_runtime_provider(requested=configured_provider, target_model=configured_model)
     except Exception as exc:
@@ -2796,8 +2797,8 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     if not api_key:
         # Context-aware auth hint: inside the gateway/TUI the user must use the
         # in-TUI `/auth` slash command, not the shell command (see
-        # hermes_cli.auth._auth_command_hint).
-        from hermes_cli.auth import _auth_command_hint
+        # superforecasting_agent.runtime.auth._auth_command_hint).
+        from superforecasting_agent.runtime.auth import _auth_command_hint
 
         raise ValueError(
             f"Delegation provider '{configured_provider}' resolved but has no API key. "
@@ -2819,7 +2820,7 @@ def _load_config() -> dict:
     """Load delegation config from CLI_CONFIG or persistent config.
 
     Checks the runtime config (cli.py CLI_CONFIG) first, then falls back
-    to the persistent config (hermes_cli/config.py load_config()) so that
+    to the persistent config (superforecasting_agent/runtime/config.py load_config()) so that
     ``delegation.model`` / ``delegation.provider`` are picked up regardless
     of the entry point (CLI, gateway, cron).
     """
@@ -2832,7 +2833,7 @@ def _load_config() -> dict:
     except Exception:
         pass
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         full = load_config()
         return full.get("delegation") or {}

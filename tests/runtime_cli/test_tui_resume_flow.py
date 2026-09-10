@@ -1,0 +1,882 @@
+from argparse import Namespace
+from pathlib import Path
+import sys
+import types
+
+import pytest
+
+
+def _args(**overrides):
+    base = {
+        "continue_last": None,
+        "model": None,
+        "provider": None,
+        "resume": None,
+        "toolsets": None,
+        "tui": True,
+        "tui_dev": False,
+    }
+    base.update(overrides)
+    return Namespace(**base)
+
+
+@pytest.fixture
+def main_mod(monkeypatch):
+    import superforecasting_agent.runtime.main as mod
+
+    monkeypatch.setattr(mod, "_has_any_provider_configured", lambda: True)
+    return mod
+
+
+def test_cmd_chat_tui_continue_uses_latest_tui_session(monkeypatch, main_mod):
+    calls = []
+    captured = {}
+
+    def fake_resolve_last(source="cli"):
+        calls.append(source)
+        return "20260408_235959_a1b2c3" if source == "tui" else None
+
+    def fake_launch(
+        resume_session_id=None,
+        tui_dev=False,
+        model=None,
+        provider=None,
+        toolsets=None,
+        **kwargs,
+    ):
+        captured["resume"] = resume_session_id
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_mod, "_resolve_last_session", fake_resolve_last)
+    monkeypatch.setattr(main_mod, "_resolve_session_by_name_or_id", lambda val: val)
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(_args(continue_last=True))
+
+    assert calls == ["tui"]
+    assert captured["resume"] == "20260408_235959_a1b2c3"
+
+
+def test_cmd_chat_tui_continue_falls_back_to_latest_cli_session(monkeypatch, main_mod):
+    calls = []
+    captured = {}
+
+    def fake_resolve_last(source="cli"):
+        calls.append(source)
+        if source == "tui":
+            return None
+        if source == "cli":
+            return "20260408_235959_d4e5f6"
+        return None
+
+    def fake_launch(
+        resume_session_id=None,
+        tui_dev=False,
+        model=None,
+        provider=None,
+        toolsets=None,
+        **kwargs,
+    ):
+        captured["resume"] = resume_session_id
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_mod, "_resolve_last_session", fake_resolve_last)
+    monkeypatch.setattr(main_mod, "_resolve_session_by_name_or_id", lambda val: val)
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(_args(continue_last=True))
+
+    assert calls == ["tui", "cli"]
+    assert captured["resume"] == "20260408_235959_d4e5f6"
+
+
+def test_cmd_chat_tui_resume_resolves_title_before_launch(monkeypatch, main_mod):
+    captured = {}
+
+    def fake_launch(
+        resume_session_id=None,
+        tui_dev=False,
+        model=None,
+        provider=None,
+        toolsets=None,
+        **kwargs,
+    ):
+        captured["resume"] = resume_session_id
+        raise SystemExit(0)
+
+    monkeypatch.setattr(
+        main_mod, "_resolve_session_by_name_or_id", lambda val: "20260409_000000_aa11bb"
+    )
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(_args(resume="my t0p session"))
+
+    assert captured["resume"] == "20260409_000000_aa11bb"
+
+
+def test_cmd_chat_accepts_forecast_tui_env_alias(monkeypatch, main_mod):
+    captured = {}
+
+    def fake_launch(resume_session_id=None, **kwargs):
+        captured["resume"] = resume_session_id
+        captured.update(kwargs)
+        raise SystemExit(0)
+
+    monkeypatch.setenv("FORECAST_TUI", "1")
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(_args(tui=False))
+
+    assert captured["tui_dev"] is False
+
+
+def test_cmd_chat_tui_passes_model_and_provider(monkeypatch, main_mod):
+    captured = {}
+
+    def fake_launch(
+        resume_session_id=None,
+        tui_dev=False,
+        model=None,
+        provider=None,
+        toolsets=None,
+        **kwargs,
+    ):
+        captured.update(
+            {
+                "model": model,
+                "provider": provider,
+                "resume": resume_session_id,
+                "toolsets": toolsets,
+                "tui_dev": tui_dev,
+            }
+        )
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(
+            _args(model="anthropic/claude-sonnet-4.6", provider="anthropic")
+        )
+
+    assert captured == {
+        "model": "anthropic/claude-sonnet-4.6",
+        "provider": "anthropic",
+        "resume": None,
+        "toolsets": None,
+        "tui_dev": False,
+    }
+
+
+def test_cmd_chat_tui_passes_toolsets(monkeypatch, main_mod):
+    captured = {}
+
+    def fake_launch(
+        resume_session_id=None,
+        tui_dev=False,
+        model=None,
+        provider=None,
+        toolsets=None,
+        **kwargs,
+    ):
+        captured["toolsets"] = toolsets
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(_args(toolsets="web,terminal"))
+
+    assert captured["toolsets"] == "web,terminal"
+
+
+def test_cmd_chat_tui_forwards_chat_flags(monkeypatch, main_mod):
+    captured = {}
+
+    def fake_launch(resume_session_id=None, **kwargs):
+        captured["resume_session_id"] = resume_session_id
+        captured.update(kwargs)
+        raise SystemExit(0)
+
+    monkeypatch.setattr(main_mod, "_launch_tui", fake_launch)
+
+    with pytest.raises(SystemExit):
+        main_mod.cmd_chat(
+            _args(
+                skills=["foo,bar"],
+                verbose=True,
+                quiet=True,
+                query="hello",
+                image="/tmp/cat.png",
+                worktree=True,
+                checkpoints=True,
+                pass_session_id=True,
+                max_turns=7,
+                accept_hooks=True,
+            )
+        )
+
+    assert captured["skills"] == ["foo,bar"]
+    assert captured["verbose"] is True
+    assert captured["quiet"] is True
+    assert captured["query"] == "hello"
+    assert captured["image"] == "/tmp/cat.png"
+    assert captured["worktree"] is True
+    assert captured["checkpoints"] is True
+    assert captured["pass_session_id"] is True
+    assert captured["max_turns"] == 7
+    assert captured["accept_hooks"] is True
+
+
+def test_main_top_level_tui_accepts_toolsets(monkeypatch, main_mod):
+    captured = {}
+
+    import superforecasting_agent.runtime.config as config_mod
+
+    monkeypatch.setattr(sys, "argv", ["hermes", "--tui", "--toolsets", "web,terminal"])
+    monkeypatch.setattr(config_mod, "get_container_exec_info", lambda: None)
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime._parser",
+        types.SimpleNamespace(
+            build_top_level_parser=lambda: (_ for _ in ()).throw(
+                AssertionError("top-level --tui should bypass full parser setup")
+            )
+        ),
+    )
+    monkeypatch.setattr(
+        main_mod,
+        "cmd_chat",
+        lambda _args: (_ for _ in ()).throw(AssertionError("cmd_chat should not run")),
+    )
+    monkeypatch.setattr(
+        main_mod,
+        "_launch_tui",
+        lambda resume_session_id=None, **kwargs: captured.update(
+            {"resume": resume_session_id, **kwargs}
+        ),
+    )
+
+    main_mod.main()
+
+    assert captured["resume"] is None
+    assert captured["toolsets"] == "web,terminal"
+    assert captured["tui_dev"] is False
+
+
+def test_main_top_level_oneshot_accepts_toolsets(monkeypatch, main_mod):
+    captured = {}
+
+    import superforecasting_agent.runtime.config as config_mod
+
+    monkeypatch.setattr(
+        sys, "argv", ["hermes", "-z", "hello", "--toolsets", "web,terminal"]
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.plugins",
+        types.SimpleNamespace(discover_plugins=lambda: None),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "tools.mcp_tool",
+        types.SimpleNamespace(discover_mcp_tools=lambda: None),
+    )
+    monkeypatch.setattr(config_mod, "load_config", lambda: {})
+    monkeypatch.setattr(config_mod, "get_container_exec_info", lambda: None)
+    monkeypatch.setitem(
+        sys.modules,
+        "agent.shell_hooks",
+        types.SimpleNamespace(
+            register_from_config=lambda _cfg, accept_hooks=False: None
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.oneshot",
+        types.SimpleNamespace(
+            run_oneshot=lambda prompt, **kwargs: captured.update(
+                {"prompt": prompt, **kwargs}
+            )
+            or 0
+        ),
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        main_mod.main()
+
+    assert exc.value.code == 0
+    assert captured == {
+        "prompt": "hello",
+        "model": None,
+        "provider": None,
+        "toolsets": "web,terminal",
+    }
+
+
+def _stub_plugin_discovery(monkeypatch):
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.plugins",
+        types.SimpleNamespace(discover_plugins=lambda: None),
+    )
+
+
+def test_oneshot_rejects_invalid_only_toolsets(monkeypatch, capsys):
+    _stub_plugin_discovery(monkeypatch)
+    from superforecasting_agent.runtime.oneshot import run_oneshot
+
+    assert run_oneshot("hello", toolsets="nope") == 2
+    err = capsys.readouterr().err
+    assert "nope" in err
+    assert "did not contain any valid toolsets" in err
+
+
+def test_oneshot_provider_accepts_forecast_native_model_env(monkeypatch, capsys):
+    _stub_plugin_discovery(monkeypatch)
+    from superforecasting_agent.runtime import oneshot
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_MODEL", "openai/gpt-5.5")
+    monkeypatch.delenv("HERMES_INFERENCE_MODEL", raising=False)
+    monkeypatch.setattr(oneshot, "_run_agent", lambda *args, **kwargs: "ok")
+
+    assert oneshot.run_oneshot("hello", provider="openrouter") == 0
+    assert capsys.readouterr().out == "ok\n"
+
+
+def test_oneshot_sets_accept_hooks_aliases(monkeypatch, capsys):
+    import os
+
+    _stub_plugin_discovery(monkeypatch)
+    from superforecasting_agent.runtime import oneshot
+
+    for name in (
+        "SUPERFORECASTING_AGENT_ACCEPT_HOOKS",
+        "FORECAST_ACCEPT_HOOKS",
+        "HERMES_ACCEPT_HOOKS",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(oneshot, "_run_agent", lambda *args, **kwargs: "ok")
+
+    assert oneshot.run_oneshot("hello") == 0
+
+    assert capsys.readouterr().out == "ok\n"
+    assert os.environ.get("SUPERFORECASTING_AGENT_ACCEPT_HOOKS") == "1"
+    assert os.environ.get("FORECAST_ACCEPT_HOOKS") == "1"
+    assert os.environ.get("HERMES_ACCEPT_HOOKS") == "1"
+
+
+def test_oneshot_provider_without_model_mentions_forecast_native_env(capsys):
+    from superforecasting_agent.runtime.oneshot import run_oneshot
+
+    assert run_oneshot("hello", provider="openrouter") == 2
+    err = capsys.readouterr().err
+    assert "SUPERFORECASTING_AGENT_INFERENCE_MODEL" in err
+    assert "FORECAST_INFERENCE_MODEL" in err
+
+
+def test_oneshot_filters_invalid_toolsets_before_redirect(monkeypatch, capsys):
+    _stub_plugin_discovery(monkeypatch)
+    from superforecasting_agent.runtime.oneshot import _validate_explicit_toolsets
+
+    valid, error = _validate_explicit_toolsets("web,nope")
+
+    assert valid == ["web"]
+    assert error is None
+    assert "nope" in capsys.readouterr().err
+
+
+def test_oneshot_all_toolsets_means_all_not_configured_cli():
+    from superforecasting_agent.runtime.oneshot import _validate_explicit_toolsets
+
+    valid, error = _validate_explicit_toolsets("all")
+
+    assert valid is None
+    assert error is None
+
+
+def test_oneshot_all_toolsets_warns_about_ignored_extra_entries(monkeypatch, capsys):
+    _stub_plugin_discovery(monkeypatch)
+    from superforecasting_agent.runtime.oneshot import _validate_explicit_toolsets
+
+    valid, error = _validate_explicit_toolsets("all,nope")
+
+    assert valid is None
+    assert error is None
+    assert "ignoring additional entries: nope" in capsys.readouterr().err
+
+
+def test_oneshot_accepts_plugin_toolset_after_discovery(monkeypatch):
+    from superforecasting_agent.tooling import toolsets as toolsets
+
+    from superforecasting_agent.runtime.oneshot import _validate_explicit_toolsets
+
+    discovered = {"ready": False}
+    original_validate = toolsets.validate_toolset
+
+    def fake_validate(name):
+        return name == "plugin_demo" and discovered["ready"] or original_validate(name)
+
+    monkeypatch.setattr(toolsets, "validate_toolset", fake_validate)
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.plugins",
+        types.SimpleNamespace(
+            discover_plugins=lambda: discovered.update({"ready": True})
+        ),
+    )
+
+    valid, error = _validate_explicit_toolsets("plugin_demo")
+
+    assert valid == ["plugin_demo"]
+    assert error is None
+
+
+def test_oneshot_rejects_disabled_mcp_toolset(monkeypatch, capsys):
+    _stub_plugin_discovery(monkeypatch)
+    import superforecasting_agent.runtime.config as config_mod
+
+    from superforecasting_agent.runtime.oneshot import _validate_explicit_toolsets
+
+    monkeypatch.setattr(
+        config_mod,
+        "read_raw_config",
+        lambda: {"mcp_servers": {"mcp-off": {"enabled": False}}},
+    )
+
+    valid, error = _validate_explicit_toolsets("mcp-off")
+
+    assert valid is None
+    assert error == "superforecasting-agent -z: --toolsets did not contain any valid toolsets.\n"
+    err = capsys.readouterr().err
+    assert "ignoring disabled MCP servers" in err
+    assert "mcp-off" in err
+
+
+def test_oneshot_distinguishes_disabled_mcp_from_unknown(monkeypatch, capsys):
+    _stub_plugin_discovery(monkeypatch)
+    import superforecasting_agent.runtime.config as config_mod
+
+    from superforecasting_agent.runtime.oneshot import _validate_explicit_toolsets
+
+    monkeypatch.setattr(
+        config_mod,
+        "read_raw_config",
+        lambda: {"mcp_servers": {"mcp-off": {"enabled": False}}},
+    )
+
+    valid, error = _validate_explicit_toolsets("web,mcp-off,nope")
+
+    assert valid == ["web"]
+    assert error is None
+    err = capsys.readouterr().err
+    assert "ignoring unknown --toolsets entries: nope" in err
+    assert "ignoring disabled MCP servers" in err
+    assert "mcp-off" in err
+
+
+def test_oneshot_wires_session_db_for_recall(monkeypatch):
+    """hermes -z bypasses HermesCLI, but recall still needs SessionDB."""
+    from superforecasting_agent.runtime.oneshot import _run_agent
+
+    captured = {}
+    sentinel_db = object()
+
+    class FakeAgent:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.suppress_status_output = False
+            self.stream_delta_callback = object()
+            self.tool_gen_callback = object()
+
+        def chat(self, prompt):
+            captured["prompt"] = prompt
+            return "ok"
+
+    class FakeSessionDB:
+        def __new__(cls):
+            return sentinel_db
+
+    def mod(name, **attrs):
+        module = types.ModuleType(name)
+        for key, value in attrs.items():
+            setattr(module, key, value)
+        return module
+
+    monkeypatch.setitem(sys.modules, "run_agent", mod("run_agent", AIAgent=FakeAgent))
+    monkeypatch.setitem(sys.modules, "superforecasting_agent.storage.session", mod("superforecasting_agent.storage.session", SessionDB=FakeSessionDB))
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.config",
+        mod("superforecasting_agent.runtime.config", load_config=lambda: {"model": {"default": "m"}}),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.models",
+        mod("superforecasting_agent.runtime.models", detect_provider_for_model=lambda *_args, **_kwargs: None),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.runtime_provider",
+        mod(
+            "superforecasting_agent.runtime.runtime_provider",
+            resolve_runtime_provider=lambda **_kwargs: {
+                "api_key": "k",
+                "base_url": "u",
+                "provider": "p",
+                "api_mode": "chat_completions",
+                "credential_pool": None,
+            },
+        ),
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "superforecasting_agent.runtime.tools_config",
+        mod("superforecasting_agent.runtime.tools_config", _get_platform_tools=lambda *_args, **_kwargs: {"session_search"}),
+    )
+
+    assert _run_agent("recall this") == "ok"
+    assert captured["session_db"] is sentinel_db
+    assert captured["enabled_toolsets"] == ["session_search"]
+    assert "Superforecasting Agent" in captured["ephemeral_system_prompt"]
+    assert "forecasting desk" in captured["ephemeral_system_prompt"]
+    assert captured["prompt"] == "recall this"
+
+
+def test_launch_tui_exports_model_provider_and_toolsets(monkeypatch, main_mod):
+    captured = {}
+    active_path_during_call = None
+
+    monkeypatch.setattr(
+        main_mod,
+        "_make_tui_argv",
+        lambda tui_dir, tui_dev: (["node", "dist/entry.js"], Path(".")),
+    )
+
+    def fake_call(argv, cwd=None, env=None):
+        nonlocal active_path_during_call
+        captured.update({"argv": argv, "cwd": cwd, "env": env})
+        active_path_during_call = Path(env["HERMES_TUI_ACTIVE_SESSION_FILE"])
+        assert active_path_during_call.exists()
+        return 1
+
+    monkeypatch.setattr(main_mod.subprocess, "call", fake_call)
+
+    with pytest.raises(SystemExit):
+        main_mod._launch_tui(
+            model="nous/hermes-test",
+            provider="nous",
+            toolsets="web, terminal",
+            accept_hooks=True,
+        )
+
+    env = captured["env"]
+    assert env["SUPERFORECASTING_AGENT_MODEL"] == "nous/hermes-test"
+    assert env["FORECAST_MODEL"] == "nous/hermes-test"
+    assert env["HERMES_MODEL"] == "nous/hermes-test"
+    assert env["SUPERFORECASTING_AGENT_INFERENCE_MODEL"] == "nous/hermes-test"
+    assert env["FORECAST_INFERENCE_MODEL"] == "nous/hermes-test"
+    assert env["HERMES_INFERENCE_MODEL"] == "nous/hermes-test"
+    assert env["HERMES_TUI_PROVIDER"] == "nous"
+    assert env["SUPERFORECASTING_AGENT_TUI_PROVIDER"] == "nous"
+    assert env["FORECAST_TUI_PROVIDER"] == "nous"
+    assert env["SUPERFORECASTING_AGENT_INFERENCE_PROVIDER"] == "nous"
+    assert env["FORECAST_INFERENCE_PROVIDER"] == "nous"
+    assert env["HERMES_INFERENCE_PROVIDER"] == "nous"
+    assert env["HERMES_TUI_TOOLSETS"] == "web,terminal"
+    assert env["SUPERFORECASTING_AGENT_TUI_TOOLSETS"] == "web,terminal"
+    assert env["FORECAST_TUI_TOOLSETS"] == "web,terminal"
+    assert env["SUPERFORECASTING_AGENT_PYTHON"] == sys.executable
+    assert env["FORECAST_PYTHON"] == sys.executable
+    assert env["HERMES_PYTHON"] == sys.executable
+    assert env["SUPERFORECASTING_AGENT_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
+    assert env["FORECAST_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
+    assert env["HERMES_PYTHON_SRC_ROOT"] == str(main_mod.PROJECT_ROOT)
+    assert env["SUPERFORECASTING_AGENT_ACCEPT_HOOKS"] == "1"
+    assert env["FORECAST_ACCEPT_HOOKS"] == "1"
+    assert env["HERMES_ACCEPT_HOOKS"] == "1"
+    assert env["SUPERFORECASTING_AGENT_CWD"] == env["HERMES_CWD"]
+    assert env["FORECAST_CWD"] == env["HERMES_CWD"]
+    active_path = Path(env["SUPERFORECASTING_AGENT_TUI_ACTIVE_SESSION_FILE"])
+    assert env["FORECAST_TUI_ACTIVE_SESSION_FILE"] == str(active_path)
+    assert env["HERMES_TUI_ACTIVE_SESSION_FILE"] == str(active_path)
+    assert active_path.name.startswith("forecast-tui-active-session-")
+    assert active_path.suffix == ".json"
+    assert active_path_during_call == active_path
+    assert not active_path.exists()
+    assert env["NODE_ENV"] == "production"
+
+
+def test_launch_tui_exit_code_42_relaunches_update(monkeypatch, main_mod):
+    from unittest.mock import patch
+
+    monkeypatch.setattr(
+        main_mod,
+        "_make_tui_argv",
+        lambda tui_dir, tui_dev: (["node", "dist/entry.js"], Path(".")),
+    )
+    monkeypatch.setattr(main_mod.subprocess, "call", lambda *args, **kwargs: 42)
+
+    with patch("superforecasting_agent.runtime.relaunch.relaunch") as mock_relaunch:
+        with pytest.raises(SystemExit) as exc:
+            main_mod._launch_tui()
+
+    assert exc.value.code == 42
+    mock_relaunch.assert_called_once_with(["update"], preserve_inherited=False)
+
+
+def test_launch_tui_drops_stale_resume_env_without_resume_arg(monkeypatch, main_mod):
+    captured = {}
+
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_TUI_RESUME", "stale-native-session")
+    monkeypatch.setenv("FORECAST_TUI_RESUME", "stale-forecast-session")
+    monkeypatch.setenv("HERMES_TUI_RESUME", "stale-missing-session")
+    monkeypatch.setattr(
+        main_mod,
+        "_make_tui_argv",
+        lambda tui_dir, tui_dev: (["node", "dist/entry.js"], Path(".")),
+    )
+    monkeypatch.setattr(
+        main_mod.subprocess,
+        "call",
+        lambda argv, cwd=None, env=None: captured.update({"env": env}) or 1,
+    )
+
+    with pytest.raises(SystemExit):
+        main_mod._launch_tui()
+
+    assert "SUPERFORECASTING_AGENT_TUI_RESUME" not in captured["env"]
+    assert "FORECAST_TUI_RESUME" not in captured["env"]
+    assert "HERMES_TUI_RESUME" not in captured["env"]
+
+
+def test_launch_tui_sets_resume_env_from_resume_arg(monkeypatch, main_mod):
+    captured = {}
+
+    monkeypatch.setenv("HERMES_TUI_RESUME", "stale-missing-session")
+    monkeypatch.setattr(
+        main_mod,
+        "_make_tui_argv",
+        lambda tui_dir, tui_dev: (["node", "dist/entry.js"], Path(".")),
+    )
+    monkeypatch.setattr(
+        main_mod.subprocess,
+        "call",
+        lambda argv, cwd=None, env=None: captured.update({"env": env}) or 1,
+    )
+
+    with pytest.raises(SystemExit):
+        main_mod._launch_tui(resume_session_id="20260518_000000_goodid")
+
+    assert captured["env"]["HERMES_TUI_RESUME"] == "20260518_000000_goodid"
+    assert captured["env"]["SUPERFORECASTING_AGENT_TUI_RESUME"] == "20260518_000000_goodid"
+    assert captured["env"]["FORECAST_TUI_RESUME"] == "20260518_000000_goodid"
+
+
+def test_make_tui_argv_dev_prebuilds_forecast_ink(monkeypatch, main_mod, tmp_path):
+    tui_dir = tmp_path / "ui-tui"
+    tsx = tui_dir / "node_modules" / ".bin" / "tsx"
+    ink_dir = tui_dir / "packages" / "forecast-ink"
+    tsx.parent.mkdir(parents=True)
+    ink_dir.mkdir(parents=True)
+    tsx.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+
+    monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
+    monkeypatch.setattr(main_mod, "_tui_need_npm_install", lambda _tui_dir: False)
+    for key in ("SUPERFORECASTING_AGENT_TUI_DIR", "FORECAST_TUI_DIR", "HERMES_TUI_DIR"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
+
+    calls = []
+
+    def fake_run(cmd, cwd=None, **_kwargs):
+        calls.append((cmd, cwd))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(main_mod.subprocess, "run", fake_run)
+
+    argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=True)
+
+    assert argv == [str(tsx), "src/entry.tsx"]
+    assert cwd == tui_dir
+    assert calls == [(["/usr/bin/npm", "run", "build"], str(ink_dir))]
+
+
+def test_make_tui_argv_uses_forecast_tui_dir_alias(monkeypatch, main_mod, tmp_path):
+    tui_dir = tmp_path / "ui-tui"
+    prebuilt = tmp_path / "prebuilt"
+    entry = prebuilt / "dist" / "entry.js"
+    entry.parent.mkdir(parents=True)
+    entry.write_text("console.log('forecast tui')\n", encoding="utf-8")
+
+    monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
+    monkeypatch.setenv("FORECAST_TUI_DIR", str(prebuilt))
+    monkeypatch.delenv("HERMES_TUI_DIR", raising=False)
+    monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
+
+    argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
+
+    assert argv == ["/usr/bin/node", str(entry)]
+    assert cwd == prebuilt
+
+
+def test_make_tui_argv_uses_forecast_node_alias(monkeypatch, main_mod, tmp_path):
+    tui_dir = tmp_path / "ui-tui"
+    prebuilt = tmp_path / "prebuilt"
+    entry = prebuilt / "dist" / "entry.js"
+    node = tmp_path / "bin" / "forecast-node"
+    entry.parent.mkdir(parents=True)
+    node.parent.mkdir(parents=True)
+    entry.write_text("console.log('forecast tui')\n", encoding="utf-8")
+    node.write_text("#!/bin/sh\n", encoding="utf-8")
+    node.chmod(0o755)
+
+    monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
+    monkeypatch.setenv("SUPERFORECASTING_AGENT_NODE", str(node))
+    monkeypatch.setenv("FORECAST_TUI_DIR", str(prebuilt))
+    monkeypatch.delenv("FORECAST_NODE", raising=False)
+    monkeypatch.delenv("HERMES_NODE", raising=False)
+    monkeypatch.delenv("HERMES_TUI_DIR", raising=False)
+    monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
+
+    argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
+
+    assert argv == [str(node), str(entry)]
+    assert cwd == prebuilt
+
+
+def test_ensure_tui_node_honors_forecast_skip_bootstrap_alias(monkeypatch, main_mod):
+    monkeypatch.setattr(main_mod.shutil, "which", lambda _bin_name: None)
+    monkeypatch.setenv("FORECAST_SKIP_NODE_BOOTSTRAP", "1")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_SKIP_NODE_BOOTSTRAP", raising=False)
+    monkeypatch.delenv("HERMES_SKIP_NODE_BOOTSTRAP", raising=False)
+
+    def fail_run(*_args, **_kwargs):
+        raise AssertionError("node bootstrap should be skipped")
+
+    monkeypatch.setattr(main_mod.subprocess, "run", fail_run)
+
+    main_mod._ensure_tui_node()
+
+
+def test_make_tui_argv_forecast_quiet_alias_suppresses_install_message(
+    monkeypatch, main_mod, tmp_path, capsys
+):
+    tui_dir = tmp_path / "ui-tui"
+    tui_dir.mkdir()
+
+    monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
+    monkeypatch.setattr(main_mod, "_tui_need_npm_install", lambda _tui_dir: True)
+    # b2bf65844 short-circuits to the wheel-bundled superforecasting_agent/runtime/tui_dist/entry.js
+    # when present (it is tracked in-tree). Pin it off so this test keeps
+    # exercising the npm-install branch whose quiet behavior it verifies.
+    monkeypatch.setattr(main_mod, "_find_bundled_tui", lambda *a, **k: None)
+    monkeypatch.setattr(main_mod.shutil, "which", lambda bin_name: f"/usr/bin/{bin_name}")
+    monkeypatch.setenv("FORECAST_QUIET", "1")
+    monkeypatch.delenv("SUPERFORECASTING_AGENT_QUIET", raising=False)
+    monkeypatch.delenv("HERMES_QUIET", raising=False)
+
+    calls = []
+
+    def fake_run(cmd, cwd=None, **_kwargs):
+        calls.append((cmd, cwd))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(main_mod.subprocess, "run", fake_run)
+
+    argv, cwd = main_mod._make_tui_argv(tui_dir, tui_dev=False)
+
+    assert argv == ["/usr/bin/node", str(tui_dir / "dist" / "entry.js")]
+    assert cwd == tui_dir
+    assert calls == [
+        (
+            [
+                "/usr/bin/npm",
+                "install",
+                "--silent",
+                "--no-fund",
+                "--no-audit",
+                "--progress=false",
+            ],
+            str(tui_dir),
+        ),
+        (["/usr/bin/npm", "run", "build"], str(tui_dir)),
+    ]
+    assert "Installing TUI dependencies" not in capsys.readouterr().out
+
+
+def test_print_tui_exit_summary_includes_resume_and_token_totals(monkeypatch, capsys):
+    import superforecasting_agent.runtime.main as main_mod
+
+    class _FakeDB:
+        def get_session(self, session_id):
+            assert session_id == "20260409_000001_abc123"
+            return {
+                "message_count": 2,
+                "input_tokens": 10,
+                "output_tokens": 6,
+                "cache_read_tokens": 2,
+                "cache_write_tokens": 2,
+                "reasoning_tokens": 1,
+            }
+
+        def get_session_title(self, _session_id):
+            return "demo title"
+
+        def close(self):
+            return None
+
+    monkeypatch.setitem(
+        sys.modules, "superforecasting_agent.storage.session", types.SimpleNamespace(SessionDB=lambda: _FakeDB())
+    )
+
+    main_mod._print_tui_exit_summary("20260409_000001_abc123")
+    out = capsys.readouterr().out
+
+    assert "Resume this session with:" in out
+    assert "superforecasting-agent --tui --resume 20260409_000001_abc123" in out
+    assert 'superforecasting-agent --tui -c "demo title"' in out
+    assert "Tokens:         21 (in 10, out 6, cache 4, reasoning 1)" in out
+
+
+def test_print_tui_exit_summary_prefers_actual_active_session_file(
+    monkeypatch, capsys, tmp_path
+):
+    import superforecasting_agent.runtime.main as main_mod
+
+    seen = []
+
+    class _FakeDB:
+        def get_session(self, session_id):
+            seen.append(session_id)
+            return {
+                "message_count": 1,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "reasoning_tokens": 0,
+            }
+
+        def get_session_title(self, _session_id):
+            return "actual"
+
+        def close(self):
+            return None
+
+    active = tmp_path / "active.json"
+    active.write_text('{"session_id":"actual_session"}', encoding="utf-8")
+    monkeypatch.setitem(
+        sys.modules, "superforecasting_agent.storage.session", types.SimpleNamespace(SessionDB=lambda: _FakeDB())
+    )
+
+    main_mod._print_tui_exit_summary("startup_resume", str(active))
+    out = capsys.readouterr().out
+
+    assert seen == ["actual_session"]
+    assert "superforecasting-agent --tui --resume actual_session" in out
+    assert "startup_resume" not in out

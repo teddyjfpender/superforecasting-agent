@@ -5,7 +5,7 @@ harness internals) is encouraged to freely write and run data-science code:
 forecasting models, backtests, research scratchpads, scripts. It MUST NOT,
 however, edit the harness source tree it is running inside. Letting the agent
 patch its own code is a self-modification footgun: a single bad write to
-``tools/file_tools.py`` or ``hermes_cli/`` could brick the running process,
+``tools/file_tools.py`` or ``superforecasting_agent/runtime/`` could brick the running process,
 silently disable a calibration gate, or exfiltrate behaviour.
 
 This module is the single decision point for that wall. It answers one
@@ -73,7 +73,7 @@ _workspace_dir_cache: Optional[Path] = None
 def _project_root() -> Optional[Path]:
     """Resolve the harness installation / repo root, or None on failure."""
     try:
-        from hermes_cli.config import get_project_root  # local import, avoid cycles
+        from superforecasting_agent.runtime.config import get_project_root  # local import, avoid cycles
 
         return get_project_root().resolve()
     except Exception:
@@ -91,8 +91,8 @@ def _project_root() -> Optional[Path]:
 # project-specific ones (not generic ``tools``/``agent`` only) so resolution is
 # unambiguous within the running process.
 _HARNESS_TOP_LEVEL_MODULES = (
-    "hermes_cli",
-    "hermes_constants",
+    "superforecasting_agent.runtime",
+    "superforecasting_agent",
     "forecasting",
     "agent",
     "tools",
@@ -118,7 +118,7 @@ def _installed_package_roots() -> list[Path]:
     # own directory IS the install root) and a PACKAGE (whose directory is
     # install_root/<pkg>) both contribute the SAME install root — never its
     # parent. The prior code uniformly took ``dir.parent`` and so over-climbed
-    # one level for the module case (e.g. hermes_constants), which could mark
+    # one level for the module case (e.g. superforecasting_agent.constants), which could mark
     # an unrelated ancestor dir as harness source.
     root_candidates: set[Path] = set()
     for name in _HARNESS_TOP_LEVEL_MODULES:
@@ -134,7 +134,7 @@ def _installed_package_roots() -> list[Path]:
                 continue
             pkg_dirs.append(d)
             root_candidates.add(d.parent)
-        else:  # plain module (e.g. hermes_constants.py): its dir IS the install root
+        else:  # plain module (e.g. superforecasting_agent/constants.py): its dir IS the install root
             f = getattr(mod, "__file__", None)
             if not f:
                 continue
@@ -224,9 +224,9 @@ def get_workspace_dir() -> Path:
     if _workspace_dir_cache is not None:
         return _workspace_dir_cache
     try:
-        from hermes_constants import get_hermes_home  # local import, avoid cycles
+        from superforecasting_agent.constants import get_agent_home  # local import, avoid cycles
 
-        home = get_hermes_home()
+        home = get_agent_home()
     except Exception:
         home = Path(os.path.expanduser("~/.superforecasting-agent"))
     ws = (home / "workspace").resolve()
@@ -237,9 +237,9 @@ def get_workspace_dir() -> Path:
 def _agent_home() -> Path:
     """Resolve the agent home, with a stable fallback."""
     try:
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
 
-        return get_hermes_home().resolve()
+        return get_agent_home().resolve()
     except Exception:
         return Path(os.path.expanduser("~/.superforecasting-agent")).resolve()
 
@@ -319,7 +319,7 @@ def is_harness_wall_enabled() -> bool:
     if os.environ.get("SUPERFORECASTING_RELEASE") == "1":
         return True
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         section = cfg.get("harness_wall")

@@ -3,14 +3,14 @@ import { PRIOR_FORCE_COLOR, PRIOR_NO_COLOR } from './pmForceColor.js'
 
 import { PassThrough } from 'stream'
 
-import { Box, Text } from '@hermes/ink'
+import { Box, Text } from '@superforecasting/ink'
 import React, { useState } from 'react'
 import { afterAll, describe, expect, it, vi } from 'vitest'
 
-import { dispatchClick } from '../../packages/hermes-ink/src/ink/hit-test.js'
-import instances from '../../packages/hermes-ink/src/ink/instances.js'
-import { nodeCache } from '../../packages/hermes-ink/src/ink/node-cache.js'
-import { renderSync } from '../../packages/hermes-ink/src/ink/root.js'
+import { dispatchClick } from '../../packages/forecast-ink/src/ink/hit-test.js'
+import instances from '../../packages/forecast-ink/src/ink/instances.js'
+import { nodeCache } from '../../packages/forecast-ink/src/ink/node-cache.js'
+import { renderSync } from '../../packages/forecast-ink/src/ink/root.js'
 import { PredictionMarketsTable } from '../components/predictionMarketsTable.js'
 import {
   DEFAULT_PM_FILTER,

@@ -353,7 +353,7 @@ def _skill_weights_enabled(ledger) -> bool:
     harmless-by-construction on cold start (every multiplier is 1.0 until a
     model clears the resolved-binary sample gate)."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         cfg = load_config() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
         models_cfg = fc.get("models", {}) if isinstance(fc, dict) else {}

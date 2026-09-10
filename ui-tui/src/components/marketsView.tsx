@@ -1,5 +1,5 @@
-import { Box, NoSelect, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, NoSelect, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { $marketJobs, pruneStaleMarketJobs, setMarketJob, STALE_MARKET_JOB_MS } from '../app/marketJobsStore.js'

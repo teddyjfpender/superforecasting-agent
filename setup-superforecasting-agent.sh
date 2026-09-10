@@ -194,10 +194,10 @@ if is_termux; then
     export ANDROID_API_LEVEL="$(getprop ro.build.version.sdk 2>/dev/null || printf '%s' "${ANDROID_API_LEVEL:-}")"
     echo -e "${CYAN}→${NC} Termux detected — installing the tested Android bundle"
     "$SETUP_PYTHON" -m pip install --upgrade pip setuptools wheel
-    if [ -f "constraints-termux.txt" ]; then
-        "$SETUP_PYTHON" -m pip install -e ".[termux]" -c constraints-termux.txt || {
+    if [ -f "packaging/termux/constraints.txt" ]; then
+        "$SETUP_PYTHON" -m pip install -e ".[termux]" -c packaging/termux/constraints.txt || {
             echo -e "${YELLOW}⚠${NC} Termux bundle install failed, falling back to base install..."
-            "$SETUP_PYTHON" -m pip install -e "." -c constraints-termux.txt
+            "$SETUP_PYTHON" -m pip install -e "." -c packaging/termux/constraints.txt
         }
     else
         "$SETUP_PYTHON" -m pip install -e ".[termux]" || "$SETUP_PYTHON" -m pip install -e "."
@@ -539,5 +539,5 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
     echo ""
     # Run directly with venv Python (no activation needed)
-    "$SCRIPT_DIR/venv/bin/python" -m hermes_cli.main setup
+    "$SCRIPT_DIR/venv/bin/python" -m superforecasting_agent.runtime.main setup
 fi

@@ -488,7 +488,7 @@ def _rpc_server_loop(
     Accept one client connection and dispatch tool-call requests until
     the client disconnects or the call limit is reached.
     """
-    from model_tools import handle_function_call
+    from superforecasting_agent.tooling.runtime import handle_function_call
 
     conn = None
     try:
@@ -756,7 +756,7 @@ def _rpc_poll_loop(
     independent process, so these calls run safely concurrent with the
     script-execution thread.
     """
-    from model_tools import handle_function_call
+    from superforecasting_agent.tooling.runtime import handle_function_call
 
     poll_interval = 0.1  # 100 ms
 
@@ -1285,7 +1285,7 @@ def execute_code(
 
         # Per-profile HOME isolation: redirect system tool configs into the
         # active profile's ``home/`` directory when that directory exists.
-        from hermes_constants import get_subprocess_home
+        from superforecasting_agent.constants import get_subprocess_home
         _profile_home = get_subprocess_home()
         if _profile_home:
             child_env["HOME"] = _profile_home
@@ -1666,7 +1666,7 @@ def _load_config() -> dict:
     key cleanly falls back to DEFAULT_EXECUTION_MODE.
     """
     try:
-        from hermes_cli.config import read_raw_config
+        from superforecasting_agent.runtime.config import read_raw_config
 
         cfg = read_raw_config().get("code_execution", {})
         return cfg if isinstance(cfg, dict) else {}
@@ -1918,7 +1918,7 @@ def build_execute_code_schema(enabled_sandbox_tools: set = None,
 
 
 # Default schema used at registration time (all sandbox tools listed,
-# current configured mode).  model_tools.py rebuilds per-session anyway.
+# current configured mode).  superforecasting_agent/tooling/runtime.py rebuilds per-session anyway.
 EXECUTE_CODE_SCHEMA = build_execute_code_schema()
 
 

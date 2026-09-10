@@ -29,7 +29,7 @@ from typing import Any, Dict, Iterator, List, Optional
 import httpx
 
 from agent.gemini_schema import sanitize_gemini_tool_parameters
-from hermes_constants import display_hermes_home
+from superforecasting_agent.constants import display_agent_home
 
 logger = logging.getLogger(__name__)
 
@@ -821,7 +821,7 @@ class GeminiNativeClient:
         if not (api_key or "").strip():
             raise RuntimeError(
                 "Gemini native client requires an API key, but none was provided. "
-                f"Set GOOGLE_API_KEY or GEMINI_API_KEY in your environment / {display_hermes_home()}/.env "
+                f"Set GOOGLE_API_KEY or GEMINI_API_KEY in your environment / {display_agent_home()}/.env "
                 "(get one at https://aistudio.google.com/app/apikey), or run `superforecasting-agent setup` "
                 "to configure the Google provider."
             )

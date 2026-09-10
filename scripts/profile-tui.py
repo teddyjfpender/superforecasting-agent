@@ -43,9 +43,9 @@ from typing import Any
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 try:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 except ImportError:
-    def get_hermes_home() -> Path:  # type: ignore[misc]
+    def get_agent_home() -> Path:  # type: ignore[misc]
         val = (
             os.environ.get("SUPERFORECASTING_AGENT_HOME")
             or os.environ.get("FORECAST_HOME")
@@ -78,10 +78,10 @@ DEFAULT_LOG = Path(
         "SUPERFORECASTING_AGENT_PERF_LOG",
         "FORECAST_PERF_LOG",
         "HERMES_PERF_LOG",
-        default=str(get_hermes_home() / "perf.log"),
+        default=str(get_agent_home() / "perf.log"),
     )
 )
-DEFAULT_STATE_DB = get_hermes_home() / "state.db"
+DEFAULT_STATE_DB = get_agent_home() / "state.db"
 
 # Keystroke escape sequences.  Matches what xterm/VT220 send when the
 # terminal has bracketed-paste disabled and the key-repeat handler fires.
@@ -574,7 +574,7 @@ def loop_mode(args: argparse.Namespace) -> int:
 
     tui_dir = Path(args.tui_dir).resolve()
     src_root = tui_dir / "src"
-    pkg_root = tui_dir / "packages" / "hermes-ink" / "src"
+    pkg_root = tui_dir / "packages" / "forecast-ink" / "src"
 
     def collect_mtimes() -> dict[str, float]:
         mtimes: dict[str, float] = {}

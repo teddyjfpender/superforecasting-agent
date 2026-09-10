@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 
 from tools.environments.base import BaseEnvironment, _pipe_stdin
-from hermes_cli._subprocess_compat import windows_hide_flags
+from superforecasting_agent.runtime._subprocess_compat import windows_hide_flags
 
 _IS_WINDOWS = platform.system() == "Windows"
 
@@ -102,7 +102,7 @@ def _build_provider_env_blocklist() -> frozenset:
     blocked: set[str] = set()
 
     try:
-        from hermes_cli.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
         for pconfig in PROVIDER_REGISTRY.values():
             blocked.update(pconfig.api_key_env_vars)
             if pconfig.auth_type == "aws_sdk":
@@ -113,7 +113,7 @@ def _build_provider_env_blocklist() -> frozenset:
         pass
 
     try:
-        from hermes_cli.config import OPTIONAL_ENV_VARS
+        from superforecasting_agent.runtime.config import OPTIONAL_ENV_VARS
         for name, metadata in OPTIONAL_ENV_VARS.items():
             category = metadata.get("category")
             if category in {"tool", "messaging"}:
@@ -197,9 +197,9 @@ _HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 def _inject_context_hermes_home(env: dict) -> None:
     """Bridge the context-local agent-home override into subprocess env."""
     try:
-        from hermes_constants import get_hermes_home_override
+        from superforecasting_agent.constants import get_agent_home_override
 
-        value = get_hermes_home_override()
+        value = get_agent_home_override()
         if value:
             env["HERMES_HOME"] = value
     except Exception:
@@ -231,7 +231,7 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
     _inject_context_hermes_home(sanitized)
 
     # Per-profile HOME isolation for background processes (same as _make_run_env).
-    from hermes_constants import get_subprocess_home
+    from superforecasting_agent.constants import get_subprocess_home
     _profile_home = get_subprocess_home()
     if _profile_home:
         sanitized["HOME"] = _profile_home
@@ -343,7 +343,7 @@ def _make_run_env(env: dict) -> dict:
     # npm ...) into the active agent-home "home" directory when it exists.
     # Only the subprocess sees the override — the Python process keeps the
     # real HOME.
-    from hermes_constants import get_subprocess_home
+    from superforecasting_agent.constants import get_subprocess_home
     _profile_home = get_subprocess_home()
     if _profile_home:
         run_env["HOME"] = _profile_home
@@ -369,7 +369,7 @@ def _read_terminal_shell_init_config() -> tuple[list[str], bool]:
     execution never breaks because the config file is unreadable.
     """
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         terminal_cfg = cfg.get("terminal") or {}
@@ -486,8 +486,8 @@ class LocalEnvironment(BaseEnvironment):
             # accepts forward slashes in filesystem paths, and we control
             # the path so we can guarantee no spaces.
             try:
-                from hermes_constants import get_hermes_home
-                cache_dir = get_hermes_home() / "cache" / "terminal"
+                from superforecasting_agent.constants import get_agent_home
+                cache_dir = get_agent_home() / "cache" / "terminal"
             except Exception:
                 cache_dir = Path(tempfile.gettempdir()) / "hermes_terminal"
             cache_dir.mkdir(parents=True, exist_ok=True)

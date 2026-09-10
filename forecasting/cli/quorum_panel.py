@@ -432,7 +432,7 @@ def _cmd_quorum(args: argparse.Namespace) -> None:
 
 
 def _quorum_overview() -> None:
-    from hermes_cli.config import load_config
+    from superforecasting_agent.runtime.config import load_config
 
     cfg = load_config().get("quorum", {})
     print("forecast quorum — model-diverse forecast panel with judge synthesis")
@@ -450,7 +450,7 @@ def _quorum_overview() -> None:
 
 
 def _quorum_run(args: argparse.Namespace, *, question_id: str) -> None:
-    from hermes_cli.config import load_config
+    from superforecasting_agent.runtime.config import load_config
     from forecasting.jobs.types.quorum import read_job, start_job
 
     cfg = load_config().get("quorum", {})
@@ -731,7 +731,7 @@ def _print_quorum_job(job: dict[str, Any], *, json_output: bool) -> None:
 
 
 def _quorum_config(rest: list[str]) -> None:
-    from hermes_cli.config import load_config, set_config_value
+    from superforecasting_agent.runtime.config import load_config, set_config_value
 
     if rest and rest[0] == "set":
         if len(rest) < 3:
@@ -782,7 +782,7 @@ def _quorum_config(rest: list[str]) -> None:
 
 
 def _quorum_default(rest: list[str], *, scope: str | None) -> None:
-    from hermes_cli.config import load_config, set_config_value
+    from superforecasting_agent.runtime.config import load_config, set_config_value
 
     state = rest[0].strip().lower() if rest else None
     if state in {"on", "off"}:

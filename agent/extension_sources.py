@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 
 _GITHUB_REPO = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
@@ -124,14 +124,14 @@ def _source_slug(index: int, repo: str) -> str:
 def sync_extension_sources(config: dict[str, Any] | None = None) -> list[ExtensionCheckout]:
     """Resolve configured sources in order and atomically update the lockfile."""
     if config is None:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         config = load_config()
     extension_cfg = config.get("extensions") if isinstance(config, dict) else None
     sources = extension_cfg.get("sources", []) if isinstance(extension_cfg, dict) else []
     if not isinstance(sources, list) or not sources:
         return []
-    base = get_hermes_home() / "extensions"
+    base = get_agent_home() / "extensions"
     cache_key = f"{base}:{json.dumps(sources, sort_keys=True, default=str)}"
 
     global _CACHE_KEY, _CACHE

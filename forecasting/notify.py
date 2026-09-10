@@ -199,9 +199,9 @@ def parse_destination(dest: str) -> Optional[NotifyRoute]:
 
 
 def _notify_dir() -> Path:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    d = get_hermes_home() / "notify"
+    d = get_agent_home() / "notify"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

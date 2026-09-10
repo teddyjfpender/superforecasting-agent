@@ -36,7 +36,7 @@ class TestToolResolution:
 
     def test_terminal_and_file_toolsets_resolve_all_tools(self):
         """enabled_toolsets=['terminal', 'file'] should produce 6 tools."""
-        from model_tools import get_tool_definitions
+        from superforecasting_agent.tooling.runtime import get_tool_definitions
         tools = get_tool_definitions(
             enabled_toolsets=["terminal", "file"],
             quiet_mode=True,
@@ -47,7 +47,7 @@ class TestToolResolution:
 
     def test_terminal_tool_present(self):
         """The terminal tool must be present (not silently dropped)."""
-        from model_tools import get_tool_definitions
+        from superforecasting_agent.tooling.runtime import get_tool_definitions
         tools = get_tool_definitions(
             enabled_toolsets=["terminal", "file"],
             quiet_mode=True,
@@ -161,7 +161,7 @@ class TestCwdHandling:
         assert config["cwd"] == os.getcwd()
 
         # Wall on + cwd inside the harness tree → relocate to the workspace.
-        from hermes_constants import ensure_workspace_dir
+        from superforecasting_agent.constants import ensure_workspace_dir
 
         with _patch("agent.harness_wall.is_harness_wall_enabled", return_value=True):
             config = _tt_mod._get_env_config()

@@ -100,7 +100,7 @@ describe('Home: a background $uiState notify must not re-blit the transcript whi
     const [{ AppLayout }, { GatewayProvider }, { Box, render }, { useVirtualHistory }] = await Promise.all([
       import('../components/appLayout.js'),
       import('../app/gatewayContext.js'),
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../hooks/useVirtualHistory.js')
     ])
 

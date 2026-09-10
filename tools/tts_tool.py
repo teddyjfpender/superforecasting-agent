@@ -55,18 +55,18 @@ from pathlib import Path
 from typing import Callable, Dict, Any, Optional
 from urllib.parse import urljoin
 
-from hermes_constants import display_hermes_home
+from superforecasting_agent.constants import display_agent_home
 
 logger = logging.getLogger(__name__)
 def get_env_value(name, default=None):
     """Read env values through the live config module.
 
-    Tests may monkeypatch and later restore ``hermes_cli.config.get_env_value``
+    Tests may monkeypatch and later restore ``superforecasting_agent.runtime.config.get_env_value``
     before this module is imported. Resolve the helper at call time so TTS does
     not keep a stale imported function for the rest of the test process.
     """
     try:
-        from hermes_cli.config import get_env_value as _get_env_value
+        from superforecasting_agent.runtime.config import get_env_value as _get_env_value
     except ImportError:
         return os.getenv(name, default)
     value = _get_env_value(name)
@@ -180,8 +180,8 @@ GEMINI_TTS_CHANNELS = 1
 GEMINI_TTS_SAMPLE_WIDTH = 2  # 16-bit PCM (L16)
 
 def _get_default_output_dir() -> str:
-    from hermes_constants import get_hermes_dir
-    return str(get_hermes_dir("cache/audio", "audio_cache"))
+    from superforecasting_agent.constants import get_agent_dir
+    return str(get_agent_dir("cache/audio", "audio_cache"))
 
 DEFAULT_OUTPUT_DIR = _get_default_output_dir()
 
@@ -291,11 +291,11 @@ def _load_tts_config() -> Dict[str, Any]:
     for any missing fields.
     """
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         config = load_config()
         return config.get("tts", {})
     except ImportError:
-        logger.debug("hermes_cli.config not available, using default TTS config")
+        logger.debug("superforecasting_agent.runtime.config not available, using default TTS config")
         return {}
     except Exception as e:
         logger.warning("Failed to load TTS config: %s", e, exc_info=True)
@@ -1218,9 +1218,9 @@ def _resolve_gemini_persona_prompt_path(gemini_config: Dict[str, Any]) -> Option
     path = Path(expanded).expanduser()
     if not path.is_absolute():
         try:
-            from hermes_constants import get_hermes_home
+            from superforecasting_agent.constants import get_agent_home
 
-            path = get_hermes_home() / path
+            path = get_agent_home() / path
         except Exception:
             path = Path.cwd() / path
     return path
@@ -1650,8 +1650,8 @@ def _get_piper_voices_dir() -> Path:
     Resolves under the active agent home so voice downloads follow profile
     boundaries.
     """
-    from hermes_constants import get_hermes_dir
-    root = Path(get_hermes_dir("cache/piper-voices", "piper_voices_cache"))
+    from superforecasting_agent.constants import get_agent_dir
+    root = Path(get_agent_dir("cache/piper-voices", "piper_voices_cache"))
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -1883,9 +1883,9 @@ def _check_kokoro_available() -> bool:
 
 def _get_kokoro_models_dir() -> Path:
     try:
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
 
-        base = Path(get_hermes_home())
+        base = Path(get_agent_home())
     except Exception:
         base = Path.home() / ".superforecasting-agent"
     return base / "cache" / "kokoro"
@@ -2714,7 +2714,7 @@ TTS_SCHEMA = {
             },
             "output_path": {
                 "type": "string",
-                "description": f"Optional custom file path to save the audio. Defaults to {display_hermes_home()}/audio_cache/<timestamp>.mp3"
+                "description": f"Optional custom file path to save the audio. Defaults to {display_agent_home()}/audio_cache/<timestamp>.mp3"
             }
         },
         "required": ["text"]

@@ -25,7 +25,7 @@ const writeStream = (columns: number, rows: number) => {
 
 describe('streaming assistant: the live tail keeps updating on deltas', () => {
   it('repaints as response text streams in — not frozen by isolation', async () => {
-    const { render } = await import('@hermes/ink')
+    const { render } = await import('@superforecasting/ink')
     const { StreamingAssistant } = await import('../components/streamingAssistant.js')
     const { patchTurnState, resetTurnState } = await import('../app/turnStore.js')
     const { resetUiState } = await import('../app/uiStore.js')

@@ -36,9 +36,9 @@ Use this page to orient yourself before editing the codebase. When a decision is
                 ▼                               ▼
 ┌──────────────────────────────┐    ┌──────────────────────────────────┐
 │ Agent-Facing Forecast Tool    │    │ Inherited Runtime Infrastructure │
-│ tools/forecasting_tool.py     │    │ run_agent.py, model_tools.py,    │
+│ tools/forecasting_tool.py     │    │ run_agent.py, superforecasting_agent/tooling/runtime.py,    │
 │                               │    │ cli.py, tui_gateway/, gateway/,  │
-│ create/update/research/score  │    │ cron/, plugins/, toolsets.py     │
+│ create/update/research/score  │    │ cron/, plugins/, superforecasting_agent/tooling/toolsets.py     │
 │ resolve/postmortem/backtest   │    │                                  │
 │ schedule/watch/review         │    │ provider routing, tools, auth,   │
 │                               │    │ sessions, approvals, MCP, files  │
@@ -75,13 +75,13 @@ superforecasting-agent/
 │   └── environments/             # terminal backends
 │
 ├── run_agent.py                  # inherited AIAgent conversation loop
-├── model_tools.py                # inherited tool schema and dispatch plumbing
-├── toolsets.py                   # forecast-desk default plus compatibility toolsets
+├── superforecasting_agent/tooling/runtime.py                # inherited tool schema and dispatch plumbing
+├── superforecasting_agent/tooling/toolsets.py                   # forecast-desk default plus compatibility toolsets
 ├── cli.py                        # classic interactive CLI, forecast-scoped by default
-├── hermes_constants.py           # fork-native home aliases plus legacy compatibility
-├── hermes_state.py               # inherited SQLite session store
+├── superforecasting_agent/constants.py           # fork-native home aliases plus legacy compatibility
+├── superforecasting_agent/storage/session.py               # inherited SQLite session store
 │
-├── hermes_cli/                   # runtime subcommands, setup, auth, profiles
+├── superforecasting_agent/runtime/                   # runtime subcommands, setup, auth, profiles
 ├── ui-tui/                       # Ink TUI, with forecast dashboard/status panels
 ├── tui_gateway/                  # Python JSON-RPC backend for the TUI
 ├── web/                          # browser dashboard, Forecasts-first routing
@@ -94,7 +94,7 @@ superforecasting-agent/
 └── tests/                        # pytest, Vitest, and docs guards
 ```
 
-Names such as `hermes_cli`, `HERMES_HOME`, and `X-Hermes-*` still exist because large parts of the runtime are inherited and external clients already depend on those identifiers. User-facing docs and commands should prefer `superforecasting-agent`, `forecast`, `SUPERFORECASTING_AGENT_HOME`, and `~/.superforecasting-agent`, while documenting legacy names as compatibility.
+Names such as `superforecasting_agent.runtime`, `HERMES_HOME`, and `X-Hermes-*` still exist because large parts of the runtime are inherited and external clients already depend on those identifiers. User-facing docs and commands should prefer `superforecasting-agent`, `forecast`, `SUPERFORECASTING_AGENT_HOME`, and `~/.superforecasting-agent`, while documenting legacy names as compatibility.
 
 ## Forecast Data Flow
 
@@ -233,7 +233,7 @@ The important invariant is that learning is scoreable. A lesson should point bac
 
 ### Inherited Agent Runtime
 
-`run_agent.py`, `model_tools.py`, `toolsets.py`, `cli.py`, `hermes_cli/`, `gateway/`, `tui_gateway/`, and the plugin system are inherited runtime infrastructure. They still provide:
+`run_agent.py`, `superforecasting_agent/tooling/runtime.py`, `superforecasting_agent/tooling/toolsets.py`, `cli.py`, `superforecasting_agent/runtime/`, `gateway/`, `tui_gateway/`, and the plugin system are inherited runtime infrastructure. They still provide:
 
 - provider and model routing
 - tool schemas and dispatch
@@ -258,7 +258,7 @@ If you are new to the fork:
 5. `tools/forecasting_tool.py`
 6. `forecasting/protocol.py`
 7. `forecasting/dashboard.py`
-8. `toolsets.py`
+8. `superforecasting_agent/tooling/toolsets.py`
 9. `run_agent.py`
 10. `tui_gateway/server.py`, `ui-tui/src/app/forecastPanel.ts`, and `web/src/pages/ForecastsPage.tsx`
 
@@ -293,9 +293,9 @@ tools/registry.py
        ↑
 tools/*.py, including tools/forecasting_tool.py
        ↑
-model_tools.py
+superforecasting_agent/tooling/runtime.py
        ↑
-run_agent.py, cli.py, tui_gateway/server.py, gateway/, batch_runner.py
+run_agent.py, cli.py, tui_gateway/server.py, gateway/, superforecasting_agent/trajectories/batch.py
 ```
 
 Tool registration still happens at import time, before any agent instance is created. Adding a new forecast-facing tool action normally means editing `tools/forecasting_tool.py`, the ledger or adapter it calls, and focused tests under `tests/forecasting/`.

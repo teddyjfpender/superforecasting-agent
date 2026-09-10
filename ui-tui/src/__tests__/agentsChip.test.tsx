@@ -34,7 +34,7 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
 }
 
 const renderBar = async (props: Partial<React.ComponentProps<typeof HomeStatusBar>>) => {
-  const { renderSync } = await import('@hermes/ink')
+  const { renderSync } = await import('@superforecasting/ink')
   const stdout = writeStream(140, 8)
   const stdin = writeStream(140, 8, true)
   const stderr = writeStream(140, 8)

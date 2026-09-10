@@ -102,7 +102,7 @@ const setup = async () => {
   const [{ AppLayout }, { GatewayProvider }, { Box, render }, { useVirtualHistory }] = await Promise.all([
     import('../components/appLayout.js'),
     import('../app/gatewayContext.js'),
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../hooks/useVirtualHistory.js')
   ])
 

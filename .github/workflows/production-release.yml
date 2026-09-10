@@ -270,7 +270,7 @@ jobs:
           uv pip install --python .venv -e ".[dev]"
           .venv/bin/python -m pytest -q \
             tests/test_packaging_metadata.py \
-            tests/hermes_cli/test_build_version_signal.py \
+            tests/runtime_cli/test_build_version_signal.py \
             tests/forecasting/test_refresh.py
 
   windows-release-installer:
@@ -343,14 +343,14 @@ jobs:
           cd ui-tui && npm ci && npm run build && cd ..
           cd web && npm ci && npm run build && cd ..
 
-      - name: Bundle TUI + install scripts into hermes_cli
+      - name: Bundle TUI + install scripts into superforecasting_agent.runtime
         run: |
-          mkdir -p hermes_cli/tui_dist hermes_cli/scripts
-          cp ui-tui/dist/entry.js hermes_cli/tui_dist/entry.js
-          cp scripts/install.sh hermes_cli/scripts/install.sh
-          cp scripts/install.ps1 hermes_cli/scripts/install.ps1
-          test -f hermes_cli/tui_dist/entry.js
-          test -f hermes_cli/web_dist/index.html
+          mkdir -p superforecasting_agent/runtime/tui_dist superforecasting_agent/runtime/scripts
+          cp ui-tui/dist/entry.js superforecasting_agent/runtime/tui_dist/entry.js
+          cp scripts/install.sh superforecasting_agent/runtime/scripts/install.sh
+          cp scripts/install.ps1 superforecasting_agent/runtime/scripts/install.ps1
+          test -f superforecasting_agent/runtime/tui_dist/entry.js
+          test -f superforecasting_agent/runtime/web_dist/index.html
 
       - name: Build wheel + sdist
         run: uv build --sdist --wheel

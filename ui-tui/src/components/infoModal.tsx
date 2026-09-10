@@ -1,5 +1,5 @@
-import { Box, type ScrollBoxHandle, Text, useInput } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, type ScrollBoxHandle, Text, useInput } from '@superforecasting/ink'
 import { useRef } from 'react'
 
 import { $globalModal } from '../app/overlayStore.js'

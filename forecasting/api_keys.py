@@ -171,9 +171,9 @@ def lookup_provider(name: str) -> ApiKeyProvider:
 def default_env_path() -> Path:
     """Where api-key writes land — the user-level dotenv loaded first by the runtime."""
 
-    from hermes_cli.env_loader import get_hermes_home
+    from superforecasting_agent.runtime.env_loader import get_agent_home
 
-    return get_hermes_home() / ".env"
+    return get_agent_home() / ".env"
 
 
 def redact(value: str | None) -> str:

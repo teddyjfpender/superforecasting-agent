@@ -1,4 +1,4 @@
-"""Tests for the OpenClaw→Hermes migration hardening features.
+"""Tests for the OpenClaw to Superforecasting Agent migration hardening features.
 
 Covers the changes in the "claw migrate hardening" PR:
   - secret redaction (engine-level, applied to report JSON)
@@ -15,6 +15,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 SCRIPT_PATH = (
     Path(__file__).resolve().parents[2]
@@ -22,12 +24,12 @@ SCRIPT_PATH = (
     / "migration"
     / "openclaw-migration"
     / "scripts"
-    / "openclaw_to_hermes.py"
+    / "openclaw_to_forecast.py"
 )
 
 
 def _load():
-    spec = importlib.util.spec_from_file_location("openclaw_to_hermes_hard", SCRIPT_PATH)
+    spec = importlib.util.spec_from_file_location("openclaw_to_forecast_hard", SCRIPT_PATH)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     sys.modules[spec.name] = module
@@ -389,3 +391,38 @@ def test_status_constants_match_historical_strings():
     assert mod.STATUS_CONFLICT == "conflict"
     assert mod.STATUS_ERROR == "error"
     assert mod.STATUS_ARCHIVED == "archived"
+
+
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_missing_source_returns_failure_in_every_output_mode(tmp_path, json_mode):
+    args = [sys.executable, str(SCRIPT_PATH), "--source", str(tmp_path / "missing"),
+            "--target", str(tmp_path / "target")]
+    if json_mode:
+        args.append("--json")
+    result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 1
+    if json_mode:
+        assert json.loads(result.stdout)["summary"]["error"] == 1
+
+
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_memory_overflow_redacted_in_all_json_output_paths(tmp_path, monkeypatch, json_mode):
+    source, target = tmp_path / "source", tmp_path / "target"
+    (source / "workspace").mkdir(parents=True)
+    target.mkdir()
+    secret = "sk-or-v1-abcdef1234567890abcdef"
+    (source / "workspace" / "MEMORY.md").write_text(f"- Fixture token {secret}\n")
+    (target / "config.yaml").write_text("memory:\n  memory_char_limit: 1\n")
+    args = [sys.executable, str(SCRIPT_PATH), "--source", str(source),
+            "--target", str(target), "--include", "memory"]
+    if json_mode:
+        args.append("--json")
+    else:
+        monkeypatch.setenv("MIGRATION_JSON_OUTPUT", "1")
+    result = subprocess.run(args, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert secret not in result.stdout
+    payload = json.loads(result.stdout[result.stdout.index("{\n"):])
+    item = next(i for i in payload["items"] if i["kind"] == "memory")
+    assert item["details"]["overflowed_entries"] == 1
+    assert "[redacted]" in item["details"]["overflow_preview"][0]

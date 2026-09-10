@@ -30,10 +30,10 @@ import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 from typing import Dict, Any, List, Optional
 
-from utils import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace
 
 # fcntl is Unix-only; on Windows use msvcrt for file locking
 msvcrt = None
@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 # happened after the first import.
 def get_memory_dir() -> Path:
     """Return the profile-scoped memories directory."""
-    return get_hermes_home() / "memories"
+    return get_agent_home() / "memories"
 
 ENTRY_DELIMITER = "\n§\n"
 

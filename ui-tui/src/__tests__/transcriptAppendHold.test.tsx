@@ -1,6 +1,6 @@
 import { PassThrough } from 'stream'
 
-import { Box, render, ScrollBox, type ScrollBoxHandle, Text } from '@hermes/ink'
+import { Box, render, ScrollBox, type ScrollBoxHandle, Text } from '@superforecasting/ink'
 import React, { useRef } from 'react'
 import { describe, expect, it } from 'vitest'
 

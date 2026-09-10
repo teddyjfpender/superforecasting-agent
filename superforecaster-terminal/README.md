@@ -1,11 +1,11 @@
 # superforecaster-terminal
 
-A high-contrast, dark-mode, 90s-terminal-style **Bloomberg-terminal** web UI. This
-is the extracted `term` POC (Vite + React 19 + TypeScript + Tailwind 4), brought in
-to become the web surface for the Superforecasting Agent. It is fully isolated from
-the repo's other web targets:
+An experimental market terminal and read-only forecast viewer, extracted from
+the `term` proof of concept (Vite + React 19 + TypeScript + Tailwind 4). The primary
+Forecast Desk remains the Ink TUI in `ui-tui/`, also embedded in the browser
+dashboard. This experiment is separate from the other interface targets:
 
-- `web/` — the existing hermes-agent webapp (left untouched).
+- `web/` — the browser dashboard, including the PTY-backed Forecast Desk.
 - `website/` — the Docusaurus docs site.
 - `ui-tui/` — the Ink terminal UI.
 

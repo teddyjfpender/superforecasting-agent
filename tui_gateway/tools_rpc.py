@@ -47,7 +47,7 @@ __all__ = ["register"]
 @method("tools.list")
 def _(rid, params: dict) -> dict:
     try:
-        from toolsets import get_all_toolsets, get_toolset_info
+        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
 
         session = _core._sessions.get(params.get("session_id", ""))
         enabled = (
@@ -78,7 +78,7 @@ def _(rid, params: dict) -> dict:
 @method("tools.show")
 def _(rid, params: dict) -> dict:
     try:
-        from model_tools import get_toolset_for_tool, get_tool_definitions
+        from superforecasting_agent.tooling.runtime import get_toolset_for_tool, get_tool_definitions
 
         session = _core._sessions.get(params.get("session_id", ""))
         enabled = (
@@ -127,8 +127,8 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4018, "names required")
 
     try:
-        from hermes_cli.config import load_config, save_config
-        from hermes_cli.tools_config import (
+        from superforecasting_agent.runtime.config import load_config, save_config
+        from superforecasting_agent.runtime.tools_config import (
             CONFIGURABLE_TOOLSETS,
             _apply_mcp_change,
             _apply_toolset_change,
@@ -184,10 +184,10 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5035, str(e))
 
 
-@method("toolsets.list")
+@method("superforecasting_agent.tooling.toolsets.list")
 def _(rid, params: dict) -> dict:
     try:
-        from toolsets import get_all_toolsets, get_toolset_info
+        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
 
         session = _core._sessions.get(params.get("session_id", ""))
         enabled = (

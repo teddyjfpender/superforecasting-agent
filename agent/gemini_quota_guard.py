@@ -7,15 +7,15 @@ import os
 import tempfile
 import time
 
-from utils import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace
 
 _COOLDOWN_SECONDS = 60 * 60
 
 
 def _state_path() -> str:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return os.path.join(get_hermes_home(), "rate_limits", "gemini.json")
+    return os.path.join(get_agent_home(), "rate_limits", "gemini.json")
 
 
 def is_gemini_endpoint(provider: str | None, base_url: str | None) -> bool:

@@ -23,7 +23,7 @@ import pytest
 
 def _make_session_db(tmp_path):
     """Create a real SessionDB for integration-style tests."""
-    from hermes_state import SessionDB
+    from superforecasting_agent.storage.session import SessionDB
     db_path = tmp_path / "test_state.db"
     return SessionDB(db_path=db_path)
 
@@ -182,7 +182,7 @@ class TestSessionsPreservedAcrossRestart:
 
         # And the transcript survives the simulated restart intact: a fresh
         # SessionDB (new process) can still read the conversation back.
-        from hermes_state import SessionDB
+        from superforecasting_agent.storage.session import SessionDB
 
         reopened = SessionDB(db_path=tmp_path / "test_state.db")
         restored = reopened.get_messages_as_conversation("live-session")

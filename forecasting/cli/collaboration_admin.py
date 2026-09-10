@@ -10,9 +10,9 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from hermes_constants import get_hermes_home
-from hermes_cli.config import get_config_path, load_config
-from utils import atomic_roundtrip_yaml_update
+from superforecasting_agent.constants import get_agent_home
+from superforecasting_agent.runtime.config import get_config_path, load_config
+from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
 
 from forecasting import ForecastLedger
 from forecasting.change_control import ChangeControl
@@ -270,7 +270,7 @@ def _cmd_init(args: argparse.Namespace) -> None:
 def _cmd_clone(args: argparse.Namespace) -> None:
     repository = _repository(args.repository)
     source = f"https://github.com/{repository}.git"
-    staging = get_hermes_home() / "workspaces" / f".staging-{uuid.uuid4().hex[:12]}"
+    staging = get_agent_home() / "workspaces" / f".staging-{uuid.uuid4().hex[:12]}"
     if args.dry_run:
         _emit(args, {"action": "clone", "repository": repository, "staging_path": str(staging)})
         return

@@ -2305,7 +2305,7 @@ def main(argv: list[str] | None = None, *, prog: str = CLI_SURFACE) -> None:
     # are active for subsequent invocations. Best-effort: a missing dotenv
     # dependency or unreadable file must not block the CLI.
     try:
-        from hermes_cli.env_loader import load_hermes_dotenv
+        from superforecasting_agent.runtime.env_loader import load_hermes_dotenv
 
         load_hermes_dotenv()
     except Exception:  # pragma: no cover — defensive
@@ -2975,7 +2975,7 @@ def _draft_resolution_criteria(spec: Any, *, model: str | None = None, provider:
     is never trusted — it still passes the full spec validation before commit."""
 
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         from forecasting.quorum import make_aiagent_runner
 
         active = model or _resolve_active_model_id(load_config().get("model"))
@@ -7423,7 +7423,7 @@ def _run_research_audit_loop(
             return 0, None
 
     try:
-        from hermes_cli.config import cfg_get, load_config_readonly
+        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
 
         max_rounds = int(cfg_get(load_config_readonly(), "forecasting", "research", "max_audit_rounds", default=2) or 0)
     except Exception:
@@ -9013,7 +9013,7 @@ def build_triage_runner(*, model: str | None = None):
     if model or configured:
         resolved = model or configured
     else:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         resolved = _resolve_active_model_id(load_config().get("model")) or quorum.DEFAULT_JUDGE_MODEL
     runner = quorum.make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)

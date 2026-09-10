@@ -50,18 +50,20 @@ entry points you'll actually edit.
 
 ```
 superforecasting-agent/
-├── run_agent.py          # AIAgent class — core forecast-support loop (~12k LOC)
-├── model_tools.py        # Tool orchestration, discover_builtin_tools(), handle_function_call()
-├── toolsets.py           # Toolset definitions, _HERMES_CORE_TOOLS list
+├── run_agent.py          # AIAgent class — core forecast-support loop
 ├── cli.py                # inherited classic CLI shell + forecast-desk entrypoint
-├── hermes_state.py       # SessionDB — SQLite session store (FTS5 search)
-├── hermes_constants.py   # get_hermes_home(), display_hermes_home() — profile-aware paths
-├── hermes_logging.py     # setup_logging() — agent.log / errors.log / gateway.log (profile-aware)
+├── superforecasting_agent/ # Public package and python -m entrypoint
+│   ├── cli.py            # Forecast-first command dispatcher
+│   ├── bootstrap.py      # Early startup without application imports
+│   ├── constants.py      # Profile-aware agent-home paths
+│   ├── paths.py          # Installed code root, separate from profile data
+│   ├── logging.py        # Profile-aware runtime logging
+│   ├── runtime/          # CLI, configuration, installation, plugins, dashboard
+│   ├── storage/          # SessionDB facade and focused SQLite operations
+│   ├── tooling/          # Tool discovery/dispatch, toolset facade and catalogs
+│   └── trajectories/     # Batch generation, compression, and statistics
 ├── forecasting/          # Forecast ledger, scoring, learning, backtesting, source adapters
-├── superforecasting_agent/ # Fork-native public package / python -m entrypoint
-├── batch_runner.py       # Parallel batch processing
 ├── agent/                # Agent internals (provider adapters, memory, caching, compression, etc.)
-├── hermes_cli/           # Inherited CLI/runtime modules with fork-native visible copy
 ├── tools/                # Tool implementations — auto-discovered via tools/registry.py
 │   └── environments/     # Terminal backends (local, docker, ssh, modal, daytona, singularity)
 ├── gateway/              # Messaging gateway — run.py + session.py + platforms/
@@ -78,8 +80,8 @@ superforecasting-agent/
 │   ├── hermes-achievements/  # Gamified achievement tracking
 │   ├── observability/    # Metrics / traces / logs plugin
 │   ├── image_gen/        # Image-generation providers
-│   └── <others>/         # disk-cleanup, example-dashboard, google_meet, obsidian,
-│                         #   platforms, strike-freedom-cockpit, ...
+│   └── <others>/         # browser, disk-cleanup, google_meet, obsidian,
+│                         #   platforms, teams_pipeline, video_gen, web, ...
 ├── optional-skills/      # Heavier/niche skills shipped but NOT active by default
 ├── skills/               # Built-in skills bundled with the repo
 ├── ui-tui/               # Ink (React) terminal UI — `superforecasting-agent tui`
@@ -89,7 +91,7 @@ superforecasting-agent/
 ├── cron/                 # Scheduler — jobs.py, scheduler.py
 ├── scripts/              # run_tests.sh, release.py, auxiliary scripts
 ├── website/              # Docusaurus docs site
-└── tests/                # Pytest suite (~17k tests across ~900 files as of May 2026)
+└── tests/                # Pytest suite grouped by product and runtime subsystem
 ```
 
 **User config:** `~/.superforecasting-agent/config.yaml` (settings),
@@ -97,7 +99,7 @@ superforecasting-agent/
 supported for existing installs.
 **Logs:** `~/.superforecasting-agent/logs/` — `agent.log` (INFO+),
 `errors.log` (WARNING+), `gateway.log` when running the gateway. Profile-aware
-via `get_hermes_home()`. Browse with
+via `get_agent_home()`. Browse with
 `superforecasting-agent logs [--follow] [--level ...] [--session ...]`.
 
 ## File Dependency Chain
@@ -107,9 +109,9 @@ tools/registry.py  (no deps — imported by all tool files)
        ↑
 tools/*.py  (each calls registry.register() at import time)
        ↑
-model_tools.py  (imports tools/registry + triggers tool discovery)
+superforecasting_agent/tooling/runtime.py  (imports tools/registry + triggers tool discovery)
        ↑
-run_agent.py, cli.py, batch_runner.py, environments/
+run_agent.py, cli.py, superforecasting_agent/trajectories/batch.py, environments/
 ```
 
 ---
@@ -179,11 +181,11 @@ Reasoning content is stored in `assistant_msg["reasoning"]`.
 - **Rich** for banner/panels, **prompt_toolkit** for input with autocomplete
 - **ForecastSpinner** (`agent/display.py`) — neutral forecast-desk markers during API calls; `KawaiiSpinner` remains a compatibility alias
 - `load_cli_config()` in cli.py merges hardcoded defaults + user config YAML
-- **Skin engine** (`hermes_cli/skin_engine.py`) — data-driven CLI theming; initialized from `display.skin` config key at startup; skins customize banner colors, spinner faces/verbs/wings, tool prefix, response box, branding text
-- `process_command()` is a method on the inherited `HermesCLI` class — dispatches on canonical command name resolved via `resolve_command()` from the central registry
+- **Skin engine** (`superforecasting_agent/runtime/skin_engine.py`) — data-driven CLI theming; initialized from `display.skin` config key at startup; skins customize banner colors, spinner faces/verbs/wings, tool prefix, response box, branding text
+- `process_command()` is a method on the `ForecastCLI` class — dispatches on canonical command name resolved via `resolve_command()` from the central registry
 - Skill slash commands: `agent/skill_commands.py` scans the active forecast home's `skills/` directory, injects as **user message** (not system prompt) to preserve prompt caching
 
-### Slash Command Registry (`hermes_cli/commands.py`)
+### Slash Command Registry (`superforecasting_agent/runtime/commands.py`)
 
 All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandDef` objects. Every downstream consumer derives from this registry automatically:
 
@@ -197,12 +199,12 @@ All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandD
 
 ### Adding a Slash Command
 
-1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `hermes_cli/commands.py`:
+1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `superforecasting_agent/runtime/commands.py`:
 ```python
 CommandDef("mycommand", "Description of what it does", "Session",
            aliases=("mc",), args_hint="[arg]"),
 ```
-2. Add handler in `HermesCLI.process_command()` in `cli.py`:
+2. Add handler in `ForecastCLI.process_command()` in `cli.py`:
 ```python
 elif canonical == "mycommand":
     self._handle_mycommand(cmd_original)
@@ -272,9 +274,9 @@ Newline-delimited JSON-RPC over stdio. Requests from Ink, events from Python. Se
 ```bash
 cd ui-tui
 npm install       # first time
-npm run dev       # watch mode (rebuilds hermes-ink + tsx --watch)
+npm run dev       # watch mode (rebuilds forecast-ink + tsx --watch)
 npm start         # production
-npm run build     # full build (hermes-ink + tsc)
+npm run build     # full build (forecast-ink + tsc)
 npm run type-check # typecheck only (tsc --noEmit)
 npm run lint      # eslint
 npm run fmt       # prettier
@@ -284,8 +286,8 @@ npm test          # vitest
 ### TUI in the Dashboard (`superforecasting-agent dashboard` → `/desk`)
 
 The dashboard embeds the real forecast TUI — **not** a rewrite. See
-`hermes_cli/pty_bridge.py` + the `@app.websocket("/api/pty")` endpoint in
-`hermes_cli/web_server.py`.
+`superforecasting_agent/runtime/pty_bridge.py` + the `@app.websocket("/api/pty")` endpoint in
+`superforecasting_agent/runtime/web_server.py`.
 
 - Browser loads `web/src/pages/ForecastDeskPage.tsx`, which mounts xterm.js's `Terminal` with the WebGL renderer, `@xterm/addon-fit` for container-driven resize, and `@xterm/addon-unicode11` for modern wide-character widths.
 - `/api/pty?token=…` upgrades to a WebSocket; auth uses the same ephemeral `_SESSION_TOKEN` as REST, via query param (browsers can't set `Authorization` on WS upgrade).
@@ -305,7 +307,7 @@ Use the plugin route instead: create
 `~/.superforecasting-agent/plugins/<name>/plugin.yaml` and
 `~/.superforecasting-agent/plugins/<name>/__init__.py`, then register tools with
 `ctx.register_tool(...)`. Plugin toolsets are discovered automatically and can be
-enabled or disabled without touching `tools/` or `toolsets.py`.
+enabled or disabled without touching `tools/` or `superforecasting_agent/tooling/toolsets.py`.
 
 Use the built-in route below only when the user is explicitly contributing a new
 core Superforecasting Agent tool that should ship in the base system.
@@ -333,15 +335,20 @@ registry.register(
 )
 ```
 
-**2. Add to `toolsets.py`** — either `_HERMES_CORE_TOOLS` (all platforms) or a new toolset. **This step is required:** auto-discovery imports the tool and registers its schema, but the tool is only *exposed to an agent* if its name appears in a toolset. `_HERMES_CORE_TOOLS` is not dead code — it's the default bundle every platform's base toolset inherits from.
+**2. Add tool membership in `superforecasting_agent/tooling/catalogs/`.**
+`capabilities.py` defines individual tool categories; `forecast.py` composes the
+forecast presets. Update the intended preset or its included category so the
+new tool is exposed to agents. `core.py` holds `_CORE_TOOLS` for inherited
+platform presets in `legacy.py`; it does not replace forecast preset membership.
+Auto-discovery registers the schema, but catalog membership determines exposure.
 
 Auto-discovery: any `tools/*.py` file with a top-level `registry.register()` call is imported automatically — no manual import list to maintain. Wiring into a toolset is still a deliberate, manual step.
 
 The registry handles schema collection, dispatch, availability checking, and error wrapping. All handlers MUST return a JSON string.
 
-**Path references in tool schemas**: If the schema description mentions file paths (e.g. default output directories), use `display_hermes_home()` to make them profile-aware. The schema is generated at import time, which is after `_apply_profile_override()` sets `HERMES_HOME`.
+**Path references in tool schemas**: If the schema description mentions file paths (e.g. default output directories), use `display_agent_home()` to make them profile-aware. The schema is generated at import time, which is after `_apply_profile_override()` sets `HERMES_HOME`.
 
-**State files**: If a tool stores persistent state (caches, logs, checkpoints), use `get_hermes_home()` for the base directory — never `Path.home() / ".hermes"`. This ensures each profile gets its own state.
+**State files**: If a tool stores persistent state (caches, logs, checkpoints), use `get_agent_home()` for the base directory — never `Path.home() / ".hermes"`. This ensures each profile gets its own state.
 
 **Agent-level tools** (todo, memory): intercepted by `run_agent.py` before `handle_function_call()`. See `tools/todo_tool.py` for the pattern.
 
@@ -373,7 +380,7 @@ Reference: #2810 (bounds pass), #9801 (SHA pinning + audit CI).
 ## Adding Configuration
 
 ### config.yaml options:
-1. Add to `DEFAULT_CONFIG` in `hermes_cli/config.py`
+1. Add to `DEFAULT_CONFIG` in `superforecasting_agent/runtime/config.py`
 2. Bump `_config_version` (check the current value at the top of `DEFAULT_CONFIG`)
    ONLY if you need to actively migrate/transform existing user config
    (renaming keys, changing structure). Adding a new key to an existing
@@ -397,7 +404,7 @@ its own provider/model/base_url/max_tokens/reasoning_effort. See
 `archive_after_days`, `backup` (nested).
 
 ### .env variables (SECRETS ONLY — API keys, tokens, passwords):
-1. Add to `OPTIONAL_ENV_VARS` in `hermes_cli/config.py` with metadata:
+1. Add to `OPTIONAL_ENV_VARS` in `superforecasting_agent/runtime/config.py` with metadata:
 ```python
 "NEW_API_KEY": {
     "description": "What it's for",
@@ -418,7 +425,7 @@ the env var in code (see `gateway_timeout`, `terminal.cwd` → `TERMINAL_CWD`).
 | Loader | Used by | Location |
 |--------|---------|----------|
 | `load_cli_config()` | CLI mode | `cli.py` — merges CLI-specific defaults + user YAML |
-| `load_config()` | `superforecasting-agent tools`, `superforecasting-agent setup`, most CLI subcommands | `hermes_cli/config.py` — merges `DEFAULT_CONFIG` + user YAML |
+| `load_config()` | `superforecasting-agent tools`, `superforecasting-agent setup`, most CLI subcommands | `superforecasting_agent/runtime/config.py` — merges `DEFAULT_CONFIG` + user YAML |
 | Direct YAML load | Gateway runtime | `gateway/run.py` + `gateway/config.py` — reads user YAML raw |
 
 If you add a new key and the CLI sees it but the gateway doesn't (or vice
@@ -436,12 +443,12 @@ versa), you're on the wrong loader. Check `DEFAULT_CONFIG` coverage.
 
 ## Skin/Theme System
 
-The skin engine (`hermes_cli/skin_engine.py`) provides data-driven CLI visual customization. Skins are **pure data** — no code changes needed to add a new skin.
+The skin engine (`superforecasting_agent/runtime/skin_engine.py`) provides data-driven CLI visual customization. Skins are **pure data** — no code changes needed to add a new skin.
 
 ### Architecture
 
 ```
-hermes_cli/skin_engine.py    # SkinConfig dataclass, built-in skins, YAML loader
+superforecasting_agent/runtime/skin_engine.py    # SkinConfig dataclass, built-in skins, YAML loader
 ~/.superforecasting-agent/skins/*.yaml  # User-installed custom skins (drop-in)
 ```
 
@@ -489,7 +496,7 @@ desk. Avoid adding playful persona or general-assistant themes as defaults.
 
 ### Adding a built-in skin
 
-Add to `_BUILTIN_SKINS` dict in `hermes_cli/skin_engine.py`:
+Add to `_BUILTIN_SKINS` dict in `superforecasting_agent/runtime/skin_engine.py`:
 
 ```python
 "mytheme": {
@@ -538,7 +545,7 @@ Superforecasting Agent has two inherited plugin surfaces. Both live under
 user-installed ones in `~/.superforecasting-agent/plugins/`, legacy
 `~/.hermes/plugins/`, and pip-installed entry points.
 
-### General plugins (`hermes_cli/plugins.py` + `plugins/<name>/`)
+### General plugins (`superforecasting_agent/runtime/plugins.py` + `plugins/<name>/`)
 
 `PluginManager` discovers plugins from the active forecast home, legacy
 `~/.hermes/plugins/`, optional project `.hermes/plugins/`, and pip entry points.
@@ -553,10 +560,10 @@ can:
   plugin's argparse tree is wired into `superforecasting-agent` at startup so
   `superforecasting-agent <pluginname> <subcmd>` works with no change to `main.py`
 
-Hooks are invoked from `model_tools.py` (pre/post tool) and `run_agent.py`
+Hooks are invoked from `superforecasting_agent/tooling/runtime.py` (pre/post tool) and `run_agent.py`
 (lifecycle). **Discovery timing pitfall:** `discover_plugins()` only runs
-as a side effect of importing `model_tools.py`. Code paths that read plugin
-state without importing `model_tools.py` first must call `discover_plugins()`
+as a side effect of importing `superforecasting_agent/tooling/runtime.py`. Code paths that read plugin
+state without importing `superforecasting_agent/tooling/runtime.py` first must call `discover_plugins()`
 explicitly (it's idempotent).
 
 ### Memory-provider plugins (`plugins/memory/<name>/`)
@@ -579,7 +586,7 @@ provider (read from `memory.provider` in config.yaml), so disabled
 providers don't clutter `superforecasting-agent --help`.
 
 **Rule (Teknium, May 2026):** plugins MUST NOT modify core files
-(`run_agent.py`, `cli.py`, `gateway/run.py`, `hermes_cli/main.py`, etc.).
+(`run_agent.py`, `cli.py`, `gateway/run.py`, `superforecasting_agent/runtime/main.py`, etc.).
 If a plugin needs a capability the framework doesn't expose, expand the
 generic plugin surface (new hook, new ctx method) — never hardcode
 plugin-specific logic into core. PR #5295 removed 95 lines of hardcoded
@@ -748,16 +755,17 @@ before polishing contributor skill PRs.
 
 ## Toolsets
 
-All toolsets are defined in `toolsets.py` as a single `TOOLSETS` dict.
-Each platform's adapter picks a base toolset (e.g. Telegram uses
-`"messaging"`); `_HERMES_CORE_TOOLS` is the default bundle most
-platforms inherit from.
+Built-in definitions live in `superforecasting_agent/tooling/catalogs/`:
+`capabilities.py` owns individual categories, `forecast.py` composes forecast
+presets, and `legacy.py` / `aliases.py` retain compatibility presets and names.
+`catalogs/__init__.py` assembles `TOOLSETS`; `toolsets.py` resolves included
+categories and plugin-registered members. Change membership in the catalogs,
+rather than adding definitions to the resolver.
 
-Current toolset keys: `browser`, `clarify`, `code_execution`, `cronjob`,
-`debugging`, `delegation`, `discord`, `discord_admin`, `feishu_doc`,
-`feishu_drive`, `file`, `homeassistant`, `image_gen`, `kanban`, `memory`,
-`messaging`, `moa`, `rl`, `safe`, `search`, `session_search`, `skills`,
-`terminal`, `todo`, `tts`, `video`, `vision`, `web`, `yuanbao`.
+`forecast-desk` is the primary desk preset. Inherited platform presets draw their
+base tools from `catalogs/core.py::_CORE_TOOLS`; registered plugin platforms also
+receive their own registered tools. `get_public_toolset_names()` lists the
+current public presets without advertising the inherited `hermes-*` names.
 
 Enable/disable per platform via `superforecasting-agent tools` (the curses UI)
 or the `tools.<platform>.enabled` / `tools.<platform>.disabled` lists in
@@ -806,7 +814,7 @@ go under the active agent home at `skills/.archive/` and are restorable.
 
 - **Core:** `agent/curator.py` (review loop, auto-transitions, LLM review
   prompt) + `agent/curator_backup.py` (pre-run tar.gz snapshots).
-- **CLI:** `hermes_cli/curator.py` wires `superforecasting-agent curator <verb>` where
+- **CLI:** `superforecasting_agent/runtime/curator.py` wires `superforecasting-agent curator <verb>` where
   verbs are: `status`, `run`, `pause`, `resume`, `pin`, `unpin`,
   `archive`, `restore`, `prune`, `backup`, `rollback`.
 - **Telemetry:** `tools/skill_usage.py` owns the sidecar
@@ -876,7 +884,7 @@ workers spawned by the dispatcher drive it via a dedicated `kanban_*`
 toolset so their schema footprint is zero when they're not inside a
 kanban task.
 
-- **CLI:** `hermes_cli/kanban.py` wires `superforecasting-agent kanban` with verbs
+- **CLI:** `superforecasting_agent/runtime/kanban.py` wires `superforecasting-agent kanban` with verbs
   `init`, `create`, `list` (alias `ls`), `show`, `assign`, `link`,
   `unlink`, `comment`, `complete`, `block`, `unblock`, `archive`,
   `tail`, plus less-commonly-used `watch`, `stats`, `runs`, `log`,
@@ -949,42 +957,42 @@ memory, sessions, skills, gateway, cron, and logs). The inherited internal
 environment variable is still named `HERMES_HOME`; new setup and docs should
 prefer `SUPERFORECASTING_AGENT_HOME` / `FORECAST_HOME` for user-facing guidance.
 
-The core mechanism: `_apply_profile_override()` in `hermes_cli/main.py` sets
-`HERMES_HOME` before any module imports. All `get_hermes_home()` references
+The core mechanism: `_apply_profile_override()` in `superforecasting_agent/runtime/main.py` sets
+`HERMES_HOME` before any module imports. All `get_agent_home()` references
 automatically scope to the active profile.
 
 ### Rules for profile-safe code
 
-1. **Use `get_hermes_home()` for all HERMES_HOME paths.** Import from `hermes_constants`.
+1. **Use `get_agent_home()` for all HERMES_HOME paths.** Import from `superforecasting_agent.constants`.
    NEVER hardcode `~/.superforecasting-agent`, `~/.hermes`, or `Path.home() / ".hermes"` in code that reads/writes state.
    ```python
    # GOOD
-   from hermes_constants import get_hermes_home
-   config_path = get_hermes_home() / "config.yaml"
+   from superforecasting_agent.constants import get_agent_home
+   config_path = get_agent_home() / "config.yaml"
 
    # BAD — breaks profiles
    config_path = Path.home() / ".hermes" / "config.yaml"
    ```
 
-2. **Use `display_hermes_home()` for user-facing messages.** Import from `hermes_constants`.
+2. **Use `display_agent_home()` for user-facing messages.** Import from `superforecasting_agent.constants`.
    This returns the active display home, usually `~/.superforecasting-agent` or
    `~/.superforecasting-agent/profiles/<name>` for new installs, while still
    displaying legacy homes accurately during migration.
    ```python
    # GOOD
-   from hermes_constants import display_hermes_home
-   print(f"Config saved to {display_hermes_home()}/config.yaml")
+   from superforecasting_agent.constants import display_agent_home
+   print(f"Config saved to {display_agent_home()}/config.yaml")
 
    # BAD — shows wrong path for profiles and migrated homes
    print("Config saved to ~/.superforecasting-agent/config.yaml")
    ```
 
-3. **Module-level constants are fine** — they cache `get_hermes_home()` at import time,
-   which is AFTER `_apply_profile_override()` sets the env var. Just use `get_hermes_home()`,
+3. **Module-level constants are fine** — they cache `get_agent_home()` at import time,
+   which is AFTER `_apply_profile_override()` sets the env var. Just use `get_agent_home()`,
    not `Path.home() / ".hermes"`.
 
 4. **Tests that mock `Path.home()` must also set `HERMES_HOME`** — since code now uses
-   `get_hermes_home()` (reads env var), not `Path.home() / ".hermes"`:
+   `get_agent_home()` (reads env var), not `Path.home() / ".hermes"`:
    ```python
    with patch.object(Path, "home", return_value=tmp_path), \
         patch.dict(os.environ, {"HERMES_HOME": str(tmp_path / ".superforecasting-agent")}):
@@ -999,33 +1007,33 @@ automatically scope to the active profile.
 
 6. **Profile operations are default-root anchored, not active-profile anchored** —
    `_get_profiles_root()` returns the default runtime root's `profiles/` directory,
-   NOT the current profile's `get_hermes_home() / "profiles"`. This is intentional:
+   NOT the current profile's `get_agent_home() / "profiles"`. This is intentional:
    it lets `superforecasting-agent -p coder profile list` see all profiles regardless
    of which one is active.
 
 ## Known Pitfalls
 
 ### DO NOT hardcode agent-home paths
-Use `get_hermes_home()` from `hermes_constants` for code paths. Use `display_hermes_home()`
+Use `get_agent_home()` from `superforecasting_agent.constants` for code paths. Use `display_agent_home()`
 for user-facing print/log messages. Hardcoding `~/.superforecasting-agent` or
 `~/.hermes` breaks profiles and migrated homes because each profile has its own
 active agent home. This was the source of 5 bugs fixed in PR #3575.
 
 ### DO NOT introduce new `simple_term_menu` usage
-Existing call sites in `hermes_cli/main.py` remain for legacy fallback only;
+Existing call sites in `superforecasting_agent/runtime/main.py` remain for legacy fallback only;
 the preferred UI is curses (stdlib) because `simple_term_menu` has
 ghost-duplication rendering bugs in tmux/iTerm2 with arrow keys. New
-interactive menus must use `hermes_cli/curses_ui.py` — see
-`hermes_cli/tools_config.py` for the canonical pattern.
+interactive menus must use `superforecasting_agent/runtime/curses_ui.py` — see
+`superforecasting_agent/runtime/tools_config.py` for the canonical pattern.
 
 ### DO NOT use `\033[K` (ANSI erase-to-EOL) in spinner/display code
 Leaks as literal `?[K` text under `prompt_toolkit`'s `patch_stdout`. Use space-padding: `f"\r{line}{' ' * pad}"`.
 
-### `_last_resolved_tool_names` is a process-global in `model_tools.py`
+### `_last_resolved_tool_names` is a process-global in `superforecasting_agent/tooling/definitions.py`
 `_run_single_child()` in `delegate_tool.py` saves and restores this global around subagent execution. If you add new code that reads this global, be aware it may be temporarily stale during child agent runs.
 
 ### DO NOT hardcode cross-tool references in schema descriptions
-Tool schema descriptions must not mention tools from other toolsets by name (e.g., `browser_navigate` saying "prefer web_search"). Those tools may be unavailable (missing API keys, disabled toolset), causing the model to hallucinate calls to non-existent tools. If a cross-reference is needed, add it dynamically in `get_tool_definitions()` in `model_tools.py` — see the `browser_navigate` / `execute_code` post-processing blocks for the pattern.
+Tool schema descriptions must not mention tools from other toolsets by name (e.g., `browser_navigate` saying "prefer web_search"). Those tools may be unavailable (missing API keys, disabled toolset), causing the model to hallucinate calls to non-existent tools. If a cross-reference is needed, add it dynamically in `get_tool_definitions()` in `superforecasting_agent/tooling/definitions.py` — see the `browser_navigate` / `execute_code` post-processing blocks for the pattern.
 
 ### The gateway has TWO message guards — both must bypass approval/control commands
 When an agent is running, messages pass through two sequential guards:
@@ -1058,7 +1066,7 @@ The `_isolate_hermes_home` autouse fixture in `tests/conftest.py` redirects
 
 **Profile tests**: When testing profile features, also mock `Path.home()` so that
 `_get_profiles_root()` and `_get_default_hermes_home()` resolve within the temp dir.
-Use the pattern from `tests/hermes_cli/test_profiles.py`:
+Use the pattern from `tests/runtime_cli/test_profiles.py`:
 ```python
 @pytest.fixture
 def profile_env(tmp_path, monkeypatch):

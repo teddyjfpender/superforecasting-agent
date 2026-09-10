@@ -11,7 +11,7 @@ Superforecasting Agent inherits a plugin system for adding custom forecast tools
 
 For forecasting work, use plugins when an extension improves the desk's ability to gather evidence, call a domain data source, run a model, trigger alerts, review stale forecasts, or route outputs to another system. Keep broad assistant-style plugins opt-in unless they directly improve research, probability estimation, scoring, or calibration.
 
-If you want to create a custom tool for yourself, your team, or one project, this is usually the right path. The developer guide's [Adding Tools](/developer-guide/adding-tools) page is for built-in core tools that live in `tools/` and `toolsets.py`.
+If you want to create a custom tool for yourself, your team, or one project, this is usually the right path. The developer guide's [Adding Tools](/developer-guide/adding-tools) page is for built-in core tools that live in `tools/` and `superforecasting_agent/tooling/toolsets.py`.
 
 **[Build a Plugin](/guides/build-a-superforecasting-agent-plugin)** - step-by-step guide with a complete working example.
 

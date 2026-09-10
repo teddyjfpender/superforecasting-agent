@@ -291,9 +291,9 @@ def default_token_path(home: Optional["os.PathLike | str"] = None) -> "Path":
     from pathlib import Path
 
     if home is None:
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
 
-        home = get_hermes_home()
+        home = get_agent_home()
     return Path(home) / _TOKEN_FILENAME
 
 
@@ -411,7 +411,7 @@ def _resolve_token(
 
 def _agent_version() -> Optional[str]:
     try:
-        from hermes_cli import __version__
+        from superforecasting_agent.runtime import __version__
 
         return str(__version__)
     except Exception:  # noqa: BLE001
@@ -428,10 +428,10 @@ def _ledger_ok() -> Optional[bool]:
         import sqlite3
 
         from forecasting import appconfig
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
 
         db = (appconfig.get_str("FORECAST_LEDGER_DB", "") or "").strip()
-        db = db or str(get_hermes_home() / "forecasting" / "forecasting.db")
+        db = db or str(get_agent_home() / "forecasting" / "forecasting.db")
         if not os.path.exists(db):
             return None
         con = sqlite3.connect(db, timeout=1.0)
@@ -901,6 +901,7 @@ def serve(
         alongside_stdio=alongside_stdio,
         rpc_timeout=rpc_timeout,
     )
+    server.start_build_check()
     bound_host, bound_port = httpd.server_address[0], httpd.server_address[1]
     auth = "token-protected" if httpd.token else "loopback, no token"
     health = "public" if health_public else "token-required"

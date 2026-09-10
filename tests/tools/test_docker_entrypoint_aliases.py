@@ -13,9 +13,9 @@ ENTRYPOINT = REPO_ROOT / "docker" / "entrypoint.sh"
 def test_dockerfile_exports_forecast_native_web_dist_aliases() -> None:
     text = DOCKERFILE.read_text(encoding="utf-8")
 
-    assert "ENV SUPERFORECASTING_AGENT_WEB_DIST=/opt/hermes/hermes_cli/web_dist" in text
-    assert "ENV FORECAST_WEB_DIST=/opt/hermes/hermes_cli/web_dist" in text
-    assert "ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist" in text
+    assert "ENV SUPERFORECASTING_AGENT_WEB_DIST=/opt/superforecasting-agent/superforecasting_agent/runtime/web_dist" in text
+    assert "ENV FORECAST_WEB_DIST=/opt/superforecasting-agent/superforecasting_agent/runtime/web_dist" in text
+    assert "ENV HERMES_WEB_DIST=/opt/superforecasting-agent/superforecasting_agent/runtime/web_dist" in text
 
 
 def test_docker_entrypoint_prefers_forecast_native_runtime_aliases() -> None:

@@ -138,7 +138,7 @@ def test_default_providers_include_all_seven():
     }
 
 
-def test_service_routes_the_four_new_providers_with_real_parsers_no_network():
+def test_service_routes_the_four_new_providers_with_real_parsers_no_network(monkeypatch):
     """The service groups by provider and runs each REAL provider's parser off an
     injected getter — no network — proving the C2 wiring end-to-end."""
 
@@ -146,6 +146,13 @@ def test_service_routes_the_four_new_providers_with_real_parsers_no_network():
     from forecasting.marketdata.providers.coingecko import CoingeckoProvider
     from forecasting.marketdata.providers.fred import FredProvider
     from forecasting.marketdata.providers.stooq import StooqProvider
+
+    # This parser-routing fixture describes July 2026, not the wall-clock date.
+    from datetime import date
+    from unittest.mock import Mock
+    reference_date = Mock(wraps=date)
+    reference_date.today.return_value = date(2026, 7, 2)
+    monkeypatch.setattr("forecasting.marketdata.providers.fred.date", reference_date)
 
     cg = CoingeckoProvider(get_json=lambda url, **kw: {"bitcoin": {"usd": 64239, "usd_24h_change": -1.05}})
     # No key resolved → FRED takes the keyless CSV path (get_text).

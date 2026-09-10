@@ -29,7 +29,7 @@ def test_syncs_exact_revision_and_writes_lock(tmp_path, monkeypatch):
     revision = _git(source, "rev-parse", "HEAD")
 
     home = tmp_path / "home"
-    monkeypatch.setattr("agent.extension_sources.get_hermes_home", lambda: home)
+    monkeypatch.setattr("agent.extension_sources.get_agent_home", lambda: home)
     config = {
         "extensions": {"sources": [{"repo": source.as_uri(), "ref": revision}]}
     }
@@ -45,7 +45,7 @@ def test_syncs_exact_revision_and_writes_lock(tmp_path, monkeypatch):
 
 def test_rejects_option_like_git_ref(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    monkeypatch.setattr("agent.extension_sources.get_hermes_home", lambda: home)
+    monkeypatch.setattr("agent.extension_sources.get_agent_home", lambda: home)
     with pytest.raises(ValueError, match="invalid extension ref"):
         sync_extension_sources({
             "extensions": {"sources": [{"repo": "example/repo", "ref": "--help"}]}
@@ -53,7 +53,7 @@ def test_rejects_option_like_git_ref(tmp_path, monkeypatch):
 
 
 def test_rejects_credentials_embedded_in_repo_url(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent.extension_sources.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("agent.extension_sources.get_agent_home", lambda: tmp_path)
     with pytest.raises(ValueError, match="must not contain credentials"):
         sync_extension_sources({
             "extensions": {"sources": [{
@@ -63,7 +63,7 @@ def test_rejects_credentials_embedded_in_repo_url(tmp_path, monkeypatch):
 
 
 def test_rejects_unsafe_scp_style_repo(tmp_path, monkeypatch):
-    monkeypatch.setattr("agent.extension_sources.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("agent.extension_sources.get_agent_home", lambda: tmp_path)
     with pytest.raises(ValueError, match="invalid extension repo"):
         sync_extension_sources({
             "extensions": {"sources": [{"repo": "git@host:repo name", "ref": "main"}]}

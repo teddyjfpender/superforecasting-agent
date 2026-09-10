@@ -39,11 +39,12 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from hermes_constants import get_hermes_home, display_hermes_home
+from superforecasting_agent.constants import get_agent_home, display_agent_home
 from typing import Dict, Any, Optional, Tuple
 
-from utils import atomic_replace, is_truthy_value
-from hermes_cli.config import cfg_get
+from superforecasting_agent.storage.files import atomic_replace
+from superforecasting_agent.environment import is_truthy_value
+from superforecasting_agent.runtime.config import cfg_get
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +66,7 @@ def _guard_agent_created_enabled() -> bool:
     on via `superforecasting-agent config set skills.guard_agent_created true`.
     """
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         cfg = load_config()
         return is_truthy_value(
             cfg_get(cfg, "skills", "guard_agent_created"),
@@ -105,7 +106,7 @@ import yaml
 
 
 # All skills live in the active agent-home skills/ directory (single source of truth)
-HERMES_HOME = get_hermes_home()
+HERMES_HOME = get_agent_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 
 MAX_NAME_LENGTH = 64
@@ -625,7 +626,7 @@ def _write_file(name: str, file_path: str, file_content: str) -> Dict[str, Any]:
     ``_validate_file_path`` (allowlisted subdirs, no ``..`` traversal),
     ``_resolve_skill_target`` (stay within the skill dir), the size caps, and
     the post-write security scan with rollback. The HARNESS CODE wall
-    (tools/hermes_cli/agent/gateway) is enforced separately in
+    (tools/superforecasting_agent/runtime/agent/gateway) is enforced separately in
     ``tools/file_tools.py``.
     """
     err = _validate_file_path(file_path)
@@ -814,7 +815,7 @@ SKILL_MANAGE_SCHEMA = {
     "description": (
         "Manage skills (create, update, delete). Skills are your procedural "
         "memory — reusable approaches for recurring task types. "
-        f"New skills go to {display_hermes_home()}/skills/; existing skills can be modified wherever they live.\n\n"
+        f"New skills go to {display_agent_home()}/skills/; existing skills can be modified wherever they live.\n\n"
         "Actions: create (full SKILL.md + optional category), "
         "patch (old_string/new_string — preferred for fixes), "
         "edit (full SKILL.md rewrite — major overhauls only), "

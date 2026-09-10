@@ -38,7 +38,7 @@ residue, not the product.
   Kalshi distributions, order books, and price history as structured data, plus a
   market-data provider fan-out (FX, econ series, crypto, equities).
 - **Autonomy** — one sentence in, a committed forecast out; nightly self-checks
-  re-pull watched sources and re-commit without an LLM; reading is triaged
+  re-pull watched sources and save update proposals without an LLM; reading is triaged
   keep/skim/skip before it is hoarded.
 
 ## Read next
@@ -49,7 +49,9 @@ residue, not the product.
 | [operating.md](operating.md) | Driving the TUI desk — all 13 views (12 default + the dev-gated Demo Vis), the help system, the `u`/`U`/`A`/`T` desk tiers, mass-select, the Operations cockpit, theses, markets & prediction markets, alerts, the agents chip. |
 | [forecasting-methodology.md](forecasting-methodology.md) | The desk process and **how to let it learn** — questions → evidence/triage → panels → quorum/Delphi → commit gates → calibration → lessons. |
 | [cli.md](cli.md) | Task-oriented CLI walkthroughs — the laziest path and the hand-driven path. |
+| [scheduled-routines.md](scheduled-routines.md) | Scheduled reviews, watched sources, and proposal-only refreshes. |
 | [development.md](development.md) | Contributing, the build/release path, the test and staleness gates. |
+| [Runtime import migration](architecture/runtime-layout.md) | Native module paths and retained user-data compatibility. |
 | [decisions.md](decisions.md) | The design-decision record — 14 ADRs, each with the evidence that drove it (the drift bugs, the event storm, the fabricated zeros…). |
 | [reference/](reference/README.md) | **Generated** reference: every RPC/event, tool action, job type, provider, CLI command, hook rule, skill, and env var — always in sync with the code. |
 

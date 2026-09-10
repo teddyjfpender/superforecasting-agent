@@ -18,7 +18,7 @@ def main(argv: list[str] | None = None) -> int:
     # A detached worker is a fresh process: register the search/extract providers
     # so job types that research have them (mirrors quorum_jobs' worker boot).
     try:
-        from hermes_cli.plugins import discover_plugins
+        from superforecasting_agent.runtime.plugins import discover_plugins
 
         discover_plugins()
     except Exception:  # noqa: BLE001 — degrade gracefully if discovery fails

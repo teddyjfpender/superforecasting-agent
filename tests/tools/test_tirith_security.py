@@ -1093,14 +1093,14 @@ class TestHermesHomeIsolation:
         assert hermes_home is not None, "HERMES_HOME should be set by conftest"
         assert "hermes_test" in hermes_home, "Should point to test temp dir"
 
-    def test_get_hermes_home_fallback(self):
+    def test_get_agent_home_fallback(self):
         """Without HERMES_HOME set, falls back to the active OS home.
 
-        Fork contract (hermes_constants._default_home_candidate): prefer the
+        Fork contract (superforecasting_agent.constants._default_home_candidate): prefer the
         native ``~/.superforecasting-agent`` home; an existing legacy
         ``~/.hermes`` directory is only used when the native one is absent.
         """
-        from tools.tirith_security import _get_hermes_home
+        from tools.tirith_security import _get_agent_home
         with patch.dict(os.environ, {}, clear=True):
             # Remove HERMES_HOME entirely. With HOME also absent, expanduser
             # falls back to the account database; compute expected under the
@@ -1115,7 +1115,7 @@ class TestHermesHomeIsolation:
                 expected = legacy
             else:
                 expected = native
-            result = _get_hermes_home()
+            result = _get_agent_home()
         assert result == expected
 
 

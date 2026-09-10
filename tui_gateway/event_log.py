@@ -77,12 +77,12 @@ _MAX_LIMIT = 5000
 
 
 def _hermes_sessions_root() -> Optional[Path]:
-    """``{home}/sessions`` resolved fresh (get_hermes_home reads env each call),
+    """``{home}/sessions`` resolved fresh (get_agent_home reads env each call),
     or ``None`` when the home can't be resolved (fail-open)."""
     try:
-        from hermes_constants import get_hermes_home
+        from superforecasting_agent.constants import get_agent_home
 
-        return Path(get_hermes_home()) / "sessions"
+        return Path(get_agent_home()) / "sessions"
     except Exception:  # pragma: no cover - defensive
         logger.debug("event_log: could not resolve hermes home", exc_info=True)
         return None

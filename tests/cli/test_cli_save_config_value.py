@@ -25,7 +25,7 @@ class TestSaveConfigValueAtomic:
     def test_calls_roundtrip_yaml_update(self, config_env, monkeypatch):
         """save_config_value must preserve user-edited YAML structure."""
         mock_update = MagicMock()
-        monkeypatch.setattr("utils.atomic_roundtrip_yaml_update", mock_update)
+        monkeypatch.setattr("superforecasting_agent.storage.files.atomic_roundtrip_yaml_update", mock_update)
 
         from cli import save_config_value
         save_config_value("display.skin", "mono")
@@ -125,7 +125,7 @@ class TestSaveConfigValueAtomic:
         def exploding_write(*args, **kwargs):
             raise OSError("disk full")
 
-        monkeypatch.setattr("utils.atomic_roundtrip_yaml_update", exploding_write)
+        monkeypatch.setattr("superforecasting_agent.storage.files.atomic_roundtrip_yaml_update", exploding_write)
 
         from cli import save_config_value
         result = save_config_value("display.skin", "broken")

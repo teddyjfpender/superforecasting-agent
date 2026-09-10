@@ -1,5 +1,5 @@
-import { AlternateScreen, Box, NoSelect, ScrollBox, Text, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { AlternateScreen, Box, NoSelect, ScrollBox, Text, useStdout } from '@superforecasting/ink'
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef } from 'react'
 
 import { $agentsActive } from '../app/agentsActiveStore.js'

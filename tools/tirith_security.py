@@ -35,7 +35,7 @@ import threading
 import time
 import urllib.request
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ def _load_security_config() -> dict:
         "tirith_fail_open": True,
     }
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         cfg = load_config().get("security", {}) or {}
     except Exception:
         cfg = {}
@@ -134,14 +134,14 @@ def _reset_spawn_warning_state() -> None:
 _MARKER_TTL = 86400  # 24 hours
 
 
-def _get_hermes_home() -> str:
+def _get_agent_home() -> str:
     """Return the active agent home directory."""
-    return str(get_hermes_home())
+    return str(get_agent_home())
 
 
 def _failure_marker_path() -> str:
     """Return the path to the install-failure marker file."""
-    return os.path.join(_get_hermes_home(), ".tirith-install-failed")
+    return os.path.join(_get_agent_home(), ".tirith-install-failed")
 
 
 def _read_failure_reason() -> str | None:
@@ -209,7 +209,7 @@ def _clear_install_failed():
 
 def _hermes_bin_dir() -> str:
     """Return the active agent-home bin directory, creating it if needed."""
-    d = os.path.join(_get_hermes_home(), "bin")
+    d = os.path.join(_get_agent_home(), "bin")
     os.makedirs(d, exist_ok=True)
     return d
 

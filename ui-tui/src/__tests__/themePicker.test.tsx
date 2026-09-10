@@ -78,7 +78,7 @@ const mountPicker = async (
   resetUiState()
 
   const [{ render }, { ThemePicker }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/themePicker.js'),
     import('../theme.js'),
     import('../lib/text.js')

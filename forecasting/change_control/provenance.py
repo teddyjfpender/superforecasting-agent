@@ -12,7 +12,7 @@ from typing import Any, Iterable, Mapping
 from forecasting.change_control.models import content_digest
 from forecasting.change_control.store import get_changeset
 from forecasting.models import LedgerNotFoundError, ValidationError, utc_now_iso
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 
 def ensure_bundle(ledger: Any, changeset_id: str) -> dict[str, Any]:
@@ -195,7 +195,7 @@ def record_transcript(
         if content_digest(content) != digest or len(encoded) != int(byte_size):
             raise ValidationError("transcript content does not match its digest or byte size")
         directory = (
-            get_hermes_home() / "provenance" / "safe-transcripts" / changeset_id
+            get_agent_home() / "provenance" / "safe-transcripts" / changeset_id
         )
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(directory, 0o700)

@@ -243,7 +243,7 @@ def _cmd_rerun(args: argparse.Namespace) -> None:
         start_job,
         validate_reforecast_ids,
     )
-    from hermes_cli.config import cfg_get, load_config_readonly
+    from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
 
     ledger = _ledger(args)
     try:

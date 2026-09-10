@@ -1,5 +1,5 @@
-import { Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Text } from '@superforecasting/ink'
 import unicodeSpinners from 'unicode-animations'
 
 import { $liveBaseTokens, $liveStartedAt, $liveTick } from '../app/liveTickStore.js'

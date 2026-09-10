@@ -104,7 +104,7 @@ def main():
     test_file = create_test_dataset()
     
     print(f"\n📝 To run the test manually:")
-    print(f"   python batch_runner.py \\")
+    print(f"   python -m superforecasting_agent.trajectories.batch \\")
     print(f"       --dataset_file={test_file} \\")
     print(f"       --batch_size=2 \\")
     print(f"       --run_name={run_name} \\")
@@ -112,10 +112,10 @@ def main():
     print(f"       --num_workers=2")
     
     print(f"\n💡 Or test with different distributions:")
-    print(f"   python batch_runner.py --list_distributions")
+    print(f"   python -m superforecasting_agent.trajectories.batch --list_distributions")
     
     print(f"\n🔍 After running, you can verify output with:")
-    print(f"   python tests/test_batch_runner.py --verify")
+    print(f"   python tests/integration/test_batch_runner.py --verify")
     
     # Note: We don't actually run the batch runner here to avoid API calls during testing
     # Users should run it manually with their API keys configured

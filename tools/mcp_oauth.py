@@ -105,8 +105,8 @@ def _get_token_dir() -> Path:
     Layout: ``HERMES_HOME/mcp-tokens/``
     """
     try:
-        from hermes_constants import get_hermes_home
-        base = Path(get_hermes_home())
+        from superforecasting_agent.constants import get_agent_home
+        base = Path(get_agent_home())
     except ImportError:
         base = Path(os.environ.get("HERMES_HOME", str(Path.home() / ".hermes")))
     return base / "mcp-tokens"
@@ -414,7 +414,7 @@ async def _redirect_handler(authorization_url: str) -> None:
             f"\n"
             f"    ssh -N -L {_oauth_port}:127.0.0.1:{_oauth_port} <user>@<this-host>\n"
             f"\n"
-            f"  Then open the URL above. See: https://superforecasting-agent.nousresearch.com/docs/guides/oauth-over-ssh\n",
+            f"  Then open the URL above. See: https://teddyjfpender.github.io/superforecasting-agent/docs/guides/oauth-over-ssh\n",
             file=sys.stderr,
         )
 

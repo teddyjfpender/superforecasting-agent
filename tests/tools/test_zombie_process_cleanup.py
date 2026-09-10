@@ -117,8 +117,8 @@ class TestAgentCloseMethod:
             agent.client = None
 
             with patch("tools.process_registry.process_registry") as mock_registry, \
-                 patch("run_agent.cleanup_vm") as mock_cleanup_vm, \
-                 patch("run_agent.cleanup_browser") as mock_cleanup_browser:
+                 patch("agent.session_lifecycle.cleanup_vm") as mock_cleanup_vm, \
+                 patch("agent.session_lifecycle.cleanup_browser") as mock_cleanup_browser:
                 agent.close()
 
                 mock_registry.kill_all.assert_called_once_with(
@@ -179,9 +179,9 @@ class TestAgentCloseMethod:
             with patch(
                 "tools.process_registry.process_registry"
             ) as mock_reg, patch(
-                "run_agent.cleanup_vm"
+                "agent.session_lifecycle.cleanup_vm"
             ) as mock_vm, patch(
-                "run_agent.cleanup_browser"
+                "agent.session_lifecycle.cleanup_browser"
             ) as mock_browser:
                 mock_reg.kill_all.side_effect = RuntimeError("boom")
 
@@ -242,7 +242,10 @@ class TestGatewayCleanupWiring:
             with patch("gateway.status.remove_pid_file"), \
                  patch("gateway.status.write_runtime_status"), \
                  patch("tools.terminal_tool.cleanup_all_environments"), \
-                 patch("tools.browser_tool.cleanup_all_browsers"):
+                 patch("tools.browser_tool.cleanup_all_browsers"), \
+                 patch("tools.process_registry.process_registry.kill_all", return_value=0), \
+                 patch("tools.async_delegation.interrupt_all", return_value=0), \
+                 patch("agent.auxiliary_client.shutdown_cached_clients"):
                 loop.run_until_complete(GatewayRunner.stop(runner))
         finally:
             loop.close()

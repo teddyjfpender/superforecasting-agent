@@ -75,7 +75,7 @@ from forecasting.source_adapters import (
     YahooFinancePriceObservation,
 )
 import forecasting.source_adapters as source_adapters
-from hermes_constants import reset_hermes_home_override, set_hermes_home_override
+from superforecasting_agent.constants import reset_agent_home_override, set_agent_home_override
 
 
 class _ImportPayloadHandler(BaseHTTPRequestHandler):
@@ -15407,7 +15407,7 @@ def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatc
     parser = _parser()
     hermes_home = tmp_path / "home"
     db_path = tmp_path / "pilot.db"
-    token = set_hermes_home_override(hermes_home)
+    token = set_agent_home_override(hermes_home)
     monkeypatch.setenv("HERMES_HOME", str(hermes_home))
     # Pop cron.jobs so the install-cron path re-imports it bound to this
     # test's home — but RESTORE the original module object afterwards.
@@ -15435,7 +15435,7 @@ def test_forecast_cli_installs_no_agent_cron_bridge(tmp_path, capsys, monkeypatc
             ],
         )
     finally:
-        reset_hermes_home_override(token)
+        reset_agent_home_override(token)
         if _orig_cron_jobs is not None:
             sys.modules["cron.jobs"] = _orig_cron_jobs
             # The re-import also rebound the `cron` package's `jobs`

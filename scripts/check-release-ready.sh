@@ -4,7 +4,7 @@
 # workflow, and a pre-tag hook.  RED means "do not cut a release".
 # ============================================================================
 # Cheap, deterministic checks (always run):
-#   1. version source-of-truth consistency  (pyproject == hermes_cli/__init__)
+#   1. version source-of-truth consistency  (pyproject == superforecasting_agent/runtime/__init__)
 #   2. semver format                         (X.Y.Z)
 #   3. version is not an existing git tag    (vX.Y.Z unused)
 #   4. changelog has a non-empty entry       (## [X.Y.Z] ... with body)
@@ -58,7 +58,7 @@ pyproject_version() {
   sed -n 's/^version = "\([^"]*\)".*/\1/p' pyproject.toml | head -n1
 }
 init_version() {
-  sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' hermes_cli/__init__.py | head -n1
+  sed -n 's/^__version__ = "\([^"]*\)".*/\1/p' superforecasting_agent/runtime/__init__.py | head -n1
 }
 
 PYPROJECT_VER="$(pyproject_version)"
@@ -133,7 +133,7 @@ if [ "$STRICT" = "1" ]; then
       c_bad "protocol codegen stale (run: python -m protocol.codegen)"
     fi
   else
-    c_skip "protocol check skipped (scripts/check-protocol.sh absent)"
+    c_bad "required protocol check unavailable (scripts/check-protocol.sh missing or not executable)"
   fi
 
   PY="${PYTHON:-}"
@@ -147,7 +147,7 @@ if [ "$STRICT" = "1" ]; then
       c_bad "generated docs stale (run: python -m scripts.docgen)"
     fi
   else
-    c_skip "docgen check skipped (docgen toolchain unavailable)"
+    c_bad "required docgen toolchain unavailable"
   fi
 
   dirty="$(git status --porcelain=v1 --untracked-files=all)"
@@ -170,7 +170,7 @@ if [ "$WITH_TESTS" = "1" ]; then
       c_bad "test suite red (run: scripts/run_tests.sh)"
     fi
   else
-    c_skip "test suite skipped (scripts/run_tests.sh absent)"
+    c_bad "required test runner unavailable (scripts/run_tests.sh missing or not executable)"
   fi
 else
   c_skip "full suite skipped (workflow gates it; pass --with-tests locally)"

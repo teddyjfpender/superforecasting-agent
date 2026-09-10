@@ -197,7 +197,7 @@ const mount = async (opts: MountOpts = {}) => {
   gw.request = rpc.request
 
   const [{ Box, render }, { AlertsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/alertsView.js'),
     import('../theme.js'),
     import('../lib/text.js')

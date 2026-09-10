@@ -16,8 +16,8 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 
-import type { FrameEvent } from '@hermes/ink'
-import { scrollFastPathStats } from '@hermes/ink'
+import type { FrameEvent } from '@superforecasting/ink'
+import { scrollFastPathStats } from '@superforecasting/ink'
 import { Profiler, type ProfilerOnRenderCallback, type ReactNode } from 'react'
 
 import { forecastPerfLogPath } from './forecastHome.js'

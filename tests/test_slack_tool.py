@@ -71,9 +71,9 @@ def test_resolve_token_from_file(monkeypatch, tmp_path):
     monkeypatch.delenv("SLACK_BOT_TOKEN", raising=False)
     tokens = tmp_path / "slack_tokens.json"
     tokens.write_text(json.dumps({"T1": {"token": "xoxb-file", "team_name": "Acme"}}))
-    import hermes_constants
+    import superforecasting_agent.constants
 
-    monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr(superforecasting_agent.constants, "get_agent_home", lambda: tmp_path)
     assert st._resolve_bot_token("T1") == "xoxb-file"
     assert st._resolve_bot_token() == "xoxb-file"  # first entry when no team_id
 

@@ -286,7 +286,7 @@ Current color overrides:
 
 ```text
 ui-tui/
-  packages/hermes-ink/   forked Ink renderer (local dep)
+  packages/forecast-ink/   forked Ink renderer (local dep)
   src/
     entry.tsx            TTY gate + render()
     app.tsx              top-level Ink tree, composes src/app/*
@@ -376,7 +376,7 @@ ui-tui/
       stores, news feeds, Signal client, LaTeX rendering, viz engine, etc.)
 
     types/
-      hermes-ink.d.ts    compatibility declarations for the inherited @hermes/ink package name
+      forecast-ink.d.ts    type declarations for the local @superforecasting/ink renderer
 
     __tests__/           vitest suite
 ```

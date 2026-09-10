@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 try:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 except ImportError:
     import os as _os
-    def get_hermes_home() -> Path:  # type: ignore[misc]
+    def get_agent_home() -> Path:  # type: ignore[misc]
         for env_name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
             val = (_os.environ.get(env_name) or "").strip()
             if val:
@@ -146,15 +146,15 @@ ACHIEVEMENTS: List[Dict[str, Any]] = [
 
 
 def state_path() -> Path:
-    return get_hermes_home() / "plugins" / "hermes-achievements" / "state.json"
+    return get_agent_home() / "plugins" / "hermes-achievements" / "state.json"
 
 
 def snapshot_path() -> Path:
-    return get_hermes_home() / "plugins" / "hermes-achievements" / "scan_snapshot.json"
+    return get_agent_home() / "plugins" / "hermes-achievements" / "scan_snapshot.json"
 
 
 def checkpoint_path() -> Path:
-    return get_hermes_home() / "plugins" / "hermes-achievements" / "scan_checkpoint.json"
+    return get_agent_home() / "plugins" / "hermes-achievements" / "scan_checkpoint.json"
 
 
 def load_state() -> Dict[str, Any]:
@@ -588,7 +588,7 @@ def scan_sessions(
     at the end.
     """
     try:
-        from hermes_state import SessionDB
+        from superforecasting_agent.storage.session import SessionDB
     except Exception as exc:
         return {"sessions": [], "aggregate": {}, "error": f"Could not import SessionDB: {exc}", "scan_meta": {"mode": "failed", "sessions_total": 0, "sessions_rescanned": 0, "sessions_reused": 0}}
 

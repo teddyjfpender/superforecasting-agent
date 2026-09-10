@@ -12,7 +12,7 @@ import threading
 from collections import OrderedDict
 from pathlib import Path
 
-from hermes_constants import get_hermes_home, get_skills_dir, is_wsl
+from superforecasting_agent.constants import get_agent_home, get_skills_dir, is_wsl
 from typing import Optional
 
 from agent.skill_utils import (
@@ -24,7 +24,8 @@ from agent.skill_utils import (
     parse_frontmatter,
     skill_matches_platform,
 )
-from utils import atomic_json_write, env_var_alias_value
+from superforecasting_agent.storage.files import atomic_json_write
+from superforecasting_agent.environment import env_var_alias_value
 
 logger = logging.getLogger(__name__)
 
@@ -880,7 +881,7 @@ _SKILLS_SNAPSHOT_VERSION = 1
 
 
 def _skills_prompt_snapshot_path() -> Path:
-    return get_hermes_home() / ".skills_prompt_snapshot.json"
+    return get_agent_home() / ".skills_prompt_snapshot.json"
 
 
 def clear_skills_system_prompt_cache(*, clear_snapshot: bool = False) -> None:
@@ -1265,7 +1266,7 @@ def build_skills_system_prompt(
 def build_nous_subscription_prompt(valid_tool_names: "set[str] | None" = None) -> str:
     """Build a compact Nous subscription capability block for the system prompt."""
     try:
-        from hermes_cli.nous_subscription import get_nous_subscription_features
+        from superforecasting_agent.runtime.nous_subscription import get_nous_subscription_features
         from tools.tool_backend_helpers import managed_nous_tools_enabled
     except Exception as exc:
         logger.debug("Failed to import Nous subscription helper: %s", exc)
@@ -1352,12 +1353,12 @@ def load_soul_md() -> Optional[str]:
     ``skip_soul=True`` so SOUL.md isn't injected twice.
     """
     try:
-        from hermes_cli.config import ensure_hermes_home
+        from superforecasting_agent.runtime.config import ensure_hermes_home
         ensure_hermes_home()
     except Exception as e:
         logger.debug("Could not ensure HERMES_HOME before loading SOUL.md: %s", e)
 
-    soul_path = get_hermes_home() / "SOUL.md"
+    soul_path = get_agent_home() / "SOUL.md"
     if not soul_path.exists():
         return None
     try:

@@ -18,19 +18,19 @@ def _cfg(**environ) -> AppConfig:
 # ── name resolution ──────────────────────────────────────────────────────────
 
 def test_default_name_is_bernard(monkeypatch, tmp_path):
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     assert identity.resolve_agent_name(_cfg()) == "Bernard"
     assert identity.configured_agent_name(_cfg()) is None
 
 
 def test_configured_name_wins(monkeypatch, tmp_path):
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     assert identity.resolve_agent_name(_cfg(AGENT_NAME="Ada")) == "Ada"
     assert identity.configured_agent_name(_cfg(AGENT_NAME="Ada")) == "Ada"
 
 
 def test_persisted_name_is_fallback_when_config_unset(monkeypatch, tmp_path):
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     (tmp_path / "identity.json").write_text(json.dumps({"name": "Ada", "instance_id": "x"}))
     # No AGENT_NAME configured → persisted name is used, not the Bernard default.
     assert identity.resolve_agent_name(_cfg()) == "Ada"
@@ -41,7 +41,7 @@ def test_persisted_name_is_fallback_when_config_unset(monkeypatch, tmp_path):
 # ── instance id: persistence + stability ─────────────────────────────────────
 
 def test_instance_id_minted_once_and_persisted(monkeypatch, tmp_path):
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     first = identity.resolve_instance_id(_cfg(), home=tmp_path)
     assert first
     # Persisted to identity.json.
@@ -54,20 +54,20 @@ def test_instance_id_minted_once_and_persisted(monkeypatch, tmp_path):
 def test_instance_id_is_a_uuid(monkeypatch, tmp_path):
     import uuid
 
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     val = identity.resolve_instance_id(_cfg(), home=tmp_path)
     uuid.UUID(val)  # raises if not a valid uuid
 
 
 def test_configured_instance_id_pins_and_does_not_write(monkeypatch, tmp_path):
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     val = identity.resolve_instance_id(_cfg(AGENT_INSTANCE_ID="fixed-123"), home=tmp_path)
     assert val == "fixed-123"
     assert not (tmp_path / "identity.json").exists()  # a pin never mints/persists
 
 
 def test_corrupt_identity_file_is_tolerated(monkeypatch, tmp_path):
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     (tmp_path / "identity.json").write_text("{not json")
     val = identity.resolve_instance_id(_cfg(), home=tmp_path)
     assert val  # regenerated cleanly
@@ -91,7 +91,7 @@ def test_team_none_when_no_tokens(tmp_path):
 # ── full identity + sfp sender ───────────────────────────────────────────────
 
 def test_resolve_identity_and_sfp_sender(monkeypatch, tmp_path):
-    monkeypatch.setattr("hermes_constants.get_hermes_home", lambda: tmp_path)
+    monkeypatch.setattr("superforecasting_agent.constants.get_agent_home", lambda: tmp_path)
     (tmp_path / "slack_tokens.json").write_text(json.dumps({"T1": {"token": "x"}}))
     ident = identity.resolve_identity(
         cfg=_cfg(AGENT_NAME="Ada", AGENT_PERSONA="dry wit"), home=tmp_path
@@ -106,7 +106,7 @@ def test_resolve_identity_and_sfp_sender(monkeypatch, tmp_path):
 # ── soul name injection ──────────────────────────────────────────────────────
 
 def test_apply_name_rewrites_default_soul_opener():
-    from hermes_cli.default_soul import DEFAULT_SOUL_MD
+    from superforecasting_agent.runtime.default_soul import DEFAULT_SOUL_MD
 
     out = identity.apply_agent_name(DEFAULT_SOUL_MD, "Ada")
     assert out.startswith("You are Ada, the superforecasting agent:")
@@ -114,7 +114,7 @@ def test_apply_name_rewrites_default_soul_opener():
 
 
 def test_apply_name_bernard_is_byte_identical():
-    from hermes_cli.default_soul import DEFAULT_SOUL_MD
+    from superforecasting_agent.runtime.default_soul import DEFAULT_SOUL_MD
 
     assert identity.apply_agent_name(DEFAULT_SOUL_MD, "Bernard") == DEFAULT_SOUL_MD
     assert identity.apply_agent_name(DEFAULT_SOUL_MD, "") == DEFAULT_SOUL_MD

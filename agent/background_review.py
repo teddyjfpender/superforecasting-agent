@@ -24,7 +24,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from utils import SESSION_SOURCE_ENV_NAMES, env_var_alias_value
+from superforecasting_agent.environment import SESSION_SOURCE_ENV_NAMES, env_var_alias_value
 
 logger = logging.getLogger(__name__)
 
@@ -442,8 +442,8 @@ def _run_review_in_thread(
             review_agent.session_start = agent.session_start
             review_agent.session_id = agent.session_id
 
-            from model_tools import get_tool_definitions
-            from hermes_cli.plugins import (
+            from superforecasting_agent.tooling.runtime import get_tool_definitions
+            from superforecasting_agent.runtime.plugins import (
                 set_thread_tool_whitelist,
                 clear_thread_tool_whitelist,
             )

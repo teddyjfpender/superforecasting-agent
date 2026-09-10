@@ -47,7 +47,11 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
-from utils import INTERACTIVE_ENV_NAMES, env_var_alias_enabled, env_var_enabled
+from superforecasting_agent.environment import (
+    INTERACTIVE_ENV_NAMES,
+    env_var_alias_enabled,
+    env_var_enabled,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +62,7 @@ logger = logging.getLogger(__name__)
 # long-running subprocesses immediately instead of blocking until timeout.
 # ---------------------------------------------------------------------------
 from tools.interrupt import is_interrupted, _interrupt_event  # noqa: F401 — re-exported
-# display_hermes_home imported lazily at call site (stale-module safety during
+# display_agent_home imported lazily at call site (stale-module safety during
 # superforecasting-agent update)
 
 
@@ -377,7 +381,7 @@ def _handle_sudo_failure(output: str, env_type: str) -> str:
     
     for failure in sudo_failures:
         if failure in output:
-            from hermes_constants import display_hermes_home as _dhh
+            from superforecasting_agent.constants import display_agent_home as _dhh
             return output + f"\n\n💡 Tip: To enable sudo over messaging, add SUDO_PASSWORD to {_dhh()}/.env on the agent machine."
     
     return output
@@ -1041,7 +1045,7 @@ def _get_env_config() -> Dict[str, Any]:
                     get_harness_source_roots,
                     is_harness_wall_enabled,
                 )
-                from hermes_constants import ensure_workspace_dir
+                from superforecasting_agent.constants import ensure_workspace_dir
 
                 if is_harness_wall_enabled():
                     cwd_real = os.path.realpath(default_cwd)
@@ -2166,7 +2170,7 @@ def terminal_tool(
             # replace it by returning a string from transform_terminal_output.
             # The hook is fail-open, and the first valid string return wins.
             try:
-                from hermes_cli.plugins import invoke_hook
+                from superforecasting_agent.runtime.plugins import invoke_hook
                 hook_results = invoke_hook(
                     "transform_terminal_output",
                     command=command,
@@ -2384,7 +2388,7 @@ if __name__ == "__main__":
     print(f"  TERMINAL_MODAL_IMAGE: {os.getenv('TERMINAL_MODAL_IMAGE', default_img)}")
     print(f"  TERMINAL_DAYTONA_IMAGE: {os.getenv('TERMINAL_DAYTONA_IMAGE', default_img)}")
     print(f"  TERMINAL_CWD: {os.getenv('TERMINAL_CWD', os.getcwd())}")
-    from hermes_constants import display_hermes_home as _dhh
+    from superforecasting_agent.constants import display_agent_home as _dhh
     print(f"  TERMINAL_SANDBOX_DIR: {os.getenv('TERMINAL_SANDBOX_DIR', f'{_dhh()}/sandboxes')}")
     print(f"  TERMINAL_TIMEOUT: {os.getenv('TERMINAL_TIMEOUT', '60')}")
     print(f"  TERMINAL_LIFETIME_SECONDS: {os.getenv('TERMINAL_LIFETIME_SECONDS', '300')}")

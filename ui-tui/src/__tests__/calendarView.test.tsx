@@ -197,7 +197,7 @@ const mount = async (columns: number, response: ForecastDashboardResponse) => {
   ;(process.stdout as unknown as { columns: number }).columns = columns
 
   const [{ render }, { CalendarView }, { DARK_THEME }, { stripAnsi }, { clearOverlayCache }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/calendarView.js'),
     import('../theme.js'),
     import('../lib/text.js'),

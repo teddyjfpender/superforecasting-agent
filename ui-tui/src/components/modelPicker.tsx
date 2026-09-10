@@ -1,4 +1,4 @@
-import { Box, Text, useInput, useStdout } from '@hermes/ink'
+import { Box, Text, useInput, useStdout } from '@superforecasting/ink'
 import { useEffect, useMemo, useState } from 'react'
 
 import { providerDisplayNames } from '../domain/providers.js'
@@ -17,7 +17,7 @@ const MAX_WIDTH = 90
 type Stage = 'provider' | 'key' | 'model' | 'effort' | 'disconnect'
 
 // Reasoning-effort levels offered when a provider/model is effort-capable.
-// Kept in sync with hermes_constants.VALID_REASONING_EFFORTS minus `minimal`
+// Kept in sync with superforecasting_agent.constants.VALID_REASONING_EFFORTS minus `minimal`
 // (codex clamps it to `low`). `none` is prepended below: it disables reasoning
 // via the dedicated /reasoning plumbing, so a user whose reasoning is currently
 // off isn't forced to re-enable it just to switch models.

@@ -1,4 +1,4 @@
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text } from '@hermes/ink'
+import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text } from '@superforecasting/ink'
 import type { ReactNode, RefObject } from 'react'
 
 import { bandChart, type BandPoint, compactNumber, histogram, pct } from '../lib/forecastCharts.js'

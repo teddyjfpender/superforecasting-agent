@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from '@hermes/ink'
+import { Box, Text, useInput } from '@superforecasting/ink'
 import { useEffect, useMemo, useState } from 'react'
 
 import { setTodayCount } from '../app/homeFocusStore.js'

@@ -229,7 +229,7 @@ Files: `loader.ts`, `plugin.ts`, `runtime.tsx`, `api.ts`, `slots.tsx`.
 **We have none.** From the baseline: zero plugin architecture; new overlays,
 keybindings, renderers, or RPC handlers require forking. The gateway's `_methods`
 dict is populated statically (`@method(name)` decorator, `server.py:646`) — no
-runtime registration / hotload. `hermes_cli.plugins.invoke_hook` exists but lives
+runtime registration / hotload. `superforecasting_agent.runtime.plugins.invoke_hook` exists but lives
 *outside* the gateway and can't define session-local hooks. `render.py`'s
 `agent.rich_output` delegation has no version negotiation.
 

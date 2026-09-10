@@ -16,7 +16,7 @@ Precedence (lowest → highest):
 
 * **registry default** — the declared fallback for a known key (``REGISTRY``).
 * **config file** — the ``env:`` section of the agent-home ``config.yaml``
-  (``hermes_cli.config.read_raw_config()``). We *extend* the file the system
+  (``superforecasting_agent.runtime.config.read_raw_config()``). We *extend* the file the system
   already reads; we do not invent a second one. A flat ``ENV_NAME: value`` map
   under ``env:`` lets an operator pin a value in the config instead of the
   shell.
@@ -329,7 +329,7 @@ class AppConfig:
             return self._config_cache
         data: dict[str, Any] = {}
         try:  # lazy — avoid an import cycle and the yaml read cost at import time
-            from hermes_cli.config import read_raw_config
+            from superforecasting_agent.runtime.config import read_raw_config
 
             raw = read_raw_config()
             section = raw.get("env") if isinstance(raw, dict) else None

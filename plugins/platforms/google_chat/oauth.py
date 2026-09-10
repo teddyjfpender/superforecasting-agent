@@ -75,12 +75,12 @@ logger = logging.getLogger("gateway.platforms.google_chat_user_oauth")
 # Use the project's active-home helper so tokens follow the user's selected
 # profile and fork-native home aliases.
 try:
-    from hermes_constants import display_hermes_home, get_hermes_home
+    from superforecasting_agent.constants import display_agent_home, get_agent_home
 except (ModuleNotFoundError, ImportError):
-    # Fallback for environments where hermes_constants isn't importable
+    # Fallback for environments where superforecasting_agent.constants isn't importable
     # (mirrors the same fallback used by the google-workspace skill's
     # _hermes_home.py shim).
-    def get_hermes_home() -> Path:
+    def get_agent_home() -> Path:
         for env_name in (
             "SUPERFORECASTING_AGENT_HOME",
             "FORECAST_HOME",
@@ -91,15 +91,15 @@ except (ModuleNotFoundError, ImportError):
                 return Path(value)
         return Path.home() / ".superforecasting-agent"
 
-    def display_hermes_home() -> str:
-        home = get_hermes_home()
+    def display_agent_home() -> str:
+        home = get_agent_home()
         try:
             return "~/" + str(home.relative_to(Path.home()))
         except ValueError:
             return str(home)
 
 
-from utils import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace
 
 
 def _hermes_home() -> Path:
@@ -109,7 +109,7 @@ def _hermes_home() -> Path:
     late-binding. If we cached the path at import time, switching profiles or
     tweaking env vars in tests would silently keep using the old path.
     """
-    return get_hermes_home()
+    return get_agent_home()
 
 
 # Filesystem-safe key: lowercase, allow ``[a-z0-9._-@]``, replace anything
@@ -590,9 +590,9 @@ def exchange_auth_code(code: str, email: Optional[str] = None) -> None:
 
     print(f"OK: Authenticated. Token saved to {token_path}")
     rel_label = (
-        f"{display_hermes_home()}/google_chat_user_tokens/{_sanitize_email(email)}.json"
+        f"{display_agent_home()}/google_chat_user_tokens/{_sanitize_email(email)}.json"
         if email
-        else f"{display_hermes_home()}/google_chat_user_token.json"
+        else f"{display_agent_home()}/google_chat_user_token.json"
     )
     print(f"Profile path: {rel_label}")
 

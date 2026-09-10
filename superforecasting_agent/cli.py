@@ -177,12 +177,12 @@ def _apply_profile(profile_name: str | None) -> None:
         if configured_home:
             os.environ["HERMES_HOME"] = configured_home
         else:
-            from hermes_constants import get_native_hermes_home
+            from superforecasting_agent.constants import get_native_agent_home
 
-            os.environ["HERMES_HOME"] = str(get_native_hermes_home())
+            os.environ["HERMES_HOME"] = str(get_native_agent_home())
         return
     try:
-        from hermes_cli.profiles import resolve_profile_env
+        from superforecasting_agent.runtime.profiles import resolve_profile_env
 
         os.environ["HERMES_HOME"] = resolve_profile_env(profile_name)
     except (ValueError, FileNotFoundError) as exc:
@@ -210,19 +210,19 @@ def _exit_with_missing_runtime_dependency(exc: ModuleNotFoundError) -> None:
 def _print_version() -> None:
     """Print version info without importing the heavy CLI runtime.
 
-    Mirrors ``hermes_cli.main.cmd_version`` output. ``hermes_cli``'s package
+    Mirrors ``superforecasting_agent.runtime.main.cmd_version`` output. ``superforecasting_agent.runtime``'s package
     ``__init__`` is intentionally light (version constants only), so this
-    path skips ``hermes_cli.main`` / ``forecasting.cli`` entirely.
+    path skips ``superforecasting_agent.runtime.main`` / ``forecasting.cli`` entirely.
     """
 
     from pathlib import Path
 
-    import hermes_cli
+    import superforecasting_agent.runtime
 
-    project_root = Path(hermes_cli.__file__).resolve().parent.parent
+    project_root = Path(superforecasting_agent.runtime.__file__).resolve().parent.parent
     print(
-        f"Superforecasting Agent v{hermes_cli.__version__} "
-        f"({hermes_cli.__release_date__})"
+        f"Superforecasting Agent v{superforecasting_agent.runtime.__version__} "
+        f"({superforecasting_agent.runtime.__release_date__})"
     )
     print(f"Project: {project_root}")
     print(f"Python: {sys.version.split()[0]}")
@@ -238,8 +238,8 @@ def _print_version() -> None:
         print("OpenAI SDK: Not installed")
     # Update status, same as cmd_version (best effort, never fatal).
     try:
-        from hermes_cli.banner import check_for_updates
-        from hermes_cli.config import recommended_update_command
+        from superforecasting_agent.runtime.banner import check_for_updates
+        from superforecasting_agent.runtime.config import recommended_update_command
 
         behind = check_for_updates()
         if behind and behind > 0:
@@ -256,7 +256,7 @@ def _print_version() -> None:
 
 def _run_inherited_runtime(argv: Sequence[str]) -> None:
     try:
-        from hermes_cli.main import main as inherited_main
+        from superforecasting_agent.runtime.main import main as inherited_main
     except ModuleNotFoundError as exc:
         _exit_with_missing_runtime_dependency(exc)
 
@@ -302,7 +302,7 @@ def main(argv: list[str] | None = None) -> None:
     _warn_legacy_entrypoint_if_needed(argv is not None)
     raw_argv = list(sys.argv[1:] if argv is None else argv)
     # Fast path: ``--version`` / ``-V`` short-circuits before any heavy
-    # import (forecasting.cli parser build, hermes_cli.main runtime).
+    # import (forecasting.cli parser build, superforecasting_agent.runtime.main runtime).
     if len(raw_argv) == 1 and raw_argv[0] in _VERSION_FLAGS:
         _print_version()
         return

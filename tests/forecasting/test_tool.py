@@ -43,11 +43,11 @@ from forecasting.source_adapters import (
     WhoGhoObservation,
     YahooFinancePriceObservation,
 )
-from hermes_cli.tools_config import _get_platform_tools
-from model_tools import get_tool_definitions
+from superforecasting_agent.runtime.tools_config import _get_platform_tools
+from superforecasting_agent.tooling.runtime import get_tool_definitions
 from tools.forecasting_tool import FORECAST_LEDGER_SCHEMA, forecast_ledger_tool
 from tools.registry import discover_builtin_tools, registry
-from toolsets import get_toolset, resolve_toolset, validate_toolset
+from superforecasting_agent.tooling.toolsets import get_toolset, resolve_toolset, validate_toolset
 
 
 def test_forecast_tool_forwards_live_runtime_to_actions(tmp_path, monkeypatch):
@@ -136,7 +136,7 @@ def test_fork_native_inherited_toolset_aliases_remain_available():
 
 
 def test_forecast_platform_toolsets_are_scoped_to_forecasting():
-    from hermes_cli.platforms import PLATFORMS
+    from superforecasting_agent.runtime.platforms import PLATFORMS
 
     for platform in ("telegram", "slack", "email", "cron", "api_server"):
         default_toolset = PLATFORMS[platform].default_toolset
@@ -5289,7 +5289,7 @@ def test_update_forecast_blocks_stale_rerun(tmp_path):
 # never commits or mutates a probability. Under `wait=true` the job runs inline
 # with the model runner monkeypatched (no network, no real model). Both
 # `create_question` and the background job resolve the SAME default ledger db
-# (get_hermes_home()/forecasting/forecasting.db — HERMES_HOME is per-test
+# (get_agent_home()/forecasting/forecasting.db — HERMES_HOME is per-test
 # isolated by the autouse conftest fixture), so the seeded question is visible
 # to `execute_job`.
 

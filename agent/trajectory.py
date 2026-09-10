@@ -1,6 +1,6 @@
 """Trajectory saving utilities and static helpers.
 
-_convert_to_trajectory_format stays as an AIAgent method (batch_runner.py
+_convert_to_trajectory_format stays as an AIAgent method (superforecasting_agent/trajectories/batch.py
 calls agent._convert_to_trajectory_format). Only the static helpers and
 the file-write logic live here.
 """
