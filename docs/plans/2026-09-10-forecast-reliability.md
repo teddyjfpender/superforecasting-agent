@@ -83,13 +83,12 @@ Commit and push coherent verified increments, as previously requested.
   rejects cycles before CLI/gateway dispatch. Shared ownership suite: 77 passed.
 - Keyless endpoints no longer receive an unconditional failed-credentials warning.
 
-## Remaining TODO before closeout
+## Closeout
 
-- Finish public-source capture/revision/duplicate and criteria verification.
-- Verify final wheel fresh installation, upgrade preservation and CLI lifecycle.
-- Complete final integrated gates and publish the reviewable branch/PR evidence.
-- Keep forecasting-skill claims unproven: synthetic outcomes and local-model
-  transport rehearsals do not establish prospective performance.
+All five requested workstreams have implementation and executable evidence below.
+Future platform/service/performance work is tracked in [TODO.md](../../TODO.md).
+Synthetic outcomes and local-model transport rehearsals do not establish
+prospective forecasting performance.
 
 ### Evidence and release checkpoint
 
@@ -116,3 +115,61 @@ Commit and push coherent verified increments, as previously requested.
   Full agent suite: 1,368 passed, 3 skipped (14.27s).
   Zero-byte reconnect guard: 159 passed. Browser connection helper: 12 passed.
   Dashboard build, Ruff, generated docs and protocol checks pass.
+
+### Final release evidence
+
+- Implementation commit: `92472c4c1`; follow-up documentation carries the manifest.
+- Final wheel SHA-256:
+  `29fe919213cedf86cec640a0c0fefb30079ec14bcfb0274fd9bd5d1f97d21fef`.
+  Byte equality checked for 966 packaged Python files. TUI/dashboard entrypoints
+  were also checked against the bundled build.
+- Previous wheel SHA-256:
+  `2875d1c4977b2c2f2647fff8985d578f0672dba2b4f26bf36bdc92bcc3265467`.
+  Its provider CLI, forecast CLI and evidence source match the merged PR #24 base.
+- Final installed-artifact rehearsal: 39 command checks, both fresh and upgraded
+  profiles pass. Upgrade preserves prior evidence/question/configuration. Invalid
+  criteria and unsupported binary outcomes fail; revised records cannot be cited
+  before publication; aged observations are flagged stale. Scores and postmortems
+  are verified through independent database reads.
+- The negative resolution check reproduced a confirmed-invalid-outcome bug.
+  Validation now precedes question closure and scheduler teardown; invalid
+  binary/categorical outcomes leave the question active with no resolution row.
+- Full command outputs, disposable profiles and captured source bytes:
+  `/tmp/forecast-release-delivery-20260910/`. Compact durable manifest:
+  [verification JSON](../verification/2026-09-10-forecast-reliability.json).
+- Final browser screenshot: `/tmp/forecast-dashboard-final.png`. Reconnect used
+  cursor 36448 with `reconnect=1`; the draft remains visible, and the false
+  credential warning is absent. Fixture servers are shut down after verification.
+
+Reproduce the release rehearsal (macOS/POSIX, uv installed):
+
+```sh
+SKIP_NPM=1 bash scripts/build-release.sh
+.venv/bin/python scripts/verify_forecast_release.py \
+  --wheel dist/superforecasting_agent-0.20.0-py3-none-any.whl \
+  --previous-wheel /path/to/previous/superforecasting_agent-0.20.0-py3-none-any.whl \
+  --output /tmp/new-release-rehearsal \
+  --source-dir /tmp/forecast-release-delivery-20260910/sources
+```
+
+Omit `--source-dir` for the installation/upgrade/local-evidence lifecycle alone.
+The source directory must contain `usgs.json`, `nws.json` and their hashed manifest.
+This verifies artifact replacement at version 0.20.0; it does not publish a new
+version or establish Windows/Linux/Termux or paid-provider readiness.
+
+### Final input and regression confirmation
+
+- Final forecasting suite after resolution validation: 3,388 passed, 3 skipped
+  (317.88s), JUnit `.test-results/pytest-20260910T115716Z-70933.xml`.
+- Browser-to-SQLite comparison exposed rapid typing loss. Mixed multi-character
+  PTY reads and single keystrokes could overtake the paste buffer; all text now
+  stays ordered, and Enter flushes buffered text before submission.
+- Real PTY tests pass chunked input, rapid input, rapid-submit and stalled-stream
+  cancellation/resume (4 passed). The final real browser persisted the complete
+  typed prompt exactly, followed by the expected streamed response.
+- Full TUI suite: 2,010 passed, 1 skipped across 185 files. Typecheck, build and
+  zero-warning targeted ESLint pass.
+- Installed public `superforecasting-agent tui` launched outside the checkout
+  from the fresh wheel environment, streamed a local-provider response, preserved
+  exact prompt/reply in SQLite, and exited cleanly. Result:
+  `/tmp/forecast-release-delivery-20260910/installed-tui-result.json`.
