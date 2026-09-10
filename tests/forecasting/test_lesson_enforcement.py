@@ -256,3 +256,61 @@ def test_prose_lesson_can_be_upgraded_to_an_enforced_rule(tmp_path):
         lg.create_snapshot(question_id=q.id, probability_or_distribution=0.5, rationale="no anchor", forecast_origin="live")
     with pytest.raises(ValidationError, match="rule is invalid"):  # update also validates
         lg.update_calibration_lesson(les["id"], recommended_adjustment={"rule": {"check": {"signal": "nope", "op": ">=", "value": 1}}})
+
+
+def test_warning_failure_is_not_recorded_as_applied(tmp_path):
+    lg = _ledger(tmp_path)
+    rule = dict(_ANCHOR_RULE, severity='warn')
+    lesson = lg.create_calibration_lesson(scope_type='domain', scope_ref='politics', lesson='Use a reference class.', status='active', recommended_adjustment={'rule': rule})
+    q = lg.create_question(title='Will the candidate win the primary?', resolution_criteria=CRIT, domain='politics')
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=.5, rationale='No reference class yet.')
+    decision = next(d for d in snap.metadata['lesson_decisions'] if d['lesson_id'] == lesson['id'])
+    assert decision['reason'] == 'rule_failed'
+    assert decision['applied'] is False
+    coverage = lg.lesson_coverage()[0]
+    assert coverage['applied_count'] == 0
+    assert coverage['verified_count'] == 1
+    lg.add_reference_class(question_id=q.id, name='Comparable primaries', inclusion_criteria='Same race type.')
+    lg.create_snapshot(question_id=q.id, probability_or_distribution=.5, rationale='Now anchored.')
+    assert lg.lesson_coverage()[0]['applied_count'] == 1
+
+
+def test_supersession_is_shared_by_context_and_rule_selection(tmp_path):
+    from forecasting.learning import active_lessons_for_question
+    lg = _ledger(tmp_path)
+    q = lg.create_question(title='Will the candidate win?', resolution_criteria=CRIT, domain='politics')
+    old = lg.create_calibration_lesson(scope_type='global', scope_ref=None, lesson='Old guidance.', status='active')
+    new = lg.create_calibration_lesson(scope_type='domain', scope_ref='politics', lesson='Replacement guidance.', status='active')
+    lg.update_calibration_lesson(new['id'], supersedes_lesson_id=old['id'])
+    assert [r['id'] for r in active_lessons_for_question(lg, q)] == [new['id']]
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=.5, rationale='Replacement applies.')
+    old_decision = next(d for d in snap.metadata['lesson_decisions'] if d['lesson_id'] == old['id'])
+    assert old_decision['reason'] == f"superseded_by:{new['id']}"
+    lg.update_calibration_lesson(new['id'], status='rejected')
+    assert [r['id'] for r in active_lessons_for_question(lg, q)] == [old['id']]
+
+
+def test_legacy_coverage_and_supersession_cycles_are_not_trusted(tmp_path):
+    lg = _ledger(tmp_path)
+    q, lesson = _politics_q_with_numeric_lesson(lg)
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=.6, rationale='Historical application.')
+    with lg._connect() as conn:
+        conn.execute("UPDATE forecast_snapshots SET metadata='{}' WHERE forecast_id=?", (snap.forecast_id,))
+        conn.execute('UPDATE lesson_applications SET applied=1 WHERE snapshot_id=?', (snap.forecast_id,))
+    row = lg.lesson_coverage()[0]
+    assert row['unverified_count'] == 1
+    assert row['applied_count'] == 0
+    with pytest.raises(Exception, match='supersession.*cycle'):
+        lg.update_calibration_lesson(lesson['id'], supersedes_lesson_id=lesson['id'])
+
+
+def test_caller_metadata_cannot_forge_a_lesson_verdict(tmp_path, monkeypatch):
+    lg = _ledger(tmp_path)
+    lesson = _politics_lesson_rule(lg)
+    q = lg.create_question(title='Will the candidate win?', resolution_criteria=CRIT, domain='politics')
+    monkeypatch.setattr('forecasting.learning.compile_lesson_rules', lambda *a: [])
+    snap = lg.create_snapshot(question_id=q.id, probability_or_distribution=.5, rationale='Compiler unavailable.',
+        metadata={'lesson_rule_report': {'verdicts': [{'rule_id': f"lesson:{lesson['id']}", 'passed': True}]}})
+    decision, = snap.metadata['lesson_decisions']
+    assert decision['reason'] == 'rule_not_evaluated'
+    assert decision['applied'] is False

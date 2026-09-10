@@ -1,12 +1,13 @@
-"""AIA P2.1 — the MarketNightly foreknowledge-proof LIVE benchmark.
+"""AIA P2.1 — the MarketNightly future-close LIVE benchmark.
 
 The paper's core epistemic point: a backtest can never fully rule out
 foreknowledge (the model may have ingested the answer during pre-training, or a
 leakage check may miss a subtle channel). The only *defensible* claim of live
 superiority comes from a continuously-running benchmark on questions that
 resolve in the FUTURE: sample currently-OPEN markets, forecast NOW, and score
-when they close. Foreknowledge is impossible BY CONSTRUCTION because the
-outcome does not exist yet at forecast time.
+on confirmed settlement. A future market close is a sampling safeguard, not
+proof that the underlying event was still unknown: event timing and evidence
+availability require separate audit.
 
 This module makes that invariant load-bearing:
 
@@ -37,7 +38,7 @@ HARD CONSTRAINTS honored here:
   (a) Nothing hits a live market API. The market source and the agent
       forecaster are INJECTED seams (callables); this module never imports or
       calls a network adapter. The CLI only runs them when explicitly invoked.
-  (b) The foreknowledge-proof invariant is enforced at BOTH the pure sampler and
+  (b) The future-close invariant is enforced at BOTH the pure sampler and
       the storing step — a violation is rejected and counted, never silently
       admitted.
   (c) Additive only: no existing forecast number, score, or default changes.
@@ -213,11 +214,11 @@ def default_market_devig(market: Mapping[str, Any]) -> float:
 
 
 def _is_strictly_future_close(close: str | None, as_of: str) -> bool:
-    """The foreknowledge-proof admissibility test: close STRICTLY > as_of.
+    """The future-close admissibility test: close STRICTLY > as_of.
 
     A missing close, or a close at/earlier than the forecast instant, is
-    INADMISSIBLE — the outcome could already exist, so foreknowledge is not ruled
-    out by construction."""
+    INADMISSIBLE. Passing this timing test alone does not rule out an already
+    known underlying event."""
 
     if not close:
         return False
@@ -316,7 +317,7 @@ def baseline_is_contemporaneous(
     return True
 
 
-# ── 1. the pure, seeded foreknowledge-proof sampler ───────────────────────────
+# ── 1. the pure, seeded future-close sampler ───────────────────────────
 
 
 def sample_open_markets(
@@ -329,7 +330,7 @@ def sample_open_markets(
     """Keep ONLY strictly-future-close markets, then take up to ``n`` (seeded).
 
     PURE: no I/O, no ledger, no clock — ``as_of`` is supplied by the caller. The
-    foreknowledge-proof filter drops every market whose close/resolution time is
+    future-close filter drops every market whose close/resolution time is
     not STRICTLY after ``as_of`` (a market closing exactly at, or before, the
     forecast instant is rejected). The surviving markets are shuffled with a
     seeded :class:`random.Random` and the first ``n`` are taken, so the pick is
@@ -449,7 +450,7 @@ def record_pending(
     plain arm still dedups against it exactly as before.
 
     For each market this:
-      1. RE-ASSERTS the foreknowledge-proof invariant (close STRICTLY > as_of);
+      1. RE-ASSERTS the future-close invariant (close STRICTLY > as_of);
          a violator is appended to ``rejected_ids`` and NEVER stored.
       2. Creates a binary forecast question for the market (close/resolution
          carried through so the question itself records when it may be scored).
@@ -659,9 +660,9 @@ def record_pending(
             question_id=question.id,
             probability_or_distribution=agent_p,
             rationale=(
-                "AIA P2.1 MarketNightly foreknowledge-proof live benchmark: agent forecast "
+                "AIA P2.1 MarketNightly future-close live benchmark: agent forecast "
                 f"committed at {as_of_norm} against an OPEN market closing at {close} "
-                "(outcome does not exist yet)."
+                "(underlying event timing and evidence availability require separate audit)."
             ),
             as_of=as_of_norm,
             method="market_nightly",
@@ -693,6 +694,7 @@ def record_pending(
                 "market_nightly": True,
                 "market_id": mid,
                 "raw_yes_price": market_yes_price(market),
+                "agent_forecast_id": snapshot.forecast_id,
                 "price_asof": price_asof,
                 "forecast_as_of": as_of_norm,
                 "baseline_lag_seconds": baseline_lag,
@@ -969,14 +971,20 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
     }
     by_market_agent: dict[str, dict[str, Any]] = {}
 
+    from forecasting.evaluation import market_evaluation_records
+
+    with ledger._connect() as conn:
+        evaluations = {r["forecast_id"]: r for r in market_evaluation_records(conn)}
+
     for snapshot in _pending_market_nightly_snapshots(ledger):
         qid = snapshot.question_id
         arm = _snapshot_arm(snapshot)
         mid = str((getattr(snapshot, "metadata", None) or {}).get("market_id") or qid)
-        resolution = ledger.get_latest_resolution(qid, confirmed_only=True)
-        agent_score = None
-        if resolution is not None:
-            agent_score = ledger._existing_score(snapshot.forecast_id, resolution.id)
+        evaluation = evaluations.get(snapshot.forecast_id)
+        agent_score = (
+            ledger.get_score(evaluation["score_id"])
+            if evaluation and evaluation["agent_valid"] else None
+        )
         if agent_score is None or agent_score.brier_score is None:
             n_pending += 1
             continue
@@ -985,7 +993,10 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
         # market-baseline gate — that comparison needs only the two agent scores.
         by_market_agent.setdefault(mid, {})[arm] = agent_score
 
-        market_score = _scored_market_baseline(ledger, qid)
+        market_score = (
+            ledger.get_score(evaluation["market_score_id"])
+            if evaluation and evaluation["exclusion_reason"] is None else None
+        )
         if market_score is None or market_score.brier_score is None:
             # Agent scored but the market baseline is not (yet) scored — count it as
             # pending for the paired comparison (an unpaired agent score cannot enter
@@ -1001,7 +1012,7 @@ def market_nightly_report(ledger: Any) -> dict[str, Any]:
         # (POSITIVE == agent better), exactly the agent-vs-market edge we want.
         pair = (agent_score, market_score)
         all_pairs.append(pair)
-        if _snapshot_baseline_is_contemporaneous(ledger, snapshot):
+        if evaluation["contemporaneous"]:
             contemporaneous_pairs.append(pair)
             c_agent_briers.append(a_brier)
             c_market_briers.append(m_brier)

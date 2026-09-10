@@ -50,6 +50,13 @@ def _ledger(args: argparse.Namespace) -> ForecastLedger:
 def register(forecast_sub: argparse._SubParsersAction) -> None:
     """Register the ``doctor`` + ``backup`` command groups (contiguous block)."""
 
+    lifecycle = forecast_sub.add_parser("lifecycle", help="Inspect or recover forecast lifecycle handoffs")
+    lifecycle.add_argument("action", choices=["status", "run"], nargs="?", default="status", help="Inspect by default; run recovers confirmed score/postmortem handoffs")
+    lifecycle.add_argument("--now", help="UTC inspection/recovery time (defaults to now)")
+    lifecycle.add_argument("--limit", type=int, default=25, help="Maximum tasks to execute or rows to display (default 25)")
+    lifecycle.add_argument("--json", action="store_true", help="Emit full structured status and execution results")
+    lifecycle.set_defaults(_forecast_handler=_cmd_lifecycle)
+
     doctor_parser = forecast_sub.add_parser(
         "doctor",
         help="Run operational, pilot, and readiness checks",
@@ -286,7 +293,10 @@ def _build_doctor_report(args: argparse.Namespace) -> dict[str, Any]:
         installed_scripts = {
             row.get("script") for row in (cron_health or {}).get("jobs", [])
         }
+        lifecycle = (operations.get("lifecycle") or {}).get("counts") or {}
         checks = (
+            ("unfinished_forecast_lifecycles", int(lifecycle.get("unfinished") or 0)),
+            ("failed_finalization_tasks", int(lifecycle.get("failed_tasks") or 0)),
             ("stranded_source_events", int(source_changes.get("stranded") or 0)),
             ("open_source_failures", int(source_changes.get("open_failed") or 0)),
             ("service_mode_coverage_gaps", int(coverage.get("service_mode_coverage_gaps") or 0)),
@@ -789,3 +799,30 @@ def _cmd_config_doctor(args: argparse.Namespace) -> None:
         print(json.dumps(report, indent=2, sort_keys=True, default=str))
         return
     print(appconfig.render_doctor_report(report))
+
+
+def _cmd_lifecycle(args: argparse.Namespace) -> None:
+    from forecasting.lifecycle import lifecycle_status, run_lifecycle
+
+    ledger = _ledger(args)
+    if args.limit < 1:
+        raise SystemExit("--limit must be positive")
+    results = []
+    if args.action == "run":
+        import uuid
+        results = run_lifecycle(ledger, owner=f"cli-lifecycle:{uuid.uuid4().hex[:12]}", now=args.now, limit=args.limit)
+    report = lifecycle_status(ledger, now=args.now)
+    report["results"] = results
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        print("Forecast lifecycle")
+        print("; ".join(f"{k.replace('_', ' ')}: {v}" for k, v in report["counts"].items()))
+        for row in (report["unfinished"] + report["attention"])[:args.limit]:
+            print(f"  {row['question_id']} {row['reason']}: {row['title']}")
+        for row in report["tasks"][:args.limit]:
+            print(f"  task {row['id']} {row['status']} ({row['attempt_count']}/{row['max_attempts']}): {row.get('error') or 'awaiting worker'}")
+        print("Review settlement evidence with `forecast protocol <id> --stage resolve`; confirm outcomes explicitly.")
+        print("Recover confirmed score/postmortem handoffs with `forecast lifecycle run`.")
+    if any(row.get("status") != "completed" for row in results):
+        raise SystemExit(1)

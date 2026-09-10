@@ -349,7 +349,7 @@ def get_latest_resolution(
             f"""
             SELECT * FROM resolutions
             WHERE {' AND '.join(clauses)}
-            ORDER BY resolved_at DESC
+            ORDER BY resolved_at DESC, rowid DESC
             LIMIT 1
             """,
             params,

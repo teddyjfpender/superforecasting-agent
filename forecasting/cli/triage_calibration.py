@@ -80,6 +80,9 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     lessons_audit = lessons_sub.add_parser("audit", help="Per-lesson coverage: is each learning actually being used? (in-scope / applied / dormant)")
     lessons_audit.add_argument("--json", action="store_true")
     lessons_audit.set_defaults(_forecast_handler=_cmd_lessons_audit)
+    explain = lessons_sub.add_parser("explain", help="Show in-scope lessons and recorded decisions for a forecast")
+    explain.add_argument("id")
+    explain.set_defaults(_forecast_handler=_cmd_lessons_explain)
     lessons_apply = lessons_sub.add_parser("apply", help="Compile a lesson into an enforceable hook rule (auto-detects the enforcement pattern)")
     lessons_apply.add_argument("lesson_id")
     lessons_apply.add_argument("--severity", choices=["warn", "error"], default="warn", help="WARN (observe, default) or ERROR (blocks at commit)")
@@ -464,10 +467,12 @@ def _cmd_lessons_audit(args: argparse.Namespace) -> None:
             status = "DORMANT — never in scope since creation"
         elif not r["enforceable"]:
             status = "advisory — prose only, will NOT bite"
-        elif r["kind"] == "numeric" and r["application_rate"] < 1.0:
+        elif r.get("unverified_count"):
+            status = f"{r['unverified_count']} historical application(s) lack verified decisions"
+        elif r["application_rate"] < 1.0:
             status = f"applied {r['application_rate'] * 100:.0f}% of in-scope commits"
         else:
-            status = "enforced"
+            status = "verified rule compliance"
         print(f"{r['lesson_id']:<15} {r['kind']:<9} {r['scope']:<22} {r['in_scope_count']:<8} {r['applied_count']:<8} {status}")
     dormant = [r for r in rows if r["dormant"]]
     advisory = [r for r in rows if not r["enforceable"]]
@@ -705,3 +710,18 @@ def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = N
             )
     if label is not None:
         print()
+
+
+def _cmd_lessons_explain(args: argparse.Namespace) -> None:
+    from forecasting.learning import active_lessons_for_question
+
+    ledger = _ledger(args)
+    question = ledger.get_question(_core._resolve_question_id(ledger, args.id))
+    snapshot = ledger.get_current_snapshot(question.id)
+    print(json.dumps({
+        "question_id": question.id,
+        "active_lessons": active_lessons_for_question(ledger, question),
+        "forecast_id": snapshot.forecast_id if snapshot else None,
+        "recorded_decisions": (snapshot.metadata or {}).get("lesson_decisions", []) if snapshot else [],
+        "interpretation": "Recorded application is process evidence, not evidence of improved accuracy. Historical snapshots without decisions are unverified.",
+    }, indent=2))

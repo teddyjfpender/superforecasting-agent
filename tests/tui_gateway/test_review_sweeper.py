@@ -29,6 +29,7 @@ class _FakeLedger:
 def _reset(monkeypatch, tmp_path, *, interval=10, due=0, nightly=None):
     """Wire the sweeper to fakes and a temp HERMES_HOME (for the state file)."""
     monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr("forecasting.lifecycle.lifecycle_status", lambda *a, **k: {"counts": {"ready_tasks": 0, "missing_tasks": 0}})
     server._review_sweep_running = False
     server._review_sweep_next_tick_at = None
     monkeypatch.setattr(cr, "resolve_review_sweep_interval_minutes", lambda explicit=None: interval)
@@ -187,3 +188,15 @@ def test_reviews_next_rpc_reports_disabled_and_no_nightly(tmp_path, monkeypatch)
     assert res["sweeper"]["enabled"] is False
     assert res["sweeper"]["interval_minutes"] == 0
     assert res["nightly"] == {"installed": False, "next_run_at": None, "last_run_at": None}
+
+
+def test_finalization_runs_without_due_reviews_even_after_nightly(monkeypatch, tmp_path):
+    _reset(monkeypatch, tmp_path, due=0)
+    monkeypatch.setattr('forecasting.lifecycle.lifecycle_status', lambda *a, **k: {'counts': {'ready_tasks': 1, 'missing_tasks': 0}})
+    monkeypatch.setattr(server, '_nightly_ran_within', lambda *a: True)
+    calls = []
+    monkeypatch.setattr(cr, 'run_due_reviews', lambda **k: calls.append(True) or 'Resolution finalization\ncompleted 1/1\n')
+    result = server._run_review_sweep(now='2026-09-10T12:00:00Z')
+    assert calls == [True]
+    assert result['ran'] is True
+    assert result['lifecycle']['ready_tasks'] == 1

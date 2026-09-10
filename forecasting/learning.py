@@ -182,7 +182,7 @@ def _canonical_question_type(question: Any) -> str | None:
     return None
 
 
-def active_lessons_for_question(ledger: ForecastLedger, question: Any) -> list[dict[str, Any]]:
+def _in_scope_lessons(ledger: ForecastLedger, question: Any) -> list[dict[str, Any]]:
     scopes: list[tuple[str, str | None]] = [("global", None)]
     if question.domain:
         scopes.append(("domain", question.domain))
@@ -212,6 +212,17 @@ def active_lessons_for_question(ledger: ForecastLedger, question: Any) -> list[d
             seen.add(lesson["id"])
             lessons.append(lesson)
     return lessons
+
+
+def active_lessons_for_question(ledger: ForecastLedger, question: Any) -> list[dict[str, Any]]:
+    """Use explicit in-scope supersession, never guess precedence from prose.
+
+    A narrower replacement only supersedes the old lesson where both match;
+    invalidated/inactive replacements cannot suppress an otherwise active lesson.
+    """
+    lessons = _in_scope_lessons(ledger, question)
+    superseded = {item.get("supersedes_lesson_id") for item in lessons}
+    return [item for item in lessons if item["id"] not in superseded]
 
 
 def lesson_scope_to_applies_to(lesson: dict[str, Any]) -> dict[str, Any]:
@@ -283,3 +294,47 @@ def _optional_float(value: Any) -> float | None:
     else:
         return None
     return number if math.isfinite(number) else None
+
+
+def lesson_application_decisions(ledger, question, payload, adjustment, refs, rule_report):
+    """Explain actual commit behavior; a successful commit is not rule compliance.
+
+    Keep the verdict and source IDs on the immutable snapshot so later lesson
+    edits cannot rewrite what the agent used. Advisory consultation is distinct
+    from a numerical adjustment or a successfully evaluated rule.
+    """
+    adjustment = adjustment or {}
+    items = {i.get("id"): i for i in adjustment.get("applied_active_lessons", []) if isinstance(i, dict)}
+    verdicts = {v["rule_id"]: v for v in rule_report.get("verdicts", [])}
+    raw = _optional_float(adjustment.get("raw_probability"))
+    value = _optional_float(payload)
+    decisions = []
+    candidates = _in_scope_lessons(ledger, question)
+    superseded = {item.get("supersedes_lesson_id"): item["id"] for item in candidates}
+    for lesson in candidates:
+        lid = lesson["id"]
+        recommended = lesson.get("recommended_adjustment") or {}
+        item = items.get(lid, {})
+        if isinstance(recommended.get("rule"), dict):
+            kind = "rule"
+            verdict = verdicts.get(f"lesson:{lid}")
+            applied = bool(verdict and verdict.get("passed"))
+            reason = "rule_passed" if applied else ("rule_failed" if verdict else "rule_not_evaluated")
+        elif any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale")):
+            kind = "numeric"
+            skipped = item.get("numeric_adjustment_skipped")
+            applied = bool(item and not skipped and raw is not None and value is not None and abs(value - raw) > 1e-9)
+            reason = skipped or ("numeric_adjustment_applied" if applied else "no_numeric_change")
+        else:
+            kind, applied = "advisory", False
+            reason = "consulted_advisory" if lid in refs else "not_recorded_as_consulted"
+        if lid in superseded:
+            applied, reason = False, f"superseded_by:{superseded[lid]}"
+        decisions.append({
+            "lesson_id": lid, "kind": kind, "applied": applied, "reason": reason,
+            "consulted": lid in refs, "scope_type": lesson.get("scope_type"),
+            "scope_ref": lesson.get("scope_ref"), "lesson_updated_at": lesson.get("updated_at"),
+            "source_score_record_refs": list(lesson.get("source_score_record_refs") or []),
+            "source_postmortem_refs": list(lesson.get("source_postmortem_refs") or []),
+        })
+    return decisions

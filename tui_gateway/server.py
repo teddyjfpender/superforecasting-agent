@@ -702,19 +702,25 @@ def _run_review_sweep(now: str | None = None) -> dict:
     try:
         from forecasting.ledger import ForecastLedger
 
-        due_count = ForecastLedger().count_due_scheduled_reviews(now=now_iso)
+        from forecasting.lifecycle import lifecycle_status
+
+        ledger = ForecastLedger()
+        due_count = ledger.count_due_scheduled_reviews(now=now_iso)
+        lifecycle = lifecycle_status(ledger, now=now_iso)["counts"]
+        result["lifecycle"] = lifecycle
+        finalization_due = lifecycle["ready_tasks"] + lifecycle["missing_tasks"]
     except Exception:
         logger.exception("review sweep: due check failed")
         result["skipped_reason"] = "due_check_failed"
         return result
     result["due_count"] = int(due_count)
-    if due_count <= 0:
+    if due_count <= 0 and finalization_due <= 0:
         result["skipped_reason"] = "none_due"
         _persist_review_sweep_state(result)
         return result
 
     # Nightly dedupe: don't double the work the nightly cron just did.
-    if _nightly_ran_within(now_iso, interval):
+    if finalization_due <= 0 and _nightly_ran_within(now_iso, interval):
         result["skipped_reason"] = "nightly_recent"
         _persist_review_sweep_state(result)
         return result
