@@ -402,7 +402,7 @@ const renderWorkspace = async (columns: number, response: ForecastWorkspaceRespo
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { DeskView }, { DARK_THEME }, { stripAnsi }, { clearOverlayCache }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/deskView.js'),
     import('../theme.js'),
     import('../lib/text.js'),
@@ -439,7 +439,7 @@ const renderWorkspace = async (columns: number, response: ForecastWorkspaceRespo
 // height measurement — both unreliable outside a real TTY.
 const renderDetail = async (item: ForecastWorkspaceItem, width = 70) => {
   const [{ renderSync }, { ForecastDetail }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/forecastsWorkspace.js'),
     import('../theme.js'),
     import('../lib/text.js')
@@ -464,7 +464,7 @@ const TAIL_TITLES = new Set(['Forecast History', 'Assumptions And References', '
 const renderTail = async (packet: Record<string, unknown>, width = 70) => {
   const [{ renderSync }, { ForecastPacketTail }, { forecastQuestionDetailSections }, { DARK_THEME }, { stripAnsi }] =
     await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../app/forecastPanel.js'),
       import('../theme.js'),
@@ -985,7 +985,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('wraps long causal-path text in a narrow pane instead of cutting it with a trailing ellipsis', async () => {
     const [{ Box, renderSync }, { ForecastDetail }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1030,7 +1030,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('detail falls back to the packet panel when the workspace item has none', async () => {
     const [{ renderSync }, { ForecastDetail, panelFromPacket }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1112,7 +1112,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders the analyst quick read with headline, labeled angles, and wrapped body', async () => {
     const [{ renderSync }, { AnalystNote }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1148,7 +1148,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('suppresses the ambiguous stance chip when showStance is false (distribution forecasts)', async () => {
     const [{ renderSync }, { AnalystNote }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1176,7 +1176,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders a resolved retrospective with its verdict', async () => {
     const [{ renderSync }, { AnalystNote }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1207,7 +1207,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders related forecasts with relationship tags and the shared-source flag', async () => {
     const [{ renderSync }, { RelatedForecasts }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1263,7 +1263,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders the thesis read with health trend, aggregate stats, members, and caveats', async () => {
     const [{ renderSync }, { ThesisDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1306,7 +1306,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders the entity suitability table and trade triggers under the member contributions', async () => {
     const [{ renderSync }, { ThesisDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1340,7 +1340,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('shows withheld (not a fake number) for a thesis with no health snapshot', async () => {
     const [{ renderSync }, { ThesisDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1359,7 +1359,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders the P(event) headline band for a joint-event thesis (the interval an all-binary thesis CAN publish)', async () => {
     const [{ renderSync }, mod, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1406,7 +1406,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('caps the thesis dot-plot preview at ~15 dots and captions the thinning honestly (FIX 2)', async () => {
     const [{ renderSync }, mod, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1453,7 +1453,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('renders the factor read with return trend, factor-return stats, constituents, and caveats', async () => {
     const [{ renderSync }, { FactorDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1496,7 +1496,7 @@ describe('ForecastsWorkspace render', () => {
 
   it('shows withheld (not a fake number) for a factor with no return snapshot', async () => {
     const [{ renderSync }, { FactorDeskRead }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1582,7 +1582,7 @@ const renderDetailProps = async (
   width = 90
 ) => {
   const [{ renderSync }, { ForecastDetail }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/forecastsWorkspace.js'),
     import('../theme.js'),
     import('../lib/text.js')

@@ -41,7 +41,7 @@ describe('reviewCountFromDeskStatus', () => {
 
 describe('session vitals on the conversation bar', () => {
   it('renders context% / voice / bg conditionally; the landing (no vitals) stays bare', async () => {
-    const { render } = await import('@hermes/ink')
+    const { render } = await import('@superforecasting/ink')
     const React = (await import('react')).default
     const { HomeStatusBar } = await import('../components/homeLanding.js')
     const { DARK_THEME } = await import('../theme.js')

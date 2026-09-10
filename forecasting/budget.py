@@ -179,9 +179,9 @@ class BudgetExceeded(PolicyRefused):
 
 
 def _spend_dir() -> Path:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    d = get_hermes_home() / "spend"
+    d = get_agent_home() / "spend"
     d.mkdir(parents=True, exist_ok=True)
     return d
 

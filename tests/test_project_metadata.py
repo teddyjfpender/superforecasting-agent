@@ -32,10 +32,10 @@ def _load_setuptools_find():
     return tool["setuptools"]["packages"]["find"]
 
 
-def test_top_level_scheduled_routines_note_is_forecast_native():
+def test_scheduled_routines_guide_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     old_note = root / "hermes-already-has-routines.md"
-    note = root / "forecasting-scheduled-routines.md"
+    note = root / "docs" / "scheduled-routines.md"
     text = note.read_text(encoding="utf-8")
 
     assert not old_note.exists()
@@ -166,7 +166,7 @@ def test_messaging_extra_includes_qrcode_for_weixin_setup():
 
 
 def test_dingtalk_extra_includes_qrcode_for_qr_auth():
-    """DingTalk's QR-code device-flow auth (hermes_cli/dingtalk_auth.py)
+    """DingTalk's QR-code device-flow auth (superforecasting_agent/runtime/dingtalk_auth.py)
     needs the qrcode package."""
     optional_dependencies = _load_optional_dependencies()
 
@@ -279,8 +279,9 @@ def test_forecast_cli_public_alias_is_exposed():
     ).read_text(encoding="utf-8")
     slash_worker = (root / "tui_gateway" / "slash_worker.py").read_text(encoding="utf-8")
 
-    assert issubclass(ForecastCLI, HermesCLI)
-    assert "class ForecastCLI(HermesCLI)" in cli_source
+    assert ForecastCLI is HermesCLI
+    assert ForecastCLI.__name__ == "ForecastCLI"
+    assert "class ForecastCLI:" in cli_source
     assert "cli = ForecastCLI(" in cli_source
     assert "cli = HermesCLI(" not in cli_source
     assert "from cli import ForecastCLI" in extension_doc
@@ -628,8 +629,8 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "web" / "src" / "pages" / "AnalyticsPage.tsx",
         root / "web" / "src" / "pages" / "SessionsPage.tsx",
         root / "web" / "src" / "pages" / "ModelsPage.tsx",
-        root / "hermes_cli" / "main.py",
-        root / "hermes_cli" / "web_server.py",
+        root / 'superforecasting_agent/runtime' / "main.py",
+        root / 'superforecasting_agent/runtime' / "web_server.py",
         root / "tui_gateway" / "entry.py",
         root / "website" / "docs" / "index.md",
         root / "website" / "docs" / "getting-started" / "installation.md",
@@ -792,7 +793,7 @@ def test_web_readme_is_forecast_native():
     assert "ForecastsPage" in text
     assert "# Hermes Agent — Web UI" not in text
     assert "managing Hermes Agent configuration" not in text
-    assert "python -m hermes_cli.main web --no-open" not in text
+    assert "python -m superforecasting_agent.runtime.main web --no-open" not in text
 
 
 def test_cli_layout_svg_is_forecast_native():
@@ -824,14 +825,14 @@ def test_acp_adapter_copy_is_forecast_native():
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
     assert "exposing Superforecasting Agent via Agent Client Protocol" in text
-    assert "Superforecasting Agent v{HERMES_VERSION}" in text
+    assert "Superforecasting Agent v{AGENT_VERSION}" in text
     assert "Configure Superforecasting Agent provider" in text
     assert "ACP-managed forecast agent" in text
     assert "Show Superforecasting Agent version" in text
     assert "active-home SessionDB" in text
     assert '["forecast-acp"]' in text
     assert "Hermes Agent via the Agent Client Protocol" not in text
-    assert "Hermes Agent v{HERMES_VERSION}" not in text
+    assert "Hermes Agent v{" not in text
     assert "Configure Hermes provider" not in text
     assert "Authenticate Hermes" not in text
     assert "Hermes' local kawaii" not in text
@@ -913,8 +914,8 @@ def test_docker_image_guidance_uses_fork_registry():
     paths = [
         root / ".github" / "workflows" / "docker-publish.yml",
         root / "website" / "docs" / "user-guide" / "docker.md",
-        root / "hermes_cli" / "config.py",
-        root / "hermes_cli" / "tools_config.py",
+        root / 'superforecasting_agent/runtime' / "config.py",
+        root / 'superforecasting_agent/runtime' / "tools_config.py",
         root / "tools" / "browser_tool.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
@@ -971,8 +972,8 @@ def test_singularity_runtime_names_are_forecast_native():
 
 def test_standalone_gateway_script_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "scripts" / "hermes-gateway").read_text(encoding="utf-8")
-    wrapper = (root / "scripts" / "superforecasting-agent-gateway").read_text(encoding="utf-8")
+    text = (root / "scripts" / "superforecasting-agent-gateway").read_text(encoding="utf-8")
+    wrapper = (root / "scripts" / "hermes-gateway").read_text(encoding="utf-8")
 
     assert "Superforecasting Agent Gateway - standalone optional messaging integration." in text
     assert "./scripts/superforecasting-agent-gateway" in text
@@ -981,12 +982,12 @@ def test_standalone_gateway_script_is_forecast_native():
     assert "except ImportError:" in text
     assert 'SERVICE_NAME = "superforecasting-agent-gateway"' in text
     assert 'LAUNCHD_LABEL = "ai.superforecasting-agent.gateway"' in text
-    assert "display_hermes_home()" in text
-    assert "get_hermes_home() / \"logs\"" in text
+    assert "display_agent_home()" in text
+    assert "get_agent_home() / \"logs\"" in text
     assert "Starting Superforecasting Agent Gateway..." in text
     assert "Superforecasting Agent Gateway - Messaging Platform Integration" in text
     assert "runpy.run_path" in wrapper
-    assert "hermes-gateway" in wrapper
+    assert 'with_name("superforecasting-agent-gateway")' in wrapper
     assert "Starting Hermes Gateway" not in text
     assert "Hermes Gateway - Messaging Platform Integration" not in text
     assert "./scripts/hermes-gateway run" not in text
@@ -996,7 +997,7 @@ def test_standalone_gateway_script_is_forecast_native():
 
 def test_logging_module_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_logging.py").read_text(encoding="utf-8")
+    text = (root / "superforecasting_agent/logging.py").read_text(encoding="utf-8")
 
     assert "Centralized logging setup for Superforecasting Agent." in text
     assert "Configure the Superforecasting Agent logging subsystem." in text
@@ -1011,7 +1012,7 @@ def test_logging_module_copy_is_forecast_native():
 
 def test_constants_module_home_override_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_constants.py").read_text(encoding="utf-8")
+    text = (root / "superforecasting_agent/constants.py").read_text(encoding="utf-8")
 
     assert "context-local agent home override" in text
     assert "context-local Hermes home override" not in text
@@ -1019,9 +1020,12 @@ def test_constants_module_home_override_docs_are_forecast_native():
 
 def test_session_state_module_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_state.py").read_text(encoding="utf-8")
+    text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted((root / "superforecasting_agent" / "storage").glob("*.py"))
+    )
 
-    assert "SQLite state store for Superforecasting Agent." in text
+    assert "Thread-safe session store" in text
     assert "multiple agent processes" in text
     assert "upgrade Superforecasting" in text
     assert "Bind one Telegram DM topic thread to one agent session." in text
@@ -1046,7 +1050,7 @@ def test_security_policy_is_forecast_native():
 
 def test_windows_gateway_service_names_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "gateway_windows.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "gateway_windows.py").read_text(encoding="utf-8")
     windows_doc = (root / "website" / "docs" / "user-guide" / "windows-native.md").read_text(
         encoding="utf-8"
     )
@@ -1074,7 +1078,7 @@ def test_windows_gateway_service_names_are_forecast_native():
 
 def test_windows_stdio_path_repair_prefers_forecast_native_dirs():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "stdio.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "stdio.py").read_text(encoding="utf-8")
 
     assert 'os.path.join(local_appdata, "superforecasting-agent", "git", "bin")' in text
     assert '"superforecasting-agent",\n            "superforecasting-agent",' in text
@@ -1086,7 +1090,7 @@ def test_windows_stdio_path_repair_prefers_forecast_native_dirs():
 
 def test_install_helpers_use_forecast_native_visible_copy():
     root = Path(__file__).resolve().parents[1]
-    constraints_termux = (root / "constraints-termux.txt").read_text(encoding="utf-8")
+    constraints_termux = (root / "packaging/termux/constraints.txt").read_text(encoding="utf-8")
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
     install_sh = (root / "scripts" / "install.sh").read_text(encoding="utf-8")
     install_cmd = (root / "scripts" / "install.cmd").read_text(encoding="utf-8")
@@ -1359,27 +1363,30 @@ def test_tui_visible_affordances_are_forecast_native():
 
 def test_runtime_docstrings_and_markers_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    goals = (root / "hermes_cli" / "goals.py").read_text(encoding="utf-8")
-    gateway = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
-    relaunch = (root / "hermes_cli" / "relaunch.py").read_text(encoding="utf-8")
+    goals = (root / 'superforecasting_agent/runtime' / "goals.py").read_text(encoding="utf-8")
+    gateway = (root / 'superforecasting_agent/runtime' / "gateway.py").read_text(encoding="utf-8")
+    relaunch = (root / 'superforecasting_agent/runtime' / "relaunch.py").read_text(encoding="utf-8")
     tui_gateway = (root / "tui_gateway" / "server.py").read_text(encoding="utf-8")
     tui_commands = (root / "tui_gateway" / "commands_rpc.py").read_text(encoding="utf-8")
-    callbacks = (root / "hermes_cli" / "callbacks.py").read_text(encoding="utf-8")
+    callbacks = (root / 'superforecasting_agent/runtime' / "callbacks.py").read_text(encoding="utf-8")
     cli = (root / "cli.py").read_text(encoding="utf-8")
-    tips = (root / "hermes_cli" / "tips.py").read_text(encoding="utf-8")
+    resume_display = (root / "superforecasting_agent/runtime/resume_display.py").read_text(encoding="utf-8")
+    goal_commands = (root / "superforecasting_agent/runtime/goal_commands.py").read_text(encoding="utf-8")
+    handoff_commands = (root / "superforecasting_agent/runtime/handoff_commands.py").read_text(encoding="utf-8")
+    tips = (root / 'superforecasting_agent/runtime' / "tips.py").read_text(encoding="utf-8")
     conversation_loop = (root / "agent" / "conversation_loop.py").read_text(
         encoding="utf-8"
     )
-    commands = (root / "hermes_cli" / "commands.py").read_text(encoding="utf-8")
+    commands = (root / 'superforecasting_agent/runtime' / "commands.py").read_text(encoding="utf-8")
     discord = (root / "gateway" / "platforms" / "discord.py").read_text(
         encoding="utf-8"
     )
     locale_en = (root / "locales" / "en.yaml").read_text(encoding="utf-8")
     install_ps1 = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
-    main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
-    parser_py = (root / "hermes_cli" / "_parser.py").read_text(encoding="utf-8")
-    config_py = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
-    setup_py = (root / "hermes_cli" / "setup.py").read_text(encoding="utf-8")
+    main_py = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
+    parser_py = (root / 'superforecasting_agent/runtime' / "_parser.py").read_text(encoding="utf-8")
+    config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    setup_py = (root / 'superforecasting_agent/runtime' / "setup.py").read_text(encoding="utf-8")
 
     assert "Persistent session goals for Superforecasting Agent" in goals
     assert "goal satisfied by the forecaster's last response" in goals
@@ -1427,18 +1434,18 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Unknown forecast style" in cli
     assert "Unknown personality" not in cli
     assert "Retry the last forecast note by removing the last exchange" in cli
-    assert "destination forecast conversation" in cli
-    assert "Forecast agent is busy" in cli
+    assert "destination forecast conversation" in handoff_commands
+    assert "Forecast agent is busy" in handoff_commands
     assert "Recent forecast sessions" in cli
     assert "No forecast session to branch" in cli
     assert "Resume this forecast session with:" in cli
-    assert "Hands the current forecast session off" in cli
+    assert "Hands the current forecast session off" in handoff_commands
     assert "No previous forecast sessions yet." in cli
-    assert "Goals unavailable (no active forecast session)." in cli
+    assert "Goals unavailable (no active forecast session)." in goal_commands
     assert "The current forecast-session history will be discarded." in cli
     assert "Forecast session title set:" in cli
-    assert "Previous Forecast Session" in cli
-    assert "previous forecast-session messages" in cli
+    assert "Previous Forecast Session" in resume_display
+    assert "previous forecast-session messages" in resume_display
     assert "discard forecast-session state" in cli
     assert "current forecast session stays free" in tips
     assert "previously named forecast session" in tips
@@ -1466,11 +1473,11 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "Resume this research session with:" not in cli
     assert "Hands the current session off" not in cli
     assert "No previous sessions yet." not in cli
-    assert "Goals unavailable (no active session)." not in cli
+    assert "Goals unavailable (no active session)." not in goal_commands
     assert "The current research-session history will be discarded." not in cli
     assert "Session title set:" not in cli
-    assert "Previous Research Session" not in cli
-    assert "previous research-session messages" not in cli
+    assert "Previous Research Session" not in resume_display
+    assert "previous research-session messages" not in resume_display
     assert "discard research-session state" not in cli
     assert "current session stays free" not in tips
     assert "previously named session" not in tips
@@ -1526,8 +1533,8 @@ def test_style_overlay_docs_and_theme_copy_are_forecast_native():
         "website/docs/reference/slash-commands.md",
         "web/src/themes/presets.ts",
         "web/src/i18n/en.ts",
-        "hermes_cli/tips.py",
-        "hermes_cli/web_server.py",
+        "superforecasting_agent/runtime/tips.py",
+        "superforecasting_agent/runtime/web_server.py",
     ]
     text = "\n".join(
         (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
@@ -1624,14 +1631,14 @@ def test_faq_messaging_workarounds_are_forecast_scoped():
 
 def test_runtime_user_guidance_prefers_active_forecast_home():
     root = Path(__file__).resolve().parents[1]
-    goals = (root / "hermes_cli" / "goals.py").read_text(encoding="utf-8")
-    main = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
-    config = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
-    plugins_cmd = (root / "hermes_cli" / "plugins_cmd.py").read_text(
+    goals = (root / 'superforecasting_agent/runtime' / "goals.py").read_text(encoding="utf-8")
+    main = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
+    config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    plugins_cmd = (root / 'superforecasting_agent/runtime' / "plugins_cmd.py").read_text(
         encoding="utf-8"
     )
-    doctor = (root / "hermes_cli" / "doctor.py").read_text(encoding="utf-8")
-    tools_config = (root / "hermes_cli" / "tools_config.py").read_text(
+    doctor = (root / 'superforecasting_agent/runtime' / "doctor.py").read_text(encoding="utf-8")
+    tools_config = (root / 'superforecasting_agent/runtime' / "tools_config.py").read_text(
         encoding="utf-8"
     )
 
@@ -1646,7 +1653,7 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
     assert "active agent home." in main
     assert "active forecast home's skills/.bundled_manifest" in main
     assert "active agent-home .install_method" in config
-    assert "hint_path = display_hermes_home()" in config
+    assert "hint_path = display_agent_home()" in config
     assert "active agent-home .env" in config
     assert "active agent-home logs/" in config
     assert "active agent-home state.db" in config
@@ -1682,8 +1689,8 @@ def test_runtime_user_guidance_prefers_active_forecast_home():
 def test_high_attention_identity_copy_is_forecast_desk_native():
     root = Path(__file__).resolve().parents[1]
     readme = (root / "README.md").read_text(encoding="utf-8")
-    tips = (root / "hermes_cli" / "tips.py").read_text(encoding="utf-8")
-    doctor = (root / "hermes_cli" / "doctor.py").read_text(encoding="utf-8")
+    tips = (root / 'superforecasting_agent/runtime' / "tips.py").read_text(encoding="utf-8")
+    doctor = (root / 'superforecasting_agent/runtime' / "doctor.py").read_text(encoding="utf-8")
     nix_setup = (
         root / "website" / "docs" / "getting-started" / "nix-setup.md"
     ).read_text(encoding="utf-8")
@@ -1737,7 +1744,7 @@ def test_operator_readiness_surfaces_use_forecast_home_guidance():
     assert "active agent-home skills/ directory" in cli
     assert "active agent-home .env" in tui_gateway
     assert "active agent-home scripts/ directory" in cron_tools
-    assert "display_hermes_home()}/scripts/" in cron_tools
+    assert "display_agent_home()}/scripts/" in cron_tools
     assert "active agent home under cron/jobs.json" in cron_jobs
     assert "Re-scan forecast skills for new or removed skills" in discord
     assert "active agent-home ``.env`` is for secrets only" in discord
@@ -1770,7 +1777,7 @@ def test_operator_readiness_surfaces_use_forecast_home_guidance():
 def test_gateway_platform_setup_guidance_prefers_active_forecast_home():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        "hermes_cli/gateway.py",
+        "superforecasting_agent/runtime/gateway.py",
         "gateway/config.py",
         "gateway/channel_directory.py",
         "gateway/platforms/feishu_comment_rules.py",
@@ -1816,7 +1823,7 @@ def test_skill_runtime_surfaces_use_active_home_guidance():
         "agent/skill_commands.py",
         "agent/skill_utils.py",
         "agent/curator_backup.py",
-        "hermes_cli/skills_hub.py",
+        "superforecasting_agent/runtime/skills_hub.py",
         "tests/tools/test_skill_manager_tool.py",
     ]
     text = "\n".join(
@@ -1827,8 +1834,8 @@ def test_skill_runtime_surfaces_use_active_home_guidance():
     assert "active-home ``skills/`` directory" in text
     assert "active-home skills/ and external dirs" in text
     assert "superforecasting-agent config set skills.guard_agent_created true" in text
-    assert "Syncing bundled skills into {display_hermes_home()}/skills/" in text
-    assert "display_hermes_home()}/skills/" in text
+    assert "Syncing bundled skills into {display_agent_home()}/skills/" in text
+    assert "display_agent_home()}/skills/" in text
 
     assert "~/.hermes/skills" not in text
     assert "hermes config set skills.guard_agent_created true" not in text
@@ -1839,8 +1846,8 @@ def test_skill_runtime_surfaces_use_active_home_guidance():
 
 def test_plugin_and_session_recap_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    plugins = (root / "hermes_cli" / "plugins.py").read_text(encoding="utf-8")
-    recap = (root / "hermes_cli" / "session_recap.py").read_text(
+    plugins = (root / 'superforecasting_agent/runtime' / "plugins.py").read_text(encoding="utf-8")
+    recap = (root / 'superforecasting_agent/runtime' / "session_recap.py").read_text(
         encoding="utf-8"
     )
 
@@ -1861,19 +1868,19 @@ def test_plugin_and_session_recap_guidance_is_forecast_native():
 
 def test_command_registry_and_oneshot_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    commands = (root / "hermes_cli" / "commands.py").read_text(encoding="utf-8")
-    plugins_cmd = (root / "hermes_cli" / "plugins_cmd.py").read_text(
+    commands = (root / 'superforecasting_agent/runtime' / "commands.py").read_text(encoding="utf-8")
+    plugins_cmd = (root / 'superforecasting_agent/runtime' / "plugins_cmd.py").read_text(
         encoding="utf-8"
     )
-    skills_config = (root / "hermes_cli" / "skills_config.py").read_text(
+    skills_config = (root / 'superforecasting_agent/runtime' / "skills_config.py").read_text(
         encoding="utf-8"
     )
-    oneshot = (root / "hermes_cli" / "oneshot.py").read_text(encoding="utf-8")
-    parser_help = (root / "hermes_cli" / "_parser.py").read_text(
+    oneshot = (root / 'superforecasting_agent/runtime' / "oneshot.py").read_text(encoding="utf-8")
+    parser_help = (root / 'superforecasting_agent/runtime' / "_parser.py").read_text(
         encoding="utf-8"
     )
-    main_help = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
-    config_py = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
+    main_help = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
+    config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
     classic_cli = (root / "cli.py").read_text(encoding="utf-8")
 
     combined = "\n".join(
@@ -1938,8 +1945,8 @@ def test_runtime_docstrings_use_forecast_native_home_paths():
         "gateway/pairing.py": "platforms/pairing",
         "gateway/sticker_cache.py": "sticker_cache.json",
         "gateway/runtime_footer.py": "runtime_footer",
-        "hermes_cli/skin_engine.py": "skins/",
-        "hermes_cli/skills_config.py": "skills:",
+        "superforecasting_agent/runtime/skin_engine.py": "skins/",
+        "superforecasting_agent/runtime/skills_config.py": "skills:",
     }
     for rel_path, marker in checked.items():
         text = (root / rel_path).read_text(encoding="utf-8")
@@ -1953,7 +1960,7 @@ def test_builtin_skin_display_identity_stays_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = "\n".join(
         [
-            (root / "hermes_cli" / "skin_engine.py").read_text(encoding="utf-8"),
+            (root / 'superforecasting_agent/runtime' / "skin_engine.py").read_text(encoding="utf-8"),
             (root / "website" / "docs" / "user-guide" / "features" / "skins.md").read_text(encoding="utf-8"),
         ]
     )
@@ -1971,7 +1978,7 @@ def test_builtin_skin_display_identity_stays_forecast_native():
 
 def test_profile_description_prompt_uses_forecast_native_examples():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "profile_describer.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "profile_describer.py").read_text(encoding="utf-8")
 
     assert "Maintains macro forecast ledgers" in text
     assert "scores resolved questions" in text
@@ -1998,7 +2005,7 @@ def test_core_prompt_fallbacks_use_forecast_native_examples():
 
 def test_model_picker_guidance_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "models.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "models.py").read_text(encoding="utf-8")
 
     assert "Superforecasting Agent is tool-calling-first" in text
     assert "superforecasting-agent auth add copilot" in text
@@ -2026,7 +2033,7 @@ def test_runtime_operator_guidance_uses_forecast_native_commands():
         "tools/approval.py",
         "tools/mcp_tool.py",
         "tools/skills_tool.py",
-        "hermes_cli/bundles.py",
+        "superforecasting_agent/runtime/bundles.py",
         "gateway/run.py",
     ]
     text = "\n".join(
@@ -2107,8 +2114,8 @@ def test_internal_runtime_copy_is_forecast_native_where_not_compatibility():
 def test_gateway_service_helper_comments_prefer_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        "hermes_cli/gateway.py",
-        "hermes_cli/gateway_windows.py",
+        "superforecasting_agent/runtime/gateway.py",
+        "superforecasting_agent/runtime/gateway_windows.py",
     ]
     text = "\n".join(
         (root / rel_path).read_text(encoding="utf-8") for rel_path in checked_paths
@@ -2130,8 +2137,8 @@ def test_gateway_service_helper_comments_prefer_forecast_native_commands():
 
 def test_debug_runtime_copy_prefers_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
-    debug_py = (root / "hermes_cli" / "debug.py").read_text(encoding="utf-8")
-    debug_tests = (root / "tests" / "hermes_cli" / "test_debug.py").read_text(
+    debug_py = (root / 'superforecasting_agent/runtime' / "debug.py").read_text(encoding="utf-8")
+    debug_tests = (root / "tests" / "runtime_cli" / "test_debug.py").read_text(
         encoding="utf-8"
     )
     text = debug_py + "\n" + debug_tests
@@ -2150,8 +2157,8 @@ def test_debug_runtime_copy_prefers_forecast_native_commands():
 
 def test_backup_runtime_copy_prefers_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
-    backup_py = (root / "hermes_cli" / "backup.py").read_text(encoding="utf-8")
-    backup_tests = (root / "tests" / "hermes_cli" / "test_backup.py").read_text(
+    backup_py = (root / 'superforecasting_agent/runtime' / "backup.py").read_text(encoding="utf-8")
+    backup_tests = (root / "tests" / "runtime_cli" / "test_backup.py").read_text(
         encoding="utf-8"
     )
     text = backup_py + "\n" + backup_tests
@@ -2171,8 +2178,8 @@ def test_backup_runtime_copy_prefers_forecast_native_commands():
 def test_tools_config_update_copy_prefers_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        root / "hermes_cli" / "tools_config.py",
-        root / "tests" / "hermes_cli" / "test_install_cua_driver.py",
+        root / 'superforecasting_agent/runtime' / "tools_config.py",
+        root / "tests" / "runtime_cli" / "test_install_cua_driver.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
 
@@ -2185,8 +2192,8 @@ def test_tools_config_update_copy_prefers_forecast_native_commands():
 def test_update_hangup_log_copy_prefers_forecast_native_command():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        root / "hermes_cli" / "main.py",
-        root / "tests" / "hermes_cli" / "test_update_hangup_protection.py",
+        root / 'superforecasting_agent/runtime' / "main.py",
+        root / "tests" / "runtime_cli" / "test_update_hangup_protection.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in checked_paths)
 
@@ -2260,11 +2267,11 @@ def test_runtime_diagnostic_status_guidance_is_forecast_native():
         root / "gateway" / "shutdown_forensics.py",
         root / "gateway" / "run.py",
         root / "gateway" / "platforms" / "qqbot" / "adapter.py",
-        root / "hermes_cli" / "auth.py",
-        root / "hermes_cli" / "config.py",
-        root / "hermes_cli" / "main.py",
-        root / "hermes_cli" / "model_switch.py",
-        root / "hermes_cli" / "web_server.py",
+        root / 'superforecasting_agent/runtime' / "auth.py",
+        root / 'superforecasting_agent/runtime' / "config.py",
+        root / 'superforecasting_agent/runtime' / "main.py",
+        root / 'superforecasting_agent/runtime' / "model_switch.py",
+        root / 'superforecasting_agent/runtime' / "web_server.py",
         root / "plugins" / "browser" / "browser_use" / "provider.py",
         root / "plugins" / "image_gen" / "openai" / "__init__.py",
         root / "plugins" / "kanban" / "dashboard" / "plugin_api.py",
@@ -2312,15 +2319,15 @@ def test_runtime_command_guidance_is_forecast_native_where_not_compatibility():
         root / "gateway" / "platforms" / "feishu.py",
         root / "gateway" / "platforms" / "qqbot" / "adapter.py",
         root / "gateway" / "run.py",
-        root / "hermes_cli" / "_parser.py",
-        root / "hermes_cli" / "auth.py",
-        root / "hermes_cli" / "config.py",
-        root / "hermes_cli" / "main.py",
-        root / "hermes_cli" / "model_switch.py",
-        root / "hermes_cli" / "nous_subscription.py",
-        root / "hermes_cli" / "profile_distribution.py",
-        root / "hermes_cli" / "runtime_provider.py",
-        root / "hermes_cli" / "setup.py",
+        root / 'superforecasting_agent/runtime' / "_parser.py",
+        root / 'superforecasting_agent/runtime' / "auth.py",
+        root / 'superforecasting_agent/runtime' / "config.py",
+        root / 'superforecasting_agent/runtime' / "main.py",
+        root / 'superforecasting_agent/runtime' / "model_switch.py",
+        root / 'superforecasting_agent/runtime' / "nous_subscription.py",
+        root / 'superforecasting_agent/runtime' / "profile_distribution.py",
+        root / 'superforecasting_agent/runtime' / "runtime_provider.py",
+        root / 'superforecasting_agent/runtime' / "setup.py",
         root / "plugins" / "kanban" / "dashboard" / "dist" / "index.js",
         root / "plugins" / "kanban" / "dashboard" / "plugin_api.py",
         root / "plugins" / "kanban" / "systemd" / "hermes-kanban-dispatcher.service",
@@ -2390,7 +2397,7 @@ def test_provider_plugin_recovery_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
         "gateway/platforms/base.py",
-        "trajectory_compressor.py",
+        "superforecasting_agent/trajectories/compression.py",
         "tools/terminal_tool.py",
         "tools/transcription_tools.py",
         "plugins/memory/honcho/cli.py",
@@ -2533,9 +2540,9 @@ def test_tool_runtime_docstrings_are_forecast_native():
 def test_dashboard_tui_comments_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        "hermes_cli/pty_bridge.py",
-        "hermes_cli/web_server.py",
-        "hermes_cli/uninstall.py",
+        "superforecasting_agent/runtime/pty_bridge.py",
+        "superforecasting_agent/runtime/web_server.py",
+        "superforecasting_agent/runtime/uninstall.py",
         "tui_gateway/entry.py",
         "tui_gateway/event_publisher.py",
         "ui-tui/src/app/createGatewayEventHandler.ts",
@@ -2647,11 +2654,11 @@ def test_holographic_memory_runtime_paths_are_forecast_native():
 def test_setup_model_toolpicker_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        "hermes_cli/tools_config.py",
-        "hermes_cli/main.py",
-        "hermes_cli/config.py",
-        "hermes_cli/plugins.py",
-        "hermes_cli/model_catalog.py",
+        "superforecasting_agent/runtime/tools_config.py",
+        "superforecasting_agent/runtime/main.py",
+        "superforecasting_agent/runtime/config.py",
+        "superforecasting_agent/runtime/plugins.py",
+        "superforecasting_agent/runtime/model_catalog.py",
         "tools/web_tools.py",
         "tools/tts_tool.py",
     ]
@@ -2683,7 +2690,7 @@ def test_setup_model_toolpicker_docs_are_forecast_native():
 
 def test_profile_runtime_exclusions_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "profiles.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "profiles.py").read_text(encoding="utf-8")
 
     assert '"superforecasting-agent",' in text
     assert "fork-native repo checkout" in text
@@ -2700,7 +2707,7 @@ def test_profile_runtime_exclusions_are_forecast_native():
 
 def test_xai_oauth_referrer_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
 
     assert '"referrer": "superforecasting-agent"' in text
     assert "referrer=superforecasting-agent" in text
@@ -2709,7 +2716,7 @@ def test_xai_oauth_referrer_is_forecast_native():
 
 
 def test_codex_runtime_migration_markers_are_forecast_native():
-    from hermes_cli.codex_runtime_plugin_migration import (
+    from superforecasting_agent.runtime.codex_runtime_plugin_migration import (
         LEGACY_MIGRATION_END_MARKER,
         LEGACY_MIGRATION_MARKER,
         MIGRATION_END_MARKER,
@@ -2718,7 +2725,7 @@ def test_codex_runtime_migration_markers_are_forecast_native():
 
     root = Path(__file__).resolve().parents[1]
     migration_py = (
-        root / "hermes_cli" / "codex_runtime_plugin_migration.py"
+        root / 'superforecasting_agent/runtime' / "codex_runtime_plugin_migration.py"
     ).read_text(encoding="utf-8")
     runtime_doc = (
         root / "website" / "docs" / "user-guide" / "features"
@@ -3019,7 +3026,7 @@ def test_contributor_and_skills_index_guidance_is_forecast_native():
         encoding="utf-8"
     )
     skills_hub = (root / "tools" / "skills_hub.py").read_text(encoding="utf-8")
-    skills_hub_cli = (root / "hermes_cli" / "skills_hub.py").read_text(
+    skills_hub_cli = (root / 'superforecasting_agent/runtime' / "skills_hub.py").read_text(
         encoding="utf-8"
     )
 
@@ -3127,7 +3134,6 @@ def test_github_issue_and_pr_templates_are_forecast_native():
     assert "forecast --db" in text
     assert "Forecasting Integrity" in text
     assert "https://github.com/teddyjfpender/superforecasting-agent" in text
-    assert "Fork Discussions" in text
     assert "https://github.com/teddyjfpender/superforecasting-agent/discussions" in text
     assert "For general questions, use fork discussions" in text
     assert "https://github.com/NousResearch/hermes-agent" not in text
@@ -3253,7 +3259,7 @@ def test_messaging_runtime_examples_are_forecast_native():
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
-    assert "MEDIA:{display_hermes_home()}/cache/img_xxx.jpg" in text
+    assert "MEDIA:{display_agent_home()}/cache/img_xxx.jpg" in text
     assert "forecast-chat-events" in text
     assert 'txn_id = f"forecast_' in text
 
@@ -3269,7 +3275,7 @@ def test_residual_runtime_identity_copy_is_forecast_native():
         root / "tools" / "browser_camofox_state.py",
         root / "agent" / "gemini_native_adapter.py",
         root / "tools" / "kanban_tools.py",
-        root / "hermes_cli" / "kanban_db.py",
+        root / 'superforecasting_agent/runtime' / "kanban_db.py",
     ]
     text = "\n".join(path.read_text(encoding="utf-8") for path in paths)
 
@@ -3302,7 +3308,7 @@ def test_google_workspace_skill_docs_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
     paths = [
         root / "skills" / "productivity" / "google-workspace" / "SKILL.md",
-        root / "skills" / "productivity" / "google-workspace" / "scripts" / "_hermes_home.py",
+        root / "skills" / "productivity" / "google-workspace" / "scripts" / "_workspace_home.py",
         root / "skills" / "productivity" / "google-workspace" / "scripts" / "setup.py",
         root / "skills" / "productivity" / "google-workspace" / "scripts" / "gws_bridge.py",
         root / "website" / "docs" / "user-guide" / "skills" / "google-workspace.md",
@@ -4389,7 +4395,7 @@ def test_cli_config_example_is_forecast_native():
 
 def test_gateway_setup_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "gateway.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "gateway.py").read_text(encoding="utf-8")
 
     assert '_SERVICE_BASE = "superforecasting-agent-gateway"' in text
     assert 'else "ai.superforecasting-agent.gateway"' in text
@@ -4433,7 +4439,7 @@ def test_gateway_runtime_copy_is_forecast_native():
 
 def test_codex_runtime_switch_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    text = (root / "hermes_cli" / "codex_runtime_switch.py").read_text(encoding="utf-8")
+    text = (root / 'superforecasting_agent/runtime' / "codex_runtime_switch.py").read_text(encoding="utf-8")
 
     assert "Hermes tool callback registered" not in text
     assert "default Hermes runtime" not in text
@@ -4443,9 +4449,9 @@ def test_codex_runtime_switch_copy_is_forecast_native():
 
 def test_model_tool_and_proxy_guidance_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    models = (root / "hermes_cli" / "models.py").read_text(encoding="utf-8")
-    tools_config = (root / "hermes_cli" / "tools_config.py").read_text(encoding="utf-8")
-    config = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
+    models = (root / 'superforecasting_agent/runtime' / "models.py").read_text(encoding="utf-8")
+    tools_config = (root / 'superforecasting_agent/runtime' / "tools_config.py").read_text(encoding="utf-8")
+    config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
 
     assert "Hermes will still save" not in models
     assert "Hermes cannot verify the model name" not in models
@@ -4546,19 +4552,19 @@ def test_provider_runtime_guidance_is_forecast_native():
 def test_support_error_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     profile_distribution = (
-        root / "hermes_cli" / "profile_distribution.py"
+        root / 'superforecasting_agent/runtime' / "profile_distribution.py"
     ).read_text(encoding="utf-8")
-    relaunch = (root / "hermes_cli" / "relaunch.py").read_text(encoding="utf-8")
-    hooks = (root / "hermes_cli" / "hooks.py").read_text(encoding="utf-8")
-    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
-    auth = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
-    main = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
-    uninstall = (root / "hermes_cli" / "uninstall.py").read_text(encoding="utf-8")
+    relaunch = (root / 'superforecasting_agent/runtime' / "relaunch.py").read_text(encoding="utf-8")
+    hooks = (root / 'superforecasting_agent/runtime' / "hooks.py").read_text(encoding="utf-8")
+    web_server = (root / 'superforecasting_agent/runtime' / "web_server.py").read_text(encoding="utf-8")
+    auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
+    main = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
+    uninstall = (root / 'superforecasting_agent/runtime' / "uninstall.py").read_text(encoding="utf-8")
 
     assert "requires Hermes" not in profile_distribution
     assert "Hermes distribution" not in profile_distribution
     assert "root profile (~/.hermes)" not in profile_distribution
-    assert "display_hermes_home()" in profile_distribution
+    assert "display_agent_home()" in profile_distribution
     assert "Hermes relaunch failed" not in relaunch
     assert "re-run hermes" not in relaunch
     assert "Hermes wire shape" not in hooks
@@ -4574,7 +4580,7 @@ def test_support_error_copy_is_forecast_native():
 def test_codex_migration_report_copy_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
     text = (
-        root / "hermes_cli" / "codex_runtime_plugin_migration.py"
+        root / 'superforecasting_agent/runtime' / "codex_runtime_plugin_migration.py"
     ).read_text(encoding="utf-8")
 
     assert "Migrate Superforecasting Agent MCP config" in text
@@ -4611,20 +4617,20 @@ def test_readme_primary_links_are_fork_native():
     assert '<a href="LICENSE">' in readme
     assert "github.com/NousResearch/hermes-agent/blob/main/LICENSE" not in readme
     assert "hermes              # also opens the forecast desk during the fork transition" not in readme
-    assert "fork-native command; forecast workflows are shorthand" in readme
+    assert "superforecasting-agent tui" in readme
     assert "github.com/NousResearch/hermes-agent/issues" not in readme
     assert 'href="https://discord.gg/NousResearch"><img' not in readme
     assert "Built by [Nous Research]" not in readme
     assert "Built by [Nous Research]" not in zh_readme
     assert "github.com/teddyjfpender/superforecasting-agent/tree/superforecasting-agent-snapshot" in zh_readme
-    assert "Upstream-Hermes%20Agent" in zh_readme
+    assert "[Hermes Agent](https://github.com/NousResearch/hermes-agent)" in zh_readme
     assert "[CONTRIBUTING.md](CONTRIBUTING.md)" in readme
     assert "upstream Hermes contributing guide" not in readme
 
 
 def test_high_attention_help_docs_are_fork_local():
     root = Path(__file__).resolve().parents[1]
-    main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    main_py = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
 
     assert "website/docs/user-guide/features/curator.md" in main_py
     assert "website/docs/user-guide/features/fallback-providers.md" in main_py
@@ -4648,7 +4654,7 @@ def test_classic_cli_examples_are_forecast_native():
 
 def test_update_upstream_metadata_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    main_py = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
+    main_py = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
 
     assert "https://github.com/teddyjfpender/superforecasting-agent.git" in main_py
     assert "superforecasting-agent/archive/refs/heads" in main_py
@@ -4671,8 +4677,8 @@ def test_update_docs_messaging_restart_copy_is_forecast_native():
 
 def test_model_catalog_default_url_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    config_py = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
-    catalog_py = (root / "hermes_cli" / "model_catalog.py").read_text(encoding="utf-8")
+    config_py = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
+    catalog_py = (root / 'superforecasting_agent/runtime' / "model_catalog.py").read_text(encoding="utf-8")
 
     expected = (
         "https://raw.githubusercontent.com/teddyjfpender/"
@@ -4756,7 +4762,7 @@ def test_fork_repo_urls_pin_live_snapshot_branch_not_dead_main():
         *sorted((root / "docs").rglob("*")),
         *sorted((root / "deploy").rglob("*")),
         *sorted((root / "scripts").rglob("*")),
-        *sorted((root / "hermes_cli" / "scripts").rglob("*")),
+        *sorted((root / 'superforecasting_agent/runtime' / "scripts").rglob("*")),
         *sorted((root / "website" / "scripts").rglob("*")),
         *sorted((root / "website" / "docs").rglob("*")),
         *sorted((root / ".github").rglob("*")),
@@ -4888,7 +4894,7 @@ def test_web_forecast_page_surfaces_tester_pilot_handoff():
 
 def test_dashboard_oauth_user_agent_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
+    web_server = (root / 'superforecasting_agent/runtime' / "web_server.py").read_text(encoding="utf-8")
 
     assert '"User-Agent": "superforecasting-agent-dashboard/1.0"' in web_server
     assert "hermes-dashboard/1.0" not in web_server
@@ -4910,6 +4916,16 @@ def test_dashboard_docs_url_points_to_fork_pages():
     assert "url: 'https://teddyjfpender.github.io/superforecasting-agent'" not in docusaurus_config
     assert "superforecasting-agent.nousresearch.com" not in docs_page
     assert "superforecasting-agent.nousresearch.com" not in docusaurus_config
+    for relative_path in (
+        'plugins/hermes-achievements/dashboard/dist/index.js',
+        'plugins/kanban/dashboard/dist/index.js',
+        'plugins/kanban/systemd/hermes-kanban-dispatcher.service',
+        'plugins/model-providers/ai-gateway/__init__.py',
+        'tools/mcp_oauth.py',
+        'tools/skills_hub.py',
+        'CONTRIBUTING.md',
+    ):
+        assert "superforecasting-agent.nousresearch.com" not in (root / relative_path).read_text()
 
 
 def test_dashboard_plugin_loader_has_forecast_native_markers():
@@ -4995,7 +5011,7 @@ def test_diagnostic_env_aliases_are_forecast_native():
     runtime_helpers = (root / "agent" / "agent_runtime_helpers.py").read_text(
         encoding="utf-8"
     )
-    auth = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
+    auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
     interrupt = (root / "tools" / "interrupt.py").read_text(encoding="utf-8")
     env_base = (root / "tools" / "environments" / "base.py").read_text(
         encoding="utf-8"
@@ -5042,8 +5058,8 @@ def test_session_env_aliases_are_forecast_native():
     compression = (root / "agent" / "conversation_compression.py").read_text(
         encoding="utf-8"
     )
-    main = (root / "hermes_cli" / "main.py").read_text(encoding="utf-8")
-    utils = (root / "utils.py").read_text(encoding="utf-8")
+    main = (root / 'superforecasting_agent/runtime' / "main.py").read_text(encoding="utf-8")
+    utils = (root / "superforecasting_agent/environment.py").read_text(encoding="utf-8")
     conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
     env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
         encoding="utf-8"
@@ -5076,7 +5092,7 @@ def test_oauth_file_env_aliases_are_forecast_native():
     anthropic_adapter = (root / "agent" / "anthropic_adapter.py").read_text(
         encoding="utf-8"
     )
-    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
+    web_server = (root / 'superforecasting_agent/runtime' / "web_server.py").read_text(encoding="utf-8")
     env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
         encoding="utf-8"
     )
@@ -5092,7 +5108,7 @@ def test_oauth_file_env_aliases_are_forecast_native():
 
 def test_managed_install_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    config = (root / "hermes_cli" / "config.py").read_text(encoding="utf-8")
+    config = (root / 'superforecasting_agent/runtime' / "config.py").read_text(encoding="utf-8")
     conftest = (root / "tests" / "conftest.py").read_text(encoding="utf-8")
     run_tests = (root / "scripts" / "run_tests.sh").read_text(encoding="utf-8")
     nix_module = (root / "nix" / "nixosModules.nix").read_text(encoding="utf-8")
@@ -5117,7 +5133,8 @@ def test_managed_install_env_aliases_are_forecast_native():
 
 def test_mcp_serve_identity_is_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    mcp_serve = (root / "mcp_serve.py").read_text(encoding="utf-8")
+    mcp_serve = (root / "superforecasting_agent/mcp/server.py").read_text(encoding="utf-8")
+    mcp_data = (root / "superforecasting_agent/mcp/data.py").read_text(encoding="utf-8")
     mcp_docs = (
         root / "website" / "docs" / "user-guide" / "features" / "mcp.md"
     ).read_text(encoding="utf-8")
@@ -5150,15 +5167,14 @@ def test_mcp_serve_identity_is_forecast_native():
         ]
     )
 
-    assert "Superforecasting Agent MCP Server" in mcp_serve
-    assert "superforecasting-agent mcp serve" in mcp_serve
-    assert '"superforecasting-agent": {' in mcp_serve
-    assert '"command": "superforecasting-agent"' in mcp_serve
+    assert "superforecasting-agent mcp serve" in mcp_docs
+    assert '"superforecasting-agent": {' in mcp_docs
+    assert '"command": "superforecasting-agent"' in mcp_docs
     assert 'FastMCP(\n        "superforecasting-agent"' in mcp_serve
     assert "Superforecasting Agent messaging bridge" in mcp_serve
-    assert "SUPERFORECASTING_AGENT_HOME" in mcp_serve
-    assert "FORECAST_HOME" in mcp_serve
-    assert "Path.home() / \".superforecasting-agent\"" in mcp_serve
+    assert "SUPERFORECASTING_AGENT_HOME" in mcp_data
+    assert "FORECAST_HOME" in mcp_data
+    assert "Path.home() / \".superforecasting-agent\"" in mcp_data
     assert "Hermes MCP Server" not in mcp_serve
     assert "Hermes Agent messaging bridge" not in mcp_serve
     assert "superforecasting-agent mcp serve" in mcp_docs
@@ -5213,7 +5229,7 @@ def test_user_runtime_guides_use_forecast_support_turn_language():
     root = Path(__file__).resolve().parents[1]
     paths = [
         root / "cli.py",
-        root / "hermes_cli" / "config.py",
+        root / 'superforecasting_agent/runtime' / "config.py",
         root / "website" / "docs" / "user-guide" / "checkpoints-and-rollback.md",
         root / "website" / "docs" / "user-guide" / "features" / "voice-mode.md",
         root / "website" / "docs" / "user-guide" / "messaging" / "index.md",
@@ -5273,15 +5289,15 @@ def test_software_development_tui_debug_skill_docs_prefer_tui_shorthand():
 
 def test_nous_runtime_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    nous_env = (root / "hermes_cli" / "nous_env.py").read_text(encoding="utf-8")
-    auth = (root / "hermes_cli" / "auth.py").read_text(encoding="utf-8")
-    runtime_provider = (root / "hermes_cli" / "runtime_provider.py").read_text(
+    nous_env = (root / 'superforecasting_agent/runtime' / "nous_env.py").read_text(encoding="utf-8")
+    auth = (root / 'superforecasting_agent/runtime' / "auth.py").read_text(encoding="utf-8")
+    runtime_provider = (root / 'superforecasting_agent/runtime' / "runtime_provider.py").read_text(
         encoding="utf-8"
     )
     auxiliary_client = (root / "agent" / "auxiliary_client.py").read_text(
         encoding="utf-8"
     )
-    web_server = (root / "hermes_cli" / "web_server.py").read_text(encoding="utf-8")
+    web_server = (root / 'superforecasting_agent/runtime' / "web_server.py").read_text(encoding="utf-8")
     env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
         encoding="utf-8"
     )
@@ -5647,7 +5663,7 @@ def test_forecast_cli_smoke_transcript_captures_tester_path():
 
 def test_revision_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
+    banner = (root / 'superforecasting_agent/runtime' / "banner.py").read_text(encoding="utf-8")
     nix_wrapper = (root / "nix" / "superforecasting-agent.nix").read_text(encoding="utf-8")
     nix_wrapper_compat = (root / "nix" / "hermes-agent.nix").read_text(encoding="utf-8")
     nix_checks = (root / "nix" / "checks.nix").read_text(encoding="utf-8")
@@ -5665,7 +5681,7 @@ def test_revision_env_aliases_are_forecast_native():
 
 def test_banner_home_repo_lookup_prefers_forecast_native_checkout():
     root = Path(__file__).resolve().parents[1]
-    banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
+    banner = (root / 'superforecasting_agent/runtime' / "banner.py").read_text(encoding="utf-8")
 
     assert '_HOME_REPO_DIR_NAMES = ("superforecasting-agent", "hermes-agent")' in banner
     assert "_resolve_home_repo_dir(hermes_home)" in banner
@@ -5674,7 +5690,7 @@ def test_banner_home_repo_lookup_prefers_forecast_native_checkout():
 
 def test_banner_logo_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    banner = (root / "hermes_cli" / "banner.py").read_text(encoding="utf-8")
+    banner = (root / 'superforecasting_agent/runtime' / "banner.py").read_text(encoding="utf-8")
     env_reference = (root / "website" / "docs" / "reference" / "environment-variables.md").read_text(
         encoding="utf-8"
     )

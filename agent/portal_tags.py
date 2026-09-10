@@ -12,7 +12,7 @@ Tag shape (sent in OpenAI-compatible ``extra_body['tags']``):
         "client=superforecasting-client-v<__version__>",
     ]
 
-The version is sourced live from ``hermes_cli.__version__`` so it auto-aligns
+The version is sourced live from ``superforecasting_agent.runtime.__version__`` so it auto-aligns
 to whatever release is installed; the release script
 (``scripts/release.py``) regex-bumps that single string, and every Portal
 request picks up the new tag on the next process start.
@@ -26,7 +26,7 @@ Why one helper instead of inlining the literal at each site:
 
 Do NOT pre-compute these as module-level constants in the consumers. The
 version can change at runtime (editable installs, hot-reload tooling), and
-``hermes_cli.__version__`` is the canonical source of truth.
+``superforecasting_agent.runtime.__version__`` is the canonical source of truth.
 """
 
 from __future__ import annotations
@@ -37,11 +37,11 @@ from typing import List
 def _client_version() -> str:
     """Return the current client release version, e.g. ``"0.14.0"``.
 
-    Falls back to ``"unknown"`` if ``hermes_cli`` cannot be imported (should
+    Falls back to ``"unknown"`` if ``superforecasting_agent.runtime`` cannot be imported (should
     never happen in a real install — guarded for defensive testing).
     """
     try:
-        from hermes_cli import __version__
+        from superforecasting_agent.runtime import __version__
         return __version__
     except Exception:
         return "unknown"

@@ -27,16 +27,16 @@ class ExecutionStore:
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         if db_path is None:
-            from hermes_constants import get_hermes_home
+            from superforecasting_agent.constants import get_agent_home
 
-            db_path = get_hermes_home() / "execution_store.db"
+            db_path = get_agent_home() / "execution_store.db"
         if str(db_path) != ":memory:":
             Path(db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=2)
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON")
         self._lock = threading.RLock()
-        from hermes_state import apply_wal_with_fallback
+        from superforecasting_agent.storage.session import apply_wal_with_fallback
 
         apply_wal_with_fallback(self._conn, db_label="execution_store.db")
         self._init_schema()

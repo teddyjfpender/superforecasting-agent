@@ -1,7 +1,7 @@
 """Central registry for Superforecasting Agent tools.
 
 Each tool file calls ``registry.register()`` at module level to declare its
-schema, handler, toolset membership, and availability check.  ``model_tools.py``
+schema, handler, toolset membership, and availability check.  ``superforecasting_agent/tooling/runtime.py``
 queries the registry instead of maintaining its own parallel data structures.
 
 Import chain (circular-import safe):
@@ -9,9 +9,9 @@ Import chain (circular-import safe):
            ^
     tools/*.py  (import from tools.registry at module level)
            ^
-    model_tools.py  (imports tools.registry + all tool modules)
+    superforecasting_agent/tooling/runtime.py  (imports tools.registry + all tool modules)
            ^
-    run_agent.py, cli.py, batch_runner.py, etc.
+    run_agent.py, cli.py, superforecasting_agent/trajectories/batch.py, etc.
 """
 
 import ast
@@ -450,24 +450,24 @@ class ToolRegistry:
             return json.dumps({"error": f"Unknown tool: {name}"})
         try:
             if entry.is_async:
-                from model_tools import _run_async
+                from superforecasting_agent.tooling.async_bridge import _run_async
                 return _run_async(entry.handler(args, **kwargs))
             return entry.handler(args, **kwargs)
         except Exception as e:
             logger.exception("Tool %s dispatch error: %s", name, e)
             # Route through the sanitizer so framing tokens / CDATA / fences
             # in exception strings don't reach the model as structural noise.
-            # See model_tools._sanitize_tool_error for rationale.
+            # See superforecasting_agent.tooling.errors._sanitize_tool_error for rationale.
             raw = f"Tool execution failed: {type(e).__name__}: {e}"
             try:
-                from model_tools import _sanitize_tool_error
+                from superforecasting_agent.tooling.errors import _sanitize_tool_error
                 sanitized = _sanitize_tool_error(raw)
             except Exception:
                 sanitized = raw  # defensive: never let the sanitizer block error propagation
             return json.dumps({"error": sanitized})
 
     # ------------------------------------------------------------------
-    # Query helpers  (replace redundant dicts in model_tools.py)
+    # Query helpers  (replace redundant dicts in superforecasting_agent/tooling/runtime.py)
     # ------------------------------------------------------------------
 
     def get_max_result_size(self, name: str, default: int | float | None = None) -> int | float:

@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any, List, Optional, Tuple
 
 from agent.model_metadata import estimate_request_tokens_rough
-from utils import SESSION_SOURCE_ENV_NAMES, env_var_alias_value
+from superforecasting_agent.environment import SESSION_SOURCE_ENV_NAMES, env_var_alias_value
 
 logger = logging.getLogger(__name__)
 

@@ -4,26 +4,20 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-import base64
 import contextvars
-import json
 import logging
 import os
 from collections import defaultdict, deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Deque, Optional
-from urllib.parse import unquote, urlparse
 
 import acp
 from acp.schema import (
     AgentCapabilities,
-    AgentMessageChunk,
-    AgentThoughtChunk,
     AuthenticateResponse,
     AvailableCommand,
     AvailableCommandsUpdate,
-    BlobResourceContents,
     ClientCapabilities,
     EmbeddedResourceContentBlock,
     ForkSessionResponse,
@@ -55,11 +49,9 @@ from acp.schema import (
     SessionResumeCapabilities,
     SessionInfo,
     TextContentBlock,
-    TextResourceContents,
     UnstructuredCommandInput,
     Usage,
     UsageUpdate,
-    UserMessageChunk,
 )
 
 from acp_adapter.auth import TERMINAL_SETUP_AUTH_METHOD_ID, build_auth_methods, detect_provider
@@ -72,14 +64,16 @@ from acp_adapter.events import (
 )
 from acp_adapter.permissions import make_approval_callback
 from acp_adapter.session import SessionManager, SessionState, _expand_acp_enabled_toolsets
-from acp_adapter.tools import build_tool_complete, build_tool_start
 
 logger = logging.getLogger(__name__)
 
 try:
-    from hermes_cli import __version__ as HERMES_VERSION
+    from superforecasting_agent.runtime import __version__ as AGENT_VERSION
 except Exception:
-    HERMES_VERSION = "0.0.0"
+    AGENT_VERSION = "0.0.0"
+
+# Compatibility export for inherited ACP integrations.
+HERMES_VERSION = AGENT_VERSION
 
 # Thread pool for running AIAgent (synchronous) in parallel.
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="acp-agent")
@@ -88,361 +82,27 @@ _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="acp-agent")
 # does not expose a client-side limit, so this is a fixed cap that clients
 # paginate against using `cursor` / `next_cursor`.
 _LIST_SESSIONS_PAGE_SIZE = 50
-_MAX_ACP_RESOURCE_BYTES = 512 * 1024
-_TEXT_RESOURCE_MIME_PREFIXES = ("text/",)
-_TEXT_RESOURCE_MIME_TYPES = {
-    "application/json",
-    "application/javascript",
-    "application/typescript",
-    "application/xml",
-    "application/x-yaml",
-    "application/yaml",
-    "application/toml",
-    "application/sql",
-}
+from acp_adapter.content import (
+    _MAX_ACP_RESOURCE_BYTES as _MAX_ACP_RESOURCE_BYTES,
+    _TEXT_RESOURCE_MIME_PREFIXES as _TEXT_RESOURCE_MIME_PREFIXES,
+    _TEXT_RESOURCE_MIME_TYPES as _TEXT_RESOURCE_MIME_TYPES,
+    _resource_display_name as _resource_display_name,
+    _is_text_resource as _is_text_resource,
+    _is_image_resource as _is_image_resource,
+    _guess_image_mime_from_path as _guess_image_mime_from_path,
+    _image_data_url as _image_data_url,
+    _path_from_file_uri as _path_from_file_uri,
+    _decode_text_bytes as _decode_text_bytes,
+    _format_resource_text as _format_resource_text,
+    _resource_link_to_parts as _resource_link_to_parts,
+    _embedded_resource_to_parts as _embedded_resource_to_parts,
+    _extract_text as _extract_text,
+    _image_block_to_openai_part as _image_block_to_openai_part,
+    _content_blocks_to_openai_user_content as _content_blocks_to_openai_user_content,
+)
 
 
-def _resource_display_name(uri: str, name: str | None = None, title: str | None = None) -> str:
-    """Human-readable attachment name for prompt context."""
-    raw_name = (name or "").strip()
-    raw_title = (title or "").strip()
-    if raw_title and raw_name and raw_title != raw_name:
-        return f"{raw_title} ({raw_name})"
-    if raw_title:
-        return raw_title
-    if raw_name:
-        return raw_name
-    parsed = urlparse(uri)
-    candidate = parsed.path if parsed.scheme else uri
-    return Path(unquote(candidate)).name or uri or "resource"
-
-
-def _is_text_resource(mime_type: str | None) -> bool:
-    mime = (mime_type or "").split(";", 1)[0].strip().lower()
-    if not mime:
-        return False
-    return mime.startswith(_TEXT_RESOURCE_MIME_PREFIXES) or mime in _TEXT_RESOURCE_MIME_TYPES
-
-
-def _is_image_resource(mime_type: str | None) -> bool:
-    mime = (mime_type or "").split(";", 1)[0].strip().lower()
-    return mime.startswith("image/")
-
-
-def _guess_image_mime_from_path(path: Path) -> str | None:
-    suffix = path.suffix.lower()
-    return {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".gif": "image/gif",
-        ".webp": "image/webp",
-        ".bmp": "image/bmp",
-        ".svg": "image/svg+xml",
-    }.get(suffix)
-
-
-def _image_data_url(data: bytes, mime_type: str) -> str:
-    return f"data:{mime_type};base64,{base64.b64encode(data).decode('ascii')}"
-
-
-def _path_from_file_uri(uri: str) -> Path | None:
-    """Convert local file URIs/paths from ACP clients into a readable Path.
-
-    Zed may send POSIX file URIs from Linux/WSL workspaces or Windows-ish paths
-    when launched through wsl.exe. Translate the common Windows drive form to
-    /mnt/<drive>/... so the agent running in WSL can read it.
-    """
-    raw = (uri or "").strip()
-    if not raw:
-        return None
-
-    parsed = urlparse(raw)
-    if parsed.scheme and parsed.scheme != "file":
-        return None
-
-    if parsed.scheme == "file":
-        if parsed.netloc and parsed.netloc not in {"", "localhost"}:
-            return None
-        path_text = unquote(parsed.path or "")
-    else:
-        path_text = unquote(raw)
-
-    # file:///C:/Users/... or C:\Users\...
-    if len(path_text) >= 3 and path_text[0] == "/" and path_text[2] == ":" and path_text[1].isalpha():
-        drive = path_text[1].lower()
-        rest = path_text[3:].lstrip("/\\").replace("\\", "/")
-        return Path("/mnt") / drive / rest
-    if len(path_text) >= 2 and path_text[1] == ":" and path_text[0].isalpha():
-        drive = path_text[0].lower()
-        rest = path_text[2:].lstrip("/\\").replace("\\", "/")
-        return Path("/mnt") / drive / rest
-
-    return Path(path_text)
-
-
-def _decode_text_bytes(data: bytes, mime_type: str | None) -> str | None:
-    """Decode resource bytes if they are probably text; return None for binary."""
-    if b"\x00" in data and not _is_text_resource(mime_type):
-        return None
-    for encoding in ("utf-8-sig", "utf-8", "latin-1"):
-        try:
-            return data.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    return data.decode("utf-8", errors="replace")
-
-
-def _format_resource_text(
-    *,
-    uri: str,
-    body: str,
-    name: str | None = None,
-    title: str | None = None,
-    note: str | None = None,
-) -> str:
-    display = _resource_display_name(uri, name=name, title=title)
-    header = f"[Attached file: {display}]"
-    if note:
-        header += f" ({note})"
-    return f"{header}\nURI: {uri}\n\n{body}"
-
-
-def _resource_link_to_parts(block: ResourceContentBlock) -> list[dict[str, Any]]:
-    """Convert an ACP resource_link block to OpenAI content parts.
-
-    Returns a list of {"type": "text", ...} and/or {"type": "image_url", ...}
-    parts. Image resources produce an image_url part with a small text header
-    so the model knows which attachment it is. Non-image resources return a
-    single text part with the inlined file body (or a binary-omit note).
-    """
-    uri = str(getattr(block, "uri", "") or "").strip()
-    if not uri:
-        return []
-
-    name = str(getattr(block, "name", "") or "").strip() or None
-    title = str(getattr(block, "title", "") or "").strip() or None
-    mime_type = str(getattr(block, "mime_type", "") or "").strip() or None
-    path = _path_from_file_uri(uri)
-
-    if path is None:
-        return [{
-            "type": "text",
-            "text": _format_resource_text(
-                uri=uri,
-                name=name,
-                title=title,
-                body="[Resource link only; the agent cannot read non-file ACP resource URIs directly.]",
-            ),
-        }]
-
-    # Image files: emit a short text header + image_url data URL so vision
-    # models can see the attachment instead of a "binary omitted" note.
-    image_mime = mime_type if _is_image_resource(mime_type) else _guess_image_mime_from_path(path)
-    if image_mime and _is_image_resource(image_mime):
-        try:
-            size = path.stat().st_size
-            if size > _MAX_ACP_RESOURCE_BYTES:
-                return [{
-                    "type": "text",
-                    "text": _format_resource_text(
-                        uri=uri,
-                        name=name,
-                        title=title,
-                        body=f"[Image too large to inline: {size} bytes, cap={_MAX_ACP_RESOURCE_BYTES}]",
-                    ),
-                }]
-            with path.open("rb") as fh:
-                data = fh.read()
-        except OSError as exc:
-            logger.warning("ACP image resource read failed: %s", uri, exc_info=True)
-            return [{
-                "type": "text",
-                "text": _format_resource_text(
-                    uri=uri,
-                    name=name,
-                    title=title,
-                    body=f"[Could not read attached image: {exc}]",
-                ),
-            }]
-        display = _resource_display_name(uri, name=name, title=title)
-        return [
-            {"type": "text", "text": f"[Attached image: {display}]\nURI: {uri}"},
-            {"type": "image_url", "image_url": {"url": _image_data_url(data, image_mime)}},
-        ]
-
-    try:
-        size = path.stat().st_size
-        read_size = min(size, _MAX_ACP_RESOURCE_BYTES)
-        with path.open("rb") as fh:
-            data = fh.read(read_size)
-        text = _decode_text_bytes(data, mime_type)
-        if text is None:
-            return [{
-                "type": "text",
-                "text": _format_resource_text(
-                    uri=uri,
-                    name=name,
-                    title=title,
-                    body=f"[Binary file omitted: {size} bytes, mime={mime_type or 'unknown'}]",
-                ),
-            }]
-        note = None
-        if size > _MAX_ACP_RESOURCE_BYTES:
-            note = f"truncated to {_MAX_ACP_RESOURCE_BYTES} of {size} bytes"
-        return [{
-            "type": "text",
-            "text": _format_resource_text(uri=uri, name=name, title=title, body=text, note=note),
-        }]
-    except OSError as exc:
-        logger.warning("ACP resource read failed: %s", uri, exc_info=True)
-        return [{
-            "type": "text",
-            "text": _format_resource_text(
-                uri=uri,
-                name=name,
-                title=title,
-                body=f"[Could not read attached file: {exc}]",
-            ),
-        }]
-
-
-def _embedded_resource_to_parts(block: EmbeddedResourceContentBlock) -> list[dict[str, Any]]:
-    resource = getattr(block, "resource", None)
-    if resource is None:
-        return []
-
-    uri = str(getattr(resource, "uri", "") or "").strip()
-    mime_type = str(getattr(resource, "mime_type", "") or "").strip() or None
-
-    if isinstance(resource, TextResourceContents):
-        return [{"type": "text", "text": _format_resource_text(uri=uri, body=resource.text)}]
-
-    if isinstance(resource, BlobResourceContents):
-        blob = resource.blob or ""
-        try:
-            data = base64.b64decode(blob, validate=True)
-        except Exception:
-            data = blob.encode("utf-8", errors="replace")
-
-        # Image blobs go through as image_url so vision models can see them.
-        if _is_image_resource(mime_type):
-            if len(data) > _MAX_ACP_RESOURCE_BYTES:
-                return [{
-                    "type": "text",
-                    "text": _format_resource_text(
-                        uri=uri,
-                        body=f"[Embedded image too large to inline: {len(data)} bytes, cap={_MAX_ACP_RESOURCE_BYTES}]",
-                    ),
-                }]
-            display = _resource_display_name(uri)
-            return [
-                {"type": "text", "text": f"[Attached image: {display}]" + (f"\nURI: {uri}" if uri else "")},
-                {"type": "image_url", "image_url": {"url": _image_data_url(data, mime_type or "image/png")}},
-            ]
-
-        text = _decode_text_bytes(data[:_MAX_ACP_RESOURCE_BYTES], mime_type)
-        if text is None:
-            body = f"[Binary embedded file omitted: {len(data)} bytes, mime={mime_type or 'unknown'}]"
-        else:
-            body = text
-            if len(data) > _MAX_ACP_RESOURCE_BYTES:
-                body += f"\n\n[Truncated to {_MAX_ACP_RESOURCE_BYTES} of {len(data)} bytes]"
-        return [{"type": "text", "text": _format_resource_text(uri=uri, body=body)}]
-
-    text = getattr(resource, "text", None)
-    if text:
-        return [{"type": "text", "text": _format_resource_text(uri=uri, body=str(text))}]
-    return []
-
-
-def _extract_text(
-    prompt: list[
-        TextContentBlock
-        | ImageContentBlock
-        | AudioContentBlock
-        | ResourceContentBlock
-        | EmbeddedResourceContentBlock
-    ],
-) -> str:
-    """Extract plain text from ACP content blocks for display/commands."""
-    parts: list[str] = []
-    for block in prompt:
-        if isinstance(block, TextContentBlock):
-            parts.append(block.text)
-        elif hasattr(block, "text"):
-            parts.append(str(block.text))
-    return "\n".join(parts)
-
-
-def _image_block_to_openai_part(block: ImageContentBlock) -> dict[str, Any] | None:
-    """Convert an ACP image content block to OpenAI-style multimodal content."""
-    data = str(getattr(block, "data", "") or "").strip()
-    uri = str(getattr(block, "uri", "") or "").strip()
-    mime_type = str(getattr(block, "mime_type", "") or "image/png").strip() or "image/png"
-
-    if data:
-        url = data if data.startswith("data:") else f"data:{mime_type};base64,{data}"
-    elif uri:
-        url = uri
-    else:
-        return None
-
-    return {"type": "image_url", "image_url": {"url": url}}
-
-
-def _content_blocks_to_openai_user_content(
-    prompt: list[
-        TextContentBlock
-        | ImageContentBlock
-        | AudioContentBlock
-        | ResourceContentBlock
-        | EmbeddedResourceContentBlock
-    ],
-) -> str | list[dict[str, Any]]:
-    """Convert ACP prompt blocks into a Hermes/OpenAI-compatible user content payload."""
-    parts: list[dict[str, Any]] = []
-    text_parts: list[str] = []
-
-    for block in prompt:
-        if isinstance(block, TextContentBlock):
-            if block.text:
-                parts.append({"type": "text", "text": block.text})
-                text_parts.append(block.text)
-            continue
-        if isinstance(block, ImageContentBlock):
-            image_part = _image_block_to_openai_part(block)
-            if image_part is not None:
-                parts.append(image_part)
-            continue
-        if isinstance(block, ResourceContentBlock):
-            resource_parts = _resource_link_to_parts(block)
-            for part in resource_parts:
-                parts.append(part)
-                if part.get("type") == "text":
-                    text_parts.append(part["text"])
-            continue
-        if isinstance(block, EmbeddedResourceContentBlock):
-            resource_parts = _embedded_resource_to_parts(block)
-            for part in resource_parts:
-                parts.append(part)
-                if part.get("type") == "text":
-                    text_parts.append(part["text"])
-            continue
-
-    if not parts:
-        return _extract_text(prompt)
-
-    # Keep pure text prompts as strings so slash-command handling and text-only
-    # providers keep the exact legacy path. Switch to structured content only
-    # when an actual non-text block is present.
-    if all(part.get("type") == "text" for part in parts):
-        return "\n".join(text_parts)
-
-    return parts
-
-
-class HermesACPAgent(acp.Agent):
+class ForecastACPAgent(acp.Agent):
     """ACP Agent implementation wrapping the forecast agent runtime."""
 
     _SLASH_COMMANDS = {
@@ -581,7 +241,7 @@ class HermesACPAgent(acp.Agent):
         provider = getattr(state.agent, "provider", None) or detect_provider() or "openrouter"
 
         try:
-            from hermes_cli.models import curated_models_for_provider, normalize_provider, provider_label
+            from superforecasting_agent.runtime.models import curated_models_for_provider, normalize_provider, provider_label
 
             normalized_provider = normalize_provider(provider)
             provider_name = provider_label(normalized_provider)
@@ -644,7 +304,7 @@ class HermesACPAgent(acp.Agent):
         new_model = raw_model.strip()
 
         try:
-            from hermes_cli.models import detect_provider_for_model, parse_model_input
+            from superforecasting_agent.runtime.models import detect_provider_for_model, parse_model_input
 
             target_provider, new_model = parse_model_input(new_model, current_provider)
             if target_provider == current_provider:
@@ -723,7 +383,7 @@ class HermesACPAgent(acp.Agent):
 
         title = row.get("title")
         # The `sessions` table does not have an `updated_at` column (see
-        # hermes_state.py schema — only started_at/ended_at). Use "now" as
+        # superforecasting_agent/storage/session.py schema — only started_at/ended_at). Use "now" as
         # the updated_at since we're emitting this notification precisely
         # because the title was just refreshed.
         updated_at = datetime.now(timezone.utc).isoformat()
@@ -785,7 +445,7 @@ class HermesACPAgent(acp.Agent):
             return
 
         try:
-            from model_tools import get_tool_definitions
+            from superforecasting_agent.tooling.runtime import get_tool_definitions
 
             enabled_toolsets = _expand_acp_enabled_toolsets(
                 getattr(state.agent, "enabled_toolsets", None) or ["forecast-acp"],
@@ -839,7 +499,7 @@ class HermesACPAgent(acp.Agent):
 
         return InitializeResponse(
             protocol_version=acp.PROTOCOL_VERSION,
-            agent_info=Implementation(name="superforecasting-agent", version=HERMES_VERSION),
+            agent_info=Implementation(name="superforecasting-agent", version=AGENT_VERSION),
             agent_capabilities=AgentCapabilities(
                 load_session=True,
                 prompt_capabilities=PromptCapabilities(image=True),
@@ -876,195 +536,16 @@ class HermesACPAgent(acp.Agent):
 
     # ---- Session management -------------------------------------------------
 
-    @staticmethod
-    def _flatten_history_text(value: Any) -> str:
-        """Normalize a persisted text-or-text-parts value into a single string.
-
-        OpenAI-style assistant content (and provider reasoning fields) can arrive
-        as either a scalar string or a list of ``{"text": ...}`` /
-        ``{"type": "text", "content": ...}`` parts. Whitespace-only inputs
-        collapse to an empty string so callers can treat ``""`` as "nothing to
-        emit".
-        """
-        if isinstance(value, str):
-            return value.strip()
-        if isinstance(value, list):
-            parts: list[str] = []
-            for item in value:
-                if isinstance(item, dict):
-                    text = item.get("text")
-                    if isinstance(text, str):
-                        parts.append(text)
-                    elif item.get("type") == "text" and isinstance(item.get("content"), str):
-                        parts.append(item["content"])
-                elif isinstance(item, str):
-                    parts.append(item)
-            return "\n".join(part.strip() for part in parts if part and part.strip()).strip()
-        return ""
-
-    @classmethod
-    def _history_message_text(cls, message: dict[str, Any]) -> str:
-        """Extract displayable text from a persisted OpenAI-style message."""
-        return cls._flatten_history_text(message.get("content"))
-
-    @classmethod
-    def _history_reasoning_text(cls, message: dict[str, Any]) -> str:
-        """Extract displayable reasoning/thought text from a persisted assistant message.
-
-        Returns the first non-empty value among ``reasoning_content`` (the
-        canonical field used by DeepSeek / Moonshot and the post-#16892
-        chat-completions normalizer) and ``reasoning`` (used by the codex
-        event projector and several other transports). Both keys are
-        actively written by live code paths, so neither branch is
-        deprecated — they cover different transports rather than old vs.
-        new sessions.
-        """
-        for key in ("reasoning_content", "reasoning"):
-            text = cls._flatten_history_text(message.get(key))
-            if text:
-                return text
-        return ""
-
-    @staticmethod
-    def _history_message_update(
-        *,
-        role: str,
-        text: str,
-    ) -> UserMessageChunk | AgentMessageChunk | None:
-        """Build an ACP history replay update for a user/assistant message."""
-        block = TextContentBlock(type="text", text=text)
-        if role == "user":
-            return UserMessageChunk(
-                session_update="user_message_chunk",
-                content=block,
-            )
-        if role == "assistant":
-            return AgentMessageChunk(
-                session_update="agent_message_chunk",
-                content=block,
-            )
-        return None
-
-    @staticmethod
-    def _history_thought_update(text: str) -> AgentThoughtChunk:
-        """Build an ACP history replay update for an assistant thought."""
-        return acp.update_agent_thought_text(text)
-
-    @staticmethod
-    def _history_tool_call_name_args(tool_call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        """Extract function name/arguments from an OpenAI-style tool_call."""
-        function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
-        name = str(function.get("name") or tool_call.get("name") or "unknown_tool")
-        raw_args = function.get("arguments") or tool_call.get("arguments") or tool_call.get("args") or {}
-        if isinstance(raw_args, str):
-            try:
-                parsed = json.loads(raw_args)
-            except Exception:
-                parsed = {"raw": raw_args}
-            raw_args = parsed
-        if not isinstance(raw_args, dict):
-            raw_args = {}
-        return name, raw_args
-
-    @staticmethod
-    def _history_tool_call_id(tool_call: dict[str, Any]) -> str:
-        """Return the stable provider tool call id for ACP history replay."""
-        return str(
-            tool_call.get("id")
-            or tool_call.get("call_id")
-            or tool_call.get("tool_call_id")
-            or ""
-        ).strip()
-
-    async def _replay_session_history(self, state: SessionState) -> None:
-        """Replay persisted user/assistant history during session/load or session/resume.
-
-        Invoked inline (``await``) from both ``load_session`` and
-        ``resume_session`` so that spec-compliant ACP clients receive the
-        full transcript within the request's lifetime — see the comment at
-        the call sites for the rationale and prior-art citations.
-
-        Replays the conversation as user/assistant chunks, thinking-mode
-        thought chunks, plus reconstructed tool-call start/completion
-        notifications. Merely restoring server-side state makes Hermes
-        remember context, but leaves the editor looking like a clean thread.
-        """
-        if not self._conn or not state.history:
-            return
-
-        active_tool_calls: dict[str, tuple[str, dict[str, Any]]] = {}
-
-        async def _send(update: Any) -> bool:
-            try:
-                await self._conn.session_update(session_id=state.session_id, update=update)
-                return True
-            except Exception:
-                logger.warning(
-                    "Failed to replay ACP history for session %s",
-                    state.session_id,
-                    exc_info=True,
-                )
-                return False
-
-        for message in state.history:
-            role = str(message.get("role") or "")
-
-            if role == "user":
-                text = self._history_message_text(message)
-                if text:
-                    update = self._history_message_update(role=role, text=text)
-                    if update is not None and not await _send(update):
-                        return
-                continue
-
-            if role == "assistant":
-                thought = self._history_reasoning_text(message)
-                if thought and not await _send(self._history_thought_update(thought)):
-                    return
-
-                text = self._history_message_text(message)
-                if text:
-                    update = self._history_message_update(role=role, text=text)
-                    if update is not None and not await _send(update):
-                        return
-
-                tool_calls = message.get("tool_calls")
-                if isinstance(tool_calls, list):
-                    for tool_call in tool_calls:
-                        if not isinstance(tool_call, dict):
-                            continue
-                        tool_call_id = self._history_tool_call_id(tool_call)
-                        if not tool_call_id:
-                            continue
-                        tool_name, args = self._history_tool_call_name_args(tool_call)
-                        active_tool_calls[tool_call_id] = (tool_name, args)
-                        if not await _send(build_tool_start(tool_call_id, tool_name, args)):
-                            return
-                continue
-
-            if role == "tool":
-                tool_call_id = str(message.get("tool_call_id") or "").strip()
-                tool_name = str(message.get("tool_name") or "").strip()
-                function_args: dict[str, Any] | None = None
-                if tool_call_id in active_tool_calls:
-                    tool_name, function_args = active_tool_calls.pop(tool_call_id)
-                if not tool_call_id or not tool_name:
-                    continue
-                result = message.get("content")
-                result_text = result if isinstance(result, str) else None
-                if not await _send(
-                    build_tool_complete(
-                        tool_call_id,
-                        tool_name,
-                        result=result_text,
-                        function_args=function_args,
-                    )
-                ):
-                    return
-                if tool_name == "todo":
-                    plan_update = _build_plan_update_from_todo_result(result_text)
-                    if plan_update is not None and not await _send(plan_update):
-                        return
+    from acp_adapter.history import (
+        _flatten_history_text as _flatten_history_text,
+        _history_message_text as _history_message_text,
+        _history_reasoning_text as _history_reasoning_text,
+        _history_message_update as _history_message_update,
+        _history_thought_update as _history_thought_update,
+        _history_tool_call_name_args as _history_tool_call_name_args,
+        _history_tool_call_id as _history_tool_call_id,
+        _replay_session_history as _replay_session_history,
+    )
 
     async def new_session(
         self,
@@ -1684,7 +1165,7 @@ class HermesACPAgent(acp.Agent):
 
     def _cmd_tools(self, args: str, state: SessionState) -> str:
         try:
-            from model_tools import get_tool_definitions
+            from superforecasting_agent.tooling.runtime import get_tool_definitions
             toolsets = _expand_acp_enabled_toolsets(
                 getattr(state.agent, "enabled_toolsets", None) or ["forecast-acp"]
             )
@@ -1871,7 +1352,7 @@ class HermesACPAgent(acp.Agent):
         return f"Queued for the next turn. ({depth} queued)"
 
     def _cmd_version(self, args: str, state: SessionState) -> str:
-        return f"Superforecasting Agent v{HERMES_VERSION}"
+        return f"Superforecasting Agent v{AGENT_VERSION}"
 
     # ---- Model switching (ACP protocol method) -------------------------------
 
@@ -1946,3 +1427,7 @@ class HermesACPAgent(acp.Agent):
         self.session_manager.save_session(session_id)
         logger.info("Session %s: config option %s updated", session_id, config_id)
         return SetSessionConfigOptionResponse(config_options=[])
+
+
+# Compatibility import; new integrations use ForecastACPAgent.
+HermesACPAgent = ForecastACPAgent

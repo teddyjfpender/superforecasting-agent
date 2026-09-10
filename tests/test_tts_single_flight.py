@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import pytest
 
-import hermes_cli.voice as v
+import superforecasting_agent.runtime.voice as v
 import tools.tts_tool as tt
 import tools.voice_mode as vm
 

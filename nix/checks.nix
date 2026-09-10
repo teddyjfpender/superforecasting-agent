@@ -17,7 +17,7 @@
         export HOME=$TMPDIR
         ${superforecastingAgentVenv}/bin/python3 -c '
 import json, sys
-from hermes_cli.config import DEFAULT_CONFIG
+from superforecasting_agent.runtime.config import DEFAULT_CONFIG
 
 def leaf_paths(d, prefix=""):
     paths = []
@@ -374,7 +374,7 @@ json.dump(sorted(leaf_paths(DEFAULT_CONFIG)), sys.stdout, indent=2)
             ${configMergeScript} ${nixSettings} "$hermes_home/config.yaml"
             ${superforecastingAgentVenv}/bin/python3 -c '
 import json, sys
-from hermes_cli.config import load_config
+from superforecasting_agent.runtime.config import load_config
 json.dump(load_config(), sys.stdout, default=str)
 '
           }

@@ -2,7 +2,7 @@
 // threshold lines and a last-value label. Drawn into a CellBuffer only where the
 // cell is still blank, so data is never clobbered.
 
-import { stringWidth } from '@hermes/ink'
+import { stringWidth } from '@superforecasting/ink'
 
 import { compactNumber } from '../forecastCharts.js'
 

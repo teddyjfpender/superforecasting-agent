@@ -381,7 +381,7 @@ const mountDesk = async (columns: number, response: ForecastWorkspaceResponse, g
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { DeskView }, { DARK_THEME }, { stripAnsi }, { clearOverlayCache }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/deskView.js'),
     import('../theme.js'),
     import('../lib/text.js'),
@@ -698,7 +698,7 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('skinny summary shows the under-saturated badge only when below the bar', async () => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -738,7 +738,7 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('skinny summary shows the in-flight quorum chip only when a quorum_run is attached', async () => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -808,7 +808,7 @@ describe('DeskView (redesigned forecast desk)', () => {
   // measurement (unreliable outside a real TTY).
   it('skinny summary leads with the thesis aggregate, then prob/delta/counts and the analyst teaser', async () => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -846,7 +846,7 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('places Next best actions BELOW the inspected forecast detail, under a hairline rule', async () => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -881,7 +881,7 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('when NOTHING is inspected, Next best actions still leads the panel', async () => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -907,7 +907,7 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('skinny summary leads with the factor μ aggregate on a factor lens tab', async () => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -934,7 +934,7 @@ describe('DeskView (redesigned forecast desk)', () => {
 
   it('skinny summary gives the LENS ROW its own aggregate + graph, not a blank panel', async () => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1147,7 +1147,7 @@ describe('DeskView review-sweep NEXT column + summary status', () => {
 
   it('SweepStatusLine: running spinner line, countdown line, tonight fallback, and NOTHING when the desk is quiet', async () => {
     const [{ renderSync }, { SweepStatusLine }, { DARK_THEME }, { stripAnsi }, { SPINNER }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js'),
@@ -1537,7 +1537,7 @@ const readinessItems = (): ForecastWorkspaceItem[] => [
 
 const renderList = async (width: number, items: ForecastWorkspaceItem[], props: Record<string, unknown> = {}) => {
   const [{ renderSync }, { DeskForecastList }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/deskView.js'),
     import('../theme.js'),
     import('../lib/text.js')
@@ -1774,7 +1774,7 @@ describe('DeskView pinned thesis row (thesis-lens leader)', () => {
 describe('DeskView readiness summary block', () => {
   const renderSummary = async (selected: ForecastWorkspaceItem) => {
     const [{ renderSync }, { DeskSummary }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -1828,7 +1828,7 @@ describe('AgentProgressLine', () => {
 
   it('renders the accent-swept "🧠 agent done/total · title · stage" line while a job runs', async () => {
     const [{ renderSync }, { AgentProgressLine }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../components/deskView.js'),
       import('../theme.js'),
       import('../lib/text.js')
@@ -2197,7 +2197,7 @@ describe('sidebar wrap law', () => {
     // useStdout reports nothing in the inline harness (the desk falls back to
     // 80 cols and never mounts the two-pane panel), so pin the contract at the
     // COMPONENT level with a deterministic width — the pmSection pattern.
-    const { render } = await import('@hermes/ink')
+    const { render } = await import('@superforecasting/ink')
     const { DeskSummary } = await import('../components/deskView.js')
     const { DARK_THEME } = await import('../theme.js')
     const item = plainRow('fq_long', 'Will the market begin pricing AI-infrastructure scarcity as a persistent macro constraint through 2027?')

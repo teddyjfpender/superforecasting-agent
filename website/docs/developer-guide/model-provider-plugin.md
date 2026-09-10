@@ -73,14 +73,14 @@ That's it. After dropping these two files, the following **auto-wire** with no o
 
 | Integration | Where | What it gets |
 |---|---|---|
-| Credential resolution | `hermes_cli/auth.py` | `PROVIDER_REGISTRY["acme-inference"]` populated from profile |
-| `--provider` CLI flag | `hermes_cli/main.py` | Accepts `acme-inference` |
-| `superforecasting-agent model` picker | `hermes_cli/models.py` | Appears in `CANONICAL_PROVIDERS`, model list fetched from `{base_url}/models` |
-| `superforecasting-agent doctor` | `hermes_cli/doctor.py` | Health check for `ACME_API_KEY` + `{base_url}/models` probe |
-| `superforecasting-agent setup` | `hermes_cli/config.py` | `ACME_API_KEY` appears in `OPTIONAL_ENV_VARS` and the setup wizard |
+| Credential resolution | `superforecasting_agent/runtime/auth.py` | `PROVIDER_REGISTRY["acme-inference"]` populated from profile |
+| `--provider` CLI flag | `superforecasting_agent/runtime/main.py` | Accepts `acme-inference` |
+| `superforecasting-agent model` picker | `superforecasting_agent/runtime/models.py` | Appears in `CANONICAL_PROVIDERS`, model list fetched from `{base_url}/models` |
+| `superforecasting-agent doctor` | `superforecasting_agent/runtime/doctor.py` | Health check for `ACME_API_KEY` + `{base_url}/models` probe |
+| `superforecasting-agent setup` | `superforecasting_agent/runtime/config.py` | `ACME_API_KEY` appears in `OPTIONAL_ENV_VARS` and the setup wizard |
 | URL reverse-mapping | `agent/model_metadata.py` | Hostname → provider name for auto-detection |
 | Auxiliary model | `agent/auxiliary_client.py` | Uses `default_aux_model` for compression, summarization, and forecast-review side work |
-| Runtime resolution | `hermes_cli/runtime_provider.py` | Returns correct `base_url`, `api_key`, `api_mode` |
+| Runtime resolution | `superforecasting_agent/runtime/runtime_provider.py` | Returns correct `base_url`, `api_key`, `api_mode` |
 | Transport | `agent/transports/chat_completions.py` | Profile path generates kwargs via `prepare_messages` / `build_extra_body` / `build_api_kwargs_extras` |
 | Forecast provenance | `forecasting/ledger.py` | Stores provider/model metadata on forecast snapshots, model runs, backtests, and postmortems |
 

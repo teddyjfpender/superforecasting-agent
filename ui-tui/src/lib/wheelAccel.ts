@@ -15,7 +15,7 @@
 // Native terminals (Ghostty, iTerm2) and xterm.js embedders (VS Code,
 // Cursor) emit wheel events with different cadences, hence two paths.
 
-import { isXtermJs } from '@hermes/ink'
+import { isXtermJs } from '@superforecasting/ink'
 
 import { tuiEnvValue } from './envAlias.js'
 

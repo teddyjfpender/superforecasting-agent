@@ -13,7 +13,7 @@ from forecasting.change_control.store import current_revision, list_changesets, 
 from forecasting.change_control.models import content_digest
 from forecasting.change_control.transcripts import review_transcript_findings
 from forecasting.workspace.manifest import WorkspaceManifest
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 
 _DROP_KEYS = frozenset(
@@ -132,7 +132,7 @@ def _safe_transcript_bytes(row: Mapping[str, Any]) -> bytes | None:
     locator = row.get("locator")
     if not locator:
         return None
-    allowed_roots = ((get_hermes_home() / "provenance" / "safe-transcripts").resolve(),)
+    allowed_roots = ((get_agent_home() / "provenance" / "safe-transcripts").resolve(),)
     try:
         candidate = Path(str(locator)).expanduser()
         if candidate.is_symlink():

@@ -18,6 +18,6 @@ def test_pyproject_defines_termux_all_without_known_blockers() -> None:
 
 def test_install_script_prefers_termux_all_then_fallbacks() -> None:
     text = INSTALL_SH.read_text()
-    assert "pip install -e '.[termux-all]' -c constraints-termux.txt" in text
+    assert "pip install -e '.[termux-all]' -c packaging/termux/constraints.txt" in text
     assert "Termux broad profile (.[termux-all]) failed, trying baseline Termux profile..." in text
     assert "Termux baseline profile (.[termux]) failed, trying base install..." in text

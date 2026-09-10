@@ -245,3 +245,22 @@ async def test_gateway_stop_kills_tool_subprocesses_on_graceful_path(monkeypatch
 
     # Only the final catch-all fires on the graceful path.
     assert kill_count == 1
+
+
+@pytest.mark.asyncio
+async def test_gateway_stop_closes_both_owned_session_connections(tmp_path):
+    from types import SimpleNamespace
+    from superforecasting_agent.storage.session import SessionDB
+
+    runner, _ = make_restart_runner()
+    databases = [SessionDB(db_path=tmp_path / f"state-{i}.db") for i in range(2)]
+    runner._session_db = databases[0]
+    runner.session_store = SimpleNamespace(_db=databases[1])
+    try:
+        with patch("gateway.status.remove_pid_file"), patch("gateway.status.write_runtime_status"):
+            await runner.stop()
+            await runner.stop()  # repeated shutdown remains safe
+        assert all(db._conn is None for db in databases)
+    finally:
+        for db in databases:
+            db.close()

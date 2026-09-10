@@ -610,7 +610,7 @@ The SSH connection details live in `.env` (not `config.yaml`) so they are not ch
 
 ## Supply-chain advisory checking
 
-Superforecasting Agent ships with a built-in advisory scanner that flags Python packages in the active venv that match a curated catalog of known-compromised versions (supply-chain worms like the May 2026 `mistralai 2.4.6` poisoning). Implementation lives in `hermes_cli/security_advisories.py`.
+Superforecasting Agent ships with a built-in advisory scanner that flags Python packages in the active venv that match a curated catalog of known-compromised versions (supply-chain worms like the May 2026 `mistralai 2.4.6` poisoning). Implementation lives in `superforecasting_agent/runtime/security_advisories.py`.
 
 How it runs:
 

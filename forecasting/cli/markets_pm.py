@@ -214,7 +214,7 @@ def _cmd_market_nightly_run(args: argparse.Namespace) -> None:
         build_informed_market_forecaster,
         load_open_markets,
     )
-    from hermes_cli.config import cfg_get, load_config
+    from superforecasting_agent.runtime.config import cfg_get, load_config
 
     # available_at / evidence stamping is NOW (live): the whole point is the agent
     # uses fresh search on an OPEN market whose outcome does not exist yet. There is

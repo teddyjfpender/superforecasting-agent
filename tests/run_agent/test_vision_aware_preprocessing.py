@@ -1,4 +1,4 @@
-"""Tests for the vision-aware image preprocessing in run_agent.py.
+"""Tests for the vision-aware preprocessing bound to AIAgent.
 
 Covers:
 

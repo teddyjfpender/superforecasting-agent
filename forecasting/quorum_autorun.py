@@ -80,7 +80,7 @@ def maybe_autorun_quorum(
     if (forecast_origin or "live") != "live":
         return {"skipped": True, "reason": f"origin {forecast_origin!r} is not live"}
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         from forecasting.panel import should_run_panel
         from forecasting.jobs.types.quorum import start_job
         from forecasting.quorum import (

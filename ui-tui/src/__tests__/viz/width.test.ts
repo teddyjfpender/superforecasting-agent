@@ -1,4 +1,4 @@
-import { stringWidth } from '@hermes/ink'
+import { stringWidth } from '@superforecasting/ink'
 import { describe, expect, it } from 'vitest'
 
 import { diverging, renderFan, renderHeatmap } from '../../lib/viz/index.js'

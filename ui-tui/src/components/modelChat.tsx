@@ -1,4 +1,4 @@
-import { Box, Text } from '@hermes/ink'
+import { Box, Text } from '@superforecasting/ink'
 import { useRef } from 'react'
 
 import { spinnerFrame } from '../lib/icons.js'

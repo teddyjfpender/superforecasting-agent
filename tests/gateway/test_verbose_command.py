@@ -199,5 +199,5 @@ class TestVerboseCommand:
 
     def test_verbose_is_in_gateway_known_commands(self):
         """The /verbose command is recognized by the gateway dispatch."""
-        from hermes_cli.commands import GATEWAY_KNOWN_COMMANDS
+        from superforecasting_agent.runtime.commands import GATEWAY_KNOWN_COMMANDS
         assert "verbose" in GATEWAY_KNOWN_COMMANDS

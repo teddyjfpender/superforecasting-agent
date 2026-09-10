@@ -3,7 +3,7 @@ a 'speaking' audiogram for the real duration, and exposes voice.stop to cut it o
 
 from __future__ import annotations
 
-import hermes_cli.voice as hv
+import superforecasting_agent.runtime.voice as hv
 import tui_gateway.server as srv
 
 

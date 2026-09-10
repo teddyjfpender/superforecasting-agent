@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.change_control.models import canonical_json, content_digest
 from forecasting.change_control.provenance import ensure_bundle
@@ -94,7 +94,7 @@ def capture_trace_archive(
     directory = (
         Path(object_dir).expanduser()
         if object_dir is not None
-        else get_hermes_home() / "provenance" / "raw-traces"
+        else get_agent_home() / "provenance" / "raw-traces"
     )
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{archive_id}.trace.enc"

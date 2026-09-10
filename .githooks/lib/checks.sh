@@ -189,8 +189,8 @@ tests/test_protocol_codegen.py" ;;
 tests/gateway" ;;
       agent/*)                                  _raw="$_raw
 tests/agent" ;;
-      hermes_cli/*)                             _raw="$_raw
-tests/hermes_cli" ;;
+      superforecasting_agent/runtime/*)                             _raw="$_raw
+tests/runtime_cli" ;;
       providers/*)                              _raw="$_raw
 tests/providers" ;;
       cron/*)                                   _raw="$_raw

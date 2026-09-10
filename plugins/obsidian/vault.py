@@ -27,9 +27,9 @@ def managed_vault_path() -> Path:
     keeps its notes — we never auto-select the user's personal vault elsewhere
     on the machine.
     """
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home() / "docs" / "vault"
+    return get_agent_home() / "docs" / "vault"
 
 
 def resolve_vault_path() -> Path | None:

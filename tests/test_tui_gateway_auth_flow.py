@@ -13,7 +13,7 @@ from __future__ import annotations
 import threading
 import time
 
-from hermes_cli.codex_device_flow import DeviceCodeGrant
+from superforecasting_agent.runtime.codex_device_flow import DeviceCodeGrant
 from tui_gateway import server
 
 
@@ -44,7 +44,7 @@ def _wait_status(target: str, timeout: float = 5.0) -> dict:
 
 
 def test_auth_start_returns_code_and_url(monkeypatch):
-    import hermes_cli.codex_device_flow as flow
+    import superforecasting_agent.runtime.codex_device_flow as flow
 
     monkeypatch.setattr(flow, "request_device_code", lambda **kw: _fake_grant())
     # Keep the poller pending so this test only checks the start surface.
@@ -63,8 +63,8 @@ def test_auth_start_returns_code_and_url(monkeypatch):
 
 
 def test_auth_flow_success_persists_tokens(monkeypatch):
-    import hermes_cli.auth as auth_mod
-    import hermes_cli.codex_device_flow as flow
+    import superforecasting_agent.runtime.auth as auth_mod
+    import superforecasting_agent.runtime.codex_device_flow as flow
 
     saved = {}
     monkeypatch.setattr(flow, "request_device_code", lambda **kw: _fake_grant())
@@ -98,7 +98,7 @@ def test_auth_flow_success_persists_tokens(monkeypatch):
 
 
 def test_auth_flow_failure_surfaces_message(monkeypatch):
-    import hermes_cli.codex_device_flow as flow
+    import superforecasting_agent.runtime.codex_device_flow as flow
 
     def boom(grant, **kw):
         raise flow.AuthError("device auth polling returned status 500", provider="openai-codex")
@@ -117,7 +117,7 @@ def test_auth_flow_failure_surfaces_message(monkeypatch):
 def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
     """The core fix: on success, the live agent's credentials are re-resolved
     and applied in place — no TUI restart needed."""
-    import hermes_cli.codex_device_flow as flow
+    import superforecasting_agent.runtime.codex_device_flow as flow
 
     monkeypatch.setattr(
         flow, "request_device_code",
@@ -131,10 +131,10 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
         flow, "exchange_device_code",
         lambda ac, cv, **kw: {"tokens": {"access_token": "fresh_at", "refresh_token": "rt"}},
     )
-    monkeypatch.setattr("hermes_cli.auth._save_codex_tokens", lambda *a, **k: None)
+    monkeypatch.setattr("superforecasting_agent.runtime.auth._save_codex_tokens", lambda *a, **k: None)
     fresh_pool = object()
     monkeypatch.setattr(
-        "hermes_cli.runtime_provider.resolve_runtime_provider",
+        "superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
         lambda **kw: {
             "provider": "openai-codex",
             "api_key": "fresh_at",
@@ -207,7 +207,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
 def test_auth_poll_reports_terminal_status_once(monkeypatch):
     """A consumed success is reported exactly once; a second poll sees 'none'
     (so a lingering watcher can't double-print 'signed in')."""
-    import hermes_cli.codex_device_flow as flow
+    import superforecasting_agent.runtime.codex_device_flow as flow
 
     monkeypatch.setattr(
         flow, "request_device_code",
@@ -221,7 +221,7 @@ def test_auth_poll_reports_terminal_status_once(monkeypatch):
         flow, "exchange_device_code",
         lambda ac, cv, **kw: {"tokens": {"access_token": "at", "refresh_token": "rt"}},
     )
-    monkeypatch.setattr("hermes_cli.auth._save_codex_tokens", lambda *a, **k: None)
+    monkeypatch.setattr("superforecasting_agent.runtime.auth._save_codex_tokens", lambda *a, **k: None)
 
     assert "result" in _start()
     assert _wait_status("success")["status"] == "success"

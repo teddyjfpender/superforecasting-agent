@@ -517,7 +517,7 @@ def _tool_names_for(toolsets):
     string list.
     """
 
-    from model_tools import get_tool_definitions
+    from superforecasting_agent.tooling.runtime import get_tool_definitions
 
     defs = get_tool_definitions(enabled_toolsets=list(toolsets), quiet_mode=True)
     names = set()

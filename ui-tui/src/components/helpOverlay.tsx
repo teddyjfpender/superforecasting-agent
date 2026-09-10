@@ -1,5 +1,5 @@
-import { Box, type ScrollBoxHandle, Text, useInput } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, type ScrollBoxHandle, Text, useInput } from '@superforecasting/ink'
 import { useEffect, useRef, useState } from 'react'
 
 import { NAV_TABS } from '../app/navRoutes.js'

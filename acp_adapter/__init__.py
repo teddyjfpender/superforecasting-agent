@@ -1,1 +1,1 @@
-"""ACP (Agent Communication Protocol) adapter for Superforecasting Agent."""
+"""ACP (Agent Client Protocol) adapter for Superforecasting Agent."""

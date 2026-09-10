@@ -57,7 +57,7 @@ const normalize = (value: string, stripAnsi: (input: string) => string) =>
 
 const mountHint = async (columns = 80) => {
   const [{ render }, { FirstRunHint }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/branding.js'),
     import('../theme.js'),
     import('../lib/text.js')

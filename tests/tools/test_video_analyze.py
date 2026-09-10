@@ -326,12 +326,12 @@ class TestVideoToolsetRegistration:
         assert entry.emoji == "🎬"
 
     def test_not_in_core_tools(self):
-        """video_analyze should NOT be in _HERMES_CORE_TOOLS (default disabled)."""
-        from toolsets import _HERMES_CORE_TOOLS
-        assert "video_analyze" not in _HERMES_CORE_TOOLS
+        """video_analyze should NOT be in _CORE_TOOLS (default disabled)."""
+        from superforecasting_agent.tooling.catalogs.core import _CORE_TOOLS
+        assert "video_analyze" not in _CORE_TOOLS
 
     def test_in_video_toolset_definition(self):
         """Toolset 'video' should contain video_analyze."""
-        from toolsets import TOOLSETS
+        from superforecasting_agent.tooling.toolsets import TOOLSETS
         assert "video" in TOOLSETS
         assert "video_analyze" in TOOLSETS["video"]["tools"]

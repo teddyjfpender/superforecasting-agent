@@ -8,7 +8,7 @@ description: "Complete reference for interactive CLI and messaging slash command
 
 Superforecasting Agent has three slash-command surfaces:
 
-- **Classic interactive CLI slash commands** — dispatched by `cli.py`, with autocomplete from the central `COMMAND_REGISTRY` in `hermes_cli/commands.py`
+- **Classic interactive CLI slash commands** — dispatched by `cli.py`, with autocomplete from the central `COMMAND_REGISTRY` in `superforecasting_agent/runtime/commands.py`
 - **Messaging slash commands** — dispatched by `gateway/run.py`, with help text and platform menus generated from the registry
 - **TUI forecast shortcuts** — local Ink handlers for forecast-desk workflows such as `/questions`, `/ledger`, `/find`, `/open`, `/note`, `/revise`, `/update`, `/evidence-for`, `/update-for`, `/forecast`, `/sources`, `/new-forecast`, `/ingest`, `/evidence`, `/research`, `/base-rate`, `/model-run`, `/trend-model`, `/update-forecast`, `/resolve`, `/score`, `/postmortem`, `/review`, `/alerts`, `/calibration`, `/lessons`, `/backtest`, `/schedule`, `/autopilot`, `/performance`, `/readiness`, `/doctor`, `/pilot-report`, `/pilot-cohort`, `/export-packet`, `/import-packet`, and `/pilot-aggregate`
 

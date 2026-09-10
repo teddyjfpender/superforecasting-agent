@@ -104,7 +104,7 @@ may do to the ledger.
   under the agent home or the system temp dir is allowed too. Write and run
   data-science code there as freely as the problem needs.
 - **You cannot edit the harness.** The code that implements this desk — the
-  installed package and its repo (`tools/`, `hermes_cli/`, `agent/`, the
+  installed package and its repo (`tools/`, `superforecasting_agent/runtime/`, `agent/`, the
   gateway) — is immutable from inside the agent. `write_file` and `patch` will
   **hard-reject** any write whose resolved target lands in the harness source
   tree, returning an error that points you back to the workspace. This is a

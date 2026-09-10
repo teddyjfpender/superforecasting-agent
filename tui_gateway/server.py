@@ -17,9 +17,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from hermes_constants import get_hermes_home
-from hermes_cli.env_loader import load_forecast_dotenv
-from utils import INTERACTIVE_ENV_NAMES, is_truthy_value
+from superforecasting_agent.constants import get_agent_home
+from superforecasting_agent.runtime.env_loader import load_forecast_dotenv
+from superforecasting_agent.environment import INTERACTIVE_ENV_NAMES, is_truthy_value
 from tui_gateway.transport import (
     StdioTransport,
     Transport,
@@ -30,10 +30,10 @@ from tui_gateway.transport import (
 
 logger = logging.getLogger(__name__)
 
-# Path() because get_hermes_home() returns a str when HERMES_HOME is set (e.g. the
+# Path() because get_agent_home() returns a str when HERMES_HOME is set (e.g. the
 # per-test tempdir) — the workspace-dir mkdir below does Path / subdir, which would
 # TypeError on a str. Fix at the callsite, per tests/conftest.py.
-_hermes_home = Path(get_hermes_home())
+_hermes_home = Path(get_agent_home())
 load_forecast_dotenv(
     hermes_home=_hermes_home, project_env=Path(__file__).parent.parent / ".env"
 )
@@ -216,12 +216,14 @@ def _thread_panic_hook(args):
 
 threading.excepthook = _thread_panic_hook
 
-try:
-    from hermes_cli.banner import prefetch_update_check
+def start_build_check() -> None:
+    """Schedule the non-blocking update check when a transport starts."""
+    try:
+        from superforecasting_agent.runtime.banner import prefetch_update_check
 
-    prefetch_update_check()
-except Exception:
-    pass
+        prefetch_update_check()
+    except Exception:
+        pass
 
 from tui_gateway.render import make_stream_renderer, render_diff, render_message
 
@@ -404,7 +406,7 @@ def _load_busy_input_mode() -> str:
 def _notify_session_boundary(event_type: str, session_id: str | None) -> None:
     """Fire session lifecycle hooks with CLI parity."""
     try:
-        from hermes_cli.plugins import invoke_hook as _invoke_hook
+        from superforecasting_agent.runtime.plugins import invoke_hook as _invoke_hook
 
         _invoke_hook(event_type, session_id=session_id, platform="tui")
     except Exception:
@@ -811,7 +813,7 @@ atexit.register(_shutdown_sessions)
 def _get_db():
     global _db, _db_error
     if _db is None:
-        from hermes_state import SessionDB
+        from superforecasting_agent.storage.session import SessionDB
 
         try:
             _db = SessionDB()
@@ -1327,7 +1329,7 @@ def _clear_pending(sid: str | None = None) -> None:
 
 def resolve_skin() -> dict:
     try:
-        from hermes_cli.skin_engine import init_skin_from_config, get_active_skin
+        from superforecasting_agent.runtime.skin_engine import init_skin_from_config, get_active_skin
 
         init_skin_from_config(_load_cfg())
         skin = get_active_skin()
@@ -1373,7 +1375,7 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
         return model, None
 
     try:
-        from hermes_cli.models import detect_static_provider_for_model
+        from superforecasting_agent.runtime.models import detect_static_provider_for_model
 
         cfg = _load_cfg().get("model") or {}
         current_provider = (
@@ -1433,7 +1435,7 @@ def _display_mouse_tracking(display: dict) -> bool:
 
 
 def _load_reasoning_config() -> dict | None:
-    from hermes_constants import parse_reasoning_effort
+    from superforecasting_agent.constants import parse_reasoning_effort
 
     effort = str(
         (_load_cfg().get("agent") or {}).get("reasoning_effort", "") or ""
@@ -1481,7 +1483,7 @@ def _load_enabled_toolsets() -> list[str] | None:
     fallback_notice = None
 
     try:
-        from toolsets import validate_toolset
+        from superforecasting_agent.tooling.toolsets import validate_toolset
     except Exception:
         validate_toolset = None
 
@@ -1491,7 +1493,7 @@ def _load_enabled_toolsets() -> list[str] | None:
 
         if unresolved:
             try:
-                from hermes_cli.plugins import discover_plugins
+                from superforecasting_agent.runtime.plugins import discover_plugins
 
                 discover_plugins()
                 plugin_valid = [name for name in unresolved if validate_toolset(name)]
@@ -1519,8 +1521,8 @@ def _load_enabled_toolsets() -> list[str] | None:
         mcp_names: set[str] = set()
         mcp_disabled: set[str] = set()
         try:
-            from hermes_cli.config import read_raw_config
-            from hermes_cli.tools_config import _parse_enabled_flag
+            from superforecasting_agent.runtime.config import read_raw_config
+            from superforecasting_agent.runtime.tools_config import _parse_enabled_flag
 
             raw_cfg = read_raw_config()
             mcp_servers = (
@@ -1571,8 +1573,8 @@ def _load_enabled_toolsets() -> list[str] | None:
         )
 
     try:
-        from hermes_cli.config import load_config
-        from hermes_cli.tools_config import _get_platform_tools
+        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.runtime.tools_config import _get_platform_tools
 
         cfg = cfg if cfg is not None else load_config()
 
@@ -1623,7 +1625,7 @@ def _restart_slash_worker(session: dict):
 
 
 def _persist_model_switch(result) -> None:
-    from hermes_cli.config import save_config
+    from superforecasting_agent.runtime.config import save_config
 
     cfg = _load_cfg()
     model_cfg = cfg.get("model")
@@ -1641,8 +1643,8 @@ def _persist_model_switch(result) -> None:
 
 
 def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
-    from hermes_cli.model_switch import parse_model_flags, switch_model
-    from hermes_cli.runtime_provider import resolve_runtime_provider
+    from superforecasting_agent.runtime.model_switch import parse_model_flags, switch_model
+    from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
     model_input, explicit_provider, persist_global, _force_refresh = parse_model_flags(raw_input)
     if not model_input:
@@ -1682,7 +1684,7 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
             # its slug from config/env (non-raising) so switch_model can still
             # detect a provider change; leave creds empty — switch_model
             # resolves the TARGET fresh and validates ONLY that provider.
-            from hermes_cli.runtime_provider import resolve_requested_provider
+            from superforecasting_agent.runtime.runtime_provider import resolve_requested_provider
 
             current_provider = resolve_requested_provider(None)
             if current_provider == "auto":
@@ -1695,7 +1697,7 @@ def _apply_model_switch(sid: str, session: dict, raw_input: str) -> dict:
     user_provs = None
     custom_provs = None
     try:
-        from hermes_cli.config import get_compatible_custom_providers, load_config
+        from superforecasting_agent.runtime.config import get_compatible_custom_providers, load_config
 
         cfg = load_config()
         user_provs = cfg.get("providers")
@@ -2004,7 +2006,7 @@ def _probe_config_health(cfg: dict) -> str:
 
 def _current_profile_name() -> str:
     try:
-        from hermes_cli.profiles import get_active_profile_name
+        from superforecasting_agent.runtime.profiles import get_active_profile_name
 
         return get_active_profile_name() or "default"
     except Exception:
@@ -2015,18 +2017,18 @@ def build_info(timeout: float = 0.0) -> dict:
     """The ``BuildInfo`` payload for ``gateway.ready`` / ``session.info``.
 
     ``timeout=0.0`` (the startup default) makes this a pure memory + tiny-file
-    read: it only harvests whatever the module-level ``prefetch_update_check()``
+    read: it only harvests whatever the startup-scheduled ``prefetch_update_check()``
     background thread has already produced, so it can never delay first paint and
     never touches the network itself. Offline it degrades to just the version.
     """
     try:
-        from hermes_cli.banner import get_update_state
+        from superforecasting_agent.runtime.banner import get_update_state
 
         return get_update_state(timeout=timeout)
     except Exception:
         # Last-resort: the version alone still beats showing nothing at all.
         try:
-            from hermes_cli import __release_date__, __version__
+            from superforecasting_agent.runtime import __release_date__, __version__
 
             return {"version": __version__, "release_date": __release_date__}
         except Exception:
@@ -2066,14 +2068,14 @@ def _session_info(agent) -> dict:
     except Exception:
         pass
     try:
-        from hermes_cli import __version__, __release_date__
+        from superforecasting_agent.runtime import __version__, __release_date__
 
         info["version"] = __version__
         info["release_date"] = __release_date__
     except Exception:
         pass
     try:
-        from model_tools import get_toolset_for_tool
+        from superforecasting_agent.tooling.runtime import get_toolset_for_tool
 
         for t in getattr(agent, "tools", []) or []:
             name = t["function"]["name"]
@@ -2083,7 +2085,7 @@ def _session_info(agent) -> dict:
     except Exception:
         pass
     try:
-        from hermes_cli.banner import get_available_skills
+        from superforecasting_agent.runtime.banner import get_available_skills
 
         info["skills"] = get_available_skills()
     except Exception:
@@ -2099,8 +2101,8 @@ def _session_info(agent) -> dict:
     except Exception:
         pass
     try:
-        from hermes_cli.banner import get_update_result
-        from hermes_cli.config import recommended_update_command
+        from superforecasting_agent.runtime.banner import get_update_result
+        from superforecasting_agent.runtime.config import recommended_update_command
 
         info["update_behind"] = get_update_result(timeout=0.5)
         info["update_command"] = recommended_update_command()
@@ -2367,7 +2369,7 @@ def _wire_callbacks(sid: str):
                 "skipped": True,
                 "message": "skipped",
             }
-        from hermes_cli.config import save_env_value_secure
+        from superforecasting_agent.runtime.config import save_env_value_secure
 
         return {
             **save_env_value_secure(env_var, val),
@@ -2396,7 +2398,7 @@ def _available_personalities(cfg: dict | None = None) -> dict:
         return (load_cli_config().get("agent") or {}).get("personalities", {}) or {}
     except Exception:
         try:
-            from hermes_cli.config import load_config as _load_full_cfg
+            from superforecasting_agent.runtime.config import load_config as _load_full_cfg
 
             return (_load_full_cfg().get("agent") or {}).get("personalities", {}) or {}
         except Exception:
@@ -2566,7 +2568,7 @@ def _session_runtime(sid: str) -> dict:
     sess = _sessions.get(sid) or {}
     agent = sess.get("agent")
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
         if agent is not None:
             model = getattr(agent, "model", "") or ""
@@ -2586,8 +2588,8 @@ def _session_runtime(sid: str) -> dict:
         # Provider failover chain from config — the real resilience fix for a
         # stalled/erroring upstream provider (the timeout band-aid only delays).
         try:
-            from hermes_cli.config import load_config_readonly
-            from hermes_cli.fallback_cmd import _read_chain
+            from superforecasting_agent.runtime.config import load_config_readonly
+            from superforecasting_agent.runtime.fallback_cmd import _read_chain
 
             chain = _read_chain(load_config_readonly())
             if chain:
@@ -2607,7 +2609,7 @@ def _session_runtime(sid: str) -> dict:
 
 def _make_agent(sid: str, key: str, session_id: str | None = None):
     from run_agent import AIAgent
-    from hermes_cli.runtime_provider import resolve_runtime_provider
+    from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
     cfg = _load_cfg()
     agent_cfg = cfg.get("agent") or {}
@@ -3118,7 +3120,7 @@ def _(rid, params: dict) -> dict:
     active = {s.get("session_key") for s in snapshot if s.get("session_key")}
     if target in active:
         return _err(rid, 4023, "cannot delete an active forecast session")
-    sessions_dir = get_hermes_home() / "sessions"
+    sessions_dir = get_agent_home() / "sessions"
     try:
         deleted = db.delete_session(target, sessions_dir=sessions_dir)
     except Exception as e:
@@ -3213,7 +3215,7 @@ def _(rid, params: dict) -> dict:
     if err:
         return err
 
-    from hermes_constants import display_hermes_home
+    from superforecasting_agent.constants import display_agent_home
 
     key = session.get("session_key") or params.get("session_id") or ""
     agent = session.get("agent")
@@ -3247,7 +3249,7 @@ def _(rid, params: dict) -> dict:
         "Superforecasting Agent TUI Status",
         "",
         f"Session ID: {key}",
-        f"Path: {display_hermes_home()}",
+        f"Path: {display_agent_home()}",
     ]
     title = (meta.get("title") or "").strip()
     if title:
@@ -3581,9 +3583,9 @@ def _(rid, params: dict) -> dict:
 
 def _spawn_trees_root():
     from pathlib import Path as _P
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    root = get_hermes_home() / "spawn-trees"
+    root = get_agent_home() / "spawn-trees"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -3908,7 +3910,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                         _read_main_model,
                         _read_main_provider,
                     )
-                    from hermes_cli.config import load_config as _tui_load_config
+                    from superforecasting_agent.runtime.config import load_config as _tui_load_config
 
                     _cfg = _tui_load_config()
                     _mode = decide_image_input_mode(
@@ -4043,7 +4045,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
             # outcome. Mirrors gateway/run._post_turn_goal_continuation.
             if status == "complete" and isinstance(raw, str) and raw.strip():
                 try:
-                    from hermes_cli.goals import GoalManager
+                    from superforecasting_agent.runtime.goals import GoalManager
 
                     sid_key = session.get("session_key") or ""
                     if sid_key:
@@ -4131,14 +4133,14 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 and _voice_tts_enabled()
             ):
                 try:
-                    from hermes_cli.voice import speak_text  # noqa: F401 — availability check
+                    from superforecasting_agent.runtime.voice import speak_text  # noqa: F401 — availability check
 
                     spoken = raw
                     threading.Thread(
                         target=_speak_with_status, args=(spoken, sid), daemon=True
                     ).start()
                 except ImportError:
-                    logger.warning("voice TTS skipped: hermes_cli.voice unavailable")
+                    logger.warning("voice TTS skipped: superforecasting_agent.runtime.voice unavailable")
                 except Exception as e:
                     logger.warning("voice TTS dispatch failed: %s", e)
         except Exception as e:
@@ -4233,7 +4235,7 @@ def _(rid, params: dict) -> dict:
     if err:
         return err
     try:
-        from hermes_cli.clipboard import has_clipboard_image, save_clipboard_image
+        from superforecasting_agent.runtime.clipboard import has_clipboard_image, save_clipboard_image
     except Exception as e:
         return _err(rid, 5027, f"clipboard unavailable: {e}")
 
@@ -4276,7 +4278,7 @@ def _(rid, params: dict) -> dict:
     if not raw:
         return _err(rid, 4015, "path required")
     try:
-        from hermes_cli.file_drop import (
+        from superforecasting_agent.runtime.file_drop import (
             _IMAGE_EXTENSIONS,
             _detect_file_drop,
             _resolve_attachment_path,
@@ -4320,7 +4322,7 @@ def _(rid, params: dict) -> dict:
         # handler runs on the serial main dispatch thread on EVERY message, and
         # pulling cli.py (prompt_toolkit/fire/rich) onto that fast path adds
         # ~0.18s (worse under import-lock contention with the startup build).
-        from hermes_cli.file_drop import _detect_file_drop
+        from superforecasting_agent.runtime.file_drop import _detect_file_drop
 
         raw = str(params.get("text", "") or "")
         dropped = _detect_file_drop(raw)
@@ -4600,7 +4602,7 @@ def _(rid, params: dict) -> dict:
 
         overrides = None
         if nv == "fast":
-            from hermes_cli.models import resolve_fast_mode_overrides
+            from superforecasting_agent.runtime.models import resolve_fast_mode_overrides
 
             target_model = (
                 getattr(agent, "model", None) if agent is not None else _resolve_model()
@@ -4701,7 +4703,7 @@ def _(rid, params: dict) -> dict:
 
     if key == "reasoning":
         try:
-            from hermes_constants import parse_reasoning_effort
+            from superforecasting_agent.constants import parse_reasoning_effort
 
             arg = str(value or "").strip().lower()
             if arg in {"show", "on"}:
@@ -4933,7 +4935,7 @@ def _(rid, params: dict) -> dict:
     key = params.get("key", "")
     if key == "provider":
         try:
-            from hermes_cli.models import list_available_providers, normalize_provider
+            from superforecasting_agent.runtime.models import list_available_providers, normalize_provider
 
             model = _resolve_model()
             parts = model.split("/", 1)
@@ -4950,9 +4952,9 @@ def _(rid, params: dict) -> dict:
         except Exception as e:
             return _err(rid, 5013, str(e))
     if key == "profile":
-        from hermes_constants import display_hermes_home
+        from superforecasting_agent.constants import display_agent_home
 
-        return _ok(rid, {"home": str(_hermes_home), "display": display_hermes_home()})
+        return _ok(rid, {"home": str(_hermes_home), "display": display_agent_home()})
     if key == "full":
         return _ok(rid, {"config": _load_cfg()})
     if key == "prompt":
@@ -5064,7 +5066,7 @@ def _(rid, params: dict) -> dict:
 @rpc_validated("setup.status")
 def _(rid, params: dict) -> dict:
     try:
-        from hermes_cli.main import _has_any_provider_configured
+        from superforecasting_agent.runtime.main import _has_any_provider_configured
 
         return _ok(rid, {"provider_configured": bool(_has_any_provider_configured())})
     except Exception as e:
@@ -5098,7 +5100,7 @@ def _(rid, params: dict) -> dict:
         user_confirm = bool(params.get("confirm", False))
         if not user_confirm:
             try:
-                from hermes_cli.config import load_config as _load_config
+                from superforecasting_agent.runtime.config import load_config as _load_config
 
                 _cfg = _load_config()
                 _approvals = _cfg.get("approvals") if isinstance(_cfg, dict) else None
@@ -5153,7 +5155,7 @@ def _(rid, params: dict) -> dict:
 @rpc_validated("reload.env")
 def _(rid, params: dict) -> dict:
     """Re-read the active agent-home ``.env`` into the gateway process via
-    ``hermes_cli.config.reload_env``, matching classic CLI's ``/reload``
+    ``superforecasting_agent.runtime.config.reload_env``, matching classic CLI's ``/reload``
     handler.  Newly added API keys take effect on the next agent call
     without restarting the TUI.
 
@@ -5163,7 +5165,7 @@ def _(rid, params: dict) -> dict:
     should follow with ``/new``.
     """
     try:
-        from hermes_cli.config import reload_env
+        from superforecasting_agent.runtime.config import reload_env
 
         count = reload_env()
         return _ok(rid, {"updated": int(count)})
@@ -5477,7 +5479,7 @@ def _(rid, params: dict) -> dict:
     live preview of each without a round-trip per theme. Also reports the
     currently active theme name."""
     try:
-        from hermes_cli.skin_engine import (
+        from superforecasting_agent.runtime.skin_engine import (
             get_active_skin_name,
             init_skin_from_config,
             list_skins,
@@ -5516,7 +5518,7 @@ def _(rid, params: dict) -> dict:
 @rpc_validated("model.options")
 def _(rid, params: dict) -> dict:
     try:
-        from hermes_cli.inventory import build_models_payload, load_picker_context
+        from superforecasting_agent.runtime.inventory import build_models_payload, load_picker_context
 
         session = _sessions.get(params.get("session_id", ""))
         agent = session.get("agent") if session else None
@@ -5577,9 +5579,9 @@ def _(rid, params: dict) -> dict:
     model.options entries) on success.
     """
     try:
-        from hermes_cli.auth import PROVIDER_REGISTRY
-        from hermes_cli.config import is_managed, save_env_value
-        from hermes_cli.inventory import build_models_payload, load_picker_context
+        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY
+        from superforecasting_agent.runtime.config import is_managed, save_env_value
+        from superforecasting_agent.runtime.inventory import build_models_payload, load_picker_context
 
         slug = (params.get("slug") or "").strip()
         api_key = (params.get("api_key") or "").strip()
@@ -5673,7 +5675,7 @@ def _run_codex_device_poll(grant, interval: int) -> None:
     exchange + persist tokens. All terminal states land in _auth_flow."""
     import time as _time
 
-    from hermes_cli import codex_device_flow as _flow
+    from superforecasting_agent.runtime import codex_device_flow as _flow
 
     deadline = _time.monotonic() + _flow.DEVICE_FLOW_MAX_WAIT_SECONDS
     try:
@@ -5689,7 +5691,7 @@ def _run_codex_device_poll(grant, interval: int) -> None:
             creds = _flow.exchange_device_code(
                 result["authorization_code"], result["code_verifier"]
             )
-            from hermes_cli.auth import _save_codex_tokens
+            from superforecasting_agent.runtime.auth import _save_codex_tokens
 
             _save_codex_tokens(creds["tokens"], creds.get("last_refresh"))
             _auth_flow_update(status="success", message="signed in to OpenAI Codex")
@@ -5760,7 +5762,7 @@ def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
     if provider == "openai-codex" and current_provider not in codex_aliases:
         return False
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
         runtime = resolve_runtime_provider(requested=current_provider or provider)
         agent.switch_model(
@@ -5802,7 +5804,7 @@ def _(rid, params: dict) -> dict:
             f"add {provider}` in a terminal",
         )
     try:
-        from hermes_cli.codex_device_flow import request_device_code
+        from superforecasting_agent.runtime.codex_device_flow import request_device_code
 
         grant = request_device_code()
     except Exception as e:
@@ -5904,8 +5906,8 @@ def _(rid, params: dict) -> dict:
     Returns success status and the provider's slug.
     """
     try:
-        from hermes_cli.auth import PROVIDER_REGISTRY, clear_provider_auth
-        from hermes_cli.config import remove_env_value
+        from superforecasting_agent.runtime.auth import PROVIDER_REGISTRY, clear_provider_auth
+        from superforecasting_agent.runtime.config import remove_env_value
 
         slug = (params.get("slug") or "").strip()
         if not slug:
@@ -6058,7 +6060,7 @@ def _(rid, params: dict) -> dict:
     resolve_plugin_command_result = None
     if _cmd_base:
         try:
-            from hermes_cli.plugins import (
+            from superforecasting_agent.runtime.plugins import (
                 get_plugin_command_handler,
                 resolve_plugin_command_result,
             )
@@ -6125,7 +6127,7 @@ def _speak_with_status(text: str, sid: str) -> None:
     TUI can show a 'speaking' indicator + audiogram for the REAL playback duration (the
     start/stop are tied to speak_text actually opening/closing the speakers)."""
     try:
-        from hermes_cli.voice import speak_text
+        from superforecasting_agent.runtime.voice import speak_text
     except Exception:
         return
     if sid:
@@ -6215,7 +6217,7 @@ def _voice_record_key() -> str:
 @method("plugins.list")
 def _(rid, params: dict) -> dict:
     try:
-        from hermes_cli.plugins import get_plugin_manager
+        from superforecasting_agent.runtime.plugins import get_plugin_manager
 
         return _ok(
             rid,

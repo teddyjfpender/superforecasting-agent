@@ -257,7 +257,7 @@ def _market_deviation_threshold_pp() -> float:
     G8 deviation-bet recorder — the SAME ``quorum.market_anchor_deviation_pp`` config
     the quorum job reads (default 10.0), so a non-quorum bet uses the same bar."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config().get("quorum", {})
         if isinstance(cfg, dict) and "market_anchor_deviation_pp" in cfg:

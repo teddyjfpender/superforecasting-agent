@@ -14,7 +14,7 @@ Docker supports two different workflows:
 This page focuses on the first workflow. The container stores all user data in a host-mounted directory at `/opt/data`: configuration, API keys, sessions, forecast ledger state, calibration reports, skills, source snapshots, cron jobs, and logs. The image itself is disposable; keep the mounted data directory backed up.
 
 :::note Compatibility internals
-The Docker image still keeps inherited internal paths such as `/opt/hermes` and supports legacy variables such as `HERMES_HOME` and `HERMES_DASHBOARD`. Treat those as compatibility identifiers. New deployments should prefer `~/.superforecasting-agent`, `superforecasting-agent`, `forecast`, `SUPERFORECASTING_AGENT_HOME`, and `SUPERFORECASTING_AGENT_DASHBOARD`.
+The Docker image installs in `/opt/superforecasting-agent` and runs as the unprivileged `forecast` user. Legacy variables such as `HERMES_HOME` and `HERMES_DASHBOARD` remain supported. New deployments should prefer `~/.superforecasting-agent`, `superforecasting-agent`, `forecast`, `SUPERFORECASTING_AGENT_HOME`, and `SUPERFORECASTING_AGENT_DASHBOARD`.
 :::
 
 ## Quick Start
@@ -125,13 +125,13 @@ docker run -it --rm \
   ghcr.io/teddyjfpender/superforecasting-agent forecast backtest
 ```
 
-If you have opened a shell inside the running container, the legacy executable path is still:
+From a shell inside the running container, use the installed command:
 
 ```sh
-/opt/hermes/.venv/bin/hermes
+/opt/superforecasting-agent/.venv/bin/superforecasting-agent
 ```
 
-Prefer `/opt/hermes/.venv/bin/superforecasting-agent` or `/opt/hermes/.venv/bin/forecast` for fork-native scripts inside the image.
+The `forecast` shortcut is available in the same directory. The legacy `hermes` executable remains a compatibility alias.
 
 ## Persistent Volume
 
@@ -266,7 +266,7 @@ The compatibility entrypoint (`docker/entrypoint.sh`) bootstraps the mounted dat
 - runs the requested command through the fork-native `superforecasting-agent` wrapper
 
 :::warning
-Do not override the image entrypoint unless you keep `/opt/hermes/docker/entrypoint.sh` in the command chain. The entrypoint drops root privileges to the runtime user before gateway state files are created. Starting the gateway as root can leave root-owned files in `/opt/data` and break later starts. Use `HERMES_ALLOW_ROOT_GATEWAY=1` only when you intentionally accept that risk.
+Do not override the image entrypoint unless you keep `/opt/superforecasting-agent/docker/entrypoint.sh` in the command chain. The entrypoint drops root privileges to the runtime user before gateway state files are created. Starting the gateway as root can leave root-owned files in `/opt/data` and break later starts. Use `HERMES_ALLOW_ROOT_GATEWAY=1` only when you intentionally accept that risk.
 :::
 
 ## Upgrading

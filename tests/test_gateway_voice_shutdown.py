@@ -5,7 +5,7 @@ and atexit (the clean stdin-EOF path)."""
 
 from __future__ import annotations
 
-import hermes_cli.voice as hv
+import superforecasting_agent.runtime.voice as hv
 import tools.voice_mode as vm
 import tui_gateway.entry as entry
 

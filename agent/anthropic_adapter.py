@@ -19,9 +19,10 @@ import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 from typing import Any, Dict, List, Optional, Tuple
-from utils import base_url_host_matches, env_var_alias_value, normalize_proxy_env_vars
+from superforecasting_agent.urls import base_url_host_matches, normalize_proxy_env_vars
+from superforecasting_agent.environment import env_var_alias_value
 
 # NOTE: `import anthropic` is deliberately NOT at module top — the SDK pulls
 # ~220 ms of imports (anthropic.types, anthropic.lib.tools._beta_runner, etc.)
@@ -1194,7 +1195,7 @@ def get_hermes_oauth_file() -> Path:
     override = env_var_alias_value(_OAUTH_FILE_ENV_NAMES)
     if override:
         return Path(override).expanduser()
-    return get_hermes_home() / ".anthropic_oauth.json"
+    return get_agent_home() / ".anthropic_oauth.json"
 
 
 _HERMES_OAUTH_FILE = get_hermes_oauth_file()

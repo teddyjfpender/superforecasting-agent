@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from forecasting import source_adapters
 from forecasting.source_adapters import load_wikipedia_pages
 
@@ -84,3 +86,17 @@ def test_as_of_drops_page_with_no_revision_before_cutoff(monkeypatch):
     _install_mock(monkeypatch, revision_payload=empty)
     pages = load_wikipedia_pages("Example Topic", as_of="2010-01-01T00:00:00Z")
     assert pages == []
+
+
+@pytest.mark.parametrize("content", ["", "   ", None])
+def test_empty_historical_revision_never_reuses_live_extract(monkeypatch, content):
+    revision = {"revid": 9002, "timestamp": "2023-09-15T08:30:00Z"}
+    if content is not None:
+        revision["slots"] = {"main": {"content": content}}
+    payload = {"query": {"pages": {"12345": {"revisions": [revision]}}}}
+    _install_mock(monkeypatch, revision_payload=payload)
+    pages = load_wikipedia_pages("Example Topic", as_of="2024-01-01T00:00:00Z")
+    assert len(pages) == 1
+    assert pages[0].extract == ""
+    assert pages[0].updated_at == "2023-09-15T08:30:00Z"
+    assert pages[0].raw["pinned_revision_id"] == 9002

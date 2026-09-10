@@ -357,8 +357,8 @@ services:
       - ${FORECAST_HOME}:/opt/data
     environment:
       - SUPERFORECASTING_AGENT_HOME=/opt/data
-      - HERMES_UID=${uid}
-      - HERMES_GID=${gid}
+      - SUPERFORECASTING_AGENT_UID=${uid}
+      - SUPERFORECASTING_AGENT_GID=${gid}
     command: ["gateway", "run"]
 YAML
   ok "wrote $COMPOSE_DIR/compose.yml"

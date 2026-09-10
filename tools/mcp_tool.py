@@ -151,8 +151,8 @@ def _get_mcp_stderr_log() -> Any:
         if _mcp_stderr_log_fh is not None:
             return _mcp_stderr_log_fh
         try:
-            from hermes_constants import get_hermes_home
-            log_dir = get_hermes_home() / "logs"
+            from superforecasting_agent.constants import get_agent_home
+            log_dir = get_agent_home() / "logs"
             log_dir.mkdir(parents=True, exist_ok=True)
             log_path = log_dir / "mcp-stderr.log"
             # Line-buffered so server output lands on disk promptly; errors=
@@ -2270,7 +2270,7 @@ def _wrap_with_home_override(coro: "Coroutine") -> "Coroutine":
     """Carry the caller's context-local agent-home override into ``coro``.
 
     The override is the contextvar set via
-    ``hermes_constants.set_hermes_home_override`` (the resolved value of the
+    ``superforecasting_agent.constants.set_agent_home_override`` (the resolved value of the
     SUPERFORECASTING_AGENT_HOME / FORECAST_HOME / HERMES_HOME alias triple).
 
     Returns ``coro`` unchanged when no override is active. Otherwise wraps
@@ -2279,24 +2279,24 @@ def _wrap_with_home_override(coro: "Coroutine") -> "Coroutine":
     carrying different scopes don't interfere.
     """
     try:
-        from hermes_constants import (
-            get_hermes_home_override,
-            reset_hermes_home_override,
-            set_hermes_home_override,
+        from superforecasting_agent.constants import (
+            get_agent_home_override,
+            reset_agent_home_override,
+            set_agent_home_override,
         )
 
-        home_override = get_hermes_home_override()
+        home_override = get_agent_home_override()
     except Exception:
         return coro
     if not home_override:
         return coro
 
     async def _scoped():
-        token = set_hermes_home_override(home_override)
+        token = set_agent_home_override(home_override)
         try:
             return await coro
         finally:
-            reset_hermes_home_override(token)
+            reset_agent_home_override(token)
 
     return _scoped()
 
@@ -2329,7 +2329,7 @@ def _run_on_mcp_loop(coro_or_factory, timeout: float = 30):
     # loop thread, so they copy the loop thread's context — not the
     # scheduling thread's. A per-request profile scope (e.g. an MCP
     # "Test server" probe under ?profile=) would silently vanish here:
-    # OAuth token stores and any other get_hermes_home() resolution inside
+    # OAuth token stores and any other get_agent_home() resolution inside
     # the coroutine would read the process home instead of the selected
     # profile's. Re-establish the override inside the task's own context
     # (task-local — concurrent calls carrying different scopes don't
@@ -2405,14 +2405,14 @@ def _load_mcp_config() -> Dict[str, dict]:
     ``os.environ`` (which includes ``~/.hermes/.env`` loaded at startup).
     """
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         config = load_config()
         servers = config.get("mcp_servers")
         if not servers or not isinstance(servers, dict):
             return {}
         # Ensure .env vars are available for interpolation
         try:
-            from hermes_cli.env_loader import load_hermes_dotenv
+            from superforecasting_agent.runtime.env_loader import load_hermes_dotenv
             load_hermes_dotenv()
         except Exception:
             pass

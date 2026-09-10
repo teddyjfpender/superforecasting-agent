@@ -40,7 +40,7 @@ const renderView = async (cols = 120) => {
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { HooksView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/hooksView.js'),
     import('../theme.js'),
     import('../lib/text.js'),

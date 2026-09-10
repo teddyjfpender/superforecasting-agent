@@ -310,7 +310,7 @@ const mount = async (providers = ['predictionmarkets'], gwOverride?: ReturnType<
   const gw = gwOverride ?? fakeGw(calls)
 
   const [{ render }, { MarketsView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/marketsView.js'),
     import('../theme.js'),
     import('../lib/text.js')
@@ -521,7 +521,7 @@ describe('PredictionMarketsTable column contract', () => {
 
     const [{ Box, render }, { PredictionMarketsTable }, { flattenPMRows }, { semantics }, { DARK_THEME }, { stripAnsi }] =
       await Promise.all([
-        import('@hermes/ink'),
+        import('@superforecasting/ink'),
         import('../components/predictionMarketsTable.js'),
         import('../lib/pmRows.js'),
         import('../lib/visualSemantics.js'),

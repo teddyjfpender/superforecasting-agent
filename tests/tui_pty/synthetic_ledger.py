@@ -1,7 +1,7 @@
 """Generate a synthetic forecast ledger for load-shaped tests.
 
 Isolation is the first requirement: every function here writes to an explicit
-``db_path`` you hand it, and never consults ``get_hermes_home()``.  There is no
+``db_path`` you hand it, and never consults ``get_agent_home()``.  There is no
 code path by which this touches an operator's real ledger.
 
 Generation goes through the ``forecasting.ledger`` package API (``create_question``,

@@ -57,7 +57,7 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger(__name__)
@@ -66,7 +66,7 @@ logger = logging.getLogger(__name__)
 # Constants
 # ---------------------------------------------------------------------------
 
-CHECKPOINT_BASE = get_hermes_home() / "checkpoints"
+CHECKPOINT_BASE = get_agent_home() / "checkpoints"
 
 # Single shared store directory under CHECKPOINT_BASE.
 _STORE_DIRNAME = "store"
@@ -102,7 +102,7 @@ DEFAULT_EXCLUDES = [
     ".git/",
     ".hg/",
     ".svn/",
-    # Worktrees (Hermes convention — don't recursively snapshot siblings)
+    # Worktrees (runtime convention — don't recursively snapshot siblings)
     ".worktrees/",
     # Native / compiled binaries
     "*.so",
@@ -256,7 +256,7 @@ def _git_env(
 ) -> dict:
     """Build env dict that redirects git to the shared store.
 
-    The shared store is internal Hermes infrastructure — it must NOT inherit
+    The shared store is internal runtime infrastructure — it must NOT inherit
     the user's global or system git config.  User-level settings like
     ``commit.gpgsign = true``, signing hooks, or credential helpers would
     either break background snapshots or, worse, spawn interactive prompts
@@ -450,8 +450,8 @@ def _init_store(store: Path, working_dir: str) -> Optional[str]:
     # Use the base dir as the working_dir for config commands — it always
     # exists since we just created the store inside it.
     cfg_wd = str(base)
-    _run_git(["config", "user.email", "hermes@local"], store, cfg_wd)
-    _run_git(["config", "user.name", "Hermes Checkpoint"], store, cfg_wd)
+    _run_git(["config", "user.email", "superforecasting-agent@local"], store, cfg_wd)
+    _run_git(["config", "user.name", "Superforecasting Agent Checkpoint"], store, cfg_wd)
     _run_git(["config", "commit.gpgsign", "false"], store, cfg_wd)
     _run_git(["config", "tag.gpgSign", "false"], store, cfg_wd)
     _run_git(["config", "gc.auto", "0"], store, cfg_wd)

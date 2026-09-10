@@ -318,7 +318,7 @@ def test_protocol_estimate_first_sentence_is_conditional(monkeypatch):
 
 
 def test_config_default_has_practice_estimate_first_off():
-    from hermes_cli.config import DEFAULT_CONFIG
+    from superforecasting_agent.runtime.config import DEFAULT_CONFIG
 
     assert DEFAULT_CONFIG["forecasting"]["practice"]["estimate_first"] is False
 

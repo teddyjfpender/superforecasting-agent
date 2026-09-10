@@ -16,7 +16,7 @@ from typing import Any
 from forecasting import appconfig
 from forecasting.learning import is_learning_review_reason
 from forecasting.ledger import ForecastLedger, allow_ledger_writes_decorator
-from utils import (
+from superforecasting_agent.environment import (
     INFERENCE_MODEL_ENV_NAMES,
     INFERENCE_PROVIDER_ENV_NAMES,
     env_var_alias_nonempty_value,
@@ -49,7 +49,7 @@ _FREE_TIER_SWEEP_CAP_DEFAULT = 500
 def _warnings_config() -> dict[str, Any]:
     """Read the optional ``forecasting.warnings`` config block (best-effort)."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
@@ -104,9 +104,9 @@ def resolve_free_tier_sweep_cap(explicit: int | None = None) -> int:
 def _free_tier_drain_state_path(state_path: "str | Path | None" = None) -> Path:
     if state_path is not None:
         return Path(state_path)
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home() / "cron" / "free_tier_drain_state.json"
+    return get_agent_home() / "cron" / "free_tier_drain_state.json"
 
 
 def read_free_tier_drain_state(state_path: "str | Path | None" = None) -> dict[str, Any]:
@@ -155,7 +155,7 @@ _REVIEW_SWEEP_INTERVAL_DEFAULT = 10
 def _reviews_config() -> dict[str, Any]:
     """Read the optional ``forecasting.reviews`` config block (best-effort)."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
@@ -194,9 +194,9 @@ def resolve_review_sweep_interval_minutes(explicit: int | None = None) -> int:
 def _review_sweeper_state_path(state_path: "str | Path | None" = None) -> Path:
     if state_path is not None:
         return Path(state_path)
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home() / "cron" / "review_sweeper_state.json"
+    return get_agent_home() / "cron" / "review_sweeper_state.json"
 
 
 def read_review_sweeper_state(state_path: "str | Path | None" = None) -> dict[str, Any]:
@@ -1536,7 +1536,7 @@ def _first_env_value(names: tuple[str, ...]) -> str:
 def _automode_config() -> dict[str, Any]:
     """Read the optional ``cron.warning_automode`` config block (best-effort)."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
@@ -1549,7 +1549,7 @@ def _automode_config() -> dict[str, Any]:
 def _source_estimator_config() -> dict[str, Any]:
     """Read the dedicated source-estimator worker settings."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         cron_cfg = cfg.get("cron", {}) if isinstance(cfg, dict) else {}
@@ -1562,9 +1562,9 @@ def _source_estimator_config() -> dict[str, Any]:
 def _source_estimator_state_path(state_path: str | Path | None = None) -> Path:
     if state_path is not None:
         return Path(state_path)
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home() / "cron" / "source_estimator_state.json"
+    return get_agent_home() / "cron" / "source_estimator_state.json"
 
 
 def read_source_estimator_state(
@@ -1656,9 +1656,9 @@ def resolve_paid_min_interval_hours(explicit: float | None = None) -> float:
 def _automode_state_path(state_path: str | Path | None = None) -> Path:
     if state_path is not None:
         return Path(state_path)
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home() / "cron" / "warning_automode_state.json"
+    return get_agent_home() / "cron" / "warning_automode_state.json"
 
 
 def _read_automode_state(state_path: str | Path | None = None) -> dict[str, Any]:
@@ -1692,7 +1692,7 @@ def _now_dt(now: str | None = None) -> datetime:
             return datetime.fromisoformat(now.strip())
         except ValueError:
             pass
-    from hermes_time import now as hermes_now
+    from superforecasting_agent.clock import now as hermes_now
 
     return hermes_now()
 

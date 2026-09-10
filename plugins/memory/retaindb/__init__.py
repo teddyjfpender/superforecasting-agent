@@ -390,21 +390,34 @@ class _WriteQueue:
             conn.commit()
             time.sleep(2)
 
+    def _close_conn(self) -> None:
+        """Close the calling thread's cached SQLite connection."""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+            del self._local.conn
+
     def _loop(self) -> None:
-        while True:
-            try:
-                item = self._q.get(timeout=5)
-                if item is _ASYNC_SHUTDOWN:
-                    break
-                self._flush_row(*item)
-            except queue.Empty:
-                continue
-            except Exception as exc:
-                logger.error("RetainDB writer error: %s", exc)
+        try:
+            while True:
+                try:
+                    item = self._q.get(timeout=5)
+                    if item is _ASYNC_SHUTDOWN:
+                        break
+                    self._flush_row(*item)
+                except queue.Empty:
+                    continue
+                except Exception as exc:
+                    logger.error("RetainDB writer error: %s", exc)
+        finally:
+            self._close_conn()
 
     def shutdown(self) -> None:
         self._q.put(_ASYNC_SHUTDOWN)
-        self._thread.join(timeout=10)
+        try:
+            self._thread.join(timeout=10)
+        finally:
+            self._close_conn()
 
 
 # ---------------------------------------------------------------------------
@@ -505,8 +518,8 @@ class RetainDBMemoryProvider(MemoryProvider):
         self._user_id = kwargs.get("user_id", "default") or "default"
         self._agent_id = kwargs.get("agent_id", "hermes") or "hermes"
 
-        from hermes_constants import get_hermes_home
-        hermes_home_path = get_hermes_home()
+        from superforecasting_agent.constants import get_agent_home
+        hermes_home_path = get_agent_home()
         db_path = hermes_home_path / "retaindb_queue.db"
         self._queue = _WriteQueue(self._client, db_path)
 

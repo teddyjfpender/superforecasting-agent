@@ -1,4 +1,4 @@
-import { Box, Text, useStdout } from '@hermes/ink'
+import { Box, Text, useStdout } from '@superforecasting/ink'
 import { useMemo } from 'react'
 
 import { OUTRIDER_HEADER } from '../content/outriderHeader.js'

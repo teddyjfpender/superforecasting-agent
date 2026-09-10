@@ -142,7 +142,7 @@ def test_main_entrypoint_runs_a_job(tmp_path, monkeypatch):
 
     _seed_ledger()
     store = JobStore(home=tmp_path)
-    # The CLI resolves a default JobStore() → get_hermes_home(); point the store
+    # The CLI resolves a default JobStore() → get_agent_home(); point the store
     # at the same per-test home by writing through the default store.
     default_store = JobStore()
     job_id = default_store.new_id()

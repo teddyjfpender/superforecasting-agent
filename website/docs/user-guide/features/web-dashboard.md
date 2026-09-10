@@ -290,7 +290,7 @@ npm run dev
 
 The Vite dev server at `http://localhost:5173` proxies `/api` requests to the FastAPI backend at `http://127.0.0.1:9119`.
 
-Production builds output to `hermes_cli/web_dist/`, which the FastAPI server serves as a static SPA. The directory name is inherited for compatibility.
+Production builds output to `superforecasting_agent/runtime/web_dist/`, which the FastAPI server serves as a static SPA. The directory name is inherited for compatibility.
 
 ## Automatic Build On Update
 

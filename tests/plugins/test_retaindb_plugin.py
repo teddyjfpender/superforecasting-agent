@@ -741,3 +741,37 @@ class TestRegister:
         ctx.register_memory_provider.assert_called_once()
         arg = ctx.register_memory_provider.call_args[0][0]
         assert isinstance(arg, RetainDBMemoryProvider)
+
+
+def test_queue_shutdown_closes_connections_on_their_owning_threads(tmp_path, monkeypatch):
+    connections = []
+    closed_on = {}
+    opened_on = {}
+    original_connect = sqlite3.connect
+
+    class TrackedConnection(sqlite3.Connection):
+        def close(self):
+            closed_on[id(self)] = threading.get_ident()
+            super().close()
+
+    def tracked_connect(*args, **kwargs):
+        # Allow cleanup in this regression's finally block even before the fix;
+        # the assertion still requires normal closure on each owning thread.
+        kwargs.update(factory=TrackedConnection, check_same_thread=False)
+        conn = original_connect(*args, **kwargs)
+        connections.append(conn)
+        opened_on[id(conn)] = threading.get_ident()
+        return conn
+
+    monkeypatch.setattr(sqlite3, "connect", tracked_connect)
+    queue = _WriteQueue(MagicMock(), tmp_path / "shutdown.db")
+    try:
+        queue.enqueue("user", "session", [{"role": "user", "content": "saved"}])
+        queue.shutdown()
+        assert not queue._thread.is_alive()
+        assert len(connections) == 2
+        assert closed_on == opened_on
+    finally:
+        queue.shutdown()
+        for conn in connections:
+            conn.close()

@@ -208,9 +208,17 @@ def _clone_repo(dest: Path) -> Path:
     )
     if r.returncode != 0:
         pytest.skip(f"git clone --local unavailable: {r.stderr.strip()}")
-    # Local clones include committed objects only. Copy the gate under test so
-    # these tests exercise the current worktree implementation before commit.
-    shutil.copy2(GATE, dest / "scripts" / GATE.name)
+    # Local clones contain committed objects only. Overlay the gate and its
+    # version inputs so the fixture exercises the current candidate layout.
+    for source in (
+        GATE,
+        REPO_ROOT / "pyproject.toml",
+        REPO_ROOT / "superforecasting_agent/runtime/__init__.py",
+        REPO_ROOT / "CHANGELOG.md",
+    ):
+        target = dest / source.relative_to(REPO_ROOT)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
     return dest
 
 

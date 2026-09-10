@@ -150,7 +150,7 @@ const writeStream = (columns: number, rows: number, isTTY = false) => {
 // HelpOverlay owns the keyboard (useInput), so it needs a raw-mode-capable
 // stdin — hence the TTY fake rather than a bare PassThrough.
 const paint = async (node: React.ReactElement, cols = 110, rows = 34): Promise<string> => {
-  const { render } = await import('@hermes/ink')
+  const { render } = await import('@superforecasting/ink')
   const stdout = writeStream(cols, rows)
   const stdin = writeStream(cols, rows, true)
   const stderr = writeStream(cols, rows)
@@ -175,7 +175,7 @@ const paint = async (node: React.ReactElement, cols = 110, rows = 34): Promise<s
 // it needs a SIZED body container beneath it to lay out against (the same
 // framing modalOverlay.test.tsx uses).
 const paintModal = async (node: React.ReactElement, cols = 110, rows = 34): Promise<string> => {
-  const { Box } = await import('@hermes/ink')
+  const { Box } = await import('@superforecasting/ink')
 
   return paint(
     React.createElement(

@@ -99,7 +99,7 @@ const mount = async () => {
   const [{ AppLayout }, { GatewayProvider }, ink, comp, store] = await Promise.all([
     import('../components/appLayout.js'),
     import('../app/gatewayContext.js'),
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../hooks/useCompletion.js'),
     import('../app/composerTextStore.js')
   ])

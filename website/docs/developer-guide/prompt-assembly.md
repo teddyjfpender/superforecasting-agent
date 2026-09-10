@@ -134,7 +134,7 @@ Treat free-form chat as forecast-scoped work...
 ```python
 # From agent/prompt_builder.py (simplified)
 def load_soul_md() -> Optional[str]:
-    soul_path = get_hermes_home() / "SOUL.md"  # fork-native home with legacy fallback
+    soul_path = get_agent_home() / "SOUL.md"  # fork-native home with legacy fallback
     if not soul_path.exists():
         return None
     content = soul_path.read_text(encoding="utf-8").strip()

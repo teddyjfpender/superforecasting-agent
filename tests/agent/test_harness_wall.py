@@ -41,7 +41,7 @@ def _fake_home(tmp_path, monkeypatch):
 
 class TestHarnessRootDetection:
     def test_project_root_is_a_harness_root(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         roots = {str(r) for r in harness_wall.get_harness_source_roots()}
         assert str(get_project_root().resolve()) in roots
@@ -67,7 +67,7 @@ class TestPackagedReleaseLayout:
         # out flat under one install root, with NO .git anywhere.
         site = (tmp_path / "site-packages").resolve()
         fake_modules: dict[str, types.ModuleType] = {}
-        for name in ("hermes_cli", "forecasting", "agent", "tools"):
+        for name in ("superforecasting_agent.runtime", "superforecasting_agent", "forecasting", "agent", "tools"):
             d = site / name
             d.mkdir(parents=True)
             (d / "__init__.py").write_text("")
@@ -75,12 +75,6 @@ class TestPackagedReleaseLayout:
             m.__path__ = [str(d)]  # type: ignore[attr-defined]
             m.__file__ = str(d / "__init__.py")
             fake_modules[name] = m
-        hc = site / "hermes_constants.py"
-        hc.write_text("")
-        m = types.ModuleType("hermes_constants")
-        m.__file__ = str(hc)
-        fake_modules["hermes_constants"] = m
-
         real_import = importlib.import_module
 
         def _fake_import(name, *a, **k):
@@ -117,7 +111,7 @@ class TestPackagedReleaseLayout:
 
 class TestRejectHarnessWrites:
     def test_write_into_tools_package_rejected(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         target = str(get_project_root() / "tools" / "file_tools.py")
         err = harness_wall.check_harness_write(target)
@@ -133,7 +127,7 @@ class TestRejectHarnessWrites:
         assert "surface the patch path" in err
 
     def test_terminal_refusal_carries_stop_directive(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         cmd = f"echo evil > {get_project_root() / 'tools' / 'file_tools.py'}"
         err = harness_wall.check_harness_command_write(cmd)
@@ -142,21 +136,21 @@ class TestRejectHarnessWrites:
         assert "do NOT retry" in err
 
     def test_write_into_hermes_cli_rejected(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
-        target = str(get_project_root() / "hermes_cli" / "config.py")
+        target = str(get_project_root() / 'superforecasting_agent/runtime' / "config.py")
         assert harness_wall.check_harness_write(target) is not None
 
     def test_new_file_in_harness_root_rejected(self):
         """A not-yet-existent leaf inside the harness root is still rejected."""
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         target = str(get_project_root() / "tools" / "evil_new_module.py")
         assert harness_wall.check_harness_write(target) is not None
 
     def test_relative_resolved_path_arg_is_honored(self):
         """tools/file_tools.py passes a pre-resolved abs path; we trust it."""
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         resolved = str(get_project_root() / "agent" / "harness_wall.py")
         err = harness_wall.check_harness_write("harness_wall.py", resolved=resolved)
@@ -187,7 +181,7 @@ class TestAllowWorkspaceWrites:
 
 class TestConfigFlag:
     def test_disabled_flag_allows_harness_write(self, monkeypatch):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         monkeypatch.setattr(
             harness_wall, "is_harness_wall_enabled", lambda: False
@@ -203,7 +197,7 @@ class TestConfigFlag:
             raise RuntimeError("no config")
 
         monkeypatch.setattr(
-            "hermes_cli.config.load_config", _boom, raising=False
+            "superforecasting_agent.runtime.config.load_config", _boom, raising=False
         )
         assert hw.is_harness_wall_enabled() is True
 
@@ -211,7 +205,7 @@ class TestConfigFlag:
         import agent.harness_wall as hw
 
         monkeypatch.setattr(
-            "hermes_cli.config.load_config",
+            "superforecasting_agent.runtime.config.load_config",
             lambda: {"harness_wall": {"enabled": False}},
             raising=False,
         )
@@ -221,7 +215,7 @@ class TestConfigFlag:
         import agent.harness_wall as hw
 
         monkeypatch.setattr(
-            "hermes_cli.config.load_config",
+            "superforecasting_agent.runtime.config.load_config",
             lambda: {"harness_wall_enabled": False},
             raising=False,
         )
@@ -278,28 +272,28 @@ class TestTerminalCommandGuard:
     """Best-effort terminal redirect guard (check_harness_command_write)."""
 
     def test_redirect_into_harness_refused(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         root = get_project_root()
         cmd = f"echo evil > {root / 'tools' / 'file_tools.py'}"
         assert harness_wall.check_harness_command_write(cmd) is not None
 
     def test_append_redirect_into_harness_refused(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         root = get_project_root()
-        cmd = f"cat payload >> {root / 'hermes_cli' / 'config.py'}"
+        cmd = f"cat payload >> {root / 'superforecasting_agent/runtime' / 'config.py'}"
         assert harness_wall.check_harness_command_write(cmd) is not None
 
     def test_tee_into_harness_refused(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         root = get_project_root()
         cmd = f"echo hi | tee {root / 'agent' / 'harness_wall.py'}"
         assert harness_wall.check_harness_command_write(cmd) is not None
 
     def test_relative_redirect_resolves_against_cwd(self):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         root = str(get_project_root())
         # Relative path that resolves into the harness when cwd is the repo root.
@@ -322,7 +316,7 @@ class TestTerminalCommandGuard:
         assert harness_wall.check_harness_command_write("python train.py") is None
 
     def test_disabled_wall_allows(self, monkeypatch):
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         monkeypatch.setattr(harness_wall, "is_harness_wall_enabled", lambda: False)
         root = get_project_root()
@@ -346,7 +340,7 @@ class TestFileToolsIntegration:
 
     def test_write_file_tool_rejects_harness_path(self):
         from tools.file_tools import write_file_tool
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
         import json
 
         target = str(get_project_root() / "tools" / "_wall_probe.py")
@@ -359,10 +353,10 @@ class TestFileToolsIntegration:
 
     def test_patch_tool_rejects_harness_path(self):
         from tools.file_tools import patch_tool
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
         import json
 
-        target = str(get_project_root() / "hermes_cli" / "_wall_probe.py")
+        target = str(get_project_root() / 'superforecasting_agent/runtime' / "_wall_probe.py")
         out = patch_tool(
             mode="replace", path=target, old_string="a", new_string="b"
         )
@@ -372,7 +366,7 @@ class TestFileToolsIntegration:
 
     def test_patch_v4a_rejects_harness_path(self):
         from tools.file_tools import patch_tool
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
         import json
 
         root = get_project_root()
@@ -422,7 +416,7 @@ class TestInternalIoUnaffected:
         # via plain open() (as the harness itself does for caches, build
         # artifacts, etc.) must NOT be intercepted — the wall only lives in
         # write_file_tool / patch_tool.
-        from hermes_cli.config import get_project_root
+        from superforecasting_agent.runtime.config import get_project_root
 
         probe = get_project_root() / "build" / "_wall_internal_probe.tmp"
         probe.parent.mkdir(parents=True, exist_ok=True)
@@ -442,7 +436,7 @@ def test_release_lock_forces_wall_on_regardless_of_config(monkeypatch):
     """SUPERFORECASTING_RELEASE=1 forces the wall ON even when config disables it —
     a released build-file instance cannot self-disable the wall via its own config."""
     import agent.harness_wall as hw
-    import hermes_cli.config as _cfg
+    import superforecasting_agent.runtime.config as _cfg
 
     monkeypatch.setattr(_cfg, "load_config", lambda: {"harness_wall": {"enabled": False}})
     monkeypatch.delenv("SUPERFORECASTING_RELEASE", raising=False)

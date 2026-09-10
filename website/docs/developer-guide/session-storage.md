@@ -11,7 +11,7 @@ evidence, snapshots, model runs, resolutions, scores, postmortems, calibration
 lessons, and domain error profiles live under the forecast ledger and must remain
 scoreable outside any one research session.
 
-Source file: `hermes_state.py`
+Source file: `superforecasting_agent/storage/session.py`
 
 
 ## Architecture Overview
@@ -188,7 +188,7 @@ _CHECKPOINT_EVERY_N_WRITES = 50
 ### Initialize
 
 ```python
-from hermes_state import SessionDB
+from superforecasting_agent.storage.session import SessionDB
 
 db = SessionDB()                           # Default: ~/.superforecasting-agent/state.db
 db = SessionDB(db_path=Path("/tmp/test.db"))  # Custom path
@@ -396,7 +396,7 @@ db.delete_session("sess_abc123")
 
 Default path: `~/.superforecasting-agent/state.db`
 
-This is derived from `hermes_constants.get_hermes_home()` which now prefers
+This is derived from `superforecasting_agent.constants.get_agent_home()` which now prefers
 `~/.superforecasting-agent/` for new installs and also honors
 `SUPERFORECASTING_AGENT_HOME`, `FORECAST_HOME`, and legacy `HERMES_HOME`. Existing
 `~/.hermes/` homes remain readable during the fork transition.

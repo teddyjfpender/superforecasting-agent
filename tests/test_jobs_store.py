@@ -318,7 +318,7 @@ def _seed_legacy_quorum(tmp_path, *, run_id="qr_live1", status="running", questi
 
 @pytest.fixture
 def legacy_home(tmp_path, monkeypatch):
-    # rf/qr write_job() resolve their dir via get_hermes_home(); pin both env vars
+    # rf/qr write_job() resolve their dir via get_agent_home(); pin both env vars
     # so the legacy files AND JobStore() land in the same tempdir.
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))

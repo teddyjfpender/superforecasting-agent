@@ -211,7 +211,7 @@ def _(rid, params: dict) -> dict:
         return _ok(rid, {"items": []})
 
     try:
-        from hermes_cli.commands import SlashCommandCompleter
+        from superforecasting_agent.runtime.commands import SlashCommandCompleter
         from prompt_toolkit.document import Document
         from prompt_toolkit.formatted_text import to_plain_text
 
@@ -254,7 +254,7 @@ def _(rid, params: dict) -> dict:
                 "meta": "Toggle mouse/wheel tracking [on|off|toggle]",
             },
             # TUI-native commands handled by the Ink slash registry (not the
-            # hermes_cli completer catalog) — list them here so they're
+            # superforecasting_agent.runtime completer catalog) — list them here so they're
             # discoverable in the composer's autocomplete.
             {
                 "text": "/theme",

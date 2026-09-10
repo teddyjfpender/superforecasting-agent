@@ -20,24 +20,21 @@ Usage:
     response = agent.run_conversation("Tell me about the latest Python updates")
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
-# on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
+# IMPORTANT: superforecasting_agent.bootstrap must be the very first import — UTF-8 stdio
+# on Windows.  No-op on POSIX.  See superforecasting_agent.bootstrap.py for full rationale.
 try:
-    import hermes_bootstrap  # noqa: F401
+    import superforecasting_agent.bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    # Graceful fallback when hermes_bootstrap isn't registered in the venv
+    # Graceful fallback when superforecasting_agent.bootstrap isn't registered in the venv
     # yet — happens during partial ``superforecasting-agent update`` where
     # git-reset landed new code but ``uv pip install -e .`` didn't finish.
     # Missing bootstrap means UTF-8 stdio setup is skipped on Windows; POSIX
     # is unaffected.
     pass
 
-import asyncio
-import base64
 import concurrent.futures
 import contextvars
 import copy
-import hashlib
 import json
 import logging
 logger = logging.getLogger(__name__)
@@ -46,7 +43,6 @@ import random
 import re
 import ssl
 import sys
-import tempfile
 import time
 import threading
 from types import SimpleNamespace
@@ -69,7 +65,7 @@ from urllib.parse import urlparse, parse_qs, urlunparse
 from datetime import datetime
 from pathlib import Path
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 # OpenAI lazy proxy + safe stdio + proxy URL helpers — see agent/process_bootstrap.py.
 # `OpenAI` is re-exported here so `patch("run_agent.OpenAI", ...)` in tests works.
@@ -85,13 +81,13 @@ from agent.process_bootstrap import (
 from agent.iteration_budget import IterationBudget
 
 
-from hermes_cli.env_loader import load_hermes_dotenv
-from hermes_cli.timeouts import (
+from superforecasting_agent.runtime.env_loader import load_hermes_dotenv
+from superforecasting_agent.runtime.timeouts import (
     get_provider_request_timeout,
     get_provider_stale_timeout,
 )
 
-_hermes_home = get_hermes_home()
+_hermes_home = get_agent_home()
 _project_env = Path(__file__).parent / '.env'
 _loaded_env_paths = load_hermes_dotenv(hermes_home=_hermes_home, project_env=_project_env)
 if _loaded_env_paths:
@@ -102,7 +98,7 @@ else:
 
 
 # Import our tool system
-from model_tools import (
+from superforecasting_agent.tooling.runtime import (
     get_tool_definitions,
     get_toolset_for_tool,
     handle_function_call,
@@ -203,16 +199,18 @@ from agent.tool_dispatch_helpers import (
     _extract_error_preview,
     _trajectory_normalize_msg,
 )
-from utils import (
-    atomic_json_write,
+from superforecasting_agent.storage.files import atomic_json_write
+from superforecasting_agent.urls import (
     base_url_host_matches,
     base_url_hostname,
+    normalize_proxy_url,
+)
+from superforecasting_agent.environment import (
     env_var_alias_float,
     env_var_alias_value,
     env_var_enabled,
-    normalize_proxy_url,
 )
-from hermes_cli.config import cfg_get
+from superforecasting_agent.runtime.config import cfg_get
 
 
 
@@ -249,7 +247,7 @@ _QWEN_CODE_VERSION = "0.14.1"
 
 def _routermint_headers() -> dict:
     """Return the User-Agent RouterMint needs to avoid Cloudflare 1010 blocks."""
-    from hermes_cli import __version__ as _HERMES_VERSION
+    from superforecasting_agent.runtime import __version__ as _HERMES_VERSION
 
     return {
         "User-Agent": f"SuperforecastingAgent/{_HERMES_VERSION}",
@@ -516,7 +514,7 @@ class AIAgent:
         if self._session_db is not None:
             return self._session_db
         try:
-            from hermes_state import SessionDB
+            from superforecasting_agent.storage.session import SessionDB
 
             self._session_db = SessionDB()
             return self._session_db
@@ -593,7 +591,7 @@ class AIAgent:
             return
         try:
             from agent.model_metadata import MINIMUM_CONTEXT_LENGTH
-            from hermes_cli.models import ensure_lmstudio_model_loaded
+            from superforecasting_agent.runtime.models import ensure_lmstudio_model_loaded
             if config_context_length is None:
                 config_context_length = getattr(self, "_config_context_length", None)
             target_ctx = max(config_context_length or 0, MINIMUM_CONTEXT_LENGTH)
@@ -623,121 +621,17 @@ class AIAgent:
         from agent.agent_runtime_helpers import switch_model
         return switch_model(self, new_model, new_provider, api_key, base_url, api_mode)
 
-    def _safe_print(self, *args, **kwargs):
-        """Print that silently handles broken pipes / closed stdout.
+    from agent.status_output import _safe_print as _safe_print
 
-        In headless environments (systemd, Docker, nohup) stdout may become
-        unavailable mid-session.  A raw ``print()`` raises ``OSError`` which
-        can crash cron jobs and lose completed work.
+    from agent.status_output import _vprint as _vprint
 
-        Internally routes through ``self._print_fn`` (default: builtin
-        ``print``) so callers such as the CLI can inject a renderer that
-        handles ANSI escape sequences properly (e.g. prompt_toolkit's
-        ``print_formatted_text(ANSI(...))``) without touching this method.
-        """
-        try:
-            fn = self._print_fn or print
-            fn(*args, **kwargs)
-        except (OSError, ValueError):
-            pass
+    from agent.status_output import _should_start_quiet_spinner as _should_start_quiet_spinner
 
-    def _vprint(self, *args, force: bool = False, **kwargs):
-        """Verbose print — suppressed when actively streaming tokens.
+    from agent.status_output import _should_emit_quiet_tool_messages as _should_emit_quiet_tool_messages
 
-        Pass ``force=True`` for error/warning messages that should always be
-        shown even during streaming playback (TTS or display).
+    from agent.status_output import _emit_status as _emit_status
 
-        During tool execution (``_executing_tools`` is True), printing is
-        allowed even with stream consumers registered because no tokens
-        are being streamed at that point.
-
-        After the main response has been delivered and the remaining tool
-        calls are post-response housekeeping (``_mute_post_response``),
-        all non-forced output is suppressed.
-
-        ``suppress_status_output`` is a stricter CLI automation mode used by
-        parseable single-query flows such as
-        ``superforecasting-agent chat -q``. In that mode, all
-        status/diagnostic prints routed through ``_vprint`` are suppressed so
-        stdout stays machine-readable.
-        """
-        if getattr(self, "suppress_status_output", False):
-            return
-        if not force and getattr(self, "_mute_post_response", False):
-            return
-        if not force and self._has_stream_consumers() and not self._executing_tools:
-            return
-        self._safe_print(*args, **kwargs)
-
-    def _should_start_quiet_spinner(self) -> bool:
-        """Return True when quiet-mode spinner output has a safe sink.
-
-        In headless/stdio-protocol environments, a raw spinner with no custom
-        ``_print_fn`` falls back to ``sys.stdout`` and can corrupt protocol
-        streams such as ACP JSON-RPC. Allow quiet spinners only when either:
-        - output is explicitly rerouted via ``_print_fn``; or
-        - stdout is a real TTY.
-        """
-        if self._print_fn is not None:
-            return True
-        stream = getattr(sys, "stdout", None)
-        if stream is None:
-            return False
-        try:
-            return bool(stream.isatty())
-        except (AttributeError, ValueError, OSError):
-            return False
-
-    def _should_emit_quiet_tool_messages(self) -> bool:
-        """Return True when quiet-mode tool summaries should print directly.
-
-        Quiet mode is used by both the interactive CLI and embedded/library
-        callers. The CLI may still want compact progress hints when no callback
-        owns rendering. Embedded/library callers, on the other hand, expect
-        quiet mode to be truly silent.
-        """
-        return (
-            self.quiet_mode
-            and not self.tool_progress_callback
-            and getattr(self, "platform", "") == "cli"
-        )
-
-    def _emit_status(self, message: str) -> None:
-        """Emit a lifecycle status message to both CLI and gateway channels.
-
-        CLI users see the message via ``_vprint(force=True)`` so it is always
-        visible regardless of verbose/quiet mode.  Gateway consumers receive
-        it through ``status_callback("lifecycle", ...)``.
-
-        This helper never raises — exceptions are swallowed so it cannot
-        interrupt the retry/fallback logic.
-        """
-        try:
-            self._vprint(f"{self.log_prefix}{message}", force=True)
-        except Exception:
-            pass
-        if self.status_callback:
-            try:
-                self.status_callback("lifecycle", message)
-            except Exception:
-                logger.debug("status_callback error in _emit_status", exc_info=True)
-
-    def _emit_warning(self, message: str) -> None:
-        """Emit a user-visible warning through the same status plumbing.
-
-        Unlike debug logs, these warnings are meant for degraded side paths
-        such as auxiliary compression or memory flushes where the main turn can
-        continue but the user needs to know something important failed.
-        """
-        try:
-            self._vprint(f"{self.log_prefix}{message}", force=True)
-        except Exception:
-            pass
-        if self.status_callback:
-            try:
-                self.status_callback("warn", message)
-            except Exception:
-                logger.debug("status_callback error in _emit_warning", exc_info=True)
+    from agent.status_output import _emit_warning as _emit_warning
 
     # ── Buffered retry/fallback status ───────────────────────────────
     # Retry and fallback chains were flooding the CLI/gateway with status
@@ -750,71 +644,13 @@ class AIAgent:
     # (agent.log) are unaffected — every individual emission site still
     # writes to ``logging.warning`` / ``logging.info`` for diagnosis.
 
-    def _buffer_status(self, message: str) -> None:
-        """Buffer a retry/fallback status message.
+    from agent.status_output import _buffer_status as _buffer_status
 
-        Stored as a (kind, text) tuple where ``kind`` is one of:
-        - ``"status"``  -> replays via ``_emit_status``
-        - ``"vprint"``  -> replays via ``_vprint(force=True)``
-        - ``"warn"``    -> replays via ``_emit_warning``
-        Used to defer noisy retry chatter until we know whether the
-        turn ultimately recovered or failed.
-        """
-        try:
-            buf = getattr(self, "_retry_status_buffer", None)
-            if buf is None:
-                buf = []
-                self._retry_status_buffer = buf
-            buf.append(("status", message))
-        except Exception:
-            # Never break the retry loop on a buffer hiccup.
-            pass
+    from agent.status_output import _buffer_vprint as _buffer_vprint
 
-    def _buffer_vprint(self, message: str) -> None:
-        """Buffer a vprint(force=True) retry/fallback line."""
-        try:
-            buf = getattr(self, "_retry_status_buffer", None)
-            if buf is None:
-                buf = []
-                self._retry_status_buffer = buf
-            buf.append(("vprint", message))
-        except Exception:
-            pass
+    from agent.status_output import _clear_status_buffer as _clear_status_buffer
 
-    def _clear_status_buffer(self) -> None:
-        """Drop buffered retry messages — call on successful recovery."""
-        try:
-            buf = getattr(self, "_retry_status_buffer", None)
-            if buf:
-                buf.clear()
-        except Exception:
-            pass
-
-    def _flush_status_buffer(self) -> None:
-        """Emit buffered retry messages — call on terminal failure.
-
-        Surfaces the full retry/fallback trace so the user can see what
-        was tried before the turn gave up.
-        """
-        try:
-            buf = getattr(self, "_retry_status_buffer", None)
-            if not buf:
-                return
-            # Drain first so a callback exception doesn't double-emit.
-            messages = list(buf)
-            buf.clear()
-            for kind, msg in messages:
-                try:
-                    if kind == "status":
-                        self._emit_status(msg)
-                    elif kind == "warn":
-                        self._emit_warning(msg)
-                    else:
-                        self._vprint(f"{self.log_prefix}{msg}", force=True)
-                except Exception:
-                    pass
-        except Exception:
-            pass
+    from agent.status_output import _flush_status_buffer as _flush_status_buffer
 
     # Stream-diagnostic class header preserved for backward compat —
     # actual list lives in ``agent.stream_diag.STREAM_DIAG_HEADERS``.
@@ -839,23 +675,7 @@ class AIAgent:
         from agent.stream_diag import flatten_exception_chain
         return flatten_exception_chain(error)
 
-    def _is_provider_stream_parse_error(self, error: BaseException) -> bool:
-        """Return True for malformed provider streaming data from SDK parsers.
-
-        Some Anthropic-compatible streaming providers can send a malformed
-        event-stream frame.  The Anthropic SDK surfaces that as a plain
-        ``ValueError`` such as ``expected ident at line 1 column 149``.  That
-        is provider wire-format trouble, not local request validation, so it
-        should follow the same retry path as a truncated JSON body.
-        """
-        if getattr(self, "api_mode", None) != "anthropic_messages":
-            return False
-        if not isinstance(error, ValueError):
-            return False
-        if isinstance(error, (UnicodeEncodeError, json.JSONDecodeError)):
-            return False
-        message = str(error).strip().lower()
-        return "expected ident at line" in message
+    from agent.api_errors import _is_provider_stream_parse_error as _is_provider_stream_parse_error
 
     def _log_stream_retry(
         self,
@@ -890,16 +710,7 @@ class AIAgent:
             mid_tool_call=mid_tool_call, diag=diag,
         )
 
-    def _emit_auxiliary_failure(self, task: str, exc: BaseException) -> None:
-        """Surface a compact warning for failed auxiliary work."""
-        try:
-            detail = self._summarize_api_error(exc)
-        except Exception:
-            detail = str(exc)
-        detail = (detail or exc.__class__.__name__).strip()
-        if len(detail) > 220:
-            detail = detail[:217].rstrip() + "..."
-        self._emit_warning(f"⚠ Auxiliary {task} failed: {detail}")
+    from agent.api_errors import _emit_auxiliary_failure as _emit_auxiliary_failure
 
     def _current_main_runtime(self) -> Dict[str, str]:
         """Return the live main runtime for session-scoped auxiliary routing."""
@@ -1086,7 +897,7 @@ class AIAgent:
             return False
         if normalized_provider == "copilot":
             try:
-                from hermes_cli.models import _should_use_copilot_responses_api
+                from superforecasting_agent.runtime.models import _should_use_copilot_responses_api
                 return _should_use_copilot_responses_api(model)
             except Exception:
                 # Fall back to the generic GPT-5 rule if Copilot-specific
@@ -1276,182 +1087,20 @@ class AIAgent:
             tool_call_id=tool_call_id,
         )
 
-    def _apply_persist_user_message_override(self, messages: List[Dict]) -> None:
-        """Rewrite the current-turn user message before persistence/return.
+    from agent.session_persistence import _apply_persist_user_message_override as _apply_persist_user_message_override
 
-        Some call paths need an API-only user-message variant without letting
-        that synthetic text leak into persisted transcripts or resumed session
-        history. When an override is configured for the active turn, mutate the
-        in-memory messages list in place so both persistence and returned
-        history stay clean.
-        """
-        idx = getattr(self, "_persist_user_message_idx", None)
-        override = getattr(self, "_persist_user_message_override", None)
-        if override is None or idx is None:
-            return
-        if 0 <= idx < len(messages):
-            msg = messages[idx]
-            if isinstance(msg, dict) and msg.get("role") == "user":
-                msg["content"] = override
+    from agent.session_persistence import _persist_session as _persist_session
 
-    def _persist_session(self, messages: List[Dict], conversation_history: List[Dict] = None):
-        """Save session state to both JSON log and SQLite on any exit path.
-
-        Ensures conversations are never lost, even on errors or early returns.
-        """
-        self._drop_trailing_empty_response_scaffolding(messages)
-        self._apply_persist_user_message_override(messages)
-        self._session_messages = messages
-        self._save_session_log(messages)
-        self._flush_messages_to_session_db(messages, conversation_history)
-
-    def _drop_trailing_empty_response_scaffolding(self, messages: List[Dict]) -> None:
-        """Remove private empty-response retry/failure scaffolding from transcript tails.
-
-        Also rewinds past any trailing tool-result / assistant(tool_calls) pair
-        that the failed iteration left hanging. Without this, the tail ends at
-        a raw ``tool`` message and the next user turn lands as
-        ``...tool, user, user`` — a protocol-invalid sequence that most
-        providers silently reject (returns empty content), causing the
-        empty-retry loop to fire forever. See #<TBD>.
-        """
-        # Pass 1: strip the flagged scaffolding messages themselves.
-        dropped_scaffolding = False
-        while (
-            messages
-            and isinstance(messages[-1], dict)
-            and (
-                messages[-1].get("_empty_recovery_synthetic")
-                or messages[-1].get("_empty_terminal_sentinel")
-            )
-        ):
-            messages.pop()
-            dropped_scaffolding = True
-
-        # Pass 2: if we stripped scaffolding, rewind through any trailing
-        # tool-result messages plus the assistant(tool_calls) message that
-        # produced them. This preserves role alternation so the next user
-        # message follows a user or assistant message, not an orphan tool
-        # result. Only runs when scaffolding was actually present — normal
-        # conversation tails (real tool loops mid-progress) are untouched.
-        if not dropped_scaffolding:
-            return
-
-        # Drop any trailing tool-result messages
-        while (
-            messages
-            and isinstance(messages[-1], dict)
-            and messages[-1].get("role") == "tool"
-        ):
-            messages.pop()
-
-        # Drop the assistant message that issued the tool calls, if the tail
-        # now ends in an assistant-with-tool_calls (the pair that owned the
-        # just-popped tool results). Without this, the tail is
-        # ``assistant(tool_calls=...)`` with no tool answers, which some
-        # providers also reject.
-        if (
-            messages
-            and isinstance(messages[-1], dict)
-            and messages[-1].get("role") == "assistant"
-            and messages[-1].get("tool_calls")
-        ):
-            messages.pop()
+    from agent.session_persistence import _drop_trailing_empty_response_scaffolding as _drop_trailing_empty_response_scaffolding
 
     def _repair_message_sequence(self, messages: List[Dict]) -> int:
         """Forwarder — see ``agent.agent_runtime_helpers.repair_message_sequence``."""
         from agent.agent_runtime_helpers import repair_message_sequence
         return repair_message_sequence(self, messages)
 
-    def _flush_messages_to_session_db(self, messages: List[Dict], conversation_history: List[Dict] = None):
-        """Persist any un-flushed messages to the SQLite session store.
+    from agent.session_persistence import _flush_messages_to_session_db as _flush_messages_to_session_db
 
-        Uses _last_flushed_db_idx to track which messages have already been
-        written, so repeated calls (from multiple exit paths) only write
-        truly new messages — preventing the duplicate-write bug (#860).
-        """
-        if not self._session_db:
-            return
-        self._apply_persist_user_message_override(messages)
-        try:
-            # Retry row creation if the earlier attempt failed transiently.
-            if not self._session_db_created:
-                self._ensure_db_session()
-            start_idx = len(conversation_history) if conversation_history else 0
-            flush_from = max(start_idx, self._last_flushed_db_idx)
-            for msg in messages[flush_from:]:
-                role = msg.get("role", "unknown")
-                content = msg.get("content")
-                # Persist multimodal tool results as their text summary only —
-                # base64 images would bloat the session DB and aren't useful
-                # for cross-session replay.
-                if _is_multimodal_tool_result(content):
-                    content = _multimodal_text_summary(content)
-                elif isinstance(content, list):
-                    # List of OpenAI-style content parts: strip images, keep text.
-                    _txt = []
-                    for p in content:
-                        if isinstance(p, dict) and p.get("type") == "text":
-                            _txt.append(str(p.get("text", "")))
-                        elif isinstance(p, dict) and p.get("type") in {"image", "image_url", "input_image"}:
-                            _txt.append("[screenshot]")
-                    content = "\n".join(_txt) if _txt else None
-                tool_calls_data = None
-                if hasattr(msg, "tool_calls") and isinstance(msg.tool_calls, list) and msg.tool_calls:
-                    tool_calls_data = [
-                        {"name": tc.function.name, "arguments": tc.function.arguments}
-                        for tc in msg.tool_calls
-                    ]
-                elif isinstance(msg.get("tool_calls"), list):
-                    tool_calls_data = msg["tool_calls"]
-                self._session_db.append_message(
-                    session_id=self.session_id,
-                    role=role,
-                    content=content,
-                    tool_name=msg.get("tool_name"),
-                    tool_calls=tool_calls_data,
-                    tool_call_id=msg.get("tool_call_id"),
-                    finish_reason=msg.get("finish_reason"),
-                    reasoning=msg.get("reasoning") if role == "assistant" else None,
-                    reasoning_content=msg.get("reasoning_content") if role == "assistant" else None,
-                    reasoning_details=msg.get("reasoning_details") if role == "assistant" else None,
-                    codex_reasoning_items=msg.get("codex_reasoning_items") if role == "assistant" else None,
-                    codex_message_items=msg.get("codex_message_items") if role == "assistant" else None,
-                )
-            self._last_flushed_db_idx = len(messages)
-        except Exception as e:
-            logger.warning("Session DB append_message failed: %s", e)
-
-    def _get_messages_up_to_last_assistant(self, messages: List[Dict]) -> List[Dict]:
-        """
-        Get messages up to (but not including) the last assistant turn.
-        
-        This is used when we need to "roll back" to the last successful point
-        in the conversation, typically when the final assistant message is
-        incomplete or malformed.
-        
-        Args:
-            messages: Full message list
-            
-        Returns:
-            Messages up to the last complete assistant turn (ending with user/tool message)
-        """
-        if not messages:
-            return []
-        
-        # Find the index of the last assistant message
-        last_assistant_idx = None
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "assistant":
-                last_assistant_idx = i
-                break
-        
-        if last_assistant_idx is None:
-            # No assistant message found, return all messages
-            return messages.copy()
-        
-        # Return everything up to (not including) the last assistant message
-        return messages[:last_assistant_idx]
+    from agent.session_persistence import _get_messages_up_to_last_assistant as _get_messages_up_to_last_assistant
 
     def _format_tools_for_system_message(self) -> str:
         """Forwarder — see ``agent.system_prompt.format_tools_for_system_message``."""
@@ -1478,126 +1127,15 @@ class AIAgent:
         trajectory = self._convert_to_trajectory_format(messages, user_query, completed)
         _save_trajectory_to_file(trajectory, self.model, completed)
 
-    @staticmethod
-    def _is_entitlement_failure(
-        error_context: Optional[Dict[str, Any]],
-        status_code: Optional[int],
-    ) -> bool:
-        """Detect subscription/entitlement 403s that masquerade as auth failures.
+    from agent.api_errors import _is_entitlement_failure as _is_entitlement_failure
+    _is_entitlement_failure = staticmethod(_is_entitlement_failure)
 
-        Returned True only when the body text matches a known entitlement
-        shape AND the status is 401/403.  Refreshing an OAuth token cannot
-        fix an unsubscribed account, so callers should surface the error
-        instead of looping the credential pool.
+    from agent.api_errors import _summarize_api_error as _summarize_api_error
+    _summarize_api_error = staticmethod(_summarize_api_error)
 
-        Current matches:
-          * xAI OAuth: "do not have an active Grok subscription" /
-            "out of available resources" / "does not have permission" + "grok"
+    from agent.api_errors import _mask_api_key_for_logs as _mask_api_key_for_logs
 
-        Extend here for new providers as we discover them (Anthropic's
-        Claude Max OAuth entitlement errors look distinct enough today that
-        the existing 1M-context-beta branch handles them; revisit if other
-        subscription tiers start producing the same loop signature).
-        """
-        if status_code not in {401, 403, None}:
-            return False
-        if not isinstance(error_context, dict):
-            return False
-        message = str(error_context.get("message") or "").lower()
-        reason = str(error_context.get("reason") or "").lower()
-        haystack = f"{message} {reason}"
-        if not haystack.strip():
-            return False
-        if "do not have an active grok subscription" in haystack:
-            return True
-        if "out of available resources" in haystack and "grok" in haystack:
-            return True
-        if "does not have permission" in haystack and "grok" in haystack:
-            return True
-        return False
-
-    @staticmethod
-    def _summarize_api_error(error: Exception) -> str:
-        """Extract a human-readable one-liner from an API error.
-
-        Handles Cloudflare HTML error pages (502, 503, etc.) by pulling the
-        <title> tag instead of dumping raw HTML.  Falls back to a truncated
-        str(error) for everything else.
-        """
-        raw = str(error)
-
-        if (
-            isinstance(error, ValueError)
-            and "expected ident at line" in raw.lower()
-        ):
-            return f"Malformed provider streaming response: {raw[:300]}"
-
-        # Cloudflare / proxy HTML pages: grab the <title> for a clean summary
-        if "<!DOCTYPE" in raw or "<html" in raw:
-            m = re.search(r"<title[^>]*>([^<]+)</title>", raw, re.IGNORECASE)
-            title = m.group(1).strip() if m else "HTML error page (title not found)"
-            # Also grab Cloudflare Ray ID if present
-            ray = re.search(r"Cloudflare Ray ID:\s*<strong[^>]*>([^<]+)</strong>", raw)
-            ray_id = ray.group(1).strip() if ray else None
-            status_code = getattr(error, "status_code", None)
-            parts = []
-            if status_code:
-                parts.append(f"HTTP {status_code}")
-            parts.append(title)
-            if ray_id:
-                parts.append(f"Ray {ray_id}")
-            return " — ".join(parts)
-
-        # JSON body errors from OpenAI/Anthropic SDKs
-        body = getattr(error, "body", None)
-        if isinstance(body, dict):
-            msg = body.get("error", {}).get("message") if isinstance(body.get("error"), dict) else body.get("message")
-            if msg:
-                status_code = getattr(error, "status_code", None)
-                prefix = f"HTTP {status_code}: " if status_code else ""
-                return f"{prefix}{msg[:300]}"
-
-        # Fallback: truncate the raw string but give more room than 200 chars
-        status_code = getattr(error, "status_code", None)
-        prefix = f"HTTP {status_code}: " if status_code else ""
-        return f"{prefix}{raw[:500]}"
-
-    def _mask_api_key_for_logs(self, key: Any) -> Optional[str]:
-        # Azure Foundry Entra ID bearer providers are callables — never
-        # invoke them in log paths; identify the auth surface instead.
-        if callable(key) and not isinstance(key, str):
-            return "<entra-id-bearer>"
-        if not key:
-            return None
-        if len(key) <= 12:
-            return "***"
-        return f"{key[:8]}...{key[-4:]}"
-
-    def _clean_error_message(self, error_msg: str) -> str:
-        """
-        Clean up error messages for user display, removing HTML content and truncating.
-        
-        Args:
-            error_msg: Raw error message from API or exception
-            
-        Returns:
-            Clean, user-friendly error message
-        """
-        if not error_msg:
-            return "Unknown error"
-            
-        # Remove HTML content (common with CloudFlare and gateway error pages)
-        if error_msg.strip().startswith('<!DOCTYPE html') or '<html' in error_msg:
-            return "Service temporarily unavailable (HTML error page returned)"
-            
-        # Remove newlines and excessive whitespace
-        cleaned = ' '.join(error_msg.split())
-        
-        # Truncate if too long
-        if len(cleaned) > 150:
-            cleaned = cleaned[:150] + "..."
-            
-        return cleaned
+    from agent.api_errors import _clean_error_message as _clean_error_message
 
     @staticmethod
     def _extract_api_error_context(error: Exception) -> Dict[str, Any]:
@@ -1632,121 +1170,13 @@ class AIAgent:
         from agent.agent_runtime_helpers import dump_api_request_debug
         return dump_api_request_debug(self, api_kwargs, reason=reason, error=error)
 
-    @staticmethod
-    def _clean_session_content(content: str) -> str:
-        """Convert REASONING_SCRATCHPAD to think tags and clean up whitespace."""
-        if not content:
-            return content
-        content = convert_scratchpad_to_think(content)
-        content = re.sub(r'\n+(<think>)', r'\n\1', content)
-        content = re.sub(r'(</think>)\n+', r'\1\n', content)
-        return content.strip()
+    from agent.session_persistence import _clean_session_content as _clean_session_content
+    _clean_session_content = staticmethod(_clean_session_content)
 
-    @staticmethod
-    def _redact_message_content(content):
-        """Apply secret redaction to message content (str or list-of-parts).
+    from agent.session_persistence import _redact_message_content as _redact_message_content
+    _redact_message_content = staticmethod(_redact_message_content)
 
-        Handles both plain-string content and the OpenAI/Anthropic multimodal
-        shape where ``content`` is a list of ``{"type": "text", "text": ...}``
-        / ``{"type": "image_url", ...}`` / ``{"type": "input_text", "content": ...}``
-        parts. Image / binary parts are left untouched; only text fields are
-        passed through ``redact_sensitive_text``.
-
-        Respects ``SUPERFORECASTING_AGENT_REDACT_SECRETS`` (and the
-        ``FORECAST_`` / ``HERMES_`` aliases) via ``redact_sensitive_text`` —
-        when disabled the helper is effectively a no-op.
-        """
-        if content is None:
-            return content
-        if isinstance(content, str):
-            return redact_sensitive_text(content)
-        if isinstance(content, list):
-            redacted = []
-            for part in content:
-                if isinstance(part, dict):
-                    part = dict(part)
-                    if isinstance(part.get("text"), str):
-                        part["text"] = redact_sensitive_text(part["text"])
-                    if isinstance(part.get("content"), str):
-                        part["content"] = redact_sensitive_text(part["content"])
-                redacted.append(part)
-            return redacted
-        return content
-
-    def _save_session_log(self, messages: List[Dict[str, Any]] = None):
-        """
-        Save the full raw session to a JSON file.
-
-        Stores every message exactly as the agent sees it: user messages,
-        assistant messages (with reasoning, finish_reason, tool_calls),
-        tool responses (with tool_call_id, tool_name), and injected system
-        messages (compression summaries, todo snapshots, etc.).
-
-        REASONING_SCRATCHPAD tags are converted to <think> blocks for consistency.
-        Overwritten after each turn so it always reflects the latest state.
-        """
-        messages = messages or self._session_messages
-        if not messages:
-            return
-
-        try:
-            # Clean assistant content for session logs
-            cleaned = []
-            for msg in messages:
-                if msg.get("role") == "assistant" and msg.get("content"):
-                    msg = dict(msg)
-                    msg["content"] = self._clean_session_content(msg["content"])
-                # Defence-in-depth: redact credentials from every message
-                # content before persistence. Catches PATs / API keys / Bearer
-                # tokens that may have leaked into assistant responses, tool
-                # output, or user paste. Respects
-                # SUPERFORECASTING_AGENT_REDACT_SECRETS (and FORECAST_/HERMES_
-                # aliases) via redact_sensitive_text — no-op when disabled.
-                if "content" in msg:
-                    msg = dict(msg)
-                    msg["content"] = self._redact_message_content(msg.get("content"))
-                cleaned.append(msg)
-
-            # Guard: never overwrite a larger session log with fewer messages.
-            # This protects against data loss when --resume loads a session whose
-            # messages weren't fully written to SQLite — the resumed agent starts
-            # with partial history and would otherwise clobber the full JSON log.
-            if self.session_log_file.exists():
-                try:
-                    existing = json.loads(self.session_log_file.read_text(encoding="utf-8"))
-                    existing_count = existing.get("message_count", len(existing.get("messages", [])))
-                    if existing_count > len(cleaned):
-                        logging.debug(
-                            "Skipping session log overwrite: existing has %d messages, current has %d",
-                            existing_count, len(cleaned),
-                        )
-                        return
-                except Exception:
-                    pass  # corrupted existing file — allow the overwrite
-
-            entry = {
-                "session_id": self.session_id,
-                "model": self.model,
-                "base_url": self.base_url,
-                "platform": self.platform,
-                "session_start": self.session_start.isoformat(),
-                "last_updated": datetime.now().isoformat(),
-                "system_prompt": redact_sensitive_text(self._cached_system_prompt or ""),
-                "tools": self.tools or [],
-                "message_count": len(cleaned),
-                "messages": cleaned,
-            }
-
-            atomic_json_write(
-                self.session_log_file,
-                entry,
-                indent=2,
-                default=str,
-            )
-
-        except Exception as e:
-            if self.verbose_logging:
-                logging.warning(f"Failed to save session log: {e}")
+    from agent.session_persistence import _save_session_log as _save_session_log
 
     def interrupt(self, message: str = None) -> None:
         """
@@ -1961,7 +1391,7 @@ class AIAgent:
             # Read from the persisted config.yaml so gateway and CLI share
             # the same setting.  Import lazily to avoid a startup-time cycle.
             try:
-                from hermes_cli.config import load_config as _load_config
+                from superforecasting_agent.runtime.config import load_config as _load_config
                 _cfg = _load_config() or {}
             except Exception:
                 _cfg = {}
@@ -2115,209 +1545,15 @@ class AIAgent:
             "budget_max": self.iteration_budget.max_total,
         }
 
-    def shutdown_memory_provider(self, messages: list = None) -> None:
-        """Shut down the memory provider and context engine — call at actual session boundaries.
+    from agent.session_lifecycle import shutdown_memory_provider as shutdown_memory_provider
 
-        This calls on_session_end() then shutdown_all() on the memory
-        manager, and on_session_end() on the context engine.
-        NOT called per-turn — only at CLI exit, /reset, gateway
-        session expiry, etc.
-        """
-        if self._memory_manager:
-            try:
-                self._memory_manager.on_session_end(messages or [])
-            except Exception:
-                pass
-            try:
-                self._memory_manager.shutdown_all()
-            except Exception:
-                pass
-        # Notify context engine of session end (flush DAG, close DBs, etc.)
-        if hasattr(self, "context_compressor") and self.context_compressor:
-            try:
-                self.context_compressor.on_session_end(
-                    self.session_id or "",
-                    messages or [],
-                )
-            except Exception:
-                pass
+    from agent.session_lifecycle import commit_memory_session as commit_memory_session
 
-    def commit_memory_session(self, messages: list = None) -> None:
-        """Trigger end-of-session extraction without tearing providers down.
-        Called when session_id rotates (e.g. /new, context compression);
-        providers keep their state and continue running under the old
-        session_id — they just flush pending extraction now."""
-        if self._memory_manager:
-            try:
-                self._memory_manager.on_session_end(messages or [])
-            except Exception:
-                pass
-        # Notify context engine of session end too — same lifecycle moment as
-        # the memory manager's on_session_end. Without this, engines that
-        # accumulate per-session state (DAGs, summaries) leak that state from
-        # the rotated-out session into whatever comes next under the same
-        # compressor instance. Mirrors the call in shutdown_memory_provider().
-        # See issue #22394.
-        if hasattr(self, "context_compressor") and self.context_compressor:
-            try:
-                self.context_compressor.on_session_end(
-                    self.session_id or "",
-                    messages or [],
-                )
-            except Exception:
-                pass
+    from agent.session_lifecycle import _sync_external_memory_for_turn as _sync_external_memory_for_turn
 
-    def _sync_external_memory_for_turn(
-        self,
-        *,
-        original_user_message: Any,
-        final_response: Any,
-        interrupted: bool,
-    ) -> None:
-        """Mirror a completed turn into external memory providers.
+    from agent.session_lifecycle import release_clients as release_clients
 
-        Called at the end of ``run_conversation`` with the cleaned user
-        message (``original_user_message``) and the finalised assistant
-        response.  The external memory backend gets both ``sync_all`` (to
-        persist the exchange) and ``queue_prefetch_all`` (to start
-        warming context for the next turn) in one shot.
-
-        Uses ``original_user_message`` rather than ``user_message``
-        because the latter may carry injected skill content that bloats
-        or breaks provider queries.
-
-        Interrupted turns are skipped entirely (#15218).  A partial
-        assistant output, an aborted tool chain, or a mid-stream reset
-        is not durable conversational truth — mirroring it into an
-        external memory backend pollutes future recall with state the
-        user never saw completed.  The prefetch is gated on the same
-        flag: the user's next message is almost certainly a retry of
-        the same intent, and a prefetch keyed on the interrupted turn
-        would fire against stale context.
-
-        Normal completed turns still sync as before.  The whole body is
-        wrapped in ``try/except Exception`` because external memory
-        providers are strictly best-effort — a misconfigured or offline
-        backend must not block the user from seeing their response.
-        """
-        if interrupted:
-            return
-        if not (self._memory_manager and final_response and original_user_message):
-            return
-        try:
-            self._memory_manager.sync_all(
-                original_user_message, final_response,
-                session_id=self.session_id or "",
-            )
-            self._memory_manager.queue_prefetch_all(
-                original_user_message,
-                session_id=self.session_id or "",
-            )
-        except Exception:
-            pass
-
-    def release_clients(self) -> None:
-        """Release LLM client resources WITHOUT tearing down session tool state.
-
-        Used by the gateway when evicting this agent from _agent_cache for
-        memory-management reasons (LRU cap or idle TTL) — the session may
-        resume at any time with a freshly-built AIAgent that reuses the
-        same task_id / session_id, so we must NOT kill:
-          - process_registry entries for task_id (user's bg shells)
-          - terminal sandbox for task_id (cwd, env, shell state)
-          - browser daemon for task_id (open tabs, cookies)
-          - memory provider (has its own lifecycle; keeps running)
-
-        We DO close:
-          - OpenAI/httpx client pool (big chunk of held memory + sockets;
-            the rebuilt agent gets a fresh client anyway)
-          - Active child subagents (per-turn artefacts; safe to drop)
-
-        Safe to call multiple times.  Distinct from close() — which is the
-        hard teardown for actual session boundaries (/new, /reset, session
-        expiry).
-        """
-        # Close active child agents (per-turn; no cross-turn persistence).
-        try:
-            with self._active_children_lock:
-                children = list(self._active_children)
-                self._active_children.clear()
-            for child in children:
-                try:
-                    child.release_clients()
-                except Exception:
-                    # Fall back to full close on children; they're per-turn.
-                    try:
-                        child.close()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # Close the OpenAI/httpx client to release sockets immediately.
-        try:
-            client = getattr(self, "client", None)
-            if client is not None:
-                self._close_openai_client(client, reason="cache_evict", shared=True)
-                self.client = None
-        except Exception:
-            pass
-
-    def close(self) -> None:
-        """Release all resources held by this agent instance.
-
-        Cleans up subprocess resources that would otherwise become orphans:
-        - Background processes tracked in ProcessRegistry
-        - Terminal sandbox environments
-        - Browser daemon sessions
-        - Active child agents (subagent delegation)
-        - OpenAI/httpx client connections
-
-        Safe to call multiple times (idempotent).  Each cleanup step is
-        independently guarded so a failure in one does not prevent the rest.
-        """
-        task_id = getattr(self, "session_id", None) or ""
-
-        # 1. Kill background processes for this task
-        try:
-            from tools.process_registry import process_registry
-            process_registry.kill_all(task_id=task_id)
-        except Exception:
-            pass
-
-        # 2. Clean terminal sandbox environments
-        try:
-            cleanup_vm(task_id)
-        except Exception:
-            pass
-
-        # 3. Clean browser daemon sessions
-        try:
-            cleanup_browser(task_id)
-        except Exception:
-            pass
-
-        # 4. Close active child agents
-        try:
-            with self._active_children_lock:
-                children = list(self._active_children)
-                self._active_children.clear()
-            for child in children:
-                try:
-                    child.close()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # 5. Close the OpenAI/httpx client
-        try:
-            client = getattr(self, "client", None)
-            if client is not None:
-                self._close_openai_client(client, reason="agent_close", shared=True)
-                self.client = None
-        except Exception:
-            pass
+    from agent.session_lifecycle import close as close
 
     def _hydrate_todo_store(self, history: List[Dict[str, Any]]) -> None:
         """
@@ -2551,80 +1787,17 @@ class AIAgent:
         """Build a valid Responses `function_call.id` (must start with `fc_`)."""
         return _codex_derive_responses_function_call_id(call_id, response_item_id)
 
-    def _thread_identity(self) -> str:
-        thread = threading.current_thread()
-        return f"{thread.name}:{thread.ident}"
+    from agent.openai_clients import _thread_identity as _thread_identity
 
-    def _client_log_context(self) -> str:
-        provider = getattr(self, "provider", "unknown")
-        base_url = getattr(self, "base_url", "unknown")
-        model = getattr(self, "model", "unknown")
-        return (
-            f"thread={self._thread_identity()} provider={provider} "
-            f"base_url={base_url} model={model}"
-        )
+    from agent.openai_clients import _client_log_context as _client_log_context
 
-    def _openai_client_lock(self) -> threading.RLock:
-        lock = getattr(self, "_client_lock", None)
-        if lock is None:
-            lock = threading.RLock()
-            self._client_lock = lock
-        return lock
+    from agent.openai_clients import _openai_client_lock as _openai_client_lock
 
-    @staticmethod
-    def _is_openai_client_closed(client: Any) -> bool:
-        """Check if an OpenAI client is closed.
+    from agent.openai_clients import _is_openai_client_closed as _is_openai_client_closed
+    _is_openai_client_closed = staticmethod(_is_openai_client_closed)
 
-        Handles both property and method forms of is_closed:
-        - httpx.Client.is_closed is a bool property
-        - openai.OpenAI.is_closed is a method returning bool
-
-        Prior bug: getattr(client, "is_closed", False) returned the bound method,
-        which is always truthy, causing unnecessary client recreation on every call.
-        """
-        from unittest.mock import Mock
-
-        if isinstance(client, Mock):
-            return False
-
-        is_closed_attr = getattr(client, "is_closed", None)
-        if is_closed_attr is not None:
-            # Handle method (openai SDK) vs property (httpx)
-            if callable(is_closed_attr):
-                if is_closed_attr():
-                    return True
-            elif bool(is_closed_attr):
-                return True
-
-        http_client = getattr(client, "_client", None)
-        if http_client is not None:
-            return bool(getattr(http_client, "is_closed", False))
-        return False
-
-    @staticmethod
-    def _build_keepalive_http_client(base_url: str = "") -> Any:
-        try:
-            import httpx as _httpx
-            import socket as _socket
-
-            _sock_opts = [(_socket.SOL_SOCKET, _socket.SO_KEEPALIVE, 1)]
-            if hasattr(_socket, "TCP_KEEPIDLE"):
-                _sock_opts.append((_socket.IPPROTO_TCP, _socket.TCP_KEEPIDLE, 30))
-                _sock_opts.append((_socket.IPPROTO_TCP, _socket.TCP_KEEPINTVL, 10))
-                _sock_opts.append((_socket.IPPROTO_TCP, _socket.TCP_KEEPCNT, 3))
-            elif hasattr(_socket, "TCP_KEEPALIVE"):
-                _sock_opts.append((_socket.IPPROTO_TCP, _socket.TCP_KEEPALIVE, 30))
-            # When a custom transport is provided, httpx won't auto-read proxy
-            # from env vars (allow_env_proxies = trust_env and transport is None).
-            # Explicitly read proxy settings while still honoring NO_PROXY for
-            # loopback / local endpoints such as a locally hosted sub2api.
-            _proxy = _get_proxy_for_base_url(base_url)
-            return _httpx.Client(
-                transport=_httpx.HTTPTransport(socket_options=_sock_opts),
-                proxy=_proxy,
-            )
-        except Exception:
-            return None
+    from agent.openai_clients import _build_keepalive_http_client as _build_keepalive_http_client
+    _build_keepalive_http_client = staticmethod(_build_keepalive_http_client)
 
     def _create_openai_client(self, client_kwargs: dict, *, reason: str, shared: bool) -> Any:
         """Forwarder — see ``agent.agent_runtime_helpers.create_openai_client``."""
@@ -2637,128 +1810,25 @@ class AIAgent:
         from agent.agent_runtime_helpers import force_close_tcp_sockets
         return force_close_tcp_sockets(client)
 
-    def _close_openai_client(self, client: Any, *, reason: str, shared: bool) -> None:
-        if client is None:
-            return
-        # Force-close TCP sockets first to prevent CLOSE-WAIT accumulation,
-        # then do the graceful SDK-level close.
-        force_closed = self._force_close_tcp_sockets(client)
-        try:
-            client.close()
-            logger.info(
-                "OpenAI client closed (%s, shared=%s, tcp_force_closed=%d) %s",
-                reason,
-                shared,
-                force_closed,
-                self._client_log_context(),
-            )
-        except Exception as exc:
-            logger.debug(
-                "OpenAI client close failed (%s, shared=%s) %s error=%s",
-                reason,
-                shared,
-                self._client_log_context(),
-                exc,
-            )
+    from agent.openai_clients import _close_openai_client as _close_openai_client
 
-    def _replace_primary_openai_client(self, *, reason: str) -> bool:
-        with self._openai_client_lock():
-            old_client = getattr(self, "client", None)
-            try:
-                new_client = self._create_openai_client(self._client_kwargs, reason=reason, shared=True)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to rebuild shared OpenAI client (%s) %s error=%s",
-                    reason,
-                    self._client_log_context(),
-                    exc,
-                )
-                return False
-            self.client = new_client
-        self._close_openai_client(old_client, reason=f"replace:{reason}", shared=True)
-        return True
+    from agent.openai_clients import _replace_primary_openai_client as _replace_primary_openai_client
 
-    def _ensure_primary_openai_client(self, *, reason: str) -> Any:
-        with self._openai_client_lock():
-            client = getattr(self, "client", None)
-            if client is not None and not self._is_openai_client_closed(client):
-                return client
-
-        logger.warning(
-            "Detected closed shared OpenAI client; recreating before use (%s) %s",
-            reason,
-            self._client_log_context(),
-        )
-        if not self._replace_primary_openai_client(reason=f"recreate_closed:{reason}"):
-            raise RuntimeError("Failed to recreate closed OpenAI client")
-        with self._openai_client_lock():
-            return self.client
+    from agent.openai_clients import _ensure_primary_openai_client as _ensure_primary_openai_client
 
     def _cleanup_dead_connections(self) -> bool:
         """Forwarder — see ``agent.agent_runtime_helpers.cleanup_dead_connections``."""
         from agent.agent_runtime_helpers import cleanup_dead_connections
         return cleanup_dead_connections(self)
 
-    @staticmethod
-    def _api_kwargs_have_image_parts(api_kwargs: dict) -> bool:
-        """Return True when the outbound request still contains native image parts."""
-        if not isinstance(api_kwargs, dict):
-            return False
-        candidates = []
-        messages = api_kwargs.get("messages")
-        if isinstance(messages, list):
-            candidates.extend(messages)
-        # Responses API payloads use `input`; after conversion, image parts can
-        # still be present there instead of in `messages`.
-        response_input = api_kwargs.get("input")
-        if isinstance(response_input, list):
-            candidates.extend(response_input)
+    from agent.openai_clients import _api_kwargs_have_image_parts as _api_kwargs_have_image_parts
+    _api_kwargs_have_image_parts = staticmethod(_api_kwargs_have_image_parts)
 
-        def _contains_image(value: Any) -> bool:
-            if isinstance(value, dict):
-                ptype = value.get("type")
-                if ptype in {"image_url", "input_image"}:
-                    return True
-                return any(_contains_image(v) for v in value.values())
-            if isinstance(value, list):
-                return any(_contains_image(v) for v in value)
-            return False
+    from agent.openai_clients import _copilot_headers_for_request as _copilot_headers_for_request
 
-        return any(_contains_image(item) for item in candidates)
+    from agent.openai_clients import _create_request_openai_client as _create_request_openai_client
 
-    def _copilot_headers_for_request(self, *, is_vision: bool) -> dict:
-        from hermes_cli.copilot_auth import copilot_request_headers
-
-        return copilot_request_headers(is_agent_turn=True, is_vision=is_vision)
-
-    def _create_request_openai_client(self, *, reason: str, api_kwargs: Optional[dict] = None) -> Any:
-        from unittest.mock import Mock
-
-        primary_client = self._ensure_primary_openai_client(reason=reason)
-        if isinstance(primary_client, Mock):
-            return primary_client
-        with self._openai_client_lock():
-            request_kwargs = dict(self._client_kwargs)
-        # Per-request OpenAI-wire clients (used by both the non-streaming
-        # chat-completions path and the streaming chat-completions path
-        # in `_interruptible_api_call`) should not run the SDK's built-in
-        # retry loop: the agent's outer loop owns retries with credential
-        # rotation, provider fallback, and backoff that the SDK can't
-        # see. Leaving SDK retries on (default 2) compounds with our outer
-        # retries and lets a single hung provider request stretch to ~3x
-        # the per-call timeout before our stale detector reports it.
-        # Shared/primary clients and Anthropic / Bedrock paths are
-        # unaffected (they don't go through here).
-        request_kwargs["max_retries"] = 0
-        if (
-            base_url_host_matches(str(request_kwargs.get("base_url", "")), "api.githubcopilot.com")
-            and self._api_kwargs_have_image_parts(api_kwargs or {})
-        ):
-            request_kwargs["default_headers"] = self._copilot_headers_for_request(is_vision=True)
-        return self._create_openai_client(request_kwargs, reason=reason, shared=False)
-
-    def _close_request_openai_client(self, client: Any, *, reason: str) -> None:
-        self._close_openai_client(client, reason=reason, shared=False)
+    from agent.openai_clients import _close_request_openai_client as _close_request_openai_client
 
     def _run_codex_stream(self, api_kwargs: dict, client: Any = None, on_first_delta: callable = None):
         """Forwarder — see ``agent.codex_runtime.run_codex_stream``."""
@@ -2770,208 +1840,13 @@ class AIAgent:
         from agent.codex_runtime import run_codex_create_stream_fallback
         return run_codex_create_stream_fallback(self, api_kwargs, client)
 
-    def _try_refresh_codex_client_credentials(self, *, force: bool = True) -> bool:
-        if self.api_mode != "codex_responses" or self.provider not in {"openai-codex", "xai-oauth"}:
-            return False
+    from agent.credential_recovery import _try_refresh_codex_client_credentials as _try_refresh_codex_client_credentials
 
-        # Guard against silent account swap.
-        #
-        # When an agent is using a non-singleton credential — e.g. a manual
-        # pool entry (``superforecasting-agent auth add xai-oauth``) whose tokens belong to
-        # a different account than the loopback_pkce singleton, or an agent
-        # constructed with an explicit ``api_key=`` arg — force-refreshing
-        # the singleton here and adopting its tokens silently re-routes the
-        # rest of the conversation onto the singleton's account.  The
-        # credential pool's reactive recovery (``_recover_with_credential_pool``)
-        # is the right channel for that case; this path is the
-        # singleton-only fallback used when the pool can't recover, and
-        # MUST only fire when the agent really is on singleton tokens.
-        try:
-            if self.provider == "openai-codex":
-                from hermes_cli.auth import resolve_codex_runtime_credentials
+    from agent.credential_recovery import _try_refresh_nous_client_credentials as _try_refresh_nous_client_credentials
 
-                singleton_now = resolve_codex_runtime_credentials(
-                    refresh_if_expiring=False,
-                )
-            else:
-                from hermes_cli.auth import resolve_xai_oauth_runtime_credentials
+    from agent.credential_recovery import _try_refresh_copilot_client_credentials as _try_refresh_copilot_client_credentials
 
-                singleton_now = resolve_xai_oauth_runtime_credentials(
-                    refresh_if_expiring=False,
-                )
-        except Exception as exc:
-            logger.debug("%s singleton read failed: %s", self.provider, exc)
-            return False
-
-        singleton_key = str(singleton_now.get("api_key") or "").strip()
-        active_key = str(self.api_key or "").strip()
-        if singleton_key and active_key and singleton_key != active_key:
-            logger.debug(
-                "%s singleton tokens differ from the active api_key; "
-                "skipping singleton force-refresh to avoid silent account swap. "
-                "Reactive credential rotation should go through the pool.",
-                self.provider,
-            )
-            return False
-
-        try:
-            if self.provider == "openai-codex":
-                from hermes_cli.auth import resolve_codex_runtime_credentials
-
-                creds = resolve_codex_runtime_credentials(force_refresh=force)
-            else:
-                from hermes_cli.auth import resolve_xai_oauth_runtime_credentials
-
-                creds = resolve_xai_oauth_runtime_credentials(force_refresh=force)
-        except Exception as exc:
-            logger.debug("%s credential refresh failed: %s", self.provider, exc)
-            return False
-
-        api_key = creds.get("api_key")
-        base_url = creds.get("base_url")
-        if not isinstance(api_key, str) or not api_key.strip():
-            return False
-        if not isinstance(base_url, str) or not base_url.strip():
-            return False
-
-        self.api_key = api_key.strip()
-        self.base_url = base_url.strip().rstrip("/")
-        self._client_kwargs["api_key"] = self.api_key
-        self._client_kwargs["base_url"] = self.base_url
-
-        if not self._replace_primary_openai_client(reason=f"{self.provider}_credential_refresh"):
-            return False
-
-        return True
-
-    def _try_refresh_nous_client_credentials(self, *, force: bool = True) -> bool:
-        if self.api_mode != "chat_completions" or self.provider != "nous":
-            return False
-
-        try:
-            from hermes_cli.auth import (
-                NOUS_INFERENCE_AUTH_MODE_AUTO,
-                NOUS_INFERENCE_AUTH_MODE_LEGACY,
-                resolve_nous_runtime_credentials,
-            )
-
-            creds = resolve_nous_runtime_credentials(
-                min_key_ttl_seconds=max(60, int(os.getenv("HERMES_NOUS_MIN_KEY_TTL_SECONDS", "1800"))),
-                timeout_seconds=float(os.getenv("HERMES_NOUS_TIMEOUT_SECONDS", "15")),
-                inference_auth_mode=(
-                    NOUS_INFERENCE_AUTH_MODE_LEGACY
-                    if force
-                    else NOUS_INFERENCE_AUTH_MODE_AUTO
-                ),
-            )
-        except Exception as exc:
-            logger.debug("Nous credential refresh failed: %s", exc)
-            return False
-
-        api_key = creds.get("api_key")
-        base_url = creds.get("base_url")
-        if not isinstance(api_key, str) or not api_key.strip():
-            return False
-        if not isinstance(base_url, str) or not base_url.strip():
-            return False
-
-        self.api_key = api_key.strip()
-        self.base_url = base_url.strip().rstrip("/")
-        self._client_kwargs["api_key"] = self.api_key
-        self._client_kwargs["base_url"] = self.base_url
-        # Nous requests should not inherit OpenRouter-only attribution headers.
-        self._client_kwargs.pop("default_headers", None)
-
-        if not self._replace_primary_openai_client(reason="nous_credential_refresh"):
-            return False
-
-        return True
-
-    def _try_refresh_copilot_client_credentials(self) -> bool:
-        """Refresh Copilot credentials and rebuild the shared OpenAI client.
-
-        Copilot tokens may remain the same string across refreshes (`gh auth token`
-        returns a stable OAuth token in many setups). We still rebuild the client
-        on 401 so retries recover from stale auth/client state without requiring
-        a session restart.
-        """
-        if self.provider != "copilot":
-            return False
-
-        try:
-            from hermes_cli.copilot_auth import resolve_copilot_token
-
-            new_token, token_source = resolve_copilot_token()
-        except Exception as exc:
-            logger.debug("Copilot credential refresh failed: %s", exc)
-            return False
-
-        if not isinstance(new_token, str) or not new_token.strip():
-            return False
-
-        new_token = new_token.strip()
-
-        self.api_key = new_token
-        self._client_kwargs["api_key"] = self.api_key
-        self._client_kwargs["base_url"] = self.base_url
-        self._apply_client_headers_for_base_url(str(self.base_url or ""))
-
-        if not self._replace_primary_openai_client(reason="copilot_credential_refresh"):
-            return False
-
-        logger.info("Copilot credentials refreshed from %s", token_source)
-        return True
-
-    def _try_refresh_anthropic_client_credentials(self) -> bool:
-        if self.api_mode != "anthropic_messages" or not hasattr(self, "_anthropic_api_key"):
-            return False
-        # Only refresh credentials for the native Anthropic provider.
-        # Other anthropic_messages providers (MiniMax, Alibaba, etc.) use their own keys.
-        if self.provider != "anthropic":
-            return False
-        # Azure endpoints use static API keys — OAuth token rotation doesn't apply.
-        # Refreshing would pick up ~/.claude/.credentials.json OAuth token and break auth.
-        _base = getattr(self, "_anthropic_base_url", "") or ""
-        if "azure.com" in _base:
-            return False
-
-        try:
-            from agent.anthropic_adapter import resolve_anthropic_token, build_anthropic_client
-
-            new_token = resolve_anthropic_token()
-        except Exception as exc:
-            logger.debug("Anthropic credential refresh failed: %s", exc)
-            return False
-
-        if not isinstance(new_token, str) or not new_token.strip():
-            return False
-        new_token = new_token.strip()
-        if new_token == self._anthropic_api_key:
-            return False
-
-        try:
-            self._anthropic_client.close()
-        except Exception:
-            pass
-
-        try:
-            self._anthropic_client = build_anthropic_client(
-                new_token,
-                getattr(self, "_anthropic_base_url", None),
-                timeout=get_provider_request_timeout(self.provider, self.model),
-            )
-        except Exception as exc:
-            logger.warning("Failed to rebuild Anthropic client after credential refresh: %s", exc)
-            return False
-
-        self._anthropic_api_key = new_token
-        # Update OAuth flag — token type may have changed (API key ↔ OAuth).
-        # Only treat as OAuth on native Anthropic; third-party endpoints using
-        # the Anthropic protocol must not trip OAuth paths (#1739 & third-party
-        # identity-injection guard).
-        from agent.anthropic_adapter import _is_oauth_token
-        self._is_anthropic_oauth = _is_oauth_token(new_token) if self.provider == "anthropic" else False
-        return True
+    from agent.credential_recovery import _try_refresh_anthropic_client_credentials as _try_refresh_anthropic_client_credentials
 
     def _apply_client_headers_for_base_url(self, base_url: str) -> None:
         from agent.auxiliary_client import (
@@ -2989,7 +1864,7 @@ class AIAgent:
         elif base_url_host_matches(base_url, "api.routermint.com"):
             self._client_kwargs["default_headers"] = _routermint_headers()
         elif base_url_host_matches(base_url, "api.githubcopilot.com"):
-            from hermes_cli.models import copilot_default_headers
+            from superforecasting_agent.runtime.models import copilot_default_headers
 
             self._client_kwargs["default_headers"] = copilot_default_headers()
         elif base_url_host_matches(base_url, "api.kimi.com"):
@@ -3016,35 +1891,7 @@ class AIAgent:
             else:
                 self._client_kwargs.pop("default_headers", None)
 
-    def _swap_credential(self, entry) -> None:
-        runtime_key = getattr(entry, "runtime_api_key", None) or getattr(entry, "access_token", "")
-        runtime_base = getattr(entry, "runtime_base_url", None) or getattr(entry, "base_url", None) or self.base_url
-
-        if self.api_mode == "anthropic_messages":
-            from agent.anthropic_adapter import build_anthropic_client, _is_oauth_token
-
-            try:
-                self._anthropic_client.close()
-            except Exception:
-                pass
-
-            self._anthropic_api_key = runtime_key
-            self._anthropic_base_url = runtime_base
-            self._anthropic_client = build_anthropic_client(
-                runtime_key, runtime_base,
-                timeout=get_provider_request_timeout(self.provider, self.model),
-            )
-            self._is_anthropic_oauth = _is_oauth_token(runtime_key) if self.provider == "anthropic" else False
-            self.api_key = runtime_key
-            self.base_url = runtime_base
-            return
-
-        self.api_key = runtime_key
-        self.base_url = runtime_base.rstrip("/") if isinstance(runtime_base, str) else runtime_base
-        self._client_kwargs["api_key"] = self.api_key
-        self._client_kwargs["base_url"] = self.base_url
-        self._apply_client_headers_for_base_url(self.base_url)
-        self._replace_primary_openai_client(reason="credential_rotation")
+    from agent.credential_recovery import _swap_credential as _swap_credential
 
     def _recover_with_credential_pool(
         self,
@@ -3301,159 +2148,17 @@ class AIAgent:
         from agent.agent_runtime_helpers import try_recover_primary_transport
         return try_recover_primary_transport(self, api_error, retry_count=retry_count, max_retries=max_retries)
 
-    @staticmethod
-    def _content_has_image_parts(content: Any) -> bool:
-        if not isinstance(content, list):
-            return False
-        for part in content:
-            if isinstance(part, dict) and part.get("type") in {"image_url", "input_image"}:
-                return True
-        return False
+    from agent.image_preprocessing import _content_has_image_parts as _content_has_image_parts
+    _content_has_image_parts = staticmethod(_content_has_image_parts)
 
-    @staticmethod
-    def _materialize_data_url_for_vision(image_url: str) -> tuple[str, Optional[Path]]:
-        header, _, data = str(image_url or "").partition(",")
-        mime = "image/jpeg"
-        if header.startswith("data:"):
-            mime_part = header[len("data:"):].split(";", 1)[0].strip()
-            if mime_part.startswith("image/"):
-                mime = mime_part
-        suffix = {
-            "image/png": ".png",
-            "image/gif": ".gif",
-            "image/webp": ".webp",
-            "image/jpeg": ".jpg",
-            "image/jpg": ".jpg",
-        }.get(mime, ".jpg")
-        tmp = tempfile.NamedTemporaryFile(prefix="anthropic_image_", suffix=suffix, delete=False)
-        try:
-            with tmp:
-                tmp.write(base64.b64decode(data))
-        except Exception:
-            # delete=False means a corrupt/unsupported data URL would otherwise
-            # leak a zero-byte temp file on every failed materialization.
-            try:
-                os.unlink(tmp.name)
-            except OSError:
-                pass
-            raise
-        path = Path(tmp.name)
-        return str(path), path
+    from agent.image_preprocessing import _materialize_data_url_for_vision as _materialize_data_url_for_vision
+    _materialize_data_url_for_vision = staticmethod(_materialize_data_url_for_vision)
 
-    def _describe_image_for_anthropic_fallback(self, image_url: str, role: str) -> str:
-        cache_key = hashlib.sha256(str(image_url or "").encode("utf-8")).hexdigest()
-        cached = self._anthropic_image_fallback_cache.get(cache_key)
-        if cached:
-            return cached
+    from agent.image_preprocessing import _describe_image_for_anthropic_fallback as _describe_image_for_anthropic_fallback
 
-        role_label = {
-            "assistant": "assistant",
-            "tool": "tool result",
-        }.get(role, "user")
-        analysis_prompt = (
-            "Describe everything visible in this image in thorough detail. "
-            "Include any text, code, UI, data, objects, people, layout, colors, "
-            "and any other notable visual information."
-        )
+    from agent.image_preprocessing import _model_supports_vision as _model_supports_vision
 
-        vision_source = str(image_url or "")
-        cleanup_path: Optional[Path] = None
-        if vision_source.startswith("data:"):
-            vision_source, cleanup_path = self._materialize_data_url_for_vision(vision_source)
-
-        description = ""
-        try:
-            from tools.vision_tools import vision_analyze_tool
-
-            result_json = asyncio.run(
-                vision_analyze_tool(image_url=vision_source, user_prompt=analysis_prompt)
-            )
-            result = json.loads(result_json) if isinstance(result_json, str) else {}
-            description = (result.get("analysis") or "").strip()
-        except Exception as e:
-            description = f"Image analysis failed: {e}"
-        finally:
-            if cleanup_path and cleanup_path.exists():
-                try:
-                    cleanup_path.unlink()
-                except OSError:
-                    pass
-
-        if not description:
-            description = "Image analysis failed."
-
-        note = f"[The {role_label} attached an image. Here's what it contains:\n{description}]"
-        if vision_source and not str(image_url or "").startswith("data:"):
-            note += (
-                f"\n[If you need a closer look, use vision_analyze with image_url: {vision_source}]"
-            )
-
-        self._anthropic_image_fallback_cache[cache_key] = note
-        return note
-
-    def _model_supports_vision(self) -> bool:
-        """Return True if the active provider+model reports native vision.
-
-        Used to decide whether to strip image content parts from API-bound
-        messages (for non-vision models) or let the provider adapter handle
-        them natively (for vision-capable models).
-        """
-        try:
-            from agent.models_dev import get_model_capabilities
-            provider = (getattr(self, "provider", "") or "").strip()
-            model = (getattr(self, "model", "") or "").strip()
-            if not provider or not model:
-                return False
-            caps = get_model_capabilities(provider, model)
-            if caps is None:
-                return False
-            return bool(caps.supports_vision)
-        except Exception:
-            return False
-
-    def _preprocess_anthropic_content(self, content: Any, role: str) -> Any:
-        if not self._content_has_image_parts(content):
-            return content
-
-        text_parts: List[str] = []
-        image_notes: List[str] = []
-        for part in content:
-            if isinstance(part, str):
-                if part.strip():
-                    text_parts.append(part.strip())
-                continue
-            if not isinstance(part, dict):
-                continue
-
-            ptype = part.get("type")
-            if ptype in {"text", "input_text"}:
-                text = str(part.get("text", "") or "").strip()
-                if text:
-                    text_parts.append(text)
-                continue
-
-            if ptype in {"image_url", "input_image"}:
-                image_data = part.get("image_url", {})
-                image_url = image_data.get("url", "") if isinstance(image_data, dict) else str(image_data or "")
-                if image_url:
-                    image_notes.append(self._describe_image_for_anthropic_fallback(image_url, role))
-                else:
-                    image_notes.append("[An image was attached but no image source was available.]")
-                continue
-
-            text = str(part.get("text", "") or "").strip()
-            if text:
-                text_parts.append(text)
-
-        prefix = "\n\n".join(note for note in image_notes if note).strip()
-        suffix = "\n".join(text for text in text_parts if text).strip()
-        if prefix and suffix:
-            return f"{prefix}\n\n{suffix}"
-        if prefix:
-            return prefix
-        if suffix:
-            return suffix
-        return "[A multimodal message was converted to text for Anthropic compatibility.]"
+    from agent.image_preprocessing import _preprocess_anthropic_content as _preprocess_anthropic_content
 
     def _get_transport(self, api_mode: str = None):
         """Return the cached transport for the given (or current) api_mode.
@@ -3473,124 +2178,11 @@ class AIAgent:
             cache[mode] = t
         return t
 
-    def _prepare_anthropic_messages_for_api(self, api_messages: list) -> list:
-        # Fast exit when no message carries image content at all.
-        if not any(
-            isinstance(msg, dict) and self._content_has_image_parts(msg.get("content"))
-            for msg in api_messages
-        ):
-            return api_messages
+    from agent.image_preprocessing import _prepare_anthropic_messages_for_api as _prepare_anthropic_messages_for_api
 
-        # The Anthropic adapter (agent/anthropic_adapter.py:_convert_content_part_to_anthropic)
-        # already translates OpenAI-style image_url/input_image parts into
-        # native Anthropic ``{"type": "image", "source": ...}`` blocks. When
-        # the active model supports vision we let the adapter do its job and
-        # skip this legacy text-fallback preprocessor entirely.
-        if self._model_supports_vision():
-            return api_messages
+    from agent.image_preprocessing import _prepare_messages_for_non_vision_model as _prepare_messages_for_non_vision_model
 
-        # Non-vision Anthropic model (rare today, but keep the fallback for
-        # compat): replace each image part with a vision_analyze text note.
-        transformed = copy.deepcopy(api_messages)
-        for msg in transformed:
-            if not isinstance(msg, dict):
-                continue
-            msg["content"] = self._preprocess_anthropic_content(
-                msg.get("content"),
-                str(msg.get("role", "user") or "user"),
-            )
-        return transformed
-
-    def _prepare_messages_for_non_vision_model(self, api_messages: list) -> list:
-        """Strip native image parts when the active model lacks vision.
-
-        Runs on the chat.completions / codex_responses paths. Vision-capable
-        models pass through unchanged (provider and any downstream translator
-        handle the image parts natively). Non-vision models get each image
-        replaced by a cached vision_analyze text description so the turn
-        doesn't fail with "model does not support image input".
-        """
-        if not any(
-            isinstance(msg, dict) and self._content_has_image_parts(msg.get("content"))
-            for msg in api_messages
-        ):
-            return api_messages
-
-        if self._model_supports_vision():
-            return api_messages
-
-        transformed = copy.deepcopy(api_messages)
-        for msg in transformed:
-            if not isinstance(msg, dict):
-                continue
-            # Reuse the Anthropic text-fallback preprocessor — the behaviour is
-            # identical (walk content parts, replace images with cached
-            # descriptions, merge back into a single text or structured
-            # content). Naming is historical.
-            msg["content"] = self._preprocess_anthropic_content(
-                msg.get("content"),
-                str(msg.get("role", "user") or "user"),
-            )
-        return transformed
-
-    def _tool_result_content_for_active_model(self, tool_name: str, result: Any) -> Any:
-        """Return the tool message content that is safe for the active model.
-
-        Multimodal tool results normally unwrap to OpenAI-style content parts so
-        vision-capable models can inspect screenshots.  Text-only providers must
-        not receive those image parts, because a rejected tool result becomes
-        part of the canonical history and can make the next user turn fail before
-        the agent has a chance to recover.
-        """
-        if not _is_multimodal_tool_result(result):
-            return result
-
-        content = result.get("content") or []
-        if not self._content_has_image_parts(content):
-            return content
-
-        if self._model_supports_vision():
-            # Vision-capable on paper — but if we've already learned in this
-            # session that the active (provider, model) rejects list-type
-            # tool content (e.g. Xiaomi MiMo's 400 "text is not set"),
-            # short-circuit to a text summary so we don't burn another
-            # round-trip relearning the same lesson.  Cache populated by
-            # the 400 recovery path in agent.conversation_loop.  Transient
-            # per-session; next session retries.
-            key = (
-                (getattr(self, "provider", "") or "").strip().lower(),
-                (getattr(self, "model", "") or "").strip(),
-            )
-            no_list = getattr(self, "_no_list_tool_content_models", None)
-            if no_list and key in no_list:
-                logger.debug(
-                    "Tool %s: model %s/%s known to reject list-type tool "
-                    "content this session — sending text summary",
-                    tool_name, key[0], key[1],
-                )
-                return _multimodal_text_summary(result)
-            return content
-
-        summary = _multimodal_text_summary(result)
-        if tool_name == "computer_use":
-            return json.dumps({
-                "error": (
-                    "computer_use returned screenshot/image content, but the active "
-                    "model/provider does not support image input. Switch to a "
-                    "vision-capable model for desktop computer use, or use browser "
-                    "tools for browser tasks."
-                ),
-                "text_summary": summary,
-            })
-
-        logger.warning(
-            "Tool %s returned image content for non-vision model %s/%s; "
-            "falling back to text summary",
-            tool_name,
-            self.provider,
-            self.model,
-        )
-        return summary
+    from agent.image_preprocessing import _tool_result_content_for_active_model as _tool_result_content_for_active_model
 
     def _try_shrink_image_parts_in_messages(self, api_messages: list) -> bool:
         """Forwarder — see ``agent.conversation_compression.try_shrink_image_parts_in_messages``."""
@@ -3791,7 +2383,7 @@ class AIAgent:
             or base_url_host_matches(self._base_url_lower, "api.githubcopilot.com")
         ):
             try:
-                from hermes_cli.models import github_model_reasoning_efforts
+                from superforecasting_agent.runtime.models import github_model_reasoning_efforts
 
                 return bool(github_model_reasoning_efforts(self.model))
             except Exception:
@@ -3844,7 +2436,7 @@ class AIAgent:
             if opts or (_time.monotonic() - ts) < 60:
                 return opts
         try:
-            from hermes_cli.models import lmstudio_model_reasoning_options
+            from superforecasting_agent.runtime.models import lmstudio_model_reasoning_options
             opts = lmstudio_model_reasoning_options(
                 self.model, self.base_url, getattr(self, "api_key", ""),
             )
@@ -3869,7 +2461,7 @@ class AIAgent:
     def _github_models_reasoning_extra_body(self) -> dict | None:
         """Format reasoning payload for GitHub Models/OpenAI-compatible routes."""
         try:
-            from hermes_cli.models import github_model_reasoning_efforts
+            from superforecasting_agent.runtime.models import github_model_reasoning_efforts
         except Exception:
             return None
 
@@ -4270,8 +2862,8 @@ def main(
     
     # Handle tool listing
     if list_tools:
-        from model_tools import get_all_tool_names, get_available_toolsets
-        from toolsets import get_all_toolsets, get_toolset_info
+        from superforecasting_agent.tooling.runtime import get_all_tool_names, get_available_toolsets
+        from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
         
         print("📋 Available Tools & Toolsets:")
         print("-" * 50)
@@ -4417,7 +3009,7 @@ def main(
         sample_id = str(uuid.uuid4())[:8]
         sample_filename = f"sample_{sample_id}.json"
         
-        # Convert messages to trajectory format (same as batch_runner)
+        # Convert messages to trajectory format (same as superforecasting_agent.trajectories.batch)
         trajectory = agent._convert_to_trajectory_format(
             result['messages'], 
             user_query, 

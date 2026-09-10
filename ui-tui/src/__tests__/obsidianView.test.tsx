@@ -104,7 +104,7 @@ const renderView = async () => {
   process.env.FORECAST_TUI_INLINE = '1'
 
   const [{ render }, { ObsidianView }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/obsidianView.js'),
     import('../theme.js'),
     import('../lib/text.js')

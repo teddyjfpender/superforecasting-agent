@@ -28,7 +28,7 @@ from urllib.error import URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.branding import (
     CORE_PRIMITIVE,
@@ -447,7 +447,7 @@ class ForecastLedger:
             if db_path
             else Path(configured_db).expanduser()
             if configured_db
-            else get_hermes_home() / "forecasting" / "forecasting.db"
+            else get_agent_home() / "forecasting" / "forecasting.db"
         )
         try:
             self.db_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)

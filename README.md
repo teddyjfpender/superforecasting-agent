@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.png" alt="Superforecasting Agent" width="100%">
+  <img src="assets/banner.svg" alt="Superforecasting Agent" width="100%">
 </p>
 
 # Superforecasting Agent
@@ -25,8 +25,8 @@ with `superforecasting-agent model` — no code changes, no lock-in.
 
 ## Documentation
 
-Full documentation lives in **[`docs/`](docs/index.md)** and is audited against
-the code, not inherited from upstream.
+Start with **[Operating the desk](docs/operating.md)** for the TUI, or browse
+the **[documentation index](docs/index.md)**.
 
 | Guide | For |
 | --- | --- |
@@ -79,25 +79,22 @@ iex (irm https://raw.githubusercontent.com/teddyjfpender/superforecasting-agent/
 After install:
 
 ```bash
-forecast tui             # open the forecast desk TUI (also: superforecasting-agent --tui)
-forecast                 # bare invocation prints the desk dashboard summary
-superforecasting-agent   # fork-native command; forecast workflows are shorthand
-forecast status          # desk state, calibration, live baseline comparisons
+superforecasting-agent tui  # open the Forecast Desk TUI
+forecast                   # print the desk dashboard summary
+forecast status            # desk state, calibration, live baseline comparisons
 ```
 
 ## Getting started
 
-The laziest path is the intended path — one sentence, and the desk structures the
-question, attaches watched sources, and runs research → base rate → committed
-forecast through the same gated pipeline a hand-driven session uses:
+To structure a question and run the research and forecasting pipeline:
 
 ```bash
 forecast onboard "Will the Fed cut rates by September?" --auto
 ```
 
-In chat, the same journey is one tool call: ask the agent to forecast something
-and it uses `full_forecast`. Autonomy never buys a weaker forecast — it buys fewer
-keystrokes; every gate still applies.
+In the TUI, ask the agent to forecast a question. The `full_forecast` tool runs
+the same gated workflow. Scheduled monitoring adds evidence and alerts without
+silently changing active forecast probabilities.
 
 A few common commands (the full, task-oriented guide is [docs/cli.md](docs/cli.md);
 the exhaustive command tree is [docs/reference/cli-reference.md](docs/reference/cli-reference.md)):
@@ -111,6 +108,32 @@ forecast calibration --by-origin --all          # your reliability curve + trend
 forecast drill --n 5                             # practice on resolved binaries
 forecast doctor                                  # operational / pilot / readiness gate
 ```
+
+## Repository layout
+
+| Directory | Responsibility |
+| --- | --- |
+| `superforecasting_agent/` | Public entry points, shared runtime services, session storage, and trajectory processing |
+| `forecasting/` | Forecast ledger, research, scoring, calibration, and jobs |
+| `ui-tui/` | Forecast Desk interface and local Ink renderer |
+| `tui_gateway/` | Python backend for the TUI |
+| `acp_adapter/` | Agent Client Protocol integration for editors |
+| `protocol/` | Shared RPC and event schemas |
+| `agent/`, `tools/`, `providers/` | Model execution and forecasting support |
+| `plugins/`, `skills/` | Runtime extensions and workflows |
+| `tests/`, `scripts/` | Verification, builds, and developer tooling |
+| `packaging/` | Platform distribution recipes and dependency constraints |
+| `docs/` | Product and developer documentation |
+| `web/` | Browser dashboard, including the embedded TUI |
+| `website/` | Documentation site |
+| `superforecaster-terminal/` | Separate experimental market terminal and read-only forecast viewer |
+
+The [architecture guide](docs/architecture.md) explains the boundaries. Shared
+configuration, installation, and CLI services live in `superforecasting_agent/runtime/`.
+Historical release notes live in [docs/releases/](docs/releases/README.md).
+Follow-up work and release verification gaps are tracked in [TODO.md](TODO.md).
+Development task runners live in [scripts/data_generation/](scripts/data_generation/README.md),
+with [trajectory examples](examples/trajectories/README.md) under `examples/`.
 
 ## Contributing
 

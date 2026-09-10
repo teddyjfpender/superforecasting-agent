@@ -201,13 +201,13 @@ Issue planned against `jo-inc/camofox-browser` adding:
 
 ### Modified
 
-- `toolsets.py` — register `browser_dialog` in `browser`, `forecast-acp`, `forecast-api-server`, and core toolsets, with inherited `hermes-*` presets kept as compatibility aliases (gated on CDP reachability)
+- `superforecasting_agent/tooling/toolsets.py` — register `browser_dialog` in `browser`, `forecast-acp`, `forecast-api-server`, and core toolsets, with inherited `hermes-*` presets kept as compatibility aliases (gated on CDP reachability)
 - `tools/browser_tool.py`
   - `browser_navigate` start-hook: if CDP URL resolvable, `SupervisorRegistry.get_or_start(task_id, cdp_url)`
   - `browser_snapshot` (at ~line 1536): merge supervisor state into return payload
   - `/browser connect` handler: restart supervisor with new endpoint
   - Session teardown hooks in `_cleanup_browser_session`
-- `hermes_cli/config.py` — add `browser.dialog_policy` and `browser.dialog_timeout_s` to `DEFAULT_CONFIG`
+- `superforecasting_agent/runtime/config.py` — add `browser.dialog_policy` and `browser.dialog_timeout_s` to `DEFAULT_CONFIG`
 - Docs: `website/docs/user-guide/features/browser.md`, `website/docs/reference/tools-reference.md`, `website/docs/reference/toolsets-reference.md`
 
 ## Non-goals

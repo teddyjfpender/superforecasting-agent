@@ -6,10 +6,10 @@ Hermetic-test invariants enforced here (see AGENTS.md for rationale):
    (ending in _API_KEY, _TOKEN, _SECRET, _PASSWORD, _CREDENTIALS, etc.)
    are unset before every test. Local developer keys cannot leak in.
 2. **Isolated HERMES_HOME.** HERMES_HOME points to a per-test tempdir so
-   code reading ``~/.hermes/*`` via ``get_hermes_home()`` can't see the
+   code reading ``~/.hermes/*`` via ``get_agent_home()`` can't see the
    real one. (We do NOT also redirect HOME — that broke subprocesses in
    CI. Code using ``Path.home() / ".hermes"`` instead of the canonical
-   ``get_hermes_home()`` is a bug to fix at the callsite.)
+   ``get_agent_home()`` is a bug to fix at the callsite.)
 3. **Deterministic runtime.** TZ=UTC, LANG=C.UTF-8, PYTHONHASHSEED=0.
 4. **No HERMES_SESSION_* inheritance** — the agent's current gateway
    session must not leak into tests.
@@ -532,14 +532,14 @@ def _hermetic_environment(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
     # 3. Redirect HERMES_HOME to a per-test tempdir. Code that reads
-    #    ``~/.hermes/*`` via ``get_hermes_home()`` now gets the tempdir.
+    #    ``~/.hermes/*`` via ``get_agent_home()`` now gets the tempdir.
     #
     #    NOTE: We do NOT also redirect HOME. Doing so broke CI because
     #    some tests (and their transitive deps) spawn subprocesses that
     #    inherit HOME and expect it to be stable. If a test genuinely
     #    needs HOME isolated, it should set it explicitly in its own
     #    fixture. Any code in the codebase reading ``~/.hermes/*`` via
-    #    ``Path.home() / ".hermes"`` instead of ``get_hermes_home()``
+    #    ``Path.home() / ".hermes"`` instead of ``get_agent_home()``
     #    is a bug to fix at the callsite.
     fake_hermes_home = tmp_path / "hermes_test"
     fake_hermes_home.mkdir()
@@ -597,7 +597,7 @@ def _hermetic_environment(tmp_path, monkeypatch):
     #    ~/.hermes/plugins/ (which, per step 3, is now empty — but the
     #    singleton might still be cached from a previous test).
     try:
-        import hermes_cli.plugins as _plugins_mod
+        import superforecasting_agent.runtime.plugins as _plugins_mod
         monkeypatch.setattr(_plugins_mod, "_plugin_manager", None)
     except Exception:
         pass
@@ -613,6 +613,29 @@ def _hermetic_environment(tmp_path, monkeypatch):
 def _isolate_hermes_home(_hermetic_environment):
     """Alias preserved for any test that yields this name explicitly."""
     return None
+
+
+@pytest.fixture(autouse=True)
+def _close_session_databases(_hermetic_environment, monkeypatch):
+    """Own database lifetimes in tests that construct only part of the runtime.
+
+    Production shutdown remains independently covered by lifecycle tests.
+    Holding these instances until teardown also prevents garbage collection in
+    unrelated tests from obscuring which test allocated a connection.
+    """
+    from superforecasting_agent.storage.session import SessionDB
+
+    databases = []
+    original_init = SessionDB.__init__
+
+    def tracked_init(self, *args, **kwargs):
+        original_init(self, *args, **kwargs)
+        databases.append(self)
+
+    monkeypatch.setattr(SessionDB, "__init__", tracked_init)
+    yield
+    for database in reversed(databases):
+        database.close()
 
 
 # ── Module-level state reset ───────────────────────────────────────────────
@@ -641,7 +664,7 @@ def _reset_module_state():
     """
     # --- logging — quiet/one-shot paths mutate process-global logger state ---
     logging.disable(logging.NOTSET)
-    for _logger_name in ("tools", "run_agent", "trajectory_compressor", "cron", "hermes_cli"):
+    for _logger_name in ("tools", "run_agent", "superforecasting_agent.trajectories.compression", "cron", "superforecasting_agent.runtime"):
         _logger = logging.getLogger(_logger_name)
         _logger.disabled = False
         _logger.setLevel(logging.NOTSET)
@@ -796,8 +819,8 @@ def _reset_module_state():
     except Exception:
         pass
 
-    # --- hermes_state — DEFAULT_DB_PATH (the session/state SQLite DB) is
-    #     cached at import time. If hermes_state was imported during suite
+    # --- superforecasting_agent.storage.session — DEFAULT_DB_PATH (the session/state SQLite DB) is
+    #     cached at import time. If superforecasting_agent.storage.session was imported during suite
     #     collection (134 test modules import it at top level) the constant
     #     froze to the *real* ~/.superforecasting-agent/state.db. Any test
     #     that builds SessionDB() / an AIAgent then wrote real chat sessions
@@ -806,14 +829,14 @@ def _reset_module_state():
     #     HERMES_HOME. SessionDB also resolves this lazily now, but tools
     #     that read DEFAULT_DB_PATH.parent directly still need the refresh.
     try:
-        import hermes_state as _hstate_mod
+        import superforecasting_agent.storage.session as _hstate_mod
         _hstate_home = Path(os.environ["HERMES_HOME"]).resolve()
         _hstate_mod.DEFAULT_DB_PATH = _hstate_home / "state.db"
     except Exception:
         pass
 
     # --- gateway.mirror — _SESSIONS_DIR / _SESSIONS_INDEX are likewise
-    #     frozen from get_hermes_home() at import. Repoint at the per-test
+    #     frozen from get_agent_home() at import. Repoint at the per-test
     #     home so transcript-mirror writes never touch the real sessions dir.
     try:
         from gateway import mirror as _mirror_mod
@@ -942,7 +965,7 @@ def _reset_tool_registry_caches():
 
     The production registry caches ``check_fn()`` results for 30 s
     (see tools/registry.py) and :func:`get_tool_definitions` memoizes
-    its result (see model_tools.py). Both are keyed on state that tests
+    its result (see superforecasting_agent/tooling/runtime.py). Both are keyed on state that tests
     routinely mutate (env vars, registry._generation, config.yaml mtime)
     — but a stale result from test A can still be served to test B
     because 30 s covers the entire suite, and xdist worker reuse means
@@ -955,7 +978,7 @@ def _reset_tool_registry_caches():
     except ImportError:
         pass
     try:
-        from model_tools import _clear_tool_defs_cache
+        from superforecasting_agent.tooling.runtime import _clear_tool_defs_cache
         _clear_tool_defs_cache()
     except ImportError:
         pass
@@ -994,7 +1017,7 @@ def web_backend_available(monkeypatch):
 # environment and finds the developer's live ``hermes-gateway`` process
 # via ``psutil`` — sending it SIGTERM mid-test. The shutdown forensics in
 # PR #23285 caught this happening 5+ times in 3 days, every time
-# correlated with a ``tests/hermes_cli/`` pytest run starting up.
+# correlated with a ``tests/runtime_cli/`` pytest run starting up.
 #
 # This fixture makes the leak impossible by intercepting the two
 # primitives that actually do damage:
@@ -1146,8 +1169,8 @@ def _live_system_guard(request, monkeypatch):
     _HERMES_TOKENS = (
         "hermes-gateway",
         "hermes.service",
-        "hermes_cli.main gateway",
-        "hermes_cli/main.py gateway",
+        "superforecasting_agent.runtime.main gateway",
+        "superforecasting_agent/runtime/main.py gateway",
         "gateway/run.py",
         "hermes gateway",
     )
@@ -1205,7 +1228,7 @@ def _live_system_guard(request, monkeypatch):
                 low = cmd_str.lower()
                 # pkill -f pattern: catch hermes-themed patterns + a
                 # plain "python" -f which would catch the live gateway
-                # whose cmdline contains "python -m hermes_cli.main".
+                # whose cmdline contains "python -m superforecasting_agent.runtime.main".
                 if (
                     "hermes" in low
                     or "gateway" in low

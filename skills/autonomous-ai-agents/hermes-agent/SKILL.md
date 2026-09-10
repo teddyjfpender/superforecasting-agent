@@ -232,7 +232,7 @@ superforecasting-agent uninstall            Uninstall Superforecasting Agent
 Type these during an interactive forecast session. New commands land fairly
 often; if something below looks stale, run `/help` in-session for the
 authoritative list or see the [live slash commands reference](/reference/slash-commands).
-The registry of record is `hermes_cli/commands.py` — every consumer
+The registry of record is `superforecasting_agent/runtime/commands.py` — every consumer
 (autocomplete, Telegram menu, Slack mapping, `/help`) derives from it.
 
 ### Session Control
@@ -432,7 +432,7 @@ Enable/disable via `superforecasting-agent tools` (interactive) or `superforecas
 | `rl` | Reinforcement learning tools (off by default) |
 | `moa` | Mixture of Agents (off by default) |
 
-Full enumeration lives in `toolsets.py` as the `TOOLSETS` dict; `_HERMES_CORE_TOOLS` is the default bundle most platforms inherit from.
+Full enumeration lives in `superforecasting_agent/tooling/toolsets.py` as the `TOOLSETS` dict; `_HERMES_CORE_TOOLS` is the default bundle most platforms inherit from.
 
 Tool changes take effect on `/reset` (new forecast session). They do NOT apply mid-turn to preserve prompt caching.
 
@@ -881,12 +881,12 @@ For occasional contributors and PR authors. Full developer docs: /developer-guid
 ```
 superforecasting-agent/
 ├── run_agent.py          # AIAgent — core forecast-support loop
-├── model_tools.py        # Tool discovery and dispatch
-├── toolsets.py           # Toolset definitions
+├── superforecasting_agent/tooling/runtime.py        # Tool discovery and dispatch
+├── superforecasting_agent/tooling/toolsets.py           # Toolset definitions
 ├── cli.py                # Interactive forecast CLI (ForecastCLI)
-├── hermes_state.py       # SQLite session store
+├── superforecasting_agent/storage/session.py       # SQLite session store
 ├── agent/                # Prompt builder, context compression, memory, model routing, credential pooling, skill dispatch
-├── hermes_cli/           # CLI subcommands, config, setup, commands
+├── superforecasting_agent/runtime/           # CLI subcommands, config, setup, commands
 │   ├── commands.py       # Slash command registry (CommandDef)
 │   ├── config.py         # DEFAULT_CONFIG, env var definitions
 │   └── main.py           # CLI entry point and argparse
@@ -925,15 +925,15 @@ registry.register(
 )
 ```
 
-**2. Add to `toolsets.py`** → `_HERMES_CORE_TOOLS` list.
+**2. Add to `superforecasting_agent/tooling/toolsets.py`** → `_HERMES_CORE_TOOLS` list.
 
 Auto-discovery: any `tools/*.py` file with a top-level `registry.register()` call is imported automatically — no manual list needed.
 
-All handlers must return JSON strings. Use `get_hermes_home()` for paths, never hardcode `~/.superforecasting-agent`.
+All handlers must return JSON strings. Use `get_agent_home()` for paths, never hardcode `~/.superforecasting-agent`.
 
 ### Adding a Slash Command
 
-1. Add `CommandDef` to `COMMAND_REGISTRY` in `hermes_cli/commands.py`
+1. Add `CommandDef` to `COMMAND_REGISTRY` in `superforecasting_agent/runtime/commands.py`
 2. Add handler in `cli.py` → `process_command()`
 3. (Optional) Add gateway handler in `gateway/run.py`
 
@@ -973,7 +973,7 @@ Use `-n 0` (not `-n 4`) because `pyproject.toml`'s default `addopts` already inc
 
 **Cross-platform test guards:** tests that use POSIX-only syscalls need a skip marker. Common ones already in the codebase:
 - Symlink creation → `@pytest.mark.skipif(sys.platform == "win32", reason="Symlinks require elevated privileges on Windows")` (see `tests/cron/test_cron_script.py`)
-- POSIX file modes (0o600, etc.) → `@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX mode bits not enforced on Windows")` (see `tests/hermes_cli/test_auth_toctou_file_modes.py`)
+- POSIX file modes (0o600, etc.) → `@pytest.mark.skipif(sys.platform.startswith("win"), reason="POSIX mode bits not enforced on Windows")` (see `tests/runtime_cli/test_auth_toctou_file_modes.py`)
 - `signal.SIGALRM` → Unix-only (see `tests/conftest.py::_enforce_test_timeout`)
 - Live Winsock / Windows-specific regression tests → `@pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific regression")`
 
@@ -1014,6 +1014,6 @@ Types: `fix:`, `feat:`, `refactor:`, `docs:`, `chore:`
 
 - **Never break prompt caching** — don't change context, tools, or system prompt mid-turn
 - **Message role alternation** — never two assistant or two user messages in a row
-- Use `get_hermes_home()` from `hermes_constants` for all paths (profile-safe)
+- Use `get_agent_home()` from `superforecasting_agent.constants` for all paths (profile-safe)
 - Config values go in `config.yaml`, secrets go in `.env`
 - New tools need a `check_fn` so they only appear when requirements are met

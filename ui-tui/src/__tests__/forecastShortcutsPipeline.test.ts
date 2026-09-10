@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { InputEvent } from '../../packages/hermes-ink/src/ink/events/input-event.js'
-import { parseMultipleKeypresses } from '../../packages/hermes-ink/src/ink/parse-keypress.js'
+import { InputEvent } from '../../packages/forecast-ink/src/ink/events/input-event.js'
+import { parseMultipleKeypresses } from '../../packages/forecast-ink/src/ink/parse-keypress.js'
 import { shouldPassThroughToGlobalHandler } from '../components/textInput.js'
 import { forecastShortcutForKey } from '../lib/forecastShortcuts.js'
 

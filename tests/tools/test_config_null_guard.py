@@ -83,11 +83,11 @@ class TestMCPAuthNullGuard:
 # ── Trajectory compressor ─────────────────────────────────────────────────
 
 class TestTrajectoryCompressorNullGuard:
-    """trajectory_compressor.py — _detect_provider() and config loading"""
+    """superforecasting_agent/trajectories/compression.py — _detect_provider() and config loading"""
 
     def test_null_base_url_does_not_crash(self):
         """base_url=None should not crash _detect_provider()."""
-        from trajectory_compressor import CompressionConfig, TrajectoryCompressor
+        from superforecasting_agent.trajectories.compression import CompressionConfig, TrajectoryCompressor
 
         config = CompressionConfig()
         config.base_url = None
@@ -101,8 +101,8 @@ class TestTrajectoryCompressorNullGuard:
 
     def test_config_loading_null_base_url_keeps_default(self):
         """YAML ``summarization: {base_url: null}`` should keep default."""
-        from trajectory_compressor import CompressionConfig
-        from hermes_constants import OPENROUTER_BASE_URL
+        from superforecasting_agent.trajectories.compression import CompressionConfig
+        from superforecasting_agent.constants import OPENROUTER_BASE_URL
 
         config = CompressionConfig()
         data = {"summarization": {"base_url": None}}

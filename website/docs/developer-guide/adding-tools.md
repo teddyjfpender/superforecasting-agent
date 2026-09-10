@@ -17,7 +17,7 @@ modifying the core runtime, use the plugin route instead:
 - [Build a Superforecasting Agent Plugin](/guides/build-a-superforecasting-agent-plugin) (inherited plugin guide)
 
 Default to plugins for most custom tool creation. Only follow this page when
-you explicitly want to ship a new built-in tool in `tools/` and `toolsets.py`.
+you explicitly want to ship a new built-in tool in `tools/` and `superforecasting_agent/tooling/toolsets.py`.
 :::
 
 Make it a **Skill** when the capability can be expressed as instructions plus existing tools, for example a repeatable research procedure, source triage workflow, data-cleaning checklist, or domain-specific modeling protocol.
@@ -29,7 +29,7 @@ Make it a **Tool** when it requires end-to-end integration with API keys, custom
 Adding a tool touches **2 files**:
 
 1. **`tools/your_tool.py`** — handler, schema, check function, `registry.register()` call
-2. **`toolsets.py`** — add tool name to `_HERMES_CORE_TOOLS` (the inherited core-tool constant) or a specific forecast-oriented toolset
+2. **`superforecasting_agent/tooling/toolsets.py`** — add tool name to `_HERMES_CORE_TOOLS` (the inherited core-tool constant) or a specific forecast-oriented toolset
 
 Any `tools/*.py` file with a top-level `registry.register()` call is auto-discovered at startup — no manual import list required.
 
@@ -120,7 +120,7 @@ registry.register(
 
 ## Step 2: Add the Built-in Tool to a Toolset
 
-In `toolsets.py`, add the tool name:
+In `superforecasting_agent/tooling/toolsets.py`, add the tool name:
 
 ```python
 # If it should be available on all platforms (CLI + messaging):
@@ -187,7 +187,7 @@ Forecast lifecycle state should not use this pattern unless there is a strong re
 
 ## Optional: Setup Wizard Integration
 
-If your tool requires an API key, add it to `hermes_cli/config.py`:
+If your tool requires an API key, add it to `superforecasting_agent/runtime/config.py`:
 
 ```python
 OPTIONAL_ENV_VARS = {
@@ -205,10 +205,10 @@ OPTIONAL_ENV_VARS = {
 ## Checklist
 
 - [ ] Tool file created with handler, schema, check function, and registration
-- [ ] Added to appropriate toolset in `toolsets.py`
+- [ ] Added to appropriate toolset in `superforecasting_agent/tooling/toolsets.py`
 - [ ] Confirmed this really should be a built-in/core tool and not a plugin
 - [ ] Confirmed forecast records, evidence, scores, and learning state go through the ledger rather than private tool storage
 - [ ] Handler returns JSON strings, errors returned as `{"error": "..."}`
-- [ ] Optional: API key added to `OPTIONAL_ENV_VARS` in `hermes_cli/config.py`
-- [ ] Optional: Added to `toolset_distributions.py` for batch processing
+- [ ] Optional: API key added to `OPTIONAL_ENV_VARS` in `superforecasting_agent/runtime/config.py`
+- [ ] Optional: Added to `superforecasting_agent/trajectories/distributions.py` for batch processing
 - [ ] Tested with `superforecasting-agent desk --toolsets forecast-desk -q "Use the weather tool to update the relevant forecast evidence"`

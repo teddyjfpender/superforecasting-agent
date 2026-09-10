@@ -25,7 +25,9 @@ data/
 tmp/
 temp_vision_images/
 hermes-*/*
-examples/
+/examples/*
+!/examples/forecasting/
+!/examples/trajectories/
 tests/quick_test_dataset.jsonl
 tests/sample_dataset.jsonl
 run_datagen_kimik2-thinking.sh
@@ -60,7 +62,7 @@ ignored/
 environments/benchmarks/evals/
 
 # Web UI build output
-hermes_cli/web_dist/
+superforecasting_agent/runtime/web_dist/
 
 # Web UI assets — synced from @nous-research/ui at build time via
 # `npm run sync-assets` (see web/package.json).
@@ -77,12 +79,12 @@ mini-swe-agent/
 result
 website/static/api/skills-index.json
 models-dev-upstream/
-hermes_cli/tui_dist/*
+superforecasting_agent/runtime/tui_dist/*
 # ...except the two-line module marker. entry.js is an ES module, and without a
 # "type" beside it Node walks UP to the repo-root package.json (which has no
 # "type"), prints a 4-line MODULE_TYPELESS_PACKAGE_JSON warning to stderr before
 # first paint, and reparses the bundle as ESM anyway. The marker is a tracked
 # source file, not a build artifact, so it must survive the ignore above.
-!hermes_cli/tui_dist/package.json
-hermes_cli/scripts/
+!superforecasting_agent/runtime/tui_dist/package.json
+superforecasting_agent/runtime/scripts/
 docs/superpowers/*

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
+  <title id="title">Superforecasting Agent</title>
+  <desc id="desc">A command-line forecasting desk that compounds judgment over time.</desc>
+  <rect width="1200" height="400" fill="#111110"/>
+  <g fill="#e8bd62" font-family="Georgia, serif" font-size="90">
+    <text x="64" y="139">Superforecasting</text>
+    <text x="64" y="235">Agent</text>
+  </g>
+  <path d="M64 282H1136" stroke="#70603d"/>
+  <text x="64" y="337" fill="#e9dfc9" font-family="Arial, sans-serif" font-size="30">A command-line forecasting desk.</text>
+</svg>

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.cron_runner import (
     install_script,
@@ -84,7 +84,7 @@ def install_forecast_cron(
     # Clean start: remove any prior self-check job before re-arming.
     remove_forecast_cron(name=name)
 
-    scripts_dir = get_hermes_home() / "scripts"
+    scripts_dir = get_agent_home() / "scripts"
     script_path = scripts_dir / FORECAST_CRON_SCRIPT
     install_script(
         script_path,
@@ -131,7 +131,7 @@ def _auto_install_enabled() -> bool:
     Best-effort: a config-read failure degrades to enabled — the auto-install is
     the intended default for the autonomous spine."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         fc = cfg.get("forecasting", {}) if isinstance(cfg, dict) else {}
@@ -162,7 +162,7 @@ def ensure_default_routines(
     a cron hiccup never blocks a forecast commit."""
     if not force and not _auto_install_enabled():
         return {"installed": False, "created": False, "job": None, "reason": "auto_install disabled"}
-    scripts_dir = get_hermes_home() / "scripts"
+    scripts_dir = get_agent_home() / "scripts"
     if default_routines_installed(name=name):
         install_script(
             scripts_dir / FORECAST_CRON_SCRIPT,
@@ -249,7 +249,7 @@ def ensure_default_warning_automode_routine(
 
 def _warning_automode_auto_install_enabled() -> bool:
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         block = ((cfg.get("forecasting") or {}).get("cron") or {})
@@ -268,7 +268,7 @@ def ensure_default_source_estimator_routine(
 ) -> dict[str, Any]:
     """Ensure source estimation has a cadence independent of warning work."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config() or {}
         block = ((cfg.get("cron") or {}).get("source_estimator") or {})
@@ -282,7 +282,7 @@ def ensure_default_source_estimator_routine(
     status = source_estimator_cron_status()
     if status["installed"]:
         install_source_estimator_script(
-            get_hermes_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT,
+            get_agent_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT,
             db_path=db_path,
         )
         return {
@@ -366,7 +366,7 @@ def forecast_cron_health(*, now: str | None = None) -> dict[str, Any]:
     from cron.jobs import list_jobs
 
     try:
-        from hermes_time import now as hermes_now
+        from superforecasting_agent.clock import now as hermes_now
 
         now_dt = _parse_iso(now) or hermes_now()
     except Exception:
@@ -463,7 +463,7 @@ def install_warning_automode_cron(
     # Clean start: remove any prior automode job of the same name before re-arming.
     remove_warning_automode_cron(name=name)
 
-    scripts_dir = get_hermes_home() / "scripts"
+    scripts_dir = get_agent_home() / "scripts"
     script_path = scripts_dir / WARNING_AUTOMODE_CRON_SCRIPT
     install_warning_automode_script(
         script_path,
@@ -547,7 +547,7 @@ def install_source_estimator_cron(
     """Install the independent adaptive source-estimation worker."""
     remove_source_estimator_cron(name=name)
     install_source_estimator_script(
-        get_hermes_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT,
+        get_agent_home() / "scripts" / SOURCE_ESTIMATOR_CRON_SCRIPT,
         db_path=db_path,
         model=model,
         provider=provider,
@@ -648,7 +648,7 @@ def install_backup_cron(
 
     remove_backup_cron(name=name)
 
-    scripts_dir = get_hermes_home() / "scripts"
+    scripts_dir = get_agent_home() / "scripts"
     script_path = scripts_dir / BACKUP_CRON_SCRIPT
     _install_backup_script(script_path, db_path=db_path)
 

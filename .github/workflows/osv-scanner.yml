@@ -31,8 +31,8 @@ on:
       - 'scripts/whatsapp-bridge/package-lock.json'
       - 'ui-tui/package.json'
       - 'ui-tui/package-lock.json'
-      - 'ui-tui/packages/hermes-ink/package.json'
-      - 'ui-tui/packages/hermes-ink/package-lock.json'
+      - 'ui-tui/packages/forecast-ink/package.json'
+      - 'ui-tui/packages/forecast-ink/package-lock.json'
       - 'web/package.json'
       - 'web/package-lock.json'
       - 'website/package.json'
@@ -61,7 +61,7 @@ jobs:
         --lockfile=package-lock.json
         --lockfile=scripts/whatsapp-bridge/package-lock.json
         --lockfile=ui-tui/package-lock.json
-        --lockfile=ui-tui/packages/hermes-ink/package-lock.json
+        --lockfile=ui-tui/packages/forecast-ink/package-lock.json
         --lockfile=web/package-lock.json
         --lockfile=website/package-lock.json
       fail-on-vuln: false

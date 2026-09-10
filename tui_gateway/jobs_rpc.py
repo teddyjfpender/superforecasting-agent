@@ -242,7 +242,7 @@ def register(server) -> None:
         return reforecast
 
     def _max_batch(default: int) -> int:
-        from hermes_cli.config import cfg_get, load_config_readonly
+        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
 
         try:
             return int(

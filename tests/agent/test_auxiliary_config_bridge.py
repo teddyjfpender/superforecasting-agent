@@ -257,14 +257,14 @@ class TestVisionModelOverride:
 
 
 class TestDefaultConfigShape:
-    """Verify the DEFAULT_CONFIG in hermes_cli/config.py has correct auxiliary structure."""
+    """Verify the DEFAULT_CONFIG in superforecasting_agent/runtime/config.py has correct auxiliary structure."""
 
     def test_auxiliary_section_exists(self):
-        from hermes_cli.config import DEFAULT_CONFIG
+        from superforecasting_agent.runtime.config import DEFAULT_CONFIG
         assert "auxiliary" in DEFAULT_CONFIG
 
     def test_vision_task_structure(self):
-        from hermes_cli.config import DEFAULT_CONFIG
+        from superforecasting_agent.runtime.config import DEFAULT_CONFIG
         vision = DEFAULT_CONFIG["auxiliary"]["vision"]
         assert "provider" in vision
         assert "model" in vision
@@ -272,7 +272,7 @@ class TestDefaultConfigShape:
         assert vision["model"] == ""
 
     def test_web_extract_task_structure(self):
-        from hermes_cli.config import DEFAULT_CONFIG
+        from superforecasting_agent.runtime.config import DEFAULT_CONFIG
         web = DEFAULT_CONFIG["auxiliary"]["web_extract"]
         assert "provider" in web
         assert "model" in web
@@ -287,17 +287,16 @@ class TestCLIDefaultsHaveAuxiliaryKeys:
     """Verify cli.py load_cli_config() defaults dict does NOT include auxiliary
     (it comes from config.yaml deep merge, not hardcoded defaults)."""
 
-    def test_cli_defaults_can_merge_auxiliary(self):
-        """The load_cli_config deep merge logic handles keys not in defaults.
-        Verify auxiliary would be picked up from config.yaml."""
-        # This is a structural assertion: cli.py's second-pass loop
-        # carries over keys from file_config that aren't in defaults.
-        # So auxiliary config from config.yaml gets merged even though
-        # cli.py's defaults dict doesn't define it.
-        import cli as _cli_mod
-        # See note in test_gateway_has_auxiliary_bridge — pin UTF-8 so the
-        # test runs on Windows where the default locale is cp1252.
-        source = Path(_cli_mod.__file__).read_text(encoding="utf-8")
-        assert "auxiliary_config = defaults.get(\"auxiliary\"" in source
-        assert "AUXILIARY_VISION_PROVIDER" in source
-        assert "AUXILIARY_VISION_MODEL" in source
+    def test_cli_defaults_can_merge_auxiliary(self, tmp_path, monkeypatch):
+        """Auxiliary settings reach the returned config and environment."""
+        from superforecasting_agent.runtime.interactive_config import load_cli_config
+
+        (tmp_path / "config.yaml").write_text(
+            "auxiliary:\n  vision:\n    provider: example-provider\n    model: example-model\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(os, "environ", dict(os.environ))
+        config = load_cli_config(tmp_path, tmp_path / "missing.yaml", False, lambda value: None)
+        assert config["auxiliary"]["vision"]["provider"] == "example-provider"
+        assert os.environ["AUXILIARY_VISION_PROVIDER"] == "example-provider"
+        assert os.environ["AUXILIARY_VISION_MODEL"] == "example-model"

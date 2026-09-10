@@ -63,7 +63,7 @@ def resolve_and_map_runtime(
     multi-tenant caller can resolve secrets per tenant without touching process globals.
     Keys whose runtime value is None are dropped (so the AIAgent default applies)."""
     if runtime is None:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
         ctx = credential_context or {}
         runtime = resolve_runtime_provider(

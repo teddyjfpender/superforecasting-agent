@@ -1,4 +1,4 @@
-import { Box, NoSelect, Text } from '@hermes/ink'
+import { Box, NoSelect, Text } from '@superforecasting/ink'
 
 import type { Theme } from '../theme.js'
 

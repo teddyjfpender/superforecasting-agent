@@ -83,7 +83,7 @@ const renderNavBar = async (value?: string) => {
   await loadWithFlag(value)
 
   const [{ renderSync }, { NavBar }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/navBar.js'),
     import('../lib/text.js')
   ])
@@ -110,7 +110,7 @@ const renderExpandedHelp = async (value?: string) => {
   vi.stubEnv('FORECAST_TUI_INLINE', '1')
 
   const [{ Box, render }, { HelpOverlay }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/helpOverlay.js'),
     import('../theme.js'),
     import('../lib/text.js')

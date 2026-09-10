@@ -229,7 +229,7 @@ def _make_chat_envelope(text="hello", sender_email="u@example.com", sender_type=
 
 class TestPlatformRegistration:
     def test_enum_value(self):
-        assert Platform.GOOGLE_CHAT.value == "google_chat"
+        assert Platform("google_chat").value == "google_chat"
 
     def test_requirements_check_returns_true_when_available(self):
         # The shim flag is True in this test module.
@@ -283,14 +283,14 @@ class TestEnvConfigLoading:
         monkeypatch.setenv("GOOGLE_CHAT_PROJECT_ID", "p")
         # No subscription.
         cfg = load_gateway_config()
-        assert Platform.GOOGLE_CHAT not in cfg.platforms
+        assert Platform("google_chat") not in cfg.platforms
 
     def test_missing_project_does_not_enable(self, monkeypatch):
         self._clean_env(monkeypatch)
         monkeypatch.setenv("GOOGLE_CHAT_SUBSCRIPTION_NAME",
                            "projects/p/subscriptions/s")
         cfg = load_gateway_config()
-        assert Platform.GOOGLE_CHAT not in cfg.platforms
+        assert Platform("google_chat") not in cfg.platforms
 
 
 
@@ -2614,20 +2614,20 @@ class TestGoogleChatInteractiveSetup:
         def fake_prompt(question, default=None, password=False):
             return answers.get(question, default or "")
 
-        monkeypatch.setattr("hermes_cli.config.get_env_value", fake_get_env_value)
-        monkeypatch.setattr("hermes_cli.config.save_env_value", fake_save_env_value)
-        monkeypatch.setattr("hermes_cli.cli_output.prompt", fake_prompt)
+        monkeypatch.setattr("superforecasting_agent.runtime.config.get_env_value", fake_get_env_value)
+        monkeypatch.setattr("superforecasting_agent.runtime.config.save_env_value", fake_save_env_value)
+        monkeypatch.setattr("superforecasting_agent.runtime.cli_output.prompt", fake_prompt)
         monkeypatch.setattr(
-            "hermes_cli.cli_output.prompt_yes_no", lambda *_a, **_kw: True
+            "superforecasting_agent.runtime.cli_output.prompt_yes_no", lambda *_a, **_kw: True
         )
         monkeypatch.setattr(
-            "hermes_cli.cli_output.print_info", lambda *_a, **_kw: None
+            "superforecasting_agent.runtime.cli_output.print_info", lambda *_a, **_kw: None
         )
         monkeypatch.setattr(
-            "hermes_cli.cli_output.print_success", lambda *_a, **_kw: None
+            "superforecasting_agent.runtime.cli_output.print_success", lambda *_a, **_kw: None
         )
         monkeypatch.setattr(
-            "hermes_cli.cli_output.print_warning", lambda *_a, **_kw: None
+            "superforecasting_agent.runtime.cli_output.print_warning", lambda *_a, **_kw: None
         )
 
         gc_mod.interactive_setup()
@@ -2700,7 +2700,7 @@ class TestAuthorizationEmailMatch:
         runner.pairing_store.is_approved = MagicMock(return_value=False)
 
         source = SessionSource(
-            platform=Platform.GOOGLE_CHAT,
+            platform=Platform("google_chat"),
             chat_id="spaces/S",
             chat_type="dm",
             user_id="alice@example.com",       # post-swap: email is canonical
@@ -2721,7 +2721,7 @@ class TestAuthorizationEmailMatch:
         runner.pairing_store.is_approved = MagicMock(return_value=False)
 
         source = SessionSource(
-            platform=Platform.GOOGLE_CHAT,
+            platform=Platform("google_chat"),
             chat_id="spaces/S",
             chat_type="dm",
             user_id="bob@example.com",
@@ -2747,7 +2747,7 @@ class TestAuthorizationEmailMatch:
         runner.pairing_store.is_approved = MagicMock(return_value=False)
 
         source = SessionSource(
-            platform=Platform.GOOGLE_CHAT,
+            platform=Platform("google_chat"),
             chat_id="spaces/S",
             chat_type="dm",
             user_id="users/77777",  # no email available — resource name wins
@@ -2783,7 +2783,7 @@ class TestCronSchedulerRegistry:
             return
         # Discover first so the plugin is loaded at all.
         try:
-            from hermes_cli.plugins import discover_plugins
+            from superforecasting_agent.runtime.plugins import discover_plugins
             discover_plugins()
         except Exception:
             pass

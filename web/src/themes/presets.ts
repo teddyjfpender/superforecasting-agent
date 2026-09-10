@@ -8,7 +8,7 @@ import type { DashboardTheme, ThemeTypography, ThemeLayout } from "./types";
  * corner-radius all shift to match the theme's dashboard role.
  *
  * Theme names must stay in sync with the backend's
- * `_BUILTIN_DASHBOARD_THEMES` list in `hermes_cli/web_server.py`.
+ * `_BUILTIN_DASHBOARD_THEMES` list in `superforecasting_agent/runtime/web_server.py`.
  */
 
 // ---------------------------------------------------------------------------

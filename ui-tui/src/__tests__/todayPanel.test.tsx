@@ -264,7 +264,7 @@ const mountToday = async (columns: number, sections: PanelSection[], opts: Mount
   const { contestedCount = 0, focused = true, overlayOpen = false, softFocus = false } = opts
 
   const [{ render }, { TodayPanel }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/todayPanel.js'),
     import('../theme.js'),
     import('../lib/text.js')

@@ -180,7 +180,7 @@ const renderForecastDesk = async (
     { stripAnsi },
     { DEFAULT_VOICE_RECORD_KEY }
   ] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../app/gatewayContext.js'),
     import('../app/forecastPanel.js'),
     import('../app/overlayStore.js'),

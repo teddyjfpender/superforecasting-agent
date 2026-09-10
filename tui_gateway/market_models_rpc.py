@@ -286,14 +286,14 @@ def _(rid, params: dict) -> dict:
         from pathlib import Path
 
         from forecasting.ledger import ForecastLedger
-        from hermes_cli.config import get_hermes_home
+        from superforecasting_agent.runtime.config import get_agent_home
 
         mid = str(params.get("id") or "").strip()
         ledger = ForecastLedger()
         packet = ledger.export_market_model(mid)
         title = (packet.get("model") or {}).get("title") or mid
         slug = _re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48] or mid
-        exports = Path(get_hermes_home()) / "exports"
+        exports = Path(get_agent_home()) / "exports"
         exports.mkdir(parents=True, exist_ok=True)
         path = exports / f"market-model-{slug}-{mid}.json"
         path.write_text(_json.dumps(packet, indent=2, default=str), encoding="utf-8")

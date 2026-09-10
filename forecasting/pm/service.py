@@ -503,17 +503,17 @@ class PMService:
     def _cache_path(self) -> Path:
         base = self._home
         if base is None:
-            from hermes_constants import get_hermes_home
+            from superforecasting_agent.constants import get_agent_home
 
-            base = get_hermes_home()
+            base = get_agent_home()
         return Path(base) / PM_CACHE_FILE
 
     def _catalog_path(self) -> Path:
         base = self._home
         if base is None:
-            from hermes_constants import get_hermes_home
+            from superforecasting_agent.constants import get_agent_home
 
-            base = get_hermes_home()
+            base = get_agent_home()
         return Path(base) / PM_CATALOG_FILE
 
     def _ensure_catalog_loaded(self) -> None:
@@ -578,7 +578,7 @@ class PMService:
                         self._catalog_updated_at = updated_at
                     if self._disk_cache:
                         try:
-                            from utils import atomic_json_write
+                            from superforecasting_agent.storage.files import atomic_json_write
 
                             atomic_json_write(
                                 self._catalog_path(),
@@ -653,7 +653,7 @@ class PMService:
             self._disk = disk
             snapshot = {"version": _DISK_CACHE_VERSION, "keys": dict(disk)}
         try:
-            from utils import atomic_json_write
+            from superforecasting_agent.storage.files import atomic_json_write
 
             atomic_json_write(self._cache_path(), snapshot)
         except Exception:  # pragma: no cover - a cache write must never crash a fetch

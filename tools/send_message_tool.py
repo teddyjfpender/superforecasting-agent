@@ -16,7 +16,7 @@ from email.utils import formatdate
 from typing import Dict, Optional
 
 from agent.redact import redact_sensitive_text
-from hermes_constants import display_hermes_home
+from superforecasting_agent.constants import display_agent_home
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +140,7 @@ SEND_MESSAGE_SCHEMA = {
             },
             "message": {
                 "type": "string",
-                "description": f"The message text to send. To send an image or file, include MEDIA:<local_path> (e.g. 'MEDIA:{display_hermes_home()}/cache/img_xxx.jpg') in the message — the platform will deliver it as a native media attachment."
+                "description": f"The message text to send. To send an image or file, include MEDIA:<local_path> (e.g. 'MEDIA:{display_agent_home()}/cache/img_xxx.jpg') in the message — the platform will deliver it as a native media attachment."
             }
         },
         "required": []
@@ -241,12 +241,12 @@ def _handle_send(args):
             else:
                 return tool_error(
                     f"Platform '{platform_name}' is not configured. Set up credentials in "
-                    f"{display_hermes_home()}/config.yaml or environment variables."
+                    f"{display_agent_home()}/config.yaml or environment variables."
                 )
         else:
             return tool_error(
                 f"Platform '{platform_name}' is not configured. Set up credentials in "
-                f"{display_hermes_home()}/config.yaml or environment variables."
+                f"{display_agent_home()}/config.yaml or environment variables."
             )
 
     from gateway.platforms.base import BasePlatformAdapter
@@ -295,7 +295,7 @@ def _handle_send(args):
                         if data.get("ok"):
                             return data["channel"]["id"]
                         return None
-            from model_tools import _run_async
+            from superforecasting_agent.tooling.async_bridge import _run_async
             dm_channel = _run_async(_open_slack_dm(pconfig.token, chat_id))
             if dm_channel:
                 chat_id = dm_channel
@@ -305,7 +305,7 @@ def _handle_send(args):
             return json.dumps({"error": f"Failed to open Slack DM: {e}"})
 
     try:
-        from model_tools import _run_async
+        from superforecasting_agent.tooling.async_bridge import _run_async
         result = _run_async(
             _send_to_platform(
                 platform,

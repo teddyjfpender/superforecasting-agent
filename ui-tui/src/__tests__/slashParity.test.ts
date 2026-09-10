@@ -53,7 +53,7 @@ const loadCommandRegistryNames = (): CommandRegistryLoad => {
         process.env.PYTHON ?? (existsSync(venvPython) ? venvPython : 'python3'),
         [
           '-c',
-          'import json; from hermes_cli.commands import COMMAND_REGISTRY; print(json.dumps([c.name for c in COMMAND_REGISTRY]))'
+          'import json; from superforecasting_agent.runtime.commands import COMMAND_REGISTRY; print(json.dumps([c.name for c in COMMAND_REGISTRY]))'
         ],
         { cwd: root, encoding: 'utf8' }
       )

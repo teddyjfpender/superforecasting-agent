@@ -4,13 +4,13 @@ Tasks scheduled via run_coroutine_threadsafe are created inside the MCP
 event-loop thread, so they copy THAT thread's context — not the scheduling
 thread's. A per-request profile scope (e.g. an MCP "Test server" probe
 under ?profile=) would silently vanish for anything resolving
-get_hermes_home() inside the coroutine, most visibly OAuth token-store
+get_agent_home() inside the coroutine, most visibly OAuth token-store
 paths. _run_on_mcp_loop now wraps scheduled coroutines with the caller's
 override (mcp_tool._wrap_with_home_override).
 
 Fork note: our agent home env has three alias names
 (SUPERFORECASTING_AGENT_HOME / FORECAST_HOME / HERMES_HOME, resolved in
-that order by hermes_constants.get_hermes_home). The override itself is a
+that order by superforecasting_agent.constants.get_agent_home). The override itself is a
 contextvar, so it is alias-agnostic; these tests pin the process home via
 the highest-priority alias and clear the others so ambient env can't
 shadow it.
@@ -38,10 +38,10 @@ def mcp_loop():
 
 
 def test_override_propagates_to_mcp_loop(tmp_path, monkeypatch, mcp_loop):
-    from hermes_constants import (
-        get_hermes_home,
-        reset_hermes_home_override,
-        set_hermes_home_override,
+    from superforecasting_agent.constants import (
+        get_agent_home,
+        reset_agent_home_override,
+        set_agent_home_override,
     )
 
     process_home = tmp_path / "proc-home"
@@ -51,13 +51,13 @@ def test_override_propagates_to_mcp_loop(tmp_path, monkeypatch, mcp_loop):
     _pin_process_home(monkeypatch, process_home)
 
     async def read_home():
-        return str(get_hermes_home())
+        return str(get_agent_home())
 
     # Unscoped: the loop task sees the process home.
     assert mcp_loop._run_on_mcp_loop(read_home(), timeout=10) == str(process_home)
 
     # Scoped: the caller's override must reach the loop task.
-    token = set_hermes_home_override(str(profile_home))
+    token = set_agent_home_override(str(profile_home))
     try:
         assert mcp_loop._run_on_mcp_loop(read_home(), timeout=10) == str(profile_home)
         # Factory form must be wrapped too.
@@ -65,7 +65,7 @@ def test_override_propagates_to_mcp_loop(tmp_path, monkeypatch, mcp_loop):
             profile_home
         )
     finally:
-        reset_hermes_home_override(token)
+        reset_agent_home_override(token)
 
     # The loop thread's default context is untouched afterwards.
     assert mcp_loop._run_on_mcp_loop(read_home(), timeout=10) == str(process_home)
@@ -75,9 +75,9 @@ def test_oauth_token_paths_follow_override(tmp_path, monkeypatch, mcp_loop):
     """The actual symptom path: HermesTokenStorage resolving inside the
     probe's MCP-loop coroutine must land in the selected profile's
     mcp-tokens dir, not the process home's."""
-    from hermes_constants import (
-        reset_hermes_home_override,
-        set_hermes_home_override,
+    from superforecasting_agent.constants import (
+        reset_agent_home_override,
+        set_agent_home_override,
     )
 
     process_home = tmp_path / "proc-home"
@@ -91,11 +91,11 @@ def test_oauth_token_paths_follow_override(tmp_path, monkeypatch, mcp_loop):
 
         return str(HermesTokenStorage("probe-srv")._tokens_path())
 
-    token = set_hermes_home_override(str(profile_home))
+    token = set_agent_home_override(str(profile_home))
     try:
         path = mcp_loop._run_on_mcp_loop(token_path(), timeout=10)
     finally:
-        reset_hermes_home_override(token)
+        reset_agent_home_override(token)
     assert path.startswith(str(profile_home))
     assert os.path.join("mcp-tokens", "probe-srv.json") in path
 
@@ -105,10 +105,10 @@ def test_concurrent_scopes_do_not_interfere(tmp_path, monkeypatch, mcp_loop):
     loop must each see their own home — the wrapper is task-local."""
     import threading
 
-    from hermes_constants import (
-        get_hermes_home,
-        reset_hermes_home_override,
-        set_hermes_home_override,
+    from superforecasting_agent.constants import (
+        get_agent_home,
+        reset_agent_home_override,
+        set_agent_home_override,
     )
 
     process_home = tmp_path / "proc-home"
@@ -119,16 +119,16 @@ def test_concurrent_scopes_do_not_interfere(tmp_path, monkeypatch, mcp_loop):
     _pin_process_home(monkeypatch, process_home)
 
     async def read_home():
-        return str(get_hermes_home())
+        return str(get_agent_home())
 
     results: dict = {}
 
     def scoped_call(key, home):
-        token = set_hermes_home_override(str(home))
+        token = set_agent_home_override(str(home))
         try:
             results[key] = mcp_loop._run_on_mcp_loop(read_home(), timeout=10)
         finally:
-            reset_hermes_home_override(token)
+            reset_agent_home_override(token)
 
     threads = [
         threading.Thread(target=scoped_call, args=("a", home_a)),

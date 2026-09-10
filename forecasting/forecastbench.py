@@ -112,9 +112,9 @@ def _cache_root(cache_dir: str | Path | None) -> Path | None:
         root = Path(cache_dir).expanduser()
     else:
         try:
-            from hermes_constants import get_hermes_home
+            from superforecasting_agent.constants import get_agent_home
 
-            root = get_hermes_home() / "cache" / "forecastbench"
+            root = get_agent_home() / "cache" / "forecastbench"
         except Exception:
             return None
     try:

@@ -98,7 +98,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   const renderCoexistence = async (viewElement: React.ReactElement) => {
     const [{ Box, render }, { PaletteOverlay }, { DARK_THEME }, { stripAnsi }, { patchOverlayState }] =
       await Promise.all([
-        import('@hermes/ink'),
+        import('@superforecasting/ink'),
         import('../components/paletteOverlay.js'),
         import('../theme.js'),
         import('../lib/text.js'),
@@ -140,7 +140,7 @@ describe('global palette / cheat-sheet gating over fullscreen views', () => {
   // open the view's useInput is inert, so `q` must be swallowed.
   const pressQ = async (viewFactory: (onClose: () => void) => React.ReactElement, paletteOpen: boolean) => {
     const [{ render }, { patchOverlayState }] = await Promise.all([
-      import('@hermes/ink'),
+      import('@superforecasting/ink'),
       import('../app/overlayStore.js')
     ])
 

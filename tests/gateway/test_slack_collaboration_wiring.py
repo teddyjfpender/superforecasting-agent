@@ -57,7 +57,7 @@ async def test_gateway_wires_thread_changeset_card_without_resetting_existing_ph
     runner = GatewayRunner.__new__(GatewayRunner)
     slack = _Slack()
     runner.adapters = {Platform.SLACK: slack}
-    with patch("hermes_cli.config.load_config", return_value=config), patch(
+    with patch("superforecasting_agent.runtime.config.load_config", return_value=config), patch(
         "forecasting.ForecastLedger", return_value=ledger
     ):
         runner._configure_slack_changeset_collaboration(slack)
@@ -154,7 +154,7 @@ def test_gateway_builds_owner_fork_publisher_with_agent_attribution(tmp_path, mo
     slack = _Slack()
     runner.adapters = {Platform.SLACK: slack}
     oauth = SimpleNamespace(control_plane_token=lambda binding_id: "never-exposed")
-    with patch("hermes_cli.config.load_config", return_value=config), patch(
+    with patch("superforecasting_agent.runtime.config.load_config", return_value=config), patch(
         "forecasting.ForecastLedger", return_value=ledger
     ), patch("forecasting.github.GitHubOAuthService", return_value=oauth):
         runner._configure_slack_changeset_collaboration(slack)

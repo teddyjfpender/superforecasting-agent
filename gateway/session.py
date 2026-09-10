@@ -64,7 +64,7 @@ from .whatsapp_identity import (
     canonical_whatsapp_identifier,
     normalize_whatsapp_identifier,  # noqa: F401 - re-exported for gateway.session callers
 )
-from utils import atomic_replace
+from superforecasting_agent.storage.files import atomic_replace
 
 
 @dataclass
@@ -220,8 +220,8 @@ def _discord_tools_loaded() -> bool:
     if not (os.environ.get("DISCORD_BOT_TOKEN") or "").strip():
         return False
     try:
-        from hermes_cli.config import load_config
-        from hermes_cli.tools_config import _get_platform_tools
+        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.runtime.tools_config import _get_platform_tools
         cfg = load_config()
         enabled = _get_platform_tools(cfg, "discord", include_default_mcp_servers=False)
         return "discord" in enabled or "discord_admin" in enabled
@@ -409,7 +409,7 @@ def build_session_context_prompt(
     lines.append("")
     lines.append("**Delivery options for scheduled tasks:**")
 
-    from hermes_constants import display_hermes_home
+    from superforecasting_agent.constants import display_agent_home
 
     # Origin delivery
     if context.source.platform == Platform.LOCAL:
@@ -422,7 +422,7 @@ def build_session_context_prompt(
 
     # Local always available
     lines.append(
-        f"- `\"local\"` → Save to local files only ({display_hermes_home()}/cron/output/)"
+        f"- `\"local\"` → Save to local files only ({display_agent_home()}/cron/output/)"
     )
 
     # Platform home channels
@@ -700,7 +700,7 @@ class SessionStore:
         # Initialize SQLite session database
         self._db = None
         try:
-            from hermes_state import SessionDB
+            from superforecasting_agent.storage.session import SessionDB
             self._db = SessionDB()
         except Exception as e:
             print(f"[gateway] Warning: SQLite session store unavailable, falling back to JSONL: {e}")

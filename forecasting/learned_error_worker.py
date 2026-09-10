@@ -87,7 +87,7 @@ def build_agent_learned_error_reviewer(
     """Build the hosted reviewer while preserving the configured model."""
     if not model:
         from forecasting.quorum_autorun import resolve_active_model_id
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         model = resolve_active_model_id(load_config().get("model"))
     if not model:

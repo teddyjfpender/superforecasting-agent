@@ -38,7 +38,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.jobs.detached import spawn_detached_job
 from forecasting.jobs.store import JobStore
@@ -57,7 +57,7 @@ def _now_iso() -> str:
 
 
 def jobs_dir() -> Path:
-    path = get_hermes_home() / "quorum_runs"
+    path = get_agent_home() / "quorum_runs"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -265,7 +265,7 @@ def _supervisor_search_enabled(spec: dict[str, Any]) -> bool:
     if "supervisor_search" in spec:
         return _truthy(spec.get("supervisor_search"))
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config().get("quorum", {})
     except Exception:  # noqa: BLE001 — config optional; harmless default ON
@@ -288,7 +288,7 @@ def _track_record_weights_enabled(spec: dict[str, Any]) -> bool:
     if "track_record_weights" in spec:
         return _truthy(spec.get("track_record_weights"))
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config().get("quorum", {})
     except Exception:  # noqa: BLE001 — config optional; harmless default ON
@@ -309,7 +309,7 @@ def _track_record_min_sample(spec: dict[str, Any]) -> int:
         except (TypeError, ValueError):
             return 10
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config().get("quorum", {})
         if isinstance(cfg, dict) and "track_record_min_sample" in cfg:
@@ -341,7 +341,7 @@ def _derive_alpha_enabled() -> bool:
     ``False`` (the fail-safe: never derive without an explicit opt-in)."""
 
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cal = (load_config().get("forecasting", {}) or {}).get("calibration", {})
     except Exception:  # noqa: BLE001 — config optional; default OFF without it
@@ -392,7 +392,7 @@ def _market_anchor_enabled(spec: dict[str, Any]) -> bool:
     if "market_anchor" in spec:
         return _truthy(spec.get("market_anchor"))
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config().get("quorum", {})
     except Exception:  # noqa: BLE001 — config optional; doctrine default ON
@@ -415,7 +415,7 @@ def _market_anchor_threshold_pp(spec: dict[str, Any]) -> float:
         except (TypeError, ValueError):
             return 10.0
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
 
         cfg = load_config().get("quorum", {})
         if isinstance(cfg, dict) and "market_anchor_deviation_pp" in cfg:
@@ -943,7 +943,6 @@ __all__ = [
     "active_jobs_by_question",
     "jobs_dir",
     "_now_iso",
-    "_repo_root",
     "_truthy",
     "_supervisor_search_enabled",
     "_track_record_weights_enabled",

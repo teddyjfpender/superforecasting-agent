@@ -27,7 +27,7 @@ def _warn_once(key: str, message: str) -> None:
 
 def _rules_file_path(rel: str) -> str | None:
     try:
-        from hermes_cli.config import get_config_path
+        from superforecasting_agent.runtime.config import get_config_path
 
         return os.path.join(str(get_config_path().parent), rel)
     except Exception:

@@ -125,7 +125,7 @@ def _has_env(name: str) -> bool:
 def _load_web_config() -> dict:
     """Load the ``web:`` section from the active agent-home config.yaml."""
     try:
-        from hermes_cli.config import load_config
+        from superforecasting_agent.runtime.config import load_config
         return load_config().get("web", {})
     except (ImportError, Exception):
         return {}
@@ -371,9 +371,9 @@ def _store_full_text(url: str, content: str) -> Optional[str]:
     try:
         import hashlib
         from urllib.parse import urlparse
-        from hermes_constants import get_hermes_dir
+        from superforecasting_agent.constants import get_agent_dir
 
-        cache_dir = get_hermes_dir("cache/web", "web_cache")
+        cache_dir = get_agent_dir("cache/web", "web_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
 
         host = (urlparse(url).hostname or "page").replace(":", "_")

@@ -22,7 +22,7 @@ from forecasting.ledger import ForecastLedger
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    # Pin both home env vars (get_hermes_home checks SUPERFORECASTING_AGENT_HOME
+    # Pin both home env vars (get_agent_home checks SUPERFORECASTING_AGENT_HOME
     # first) so the JobStore + ForecastLedger(None) land in the tempdir.
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))

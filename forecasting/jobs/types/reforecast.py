@@ -42,7 +42,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 from forecasting.jobs.detached import spawn_detached_job
 from forecasting.jobs.store import JobStore
@@ -75,7 +75,7 @@ def _repo_root() -> Path:
 
 
 def jobs_dir() -> Path:
-    path = get_hermes_home() / "reforecast_runs"
+    path = get_agent_home() / "reforecast_runs"
     path.mkdir(parents=True, exist_ok=True)
     return path
 

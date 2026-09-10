@@ -62,7 +62,7 @@ def _resolve_browser_cdp_url() -> str:
     if env_url:
         return env_url
     try:
-        from hermes_cli.config import read_raw_config
+        from superforecasting_agent.runtime.config import read_raw_config
 
         cfg = read_raw_config()
         browser_cfg = cfg.get("browser", {}) if isinstance(cfg, dict) else {}
@@ -121,7 +121,7 @@ def _normalize_cdp_url(parsed) -> str:
 
 
 def _failure_messages(url: str, port: int, system: str) -> list[str]:
-    from hermes_cli.browser_connect import manual_chrome_debug_command
+    from superforecasting_agent.runtime.browser_connect import manual_chrome_debug_command
 
     command = manual_chrome_debug_command(port, system)
     hint = (
@@ -159,7 +159,7 @@ def _(rid, params: dict) -> dict:
 def _browser_connect(rid, params: dict) -> dict:
     import platform
 
-    from hermes_cli.browser_connect import DEFAULT_BROWSER_CDP_URL
+    from superforecasting_agent.runtime.browser_connect import DEFAULT_BROWSER_CDP_URL
     from tools.browser_tool import cleanup_all_browsers
     from urllib.parse import urlparse
 
@@ -218,7 +218,7 @@ def _browser_connect(rid, params: dict) -> dict:
             ok = any(_http_ok(p, timeout=2.0) for p in probes)
 
             if not ok and _is_default_local_cdp(parsed):
-                from hermes_cli.browser_connect import try_launch_chrome_debug
+                from superforecasting_agent.runtime.browser_connect import try_launch_chrome_debug
 
                 announce(
                     "Chromium-family browser isn't running with remote debugging — attempting to launch..."

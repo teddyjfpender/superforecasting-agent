@@ -10,6 +10,8 @@ import sys
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
+from superforecasting_agent.runtime import console_output
+
 import pytest
 import cli as cli_mod
 
@@ -264,6 +266,18 @@ class TestDisplayResumedHistory:
         assert "What's in this image?" in output
         assert "[image]" in output
 
+    @pytest.mark.parametrize("content", [None, "", [], [{"type": "input_audio", "data": "fixture"}]])
+    def test_user_without_displayable_text_keeps_recap_readable(self, content):
+        cli = _make_cli()
+        cli.conversation_history = [
+            {"role": "user", "content": content},
+            {"role": "assistant", "content": "Saved forecast reasoning."},
+        ]
+        output = self._capture_display(cli)
+        assert "You:" in output
+        assert "Saved forecast reasoning." in output
+        assert cli.conversation_history[0]["content"] == content
+
     def test_empty_history_no_output(self):
         cli = _make_cli()
         cli.conversation_history = []
@@ -297,8 +311,8 @@ class TestDisplayResumedHistory:
             output = self._capture_display(cli)
 
             assert "Previous Forecast Session" in output
-            assert len(cli_mod._OUTPUT_HISTORY) == 1
-            assert callable(cli_mod._OUTPUT_HISTORY[0])
+            assert len(console_output._OUTPUT_HISTORY) == 1
+            assert callable(console_output._OUTPUT_HISTORY[0])
         finally:
             cli_mod._configure_output_history(True, 200)
 
@@ -642,8 +656,8 @@ class TestResumeDisplayConfig:
     """resume_display config option defaults and behavior."""
 
     def test_default_config_has_resume_display(self):
-        """DEFAULT_CONFIG in hermes_cli/config.py includes resume_display."""
-        from hermes_cli.config import DEFAULT_CONFIG
+        """DEFAULT_CONFIG in superforecasting_agent/runtime/config.py includes resume_display."""
+        from superforecasting_agent.runtime.config import DEFAULT_CONFIG
         display = DEFAULT_CONFIG.get("display", {})
         assert "resume_display" in display
         assert display["resume_display"] == "full"

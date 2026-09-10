@@ -16,8 +16,8 @@ _WRITE_SAFE_ROOT_ENV_NAMES = (
 def _hermes_home_path() -> Path:
     """Resolve the active agent home (profile-aware) without circular imports."""
     try:
-        from hermes_constants import get_hermes_home  # local import to avoid cycles
-        return get_hermes_home()
+        from superforecasting_agent.constants import get_agent_home  # local import to avoid cycles
+        return get_agent_home()
     except Exception:
         return Path(os.path.expanduser("~/.superforecasting-agent"))
 
@@ -30,8 +30,8 @@ def _hermes_root_path() -> Path:
     profile run still can't read ``<root>/auth.json`` etc.
     """
     try:
-        from hermes_constants import get_default_hermes_root  # local import to avoid cycles
-        return get_default_hermes_root()
+        from superforecasting_agent.constants import get_default_agent_root  # local import to avoid cycles
+        return get_default_agent_root()
     except Exception:
         return _hermes_home_path()
 

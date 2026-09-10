@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Dict
 
-from utils import atomic_json_write
+from superforecasting_agent.storage.files import atomic_json_write
 
 if TYPE_CHECKING:
     from gateway.platforms.base import MessageEvent
@@ -227,8 +227,8 @@ class ThreadParticipationTracker:
         }
 
     def _state_path(self) -> Path:
-        from hermes_constants import get_hermes_home
-        return get_hermes_home() / f"{self._platform}_threads.json"
+        from superforecasting_agent.constants import get_agent_home
+        return get_agent_home() / f"{self._platform}_threads.json"
 
     def _load(self) -> list[str]:
         path = self._state_path()

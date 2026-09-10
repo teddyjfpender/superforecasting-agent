@@ -116,6 +116,7 @@ class WSTransport:
 async def handle_ws(ws: Any) -> None:
     """Run one WebSocket session. Wire-compatible with ``tui_gateway.entry``."""
     await ws.accept()
+    server.start_build_check()
 
     transport = WSTransport(ws, asyncio.get_running_loop())
 

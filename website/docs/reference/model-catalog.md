@@ -95,7 +95,7 @@ Maintainers:
 
 ```bash
 # Re-generate from the in-repo hardcoded lists (keeps manifest in sync after
-# editing OPENROUTER_MODELS or _PROVIDER_MODELS["nous"] in hermes_cli/models.py).
+# editing OPENROUTER_MODELS or _PROVIDER_MODELS["nous"] in superforecasting_agent/runtime/models.py).
 python scripts/build_model_catalog.py
 ```
 

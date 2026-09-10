@@ -1,7 +1,7 @@
 """Render ``docs/reference/config-and-env.md`` from the source itself.
 
 Source of truth: every ``os.getenv`` / ``os.environ.get`` / ``os.environ[...]``
-read across ``forecasting/``, ``tui_gateway/``, ``tools/``, and ``hermes_cli/``.
+read across ``forecasting/``, ``tui_gateway/``, ``tools/``, and ``superforecasting_agent/``.
 
 There is no hand-maintained list of environment variables — there cannot be one
 without it drifting. Instead this page is derived by walking the AST of every
@@ -19,12 +19,12 @@ from pathlib import Path
 
 from scripts.docgen.common import header
 
-SOURCE = "os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, hermes_cli/"
+SOURCE = "os.getenv / os.environ reads across forecasting/, tui_gateway/, tools/, superforecasting_agent/"
 
 # The package roots we scan. Only production source — no test trees exist under
 # these packages (verified), so no filtering is needed beyond __pycache__, which
 # rglob("*.py") never returns.
-_PACKAGES = ("forecasting", "tui_gateway", "tools", "hermes_cli")
+_PACKAGES = ("forecasting", "tui_gateway", "tools", "superforecasting_agent")
 
 # A variable is flagged a **secret** purely by name — anything whose name carries
 # one of these tokens is treated as a credential and grouped apart so an operator
@@ -148,7 +148,7 @@ def render() -> str:
             blurb=(
                 f"Every environment variable the server, tools, and CLI actually"
                 f" **read** — harvested by walking the AST of every module under"
-                f" `forecasting/`, `tui_gateway/`, `tools/`, and `hermes_cli/` for"
+                f" `forecasting/`, `tui_gateway/`, `tools/`, and `superforecasting_agent/` for"
                 f" `os.getenv` / `os.environ.get` / `os.environ[...]`. There are"
                 f" **{len(found)} variables** ({len(secrets)} flagged as secrets,"
                 f" {len(config)} configuration/runtime). The **default** column shows"

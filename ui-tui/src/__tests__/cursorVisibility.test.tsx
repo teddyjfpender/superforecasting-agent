@@ -51,7 +51,7 @@ const inkStdout = () => {
 }
 
 const renderProbe = async (element: React.ReactElement) => {
-  const { render } = await import('@hermes/ink')
+  const { render } = await import('@superforecasting/ink')
   // `render` is async — await it to get the real Instance (rerender/unmount);
   // otherwise `instance` is a Promise and those handles are undefined.
   let instance!: Awaited<ReturnType<typeof render>>

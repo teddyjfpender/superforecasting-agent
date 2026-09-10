@@ -33,7 +33,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse, parse_qs, urlunparse
 
-from hermes_cli.timeouts import get_provider_request_timeout, get_provider_stale_timeout
+from superforecasting_agent.runtime.timeouts import get_provider_request_timeout, get_provider_stale_timeout
 from agent.error_classifier import classify_api_error, FailoverReason
 from agent.model_metadata import is_local_endpoint
 from agent.message_sanitization import (
@@ -59,9 +59,8 @@ from agent.tool_guardrails import (
     toolguard_synthetic_result,
 )
 from tools.terminal_tool import is_persistent_env
-from utils import (
-    base_url_host_matches,
-    base_url_hostname,
+from superforecasting_agent.urls import base_url_host_matches, base_url_hostname
+from superforecasting_agent.environment import (
     env_var_alias_float,
     env_var_alias_int,
     env_var_alias_value,
@@ -1205,7 +1204,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
         fb_api_key_hint = (fb.get("api_key") or "").strip() or None
         if not fb_api_key_hint:
             # key_env and api_key_env are both documented aliases (see
-            # _normalize_custom_provider_entry in hermes_cli/config.py).
+            # _normalize_custom_provider_entry in superforecasting_agent/runtime/config.py).
             fb_key_env = (fb.get("key_env") or fb.get("api_key_env") or "").strip()
             if fb_key_env:
                 fb_api_key_hint = os.getenv(fb_key_env, "").strip() or None
@@ -1224,7 +1223,7 @@ def try_activate_fallback(agent, reason: "FailoverReason | None" = None) -> bool
                 fb_provider)
             return agent._try_activate_fallback()  # try next in chain
         try:
-            from hermes_cli.model_normalize import normalize_model_for_provider
+            from superforecasting_agent.runtime.model_normalize import normalize_model_for_provider
 
             fb_model = normalize_model_for_provider(fb_model, fb_provider)
         except Exception:

@@ -169,12 +169,12 @@ def sync_turn(self, user_content, assistant_content):
 
 ## Profile Isolation
 
-All storage paths **must** use the `hermes_home` kwarg from `initialize()` or `get_hermes_home()`, not hardcoded legacy paths. New user-facing docs should prefer `~/.superforecasting-agent`; inherited `~/.hermes` homes remain compatibility fallbacks.
+All storage paths **must** use the `hermes_home` kwarg from `initialize()` or `get_agent_home()`, not hardcoded legacy paths. New user-facing docs should prefer `~/.superforecasting-agent`; inherited `~/.hermes` homes remain compatibility fallbacks.
 
 ```python
 # CORRECT — profile-scoped
-from hermes_constants import get_hermes_home
-data_dir = get_hermes_home() / "my-provider"
+from superforecasting_agent.constants import get_agent_home
+data_dir = get_agent_home() / "my-provider"
 
 # WRONG - shared across all profiles and bypasses fork-native homes
 data_dir = Path("~/.hermes/my-provider").expanduser()

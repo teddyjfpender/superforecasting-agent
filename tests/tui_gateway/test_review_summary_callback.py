@@ -23,12 +23,12 @@ def server():
     with patch.dict(
         "sys.modules",
         {
-            "hermes_constants": MagicMock(
-                get_hermes_home=MagicMock(return_value=Path("/tmp/hermes_test_review_summary"))
+            "superforecasting_agent.constants": MagicMock(
+                get_agent_home=MagicMock(return_value=Path("/tmp/hermes_test_review_summary"))
             ),
-            "hermes_cli.env_loader": MagicMock(),
-            "hermes_cli.banner": MagicMock(),
-            "hermes_state": MagicMock(),
+            "superforecasting_agent.runtime.env_loader": MagicMock(),
+            "superforecasting_agent.runtime.banner": MagicMock(),
+            "superforecasting_agent.storage.session": MagicMock(),
         },
     ):
         import importlib

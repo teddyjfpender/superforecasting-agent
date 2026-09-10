@@ -1,5 +1,5 @@
-import { forceRedraw, useInput } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { forceRedraw, useInput } from '@superforecasting/ink'
 import { useEffect, useRef } from 'react'
 
 import { TYPING_IDLE_MS } from '../config/timing.js'

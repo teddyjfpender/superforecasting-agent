@@ -1,5 +1,5 @@
-import { Box, Text } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, Text } from '@superforecasting/ink'
 
 import { $globalModal } from '../app/overlayStore.js'
 import type { CatalogFeed } from '../content/newsFeedCatalog.js'

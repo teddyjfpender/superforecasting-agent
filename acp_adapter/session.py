@@ -8,7 +8,7 @@ database and restore the full conversation history.
 """
 from __future__ import annotations
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 
 import copy
 import json
@@ -45,7 +45,7 @@ def _translate_acp_cwd(cwd: str) -> str:
     tools, and persisted ACP sessions all agree on the usable workspace.
     Native Linux/macOS keeps the original cwd unchanged.
     """
-    from hermes_constants import is_wsl
+    from superforecasting_agent.constants import is_wsl
 
     if not is_wsl():
         return cwd
@@ -404,17 +404,16 @@ class SessionManager:
         Returns ``None`` if the DB is unavailable (e.g. import error in a
         minimal test environment).
 
-        Note: we resolve ``HERMES_HOME`` dynamically rather than relying on
-        the module-level ``DEFAULT_DB_PATH`` constant, because that constant
-        is evaluated at import time and won't reflect env-var changes made
-        later (e.g. by the test fixture ``_isolate_hermes_home``).
+        Note: resolve the active forecast home dynamically, including legacy
+        home overrides, rather than using the import-time ``DEFAULT_DB_PATH``.
+        This keeps sessions aligned with later profile or test-home changes.
         """
         if self._db_instance is not None:
             return self._db_instance
         try:
-            from hermes_state import SessionDB
-            hermes_home = get_hermes_home()
-            self._db_instance = SessionDB(db_path=hermes_home / "state.db")
+            from superforecasting_agent.storage.session import SessionDB
+            agent_home = get_agent_home()
+            self._db_instance = SessionDB(db_path=agent_home / "state.db")
             return self._db_instance
         except Exception:
             logger.debug("SessionDB unavailable for ACP persistence", exc_info=True)
@@ -452,7 +451,7 @@ class SessionManager:
                     session_id=state.session_id,
                     source="acp",
                     model=model_str,
-                    model_config={"cwd": state.cwd},
+                    model_config=session_meta,
                 )
             else:
                 # Update model_config (contains cwd) if changed.
@@ -574,8 +573,8 @@ class SessionManager:
             return self._agent_factory()
 
         from run_agent import AIAgent
-        from hermes_cli.config import load_config
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from superforecasting_agent.runtime.config import load_config
+        from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
         config = load_config()
         model_cfg = config.get("model")

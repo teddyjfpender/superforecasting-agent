@@ -195,6 +195,6 @@ Strategies live in `config.yaml`, not `auth.json`.
 Key modules:
 
 - `agent/credential_pool.py` — storage, selection, rotation, cooldowns
-- `hermes_cli/auth_commands.py` — CLI commands and interactive wizard
-- `hermes_cli/runtime_provider.py` — pool-aware credential resolution
+- `superforecasting_agent/runtime/auth_commands.py` — CLI commands and interactive wizard
+- `superforecasting_agent/runtime/runtime_provider.py` — pool-aware credential resolution
 - `run_agent.py` — error recovery and fallback handoff

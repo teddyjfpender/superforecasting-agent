@@ -7,7 +7,7 @@ import json
 import tools.desk_forecast_tool  # noqa: F401 (self-registers)
 import tools.market_compute_tool  # noqa: F401
 import tools.market_presentation_tool as mpt
-import toolsets
+from superforecasting_agent.tooling import toolsets as toolsets
 from tools.registry import registry
 
 

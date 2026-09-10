@@ -108,7 +108,7 @@ const mountPicker = async (payload: ModelOptionsResponse) => {
   const selected: { effort?: string; value?: string }[] = []
 
   const [{ Box, render }, { ModelPicker }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/modelPicker.js'),
     import('../theme.js'),
     import('../lib/text.js')

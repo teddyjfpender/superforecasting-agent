@@ -30,11 +30,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 try:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 except Exception:  # pragma: no cover — plugin may load before constants resolves
     import os
 
-    def get_hermes_home() -> Path:  # type: ignore[no-redef]
+    def get_agent_home() -> Path:  # type: ignore[no-redef]
         for env_name in ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"):
             val = (os.environ.get(env_name) or "").strip()
             if val:
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 
 def get_state_dir() -> Path:
     """State dir — separate from the main agent logs directory."""
-    return get_hermes_home() / "disk-cleanup"
+    return get_agent_home() / "disk-cleanup"
 
 
 def get_tracked_file() -> Path:
@@ -72,7 +72,7 @@ def is_safe_path(path: Path) -> bool:
 
     Rejects Windows mounts (``/mnt/c`` etc.) and any system directory.
     """
-    hermes_home = get_hermes_home()
+    hermes_home = get_agent_home()
     try:
         path.resolve().relative_to(hermes_home)
         return True
@@ -299,7 +299,7 @@ def quick() -> Dict[str, Any]:
     # Remove empty dirs under the agent home (but leave the home itself and
     # a short list of well-known top-level state dirs alone — a fresh install
     # has these empty, and deleting them would surprise the user).
-    hermes_home = get_hermes_home()
+    hermes_home = get_agent_home()
     _PROTECTED_TOP_LEVEL = {
         "logs", "memories", "sessions", "cron", "cronjobs",
         "cache", "skills", "plugins", "disk-cleanup", "optional-skills",
@@ -475,7 +475,7 @@ def guess_category(path: Path) -> Optional[str]:
         return None
 
     # Skip the state dir itself, logs, memory files, sessions, config.
-    hermes_home = get_hermes_home()
+    hermes_home = get_agent_home()
     try:
         rel = path.resolve().relative_to(hermes_home)
         top = rel.parts[0] if rel.parts else ""

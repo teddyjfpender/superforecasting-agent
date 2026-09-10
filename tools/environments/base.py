@@ -20,9 +20,9 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import IO, Callable, Protocol
 
-from hermes_constants import get_hermes_home
+from superforecasting_agent.constants import get_agent_home
 from tools.interrupt import is_interrupted
-from utils import env_var_alias_enabled
+from superforecasting_agent.environment import env_var_alias_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +95,7 @@ def get_sandbox_dir() -> Path:
     if custom:
         p = Path(custom)
     else:
-        p = get_hermes_home() / "sandboxes"
+        p = get_agent_home() / "sandboxes"
     p.mkdir(parents=True, exist_ok=True)
     return p
 

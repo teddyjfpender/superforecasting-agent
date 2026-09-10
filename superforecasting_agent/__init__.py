@@ -1,25 +1,11 @@
-"""Public package namespace for the Superforecasting Agent fork."""
+"""Public Superforecasting Agent API, loaded only when requested.
+
+Keep package initialization free of application imports so startup helpers can
+run before configuration, logging, or the forecast ledger are initialized.
+"""
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
-
-from forecasting import (
-    ForecastLedger,
-    ForecastQuestion,
-    ForecastSnapshot,
-    ForecastingError,
-    LedgerNotFoundError,
-    OutcomeSpace,
-    PRODUCT_NAME,
-    PRODUCT_SLUG,
-    ValidationError,
-)
-
-try:
-    __version__ = version("superforecasting-agent")
-except PackageNotFoundError:  # pragma: no cover - editable source tree without metadata
-    __version__ = "0.0.0"
 
 __all__ = [
     "ForecastLedger",
@@ -33,3 +19,25 @@ __all__ = [
     "ValidationError",
     "__version__",
 ]
+
+
+def __getattr__(name: str):
+    if name == "__version__":
+        from importlib.metadata import PackageNotFoundError, version
+
+        try:
+            value = version("superforecasting-agent")
+        except PackageNotFoundError:
+            value = "0.0.0"
+    elif name in __all__:
+        import forecasting
+
+        value = getattr(forecasting, name)
+    else:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    globals()[name] = value
+    return value
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

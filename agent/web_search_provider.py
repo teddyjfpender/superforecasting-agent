@@ -198,7 +198,7 @@ class WebSearchProvider(abc.ABC):
     def get_setup_schema(self) -> Dict[str, Any]:
         """Return provider metadata for the ``superforecasting-agent tools`` picker.
 
-        Used by ``hermes_cli/tools_config.py`` to inject this provider as a
+        Used by ``superforecasting_agent/runtime/tools_config.py`` to inject this provider as a
         row in the Web Search / Web Extract picker. Shape::
 
             {

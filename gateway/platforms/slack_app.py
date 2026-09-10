@@ -74,9 +74,9 @@ def url_verification_challenge(payload: dict[str, Any]) -> str | None:
 
 
 def _tokens_path() -> Path:
-    from hermes_constants import get_hermes_home
+    from superforecasting_agent.constants import get_agent_home
 
-    return get_hermes_home() / "slack_tokens.json"
+    return get_agent_home() / "slack_tokens.json"
 
 
 def write_slack_token(

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,10 +25,6 @@ def hermes_home(tmp_path, monkeypatch):
     home.mkdir()
     monkeypatch.setattr(Path, "home", lambda: tmp_path)
     monkeypatch.setenv("HERMES_HOME", str(home))
-    # Clear any cached hermes_home computation
-    import hermes_constants
-    if hasattr(hermes_constants, "_hermes_home_cache"):
-        hermes_constants._hermes_home_cache = None
     return home
 
 
@@ -49,10 +44,6 @@ def test_save_conversation_writes_under_hermes_home(hermes_home, tmp_path, monke
     work = tmp_path / "somewhere-else"
     work.mkdir()
     monkeypatch.chdir(work)
-
-    # Import fresh to pick up the HERMES_HOME fixture
-    for mod in [m for m in sys.modules if m.startswith("cli") or m == "hermes_constants"]:
-        sys.modules.pop(mod, None)
 
     import cli  # noqa: F401  (module under test)
 
@@ -89,8 +80,6 @@ def test_save_conversation_writes_under_hermes_home(hermes_home, tmp_path, monke
 
 
 def test_save_conversation_empty_history_does_nothing(hermes_home, capsys):
-    for mod in [m for m in sys.modules if m.startswith("cli") or m == "hermes_constants"]:
-        sys.modules.pop(mod, None)
     import cli
 
     stub = _make_stub_cli([])

@@ -10,7 +10,7 @@ This is a library module (not an agent tool). It provides:
   - HubLockFile: Track provenance of installed hub skills
   - Hub state directory management (quarantine, audit log, taps, index cache)
 
-Used by hermes_cli/skills_hub.py for CLI commands and the /skills slash command
+Used by superforecasting_agent/runtime/skills_hub.py for CLI commands and the /skills slash command
 inside an interactive forecast session.
 """
 
@@ -20,13 +20,10 @@ import logging
 import os
 import re
 import shutil
-import subprocess
 import time
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path, PurePosixPath
-from hermes_constants import get_hermes_home
+from pathlib import Path
+from superforecasting_agent.constants import get_agent_home
 from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import urljoin, urlparse, urlunparse
 
@@ -39,6 +36,13 @@ from tools.skills_guard import (
 from tools.url_safety import is_safe_url
 from tools.website_policy import check_website_access
 
+from superforecasting_agent.tooling.skill_paths import (
+    _normalize_bundle_path as _normalize_bundle_path,
+    _validate_skill_name as _validate_skill_name,
+    _validate_category_name as _validate_category_name,
+    _validate_bundle_rel_path as _validate_bundle_rel_path,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,7 +50,7 @@ logger = logging.getLogger(__name__)
 # Paths
 # ---------------------------------------------------------------------------
 
-HERMES_HOME = get_hermes_home()
+HERMES_HOME = get_agent_home()
 SKILLS_DIR = HERMES_HOME / "skills"
 HUB_DIR = SKILLS_DIR / ".hub"
 LOCK_FILE = HUB_DIR / "lock.json"
@@ -66,62 +70,17 @@ _MAX_SKILL_FETCH_REDIRECTS = 5
 # Data models
 # ---------------------------------------------------------------------------
 
-@dataclass
-class SkillMeta:
-    """Minimal metadata returned by search results."""
-    name: str
-    description: str
-    source: str           # "official", "github", "clawhub", "claude-marketplace", "lobehub"
-    identifier: str       # source-specific ID (e.g. "openai/skills/skill-creator")
-    trust_level: str      # "builtin" | "trusted" | "community"
-    repo: Optional[str] = None
-    path: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
-    extra: Dict[str, Any] = field(default_factory=dict)
+from superforecasting_agent.tooling.skill_types import (
+    SkillMeta as SkillMeta, SkillBundle as SkillBundle, SkillSource as SkillSource,
+)
 
 
-@dataclass
-class SkillBundle:
-    """A downloaded skill ready for quarantine/scanning/installation."""
-    name: str
-    files: Dict[str, Union[str, bytes]]   # relative_path -> file content
-    source: str
-    identifier: str
-    trust_level: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
-def _normalize_bundle_path(path_value: str, *, field_name: str, allow_nested: bool) -> str:
-    """Normalize and validate bundle-controlled paths before touching disk."""
-    if not isinstance(path_value, str):
-        raise ValueError(f"Unsafe {field_name}: expected a string")
-
-    raw = path_value.strip()
-    if not raw:
-        raise ValueError(f"Unsafe {field_name}: empty path")
-
-    normalized = raw.replace("\\", "/")
-    path = PurePosixPath(normalized)
-    parts = [part for part in path.parts if part not in {"", "."}]
-
-    if normalized.startswith("/") or path.is_absolute():
-        raise ValueError(f"Unsafe {field_name}: {path_value}")
-    if not parts or any(part == ".." for part in parts):
-        raise ValueError(f"Unsafe {field_name}: {path_value}")
-    if re.fullmatch(r"[A-Za-z]:", parts[0]):
-        raise ValueError(f"Unsafe {field_name}: {path_value}")
-    if not allow_nested and len(parts) != 1:
-        raise ValueError(f"Unsafe {field_name}: {path_value}")
-
-    return "/".join(parts)
 
 
-def _validate_skill_name(name: str) -> str:
-    return _normalize_bundle_path(name, field_name="skill name", allow_nested=False)
 
 
-def _validate_category_name(category: str) -> str:
-    return _normalize_bundle_path(category, field_name="category", allow_nested=False)
 
 
 def _guarded_http_get(url: str, *, timeout: int = 20) -> Optional[httpx.Response]:
@@ -161,163 +120,19 @@ def _guarded_http_get(url: str, *, timeout: int = 20) -> Optional[httpx.Response
     return None
 
 
-def _validate_bundle_rel_path(rel_path: str) -> str:
-    return _normalize_bundle_path(rel_path, field_name="bundle file path", allow_nested=True)
 
 
 # ---------------------------------------------------------------------------
 # GitHub Authentication
 # ---------------------------------------------------------------------------
 
-class GitHubAuth:
-    """
-    GitHub API authentication. Tries methods in priority order:
-      1. GITHUB_TOKEN / GH_TOKEN env var (PAT — the default)
-      2. `gh auth token` subprocess (if gh CLI is installed)
-      3. GitHub App JWT + installation token (if app credentials configured)
-      4. Unauthenticated (60 req/hr, public repos only)
-    """
-
-    def __init__(self):
-        self._cached_token: Optional[str] = None
-        self._cached_method: Optional[str] = None
-        self._app_token_expiry: float = 0
-
-    def get_headers(self) -> Dict[str, str]:
-        """Return authorization headers for GitHub API requests."""
-        token = self._resolve_token()
-        headers = {"Accept": "application/vnd.github.v3+json"}
-        if token:
-            headers["Authorization"] = f"token {token}"
-        return headers
-
-    def is_authenticated(self) -> bool:
-        return self._resolve_token() is not None
-
-    def auth_method(self) -> str:
-        """Return which auth method is active: 'pat', 'gh-cli', 'github-app', or 'anonymous'."""
-        self._resolve_token()
-        return self._cached_method or "anonymous"
-
-    def _resolve_token(self) -> Optional[str]:
-        # Return cached token if still valid
-        if self._cached_token:
-            if self._cached_method != "github-app" or time.time() < self._app_token_expiry:
-                return self._cached_token
-
-        # 1. Environment variable
-        token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-        if token:
-            self._cached_token = token
-            self._cached_method = "pat"
-            return token
-
-        # 2. gh CLI
-        token = self._try_gh_cli()
-        if token:
-            self._cached_token = token
-            self._cached_method = "gh-cli"
-            return token
-
-        # 3. GitHub App
-        token = self._try_github_app()
-        if token:
-            self._cached_token = token
-            self._cached_method = "github-app"
-            self._app_token_expiry = time.time() + 3500  # ~58 min (tokens last 1 hour)
-            return token
-
-        self._cached_method = "anonymous"
-        return None
-
-    def _try_gh_cli(self) -> Optional[str]:
-        """Try to get a token from the gh CLI."""
-        try:
-            result = subprocess.run(
-                ["gh", "auth", "token"],
-                capture_output=True, text=True, timeout=5,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-        except (FileNotFoundError, subprocess.TimeoutExpired) as e:
-            logger.debug("gh CLI token lookup failed: %s", e)
-        return None
-
-    def _try_github_app(self) -> Optional[str]:
-        """Try GitHub App JWT authentication if credentials are configured."""
-        app_id = os.environ.get("GITHUB_APP_ID")
-        key_path = os.environ.get("GITHUB_APP_PRIVATE_KEY_PATH")
-        installation_id = os.environ.get("GITHUB_APP_INSTALLATION_ID")
-
-        if not all([app_id, key_path, installation_id]):
-            return None
-
-        try:
-            import jwt  # PyJWT
-        except ImportError:
-            logger.debug("PyJWT not installed, skipping GitHub App auth")
-            return None
-
-        try:
-            key_file = Path(key_path)
-            if not key_file.exists():
-                return None
-            private_key = key_file.read_text(encoding="utf-8")
-
-            now = int(time.time())
-            payload = {
-                "iat": now - 60,
-                "exp": now + (10 * 60),
-                "iss": app_id,
-            }
-            encoded_jwt = jwt.encode(payload, private_key, algorithm="RS256")
-
-            resp = httpx.post(
-                f"https://api.github.com/app/installations/{installation_id}/access_tokens",
-                headers={
-                    "Authorization": f"Bearer {encoded_jwt}",
-                    "Accept": "application/vnd.github.v3+json",
-                },
-                timeout=10,
-            )
-            if resp.status_code == 201:
-                return resp.json().get("token")
-        except Exception as e:
-            logger.debug(f"GitHub App auth failed: {e}")
-
-        return None
+from superforecasting_agent.tooling.github_auth import GitHubAuth as GitHubAuth
 
 
 # ---------------------------------------------------------------------------
 # Source adapter interface
 # ---------------------------------------------------------------------------
 
-class SkillSource(ABC):
-    """Abstract base for all skill registry adapters."""
-
-    @abstractmethod
-    def search(self, query: str, limit: int = 10) -> List[SkillMeta]:
-        """Search for skills matching a query string."""
-        ...
-
-    @abstractmethod
-    def fetch(self, identifier: str) -> Optional[SkillBundle]:
-        """Download a skill bundle by identifier."""
-        ...
-
-    @abstractmethod
-    def inspect(self, identifier: str) -> Optional[SkillMeta]:
-        """Fetch metadata for a skill without downloading all files."""
-        ...
-
-    @abstractmethod
-    def source_id(self) -> str:
-        """Unique identifier for this source (e.g. 'github', 'clawhub')."""
-        ...
-
-    def trust_level_for(self, identifier: str) -> str:
-        """Determine trust level for a skill from this source."""
-        return "community"
 
 
 # ---------------------------------------------------------------------------
@@ -2541,7 +2356,7 @@ class OptionalSkillSource(SkillSource):
     """
 
     def __init__(self):
-        from hermes_constants import get_optional_skills_dir
+        from superforecasting_agent.constants import get_optional_skills_dir
 
         self._optional_dir = get_optional_skills_dir(
             Path(__file__).parent.parent / "optional-skills"
@@ -3083,10 +2898,10 @@ def check_for_skill_updates(
 
 
 # ---------------------------------------------------------------------------
-# Hermes centralized index source
+# Forecast centralized index source
 # ---------------------------------------------------------------------------
 
-HERMES_INDEX_URL = "https://superforecasting-agent.nousresearch.com/docs/api/skills-index.json"
+HERMES_INDEX_URL = "https://teddyjfpender.github.io/superforecasting-agent/docs/api/skills-index.json"
 HERMES_INDEX_CACHE_FILE = INDEX_CACHE_DIR / "hermes-index.json"
 HERMES_INDEX_TTL = 6 * 3600  # 6 hours
 
@@ -3111,11 +2926,11 @@ def _load_hermes_index() -> Optional[dict]:
     try:
         resp = httpx.get(HERMES_INDEX_URL, timeout=15, follow_redirects=True)
         if resp.status_code != 200:
-            logger.debug("Hermes index fetch returned %d", resp.status_code)
+            logger.debug("Forecast index fetch returned %d", resp.status_code)
             return _load_stale_index_cache()
         data = resp.json()
     except (httpx.HTTPError, json.JSONDecodeError) as e:
-        logger.debug("Hermes index fetch failed: %s", e)
+        logger.debug("Forecast index fetch failed: %s", e)
         return _load_stale_index_cache()
 
     # Validate structure
@@ -3142,7 +2957,7 @@ def _load_stale_index_cache() -> Optional[dict]:
     return None
 
 
-class HermesIndexSource(SkillSource):
+class ForecastIndexSource(SkillSource):
     """Skill source backed by the centralized Superforecasting Agent index.
 
     The index is a JSON catalog published to the docs site and rebuilt
@@ -3298,6 +3113,10 @@ class HermesIndexSource(SkillSource):
         )
 
 
+# Compatibility import for existing skill-source integrations.
+HermesIndexSource = ForecastIndexSource
+
+
 def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]:
     """
     Create all configured source adapters.
@@ -3311,7 +3130,7 @@ def create_source_router(auth: Optional[GitHubAuth] = None) -> List[SkillSource]
 
     sources: List[SkillSource] = [
         OptionalSkillSource(),        # Official optional skills (highest priority)
-        HermesIndexSource(auth=auth), # Centralized index (search + resolved install paths)
+        ForecastIndexSource(auth=auth), # Centralized index (search + resolved install paths)
         SkillsShSource(auth=auth),
         WellKnownSkillSource(),
         UrlSource(),                  # Direct HTTP(S) URL to a SKILL.md file

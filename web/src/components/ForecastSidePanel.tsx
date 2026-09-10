@@ -144,7 +144,7 @@ export function ForecastSidePanel({ channel, className }: ForecastSidePanelProps
 
   // Event subscriber WebSocket — receives the rebroadcast of every
   // dispatcher emit from the PTY child's gateway.  See /api/pub +
-  // /api/events in hermes_cli/web_server.py for the broadcast hop.
+  // /api/events in superforecasting_agent/runtime/web_server.py for the broadcast hop.
   //
   // Failures (auth/loopback rejection, server too old to expose the
   // endpoint, transient drops) surface in the same banner as the

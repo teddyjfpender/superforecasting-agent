@@ -82,7 +82,7 @@ describe('memoized TranscriptPane: scroll position survives re-renders', () => {
     const [{ AppLayout }, { GatewayProvider }, { Box, render }] = await Promise.all([
       import('../components/appLayout.js'),
       import('../app/gatewayContext.js'),
-      import('@hermes/ink')
+      import('@superforecasting/ink')
     ])
 
     const { resetOverlayState } = await import('../app/overlayStore.js')

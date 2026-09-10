@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from toolsets import resolve_toolset, get_toolset, validate_toolset
+from superforecasting_agent.tooling.toolsets import resolve_toolset, get_toolset, validate_toolset
 
 
 class TestHermesApiServerToolset:
@@ -62,7 +62,7 @@ class TestHermesApiServerToolset:
 
 class TestApiServerPlatformConfig:
     def test_platforms_dict_includes_api_server(self):
-        from hermes_cli.tools_config import PLATFORMS
+        from superforecasting_agent.runtime.tools_config import PLATFORMS
         assert "api_server" in PLATFORMS
         assert PLATFORMS["api_server"]["default_toolset"] == "forecast-api-server"
 
@@ -130,7 +130,7 @@ class TestApiServerAdapterToolset:
             # the override — the override governs the *configurable* toolsets.
             # Filter the always-on plugin keys so the pin still proves the
             # override was respected without over-fitting to which plugins ship.
-            from hermes_cli.tools_config import _get_plugin_toolset_keys
+            from superforecasting_agent.runtime.tools_config import _get_plugin_toolset_keys
             plugin_keys = _get_plugin_toolset_keys()
             configured = sorted(ts for ts in toolsets if ts not in plugin_keys)
             assert configured == ["terminal", "web"]

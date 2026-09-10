@@ -25,7 +25,7 @@ from forecasting.jobs.types.refresh import classify_refresh_status
 
 @pytest.fixture
 def home(tmp_path, monkeypatch):
-    # Pin both home env vars (get_hermes_home checks SUPERFORECASTING_AGENT_HOME
+    # Pin both home env vars (get_agent_home checks SUPERFORECASTING_AGENT_HOME
     # first) so execute's ForecastLedger(None) + the JobStore land in the tempdir.
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.setenv("SUPERFORECASTING_AGENT_HOME", str(tmp_path))

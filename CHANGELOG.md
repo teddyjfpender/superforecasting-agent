@@ -243,7 +243,7 @@ itself becomes a formal, testable artifact.
   transcript.
 - **Missing-observation discipline.** Lag is not absence and absence is not
   zero — the data plane now models the missing-observation rule explicitly.
-- **Version source of truth.** `pyproject.toml` (with `hermes_cli/__init__.py`
+- **Version source of truth.** `pyproject.toml` (with `superforecasting_agent/runtime/__init__.py`
   and the ACP registry manifest kept in lockstep) is the single version source;
   the ad-hoc CalVer/SemVer split is superseded by SemVer `vX.Y.Z` releases.
 

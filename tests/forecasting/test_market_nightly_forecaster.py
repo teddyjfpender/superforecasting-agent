@@ -101,7 +101,7 @@ def test_live_forecaster_exposes_no_ledger_write_tools(web_backend_available):
     # The fix drops "forecasting" (and "file"): the forecaster holds ONLY research
     # tools. Assert that the toolset the live forecaster is built with resolves to a
     # tool registry that (a) exposes web search and (b) exposes NO ledger-write tool.
-    from model_tools import get_tool_definitions
+    from superforecasting_agent.tooling.runtime import get_tool_definitions
 
     defs = get_tool_definitions(
         enabled_toolsets=list(mnf.LIVE_ENABLED_TOOLSETS), quiet_mode=True
@@ -248,7 +248,7 @@ def test_cli_run_resolves_model_with_quorum_logic(tmp_path, monkeypatch):
         "forecasting.market_nightly_forecaster.build_informed_market_forecaster", fake_build
     )
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "superforecasting_agent.runtime.config.load_config",
         lambda: {"model": {"default": "openrouter/some-model", "provider": "openrouter"}},
     )
 
@@ -492,7 +492,7 @@ def test_cli_run_arm_defaults_from_config_when_flag_absent(tmp_path, monkeypatch
         "forecasting.market_nightly_forecaster.build_informed_market_forecaster", fake_build
     )
     monkeypatch.setattr(
-        "hermes_cli.config.load_config",
+        "superforecasting_agent.runtime.config.load_config",
         lambda: {
             "model": {"default": "openrouter/m", "provider": "openrouter"},
             "forecasting": {"market_nightly": {"research_arm": "voi"}},

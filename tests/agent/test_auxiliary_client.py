@@ -108,7 +108,7 @@ class TestReadCodexAccessToken:
 
         valid_jwt = "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTl9.sig"
         with patch("agent.auxiliary_client._select_pool_entry", return_value=(True, None)), \
-             patch("hermes_cli.auth._read_codex_tokens", return_value={
+             patch("superforecasting_agent.runtime.auth._read_codex_tokens", return_value={
                  "tokens": {"access_token": valid_jwt, "refresh_token": "refresh"}
              }):
             result = _read_codex_access_token()
@@ -232,7 +232,7 @@ class TestResolveXaiOAuthForAux:
         because the singleton auth-store entry is absent.
         """
         from agent.credential_pool import AUTH_TYPE_OAUTH, PooledCredential, load_pool
-        from hermes_cli.auth import DEFAULT_XAI_OAUTH_BASE_URL
+        from superforecasting_agent.runtime.auth import DEFAULT_XAI_OAUTH_BASE_URL
 
         hermes_home = tmp_path / "hermes"
         hermes_home.mkdir(parents=True, exist_ok=True)
@@ -264,7 +264,7 @@ class TestResolveXaiOAuthForAux:
 
     def test_pool_backed_credentials_honor_base_url_env_override(self, tmp_path, monkeypatch):
         from agent.credential_pool import AUTH_TYPE_OAUTH, PooledCredential, load_pool
-        from hermes_cli.auth import DEFAULT_XAI_OAUTH_BASE_URL
+        from superforecasting_agent.runtime.auth import DEFAULT_XAI_OAUTH_BASE_URL
 
         hermes_home = tmp_path / "hermes"
         hermes_home.mkdir(parents=True, exist_ok=True)
@@ -649,7 +649,7 @@ class TestGetTextAuxiliaryClient:
         with (
             patch("agent.auxiliary_client.load_pool", return_value=_Pool()),
             patch("agent.auxiliary_client.OpenAI"),
-            patch("hermes_cli.auth._read_codex_tokens", side_effect=AssertionError("legacy codex store should not run")),
+            patch("superforecasting_agent.runtime.auth._read_codex_tokens", side_effect=AssertionError("legacy codex store should not run")),
         ):
             from agent.auxiliary_client import _build_codex_client
 
@@ -735,7 +735,7 @@ class TestAuxiliaryPoolAwareness:
         with (
             patch("agent.auxiliary_client.load_pool", return_value=_Pool()),
             patch("agent.auxiliary_client.OpenAI") as mock_openai,
-            patch("hermes_cli.models.get_nous_recommended_aux_model", return_value=None),
+            patch("superforecasting_agent.runtime.models.get_nous_recommended_aux_model", return_value=None),
         ):
             from agent.auxiliary_client import _try_nous
 
@@ -752,7 +752,7 @@ class TestAuxiliaryPoolAwareness:
         with (
             patch("agent.auxiliary_client._read_nous_auth", return_value={"access_token": "***"}),
             patch("agent.auxiliary_client._resolve_nous_runtime_api", return_value=("fresh-agent-key", fresh_base)),
-            patch("hermes_cli.models.get_nous_recommended_aux_model", return_value="minimax/minimax-m2.7") as mock_rec,
+            patch("superforecasting_agent.runtime.models.get_nous_recommended_aux_model", return_value="minimax/minimax-m2.7") as mock_rec,
             patch("agent.auxiliary_client.OpenAI") as mock_openai,
         ):
             from agent.auxiliary_client import _try_nous
@@ -770,7 +770,7 @@ class TestAuxiliaryPoolAwareness:
         with (
             patch("agent.auxiliary_client._read_nous_auth", return_value={"access_token": "***"}),
             patch("agent.auxiliary_client._resolve_nous_runtime_api", return_value=("fresh-agent-key", fresh_base)),
-            patch("hermes_cli.models.get_nous_recommended_aux_model", return_value="google/gemini-3-flash-preview") as mock_rec,
+            patch("superforecasting_agent.runtime.models.get_nous_recommended_aux_model", return_value="google/gemini-3-flash-preview") as mock_rec,
             patch("agent.auxiliary_client.OpenAI"),
         ):
             from agent.auxiliary_client import _try_nous
@@ -786,7 +786,7 @@ class TestAuxiliaryPoolAwareness:
         with (
             patch("agent.auxiliary_client._read_nous_auth", return_value={"access_token": "***"}),
             patch("agent.auxiliary_client._resolve_nous_runtime_api", return_value=("fresh-agent-key", fresh_base)),
-            patch("hermes_cli.models.get_nous_recommended_aux_model", side_effect=RuntimeError("portal down")),
+            patch("superforecasting_agent.runtime.models.get_nous_recommended_aux_model", side_effect=RuntimeError("portal down")),
             patch("agent.auxiliary_client.OpenAI"),
         ):
             from agent.auxiliary_client import _try_nous
@@ -1294,7 +1294,7 @@ class TestTryMainAgentModelFallback:
 def test_resolve_api_key_provider_skips_unconfigured_anthropic(monkeypatch):
     """_resolve_api_key_provider must not try anthropic when user never configured it."""
     from collections import OrderedDict
-    from hermes_cli.auth import ProviderConfig
+    from superforecasting_agent.runtime.auth import ProviderConfig
 
     # Build a minimal registry with only "anthropic" so the loop is guaranteed
     # to reach it without being short-circuited by earlier providers.
@@ -1315,9 +1315,9 @@ def test_resolve_api_key_provider_skips_unconfigured_anthropic(monkeypatch):
         return None, None
 
     monkeypatch.setattr("agent.auxiliary_client._try_anthropic", mock_try_anthropic)
-    monkeypatch.setattr("hermes_cli.auth.PROVIDER_REGISTRY", fake_registry)
+    monkeypatch.setattr("superforecasting_agent.runtime.auth.PROVIDER_REGISTRY", fake_registry)
     monkeypatch.setattr(
-        "hermes_cli.auth.is_provider_explicitly_configured",
+        "superforecasting_agent.runtime.auth.is_provider_explicitly_configured",
         lambda pid: False,
     )
 
@@ -1561,7 +1561,7 @@ class TestAuxiliaryTaskExtraBody:
             }
         }
 
-        with patch("hermes_cli.config.load_config", return_value=config), patch(
+        with patch("superforecasting_agent.runtime.config.load_config", return_value=config), patch(
             "agent.auxiliary_client._get_cached_client",
             return_value=(client, "glm-4.5-air"),
         ):
@@ -1592,7 +1592,7 @@ class TestAuxiliaryTaskExtraBody:
             }
         }
 
-        with patch("hermes_cli.config.load_config", return_value=config), patch(
+        with patch("superforecasting_agent.runtime.config.load_config", return_value=config), patch(
             "agent.auxiliary_client._get_cached_client",
             return_value=(client, "glm-4.5-air"),
         ):

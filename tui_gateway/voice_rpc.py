@@ -124,7 +124,7 @@ def _(rid, params: dict) -> dict:
             # Disabling the mode must tear the continuous loop down; the
             # loop holds the microphone and would otherwise keep running.
             try:
-                from hermes_cli.voice import stop_continuous
+                from superforecasting_agent.runtime.voice import stop_continuous
 
                 stop_continuous()
             except ImportError:
@@ -195,7 +195,7 @@ def _(rid, params: dict) -> dict:
             with _core._voice_sid_lock:
                 _core._voice_event_sid = params.get("session_id") or _core._voice_event_sid
 
-            from hermes_cli.voice import start_continuous
+            from superforecasting_agent.runtime.voice import start_continuous
 
             # Shape-safe lookups: malformed ``voice:`` YAML (bool/scalar/list)
             # must not crash /voice with a 5025 — fall back to VAD defaults.
@@ -236,7 +236,7 @@ def _(rid, params: dict) -> dict:
         with _core._voice_sid_lock:
             _core._voice_event_sid = params.get("session_id") or _core._voice_event_sid
 
-        from hermes_cli.voice import stop_continuous
+        from superforecasting_agent.runtime.voice import stop_continuous
 
         stop_continuous(force_transcribe=True)
         return _ok(rid, {"status": "stopped"})
@@ -254,7 +254,7 @@ def _(rid, params: dict) -> dict:
     if not text:
         return _err(rid, 4020, "text required")
     try:
-        from hermes_cli.voice import speak_text  # noqa: F401 — availability check
+        from superforecasting_agent.runtime.voice import speak_text  # noqa: F401 — availability check
 
         sid = _voice_session_key(params) or params.get("session_id") or _core._voice_event_sid
         threading.Thread(target=_speak_with_status, args=(text, sid or ""), daemon=True).start()

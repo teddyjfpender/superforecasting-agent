@@ -68,7 +68,7 @@ def _(rid, params: dict) -> dict:
     action, query = params.get("action", "list"), params.get("query", "")
     try:
         if action == "list":
-            from hermes_cli.banner import get_available_skills
+            from superforecasting_agent.runtime.banner import get_available_skills
 
             return _ok(rid, {"skills": get_available_skills()})
         if action == "search":
@@ -96,7 +96,7 @@ def _(rid, params: dict) -> dict:
                 },
             )
         if action == "install":
-            from hermes_cli.skills_hub import do_install
+            from superforecasting_agent.runtime.skills_hub import do_install
 
             class _Q:
                 def print(self, *a, **k):
@@ -105,7 +105,7 @@ def _(rid, params: dict) -> dict:
             do_install(query, skip_confirm=True, console=_Q())
             return _ok(rid, {"installed": True, "name": query})
         if action == "browse":
-            from hermes_cli.skills_hub import browse_skills
+            from superforecasting_agent.runtime.skills_hub import browse_skills
 
             pg = int(params.get("page", 0) or 0) or (
                 int(query) if query.isdigit() else 1
@@ -114,7 +114,7 @@ def _(rid, params: dict) -> dict:
                 rid, browse_skills(page=pg, page_size=int(params.get("page_size", 20)))
             )
         if action == "inspect":
-            from hermes_cli.skills_hub import inspect_skill
+            from superforecasting_agent.runtime.skills_hub import inspect_skill
 
             return _ok(rid, {"info": inspect_skill(query) or {}})
         return _err(rid, 4017, f"unknown skills action: {action}")

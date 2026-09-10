@@ -33,7 +33,7 @@ MIN_NODE_MAJOR = 20
 # The bundle the wheel ships (built at release time, gitignored) is preferred:
 # it is the artefact users actually run.  ``ui-tui/dist`` is the dev build.
 BUNDLE_CANDIDATES = (
-    REPO_ROOT / "hermes_cli" / "tui_dist" / "entry.js",
+    REPO_ROOT / 'superforecasting_agent/runtime' / "tui_dist" / "entry.js",
     REPO_ROOT / "ui-tui" / "dist" / "entry.js",
 )
 
@@ -183,7 +183,7 @@ def tui_env(tui_home: Path) -> dict[str, str]:
         "PATH": os.environ.get("PATH", ""),
         "HOME": str(tui_home),
         "TERM": "xterm-256color",
-        # All three aliases: hermes_constants resolves the first one set.
+        # All three aliases: superforecasting_agent.constants resolves the first one set.
         "SUPERFORECASTING_AGENT_HOME": agent_home,
         "FORECAST_HOME": agent_home,
         "HERMES_HOME": agent_home,
@@ -195,7 +195,7 @@ def tui_env(tui_home: Path) -> dict[str, str]:
         "SUPERFORECASTING_AGENT_CWD": str(REPO_ROOT),
         "PYTHONPATH": str(REPO_ROOT),
         "PYTHONIOENCODING": "utf-8",
-        # Mirrors hermes_cli.main._launch_tui, with a smaller heap: an 8GB
+        # Mirrors superforecasting_agent.runtime.main._launch_tui, with a smaller heap: an 8GB
         # max-old-space is pointless for a 2-second boot and antagonises
         # memory-capped CI containers.
         "NODE_OPTIONS": "--max-old-space-size=2048 --expose-gc",

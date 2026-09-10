@@ -33,7 +33,7 @@ def test_fallback_chain_import_contract():
     # _session_runtime depends on this EXACT name + behaviour to give the market
     # agent provider failover. Regression guard: a wrong import name was silently
     # swallowed, killing the failover entirely.
-    from hermes_cli.fallback_cmd import _read_chain
+    from superforecasting_agent.runtime.fallback_cmd import _read_chain
 
     assert _read_chain({"fallback_providers": [{"provider": "p", "model": "m"}]}) == [{"provider": "p", "model": "m"}]
     assert _read_chain({}) == []
@@ -41,9 +41,9 @@ def test_fallback_chain_import_contract():
 
 def test_session_runtime_surfaces_fallback_and_interactive(monkeypatch):
     monkeypatch.setattr(S, "_resolve_startup_runtime", lambda: ("model-x", "prov-x"))
-    monkeypatch.setattr("hermes_cli.runtime_provider.resolve_runtime_provider",
+    monkeypatch.setattr("superforecasting_agent.runtime.runtime_provider.resolve_runtime_provider",
                         lambda **k: {"provider": "prov-x", "base_url": None, "api_key": "k", "api_mode": None})
-    monkeypatch.setattr("hermes_cli.config.load_config_readonly",
+    monkeypatch.setattr("superforecasting_agent.runtime.config.load_config_readonly",
                         lambda: {"fallback_providers": [{"provider": "fb", "model": "fb/m"}]})
     monkeypatch.delenv("HERMES_MARKET_INTERACTIVE", raising=False)
     rt = S._session_runtime("")
@@ -150,7 +150,7 @@ def test_delete(tmp_ledger, monkeypatch):
 def test_export_writes_json(tmp_ledger, monkeypatch):
     from forecasting.ledger import ForecastLedger
 
-    monkeypatch.setattr("hermes_cli.config.get_hermes_home", lambda: str(tmp_ledger))
+    monkeypatch.setattr("superforecasting_agent.runtime.config.get_agent_home", lambda: str(tmp_ledger))
     lg = ForecastLedger()
     m = lg.create_market_model(title="GPU model", question="q")
     lg.add_market_presentation(model_id=m["id"], presentation=_good_pres())

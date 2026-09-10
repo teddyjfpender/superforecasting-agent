@@ -8,7 +8,7 @@ description: "Authoritative reference for Superforecasting Agent tools, grouped 
 
 This page documents Superforecasting Agent's built-in tools, grouped by toolset. The CLI defaults to the `forecast-desk` toolset: enough access to research questions, write to the append-only forecast ledger, run lightweight models, schedule reviews, and inspect stale beliefs. Broader inherited agent tools remain available, but they should be treated as opt-in capabilities unless they directly improve forecasting work.
 
-The canonical source is the live registry in `tools/registry.py` and the toolset map in `toolsets.py`. Counts can change as optional providers register tools, so this page focuses on operational surface area and default exposure rather than a frozen inventory count.
+The canonical source is the live registry in `tools/registry.py` and the toolset map in `superforecasting_agent/tooling/toolsets.py`. Counts can change as optional providers register tools, so this page focuses on operational surface area and default exposure rather than a frozen inventory count.
 
 :::tip MCP Tools
 In addition to built-in tools, Superforecasting Agent can load tools dynamically from MCP servers. MCP tools appear with the prefix `mcp_<server>_` (for example, `mcp_github_create_issue` for the `github` MCP server). See [MCP Integration](/user-guide/features/mcp) for configuration.

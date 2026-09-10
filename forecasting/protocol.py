@@ -208,7 +208,7 @@ def _estimate_first_enabled() -> bool:
     never injected unless the operator turned it on."""
 
     try:
-        from hermes_cli.config import cfg_get, load_config_readonly
+        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
 
         return bool(
             cfg_get(

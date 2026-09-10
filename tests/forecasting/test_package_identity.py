@@ -248,13 +248,13 @@ def test_superforecasting_agent_profiled_tui_shorthand_preserves_profile(
 
 def test_superforecasting_agent_cli_entrypoint_delegates_runtime_commands(monkeypatch):
     calls = []
-    fake_main_module = ModuleType("hermes_cli.main")
+    fake_main_module = ModuleType("superforecasting_agent.runtime.main")
 
     def fake_main():
         calls.append(sys.argv[:])
 
     fake_main_module.main = fake_main
-    monkeypatch.setitem(sys.modules, "hermes_cli.main", fake_main_module)
+    monkeypatch.setitem(sys.modules, "superforecasting_agent.runtime.main", fake_main_module)
 
     forecast_cli.main(["dashboard", "--no-open"])
 
@@ -268,7 +268,7 @@ def test_runtime_command_missing_optional_dependency_gets_forecast_native_guidan
     runtime_command,
 ):
     def fail_import(name, *args, **kwargs):
-        if name == "hermes_cli.main":
+        if name == "superforecasting_agent.runtime.main":
             raise ModuleNotFoundError("No module named 'dotenv'", name="dotenv")
         return original_import(name, *args, **kwargs)
 
@@ -290,13 +290,13 @@ def test_late_runtime_command_missing_optional_dependency_gets_forecast_native_g
     capsys,
     monkeypatch,
 ):
-    fake_main_module = ModuleType("hermes_cli.main")
+    fake_main_module = ModuleType("superforecasting_agent.runtime.main")
 
     def fake_main():
         raise ModuleNotFoundError("No module named 'rich'", name="rich")
 
     fake_main_module.main = fake_main
-    monkeypatch.setitem(sys.modules, "hermes_cli.main", fake_main_module)
+    monkeypatch.setitem(sys.modules, "superforecasting_agent.runtime.main", fake_main_module)
 
     with pytest.raises(SystemExit) as exc:
         forecast_cli.main(["dashboard", "--no-open"])

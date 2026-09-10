@@ -18,7 +18,7 @@ const render = async (cols: number, rows: number) => {
   process.env.FORCE_COLOR = '3' // emit 24-bit color in the headless test harness
 
   const [{ render: inkRender }, { OutriderHeader }, { DARK_THEME }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/outriderHeader.js'),
     import('../theme.js')
   ])

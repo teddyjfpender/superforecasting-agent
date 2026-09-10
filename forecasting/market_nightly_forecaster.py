@@ -265,7 +265,7 @@ def _ensure_plugins_discovered() -> None:
     runs with whatever toolsets are already registered."""
 
     try:
-        from hermes_cli.plugins import discover_plugins
+        from superforecasting_agent.runtime.plugins import discover_plugins
 
         discover_plugins()  # idempotent
     except Exception:  # noqa: BLE001 — discovery is best-effort, never fatal
@@ -333,7 +333,7 @@ def build_informed_market_forecaster(
         # than passing "" to the provider (codex rejects an empty model). The CLI path
         # already resolves it; this covers programmatic callers.
         try:
-            from hermes_cli.config import load_config
+            from superforecasting_agent.runtime.config import load_config
 
             from forecasting.cli import _resolve_active_model_id
 

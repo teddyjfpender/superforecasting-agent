@@ -56,7 +56,7 @@ const tick = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
 const renderAnim = async (props: { active?: boolean } = {}) => {
   const [{ render }, { AsciiAnimation }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/asciiAnimation.js'),
     import('../lib/text.js')
   ])

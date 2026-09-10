@@ -97,7 +97,7 @@ def quorum_auto_indicated(
 def available_provider_slugs() -> set[str] | None:
     """Authenticated LLM-provider slugs, or ``None`` when detection is unavailable.
 
-    Reuses the same :func:`hermes_cli.models.list_available_providers` seam the
+    Reuses the same :func:`superforecasting_agent.runtime.models.list_available_providers` seam the
     ``/model`` picker uses (which itself checks ``get_auth_status`` / the
     ``OPENROUTER_API_KEY``). Returning ``None`` on any failure is the FAIL-OPEN
     signal: an unknown provider picture must never spuriously downgrade a panel to
@@ -105,7 +105,7 @@ def available_provider_slugs() -> set[str] | None:
     """
 
     try:
-        from hermes_cli.models import list_available_providers
+        from superforecasting_agent.runtime.models import list_available_providers
 
         slugs = {
             str(p.get("id"))
@@ -187,7 +187,7 @@ _NON_PANEL_PROVIDER_SLUGS = frozenset({"custom"})
 def available_providers_detail() -> list[dict[str, Any]] | None:
     """Authenticated-provider detail rows, or ``None`` when detection is unavailable.
 
-    Reuses the same :func:`hermes_cli.models.list_available_providers` seam as
+    Reuses the same :func:`superforecasting_agent.runtime.models.list_available_providers` seam as
     :func:`available_provider_slugs` but keeps the ORDER + labels (so the panel is
     built deterministically from the canonical provider order). ``None`` on any
     failure is the FAIL-OPEN signal — an unknown provider picture must never
@@ -195,7 +195,7 @@ def available_providers_detail() -> list[dict[str, Any]] | None:
     """
 
     try:
-        from hermes_cli.models import list_available_providers
+        from superforecasting_agent.runtime.models import list_available_providers
 
         rows = [
             dict(p) for p in list_available_providers() if p.get("authenticated")
@@ -209,7 +209,7 @@ def _provider_default_model(slug: str) -> str | None:
     """The provider's own default/best model id (native form), or ``None``."""
 
     try:
-        from hermes_cli.models import get_default_model_for_provider
+        from superforecasting_agent.runtime.models import get_default_model_for_provider
 
         model = (get_default_model_for_provider(slug) or "").strip()
     except Exception:  # noqa: BLE001 — best-effort; a provider with no default is skipped
@@ -234,7 +234,7 @@ def _split_provider_model(model_id: str) -> tuple[str | None, str]:
     if not rest:
         return None, model_id
     try:
-        from hermes_cli.models import _KNOWN_PROVIDER_NAMES
+        from superforecasting_agent.runtime.models import _KNOWN_PROVIDER_NAMES
 
         known = head_n in _KNOWN_PROVIDER_NAMES
     except Exception:  # noqa: BLE001 — without the catalog, never split

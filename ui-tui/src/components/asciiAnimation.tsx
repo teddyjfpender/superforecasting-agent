@@ -1,4 +1,4 @@
-import { Box, Text } from '@hermes/ink'
+import { Box, Text } from '@superforecasting/ink'
 import { useEffect, useState } from 'react'
 
 import { BERNARD_ANIMATION, type BernardAnimation } from '../content/bernardAnimation.js'

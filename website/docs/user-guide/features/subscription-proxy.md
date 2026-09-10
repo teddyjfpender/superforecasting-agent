@@ -94,7 +94,7 @@ Currently shipped adapters include:
 | `nous` | Nous Portal subscription access |
 | `xai` | xAI Grok OAuth access |
 
-Adapters live under `hermes_cli/proxy/adapters/`; that module path is inherited compatibility naming.
+Adapters live under `superforecasting_agent/runtime/proxy/adapters/`; that module path is inherited compatibility naming.
 
 ## Check Status
 
@@ -198,6 +198,6 @@ There is no request-body logging, no forecast ledger write, no memory update, no
 
 ## Extending The Proxy
 
-New upstreams implement `UpstreamAdapter` in `hermes_cli/proxy/adapters/<provider>.py` and register through `hermes_cli/proxy/adapters/__init__.py`.
+New upstreams implement `UpstreamAdapter` in `superforecasting_agent/runtime/proxy/adapters/<provider>.py` and register through `superforecasting_agent/runtime/proxy/adapters/__init__.py`.
 
 Providers that are not OpenAI-compatible at the protocol level need a transformation layer before they can be used through this proxy. Keep that layer separate from forecast scoring and calibration logic so raw inference transport does not become an untracked forecast workflow.

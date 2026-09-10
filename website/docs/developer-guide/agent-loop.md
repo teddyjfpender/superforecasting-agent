@@ -217,7 +217,7 @@ The fallback system also covers auxiliary tasks independently — vision, compre
 ### Session Persistence
 
 After each turn:
-- Messages are saved to the session store (SQLite via `hermes_state.py`)
+- Messages are saved to the session store (SQLite via `superforecasting_agent/storage/session.py`)
 - Memory changes are flushed to `MEMORY.md` / `USER.md`
 - The session can be resumed later via `/resume` or `superforecasting-agent desk --resume`
 
@@ -233,7 +233,7 @@ Session persistence is not the forecast ledger. If a model reaches a probability
 | `agent/context_compressor.py` | Default engine — lossy summarization algorithm |
 | `agent/prompt_caching.py` | Anthropic prompt caching markers and cache metrics |
 | `agent/auxiliary_client.py` | Auxiliary LLM client for side tasks (vision, summarization) |
-| `model_tools.py` | Tool schema collection, `handle_function_call()` dispatch |
+| `superforecasting_agent/tooling/runtime.py` | Tool schema collection, `handle_function_call()` dispatch |
 
 ## Related Docs
 

@@ -83,7 +83,7 @@ class TestManifest:
 class TestDiscovery:
     def test_plugin_is_discovered_as_standalone_opt_in(self, tmp_path, monkeypatch):
         """Scanner should find the plugin but NOT load it by default."""
-        from hermes_cli import plugins as plugins_mod
+        from superforecasting_agent.runtime import plugins as plugins_mod
 
         # Isolated legacy home override so we don't read the developer's config.yaml.
         home = tmp_path / ".hermes"
@@ -158,15 +158,15 @@ class TestRuntimeGate:
         for k in LANGFUSE_ENV_KEYS:
             monkeypatch.delenv(k, raising=False)
 
-        # Drop any cached import of hermes_cli.config.
-        sys.modules.pop("hermes_cli.config", None)
+        # Drop any cached import of superforecasting_agent.runtime.config.
+        sys.modules.pop("superforecasting_agent.runtime.config", None)
 
         langfuse_plugin = self._fresh_plugin()
         for _ in range(20):
             langfuse_plugin._get_langfuse()
 
-        assert "hermes_cli.config" not in sys.modules, (
-            "langfuse plugin imported hermes_cli.config — regression toward "
+        assert "superforecasting_agent.runtime.config" not in sys.modules, (
+            "langfuse plugin imported superforecasting_agent.runtime.config — regression toward "
             "the rejected per-hook load_config() design"
         )
 

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 from unittest.mock import MagicMock
 
-import hermes_cli.plugins as plugins_mod
+import superforecasting_agent.runtime.plugins as plugins_mod
 import tools.terminal_tool as terminal_tool_module
 
 
@@ -53,7 +53,7 @@ def _run_terminal(
     monkeypatch.setitem(terminal_tool_module._last_activity, "default", 0.0)
 
     if invoke_hook is not _UNSET:
-        monkeypatch.setattr("hermes_cli.plugins.invoke_hook", invoke_hook)
+        monkeypatch.setattr("superforecasting_agent.runtime.plugins.invoke_hook", invoke_hook)
 
     result = json.loads(
         terminal_tool_module.terminal_tool(

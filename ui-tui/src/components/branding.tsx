@@ -1,5 +1,5 @@
-import { Box, Text, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, Text, useStdout } from '@superforecasting/ink'
 import { useEffect, useState } from 'react'
 import unicodeSpinners from 'unicode-animations'
 

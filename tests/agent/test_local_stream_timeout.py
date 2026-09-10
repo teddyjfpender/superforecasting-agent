@@ -14,7 +14,7 @@ from agent.chat_completion_helpers import (
     STREAM_READ_TIMEOUT_ENV_NAMES,
     STREAM_STALE_TIMEOUT_ENV_NAMES,
 )
-from utils import env_var_alias_float
+from superforecasting_agent.environment import env_var_alias_float
 
 
 def _clear_timeout_aliases(monkeypatch, names):

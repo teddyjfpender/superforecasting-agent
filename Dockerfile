@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Store Playwright browsers outside the volume mount so the build-time
 # install survives the /opt/data volume overlay at runtime.
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/hermes/.playwright
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/superforecasting-agent/.playwright
 
 # Install system dependencies in one layer, clear APT cache
 # tini reaps orphaned zombie processes (MCP stdio subprocesses, git, bun, etc.)
@@ -19,32 +19,32 @@ RUN apt-get update && \
 
 # Non-root user for runtime; UID can be overridden via forecast-native
 # SUPERFORECASTING_AGENT_UID / FORECAST_UID aliases, or legacy HERMES_UID.
-RUN useradd -u 10000 -m -d /opt/data hermes
+RUN useradd -u 10000 -m -d /opt/data forecast
 
 COPY --chmod=0755 --from=gosu_source /gosu /usr/local/bin/
 COPY --chmod=0755 --from=uv_source /usr/local/bin/uv /usr/local/bin/uvx /usr/local/bin/
 
-WORKDIR /opt/hermes
+WORKDIR /opt/superforecasting-agent
 
 # ---------- Layer-cached dependency install ----------
 # Copy only package manifests first so npm install + Playwright are cached
 # unless the lockfiles themselves change.
 #
-# ui-tui/packages/hermes-ink/ is copied IN FULL (not just its manifests)
+# ui-tui/packages/forecast-ink/ is copied IN FULL (not just its manifests)
 # because it is referenced as a `file:` workspace dependency from
 # ui-tui/package.json.  Copying the tree up front lets npm resolve the
 # workspace to real content instead of stopping at a bare package.json.
 COPY package.json package-lock.json ./
 COPY web/package.json web/package-lock.json web/
 COPY ui-tui/package.json ui-tui/package-lock.json ui-tui/
-COPY ui-tui/packages/hermes-ink/ ui-tui/packages/hermes-ink/
+COPY ui-tui/packages/forecast-ink/ ui-tui/packages/forecast-ink/
 
 # `npm_config_install_links=false` forces npm to install `file:` deps as
 # symlinks (the npm 10+ default) even on Debian's older bundled npm 9.x,
 # which defaults to `install-links=true` and installs file deps as *copies*.
 # The host-side package-lock.json is generated with a newer npm that uses
 # symlinks, so an install-as-copy produces a hidden node_modules/.package-lock.json
-# that permanently disagrees with the root lock on the @hermes/ink entry.
+# that permanently disagrees with the root lock on the @superforecasting/ink entry.
 # That disagreement trips the TUI launcher's `_tui_need_npm_install()`
 # check on every startup and triggers a runtime `npm install` that then
 # fails with EACCES (node_modules/ is root-owned from build time).
@@ -83,7 +83,7 @@ RUN uv sync --frozen --no-install-project --extra all --extra messaging
 
 # ---------- Source code ----------
 # .dockerignore excludes node_modules, so the installs above survive.
-COPY --chown=hermes:hermes . .
+COPY --chown=forecast:forecast . .
 
 # Build browser dashboard and terminal UI assets.
 RUN cd web && npm run build && \
@@ -92,21 +92,21 @@ RUN cd web && npm run build && \
 # ---------- Permissions ----------
 # Make install dir world-readable so any remapped runtime UID can read it.
 # The venv needs to be traversable too.
-# node_modules trees additionally need to be writable by the hermes user
+# node_modules trees additionally need to be writable by the forecast user
 # so the runtime `npm install` triggered by _tui_need_npm_install() in
-# hermes_cli/main.py succeeds (see #18800). /opt/hermes/web is build-time
-# only (the dashboard web-dist aliases point at hermes_cli/web_dist) and is
+# superforecasting_agent/runtime/main.py succeeds (see #18800). /opt/superforecasting-agent/web is build-time
+# only (the dashboard web-dist aliases point at superforecasting_agent/runtime/web_dist) and is
 # intentionally not chowned here.
-# The .venv MUST remain hermes-writable so lazy_deps.py can install
+# The .venv MUST remain forecast-writable so lazy_deps.py can install
 # remaining optional platform packages and future pin bumps at first use.
 # Without this, `uv pip install` fails with EACCES and adapters silently
 # fail to load.  See tools/lazy_deps.py.
 USER root
-RUN chmod -R a+rX /opt/hermes && \
-    chown -R hermes:hermes /opt/hermes/.venv /opt/hermes/ui-tui /opt/hermes/node_modules
+RUN chmod -R a+rX /opt/superforecasting-agent && \
+    chown -R forecast:forecast /opt/superforecasting-agent/.venv /opt/superforecasting-agent/ui-tui /opt/superforecasting-agent/node_modules
 # Start as root so the entrypoint can usermod/groupmod + gosu.
 # If no runtime UID override is set, the entrypoint drops to the default
-# internal hermes user (10000).
+# internal forecast user (10000).
 
 # ---------- Link Superforecasting Agent itself (editable) ----------
 # Deps are already installed in the cached layer above; `--no-deps` makes
@@ -114,11 +114,11 @@ RUN chmod -R a+rX /opt/hermes && \
 RUN uv pip install --no-cache-dir --no-deps -e "."
 
 # ---------- Runtime ----------
-ENV SUPERFORECASTING_AGENT_WEB_DIST=/opt/hermes/hermes_cli/web_dist
-ENV FORECAST_WEB_DIST=/opt/hermes/hermes_cli/web_dist
-ENV HERMES_WEB_DIST=/opt/hermes/hermes_cli/web_dist
+ENV SUPERFORECASTING_AGENT_WEB_DIST=/opt/superforecasting-agent/superforecasting_agent/runtime/web_dist
+ENV FORECAST_WEB_DIST=/opt/superforecasting-agent/superforecasting_agent/runtime/web_dist
+ENV HERMES_WEB_DIST=/opt/superforecasting-agent/superforecasting_agent/runtime/web_dist
 ENV HERMES_HOME=/opt/data
 ENV PATH="/opt/data/.local/bin:${PATH}"
 RUN mkdir -p /opt/data
 VOLUME [ "/opt/data" ]
-ENTRYPOINT [ "/usr/bin/tini", "-g", "--", "/opt/hermes/docker/entrypoint.sh" ]
+ENTRYPOINT [ "/usr/bin/tini", "-g", "--", "/opt/superforecasting-agent/docker/entrypoint.sh" ]

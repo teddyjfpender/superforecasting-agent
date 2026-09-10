@@ -119,8 +119,8 @@ acp = ["agent-client-protocol==0.9.0"]
 #   2. Add back: mistral = ["mistralai==<verified-version>"]
 #   3. Re-enable Mistral in:
 #        - tools/lazy_deps.py (LAZY_DEPS["tts.mistral"], LAZY_DEPS["stt.mistral"])
-#        - hermes_cli/tools_config.py (un-hide from provider picker)
-#        - hermes_cli/web_server.py (re-add to dashboard STT options)
+#        - superforecasting_agent/runtime/tools_config.py (un-hide from provider picker)
+#        - superforecasting_agent/runtime/web_server.py (re-add to dashboard STT options)
 #        - tools/transcription_tools.py / tools/tts_tool.py (drop disabled stubs)
 #   4. Run `uv lock` to regenerate transitives.
 #   5. Optionally re-add to [all] only after a few days of clean operation.
@@ -218,10 +218,10 @@ hermes-agent = "superforecasting_agent.cli:main"
 hermes-acp = "acp_adapter.entry:main"
 
 [tool.setuptools]
-py-modules = ["run_agent", "model_tools", "toolsets", "batch_runner", "trajectory_compressor", "toolset_distributions", "cli", "hermes_bootstrap", "hermes_constants", "hermes_state", "hermes_time", "hermes_logging", "utils"]
+py-modules = ["run_agent", "cli"]
 
 [tool.setuptools.package-data]
-hermes_cli = ["web_dist/**/*", "tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
+"superforecasting_agent.runtime" = ["web_dist/**/*", "tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
 gateway = ["assets/**/*"]
 forecasting = [
   "data/*.csv",
@@ -232,13 +232,15 @@ forecasting = [
   "workspace/schemas/*.md",
 ]
 plugins = [
+  "**/plugin.yaml",
+  "**/plugin.yml",
   "*/dashboard/manifest.json",
   "*/dashboard/dist/*",
   "*/dashboard/dist/**/*",
 ]
 
 [tool.setuptools.packages.find]
-include = ["agent", "agent.*", "tools", "tools.*", "hermes_cli", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*", "forecasting", "forecasting.*", "superforecasting_agent", "superforecasting_agent.*"]
+include = ["protocol", "protocol.*", "agent", "agent.*", "tools", "tools.*", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*", "forecasting", "forecasting.*", "superforecasting_agent", "superforecasting_agent.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -320,7 +322,7 @@ select = ["PLW1514"]
 #   1. ENFORCE NOW (already true, 0 violations): protocol purity; ledger↛cli;
 #      forecasting↛tui_gateway.
 #   2. RATCHET (frozen violation lists below — they may only SHRINK, never grow):
-#      *↛run_agent (the inverted entry-script edge); forecasting↛hermes_cli;
+#      *↛run_agent (the inverted entry-script edge); forecasting↛superforecasting_agent.runtime;
 #      forecasting↛tools.
 [tool.importlinter]
 root_packages = [
@@ -330,7 +332,7 @@ root_packages = [
     "tools",
     "agent",
     "gateway",
-    "hermes_cli",
+    "superforecasting_agent",
 ]
 # run_agent.py / cli.py are top-level MODULES (not packages), so they are seen as
 # "external" nodes; this must be true for the *↛run_agent forbidden contract.
@@ -341,7 +343,7 @@ include_external_packages = true
 name = "protocol is a pure kernel (imports nothing app-side)"
 type = "forbidden"
 source_modules = ["protocol"]
-forbidden_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "hermes_cli", "run_agent", "cli"]
+forbidden_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "run_agent", "cli"]
 allow_indirect_imports = "true"
 
 [[tool.importlinter.contracts]]
@@ -362,7 +364,7 @@ allow_indirect_imports = "true"
 [[tool.importlinter.contracts]]
 name = "nothing imports the run_agent entry script (inverted edge; burn down)"
 type = "forbidden"
-source_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "hermes_cli", "cli"]
+source_modules = ["forecasting", "tools", "agent", "gateway", "tui_gateway", "superforecasting_agent", "cli"]
 forbidden_modules = ["run_agent"]
 allow_indirect_imports = "true"
 ignore_imports = [
@@ -384,43 +386,42 @@ ignore_imports = [
     "gateway.platforms.api_server -> run_agent",
     "gateway.platforms.feishu_comment -> run_agent",
     "gateway.run -> run_agent",
-    "hermes_cli.oneshot -> run_agent",
     "tools.delegate_tool -> run_agent",
     "tui_gateway.server -> run_agent",
 ]
 
 [[tool.importlinter.contracts]]
-name = "forecasting↛hermes_cli (kernel seam; ratchet)"
+name = "forecasting↛superforecasting_agent.runtime (kernel seam; ratchet)"
 type = "forbidden"
 source_modules = ["forecasting"]
-forbidden_modules = ["hermes_cli"]
+forbidden_modules = ["superforecasting_agent.runtime"]
 allow_indirect_imports = "true"
 ignore_imports = [
-    "forecasting.api_keys -> hermes_cli.env_loader",
-    "forecasting.appconfig -> hermes_cli.config",
-    "forecasting.cli.collaboration_admin -> hermes_cli.config",
-    "forecasting.cli.core -> hermes_cli.config",
-    "forecasting.cli.core -> hermes_cli.env_loader",
-    "forecasting.cli.markets_pm -> hermes_cli.config",
-    "forecasting.cli.quorum_panel -> hermes_cli.config",
-    "forecasting.cli.refresh_cycle -> hermes_cli.config",
-    "forecasting.cron_runner -> hermes_cli.config",
-    "forecasting.estimator_worker -> hermes_cli.config",
-    "forecasting.hooks.engine -> hermes_cli.config",
-    "forecasting.hooks.loader -> hermes_cli.config",
-    "forecasting.hooks.store -> hermes_cli.config",
-    "forecasting.jobs.__main__ -> hermes_cli.plugins",
-    "forecasting.jobs.types.quorum -> hermes_cli.config",
-    "forecasting.learned_error_worker -> hermes_cli.config",
-    "forecasting.ledger.model_scoring -> hermes_cli.config",
-    "forecasting.ledger.snapshots -> hermes_cli.config",
-    "forecasting.market_nightly_forecaster -> hermes_cli.config",
-    "forecasting.market_nightly_forecaster -> hermes_cli.plugins",
-    "forecasting.protocol -> hermes_cli.config",
-    "forecasting.quorum.panels -> hermes_cli.models",
-    "forecasting.quorum_autorun -> hermes_cli.config",
-    "forecasting.research_audit -> hermes_cli.config",
-    "forecasting.scheduler -> hermes_cli.config",
+    "forecasting.api_keys -> superforecasting_agent.runtime.env_loader",
+    "forecasting.appconfig -> superforecasting_agent.runtime.config",
+    "forecasting.cli.collaboration_admin -> superforecasting_agent.runtime.config",
+    "forecasting.cli.core -> superforecasting_agent.runtime.config",
+    "forecasting.cli.core -> superforecasting_agent.runtime.env_loader",
+    "forecasting.cli.markets_pm -> superforecasting_agent.runtime.config",
+    "forecasting.cli.quorum_panel -> superforecasting_agent.runtime.config",
+    "forecasting.cli.refresh_cycle -> superforecasting_agent.runtime.config",
+    "forecasting.cron_runner -> superforecasting_agent.runtime.config",
+    "forecasting.estimator_worker -> superforecasting_agent.runtime.config",
+    "forecasting.hooks.engine -> superforecasting_agent.runtime.config",
+    "forecasting.hooks.loader -> superforecasting_agent.runtime.config",
+    "forecasting.hooks.store -> superforecasting_agent.runtime.config",
+    "forecasting.jobs.__main__ -> superforecasting_agent.runtime.plugins",
+    "forecasting.jobs.types.quorum -> superforecasting_agent.runtime.config",
+    "forecasting.learned_error_worker -> superforecasting_agent.runtime.config",
+    "forecasting.ledger.model_scoring -> superforecasting_agent.runtime.config",
+    "forecasting.ledger.snapshots -> superforecasting_agent.runtime.config",
+    "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.config",
+    "forecasting.market_nightly_forecaster -> superforecasting_agent.runtime.plugins",
+    "forecasting.protocol -> superforecasting_agent.runtime.config",
+    "forecasting.quorum.panels -> superforecasting_agent.runtime.models",
+    "forecasting.quorum_autorun -> superforecasting_agent.runtime.config",
+    "forecasting.research_audit -> superforecasting_agent.runtime.config",
+    "forecasting.scheduler -> superforecasting_agent.runtime.config",
 ]
 
 [[tool.importlinter.contracts]]

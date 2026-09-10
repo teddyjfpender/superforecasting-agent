@@ -56,7 +56,7 @@ _ensure_discord_mock()
 
 @pytest.fixture(autouse=True)
 def _close_gateway_sqlite_stores(monkeypatch):
-    """Close per-test API stores before xdist workers exhaust file descriptors."""
+    """Close per-test stores before xdist workers exhaust file descriptors."""
     from gateway.execution_store import ExecutionStore
     from gateway.platforms.api_server import ResponseStore
 

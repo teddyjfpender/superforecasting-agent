@@ -126,7 +126,7 @@ const mountModal = async (cfg: ForecastConfigResponse) => {
   const saved: { count: number } = { count: 0 }
 
   const [{ Box, render }, { ForecastSettingsModal }, { DARK_THEME }, { stripAnsi }] = await Promise.all([
-    import('@hermes/ink'),
+    import('@superforecasting/ink'),
     import('../components/forecastSettingsModal.js'),
     import('../theme.js'),
     import('../lib/text.js')

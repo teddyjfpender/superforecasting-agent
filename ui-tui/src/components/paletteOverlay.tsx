@@ -1,4 +1,4 @@
-import { Box, Text, useInput } from '@hermes/ink'
+import { Box, Text, useInput } from '@superforecasting/ink'
 import { useState } from 'react'
 
 import { SLASH_COMMANDS } from '../app/slash/registry.js'

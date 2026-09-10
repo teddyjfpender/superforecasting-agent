@@ -289,9 +289,10 @@ class TestCheckpointPersistence:
         with registry._lock:
             registry._running[session.id] = session
 
-        with patch("utils.atomic_json_write") as mock_write:
+        with patch("superforecasting_agent.storage.files.atomic_json_write") as mock_write:
             registry._write_checkpoint()
             args = mock_write.call_args
+            mock_write.assert_called_once()
             entries = args[0][1]  # second positional arg
             assert len(entries) == 1
             assert entries[0]["watch_patterns"] == ["ERROR", "FAIL"]

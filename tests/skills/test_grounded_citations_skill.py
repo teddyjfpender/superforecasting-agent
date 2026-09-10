@@ -604,3 +604,31 @@ def test_stats_reports_provenance_total_matching_coverage(sources_mod, ledger: P
     stats = warnings[0]
     # 4 sentences, 3 with provenance (the both-marked sentence counts once).
     assert "4 prose sentence(s), 3 with declared provenance (75%)" in stats
+
+
+@pytest.mark.parametrize(
+    ("native", "forecast", "legacy", "expected"),
+    [
+        ("native", "forecast", "legacy", "native"),
+        (" ", "forecast", "legacy", "forecast"),
+        (" ", " ", "legacy", "legacy"),
+        (" ", " ", " ", None),
+    ],
+)
+def test_standalone_home_alias_precedence(monkeypatch, tmp_path, native, forecast, legacy, expected):
+    """Standalone citation scripts must use the same active-home precedence."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "superforecasting_agent.constants", None)
+    for key, value in zip(
+        ("SUPERFORECASTING_AGENT_HOME", "FORECAST_HOME", "HERMES_HOME"),
+        (native, forecast, legacy),
+    ):
+        monkeypatch.setenv(key, str(tmp_path / value) if value.strip() else value)
+    spec = importlib.util.spec_from_file_location(
+        "citation_home_standalone", SKILL_DIR / "scripts" / "_citation_home.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    want = tmp_path / expected if expected else Path.home() / ".superforecasting-agent"
+    assert module.get_agent_home() == want

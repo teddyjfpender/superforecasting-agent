@@ -246,7 +246,7 @@ def _on_config():
 def test_autorun_fires_start_job_on_high_impact_live(tmp_path, monkeypatch):
     from forecasting import cli as fcli
     import forecasting.jobs.types.quorum as qj
-    import hermes_cli.config as cfgmod
+    import superforecasting_agent.runtime.config as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
     snap = SimpleNamespace(forecast_id="fc_snap_1")
@@ -278,7 +278,7 @@ def test_autorun_fires_start_job_on_high_impact_live(tmp_path, monkeypatch):
 def test_autorun_respects_config_off(tmp_path, monkeypatch):
     from forecasting import cli as fcli
     import forecasting.jobs.types.quorum as qj
-    import hermes_cli.config as cfgmod
+    import superforecasting_agent.runtime.config as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
 
@@ -297,7 +297,7 @@ def test_autorun_respects_config_off(tmp_path, monkeypatch):
 def test_autorun_is_fail_open_when_start_job_raises(tmp_path, monkeypatch, capsys):
     from forecasting import cli as fcli
     import forecasting.jobs.types.quorum as qj
-    import hermes_cli.config as cfgmod
+    import superforecasting_agent.runtime.config as cfgmod
 
     ledger, q = _high_impact_ledger(tmp_path)
 
@@ -465,7 +465,7 @@ def _seed_commit_prereqs(ledger, q):
 
 def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import hermes_cli.config as cfgmod
+    import superforecasting_agent.runtime.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -490,7 +490,7 @@ def test_tool_update_forecast_fires_autorun(tmp_path, monkeypatch):
 
 def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import hermes_cli.config as cfgmod
+    import superforecasting_agent.runtime.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -509,7 +509,7 @@ def test_tool_update_forecast_autorun_respects_config_off(tmp_path, monkeypatch)
 
 def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import hermes_cli.config as cfgmod
+    import superforecasting_agent.runtime.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)
@@ -545,7 +545,7 @@ def test_tool_update_forecast_autorun_skipped_when_panel_attached(tmp_path, monk
 
 def test_tool_update_forecast_autorun_fail_open(tmp_path, monkeypatch):
     import forecasting.jobs.types.quorum as qj
-    import hermes_cli.config as cfgmod
+    import superforecasting_agent.runtime.config as cfgmod
     from tools.forecasting_tool import forecast_ledger_tool
 
     ledger, q = _high_impact_ledger(tmp_path)

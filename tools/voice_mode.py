@@ -83,7 +83,7 @@ def ensure_audio_deps() -> bool:
     return _audio_available()
 
 
-from hermes_constants import is_termux as _is_termux_environment
+from superforecasting_agent.constants import is_termux as _is_termux_environment
 
 
 def _voice_capture_install_hint() -> str:
@@ -137,7 +137,7 @@ def detect_audio_environment() -> dict:
         warnings.append("Running over SSH -- no audio devices available")
 
     # Docker/Podman container detection
-    from hermes_constants import is_container
+    from superforecasting_agent.constants import is_container
     if is_container():
         warnings.append("Running inside Docker container -- no audio devices")
 

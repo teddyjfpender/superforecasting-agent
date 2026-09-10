@@ -418,7 +418,7 @@ def deterministic_research_checks(
 # ── (1b) the judge ────────────────────────────────────────────────────────────
 def _resolve_adequacy_threshold() -> float:
     try:
-        from hermes_cli.config import cfg_get, load_config_readonly
+        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
 
         val = cfg_get(load_config_readonly(), "forecasting", "research", "adequacy_threshold", default=None)
         if val is not None:
@@ -592,7 +592,7 @@ def _change_my_mind_coverage(
     active_model = model
     if not active_model:
         try:
-            from hermes_cli.config import load_config
+            from superforecasting_agent.runtime.config import load_config
             from forecasting.cli import _resolve_active_model_id
 
             active_model = _resolve_active_model_id(load_config().get("model"))

@@ -1,5 +1,5 @@
-import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@hermes/ink'
 import { useStore } from '@nanostores/react'
+import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from 'react'
 
 import {

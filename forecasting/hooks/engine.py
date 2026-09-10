@@ -33,7 +33,7 @@ def _sev(value, default: Severity = Severity.WARN) -> Severity:
 def load_hook_config() -> dict:
     """Read ``forecasting.hooks`` from the global config (defaults if absent)."""
     try:
-        from hermes_cli.config import cfg_get, load_config_readonly
+        from superforecasting_agent.runtime.config import cfg_get, load_config_readonly
 
         hooks = cfg_get(load_config_readonly(), "forecasting", "hooks", default=None)
         return hooks if isinstance(hooks, dict) else {}
