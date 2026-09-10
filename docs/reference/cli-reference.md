@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **90 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **91 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -53,6 +53,7 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | [`forecast jobs`](#forecast-jobs) | Administer detached background forecast jobs |
 | [`forecast lesson`](#forecast-lesson) | Review and promote calibration lessons |
 | [`forecast lessons`](#forecast-lessons) | List calibration lessons |
+| [`forecast lifecycle`](#forecast-lifecycle) | Inspect or recover forecast lifecycle handoffs |
 | [`forecast link`](#forecast-link) | Link related forecasts so they cross-pollinate context |
 | [`forecast links`](#forecast-links) | List a forecast's links and related forecasts |
 | [`forecast lint`](#forecast-lint) | Saturation report for a forecast: 0-100 score + per-rule verdicts (style + completeness) |
@@ -2171,6 +2172,7 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 
 - **`forecast lessons apply`** — Compile a lesson into an enforceable hook rule (auto-detects the enforcement pattern)
 - **`forecast lessons audit`** — Per-lesson coverage: is each learning actually being used? (in-scope / applied / dormant)
+- **`forecast lessons explain`** — Show in-scope lessons and recorded decisions for a forecast
 
 ### `forecast lessons apply`
 
@@ -2184,6 +2186,21 @@ The full `forecast` command tree — **90 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `--json` |  |
+
+### `forecast lessons explain`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+
+## `forecast lifecycle`
+
+| argument | help |
+| --- | --- |
+| `action` | Inspect by default; run recovers confirmed score/postmortem handoffs |
+| `--now` | UTC inspection/recovery time (defaults to now) |
+| `--limit` | Maximum tasks to execute or rows to display (default 25) |
+| `--json` | Emit full structured status and execution results |
 
 ## `forecast link`
 

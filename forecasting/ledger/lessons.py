@@ -38,6 +38,15 @@ from forecasting.models import utc_now_iso
 import uuid
 
 
+def _validate_supersession(ledger, lesson_id, supersedes):
+    seen = {lesson_id} if lesson_id else set()
+    while supersedes:
+        if supersedes in seen:
+            raise ValidationError("calibration lesson supersession must not contain a cycle")
+        seen.add(supersedes)
+        supersedes = ledger.get_calibration_lesson(supersedes).get("supersedes_lesson_id")
+
+
 def create_calibration_lesson(
     ledger,
     *,
@@ -85,6 +94,7 @@ def create_calibration_lesson(
         _rule_errs = [issue for issue in validate_rule(_spec) if issue.severity == "error"]
         if _rule_errs:
             raise ValidationError(f"calibration lesson rule is invalid: {_rule_errs[0].message}")
+    _validate_supersession(ledger, None, supersedes_lesson_id)
     now = utc_now_iso()
     lesson_id = f"cl_{uuid.uuid4().hex[:12]}"
     with ledger._connect() as conn:
@@ -158,7 +168,7 @@ def update_calibration_lesson(
     if current.get("invalidated_by_correction_id") and new_status == "active":
         raise ValidationError("invalidated calibration lessons cannot be activated")
     if supersedes_lesson_id:
-        ledger.get_calibration_lesson(supersedes_lesson_id)
+        _validate_supersession(ledger, lesson_id, supersedes_lesson_id)
     with ledger._connect() as conn:
         conn.execute(
             """
@@ -252,11 +262,19 @@ def lesson_coverage(ledger) -> list[dict[str, Any]]:
         ).fetchall()
         for row in lessons:
             apps = conn.execute(
-                "SELECT applied, created_at FROM lesson_applications WHERE lesson_id = ? ORDER BY created_at",
+                "SELECT a.applied, a.created_at, s.metadata FROM lesson_applications a "
+                "LEFT JOIN forecast_snapshots s ON s.forecast_id = a.snapshot_id "
+                "WHERE a.lesson_id = ? ORDER BY a.created_at",
                 (row["id"],),
             ).fetchall()
             in_scope = len(apps)
-            applied = sum(int(a["applied"]) for a in apps)
+            verified = []
+            for app in apps:
+                decisions = (json_loads(app["metadata"], {}) or {}).get("lesson_decisions", [])
+                decision = next((d for d in decisions if d.get("lesson_id") == row["id"]), None)
+                if decision is not None:
+                    verified.append(decision)
+            applied = sum(bool(d.get("applied")) for d in verified)
             last_seen = apps[-1]["created_at"] if apps else None
             recommended = json_loads(row["recommended_adjustment"], {}) or {}
             if isinstance(recommended.get("rule"), dict):
@@ -272,6 +290,10 @@ def lesson_coverage(ledger) -> list[dict[str, Any]]:
                 "lesson": (row["lesson"] or "")[:90],
                 "in_scope_count": in_scope,
                 "applied_count": applied,
+                "verified_count": len(verified),
+                "unverified_count": in_scope - len(verified),
+                "decision_reasons": {reason: sum(d.get("reason") == reason for d in verified)
+                                     for reason in sorted({d.get("reason", "unknown") for d in verified})},
                 "application_rate": (applied / in_scope) if in_scope else 0.0,
                 "last_seen": last_seen,
                 "dormant": in_scope == 0,

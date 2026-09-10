@@ -616,11 +616,19 @@ def build_context_packet(
 
     lines.extend(["", "## Calibration Lessons"])
     if lessons:
+        lines.append("Check each lesson's conditions against this question and horizon. "
+                     "Conflicting prose is a review requirement, not permission to average or stack corrections. "
+                     "Score references may share outcomes; confidence is not a sample count. "
+                     "Record which guidance you used or rejected and why.")
+    if lessons:
         for item in lessons:
             lines.append(
                 f"- {item['id']} status={item['status']} confidence={item['confidence']} "
                 f"lesson={item['lesson']}"
             )
+            recommended = item.get("recommended_adjustment") or {}
+            lines.append(f"  scope={item.get('scope_type')}:{item.get('scope_ref') or '*'} "
+                         f"conditions={recommended.get('when', 'not specified; verify applicability')}")
             score_refs = item.get("source_score_record_refs") or []
             metadata = item.get("metadata") or {}
             if score_refs:

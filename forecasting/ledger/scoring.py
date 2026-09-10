@@ -121,6 +121,10 @@ def _audit_unapplied_lessons(
         is_numeric = any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale"))
         if not is_numeric:
             continue
+        item = next((i for i in adjustment.get("applied_active_lessons", [])
+                     if isinstance(i, dict) and i.get("id") == lesson["id"]), {})
+        if item.get("numeric_adjustment_skipped") == "more_specific_calibration_bias_applied":
+            continue
         net_moved = (
             lesson["id"] in applied_ids
             and isinstance(raw, (int, float))
@@ -147,37 +151,22 @@ def _record_lesson_applications(
         active = active_lessons_for_question(ledger, question)
         if not active:
             return
-        adjustment = calibration_adjustment or {}
-        applied_ids = {
-            item.get("id")
-            for item in (adjustment.get("applied_active_lessons") or [])
-            if isinstance(item, dict)
-        }
-        raw = adjustment.get("raw_probability")
-        committed = (
-            committed_payload
-            if isinstance(committed_payload, (int, float)) and not isinstance(committed_payload, bool)
-            else None
-        )
+        snapshot = ledger.get_snapshot(snapshot_id) if snapshot_id else None
+        decisions = (snapshot.metadata or {}).get("lesson_decisions", []) if snapshot else []
+        # Legacy/direct calls without a recorded verdict are unverified, never
+        # inferred successful from the existence of the snapshot.
+        by_id = {row["lesson_id"]: row for row in decisions}
         now = utc_now_iso()
         rows = []
         for lesson in active:
+            decision = by_id.get(lesson["id"], {})
             recommended = lesson.get("recommended_adjustment") or {}
-            if isinstance(recommended.get("rule"), dict):
-                # The commit SUCCEEDED, so an error-severity lesson rule passed
-                # (it would otherwise have blocked); recorded as applied.
-                kind, applied = "rule", 1
-            elif any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale")):
-                kind = "numeric"
-                applied = 1 if (
-                    lesson["id"] in applied_ids
-                    and isinstance(raw, (int, float))
-                    and committed is not None
-                    and abs(committed - float(raw)) > 1e-9
-                ) else 0
-            else:
-                kind, applied = "advisory", 0
-            rows.append((f"la_{uuid.uuid4().hex[:12]}", lesson["id"], question.id, snapshot_id, kind, applied, now))
+            kind = decision.get("kind") or (
+                "rule" if isinstance(recommended.get("rule"), dict) else
+                "numeric" if any(k in recommended for k in ("probability_delta", "logit_shift", "logit_scale")) else "advisory"
+            )
+            rows.append((f"la_{uuid.uuid4().hex[:12]}", lesson["id"], question.id, snapshot_id,
+                         kind, int(bool(decision.get("applied"))), now))
         if rows:
             with ledger._connect() as conn:
                 conn.executemany(

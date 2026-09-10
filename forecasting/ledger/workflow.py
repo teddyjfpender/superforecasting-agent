@@ -2720,8 +2720,17 @@ def run_resolution_finalization_tasks(
     results: list[dict[str, Any]] = []
     for task in tasks:
         try:
-            score = ledger.score_question(task["question_id"])
             question = ledger.get_question(task["question_id"])
+            resolution = ledger.get_latest_resolution(question.id, confirmed_only=True)
+            if question.status != "resolved" or resolution is None:
+                raise ValidationError("finalization requires a currently resolved question and confirmed outcome")
+            if task["idempotency_key"] != f"finalize-resolution:{resolution.id}":
+                results.append(complete_operational_task(
+                    ledger, task["id"], owner=owner, disposition="superseded_resolution",
+                    result={"current_resolution_id": resolution.id}, now=now,
+                ))
+                continue
+            score = ledger.score_question(task["question_id"])
             postmortem = ledger.create_postmortem(
                 question_id=task["question_id"],
                 summary="Auto-created after confirmed resolution and scoring.",
@@ -4174,7 +4183,10 @@ def operational_cockpit(ledger, *, now: str | None = None) -> dict[str, Any]:
                 },
             }
         )
+    from forecasting.lifecycle import lifecycle_status
+
     return {
+        "lifecycle": lifecycle_status(ledger, now=stamp),
         "generated_at": stamp,
         "queue": queue,
         "awaiting_human": sum(row["status"] == "awaiting_human" for row in task_rows),

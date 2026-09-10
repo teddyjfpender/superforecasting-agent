@@ -27,52 +27,19 @@ def _logit(p: float, eps: float = 1e-6) -> float:
     return math.log(p / (1 - p))
 
 
-def _recover_outcome(p: float, brier: float) -> float:
-    """Outcome in {0,1} from brier = (p - outcome)^2 (the snapshot stores no raw label)."""
-    return 1.0 if abs(brier - (1 - p) ** 2) <= abs(brier - p ** 2) else 0.0
-
-
 def load_records(db: str) -> list[dict]:
+    from forecasting.evaluation import market_evaluation_records
+
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
-    c = con.cursor()
-    qrows = c.execute(
-        "SELECT id, title FROM forecast_questions WHERE domain='market_nightly'"
-    ).fetchall()
-    recs: list[dict] = []
-    for q in qrows:
-        qid = q["id"]
-        snap = c.execute(
-            "SELECT probability_or_distribution p FROM forecast_snapshots "
-            "WHERE question_id=? ORDER BY created_at DESC LIMIT 1",
-            (qid,),
-        ).fetchone()
-        mb = c.execute(
-            "SELECT probability_or_distribution p FROM baseline_comparisons "
-            "WHERE question_id=? AND baseline_type IN ('market_price','market') LIMIT 1",
-            (qid,),
-        ).fetchone()
-        if not snap or not mb:
-            continue
-        try:
-            agent_p = float(snap["p"])
-            market_p = float(mb["p"])
-        except (TypeError, ValueError):
-            continue
-        sr = c.execute(
-            "SELECT brier_score FROM score_records "
-            "WHERE question_id=? AND brier_score IS NOT NULL LIMIT 1",
-            (qid,),
-        ).fetchone()
-        outcome = _recover_outcome(agent_p, float(sr["brier_score"])) if sr else None
-        recs.append(
-            {"qid": qid, "title": q["title"], "agent_p": agent_p, "market_p": market_p, "outcome": outcome}
-        )
-    con.close()
-    return recs
+    try:
+        return market_evaluation_records(con)
+    finally:
+        con.close()
 
 
 def orthogonality(recs: list[dict]) -> dict:
+    recs = [r for r in recs if r["agent_p"] is not None and r["market_p"] is not None]
     if not recs:
         return {"n": 0}
     da = [r["agent_p"] for r in recs]
@@ -167,7 +134,13 @@ def main() -> None:
     ap.add_argument("--json", default=None)
     args = ap.parse_args()
     recs = load_records(args.db)
-    report = {"n_total": len(recs), "orthogonality": orthogonality(recs), "scored": scored(recs)}
+    report = {
+        "n_total": len(recs), "orthogonality": orthogonality(recs),
+        "scored": scored([r for r in recs if r["contemporaneous"]]),
+        "frozen_diagnostic": scored([r for r in recs if not r["contemporaneous"]]),
+        "exclusions": {reason: sum(r["exclusion_reason"] == reason for r in recs)
+                       for reason in sorted({r["exclusion_reason"] for r in recs if r["exclusion_reason"]})},
+    }
     print(json.dumps(report, indent=2, default=str))
     if args.json:
         with open(args.json, "w", encoding="utf-8") as fh:

@@ -596,6 +596,9 @@ def create_snapshot(
         effective_cutoff = cutoff_ts or as_of_ts
         ledger._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
         snapshot_metadata = dict(metadata or {})
+        # Audit results are code-owned; caller metadata cannot claim a rule ran.
+        for audit_key in ("lesson_rule_report", "lesson_decisions", "lesson_decisions_error"):
+            snapshot_metadata.pop(audit_key, None)
         # BLF A7 — record the commit-path clamp when it engaged (honesty law:
         # never silent). Stamped BEFORE the preview return so preview and commit
         # report the identical transform.
@@ -1201,6 +1204,7 @@ def create_snapshot(
                     )
                     _upolicy = resolve_severities(question, forecast_origin=forecast_origin, hooks_config=_hcfg)
                     _ureport = run_hooks(_ctx, _upolicy, rules=tuple(_user_rules) + tuple(_lesson_rules))
+                    snapshot_metadata["lesson_rule_report"] = _ureport.to_dict()
                     if not _ureport.passed:
                         _ublocked = _ureport
                 except Exception:
@@ -1423,6 +1427,17 @@ def create_snapshot(
         if preview:
             return {"preview": True, "would_commit": False, "blockers": [str(_preview_err)]}
         raise
+    if forecast_origin == "live":
+        from forecasting.learning import lesson_application_decisions
+
+        try:
+            snapshot_metadata["lesson_decisions"] = lesson_application_decisions(
+                ledger, question, probability_or_distribution, calibration_adjustment,
+                calibration_lesson_refs or [], snapshot_metadata.get("lesson_rule_report") or {},
+            )
+        except Exception as exc:
+            snapshot_metadata["lesson_decisions_error"] = str(exc)
+            logger.debug("lesson decision audit unavailable", exc_info=True)
     if preview:
         # Every gate passed. Return the SAME saturation score + post-adjustment
         # value + assembled metadata a real commit would stamp — but no INSERT.

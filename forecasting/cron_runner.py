@@ -297,11 +297,13 @@ def run_due_reviews(
 
     ledger = ForecastLedger(db_path)
     try:
-        resolution_finalization = ledger.run_resolution_finalization_tasks(
-            owner=f"scheduled-resolution-finalizer:{os.getpid()}", now=now, limit=100
+        from forecasting.lifecycle import run_lifecycle
+
+        resolution_finalization = run_lifecycle(
+            ledger, owner=f"scheduled-resolution-finalizer:{os.getpid()}", now=now, limit=100
         )
-    except Exception:
-        resolution_finalization = []
+    except Exception as exc:
+        resolution_finalization = [{"status": "failed", "error": str(exc)}]
     try:
         dead_letter_recovery = ledger.reconcile_operational_dead_letters(
             owner=f"scheduled-dead-letter-recovery:{os.getpid()}", now=now
@@ -355,6 +357,9 @@ def run_due_reviews(
             "Resolution finalization\n"
             f"completed {completed}/{len(resolution_finalization)} score + postmortem follow-up(s)\n"
         )
+    for row in resolution_finalization:
+        if row.get("error"):
+            sections.append(f"Resolution finalization error: {row['error']}\n")
     if dead_letter_recovery:
         actions: dict[str, int] = {}
         for row in dead_letter_recovery:
@@ -506,7 +511,9 @@ def run_due_reviews(
     run_synthesis = (
         synthesize_lessons
         if synthesize_lessons is not None
-        else bool(score_events or postmortem_events)
+        else bool(score_events or postmortem_events or any(
+            row.get("status") == "completed" for row in resolution_finalization
+        ))
     )
     if run_synthesis:
         try:
@@ -1767,8 +1774,10 @@ def run_warning_automode(
         state_path,
     )
     try:
-        resolution_finalization = led.run_resolution_finalization_tasks(
-            owner=f"warning-resolution-finalizer:{uuid.uuid4().hex[:12]}",
+        from forecasting.lifecycle import run_lifecycle
+
+        resolution_finalization = run_lifecycle(
+            led, owner=f"warning-resolution-finalizer:{uuid.uuid4().hex[:12]}",
             now=now,
             limit=100,
         )

@@ -626,6 +626,7 @@ def test_embedded_tui_surface_is_forecast_desk():
         root / "web" / "src" / "lib" / "dashboard-flags.ts",
         root / "web" / "src" / "lib" / "resolve-page-title.ts",
         root / "web" / "src" / "lib" / "slashExec.ts",
+        root / "web" / "src" / "lib" / "ptyConnection.ts",
         root / "web" / "src" / "pages" / "AnalyticsPage.tsx",
         root / "web" / "src" / "pages" / "SessionsPage.tsx",
         root / "web" / "src" / "pages" / "ModelsPage.tsx",

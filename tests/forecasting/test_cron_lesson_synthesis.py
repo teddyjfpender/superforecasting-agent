@@ -131,3 +131,12 @@ def test_obsidian_sync_off_by_default(tmp_path, monkeypatch):
     text = cron_runner.run_due_reviews(db_path=tmp_path / "f.db")
     assert "Obsidian sync" not in text
     assert not (vault / "Forecasting").exists()
+
+
+def test_finalization_triggers_synthesis_without_review_alerts(tmp_path, synth_spy, monkeypatch):
+    _fake_reviews(monkeypatch, [])
+    monkeypatch.setattr('forecasting.lifecycle.run_lifecycle', lambda *a, **k: [{'status': 'completed'}])
+    text = cron_runner.run_due_reviews(db_path=tmp_path / 'f.db')
+    assert len(synth_spy) == 1
+    assert 'Resolution finalization' in text
+    assert 'Lesson synthesis' in text

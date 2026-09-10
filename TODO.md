@@ -68,3 +68,20 @@ See [verification and reproduction](docs/plans/2026-09-10-forecast-reliability.m
   records; probability changes must remain explicit forecast updates.
 - [ ] Evaluate forecasting accuracy and calibration with scored resolved questions;
   passing software tests does not establish forecasting skill.
+
+## Lifecycle and learning follow-up
+
+See [runtime changes and verification](docs/plans/2026-09-10-lifecycle-learning.md).
+
+- [x] Recover missing score/postmortem handoffs through the existing durable queue;
+  make them visible through CLI, TUI commands, and operational diagnostics.
+- [x] Wake TUI maintenance for finalization work even when no reviews are due.
+- [x] Record actual lesson decisions and rule verdicts, apply explicit in-scope
+  supersession, and distinguish historical unverified application counts.
+- [x] Share exact market-study evaluation records between CLI reports and scripts.
+- [ ] Review the live instance's settlement backlog and the two resolved questions
+  without forecasts. This change verified recovery on an isolated backup only.
+- [ ] Review conditional weather guidance and explicitly supersede or re-scope it
+  where warranted. Prose conflicts are not automatically converted into rules.
+- [ ] Evaluate prospective lesson benefit using independent outcomes and matched
+  pre-adjustment forecasts; application coverage alone does not prove benefit.

@@ -5665,8 +5665,9 @@ class ForecastCLI:
             bool: True to continue, False to exit
         """
         from superforecasting_agent.runtime.commands import expand_quick_alias
+        quick_commands = (getattr(self, "config", None) or {}).get("quick_commands", {})
         try:
-            command = expand_quick_alias(command, self.config.get("quick_commands"))
+            command = expand_quick_alias(command, quick_commands)
         except ValueError as exc:
             self._console_print(str(exc))
             return True
@@ -6040,7 +6041,6 @@ class ForecastCLI:
         else:
             # Check for user-defined quick commands (bypass agent loop, no LLM call)
             base_cmd = cmd_lower.split()[0]
-            quick_commands = self.config.get("quick_commands", {})
             if base_cmd.lstrip("/") in quick_commands:
                 qcmd = quick_commands[base_cmd.lstrip("/")]
                 if qcmd.get("type") == "exec":
