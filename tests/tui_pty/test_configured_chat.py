@@ -83,7 +83,8 @@ def local_provider():
 
 @pytest.mark.live_system_guard_bypass
 @pytest.mark.timeout(90)
-def test_configured_prompt_streams_through_local_provider(tui_bundle, tui_env, tui_home, local_provider):
+@pytest.mark.parametrize("typing_mode", ["chunk", "rapid", "rapid-submit"])
+def test_configured_prompt_streams_through_local_provider(tui_bundle, tui_env, tui_home, local_provider, typing_mode):
     endpoint, requests = local_provider
     config = {
         "model": {"default": "fixture-local", "provider": "custom", "base_url": endpoint},
@@ -95,10 +96,19 @@ def test_configured_prompt_streams_through_local_provider(tui_bundle, tui_env, t
     with PtySession(["node", str(tui_bundle)], cwd=str(REPO_ROOT), env=env, rows=44, cols=120) as session:
         session.wait_for(lambda screen: "fixture-local" in screen.text(), timeout=20, what="configured home")
         session.settle()
-        session.send(PROMPT.encode())
-        session.wait_for(lambda screen: PROMPT in screen.text(), timeout=5, what="composer input")
-        # Enter must be a separate event; a single text+Enter write is a paste.
-        session.settle(quiet=0.1, max_wait=0.5)
+        if typing_mode.startswith("rapid"):
+            import time
+            for char in PROMPT:
+                session.send(char.encode())
+                time.sleep(0.001)
+        else:
+            session.send(PROMPT.encode())
+        if typing_mode == "rapid-submit":
+            time.sleep(0.01)  # Separate key event, before the 50ms paste debounce.
+        else:
+            session.wait_for(lambda screen: PROMPT in screen.text(), timeout=5, what="composer input")
+            # Enter must be a separate event; a single text+Enter write is a paste.
+            session.settle(quiet=0.1, max_wait=0.5)
         session.send(b"\r")
         session.wait_for(lambda screen: REPLY in screen.text(), timeout=40, what="streamed provider reply")
         assert any(
