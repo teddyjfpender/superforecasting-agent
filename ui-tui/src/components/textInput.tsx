@@ -671,16 +671,27 @@ export function TextInput({
     return !!h
   }
 
-  const flushPaste = () => {
+  const flushPaste = (asText = false) => {
     const text = pasteBuf.current
     const at = pastePos.current
     const end = pasteEnd.current ?? at
     pasteBuf.current = ''
     pasteEnd.current = null
+
+    if (pasteTimer.current) {
+      clearTimeout(pasteTimer.current)
+    }
+
     pasteTimer.current = null
 
     if (!text) {
       return
+    }
+
+    // Enter can arrive before the debounce. Submit all received keystrokes,
+    // without waiting for asynchronous paste enrichment to update the value.
+    if (asText) {
+      return commit(vRef.current.slice(0, at) + text + vRef.current.slice(end), at + text.length)
     }
 
     if (!emitPaste({ cursor: at, text, value: vRef.current }) && PRINTABLE.test(text)) {
@@ -875,6 +886,8 @@ export function TextInput({
       }
 
       if (k.return) {
+        flushPaste(true)
+
         if (k.shift || k.ctrl || (isMac ? isActionMod(k) : k.meta)) {
           flushParentChange()
           commit(ins(vRef.current, curRef.current, '\n'), curRef.current + 1)
@@ -1025,7 +1038,9 @@ export function TextInput({
           return commit(ins(v, c, '\n'), c + 1)
         }
 
-        if (text.length > 1 || text.includes('\n')) {
+        // PTY reads can mix multi-character chunks with single keystrokes.
+        // Once buffering starts, keep later text in order until the flush.
+        if (pasteBuf.current || text.length > 1 || text.includes('\n')) {
           if (!pasteBuf.current) {
             pastePos.current = range ? range.start : c
             pasteEnd.current = range ? range.end : pastePos.current

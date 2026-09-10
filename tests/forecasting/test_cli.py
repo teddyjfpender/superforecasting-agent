@@ -5802,7 +5802,9 @@ def test_forecast_cli_usgs_import_captures_events_as_evidence(
     assert evidence[0].summary.startswith("USGS earthquake M5.7 at 10 km S of Testville.")
     assert evidence[0].source_name == "USGS Earthquake Catalog"
     assert evidence[0].source_type == "adapter:usgs"
-    assert evidence[0].published_at == "2026-05-20T00:00:00Z"
+    assert evidence[0].published_at == "2026-05-20T01:00:00Z"
+    assert evidence[0].available_at == "2026-05-20T01:00:00Z"
+    assert evidence[0].metadata["observed_at"] == "2026-05-20T00:00:00Z"
     assert evidence[0].claim_type == "fact"
     assert evidence[0].reliability_rating == 0.9
     assert evidence[0].relevance_rating == 0.8
@@ -5810,6 +5812,9 @@ def test_forecast_cli_usgs_import_captures_events_as_evidence(
     assert evidence[0].metadata["event_id"] == "us7000abcd"
     assert evidence[0].metadata["magnitude"] == 5.7
     assert evidence[0].metadata["depth_km"] == 8.5
+    _run(parser, ["forecast", "--db", db, "import", "usgs", "minmagnitude=5", "--question", question_id])
+    assert "captured 0 usgs evidence item(s)" in capsys.readouterr().out
+    assert len(ForecastLedger(db_path).list_evidence(question_id)) == 1
 
 
 def test_eonet_adapter_loads_natural_events(monkeypatch):

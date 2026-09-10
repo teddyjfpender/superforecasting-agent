@@ -1,0 +1,71 @@
+{
+  "kind": "operational-release-rehearsal",
+  "prospective_skill_evidence": false,
+  "wheel_sha256": "29fe919213cedf86cec640a0c0fefb30079ec14bcfb0274fd9bd5d1f97d21fef",
+  "previous_wheel_sha256": "2875d1c4977b2c2f2647fff8985d578f0672dba2b4f26bf36bdc92bcc3265467",
+  "sources": [
+    {
+      "source": "usgs",
+      "url": "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson",
+      "status": 200,
+      "captured_at": "2026-09-10T11:46:41.801842+00:00",
+      "sha256": "ab9460418497ebcf1405d6681b97aab5c929784713d7e7e70052cf7d7f6d21fc",
+      "features": 11
+    },
+    {
+      "source": "nws",
+      "url": "https://api.weather.gov/alerts/active",
+      "status": 200,
+      "captured_at": "2026-09-10T11:46:42.927296+00:00",
+      "sha256": "63acbad5d0ada52df5f26c15156556d6dfb2b9d76c99c277963fc7e156ea01f4",
+      "features": 353
+    }
+  ],
+  "upgrade": {
+    "question_id": "fq_a13950ed48bf",
+    "passed": true
+  },
+  "fresh": {
+    "question_id": "fq_588bfd45c12c",
+    "passed": true
+  },
+  "passed": true,
+  "command_count": 39,
+  "implementation_commit": "92472c4c1",
+  "artifact_directory": "/tmp/forecast-release-delivery-20260910",
+  "validation": {
+    "forecasting": {
+      "passed": 3388,
+      "skipped": 3
+    },
+    "runtime_gateway_terminal": {
+      "passed": 5643,
+      "skipped": 8
+    },
+    "agent": {
+      "passed": 1368,
+      "skipped": 3
+    },
+    "zero_output_reconnect": {
+      "passed": 159
+    },
+    "web_connection": {
+      "passed": 12
+    },
+    "tui": {
+      "passed": 2010,
+      "skipped": 1
+    },
+    "real_terminal_input_and_cancel_resume": {
+      "passed": 4
+    }
+  },
+  "python_files_byte_verified": 966,
+  "installed_tui": {
+    "passed": true,
+    "command": "fresh-venv/bin/superforecasting-agent tui",
+    "cwd": "/tmp/forecast-release-delivery-20260910",
+    "durable_prompt": "Reply with the fixture response.",
+    "durable_response": "LOCAL FIXTURE RESPONSE: Forecast desk transport verified."
+  }
+}

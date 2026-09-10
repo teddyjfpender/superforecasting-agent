@@ -58,7 +58,7 @@ stratification, applying the ``logit_scale`` nudge, writing lessons) lives in
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Sequence
 
 __all__ = [
@@ -172,6 +172,7 @@ class Observation:
     weight: float = 1.0
     lesson_active: bool = False
     horizon_days: float | None = None
+    score_record_id: str | None = None
 
     def signed_contribution(self) -> float | None:
         """``c_i = sign(p_yes-0.5) * (p_yes-outcome)`` or ``None`` if neutral."""
@@ -621,6 +622,8 @@ class CalibrationBiasReport:
     recommended_adjustment: dict[str, Any] = field(default_factory=dict)
     horizon_label: str | None = None
     notes: list[str] = field(default_factory=list)
+    source_score_record_refs: list[str] = field(default_factory=list)
+    shrink_prior_score_record_refs: list[str] = field(default_factory=list)
 
     @property
     def has_detectable_bias(self) -> bool:
@@ -646,6 +649,8 @@ class CalibrationBiasReport:
             "recommended_adjustment": self.recommended_adjustment,
             "horizon_label": self.horizon_label,
             "notes": self.notes,
+            "source_score_record_refs": self.source_score_record_refs,
+            "shrink_prior_score_record_refs": self.shrink_prior_score_record_refs,
         }
 
 
@@ -807,6 +812,7 @@ def assess_bias(
         curve_shape=shape,
         horizon_label=horizon_label,
         notes=notes,
+        source_score_record_refs=sorted({o.score_record_id for o in rows if o.score_record_id}),
     )
 
     if ess < floor:
@@ -863,25 +869,17 @@ def assess_bias(
             prior_scale=prior_scale,
         )
 
-    return CalibrationBiasReport(
-        scope_type=scope_type,
-        scope_ref=scope_ref,
+    return replace(
+        base,
         status=status,
-        n=n,
-        ess=ess,
         sce_raw=sce_raw,
         sce_shrunk=sce_shrunk,
         ci_low=ci_low,
         ci_high=ci_high,
         pvalue=pvalue,
-        ece=ece,
-        ess_min=floor,
         direction=direction,
-        curve_shape=shape,
         advisory_text=advisory,
         recommended_adjustment=adjustment,
-        horizon_label=horizon_label,
-        notes=notes,
     )
 
 

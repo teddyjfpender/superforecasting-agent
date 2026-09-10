@@ -1389,7 +1389,9 @@ def _bias_observations(
         forecast_origin=forecast_origin,
         calibration_eligible=True,
     )
-    observations: list[Any] = []
+    # One independent outcome per question, using its latest scored forecast.
+    # Repeated updates must not manufacture effective sample size.
+    observations: dict[str, tuple[tuple[Any, ...], Any]] = {}
     for score in scores:
         try:
             question = ledger.get_question(score.question_id)
@@ -1423,16 +1425,20 @@ def _bias_observations(
             if resolved_dt is not None:
                 age_days = (now_dt - resolved_dt).total_seconds() / 86400.0
                 weight = recency_halflife_weight(age_days, recency_halflife_days)
-        observations.append(
-            Observation(
+        rank = (snapshot.as_of, snapshot.created_at, snapshot.forecast_id, score.scored_at, score.id)
+        if score.question_id in observations and observations[score.question_id][0] >= rank:
+            continue
+        observations[score.question_id] = (
+            rank, Observation(
                 p_yes=float(probability),
                 outcome=float(observed),
                 weight=weight,
                 lesson_active=bool(snapshot.calibration_lesson_refs),
                 horizon_days=score.forecast_horizon_days,
+                score_record_id=score.id,
             )
         )
-    return observations
+    return [observation for _, observation in observations.values()]
 
 
 def calibration_bias(

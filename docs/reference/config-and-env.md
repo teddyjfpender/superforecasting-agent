@@ -179,7 +179,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `PREFIX` | `''` | `superforecasting_agent.constants`, `superforecasting_agent.runtime.doctor`, `superforecasting_agent.runtime.uninstall` |
 | `PULSE_SERVER` | `None` | `tools.voice_mode` |
 | `PYTEST_CURRENT_TEST` | `None` | `superforecasting_agent.runtime.auth` |
-| `PYTHON` | `''` | `superforecasting_agent.runtime.main` |
+| `PYTHON` | `''` | `superforecasting_agent.runtime.tui_environment` |
 | `PYTHONPATH` | `''`, `None` | `superforecasting_agent.runtime.codex_runtime_plugin_migration`, `superforecasting_agent.runtime.gateway_windows` |
 | `ProgramFiles` | `'C:\\Program Files'`, `None` | `superforecasting_agent.runtime.browser_connect`, `superforecasting_agent.runtime.plugins_cmd`, `tools.environments.local` |
 | `ProgramFiles(x86)` | `'C:\\Program Files (x86)'`, `None` | `superforecasting_agent.runtime.browser_connect`, `superforecasting_agent.runtime.plugins_cmd`, `tools.environments.local` |

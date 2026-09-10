@@ -196,3 +196,24 @@ rule above).
   `cheatSheetOverlay.tsx`, `footerChips.tsx`
 - Background: ARC A2 commit `6b13707a2` (help unification, `FooterChips` flexWrap),
   the Aurora theme change, `docs/plans/2026-07-03-architecture-delivery-plan.md`
+
+## Dashboard transport recovery
+
+The dashboard embeds the same Ink process via a POSIX PTY. Both launch paths use
+`superforecasting_agent/runtime/tui_environment.py` for interpreter, source-root
+and working-directory settings. The web server owns transport authentication;
+`pty_sessions.py` owns process lifetime and bounded replay.
+
+A transient WebSocket loss retains the child for 30 seconds. The browser keeps
+its terminal buffer and reconnects with its received byte cursor and an explicit
+reconnect flag. The latter prevents a zero-output expired session from silently
+starting a replacement. Replay is capped at 1 MiB and 16 retained/attached desks.
+An expired session, missing bytes or competing attachment requires explicit
+resume through Forecast Sessions. Input is paused while disconnected. Normal
+close ends the child; application shutdown reaps retained children.
+
+Cancellation preserves separate durable user turns. Provider role-sequence
+repair operates on request copies, because merging stored user turns after an
+interruption would move the SQLite append cursor past the follow-up prompt.
+The real PTY regression covers a stalled stream, cancellation, resize, a new
+successful turn, process exit, and hydration from the session database.

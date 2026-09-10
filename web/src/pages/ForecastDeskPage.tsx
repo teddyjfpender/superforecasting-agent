@@ -26,6 +26,7 @@ import { Button } from "@nous-research/ui/ui/components/button";
 import { Typography } from "@/components/NouiTypography";
 import { FORECAST_BASE_PATH, getDashboardSessionTokenSync } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { connectPty } from "@/lib/ptyConnection";
 import { Copy, PanelRight, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -545,51 +546,13 @@ export default function ForecastDeskPage({ isActive = true }: { isActive?: boole
     });
 
     // WebSocket
-    const url = buildWsUrl(token, resumeParam, channel);
-    const ws = new WebSocket(url);
-    ws.binaryType = "arraybuffer";
-    wsRef.current = ws;
-    // Suppress banner/terminal side-effects when cleanup() calls `ws.close()`
-    // (React StrictMode remount, route change) so we never write to a
-    // disposed xterm or setState on an unmounted tree.
-    let unmounting = false;
-
-    ws.onopen = () => {
-      setBanner(null);
-      // Send the initial RESIZE immediately so Ink has *a* size to lay
-      // out against on its first paint.  The double-rAF block above will
-      // follow up with the authoritative measurement — at worst Ink
-      // reflows once after the PTY boots, which is imperceptible.
-      ws.send(`\x1b[RESIZE:${term.cols};${term.rows}]`);
-    };
-
-    ws.onmessage = (ev) => {
-      if (typeof ev.data === "string") {
-        term.write(ev.data);
-      } else {
-        term.write(new Uint8Array(ev.data as ArrayBuffer));
-      }
-    };
-
-    ws.onclose = (ev) => {
-      wsRef.current = null;
-      if (unmounting) {
-        return;
-      }
-      if (ev.code === 4401) {
-        setBanner("Auth failed. Reload the page to refresh the session token.");
-        return;
-      }
-      if (ev.code === 4403) {
-        setBanner("Forecast Desk is only reachable from localhost.");
-        return;
-      }
-      if (ev.code === 1011) {
-        // Server already wrote an ANSI error frame.
-        return;
-      }
-      term.write("\r\n\x1b[90m[session ended]\x1b[0m\r\n");
-    };
+    const connection = connectPty({
+      url: buildWsUrl(token, resumeParam, channel),
+      onData: (data) => term.write(data),
+      onStatus: setBanner,
+      onSocket: (socket) => { wsRef.current = socket; },
+      onReady: (socket) => socket.send(`\x1b[RESIZE:${term.cols};${term.rows}]`),
+    });
 
     // Keystrokes → PTY.
     //
@@ -608,25 +571,20 @@ export default function ForecastDeskPage({ isActive = true }: { isActive?: boole
     // eslint-disable-next-line no-control-regex -- intentional ESC byte in xterm SGR mouse report parser
     const SGR_MOUSE_RE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
     const onDataDisposable = term.onData((data) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
-
       if (SGR_MOUSE_RE.test(data)) {
         return;
       }
 
-      ws.send(data);
+      connection.send(data);
     });
 
     const onResizeDisposable = term.onResize(({ cols, rows }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(`\x1b[RESIZE:${cols};${rows}]`);
-      }
+      connection.send(`\x1b[RESIZE:${cols};${rows}]`);
     });
 
     term.focus();
 
     return () => {
-      unmounting = true;
       syncMetricsRef.current = null;
       onDataDisposable.dispose();
       onResizeDisposable.dispose();
@@ -640,8 +598,7 @@ export default function ForecastDeskPage({ isActive = true }: { isActive?: boole
       if (hostSyncRaf) cancelAnimationFrame(hostSyncRaf);
       if (settleRaf1) cancelAnimationFrame(settleRaf1);
       if (settleRaf2) cancelAnimationFrame(settleRaf2);
-      ws.close();
-      wsRef.current = null;
+      connection.close();
       term.dispose();
       termRef.current = null;
       fitRef.current = null;

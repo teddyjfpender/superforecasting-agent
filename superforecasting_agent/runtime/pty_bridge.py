@@ -193,7 +193,7 @@ class PtyBridge:
         if self._closed:
             return
         # struct winsize: rows, cols, xpixel, ypixel (all unsigned short)
-        winsize = struct.pack("HHHH", max(1, rows), max(1, cols), 0, 0)
+        winsize = struct.pack("HHHH", min(65535, max(1, rows)), min(65535, max(1, cols)), 0, 0)
         try:
             fcntl.ioctl(self._fd, termios.TIOCSWINSZ, winsize)
         except OSError:

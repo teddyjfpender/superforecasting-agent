@@ -4589,8 +4589,15 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             since=args.since,
             api_base_url=args.api_base_url,
         )
+        from forecasting.evidence_quality import revision_key
+        existing = ledger.existing_evidence_keys(args.question_id)
         evidence_items = []
         for event in events:
+            entry_id = revision_key(event.entry_id or event.event_id or event.title, event.raw)
+            key = ("adapter:usgs", entry_id)
+            if key in existing:
+                continue
+            existing.add(key)
             magnitude = f"M{event.magnitude:g}" if event.magnitude is not None else "event"
             event_label = event.event_type or "event"
             location = event.place or event.title
@@ -4613,8 +4620,9 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                     source_url=event.url,
                     source_name=event.source_name,
                     source_type="adapter:usgs",
-                    published_at=event.time,
-                    available_at=event.time or args.as_of,
+                    # Current magnitudes/status may be revised long after the earthquake.
+                    published_at=event.updated_at,
+                    available_at=event.updated_at or utc_now_iso(),
                     claim=f"USGS {event_label} {magnitude}: {location}",
                     summary=summary,
                     reliability_rating=args.reliability,
@@ -4623,6 +4631,8 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                     claim_type=args.claim_type,
                     metadata={
                         "adapter": "usgs",
+                        "entry_id": entry_id,
+                        "observed_at": event.time,
                         "query": args.source,
                         "event_id": event.event_id,
                         "title": event.title,
@@ -4715,8 +4725,15 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
             since=args.since,
             api_base_url=args.api_base_url,
         )
+        from forecasting.evidence_quality import revision_key
+        existing = ledger.existing_evidence_keys(args.question_id)
         evidence_items = []
         for alert in alerts:
+            entry_id = revision_key(alert.entry_id or alert.alert_id or alert.headline, alert.raw)
+            key = ("adapter:nws", entry_id)
+            if key in existing:
+                continue
+            existing.add(key)
             timing = [
                 f"sent {alert.sent_at or 'unknown'}",
                 f"effective {alert.effective_at or 'unknown'}",
@@ -4744,7 +4761,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                     source_name=alert.source_name,
                     source_type="adapter:nws",
                     published_at=alert.sent_at,
-                    available_at=alert.sent_at or alert.effective_at or args.as_of,
+                    available_at=alert.sent_at or utc_now_iso(),
                     claim=f"NWS {alert.event}: {alert.headline}",
                     summary=summary,
                     reliability_rating=args.reliability,
@@ -4753,6 +4770,7 @@ def _cmd_import_adapter(args: argparse.Namespace) -> None:
                     claim_type=args.claim_type,
                     metadata={
                         "adapter": "nws",
+                        "entry_id": entry_id,
                         "query": args.source,
                         "alert_id": alert.alert_id,
                         "event": alert.event,

@@ -95,6 +95,21 @@ class TestPtyBridgeIO:
 
 @skip_on_windows
 class TestPtyBridgeResize:
+    def test_out_of_range_resize_is_bounded(self):
+        import fcntl
+        import struct
+        import termios
+
+        bridge = PtyBridge.spawn(["/bin/cat"])
+        try:
+            bridge.resize(cols=10**20, rows=-1)
+            rows, cols, *_ = struct.unpack("HHHH", fcntl.ioctl(bridge._fd, termios.TIOCGWINSZ, b"\0" * 8))
+            assert (rows, cols) == (1, 65535)
+            bridge.write(b"still-alive\n")
+            assert b"still-alive" in _read_until(bridge, b"still-alive")
+        finally:
+            bridge.close()
+
     def test_resize_updates_child_winsize(self):
         # Query the TTY ioctl directly instead of using tput, which requires
         # TERM and fails in GitHub Actions' non-interactive environment.

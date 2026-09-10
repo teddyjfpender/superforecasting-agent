@@ -7948,27 +7948,22 @@ class GatewayRunner:
         _cmd_def = _resolve_cmd(command) if command else None
         canonical = _cmd_def.name if _cmd_def else command
 
-        # Expand alias quick commands before built-in dispatch so targets like
-        # /model openai/gpt-5.5 --provider openrouter reach the /model handler.
-        # Preserve built-in precedence; aliases only need early handling when
-        # the typed command is not already known.
+        # Shared alias expansion runs before access control and command hooks.
         if command and _cmd_def is None:
-            if isinstance(self.config, dict):
-                quick_commands = self.config.get("quick_commands", {}) or {}
-            else:
-                quick_commands = getattr(self.config, "quick_commands", {}) or {}
-            if isinstance(quick_commands, dict) and command in quick_commands:
-                qcmd = quick_commands[command]
-                if qcmd.get("type") == "alias":
-                    target = qcmd.get("target", "").strip()
-                    if target:
-                        target = target if target.startswith("/") else f"/{target}"
-                        target_command = target.lstrip("/")
-                        user_args = event.get_command_args().strip()
-                        event.text = f"{target} {user_args}".strip()
-                        command = target_command.split()[0] if target_command else target_command
-                        _cmd_def = _resolve_cmd(command) if command else None
-                        canonical = _cmd_def.name if _cmd_def else command
+            from superforecasting_agent.runtime.commands import expand_quick_alias
+
+            quick_commands = (self.config.get("quick_commands") if isinstance(self.config, dict)
+                              else getattr(self.config, "quick_commands", None))
+            try:
+                expanded = expand_quick_alias(
+                    f"/{command} {event.get_command_args()}".strip(), quick_commands
+                )
+            except ValueError as exc:
+                return str(exc)
+            event.text = expanded
+            command = event.get_command()
+            _cmd_def = _resolve_cmd(command) if command else None
+            canonical = _cmd_def.name if _cmd_def else command
 
         # Per-platform slash command access control. Only kicks in when the
         # operator has set ``allow_admin_from`` for the source's scope (DM

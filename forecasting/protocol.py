@@ -621,6 +621,14 @@ def build_context_packet(
                 f"- {item['id']} status={item['status']} confidence={item['confidence']} "
                 f"lesson={item['lesson']}"
             )
+            score_refs = item.get("source_score_record_refs") or []
+            metadata = item.get("metadata") or {}
+            if score_refs:
+                lines.append(
+                    f"  scored_sources={len(score_refs)} effective_sample={metadata.get('ess', 'unknown')} "
+                    f"source_refs={','.join(score_refs[:5])}"
+                    + (f" (+{len(score_refs) - 5} more in lesson record)" if len(score_refs) > 5 else "")
+                )
     else:
         lines.append("- none")
 

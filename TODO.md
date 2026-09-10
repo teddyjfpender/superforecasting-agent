@@ -4,6 +4,23 @@ This is the follow-up list from the September 2026 repository cleanup. Completed
 work and verification are recorded in the [cleanup review](docs/plans/2026-09-10-cleanup-review.md)
 and its linked work log. These items are not claims of known production failures.
 
+## Completed reliability follow-up (September 10)
+
+See [verification and reproduction](docs/plans/2026-09-10-forecast-reliability.md).
+
+- [x] Fresh wheel installation and upgrade in isolated macOS profiles, including
+  persisted configuration/evidence and create → research → update → resolve →
+  score → postmortem through the installed public CLI.
+- [x] Calibration lesson provenance, independent-outcome counts, small-sample
+  safeguards, correction invalidation and bounded numerical adjustments.
+- [x] Stalled-stream cancellation, durable follow-up prompts, session restart/resume,
+  bounded terminal resize and dashboard reconnect with draft/output preservation.
+- [x] Shared CLI/dashboard launch environment, isolated provider catalog ownership,
+  and shared CLI/gateway alias expansion with cycle rejection.
+- [x] Evidence source grouping, duplicate observations/revisions, timestamps,
+  historical cutoffs, stale evidence and resolution outcome validation, including
+  captured public USGS/NWS records.
+
 ## Before a production release
 
 - [ ] Verify the pushed commit's CI results, including platform jobs and release
@@ -13,9 +30,9 @@ and its linked work log. These items are not claims of known production failures
 - [ ] Exercise the documented installation and upgrade paths on native Windows,
   Linux/container, and Android/Termux. This pass verified macOS and a wheel
   installed outside the checkout; it did not establish cross-platform readiness.
-- [ ] Smoke-test configured provider authentication, source fetching, and the
-  forecast lifecycle against live services in a disposable profile. Local model
-  and source fixtures establish transport and parsing behavior only.
+- [ ] Exercise paid-provider authentication and service-failure behavior under an
+  approved budget. Public-source capture, local-model streaming and the installed
+  lifecycle are verified; paid-service availability is a separate release gate.
 - [ ] Build and publish the release through the release workflow after the above
   checks. A pushed source commit is not a published or deployed release.
 
@@ -26,8 +43,8 @@ and its linked work log. These items are not claims of known production failures
   injected test seams, callback behavior, and wire responses.
 - [ ] Continue splitting orchestration from parsing in remaining source adapters.
   Keep missing values distinct from zero and preserve provider outcome indices.
-- [ ] Audit remaining repeated configuration/provider selection logic before
-  consolidating it; similar-looking flows can have different persistence rules.
+- [ ] Continue auditing remaining configuration/provider persistence differences.
+  The picker catalog and CLI/dashboard launch settings now have clear ownership.
 - [ ] Keep the ownership map and generated reference current as modules move.
 
 ## Identity and compatibility
@@ -43,10 +60,10 @@ and its linked work log. These items are not claims of known production failures
 
 ## Preserve the TUI and forecasting guarantees
 
-- [ ] Include an installed-artifact TUI interaction in future release checks,
-  alongside component tests, types, lint, and builds.
-- [ ] Expand real-terminal coverage for resize, reconnect, Unicode, cancellation,
-  session resume, and the dashboard PTY on supported platforms.
+- [x] Verify the installed public TUI outside the checkout: streamed local-model
+  response, durable prompt/reply and clean exit. Keep this in future release checks.
+- [ ] Extend the verified macOS cancellation/resume/resize/dashboard recovery
+  cases to supported platforms and longer-running sessions, including Unicode.
 - [ ] Keep scheduled monitoring limited to evidence, alerts, scores, and learning
   records; probability changes must remain explicit forecast updates.
 - [ ] Evaluate forecasting accuracy and calibration with scored resolved questions;

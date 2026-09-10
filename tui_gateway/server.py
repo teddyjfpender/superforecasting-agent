@@ -1964,8 +1964,9 @@ def _probe_credentials(agent) -> str:
     try:
         key = getattr(agent, "api_key", "") or ""
         provider = getattr(agent, "provider", "") or ""
-        if not key or key == "no-key-required":
-            return f"No API key configured for provider '{provider}'. First forecast turn will fail."
+        # The resolver deliberately returns this sentinel for keyless endpoints.
+        if not key:
+            return f"No API key configured for provider '{provider}'. Check provider configuration if requests fail."
     except Exception:
         pass
     return ""

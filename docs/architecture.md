@@ -172,3 +172,16 @@ generic chat memory, and do-anything tool exposure are the demoted surfaces —
 present during the transition, not the product. When you see a `hermes_*` module
 or a `HERMES_HOME` env var, that is compatibility residue; the fork prefers
 `superforecasting-agent` / `FORECAST_*` names.
+
+## Shared runtime ownership
+
+`runtime/custom_provider_catalog.py` owns the model picker's provider catalog and
+raw environment-reference preservation; the picker owns interaction and selection.
+`runtime/tui_environment.py` owns launch environment parity for CLI and dashboard.
+`runtime/commands.py::expand_quick_alias` owns CLI/gateway alias expansion, argument
+preservation and cycle detection; platform dispatch retains access control and hooks.
+
+`forecasting/evidence_quality.py` supplies the shared source/observation identities
+used by research adequacy and ledger readiness. URL hosts are conservative source
+proxies. Known shared origins belong in evidence metadata as `independence_group`
+or `original_source_url`; different hosts alone do not prove independence.
