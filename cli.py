@@ -5664,6 +5664,14 @@ class ForecastCLI:
         Returns:
             bool: True to continue, False to exit
         """
+        from superforecasting_agent.runtime.commands import expand_quick_alias
+        try:
+            command = expand_quick_alias(command, self.config.get("quick_commands"))
+        except ValueError as exc:
+            self._console_print(str(exc))
+            return True
+        if not command:
+            return True
         # Lowercase only for dispatch matching; preserve original case for arguments
         cmd_lower = command.lower().strip()
         cmd_original = command.strip()
@@ -6057,15 +6065,6 @@ class ForecastCLI:
                             self._console_print(f"[bold red]Quick command error: {e}[/]")
                     else:
                         self._console_print(f"[bold red]Quick command '{base_cmd}' has no command defined[/]")
-                elif qcmd.get("type") == "alias":
-                    target = qcmd.get("target", "").strip()
-                    if target:
-                        target = target if target.startswith("/") else f"/{target}"
-                        user_args = cmd_original[len(base_cmd):].strip()
-                        aliased_command = f"{target} {user_args}".strip()
-                        return self.process_command(aliased_command)
-                    else:
-                        self._console_print(f"[bold red]Quick command '{base_cmd}' has no target defined[/]")
                 else:
                     self._console_print(f"[bold red]Quick command '{base_cmd}' has unsupported type (supported: 'exec', 'alias')[/]")
             # Check for plugin-registered slash commands

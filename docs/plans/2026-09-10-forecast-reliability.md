@@ -59,3 +59,34 @@ Commit and push coherent verified increments, as previously requested.
 - Real browser at `/desk` showed gateway loss with the packaged TUI. Two failing
   tests establish the dashboard does not propagate CLI Python/source-root/CWD
   settings. Shared launch-environment fix is next.
+
+### Recovery and shared ownership
+
+- CLI and dashboard now share Python interpreter, source root and working-directory
+  launch settings. This fixed the observed real-browser gateway startup failure.
+- Dashboard transport loss retains one child for 30 seconds with a 1 MiB replay
+  bound. Byte cursors prevent duplicate output; expired/incomplete replay requires
+  explicit resume. Normal close and server shutdown reap children. ASGI cancellation
+  shields teardown. Resize dimensions stay inside the POSIX unsigned-short range.
+- Browser rehearsal with a local HTTP model: streamed reply, disconnected socket,
+  reconnect from byte 27864, draft preserved, resize and subsequent submission.
+  Screenshot: `/tmp/forecast-dashboard-reconnected.png` (local evidence).
+- Stalled-stream PTY rehearsal reproduced lost follow-up prompts in SQLite: request
+  sequence repair merged durable user rows and invalidated the flush cursor. Repair
+  now operates on request copies. Cancellation, resize, subsequent turn, exact-once
+  prompt persistence and process restart/resume pass together (13 targeted tests).
+- Existing terminal/gateway recovery suite: 293 passed. WebSocket suite: 168 passed.
+  PTY replay/expiry/capacity/cleanup suite: 17 passed. Browser connection helper:
+  11 Node tests passed; dashboard build passed.
+- Provider catalog/template preservation moved out of the interactive picker;
+  shared quick-alias expansion preserves arguments and built-in precedence and
+  rejects cycles before CLI/gateway dispatch. Shared ownership suite: 77 passed.
+- Keyless endpoints no longer receive an unconditional failed-credentials warning.
+
+## Remaining TODO before closeout
+
+- Finish public-source capture/revision/duplicate and criteria verification.
+- Verify final wheel fresh installation, upgrade preservation and CLI lifecycle.
+- Complete final integrated gates and publish the reviewable branch/PR evidence.
+- Keep forecasting-skill claims unproven: synthetic outcomes and local-model
+  transport rehearsals do not establish prospective performance.

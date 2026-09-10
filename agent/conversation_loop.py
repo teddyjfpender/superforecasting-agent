@@ -747,21 +747,6 @@ def run_conversation(
                 agent.session_id or "-",
             )
 
-        # Defensive: repair malformed role-alternation before API call.
-        # Catches cases where the history got wedged into a
-        # ``tool → user`` or ``user → user`` tail (e.g. after empty-
-        # response scaffolding was stripped and a new user message
-        # landed after an orphan tool result). Most providers return
-        # empty content on malformed sequences, which would otherwise
-        # retrigger the empty-retry loop indefinitely.
-        repaired_seq = agent._repair_message_sequence(messages)
-        if repaired_seq > 0:
-            request_logger.info(
-                "Repaired %s message-alternation violations before request (session=%s)",
-                repaired_seq,
-                agent.session_id or "-",
-            )
-
         api_messages = []
         for idx, msg in enumerate(messages):
             api_msg = msg.copy()
@@ -806,6 +791,22 @@ def run_conversation(
             # Keep 'reasoning_details' - OpenRouter uses this for multi-turn reasoning context
             # The signature field helps maintain reasoning continuity
             api_messages.append(api_msg)
+
+        # Repair only the request copy: merging durable user rows would move
+        # the SQLite flush cursor past the next prompt after cancellation.
+        # Catches cases where the history got wedged into a
+        # ``tool → user`` or ``user → user`` tail (e.g. after empty-
+        # response scaffolding was stripped and a new user message
+        # landed after an orphan tool result). Most providers return
+        # empty content on malformed sequences, which would otherwise
+        # retrigger the empty-retry loop indefinitely.
+        repaired_seq = agent._repair_message_sequence(api_messages)
+        if repaired_seq > 0:
+            request_logger.info(
+                "Repaired %s message-alternation violations before request (session=%s)",
+                repaired_seq,
+                agent.session_id or "-",
+            )
 
         # Build the final system message: cached prompt + ephemeral system prompt.
         # Ephemeral additions are API-call-time only (not persisted to session DB).

@@ -70,17 +70,16 @@ class TestCLIQuickCommands:
     def test_alias_command_routes_to_target(self):
         """Alias quick commands rewrite to the target command."""
         cli = self._make_cli({"shortcut": {"type": "alias", "target": "/help"}})
-        with patch.object(cli, "process_command", wraps=cli.process_command) as spy:
+        with patch.object(cli, "show_help") as spy:
             cli.process_command("/shortcut")
-            # Should recursively call process_command with /help
-            spy.assert_any_call("/help")
+            spy.assert_called_once_with()
 
     def test_alias_command_passes_args(self):
         """Alias quick commands forward user arguments to the target."""
-        cli = self._make_cli({"sc": {"type": "alias", "target": "/context"}})
-        with patch.object(cli, "process_command", wraps=cli.process_command) as spy:
-            cli.process_command("/sc some args")
-            spy.assert_any_call("/context some args")
+        cli = self._make_cli({"sc": {"type": "alias", "target": "/tools"}})
+        with patch.object(cli, "_handle_tools_command") as spy:
+            cli.process_command("/sc Some Args")
+            spy.assert_called_once_with("/tools Some Args")
 
     def test_alias_no_target_shows_error(self):
         cli = self._make_cli({"broken": {"type": "alias", "target": ""}})

@@ -24,11 +24,13 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from contextlib import asynccontextmanager
 
 from superforecasting_agent.paths import get_install_root
 from typing import Any, Dict, List, Optional, Tuple
 
 import yaml
+from anyio import CancelScope
 
 PROJECT_ROOT = get_install_root()
 if str(PROJECT_ROOT) not in sys.path:
@@ -95,7 +97,20 @@ def _configured_web_dist() -> str | None:
 WEB_DIST = Path(_configured_web_dist() or Path(__file__).parent / "web_dist")
 _log = logging.getLogger(__name__)
 
-app = FastAPI(title="Superforecasting Agent", version=__version__)
+from superforecasting_agent.runtime.pty_sessions import PtyReplayUnavailable, PtySessions
+
+_pty_sessions = PtySessions()
+
+
+@asynccontextmanager
+async def _web_lifespan(_app):
+    try:
+        yield
+    finally:
+        await _pty_sessions.close_all()
+
+
+app = FastAPI(title="Superforecasting Agent", version=__version__, lifespan=_web_lifespan)
 
 # ---------------------------------------------------------------------------
 # Session token for protecting sensitive endpoints (reveal).
@@ -3487,7 +3502,9 @@ def _resolve_chat_argv(
 
     argv, cwd = _make_tui_argv(PROJECT_ROOT / "ui-tui", tui_dev=False)
     env = os.environ.copy()
-    env.setdefault("NODE_ENV", "production")
+    from superforecasting_agent.runtime.tui_environment import configure_tui_runtime
+
+    configure_tui_runtime(env, PROJECT_ROOT)
     # Browser-embedded Forecast Desk should prefer stable wheel-based scrollback over
     # native terminal mouse tracking. When mouse tracking is enabled, wheel
     # events are consumed by the TUI and forwarded as terminal input, which
@@ -3589,69 +3606,79 @@ async def pty_ws(ws: WebSocket) -> None:
         return
 
 
+    # Legacy clients without a channel keep connection-owned PTYs. Reconnecting
+    # clients use a stable opaque channel and acknowledge received byte offsets.
+    retained = channel is not None
+    channel = channel or secrets.token_urlsafe(24)
     try:
-        bridge = PtyBridge.spawn(argv, cwd=cwd, env=env)
-    except PtyUnavailableError as exc:
-        await ws.send_text(f"\r\n\x1b[31mForecast Desk unavailable: {exc}\x1b[0m\r\n")
-        await ws.close(code=1011)
+        cursor = int(ws.query_params.get("cursor", "0"))
+        if cursor < 0:
+            raise ValueError
+    except ValueError:
+        await ws.close(code=4400)
         return
-    except (FileNotFoundError, OSError) as exc:
+    try:
+        session = _pty_sessions.attach(
+            channel, resume, cursor, lambda: PtyBridge.spawn(argv, cwd=cwd, env=env)
+        )
+    except PtyReplayUnavailable as exc:
+        await ws.send_text(f"\r\n{exc}\r\n")
+        await ws.close(code=4410)
+        return
+    except (PtyUnavailableError, FileNotFoundError, OSError) as exc:
         await ws.send_text(f"\r\n\x1b[31mForecast Desk failed to start: {exc}\x1b[0m\r\n")
         await ws.close(code=1011)
         return
 
-    loop = asyncio.get_running_loop()
-
-    # --- reader task: PTY master → WebSocket ----------------------------
-    async def pump_pty_to_ws() -> None:
+    async def send_output() -> None:
+        offset = cursor
         while True:
-            chunk = await loop.run_in_executor(
-                None, bridge.read, _PTY_READ_CHUNK_TIMEOUT
-            )
-            if chunk is None:  # EOF
+            chunk = await session.read_after(offset)
+            if chunk is None:
                 return
-            if not chunk:  # no data this tick; yield control and retry
-                await asyncio.sleep(0)
-                continue
-            try:
-                await ws.send_bytes(chunk)
-            except Exception:
-                return
+            await ws.send_bytes(chunk)
+            offset += len(chunk)
 
-    reader_task = asyncio.create_task(pump_pty_to_ws())
-
-    # --- writer loop: WebSocket → PTY master ----------------------------
-    try:
+    async def receive_input() -> int:
         while True:
             msg = await ws.receive()
-            msg_type = msg.get("type")
-            if msg_type == "websocket.disconnect":
-                break
+            if msg.get("type") == "websocket.disconnect":
+                return msg.get("code", 1006)
             raw = msg.get("bytes")
             if raw is None:
                 text = msg.get("text")
                 raw = text.encode("utf-8") if isinstance(text, str) else b""
             if not raw:
                 continue
+            match = _RESIZE_RE.fullmatch(raw)
+            if match:
+                session.bridge.resize(cols=int(match.group(1)), rows=int(match.group(2)))
+            else:
+                await asyncio.to_thread(session.bridge.write, raw)
 
-            # Resize escape is consumed locally, never written to the PTY.
-            match = _RESIZE_RE.match(raw)
-            if match and match.end() == len(raw):
-                cols = int(match.group(1))
-                rows = int(match.group(2))
-                bridge.resize(cols=cols, rows=rows)
-                continue
-
-            bridge.write(raw)
-    except WebSocketDisconnect:
+    sender = asyncio.create_task(send_output())
+    receiver = asyncio.create_task(receive_input())
+    retain = retained
+    try:
+        done, _ = await asyncio.wait({sender, receiver}, return_when=asyncio.FIRST_COMPLETED)
+        if receiver in done:
+            retain = retained and receiver.result() not in {1000, 1001}
+        else:
+            sender.result()
+            retain = False  # clean child EOF
+            await ws.close(code=1000)
+    except PtyReplayUnavailable:
+        retain = retained
+        await ws.close(code=4410)
+    except (WebSocketDisconnect, OSError, RuntimeError):
         pass
     finally:
-        reader_task.cancel()
-        try:
-            await reader_task
-        except (asyncio.CancelledError, Exception):
-            pass
-        bridge.close()
+        sender.cancel()
+        receiver.cancel()
+        # ASGI cancellation must not interrupt child reaping or detach bookkeeping.
+        with CancelScope(shield=True):
+            await asyncio.gather(sender, receiver, return_exceptions=True)
+            await _pty_sessions.detach(channel, session, retain=retain)
 
 
 # ---------------------------------------------------------------------------

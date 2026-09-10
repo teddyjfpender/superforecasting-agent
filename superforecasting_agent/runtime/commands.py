@@ -332,6 +332,33 @@ def resolve_command(name: str) -> CommandDef | None:
     return _COMMAND_LOOKUP.get(name.lower().lstrip("/"))
 
 
+def expand_quick_alias(command: str, quick_commands: Mapping | None) -> str:
+    """Expand configured aliases consistently before CLI/gateway dispatch.
+
+    Built-ins keep precedence; arguments keep their original case. Cycles fail
+    without recursion or executing any command in the chain.
+    """
+    command = command.strip()
+    seen: set[str] = set()
+    while command and isinstance(quick_commands, Mapping):
+        parts = command.split(None, 1)
+        name = parts[0].lstrip("/").lower()
+        if resolve_command(name):
+            break
+        entry = quick_commands.get(name)
+        if not isinstance(entry, Mapping) or entry.get("type") != "alias":
+            break
+        if name in seen:
+            raise ValueError(f"Quick command alias cycle at '/{name}'.")
+        seen.add(name)
+        target = str(entry.get("target") or "").strip()
+        if not target:
+            raise ValueError(f"Quick command '/{name}' has no target defined.")
+        target = target if target.startswith("/") else f"/{target}"
+        command = f"{target} {parts[1] if len(parts) > 1 else ''}".strip()
+    return command
+
+
 def _build_description(cmd: CommandDef) -> str:
     """Build a CLI-facing description string including usage hint."""
     if cmd.args_hint:
