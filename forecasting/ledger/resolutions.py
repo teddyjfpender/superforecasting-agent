@@ -70,6 +70,15 @@ def resolve_question(
     auto_score: bool = True,
 ) -> Resolution:
     resolved_question = ledger.get_question(question_id)
+    # Validate before changing question/scheduler state. Auto-scoring is best
+    # effort, so relying on it to reject an invalid outcome closes an unscoreable
+    # question and silently skips the feedback loop.
+    if resolution_status == "confirmed" and criteria_satisfied and scoreable:
+        space = resolved_question.outcome_space
+        if space.type == "binary":
+            ledger._probability_for_outcome(0.5, outcome, space)
+        elif space.type == "categorical":
+            ledger._probability_for_outcome({choice: 0.0 for choice in space.choices}, outcome, space)
     if resolution_status not in RESOLUTION_STATUSES:
         raise ValidationError(
             f"resolution_status must be one of {', '.join(sorted(RESOLUTION_STATUSES))}"

@@ -58,3 +58,16 @@ def test_publication_chronology_and_timezone_normalization(tmp_path):
     item = ledger.add_evidence(question_id=question.id, source_or_note="observation",
         published_at="2026-09-10T12:00:00+04:00", available_at="2026-09-10T08:00:00Z")
     assert item.published_at == item.available_at == "2026-09-10T08:00:00Z"
+
+
+@pytest.mark.parametrize("space,outcome", [
+    (OutcomeSpace(type="binary"), "unknown"),
+    (OutcomeSpace(type="categorical", choices=["A", "B"]), "C"),
+])
+def test_invalid_confirmed_outcome_does_not_close_question(tmp_path, space, outcome):
+    ledger = ForecastLedger(tmp_path / "ledger.db")
+    q = ledger.create_question(title="Will the stated outcome occur?", resolution_criteria="Use the named official outcome at the deadline.", outcome_space=space)
+    with pytest.raises(ValidationError, match="outcome"):
+        ledger.resolve_question(question_id=q.id, outcome=outcome)
+    assert ledger.get_question(q.id).status == "active"
+    assert ledger.get_latest_resolution(q.id) is None
