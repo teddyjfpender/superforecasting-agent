@@ -17,7 +17,7 @@ runs:
     - name: Ensure /tmp/superforecasting-agent-test is writable
       shell: bash
       run: |
-        # The image still runs as the inherited hermes user (UID 10000).
+        # The entrypoint drops privileges to the forecast user (UID 10000).
         # GitHub Actions creates /tmp/superforecasting-agent-test root-owned by default, which the container user
         # can't write to — chown it to match the in-container UID before
         # bind-mounting.  Real users doing `docker run -v ~/.superforecasting-agent:...`
@@ -31,7 +31,6 @@ runs:
       run: |
         docker run --rm \
           -v /tmp/superforecasting-agent-test:/opt/data \
-          --entrypoint /opt/hermes/docker/entrypoint.sh \
           "${{ inputs.image }}" --help
 
     - name: superforecasting-agent dashboard --help
@@ -43,5 +42,4 @@ runs:
         # installed package.
         docker run --rm \
           -v /tmp/superforecasting-agent-test:/opt/data \
-          --entrypoint /opt/hermes/docker/entrypoint.sh \
           "${{ inputs.image }}" dashboard --help
