@@ -3,8 +3,8 @@
 A lazy prompter's single sentence should yield a complete, committed forecast:
 `forecast onboard --auto` / the `full_forecast` tool action / the cron bootstrap all
 chain research -> base_rate -> update through ONE shared orchestration helper
-(`forecasting.cli.run_forecast_chain`). The LLM stages can't run in a test, so we stub
-`_run_update_agent` (the module-level seam every path reuses) and assert the wiring:
+(`forecasting.application.pipeline.run_forecast_chain`). The LLM stages can't run in a test, so we stub
+`agent.forecast_stage.run_stage` (the execution adapter every path reuses) and assert the wiring:
 the chain commits at each stage, a gate that refuses the update still blocks (no
 fabricated snapshot), and the CLI flag parses + runs the chain.
 """
@@ -67,7 +67,7 @@ def test_chain_happy_path_commits_at_each_stage(tmp_path, monkeypatch):
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} done"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     result = run_forecast_chain(ledger, q.id, max_iterations=3)
 
     assert seen == ["research", "base_rate", "update"]
@@ -98,7 +98,7 @@ def test_chain_gate_blocks_when_update_violates_a_gate(tmp_path, monkeypatch):
             led.create_snapshot(question_id=qid, probability_or_distribution=0.42, rationale="x", require_panel=True)
         return {}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     result = run_forecast_chain(ledger, q.id, max_iterations=3)
 
     assert result["committed"] is False
@@ -124,7 +124,7 @@ def test_chain_continues_past_a_failing_stage(tmp_path, monkeypatch):
         # the update stage respects the still-open gate and declines to commit
         return {}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     result = run_forecast_chain(ledger, q.id, max_iterations=3)
 
     # research errored but the chain CONTINUED through base_rate and update; with no
@@ -158,7 +158,7 @@ def test_full_forecast_tool_commits_and_chains(tmp_path, monkeypatch):
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} done"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     out = json.loads(forecast_ledger_tool({
         "action": "full_forecast", "db": db, "spec": _casual_spec(),
     }))
@@ -178,7 +178,7 @@ def test_full_forecast_tool_blocks_on_unscoreable_and_never_runs_agent(tmp_path,
     import forecasting.cli as cli
     db = str(tmp_path / "chain.db")
     calls: list[str] = []
-    monkeypatch.setattr(cli, "_run_update_agent", lambda *a, **k: calls.append("x") or {})
+    monkeypatch.setattr("agent.forecast_stage.run_stage", lambda *a, **k: calls.append("x") or {})
 
     out = json.loads(forecast_ledger_tool({
         "action": "full_forecast", "db": db,
@@ -197,7 +197,7 @@ def _chain_agent(cli, monkeypatch):
     def fake_agent(led, qid, *, stage="update", **kw):
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} done"}
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
 
 
 def test_full_forecast_routes_duplicate_to_existing(tmp_path, monkeypatch):
@@ -311,7 +311,7 @@ def test_cli_onboard_auto_parses_commits_and_chains(tmp_path, monkeypatch, capsy
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} ok"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     parser = _parser()
     args = parser.parse_args(["forecast", "--db", db, "onboard", "--spec", str(spec_file), "--auto"])
     args.func(args)
@@ -330,7 +330,7 @@ def test_cli_onboard_auto_refuses_unscoreable_prompt(tmp_path, monkeypatch, caps
     import forecasting.cli as cli
     db = str(tmp_path / "chain.db")
     calls: list[str] = []
-    monkeypatch.setattr(cli, "_run_update_agent", lambda *a, **k: calls.append("x") or {})
+    monkeypatch.setattr("agent.forecast_stage.run_stage", lambda *a, **k: calls.append("x") or {})
     parser = _parser()
     args = parser.parse_args(["forecast", "--db", db, "onboard", "a vague wish with no criteria", "--auto"])
     with pytest.raises(SystemExit):
@@ -350,7 +350,7 @@ def test_cli_onboard_auto_routes_duplicate_to_existing(tmp_path, monkeypatch, ca
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} ok"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     parser = _parser()
 
     first = parser.parse_args(["forecast", "--db", db, "onboard", "--spec", str(spec_file), "--auto"])
@@ -376,7 +376,7 @@ def test_cli_onboard_auto_force_new_forks_a_rival(tmp_path, monkeypatch, capsys)
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} ok"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     parser = _parser()
 
     first = parser.parse_args(["forecast", "--db", db, "onboard", "--spec", str(spec_file), "--auto"])
@@ -401,7 +401,7 @@ def test_cli_onboard_auto_attaches_watches(tmp_path, monkeypatch, capsys):
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} ok"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     parser = _parser()
     args = parser.parse_args(["forecast", "--db", db, "onboard", "--spec", str(spec_file), "--auto"])
     args.func(args)
@@ -527,7 +527,7 @@ def test_chain_runs_model_stage_for_numeric_question(tmp_path, monkeypatch):
         _stage_side_effects(led, qid, stage)
         return {"final_response": f"{stage} ok"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     result = run_forecast_chain(ledger, q.id, max_iterations=3)
     assert seen == ["research", "base_rate", "model", "update"]
     assert [s["stage"] for s in result["stages"]] == ["research", "base_rate", "model", "update"]
@@ -551,6 +551,6 @@ def test_chain_explicit_stages_still_win(tmp_path, monkeypatch):
         _stage_side_effects(led, qid, stage)  # research lands adequate evidence -> no adequacy re-run
         return {"final_response": "ok"}
 
-    monkeypatch.setattr(cli, "_run_update_agent", fake_agent)
+    monkeypatch.setattr("agent.forecast_stage.run_stage", fake_agent)
     run_forecast_chain(ledger, q.id, max_iterations=3, stages=("research",))
     assert seen == ["research"], "an explicit stages argument must not be overridden"

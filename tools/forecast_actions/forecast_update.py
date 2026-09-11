@@ -15,7 +15,7 @@ from tools.forecasting_tool import _DUPLICATE_WARN_SCORE, _apply_source_plan_wat
 from tools import forecasting_tool as _ft
 
 def full_forecast(args: dict[str, Any], ledger) -> str:
-    from forecasting.cli import run_forecast_chain
+    from forecasting.application.pipeline import run_forecast_chain
     from forecasting.question_spec import (
         apply_recommended_defaults,
         spec_from_dict,

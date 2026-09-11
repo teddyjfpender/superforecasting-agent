@@ -382,3 +382,27 @@ Indirect boundary enforcement:
   both negative import probes pass. Shared Python quality and all nine contracts
   pass. The other seven contracts still permit indirect imports; the strict
   forecast application audit is not claimed complete.
+
+Shared forecast production workflow:
+
+- `forecasting.application.pipeline` now owns stage ordering, per-stage outcome
+  tracking, bounded research adequacy retries and final ledger-derived status.
+  The CLI retains compatibility adapters, while detached reforecast jobs (used
+  by the desk's batch action) and the `full_forecast` tool call the service
+  directly. They no longer import CLI orchestration.
+- `agent.forecast_stage` owns execution through the common agent factory, stage
+  toolsets and the existing research retry setting. Each stage closes its agent
+  after success, provider failure or interruption. Cleanup failures are logged
+  without overwriting the returned result or original exception.
+- Existing explicit commit/proposal policies, protocol prompts, ledger gates,
+  retry no-progress behavior, stage callbacks and durable result derivation are
+  retained. CLI private runner injection remains supported by its adapter.
+- Ninety focused tests passed, including CLI/tool production, desk job RPC and
+  execution, proposal-only/material-update behavior, research audit bounds,
+  interruption and cleanup failure. The new execution adapter is included in
+  the blocking Ruff/format/type scope. Shared Python quality and all ten import
+  contracts pass; an added contract prohibits direct CLI imports from these
+  execution consumers.
+- Scheduled warning-runner construction still resides in the CLI. The ledger's
+  dashboard-helper dependency and indirect runtime/presentation paths remain
+  open, as do full runtime hosting and remote installed-terminal qualification.

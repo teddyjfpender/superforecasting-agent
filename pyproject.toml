@@ -450,3 +450,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.application"]
 forbidden_modules = ["cli", "run_agent", "tui_gateway", "gateway", "superforecasting_agent.runtime.main", "superforecasting_agent.runtime.session_browser"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "forecast execution consumers do not import CLI orchestration"
+type = "forbidden"
+source_modules = ["forecasting.jobs.types.reforecast", "tools.forecast_actions.forecast_update", "agent.forecast_stage"]
+forbidden_modules = ["forecasting.cli", "cli"]
+allow_indirect_imports = true

@@ -4,9 +4,9 @@ detached-job runtime (Arc B2).
 The operator multi-selects Desk questions and wants the FULL formal forecast flow
 PER question — fresh evidence searched/imported/triaged, a VOI research-adequacy
 audit, a base rate, a quorum where indicated, and a GATED LLM commit — NOT the
-deterministic re-pool. That chain already exists: :func:`forecasting.cli.run_forecast_chain`
+deterministic re-pool. That chain already exists: :func:`forecasting.application.pipeline.run_forecast_chain`
 drives research → base_rate → (model) → update through the same gated
-``_run_update_agent`` every manual ``forecast agent --stage S`` run uses, and the
+``agent.forecast_stage.run_stage`` every manual ``forecast agent --stage S`` run uses, and the
 tool commit hook applies lessons, records the saturation score, and auto-runs a
 quorum on high-impact commits.
 
@@ -15,17 +15,14 @@ it runs the chain PER QUESTION SEQUENTIALLY (one LLM session at a time — spend
 sanity), fail-open per question (one bad question never kills the batch), and
 recovers saturation + auto-quorum from the REAL artifacts the commit produced —
 never fabricated. NOTHING here weakens a gate: every question commits through the
-exact same gated ``run_forecast_chain`` → ``_run_update_agent`` path, so the panel
+exact same gated ``run_forecast_chain`` → ``agent.forecast_stage.run_stage`` path, so the panel
 gate, analyst brief, saturation score, and auto-quorum fire unchanged.
 
-Write-path preservation (the plan's named risk): the chain opens the ledger write
-gate itself (``_run_update_agent`` wraps every commit in
-``allow_ledger_writes(reason="forecast_cli")``), and :func:`execute` runs in the
-detached worker's MAIN thread (``python -m forecasting.jobs run <job_id>`` or an
-inline ``wait=True``) — a fresh process, default contextvars — so the exact
-allow-writes environment a manual chain run uses is preserved verbatim. Heavy work
-is detached as a CHILD PROCESS (not a thread) for the same reason the legacy runner
-was: the one-shot CLI/RPC that enqueues exits as soon as it has the id.
+Write-path preservation: the stage agent commits through the existing forecasting
+tools and their ledger admission gates. The job runtime authorizes model spend
+and writes before execution; unattended proposal policy is retained. Execution
+runs in the detached worker's main thread with its own context. No application
+service bypasses the ledger's settlement, provenance or probability-update gates.
 
 New jobs persist as :class:`~forecasting.jobs.model.JobRecord` files under
 ``{home}/jobs/`` (``job_`` ids) via the shared :class:`~forecasting.jobs.store.JobStore`.
@@ -315,10 +312,9 @@ def execute(spec: dict[str, Any], ctx: Any) -> dict[str, Any]:
     produced (the snapshot metadata and the detached quorum job file) — never
     fabricated. A bad db raises out to the runtime (whole-job ``error``)."""
 
-    # Imported lazily: the detached worker is a fresh process and cli/run_agent are
-    # heavy; keeping the import here also avoids any import cycle (cli imports the
-    # jobs package lazily too).
-    from forecasting.cli import run_forecast_chain
+    # The worker uses the application service directly; CLI presentation is not
+    # part of detached execution. Keep the import lazy for job-type registration.
+    from forecasting.application.pipeline import run_forecast_chain
     from forecasting.hooks.sweep import saturation_summary
     from forecasting.jobs.policy import ActionClass
     from forecasting.ledger import ForecastLedger
