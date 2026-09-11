@@ -7642,7 +7642,9 @@ def _cmd_evidence_list(args: argparse.Namespace) -> None:
 
 def _cmd_resolve(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
-    resolution = ledger.resolve_question(
+    from forecasting.application.resolution import resolve_forecast
+
+    result = resolve_forecast(ledger, dict(
         question_id=args.id,
         outcome=args.outcome,
         resolution_source=args.resolution_source,
@@ -7657,7 +7659,8 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
         trusted_policy_id=args.trusted_policy,
         scoreable=not args.not_scoreable,
         auto_score=args.auto_score,
-    )
+    ))
+    resolution = result.resolution
     print(f"recorded resolution {resolution.id}")
     print(f"status: {resolution.resolution_status}")
     print(f"criteria_satisfied: {resolution.criteria_satisfied}")
@@ -7668,7 +7671,7 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
         and resolution.criteria_satisfied
         and not args.not_scoreable
     ):
-        score = ledger.get_current_score(args.id)
+        score = result.score
         if score is not None:
             print(
                 "auto_score: "
@@ -7676,10 +7679,10 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
                 f"log={_format_metric(score.log_score)} "
                 f"origin={score.forecast_origin}"
             )
-    # Once the question is finalized, write the closing retrospective into the same
-    # time-indexed note stream. Best-effort, after the resolution is recorded.
-    if resolution.resolution_status == "confirmed" and resolution.criteria_satisfied:
-        _write_retrospective(ledger, args.id, score=score)
+    if result.retrospective:
+        headline = result.retrospective.get("headline") or result.retrospective.get("body", "")
+        if headline:
+            print(f"retrospective: {headline[:80]}")
 
 
 def _cmd_score(args: argparse.Namespace) -> None:
@@ -8715,85 +8718,11 @@ def _cmd_errors(args: argparse.Namespace) -> None:
         print("recurring_errors: no high-level pattern detected from scored forecasts")
 
 
-def _active_learned_error_review_rows(
-    ledger: ForecastLedger,
-    *,
-    domain: str | None = None,
-    topic: str | None = None,
-    horizon: str | None = None,
-    confidence_below: float | None = None,
-    confidence_above: float | None = None,
-    limit: int | None = None,
-) -> list[dict[str, Any]]:
-    if limit is not None and limit <= 0:
-        return []
-    rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for alert in ledger.list_alerts(unresolved_only=True):
-        if alert.scope_type != "question" or not is_learned_error_review_reason(alert.reason):
-            continue
-        key = (alert.scope_ref, alert.reason)
-        if key in seen:
-            continue
-        seen.add(key)
-        try:
-            question = ledger.get_question(alert.scope_ref)
-        except ForecastingError:
-            continue
-        if question.status != "active":
-            continue
-        snapshot = ledger.get_current_snapshot(question.id)
-        if not _review_alert_matches_filters(
-            ledger,
-            question=question,
-            snapshot=snapshot,
-            domain=domain,
-            topic=topic,
-            horizon=horizon,
-            confidence_below=confidence_below,
-            confidence_above=confidence_above,
-        ):
-            continue
-        rows.append(
-            {
-                "alert": alert,
-                "question": question,
-                "current_snapshot": snapshot,
-                "profile_id": learned_error_profile_id(alert.reason),
-            }
-        )
-        if limit is not None and len(rows) >= limit:
-            break
-    return rows
-
-
-def _review_alert_matches_filters(
-    ledger: ForecastLedger,
-    *,
-    question: Any,
-    snapshot: Any,
-    domain: str | None,
-    topic: str | None,
-    horizon: str | None,
-    confidence_below: float | None,
-    confidence_above: float | None,
-) -> bool:
-    if domain and question.domain != domain:
-        return False
-    if topic and topic not in question.topics:
-        return False
-    if horizon and (
-        snapshot is None or not ledger._horizon_matches(snapshot.forecast_horizon_days, horizon)
-    ):
-        return False
-    if confidence_below is not None or confidence_above is not None:
-        if snapshot is None or snapshot.confidence is None:
-            return False
-        if confidence_below is not None and snapshot.confidence >= confidence_below:
-            return False
-        if confidence_above is not None and snapshot.confidence <= confidence_above:
-            return False
-    return True
+# Compatibility imports only: review selection belongs to application services.
+from forecasting.application.reviews import (
+    _active_learned_error_review_rows,
+    _review_alert_matches_filters,
+)
 
 
 def _build_cycle_reforecast_runner(

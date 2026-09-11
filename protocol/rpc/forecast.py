@@ -2081,3 +2081,56 @@ class ForecastHooksPreviewResponse(WireModel):
 
 
 __all__ = [name for name in dir() if name.startswith("Forecast")]
+
+
+# Structured application-service endpoints. Unlike forecast.command these carry
+# values/results and never execute the CLI or redirect process-wide output.
+class ForecastReviewRequest(WireModel):
+    TS_NAME = "ForecastReviewRequest"
+    stale: bool = False
+    last_days: int = 7
+    domain: str | None = None
+    topic: str | None = None
+    horizon: str | None = None
+    confidence_below: float | None = None
+    confidence_above: float | None = None
+    large_delta_threshold: float | None = None
+    now: str | None = None
+
+
+class ForecastReviewRow(WireModel):
+    TS_NAME = "ForecastReviewRow"
+    question: dict[str, Any]
+    current_snapshot: dict[str, Any] | None
+    reasons: list[str]
+    priority: int
+
+
+class ForecastReviewResponse(WireModel):
+    TS_NAME = "ForecastReviewResponse"
+    rows: list[ForecastReviewRow]
+
+
+class ForecastResolveRequest(WireModel):
+    TS_NAME = "ForecastResolveRequest"
+    question_id: str
+    outcome: Any
+    resolution_source: str | None = None
+    resolution_source_snapshot_ref: str | None = None
+    resolver_type: str = "manual"
+    resolution_status: str = "confirmed"
+    criteria_satisfied: bool = True
+    confidence: float | None = None
+    confirmed_by: str | None = None
+    resolver_notes: str | None = None
+    correction_ref: str | None = None
+    trusted_policy_id: str | None = None
+    scoreable: bool = True
+    auto_score: bool = True
+
+
+class ForecastResolveResponse(WireModel):
+    TS_NAME = "ForecastResolveResponse"
+    resolution: dict[str, Any]
+    score: dict[str, Any] | None
+    retrospective: dict[str, Any] | None

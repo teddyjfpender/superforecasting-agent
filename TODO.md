@@ -4,6 +4,15 @@ This is the follow-up list from the September 2026 repository cleanup. Completed
 work and verification are recorded in the [cleanup review](docs/plans/2026-09-10-cleanup-review.md)
 and its linked work log. These items are not claims of known production failures.
 
+## Active product architecture and hygiene workstream
+
+All five requested deliverables and their acceptance evidence are tracked in the
+[product boundaries plan](docs/plans/2026-09-11-product-boundaries.md). This includes
+shared application services consumed first by Ink, enforced ownership boundaries,
+one bootstrap/check workflow and installed hooks, independent runtime hosting with
+version/capability negotiation, and separately verified distribution profiles.
+The first service/RPC extraction is in progress; the workstream is not complete.
+
 ## Runtime ownership and real desk follow-up (September 11)
 
 See [investigation, changes and evidence limits](docs/plans/2026-09-11-runtime-ownership.md).

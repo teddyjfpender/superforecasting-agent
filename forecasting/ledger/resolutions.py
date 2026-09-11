@@ -175,8 +175,17 @@ def resolve_question(
             correction_ref=correction_ref, trusted_policy_id=trusted_policy_id,
             scoreable=scoreable,
         )
-        if previous is not None and all(getattr(previous, key) == value for key, value in request_fields.items()):
-            return previous  # The durable finalization task remains the retry owner.
+        if previous is not None and all(
+            getattr(previous, key) == value for key, value in request_fields.items() if key != "outcome"
+        ):
+            same_outcome = previous.outcome == outcome
+            if resolved_question.outcome_space.type == "binary" and resolution_status == "confirmed" and criteria_satisfied:
+                # CLI text and structured RPC/tool booleans represent the same
+                # event. Compare meaning without rewriting historical provenance.
+                space = resolved_question.outcome_space
+                same_outcome = ledger._probability_for_outcome(1.0, previous.outcome, space) == ledger._probability_for_outcome(1.0, outcome, space)
+            if same_outcome:
+                return previous  # The durable finalization task remains the retry owner.
         now = utc_now_iso()
         resolution_id = f"rs_{uuid.uuid4().hex[:12]}"
         if resolution_source and resolution_source_snapshot_ref is None:

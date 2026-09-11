@@ -20,7 +20,6 @@ from typing import Any
 from forecasting.cli import core as _core
 from forecasting.cli.core import (
     ForecastLedger,
-    _active_learned_error_review_rows,
     _format_probability,
     _format_schedule_scope,
     _parse_day_count,
@@ -187,7 +186,9 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
 
 def _cmd_review(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
-    rows = ledger.review_questions(
+    from forecasting.application.reviews import review_forecasts
+
+    rows = review_forecasts(ledger,
         stale=args.stale,
         last_days=args.last_days,
         domain=args.domain,
@@ -197,15 +198,6 @@ def _cmd_review(args: argparse.Namespace) -> None:
         confidence_above=args.confidence_above,
         large_delta_threshold=args.large_delta_threshold,
         now=args.now,
-    )
-    _merge_learned_error_reviews(
-        rows,
-        ledger=ledger,
-        domain=args.domain,
-        topic=args.topic,
-        horizon=args.horizon,
-        confidence_below=args.confidence_below,
-        confidence_above=args.confidence_above,
     )
     if not rows:
         print("No forecasts need review.")
@@ -225,53 +217,8 @@ def _cmd_review(args: argparse.Namespace) -> None:
         print(f"  next: {_review_next_action(question.id, row['reasons'])}")
 
 
-def _merge_learned_error_reviews(
-    rows: list[dict[str, Any]],
-    *,
-    ledger: ForecastLedger,
-    domain: str | None = None,
-    topic: str | None = None,
-    horizon: str | None = None,
-    confidence_below: float | None = None,
-    confidence_above: float | None = None,
-) -> None:
-    rows_by_id = {row["question"].id: row for row in rows}
-    for learned_row in _active_learned_error_review_rows(
-        ledger,
-        domain=domain,
-        topic=topic,
-        horizon=horizon,
-        confidence_below=confidence_below,
-        confidence_above=confidence_above,
-    ):
-        question = learned_row["question"]
-        alert = learned_row["alert"]
-        existing = rows_by_id.get(question.id)
-        if existing is not None:
-            reasons = existing.setdefault("reasons", [])
-            if alert.reason not in reasons:
-                reasons.append(alert.reason)
-            existing["priority"] = min(int(existing.get("priority") or 9), 4)
-            continue
-        row = {
-            "question": question,
-            "current_snapshot": learned_row["current_snapshot"],
-            "reasons": [alert.reason],
-            "priority": 4,
-        }
-        rows.append(row)
-        rows_by_id[question.id] = row
-    _sort_review_rows(rows)
-
-
-def _sort_review_rows(rows: list[dict[str, Any]]) -> None:
-    rows.sort(
-        key=lambda row: (
-            int(row.get("priority") or 9),
-            row["question"].close_time or row["question"].resolution_time or "9999-12-31T00:00:00Z",
-            row["question"].title.lower(),
-        )
-    )
+# Compatibility names for callers; these helpers have one application owner.
+from forecasting.application.reviews import _merge_learned_error_reviews, _sort_review_rows
 
 
 def _cmd_schedule_add(args: argparse.Namespace) -> None:

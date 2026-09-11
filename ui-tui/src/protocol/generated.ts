@@ -1399,6 +1399,52 @@ export interface ForecastRelatedView {
   verdict?: null | string
 }
 
+export interface ForecastResolveRequest {
+  auto_score: boolean
+  confidence: null | number
+  confirmed_by: null | string
+  correction_ref: null | string
+  criteria_satisfied: boolean
+  outcome: unknown
+  question_id: string
+  resolution_source: null | string
+  resolution_source_snapshot_ref: null | string
+  resolution_status: string
+  resolver_notes: null | string
+  resolver_type: string
+  scoreable: boolean
+  trusted_policy_id: null | string
+}
+
+export interface ForecastResolveResponse {
+  resolution: Record<string, unknown>
+  retrospective: null | Record<string, unknown>
+  score: null | Record<string, unknown>
+}
+
+export interface ForecastReviewRequest {
+  confidence_above: null | number
+  confidence_below: null | number
+  domain: null | string
+  horizon: null | string
+  large_delta_threshold: null | number
+  last_days: number
+  now: null | string
+  stale: boolean
+  topic: null | string
+}
+
+export interface ForecastReviewResponse {
+  rows: ForecastReviewRow[]
+}
+
+export interface ForecastReviewRow {
+  current_snapshot: null | Record<string, unknown>
+  priority: number
+  question: Record<string, unknown>
+  reasons: string[]
+}
+
 export interface ForecastReviewsNextRequest {
 }
 

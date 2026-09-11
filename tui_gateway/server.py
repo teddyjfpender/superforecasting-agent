@@ -6419,6 +6419,8 @@ from tui_gateway import cron_skills_rpc as _cron_skills_rpc  # noqa: E402
 _obsidian_rpc.register(sys.modules[__name__])
 _market_models_rpc.register(sys.modules[__name__])
 _forecast_rpc.register(sys.modules[__name__])
+from tui_gateway import forecast_operations_rpc as _forecast_operations_rpc
+_forecast_operations_rpc.register(sys.modules[__name__])
 _rollback_rpc.register(sys.modules[__name__])
 _agents_rpc.register(sys.modules[__name__])
 _subagents_rpc.register(sys.modules[__name__])

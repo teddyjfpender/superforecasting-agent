@@ -443,3 +443,11 @@ ignore_imports = [
     "forecasting.notify -> tools.slack_tool",
     "forecasting.supervisor_search -> tools.web_tools",
 ]
+
+
+[[tool.importlinter.contracts]]
+name = "forecast application operations do not import product entrypoints"
+type = "forbidden"
+source_modules = ["forecasting.application"]
+forbidden_modules = ["forecasting.cli", "forecasting.dashboard", "tui_gateway", "gateway", "cli", "superforecasting_agent.runtime.main"]
+allow_indirect_imports = true
