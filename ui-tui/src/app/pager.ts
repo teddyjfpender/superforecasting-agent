@@ -8,5 +8,6 @@ export const pagerWindow = (pager: PagerState, columns: number, pageSize: number
   const width = Math.max(1, columns - 8)
   const lines = pager.lines.flatMap(line => wrapAnsi(line, width, {hard: true, trim: false}).split('\n'))
   const offset = Math.min(pager.offset, Math.max(0, lines.length - pageSize))
+
   return {lines, offset}
 }
