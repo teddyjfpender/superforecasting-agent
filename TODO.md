@@ -31,7 +31,8 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
 - [x] Carry declared right-censoring through resolution, scoring, exports and TUI.
 - [x] Share model configuration/persistence and isolate gateway command hooks.
 - [x] Verify 18 Unicode turns across three TUI lifetimes with durable history.
-- [ ] Finish the running eight-question paired cohort and retain final receipts.
+- [x] Finish prospective cohorts and retain failed arms: five and three complete
+  pairs respectively, across two conservative clusters; outcomes still pending.
 - [ ] Verify the desktop platform CI matrix and formal release artifact set.
 - [ ] Supply Android/Termux access and missing live-service credentials.
 
@@ -134,7 +135,7 @@ See [commands, invariants and limits](docs/plans/2026-09-10-controlled-learning-
 - [x] Reconcile acquisition labels such as `market_nightly` with semantic domains:
   the live pilot exposed politics questions that cannot retrieve politics lessons.
   Keep acquisition provenance separate; do not silently broaden lesson scope.
-- [ ] Run a new prospective cohort once the provider is available, with a
+- [x] Run a new prospective cohort once the provider is available, with a
   predeclared response budget sufficient for complete JSON. The retained live
   pilots encountered 503 errors, truncated output and a timeout; they have no
   usable comparison pairs. Waiting for their outcomes alone cannot establish benefit.

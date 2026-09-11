@@ -55,7 +55,7 @@ _get_env_config = terminal_module._get_env_config
 cleanup_vm = terminal_module.cleanup_vm
 
 
-def test_modal_requirements():
+def check_modal_requirements():
     """Test that Modal requirements are met."""
     print("\n" + "=" * 60)
     print("TEST 1: Modal Requirements Check")
@@ -84,7 +84,7 @@ def test_modal_requirements():
     return requirements_met
 
 
-def test_simple_command():
+def check_simple_command():
     """Test executing a simple command."""
     print("\n" + "=" * 60)
     print("TEST 2: Simple Command Execution")
@@ -110,7 +110,7 @@ def test_simple_command():
     return success
 
 
-def test_python_execution():
+def check_python_execution():
     """Test executing Python code in Modal."""
     print("\n" + "=" * 60)
     print("TEST 3: Python Execution")
@@ -138,7 +138,7 @@ def test_python_execution():
     return success
 
 
-def test_pip_install():
+def check_pip_install():
     """Test installing a package with pip in Modal."""
     print("\n" + "=" * 60)
     print("TEST 4: Pip Install Test")
@@ -171,7 +171,7 @@ def test_pip_install():
     return success
 
 
-def test_filesystem_persistence():
+def check_filesystem_persistence():
     """Test that filesystem persists between commands in the same task."""
     print("\n" + "=" * 60)
     print("TEST 5: Filesystem Persistence")
@@ -205,7 +205,7 @@ def test_filesystem_persistence():
     return success
 
 
-def test_environment_isolation():
+def check_environment_isolation():
     """Test that different task_ids get isolated environments."""
     print("\n" + "=" * 60)
     print("TEST 6: Environment Isolation")
@@ -260,17 +260,17 @@ def main():
     results = {}
     
     # Run tests
-    results['requirements'] = test_modal_requirements()
+    results['requirements'] = check_modal_requirements()
     
     if not results['requirements']:
         print("\n❌ Requirements not met. Cannot continue with other tests.")
         return
     
-    results['simple_command'] = test_simple_command()
-    results['python_execution'] = test_python_execution()
-    results['pip_install'] = test_pip_install()
-    results['filesystem_persistence'] = test_filesystem_persistence()
-    results['environment_isolation'] = test_environment_isolation()
+    results['simple_command'] = check_simple_command()
+    results['python_execution'] = check_python_execution()
+    results['pip_install'] = check_pip_install()
+    results['filesystem_persistence'] = check_filesystem_persistence()
+    results['environment_isolation'] = check_environment_isolation()
     
     # Summary
     print("\n" + "=" * 60)
@@ -292,3 +292,13 @@ def main():
 if __name__ == "__main__":
     success = main()
     sys.exit(0 if success else 1)
+
+
+@pytest.mark.parametrize("check", [check_modal_requirements, check_simple_command,
+    check_python_execution, check_pip_install, check_filesystem_persistence, check_environment_isolation])
+def test_modal_backend(check, monkeypatch):
+    # The standalone checks return booleans; pytest would count False as a pass.
+    if not (os.getenv("MODAL_TOKEN_ID") and os.getenv("MODAL_TOKEN_SECRET")):
+        pytest.skip("Modal service credentials unavailable in the test profile; run the standalone harness with configured credentials")
+    monkeypatch.setenv("TERMINAL_ENV", "modal")
+    assert check(), f"{check.__name__} failed"

@@ -44,6 +44,16 @@ performance. A working trial is not evidence that its lessons improve accuracy.
   the installed CLI. Prior question, evidence and configuration survive upgrade.
 - Live NWS and USGS responses captured through the installed CLI in a disposable
   profile satisfy the new contracts; receipts retain URLs, hashes and timestamps.
+- Twenty dashboard reconnect cycles preserve a single child and UTF-8 byte cursor.
+- Actual narrow detail/tail rendering now covers censoring and source conditions;
+  this caught and fixed a filtered-out section and `[object Object]` output.
+  Focused TUI rendering suite: 95 passed.
+- Local TCP Home Assistant and real-crypto voice integration tests: 48 passed.
+  The fake server now receives close frames; event tests configure their watch
+  filter. Six Modal checks skip without credentials instead of passing on false
+  return values. The legacy checkpoint script remains an explicitly manual
+  harness, not pytest coverage. Run mocked-platform E2E tests separately: their
+  collection-time dependency mocks contaminate real-crypto integration imports.
 - TUI type-check, focused forecast-panel tests, Ruff, generated references and
   the bounded Impeccable detector pass. Detector findings: none.
 
@@ -66,11 +76,24 @@ lesson. This limited library coverage cannot establish broad judgment improvemen
 The frozen threshold remains 20 clusters. Response budget: 8,192 tokens per arm,
 16 calls maximum (131,072 response tokens); provider: Gemini 3 Flash Preview.
 The known-answer probe completed successfully and includes token usage.
+The first cohort completed 11 arms (five full pairs) and failed five on Gemini's
+input-token quota. Its immutable export and code revision `49c9e0f18` are retained.
+This exposed a batch recovery bug: execution now stops after a transport failure,
+leaving unattempted arms pending rather than consuming them against an outage.
+
+A separate, non-overlapping four-question cohort, `lt_4e2ffc3ef7e9`, used paced
+calls under code revision `cbd7c15da`. It completed six arms (three full pairs
+across the two clusters); both arms of the fourth case failed the numeric payload
+contract. Those failures were not retried or dropped. Both cohorts await real
+outcomes. Frozen policy checks require the recorded code version when replaying
+historical cohorts; the second cohort matches the current forecasting kernel.
+Completed pairs are usable prospective records, not scored accuracy comparisons.
 
 ## Release gates still pending
 
-- Final CI receipts for the PR, including the new Windows/Linux/macOS installed
-  lifecycle matrix. macOS evidence above is not evidence for other platforms.
+- Final CI receipts for the PR. The Windows/Linux/macOS installed lifecycle
+  matrix passed for `cbd7c15da` in run 34574397287; final-head revalidation follows
+  the subsequent TUI and integration-harness corrections.
 - Android/Termux access and credential-dependent Daytona, Modal, web-search and
   Home Assistant integrations. Their credentials are absent; no fake success or
   substitute fixture is counted as a live integration.
