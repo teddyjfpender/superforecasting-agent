@@ -7470,7 +7470,7 @@ def test_bls_adapter_loads_public_api_observations(monkeypatch):
     assert len(observations) == 1
     assert observations[0].series_id == "LNS14000000"
     assert observations[0].observation_date == "2026-03-01"
-    assert observations[0].published_at == "2026-03-01T00:00:00Z"
+    assert observations[0].published_at is None  # API period is not a publication timestamp
     assert observations[0].period == "M03"
     assert observations[0].value == 4.2
 

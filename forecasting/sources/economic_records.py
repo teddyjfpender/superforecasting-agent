@@ -79,7 +79,7 @@ class BlsObservation:
     period: str
     period_name: str | None
     value: float | str
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str
