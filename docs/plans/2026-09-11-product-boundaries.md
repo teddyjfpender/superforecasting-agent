@@ -518,3 +518,24 @@ Noninteractive runtime identity and subscription ownership:
   strict transitive boundary; subscription eligibility currently has a direct
   setup exclusion. Complete transitive forecast-service isolation and independent
   host/session lifetime ownership remain open.
+
+Shared benchmark execution:
+
+- Offline readiness benchmark execution and probability-source transformation now
+  belong to `forecasting.application.benchmarks`. CLI adapters retain their public
+  call signatures, command errors and progress output; the forecasting tool calls
+  the application service directly instead of importing CLI orchestration.
+- The service rejects non-offline sources before dataset access or writes. Unknown
+  transformation sources no longer silently fall through to baseline-ensemble.
+  Agent protocol failures retain per-case skipping and optional progress reporting;
+  forecast-engine, baseline weighting and run provenance semantics are preserved.
+- 264 CLI/application/readiness tests and 80 forecasting-tool tests passed. The
+  first new import-isolation test unnecessarily ran the full corpus and hit its
+  30-second timeout; it now persists one deterministic fixture. Existing full-corpus
+  coverage remains and passed. Shared Python lint/format/types and all fourteen
+  import contracts pass; diagnostic tools join the no-CLI execution contract.
+- A fresh strict transitive audit confirms the benchmark-to-CLI edge is removed.
+  Remaining paths include cron profile admission through administrative modules,
+  session tool selection through interactive tools configuration, and diagnostic
+  thesis summaries through dashboard code. These are incomplete boundaries, not
+  additional allowed exceptions. Independent host lifecycle work remains open.

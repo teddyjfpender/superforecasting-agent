@@ -9,7 +9,7 @@ import argparse
 
 import pytest
 
-import forecasting.cli as forecast_cli
+from forecasting.application import benchmarks as benchmark_service
 from forecasting.backtesting import build_backtest_performance_summaries, build_forecasting_evidence_status
 from forecasting.cli import _cmd_readiness, _run_safe_benchmarks
 from forecasting.ledger import ForecastLedger
@@ -65,7 +65,7 @@ def test_safe_benchmarks_close_offline_gaps_only(tmp_path, monkeypatch):
         "builtin:kalshi-public-120-binary": _tiny_external_cases("kalshi", "kalshi"),
     }
     monkeypatch.setattr(
-        forecast_cli,
+        benchmark_service,
         "list_builtin_benchmarks",
         lambda: [
             {"name": "manifold-public-120-binary", "case_count": 2, "description": "fixture"},
@@ -73,8 +73,8 @@ def test_safe_benchmarks_close_offline_gaps_only(tmp_path, monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        forecast_cli,
-        "_load_backtest_cases",
+        benchmark_service,
+        "load_builtin_benchmark",
         lambda dataset, **_: list(cases_by_dataset[dataset]),
     )
 
