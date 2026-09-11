@@ -490,6 +490,31 @@ class GoalManager:
         self.session_id = session_id
         self.default_max_turns = int(default_max_turns or DEFAULT_MAX_TURNS)
         self._state: Optional[GoalState] = load_goal(session_id)
+        self._expected_state = self._state.to_json() if self._state is not None else None
+
+    def _persist(self, state: GoalState, *, expected_state: Optional[str] = None) -> None:
+        """Reject stale manager writes, including verdicts from an older judge."""
+        value = state.to_json()
+        expected = self._expected_state if expected_state is None else expected_state
+
+        def update(raw):
+            current = GoalState.from_json(raw).to_json() if raw else None
+            if current != expected:
+                raise RuntimeError("Goal changed while this operation was running; retry against the current goal.")
+            return value
+
+        try:
+            db = _get_session_db()
+            if db is None:
+                raise RuntimeError("Goal storage is unavailable")
+            db.mutate_meta(_meta_key(self.session_id), update)
+        except Exception:
+            self._state = load_goal(self.session_id)
+            self._expected_state = self._state.to_json() if self._state is not None else None
+            raise
+        self._state = state
+        self._expected_state = value
+
 
     # --- introspection ------------------------------------------------
 
@@ -533,7 +558,7 @@ class GoalManager:
             last_turn_at=0.0,
         )
         self._state = state
-        save_goal(self.session_id, state)
+        self._persist(state)
         return state
 
     def pause(self, reason: str = "user-paused") -> Optional[GoalState]:
@@ -541,7 +566,7 @@ class GoalManager:
             return None
         self._state.status = "paused"
         self._state.paused_reason = reason
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return self._state
 
     def resume(self, *, reset_budget: bool = True) -> Optional[GoalState]:
@@ -551,14 +576,14 @@ class GoalManager:
         self._state.paused_reason = None
         if reset_budget:
             self._state.turns_used = 0
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return self._state
 
     def clear(self) -> None:
         if self._state is None:
             return
         self._state.status = "cleared"
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         self._state = None
 
     def mark_done(self, reason: str) -> None:
@@ -567,7 +592,7 @@ class GoalManager:
         self._state.status = "done"
         self._state.last_verdict = "done"
         self._state.last_reason = reason
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
 
     # --- /subgoal user controls ---------------------------------------
 
@@ -583,7 +608,7 @@ class GoalManager:
         if not text:
             raise ValueError("subgoal text is empty")
         self._state.subgoals.append(text)
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return text
 
     def remove_subgoal(self, index_1based: int) -> str:
@@ -596,7 +621,7 @@ class GoalManager:
                 f"index out of range (1..{len(self._state.subgoals)})"
             )
         removed = self._state.subgoals.pop(idx)
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return removed
 
     def clear_subgoals(self) -> int:
@@ -605,7 +630,7 @@ class GoalManager:
             raise RuntimeError("no active goal")
         prev = len(self._state.subgoals)
         self._state.subgoals = []
-        save_goal(self.session_id, self._state)
+        self._persist(self._state)
         return prev
 
     def render_subgoals(self) -> str:
@@ -649,6 +674,11 @@ class GoalManager:
                 "message": "",
             }
 
+        # Judge an immutable snapshot. A concurrent command on this same manager
+        # must not change the criteria underneath the in-flight verdict.
+        expected = self._expected_state
+        state = GoalState.from_json(state.to_json())
+
         # Count the turn that just finished.
         state.turns_used += 1
         state.last_turn_at = time.time()
@@ -669,7 +699,7 @@ class GoalManager:
 
         if verdict == "done":
             state.status = "done"
-            save_goal(self.session_id, state)
+            self._persist(state, expected_state=expected)
             return {
                 "status": "done",
                 "should_continue": False,
@@ -690,7 +720,7 @@ class GoalManager:
             state.paused_reason = (
                 f"judge model returned unparseable output {state.consecutive_parse_failures} turns in a row"
             )
-            save_goal(self.session_id, state)
+            self._persist(state, expected_state=expected)
             return {
                 "status": "paused",
                 "should_continue": False,
@@ -712,7 +742,7 @@ class GoalManager:
         if state.turns_used >= state.max_turns:
             state.status = "paused"
             state.paused_reason = f"turn budget exhausted ({state.turns_used}/{state.max_turns})"
-            save_goal(self.session_id, state)
+            self._persist(state, expected_state=expected)
             return {
                 "status": "paused",
                 "should_continue": False,
@@ -725,7 +755,7 @@ class GoalManager:
                 ),
             }
 
-        save_goal(self.session_id, state)
+        self._persist(state, expected_state=expected)
         return {
             "status": "active",
             "should_continue": True,

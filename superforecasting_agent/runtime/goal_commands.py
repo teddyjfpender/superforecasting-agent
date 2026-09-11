@@ -121,8 +121,8 @@ def _handle_subgoal_command(self, cmd: str) -> None:
         boundary. No special kick — the running turn finishes, the next
         judge call includes them.
         """
-    parts = (cmd or "").strip().split(None, 2)
-    arg = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
+    parts = (cmd or "").strip().split(None, 1)
+    arg = parts[1].strip() if len(parts) > 1 else ""
 
     mgr = self._get_goal_manager()
     if mgr is None:

@@ -738,3 +738,51 @@ class TestStatusLineSubgoalCount:
         mgr.add_subgoal("b")
         line = mgr.status_line()
         assert "2 subgoals" in line
+
+
+@pytest.mark.parametrize("same_manager", [False, True])
+def test_inflight_judge_cannot_erase_new_criteria(hermes_home, monkeypatch, same_manager):
+    from superforecasting_agent.runtime import goals
+
+    actor = goals.GoalManager("judge-conflict")
+    actor.set("Review forecast")
+    def judge(*args, **kwargs):
+        editor = actor if same_manager else goals.GoalManager("judge-conflict")
+        editor.add_subgoal("Require a second source")
+        return "done", "old criteria met", False
+    monkeypatch.setattr(goals, "judge_goal", judge)
+    with pytest.raises(RuntimeError, match="Goal changed"):
+        actor.evaluate_after_turn("fixture response")
+    durable = goals.GoalManager("judge-conflict").state
+    assert durable.status == "active"
+    assert durable.subgoals == ["Require a second source"]
+    assert actor.state.to_json() == durable.to_json()
+
+
+def test_stale_goal_editor_reloads_before_retry(hermes_home):
+    from superforecasting_agent.runtime.goals import GoalManager
+
+    first = GoalManager("edit-conflict")
+    first.set("Review forecast")
+    stale = GoalManager("edit-conflict")
+    first.add_subgoal("First criterion")
+    with pytest.raises(RuntimeError, match="Goal changed"):
+        stale.add_subgoal("Second criterion")
+    assert stale.state.subgoals == ["First criterion"]
+    stale.add_subgoal("Second criterion")
+    assert GoalManager("edit-conflict").state.subgoals == ["First criterion", "Second criterion"]
+
+
+def test_goal_storage_failure_is_visible_and_restores_memory(hermes_home, monkeypatch):
+    from superforecasting_agent.runtime import goals
+
+    manager = goals.GoalManager("failed-write")
+    manager.set("Review forecast")
+    db = goals._get_session_db()
+    def fail(*args):
+        raise OSError("fixture disk failure")
+    monkeypatch.setattr(db, "mutate_meta", fail)
+    with pytest.raises(OSError, match="fixture disk failure"):
+        manager.add_subgoal("Not persisted")
+    assert manager.state.subgoals == []
+    assert goals.GoalManager("failed-write").state.subgoals == []

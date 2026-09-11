@@ -28,6 +28,8 @@ worker admission. The legacy dispatcher itself remains.
   Do not retry task-ID cleanup if it could close a replacement component's resources.
 - [ ] Close remaining partial-construction and shutdown failure paths with
   deterministic failure injection and retained cleanup handles.
+- [ ] Consolidate goal database cache lifetime with host storage ownership and
+  refresh long-lived manager reads. Atomic stale-write rejection is implemented.
 - [ ] Extend installed remote-host/provider recovery exercises to longer sessions.
 
 Already implemented: host-owned workers, session registry/storage, profile

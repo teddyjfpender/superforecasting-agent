@@ -1518,3 +1518,27 @@ including three-consumer output/durable-state parity for list/add/remove/clear
 and invalid input, and mutation while a TUI turn is running. Python quality
 passed (`/tmp/forecast-subgoal-quality.log`). This removes one more worker route;
 the remaining legacy dispatcher is still tracked in TODO.
+
+### Reject stale goal verdicts and destructive command ambiguity
+
+A deterministic isolated-profile reproduction showed that a criterion added
+while the judge ran was erased by the older manager's save: the stored result
+was `status=done, subgoals=[]`. GoalManager writes now compare their expected
+state against the current record inside `SessionDB.mutate_meta`'s write
+transaction. Stale writes raise and reload the current state; persistence errors
+are no longer swallowed by manager mutations. The judge receives a copied state
+and retains its original expected version, including when a concurrent edit uses
+the same GoalManager object. No old verdict can silently accept newer criteria.
+
+The shared subgoal parser also rejects trailing arguments to `remove` and `clear`
+before mutation. Classic CLI preserves internal spacing in criterion text, matching
+messaging and TUI.
+
+Validation: 81 storage/goal/command tests passed
+(`/tmp/forecast-goal-storage-final-tests.log`), including same/different-manager
+judge races, stale-editor retry, visible write failure, independent SQLite
+connection increments and callback rollback, plus three-interface validation and
+state parity. Python quality and 32 import contracts passed
+(`/tmp/forecast-goal-storage-quality.log`). Goal database cache ownership and
+long-lived manager read refresh remain separate follow-up; the low-level public
+`save_goal` compatibility helper retains its existing behavior.

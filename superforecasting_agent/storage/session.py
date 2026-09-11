@@ -343,6 +343,7 @@ class SessionDB:
     # ── Meta key/value (for scheduler bookkeeping) ──
     get_meta = _retention.get_meta
     set_meta = _retention.set_meta
+    mutate_meta = _retention.mutate_meta
     apply_telegram_topic_migration = _telegram_schema.apply_telegram_topic_migration
     enable_telegram_topic_mode = _telegram.enable_telegram_topic_mode
     disable_telegram_topic_mode = _telegram.disable_telegram_topic_mode

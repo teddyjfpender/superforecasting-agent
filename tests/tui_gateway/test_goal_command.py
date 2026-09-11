@@ -196,7 +196,7 @@ def test_pending_input_commands_includes_goal(server):
     assert "goal" in server._PENDING_INPUT_COMMANDS
 
 
-@pytest.mark.parametrize("argument", ["", "Evidence must be timestamped", "remove", "remove nope", "remove 1", "clear"])
+@pytest.mark.parametrize("argument", ["", "Evidence must be timestamped", "remove", "remove nope", "remove 1", "clear", "remove 1 2", "clear extra", "Preserve  internal spacing"])
 def test_subgoal_consumers_share_results_and_durable_state(server, session, monkeypatch, capsys, argument):
     import asyncio
     from types import SimpleNamespace
@@ -236,3 +236,16 @@ def test_subgoal_legacy_rpc_hands_off_before_build(server, session, monkeypatch)
     response = _call(server, "slash.exec", command="subgoal require sources", session_id=sid)
     assert response["error"]["data"] == {"dispatch": "command.dispatch", "execution_started": False}
     server._start_agent_build.assert_not_called()
+
+
+@pytest.mark.parametrize("argument", ["remove 1 2", "clear extra"])
+def test_malformed_destructive_subgoal_command_preserves_criteria(server, session, argument):
+    from superforecasting_agent.runtime.goals import GoalManager
+
+    sid, key, _ = session
+    manager = GoalManager(session_id=key)
+    manager.set("Review forecast")
+    manager.add_subgoal("Keep this criterion")
+    result = _call(server, "command.dispatch", name="subgoal", arg=argument, session_id=sid)
+    assert "✓" not in result["result"]["output"]
+    assert GoalManager(session_id=key).state.subgoals == ["Keep this criterion"]

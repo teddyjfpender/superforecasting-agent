@@ -223,6 +223,27 @@ def set_meta(self, key: str, value: str) -> None:
     self._execute_write(_do)
 
 
+def mutate_meta(self, key: str, update) -> str:
+    """Read and replace metadata in one write transaction.
+
+    The callback must be side-effect free: lock contention may retry it.
+    Raising from the callback rolls back without changing the stored value.
+    """
+    def _do(conn):
+        row = conn.execute("SELECT value FROM state_meta WHERE key = ?", (key,)).fetchone()
+        current = row[0] if row is not None else None
+        value = update(current)
+        if not isinstance(value, str):
+            raise TypeError("metadata update must return a string")
+        conn.execute(
+            "INSERT INTO state_meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        return value
+    return self._execute_write(_do)
+
+
 def vacuum(self) -> None:
     """Run VACUUM to reclaim disk space after large deletes.
 

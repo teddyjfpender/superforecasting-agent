@@ -22,7 +22,7 @@ def execute_subgoal(manager: GoalManager, argument: str) -> str:
         if not rest:
             return "Usage: /subgoal remove <n>"
         try:
-            idx = int(rest.split()[0])
+            idx = int(rest)
         except ValueError:
             return "/subgoal remove: <n> must be an integer (1-based index)."
         try:
@@ -32,6 +32,8 @@ def execute_subgoal(manager: GoalManager, argument: str) -> str:
         return f"✓ Removed subgoal {idx}: {removed}"
 
     if verb == "clear":
+        if rest:
+            return "Usage: /subgoal clear"
         try:
             prev = mgr.clear_subgoals()
         except RuntimeError as exc:
