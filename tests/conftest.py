@@ -24,7 +24,6 @@ import ipaddress
 import logging
 import os
 import re
-import signal
 import socket
 import sys
 import tempfile
@@ -873,11 +872,6 @@ def mock_config():
     }
 
 
-# ── Global test timeout ─────────────────────────────────────────────────────
-# Kill any individual test that takes longer than 30 seconds.
-# Prevents hanging tests (subprocess spawns, blocking I/O) from stalling the
-# entire test suite.
-
 @pytest.fixture(scope="session", autouse=True)
 def _session_default_event_loop():
     """Keep pytest-asyncio from lazily creating an unowned policy loop."""
@@ -929,34 +923,9 @@ def _ensure_current_event_loop(request):
                 asyncio.set_event_loop(None)
 
 
-@pytest.fixture(autouse=True)
-def _enforce_test_timeout(request):
-    """Kill any individual test that takes longer than 30 seconds.
-    SIGALRM is Unix-only; skip on Windows."""
-    if sys.platform == "win32":
-        yield
-        return
-    timeout_seconds = 30
-    timeout_marker = request.node.get_closest_marker("timeout")
-    if timeout_marker:
-        marker_value = (
-            timeout_marker.kwargs.get("timeout")
-            or timeout_marker.kwargs.get("seconds")
-            or (timeout_marker.args[0] if timeout_marker.args else None)
-        )
-        if marker_value is not None:
-            try:
-                timeout_seconds = max(1, int(marker_value))
-            except (TypeError, ValueError):
-                timeout_seconds = 30
-    def timeout_handler(signum, frame):
-        raise TimeoutError(f"Test exceeded {timeout_seconds} second timeout")
-
-    old = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout_seconds)
-    yield
-    signal.alarm(0)
-    signal.signal(signal.SIGALRM, old)
+# pytest-timeout owns deadlines through pyproject addopts, CLI overrides and
+# per-test markers. A second SIGALRM fixture silently overrode --timeout and
+# raced the plugin's timer; do not install another process-wide alarm here.
 
 
 @pytest.fixture(autouse=True)

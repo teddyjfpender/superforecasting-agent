@@ -127,3 +127,32 @@ A build is ready for friendly testers when:
 - the tester can create, update, resolve, score, and postmortem one manual question without editing code
 
 This smoke test is not evidence that the agent beats superforecasters. It is a local acceptance check that the forecast desk can preserve the data needed to measure that claim later.
+
+
+## Prospective learning checks
+
+A passing smoke test does not establish that lessons improve predictions. Before
+creating a live paired trial, inspect evidence and lesson coverage:
+
+```bash
+superforecasting-agent forecast trial candidates
+superforecasting-agent forecast trial preflight --spec-file trial.json
+superforecasting-agent forecast trial create --spec-file trial.json
+superforecasting-agent forecast trial run <trial-id>
+superforecasting-agent forecast trial report <trial-id>
+```
+
+Declare question-to-event cluster assignments in the trial specification. Related
+companies, elections or observations must not be counted as independent merely
+because they have different question IDs. The readiness report exposes gaps; it
+does not assign independence automatically.
+
+New numeric trials require `{"forecast":{"mean":10,"sd":2},"rationale":"..."}`
+in the question's units. Set `requests_per_minute` and
+`input_tokens_per_minute` to conservative limits for the provider account. If a
+run returns `execution_pause`, wait its reported retry interval and resume the
+same trial. Failed arms remain failed; never recreate them to improve the result.
+
+Only resolved, comparable pairs contribute to learning estimates. Completed
+historical trials retain their original packets and requests; execution changes
+do not automatically invalidate a reviewed compatible evaluator.

@@ -494,16 +494,29 @@ def format_banner_version_label() -> str:
 
 _update_result: Optional[int] = None
 _update_check_done = threading.Event()
+_update_check_lock = threading.Lock()
+_update_check_thread: Optional[threading.Thread] = None
 
 
 def prefetch_update_check():
-    """Kick off update check in a background daemon thread."""
-    def _run():
-        global _update_result
-        _update_result = check_for_updates()
-        _update_check_done.set()
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
+    """Share one in-flight update check across callers without blocking them."""
+    global _update_check_thread
+    with _update_check_lock:
+        if _update_check_thread is not None and _update_check_thread.is_alive():
+            return
+        _update_check_done.clear()
+
+        def _run():
+            global _update_result
+            try:
+                _update_result = check_for_updates()
+            except Exception:
+                _update_result = None
+            finally:
+                _update_check_done.set()
+
+        _update_check_thread = threading.Thread(target=_run, daemon=True, name="forecast-update-check")
+        _update_check_thread.start()
 
 
 def get_update_result(timeout: float = 0.5) -> Optional[int]:

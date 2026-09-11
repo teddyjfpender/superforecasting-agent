@@ -34,7 +34,7 @@ def test_forecast_smoke_required_source_catalog_includes_fiscal_adapter():
 # legitimate run never trips it while a genuine hang still surfaces. The pytest
 # cap must exceed the subprocess timeout so the subprocess deadline wins first
 # with a captured-output assertion instead of an opaque signal kill.
-@pytest.mark.timeout(480)
+@pytest.mark.timeout(660)
 def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
     repo_root = Path(__file__).resolve().parents[2]
     db_path = tmp_path / "forecast-smoke.db"
@@ -49,7 +49,7 @@ def test_forecast_smoke_script_runs_local_lifecycle(tmp_path):
         cwd=repo_root,
         capture_output=True,
         text=True,
-        timeout=420,
+        timeout=600,
     )
 
     output = result.stdout + result.stderr

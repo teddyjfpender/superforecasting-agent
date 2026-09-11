@@ -52,10 +52,13 @@ This measures the bounded closed-book lesson-context plus adjustment policy. It
 cannot establish the benefit of autonomous research, causal benefit of each lesson,
 or general forecasting superiority. Cluster independence remains an operator
 judgment. Actual evidence of benefit requires prospective outcomes; test fixtures
-are software validation only. A source hash pins scoring, numeric treatment and response validation;
-changed implementation code requires the original release to reproduce a trial rather
-than silently mixing score versions. Export preserves the frozen inputs and
-receipts; keep a SQLite online backup and release wheel for full restoration.
+are software validation only. Execution source identity still requires the original
+code to finish pending arms. Completed trials now have a separate evaluation
+identity covering scoring, numeric treatment and response validation; reviewed
+legacy hashes remain evaluable after transport changes. Unknown scoring versions
+are excluded. See the [September 11 follow-up](2026-09-11-trial-followup.md).
+Export preserves frozen inputs and receipts; keep a SQLite online backup and
+release wheel for full restoration.
 
 ## Evidence-backed conditions
 

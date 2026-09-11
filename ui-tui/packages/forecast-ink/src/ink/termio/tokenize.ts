@@ -133,6 +133,12 @@ function tokenize(
           seqStart = i
           result.state = 'escape'
           i++
+        } else if (code < 32 || code === 127) {
+          // A PTY read can contain typed text and Enter together. Preserve
+          // control-key boundaries; bracketed paste collects these verbatim.
+          flushText()
+          i++
+          emitSequence(data.slice(i - 1, i))
         } else {
           i++
         }

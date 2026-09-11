@@ -286,3 +286,15 @@ each invocation, preserving existing patch points and the public call signature.
 The classic CLI session browser and relative-time labels live in
 `runtime/session_browser.py`. Main reexports the existing picker and label helpers;
 SQLite session queries and the Ink TUI session picker retain their own ownership.
+
+### Paired learning trial boundaries
+
+- `forecasting/learning_trials.py`: enrollment, immutable packet/request ownership,
+  arm claims and failure recovery.
+- `forecasting/trial_provider.py`: provider readiness, receipts and quota reservations.
+- `forecasting/trial_contracts.py`: versioned response validation and reviewed
+  evaluation compatibility; `trial_evaluation.py`: read-only paired scoring.
+- `forecasting/trial_readiness.py`: pre-enrollment evidence/lesson coverage audit.
+
+Execution identity and evaluation identity are separate. Compatibility mappings
+require source review; never update historical trial rows to make a hash match.

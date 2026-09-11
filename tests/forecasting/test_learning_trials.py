@@ -237,3 +237,84 @@ def test_transport_failure_stops_before_consuming_remaining_arms(trial_setup):
     assert len(calls) == 1
     resumed = run_trial(ledger, tid, runner=fixture_runner)
     assert resumed['arm_status_counts'] == {'failed': 1, 'completed': 3}
+
+
+def test_execution_change_does_not_strand_completed_evaluation(trial_setup, monkeypatch):
+    ledger, questions, _, tid, now = trial_setup
+    run_trial(ledger, tid, runner=fixture_runner)
+    monkeypatch.setattr('forecasting.learning_trials.kernel_identity', lambda: 'new-transport')
+    with pytest.raises(ValidationError, match='implementation changed'):
+        run_trial(ledger, tid, runner=fixture_runner)
+    now[0] = '2026-10-02T00:00:00Z'
+    for q in questions:
+        ledger.resolve_question(question_id=q.id, outcome='yes')
+    assert len(trial_report(ledger, tid)['comparisons']) == 2
+    monkeypatch.setattr('forecasting.trial_contracts.evaluation_identity', lambda: 'new-score-policy')
+    assert trial_report(ledger, tid)['exclusions'] == {'scoring_version_changed': 2}
+
+
+def test_stored_output_tampering_cannot_improve_trial_score(trial_setup):
+    ledger, questions, _, tid, now = trial_setup
+    run_trial(ledger, tid, runner=fixture_runner)
+    with ledger._connect() as conn:
+        conn.execute("UPDATE learning_trial_arms SET output=json_set(output,'$.forecast',1.0) WHERE trial_id=? AND arm='learning'", (tid,))
+    now[0] = '2026-10-02T00:00:00Z'
+    for q in questions:
+        ledger.resolve_question(question_id=q.id, outcome='yes')
+    assert trial_report(ledger, tid)['exclusions'] == {'unscoreable_pair': 2}
+
+
+def test_candidate_readiness_does_not_treat_unbacked_guidance_as_learning_evidence(trial_setup):
+    from forecasting.trial_readiness import candidate_report
+    ledger, questions, _, _, _ = trial_setup
+    report = candidate_report(ledger)
+    selected = [c for c in report['candidates'] if c['question_id'] in {q.id for q in questions}]
+    assert len(selected) == 2
+    assert all(c['readiness_gaps'] == ['no_outcome_backed_lesson'] for c in selected)
+    assert all(c['evidence_count'] and c['lesson_refs'] for c in selected)
+
+
+def test_live_pacing_leaves_unattempted_arms_pending(trial_setup, monkeypatch):
+    ledger, _, _, tid, _ = trial_setup
+    monkeypatch.setattr('forecasting.learning_trials.require_preflight', lambda *_: {'model': 'fixture', 'endpoint': 'fixture'})
+    monkeypatch.setattr('forecasting.learning_trials.provider_runner', lambda *_: fixture_runner)
+    result = run_trial(ledger, tid)
+    assert result['arm_status_counts'] == {'completed': 1, 'pending': 3}
+    assert result['execution_pause']['reason'] == 'provider_quota_pacing'
+    assert run_trial(ledger, tid)['arm_status_counts'] == result['arm_status_counts']
+
+
+def test_reviewed_legacy_packets_evaluate_without_rewriting_history(trial_setup):
+    from pathlib import Path
+    from forecasting.learning_trials import arm_messages
+    from forecasting import trial_contracts
+    ledger, questions, _, tid, now = trial_setup
+    run_trial(ledger, tid, runner=fixture_runner)
+    trial, cases, arms = trial_records(ledger, tid)
+    registry = json.loads(Path(trial_contracts.__file__).with_name('trial_compatibility.json').read_text())
+    config = json.loads(trial['config'])
+    config.pop('evaluation_identity')
+    config['prompt_version'] = 'paired-learning-v2'
+    with ledger._connect() as conn:
+        conn.execute('UPDATE learning_trials SET config=?,scoring_kernel=? WHERE id=?', (json.dumps(config), next(iter(registry)), tid))
+        for case in cases:
+            for arm in ('control', 'learning'):
+                conn.execute('UPDATE learning_trial_arms SET request=? WHERE trial_id=? AND question_id=? AND arm=?',
+                             (json.dumps(arm_messages(case, arm)), tid, case['question_id'], arm))
+    before = trial_records(ledger, tid)
+    now[0] = '2026-10-02T00:00:00Z'
+    for q in questions:
+        ledger.resolve_question(question_id=q.id, outcome='yes')
+    assert len(trial_report(ledger, tid)['comparisons']) == 2
+    assert trial_records(ledger, tid) == before
+    with ledger._connect() as conn:
+        conn.execute("UPDATE learning_trials SET scoring_kernel='unreviewed' WHERE id=?", (tid,))
+    assert trial_report(ledger, tid)['exclusions'] == {'scoring_version_changed': 2}
+
+
+def test_cluster_whitespace_does_not_inflate_independence(trial_setup):
+    ledger, questions, _, _, _ = trial_setup
+    report = create_trial(ledger, assignments={questions[0].id: 'shared-event', questions[1].id: ' shared-event '},
+                          model='fixture', provider='fixture')
+    assert report['assigned_questions'] == 2
+    assert report['assigned_clusters'] == 1

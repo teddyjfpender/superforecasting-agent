@@ -34,7 +34,9 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
 - [x] Finish prospective cohorts and retain failed arms: five and three complete
   pairs respectively, across two conservative clusters; outcomes still pending.
 - [x] Verify fresh installation and upgrade on Windows, Linux and macOS in CI.
-- [ ] Publish and verify the formal release artifact set.
+- [ ] Publish and verify the formal release artifact set. The v0.22.0 tag's
+  release gate failed twice; fixes are in the follow-up branch, and the corrected
+  candidate needs an explicit release-identity decision before publication.
 - [ ] Supply Android/Termux access and missing live-service credentials.
 
 ## Before a production release
@@ -80,7 +82,10 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
   response, durable prompt/reply and clean exit. Keep this in future release checks.
 - [ ] Extend the verified macOS cancellation/resume/resize/dashboard recovery
   cases to other supported platforms and longer-running sessions. The macOS
-  18-turn Unicode exercise across three process lifetimes is complete.
+  60-turn Unicode exercise across five process lifetimes passed locally and in
+  macOS CI. Linux passed the input/soak checks but its orphan assertion needs
+  verification after distinguishing zombies from live workers. Android/Termux
+  still requires device access.
 - [ ] Keep scheduled monitoring limited to evidence, alerts, scores, and learning
   records; probability changes must remain explicit forecast updates.
 - [ ] Evaluate forecasting accuracy and calibration with scored resolved questions;
@@ -141,7 +146,10 @@ See [commands, invariants and limits](docs/plans/2026-09-10-controlled-learning-
   predeclared response budget sufficient for complete JSON. Earlier failed pilots
   had no usable pairs; September 11 cohorts retained five and three complete pairs
   across two conservative clusters. Outcomes remain pending.
-- [ ] Make numeric trial response schemas explicit and account for provider input
+- [x] Make numeric trial response schemas explicit and account for provider input
   quotas when pacing cohorts; preserve failed arms without rerolling.
-- [ ] Separate trial execution identity from evaluation compatibility so later
+- [x] Separate trial execution identity from evaluation compatibility so later
   prompt changes do not strand frozen comparisons; preserve historical integrity.
+
+See [trial follow-up evidence](docs/plans/2026-09-11-trial-followup.md) for quota pauses,
+legacy evaluation compatibility, cohort readiness gaps and settlement rechecks.
