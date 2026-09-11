@@ -2737,7 +2737,9 @@ def _finalize_resolution_task(ledger, task, *, owner, now):
     if question.status != "resolved" or resolution is None:
         raise ValidationError("finalization requires a currently resolved question and confirmed outcome")
     repair_key = f"repair-resolution:{resolution.id}:lesson"
-    if task["idempotency_key"] not in {f"finalize-resolution:{resolution.id}", repair_key}:
+    current_score = ledger.get_current_score(question.id)
+    score_key = f"finalize-score:{current_score.id}" if current_score is not None else None
+    if task["idempotency_key"] not in {f"finalize-resolution:{resolution.id}", repair_key, score_key}:
         return complete_operational_task(
             ledger, task["id"], owner=owner, disposition="superseded_resolution",
             result={"current_resolution_id": resolution.id}, now=now,

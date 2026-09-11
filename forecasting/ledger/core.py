@@ -370,6 +370,7 @@ _PACKET_JSON_FIELDS = {
     },
 }
 _PACKET_BOOL_FIELDS = {
+    "forecast_snapshots": {"calibration_eligible"},
     "evidence_items": {"admissible_for_backtests"},
     "resolutions": {"criteria_satisfied", "scoreable"},
     "score_records": {"calibration_eligible"},

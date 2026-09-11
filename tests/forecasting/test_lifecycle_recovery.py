@@ -153,6 +153,7 @@ def test_explicit_rescore_preserves_correction_lineage(tmp_path):
     q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
     ledger.create_snapshot(question_id=q.id, probability_or_distribution=.9, rationale='Before announcement.')
     ledger.resolve_question(question_id=q.id, outcome='no')
+    run_lifecycle(ledger, owner='initial')
     prior = ledger.create_postmortem(question_id=q.id, lesson='Check the base rate.')
     replacement = ledger.score_question(q.id, force=True)
     old = ledger.get_score(prior['score_record_id'])
@@ -160,6 +161,10 @@ def test_explicit_rescore_preserves_correction_lineage(tmp_path):
     assert replacement.id != old.id
     assert [s.id for s in ledger.list_scores()] == [replacement.id]
     assert ledger.get_postmortem(prior['id'])['invalidated_by_correction_id'] == old.invalidated_by_correction_id
+
+    assert run_lifecycle(ledger, owner='rescore')[0]['status'] == 'completed'
+    assert ledger.list_postmortems(question_id=q.id)[0]['score_record_id'] == replacement.id
+    assert lifecycle_status(ledger)['counts']['unfinished'] == 0
 
 
 def test_historical_lesson_repair_failure_uses_durable_attempt_queue(tmp_path, monkeypatch):

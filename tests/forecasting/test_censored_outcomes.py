@@ -109,12 +109,17 @@ def test_packet_import_cannot_forge_censored_score_or_drop_tail(tmp_path):
         assert target.list_questions() == []
 
 
-def test_packet_boolean_strings_cannot_enable_scoring(tmp_path):
+@pytest.mark.parametrize("record,field", [("resolution", "scoreable"), ("forecast_history", "calibration_eligible")])
+def test_packet_boolean_strings_cannot_enable_scoring(tmp_path, record, field):
     ledger = ForecastLedger(tmp_path/'source.db')
     q = ledger.create_question(title='Will delivery occur?', resolution_criteria='Resolve yes on official confirmation of delivery.')
+    ledger.create_snapshot(question_id=q.id, probability_or_distribution=.5, rationale='Imported fixture.')
     ledger.resolve_question(question_id=q.id, outcome='yes')
     packet = json.loads(ledger.export_question(q.id, fmt='json'))
-    packet['resolution']['scoreable'] = 'false'
+    if record == 'forecast_history':
+        packet[record][0][field] = 'false'
+    else:
+        packet[record][field] = 'false'
     target = ForecastLedger(tmp_path/'target.db')
     with pytest.raises(ValidationError, match='boolean'):
         target.import_packet(packet)

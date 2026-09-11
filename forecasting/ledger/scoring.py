@@ -253,6 +253,17 @@ def score_snapshot(ledger, forecast_id: str, *, force: bool = False) -> ScoreRec
                     scoring["notes"],
                 ),
             )
+        if force and existing is not None:
+            with ledger._connect() as conn:
+                stamp = utc_now_iso()
+                conn.execute("""
+                    INSERT OR IGNORE INTO operational_tasks
+                        (id, task_type, lane, question_id, status, priority,
+                         available_at, idempotency_key, created_at, updated_at)
+                    VALUES (?, 'finalize_resolution', 'deterministic_critical', ?,
+                            'pending', 100, ?, ?, ?, ?)
+                """, (f"ot_{uuid.uuid4().hex[:12]}", question.id, stamp,
+                      f"finalize-score:{score_id}", stamp, stamp))
         score = ledger.get_score(score_id)
         if score.calibration_eligible and score.forecast_origin == "live":
             ledger.update_domain_error_profile(question)
