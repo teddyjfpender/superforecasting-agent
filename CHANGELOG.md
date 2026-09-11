@@ -13,6 +13,17 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 
 ## [Unreleased]
 
+### Fixed
+- Keep reviewed historical trial evaluations available after provider/prompt changes, with receipt-to-output integrity checks.
+- Require exact numeric trial responses and pause pending arms against shared provider quotas.
+- Expose evidence and outcome-backed lesson gaps before cohort enrollment.
+- Share legacy provider interpretation in profile listings and diagnostic reports.
+- Prefer valid parsed openFDA submission dates over malformed date strings.
+- Require explicit service-scoped credentials for live integration tests.
+
+### Tests
+- Exercise 60 Unicode turns across five TUI lifetimes in the Linux/macOS lifecycle matrix.
+
 ## [0.22.0] - 2026-09-11
 
 ### Added
