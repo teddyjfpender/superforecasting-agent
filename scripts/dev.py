@@ -35,6 +35,7 @@ STRICT_PYTHON = (
     "scripts/dev.py",
     "scripts/build_profiles.py",
     "scripts/verify_profiles.py",
+    "scripts/verify_headless_host.py",
     "products/tui/superforecasting_agent_tui",
 )
 

@@ -279,7 +279,17 @@ def main() -> None:
             env=terminal_env,
             check=True,
         )
-        print("Optional web profile: dependencies and local host construction passed.")
+        subprocess.run(
+            [
+                str(backend_python),
+                str(Path(__file__).with_name("verify_headless_host.py").resolve()),
+            ],
+            cwd=root,
+            env=terminal_env,
+            check=True,
+            timeout=90,
+        )
+        print("Optional web profile: installed authenticated hosting passed.")
 
 
 if __name__ == "__main__":
