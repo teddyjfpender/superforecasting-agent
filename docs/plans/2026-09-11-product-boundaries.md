@@ -695,3 +695,24 @@ Headless WebSocket entrypoint (isolated follow-up):
 - This is an independently invocable transport host, not complete host resource
   ownership. Active-worker draining, database lifetime, installed remote-terminal
   lifecycle tests and broader release wiring remain required.
+
+Installed headless host qualification:
+
+- Integrated the stdio ownership and authenticated headless WebSocket entrypoint
+  into the main work branch. The backend-only wheel accepts protocol negotiation
+  over a real localhost socket without importing the dashboard.
+- The first installed probe exposed a credential leak: Uvicorn's WebSocket
+  handshake records use its error logger even with HTTP access logging disabled.
+  Host logging now redacts URL query strings while retaining paths and diagnostics.
+  Both rejected authentication/origin requests and accepted requests are exercised.
+- Added `scripts/verify_headless_host.py` to the independent distribution verifier
+  and blocking Python lint/format/type scope. It runs the installed host outside
+  the checkout, checks authorization and capabilities, and verifies credential-free
+  logs plus completed shutdown. Uvicorn deliberately re-raises termination signals
+  after orderly shutdown; the verifier requires the shutdown completion marker as
+  well as an expected exit status. The native Windows signal branch remains
+  unqualified; the installed probe passed on macOS.
+- The candidate backend wheel built from `f507daf3e` passed the real installed
+  probe after correcting that shutdown expectation. Seventeen focused host tests
+  and shared Python quality with twenty import contracts pass. This is a host
+  transport/install check, not proof of full remote Ink or session lifetime safety.

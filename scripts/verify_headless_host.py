@@ -4,6 +4,7 @@ import json
 import os
 import queue
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -42,6 +43,7 @@ def main() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.PIPE,
             text=True,
+            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
         )
         stderr = child.stderr
         assert stderr is not None
@@ -104,7 +106,11 @@ def main() -> None:
                 "Installed headless host: actual localhost WebSocket negotiation passed"
             )
         finally:
-            child.terminate()
+            if child.poll() is None:
+                if os.name == "nt":
+                    child.send_signal(signal.CTRL_BREAK_EVENT)
+                else:
+                    child.terminate()
             try:
                 child.wait(timeout=15)
             except subprocess.TimeoutExpired:
@@ -121,7 +127,13 @@ def main() -> None:
                     "host logged authentication token"
                 )
             assert "[redacted]" in "".join(log), "handshake logs were not exercised"
-        assert child.returncode == 0, "".join(log)
+        # Uvicorn re-raises the captured signal after orderly ASGI shutdown.
+        # A signal exit alone is insufficient: require the completion marker too.
+        assert "Application shutdown complete." in "".join(log), "".join(log)
+        expected = (
+            (0, 0xC000013A, -1073741510) if os.name == "nt" else (0, -signal.SIGTERM)
+        )
+        assert child.returncode in expected, "".join(log)
         print(
             "Installed headless host: clean termination and no credential logging passed"
         )

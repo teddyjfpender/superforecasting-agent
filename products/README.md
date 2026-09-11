@@ -72,8 +72,8 @@ reverse proxy in front of it. The terminal connects using `--gateway-url` as abo
 The host accepts a Bearer authorization header or the terminal's token query
 field; an explicit invalid header cannot fall back to a valid query token.
 Browser clients must additionally match an exact `--allow-origin` value. Native
-clients without an Origin header are supported. Access logging is disabled so
-query tokens are not recorded in request logs.
+clients without an Origin header are supported. HTTP access logging is disabled. WebSocket handshake logs redact query strings
+for both accepted and rejected connections.
 
 This exposes the existing runtime operations and protocol negotiation. Full
 host/session lifetime ownership and installed remote-terminal recovery qualification
