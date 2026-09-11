@@ -740,6 +740,7 @@ export interface ForecastDashboardLearning {
   tentative_lessons?: number
   top_error_profiles?: ForecastDashboardErrorProfile[]
   total_lessons?: number
+  trials?: Record<string, number>
 }
 
 export interface ForecastDashboardLesson {
@@ -1136,6 +1137,7 @@ export interface ForecastQuarantineSummary {
 export interface ForecastQuestionPacket {
   analyst_note?: null | ForecastAnalystNote
   analyst_notes?: ForecastAnalystNote[]
+  applicability_facts?: Record<string, unknown>
   assumptions?: ForecastQuestionPacketAssumption[]
   baseline_comparisons?: Record<string, unknown>[]
   calibration_lessons?: ForecastDashboardLesson[]
@@ -1154,6 +1156,7 @@ export interface ForecastQuestionPacket {
   resolution?: null | Record<string, unknown>
   retrospective?: null | ForecastAnalystNote
   scores?: Record<string, unknown>[]
+  settlement_review?: null | Record<string, unknown>
   watched_sources?: Record<string, unknown>[]
 }
 

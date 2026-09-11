@@ -141,6 +141,7 @@ def add_evidence(
         raise ValidationError("available_at cannot precede the source's published_at")
     evidence_id = f"ev_{uuid.uuid4().hex[:12]}"
     evidence_metadata = dict(metadata or {})
+    evidence_metadata.pop("source_capture", None)
     if source_file_path is not None and snapshot_path is None:
         snapshot_path = ledger._archive_file_evidence_snapshot(
             question_id=question_id,
@@ -166,7 +167,12 @@ def add_evidence(
         )
         if archived_url_snapshot is not None:
             snapshot_path = archived_url_snapshot["snapshot_path"]
-            evidence_metadata.setdefault("source_snapshot", archived_url_snapshot)
+            evidence_metadata["source_snapshot"] = archived_url_snapshot
+            if not archived_url_snapshot.get('blocked') and archived_url_snapshot.get('status') == 200:
+                evidence_metadata['source_capture'] = {
+                    'url': inferred_url, 'sha256': archived_url_snapshot.get('sha256'),
+                    'captured_at': now, 'method': 'https_fetch',
+                }
             if archived_url_snapshot.get("blocked"):
                 # Surface at top-level so list_evidence / show_question can
                 # see "blocked" without opening the snapshot file. The
@@ -203,6 +209,11 @@ def add_evidence(
                     inferred_url,
                     reason,
                 )
+    # Integrity anchor is code-owned, never accepted from caller metadata.
+    evidence_metadata.pop('archive_sha256', None)
+    if snapshot_path and Path(snapshot_path).is_file():
+        import hashlib
+        evidence_metadata['archive_sha256'] = hashlib.sha256(Path(snapshot_path).read_bytes()).hexdigest()
     with ledger._connect() as conn:
         conn.execute(
             """

@@ -1833,6 +1833,12 @@ class ForecastLedger:
             from forecasting.ledger.workflow import initialize_schema as initialize_workflow_schema
 
             initialize_workflow_schema(conn)
+            from forecasting.settlement_reviews import initialize_schema as initialize_settlement_reviews
+            initialize_settlement_reviews(conn)
+            from forecasting.applicability_facts import initialize_schema as initialize_facts
+            initialize_facts(conn)
+            from forecasting.learning_trials import initialize_schema as initialize_learning_trials
+            initialize_learning_trials(conn)
 
     def _ensure_column(
         self,

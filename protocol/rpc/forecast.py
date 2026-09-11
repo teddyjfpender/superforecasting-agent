@@ -473,6 +473,7 @@ class ForecastDashboardLearning(WireModel):
     TS_NAME = "ForecastDashboardLearning"
 
     effectiveness: ForecastLearningEffectiveness | None = wire_optional()
+    trials: dict[str, int] | None = wire_optional()
 
     active_lessons: int | None = wire_optional()
     invalidated_lessons: int | None = wire_optional()
@@ -1653,6 +1654,9 @@ class ForecastQuestionPacketReferenceClass(WireModel):
 
 class ForecastQuestionPacket(WireModel):
     TS_NAME = "ForecastQuestionPacket"
+
+    applicability_facts: dict[str, Any] | None = wire_optional()
+    settlement_review: dict[str, Any] | None = wire_optional(nullable=True)
 
     analyst_note: ForecastAnalystNote | None = wire_optional(nullable=True)
     analyst_notes: list[ForecastAnalystNote] | None = wire_optional()

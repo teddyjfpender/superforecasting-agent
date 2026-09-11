@@ -69,6 +69,7 @@ def apply_active_lesson_adjustments(
     payload: Any,
     calibration_lesson_refs: list[str],
     calibration_adjustment: dict[str, Any],
+    frozen_lessons: list[dict[str, Any]] | None = None,
 ) -> tuple[Any, list[str], dict[str, Any]]:
     """Attach active lessons for a question and apply supported adjustments.
 
@@ -78,7 +79,7 @@ def apply_active_lesson_adjustments(
     preserved inside the lesson but do not silently affect a saved probability.
     """
 
-    lessons = active_lessons_for_question(ledger, question)
+    lessons = frozen_lessons if frozen_lessons is not None else active_lessons_for_question(ledger, question)
     existing_refs = set(calibration_lesson_refs)
     selected = [lesson for lesson in lessons if lesson["id"] not in existing_refs]
     if not selected:
@@ -114,6 +115,10 @@ def apply_active_lesson_adjustments(
             "scope_type": lesson.get("scope_type"),
             "scope_ref": lesson.get("scope_ref"),
         }
+        if getattr(getattr(question, "outcome_space", None), "type", "binary") != "binary":
+            item["numeric_adjustment_skipped"] = "binary_probability_adjustment_not_applicable"
+            applied_lessons.append(item)
+            continue
         if lesson in bias_scales and lesson is not chosen_bias:
             item["numeric_adjustment_skipped"] = "more_specific_calibration_bias_applied"
             applied_lessons.append(item)
@@ -138,7 +143,10 @@ def apply_active_lesson_adjustments(
     if applied_lessons:
         adjustment["applied_active_lessons"] = applied_lessons
 
-    if isinstance(payload, bool) or not isinstance(payload, (int, float)):
+    if (getattr(getattr(question, 'outcome_space', None), 'type', 'binary') != 'binary'
+            or isinstance(payload, bool) or not isinstance(payload, (int, float))):
+        # Probability calibration is not a unit conversion. Never clamp a
+        # temperature, vote share or other physical estimate into [0.01, 0.99].
         return payload, refs, adjustment
 
     adjusted = float(payload)
@@ -219,20 +227,22 @@ def validate_lesson_applicability(adjustment):
     conditions = (adjustment or {}).get("applicability")
     if conditions is None:
         return
-    if not isinstance(conditions, dict) or set(conditions) - {"outcome_types", "topics_any", "metadata_equals"}:
+    if not isinstance(conditions, dict) or set(conditions) - {"outcome_types", "topics_any", "metadata_equals", "evidence_equals"}:
         raise ValidationError("invalid lesson applicability fields")
     for key in ("outcome_types", "topics_any"):
         if key in conditions and (not isinstance(conditions[key], list) or not conditions[key]
                                   or not all(isinstance(v, str) and v for v in conditions[key])):
             raise ValidationError(f"lesson applicability {key} must be a nonempty list of strings")
-    if "metadata_equals" in conditions:
-        values = conditions["metadata_equals"]
+    for condition_key in ("metadata_equals", "evidence_equals"):
+        if condition_key not in conditions:
+            continue
+        values = conditions[condition_key]
         if not isinstance(values, dict) or any(not isinstance(k, str) or not k or v is None
                                                or isinstance(v, (dict, list)) for k, v in values.items()):
             raise ValidationError("lesson applicability metadata_equals must map paths to scalar values")
 
 
-def lesson_applicability(lesson, question, context=None):
+def lesson_applicability(lesson, question, context=None, *, ledger=None):
     """Explicit conditions only. Missing facts never authorize enforcement.
 
     Conditions narrow the stored scope; no expression evaluation or inferred
@@ -246,7 +256,7 @@ def lesson_applicability(lesson, question, context=None):
         validate_lesson_applicability(lesson.get("recommended_adjustment"))
     except ValidationError:
         return False, "invalid_applicability"
-    if not isinstance(conditions, dict) or set(conditions) - {"outcome_types", "topics_any", "metadata_equals"}:
+    if not isinstance(conditions, dict) or set(conditions) - {"outcome_types", "topics_any", "metadata_equals", "evidence_equals"}:
         return False, "invalid_applicability"
     if "outcome_types" in conditions and question.outcome_space.type not in conditions["outcome_types"]:
         return False, "outcome_type_mismatch"
@@ -261,6 +271,20 @@ def lesson_applicability(lesson, question, context=None):
             return False, f"condition_unknown:{key}"
         if actual != expected:
             return False, f"condition_mismatch:{key}"
+    if conditions.get('evidence_equals'):
+        if ledger is None:
+            return False, 'evidence_context_required'
+        from forecasting.applicability_facts import evidence_facts
+        observations = evidence_facts(ledger, question, cutoff=(context or {}).get('_fact_cutoff'))
+        for key, expected in conditions['evidence_equals'].items():
+            fact = observations.get(key, {})
+            if fact.get('status') != 'verified':
+                return False, f"evidence_unknown:{key}:{fact.get('reason', 'binding_missing')}"
+            if type(fact['value']) is not type(expected) and not (
+                type(fact['value']) in (int, float) and type(expected) in (int, float)):
+                return False, f'evidence_type_mismatch:{key}'
+            if fact['value'] != expected:
+                return False, f'evidence_mismatch:{key}'
     return True, "conditions_met"
 
 
@@ -271,7 +295,7 @@ def active_lessons_for_question(ledger: ForecastLedger, question: Any, *, contex
     invalidated/inactive replacements cannot suppress an otherwise active lesson.
     """
     lessons = [item for item in _in_scope_lessons(ledger, question)
-               if lesson_applicability(item, question, context)[0]]
+               if lesson_applicability(item, question, context, ledger=ledger)[0]]
     superseded = {item.get("supersedes_lesson_id") for item in lessons}
     return [item for item in lessons if item["id"] not in superseded]
 
@@ -362,7 +386,7 @@ def lesson_application_decisions(ledger, question, payload, adjustment, refs, ru
     decisions = []
     candidates = _in_scope_lessons(ledger, question)
     superseded = {item.get("supersedes_lesson_id"): item["id"] for item in candidates
-                  if lesson_applicability(item, question, context)[0]}
+                  if lesson_applicability(item, question, context, ledger=ledger)[0]}
     for lesson in candidates:
         lid = lesson["id"]
         recommended = lesson.get("recommended_adjustment") or {}
@@ -380,7 +404,7 @@ def lesson_application_decisions(ledger, question, payload, adjustment, refs, ru
         else:
             kind, applied = "advisory", False
             reason = "consulted_advisory" if lid in refs else "not_recorded_as_consulted"
-        applicable, applicability_reason = lesson_applicability(lesson, question, context)
+        applicable, applicability_reason = lesson_applicability(lesson, question, context, ledger=ledger)
         if not applicable:
             applied, reason = False, applicability_reason
         if lid in superseded:

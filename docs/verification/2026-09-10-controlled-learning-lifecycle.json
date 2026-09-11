@@ -1,0 +1,155 @@
+{
+  "verified_at": "2026-09-10T18:29:47.012782+00:00",
+  "runtime_source_commit": "9846723e50c5a6765406bba2f8238c56933b8d22",
+  "runtime_version": "0.21.2",
+  "wheel_sha256": "09c3ec93d5dec5e26353922c2162f50d5702e4c5264a846643470c9fa4abfaca",
+  "tui_bundle_sha256": "9973c4106b1614683b7b63acae190aa30404e5de72cd9e9fd39328f6b5884965",
+  "installed_files_verified_against_wheel": 9,
+  "native_python": "3.13.12",
+  "gateway_running": true,
+  "trial_policy_identity_preserved_across_report_update": true,
+  "tests": {
+    "forecasting_suite": {
+      "passed": 3449,
+      "skipped": 3
+    },
+    "tui_suite": {
+      "passed": 2015,
+      "skipped": 1
+    },
+    "followup_contracts": {
+      "passed": 69
+    },
+    "final_report_regressions": {
+      "passed": 14
+    },
+    "import_boundary_regressions": {
+      "passed": 5
+    },
+    "note": "Follow-up suites overlap the full suite; counts must not be added."
+  },
+  "installed_cli": {
+    "fresh_install": "0.21.0 on Python 3.13",
+    "upgrades": [
+      "0.20.1 to 0.21.0 on Python 3.11",
+      "0.21.0 to 0.21.1 to 0.21.2 on Python 3.13"
+    ],
+    "isolated_model_http_calls": 4,
+    "paired_fixture_comparisons": 2,
+    "small_sample_claim": "benefit_not_established",
+    "real_scored_lesson_provenance": true,
+    "model_json_fence_accepted_without_retry": true,
+    "trial_live_snapshots_created": 0,
+    "trial_live_scores_created": 0,
+    "final_report_has_raw_and_adjusted_forecasts": true
+  },
+  "public_source_capture": {
+    "status": "verified",
+    "reason": "archived_source_value",
+    "binding_id": "fb_a64b82346844",
+    "source_url": "https://api.weather.gov/stations/KJFK/observations/latest",
+    "cutoff": "2026-09-10T18:18:07Z",
+    "evidence_id": "ev_7656270a6090",
+    "value": 30.6,
+    "observed_at": "2026-09-10T17:51:00Z",
+    "captured_at": "2026-09-10T18:18:07Z",
+    "available_at": "2026-09-10T18:18:07Z",
+    "sha256": "968dd6249c8b7be6ed0e6e870d91d8d97397b3d57a7264d693f1784533f20ab7",
+    "value_pointer": "/properties/temperature/value",
+    "max_age_seconds": 86400
+  },
+  "tui_checks": [
+    "/ledger review renders and survives 150/80/150-column resize",
+    "/ledger learning renders and survives 150/80/150-column resize",
+    "/forecast trial report lt_d0694f8196cd renders and survives 150/80/150-column resize; report controls and end reachable",
+    "/forecast facts show fq_f86c7690d9f5 renders and survives 150/80/150-column resize; report controls and end reachable",
+    "Clean exit 0"
+  ],
+  "live_ledger": {
+    "integrity": "ok",
+    "snapshots": 7403,
+    "changed_snapshots": 0,
+    "snapshot_sha256": "f5016483ffaeac9def684f3c0bd30bc933be49ad5586987e324c49717debd045",
+    "counts": {
+      "settlement_review": 104,
+      "review_overdue": 58,
+      "unfinished": 0,
+      "ready_tasks": 0,
+      "review_reminders_due": 0,
+      "deferred_settlements": 6,
+      "documented_unscoreable": 2,
+      "missing_tasks": 0,
+      "failed_tasks": 0
+    },
+    "repeated_recovery_created_work": false,
+    "conservation": {
+      "forecast_questions": {
+        "rows": 2233,
+        "unchanged": true
+      },
+      "forecast_snapshots": {
+        "rows": 7403,
+        "unchanged": true
+      },
+      "evidence_items": {
+        "rows": 35138,
+        "unchanged": true
+      },
+      "resolutions": {
+        "rows": 1813,
+        "unchanged": true
+      },
+      "score_records": {
+        "rows": 5254,
+        "unchanged": true
+      },
+      "postmortems": {
+        "rows": 1840,
+        "unchanged": true
+      },
+      "calibration_lessons": {
+        "rows": 25,
+        "unchanged": true
+      }
+    }
+  },
+  "live_trials": [
+    {
+      "assigned_questions": 2,
+      "assigned_clusters": 1,
+      "status_counts": {
+        "failed": 2,
+        "interrupted": 1,
+        "pending": 1
+      },
+      "questions_with_lessons": 0,
+      "error_types": {
+        "JSONDecodeError": 2,
+        "KeyboardInterrupt": 1
+      },
+      "usable_comparisons": 0
+    },
+    {
+      "assigned_questions": 2,
+      "assigned_clusters": 1,
+      "status_counts": {
+        "failed": 4
+      },
+      "questions_with_lessons": 2,
+      "error_types": {
+        "GeminiAPIError": 2,
+        "JSONDecodeError": 1,
+        "ReadTimeout": 1
+      },
+      "usable_comparisons": 0
+    }
+  ],
+  "learning_benefit": "not established",
+  "limitations": [
+    "No usable live pairs: Gemini high-demand errors, truncated output and a timeout were retained as failures, without rerolls. A new prospective cohort is needed; merely waiting for these outcomes will not repair the missing pairs.",
+    "Both operational cohorts represent one correlated Senate election cluster, not independent samples.",
+    "The market_nightly acquisition domain prevents politics lesson retrieval; the second cohort uses existing politics questions. Domain normalization remains in TODO.md.",
+    "Source bindings verify archived values and times, not universal source truth or an inferred weather peak.",
+    "Cross-platform release gates and right-censored scoring remain outside this work."
+  ]
+}

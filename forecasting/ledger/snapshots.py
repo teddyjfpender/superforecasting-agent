@@ -597,8 +597,11 @@ def create_snapshot(
         ledger._validate_evidence_refs(question_id, evidence_refs or [], effective_cutoff)
         snapshot_metadata = dict(metadata or {})
         # Audit results are code-owned; caller metadata cannot claim a rule ran.
-        for audit_key in ("lesson_rule_report", "lesson_decisions", "lesson_decisions_error"):
+        for audit_key in ("lesson_rule_report", "lesson_decisions", "lesson_decisions_error", "evidence_facts", "_fact_cutoff"):
             snapshot_metadata.pop(audit_key, None)
+        from forecasting.applicability_facts import evidence_facts
+        snapshot_metadata['_fact_cutoff'] = effective_cutoff
+        snapshot_metadata['evidence_facts'] = evidence_facts(ledger, question, cutoff=effective_cutoff)
         # BLF A7 — record the commit-path clamp when it engaged (honesty law:
         # never silent). Stamped BEFORE the preview return so preview and commit
         # report the identical transform.

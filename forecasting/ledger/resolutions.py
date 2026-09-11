@@ -55,17 +55,11 @@ def _normalize_distribution_outcome(ledger, question, outcome):
     import json
     from forecasting.ledger.scoring import _validated_shares
 
-    def unique_object(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValidationError(f"duplicate resolution outcome key: {key}")
-            result[key] = value
-        return result
+    from forecasting.json_validation import strict_json_loads
 
     if isinstance(outcome, str) and outcome.lstrip().startswith("{"):
         try:
-            outcome = json.loads(outcome, object_pairs_hook=unique_object)
+            outcome = strict_json_loads(outcome, object_name="resolution outcome")
         except json.JSONDecodeError as exc:
             raise ValidationError("resolution outcome must be valid JSON") from exc
     if isinstance(outcome, dict):

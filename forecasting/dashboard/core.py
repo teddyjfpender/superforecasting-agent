@@ -1480,6 +1480,10 @@ def build_doctor_gate_summary(
 def build_learning_summary(*, ledger: ForecastLedger, limit: int = 5) -> dict[str, Any]:
     from forecasting.learning_evaluation import learning_effectiveness
 
+    with ledger._connect() as conn:
+        trials = {"total": conn.execute("SELECT COUNT(*) FROM learning_trials").fetchone()[0]}
+        trials.update({r[0]: r[1] for r in conn.execute(
+            "SELECT status, COUNT(*) FROM learning_trial_arms GROUP BY status")})
     effectiveness = learning_effectiveness(ledger)
     effectiveness.pop("records", None)
     lessons = ledger.list_calibration_lessons(active_only=False)
@@ -1505,6 +1509,7 @@ def build_learning_summary(*, ledger: ForecastLedger, limit: int = 5) -> dict[st
     )
     return {
         "effectiveness": effectiveness,
+        "trials": trials,
         "total_lessons": len(lessons),
         "active_lessons": len(active_lessons),
         "tentative_lessons": len(tentative_lessons),

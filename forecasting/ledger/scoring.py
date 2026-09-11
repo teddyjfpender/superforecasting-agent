@@ -2274,6 +2274,7 @@ def _row_to_score(ledger, row: sqlite3.Row) -> ScoreRecord:
         baseline_ref=row["baseline_ref"],
         invalidated_by_correction_id=row["invalidated_by_correction_id"],
         notes=row["notes"],
+        audit_quarantine_reason=row["audit_quarantine_reason"],
     )
 
 

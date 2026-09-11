@@ -11,7 +11,7 @@ import uuid
 import json
 from typing import Any
 
-from forecasting.models import parse_timestamp, utc_now_iso
+from forecasting.models import parse_timestamp, timestamp_to_datetime, utc_now_iso
 
 
 def lifecycle_status(ledger, *, now: str | None = None) -> dict[str, Any]:
@@ -67,17 +67,35 @@ def lifecycle_status(ledger, *, now: str | None = None) -> dict[str, Any]:
             if meta.get("lifecycle_review"):
                 reviews[note["question_id"]] = {"body": note["body"], "source": meta.get("source"),
                     "revisit_at": meta.get("revisit_at"), "created_at": note["created_at"]}
+    from forecasting.settlement_reviews import latest_reviews
+    durable_reviews = latest_reviews(ledger)
+    for row in unfinished + attention:
+        if row['question_id'] in durable_reviews:
+            row['settlement'] = durable_reviews[row['question_id']]
+    reminder_due = sum(bool(r['revisit_at'] and not r['notified_at'] and
+        timestamp_to_datetime(r['revisit_at']) <=
+        timestamp_to_datetime(stamp))
+        for r in durable_reviews.values() if ledger.get_question(r['question_id']).status != 'resolved')
     for row in unfinished + attention:
         if row["question_id"] in reviews:
             row["review"] = reviews[row["question_id"]]
+    limitations = [r for r in unfinished if r.get('settlement', {}).get('state') == 'no_historical_forecast' and r['forecast_id'] is None]
+    unfinished = [r for r in unfinished if r not in limitations]
+    for row in attention:
+        review = row.get('settlement', {})
+        if review.get('revisit_at') and timestamp_to_datetime(review['revisit_at']) > timestamp_to_datetime(stamp):
+            row['reason'] = 'waiting:' + review['state']
     for row in unfinished:
         row["task_missing"] = f"finalize-resolution:{row['resolution_id']}" not in keys
     return {
-        "as_of": stamp, "attention": attention, "unfinished": unfinished, "tasks": tasks,
+        "as_of": stamp, "settlement_reviews": list(durable_reviews.values()), "limitations": limitations, "attention": attention, "unfinished": unfinished, "tasks": tasks,
         "counts": {
             "settlement_review": sum(r["reason"] == "settlement_review" for r in attention),
             "review_overdue": sum(r["reason"] == "review_overdue" for r in attention),
             "unfinished": len(unfinished), "ready_tasks": ready,
+            "review_reminders_due": reminder_due,
+            "deferred_settlements": sum(r['state'] not in ('ready', 'no_historical_forecast') and ledger.get_question(r['question_id']).status != 'resolved' for r in durable_reviews.values()),
+            "documented_unscoreable": sum(r['state'] == 'no_historical_forecast' for r in durable_reviews.values()),
             "missing_tasks": sum(r["task_missing"] and r["forecast_id"] is not None for r in unfinished),
             "failed_tasks": sum(r["status"] in ("failed", "dead_letter") for r in tasks),
         },
@@ -90,6 +108,8 @@ def run_lifecycle(ledger, *, owner: str, now: str | None = None, limit: int = 25
     Never resets exhausted retries or edits probabilities/resolutions. Duplicate
     runs reuse the resolution key and the existing score/postmortem identities.
     """
+    from forecasting.settlement_reviews import emit_due_reminders
+    emit_due_reminders(ledger, now=now)
     report = lifecycle_status(ledger, now=now)
     with ledger._connect() as conn:
         for row in report["unfinished"]:

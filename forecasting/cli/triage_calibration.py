@@ -39,6 +39,8 @@ def _ledger(args: argparse.Namespace):
 
 
 def register(forecast_sub: argparse._SubParsersAction) -> None:
+    from forecasting.cli.learning_operations import register as register_learning_operations
+    register_learning_operations(forecast_sub)
     """Register the ``lesson`` + ``lessons`` command groups (contiguous block)."""
 
     lesson_parser = forecast_sub.add_parser("lesson", help="Review and promote calibration lessons")
@@ -730,8 +732,8 @@ def _cmd_lessons_explain(args: argparse.Namespace) -> None:
         "question_id": question.id,
         "active_lessons": active_lessons_for_question(ledger, question),
         "conditional_lessons": [{"lesson_id": l["id"], "conditions": l["recommended_adjustment"].get("applicability"),
-            "reason": lesson_applicability(l, question)[1]} for l in _in_scope_lessons(ledger, question)
-            if not lesson_applicability(l, question)[0]],
+            "reason": lesson_applicability(l, question, ledger=ledger)[1]} for l in _in_scope_lessons(ledger, question)
+            if not lesson_applicability(l, question, ledger=ledger)[0]],
         "forecast_id": snapshot.forecast_id if snapshot else None,
         "recorded_decisions": (snapshot.metadata or {}).get("lesson_decisions", []) if snapshot else [],
         "interpretation": "Recorded application is process evidence, not evidence of improved accuracy. Historical snapshots without decisions are unverified.",

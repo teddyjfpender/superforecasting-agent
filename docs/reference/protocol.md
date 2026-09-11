@@ -1019,6 +1019,7 @@ _(no fields)_
 | `tentative_lessons` | `number?` |
 | `top_error_profiles` | `ForecastDashboardErrorProfile[]?` |
 | `total_lessons` | `number?` |
+| `trials` | `Record<string, number>?` |
 
 ### ForecastDashboardLesson
 
@@ -1501,6 +1502,7 @@ _(no fields)_
 | --- | --- |
 | `analyst_note` | `ForecastAnalystNote? | null` |
 | `analyst_notes` | `ForecastAnalystNote[]?` |
+| `applicability_facts` | `Record<string, unknown>?` |
 | `assumptions` | `ForecastQuestionPacketAssumption[]?` |
 | `baseline_comparisons` | `Record<string, unknown>[]?` |
 | `calibration_lessons` | `ForecastDashboardLesson[]?` |
@@ -1519,6 +1521,7 @@ _(no fields)_
 | `resolution` | `Record<string, unknown>? | null` |
 | `retrospective` | `ForecastAnalystNote? | null` |
 | `scores` | `Record<string, unknown>[]?` |
+| `settlement_review` | `Record<string, unknown>? | null` |
 | `watched_sources` | `Record<string, unknown>[]?` |
 
 ### ForecastQuestionPacketAssumption

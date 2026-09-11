@@ -364,6 +364,7 @@ class ScoreRecord:
     baseline_ref: str | None
     invalidated_by_correction_id: str | None
     notes: str | None
+    audit_quarantine_reason: str | None = None
 
 
 # Comparison operators that make an update trigger *executable* — i.e. checkable

@@ -1103,6 +1103,7 @@ it('routes lifecycle recovery and outcome-backed learning to the shared CLI', ()
       verified_decision_snapshots: 2, historical_unverified_snapshots: 1500, scored_distinct_questions: 40
     }}}
   }}
+
   const sections = forecastDashboardSections(response)
   const lifecycle = sections.find(section => section.title === 'Lifecycle')
   expect(lifecycle?.rows?.some(row => row[2] === '/forecast lifecycle run')).toBe(true)
@@ -1118,6 +1119,7 @@ it('keeps review and learning decision views bounded without losing full-report 
     lifecycle: {counts: {settlement_review: 12, unfinished: 2, missing_tasks: 3}},
     learning: {active_lessons: 10, effectiveness: {status: 'benefit_not_established', counts: {}}}
   }}
+
   const review = forecastLedgerViewSections(response, 'review')
   expect(review.map(section => section.title)).toEqual(['Lifecycle'])
   expect(review[0]?.rows?.some(row => row[2] === '/forecast lifecycle status')).toBe(true)
@@ -1126,4 +1128,19 @@ it('keeps review and learning decision views bounded without losing full-report 
   expect(learning.map(section => section.title)).toEqual(['Learning Memory'])
   expect(learning[0]?.rows).toHaveLength(5)
   expect(learning[0]?.rows?.some(row => row[2] === '/forecast lessons effectiveness')).toBe(true)
+})
+
+it('surfaces durable deferrals, unscoreable outcomes and controlled trials', () => {
+  const response: ForecastDashboardResponse = {summary: {
+    lifecycle: {counts: {deferred_settlements: 6, review_reminders_due: 2, documented_unscoreable: 2}},
+    learning: {trials: {total: 1, completed: 4}, effectiveness: {counts: {}}}
+  }}
+
+  const review = forecastLedgerViewSections(response, 'review')[0]
+  expect(review?.rows?.find(row => row[0] === 'deferred reviews')?.[1]).toContain('6 waiting · 2 reminders due')
+  expect(review?.rows?.find(row => row[0] === 'documented limits')?.[1]).toContain('2 outcomes')
+  const learning = forecastLedgerViewSections(response, 'learning')[0]
+  expect(learning?.rows?.some(row => row[2] === '/forecast trial list')).toBe(true)
+  const detail = forecastQuestionDetailSections({packet: {question: {id: 'fq_proof', title: 'Proof'}}})
+  expect(detail.find(section => section.title === 'Actions')?.rows?.some(row => row[0] === '/forecast facts show fq_proof')).toBe(true)
 })

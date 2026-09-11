@@ -708,7 +708,7 @@ def _run_review_sweep(now: str | None = None) -> dict:
         due_count = ledger.count_due_scheduled_reviews(now=now_iso)
         lifecycle = lifecycle_status(ledger, now=now_iso)["counts"]
         result["lifecycle"] = lifecycle
-        finalization_due = lifecycle["ready_tasks"] + lifecycle["missing_tasks"]
+        finalization_due = lifecycle["ready_tasks"] + lifecycle["missing_tasks"] + lifecycle.get("review_reminders_due", 0)
     except Exception:
         logger.exception("review sweep: due check failed")
         result["skipped_reason"] = "due_check_failed"
