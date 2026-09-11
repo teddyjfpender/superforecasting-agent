@@ -5,6 +5,8 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.usefixtures("isolated_runtime_host")
+
 
 def test_importing_embedded_rpc_server_preserves_stdout():
     code = 'import sys; before = sys.stdout; from tui_gateway import server; assert sys.stdout is before; print("stdout-preserved")'

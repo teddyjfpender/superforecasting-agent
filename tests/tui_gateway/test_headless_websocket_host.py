@@ -2,6 +2,8 @@
 import builtins
 
 import pytest
+
+pytestmark = pytest.mark.usefixtures("isolated_runtime_host")
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 

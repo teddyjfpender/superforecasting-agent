@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
-from collections.abc import Collection
+from collections.abc import AsyncIterator, Collection
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket
 
@@ -25,7 +27,20 @@ def create_app(*, token: str, allowed_origins: Collection[str] = ()) -> FastAPI:
             "Allowed origins must be explicit; wildcard origins are unsupported"
         )
     expected = token.encode()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        from tui_gateway import server
+
+        server.start_runtime()
+        try:
+            yield
+        finally:
+            if not await asyncio.to_thread(server.shutdown_runtime):
+                raise RuntimeError("runtime shutdown incomplete: workers still active")
+
     app = FastAPI(
+        lifespan=lifespan,
         title="Superforecasting Agent Host",
         docs_url=None,
         redoc_url=None,

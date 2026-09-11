@@ -716,3 +716,27 @@ Installed headless host qualification:
   probe after correcting that shutdown expectation. Seventeen focused host tests
   and shared Python quality with twenty import contracts pass. This is a host
   transport/install check, not proof of full remote Ink or session lifetime safety.
+
+Explicit host worker lifetime:
+
+- Added presentation-independent `hosting.workers.RuntimeWorkers`: lazy executor
+  creation, tracked inline requests and dedicated background threads, closed
+  admission, queued-call cancellation and bounded draining with idempotent retries.
+  A strict transitive import contract and injected-edge test enforce its ownership.
+- Stdio and headless WebSocket serving explicitly start/stop the runtime. Shutdown
+  interrupts session agents and registered background agents, releases approvals,
+  stops pollers/cron/auth work and drains admitted tasks before closing agents or
+  the shared session database. A timeout retains resources and reports incomplete
+  shutdown; it does not authorize closing handles still used by workers.
+- Background prompt agents now close their own resources. After draining, unfinished
+  turn receipts become interrupted without overwriting terminal receipts; session
+  rows remain un-ended for resume, including a new host lifetime in the same process.
+- 242 gateway/lazy-session/import tests passed; four focused worker tests pass,
+  including real SQLite reopen after a final write during shutdown. Tests that
+  launch full hosts now isolate their runtime ownership instead of leaving stopped
+  global workers behind. The EOF deadline probe now reflects import-safe stdout.
+  Shared Python quality passes with twenty-one import contracts.
+- This does not complete host extraction: session/configuration state and close
+  orchestration still reside in the RPC server. Explicit session-close races,
+  complete ownership of external delegation/provider resources, installed remote
+  Ink lifecycle verification and cross-platform qualification remain open.

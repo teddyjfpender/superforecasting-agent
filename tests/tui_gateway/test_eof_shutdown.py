@@ -21,4 +21,4 @@ print('shutdown armed', flush=True)
         env=env, capture_output=True, text=True, timeout=15,
     )
     assert result.returncode == 0, result.stderr
-    assert "shutdown armed" in result.stderr  # gateway reserves stdout for JSON-RPC
+    assert "shutdown armed" in result.stdout  # importing a host does not reserve stdout

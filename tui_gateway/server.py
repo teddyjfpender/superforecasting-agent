@@ -1,5 +1,4 @@
 import atexit
-import concurrent.futures
 import contextlib
 import contextvars
 import copy
@@ -294,11 +293,11 @@ try:
     )
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
-_pool = concurrent.futures.ThreadPoolExecutor(
-    max_workers=_rpc_pool_workers,
-    thread_name_prefix="tui-rpc",
-)
-atexit.register(lambda: _pool.shutdown(wait=False, cancel_futures=True))
+from superforecasting_agent.hosting.workers import HostStopping, RuntimeWorkers
+
+_pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
+_host_lifecycle_lock = threading.Lock()
+
 
 # Embedded hosts retain their process streams. The stdio entrypoint explicitly
 # owns redirection while serving its JSON-RPC command pipe.
@@ -543,13 +542,10 @@ def start_cron_ticker() -> None:
     global _cron_ticker_thread
     if _cron_ticker_thread is not None or _cron_ticker_disabled():
         return
-    _cron_ticker_thread = threading.Thread(
-        target=_cron_ticker_loop,
-        args=(_cron_ticker_stop, _cron_ticker_interval()),
-        name="tui-cron-ticker",
-        daemon=True,
+    _cron_ticker_thread = _pool.start(
+        lambda: _cron_ticker_loop(_cron_ticker_stop, _cron_ticker_interval()),
+        name="forecast-cron-ticker",
     )
-    _cron_ticker_thread.start()
 
 
 def _stop_cron_ticker() -> None:
@@ -809,7 +805,71 @@ def _shutdown_sessions() -> None:
             pass
 
 
-atexit.register(_shutdown_sessions)
+def start_runtime() -> None:
+    """Admit a new serving lifetime only after the previous owner finished."""
+    global _pool, _cron_ticker_stop, _cron_ticker_thread
+    with _host_lifecycle_lock:
+        if not _pool.stopping:
+            return
+        if not _pool.drain(0) or _sessions or _db is not None:
+            raise RuntimeError("previous runtime shutdown is incomplete")
+        _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
+        _cron_ticker_stop = threading.Event()
+        _cron_ticker_thread = None
+
+
+def shutdown_runtime(timeout: float = 5.0) -> bool:
+    """Interrupt and drain before closing resources; preserve durable sessions."""
+    global _db
+    with _host_lifecycle_lock:
+        _pool.stop()
+        _stop_cron_ticker()
+        with _auth_flow_lock:
+            _auth_flow["cancelled"] = True
+        for sid, session in list(_sessions.items()):
+            session["cancel_requested"] = True
+            stop = session.get("_notif_stop")
+            if stop is not None:
+                stop.set()
+            _clear_pending(sid)
+            agents = [session.get("agent")]
+            with session.setdefault("history_lock", threading.Lock()):
+                agents.extend(session.get("_background_agents", {}).values())
+            for agent in agents:
+                if agent is not None and hasattr(agent, "interrupt"):
+                    try:
+                        agent.interrupt()
+                    except Exception:
+                        logger.exception("failed to interrupt runtime session %s", sid)
+            try:
+                from tools.approval import resolve_gateway_approval
+                resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
+            except Exception:
+                logger.exception("failed to release approvals for runtime session %s", sid)
+        try:
+            from tools.async_delegation import interrupt_all
+            interrupt_all(reason="runtime_shutdown")
+        except Exception:
+            logger.exception("failed to interrupt runtime delegations")
+        if not _pool.drain(timeout):
+            logger.error("runtime shutdown incomplete: workers still own resources")
+            return False
+        for sid, session in list(_sessions.items()):
+            if session.get("turn_id") and _db is not None:
+                from tui_gateway import turn_journal
+                # Workers have relinquished the receipt. Terminal records remain
+                # immutable; an unfinished receipt now has a truthful end state,
+                # even if another lifetime starts in this same process.
+                turn_journal.transition(_db, session["turn_id"], "interrupted")
+            _close_runtime_session(sid, mark_ended=False)
+        with _db_lock:
+            if _db is not None:
+                _db.close()
+                _db = None
+        return True
+
+
+atexit.register(shutdown_runtime, 0)
 
 
 # ── Plumbing ──────────────────────────────────────────────────────────
@@ -1056,6 +1116,14 @@ def handle_request(req: dict) -> dict | None:
 
 
 def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
+    try:
+        with _pool.operation():
+            return _dispatch(req, transport)
+    except HostStopping:
+        return _err(req.get("id") if isinstance(req, dict) else None, 5030, "runtime host is stopping")
+
+
+def _dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
     """Route inbound RPCs — long handlers to the pool, everything else inline.
 
     Returns a response dict when handled inline. Returns None when the
@@ -1210,7 +1278,7 @@ def _start_agent_build(sid: str, session: dict) -> None:
                         pass
             ready.set()
 
-    threading.Thread(target=_build, daemon=True).start()
+    _pool.start(_build, name="forecast-agent-build")
 
 
 def _sess_nowait(params, rid):
@@ -2944,9 +3012,11 @@ def _(rid, params: dict) -> dict:
         if session is not None:
             _start_agent_build(sid, session)
 
-    build_timer = threading.Timer(0.05, _deferred_build)
-    build_timer.daemon = True
-    build_timer.start()
+    def delayed_build() -> None:
+        time.sleep(0.05)
+        if not _pool.stopping:
+            _deferred_build()
+    _pool.start(delayed_build, name="forecast-deferred-build")
 
     return _ok(
         rid,
@@ -3774,7 +3844,7 @@ def _(rid, params: dict) -> dict:
             return
         _run_prompt_submit(rid, sid, session, text)
 
-    threading.Thread(target=run_after_agent_ready, daemon=True).start()
+    _pool.start(run_after_agent_ready, name="forecast-agent-ready")
     return _ok(rid, {"status": "streaming"})
 
 
@@ -3901,12 +3971,7 @@ def _notification_poller_loop(
 def _start_notification_poller(sid: str, session: dict) -> threading.Event:
     """Start the background notification poller for a TUI session."""
     stop = threading.Event()
-    t = threading.Thread(
-        target=_notification_poller_loop,
-        args=(stop, sid, session),
-        daemon=True,
-    )
-    t.start()
+    _pool.start(lambda: _notification_poller_loop(stop, sid, session), name="forecast-notifications")
     return stop
 
 
@@ -4216,9 +4281,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     from superforecasting_agent.runtime.voice import speak_text  # noqa: F401 — availability check
 
                     spoken = raw
-                    threading.Thread(
-                        target=_speak_with_status, args=(spoken, sid), daemon=True
-                    ).start()
+                    _pool.start(lambda: _speak_with_status(spoken, sid), name="forecast-speech")
                 except ImportError:
                     logger.warning("voice TTS skipped: superforecasting_agent.runtime.voice unavailable")
                 except Exception as e:
@@ -4306,7 +4369,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 file=sys.stderr,
             )
 
-    threading.Thread(target=run, daemon=True).start()
+    _pool.start(run, name="forecast-turn")
 
 
 @rpc_validated("clipboard.paste")
@@ -4455,12 +4518,18 @@ def _(rid, params: dict) -> dict:
 
     def run():
         session_tokens = _set_session_context(task_id)
+        background_agent = None
         try:
             from agent.runtime import AIAgent
 
-            result = AIAgent(
+            background_agent = AIAgent(
                 **_background_agent_kwargs(session["agent"], task_id)
-            ).run_conversation(
+            )
+            with session["history_lock"]:
+                session.setdefault("_background_agents", {})[task_id] = background_agent
+            if _pool.stopping:
+                return
+            result = background_agent.run_conversation(
                 user_message=text,
                 task_id=task_id,
             )
@@ -4483,9 +4552,15 @@ def _(rid, params: dict) -> dict:
                 {"task_id": task_id, "text": f"error: {e}"},
             )
         finally:
-            _clear_session_context(session_tokens)
+            try:
+                if background_agent is not None:
+                    background_agent.close()
+            finally:
+                with session["history_lock"]:
+                    session.get("_background_agents", {}).pop(task_id, None)
+                _clear_session_context(session_tokens)
 
-    threading.Thread(target=run, daemon=True).start()
+    _pool.start(run, name="forecast-turn")
     return _ok(rid, {"task_id": task_id})
 
 
@@ -5894,12 +5969,7 @@ def _(rid, params: dict) -> dict:
                 "consumed": False,
             }
         )
-    threading.Thread(
-        target=_run_codex_device_poll,
-        args=(grant, grant.interval),
-        daemon=True,
-        name="codex-device-poll",
-    ).start()
+    _pool.start(lambda: _run_codex_device_poll(grant, grant.interval), name="codex-device-poll")
     return _ok(
         rid,
         {

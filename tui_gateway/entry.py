@@ -350,9 +350,13 @@ def _run_http(cfg: dict) -> None:
 
 
 def main():
+    server.start_runtime()
     http_cfg = _parse_http_args(sys.argv[1:])
     if http_cfg is not None and not http_cfg.get("alongside_stdio"):
-        _run_http(http_cfg)
+        try:
+            _run_http(http_cfg)
+        finally:
+            server.shutdown_runtime(_shutdown_grace_seconds())
         return
 
     # Only the command-pipe host reserves stdout for protocol frames. Embedded
@@ -367,8 +371,11 @@ def main():
         else:
             _run_stdio()
     finally:
-        sys.stdout = previous_stdout
-        server._real_stdout = previous_protocol_stdout
+        try:
+            server.shutdown_runtime(_shutdown_grace_seconds())
+        finally:
+            sys.stdout = previous_stdout
+            server._real_stdout = previous_protocol_stdout
 
 
 def _run_stdio():
