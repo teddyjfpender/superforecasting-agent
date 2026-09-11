@@ -67,15 +67,18 @@ See [implementation, live operations and limits](docs/plans/2026-09-11-learning-
   pre-cutoff evidence, and 52 are ready only for manual cluster review.
 - [ ] Obtain Android/Termux access and missing live-service credentials. Linux
   containers do not establish Android or native Windows PTY recovery behavior.
-- [ ] Reproduce the historical native TLS crash and SELECT authorization failure
-  on their original runtime. Containment and a reproduced callback mechanism
-  are verified; the exact historical causes remain unproven.
+- [x] Reproduce the SQLite signal/authorizer mechanism on uv Linux x86-64
+  CPython 3.11.15; preserve the actual exception and verify rollback/reuse.
+- [ ] Obtain a native core dump or reproducer for the historical TLS fault. Bounded
+  tests on matching-version uv Linux, Debian and ARM64 did not reproduce it;
+  subprocess containment is verified, but the exact native cause remains unproven.
 - [ ] Review the Japan-earthquake settlement's substitution of USGS for its linked
   Manifold oracle, and the court decision's exact linked-market identity.
 - [x] Distinguish missing provider authentication, rate limits and payment errors
   in auxiliary-provider cooldown diagnostics.
-- [ ] Continue source-specific bindings beyond NWS/USGS and reconcile older guides.
-  Remaining release publication work is explicitly deferred by the operator.
+- [x] Extend source-specific bindings to reviewed BLS and FRED observations with
+  explicit revision policy and archived FRED series metadata. See the source-transfer
+  follow-up below. Broader guide reconciliation remains in the documentation list.
 
 ## Engineering integrity follow-up
 
@@ -96,6 +99,19 @@ See [implementation and verification](docs/plans/2026-09-11-engineering-integrit
   ambiguous revisions, and stop treating observation periods as publication dates.
 - [x] Reject duplicate/nonfinite/overflow JSON across source adapters and make
   promotion tests independent of the operator's ledger.
+
+## Source transfer and recovery follow-up
+
+See [implementation, reproduction and limits](docs/plans/2026-09-11-source-portability-runtime.md).
+
+- [x] Version source-bound exports, transfer archived bytes transactionally, retain
+  historical provenance, and require explicit local byte verification.
+- [x] Quarantine imported forecasts/scores from calibration even after verification.
+- [x] Close raw configuration writer bypasses and reject stale dashboard/TUI saves.
+- [x] Persist TUI partial turns before notifications; test provider failures,
+  cancellation, owner-aware resume, stale frames and storage failure.
+- [x] Preserve real SQLite callback interruptions through statements and commits;
+  strengthen update-probe runtime identity and crash diagnostics.
 
 ## Before a production release
 

@@ -720,8 +720,9 @@ The full `forecast` command tree — **95 top-level commands** (also reachable a
 
 - **`forecast facts bind`** — 
 - **`forecast facts bind-settlement`** — Require an exact verified measurement at resolution
-- **`forecast facts bind-source`** — Bind a verified NWS or USGS measurement contract
+- **`forecast facts bind-source`** — Bind a verified source measurement contract
 - **`forecast facts show`** — 
+- **`forecast facts verify-import`** — Re-fetch transferred sources without backdating verification
 
 ### `forecast facts bind`
 
@@ -759,6 +760,11 @@ The full `forecast` command tree — **95 top-level commands** (also reachable a
 | `--window-start` |  |
 | `--window-end` |  |
 | `--magnitude-type` |  |
+| `--units` |  |
+| `--revision-policy` |  |
+| `--observation-date` |  |
+| `--vintage-date` |  |
+| `--metadata-evidence-id` |  |
 | `--max-age-seconds` |  |
 
 ### `forecast facts show`
@@ -767,6 +773,12 @@ The full `forecast` command tree — **95 top-level commands** (also reachable a
 | --- | --- |
 | `id` |  |
 | `--cutoff` |  |
+
+### `forecast facts verify-import`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
 
 ## `forecast freshen`
 

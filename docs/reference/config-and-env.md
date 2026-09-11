@@ -39,7 +39,7 @@ Every environment variable the server, tools, and CLI actually **read** — harv
 | `FIRECRAWL_API_KEY` | `''` | `tools.web_tools` |
 | `FORECAST_REDACT_SECRETS` | `None` | `superforecasting_agent.runtime.codex_runtime_plugin_migration` |
 | `FORECAST_TRACE_ENCRYPTION_KEY` | `''` | `forecasting.change_control.trace_archive` |
-| `FRED_API_KEY` | `None` | `tools.forecasting_tool` |
+| `FRED_API_KEY` | `(required)`, `None` | `forecasting.economic_bindings`, `tools.forecasting_tool` |
 | `GH_TOKEN` | `None` | `forecasting.cli.collaboration_admin`, `superforecasting_agent.tooling.github_auth` |
 | `GITHUB_APP_CLIENT_SECRET` | `''` | `forecasting.cli.collaboration_admin` |
 | `GITHUB_APP_PRIVATE_KEY_PATH` | `None` | `superforecasting_agent.tooling.github_auth` |

@@ -1,0 +1,25 @@
+{
+  "source_revision": "61567a29668c53faea895880d0d51cf14163a487",
+  "python": {
+    "command": "scripts/run_tests.sh",
+    "passed": 30387,
+    "skipped": 148,
+    "failures": 0,
+    "errors": 0,
+    "junit_sha256": "943be67833010474122f032648fe355158aefdaa9494a9944793ee0e962b46b8",
+    "scope": "Canonical default suite; tests/integration and tests/e2e excluded by repository runner"
+  },
+  "tui": {
+    "command": "npm test -- --run (ui-tui)",
+    "passed": 2024,
+    "skipped": 1
+  },
+  "additional_checks": [
+    "ui-tui type-check and production build",
+    "web production build",
+    "ESLint for changed TUI files",
+    "Ruff configured checks and undefined names",
+    "six import architecture contracts",
+    "generated reference documents current"
+  ]
+}

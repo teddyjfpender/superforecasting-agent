@@ -512,7 +512,9 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `durable_status` | `string?` |
 | `message` | `string` |
+| `turn_id` | `string?` |
 
 ### EvidenceShareBody
 
@@ -2863,10 +2865,12 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `durable_status` | `string?` |
 | `reasoning` | `string?` |
 | `rendered` | `string?` |
 | `status` | `string` |
 | `text` | `string` |
+| `turn_id` | `string?` |
 | `usage` | `Record<string, unknown>` |
 | `warning` | `string?` |
 
@@ -2874,12 +2878,17 @@ _(no fields)_
 
 | field | type |
 | --- | --- |
+| `durable_status` | `string?` |
 | `rendered` | `string?` |
 | `text` | `string?` |
+| `turn_id` | `string?` |
 
 ### MessageStartPayload
 
-_(no fields)_
+| field | type |
+| --- | --- |
+| `durable_status` | `string?` |
+| `turn_id` | `string?` |
 
 ### ModelOptionProvider
 
@@ -3534,6 +3543,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `ok` | `boolean?` |
+| `status` | `string?` |
 
 ### SessionListItem
 
@@ -3584,6 +3594,7 @@ _(no fields)_
 | `info` | `SessionInfo?` |
 | `message_count` | `number?` |
 | `messages` | `GatewayTranscriptMessage[]` |
+| `recovery` | `Record<string, unknown>?` |
 | `resumed` | `string?` |
 | `session_id` | `string` |
 

@@ -167,6 +167,28 @@ forecast export all --format json --output export.json              # auditable 
 forecast import packet export.json --conflict skip                   # restore a packet
 ```
 
+Source-bound JSON packets now carry their archived source bytes and measurement
+bindings. On another instance these are **imported claims**, not locally verified
+evidence. Inspect their status and explicitly re-fetch the canonical source:
+
+```bash
+superforecasting-agent forecast facts show <question-id>
+superforecasting-agent forecast facts verify-import <question-id>
+```
+
+Identical bytes acquire a local verification timestamp; changed sources remain
+imported with an explanation. Verification does not authenticate the original
+forecast timing or make imported scores eligible for calibration. Original records
+remain in the packet's transfer history.
+
+For economic settlement, `facts bind-source` supports reviewed BLS monthly series
+with `--revision-policy as_captured`, and FRED with `first_release` or an explicit
+`vintage` date. FRED also requires archived series metadata proving physical units
+and frequency. Observation dates are not publication timestamps. See the
+[source-contract and transfer guide](plans/2026-09-11-source-portability-runtime.md)
+for semantics and limits.
+
+
 ---
 
 ## Data-provider API keys

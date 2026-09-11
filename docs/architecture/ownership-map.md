@@ -48,6 +48,22 @@ The formality layer of the modularization program
 `* → run_agent` edge is frozen at 20 direct importers; burn down opportunistically
 by hoisting the imported name into `agent/`).
 
+### Source and recovery ownership
+
+- `forecasting/economic_bindings.py`: pure BLS/FRED entity, unit, period and
+  revision semantics. `source_bindings.py` dispatches adapter contracts.
+- `forecasting/applicability_facts.py`: archive/cutoff verification;
+  `settlement_binding.py`: resolution admission against the declared measurement.
+- `forecasting/source_transfer.py`: versioned archive transfer, immutable origin
+  history and explicit local re-verification. Hashes alone never grant authority.
+- `forecasting/ledger/sqlite_runtime.py`: preserve callback failures while keeping
+  the authorizer fail closed. It owns no scoring policy.
+- `superforecasting_agent/storage/files.py`: locked atomic YAML mutations and
+  the stable revision-bearing snapshot type; `runtime/config.py`: configuration
+  defaults, loaders and snapshot admission.
+- `tui_gateway/turn_journal.py`: durable partial turns and worker ownership;
+  the gateway persists before delivering events, and Ink renders that status.
+
 ### Existing forecasting façades
 
 `__init__.py` installs a `ModuleType` subclass whose `__getattr__` read-forwards
