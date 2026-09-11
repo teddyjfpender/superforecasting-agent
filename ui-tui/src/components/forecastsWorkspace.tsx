@@ -1,7 +1,7 @@
 import { Box, NoSelect, ScrollBox, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
-import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
+import { FORECAST_PACKET_TAIL_TITLES, forecastQuestionDetailSections, forecastResolutionRows } from '../app/forecastPanel.js'
 import { patchOverlayState } from '../app/overlayStore.js'
 import type { GatewayClient } from '../gatewayClient.js'
 import type {
@@ -89,12 +89,7 @@ const WIDE_COLS = 100
 // header facts (question/Current Forecast/Ledger State), Recent Evidence, and
 // Resolution — ForecastDetail already shows those — so the tail is purely the
 // long-form content the desk view omits.
-const TAIL_SECTION_TITLES = new Set<string>([
-  'Forecast History',
-  'Assumptions And References',
-  'Model Runs',
-  'Actions'
-])
+
 
 interface ForecastsWorkspaceProps {
   gw: GatewayClient
@@ -591,7 +586,7 @@ export function ForecastsWorkspace({ gw, initialId = null, onClose, t }: Forecas
     }
 
     return forecastQuestionDetailSections(packet).filter(
-      section => section.title && TAIL_SECTION_TITLES.has(section.title)
+      section => section.title && FORECAST_PACKET_TAIL_TITLES.has(section.title)
     )
   }, [packet, packetId, selectedId])
 
@@ -1710,13 +1705,9 @@ export function ForecastDetail({
               } · bucket ${item.scores.last_bucket ?? '—'}`}
             />
           ) : null}
-          {item.resolution ? (
-            <KV
-              k="resolution"
-              t={t}
-              v={`${String(item.resolution.outcome ?? '—')} (${item.resolution.resolution_status ?? '—'})`}
-            />
-          ) : null}
+          {item.resolution ? forecastResolutionRows(item.resolution as Record<string, unknown>).map(([label, value]) => (
+            <KV k={label} key={label} t={t} v={value} />
+          )) : null}
         </>
       ) : null}
     </Box>

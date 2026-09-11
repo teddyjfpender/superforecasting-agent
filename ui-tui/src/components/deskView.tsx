@@ -2,7 +2,7 @@ import { useStore } from '@nanostores/react'
 import { Box, type ScrollBoxHandle, Text, useInput, useStdout } from '@superforecasting/ink'
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 
-import { forecastQuestionDetailSections } from '../app/forecastPanel.js'
+import { FORECAST_PACKET_TAIL_TITLES, forecastQuestionDetailSections } from '../app/forecastPanel.js'
 import type { ReviewSweepState } from '../app/interfaces.js'
 import { $globalModal, openHelpOverlay, patchOverlayState } from '../app/overlayStore.js'
 import { $reviewSweep } from '../app/uiStore.js'
@@ -111,12 +111,7 @@ const EMPTY_ID_SET: ReadonlySet<string> = new Set<string>()
 
 // Packet sections rendered under the visual summary inside the modal — the
 // long-form content the skinny panel + ForecastDetail summary omit.
-const TAIL_SECTION_TITLES = new Set<string>([
-  'Forecast History',
-  'Assumptions And References',
-  'Model Runs',
-  'Actions'
-])
+
 
 // Field weights for the `/` filter — same as forecastsWorkspace so the two desks
 // agree on what matches.
@@ -602,7 +597,7 @@ export function DeskView({ gw, initialId = null, onClose, t }: DeskViewProps) {
     }
 
     return forecastQuestionDetailSections(packet).filter(
-      section => section.title && TAIL_SECTION_TITLES.has(section.title)
+      section => section.title && FORECAST_PACKET_TAIL_TITLES.has(section.title)
     )
   }, [packet, packetId, selectedId])
 

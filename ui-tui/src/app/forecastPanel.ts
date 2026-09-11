@@ -597,6 +597,28 @@ const currentTailAuditRows = (current: ForecastQuestionPacketSnapshot | undefine
   return chip ? [['tail audit', chip]] : []
 }
 
+export const FORECAST_PACKET_TAIL_TITLES = new Set([
+  'Forecast History', 'Assumptions And References', 'Model Runs', 'Source Conditions', 'Actions'
+])
+
+export const forecastResolutionRows = (resolution: Record<string, unknown>): [string, string][] => {
+  const outcome = resolution.outcome as Record<string, unknown> | undefined
+  const censored = outcome && typeof outcome === 'object' && outcome.kind === 'right_censored'
+
+  return [
+    ['outcome', censored
+      ? `${outcome.inclusive ? 'At least' : 'More than'} ${String(outcome.lower_bound)} ${String(outcome.units)} (right-censored)`
+      : typeof resolution.outcome === 'object' ? JSON.stringify(resolution.outcome) : String(resolution.outcome ?? '—')],
+    ...(censored ? [
+      ['observed through', shortDate(String(outcome.observed_through))],
+      ['score meaning', 'Declared threshold probability only; exact outcome remains unknown.']
+    ] as [string, string][] : []),
+    ['status', fieldString(resolution, 'resolution_status')],
+    ['resolved', shortDate(fieldString(resolution, 'resolved_at'))],
+    ['source', truncate(fieldString(resolution, 'resolution_source'), 96)]
+  ]
+}
+
 export const forecastQuestionDetailSections = (response: ForecastQuestionPacketResponse): PanelSection[] => {
   const packet = response.packet
   const question = packet?.question
@@ -722,22 +744,8 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
 
   if (packet.resolution) {
     const resolution = packet.resolution as Record<string, unknown>
-    const outcome = resolution.outcome as Record<string, unknown> | undefined
-    const censored = outcome && typeof outcome === 'object' && outcome.kind === 'right_censored'
-
     sections.push({
-      rows: [
-        ['outcome', censored
-          ? `${outcome.inclusive ? 'At least' : 'More than'} ${String(outcome.lower_bound)} ${String(outcome.units)} (right-censored)`
-          : fieldString(resolution, 'outcome')],
-        ...(censored ? [
-          ['observed through', shortDate(String(outcome.observed_through))],
-          ['score meaning', 'Declared threshold probability only; exact outcome remains unknown.']
-        ] as [string, string][] : []),
-        ['status', fieldString(resolution, 'resolution_status')],
-        ['resolved', shortDate(fieldString(resolution, 'resolved_at'))],
-        ['source', truncate(fieldString(resolution, 'resolution_source'), 96)]
-      ],
+      rows: forecastResolutionRows(resolution),
       title: 'Resolution'
     })
   }
