@@ -52,3 +52,15 @@ def test_cli_disable_reports_same_validation_error_without_traceback():
     with pytest.raises(SystemExit) as cli_error:
         _cmd_hooks_disable(argparse.Namespace(rule_id="unknown-rule"))
     assert str(cli_error.value) == str(error.value)
+
+
+def test_malformed_rule_has_same_field_issue_in_preview_and_save(isolated_profile):
+    raw = {"id": "fixture-rule", "check": [["signal", "components.count"]]}
+    responses = []
+    for method in ("forecast.hooks.preview", "forecast.hooks.save_rule"):
+        response = server.handle_request({"id": 1, "method": method, "params": {"rule": raw}})
+        assert "result" in response, response
+        responses.append(response["result"]["issues"])
+    assert responses[0] == responses[1]
+    assert responses[0][0]["field"] == "check"
+    assert not (isolated_profile / "hooks/rules.yaml").exists()

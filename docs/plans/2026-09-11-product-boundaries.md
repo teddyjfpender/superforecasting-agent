@@ -1354,3 +1354,18 @@ Configured command admission and TUI execution routing:
 - 34 RPC/store tests passed, including invalid booleans leaving configuration
   untouched, true/false round trips and CLI/service error parity. Strict Python
   quality and all 32 architecture contracts passed.
+
+
+### Shared rule parsing and compilation admission
+
+- Rule parsing now retains structured field issues instead of coercing malformed
+  objects/identifiers or raising before validation. Loader, CLI, preview and save
+  consume the same validator; invalid configured rules are skipped safely.
+- Predicate validation rejects ambiguous combiners, unhashable signal/operator
+  input, nonfinite numeric comparisons, booleans as numeric thresholds and numeric
+  or string substitutes for boolean comparisons. Direct compilation also validates.
+- The DSL owner now passes strict lint/format/types. Final DSL/store/RPC/v2 tests:
+  101 passed. Preview and save report identical field issues without writing files.
+- The preceding integrated batch `41d551d7c` passed 30,766 tests, with 148 skips
+  and 58 warnings, and was verified pushed to the working branch. Subsequent hook
+  fixes are separately tested follow-ups awaiting integrated full qualification.
