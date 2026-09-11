@@ -5196,6 +5196,7 @@ _PENDING_INPUT_COMMANDS: frozenset[str] = frozenset(
         "steer",
         "plan",
         "goal",
+        "subgoal",
     }
 )
 

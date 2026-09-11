@@ -194,3 +194,45 @@ def test_pending_input_commands_includes_goal(server):
     """Guard: _PENDING_INPUT_COMMANDS must list 'goal' — removing it would
     silently re-break the TUI."""
     assert "goal" in server._PENDING_INPUT_COMMANDS
+
+
+@pytest.mark.parametrize("argument", ["", "Evidence must be timestamped", "remove", "remove nope", "remove 1", "clear"])
+def test_subgoal_consumers_share_results_and_durable_state(server, session, monkeypatch, capsys, argument):
+    import asyncio
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+    from gateway.run import GatewayRunner
+    from superforecasting_agent.runtime.goal_commands import _handle_subgoal_command
+    from superforecasting_agent.runtime.goals import GoalManager
+
+    sid, key, live = session
+    live["running"] = True  # Criteria may be changed while a model turn runs.
+    monkeypatch.setattr(server, "_start_agent_build", Mock(side_effect=AssertionError("agent construction")))
+    monkeypatch.setattr(server, "_SlashWorker", Mock(side_effect=AssertionError("classic worker")))
+    managers = [GoalManager(session_id=value) for value in (key, "classic", "messaging")]
+    for manager in managers:
+        manager.set("Review a forecast")
+        manager.add_subgoal("Original criterion")
+
+    native = _call(server, "command.dispatch", name="subgoal", arg=argument, session_id=sid)
+    assert native["result"]["type"] == "exec"
+    expected = native["result"]["output"]
+    _handle_subgoal_command(SimpleNamespace(_get_goal_manager=lambda: managers[1]), f"/subgoal {argument}")
+    assert "\n".join(line.removeprefix("  ") for line in capsys.readouterr().out.splitlines()) == expected
+    messaging = SimpleNamespace(_get_goal_manager_for_event=lambda event: (managers[2], None))
+    event = SimpleNamespace(get_command_args=lambda: argument)
+    assert asyncio.run(GatewayRunner._handle_subgoal_command(messaging, event)) == expected
+    persisted = [GoalManager(session_id=value).state.subgoals for value in (key, "classic", "messaging")]
+    assert persisted[0] == persisted[1] == persisted[2]
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+def test_subgoal_legacy_rpc_hands_off_before_build(server, session, monkeypatch):
+    from unittest.mock import Mock
+
+    sid, _, _ = session
+    monkeypatch.setattr(server, "_start_agent_build", Mock(side_effect=AssertionError("agent construction")))
+    response = _call(server, "slash.exec", command="subgoal require sources", session_id=sid)
+    assert response["error"]["data"] == {"dispatch": "command.dispatch", "execution_started": False}
+    server._start_agent_build.assert_not_called()

@@ -1503,3 +1503,18 @@ notification ownership extraction from RPC.
 The earlier pushed native-dispatch batch at `b55515d6f` completed its full Python
 qualification: 30,832 passed, 148 skipped, 58 warnings in 592.15 seconds
 (`/tmp/forecast-native-dispatch-full.log`). Later changes need their own gate.
+
+### One subgoal command operation for CLI, messaging and TUI
+
+`runtime/subgoal_commands.py::execute_subgoal` owns subgoal argument handling,
+mutation and result messages against the caller's session-bound GoalManager.
+Classic CLI and messaging delegate to it; native TUI uses the same live-session
+identity as `/goal`, without constructing the classic worker or a model agent.
+The legacy RPC hands off before runtime admission. Rendering remains in the
+consumers. The new operation is included in strict lint/format/type coverage.
+
+Validation: 68 goal and TUI tests passed (`/tmp/forecast-subgoal-tests.log`),
+including three-consumer output/durable-state parity for list/add/remove/clear
+and invalid input, and mutation while a TUI turn is running. Python quality
+passed (`/tmp/forecast-subgoal-quality.log`). This removes one more worker route;
+the remaining legacy dispatcher is still tracked in TODO.

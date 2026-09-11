@@ -422,7 +422,7 @@ def _(rid, params: dict) -> dict:
         # Fallback: no active run, treat as next-turn message
         return _ok(rid, {"type": "send", "message": arg})
 
-    if name == "goal":
+    if name in {"goal", "subgoal"}:
         if not session:
             return _err(rid, 4001, "no active forecast session")
         try:
@@ -440,6 +440,11 @@ def _(rid, params: dict) -> dict:
         except Exception:
             max_turns = 20
         mgr = GoalManager(session_id=sid_key, default_max_turns=max_turns)
+        if name == "subgoal":
+            from superforecasting_agent.runtime.subgoal_commands import execute_subgoal
+
+            return _ok(rid, {"type": "exec", "output": execute_subgoal(mgr, arg)})
+
 
         lower = arg.strip().lower()
         if not arg.strip() or lower == "status":
