@@ -60,8 +60,11 @@ def test_first_cli_setting_is_owned_by_the_profile(tmp_path, monkeypatch):
 def test_yaml_strings_keep_their_types_across_readers(tmp_path, value, compound):
     from superforecasting_agent.storage.files import atomic_roundtrip_yaml_mutate
     path = tmp_path / 'config.yaml'
+    path.write_text('enabled: no\nactive: on\n# retain comment\n')
     if compound:
         atomic_roundtrip_yaml_mutate(path, lambda config: config.update(mode=value))
     else:
         atomic_roundtrip_yaml_update(path, 'mode', value)
-    assert yaml.safe_load(path.read_text())['mode'] == value
+    saved = yaml.safe_load(path.read_text())
+    assert saved == {'enabled': False, 'active': True, 'mode': value}
+    assert '# retain comment' in path.read_text()

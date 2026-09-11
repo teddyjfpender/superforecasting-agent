@@ -237,6 +237,7 @@ def _roundtrip_codec():
     ConfigRepresenter.add_representer(str, ConfigRepresenter.represent_str)
     codec = YAML(typ="rt")
     codec.Representer = ConfigRepresenter
+    codec.version = (1, 1)  # read existing booleans like the application loaders
     codec.preserve_quotes = True
     codec.allow_unicode = True
     return codec
@@ -285,6 +286,7 @@ def atomic_roundtrip_yaml_update(
         set_nested(config, key_path, value)
 
         with _atomic_text_writer(path) as f:
+            yaml_rt.version = None  # avoid introducing a YAML directive
             yaml_rt.dump(config, f)
 
 
@@ -308,6 +310,7 @@ def atomic_roundtrip_yaml_mutate(path, mutate):
         mutate(config)
         with _atomic_text_writer(path) as stream:
             if codec:
+                codec.version = None
                 codec.dump(config, stream)
             else:
                 yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
