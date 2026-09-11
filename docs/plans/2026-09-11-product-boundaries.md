@@ -329,3 +329,17 @@ Headless transport ownership:
 
 Full `tests/tui_gateway/` qualification after that change: 183 tests passed,
 including concurrent transport registration. Shared Python quality gates pass.
+
+WebSocket send ownership:
+
+- Each connection tracks its loop-owned sends, serializes writes, rejects new
+  work after close, and cancels/drains active and queued sends during async close.
+  Worker timeouts cancel their scheduled future instead of leaving a send alive.
+- The handshake now lives inside the same cleanup boundary as request handling;
+  failed or cancelled greetings close the socket without entering the receive loop.
+  Async write/drain calls explicitly reject use from a different event loop.
+- All 189 gateway tests passed. New cases cover close before a queued send runs,
+  cancellation of an active send and its queued successor, worker timeout,
+  failed/cancelled handshakes, repeated cleanup and wrong-loop admission.
+  Shared Python quality gates pass. This does not establish remote installed-TUI
+  lifecycle behavior; that remains a separate distribution verification item.

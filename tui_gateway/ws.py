@@ -56,8 +56,8 @@ class WSTransport:
 
     When called from the loop thread itself (e.g. by ``handle_ws`` for an
     inline response) the same call would deadlock: we'd schedule work onto
-    the loop we're currently blocking. We detect that case and fire-and-
-    forget instead. Callers that need to know when the bytes are on the wire
+    the loop we're currently blocking. We detect that case and schedule a
+    connection-owned send instead. Callers that need wire completion
     should use :meth:`write_async` from the loop thread.
     """
 
@@ -65,6 +65,8 @@ class WSTransport:
         self._ws = ws
         self._loop = loop
         self._closed = False
+        self._send_lock = asyncio.Lock()
+        self._pending: set[asyncio.Task] = set()
 
     def write(self, obj: dict) -> bool:
         if self._closed:
@@ -78,39 +80,87 @@ class WSTransport:
             on_loop = False
 
         if on_loop:
-            # Fire-and-forget — don't block the loop waiting on itself.
-            self._loop.create_task(self._safe_send(line))
+            # Schedule without blocking this loop; close owns pending sends.
+            task = self._loop.create_task(self._safe_send(line))
+            self._pending.add(task)
+            task.add_done_callback(self._pending.discard)
             return True
 
+        fut = None
         try:
             from agent.async_utils import safe_schedule_threadsafe
             fut = safe_schedule_threadsafe(self._safe_send(line), self._loop)
             if fut is None:
-                self._closed = True
+                self.close()
                 return False
             fut.result(timeout=_WS_WRITE_TIMEOUT_S)
             return not self._closed
         except Exception as exc:
-            self._closed = True
+            if fut is not None:
+                fut.cancel()
+            self.close()
             _log.debug("ws write failed: %s", exc)
             return False
 
     async def write_async(self, obj: dict) -> bool:
         """Send from the owning event loop. Awaits until the frame is on the wire."""
+        if asyncio.get_running_loop() is not self._loop:
+            raise RuntimeError("WebSocket writes must use the owning event loop")
         if self._closed:
             return False
         await self._safe_send(json.dumps(obj, ensure_ascii=False))
         return not self._closed
 
     async def _safe_send(self, line: str) -> None:
+        if self._closed:
+            return
+        task = asyncio.current_task()
+        if task is not None:
+            self._pending.add(task)
         try:
-            await self._ws.send_text(line)
+            async with self._send_lock:
+                if not self._closed:
+                    await self._ws.send_text(line)
+        except asyncio.CancelledError:
+            self.close()
+            raise
         except Exception as exc:
-            self._closed = True
+            self.close()
             _log.debug("ws send failed: %s", exc)
+        finally:
+            if task is not None:
+                self._pending.discard(task)
+
+    def _cancel_pending(self) -> None:
+        current = asyncio.current_task()
+        for task in tuple(self._pending):
+            if task is not current:
+                task.cancel()
 
     def close(self) -> None:
         self._closed = True
+        try:
+            on_loop = asyncio.get_running_loop() is self._loop
+        except RuntimeError:
+            on_loop = False
+        if on_loop:
+            self._cancel_pending()
+        else:
+            try:
+                self._loop.call_soon_threadsafe(self._cancel_pending)
+            except RuntimeError:
+                # The owning loop is already closed; never touch another loop.
+                pass
+
+    async def aclose(self) -> None:
+        """Cancel and drain this connection's sends on the owning event loop."""
+        if asyncio.get_running_loop() is not self._loop:
+            raise RuntimeError("WebSocket cleanup must use the owning event loop")
+        self.close()
+        current = asyncio.current_task()
+        pending = [task for task in self._pending if task is not current]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
 
 async def handle_ws(ws: Any) -> None:
@@ -120,26 +170,29 @@ async def handle_ws(ws: Any) -> None:
 
     transport = WSTransport(ws, asyncio.get_running_loop())
 
-    from tui_gateway.host_rpc import descriptor
-
-    await transport.write_async(
-        {
-            "jsonrpc": "2.0",
-            "method": "event",
-            "params": {
-                "type": "gateway.ready",
-                "payload": {
-                    "skin": server.resolve_skin(),
-                    **descriptor(server),
-                    # Same non-blocking build identity the stdio entry advertises,
-                    # so a websocket-attached TUI shows the same version banner.
-                    "build": server.build_info(),
-                },
-            },
-        }
-    )
-
     try:
+        from tui_gateway.host_rpc import descriptor
+
+        ready = await transport.write_async(
+            {
+                "jsonrpc": "2.0",
+                "method": "event",
+                "params": {
+                    "type": "gateway.ready",
+                    "payload": {
+                        "skin": server.resolve_skin(),
+                        **descriptor(server),
+                        # Same non-blocking build identity the stdio entry advertises,
+                        # so a websocket-attached TUI shows the same version banner.
+                        "build": server.build_info(),
+                    },
+                },
+            }
+        )
+
+        if not ready:
+            return
+
         while True:
             try:
                 raw = await ws.receive_text()
@@ -173,7 +226,7 @@ async def handle_ws(ws: Any) -> None:
             if resp is not None and not await transport.write_async(resp):
                 break
     finally:
-        transport.close()
+        await transport.aclose()
 
         # Detach the transport from any sessions it owned so later emits
         # fall back to stdio instead of crashing into a closed socket.
