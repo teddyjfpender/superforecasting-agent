@@ -1510,13 +1510,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     resolve_parser.set_defaults(_forecast_handler=_cmd_resolve)
 
     score_parser = forecast_sub.add_parser("score", help="Score the current forecast snapshot")
-    score_parser.add_argument("id")
-    score_parser.add_argument("--force", action="store_true")
-    score_parser.add_argument(
-        "--baselines",
-        action="store_true",
-        help="Also score imported market/crowd/baseline comparisons without changing the current forecast",
-    )
+    from forecasting.interfaces.commands import add_scoring_arguments
+    add_scoring_arguments(score_parser)
     score_parser.set_defaults(_forecast_handler=_cmd_score)
 
     scores_parser = forecast_sub.add_parser("scores", help="List score records")
@@ -7628,30 +7623,13 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
 
 
 def _cmd_score(args: argparse.Namespace) -> None:
-    ledger = _ledger(args)
-    score = ledger.score_question(args.id, force=args.force)
-    print(f"score: {score.id}")
-    print(f"brier_score: {score.brier_score:.6f}" if score.brier_score is not None else "brier_score: -")
-    print(f"log_score: {score.log_score:.6f}" if score.log_score is not None else "log_score: -")
-    print(f"proper_score: {score.proper_score:.6f}" if score.proper_score is not None else "proper_score: -")
-    print(f"score_rule: {score.score_rule or '-'}")
-    print(f"bucket: {score.calibration_bucket or '-'}")
-    print(f"origin: {score.forecast_origin}")
-    if args.baselines:
-        baselines = ledger.score_baseline_comparisons(args.id, force=args.force)
-        if not baselines:
-            print("baseline_scores: none")
-        else:
-            print(f"baseline_scores: {len(baselines)}")
-            for baseline in baselines:
-                baseline_score = baseline["score"]
-                name = f"{baseline['baseline_type']}:{baseline['source']}"
-                print(
-                    f"  {baseline['id']} {name} "
-                    f"brier={_format_metric(baseline_score.brier_score)} "
-                    f"log={_format_metric(baseline_score.log_score)} "
-                    f"origin={baseline_score.forecast_origin}"
-                )
+    from forecasting.application.scoring import score_forecast
+    from forecasting.interfaces.commands import format_scoring
+
+    result = score_forecast(_ledger(args), {
+        "question_id": args.id, "force": args.force, "baselines": args.baselines,
+    })
+    print(format_scoring(result))
 
 
 def _cmd_scores(args: argparse.Namespace) -> None:

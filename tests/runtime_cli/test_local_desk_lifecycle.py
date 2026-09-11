@@ -170,6 +170,7 @@ def test_real_desk_shared_forecast_operations(local_desk):
     )
     ledger.create_snapshot(question_id=question.id, probability_or_distribution=0.7, rationale="Baseline.")
     with client.websocket_connect('/api/pty?token=local-engineering&channel=forecast-operations') as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
         until(ws, lambda out: b'local-fixture' in out)
         ws.send_text('/review --last 7d\r')
         until(ws, lambda out: question.id.encode() in out)
@@ -185,6 +186,12 @@ def test_real_desk_shared_forecast_operations(local_desk):
         ws.send_text(f'/forecast resolve {question.id} --outcome true --source fixture\r')
         until(ws, lambda out: b'auto_score:' in out)
         assert ledger.get_latest_resolution(question.id).id == resolution.id
+        score = ledger.get_current_score(question.id)
+        ws.send_text('q')
+        until(ws, lambda out: b'TODAY' in out)
+        ws.send_text(f'/score {question.id} --baselines\r')
+        until(ws, lambda out: b'baseline_scores: none' in out)
+        assert ledger.get_current_score(question.id).id == score.id
         ws.close(code=1000)
 
 

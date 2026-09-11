@@ -106,7 +106,7 @@ def test_terminal_operation_uses_shared_flags_without_cli_or_stdout(desk, monkey
     assert capsys.readouterr().out == ""
 
 
-@pytest.mark.parametrize('operation', ['review', 'resolve'])
+@pytest.mark.parametrize('operation', ['review', 'resolve', 'score'])
 def test_terminal_operation_help_and_parse_failure_do_not_write(desk, operation, capsys):
     ledger, question = desk
     help_result = rpc("forecast.operation", {"operation": operation, "arg": "--help"})["result"]
@@ -116,3 +116,41 @@ def test_terminal_operation_help_and_parse_failure_do_not_write(desk, operation,
     assert rejected["code"] == 2
     assert ledger.get_latest_resolution(question.id) is None
     assert capsys.readouterr().out == ""
+
+
+def test_score_cli_and_rpc_share_results_and_baseline_defaults(desk, capsys):
+    ledger, question = desk
+    resolve_forecast(ledger, {"question_id": question.id, "outcome": True})
+    from forecasting.cli import main
+    main(["score", question.id, "--baselines"])
+    output = capsys.readouterr().out.rstrip()
+    response = rpc("forecast.operation", {"operation": "score", "argv": [question.id, "--baselines"]})["result"]
+    assert response["code"] == 0
+    assert response["output"] == output
+    assert response["data"]["score"]["id"] == ledger.get_current_score(question.id).id
+    assert response["data"]["baselines"] == []
+    assert "baseline_scores: none" in output
+
+
+def test_scoring_service_validates_before_any_write(desk):
+    from forecasting.application.scoring import score_forecast
+    ledger, question = desk
+    for invalid in ({"force": "false"}, {"baselines": 1}, {"unknown": True}):
+        with pytest.raises(ValidationError):
+            score_forecast(ledger, {"question_id": question.id, **invalid})
+    assert ledger.get_current_score(question.id) is None
+
+
+def test_scoring_rpc_does_not_import_presentation(desk, monkeypatch):
+    ledger, question = desk
+    resolve_forecast(ledger, {"question_id": question.id, "outcome": True})
+    from tui_gateway import server  # noqa: F401
+    original = builtins.__import__
+    def guard(name, *args, **kwargs):
+        if name == "cli" or name == "forecasting.cli" or name.startswith("forecasting.cli."):
+            raise AssertionError(name)
+        return original(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, "__import__", guard)
+    response = rpc("forecast.operation", {"operation": "score", "arg": question.id})["result"]
+    assert response["code"] == 0
+    assert response["data"]["baselines"] is None

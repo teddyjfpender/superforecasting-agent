@@ -107,7 +107,7 @@ const renderForecastCommandOutput = (response: ForecastCommandResponse, ctx: Sla
 }
 
 const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
-  const operation = /^(review|resolve)(?:\s+([\s\S]*))?$/.exec(arg.trim())
+  const operation = /^(review|resolve|score)(?:\s+([\s\S]*))?$/.exec(arg.trim())
 
   ctx.gateway
     .rpc<ForecastCommandResponse>(operation ? 'forecast.operation' : 'forecast.command',
@@ -117,7 +117,7 @@ const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
 }
 
 const runForecastCommandArgv = (ctx: SlashRunCtx, argv: string[]) => {
-  const operation = argv[0] === 'review' || argv[0] === 'resolve'
+  const operation = argv[0] === 'review' || argv[0] === 'resolve' || argv[0] === 'score'
 
   ctx.gateway
     .rpc<ForecastCommandResponse>(operation ? 'forecast.operation' : 'forecast.command',

@@ -12,6 +12,7 @@ from typing import Any, NoReturn
 
 from forecasting.application.resolution import ResolutionResult, resolve_forecast
 from forecasting.application.reviews import review_forecasts
+from forecasting.application.scoring import ScoringResult, score_forecast
 from forecasting.argv import split_forecast_cli_args
 from forecasting.learning import is_learned_error_review_reason
 from forecasting.ledger import ForecastLedger
@@ -70,6 +71,40 @@ def _parse_day_count(value: str) -> int:
     if days < 0:
         raise argparse.ArgumentTypeError("day count must be non-negative")
     return days
+
+
+def add_scoring_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("id")
+    parser.add_argument("--force", action="store_true")
+    parser.add_argument(
+        "--baselines",
+        action="store_true",
+        help="Also score imported market/crowd/baseline comparisons without changing the current forecast",
+    )
+
+
+def format_scoring(result: ScoringResult) -> str:
+    score = result.score
+    lines = [
+        f"score: {score.id}",
+        f"brier_score: {_format_metric(score.brier_score)}",
+        f"log_score: {_format_metric(score.log_score)}",
+        f"proper_score: {_format_metric(score.proper_score)}",
+        f"score_rule: {score.score_rule or '-'}",
+        f"bucket: {score.calibration_bucket or '-'}",
+        f"origin: {score.forecast_origin}",
+    ]
+    if result.baselines is not None:
+        lines.append(f"baseline_scores: {len(result.baselines) or 'none'}")
+        for baseline in result.baselines:
+            value = baseline["score"]
+            name = f"{baseline['baseline_type']}:{baseline['source']}"
+            lines.append(
+                f"  {baseline['id']} {name} "
+                f"brier={_format_metric(value.brier_score)} "
+                f"log={_format_metric(value.log_score)} origin={value.forecast_origin}"
+            )
+    return "\n".join(lines)
 
 
 def add_resolution_arguments(parser: argparse.ArgumentParser) -> None:
@@ -182,12 +217,14 @@ def execute_operation(
     ledger: ForecastLedger, operation: str, arg: str | list[str]
 ) -> dict[str, Any]:
     """Parse a terminal command without process-global stdout/exit side effects."""
-    if operation not in {"review", "resolve"}:
-        raise ValidationError("operation must be review or resolve")
+    if operation not in {"review", "resolve", "score"}:
+        raise ValidationError("operation must be review, resolve or score")
     parser = _Parser(prog=f"forecast {operation}", add_help=False)
-    (add_review_arguments if operation == "review" else add_resolution_arguments)(
-        parser
-    )
+    {
+        "review": add_review_arguments,
+        "resolve": add_resolution_arguments,
+        "score": add_scoring_arguments,
+    }[operation](parser)
     try:
         argv = list(arg) if isinstance(arg, list) else split_forecast_cli_args(arg)
         if argv in (["--help"], ["-h"]):
@@ -207,6 +244,9 @@ def execute_operation(
             ]
             return {"code": 0, "output": format_review(rows), "data": {"rows": data}}
         values["question_id"] = values.pop("id")
+        if operation == "score":
+            scored = score_forecast(ledger, values)
+            return {"code": 0, "output": format_scoring(scored), "data": asdict(scored)}
         values["scoreable"] = not values.pop("not_scoreable")
         values["trusted_policy_id"] = values.pop("trusted_policy")
         result = resolve_forecast(ledger, values)

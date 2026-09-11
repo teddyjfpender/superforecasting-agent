@@ -275,3 +275,18 @@ Commit-content hygiene:
 - This intentionally requires matching in-place contents; automatic isolated
   snapshot validation is not claimed. CONTRIBUTING documents the partial-staging
   constraint. Shared Python quality and shell syntax checks pass.
+
+Shared scoring operation:
+
+- Added a typed scoring use case owning current-score and optional baseline
+  orchestration. Ledger settlement semantics and score lineage remain unchanged.
+  Classic CLI and Ink `/score` / `/forecast score` now share argument definitions,
+  formatting and application execution through `forecast.operation`.
+- Tests cover invalid structured booleans before writes, matching CLI/RPC output,
+  baseline opt-in versus absence, preserved score identity, no presentation import,
+  and real compiled Ink resolution followed by scoring against durable storage.
+- Verification: 265 application/CLI tests and 89 slash-handler tests passed;
+  shared Python/TypeScript quality gates and the Ink build passed. Six existing
+  desk cases passed in the initial integration run; the extended scoring case
+  timed out at the default viewport, then passed at an explicit 160x45 viewport
+  while observing the final baseline output. Full-suite qualification remains open.

@@ -599,6 +599,8 @@ describe('createSlashHandler', () => {
 
   it.each([
     ['/review', 'review', '--stale'],
+    ['/score fq_example --baselines', 'score', 'fq_example --baselines'],
+    ['/forecast score fq_example', 'score', 'fq_example'],
     ['/review --domain politics', 'review', '--domain politics'],
     ['/resolve fq_example --outcome true', 'resolve', 'fq_example --outcome true'],
     ['/forecast resolve fq_example --outcome false', 'resolve', 'fq_example --outcome false']
@@ -729,7 +731,7 @@ describe('createSlashHandler', () => {
     expect(handler('/resolve fq_123 --outcome yes --confirmed')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'resolve', arg: 'fq_123 --outcome yes --confirmed' })
     expect(handler('/score fq_123')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'score fq_123' })
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'score', arg: 'fq_123' })
     expect(handler('/postmortem fq_123 --lesson "discount noisy signals"')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'postmortem fq_123 --lesson "discount noisy signals"' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
