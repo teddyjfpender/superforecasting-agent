@@ -50,3 +50,32 @@ session bootstrap.
 Legacy release assembly and installer automation still assume a bundled terminal;
 that wiring must be reconciled before publishing these separate distributions.
 The new build/verification commands do not publish packages.
+
+## Headless protocol host
+
+The backend also provides `superforecasting-agent-host` (or
+`python -m superforecasting_agent.hosting`). It serves the same `/api/ws` protocol
+used by the terminal without loading the dashboard application. Install the
+backend wheel with its existing `[web]` extra for FastAPI/Uvicorn dependencies.
+It needs neither Node nor frontend assets.
+
+Read authentication from a private token file and choose the active data profile:
+
+```sh
+SUPERFORECASTING_AGENT_HOME=/srv/forecast \
+  superforecasting-agent-host --host 127.0.0.1 --port 8642 \
+  --token-file /srv/forecast/host.token
+```
+
+For VPS access, forward the loopback port over SSH or put an authenticated TLS
+reverse proxy in front of it. The terminal connects using `--gateway-url` as above.
+The host accepts a Bearer authorization header or the terminal's token query
+field; an explicit invalid header cannot fall back to a valid query token.
+Browser clients must additionally match an exact `--allow-origin` value. Native
+clients without an Origin header are supported. Access logging is disabled so
+query tokens are not recorded in request logs.
+
+This exposes the existing runtime operations and protocol negotiation. Full
+host/session lifetime ownership and installed remote-terminal recovery qualification
+remain tracked in the product-boundaries plan; this entrypoint alone does not
+establish those guarantees.

@@ -211,6 +211,7 @@ full-test = ["numpy==2.4.3"]
 forecast = "superforecasting_agent.cli:main"
 superforecast = "superforecasting_agent.cli:main"
 superforecasting-agent = "superforecasting_agent.cli:main"
+superforecasting-agent-host = "superforecasting_agent.hosting.__main__:main"
 superforecasting-agent-acp = "acp_adapter.entry:main"
 superforecast-acp = "acp_adapter.entry:main"
 hermes = "superforecasting_agent.cli:main"

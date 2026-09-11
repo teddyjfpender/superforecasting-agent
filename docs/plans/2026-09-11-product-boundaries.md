@@ -680,3 +680,18 @@ Host stream ownership (isolated follow-up):
   fresh server import and injected entrypoint failures. Real installed-terminal
   qualification for this follow-up is still required. This change was developed
   in an isolated worktree while the prior frozen commit's full suite ran.
+
+Headless WebSocket entrypoint (isolated follow-up):
+
+- Added `superforecasting-agent-host` / `python -m superforecasting_agent.hosting`,
+  using the existing WebSocket dispatcher and capability negotiation without the
+  dashboard application. Authentication comes from a required token file; bearer
+  headers take precedence over query tokens and browser origins require exact
+  opt-in. Access logging is disabled to keep query credentials out of URL logs.
+- Seventeen host/stdio tests passed, covering rejected credentials/origins before
+  runtime admission, successful existing-protocol negotiation, incompatible
+  versions, malformed JSON and stream ownership. Shared Python quality passes;
+  new hosting code participates in strict lint/format/type gates.
+- This is an independently invocable transport host, not complete host resource
+  ownership. Active-worker draining, database lifetime, installed remote-terminal
+  lifecycle tests and broader release wiring remain required.
