@@ -1,0 +1,72 @@
+"""Session close cannot dispose of resources held by an admitted operation."""
+import threading
+from types import SimpleNamespace
+
+import pytest
+
+from superforecasting_agent.hosting.sessions import SessionBusy, use_session
+
+pytestmark = pytest.mark.usefixtures('isolated_runtime_host')
+
+
+def register_session(server, monkeypatch, **fields):
+    closed = []
+    session = {
+        'session_key': 'durable', 'history': [], 'history_lock': threading.Lock(),
+        'agent': SimpleNamespace(close=lambda: closed.append('agent')),
+        **fields,
+    }
+    server._sessions['runtime'] = session
+    monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
+    monkeypatch.setattr(server, '_get_db', lambda: None)
+    return session, closed
+
+
+def request(server, method):
+    return server.handle_request({'id': 1, 'method': method, 'params': {'session_id': 'runtime'}})
+
+
+def test_close_rejects_inflight_rpc_then_closes_once(monkeypatch):
+    from tui_gateway import server
+    session, closed = register_session(server, monkeypatch)
+    entered, release = threading.Event(), threading.Event()
+    def command(rid, params):
+        entered.set()
+        assert release.wait(3)
+        assert closed == []
+        return {'result': {}}
+    monkeypatch.setitem(server._methods, 'test.hold_session', command)
+    thread = threading.Thread(target=lambda: request(server, 'test.hold_session'))
+    thread.start()
+    assert entered.wait(1)
+    try:
+        assert request(server, 'session.close')['error']['code'] == 4009
+        assert server._sessions['runtime'] is session
+        assert not closed
+    finally:
+        release.set()
+        thread.join(2)
+    assert request(server, 'session.close')['result']['closed'] is True
+    assert request(server, 'session.close')['result']['closed'] is False
+    assert closed == ['agent']
+    with pytest.raises(SessionBusy), use_session(session):
+        pytest.fail('stale reference admitted after close')
+
+
+@pytest.mark.parametrize('fields', [
+    {'running': True},
+    {'_background_jobs': 1},
+    {'agent_build_started': True, 'agent_ready': threading.Event()},
+])
+def test_close_preserves_busy_session_for_retry(monkeypatch, fields):
+    from tui_gateway import server
+    session, closed = register_session(server, monkeypatch, **fields)
+    assert request(server, 'session.close')['error']['code'] == 4009
+    assert server._sessions['runtime'] is session
+    assert not closed
+    session['running'] = False
+    session['_background_jobs'] = 0
+    if session.get('agent_ready') is not None:
+        session['agent_ready'].set()
+    assert request(server, 'session.close')['result']['closed'] is True
+    assert closed == ['agent']

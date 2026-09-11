@@ -535,3 +535,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.workers"]
 forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "session admission is independent of presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.sessions"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false

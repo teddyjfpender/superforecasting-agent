@@ -294,6 +294,7 @@ try:
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
 from superforecasting_agent.hosting.workers import HostStopping, RuntimeWorkers
+from superforecasting_agent.hosting.sessions import SessionBusy, in_use, reserve_close, use_session
 
 _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
 _host_lifecycle_lock = threading.Lock()
@@ -861,7 +862,7 @@ def shutdown_runtime(timeout: float = 5.0) -> bool:
                 # immutable; an unfinished receipt now has a truthful end state,
                 # even if another lifetime starts in this same process.
                 turn_journal.transition(_db, session["turn_id"], "interrupted")
-            _close_runtime_session(sid, mark_ended=False)
+            _close_runtime_session(sid, mark_ended=False, drained=True)
         with _db_lock:
             if _db is not None:
                 _db.close()
@@ -1112,7 +1113,14 @@ def handle_request(req: dict) -> dict | None:
     fn = _methods.get(method)
     if not fn:
         return _err(rid, -32601, f"unknown method: {method}")
-    return fn(rid, params)
+    session = _sessions.get(params.get("session_id")) if isinstance(params.get("session_id"), str) else None
+    try:
+        if session is not None and method not in {"session.close", "session.resume"}:
+            with use_session(session):
+                return fn(rid, params)
+        return fn(rid, params)
+    except SessionBusy as exc:
+        return _err(rid, 4009, str(exc))
 
 
 def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
@@ -1187,9 +1195,14 @@ def _start_agent_build(sid: str, session: dict) -> None:
         return
     lock = session.setdefault("agent_build_lock", threading.Lock())
     with lock:
-        if ready.is_set() or session.get("agent_build_started"):
-            return
-        session["agent_build_started"] = True
+        with session.setdefault("history_lock", threading.Lock()):
+            if session.get("_closing"):
+                session["agent_error"] = "session is closing"
+                ready.set()
+                return
+            if ready.is_set() or session.get("agent_build_started"):
+                return
+            session["agent_build_started"] = True
     key = session["session_key"]
 
     def _build() -> None:
@@ -3155,7 +3168,7 @@ def _(rid, params: dict) -> dict:
             if replace_lock is None:
                 replace_lock = contextlib.nullcontext()
             with replace_lock:
-                if replace_session.get("running"):
+                if in_use(replace_session) or replace_session.get("_closing"):
                     return _err(
                         rid,
                         4009,
@@ -3193,7 +3206,7 @@ def _(rid, params: dict) -> dict:
             return _err(rid, 5000, f"resume failed: {e}")
         if replace_sid and replace_sid != sid:
             try:
-                _close_runtime_session(replace_sid)
+                _close_runtime_session(replace_sid, reserved=True)
             except Exception:
                 logger.exception("failed to close replaced session %s", replace_sid)
         return _ok(
@@ -3582,10 +3595,13 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 5011, str(e))
 
 
-def _close_runtime_session(sid: str, *, mark_ended: bool = True) -> bool:
-    session = _sessions.pop(sid, None)
-    if not session:
-        return False
+def _close_runtime_session(sid: str, *, mark_ended: bool = True, reserved: bool = False, drained: bool = False) -> bool:
+    with _session_resume_lock:
+        session = _sessions.get(sid)
+        if not session:
+            return False
+        reserve_close(session, reserved=reserved, drained=drained)
+        _sessions.pop(sid)
     _session_toggles.pop(session.get("session_key", ""), None)
     try:
         _finalize_session(session, mark_ended=mark_ended)
@@ -3914,7 +3930,7 @@ def _notification_poller_loop(
         _emit("status.update", sid, {"kind": "process", "text": text})
 
         with session["history_lock"]:
-            if session.get("running"):
+            if session.get("running") or session.get("_closing") or _pool.stopping:
                 process_registry.completion_queue.put(evt)
                 continue
             session["running"] = True
@@ -3949,7 +3965,7 @@ def _notification_poller_loop(
         _emit("status.update", sid, {"kind": "process", "text": text})
 
         with session["history_lock"]:
-            if session.get("running"):
+            if session.get("running") or session.get("_closing") or _pool.stopping:
                 process_registry.completion_queue.put(evt)
                 break
             session["running"] = True
@@ -4516,6 +4532,9 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4012, "text required")
     task_id = f"bg_{uuid.uuid4().hex[:6]}"
 
+    with session["history_lock"]:
+        session["_background_jobs"] = session.get("_background_jobs", 0) + 1
+
     def run():
         session_tokens = _set_session_context(task_id)
         background_agent = None
@@ -4558,9 +4577,15 @@ def _(rid, params: dict) -> dict:
             finally:
                 with session["history_lock"]:
                     session.get("_background_agents", {}).pop(task_id, None)
+                    session["_background_jobs"] -= 1
                 _clear_session_context(session_tokens)
 
-    _pool.start(run, name="forecast-turn")
+    try:
+        _pool.start(run, name="forecast-background")
+    except BaseException:
+        with session["history_lock"]:
+            session["_background_jobs"] -= 1
+        raise
     return _ok(rid, {"task_id": task_id})
 
 
@@ -5850,6 +5875,17 @@ def _run_codex_device_poll(grant, interval: int) -> None:
 
 
 def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
+    session = _sessions.get(sid or "")
+    if session is None:
+        return False
+    try:
+        with use_session(session):
+            return _refresh_session_credentials_after_auth(sid, provider)
+    except SessionBusy:
+        return False
+
+
+def _refresh_session_credentials_after_auth(sid: str, provider: str) -> bool:
     """Re-resolve *provider* credentials from disk and apply them to the live
     agent, so a fresh in-TUI sign-in takes effect WITHOUT a TUI restart.
 

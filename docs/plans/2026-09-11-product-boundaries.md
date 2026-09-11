@@ -743,3 +743,25 @@ Explicit host worker lifetime:
 - The backend-only wheel built from `f8a415a5d` also passed the installed localhost
   authentication, negotiation, query-redaction and graceful shutdown probe outside
   the checkout. Full regression and installed remote Ink qualification are pending.
+
+Session close admission:
+
+- `hosting.sessions` owns session-use leases and close admission independently of
+  presentation. RPC execution and post-auth credential refresh hold a lease while
+  using session resources. Close rejects active calls, model turns, agent builds
+  and background jobs, and marks the session closing under the same lock before
+  detaching it. Stale references cannot acquire new leases.
+- Replacement admission checks active work before reserving the old session.
+  Completed host drain has an explicit internal cleanup path; it does not rely
+  on a possibly stale `running` display flag. Notification consumers refuse to
+  start turns after close or host shutdown begins. Background-job ownership spans
+  construction as well as the model call and cleanup.
+- 248 gateway/lifecycle/import tests pass, including concurrent RPC-versus-close,
+  busy build/background cases, exactly-once close and stale-reference admission.
+  Shared Python quality passes with twenty-two import contracts; the session
+  admission contract includes a deliberately forbidden indirect-import test.
+- The TUI branch handoff remains two separate calls (create branch, close old
+  session); it needs a coordinated shared operation and explicit failure handling.
+  Further session/configuration host extraction, external-resource ownership and
+  installed remote Ink qualification remain unfinished. Full regression is next
+  for the accumulated batch before pushing.
