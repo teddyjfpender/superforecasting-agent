@@ -23,8 +23,10 @@ See [investigation, changes and evidence limits](docs/plans/2026-09-11-runtime-o
 - [x] Extend price/OWID ingestion checks for identity, malformed arrays/columns and
   ambiguous measurements; retain unknown publication times and fail-closed settlement.
 - [ ] Conclusively attribute the historical native TLS crash. Native GDB experiment
-  and core-capture workflow are implemented; original OpenSSL/CA hashes were not
-  preserved. A clean experiment or synthetic abort is not an SSL root cause.
+  and core-capture workflow ran successfully on the matching native runner image;
+  preserved-libc and upgraded-libc trials did not reproduce it. Python embeds
+  OpenSSL 3.5.5; native real-desk tests passed. Original incident hashes/environment
+  were not preserved. A clean experiment or synthetic abort is not an SSL cause.
 
 ## Completed reliability follow-up (September 10)
 

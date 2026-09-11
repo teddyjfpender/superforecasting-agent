@@ -175,3 +175,44 @@ workers). JUnit: `.test-results/pytest-20260911T164412Z-56069.xml`.
 The 16 startup-ownership failures from the previous run are resolved. This
 qualifies the local code changes, not historical native SSL attribution or
 unavailable external platforms/services.
+
+## Native Linux results (September 11)
+
+[Preserved-runner experiment and real desk run](https://github.com/teddyjfpender/superforecasting-agent/actions/runs/34625008811)
+completed successfully on native Ubuntu 24.04 x86-64, image `20260907.300.1`
+(the original incident's image), uv 0.10.9 and CPython 3.11.15. Python embeds
+OpenSSL **3.5.5**; the system `openssl` package's 3.0.13 is not the library used by
+this interpreter. The binary, CA and libc hashes and logs are retained under
+[`native-tls/preserved-runner`](../verification/2026-09-11-runtime/native-tls/preserved-runner/).
+The public system CA bundle is also retained for repeatability; no credentials
+or production profile were used.
+
+GDB setup initially upgraded libc from `2.39-0ubuntu8.8` to `8.9` through a
+recommended debugger package. The corrected setup holds runtime/CA packages and
+checks libc/CA hashes before and after installing GDB without recommendations.
+The earlier upgraded-libc result is retained separately as a comparison, not
+mislabelled as the original environment. The first job failed only because the
+harness assumed `_ssl` had an extension-file path; embedded `_ssl` is now handled.
+
+Both completed native experiments produced a synthetic SIGABRT core with native
+stack frames, verifying capture. None of the seven TLS cases crashed: serial,
+concurrent, environment growth, environment removal, explicit-CA growth/removal,
+and daemon-worker shutdown. Each run completed 1,800 context initializations
+outside the shutdown case. The preserved-runner mutation counts were 256/309 for
+default paths and 7,553/6,537 for explicit CA. The runner has no default CA file
+at `/etc/ssl/cert.pem`: default-path cases exercise lookup/lazy directory setup,
+while explicit-CA cases load the preserved PEM bundle. The shutdown case observed
+worker startup and zero completed contexts before finalization; that is not a
+captured native frame proving the exact point of shutdown.
+
+The actual compiled Ink + gateway + dashboard PTY/WebSocket + SQLite tests also
+passed on native Linux (**5 passed**), including process death, cancellation,
+interrupted streams, authentication/rate errors and reconnects. Local macOS full
+qualification remains 30,461 passed; no application code changed afterward.
+
+**Conclusion:** resource ownership bugs are fixed with reproductions and
+integration evidence. The historical SSL root cause is still unproven. We now have
+a native matching-image investigation and reliable core capture, not merely
+emulated or generic stress runs. No historical core or certificate/environment
+snapshot was preserved, so exact incident equivalence remains unestablished. Do
+not close the SSL attribution TODO or claim a synthetic abort reproduced it.
