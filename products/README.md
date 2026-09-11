@@ -24,9 +24,13 @@ than producing an incomplete installation.
 
 The verifier creates fresh environments outside the checkout, checks dependency
 consistency, runs create/update/resolve/score with Node absent from PATH, checks a
-terminal-only installation without backend imports, verifies companion discovery,
+terminal-only installation without backend imports, launches the installed Ink
+client against the separate local backend to score a durable forecast and exit
+cleanly on POSIX, verifies companion discovery,
 and checks the optional web integration. Remote `--check` validates local
-prerequisites only; host compatibility is checked when connecting.
+prerequisites only; host compatibility is checked when connecting. The installed
+PTY exercise explicitly skips native Windows; it does not establish ConPTY
+coverage or remote-network recovery.
 
 Install both wheels into one environment to use `superforecasting-agent tui`.
 Alternatively, run the terminal distribution directly:

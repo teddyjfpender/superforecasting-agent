@@ -38,7 +38,7 @@ import { resolveSignalConfig } from '../lib/signalStore.js'
 import { AgentsOverlay } from './agentsOverlay.js'
 import { AlertsView } from './alertsView.js'
 import { ForecastPulse, StickyPromptTracker, TranscriptScrollbar } from './appChrome.js'
-import { FloatingOverlays, PromptZone } from './appOverlays.js'
+import { FloatingOverlays, OutputPager, PromptZone } from './appOverlays.js'
 import { HomeHero, Panel, SessionPanel } from './branding.js'
 import { CalendarView } from './calendarView.js'
 import { CalibrationView } from './calibrationView.js'
@@ -353,7 +353,6 @@ const ComposerPane = memo(function ComposerPane({
           onModelConnect={onModelConnect}
           onModelSelect={actions.onModelSelect}
           onPickerSelect={actions.resumeById}
-          pagerPageSize={composer.pagerPageSize}
         />
 
         {input === '?' && !inputBuf.length && <HelpHint t={ui.theme} />}
@@ -1031,6 +1030,7 @@ export const AppLayout = memo(function AppLayout({
             ) : null}
           </>
         )}
+        {!globalModal && <OutputPager cols={composer.cols} pageSize={composer.pagerPageSize} rows={rows} />}
       </Box>
     </Shell>
   )

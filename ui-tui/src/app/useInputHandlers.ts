@@ -125,7 +125,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   const overlay = useStore($overlayState)
   const isBlocked = useStore($isBlocked)
-  const pagerPageSize = Math.max(1, (terminal.stdout?.rows ?? 24) - 12)
+  const pagerPageSize = Math.max(1, (terminal.stdout?.rows ?? 24) - 13)
   const scrollIdleTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
 
   // Wheel accel ported from claude-code: inter-event timing drives step size,

@@ -9,8 +9,8 @@ import { $uiSessionId, $uiTheme } from '../app/uiStore.js'
 
 import { FloatBox } from './appChrome.js'
 import { MaskedPrompt } from './maskedPrompt.js'
+import { ModalOverlay } from './modalOverlay.js'
 import { ModelPicker } from './modelPicker.js'
-import { OverlayHint } from './overlayControls.js'
 import { ApprovalPrompt, ClarifyPrompt, ConfirmPrompt } from './prompts.js'
 import { SessionPicker } from './sessionPicker.js'
 import { SkillsHub } from './skillsHub.js'
@@ -124,19 +124,15 @@ export function FloatingOverlays({
   onModelConnect,
   onModelSelect,
   onPickerSelect,
-  pagerPageSize
-}: Pick<AppOverlaysProps, 'cols' | 'compIdx' | 'completions' | 'onModelConnect' | 'onModelSelect' | 'onPickerSelect' | 'pagerPageSize'>) {
+}: Pick<AppOverlaysProps, 'cols' | 'compIdx' | 'completions' | 'onModelConnect' | 'onModelSelect' | 'onPickerSelect'>) {
   const { gw } = useGateway()
   const overlay = useStore($overlayState)
   const sid = useStore($uiSessionId)
   const theme = useStore($uiTheme)
 
-  const pager = overlay.pager ? pagerWindow(overlay.pager, cols, pagerPageSize) : null
-
   const hasAny =
     overlay.modelPicker ||
     overlay.themePicker ||
-    overlay.pager ||
     overlay.picker ||
     overlay.skillsHub ||
     completions.length
@@ -190,34 +186,6 @@ export function FloatingOverlays({
         </FloatBox>
       )}
 
-      {overlay.pager && (
-        <FloatBox color={theme.color.border}>
-          <Box flexDirection="column" paddingX={1} paddingY={1}>
-            {overlay.pager.title && (
-              <Box justifyContent="center" marginBottom={1}>
-                <Text bold color={theme.color.primary}>
-                  {overlay.pager.title}
-                </Text>
-              </Box>
-            )}
-
-            {pager!.lines.slice(pager!.offset, pager!.offset + pagerPageSize).map((line, i) => (
-              <Text color={pagerLineColor(line, theme)} key={i}>
-                {line}
-              </Text>
-            ))}
-
-            <Box marginTop={1}>
-              <OverlayHint t={theme}>
-                {pager!.offset + pagerPageSize < pager!.lines.length
-                  ? `↑↓ line · PgUp/PgDn page · g/G ends · Esc close (${Math.min(pager!.offset + pagerPageSize, pager!.lines.length)}/${pager!.lines.length})`
-                  : `end · ↑↓ line · PgUp back · g top · Esc close (${pager!.lines.length} lines)`}
-              </OverlayHint>
-            </Box>
-          </Box>
-        </FloatBox>
-      )}
-
       {!!completions.length && (
         <FloatBox color={theme.color.primary}>
           <Box flexDirection="column" width={Math.max(28, cols - 6)}>
@@ -251,5 +219,33 @@ export function FloatingOverlays({
         </FloatBox>
       )}
     </Box>
+  )
+}
+
+
+/** Output viewers belong to the viewport, not the composer's floating menu. */
+export function OutputPager({ cols, rows, pageSize }: { cols: number; rows: number; pageSize: number }) {
+  const state = useStore($overlayState)
+  const theme = useStore($uiTheme)
+
+  if (!state.pager) {return null}
+
+  const pager = pagerWindow(state.pager, cols, pageSize)
+  const end = Math.min(pager.offset + pageSize, pager.lines.length)
+
+  return (
+    <ModalOverlay
+      cols={cols}
+      footerHint={`↑↓ line · PgUp/PgDn page · g/G ends · Esc close (${end}/${pager.lines.length})`}
+      maxHeight={Math.min(rows - 6, pager.lines.length + 7)}
+      maxWidth={cols}
+      rows={rows}
+      t={theme}
+      title={state.pager.title || 'Output'}
+    >
+      {pager.lines.slice(pager.offset, pager.offset + pageSize).map((line, i) => (
+        <Text color={pagerLineColor(line, theme)} key={i}>{line || ' '}</Text>
+      ))}
+    </ModalOverlay>
   )
 }

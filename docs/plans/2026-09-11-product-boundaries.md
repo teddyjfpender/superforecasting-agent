@@ -290,3 +290,24 @@ Shared scoring operation:
   desk cases passed in the initial integration run; the extended scoring case
   timed out at the default viewport, then passed at an explicit 160x45 viewport
   while observing the final baseline output. Full-suite qualification remains open.
+
+Installed terminal qualification and output ownership:
+
+- Extended the product-wheel verifier to launch the terminal-only installation
+  against a separately installed backend outside the checkout, wait for the
+  credential-free startup state, display a durable score with baseline status,
+  close the viewer and exit cleanly. The fixture drains PTY output during exit
+  and allows the viewer-close redraw to release keyboard focus before `/quit`.
+- The new test exposed a real presentation failure: tracing the installed host
+  proved that scoring returned a valid result, but its composer-relative floating
+  viewer did not visibly paint over the setup screen. Output paging now belongs
+  to the viewport and uses the existing explicitly bounded modal primitive.
+  Navigation and rendering share wrapping widths and the adjusted page height.
+- Fresh clean-environment verification passed for the backend without Node,
+  separate terminal/backend execution, companion discovery and optional web host.
+  Seven real desk cases passed; 97 existing slash/completion/pager tests passed,
+  followed by six focused paging/render tests covering 80x24 and 160x45 and the
+  final page of long reports. Shared quality gates pass.
+- Native Windows PTY execution remains explicitly skipped by this verifier;
+  remote-network lifecycle qualification, release/installer assembly and full
+  regression qualification remain open. No live model/provider was needed.

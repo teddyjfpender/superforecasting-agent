@@ -6,9 +6,117 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import select
+import signal
 import subprocess
 import tempfile
+import time
 from pathlib import Path
+
+
+def verify_installed_terminal(
+    terminal_python: Path,
+    backend_python: Path,
+    root: Path,
+    env: dict[str, str],
+    question: str,
+) -> None:
+    """Exercise the packaged Ink client and packaged local backend over a PTY."""
+    if os.name == "nt":
+        print(
+            "Installed terminal PTY exercise: skipped on native Windows (requires ConPTY)."
+        )
+        return
+    import fcntl
+    import pty
+    import struct
+    import termios
+
+    master, slave = pty.openpty()
+    process = None
+    try:
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 45, 160, 0, 0))
+        process = subprocess.Popen(
+            [
+                str(terminal_python),
+                "-c",
+                "from superforecasting_agent_tui import main; raise SystemExit(main())",
+                "--python",
+                str(backend_python),
+            ],
+            stdin=slave,
+            stdout=slave,
+            stderr=slave,
+            cwd=root,
+            env={
+                **env,
+                "TERM": "xterm-256color",
+                "SUPERFORECASTING_AGENT_TUI_CRON_TICKER": "0",
+            },
+            start_new_session=True,
+        )
+        os.close(slave)
+        slave = -1
+
+        def expect(text: bytes) -> None:
+            output = bytearray()
+            deadline = time.monotonic() + 45
+            while time.monotonic() < deadline:
+                readable, _, _ = select.select([master], [], [], 0.2)
+                if readable:
+                    try:
+                        chunk = os.read(master, 65536)
+                    except OSError:
+                        break
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+                    if text in output:
+                        return
+                if process.poll() is not None:
+                    break
+            plain = re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", bytes(output))
+            plain = re.sub(rb"[^\x20-\x7e\n\r]", b"", plain)
+            raise RuntimeError(
+                f"Installed terminal did not display {text!r}: {plain[-12000:]!r}"
+            )
+
+        expect(b"setup required")
+        os.write(master, f"/score {question} --baselines\r".encode())
+        expect(b"baseline_scores: none")
+        os.write(master, b"q")
+        expect(b"setup required")
+        # Let the close redraw settle before the next physical key sequence.
+        # A footer also appears under the open viewer, so matching its bytes
+        # alone is not proof that the viewer has released input focus.
+        settle_deadline = time.monotonic() + 3
+        while time.monotonic() < settle_deadline:
+            if not select.select([master], [], [], 0.2)[0]:
+                break
+            os.read(master, 65536)
+        os.write(master, b"/quit\r")
+        # Keep draining redraw/terminal-reset output while the child exits.
+        # Waiting without reading can fill the PTY and block Node's shutdown.
+        deadline = time.monotonic() + 15
+        while process.poll() is None and time.monotonic() < deadline:
+            if select.select([master], [], [], 0.2)[0]:
+                try:
+                    if not os.read(master, 65536):
+                        break
+                except OSError:
+                    break
+        if process.wait(timeout=3) != 0:
+            raise RuntimeError("Installed terminal exited unsuccessfully")
+        print(
+            "Installed terminal: negotiated local host, scored durable forecast and exited cleanly."
+        )
+    finally:
+        if slave >= 0:
+            os.close(slave)
+        os.close(master)
+        if process is not None and process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
 
 
 def main() -> None:
@@ -60,6 +168,7 @@ def main() -> None:
                     env=env,
                     text=True,
                     stderr=subprocess.STDOUT,
+                    timeout=90,
                 )
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(exc.output) from exc
@@ -125,6 +234,9 @@ def main() -> None:
             cwd=root,
             env=terminal_env,
             check=True,
+        )
+        verify_installed_terminal(
+            terminal_python, backend_python, root, terminal_env, question
         )
         subprocess.run(
             ["uv", "pip", "install", "--python", str(backend_python), str(terminal)],
