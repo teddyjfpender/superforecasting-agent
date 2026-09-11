@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
+from typing import Any
 
 from .operations import COMMANDS as _OPERATION_COMMANDS
 from .types import CommandDef as CommandDef
@@ -48,6 +49,34 @@ def resolve_command(name: str) -> CommandDef | None:
     return _COMMAND_LOOKUP.get(name.lower().lstrip("/"))
 
 
+def configured_command(
+    name: str, quick_commands: Mapping | None
+) -> Mapping[str, Any] | None:
+    """Validate a configured command while preserving built-in precedence."""
+    name = name.lower().lstrip("/")
+    if (
+        resolve_command(name)
+        or not isinstance(quick_commands, Mapping)
+        or name not in quick_commands
+    ):
+        return None
+    entry = quick_commands[name]
+    if not isinstance(entry, Mapping):
+        raise ValueError(f"Quick command '/{name}' must be a mapping.")
+    kind = entry.get("type")
+    if kind not in ("alias", "exec"):
+        raise ValueError(
+            f"Quick command '/{name}' has unsupported type (supported: 'exec', 'alias')."
+        )
+    field = "target" if kind == "alias" else "command"
+    value = entry.get(field)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(
+            f"Quick command '/{name}' has no {field} defined (expected non-empty text)."
+        )
+    return entry
+
+
 def expand_quick_alias(command: str, quick_commands: Mapping | None) -> str:
     """Expand configured aliases consistently before CLI/gateway dispatch.
 
@@ -59,17 +88,13 @@ def expand_quick_alias(command: str, quick_commands: Mapping | None) -> str:
     while command and isinstance(quick_commands, Mapping):
         parts = command.split(None, 1)
         name = parts[0].lstrip("/").lower()
-        if resolve_command(name):
-            break
-        entry = quick_commands.get(name)
-        if not isinstance(entry, Mapping) or entry.get("type") != "alias":
+        entry = configured_command(name, quick_commands)
+        if entry is None or entry["type"] != "alias":
             break
         if name in seen:
             raise ValueError(f"Quick command alias cycle at '/{name}'.")
         seen.add(name)
-        target = str(entry.get("target") or "").strip()
-        if not target:
-            raise ValueError(f"Quick command '/{name}' has no target defined.")
+        target = entry["target"].strip()
         target = target if target.startswith("/") else f"/{target}"
         command = f"{target} {parts[1] if len(parts) > 1 else ''}".strip()
     return command

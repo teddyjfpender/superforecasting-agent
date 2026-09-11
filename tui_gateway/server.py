@@ -6014,7 +6014,7 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
 
 @rpc_validated("slash.exec")
 def _(rid, params: dict) -> dict:
-    session, err = _sess(params, rid)
+    session, err = _sess_nowait(params, rid)
     if err:
         return err
 
@@ -6030,6 +6030,20 @@ def _(rid, params: dict) -> dict:
     _cmd_parts = _cmd_text.split(maxsplit=1)
     _cmd_base = (_cmd_parts[0] if _cmd_parts else "").lower()
     _cmd_arg = _cmd_parts[1] if len(_cmd_parts) > 1 else ""
+
+    from superforecasting_agent.application.command_catalog import configured_command
+    try:
+        quick = configured_command(_cmd_base, _load_cfg().get("quick_commands", {}))
+    except ValueError as exc:
+        return _err(rid, 4018, str(exc))
+    if quick is not None:
+        # Execute only in command.dispatch: executing here and then returning an
+        # error would make the client's fallback repeat a failed shell command.
+        return _err(rid, 4018, "configured command: use command.dispatch")
+
+    session, err = _sess(params, rid)
+    if err:
+        return err
 
     if _cmd_base in _PENDING_INPUT_COMMANDS:
         return _err(

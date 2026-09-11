@@ -232,9 +232,18 @@ def _(rid, params: dict) -> dict:
         name = resolved
     session = _core._host.sessions.get(params.get("session_id", ""))
 
+    from superforecasting_agent.application.command_catalog import configured_command, expand_quick_alias
+
     qcmds = _core._load_cfg().get("quick_commands", {})
-    if name in qcmds:
-        qc = qcmds[name]
+    try:
+        qc = configured_command(name, qcmds)
+        if qc is not None and qc["type"] == "alias":
+            # The client appends the invocation's original arguments once.
+            target = expand_quick_alias(f"/{name}", qcmds)
+            return _ok(rid, {"type": "alias", "target": target.lstrip("/")})
+    except ValueError as exc:
+        return _err(rid, 4018, str(exc))
+    if qc is not None:
         if qc.get("type") == "exec":
             r = subprocess.run(
                 qc.get("command", ""),
@@ -255,8 +264,6 @@ def _(rid, params: dict) -> dict:
                     output or f"quick command failed with exit code {r.returncode}",
                 )
             return _ok(rid, {"type": "exec", "output": output})
-        if qc.get("type") == "alias":
-            return _ok(rid, {"type": "alias", "target": qc.get("target", "")})
 
     try:
         from superforecasting_agent.runtime.plugins import (

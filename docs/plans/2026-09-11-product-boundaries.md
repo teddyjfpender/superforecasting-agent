@@ -1187,3 +1187,23 @@ Push-gate coverage for shared and newly introduced owners:
   and an unfamiliar package. All 12 developer-workflow tests passed, log:
   `/tmp/forecast-hook-owner-coverage.log`. Full regression for the already
   integrated auth/catalog batch runs independently in the frozen primary tree.
+
+Configured command admission and TUI execution routing:
+
+- The application catalog now validates configured command mappings, kinds and
+  non-empty textual targets/commands. Built-ins take precedence consistently;
+  malformed definitions fail with the same message in CLI and TUI instead of
+  becoming attribute errors or unexpected command strings.
+- TUI configured commands bypass the classic slash worker and agent construction.
+  Alias chains are fully expanded and checked for cycles in shared code before
+  handing the target to Ink; invocation arguments are appended once by the client.
+  Configured shell commands execute only through command.dispatch, avoiding a
+  failed execution followed by an automatic duplicate in the fallback path.
+- A real subprocess regression counts executions across slash.exec handoff and
+  command.dispatch failure. Further tests cover malformed JSON/YAML types, cyclic
+  aliases, model-name case preservation and attempted built-in overrides.
+- Gateway/catalog/CLI validation selection: 657 passed, log
+  `/tmp/forecast-configured-commands-qualified.log`. Shared quality gates pass.
+- Shell execution environment, output/error policy and process cleanup still need
+  consolidation across synchronous CLI/TUI and asynchronous messaging adapters.
+  Other legacy slash commands remain outside the shared execution boundary.
