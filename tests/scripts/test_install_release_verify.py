@@ -35,6 +35,7 @@ case "$url" in
   *api.github.com*)       src="$FIXDIR/api.json" ;;
   *SHA256SUMS)            src="$FIXDIR/SHA256SUMS" ;;
   *release-manifest.json) src="$FIXDIR/release-manifest.json" ;;
+  *superforecasting_agent_tui-*.whl) src="$FIXDIR/terminal.whl" ;;
   *.whl)                  src="$FIXDIR/wheel.whl" ;;
   *) exit 22 ;;
 esac
@@ -253,4 +254,108 @@ def test_local_manifest_conflicting_tag_aborts(tmp_path):
     result = _run(tmp_path, fixdir, {"TAG": "v8.8.8", "MANIFEST": str(local)})
     assert result.returncode != 0
     assert "conflicts" in result.stderr
+    assert _pipx_log(fixdir) is None
+
+
+TUI_NAME = "superforecasting_agent_tui-0.1.0-py3-none-any.whl"
+TUI_BYTES = b"separate terminal payload\n"
+
+
+def _split_release(fixdir: Path) -> None:
+    _write_fixtures(fixdir)
+    (fixdir / "terminal.whl").write_bytes(TUI_BYTES)
+    manifest_path = fixdir / "release-manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["artifacts"]["terminal_wheel"] = {
+        "name": TUI_NAME,
+        "sha256": hashlib.sha256(TUI_BYTES).hexdigest(),
+    }
+    manifest_path.write_text(json.dumps(manifest))
+    sums = fixdir / "SHA256SUMS"
+    sums.write_text(sums.read_text() + f"{hashlib.sha256(TUI_BYTES).hexdigest()}  {TUI_NAME}\n")
+    api_path = fixdir / "api.json"
+    api = json.loads(api_path.read_text())
+    api["assets"].insert(0, {"browser_download_url": f"https://dl.example/{TUI_NAME}"})
+    api_path.write_text(json.dumps(api))
+
+
+def test_split_release_installs_manifest_backend_then_companion(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    result = _run(tmp_path, fixdir)
+    assert result.returncode == 0, result.stderr
+    log = _pipx_log(fixdir)
+    assert f"/{WHEEL_NAME}" in log
+    assert f"inject --force superforecasting-agent " in log
+    assert f"/{TUI_NAME}" in log
+    assert log.index("install --force") < log.index("inject --force")
+
+
+def test_corrupt_companion_prevents_backend_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    (fixdir / "terminal.whl").write_bytes(b"corrupt")
+    result = _run(tmp_path, fixdir)
+    assert result.returncode != 0
+    assert "MISMATCH" in result.stderr
+    assert _pipx_log(fixdir) is None
+
+
+def test_backend_only_does_not_download_or_install_companion(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    (fixdir / "terminal.whl").unlink()
+    result = _run(tmp_path, fixdir, {"INSTALL_TUI": "0"})
+    assert result.returncode == 0, result.stderr
+    assert "inject" not in _pipx_log(fixdir)
+    assert TUI_NAME not in _pipx_log(fixdir)
+    assert "--tui" not in result.stdout
+
+
+def test_duplicate_companion_asset_prevents_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    api_path = fixdir / "api.json"
+    api = json.loads(api_path.read_text())
+    api["assets"].append(api["assets"][0])
+    api_path.write_text(json.dumps(api))
+    result = _run(tmp_path, fixdir)
+    assert result.returncode != 0
+    assert "duplicate terminal wheel" in result.stderr
+    assert _pipx_log(fixdir) is None
+
+
+def test_companion_manifest_mismatch_prevents_backend_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    path = fixdir / "release-manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["artifacts"]["terminal_wheel"]["sha256"] = "0" * 64
+    path.write_text(json.dumps(manifest))
+    result = _run(tmp_path, fixdir)
+    assert result.returncode != 0
+    assert "manifest sha256 MISMATCH" in result.stderr
+    assert _pipx_log(fixdir) is None
+
+
+def test_missing_companion_prevents_backend_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    path = fixdir / "api.json"
+    api = json.loads(path.read_text())
+    api["assets"].pop(0)
+    path.write_text(json.dumps(api))
+    result = _run(tmp_path, fixdir)
+    assert result.returncode != 0
+    assert "Missing or duplicate terminal wheel" in result.stderr
+    assert _pipx_log(fixdir) is None
+
+
+def test_duplicate_checksum_entry_prevents_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _write_fixtures(fixdir)
+    path = fixdir / "SHA256SUMS"
+    path.write_text(path.read_text() + f"{WHEEL_SHA}  {WHEEL_NAME}\n")
+    result = _run(tmp_path, fixdir)
+    assert result.returncode != 0
     assert _pipx_log(fixdir) is None

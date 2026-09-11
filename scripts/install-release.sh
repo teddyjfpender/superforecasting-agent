@@ -3,8 +3,8 @@
 # Outrider / Superforecasting Agent — standalone one-command installer
 # ============================================================================
 # Installs the prebuilt RELEASE WHEEL with pipx. No git checkout, no Python
-# venv to manage, no `npm run build` — the wheel bundles the prebuilt TUI and
-# the launcher auto-provisions Node and runs the gateway from pipx's own venv.
+# venv to manage, no `npm run build`. Modern releases provide separate backend
+# and prebuilt TUI wheels, installed together into the pipx environment.
 #
 # Every install is INTEGRITY-CHECKED before anything touches the system: the
 # wheel is verified against the release's SHA256SUMS and, when the release
@@ -23,6 +23,7 @@
 #
 # Config:
 #   TAG=vX.Y.Z | latest    release to install (alias: SUPERFORECASTING_AGENT_RELEASE_TAG)
+#   INSTALL_TUI=0         install only the backend/CLI (default: 1).
 #   MANIFEST=/path/release-manifest.json
 #                          pin the EXACT release a local manifest names: the
 #                          tag, the wheel filename, and the wheel sha256 all
@@ -47,6 +48,8 @@ TAG_SET="${SUPERFORECASTING_AGENT_RELEASE_TAG:-${TAG:-}}"
 TAG="${TAG_SET:-latest}"
 ALLOW_UNVERIFIED="${SUPERFORECASTING_AGENT_ALLOW_UNVERIFIED:-${ALLOW_UNVERIFIED:-0}}"
 BIN="superforecasting-agent"
+INSTALL_TUI="${INSTALL_TUI:-1}"
+case "$INSTALL_TUI" in 0|1) ;; *) echo "INSTALL_TUI must be 0 or 1" >&2; exit 1;; esac
 
 # A leaked PYTHONPATH/PYTHONHOME (e.g. when launched from another tool's venv)
 # can make pip import the wrong packages and the install look broken.
@@ -90,7 +93,7 @@ sha256_of() {  # <file> -> hex digest on stdout
 verify_checksum() {  # <file> <SHA256SUMS>  -> 0 iff the recorded sha256 matches
   local file="$1" sums="$2" name want got
   name="$(basename "$file")"
-  want="$(grep -E "  ${name}\$| ${name}\$" "$sums" 2>/dev/null | awk '{print $1}' | head -n1)"
+  want="$(awk -v name="$name" '$2 == name {digest=$1; count++} END {if (count == 1) print digest}' "$sums")"
   [ -n "$want" ] || { warn "SHA256SUMS has no entry for $name"; return 1; }
   got="$(sha256_of "$file")"
   if [ "$want" != "$got" ]; then
@@ -103,15 +106,25 @@ verify_checksum() {  # <file> <SHA256SUMS>  -> 0 iff the recorded sha256 matches
 read_manifest() {  # <path> -> sets MAN_VERSION MAN_TAG MAN_WHEEL_NAME MAN_WHEEL_SHA
   local out
   out="$("$PY" -c '
-import json, sys
+import json, re, sys
 m = json.load(open(sys.argv[1]))
-w = m["artifacts"]["wheel"]
-print(m["version"]); print(m["tag"]); print(w["name"]); print(w["sha256"])
+print(m["version"]); print(m["tag"])
+for role in ("wheel", "terminal_wheel"):
+    w = m["artifacts"].get(role)
+    if w is None and role == "terminal_wheel":
+        print(""); print(""); continue
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", w["name"]):
+        raise ValueError("Invalid wheel filename")
+    if not re.fullmatch(r"[0-9a-f]{64}", w["sha256"]):
+        raise ValueError("Invalid wheel digest")
+    print(w["name"]); print(w["sha256"])
 ' "$1" 2>/dev/null)" || return 1
   MAN_VERSION="$(printf '%s\n' "$out" | sed -n 1p)"
   MAN_TAG="$(printf '%s\n' "$out" | sed -n 2p)"
   MAN_WHEEL_NAME="$(printf '%s\n' "$out" | sed -n 3p)"
   MAN_WHEEL_SHA="$(printf '%s\n' "$out" | sed -n 4p)"
+  MAN_TUI_NAME="$(printf '%s\n' "$out" | sed -n 5p)"
+  MAN_TUI_SHA="$(printf '%s\n' "$out" | sed -n 6p)"
   [ -n "$MAN_VERSION" ] && [ -n "$MAN_TAG" ] && [ -n "$MAN_WHEEL_NAME" ] && [ -n "$MAN_WHEEL_SHA" ]
 }
 
@@ -131,7 +144,7 @@ done
 # 2. Resolve the target release. A local release-manifest.json (MANIFEST=…)
 #    pins the exact tag; otherwise TAG (default: latest) resolves through the
 #    GitHub Releases API.
-MAN_VERSION="" MAN_TAG="" MAN_WHEEL_NAME="" MAN_WHEEL_SHA=""
+MAN_VERSION="" MAN_TAG="" MAN_WHEEL_NAME="" MAN_WHEEL_SHA="" MAN_TUI_NAME="" MAN_TUI_SHA=""
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 if [ -n "${MANIFEST:-}" ]; then
@@ -151,12 +164,23 @@ else
 fi
 say "Resolving release ($TAG)…"
 META="$(fetch "$API")" || die "Could not reach the GitHub Releases API for the '$TAG' release of $REPO (network error, or no such release)."
-WHEEL_URL="$(printf '%s' "$META" | grep -o 'https://[^"]*\.whl' | head -n1 || true)"
-SUMS_URL="$(printf '%s' "$META" | grep -o 'https://[^"]*SHA256SUMS' | head -n1 || true)"
-MANIFEST_URL="$(printf '%s' "$META" | grep -o 'https://[^"]*release-manifest\.json' | head -n1 || true)"
-[ -n "$WHEEL_URL" ] || die "Could not find a .whl asset on the '$TAG' release of $REPO."
-WHEEL_NAME="${WHEEL_URL##*/}"
-ok "Found $WHEEL_NAME"
+printf '%s' "$META" > "$TMP/release.json"
+# Select exact asset names from structured metadata; API ordering is irrelevant.
+asset_url() {
+  "$PY" -c '
+import json, sys
+from urllib.parse import urlsplit
+assets = json.load(open(sys.argv[1]))["assets"]
+name = sys.argv[2]
+urls = [a["browser_download_url"] for a in assets
+        if urlsplit(a["browser_download_url"]).path.rsplit("/", 1)[-1] == name]
+if len(urls) != 1 or urlsplit(urls[0]).scheme != "https":
+    raise SystemExit(1)
+print(urls[0])
+' "$TMP/release.json" "$1"
+}
+SUMS_URL="$(asset_url SHA256SUMS || true)"
+MANIFEST_URL="$(asset_url release-manifest.json || true)"
 
 # 2b. Without a local pin, take the pin from the release's own manifest
 #     (every formal release ships one; it names the wheel + its sha256).
@@ -167,10 +191,29 @@ if [ -z "$MAN_WHEEL_SHA" ] && [ -n "$MANIFEST_URL" ]; then
     || die "release $TAG ships an unreadable release-manifest.json — aborting, nothing installed."
 fi
 if [ -n "$MAN_WHEEL_NAME" ]; then
-  # The wheel the release serves must be the wheel the manifest pins.
-  [ "$WHEEL_NAME" = "$MAN_WHEEL_NAME" ] \
-    || die "release $TAG serves wheel '$WHEEL_NAME' but its manifest pins '$MAN_WHEEL_NAME' — aborting, nothing installed."
-  ok "Target v$MAN_VERSION (manifest pin)"
+  WHEEL_NAME="$MAN_WHEEL_NAME"
+else
+  # Historical releases had one bundled wheel. Ambiguous releases fail closed.
+  WHEEL_NAME="$("$PY" -c '
+import json, re, sys
+from urllib.parse import urlsplit
+names = [urlsplit(a["browser_download_url"]).path.rsplit("/", 1)[-1]
+         for a in json.load(open(sys.argv[1]))["assets"]]
+wheels = [n for n in names if n.endswith(".whl")]
+if len(wheels) != 1 or not re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", wheels[0]):
+    raise SystemExit(1)
+print(wheels[0])
+' "$TMP/release.json")" || die "Release requires a manifest identifying its backend wheel."
+fi
+WHEEL_URL="$(asset_url "$WHEEL_NAME")" \
+  || die "Release does not serve exactly one wheel matching the manifest pin '$WHEEL_NAME'."
+ok "Found $WHEEL_NAME"
+TUI_WHEEL=""
+if [ "$INSTALL_TUI" = 1 ] && [ -n "$MAN_TUI_NAME" ]; then
+  [ "$MAN_TUI_NAME" != "$WHEEL_NAME" ] || die "Backend and terminal wheel names must differ."
+  TUI_URL="$(asset_url "$MAN_TUI_NAME")" || die "Missing or duplicate terminal wheel '$MAN_TUI_NAME'."
+  TUI_WHEEL="$TMP/$MAN_TUI_NAME"
+  download "$TUI_URL" "$TUI_WHEEL" || die "Terminal wheel download failed; nothing installed."
 fi
 
 # 3. Download the wheel to a temp file (more reliable than installing from a
@@ -206,6 +249,20 @@ else
   fi
 fi
 
+# Every selected companion is verified before even the backend install starts.
+if [ -n "$TUI_WHEEL" ]; then
+  [ -f "$TMP/SHA256SUMS" ] || die "Split distributions require SHA256SUMS."
+  verify_checksum "$TUI_WHEEL" "$TMP/SHA256SUMS" \
+    || die "Terminal wheel sha256 MISMATCH; nothing installed."
+  [ "$(sha256_of "$TUI_WHEEL")" = "$MAN_TUI_SHA" ] \
+    || die "Terminal wheel manifest sha256 MISMATCH; nothing installed."
+fi
+# A manifest pin remains binding even for legacy releases without SHA256SUMS.
+if [ -n "$MAN_WHEEL_SHA" ]; then
+  [ "$(sha256_of "$WHEEL")" = "$MAN_WHEEL_SHA" ] \
+    || die "Wheel manifest sha256 MISMATCH; nothing installed."
+fi
+
 # 5. Ensure pipx (isolated venv + clean, repeatable upgrades).
 ensure_pipx() {
   command -v pipx >/dev/null 2>&1 && return 0
@@ -222,10 +279,13 @@ ensure_pipx() {
 if ensure_pipx; then
   say "Installing with pipx…"
   pipx install --force "$WHEEL"
+  if [ -n "$TUI_WHEEL" ]; then pipx inject --force "$BIN" "$TUI_WHEEL"; fi
   BIN_DIR="$(pipx environment --value PIPX_BIN_DIR 2>/dev/null || echo "$HOME/.local/bin")"
 else
   warn "pipx unavailable — falling back to 'pip install --user'."
-  "$PY" -m pip install --user --force-reinstall "$WHEEL"
+  INSTALL_WHEELS=("$WHEEL")
+  if [ -n "$TUI_WHEEL" ]; then INSTALL_WHEELS+=("$TUI_WHEEL"); fi
+  "$PY" -m pip install --user --force-reinstall "${INSTALL_WHEELS[@]}"
   BIN_DIR="$("$PY" -c 'import site, os; print(os.path.join(site.getuserbase(), "bin"))')"
 fi
 
@@ -244,14 +304,16 @@ fi
 #    earlier on PATH.
 INSTALLED_BIN="$BIN_DIR/$BIN"
 [ -x "$INSTALLED_BIN" ] || INSTALLED_BIN="$BIN"
+LAUNCH="$BIN --tui"
+if [ "$INSTALL_TUI" = 0 ]; then LAUNCH="$BIN --help"; fi
 echo
 if command -v "$BIN" >/dev/null 2>&1; then
   ok "Installed $("$INSTALLED_BIN" --version 2>/dev/null || echo "$BIN")"
-  printf '\n   Start the desk:  \033[1m%s --tui\033[0m\n\n' "$BIN"
+  printf '\n   Get started:  \033[1m%s\033[0m\n\n' "$LAUNCH"
 else
   ok "Installed."
   echo
   warn "'$BIN' isn't on your PATH yet in this shell. Add the bin dir:"
   printf '     export PATH="%s:$PATH"\n' "$BIN_DIR"
-  printf '   then open a new terminal and run:  \033[1m%s --tui\033[0m\n\n' "$BIN"
+  printf '   then open a new terminal and run:  \033[1m%s\033[0m\n\n' "$LAUNCH"
 fi

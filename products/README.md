@@ -84,3 +84,8 @@ This exposes the existing runtime operations and protocol negotiation. Full
 host/session lifetime ownership and installed remote-terminal recovery qualification
 remain tracked in the product-boundaries plan; this entrypoint alone does not
 establish those guarantees.
+
+The POSIX release installer installs both manifest-selected wheels by default.
+Use `INSTALL_TUI=0 bash install.sh` for a backend-only environment. All selected
+artifacts are verified before installation begins. Windows installation and the
+other upgrade entrypoints still need equivalent split-package handling.

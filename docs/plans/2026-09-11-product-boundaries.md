@@ -847,3 +847,18 @@ Independent release artifact assembly (isolated follow-up):
   size matched its output artifact; the archive contains its index and workflow
   YAML parses. Installer selection/upgrade support for multiple wheels remains
   incomplete and must be finished before publishing this artifact layout.
+
+POSIX companion installation follow-up:
+
+- The standalone installer selects backend and terminal assets by manifest role,
+  independent of GitHub asset ordering. Both selected wheels must pass checksum
+  and manifest verification before pipx installation begins. Ambiguous asset and
+  checksum entries fail closed. Historical single-wheel releases remain supported.
+- `INSTALL_TUI=0` selects backend-only installation; the default injects the
+  verified terminal companion into the backend pipx environment. The pip fallback
+  submits both wheels in one install command. Manifest pins remain binding even
+  when the historical missing-checksum override is explicitly selected.
+- Controlled shell tests cover separate artifact bytes, reversed asset ordering,
+  corrupt/missing/duplicate companions, manifest disagreement and backend-only
+  selection. Windows companion installation and other upgrade entrypoints remain
+  unfinished; this change does not qualify cross-platform distribution as complete.
