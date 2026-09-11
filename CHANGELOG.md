@@ -22,6 +22,7 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 - Require explicit service-scoped credentials for live integration tests.
 - Commit new questions and their initial review schedules atomically.
 - Preserve Enter/control keys in coalesced terminal reads and bound gateway shutdown after stdin closes.
+- Prevent stale thinking timers from overwriting completed TUI status and share concurrent background update checks.
 
 ### Tests
 - Exercise 60 Unicode turns across five TUI lifetimes in the Linux/macOS lifecycle matrix.

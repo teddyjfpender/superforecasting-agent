@@ -136,3 +136,34 @@ passed in 83 seconds, including 60 Unicode turns across five process lifetimes,
 stalled-stream cancellation, durable resume, gateway respawn and hard client
 termination. The harness/EOF unit checks passed 15 tests; terminal parser checks
 passed 57. Linux/macOS CI must rerun these fixes before claiming platform parity.
+
+## Release and platform closeout
+
+The second v0.22.0 gate attempt failed with 30,214 tests passing and 163 skips:
+a hierarchical-calibration read raised SQLite `not authorized`, and another
+worker crashed in SSL certificate loading inside a background banner update
+check. No release assets were published. The first attempt's duplicate deadline
+mechanism is removed in this follow-up, but the second SQLite error has not been
+independently attributed to it. Do not describe these failures as resolved
+release evidence.
+
+The crash dump contained multiple concurrent banner update-check threads.
+`prefetch_update_check` now shares one in-flight thread and always signals
+completion on failure. A blocked-provider regression confirms that 100 extra
+prefetch calls do not create additional workers. Seventy focused update-check,
+build-identity, doctor, TUI startup and hierarchical-calibration tests passed.
+This addresses thread accumulation; it does not claim to prove the SSL crash's
+complete cause.
+
+The updated macOS CI job passed fresh install, upgrade and sustained recovery;
+Windows passed install/upgrade. Linux passed the soak/input checks but its
+hard-kill assertion still reported an orphan. The assertion now distinguishes
+an exited zombie from a running worker and includes live process status on
+failure. Its regression proves sleeping workers still fail the live-orphan
+check; three local respawn/orphan tests passed. Linux verification remains
+pending for that test correction.
+
+Publishing the corrected code requires a release-identity decision: preserve the
+existing v0.22.0 tag and use v0.22.1, or explicitly replace the unpublished tag
+while preserving the failed candidate in an audit ref. No tag was moved and no
+failed gate was bypassed.
