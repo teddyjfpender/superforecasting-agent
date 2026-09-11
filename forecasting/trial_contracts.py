@@ -20,11 +20,17 @@ def evaluation_identity():
 def evaluation_compatible(trial):
     config = json.loads(trial['config'])
     expected = config.get('evaluation_identity')
+    registry = json.loads(Path(__file__).with_name('trial_compatibility.json').read_text())
     if expected is None:
         # Reviewed source hashes, never inferred from a version label or DB claim.
-        registry = json.loads(Path(__file__).with_name('trial_compatibility.json').read_text())
         expected = registry.get(trial['scoring_kernel'], {}).get('evaluation_identity')
-    return expected == evaluation_identity()
+    current = evaluation_identity()
+    if expected == current:
+        return True
+    # Explicitly reviewed non-scoring changes only; unknown identities fail
+    # closed. Frozen trial config and source identities are never rewritten.
+    review = registry.get('evaluation_reviews', {}).get(expected, {})
+    return bool(review.get('reason')) and review.get('compatible_identity') == current
 
 
 def response_schema(space):

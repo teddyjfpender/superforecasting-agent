@@ -318,3 +318,26 @@ def test_cluster_whitespace_does_not_inflate_independence(trial_setup):
                           model='fixture', provider='fixture')
     assert report['assigned_questions'] == 2
     assert report['assigned_clusters'] == 1
+
+
+def test_new_trial_and_readiness_exclude_invalidated_evidence(trial_setup):
+    from forecasting.trial_readiness import candidate_report
+    ledger, questions, _, _, _ = trial_setup
+    with ledger._connect() as conn:
+        conn.execute("UPDATE evidence_items SET metadata=? WHERE question_id=?", ('{"invalidated":true}', questions[0].id))
+    candidate = next(c for c in candidate_report(ledger)['candidates'] if c['question_id'] == questions[0].id)
+    assert 'missing_pre_cutoff_evidence' in candidate['readiness_gaps']
+    with pytest.raises(ValidationError, match='pre-cutoff evidence'):
+        create_trial(ledger, assignments={questions[0].id:'new-event'}, model='fixture', provider='fixture')
+
+
+def test_synthetic_score_cannot_support_new_trial_learning(trial_setup):
+    from forecasting.trial_inputs import score_support_problem
+    from types import SimpleNamespace
+    source = SimpleNamespace(calibration_eligible=False, calibration_weight=1,
+        invalidated_by_correction_id=None, audit_quarantine_reason=None,
+        question_id='historical', scored_at='2026-08-01T00:00:00Z')
+    assert score_support_problem(source, '2026-09-01T00:00:00Z') == 'ineligible_source_score'
+    source.calibration_eligible = True
+    assert score_support_problem(source, '2026-09-01T00:00:00Z') is None
+    assert score_support_problem(source, '2026-09-01T00:00:00Z', ['historical']) == 'overlapping_source_outcome'

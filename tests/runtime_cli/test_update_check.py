@@ -214,3 +214,13 @@ def test_prefetch_shares_in_flight_check_and_completes_on_failure(monkeypatch):
             banner._update_check_thread.join(5)
     assert banner._update_check_done.is_set()
     assert banner.get_update_result(0) is None
+
+
+def test_pending_refresh_does_not_report_previous_result(monkeypatch):
+    import superforecasting_agent.runtime.banner as banner
+    done = threading.Event()
+    monkeypatch.setattr(banner, '_update_check_done', done)
+    monkeypatch.setattr(banner, '_update_result', 5)
+    assert banner.get_update_result(0) is None
+    done.set()
+    assert banner.get_update_result(0) == 5

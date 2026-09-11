@@ -6,5 +6,12 @@
   "0900d57a4209048d2504673f6a39e3dd103683d6a32b005e1f4afe899898ea74": {
     "source_revision": "299b014a0640a97f99b170bb933c4cc1b139a2a9",
     "evaluation_identity": "7cba99836cdc7bff4159d5248351b80116cdcdc064513d692c510b6d793bc1ae"
+  },
+  "evaluation_reviews": {
+    "7cba99836cdc7bff4159d5248351b80116cdcdc064513d692c510b6d793bc1ae": {
+      "compatible_identity": "96b0454abf04efaf4a62a5a99a09d1f090031c2b902079b131833d8f598931cc",
+      "source_revision": "5741f9f0d5d19bfc78eb58fba863e900d8e267b5",
+      "reason": "Reviewed non-scoring connection cache fix and explicit compatibility lookup. Censoring only adds an opt-in probability_key representation; existing contracts without that key retain identical evaluation. Scoring, model validation, learning adjustments, and frozen trial evaluation are byte-identical. No historical trial packet has the new opt-in key."
+    }
   }
 }

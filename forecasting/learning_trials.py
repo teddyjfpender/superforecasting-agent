@@ -29,11 +29,11 @@ def digest(value):
 
 def kernel_identity():
     from forecasting.ledger import scoring, core
-    from forecasting import learning, models, json_validation, trial_provider, censoring, applicability_facts, source_bindings, trial_contracts, trial_evaluation
+    from forecasting import learning, models, json_validation, trial_provider, censoring, applicability_facts, source_bindings, trial_contracts, trial_evaluation, trial_inputs
     # Freeze both scoring and the numeric treatment/response contract. A new
     # implementation cannot finish pending arms under a different policy.
     paths = [__file__, scoring.__file__, core.__file__, learning.__file__, models.__file__, json_validation.__file__, trial_provider.__file__,
-        censoring.__file__, applicability_facts.__file__, source_bindings.__file__, trial_contracts.__file__, trial_evaluation.__file__]
+        censoring.__file__, applicability_facts.__file__, source_bindings.__file__, trial_contracts.__file__, trial_evaluation.__file__, trial_inputs.__file__]
     return hashlib.sha256(b"".join(Path(path).read_bytes() for path in paths)).hexdigest()
 
 
@@ -95,8 +95,8 @@ def create_trial(ledger, *, assignments, model, provider, max_tokens=8192, min_c
                 raise ValidationError('unsupported trial outcome type')
             if q.outcome_space.type == 'distribution' and q.outcome_space.choices:
                 raise ValidationError('named percentage vectors do not have a comparable proper trial loss')
-            evs = [e for e in ledger.list_evidence(qid) if all(t and timestamp_to_datetime(t) <= at
-                   for t in (e.available_at, e.captured_at)) and not e.metadata.get('blocked')]
+            from forecasting.trial_inputs import admissible_evidence, score_support_problem
+            evs = admissible_evidence(ledger, qid, stamp)
             if not evs:
                 raise ValidationError('each trial question requires recorded pre-cutoff evidence')
             packet = {'question': contract(q), 'evidence_cutoff': stamp,
@@ -106,8 +106,8 @@ def create_trial(ledger, *, assignments, model, provider, max_tokens=8192, min_c
             for lesson in lessons:
                 for sid in lesson.get('source_score_record_refs', []):
                     score = ledger.get_score(sid)
-                    if score.invalidated_by_correction_id or score.audit_quarantine_reason or score.question_id in assignments or timestamp_to_datetime(score.scored_at) > at:
-                        raise ValidationError('lesson has invalid or overlapping source outcomes')
+                    if score_support_problem(score, stamp, assignments):
+                        raise ValidationError('lesson has invalid or overlapping source outcomes (including calibration-ineligible scores)')
             treatment = {'lessons': lessons, 'error_profiles': ledger.list_domain_error_profiles(domain=q.domain) if q.domain else []}
             order = ['control', 'learning']
             random.Random(trial_id+cluster).shuffle(order)  # paired order frozen per event cluster

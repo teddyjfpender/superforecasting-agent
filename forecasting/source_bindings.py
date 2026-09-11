@@ -7,6 +7,7 @@ maximum, an independent corroborating source, or a final settlement by itself.
 """
 from datetime import datetime, timezone
 import re
+import math
 
 from forecasting.models import ValidationError, parse_timestamp, timestamp_to_datetime
 
@@ -25,7 +26,16 @@ def source_contract(*, adapter, entity, window_start, window_end, magnitude_type
     return dict(adapter=adapter, entity=entity, window_start=start, window_end=end, magnitude_type=magnitude_type)
 
 
+def _validated_contract(contract):
+    if not isinstance(contract, dict) or set(contract) - {'adapter', 'entity', 'window_start', 'window_end', 'magnitude_type'}:
+        raise ValidationError('invalid source contract fields')
+    if not {'adapter', 'entity', 'window_start', 'window_end'} <= set(contract):
+        raise ValidationError('missing source contract fields')
+    return source_contract(**contract)
+
+
 def binding_spec(contract):
+    contract = _validated_contract(contract)
     if contract['adapter'] == 'nws_temperature_v1':
         return dict(source_url=f"https://api.weather.gov/stations/{contract['entity']}/observations/latest",
             value_pointer='/properties/temperature/value', observed_at_pointer='/properties/timestamp')
@@ -36,11 +46,18 @@ def binding_spec(contract):
 def _epoch_ms(value):
     if type(value) is not int:
         raise ValidationError('USGS timestamps must be integer epoch milliseconds')
-    return datetime.fromtimestamp(value / 1000, timezone.utc).isoformat()
+    try:
+        return datetime.fromtimestamp(value / 1000, timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValidationError('USGS timestamp out of range') from exc
 
 
 def extract_measurement(document, contract, *, captured_at):
     """Return value, revision/observation time, and explicit measurement meaning."""
+    contract = _validated_contract(contract)
+    captured_at = parse_timestamp(captured_at, field_name='source capture time')
+    if not captured_at:
+        raise ValidationError('source_capture_time_missing')
     if not isinstance(document, dict) or document.get('type') != 'Feature' or not isinstance(document.get('properties'), dict):
         raise ValidationError('source_schema_mismatch')
     p = document['properties']
@@ -55,7 +72,7 @@ def extract_measurement(document, contract, *, captured_at):
             raise ValidationError('source_units_mismatch')
         if measure.get('qualityControl') != 'V':
             raise ValidationError('source_quality_unverified')
-        value, observed = measure['value'], parse_timestamp(p['timestamp'], field_name='NWS observation time')
+        value, observed = measure.get('value'), parse_timestamp(p.get('timestamp'), field_name='NWS observation time')
         event_time = observed
         meaning = dict(measurement='instantaneous_air_temperature', units='wmoUnit:degC',
             observation_period='instant', entity=contract['entity'], daily_maximum_complete=False)
@@ -66,10 +83,12 @@ def extract_measurement(document, contract, *, captured_at):
             raise ValidationError('source_magnitude_scale_mismatch')
         if p.get('status') not in ('automatic', 'reviewed'):
             raise ValidationError('source_review_status_unknown')
-        value, observed = p['mag'], _epoch_ms(p['updated'])
-        event_time = _epoch_ms(p['time'])
+        value, observed = p.get('mag'), _epoch_ms(p.get('updated'))
+        event_time = _epoch_ms(p.get('time'))
         meaning = dict(measurement='earthquake_magnitude', units='magnitude:'+contract['magnitude_type'],
             observation_period='event', entity=contract['entity'], review_status=p['status'], event_time=event_time)
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ValidationError('source_measurement_must_be_finite_number')
     if not observed or not event_time:
         raise ValidationError('observation_time_missing')
     event_at, observed_at = timestamp_to_datetime(event_time), timestamp_to_datetime(observed)

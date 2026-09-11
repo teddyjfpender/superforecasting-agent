@@ -8,6 +8,11 @@ from forecasting.cli import core as _core
 
 
 def register(sub):
+    policy = sub.add_parser('censoring-policy', help='Audit and convert historical prose censoring without rewriting forecasts')
+    policy.add_argument('id')
+    policy.add_argument('--spec-file', required=True)
+    policy.add_argument('--apply', action='store_true', help='Apply the reviewed spec with its expected_sha256')
+    policy.set_defaults(_forecast_handler=handle_censoring_policy)
     domain = sub.add_parser('domain', help='Correct semantic domain with preserved history')
     domain.add_argument('id')
     domain.add_argument('--domain', required=True)
@@ -158,4 +163,17 @@ def handle_domain(args):
         qid = _core._resolve_question_id(ledger, args.id)
         print(json.dumps(asdict(set_question_domain(ledger, qid, domain=args.domain,
             expected_domain=args.expected_domain or None, reason=args.reason)), indent=2))
+    return _run_operation(operation, args)
+
+
+def handle_censoring_policy(args):
+    def operation(args):
+        from forecasting.censoring_policy import policy_preview, convert_policy
+        ledger = _core._ledger(args)
+        spec = json.loads(Path(args.spec_file).read_text(encoding='utf-8'))
+        qid = _core._resolve_question_id(ledger, args.id)
+        if not args.apply:
+            spec.pop('expected_sha256', None)
+        result = (convert_policy if args.apply else policy_preview)(ledger, qid, **spec)
+        print(json.dumps(result, indent=2))
     return _run_operation(operation, args)

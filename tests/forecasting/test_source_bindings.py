@@ -49,3 +49,29 @@ def test_nws_malformed_measurement_is_rejected(temperature):
         'temperature': temperature}}
     with pytest.raises(ValidationError, match='schema'):
         extract_measurement(raw, contract, captured_at='2026-09-11T00:00:00Z')
+
+
+@pytest.mark.parametrize('value', [None, True, '4.5', [], float('nan'), float('inf')])
+def test_usgs_non_numeric_measurement_rejected(value):
+    raw = {'id': 'us1234', 'type': 'Feature', 'properties': {'type': 'earthquake',
+        'time': 1789041600000, 'updated': 1789045200000, 'mag': value, 'magType': 'mb', 'status': 'reviewed'}}
+    contract = source_contract(adapter='usgs_magnitude_v1', entity='us1234', magnitude_type='mb',
+        window_start='2026-09-10T00:00:00Z', window_end='2026-09-11T00:00:00Z')
+    with pytest.raises(ValidationError, match='finite_number'):
+        extract_measurement(raw, contract, captured_at='2026-09-11T00:00:00Z')
+
+
+@pytest.mark.parametrize('value', [None, True, 10**1000, -10**1000])
+def test_usgs_invalid_epoch_has_domain_error(value):
+    from forecasting.source_bindings import _epoch_ms
+    with pytest.raises(ValidationError):
+        _epoch_ms(value)
+
+
+@pytest.mark.parametrize('contract', [{}, {'adapter': 'unknown'}, None])
+def test_invalid_source_contract_never_falls_through_to_usgs(contract):
+    from forecasting.source_bindings import binding_spec
+    with pytest.raises(ValidationError):
+        binding_spec(contract)
+    with pytest.raises(ValidationError):
+        extract_measurement({}, contract, captured_at='2026-09-11T00:00:00Z')

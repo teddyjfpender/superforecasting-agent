@@ -336,3 +336,38 @@ def test_off_mode_is_noop(tmp_path, monkeypatch):
         outcome_space=OutcomeSpace(),
     )
     assert q.id
+
+
+def test_reused_statement_rechecks_commit_context(tmp_path, enforced):
+    ledger = _ledger(tmp_path)
+    with ledger._connect() as conn:
+        with allow_ledger_writes(reason='first insert only'):
+            _raw_insert_question(conn, 'permitted')
+        with pytest.raises(sqlite3.DatabaseError, match='not authorized'):
+            _raw_insert_question(conn, 'must-not-exist')
+        assert [r[0] for r in conn.execute('SELECT id FROM forecast_questions')] == ['permitted']
+
+
+def test_reused_statement_rechecks_proposal_only_policy(tmp_path, enforced, monkeypatch):
+    ledger = _ledger(tmp_path)
+    with ledger._connect() as conn:
+        # A temporary scratch table with the protected name avoids unrelated
+        # snapshot foreign keys while exercising the real connection policy.
+        conn.execute('CREATE TEMP TABLE forecast_snapshots(id TEXT)')
+        with allow_ledger_writes(reason='initial permission'):
+            conn.execute('INSERT INTO temp.forecast_snapshots VALUES (?)', ('allowed',))
+            monkeypatch.setenv('FORECAST_COMMIT_POLICY', 'proposal_only')
+            with pytest.raises(sqlite3.DatabaseError, match='not authorized'):
+                conn.execute('INSERT INTO temp.forecast_snapshots VALUES (?)', ('forbidden',))
+
+
+def test_callback_failure_retains_diagnostic_without_allowing_query(tmp_path, enforced, monkeypatch, caplog):
+    from forecasting.ledger import gate
+    ledger = _ledger(tmp_path)
+    def interrupted(*args):
+        raise TimeoutError('deadline during authorizer')
+    with ledger._connect() as conn:
+        monkeypatch.setattr(gate, '_authorize_ledger_write', interrupted)
+        with pytest.raises(sqlite3.DatabaseError, match='not authorized'):
+            conn.execute('SELECT 42')
+    assert 'TimeoutError: deadline during authorizer' in caplog.text

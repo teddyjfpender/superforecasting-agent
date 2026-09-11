@@ -12,12 +12,17 @@ from forecasting.models import ValidationError, parse_timestamp
 
 
 def validate_contract(contract):
-    if not isinstance(contract, dict) or set(contract) != {'threshold', 'inclusive'}:
-        raise ValidationError('censoring requires exactly threshold and inclusive')
+    if not isinstance(contract, dict) or not {'threshold', 'inclusive'} <= set(contract) or set(contract) - {'threshold', 'inclusive', 'probability_key'}:
+        raise ValidationError('censoring requires threshold and inclusive, with optional probability_key')
     if type(contract['threshold']) not in (int, float) or not math.isfinite(contract['threshold']):
         raise ValidationError('censoring threshold must be a finite JSON number')
     if type(contract['inclusive']) is not bool:
         raise ValidationError('censoring inclusive must be boolean')
+    if 'probability_key' in contract:
+        key = contract['probability_key']
+        match = re.fullmatch(r'p_(gt|gte)_(-?\d+(?:\.\d+)?)(?:_[A-Za-z][A-Za-z0-9_]*)?', key) if isinstance(key, str) else None
+        if not match or float(match[2]) != contract['threshold'] or (match[1] == 'gte') != contract['inclusive']:
+            raise ValidationError('explicit probability key must identify the exact threshold and inequality')
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,11 @@ def threshold_probability(payload, contract):
     threshold, inclusive = contract['threshold'], contract['inclusive']
     if not isinstance(payload, dict) or not payload:
         raise ValidationError('censored scoring requires a predictive distribution with identifiable tail mass')
+    if 'probability_key' in contract:
+        probability = payload.get(contract['probability_key'])
+        if type(probability) not in (int, float) or not math.isfinite(probability) or not 0 <= probability <= 1:
+            raise ValidationError('declared explicit tail probability is missing or invalid; Gaussian fallback is forbidden')
+        return float(probability)
     gaussian_keys = {'mean', 'expected', 'value', 'point', 'sd', 'std', 'sigma', 'stdev', 'standard_deviation'}
     if set(payload) <= gaussian_keys:
         if len(set(payload) & {'mean', 'expected', 'value', 'point'}) != 1 or len(set(payload) - {'mean', 'expected', 'value', 'point'}) != 1:
