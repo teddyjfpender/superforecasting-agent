@@ -1278,3 +1278,24 @@ Configured command admission and TUI execution routing:
   agent-internal cleanup and compatibility command migration remain unfinished.
   The primary branch's full push gate runs separately and does not include this
   isolated follow-up.
+
+
+### Installed backend upgrade and independent terminal qualification
+
+- `verify_profiles.py --upgrade-from <previous-backend-wheel>` now creates
+  forecast/evidence and session state before installing the candidate, checks
+  unchanged existing values/types and configuration, then exercises the installed
+  CLI and independent local/remote terminal. Missing history/evidence fails.
+- macOS Python 3.13.12: retained backend 0.21.2 upgraded to candidate 0.22.0.
+  Question, probability history, timestamped evidence, Unicode session history and
+  raw configuration survived. Installed resolution/scoring, local Ink, authenticated
+  remote Ink, host termination and credential-log checks passed.
+- Previous wheel SHA-256:
+  `09c3ec93d5dec5e26353922c2162f50d5702e4c5264a846643470c9fa4abfaca`.
+  Candidate wheel SHA-256:
+  `294771183bf80fd3a866dd388d4975211014689bfd80eea524d9c119ecb75226`.
+  Candidate built from isolated runtime commit `58e91e7a8`; this is local artifact
+  qualification, not publication or native Windows/Android evidence.
+- Seven verifier regression cases reject missing/retyped/changed history while
+  allowing additive fields. The terminal package remains version 0.1.0; this does
+  not claim an upgrade between different terminal versions.

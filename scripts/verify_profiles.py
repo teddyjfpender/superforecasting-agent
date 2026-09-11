@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import select
@@ -12,6 +14,7 @@ import subprocess
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 
 def verify_installed_terminal(
@@ -124,9 +127,32 @@ def verify_installed_terminal(
             process.wait(timeout=5)
 
 
+def assert_preserved(before: Any, after: Any, path: str = "state") -> None:
+    """Allow added schema fields; never silently lose or alter existing values."""
+    if isinstance(before, dict):
+        if not isinstance(after, dict):
+            raise AssertionError(f"{path}: mapping lost during upgrade")
+        for key, value in before.items():
+            if key not in after:
+                raise AssertionError(f"{path}.{key}: missing after upgrade")
+            assert_preserved(value, after[key], f"{path}.{key}")
+    elif isinstance(before, list):
+        if not isinstance(after, list) or len(before) != len(after):
+            raise AssertionError(f"{path}: record count changed during upgrade")
+        for index, value in enumerate(before):
+            assert_preserved(value, after[index], f"{path}[{index}]")
+    elif type(before) is not type(after) or before != after:
+        raise AssertionError(f"{path}: value changed during upgrade")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("wheels", type=Path)
+    parser.add_argument(
+        "--upgrade-from",
+        type=Path,
+        help="Install this older backend wheel and create durable state before upgrading",
+    )
     parser.add_argument(
         "--python",
         default="3.11",
@@ -139,7 +165,10 @@ def main() -> None:
         root = Path(temporary)
         bins = "Scripts" if os.name == "nt" else "bin"
         python_name = "python.exe" if os.name == "nt" else "python"
-        for name, wheel in (("backend", backend), ("terminal", terminal)):
+        for name, wheel in (
+            ("backend", args.upgrade_from.resolve() if args.upgrade_from else backend),
+            ("terminal", terminal),
+        ):
             env_root = root / name
             subprocess.run(
                 ["uv", "venv", str(env_root), "--python", args.python], check=True
@@ -180,7 +209,7 @@ def main() -> None:
 
         backend_run(
             "-c",
-            "import shutil; assert shutil.which('node') is None; import forecasting.application.reviews",
+            "import shutil; assert shutil.which('node') is None; import forecasting",
         )
 
         def forecast(*arguments: str) -> str:
@@ -210,6 +239,108 @@ def main() -> None:
             "--change-my-mind",
             "A failed completion record",
         )
+        if args.upgrade_from:
+            forecast(
+                "evidence",
+                "add",
+                question,
+                "Local upgrade fixture",
+                "--claim",
+                "The isolated fixture is prepared",
+                "--summary",
+                "Synthetic engineering evidence; no forecasting skill claim",
+                "--published-at",
+                "2026-09-10T00:00:00Z",
+            )
+            export_path = root / "before-upgrade.json"
+            forecast(
+                "export", question, "--format", "json", "--output", str(export_path)
+            )
+            before = json.loads(export_path.read_text(encoding="utf-8"))
+            if not before["forecast_history"] or not before["evidence"]:
+                raise AssertionError(
+                    "Older backend did not persist forecast/evidence fixtures"
+                )
+            config = profile / "config.yaml"
+            config.write_text("display:\n  skin: mono\n", encoding="utf-8")
+            config_before = config.read_bytes()
+            session_import = (
+                "from importlib.util import find_spec; from importlib import import_module; "
+                "SessionDB = import_module('superforecasting_agent.storage.session' "
+                "if find_spec('superforecasting_agent.storage') is not None "
+                "else 'hermes_state').SessionDB; "
+            )
+            backend_run(
+                "-c",
+                session_import + "db=SessionDB(); "
+                "db.create_session('upgrade-fixture', source='cli'); "
+                "db.append_message('upgrade-fixture', 'user', 'Preserve this forecast note — 日本語'); db.close()",
+            )
+            read_session = (
+                session_import + "import json; db=SessionDB(); "
+                "print(json.dumps(db.get_messages('upgrade-fixture'))); db.close()"
+            )
+            messages = json.loads(backend_run("-c", read_session))
+            if not messages:
+                raise AssertionError(
+                    "Older backend did not persist the session fixture"
+                )
+            old_version = backend_run(
+                "-c",
+                "from importlib.metadata import version; print(version('superforecasting-agent'))",
+            ).strip()
+            subprocess.run(
+                [
+                    "uv",
+                    "pip",
+                    "install",
+                    "--reinstall-package",
+                    "superforecasting-agent",
+                    "--python",
+                    str(backend_python),
+                    str(backend),
+                ],
+                check=True,
+            )
+            subprocess.run(
+                ["uv", "pip", "check", "--python", str(backend_python)], check=True
+            )
+            new_version = backend_run(
+                "-c",
+                "from importlib.metadata import version; print(version('superforecasting-agent'))",
+            ).strip()
+            forecast(
+                "export", question, "--format", "json", "--output", str(export_path)
+            )
+            after = json.loads(export_path.read_text(encoding="utf-8"))
+            for field in ("question", "forecast_history", "evidence"):
+                assert_preserved(before[field], after[field], field)
+            assert_preserved(
+                messages,
+                json.loads(backend_run("-c", read_session)),
+                "session",
+            )
+            if config.read_bytes() != config_before:
+                raise AssertionError("Upgrade changed user configuration")
+            print(
+                json.dumps({
+                    "upgrade": {"from": old_version, "to": new_version},
+                    "previous_sha256": hashlib.sha256(
+                        args.upgrade_from.read_bytes()
+                    ).hexdigest(),
+                    "candidate_sha256": hashlib.sha256(
+                        backend.read_bytes()
+                    ).hexdigest(),
+                    "preserved": [
+                        "question",
+                        "forecast_history",
+                        "evidence",
+                        "session",
+                        "configuration",
+                    ],
+                })
+            )
+        backend_run("-c", "import forecasting.application.reviews")
         resolved = forecast(
             "resolve", question, "--outcome", "true", "--source", "Fixture completion"
         )

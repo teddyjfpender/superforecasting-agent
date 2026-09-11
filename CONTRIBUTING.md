@@ -1084,6 +1084,26 @@ After the [litellm supply chain compromise](https://github.com/BerriAI/litellm/i
 
 ---
 
+## Installed product upgrade checks
+
+Build and check the independent distributions outside the checkout:
+
+```bash
+python3 scripts/build_profiles.py --out dist/profiles
+python3 scripts/verify_profiles.py dist/profiles --python .venv/bin/python
+python3 scripts/verify_profiles.py dist/profiles --python .venv/bin/python \
+  --upgrade-from /path/to/previous-superforecasting-agent.whl
+```
+
+The upgrade mode installs the supplied previous backend wheel in an isolated
+environment, creates a forecast, evidence and Unicode session history, then
+installs the candidate. It checks existing values and types, permits additive
+schema fields, and requires unchanged configuration. It continues resolution and
+scoring through the installed backend and independent local/remote terminal.
+The receipt prints both backend versions and wheel SHA-256 hashes. Supply a
+retained, identified prior artifact; a fresh-install pass does not prove upgrades.
+Platform qualifications remain specific to the machine running this command.
+
 ## Pull Request Process
 
 ### Branch naming
