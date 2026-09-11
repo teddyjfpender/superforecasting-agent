@@ -573,23 +573,13 @@ def write_profile_meta(
     """
     if not profile_dir.is_dir():
         raise FileNotFoundError(f"profile directory does not exist: {profile_dir}")
-    import yaml
-    path = _profile_yaml_path(profile_dir)
-    existing: dict = {}
-    if path.is_file():
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                loaded = yaml.safe_load(f) or {}
-            if isinstance(loaded, dict):
-                existing = loaded
-        except Exception:
-            existing = {}
-    if description is not None:
-        existing["description"] = description.strip()
-    if description_auto is not None:
-        existing["description_auto"] = bool(description_auto)
-    from superforecasting_agent.storage.files import atomic_yaml_write
-    atomic_yaml_write(path, existing)
+    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_mutate
+    def update(existing):
+        if description is not None:
+            existing["description"] = description.strip()
+        if description_auto is not None:
+            existing["description_auto"] = bool(description_auto)
+    atomic_roundtrip_yaml_mutate(_profile_yaml_path(profile_dir), update)
 
 
 # ---------------------------------------------------------------------------

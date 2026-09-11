@@ -47,7 +47,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import httpx
 import yaml
 
-from superforecasting_agent.runtime.config import get_agent_home, get_config_path, read_raw_config
+from superforecasting_agent.runtime.config import get_agent_home, get_config_path, read_raw_config, save_config
 from superforecasting_agent.runtime.nous_env import nous_inference_base_url, nous_portal_base_url
 
 
@@ -67,7 +67,7 @@ def _auth_command_hint() -> str:
 
 from superforecasting_agent.constants import OPENROUTER_BASE_URL
 from agent.credential_persistence import sanitize_borrowed_credential_payload
-from superforecasting_agent.storage.files import atomic_replace, atomic_yaml_write
+from superforecasting_agent.storage.files import atomic_replace
 from superforecasting_agent.environment import env_var_alias_enabled, is_truthy_value
 
 logger = logging.getLogger(__name__)
@@ -5474,12 +5474,6 @@ def _update_config_for_provider(
     mismatched model/provider (e.g. ``anthropic/claude-opus-4.6`` sent to
     MiniMax's API).
     """
-    # Set active_provider in auth.json so auto-resolution picks this provider
-    with _auth_store_lock():
-        auth_store = _load_auth_store()
-        auth_store["active_provider"] = provider_id
-        _save_auth_store(auth_store)
-
     # Update config.yaml model section
     config_path = get_config_path()
     config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -5522,7 +5516,13 @@ def _update_config_for_provider(
 
     config["model"] = model_cfg
 
-    atomic_yaml_write(config_path, config, sort_keys=False)
+    save_config(config)
+    # Set active_provider in auth.json so auto-resolution picks this provider
+    with _auth_store_lock():
+        auth_store = _load_auth_store()
+        auth_store["active_provider"] = provider_id
+        _save_auth_store(auth_store)
+
     return config_path
 
 
@@ -5589,7 +5589,7 @@ def _reset_config_provider() -> Path:
         model["provider"] = "auto"
         if "base_url" in model:
             model["base_url"] = OPENROUTER_BASE_URL
-    atomic_yaml_write(config_path, config, sort_keys=False)
+    save_config(config)
     return config_path
 
 

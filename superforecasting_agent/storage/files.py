@@ -224,6 +224,24 @@ def atomic_yaml_write(
             f.write(extra_content)
 
 
+def _roundtrip_codec():
+    """Keep YAML 1.2 writers compatible with the application's YAML 1.1 readers."""
+    from ruamel.yaml import YAML
+    from ruamel.yaml.representer import RoundTripRepresenter
+
+    class ConfigRepresenter(RoundTripRepresenter):
+        def represent_str(self, value):
+            style = '"' if value.lower() in {'on', 'off', 'yes', 'no'} else None
+            return self.represent_scalar('tag:yaml.org,2002:str', value, style=style)
+
+    ConfigRepresenter.add_representer(str, ConfigRepresenter.represent_str)
+    codec = YAML(typ="rt")
+    codec.Representer = ConfigRepresenter
+    codec.preserve_quotes = True
+    codec.allow_unicode = True
+    return codec
+
+
 def atomic_roundtrip_yaml_update(
     path: Union[str, Path],
     key_path: str,
@@ -247,7 +265,7 @@ def atomic_roundtrip_yaml_update(
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        yaml_rt = YAML(typ="rt")
+        yaml_rt = _roundtrip_codec()
         yaml_rt.preserve_quotes = True
         yaml_rt.allow_unicode = True
         yaml_rt.default_flow_style = False
@@ -268,6 +286,31 @@ def atomic_roundtrip_yaml_update(
 
         with _atomic_text_writer(path) as f:
             yaml_rt.dump(config, f)
+
+
+def atomic_roundtrip_yaml_mutate(path, mutate):
+    """Apply a compound edit to the latest mapping under the shared writer lock."""
+    path = Path(path)
+    with yaml_update_lock(path):
+        try:
+            from ruamel.yaml import YAML
+            codec = _roundtrip_codec()
+            codec.preserve_quotes = True
+            codec.allow_unicode = True
+        except ImportError:
+            codec = None
+        raw = path.read_text(encoding="utf-8") if path.exists() else ""
+        config = codec.load(raw) if codec else yaml.safe_load(raw)
+        if config is None:
+            config = {}
+        if not isinstance(config, dict):
+            raise ValueError("configuration root must be a mapping")
+        mutate(config)
+        with _atomic_text_writer(path) as stream:
+            if codec:
+                codec.dump(config, stream)
+            else:
+                yaml.safe_dump(config, stream, allow_unicode=True, sort_keys=False)
 
 
 def _yaml_inline_scalar(value: Any) -> str:

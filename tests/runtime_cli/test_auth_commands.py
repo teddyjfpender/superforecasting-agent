@@ -788,10 +788,10 @@ def test_reset_config_provider_uses_atomic_yaml_write(tmp_path, monkeypatch):
         assert path == config_path
         assert data["model"]["provider"] == "auto"
         assert data["model"]["base_url"] == "https://openrouter.ai/api/v1"
-        assert kwargs["sort_keys"] is False
+        assert kwargs.get("sort_keys", False) is False
         raise OSError("simulated atomic write failure")
 
-    with patch("superforecasting_agent.runtime.auth.atomic_yaml_write", side_effect=_boom) as mock_write:
+    with patch("superforecasting_agent.storage.files.atomic_yaml_write", side_effect=_boom) as mock_write:
         with pytest.raises(OSError, match="simulated atomic write failure"):
             _reset_config_provider()
 

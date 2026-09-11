@@ -1353,9 +1353,8 @@ def save_config_value(key_path: str, value: any) -> bool:
     """
     Save a value to the active config file at the specified key path.
     
-    Respects the same lookup order as load_cli_config():
-    1. Active agent-home config.yaml (user config - preferred, used if it exists)
-    2. ./cli-config.yaml (project config - fallback)
+    Writes to the active profile, including first use. Project defaults are
+    read-only compatibility input, never a persistence destination.
     
     Args:
         key_path: Dot-separated path like "agent.system_prompt"
@@ -1364,10 +1363,7 @@ def save_config_value(key_path: str, value: any) -> bool:
     Returns:
         True if successful, False otherwise
     """
-    # Use the same precedence as load_cli_config: user config first, then project config
-    user_config_path = _hermes_home / 'config.yaml'
-    project_config_path = Path(__file__).parent / 'cli-config.yaml'
-    config_path = user_config_path if user_config_path.exists() else project_config_path
+    config_path = _hermes_home / 'config.yaml'
     
     try:
         # Ensure parent directory exists (for config.yaml on first use)
@@ -6457,16 +6453,18 @@ class ForecastCLI:
             self.show_reasoning = True
             if self.agent:
                 self.agent.reasoning_callback = self._current_reasoning_callback()
-            save_config_value("display.show_reasoning", True)
-            _cprint(f"  {_ACCENT}✓ Reasoning display: ON (saved){_RST}")
+            saved = save_config_value("display.show_reasoning", True)
+            scope = "saved" if saved else "session only; configuration save failed"
+            _cprint(f"  {_ACCENT}✓ Reasoning display: ON ({scope}){_RST}")
             _cprint(f"  {_DIM}  Model thinking will be shown during and after each response.{_RST}")
             return
         if arg in {"hide", "off"}:
             self.show_reasoning = False
             if self.agent:
                 self.agent.reasoning_callback = self._current_reasoning_callback()
-            save_config_value("display.show_reasoning", False)
-            _cprint(f"  {_ACCENT}✓ Reasoning display: OFF (saved){_RST}")
+            saved = save_config_value("display.show_reasoning", False)
+            scope = "saved" if saved else "session only; configuration save failed"
+            _cprint(f"  {_ACCENT}✓ Reasoning display: OFF ({scope}){_RST}")
             return
 
         # Effort level change

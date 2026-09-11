@@ -116,6 +116,7 @@ export default function ConfigPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [yamlMode, setYamlMode] = useState(false);
   const [yamlText, setYamlText] = useState("");
+  const [yamlRevision, setYamlRevision] = useState<string | null>(null);
   const [yamlLoading, setYamlLoading] = useState(false);
   const [yamlSaving, setYamlSaving] = useState(false);
   const [configPath, setConfigPath] = useState<string | null>(null);
@@ -197,7 +198,7 @@ export default function ConfigPage() {
       setYamlLoading(true);
       api
         .getConfigRaw()
-        .then((resp) => setYamlText(resp.yaml))
+        .then((resp) => { setYamlText(resp.yaml); setYamlRevision(resp.revision); })
         .catch(() => showToast(t.config.failedToLoadRaw, "error"))
         .finally(() => setYamlLoading(false));
     }
@@ -262,7 +263,8 @@ export default function ConfigPage() {
     if (!config) return;
     setSaving(true);
     try {
-      await api.saveConfig(config);
+      const saved = await api.saveConfig(config);
+      setConfig((current) => current ? { ...current, _revision: saved.revision } : current);
       showToast(t.config.configSaved, "success");
     } catch (e) {
       showToast(`${t.config.failedToSave}: ${e}`, "error");
@@ -274,7 +276,8 @@ export default function ConfigPage() {
   const handleYamlSave = async () => {
     setYamlSaving(true);
     try {
-      await api.saveConfigRaw(yamlText);
+      const saved = await api.saveConfigRaw(yamlText, yamlRevision);
+      setYamlRevision(saved.revision);
       showToast(t.config.yamlConfigSaved, "success");
       api
         .getConfig()

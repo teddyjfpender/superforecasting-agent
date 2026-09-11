@@ -83,10 +83,10 @@ class TestProviderPersistsAfterModelSave:
             assert data["model"]["provider"] == "nous"
             assert data["model"]["base_url"] == "https://inference.example.com/v1"
             assert data["model"]["default"] == "some-old-model"
-            assert kwargs["sort_keys"] is False
+            assert kwargs.get("sort_keys", False) is False
             raise OSError("simulated atomic write failure")
 
-        with patch("superforecasting_agent.runtime.auth.atomic_yaml_write", side_effect=_boom) as mock_write:
+        with patch("superforecasting_agent.storage.files.atomic_yaml_write", side_effect=_boom) as mock_write:
             with pytest.raises(OSError, match="simulated atomic write failure"):
                 _update_config_for_provider(
                     "nous",

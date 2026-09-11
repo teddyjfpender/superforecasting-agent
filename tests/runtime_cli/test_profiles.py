@@ -1261,10 +1261,9 @@ def test_profile_metadata_interrupted_write_preserves_existing_file(tmp_path, mo
     path = tmp_path/'profile.yaml'
     original = 'description: original\ndescription_auto: false\n'
     path.write_text(original)
-    def interrupted(data, stream, **kwargs):
-        stream.write('partial:')
+    def interrupted(source, destination):
         raise OSError('disk write interrupted')
-    monkeypatch.setattr(files.yaml, 'dump', interrupted)
+    monkeypatch.setattr(files.os, 'replace', interrupted)
     with pytest.raises(OSError, match='interrupted'):
         write_profile_meta(tmp_path, description='replacement')
     assert path.read_text() == original

@@ -4991,6 +4991,15 @@ def cfg_get(cfg: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> A
 
 
 def read_raw_config() -> Dict[str, Any]:
+    """Read a revision-bearing raw snapshot suitable for a checked save."""
+    path = get_config_path()
+    revision = _config_revision(path)
+    result = _ConfigSnapshot(_read_raw_config())
+    result._path, result._revision = path.resolve(), revision
+    return result
+
+
+def _read_raw_config() -> Dict[str, Any]:
     """Read active agent-home config.yaml as-is, without merging defaults or migrating.
 
     Returns the raw YAML dict, or ``{}`` if the file doesn't exist or can't

@@ -575,7 +575,7 @@ from superforecasting_agent.environment import (
     env_var_alias_value,
     is_truthy_value,
 )
-from superforecasting_agent.storage.files import atomic_json_write, atomic_yaml_write
+from superforecasting_agent.storage.files import atomic_json_write, atomic_roundtrip_yaml_update
 from superforecasting_agent.urls import base_url_host_matches
 _hermes_home = get_agent_home()
 
@@ -12497,18 +12497,7 @@ class GatewayRunner:
         def _save_config_key(key_path: str, value):
             """Save a dot-separated key to config.yaml."""
             try:
-                user_config = {}
-                if config_path.exists():
-                    with open(config_path, encoding="utf-8") as f:
-                        user_config = yaml.safe_load(f) or {}
-                keys = key_path.split(".")
-                current = user_config
-                for k in keys[:-1]:
-                    if k not in current or not isinstance(current[k], dict):
-                        current[k] = {}
-                    current = current[k]
-                current[keys[-1]] = value
-                atomic_yaml_write(config_path, user_config)
+                atomic_roundtrip_yaml_update(config_path, key_path, value)
                 return True
             except Exception as e:
                 logger.error("Failed to save config key %s: %s", key_path, e)
@@ -12545,12 +12534,14 @@ class GatewayRunner:
         platform_key = _platform_config_key(event.source.platform)
         if args in {"show", "on"}:
             self._show_reasoning = True
-            _save_config_key(f"display.platforms.{platform_key}.show_reasoning", True)
+            if not _save_config_key(f"display.platforms.{platform_key}.show_reasoning", True):
+                return t("gateway.config_save_failed", error="Reasoning display changed for this process only")
             return t("gateway.reasoning.display_set_on", platform=platform_key)
 
         if args in {"hide", "off"}:
             self._show_reasoning = False
-            _save_config_key(f"display.platforms.{platform_key}.show_reasoning", False)
+            if not _save_config_key(f"display.platforms.{platform_key}.show_reasoning", False):
+                return t("gateway.config_save_failed", error="Reasoning display changed for this process only")
             return t("gateway.reasoning.display_set_off", platform=platform_key)
 
         # Effort level change
@@ -12562,11 +12553,9 @@ class GatewayRunner:
             self._reasoning_config = self._load_reasoning_config()
             self._evict_cached_agent(session_key)
             return t("gateway.reasoning.reset_done")
-        if effort == "none":
-            parsed = {"enabled": False}
-        elif effort in {"minimal", "low", "medium", "high", "xhigh"}:
-            parsed = {"enabled": True, "effort": effort}
-        else:
+        from superforecasting_agent.constants import parse_reasoning_effort
+        parsed = parse_reasoning_effort(effort)
+        if parsed is None:
             return t(
                 "gateway.reasoning.unknown_arg",
                 arg=effort or raw_args.lower(),
@@ -12603,18 +12592,7 @@ class GatewayRunner:
         def _save_config_key(key_path: str, value):
             """Save a dot-separated key to config.yaml."""
             try:
-                user_config = {}
-                if config_path.exists():
-                    with open(config_path, encoding="utf-8") as f:
-                        user_config = yaml.safe_load(f) or {}
-                keys = key_path.split(".")
-                current = user_config
-                for k in keys[:-1]:
-                    if k not in current or not isinstance(current[k], dict):
-                        current[k] = {}
-                    current = current[k]
-                current[keys[-1]] = value
-                atomic_yaml_write(config_path, user_config)
+                atomic_roundtrip_yaml_update(config_path, key_path, value)
                 return True
             except Exception as e:
                 logger.error("Failed to save config key %s: %s", key_path, e)
@@ -12709,7 +12687,7 @@ class GatewayRunner:
             if platform_key not in display["platforms"] or not isinstance(display["platforms"].get(platform_key), dict):
                 display["platforms"][platform_key] = {}
             display["platforms"][platform_key]["tool_progress"] = new_mode
-            atomic_yaml_write(config_path, user_config)
+            atomic_roundtrip_yaml_update(config_path, f"display.platforms.{platform_key}.tool_progress", new_mode)
             return (
                 f"{descriptions[new_mode]}\n"
                 + t("gateway.verbose.saved_suffix", platform=platform_key)
@@ -12783,7 +12761,7 @@ class GatewayRunner:
             if not isinstance(display.get("runtime_footer"), dict):
                 display["runtime_footer"] = {}
             display["runtime_footer"]["enabled"] = new_state
-            atomic_yaml_write(config_path, user_config)
+            atomic_roundtrip_yaml_update(config_path, "display.runtime_footer.enabled", new_state)
         except Exception as e:
             logger.warning("Failed to save runtime_footer.enabled: %s", e)
             return t("gateway.config_save_failed", error=e)

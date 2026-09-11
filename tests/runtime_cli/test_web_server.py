@@ -616,7 +616,7 @@ class TestConfigRoundTrip:
     def test_get_config_no_internal_keys(self):
         """GET /api/config should not expose _config_version or _model_meta."""
         config = self.client.get("/api/config").json()
-        internal = [k for k in config if k.startswith("_")]
+        internal = [k for k in config if k.startswith("_") and k != "_revision"]
         assert not internal, f"Internal keys leaked to frontend: {internal}"
 
     def test_get_config_model_is_string(self):
@@ -1148,7 +1148,7 @@ class TestNewEndpoints:
     def test_config_raw_put_valid(self):
         resp = self.client.put(
             "/api/config/raw",
-            json={"yaml_text": "model: test\ntoolsets:\n  - all\n"},
+            json={"yaml_text": "model: test\ntoolsets:\n  - all\n", "revision": self.client.get("/api/config/raw").json()["revision"]},
         )
         assert resp.status_code == 200
         assert resp.json()["ok"] is True

@@ -942,9 +942,11 @@ def _normalize_config_for_web(config: Dict[str, Any]) -> Dict[str, Any]:
 
 @app.get("/api/config")
 async def get_config():
-    config = _normalize_config_for_web(load_config())
-    # Strip internal keys that the frontend shouldn't see or send back
-    return {k: v for k, v in config.items() if not k.startswith("_")}
+    snapshot = load_config()
+    config = _normalize_config_for_web(snapshot)
+    result = {k: v for k, v in config.items() if not k.startswith("_")}
+    result["_revision"] = snapshot._revision
+    return result
 
 
 @app.get("/api/config/defaults")
@@ -1271,8 +1273,21 @@ def _denormalize_config_from_web(config: Dict[str, Any]) -> Dict[str, Any]:
 @app.put("/api/config")
 async def update_config(body: ConfigUpdate):
     try:
-        save_config(_denormalize_config_from_web(body.config))
-        return {"ok": True}
+        snapshot = load_config()
+        if "_revision" not in body.config:
+            raise HTTPException(status_code=428, detail="Reload configuration before saving")
+        if body.config["_revision"] != snapshot._revision:
+            raise HTTPException(status_code=409, detail="Configuration changed; reload before saving")
+        updated = dict(body.config)
+        updated.pop("_revision")
+        snapshot.clear()
+        snapshot.update(_denormalize_config_from_web(updated))
+        save_config(snapshot)
+        return {"ok": True, "revision": snapshot._revision}
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
     except Exception:
         _log.exception("PUT /api/config failed")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -3192,14 +3207,16 @@ async def get_forecast_dashboard(limit: int = 50):
 
 class RawConfigUpdate(BaseModel):
     yaml_text: str
+    revision: str | None = None
 
 
 @app.get("/api/config/raw")
 async def get_config_raw():
     path = get_config_path()
-    if not path.exists():
-        return {"yaml": ""}
-    return {"yaml": path.read_text(encoding="utf-8")}
+    import hashlib
+    raw = path.read_bytes() if path.exists() else None
+    return {"yaml": raw.decode("utf-8") if raw is not None else "",
+            "revision": hashlib.sha256(raw).hexdigest() if raw is not None else None}
 
 
 @app.put("/api/config/raw")
@@ -3208,10 +3225,19 @@ async def update_config_raw(body: RawConfigUpdate):
         parsed = yaml.safe_load(body.yaml_text)
         if not isinstance(parsed, dict):
             raise HTTPException(status_code=400, detail="YAML must be a mapping")
-        save_config(parsed)
-        return {"ok": True}
+        snapshot = load_config()
+        if "revision" not in body.model_fields_set:
+            raise HTTPException(status_code=428, detail="Reload configuration before saving")
+        if body.revision != snapshot._revision:
+            raise HTTPException(status_code=409, detail="Configuration changed; reload before saving")
+        snapshot.clear()
+        snapshot.update(parsed)
+        save_config(snapshot)
+        return {"ok": True, "revision": snapshot._revision}
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {e}")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------
