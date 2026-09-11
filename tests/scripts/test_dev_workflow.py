@@ -129,30 +129,6 @@ def test_pre_push_checks_second_ref_before_running_quality(snapshot_repo):
     assert "Missing" not in result.stderr  # Never reached the missing linter.
 
 
-@pytest.mark.skipif(os.name == "nt", reason="Git hooks execute with POSIX bash")
-def test_changed_fixture_is_not_collected_as_a_test(snapshot_repo):
-    root, git, _ = snapshot_repo
-    target = root / "tests/runtime_cli/test_local_desk_lifecycle.py"
-    target.parent.mkdir(parents=True)
-    target.write_text("def test_lifecycle(): pass\n", encoding="utf-8")
-    helper = root / "tests/fixtures/runtime/local_desk_gateway.py"
-    helper.parent.mkdir(parents=True)
-    helper.write_text("raise RuntimeError('executable fixture')\n", encoding="utf-8")
-    git("add", "tests")
-    git("commit", "-qm", "fixture")
-    base = git("rev-parse", "HEAD")
-    helper.write_text("raise RuntimeError('changed executable fixture')\n", encoding="utf-8")
-    git("add", "tests")
-    git("commit", "-qm", "change fixture")
-    checks = SOURCE.parents[1] / ".githooks/lib/checks.sh"
-    result = subprocess.run(
-        ["bash", "-c", 'source "$1"; py_test_targets "$2" HEAD', "fixture", str(checks), base],
-        cwd=root, env={**os.environ, "HOOKS_REPO_ROOT": str(root)},
-        capture_output=True, text=True, check=True,
-    )
-    assert result.stdout.splitlines() == ["tests/runtime_cli/test_local_desk_lifecycle.py"]
-
-
 def test_local_desk_fixture_import_does_not_modify_runtime(monkeypatch):
     import runpy
     import socket
@@ -169,24 +145,35 @@ def test_local_desk_fixture_import_does_not_modify_runtime(monkeypatch):
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Git hooks execute with POSIX bash")
-@pytest.mark.parametrize("changed", ["cli.py", "superforecasting_agent/application/operation.py", "superforecasting_agent/hosting/owner.py", "new_package/worker.py"])
-def test_unmapped_python_owners_require_full_suite(snapshot_repo, changed):
+@pytest.mark.parametrize("suite_status", [0, 1])
+@pytest.mark.parametrize("changed", ["tui_gateway/commands.py", "README.md"])
+def test_pre_push_runs_full_suite_and_propagates_failure(snapshot_repo, suite_status, changed):
     root, git, _ = snapshot_repo
-    tests = root / "tests"
-    tests.mkdir()
-    (tests / "test_smoke.py").write_text("def test_smoke(): pass\n", encoding="utf-8")
-    git("add", "tests")
-    git("commit", "-qm", "suite")
+    shutil.copytree(SOURCE.parents[1] / ".githooks", root / ".githooks",
+                    ignore=shutil.ignore_patterns("skips.log"))
+    checks = root / ".githooks/lib/checks.sh"
+    with checks.open("a", encoding="utf-8") as stream:
+        stream.write("\ncheck_quality() { return 0; }\ncheck_snapshot() { return 0; }\n")
+    runner = root / "scripts/run_tests.sh"
+    runner.write_text('#!/bin/sh\nprintf "%s\\n" "$#" > suite-arguments\nexit ' + str(suite_status) + '\n', encoding="utf-8")
+    runner.chmod(0o755)
+    git("add", ".")
+    git("commit", "-qm", "gate fixture")
     base = git("rev-parse", "HEAD")
     target = root / changed
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("value = 1\n", encoding="utf-8")
+    target.write_text("changed\n", encoding="utf-8")
     git("add", changed)
-    git("commit", "-qm", "new owner")
-    checks = SOURCE.parents[1] / ".githooks/lib/checks.sh"
+    git("commit", "-qm", "change")
+    current = git("rev-parse", "HEAD")
+    env = {key: value for key, value in os.environ.items()
+           if not key.startswith("HERMES_HOOKS_SKIP")}
     result = subprocess.run(
-        ["bash", "-c", 'source "$1"; py_test_targets "$2" HEAD', "fixture", str(checks), base],
-        cwd=root, env={**os.environ, "HOOKS_REPO_ROOT": str(root)},
-        capture_output=True, text=True, check=True,
+        ["bash", ".githooks/pre-push"],
+        input=f"refs/heads/current {current} refs/heads/current {base}\n",
+        cwd=root, env=env, capture_output=True, text=True,
     )
-    assert result.stdout.splitlines() == ["tests"]
+    assert (root / "suite-arguments").read_text(encoding="utf-8").strip() == "0"
+    assert result.returncode == suite_status
+    if suite_status:
+        assert "Full Python suite failed" in result.stderr

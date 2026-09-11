@@ -170,59 +170,6 @@ $(printf '    %s\n' $_gen)
 }
 
 # ── map changed .py files -> the test dirs that cover them (pre-push) ─────────
-# py_test_targets <base> [head]  -> prints unique, existing test paths
-py_test_targets() {
-  _base="$1"; _head="${2:-HEAD}"
-  _changed="$(git diff --name-only "$_base" "$_head" -- '*.py')"
-  [ -z "$_changed" ] && return 0
-  _raw=""
-  while IFS= read -r _f; do
-    [ -z "$_f" ] && continue
-    case "$_f" in
-      tests/fixtures/runtime/*)                 _raw="$_raw
-tests/runtime_cli/test_local_desk_lifecycle.py" ;;
-      tests/test_*.py|tests/*/test_*.py|tests/*_test.py|tests/*/*_test.py)
-        _raw="$_raw
-$_f" ;;
-      tests/*)
-        # Helpers and conftests are not test entrypoints. Collect their directory
-        # using pytest's normal discovery instead of executing arbitrary scripts.
-        _raw="$_raw
-$(dirname "$_f")" ;;
-      forecasting/*|tools/forecast_actions/*)   _raw="$_raw
-tests/forecasting
-tests/application" ;;
-      protocol/*)                               _raw="$_raw
-tests/test_protocol_codegen.py" ;;
-      gateway/*)                               _raw="$_raw
-tests/gateway" ;;
-      tui_gateway/*)                           _raw="$_raw
-tests/tui_gateway
-tests/application" ;;
-      agent/*)                                  _raw="$_raw
-tests/agent" ;;
-      superforecasting_agent/runtime/*)                             _raw="$_raw
-tests/runtime_cli" ;;
-      providers/*)                              _raw="$_raw
-tests/providers" ;;
-      cron/*)                                   _raw="$_raw
-tests/cron" ;;
-      acp_adapter/*|acp_registry/*)             _raw="$_raw
-tests/acp" ;;
-      *.py)
-        # Root entrypoints and new/shared packages cross existing domain maps.
-        # Never silently omit behavioral tests because a package is unfamiliar.
-        _raw="$_raw
-tests" ;;
-    esac
-  done <<EOF
-$_changed
-EOF
-  printf '%s\n' "$_raw" | sed -e '/^[[:space:]]*$/d' | sort -u | while IFS= read -r _t; do
-    [ -e "$HOOKS_REPO_ROOT/$_t" ] && printf '%s\n' "$_t"
-  done
-}
-
 # Shared blocking implementation used by hooks and product-quality CI.
 check_quality() {
   _py="$(hook_python)" || return 1

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# HEAVIER gate: domain pytest, with full-suite fallback for unmapped Python.
+# HEAVIER gate: the full Python suite required by AGENTS.md.
 # Also runs TUI vitest --changed and checks codegen staleness.
 # git feeds us "<local ref> <local sha> <remote ref> <remote sha>" on stdin.
 # See CONTRIBUTING.md -> "Commit provenance" and "Local Gates".
@@ -44,19 +44,14 @@ if ! check_quality "${quality_args[@]}"; then
   rc=1
 fi
 
-# targeted pytest for the changed python domains
-TARGETS=""
-while IFS= read -r t; do [ -n "$t" ] && TARGETS="$TARGETS $t"; done < <(py_test_targets "$base" "$head")
-if [ -n "$TARGETS" ]; then
-  hook_note "pre-push: pytest$TARGETS"
-  # shellcheck disable=SC2086
-  if ! "$HOOKS_REPO_ROOT/scripts/run_tests.sh" $TARGETS -q; then
-    hook_fail "Tests failed for a changed domain" "Commit provenance (tests green BEFORE you push)" \
-      "Reproduce: scripts/run_tests.sh$TARGETS"
-    rc=1
-  fi
-else
-  hook_note "pre-push: no python domain mapped to the changed files -- skipping targeted pytest."
+# Shared ownership changes can affect consumers outside their source directory.
+# AGENTS.md requires the full suite before every push; do not infer coverage
+# from a directory-to-test mapping.
+hook_note "pre-push: full Python suite..."
+if ! "$HOOKS_REPO_ROOT/scripts/run_tests.sh"; then
+  hook_fail "Full Python suite failed" "Commit provenance (tests green BEFORE you push)" \
+    "Reproduce: scripts/run_tests.sh"
+  rc=1
 fi
 
 # vitest --changed when ui-tui was touched

@@ -1416,3 +1416,20 @@ not remove the remaining legacy dispatcher.
 Validation: 90 configured-command/protocol tests passed via `scripts/run_tests.sh`
 (`/tmp/forecast-unknown-command-tests.log`). Python quality checks passed,
 including all 32 import contracts (`/tmp/forecast-unknown-command-quality.log`).
+
+
+### Make the push gate match the full-suite policy
+
+The native-dispatch push exposed a mismatch between `AGENTS.md` and the hook:
+known Python directories selected only their mapped test directories. The push
+completed with 353 targeted Python tests plus changed TUI tests, not a full Python
+run. A full run of that pushed commit was started separately at
+`/tmp/forecast-native-dispatch-full.log`; its result must be checked before claiming
+qualification.
+
+The pre-push hook now invokes `scripts/run_tests.sh` without narrowing arguments
+for every non-deletion push. Removed the directory mapper and reconciled the
+contributor guide. Hook execution tests cover mapped-source and documentation
+changes, verify the actual wrapper receives zero arguments, and prove suite
+failure rejects the push. All 11 workflow tests passed via the repository wrapper
+(`/tmp/forecast-full-push-gate-tests.log`). This change is not yet pushed.

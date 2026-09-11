@@ -171,7 +171,7 @@ callers, no drift.
 |------|-------|-------|
 | **pre-commit** | fast | Index/worktree agreement; shared Python quality and import/protocol checks; wire drift; TUI lint/types when staged |
 | **commit-msg** | instant | message shape `type(scope): subject`; a WHY-body for `feat`/`refactor`; the oversize / `MOVES-ONLY` gate |
-| **pre-push** | depends on changed domains | Every pushed tree must match the index/worktree; shared quality gates; targeted Python tests and changed TUI tests |
+| **pre-push** | full Python suite plus changed TUI tests | Every pushed tree must match the index/worktree; shared quality gates; full Python tests and changed TUI tests |
 
 Hooks run tools in place and require the checked files to match the submitted
 index (commit) or every submitted commit tree (push), before and after checks.

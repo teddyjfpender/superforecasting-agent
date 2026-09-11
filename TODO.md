@@ -60,7 +60,7 @@ See the work log for artifact hashes; this is not a published-release claim.
 
 Already implemented: `python3 scripts/dev.py bootstrap` installs hooks and runs
 the same quality workflow as CI; `check` runs lint/format/types/import/protocol
-checks. Python paths unknown to the push-hook mapper fall back to the full suite.
+checks. Every push runs the full Python suite, matching the repository development policy.
 Import contracts enforce extracted owners; frozen exceptions remain explicit.
 
 ## 5. Other engineering follow-up
