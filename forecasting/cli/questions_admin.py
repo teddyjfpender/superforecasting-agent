@@ -82,6 +82,7 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
         default="binary",
     )
     new_parser.add_argument("--choice", dest="choices", action="append", default=[])
+    new_parser.add_argument("--censor-at", type=float, help="Declare an inclusive right-censoring threshold; scores its event probability")
     new_parser.add_argument("--unit", dest="units")
     new_parser.add_argument("--bound", dest="bounds", type=float, action="append", default=[])
     new_parser.add_argument("--close-time")
@@ -431,6 +432,7 @@ def _cmd_new(args: argparse.Namespace) -> None:
     choices = args.choices or (["yes", "no"] if args.outcome_type == "binary" else [])
     outcome_space = OutcomeSpace(
         type=args.outcome_type,
+        censoring={"threshold": args.censor_at, "inclusive": True} if getattr(args, "censor_at", None) is not None else None,
         choices=choices,
         units=args.units,
         bounds=bounds,

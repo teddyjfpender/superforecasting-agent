@@ -192,8 +192,14 @@ class OutcomeSpace:
     units: str | None = None
     bounds: list[float] | None = None
     resolution_parser: str | None = None
+    censoring: dict[str, Any] | None = None
 
     def validate(self) -> None:
+        if self.censoring is not None:
+            from forecasting.censoring import validate_contract
+            validate_contract(self.censoring)
+            if self.type not in {'numeric', 'distribution'} or self.choices or not self.units:
+                raise ValidationError('censoring requires a scalar numeric/distribution space with units and no categorical choices')
         if self.type not in OUTCOME_TYPES:
             raise ValidationError(
                 f"outcome type must be one of {', '.join(sorted(OUTCOME_TYPES))}"
@@ -215,6 +221,7 @@ class OutcomeSpace:
             "units": self.units,
             "bounds": self.bounds,
             "resolution_parser": self.resolution_parser,
+            **({"censoring": self.censoring} if self.censoring is not None else {}),
         }
 
     @classmethod
@@ -227,6 +234,7 @@ class OutcomeSpace:
             units=data.get("units"),
             bounds=data.get("bounds"),
             resolution_parser=data.get("resolution_parser"),
+            censoring=data.get("censoring"),
         )
         outcome.validate()
         return outcome

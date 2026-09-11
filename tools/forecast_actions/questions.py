@@ -22,8 +22,9 @@ def create_question(args: dict[str, Any], ledger) -> str:
         domain=args.get("domain"),
         outcome_space=OutcomeSpace(
             type=args.get("outcome_type") or "binary",
-            choices=args.get("choices") or ["yes", "no"],
+            choices=args.get("choices") or (["yes", "no"] if (args.get("outcome_type") or "binary") == "binary" else []),
             units=args.get("units"),
+            censoring=args.get("censoring"),
             bounds=args.get("bounds"),
         ),
         close_time=args.get("close_time"),

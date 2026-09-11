@@ -722,9 +722,18 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
 
   if (packet.resolution) {
     const resolution = packet.resolution as Record<string, unknown>
+    const outcome = resolution.outcome as Record<string, unknown> | undefined
+    const censored = outcome && typeof outcome === 'object' && outcome.kind === 'right_censored'
+
     sections.push({
       rows: [
-        ['outcome', fieldString(resolution, 'outcome')],
+        ['outcome', censored
+          ? `${outcome.inclusive ? 'At least' : 'More than'} ${String(outcome.lower_bound)} ${String(outcome.units)} (right-censored)`
+          : fieldString(resolution, 'outcome')],
+        ...(censored ? [
+          ['observed through', shortDate(String(outcome.observed_through))],
+          ['score meaning', 'Declared threshold probability only; exact outcome remains unknown.']
+        ] as [string, string][] : []),
         ['status', fieldString(resolution, 'resolution_status')],
         ['resolved', shortDate(fieldString(resolution, 'resolved_at'))],
         ['source', truncate(fieldString(resolution, 'resolution_source'), 96)]
@@ -740,7 +749,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
       const fact = value as Record<string, unknown>
 
       return [key, fact.status === 'verified'
-        ? `${String(fact.value)} · source observed ${shortDate(String(fact.observed_at))}`
+        ? `${String(fact.value)} ${fact.units === 'wmoUnit:degC' ? '°C' : String(fact.units ?? '')} · ${String(fact.entity ?? 'source')} · observed ${shortDate(String(fact.observed_at))}${fact.observation_period === 'instant' ? '; instantaneous reading, daily maximum unconfirmed' : ''}`
         : `Unknown: ${String(fact.reason)}; inspect or refresh the source`, `/forecast facts show ${question.id}`]
     })})
   }
