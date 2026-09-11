@@ -31,10 +31,11 @@ def digest(value):
 
 def kernel_identity():
     from forecasting.ledger import scoring, core
-    from forecasting import learning, models, json_validation, trial_provider
+    from forecasting import learning, models, json_validation, trial_provider, censoring, applicability_facts, source_bindings
     # Freeze both scoring and the numeric treatment/response contract. A new
     # implementation cannot finish pending arms under a different policy.
-    paths = [__file__, scoring.__file__, core.__file__, learning.__file__, models.__file__, json_validation.__file__, trial_provider.__file__]
+    paths = [__file__, scoring.__file__, core.__file__, learning.__file__, models.__file__, json_validation.__file__, trial_provider.__file__,
+        censoring.__file__, applicability_facts.__file__, source_bindings.__file__]
     return hashlib.sha256(b"".join(Path(path).read_bytes() for path in paths)).hexdigest()
 
 

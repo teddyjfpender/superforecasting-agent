@@ -48,7 +48,9 @@ def extract_measurement(document, contract, *, captured_at):
         station = f"https://api.weather.gov/stations/{contract['entity']}"
         if p.get('station') != station or p.get('stationId', contract['entity']) != contract['entity']:
             raise ValidationError('source_entity_mismatch')
-        measure = p['temperature']
+        measure = p.get('temperature')
+        if not isinstance(measure, dict):
+            raise ValidationError('source_schema_mismatch')
         if measure.get('unitCode') != 'wmoUnit:degC':
             raise ValidationError('source_units_mismatch')
         if measure.get('qualityControl') != 'V':

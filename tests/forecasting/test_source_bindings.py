@@ -39,3 +39,13 @@ def test_usgs_revision_time_is_distinct_from_event_time():
 def test_json_pointer_cannot_select_last_array_item_with_negative_index():
     with pytest.raises(ValidationError, match='array index'):
         pointer_value({'records': [1, 2]}, '/records/-1')
+
+
+@pytest.mark.parametrize("temperature", [None, [], "30.6", 30.6])
+def test_nws_malformed_measurement_is_rejected(temperature):
+    contract = source_contract(adapter='nws_temperature_v1', entity='KJFK',
+        window_start='2026-09-10T00:00:00Z', window_end='2026-09-11T00:00:00Z')
+    raw = {'type': 'Feature', 'properties': {'station': 'https://api.weather.gov/stations/KJFK',
+        'temperature': temperature}}
+    with pytest.raises(ValidationError, match='schema'):
+        extract_measurement(raw, contract, captured_at='2026-09-11T00:00:00Z')
