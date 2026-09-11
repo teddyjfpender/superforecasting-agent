@@ -64,6 +64,7 @@ def contract(question):
 def create_trial(ledger, *, assignments, model, provider, max_tokens=8192, min_clusters=20, minimum_effect=0.0, preflight_id=None, requests_per_minute=6, input_tokens_per_minute=60000):
     if not isinstance(assignments, dict) or not assignments or not all(isinstance(v, str) and v.strip() for v in assignments.values()):
         raise ValidationError('assignments must map question IDs to explicit event/source cluster IDs')
+    assignments = {qid: cluster.strip() for qid, cluster in assignments.items()}
     if not model or not provider or not isinstance(model, str) or not isinstance(provider, str):
         raise ValidationError('trial requires an explicit model and provider')
     if type(max_tokens) is not int or not 128 <= max_tokens <= 16384 or type(min_clusters) is not int or min_clusters < 2:

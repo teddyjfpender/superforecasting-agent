@@ -55,9 +55,10 @@ clusters. The earlier eight complete pairs remain prospective, not resolved
 accuracy results. No new calls were spent on untreated or unresearched cases.
 
 All six deferred settlements were revisited. Michigan's official results endpoint
-still returned 403. SpaceX's primary launch page yielded no usable record; the
-historical question also needs an audited typed binding of its prose censoring
-policy. The Manifold identity remains unconfirmed in the ledger. Two basket
+still returned 403. SpaceX's rendered page was an empty shell, but inspecting its
+public data endpoint recovered the primary Flight 13 launch confirmation. It is
+now archived as evidence; the historical question still needs an audited typed
+binding of its prose censoring policy. The Manifold identity remains unconfirmed in the ledger. Two basket
 questions concern an interval ending in June 2027. Reviews and reminders remain
 append-only; no retrospective outcomes or probabilities were invented.
 
@@ -90,3 +91,6 @@ The canonical `scripts/run_tests.sh` deliberately strips credentials and is for
 hermetic verification, not this opt-in live path. Missing credentials or absent
 opt-in are explicit skips, never successful service checks. These tests create
 and clean up test sandboxes. No unavailable credentials were fabricated.
+
+Primary launch archive: https://content.spacex.com/api/spacex-website/missions/starship-flight-13
+(the mission narrative, not image upload timestamps, establishes the launch).

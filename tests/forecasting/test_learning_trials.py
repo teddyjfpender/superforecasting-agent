@@ -310,3 +310,11 @@ def test_reviewed_legacy_packets_evaluate_without_rewriting_history(trial_setup)
     with ledger._connect() as conn:
         conn.execute("UPDATE learning_trials SET scoring_kernel='unreviewed' WHERE id=?", (tid,))
     assert trial_report(ledger, tid)['exclusions'] == {'scoring_version_changed': 2}
+
+
+def test_cluster_whitespace_does_not_inflate_independence(trial_setup):
+    ledger, questions, _, _, _ = trial_setup
+    report = create_trial(ledger, assignments={questions[0].id: 'shared-event', questions[1].id: ' shared-event '},
+                          model='fixture', provider='fixture')
+    assert report['assigned_questions'] == 2
+    assert report['assigned_clusters'] == 1
