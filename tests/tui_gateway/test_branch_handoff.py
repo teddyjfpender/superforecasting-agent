@@ -1,4 +1,5 @@
 """Branch copying and runtime replacement preserve the complete transcript."""
+import sqlite3
 import threading
 from types import SimpleNamespace
 
@@ -35,7 +36,7 @@ def test_branch_copy_preserves_tool_and_reasoning_metadata(db):
 
 
 def test_failed_transcript_copy_rolls_back_branch_and_parent_end(db):
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.IntegrityError):
         branch_session(db, session_id='failed', parent_session_id='parent', source='cli',
             history=[{'role': 'user', 'content': 'first'}, {'role': None, 'content': 'invalid'}], end_parent=True)
     assert db.get_session('failed') is None

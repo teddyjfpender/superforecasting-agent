@@ -789,3 +789,22 @@ Coordinated branch handoff and complete transcript copying (isolated follow-up):
   including hooks and Python/TypeScript quality checks, passes in this isolated
   environment. Primary full regression continues separately on `4f1532e81`;
   these changes have not yet been included in that full run or pushed.
+
+Integrated qualification follow-up:
+
+- Full regression at `4f1532e81` finished with 30,628 passed, 148 skipped and
+  twelve failures in the larger gateway-server test module. Thread doubles still
+  rejected the new diagnostic name argument; the old close-race expectation
+  required immediate disposal during agent construction. Updated the tests to
+  verify retained ownership and successful retry. Test pollers/workers now have
+  explicit owners rather than relying on private Thread target/argument inspection.
+- The failure investigation also found a production accounting gap: thread
+  construction could raise before the cleanup guard, leaking an active admission.
+  Construction now falls inside the guard; an injected failure proves subsequent
+  draining succeeds. The repaired gateway-server/ownership selection passes 230 tests.
+- Integrated the committed branch-copy/handoff/bootstrap changes from the isolated
+  worktree. Full regression must be rerun on this combined tree before pushing;
+  neither earlier narrow passes nor the failed full run qualify this batch.
+- Combined focused qualification after integration passes 688 lifecycle, storage,
+  CLI and gateway tests. Branch rollback now asserts the specific SQLite integrity
+  error caused by an invalid transcript row rather than accepting any exception.
