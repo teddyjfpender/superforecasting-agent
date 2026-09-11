@@ -11,7 +11,8 @@ def isolated_runtime_host(monkeypatch):
     from tui_gateway import server
     monkeypatch.setattr(server, '_pool', RuntimeWorkers())
     monkeypatch.setattr(server, '_sessions', {})
-    monkeypatch.setattr(server, '_db', None)
+    from superforecasting_agent.hosting.storage import SessionStore
+    monkeypatch.setattr(server, '_session_store', SessionStore())
     monkeypatch.setattr(server, '_auth_flow', {})
     monkeypatch.setattr(server, '_cron_ticker_stop', threading.Event())
     monkeypatch.setattr(server, '_cron_ticker_thread', None)

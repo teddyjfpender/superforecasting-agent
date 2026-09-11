@@ -637,8 +637,9 @@ def _close_session_databases(_hermetic_environment, monkeypatch):
         database.close()
     # The runtime singleton must not retain a handle this fixture just closed.
     server = sys.modules.get("tui_gateway.server")
-    if server is not None and any(getattr(server, "_db", None) is db for db in databases):
-        server._db = None
+    owner = getattr(server, "_session_store", None)
+    if owner is not None and any(owner.current is db for db in databases):
+        owner._connection = None
 
 
 # ── Module-level state reset ───────────────────────────────────────────────

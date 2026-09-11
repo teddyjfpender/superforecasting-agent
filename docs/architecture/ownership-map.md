@@ -355,3 +355,10 @@ Ink list/auto-resume, classic CLI recent history, and CLI list/browse consume it
 Storage owns SQL and compression lineage; products own rendering and the set of
 currently active session IDs. Import checks forbid presentation and transport
 imports from this application package.
+
+The session database serving lifetime belongs to
+`superforecasting_agent/hosting/storage.py`. The host drains admitted workers
+before closing it; transports acquire it through the host adapter. Initialization
+failures preserve diagnostics, failed close retains ownership for retry, and a
+stopped owner cannot reopen until explicit host startup. Presentation imports are
+forbidden by the storage-owner import contract.

@@ -916,3 +916,23 @@ Provisioning and fresh-box product wiring:
 - Docker is installed locally but its configured daemon is unavailable. The
   actual fresh-container/system/SSH exercise is therefore still unverified for
   the split distribution. Controlled installer tests do not replace that gate.
+
+Host session-store ownership:
+
+- `hosting.storage.SessionStore` now owns lazy session-database construction,
+  serialized access to initialization/closure, and initialization diagnostics.
+  The TUI RPC server delegates access and lifecycle rather than owning global
+  `_db`, `_db_lock` and `_db_error` state. Both local and remote hosts use this owner.
+- Closing stops future acquisition even if the underlying close fails. Failure
+  retains the handle for an explicit retry; a new lifetime cannot start while
+  the old connection remains owned. Successful close is idempotent. Only explicit
+  host startup admits a new database after shutdown, preventing stale callers
+  from silently opening orphan storage. Hosts still drain workers before close.
+- 471 focused gateway/session tests pass, including actual SQLite shutdown and
+  resumed durable state. Owner tests cover concurrent initialization, diagnostic
+  recovery, close failure/retry and stale acquisition. Shared quality passes with
+  twenty-three import contracts; the new storage-owner contract forbids indirect
+  presentation imports and participates in the injected-edge regression test.
+- Session registry, configuration and full resource-finalization orchestration
+  still need extraction from the RPC server. This is storage-lifetime ownership,
+  not a claim that complete hosting has become presentation-independent.

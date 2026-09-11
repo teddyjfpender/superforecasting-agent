@@ -4311,11 +4311,11 @@ def test_get_db_degrades_cleanly_when_sessiondb_init_fails(monkeypatch):
 
     fake_mod.SessionDB = _BrokenSessionDB
     monkeypatch.setitem(sys.modules, "superforecasting_agent.storage.session", fake_mod)
-    monkeypatch.setattr(server, "_db", None)
-    monkeypatch.setattr(server, "_db_error", None)
+    monkeypatch.setattr(server._session_store, "_connection", None)
+    monkeypatch.setattr(server._session_store, "last_error", None)
 
     assert server._get_db() is None
-    assert server._db_error == "locking protocol"
+    assert server._session_store.last_error == "locking protocol"
 
 
 def test_session_create_continues_when_state_db_is_unavailable(monkeypatch):
@@ -4364,7 +4364,7 @@ def test_session_create_continues_when_state_db_is_unavailable(monkeypatch):
 
 def test_session_list_returns_clean_error_when_state_db_is_unavailable(monkeypatch):
     monkeypatch.setattr(server, "_get_db", lambda: None)
-    monkeypatch.setattr(server, "_db_error", "locking protocol")
+    monkeypatch.setattr(server._session_store, "last_error", "locking protocol")
 
     resp = server.handle_request({"id": "1", "method": "session.list", "params": {}})
 
@@ -4396,7 +4396,7 @@ def test_session_delete_requires_session_id(monkeypatch):
 
 def test_session_delete_returns_db_unavailable_when_no_db(monkeypatch):
     monkeypatch.setattr(server, "_get_db", lambda: None)
-    monkeypatch.setattr(server, "_db_error", "locked")
+    monkeypatch.setattr(server._session_store, "last_error", "locked")
 
     resp = server.handle_request(
         {"id": "1", "method": "session.delete", "params": {"session_id": "abc"}}

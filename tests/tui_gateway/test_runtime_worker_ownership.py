@@ -59,7 +59,7 @@ def test_host_timeout_preserves_resources_until_worker_finishes(monkeypatch):
         close=lambda: calls.append('agent.close'))}
     monkeypatch.setattr(server, '_pool', workers)
     monkeypatch.setattr(server, '_sessions', {'runtime': session})
-    monkeypatch.setattr(server, '_db', SimpleNamespace(close=lambda: calls.append('db.close')))
+    monkeypatch.setattr(server._session_store, '_connection', SimpleNamespace(close=lambda: calls.append('db.close')))
     monkeypatch.setattr(server, '_clear_pending', lambda sid: None)
     monkeypatch.setattr(server, '_stop_cron_ticker', lambda: None)
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
@@ -83,7 +83,7 @@ def test_host_timeout_preserves_resources_until_worker_finishes(monkeypatch):
     assert server.shutdown_runtime(1)
     assert calls.index('worker.finished') < calls.index('agent.close') < calls.index('db.close')
     assert server._sessions == {}
-    assert server._db is None
+    assert server._session_store._connection is None
     assert server.shutdown_runtime(0)
     assert calls.count('agent.close') == calls.count('db.close') == 1
     server.start_runtime()
@@ -98,7 +98,7 @@ def test_shutdown_preserves_last_worker_write_and_resumable_session(tmp_path, mo
     db.create_session(session_id='durable', source='tui', model='fixture')
     receipt = turn_journal.start(db, 'durable', 'preserve my work')
     release, entered = threading.Event(), threading.Event()
-    monkeypatch.setattr(server, '_db', db)
+    monkeypatch.setattr(server._session_store, '_connection', db)
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
     server._sessions['runtime'] = {
         'session_key': 'durable', 'turn_id': receipt, 'history': [],

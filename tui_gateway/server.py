@@ -231,9 +231,9 @@ _session_resume_lock = threading.RLock()
 _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
 _answers: dict[str, str] = {}
-_db = None
-_db_lock = threading.Lock()
-_db_error: str | None = None
+from superforecasting_agent.hosting.storage import SessionStore
+
+_session_store = SessionStore()
 _stdout_lock = threading.Lock()
 _cfg_lock = threading.Lock()
 _cfg_cache: dict | None = None
@@ -813,8 +813,9 @@ def start_runtime() -> None:
     with _host_lifecycle_lock:
         if not _pool.stopping:
             return
-        if not _pool.drain(0) or _sessions or _db is not None:
+        if not _pool.drain(0) or _sessions or _session_store.current is not None:
             raise RuntimeError("previous runtime shutdown is incomplete")
+        _session_store.start()
         _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
         _cron_ticker_stop = threading.Event()
         _cron_ticker_thread = None
@@ -822,7 +823,6 @@ def start_runtime() -> None:
 
 def shutdown_runtime(timeout: float = 5.0) -> bool:
     """Interrupt and drain before closing resources; preserve durable sessions."""
-    global _db
     with _host_lifecycle_lock:
         _pool.stop()
         _stop_cron_ticker()
@@ -856,18 +856,16 @@ def shutdown_runtime(timeout: float = 5.0) -> bool:
         if not _pool.drain(timeout):
             logger.error("runtime shutdown incomplete: workers still own resources")
             return False
+        db = _session_store.current
         for sid, session in list(_sessions.items()):
-            if session.get("turn_id") and _db is not None:
+            if session.get("turn_id") and db is not None:
                 from tui_gateway import turn_journal
                 # Workers have relinquished the receipt. Terminal records remain
                 # immutable; an unfinished receipt now has a truthful end state,
                 # even if another lifetime starts in this same process.
-                turn_journal.transition(_db, session["turn_id"], "interrupted")
+                turn_journal.transition(db, session["turn_id"], "interrupted")
             _close_runtime_session(sid, mark_ended=False, drained=True)
-        with _db_lock:
-            if _db is not None:
-                _db.close()
-                _db = None
+        _session_store.close()
         return True
 
 
@@ -878,27 +876,11 @@ atexit.register(shutdown_runtime, 0)
 
 
 def _get_db():
-    global _db, _db_error
-    # Single ownership: concurrent RPC startup must not open orphan databases.
-    with _db_lock:
-        if _db is None:
-            from superforecasting_agent.storage.session import SessionDB
-
-            try:
-                _db = SessionDB()
-                _db_error = None
-            except Exception as exc:
-                _db_error = str(exc)
-                logger.warning(
-                    "TUI session store unavailable — continuing without state.db features: %s",
-                    exc,
-                )
-                return None
-        return _db
+    return _session_store.get()
 
 
 def _db_unavailable_error(rid, *, code: int):
-    detail = _db_error or "state.db unavailable"
+    detail = _session_store.last_error or "state.db unavailable"
     return _err(rid, code, f"state.db unavailable: {detail}")
 
 

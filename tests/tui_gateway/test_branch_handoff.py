@@ -16,7 +16,7 @@ def db(tmp_path, monkeypatch):
     from tui_gateway import server
     store = SessionDB(db_path=tmp_path / 'sessions.db')
     store.create_session('parent', source='tui')
-    monkeypatch.setattr(server, '_db', store)
+    monkeypatch.setattr(server._session_store, '_connection', store)
     return store
 
 
