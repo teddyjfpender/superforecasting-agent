@@ -5157,6 +5157,10 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
                     user_config["agent"] = agent_user_config
                     user_config.pop("max_turns", None)
 
+                # Promote explicit model.model before defaults can shadow it.
+                if isinstance(user_config.get('model'), dict):
+                    from superforecasting_agent.runtime.model_configuration import model_section
+                    user_config['model'] = model_section(user_config)
                 config = _deep_merge(config, user_config)
             except Exception as e:
                 _warn_config_parse_failure(config_path, e)

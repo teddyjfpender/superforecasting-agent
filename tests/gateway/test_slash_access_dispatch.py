@@ -556,3 +556,13 @@ async def test_gating_isolated_per_platform():
     tg_src = _make_source(platform=Platform.TELEGRAM, user_id="999", chat_id="t1")
     result = await runner._handle_message(_make_event("/whoami", tg_src))
     assert "Tier: unrestricted" in result
+
+
+@pytest.mark.asyncio
+async def test_hook_rewrite_cannot_bypass_target_command_access():
+    runner = _make_runner(platform_extra={'allow_admin_from': ['111'], 'user_allowed_commands': ['status']})
+    runner.hooks.emit_collect = AsyncMock(return_value=[{'decision': 'rewrite', 'command_name': 'stop'}])
+    runner._handle_stop_command = AsyncMock(side_effect=AssertionError('unauthorized rewritten command ran'))
+    result = await runner._handle_message(_make_event('/status', _make_source(user_id='999')))
+    assert '/stop is admin-only here' in result
+    runner._handle_stop_command.assert_not_called()

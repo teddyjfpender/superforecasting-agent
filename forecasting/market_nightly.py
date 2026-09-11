@@ -433,7 +433,7 @@ def record_pending(
     agent_forecaster: AgentForecaster,
     market_devig: MarketDevig | None = None,
     *,
-    domain: str | None = "market_nightly",
+    domain: str | None = None,
     tags: Sequence[str] | None = None,
     max_workers: int = 1,
     arm: str = DEFAULT_RESEARCH_ARM,
@@ -638,6 +638,8 @@ def record_pending(
             or "Resolves YES/NO according to the linked market's settlement rules."
         ).strip()
 
+        from forecasting.domains import market_domain
+        question_domain, domain_basis = market_domain(market, domain)
         question = ledger.create_question(
             title=title,
             resolution_criteria=criteria,
@@ -645,9 +647,12 @@ def record_pending(
             description=str(_first(market, "description") or ""),
             close_time=close,
             resolution_time=market_close_time(market),
-            domain=domain,
+            domain=question_domain,
             tags=tag_list,
             metadata={
+                "acquisition_origin": MARKET_NIGHTLY_ORIGIN,
+                "domain_basis": domain_basis,
+                "source_category": market.get("domain") or market.get("category"),
                 "market_nightly": True,
                 "market_id": mid,
                 "market_source": str(_first(market, "source", "platform") or ""),

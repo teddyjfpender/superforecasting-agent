@@ -212,22 +212,23 @@ class FakeHAServer:
             "result": None,
         })
 
-        # Step 6: push events from queue until closed
-        try:
+        # Receive concurrently so client CLOSE/PING frames are acknowledged.
+        # An event-only loop never consumes CLOSE and hangs clean disconnects.
+        async def push_events():
             while not ws.closed:
-                try:
-                    event_data = await asyncio.wait_for(
-                        self._event_queue.get(), timeout=0.1,
-                    )
-                    await ws.send_json({
-                        "id": sub_id,
-                        "type": "event",
-                        "event": event_data,
-                    })
-                except asyncio.TimeoutError:
-                    continue
-        except (ConnectionResetError, asyncio.CancelledError):
-            pass
+                event_data = await self._event_queue.get()
+                await ws.send_json({"id": sub_id, "type": "event", "event": event_data})
+
+        sender = asyncio.create_task(push_events())
+        try:
+            async for _ in ws:
+                pass
+        finally:
+            sender.cancel()
+            try:
+                await sender
+            except (ConnectionResetError, asyncio.CancelledError):
+                pass
 
         return ws
 

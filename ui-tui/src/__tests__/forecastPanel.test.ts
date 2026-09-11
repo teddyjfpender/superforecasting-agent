@@ -1144,3 +1144,17 @@ it('surfaces durable deferrals, unscoreable outcomes and controlled trials', () 
   const detail = forecastQuestionDetailSections({packet: {question: {id: 'fq_proof', title: 'Proof'}}})
   expect(detail.find(section => section.title === 'Actions')?.rows?.some(row => row[0] === '/forecast facts show fq_proof')).toBe(true)
 })
+
+it('explains censored bounds and source measurement limits in question detail', () => {
+  const detail = forecastQuestionDetailSections({packet: {
+    question: {id: 'fq_censored', title: 'Delivery delay'},
+    resolution: {outcome: {kind: 'right_censored', lower_bound: 6, inclusive: true, units: 'days', observed_through: '2026-09-10T12:00:00Z'}},
+    applicability_facts: {temperature: {status: 'verified', value: 30.6, units: 'wmoUnit:degC', entity: 'KJFK', observation_period: 'instant', observed_at: '2026-09-10T17:51:00Z'}}
+  }})
+
+  const resolution = detail.find(section => section.title === 'Resolution')
+  expect(resolution?.rows?.find(row => row[0] === 'outcome')?.[1]).toContain('At least 6 days')
+  expect(resolution?.rows?.find(row => row[0] === 'score meaning')?.[1]).toContain('exact outcome remains unknown')
+  expect(detail.find(section => section.title === 'Source Conditions')?.rows?.[0]?.[1]).toContain('30.6 °C · KJFK')
+  expect(detail.find(section => section.title === 'Source Conditions')?.rows?.[0]?.[1]).toContain('daily maximum unconfirmed')
+})

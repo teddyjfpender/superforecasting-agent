@@ -106,9 +106,23 @@ def resolve_question(
     # Validate and normalize at the shared ledger boundary BEFORE any writes,
     # including source archival and scheduler teardown. CLI strings are transport
     # values; the stored outcome must retain the question's actual value type.
+    from forecasting.censoring import is_censored, normalized_outcome
+    if isinstance(outcome, str) and outcome.lstrip().startswith('{'):
+        from forecasting.json_validation import strict_json_loads
+        try:
+            outcome = strict_json_loads(outcome, object_name='resolution outcome')
+        except ValueError as exc:
+            raise ValidationError('resolution outcome must be valid JSON') from exc
+    if is_censored(outcome):
+        outcome = normalized_outcome(outcome, resolved_question.outcome_space)
+        from forecasting.models import timestamp_to_datetime
+        if timestamp_to_datetime(outcome['observed_through']) > timestamp_to_datetime(utc_now_iso()):
+            raise ValidationError('censoring observation cutoff cannot be in the future')
     if resolution_status == "confirmed" and criteria_satisfied and scoreable:
         space = resolved_question.outcome_space
-        if space.type == "binary":
+        if is_censored(outcome):
+            pass
+        elif space.type == "binary":
             ledger._probability_for_outcome(0.5, outcome, space)
         elif space.type == "categorical":
             ledger._probability_for_outcome({choice: 0.0 for choice in space.choices}, outcome, space)

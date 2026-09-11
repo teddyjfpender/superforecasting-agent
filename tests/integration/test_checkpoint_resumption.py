@@ -20,6 +20,9 @@ Usage:
 
 import pytest
 pytestmark = pytest.mark.integration
+# Manual, credential-dependent harness with boolean results and a crash scenario,
+# not pytest assertions. Invoke its documented CLI; never count False as a pass.
+__test__ = False
 
 import json
 import os

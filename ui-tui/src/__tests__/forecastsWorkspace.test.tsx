@@ -459,10 +459,9 @@ const renderDetail = async (item: ForecastWorkspaceItem, width = 70) => {
 // the same way the workspace does: feed a packet through the real section
 // builder, keep only the tail titles, and render ForecastPacketTail directly so
 // the assertion doesn't depend on headless ScrollBox height measurement.
-const TAIL_TITLES = new Set(['Forecast History', 'Assumptions And References', 'Model Runs', 'Actions'])
 
 const renderTail = async (packet: Record<string, unknown>, width = 70) => {
-  const [{ renderSync }, { ForecastPacketTail }, { forecastQuestionDetailSections }, { DARK_THEME }, { stripAnsi }] =
+  const [{ renderSync }, { ForecastPacketTail }, { FORECAST_PACKET_TAIL_TITLES, forecastQuestionDetailSections }, { DARK_THEME }, { stripAnsi }] =
     await Promise.all([
       import('@superforecasting/ink'),
       import('../components/forecastsWorkspace.js'),
@@ -472,7 +471,7 @@ const renderTail = async (packet: Record<string, unknown>, width = 70) => {
     ])
 
   const sections = forecastQuestionDetailSections({ packet } as never).filter(
-    section => section.title && TAIL_TITLES.has(section.title)
+    section => section.title && FORECAST_PACKET_TAIL_TITLES.has(section.title)
   )
 
   const stdout = writeStream(120, 80)
@@ -1808,4 +1807,29 @@ describe('question-detail modal formatting law', () => {
     // No perspective name is cut with an ellipsis.
     expect(panelLines.join('\n')).not.toContain('…')
   })
+})
+
+it('renders typed censored resolutions in the actual narrow detail pane', async () => {
+  const item = { ...cpiItem(), resolution: {
+    outcome: { kind: 'right_censored', lower_bound: 6, inclusive: true, units: 'days', observed_through: '2026-09-10T12:00:00Z' },
+    resolution_status: 'confirmed'
+  }} as unknown as ForecastWorkspaceItem
+
+  const text = await renderDetail(item, 50)
+  expect(text).toContain('At least 6 days')
+  expect(text).toContain('right-censored')
+  expect(text.replace(/\s+/g, ' ')).toContain('exact outcome remains unknown')
+  expect(text).not.toContain('[object Object]')
+})
+
+
+it('renders verified measurement limits in the shared packet tail', async () => {
+  const { text } = await renderTail({ question: { id: 'fq_source', title: 'Measurement' },
+    applicability_facts: { temperature: { status: 'verified', value: 24, units: 'wmoUnit:degC',
+      entity: 'KJFK', observation_period: 'instant', observed_at: '2026-09-11T07:05:00Z' } } }, 50)
+
+  expect(text).toContain('Source Conditions')
+  expect(text).toContain('24 °C')
+  expect(text).toContain('KJFK')
+  expect(text.replace(/\s+/g, ' ')).toContain('daily maximum unconfirmed')
 })

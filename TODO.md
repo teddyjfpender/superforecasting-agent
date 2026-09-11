@@ -21,6 +21,22 @@ See [verification and reproduction](docs/plans/2026-09-10-forecast-reliability.m
   historical cutoffs, stale evidence and resolution outcome validation, including
   captured public USGS/NWS records.
 
+## September 11 implementation and operational follow-up
+
+See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
+
+- [x] Separate semantic domains from acquisition labels with audited corrections.
+- [x] Validate provider readiness, preserve response budgets and reject truncation.
+- [x] Add NWS/USGS identity, units, measurement-window and revision contracts.
+- [x] Carry declared right-censoring through resolution, scoring, exports and TUI.
+- [x] Share model configuration/persistence and isolate gateway command hooks.
+- [x] Verify 18 Unicode turns across three TUI lifetimes with durable history.
+- [x] Finish prospective cohorts and retain failed arms: five and three complete
+  pairs respectively, across two conservative clusters; outcomes still pending.
+- [x] Verify fresh installation and upgrade on Windows, Linux and macOS in CI.
+- [ ] Publish and verify the formal release artifact set.
+- [ ] Supply Android/Termux access and missing live-service credentials.
+
 ## Before a production release
 
 - [ ] Verify the pushed commit's CI results, including platform jobs and release
@@ -28,8 +44,8 @@ See [verification and reproduction](docs/plans/2026-09-10-forecast-reliability.m
 - [ ] Run the integration and end-to-end suites excluded by the default Python
   runner with their required services and credentials. Record skips explicitly.
 - [ ] Exercise the documented installation and upgrade paths on native Windows,
-  Linux/container, and Android/Termux. This pass verified macOS and a wheel
-  installed outside the checkout; it did not establish cross-platform readiness.
+  Linux/container, and Android/Termux. Desktop installation and upgrade passed
+  the CI matrix; Android/Termux and published-artifact verification remain.
 - [ ] Exercise paid-provider authentication and service-failure behavior under an
   approved budget. Public-source capture, local-model streaming and the installed
   lifecycle are verified; paid-service availability is a separate release gate.
@@ -63,7 +79,8 @@ See [verification and reproduction](docs/plans/2026-09-10-forecast-reliability.m
 - [x] Verify the installed public TUI outside the checkout: streamed local-model
   response, durable prompt/reply and clean exit. Keep this in future release checks.
 - [ ] Extend the verified macOS cancellation/resume/resize/dashboard recovery
-  cases to supported platforms and longer-running sessions, including Unicode.
+  cases to other supported platforms and longer-running sessions. The macOS
+  18-turn Unicode exercise across three process lifetimes is complete.
 - [ ] Keep scheduled monitoring limited to evidence, alerts, scores, and learning
   records; probability changes must remain explicit forecast updates.
 - [ ] Evaluate forecasting accuracy and calibration with scored resolved questions;
@@ -92,7 +109,7 @@ See [runtime changes and verification](docs/plans/2026-09-10-lifecycle-learning.
 - [x] Correct the five newly settled BLS scores and 15 existing legacy CRPS
   scores with preserved correction lineage and replacement postmortems; a fresh
   preview reports zero remaining migrations for current resolved snapshots.
-- [ ] Add explicit right-censored outcome representation and scoring before
+- [x] Add explicit right-censored outcome representation and scoring before
   settling censored continuous questions. Do not substitute a boundary point.
 - [ ] Evaluate prospective lesson benefit using independent outcomes and matched
   pre-adjustment forecasts; application coverage alone does not prove benefit.
@@ -111,16 +128,20 @@ See [commands, invariants and limits](docs/plans/2026-09-10-controlled-learning-
   reminders; distinguish missing historical forecasts from recoverable handoffs.
 - [x] Prevent binary calibration adjustments from corrupting physical quantities.
 - [ ] Accumulate independent prospective outcomes before claiming learning benefit.
-- [ ] Add source-specific bindings only after verifying their actual schema and
+- [x] Add source-specific bindings only after verifying their actual schema and
   measurement meaning; do not infer completed weather periods from local time.
 - [x] Preserve quarantine reasons in typed score records and JSON exports, and
   reject quarantined lesson provenance during trial enrollment and comparison.
 - [x] Accept one complete JSON code fence without retrying the model; retain the
   original response and reject ambiguous duplicate fields or surrounding prose.
-- [ ] Reconcile acquisition labels such as `market_nightly` with semantic domains:
+- [x] Reconcile acquisition labels such as `market_nightly` with semantic domains:
   the live pilot exposed politics questions that cannot retrieve politics lessons.
   Keep acquisition provenance separate; do not silently broaden lesson scope.
-- [ ] Run a new prospective cohort once the provider is available, with a
-  predeclared response budget sufficient for complete JSON. The retained live
-  pilots encountered 503 errors, truncated output and a timeout; they have no
-  usable comparison pairs. Waiting for their outcomes alone cannot establish benefit.
+- [x] Run a new prospective cohort once the provider is available, with a
+  predeclared response budget sufficient for complete JSON. Earlier failed pilots
+  had no usable pairs; September 11 cohorts retained five and three complete pairs
+  across two conservative clusters. Outcomes remain pending.
+- [ ] Make numeric trial response schemas explicit and account for provider input
+  quotas when pacing cohorts; preserve failed arms without rerolling.
+- [ ] Separate trial execution identity from evaluation compatibility so later
+  prompt changes do not strand frozen comparisons; preserve historical integrity.

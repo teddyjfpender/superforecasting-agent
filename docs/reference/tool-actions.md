@@ -200,6 +200,7 @@ Every parameter the tool accepts, sorted by name. Descriptions are often prefixe
 | `candidates` | array<object> |  | triage_label: candidate readings to classify as [{title, summary?, source_type?, source?, url?, id?}, ...] (pre-ingest, before they become evidence). |
 | `capture_candidates` | boolean |  |  |
 | `cases` | array<object> |  |  |
+| `censoring` | object |  | Predeclared right-censoring event; scores only threshold probability, not the hidden exact value. |
 | `change_my_mind` | array<string> |  | Specific observations that would force a material update. |
 | `channel` | string |  | For share_forecast: the Slack channel id to post the forecast card into. |
 | `check_cadence` | string |  |  |

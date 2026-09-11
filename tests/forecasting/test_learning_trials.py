@@ -224,3 +224,16 @@ def test_cli_report_shows_both_raw_forecasts_and_frozen_lesson_refs(trial_setup,
             assert arm['frozen_lesson_refs'] == [lesson['id']]
         else:
             assert arm['forecast'] == .4 and arm['frozen_lesson_refs'] == []
+
+
+def test_transport_failure_stops_before_consuming_remaining_arms(trial_setup):
+    ledger, _, _, tid, _ = trial_setup
+    calls = []
+    def unavailable(*_):
+        calls.append(1)
+        raise RuntimeError('HTTP 429: input token quota exhausted')
+    result = run_trial(ledger, tid, runner=unavailable)
+    assert result['arm_status_counts'] == {'failed': 1, 'pending': 3}
+    assert len(calls) == 1
+    resumed = run_trial(ledger, tid, runner=fixture_runner)
+    assert resumed['arm_status_counts'] == {'failed': 1, 'completed': 3}

@@ -13,6 +13,21 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-09-11
+
+### Added
+- Audited semantic-domain corrections independent of acquisition provenance.
+- Durable provider readiness probes and bounded prospective trial responses.
+- Explicit NWS station-temperature and USGS magnitude measurement contracts.
+- Typed right-censored outcomes, threshold-event scoring, exports and desk display.
+- Installed-wheel lifecycle and durable-upgrade checks across desktop platforms.
+
+### Fixed
+- Reject incomplete model responses before they become comparison forecasts.
+- Preserve configuration references and clear stale credentials when switching providers.
+- Enforce command access after a plugin hook rewrites a slash command.
+
+
 ## [0.21.2] - 2026-09-10
 
 ### Fixed

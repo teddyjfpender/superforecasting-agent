@@ -5663,6 +5663,9 @@ class ForecastLedger:
         return _backtest._has_baseline(self, baselines=baselines, baseline_type=baseline_type, source=source)
 
     def _validate_probability_payload(self, value: Any, outcome_space: OutcomeSpace | None = None) -> Any:
+        if outcome_space is not None and outcome_space.censoring is not None:
+            from forecasting.censoring import threshold_probability
+            threshold_probability(value, outcome_space.censoring)
         outcome_type = (outcome_space.type if outcome_space else "binary")
         if isinstance(value, bool):
             raise ValidationError("probability must be numeric, not boolean")
@@ -5760,102 +5763,7 @@ class ForecastLedger:
         outcome: Any,
         outcome_space: OutcomeSpace,
     ) -> dict[str, Any]:
-        if outcome_space.type in {"binary", "categorical"}:
-            probability = self._probability_for_outcome(
-                probability_or_distribution,
-                outcome,
-                outcome_space,
-            )
-            brier = self._brier_score(
-                probability_or_distribution,
-                outcome,
-                outcome_space,
-            )
-            log_score = self._log_score(probability)
-            return {
-                "brier_score": brier,
-                "log_score": log_score,
-                "proper_score": brier,
-                "score_rule": "brier",
-                "calibration_bucket": self._probability_bucket(probability),
-                "notes": "Brier score against confirmed resolution.",
-            }
-
-        if outcome_space.type == "numeric":
-            # A dict payload with real distributional shape (quantiles / CDF
-            # thresholds / mean+sd) is scored with CRPS — a proper score for the
-            # whole predictive distribution, not just its mean point.
-            if isinstance(probability_or_distribution, dict):
-                crps = self._crps_score(probability_or_distribution, outcome, outcome_space)
-                if crps is not None:
-                    return crps
-            forecast_value = self._numeric_forecast_point(probability_or_distribution)
-            outcome_value = self._numeric_outcome(outcome)
-            score, rule = self._numeric_squared_error(forecast_value, outcome_value, outcome_space)
-            return {
-                "brier_score": None,
-                "log_score": None,
-                "proper_score": score,
-                "score_rule": rule,
-                "calibration_bucket": self._numeric_bucket(forecast_value, outcome_space),
-                "notes": f"{rule} against confirmed numeric resolution.",
-            }
-
-        if outcome_space.type in {"distribution", "thesis"}:
-            if isinstance(probability_or_distribution, (int, float)):
-                forecast_value = self._numeric_forecast_point(probability_or_distribution)
-                outcome_value = self._numeric_outcome(outcome)
-                score, rule = self._numeric_squared_error(forecast_value, outcome_value, outcome_space)
-                return {
-                    "brier_score": None,
-                    "log_score": None,
-                    "proper_score": score,
-                    "score_rule": rule,
-                    "calibration_bucket": self._numeric_bucket(forecast_value, outcome_space),
-                    "notes": f"{rule} for distributional point summary against confirmed resolution.",
-                }
-            if isinstance(probability_or_distribution, dict):
-                # CRPS is the proper score for a continuous predictive
-                # distribution; it REFUSES (None) a candidate-share vote dict,
-                # which falls through to the vote-share vector scorer below.
-                crps = self._crps_score(probability_or_distribution, outcome, outcome_space)
-                if crps is not None:
-                    return crps
-                normal = self._normal_distribution_score(probability_or_distribution, outcome, outcome_space)
-                if normal is not None:
-                    return normal
-                # Vote-share pattern: a candidate-SHARE dict forecast scored against a
-                # candidate-SHARE dict outcome (e.g. {"Lasher": .39, ...} vs certified
-                # {"Lasher": 39.2, ...}). The fallthrough below treats the dict OUTCOME
-                # as a categorical label, which mis-scores / fails — the bug behind the
-                # hand-rolled manual scores. Score it as a vector MAE/RMSE in
-                # percentage points so vote-share forecasts are machine-scoreable
-                # (lesson cl_ec9059c809ba). None -> no shared candidates -> fall through.
-                if isinstance(outcome, dict):
-                    vector = self._vote_share_vector_score(probability_or_distribution, outcome)
-                    if vector is not None:
-                        return vector
-                probability = self._probability_for_outcome(
-                    probability_or_distribution,
-                    outcome,
-                    outcome_space,
-                )
-                brier = self._brier_score(
-                    probability_or_distribution,
-                    outcome,
-                    outcome_space,
-                )
-                log_score = self._log_score(probability)
-                return {
-                    "brier_score": brier,
-                    "log_score": log_score,
-                    "proper_score": log_score,
-                    "score_rule": "discrete_distribution_log_score",
-                    "calibration_bucket": self._probability_bucket(probability),
-                    "notes": "Discrete distribution log score against confirmed resolution.",
-                }
-
-        raise ValidationError(f"scoring is not implemented for outcome type: {outcome_space.type}")
+        return _scoring._score_forecast_payload(self, probability_or_distribution, outcome, outcome_space)
 
     def _brier_score(
         self,

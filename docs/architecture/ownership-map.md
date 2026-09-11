@@ -29,6 +29,11 @@ The formality layer of the modularization program
 | `superforecasting_agent/tooling/github_auth.py` | skill source authentication | `GitHubAuth`, re-exported by `tools.skills_hub` | Credentials resolve lazily; importing the module does not load source adapters |
 | `superforecasting_agent/tooling/skill_paths.py` | skill bundle path validation | Shared name, category, and relative-file validators, re-exported by `tools.skills_hub` | Standard-library-only validation before filesystem access |
 | `tools/` | tools | `tools.registry`; `tools.forecast_actions.ACTIONS` | `run_agent` (ratchet) |
+| `forecasting/domains.py` | semantic classification | Explicit source categories and audited active-question corrections | No title-based inference or probability-history rewriting |
+| `forecasting/source_bindings.py` | measurement contracts | NWS temperature and USGS magnitude extraction | No network calls or inferred settlement decisions |
+| `forecasting/censoring.py` | coarsened observations | Typed right-censoring contracts and threshold-event probabilities | No fabricated exact outcomes or full-distribution score claims |
+| `superforecasting_agent/runtime/model_configuration.py` | model configuration ownership | `model_section`, `persist_model_selection` | No UI imports; preserve raw environment references |
+| `gateway/command_dispatch.py` | gateway command hooks | `dispatch_command_hooks` | No gateway runner import; reauthorize rewritten commands |
 | `superforecasting_agent/runtime/provider_catalog.py` | provider metadata catalog | `ProviderDef`, `ProviderOverlay`, aliases and transport tables; resolved through `runtime.providers` | Data only; no model calls, configuration reads, or provider discovery |
 | `superforecasting_agent/runtime/cron_commands.py` | classic CLI command surface | `ForecastCLI._handle_cron_command` binds the handler; scheduled operations use the cron tool API | No import of the root CLI; scheduling stays in `cron/` and its tool interface |
 | `superforecasting_agent/runtime/handoff_commands.py` | classic CLI handoff surface | `ForecastCLI._handle_handoff_command` delegates to this handler | Gateway configuration and session storage remain the handoff authorities |

@@ -47,7 +47,8 @@ def local_provider():
                 self.end_headers()
                 holding = any(message.get("role") == "user" and message.get("content") == "HOLD STREAM FOR CANCELLATION"
                               for message in body.get("messages", [])[-1:])
-                reply = "PARTIAL BEFORE CANCELLATION" if holding else REPLY
+                last_user = next((str(message.get("content", "")) for message in reversed(body.get("messages", [])) if message.get("role") == "user"), "")
+                reply = "PARTIAL BEFORE CANCELLATION" if holding else REPLY + " " + last_user
                 for delta, finish in [({"role": "assistant", "content": reply}, None), ({}, "stop")]:
                     event = {
                         "id": "fixture", "object": "chat.completion.chunk",
@@ -161,3 +162,43 @@ def test_cancel_stalled_stream_then_resume_saved_session(tui_bundle, tui_env, tu
         assert PROMPT in session.screen.text()
         session.send(b"\x03")
         assert session.wait_exit(timeout=15, sweep=False) == 0
+
+
+@pytest.mark.live_system_guard_bypass
+@pytest.mark.timeout(240)
+def test_repeated_unicode_turns_resize_and_restart(tui_bundle, tui_env, tui_home, local_provider):
+    """Sustained real transport exercise: exact-once Unicode history across restarts."""
+    import sqlite3
+    from contextlib import closing
+
+    endpoint, _ = local_provider
+    home = tui_home / ".superforecasting-agent"
+    (home / "config.yaml").write_text(json.dumps({"model": {"default": "fixture-local", "provider": "custom", "base_url": endpoint}}))
+    env = dict(tui_env, OPENAI_BASE_URL=endpoint, OPENAI_API_KEY="fixture-local-only",
+               SUPERFORECASTING_AGENT_TUI_TOOLSETS="forecasting")
+    prompts = []
+    sid = None
+    for cycle in range(3):
+        current_env = dict(env, **({"SUPERFORECASTING_AGENT_TUI_RESUME": sid} if sid else {}))
+        with PtySession(["node", str(tui_bundle)], cwd=str(REPO_ROOT), env=current_env, rows=44, cols=120) as session:
+            session.wait_for(lambda s: (REPLY if sid else "fixture-local") in s.text(), timeout=25, what="ready or resumed desk")
+            session.settle()
+            for turn in range(6):
+                marker = f"CYCLE{cycle}TURN{turn}"
+                prompt = f"{marker} café 東京 — probability 50%"
+                prompts.append(prompt)
+                session.resize(rows=35 + turn, cols=80 if turn % 2 else 120)
+                session.settle()
+                session.send(prompt.encode("utf-8"))
+                session.settle(quiet=.1, max_wait=.5)
+                session.send(b"\r")
+                session.wait_for(lambda s: any(marker in line and "verified." in line for line in s.text().splitlines()),
+                                 timeout=30, what="unique streamed reply")
+            session.send(b"\x03")
+            assert session.wait_exit(timeout=15, sweep=False) == 0
+        with closing(sqlite3.connect(home / "state.db")) as conn:
+            rows = conn.execute("SELECT session_id,content FROM messages WHERE role='user'").fetchall()
+            for prompt in prompts:
+                matches = [row for row in rows if row[1] == prompt]
+                assert len(matches) == 1, "every Unicode prompt survives exactly once"
+                sid = matches[0][0]

@@ -58,3 +58,24 @@ def test_transient_disconnect_preserves_child_and_output_cursor(desk_client):
         assert len(bridges) == 1
         ws.close(code=1000)
     assert not bridges[0].is_alive()
+
+
+@pytest.mark.timeout(60)
+def test_repeated_unicode_reconnects_keep_one_child_and_byte_cursor(desk_client):
+    client, bridges = desk_client
+    cursor = 0
+    previous = None
+    for turn in range(20):
+        with client.websocket_connect(_url(cursor)) as ws:
+            received = _receive_until(ws, b"READY") if turn == 0 else b""
+            ws.send_text(f"\x1b[RESIZE:{80 + turn};{30 + turn}]")
+            value = f"turn-{turn}: café 東京"
+            marker = f"{turn + 1}:{value}".encode()
+            ws.send_text(value + "\n")
+            received += _receive_until(ws, marker)
+            assert previous is None or previous not in received
+            cursor += len(received)  # UTF-8 byte count, never character count.
+            previous = marker
+            ws.close(code=1000 if turn == 19 else 1006)
+        assert len(bridges) == 1
+        assert bridges[0].is_alive() == (turn != 19)

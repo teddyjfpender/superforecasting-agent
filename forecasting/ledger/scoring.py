@@ -243,7 +243,7 @@ def score_snapshot(ledger, forecast_id: str, *, force: bool = False) -> ScoreRec
                 snapshot.forecast_horizon_days,
                 question.domain,
                 snapshot.forecast_origin,
-                1 if snapshot.calibration_eligible else 0,
+                1 if snapshot.calibration_eligible and question.outcome_space.censoring is None else 0,
                 snapshot.calibration_weight,
                 scoring["notes"],
             ),
@@ -2280,3 +2280,105 @@ def _row_to_score(ledger, row: sqlite3.Row) -> ScoreRecord:
 
 def _score_to_dict(ledger, score: ScoreRecord) -> dict[str, Any]:
     return score.__dict__.copy()
+
+
+def _score_forecast_payload(ledger, probability_or_distribution, outcome, outcome_space):
+    from forecasting.censoring import is_censored, score
+    if is_censored(outcome) or outcome_space.censoring is not None:
+        return score(probability_or_distribution, outcome, outcome_space)
+    if outcome_space.type in {"binary", "categorical"}:
+        probability = ledger._probability_for_outcome(
+            probability_or_distribution,
+            outcome,
+            outcome_space,
+        )
+        brier = ledger._brier_score(
+            probability_or_distribution,
+            outcome,
+            outcome_space,
+        )
+        log_score = ledger._log_score(probability)
+        return {
+            "brier_score": brier,
+            "log_score": log_score,
+            "proper_score": brier,
+            "score_rule": "brier",
+            "calibration_bucket": ledger._probability_bucket(probability),
+            "notes": "Brier score against confirmed resolution.",
+        }
+
+    if outcome_space.type == "numeric":
+        # A dict payload with real distributional shape (quantiles / CDF
+        # thresholds / mean+sd) is scored with CRPS — a proper score for the
+        # whole predictive distribution, not just its mean point.
+        if isinstance(probability_or_distribution, dict):
+            crps = ledger._crps_score(probability_or_distribution, outcome, outcome_space)
+            if crps is not None:
+                return crps
+        forecast_value = ledger._numeric_forecast_point(probability_or_distribution)
+        outcome_value = ledger._numeric_outcome(outcome)
+        score, rule = ledger._numeric_squared_error(forecast_value, outcome_value, outcome_space)
+        return {
+            "brier_score": None,
+            "log_score": None,
+            "proper_score": score,
+            "score_rule": rule,
+            "calibration_bucket": ledger._numeric_bucket(forecast_value, outcome_space),
+            "notes": f"{rule} against confirmed numeric resolution.",
+        }
+
+    if outcome_space.type in {"distribution", "thesis"}:
+        if isinstance(probability_or_distribution, (int, float)):
+            forecast_value = ledger._numeric_forecast_point(probability_or_distribution)
+            outcome_value = ledger._numeric_outcome(outcome)
+            score, rule = ledger._numeric_squared_error(forecast_value, outcome_value, outcome_space)
+            return {
+                "brier_score": None,
+                "log_score": None,
+                "proper_score": score,
+                "score_rule": rule,
+                "calibration_bucket": ledger._numeric_bucket(forecast_value, outcome_space),
+                "notes": f"{rule} for distributional point summary against confirmed resolution.",
+            }
+        if isinstance(probability_or_distribution, dict):
+            # CRPS is the proper score for a continuous predictive
+            # distribution; it REFUSES (None) a candidate-share vote dict,
+            # which falls through to the vote-share vector scorer below.
+            crps = ledger._crps_score(probability_or_distribution, outcome, outcome_space)
+            if crps is not None:
+                return crps
+            normal = ledger._normal_distribution_score(probability_or_distribution, outcome, outcome_space)
+            if normal is not None:
+                return normal
+            # Vote-share pattern: a candidate-SHARE dict forecast scored against a
+            # candidate-SHARE dict outcome (e.g. {"Lasher": .39, ...} vs certified
+            # {"Lasher": 39.2, ...}). The fallthrough below treats the dict OUTCOME
+            # as a categorical label, which mis-scores / fails — the bug behind the
+            # hand-rolled manual scores. Score it as a vector MAE/RMSE in
+            # percentage points so vote-share forecasts are machine-scoreable
+            # (lesson cl_ec9059c809ba). None -> no shared candidates -> fall through.
+            if isinstance(outcome, dict):
+                vector = ledger._vote_share_vector_score(probability_or_distribution, outcome)
+                if vector is not None:
+                    return vector
+            probability = ledger._probability_for_outcome(
+                probability_or_distribution,
+                outcome,
+                outcome_space,
+            )
+            brier = ledger._brier_score(
+                probability_or_distribution,
+                outcome,
+                outcome_space,
+            )
+            log_score = ledger._log_score(probability)
+            return {
+                "brier_score": brier,
+                "log_score": log_score,
+                "proper_score": log_score,
+                "score_rule": "discrete_distribution_log_score",
+                "calibration_bucket": ledger._probability_bucket(probability),
+                "notes": "Discrete distribution log score against confirmed resolution.",
+            }
+
+    raise ValidationError(f"scoring is not implemented for outcome type: {outcome_space.type}")

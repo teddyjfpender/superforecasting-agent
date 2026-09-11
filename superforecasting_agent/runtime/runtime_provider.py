@@ -221,25 +221,14 @@ def _auto_detect_local_model(base_url: str) -> str:
 
 
 def _get_model_config() -> Dict[str, Any]:
-    config = load_config()
-    model_cfg = config.get("model")
-    if isinstance(model_cfg, dict):
-        cfg = dict(model_cfg)
-        # Accept "model" as alias for "default" (users intuitively write model.model)
-        if not cfg.get("default") and cfg.get("model"):
-            cfg["default"] = cfg["model"]
-        default = (cfg.get("default") or "").strip()
-        base_url = (cfg.get("base_url") or "").strip()
-        is_local = "localhost" in base_url or "127.0.0.1" in base_url
-        is_fallback = not default
-        if is_local and is_fallback and base_url:
-            detected = _auto_detect_local_model(base_url)
-            if detected:
-                cfg["default"] = detected
-        return cfg
-    if isinstance(model_cfg, str) and model_cfg.strip():
-        return {"default": model_cfg.strip()}
-    return {}
+    from superforecasting_agent.runtime.model_configuration import model_section
+    cfg = model_section(load_config())
+    base_url = cfg.get('base_url') or ''
+    if not cfg.get('default') and _loopback_hostname(base_url_hostname(base_url)):
+        detected = _auto_detect_local_model(base_url)
+        if detected:
+            cfg['default'] = detected
+    return cfg
 
 
 def _provider_supports_explicit_api_mode(provider: Optional[str], configured_provider: Optional[str] = None) -> bool:
