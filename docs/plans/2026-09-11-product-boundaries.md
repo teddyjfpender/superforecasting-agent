@@ -740,3 +740,6 @@ Explicit host worker lifetime:
   orchestration still reside in the RPC server. Explicit session-close races,
   complete ownership of external delegation/provider resources, installed remote
   Ink lifecycle verification and cross-platform qualification remain open.
+- The backend-only wheel built from `f8a415a5d` also passed the installed localhost
+  authentication, negotiation, query-redaction and graceful shutdown probe outside
+  the checkout. Full regression and installed remote Ink qualification are pending.
