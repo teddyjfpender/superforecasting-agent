@@ -77,6 +77,26 @@ See [implementation, live operations and limits](docs/plans/2026-09-11-learning-
 - [ ] Continue source-specific bindings beyond NWS/USGS and reconcile older guides.
   Remaining release publication work is explicitly deferred by the operator.
 
+## Engineering integrity follow-up
+
+See [implementation and verification](docs/plans/2026-09-11-engineering-integrity.md).
+
+- [x] Share resolution validation with imports; reject invalid unscoreable
+  outcomes, boolean strings and inconsistent censored score/tail records.
+- [x] Serialize resolution, score and postmortem retries; make postmortem/lesson
+  handoffs atomic, add nested rollback savepoints, and preserve forced-rescore lineage.
+- [x] Detect and repair historical missing lesson handoffs without replacing
+  postmortems or existing lesson decisions.
+- [x] Share indexed configuration updates across command surfaces, serialize
+  updates across processes, and reject stale loaded full-config saves.
+- [x] Close interrupted SQLite setup handles and test real update-probe timeout
+  and signal-exit containment. Historical native TLS cause remains unproven.
+- [x] Reject messages and replies from replaced/stopped TUI transports.
+- [x] Separate BLS parsing from fetching; preserve zero, reject wrong entities and
+  ambiguous revisions, and stop treating observation periods as publication dates.
+- [x] Reject duplicate/nonfinite/overflow JSON across source adapters and make
+  promotion tests independent of the operator's ledger.
+
 ## Before a production release
 
 - [ ] Verify the pushed commit's CI results, including platform jobs and release

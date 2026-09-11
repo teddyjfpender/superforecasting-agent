@@ -31,6 +31,8 @@ The formality layer of the modularization program
 | `tools/` | tools | `tools.registry`; `tools.forecast_actions.ACTIONS` | `run_agent` (ratchet) |
 | `forecasting/domains.py` | semantic classification | Explicit source categories and audited active-question corrections | No title-based inference or probability-history rewriting |
 | `forecasting/source_bindings.py` | measurement contracts | NWS temperature and USGS magnitude extraction | No network calls or inferred settlement decisions |
+| `forecasting/sources/bls_parsing.py` | BLS parsing | Finite measurements, exact series identity, periods and duplicate/revision checks | No network, CLI or ledger writes; periods are not publication times |
+| `superforecasting_agent/storage/files.py`, `storage/locking.py` | configuration mutation and locking | Dotted mapping/list updates, atomic YAML replacement and reentrant process locks | No runtime imports; full-config stale-write checks remain in `runtime.config` |
 | `forecasting/censoring.py` | coarsened observations | Typed right-censoring contracts and threshold-event probabilities | No fabricated exact outcomes or full-distribution score claims |
 | `superforecasting_agent/runtime/model_configuration.py` | model configuration ownership | `model_section`, `persist_model_selection` | No UI imports; preserve raw environment references |
 | `gateway/command_dispatch.py` | gateway command hooks | `dispatch_command_hooks` | No gateway runner import; reauthorize rewritten commands |
