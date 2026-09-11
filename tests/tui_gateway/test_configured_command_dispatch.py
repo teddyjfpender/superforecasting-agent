@@ -167,3 +167,40 @@ def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeyp
     plugin.assert_called_once_with("CaseSensitive")
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+def test_native_unknown_command_hands_off_without_execution(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
+    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
+    response = dispatch("fixture-legacy")
+    assert response["error"]["data"] == {"dispatch": "slash.exec", "execution_started": False}
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+def test_native_plugin_failure_never_becomes_a_legacy_handoff(configure, monkeypatch):
+    configure({})
+    plugin = Mock(side_effect=RuntimeError("failed after effect"))
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: plugin)
+    response = dispatch("fixture-plugin", "args")
+    assert response["error"]["code"] == 5030
+    assert "failed after effect" in response["error"]["message"]
+    assert "data" not in response["error"]
+    plugin.assert_called_once_with("args")
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("result", [None, RuntimeError("fixture skill failed")])
+def test_owned_skill_failure_does_not_fall_back_to_legacy(configure, monkeypatch, result):
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
+    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {"/fixture-skill": {"name": "fixture-skill"}})
+    build = Mock(side_effect=result) if isinstance(result, Exception) else Mock(return_value=result)
+    monkeypatch.setattr("agent.skill_commands.build_skill_invocation_message", build)
+    response = dispatch("fixture-skill")
+    assert "error" in response
+    assert "data" not in response["error"]
+    build.assert_called_once()
+    server._start_agent_build.assert_not_called()

@@ -74,61 +74,63 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
       }
     }
 
-    gw.request<SlashExecResponse>('slash.exec', { command: cmd.slice(1), session_id: sid })
-      .then(r => {
+    const showOutput = (output?: string, warning?: string) => {
+      const body = output || `/${parsed.name}: no output`
+      const text = warning ? `warning: ${warning}\n${body}` : body
+      const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
+
+      long ? page(text, parsed.name[0]!.toUpperCase() + parsed.name.slice(1)) : sys(text)
+    }
+
+    gw.request('command.dispatch', { arg: parsed.arg, name: parsed.name, session_id: sid })
+      .then((raw: unknown) => {
         if (stale()) {
           return
         }
 
-        const body = r?.output || `/${parsed.name}: no output`
-        const text = r?.warning ? `warning: ${r.warning}\n${body}` : body
-        const long = text.length > 180 || text.split('\n').filter(Boolean).length > 2
+        const d = asCommandDispatch(raw)
 
-        long ? page(text, parsed.name[0]!.toUpperCase() + parsed.name.slice(1)) : sys(text)
+        if (!d) {
+          return sys('error: invalid response: command.dispatch')
+        }
+
+        if (d.type === 'exec' || d.type === 'plugin') {
+          return showOutput(d.output)
+        }
+
+        if (d.type === 'alias') {
+          return handler(`/${d.target}${argTail}`)
+        }
+
+        if (d.type === 'skill') {
+          sys(`⚡ loading skill: ${d.name}`)
+
+          return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: skill payload missing message`)
+        }
+
+        if (d.type === 'send') {
+          if (d.notice?.trim()) {
+            sys(d.notice)
+          }
+
+          return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: empty message`)
+        }
       })
       .catch((error: unknown) => {
         if (stale()) {
           return
         }
 
-        if (!isCommandHandoff(error)) {
+        if (!isCommandHandoff(error, 'slash.exec')) {
           guardedErr(error)
 
           return
         }
 
-        gw.request('command.dispatch', { arg: parsed.arg, name: parsed.name, session_id: sid })
-          .then((raw: unknown) => {
-            if (stale()) {
-              return
-            }
-
-            const d = asCommandDispatch(raw)
-
-            if (!d) {
-              return sys('error: invalid response: command.dispatch')
-            }
-
-            if (d.type === 'exec' || d.type === 'plugin') {
-              return sys(d.output || '(no output)')
-            }
-
-            if (d.type === 'alias') {
-              return handler(`/${d.target}${argTail}`)
-            }
-
-            if (d.type === 'skill') {
-              sys(`⚡ loading skill: ${d.name}`)
-
-              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: skill payload missing message`)
-            }
-
-            if (d.type === 'send') {
-              if (d.notice?.trim()) {
-                sys(d.notice)
-              }
-
-              return d.message?.trim() ? send(d.message) : sys(`/${parsed.name}: empty message`)
+        gw.request<SlashExecResponse>('slash.exec', { command: cmd.slice(1), session_id: sid })
+          .then(r => {
+            if (!stale()) {
+              showOutput(r?.output, r?.warning)
             }
           })
           .catch(guardedErr)

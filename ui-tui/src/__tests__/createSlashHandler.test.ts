@@ -1213,7 +1213,7 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.sys).toHaveBeenCalledWith('usage: /indicator [ascii|emoji|markers|unicode]')
   })
 
-  it('drops stale slash.exec output after a newer slash', async () => {
+  it('drops stale native command output after a newer slash', async () => {
     let resolveLate: (v: { output?: string }) => void
     let slashExecCalls = 0
 
@@ -1222,7 +1222,7 @@ describe('createSlashHandler', () => {
         gw: {
           getLogTail: vi.fn(() => ''),
           request: vi.fn((method: string) => {
-            if (method === 'slash.exec') {
+            if (method === 'command.dispatch') {
               slashExecCalls += 1
 
               if (slashExecCalls === 1) {
@@ -1231,7 +1231,7 @@ describe('createSlashHandler', () => {
                 })
               }
 
-              return Promise.resolve({ output: 'fresh' })
+              return Promise.resolve({ type: 'exec', output: 'fresh' })
             }
 
             return Promise.resolve({})
@@ -1253,7 +1253,7 @@ describe('createSlashHandler', () => {
   })
 
   it.each([
-    new Error('timeout: slash.exec'),
+    new Error('timeout: command.dispatch'),
     new GatewayRpcError('worker failed after execution', 5030),
     new GatewayRpcError('invalid configured command', 4018)
   ])('does not retry an execution failure through another dispatcher: %s', async error => {
@@ -1275,12 +1275,31 @@ describe('createSlashHandler', () => {
     )
     createSlashHandler(ctx)('/fixture-command')
     patchUiState({ sid: 'new-session' })
-    reject(new GatewayRpcError('handoff', 4018, { dispatch: 'command.dispatch', execution_started: false }))
+    reject(new GatewayRpcError('handoff', 4018, { dispatch: 'slash.exec', execution_started: false }))
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
     expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
     expect(ctx.transcript.sys).not.toHaveBeenCalled()
+  })
+
+  it('runs a native command without contacting the legacy dispatcher', async () => {
+    const ctx = buildCtx()
+    ctx.gateway.gw.request.mockResolvedValue({ type: 'exec', output: 'native result' })
+    createSlashHandler(ctx)('/fixture-command')
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('native result'))
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+    expect(ctx.gateway.gw.request).toHaveBeenCalledWith('command.dispatch', expect.objectContaining({ name: 'fixture-command' }))
+  })
+
+  it('uses the legacy worker once after an explicit native handoff', async () => {
+    const ctx = buildCtx()
+    ctx.gateway.gw.request
+      .mockRejectedValueOnce(new GatewayRpcError('handoff', 4018, { dispatch: 'slash.exec', execution_started: false }))
+      .mockResolvedValueOnce({ output: 'legacy result' })
+    createSlashHandler(ctx)('/fixture-legacy')
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('legacy result'))
+    expect(ctx.gateway.gw.request.mock.calls.map(call => call[0])).toEqual(['command.dispatch', 'slash.exec'])
   })
 
   it('dispatches command.dispatch with typed alias', async () => {
@@ -1341,8 +1360,9 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/profile')).toBe(true)
     await vi.waitFor(() => {
-      expect(ctx.gateway.gw.request).toHaveBeenCalledWith('slash.exec', {
-        command: 'profile',
+      expect(ctx.gateway.gw.request).toHaveBeenCalledWith('command.dispatch', {
+        name: 'profile',
+        arg: '',
         session_id: null
       })
     })

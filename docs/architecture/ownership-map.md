@@ -393,9 +393,11 @@ session's history/admission lock. The registry imports no transport or product.
 
 ### Command handoff transport semantics
 
-A `slash.exec` pre-execution handoff returns error code 4018 with
-`data: {dispatch: "command.dispatch", execution_started: false}`.
-Ink preserves RPC error code/data and only falls through on this handoff or an
-absent legacy method (-32601). Established older-host handoff messages remain
-recognized when structured data is absent. Timeout, disconnect, worker failure,
-validation failure and stale-session responses cannot trigger another execution.
+Ink requests `command.dispatch` first. An unsupported native command returns
+error code 4018 with `data: {dispatch: "slash.exec", execution_started: false}`.
+Only that pre-execution handoff (or an absent method, -32601) can invoke the legacy
+worker. The existing `slash.exec` handoff to `command.dispatch` stays available
+for older clients. Error code/data and established older-host handoff messages
+are preserved. Timeouts, disconnects, execution/validation failures and stale
+sessions cannot trigger another execution. Plugin/skill handlers report owned
+failures directly instead of allowing fallthrough.

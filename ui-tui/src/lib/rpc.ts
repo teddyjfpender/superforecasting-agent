@@ -51,7 +51,7 @@ export class GatewayRpcError extends Error {
   }
 }
 
-export function isCommandHandoff(error: unknown): boolean {
+export function isCommandHandoff(error: unknown, dispatch: 'command.dispatch' | 'slash.exec' = 'command.dispatch'): boolean {
   if (!(error instanceof GatewayRpcError)) {
     return false
   }
@@ -68,7 +68,11 @@ export function isCommandHandoff(error: unknown): boolean {
   const data = asRpcResult(error.data)
 
   if (error.data !== undefined) {
-    return data?.dispatch === 'command.dispatch' && data.execution_started === false
+    return data?.dispatch === dispatch && data.execution_started === false
+  }
+
+  if (dispatch === 'slash.exec') {
+    return error.message.startsWith('not a quick/plugin/skill command: ')
   }
 
   // Older hosts use the same pre-execution handoffs without structured data.

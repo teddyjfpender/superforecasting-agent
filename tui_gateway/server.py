@@ -5981,9 +5981,9 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
     return ""
 
 
-def _command_handoff(rid, message: str) -> dict:
+def _command_handoff(rid, message: str, dispatch: str = "command.dispatch") -> dict:
     response = _err(rid, 4018, message)
-    response["error"]["data"] = {"dispatch": "command.dispatch", "execution_started": False}
+    response["error"]["data"] = {"dispatch": dispatch, "execution_started": False}
     return response
 
 

@@ -260,7 +260,10 @@ def _(rid, params: dict) -> dict:
 
         handler = get_plugin_command_handler(name)
         if handler:
-            result = resolve_plugin_command_result(handler(arg))
+            try:
+                result = resolve_plugin_command_result(handler(arg))
+            except Exception as exc:
+                return _err(rid, 5030, f"Plugin command error: {exc}")
             return _ok(rid, {"type": "plugin", "output": str(result or "")})
     except Exception:
         pass
@@ -274,9 +277,14 @@ def _(rid, params: dict) -> dict:
         cmds = scan_skill_commands()
         key = f"/{name}"
         if key in cmds:
-            msg = build_skill_invocation_message(
-                key, arg, task_id=session.get("session_key", "") if session else ""
-            )
+            try:
+                msg = build_skill_invocation_message(
+                    key, arg, task_id=session.get("session_key", "") if session else ""
+                )
+            except Exception as exc:
+                return _err(rid, 5030, f"Skill command error: {exc}")
+            if not msg:
+                return _err(rid, 4018, f"skill payload missing message: {key}")
             if msg:
                 return _ok(
                     rid,
@@ -447,4 +455,4 @@ def _(rid, params: dict) -> dict:
                 },
             )
 
-    return _err(rid, 4018, f"not a quick/plugin/skill command: {name}")
+    return _core._command_handoff(rid, f"not a quick/plugin/skill command: {name}", dispatch="slash.exec")

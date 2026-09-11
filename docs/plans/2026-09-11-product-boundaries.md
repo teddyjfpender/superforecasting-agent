@@ -1387,3 +1387,19 @@ Configured command admission and TUI execution routing:
   Ink/dashboard/local-provider/SQLite lifecycle cases; seven existing forkpty
   warnings. The later absent-method compatibility branch is covered by the
   focused TypeScript test rather than a legacy-free installed host.
+
+
+### Native-first TUI command dispatch
+
+- Ink now calls native command dispatch first; native commands need one request
+  and no classic CLI runtime. Only an explicit not-executed handoff invokes the
+  compatibility worker. The old handoff direction stays available to old clients.
+- Native plugin exceptions no longer get swallowed and rerun through the legacy
+  path. Empty/failed skill payload construction also reports its own failure.
+- 106 focused TypeScript tests and 248 backend routing/gateway tests passed.
+  Shared Python/TypeScript quality gates and production bundle build passed.
+  Remaining legacy-only commands still require migration to shared operations.
+
+- Rebuilt real desk plus native routing verification: 32 passed, including all
+  seven Ink/dashboard/local-provider/SQLite lifecycle cases; seven existing
+  forkpty warnings. Native-first source was bundled before this run.
