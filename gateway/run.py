@@ -8176,50 +8176,9 @@ class GatewayRunner:
             if command in quick_commands:
                 qcmd = quick_commands[command]
                 if qcmd.get("type") == "exec":
-                    exec_cmd = qcmd.get("command", "")
-                    if exec_cmd:
-                        try:
-                            # Sanitize env to prevent credential leakage —
-                            # quick commands run in the gateway process which
-                            # has all API keys in os.environ.
-                            from tools.environments.local import _sanitize_subprocess_env
-                            sanitized_env = _sanitize_subprocess_env(os.environ.copy())
-                            process_kwargs = {} if os.name == "nt" else {"start_new_session": True}
-                            proc = await asyncio.create_subprocess_shell(
-                                exec_cmd,
-                                stdout=asyncio.subprocess.PIPE,
-                                stderr=asyncio.subprocess.PIPE,
-                                env=sanitized_env,
-                                **process_kwargs,
-                            )
-                            communicate = asyncio.create_task(proc.communicate())
-                            try:
-                                stdout, stderr = await asyncio.wait_for(
-                                    asyncio.shield(communicate), timeout=30
-                                )
-                            except (asyncio.CancelledError, asyncio.TimeoutError):
-                                try:
-                                    if os.name == "nt":
-                                        from gateway.status import terminate_pid
-                                        terminate_pid(proc.pid, force=True)
-                                    else:
-                                        os.killpg(proc.pid, signal.SIGKILL)  # windows-footgun: ok — os.name guard above
-                                except (ProcessLookupError, OSError):
-                                    pass
-                                await communicate
-                                raise
-                            output = (stdout or stderr).decode().strip()
-                            # Redact any remaining sensitive patterns in output
-                            if output:
-                                from agent.redact import redact_sensitive_text
-                                output = redact_sensitive_text(output)
-                            return output if output else "Command returned no output."
-                        except asyncio.TimeoutError:
-                            return "Quick command timed out (30s)."
-                        except Exception as e:
-                            return f"Quick command error: {e}"
-                    else:
-                        return f"Quick command '/{command}' has no command defined."
+                    from superforecasting_agent.runtime.quick_commands import execute
+
+                    return (await execute(qcmd["command"])).message
                 elif qcmd.get("type") == "alias":
                     target = qcmd.get("target", "").strip()
                     if target:

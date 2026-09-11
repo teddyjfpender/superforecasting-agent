@@ -1,7 +1,6 @@
 """Tests for user-defined quick commands that bypass the agent loop."""
 import os
-import subprocess
-from unittest.mock import MagicMock, patch, AsyncMock
+from unittest.mock import MagicMock, patch
 from rich.text import Text
 import pytest
 
@@ -64,7 +63,7 @@ class TestCLIQuickCommands:
         cli = self._make_cli({"empty": {"type": "exec", "command": "true"}})
         cli.process_command("/empty")
         cli.console.print.assert_called_once()
-        args = cli.console.print.call_args[0][0]
+        args = self._printed_plain(cli.console.print.call_args[0][0])
         assert "no output" in args.lower()
 
     def test_alias_command_routes_to_target(self):
@@ -85,21 +84,21 @@ class TestCLIQuickCommands:
         cli = self._make_cli({"broken": {"type": "alias", "target": ""}})
         cli.process_command("/broken")
         cli.console.print.assert_called_once()
-        args = cli.console.print.call_args[0][0]
+        args = self._printed_plain(cli.console.print.call_args[0][0])
         assert "no target defined" in args.lower()
 
     def test_unsupported_type_shows_error(self):
         cli = self._make_cli({"bad": {"type": "prompt", "command": "echo hi"}})
         cli.process_command("/bad")
         cli.console.print.assert_called_once()
-        args = cli.console.print.call_args[0][0]
+        args = self._printed_plain(cli.console.print.call_args[0][0])
         assert "unsupported type" in args.lower()
 
     def test_missing_command_field_shows_error(self):
         cli = self._make_cli({"oops": {"type": "exec"}})
         cli.process_command("/oops")
         cli.console.print.assert_called_once()
-        args = cli.console.print.call_args[0][0]
+        args = self._printed_plain(cli.console.print.call_args[0][0])
         assert "no command defined" in args.lower()
 
     def test_quick_command_takes_priority_over_skill_commands(self):
@@ -121,10 +120,12 @@ class TestCLIQuickCommands:
 
     def test_timeout_shows_error(self):
         cli = self._make_cli({"slow": {"type": "exec", "command": "sleep 100"}})
-        with patch("subprocess.run", side_effect=subprocess.TimeoutExpired("sleep", 30)):
+        with patch("superforecasting_agent.runtime.quick_commands.execute_sync") as execute:
+            from superforecasting_agent.runtime.quick_commands import CommandResult
+            execute.return_value = CommandResult(error="Quick command timed out (30s).")
             cli.process_command("/slow")
         cli.console.print.assert_called_once()
-        args = cli.console.print.call_args[0][0]
+        args = self._printed_plain(cli.console.print.call_args[0][0])
         assert "timed out" in args.lower()
 
 

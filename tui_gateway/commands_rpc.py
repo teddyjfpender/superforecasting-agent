@@ -245,25 +245,12 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4018, str(exc))
     if qc is not None:
         if qc.get("type") == "exec":
-            r = subprocess.run(
-                qc.get("command", ""),
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            output = (
-                (r.stdout or "")
-                + ("\n" if r.stdout and r.stderr else "")
-                + (r.stderr or "")
-            ).strip()[:4000]
-            if r.returncode != 0:
-                return _err(
-                    rid,
-                    4018,
-                    output or f"quick command failed with exit code {r.returncode}",
-                )
-            return _ok(rid, {"type": "exec", "output": output})
+            from superforecasting_agent.runtime.quick_commands import execute_sync
+
+            result = execute_sync(qc["command"])
+            if result.error:
+                return _err(rid, 4018, result.error)
+            return _ok(rid, {"type": "exec", "output": result.message})
 
     try:
         from superforecasting_agent.runtime.plugins import (

@@ -598,3 +598,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.legacy_commands"]
 forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "configured process ownership never imports presentation or policy adapters"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.commands"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false

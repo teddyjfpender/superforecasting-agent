@@ -1229,3 +1229,32 @@ Configured command admission and TUI execution routing:
   one skipped (platform-specific metadata), seven existing forkpty warnings.
   All seven real desk cases ran, covering provider failures, reconnect, cancellation,
   gateway death, unavailable history and the shared forecast workflow.
+
+
+### Shared configured shell execution
+
+- CLI, TUI and messaging now delegate configured shell snippets to one host
+  owner, with a structured result. All preserve stdout and stderr, detect nonzero
+  exits, use a 30-second deadline and cap displayed output at 4,000 characters.
+- All three now use the existing profile-aware subprocess environment filter and
+  output redactor. CLI and TUI previously inherited provider credentials directly.
+  Invocation arguments are not interpolated into configured shell source.
+- Async cancellation waits for process admission, kills the owned process group
+  (Windows uses taskkill), and drains pipe readers despite repeated cancellation.
+  The sync adapter runs the same operation with its own event loop.
+- Focused tests exercise real shell timeout/reaping, stderr plus nonzero exit,
+  environment filtering, invalid UTF-8, secret redaction, and deterministic repeated
+  cancellation during startup. Existing CLI and TUI command dispatch tests pass.
+- This owner is included in strict lint/format/type checks. The inherited environment
+  and redaction helpers remain dependencies to consolidate; Windows process-tree
+  behavior has not been newly qualified by the POSIX tests.
+
+- The host owner imports only the standard library; a thin runtime adapter supplies
+  the existing environment filter/redactor. A transitive negative import contract
+  prevents process ownership from reaching presentation, runtime, agent or tools.
+- Before the final ownership split, 532 command/gateway tests passed. The final
+  split is separately covered by command behavior and negative boundary tests.
+
+- Final verification: 55 focused command/boundary tests passed; strict Python
+  lint, formatting and types passed; all 31 import contracts and protocol drift
+  checks passed. Full push qualification remains separate.
