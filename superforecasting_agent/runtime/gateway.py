@@ -1061,7 +1061,7 @@ def _print_other_profiles_gateway_status() -> None:
     running and avoid confusing another profile's process with the current one.
     """
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
 
         current = get_active_profile_name()
         other_processes = [

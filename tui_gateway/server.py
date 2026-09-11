@@ -2068,7 +2068,7 @@ def _probe_config_health(cfg: dict) -> str:
 
 def _current_profile_name() -> str:
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
 
         return get_active_profile_name() or "default"
     except Exception:

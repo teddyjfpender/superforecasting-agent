@@ -224,7 +224,7 @@ def run_dump(args):
 
     # Profile
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         profile = get_active_profile_name() or "(default)"
     except Exception:
         profile = "(default)"

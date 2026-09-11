@@ -471,3 +471,17 @@ type = "forbidden"
 source_modules = ["forecasting.ledger", "forecasting.distribution", "forecasting.hooks.distribution"]
 forbidden_modules = ["forecasting.dashboard"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "subscription eligibility does not own interactive setup"
+type = "forbidden"
+source_modules = ["superforecasting_agent.runtime.nous_subscription"]
+forbidden_modules = ["superforecasting_agent.runtime.setup", "superforecasting_agent.runtime.oauth_setup", "cli"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "profile identity is independent of runtime management and presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.constants"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false

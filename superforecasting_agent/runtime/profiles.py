@@ -26,6 +26,7 @@ from superforecasting_agent.paths import get_install_root
 import json
 import os
 import re
+
 import shutil
 import stat
 import subprocess
@@ -33,6 +34,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import List, Optional
+
+from superforecasting_agent.constants import get_active_profile_name  # compatibility export
 
 _PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
@@ -1080,32 +1083,6 @@ def set_active_profile(name: str) -> None:
         tmp.replace(path)
 
 
-def get_active_profile_name() -> str:
-    """Infer the current profile name from HERMES_HOME.
-
-    Returns ``"default"`` if HERMES_HOME is not set or points to the default
-    runtime root. Returns the profile name if HERMES_HOME points into
-    ``<default-root>/profiles/<name>``.
-    Returns ``"custom"`` if HERMES_HOME is set to an unrecognized path.
-    """
-    from superforecasting_agent.constants import get_agent_home
-    hermes_home = get_agent_home()
-    resolved = hermes_home.resolve()
-
-    default_resolved = _get_default_hermes_home().resolve()
-    if resolved == default_resolved:
-        return "default"
-
-    profiles_root = _get_profiles_root().resolve()
-    try:
-        rel = resolved.relative_to(profiles_root)
-        parts = rel.parts
-        if len(parts) == 1 and _PROFILE_ID_RE.match(parts[0]):
-            return parts[0]
-    except ValueError:
-        pass
-
-    return "custom"
 
 
 # ---------------------------------------------------------------------------

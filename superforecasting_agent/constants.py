@@ -5,6 +5,7 @@ without risk of circular imports.
 """
 
 import os
+import re
 import sysconfig
 from contextvars import ContextVar, Token
 from pathlib import Path
@@ -540,3 +541,30 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 OPENROUTER_MODELS_URL = f"{OPENROUTER_BASE_URL}/models"
 
 AI_GATEWAY_BASE_URL = "https://ai-gateway.vercel.sh/v1"
+
+
+def get_active_profile_name() -> str:
+    """Infer the current profile name from HERMES_HOME.
+
+    Returns ``"default"`` if HERMES_HOME is not set or points to the default
+    runtime root. Returns the profile name if HERMES_HOME points into
+    ``<default-root>/profiles/<name>``.
+    Returns ``"custom"`` if HERMES_HOME is set to an unrecognized path.
+    """
+    hermes_home = get_agent_home()
+    resolved = hermes_home.resolve()
+
+    default_resolved = get_default_agent_root().resolve()
+    if resolved == default_resolved:
+        return "default"
+
+    profiles_root = (default_resolved / "profiles").resolve()
+    try:
+        rel = resolved.relative_to(profiles_root)
+        parts = rel.parts
+        if len(parts) == 1 and re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", parts[0]):
+            return parts[0]
+    except ValueError:
+        pass
+
+    return "custom"

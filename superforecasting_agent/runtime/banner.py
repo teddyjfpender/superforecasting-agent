@@ -876,7 +876,7 @@ def build_welcome_banner(console: Console, model: str, cwd: str,
         pass
     # Show active profile name when not 'default'
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         _profile_name = get_active_profile_name()
         if _profile_name and _profile_name != "default":
             right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")

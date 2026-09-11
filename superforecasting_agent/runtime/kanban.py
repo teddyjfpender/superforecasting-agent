@@ -25,7 +25,8 @@ from typing import Any, Optional
 
 from superforecasting_agent.runtime import kanban_db as kb
 from superforecasting_agent.runtime import kanban_swarm as ks
-from superforecasting_agent.runtime.profiles import get_active_profile_name, get_profile_dir, seed_profile_skills
+from superforecasting_agent.constants import get_active_profile_name
+from superforecasting_agent.runtime.profiles import get_profile_dir, seed_profile_skills
 
 _PRIMARY_CLI = "superforecasting-agent"
 _PRODUCT_NAME = "Superforecasting Agent"
@@ -946,7 +947,7 @@ def _profile_author() -> str:
         if v:
             return v
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         return get_active_profile_name() or "user"
     except Exception:
         return "user"

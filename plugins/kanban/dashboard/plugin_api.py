@@ -1523,7 +1523,7 @@ def _configured_home_channels() -> list[dict]:
 def _active_profile_name() -> str:
     """Return the current Hermes profile name for notify-sub ownership."""
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         return get_active_profile_name() or "default"
     except Exception:
         return "default"

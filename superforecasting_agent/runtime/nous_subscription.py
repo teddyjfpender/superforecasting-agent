@@ -551,15 +551,8 @@ def apply_nous_managed_defaults(
 
 
 # ---------------------------------------------------------------------------
-# Tool Gateway offer — single Y/n prompt after model selection
+# Tool Gateway eligibility and settings
 # ---------------------------------------------------------------------------
-
-_GATEWAY_TOOL_LABELS = {
-    "web": "Web search & extract (Firecrawl)",
-    "image_gen": "Image generation (FAL)",
-    "tts": "Text-to-speech (OpenAI TTS)",
-    "browser": "Browser automation (Browser Use)",
-}
 
 
 def _get_gateway_direct_credentials() -> Dict[str, bool]:
@@ -583,13 +576,6 @@ def _get_gateway_direct_credentials() -> Dict[str, bool]:
         ),
     }
 
-
-_GATEWAY_DIRECT_LABELS = {
-    "web": "Firecrawl/Exa/Parallel/Tavily key",
-    "image_gen": "FAL key",
-    "tts": "OpenAI/ElevenLabs key",
-    "browser": "Browser Use/Browserbase key",
-}
 
 _ALL_GATEWAY_KEYS = ("web", "image_gen", "tts", "browser")
 
@@ -694,108 +680,4 @@ def apply_gateway_defaults(
         image_cfg["use_gateway"] = True
         changed.add("image_gen")
 
-    return changed
-
-
-def prompt_enable_tool_gateway(config: Dict[str, object]) -> set[str]:
-    """If eligible tools exist, prompt the user to enable the Tool Gateway.
-
-    Uses prompt_choice() with a description parameter so the curses TUI
-    shows the tool context alongside the choices.
-
-    Returns the set of tools that were enabled, or empty set if the user
-    declined or no tools were eligible.
-    """
-    unconfigured, has_direct, already_managed = get_gateway_eligible_tools(config)
-    if not unconfigured and not has_direct:
-        return set()
-
-    try:
-        from superforecasting_agent.runtime.setup import prompt_choice
-    except Exception:
-        return set()
-
-    # Build description lines showing full status of all gateway tools
-    desc_parts: list[str] = [
-        "",
-        "  The Tool Gateway gives you access to web search, image generation,",
-        "  text-to-speech, and browser automation through your Nous subscription.",
-        "  No need to sign up for separate API keys — just pick the tools you want.",
-        "",
-    ]
-    if already_managed:
-        for k in already_managed:
-            desc_parts.append(f"  ✓ {_GATEWAY_TOOL_LABELS[k]} — using Tool Gateway")
-    if unconfigured:
-        for k in unconfigured:
-            desc_parts.append(f"  ○ {_GATEWAY_TOOL_LABELS[k]} — not configured")
-    if has_direct:
-        for k in has_direct:
-            desc_parts.append(f"  ○ {_GATEWAY_TOOL_LABELS[k]} — using {_GATEWAY_DIRECT_LABELS[k]}")
-
-    # Build short choice labels — detail is in the description above
-    choices: list[str] = []
-    choice_keys: list[str] = []  # maps choice index -> action
-
-    if unconfigured and has_direct:
-        choices.append("Enable for all tools (existing keys kept, not used)")
-        choice_keys.append("all")
-
-        choices.append("Enable only for tools without existing keys")
-        choice_keys.append("unconfigured")
-
-        choices.append("Skip")
-        choice_keys.append("skip")
-
-    elif unconfigured:
-        choices.append("Enable Tool Gateway")
-        choice_keys.append("unconfigured")
-
-        choices.append("Skip")
-        choice_keys.append("skip")
-
-    else:
-        choices.append("Enable Tool Gateway (existing keys kept, not used)")
-        choice_keys.append("all")
-
-        choices.append("Skip")
-        choice_keys.append("skip")
-
-    description = "\n".join(desc_parts) if desc_parts else None
-    # Default to "Enable" when user has no direct keys (new user),
-    # default to "Skip" when they have existing keys to preserve.
-    default_idx = 0 if not has_direct else len(choices) - 1
-
-    try:
-        idx = prompt_choice(
-            "Your Nous subscription includes the Tool Gateway.",
-            choices,
-            default_idx,
-            description=description,
-        )
-    except (KeyboardInterrupt, EOFError, OSError, SystemExit):
-        return set()
-
-    action = choice_keys[idx]
-    if action == "skip":
-        return set()
-
-    if action == "all":
-        # Apply to switchable tools + ensure already-managed tools also
-        # have use_gateway persisted in config for consistency.
-        to_apply = list(_ALL_GATEWAY_KEYS)
-    else:
-        to_apply = unconfigured
-
-    changed = apply_gateway_defaults(config, to_apply)
-    if changed:
-        from superforecasting_agent.runtime.config import save_config
-        save_config(config)
-        # Only report the tools that actually switched (not already-managed ones)
-        newly_switched = changed - set(already_managed)
-        for key in sorted(newly_switched):
-            label = _GATEWAY_TOOL_LABELS.get(key, key)
-            print(f"  ✓ {label}: enabled via Nous subscription")
-        if already_managed and not newly_switched:
-            print("  (all tools already using Tool Gateway)")
     return changed

@@ -1004,7 +1004,6 @@ class TestLoginNousSkipKeepsCurrent:
         """Patch OAuth + model-list + prompt so _login_nous doesn't hit network."""
         import superforecasting_agent.runtime.auth as auth_mod
         import superforecasting_agent.runtime.models as models_mod
-        import superforecasting_agent.runtime.nous_subscription as ns
 
         fake_auth_state = {
             "access_token": "fake-nous-token",
@@ -1028,7 +1027,8 @@ class TestLoginNousSkipKeepsCurrent:
             models_mod, "partition_nous_models_by_tier",
             lambda ids, p, free_tier=False: (ids, []),
         )
-        monkeypatch.setattr(ns, "prompt_enable_tool_gateway", lambda cfg: None)
+        from superforecasting_agent.runtime import oauth_setup
+        monkeypatch.setattr(oauth_setup, "prompt_enable_tool_gateway", lambda cfg: None)
 
     def test_skip_keep_current_preserves_provider_and_model(self, tmp_path, monkeypatch):
         """User picks Skip → config.yaml untouched, Nous creds still saved."""

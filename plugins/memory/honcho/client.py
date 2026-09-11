@@ -45,7 +45,7 @@ def resolve_active_host() -> str:
         return explicit
 
     try:
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
         profile = get_active_profile_name()
         if profile and profile not in {"default", "custom"}:
             return f"{HOST}.{profile}"

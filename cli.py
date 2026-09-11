@@ -8859,7 +8859,7 @@ class ForecastCLI:
 
         # Prepend profile name when not default
         try:
-            from superforecasting_agent.runtime.profiles import get_active_profile_name
+            from superforecasting_agent.constants import get_active_profile_name
             profile = get_active_profile_name()
             if profile not in {"default", "custom"}:
                 symbol = f"{profile} {symbol}"

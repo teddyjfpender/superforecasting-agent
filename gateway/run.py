@@ -4475,7 +4475,7 @@ class GatewayRunner:
         except Exception:
             pass
         try:
-            from superforecasting_agent.runtime.profiles import get_active_profile_name
+            from superforecasting_agent.constants import get_active_profile_name
             _profile = get_active_profile_name()
             if _profile and _profile != "default":
                 logger.info("Active profile: %s", _profile)
@@ -5341,7 +5341,7 @@ class GatewayRunner:
     def _active_profile_name(self) -> str:
         """Return the profile name this gateway represents."""
         try:
-            from superforecasting_agent.runtime.profiles import get_active_profile_name
+            from superforecasting_agent.constants import get_active_profile_name
             return get_active_profile_name() or "default"
         except Exception:
             return "default"
@@ -10086,7 +10086,7 @@ class GatewayRunner:
     async def _handle_profile_command(self, event: MessageEvent) -> str:
         """Handle /profile — show active profile name and home directory."""
         from superforecasting_agent.constants import display_agent_home
-        from superforecasting_agent.runtime.profiles import get_active_profile_name
+        from superforecasting_agent.constants import get_active_profile_name
 
         display = display_agent_home()
         profile_name = get_active_profile_name()

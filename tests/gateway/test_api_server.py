@@ -583,12 +583,12 @@ class TestModelsEndpoint:
 
     def test_resolve_model_name_default_profile(self):
         """Default profile falls back to 'superforecasting-agent'."""
-        with patch("superforecasting_agent.runtime.profiles.get_active_profile_name", return_value="default"):
+        with patch("superforecasting_agent.constants.get_active_profile_name", return_value="default"):
             assert APIServerAdapter._resolve_model_name("") == "superforecasting-agent"
 
     def test_resolve_model_name_named_profile(self):
         """Named profile uses the profile name as model name."""
-        with patch("superforecasting_agent.runtime.profiles.get_active_profile_name", return_value="lucas"):
+        with patch("superforecasting_agent.constants.get_active_profile_name", return_value="lucas"):
             assert APIServerAdapter._resolve_model_name("") == "lucas"
 
     @pytest.mark.asyncio

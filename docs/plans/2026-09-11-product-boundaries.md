@@ -499,3 +499,22 @@ Shared delegation configuration and gateway persistence:
   twelve import contracts pass; delegation now joins the no-CLI consumer contract.
 - Complete runtime hosting, transitive application isolation, broader command
   migration and remote installed-product qualification remain open.
+
+Noninteractive runtime identity and subscription ownership:
+
+- Moved the Tool Gateway offer, labels and prompting into the existing OAuth
+  setup owner. Subscription eligibility and settings application remain available
+  without importing the interactive setup module. Selection defaults, opt-in
+  scope, persistence and cancellation behavior are retained.
+- Moved active-profile identity lookup into the existing dependency-free home/path
+  owner. Agent construction, TUI, gateway, CLI and plugin readers use that owner;
+  profile management retains its compatibility export and administrative operations.
+  Reading a profile name no longer imports service-management code.
+- 429 focused profile, subscription, OAuth, API and plugin tests passed (four
+  skipped). Thirteen focused ownership tests passed, including a fresh process
+  rejecting runtime/presentation imports during identity lookup and actual import
+  checker rejection of an injected indirect presentation dependency.
+- Shared Python quality passes with fourteen contracts. Profile identity has a
+  strict transitive boundary; subscription eligibility currently has a direct
+  setup exclusion. Complete transitive forecast-service isolation and independent
+  host/session lifetime ownership remain open.
