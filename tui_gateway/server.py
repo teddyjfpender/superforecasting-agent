@@ -226,8 +226,10 @@ def start_build_check() -> None:
 
 from tui_gateway.render import make_stream_renderer, render_diff, render_message
 
-_sessions: dict[str, dict] = {}
-_session_resume_lock = threading.RLock()
+from superforecasting_agent.hosting.registry import SessionRegistry
+
+_sessions = SessionRegistry()
+_session_resume_lock = _sessions.lock
 _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
 _answers: dict[str, str] = {}
@@ -294,7 +296,7 @@ try:
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
 from superforecasting_agent.hosting.workers import HostStopping, RuntimeWorkers
-from superforecasting_agent.hosting.sessions import SessionBusy, finalize_session, in_use, replacement, reserve_close, use_session
+from superforecasting_agent.hosting.sessions import SessionBusy, finalize_session, in_use, replacement, use_session
 
 _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
 _host_lifecycle_lock = threading.Lock()
@@ -316,6 +318,8 @@ class _SlashWorker:
     def __init__(self, session_key: str, model: str):
         self._lock = threading.Lock()
         self._seq = 0
+        self._close_lock = threading.Lock()
+        self._readers = []
         self.stderr_tail: list[str] = []
         self.stdout_queue: queue.Queue[dict | None] = queue.Queue()
 
@@ -339,21 +343,31 @@ class _SlashWorker:
             cwd=os.getcwd(),
             env=os.environ.copy(),
         )
-        threading.Thread(target=self._drain_stdout, daemon=True).start()
-        threading.Thread(target=self._drain_stderr, daemon=True).start()
+        try:
+            for target in (self._drain_stdout, self._drain_stderr):
+                reader = threading.Thread(target=target, daemon=True)
+                reader.start()
+                self._readers.append(reader)
+        except BaseException:
+            self.close()
+            raise
 
     def _drain_stdout(self):
-        for line in self.proc.stdout or []:
-            try:
-                self.stdout_queue.put(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        self.stdout_queue.put(None)
+        try:
+            with self.proc.stdout as stream:
+                for line in stream:
+                    try:
+                        self.stdout_queue.put(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        finally:
+            self.stdout_queue.put(None)
 
     def _drain_stderr(self):
-        for line in self.proc.stderr or []:
-            if text := line.rstrip("\n"):
-                self.stderr_tail = (self.stderr_tail + [text])[-80:]
+        with self.proc.stderr as stream:
+            for line in stream:
+                if text := line.rstrip("\n"):
+                    self.stderr_tail = (self.stderr_tail + [text])[-80:]
 
     def run(self, command: str) -> str:
         if self.proc.poll() is not None:
@@ -383,15 +397,24 @@ class _SlashWorker:
             )
 
     def close(self):
-        try:
+        with self._close_lock:
             if self.proc.poll() is None:
                 self.proc.terminate()
-                self.proc.wait(timeout=1)
-        except Exception:
-            try:
-                self.proc.kill()
-            except Exception:
-                pass
+                try:
+                    self.proc.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                    self.proc.wait(timeout=1)
+            if self.proc.stdin is not None:
+                self.proc.stdin.close()
+            for reader in self._readers:
+                reader.join(timeout=1)
+            if any(reader.is_alive() for reader in self._readers):
+                raise RuntimeError("slash worker pipe readers did not stop")
+            # Also covers construction failure before a reader started.
+            for stream in (self.proc.stdout, self.proc.stderr):
+                if stream is not None:
+                    stream.close()
 
 
 def _load_busy_input_mode() -> str:
@@ -2703,7 +2726,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
 
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
-    _sessions[sid] = {
+    _sessions.register(sid, {
         "agent": agent,
         "session_key": key,
         "history": history,
@@ -2722,7 +2745,7 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, p
         # Pin async event emissions to whichever transport created the
         # session (stdio for Ink, JSON-RPC WS for the dashboard sidebar).
         "transport": current_transport() or _stdio_transport,
-    }
+    })
     try:
         _sessions[sid]["slash_worker"] = _SlashWorker(
             key, getattr(agent, "model", _resolve_model())
@@ -2893,7 +2916,7 @@ def _(rid, params: dict) -> dict:
 
     ready = threading.Event()
 
-    _sessions[sid] = {
+    _sessions.register(sid, {
         "agent": None,
         "agent_error": None,
         "agent_ready": ready,
@@ -2912,7 +2935,7 @@ def _(rid, params: dict) -> dict:
         "tool_progress_mode": _load_tool_progress_mode(),
         "tool_started_at": {},
         "transport": current_transport() or _stdio_transport,
-    }
+    })
 
     # Return the lightweight session immediately so Ink can paint the composer
     # + skeleton panel, then build the real AIAgent just after this response is
@@ -3061,6 +3084,9 @@ def _(rid, params: dict) -> dict:
         recovery = _turn_recovery(db, target, recover=True)
         if recovery and recovery.get("owner_active"):
             return _err(rid, 4010, "session turn is still owned by a running gateway")
+        sid = uuid.uuid4().hex[:8]
+        if sid in _sessions:
+            return _err(rid, 5000, "runtime session identifier collision; retry")
         if replace_session:
             replace_lock = replace_session.get("history_lock")
             if replace_lock is None:
@@ -3075,7 +3101,6 @@ def _(rid, params: dict) -> dict:
                 # Reserve the old runtime so prompt/notification dispatch cannot
                 # start work while its replacement is being constructed.
                 replace_session["running"] = True
-        sid = uuid.uuid4().hex[:8]
         _enable_gateway_prompts()
         try:
             history = db.get_messages_as_conversation(target)
@@ -3494,19 +3519,12 @@ def _(rid, params: dict) -> dict:
 
 
 def _close_runtime_session(sid: str, *, mark_ended: bool = True, reserved: bool = False, drained: bool = False) -> bool:
-    with _session_resume_lock:
-        session = _sessions.get(sid)
-        if not session:
-            return False
-        reserve_close(session, reserved=reserved, drained=drained)
-    try:
-        _finalize_session(session, mark_ended=mark_ended)
-    except Exception:
-        with session["history_lock"]:
-            session["_closing"] = False
-        raise
-    with _session_resume_lock:
-        _sessions.pop(sid)
+    session = _sessions.retire(
+        sid, lambda session: _finalize_session(session, mark_ended=mark_ended),
+        reserved=reserved, drained=drained,
+    )
+    if session is None:
+        return False
     _session_toggles.pop(session.get("session_key", ""), None)
     try:
         from tools.approval import unregister_gateway_notify
@@ -3588,7 +3606,7 @@ def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
     except Exception as exc:
         cleanup_error = ""
         try:
-            if new_sid in _sessions:
+            if (_sessions.get(new_sid) or {}).get("session_key") == new_key:
                 _close_runtime_session(new_sid, mark_ended=False, reserved=replace_current)
             elif agent is not None:
                 agent.close()

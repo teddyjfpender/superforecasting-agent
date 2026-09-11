@@ -31,6 +31,7 @@ def server():
         import importlib
         mod = importlib.import_module("tui_gateway.server")
         yield mod
+        assert mod.shutdown_runtime(5), "protocol test left runtime workers active"
         mod._sessions.clear()
         mod._pending.clear()
         mod._answers.clear()

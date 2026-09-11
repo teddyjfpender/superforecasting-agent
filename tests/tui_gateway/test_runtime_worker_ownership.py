@@ -58,7 +58,7 @@ def test_host_timeout_preserves_resources_until_worker_finishes(monkeypatch):
         interrupt=lambda: calls.append('interrupt'),
         close=lambda: calls.append('agent.close'))}
     monkeypatch.setattr(server, '_pool', workers)
-    monkeypatch.setattr(server, '_sessions', {'runtime': session})
+    server._sessions['runtime'] = session
     monkeypatch.setattr(server._session_store, '_connection', SimpleNamespace(close=lambda: calls.append('db.close')))
     monkeypatch.setattr(server, '_clear_pending', lambda sid: None)
     monkeypatch.setattr(server, '_stop_cron_ticker', lambda: None)

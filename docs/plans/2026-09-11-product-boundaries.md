@@ -978,3 +978,27 @@ Session finalization ownership and failed handoffs:
   compressed-session identity, and exactly-once hooks after a successful retry.
   Optional memory/hook failures are logged; full external resource disposal and
   registry ownership remain separate unfinished host responsibilities.
+
+Live session registry ownership (isolated follow-up):
+
+- `hosting.registry.SessionRegistry` owns registration, the shared membership
+  lock, stable enumeration snapshots and retirement. The RPC server delegates
+  registration/retirement; failed finalization releases admission without
+  detaching the session. Duplicate runtime registration cannot replace an owner.
+  An import contract rejects indirect presentation dependencies.
+- Collision testing exposed branch rollback's assumption that any matching
+  runtime ID belonged to the failed construction. Rollback now checks durable
+  identity before closing it, and resume rejects runtime-ID collisions before
+  reserving the prior session. A real ledger test preserves an unrelated runtime
+  and deletes only the failed branch record.
+- The expanded selection exposed unclosed subprocess pipes. Allocation tracing
+  located them in slash-worker construction during resume: protocol fixtures
+  cleared session membership without shutdown, and production worker close did
+  not close pipes or wait after forced kill. Fixtures now invoke host shutdown;
+  pipe readers own their streams, and worker close serializes shutdown, reaps
+  terminate/kill, joins readers and closes streams. Failed reader construction
+  also disposes of the child.
+- The 497-test host/protocol/import selection passes after those repairs. Two
+  real-child tests prove forced-kill reaping, concurrent repeated close and reader
+  construction failure cleanup. These isolated changes are not yet part of the
+  primary full regression running on `66df97c89`; full qualification is pending.

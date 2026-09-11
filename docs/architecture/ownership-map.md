@@ -369,3 +369,9 @@ carry resolved profile identity and revision. Atomic writes, update locking and
 revision metadata belong to `superforecasting_agent/storage/files.py`. Runtime
 CLI loaders retain their expansion/default policy and delegate revision identity
 to storage. The host configuration owner cannot import presentation modules.
+
+Live runtime membership and retirement belong to
+`superforecasting_agent/hosting/registry.py`. Registration cannot silently replace
+an existing runtime ID. Enumeration snapshots membership, and retirement preserves
+an entry until finalization succeeds. Session content remains protected by each
+session's history/admission lock. The registry imports no transport or product.
