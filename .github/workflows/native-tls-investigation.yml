@@ -20,8 +20,13 @@ jobs:
       - name: Install original Python distribution and native debugger
         run: |
           uv python install 3.11.15
+          mkdir -p native-tls-results
+          dpkg-query -W libc6 openssl libssl3t64 ca-certificates > native-tls-results/runner-packages-before.txt
+          sha256sum /lib/x86_64-linux-gnu/libc.so.6 /etc/ssl/certs/ca-certificates.crt > native-tls-results/runner-hashes-before.txt
+          sudo apt-mark hold libc6 openssl libssl3t64 ca-certificates
           sudo apt-get update
-          sudo apt-get install -y gdb
+          sudo apt-get install -y --no-install-recommends gdb
+          sha256sum --check native-tls-results/runner-hashes-before.txt
       - name: Run separate hypotheses with native capture
         run: |
           ulimit -c unlimited
