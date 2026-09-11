@@ -1152,3 +1152,27 @@ Device sign-in ownership and stale-result protection:
 - Remaining application boundaries include failed-agent-build retry and legacy
   command behavior. Lower-level agent tool-resource retry ownership, cross-version
   product upgrades and broader platform qualification remain open.
+
+Shared command catalog and compatibility boundaries:
+
+- Command definitions, category ordering, subcommands, alias lookup and configured
+  alias expansion now belong to `application/command_catalog/`. Workflow commands
+  and operator-support commands have separate definition modules; each module is
+  below 400 lines. Classic completion/menu adapters retain compatibility exports.
+- TUI catalog and command resolution import the shared owner directly. Classic CLI
+  and messaging alias expansion use the same operation. The catalog can import
+  and resolve commands without loading runtime adapters, prompt-toolkit, Rich,
+  CLI, TUI or messaging presentation.
+- Serialized command metadata, ordering, descriptions and subcommands matched the
+  pre-extraction snapshot exactly. Existing registry objects and public resolver
+  exports retain shared identity across the compatibility module.
+- Catalog, alias, gateway and boundary tests: 395 passed, log
+  `/tmp/forecast-command-catalog-final-tests.log`. Shared quality checks pass with
+  29 import contracts. Contributor guidance and the ownership map name the new
+  definition owners.
+- This extracts definition/resolution ownership; the legacy slash worker still
+  constructs the classic CLI for commands not yet migrated. Shared command
+  execution and failed-agent-build recovery remain unfinished.
+- Primary runtime composition batch `374dd2d49` completed full regression with
+  30,701 passed, 148 skipped and 58 warnings, then pushed successfully. Remote SHA
+  was verified. Log: `/tmp/forecast-host-owner-push.log`.

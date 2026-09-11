@@ -185,9 +185,9 @@ Reasoning content is stored in `assistant_msg["reasoning"]`.
 - `process_command()` is a method on the `ForecastCLI` class — dispatches on canonical command name resolved via `resolve_command()` from the central registry
 - Skill slash commands: `agent/skill_commands.py` scans the active forecast home's `skills/` directory, injects as **user message** (not system prompt) to preserve prompt caching
 
-### Slash Command Registry (`superforecasting_agent/runtime/commands.py`)
+### Slash Command Registry (`superforecasting_agent/application/command_catalog/`)
 
-All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandDef` objects. Every downstream consumer derives from this registry automatically:
+All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandDef` objects. The application catalog owns definitions, aliases and resolution without presentation imports. `runtime/commands.py` re-exports the catalog for compatibility and owns classic completion and platform-menu adapters. Every downstream consumer derives from this registry automatically:
 
 - **CLI** — `process_command()` resolves aliases via `resolve_command()`, dispatches on canonical name
 - **Gateway** — `GATEWAY_KNOWN_COMMANDS` frozenset for hook emission, `resolve_command()` for dispatch
@@ -199,7 +199,7 @@ All slash commands are defined in a central `COMMAND_REGISTRY` list of `CommandD
 
 ### Adding a Slash Command
 
-1. Add a `CommandDef` entry to `COMMAND_REGISTRY` in `superforecasting_agent/runtime/commands.py`:
+1. Add a `CommandDef` entry to `COMMANDS` in `superforecasting_agent/application/command_catalog/workflow.py` for forecast/session workflows, or `operations.py` for configuration/integration support. The catalog assembles `COMMAND_REGISTRY` from those owners:
 ```python
 CommandDef("mycommand", "Description of what it does", "Session",
            aliases=("mc",), args_hint="[arg]"),

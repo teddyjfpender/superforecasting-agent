@@ -383,7 +383,7 @@ superforecasting-agent/
 │       ├── auth.py                   # Provider resolution, OAuth, Nous Portal
 │       ├── models.py                 # OpenRouter model selection lists
 │       ├── banner.py                 # Welcome banner, ASCII art
-│       ├── commands.py               # Central slash command registry (CommandDef), autocomplete, gateway helpers
+│       ├── commands.py               # Classic autocomplete/menu adapters; shared registry lives in application/command_catalog/
 │       ├── callbacks.py              # Interactive callbacks (clarify, sudo, approval)
 │       ├── doctor.py                 # Diagnostics
 │       ├── skills_hub.py             # Skills Hub CLI + /skills slash command

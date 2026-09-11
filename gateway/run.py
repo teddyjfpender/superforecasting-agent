@@ -7942,7 +7942,7 @@ class GatewayRunner:
 
         # Shared alias expansion runs before access control and command hooks.
         if command and _cmd_def is None:
-            from superforecasting_agent.runtime.commands import expand_quick_alias
+            from superforecasting_agent.application.command_catalog import expand_quick_alias
 
             quick_commands = (self.config.get("quick_commands") if isinstance(self.config, dict)
                               else getattr(self.config, "quick_commands", None))

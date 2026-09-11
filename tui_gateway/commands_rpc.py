@@ -54,7 +54,7 @@ __all__ = ["register"]
 def _(rid, params: dict) -> dict:
     """Registry-backed slash metadata for the TUI — categorized, no aliases."""
     try:
-        from superforecasting_agent.runtime.commands import (
+        from superforecasting_agent.application.command_catalog import (
             COMMAND_REGISTRY,
             SUBCOMMANDS,
             _build_description,
@@ -197,7 +197,7 @@ def _(rid, params: dict) -> dict:
 @method("command.resolve")
 def _(rid, params: dict) -> dict:
     try:
-        from superforecasting_agent.runtime.commands import resolve_command
+        from superforecasting_agent.application.command_catalog import resolve_command
 
         r = resolve_command(params.get("name", ""))
         if r:
@@ -216,7 +216,7 @@ def _(rid, params: dict) -> dict:
 
 def _resolve_name(name: str) -> str:
     try:
-        from superforecasting_agent.runtime.commands import resolve_command
+        from superforecasting_agent.application.command_catalog import resolve_command
 
         r = resolve_command(name)
         return r.name if r else name

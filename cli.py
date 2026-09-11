@@ -5526,7 +5526,7 @@ class ForecastCLI:
         Returns:
             bool: True to continue, False to exit
         """
-        from superforecasting_agent.runtime.commands import expand_quick_alias
+        from superforecasting_agent.application.command_catalog import expand_quick_alias
         quick_commands = (getattr(self, "config", None) or {}).get("quick_commands", {})
         try:
             command = expand_quick_alias(command, quick_commands)
@@ -5541,7 +5541,7 @@ class ForecastCLI:
 
         # Resolve aliases via central registry so adding an alias is a one-line
         # change in superforecasting_agent/runtime/commands.py instead of touching every dispatch site.
-        from superforecasting_agent.runtime.commands import resolve_command as _resolve_cmd
+        from superforecasting_agent.application.command_catalog import resolve_command as _resolve_cmd
         _base_word = cmd_lower.split()[0].lstrip("/")
         _cmd_def = _resolve_cmd(_base_word)
         canonical = _cmd_def.name if _cmd_def else _base_word

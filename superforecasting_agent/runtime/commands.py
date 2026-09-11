@@ -1,11 +1,8 @@
-"""Slash command definitions and autocomplete for Superforecasting Agent.
+"""Classic completion and platform-menu adapters for the shared command catalog.
 
-Central registry for all slash commands. Every consumer -- CLI help, gateway
-dispatch, Telegram BotCommands, Slack subcommand mapping, autocomplete --
-derives its data from ``COMMAND_REGISTRY``.
-
-To add a command: add a ``CommandDef`` entry to ``COMMAND_REGISTRY``.
-To add an alias: set ``aliases=("short",)`` on the existing ``CommandDef``.
+Command definitions, aliases and resolution belong to
+``superforecasting_agent.application.command_catalog``. They remain re-exported
+here for compatibility; new non-presentation consumers should import that owner.
 """
 
 from __future__ import annotations
@@ -17,7 +14,6 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 from typing import Any
 
 from superforecasting_agent.environment import is_truthy_value
@@ -39,331 +35,21 @@ except ImportError:  # pragma: no cover
 
 
 # ---------------------------------------------------------------------------
-# CommandDef dataclass
+# Shared catalog compatibility exports
 # ---------------------------------------------------------------------------
 
-@dataclass(frozen=True)
-class CommandDef:
-    """Definition of a single slash command."""
-
-    name: str                          # canonical name without slash: "background"
-    description: str                   # human-readable description
-    category: str                      # "Forecast Desk", "Session", etc.
-    aliases: tuple[str, ...] = ()      # alternative names: ("bg",)
-    args_hint: str = ""                # argument placeholder: "<prompt>", "[name]"
-    subcommands: tuple[str, ...] = ()  # tab-completable subcommands
-    cli_only: bool = False             # only available in CLI
-    gateway_only: bool = False         # only available in gateway/messaging
-    gateway_config_gate: str | None = None  # config dotpath; when truthy, overrides cli_only for gateway
-
-
-# ---------------------------------------------------------------------------
-# Central registry -- single source of truth
-# ---------------------------------------------------------------------------
-
-COMMAND_CATEGORY_ORDER: tuple[str, ...] = (
-    "Forecast Desk",
-    "Session",
-    "Configuration",
-    "Tools & Skills",
-    "Compatibility",
-    "Info",
-    "Exit",
+from superforecasting_agent.application.command_catalog import (
+    COMMAND_CATEGORY_ORDER,
+    COMMAND_REGISTRY,
+    FORECAST_DESK_SUBCOMMANDS,
+    SUBCOMMANDS,
+    CommandDef,
+    _build_command_lookup,
+    _build_description,
+    _COMMAND_LOOKUP,
+    expand_quick_alias,
+    resolve_command,
 )
-
-FORECAST_DESK_SUBCOMMANDS: tuple[str, ...] = (
-    "about",
-    "status",
-    "doctor",
-    "sources",
-    "new",
-    "list",
-    "show",
-    "update",
-    "ingest",
-    "import",
-    "tournament",
-    "plugins",
-    "research",
-    "base-rate",
-    "model",
-    "quorum",
-    "api-key",
-    "bayes",
-    "protocol",
-    "agent",
-    "assumption",
-    "reference-class",
-    "evidence",
-    "resolve",
-    "score",
-    "scores",
-    "postmortem",
-    "lesson",
-    "lessons",
-    "correction",
-    "resolver",
-    "calibration",
-    "errors",
-    "review",
-    "schedule",
-    "watch",
-    "alerts",
-    "autopilot",
-    "self-check",
-    "backtest",
-    "performance",
-    "readiness",
-    "pilot-report",
-    "pilot-cohort",
-    "pilot-aggregate",
-    "pilot-bundle",
-    "export",
-)
-
-COMMAND_REGISTRY: list[CommandDef] = [
-    # Session
-    CommandDef("new", "Start a new forecast session (fresh session ID + history)", "Session",
-               aliases=("reset",), args_hint="[name]"),
-    CommandDef("topic", "Enable or inspect Telegram DM topic sessions", "Session",
-               gateway_only=True, args_hint="[off|help|session-id]"),
-    CommandDef("clear", "Clear screen and start a new forecast session", "Session",
-               cli_only=True),
-    CommandDef("redraw", "Force a full UI repaint (recovers from terminal drift)", "Session",
-               cli_only=True),
-    CommandDef("history", "Show forecast transcript history", "Session",
-               cli_only=True),
-    CommandDef("save", "Save the current forecast transcript", "Session",
-               cli_only=True),
-    CommandDef("retry", "Retry the last forecast note", "Session"),
-    CommandDef("undo", "Remove the last user/forecaster exchange", "Session"),
-    CommandDef("title", "Set a title for the current forecast session", "Session",
-               args_hint="[name]"),
-    CommandDef("handoff", "Hand off this forecast session to an optional messaging compatibility surface", "Compatibility",
-               args_hint="<platform>", cli_only=True),
-    CommandDef("branch", "Branch the current forecast session (explore a different path)", "Session",
-               aliases=("fork",), args_hint="[name]"),
-    CommandDef("compress", "Manually compress forecast transcript context", "Session",
-               args_hint="[focus topic]"),
-    CommandDef("rollback", "List or restore filesystem checkpoints", "Session",
-               args_hint="[number]"),
-    CommandDef("snapshot", "Create or restore runtime config/state snapshots", "Session",
-               cli_only=True, aliases=("snap",), args_hint="[create|restore <id>|prune]"),
-    CommandDef("stop", "Kill all running background processes", "Session"),
-    CommandDef("approve", "Approve a pending dangerous command", "Session",
-               gateway_only=True, args_hint="[session|always]"),
-    CommandDef("deny", "Deny a pending dangerous command", "Session",
-               gateway_only=True),
-    CommandDef("background", "Run a forecast note in the background", "Session",
-               aliases=("bg", "btw"), args_hint="<forecast note>"),
-    CommandDef("agents", "Show active agents and running forecast tasks", "Session",
-               aliases=("tasks",)),
-    CommandDef("queue", "Queue a forecast note for the next turn (doesn't interrupt)", "Session",
-               aliases=("q",), args_hint="<forecast note>"),
-    CommandDef("steer", "Inject a forecast note after the next tool call without interrupting", "Session",
-               args_hint="<forecast note>"),
-    CommandDef("goal", "Set a standing goal the forecaster works on across turns until achieved", "Session",
-               args_hint="[text | pause | resume | clear | status]"),
-    CommandDef("subgoal", "Add or manage extra criteria on the active goal", "Session",
-               args_hint="[text | remove N | clear]"),
-    CommandDef("status", "Show forecast session info", "Session"),
-    CommandDef("whoami", "Show your slash command access (admin / user)", "Info"),
-    CommandDef("profile", "Show active profile name and home directory", "Info"),
-    CommandDef("sethome", "Set this conversation as the scheduled forecast-review delivery channel", "Session",
-               gateway_only=True, aliases=("set-home",)),
-    CommandDef("resume", "Resume a previously-named forecast session", "Session",
-               args_hint="[name]"),
-
-    # Forecast desk
-    CommandDef("sessions", "Browse and resume previous forecast sessions", "Session"),
-    CommandDef("questions", "Show current forecast questions and headline probabilities", "Forecast Desk",
-               aliases=("book", "qbook"), args_hint="[row|list N|words]", cli_only=True),
-    CommandDef("ledger", "Browse forecast ledger views without remembering forecast ids", "Forecast Desk",
-               aliases=("store", "state"), args_hint="[view|search words]", cli_only=True),
-    CommandDef("find", "Search forecast questions by title, topic, or domain", "Forecast Desk",
-               aliases=("search-forecasts", "lookup"), args_hint="<words>", cli_only=True),
-    CommandDef("open", "Open a forecast by row, id, short id, or words", "Forecast Desk",
-               aliases=("question", "show-forecast"), args_hint="<row|id|words>", cli_only=True),
-    CommandDef("note", "Add evidence to a forecast found by row or words", "Forecast Desk",
-               aliases=("evidence-for", "note-for"), args_hint="<row|words> -- <evidence>", cli_only=True),
-    CommandDef("revise", "Update a forecast found by row or words", "Forecast Desk",
-               aliases=("update-for", "updateq"), args_hint="<row|words> -- <args>", cli_only=True),
-    CommandDef("forecast", "Open the interactive forecasts workspace (or run lifecycle subcommands)", "Forecast Desk",
-               aliases=("forecasts", "desk"), args_hint="[status|subcommand|id]", cli_only=True,
-               subcommands=FORECAST_DESK_SUBCOMMANDS),
-    CommandDef("api-key", "Manage data-provider API keys (FRED, EIA, web search, …)", "Forecast Desk",
-               aliases=("apikey", "api-keys", "keys"),
-               args_hint="[list|show|set|unset] [provider] [value]", cli_only=True,
-               subcommands=("list", "show", "set", "unset")),
-
-    # Configuration
-    CommandDef("config", "Show current configuration", "Configuration",
-               cli_only=True),
-    CommandDef("model", "Switch model for this session", "Configuration",
-               aliases=("provider",), args_hint="[model] [--provider name] [--global] [--refresh]"),
-    CommandDef("codex-runtime", "Toggle codex app-server runtime for OpenAI/Codex models",
-               "Configuration", aliases=("codex_runtime",),
-               args_hint="[auto|codex_app_server]"),
-    CommandDef("gquota", "Show Google Gemini Code Assist quota usage", "Info",
-               cli_only=True),
-
-    CommandDef("style", "Switch forecast style overlay; forecast protocol stays authoritative", "Configuration",
-               aliases=("personality",), args_hint="[name]"),
-    CommandDef("statusbar", "Toggle the context/model status bar", "Configuration",
-               cli_only=True, aliases=("sb",)),
-    CommandDef("verbose", "Cycle tool progress display: off -> new -> all -> verbose",
-               "Configuration", cli_only=True,
-               gateway_config_gate="display.tool_progress_command"),
-    CommandDef("footer", "Toggle gateway runtime-metadata footer on final replies",
-               "Configuration", args_hint="[on|off|status]",
-               subcommands=("on", "off", "status")),
-    CommandDef("yolo", "Toggle YOLO mode (skip all dangerous command approvals)",
-               "Configuration"),
-    CommandDef("reasoning", "Manage reasoning effort and display", "Configuration",
-               args_hint="[level|show|hide]",
-               subcommands=("none", "minimal", "low", "medium", "high", "xhigh", "show", "hide", "on", "off")),
-    CommandDef("fast", "Toggle fast mode — OpenAI Priority Processing / Anthropic Fast Mode (Normal/Fast)", "Configuration",
-               args_hint="[normal|fast|status]",
-               subcommands=("normal", "fast", "status", "on", "off")),
-    CommandDef("skin", "Show or change the display skin/theme", "Configuration",
-               cli_only=True, args_hint="[name]"),
-    CommandDef("indicator", "Pick the TUI busy-indicator style", "Configuration",
-               cli_only=True, args_hint="[markers|emoji|unicode|ascii]",
-               subcommands=("markers", "emoji", "unicode", "ascii")),
-    CommandDef("voice", "Toggle optional voice compatibility mode", "Compatibility",
-               args_hint="[on|off|tts|status]", subcommands=("on", "off", "tts", "status")),
-    CommandDef("busy", "Control what Enter does while the forecast desk is working", "Configuration",
-               cli_only=True, args_hint="[queue|steer|interrupt|status]",
-               subcommands=("queue", "steer", "interrupt", "status")),
-
-    # Tools & Skills
-    CommandDef("tools", "Manage tools: /tools [list|disable|enable] [name...]", "Tools & Skills",
-               args_hint="[list|disable|enable] [name...]", cli_only=True),
-    CommandDef("toolsets", "List available toolsets", "Tools & Skills",
-               cli_only=True),
-    CommandDef("skills", "Search, install, inspect, or manage optional skill playbooks",
-               "Compatibility", cli_only=True,
-               subcommands=("search", "browse", "inspect", "install")),
-    CommandDef("bundles", "List optional skill bundles (aliases /<name> for multiple skills)",
-               "Compatibility"),
-    CommandDef("learn", "Learn a reusable skill from anything you describe (dirs, URLs, this chat, notes)",
-               "Tools & Skills", args_hint="<what to learn from>"),
-    CommandDef("cron", "Manage scheduled tasks", "Tools & Skills",
-               cli_only=True, args_hint="[subcommand]",
-               subcommands=("list", "add", "create", "edit", "pause", "resume", "run", "remove")),
-    CommandDef("curator", "Optional background skill maintenance (status, run, pin, archive, list-archived)",
-               "Compatibility", args_hint="[subcommand]",
-               subcommands=("status", "run", "pause", "resume", "pin", "unpin", "restore", "list-archived")),
-    CommandDef("kanban", "Optional multi-profile collaboration board (tasks, links, comments)",
-               "Compatibility", args_hint="[subcommand]",
-               subcommands=("init", "boards", "create", "list", "ls", "show", "assign",
-                            "reclaim", "reassign", "diagnostics", "diag", "link", "unlink",
-                            "claim", "comment", "complete", "edit", "block", "unblock",
-                            "archive", "tail", "dispatch", "stats", "notify-subscribe",
-                            "notify-list", "notify-unsubscribe", "log", "runs",
-                            "heartbeat", "assignees", "context", "specify", "gc")),
-    CommandDef("reload", "Reload .env variables into the running session", "Tools & Skills",
-               cli_only=True),
-    CommandDef("reload-mcp", "Reload MCP servers from config", "Tools & Skills",
-               aliases=("reload_mcp",)),
-    CommandDef("reload-skills", "Re-scan forecast skill directories for newly installed or removed skills",
-               "Tools & Skills", aliases=("reload_skills",)),
-    CommandDef("browser", "Connect browser tools to your live Chromium-family browser via CDP", "Tools & Skills",
-               cli_only=True, args_hint="[connect|disconnect|status]",
-               subcommands=("connect", "disconnect", "status")),
-    CommandDef("plugins", "List installed plugins and their status",
-               "Tools & Skills", cli_only=True),
-
-    # Info
-    CommandDef("commands", "Browse all commands and skills (paginated)", "Info",
-               gateway_only=True, args_hint="[page]"),
-    CommandDef("help", "Show available commands", "Info"),
-    CommandDef("restart", "Gracefully restart the gateway after draining active runs", "Session",
-               gateway_only=True),
-    CommandDef("usage", "Show token usage and rate limits for the current session", "Info"),
-    CommandDef("insights", "Show usage insights and analytics", "Info",
-               args_hint="[days]"),
-    CommandDef("platforms", "Show optional gateway/messaging platform status", "Compatibility",
-               cli_only=True, aliases=("gateway",)),
-    CommandDef("platform", "Pause, resume, or list a failing gateway platform", "Info",
-               gateway_only=True, args_hint="<pause|resume|list> [name]"),
-    CommandDef("copy", "Copy the last forecast response to clipboard", "Info",
-               cli_only=True, args_hint="[number]"),
-    CommandDef("paste", "Attach clipboard image from your clipboard", "Info",
-               cli_only=True),
-    CommandDef("image", "Attach a local image file for your next prompt", "Info",
-               cli_only=True, args_hint="<path>"),
-    CommandDef(
-        "update",
-        "Update the app; with args, append a forecast update",
-        "Info",
-        args_hint="[row|id|words -- --probability <p> --rationale <why>]",
-    ),
-    CommandDef("debug", "Upload debug report (system info + logs) and get shareable links", "Info"),
-
-    # Exit
-    CommandDef("quit", "Exit the CLI (use --delete to also remove session history)", "Exit",
-               cli_only=True, aliases=("exit",), args_hint="[--delete]"),
-]
-
-
-# ---------------------------------------------------------------------------
-# Derived lookups -- rebuilt once at import time, refreshed by rebuild_lookups()
-# ---------------------------------------------------------------------------
-
-def _build_command_lookup() -> dict[str, CommandDef]:
-    """Map every name and alias to its CommandDef."""
-    lookup: dict[str, CommandDef] = {}
-    for cmd in COMMAND_REGISTRY:
-        lookup[cmd.name] = cmd
-        for alias in cmd.aliases:
-            lookup[alias] = cmd
-    return lookup
-
-
-_COMMAND_LOOKUP: dict[str, CommandDef] = _build_command_lookup()
-
-
-def resolve_command(name: str) -> CommandDef | None:
-    """Resolve a command name or alias to its CommandDef.
-
-    Accepts names with or without the leading slash.
-    """
-    return _COMMAND_LOOKUP.get(name.lower().lstrip("/"))
-
-
-def expand_quick_alias(command: str, quick_commands: Mapping | None) -> str:
-    """Expand configured aliases consistently before CLI/gateway dispatch.
-
-    Built-ins keep precedence; arguments keep their original case. Cycles fail
-    without recursion or executing any command in the chain.
-    """
-    command = command.strip()
-    seen: set[str] = set()
-    while command and isinstance(quick_commands, Mapping):
-        parts = command.split(None, 1)
-        name = parts[0].lstrip("/").lower()
-        if resolve_command(name):
-            break
-        entry = quick_commands.get(name)
-        if not isinstance(entry, Mapping) or entry.get("type") != "alias":
-            break
-        if name in seen:
-            raise ValueError(f"Quick command alias cycle at '/{name}'.")
-        seen.add(name)
-        target = str(entry.get("target") or "").strip()
-        if not target:
-            raise ValueError(f"Quick command '/{name}' has no target defined.")
-        target = target if target.startswith("/") else f"/{target}"
-        command = f"{target} {parts[1] if len(parts) > 1 else ''}".strip()
-    return command
-
-
-def _build_description(cmd: CommandDef) -> str:
-    """Build a CLI-facing description string including usage hint."""
-    if cmd.args_hint:
-        return f"{cmd.description} (usage: /{cmd.name} {cmd.args_hint})"
-    return cmd.description
 
 
 # Backwards-compatible flat dict: "/command" -> description
@@ -391,25 +77,6 @@ COMMANDS_BY_CATEGORY = {
 
 
 # Subcommands lookup: "/cmd" -> ["sub1", "sub2", ...]
-SUBCOMMANDS: dict[str, list[str]] = {}
-for _cmd in COMMAND_REGISTRY:
-    if _cmd.subcommands:
-        SUBCOMMANDS[f"/{_cmd.name}"] = list(_cmd.subcommands)
-
-# Also extract subcommands hinted in args_hint via pipe-separated patterns
-# e.g. args_hint="[on|off|tts|status]" for commands that don't have explicit subcommands.
-# NOTE: If a command already has explicit subcommands, this fallback is skipped.
-# Use the `subcommands` field on CommandDef for intentional tab-completable args.
-_PIPE_SUBS_RE = re.compile(r"[a-z]+(?:\|[a-z]+)+")
-for _cmd in COMMAND_REGISTRY:
-    key = f"/{_cmd.name}"
-    if key in SUBCOMMANDS or not _cmd.args_hint:
-        continue
-    m = _PIPE_SUBS_RE.search(_cmd.args_hint)
-    if m:
-        SUBCOMMANDS[key] = m.group(0).split("|")
-
-
 # ---------------------------------------------------------------------------
 # Gateway helpers
 # ---------------------------------------------------------------------------
