@@ -153,7 +153,7 @@ def test_remedy_for_a_checkout_rebuilds_and_reinstalls(banner):
     """A `git pull` alone leaves an installed binary — and its frozen TUI — stale."""
     with patch.object(banner, "_resolve_repo_dir", return_value=banner.Path("/repo")):
         remedy = banner.stale_build_remedy("git")
-    assert remedy == "scripts/build-release.sh && pipx install --force dist/*.whl"
+    assert remedy == "scripts/build-release.sh && pipx install --force dist/superforecasting_agent-*.whl && pipx inject --force superforecasting-agent dist/superforecasting_agent_tui-*.whl"
 
 
 def test_remedy_for_a_wheel_is_the_one_line_installer(banner):
@@ -169,7 +169,7 @@ def test_remedy_detects_the_lane_when_not_told_one(banner):
         assert banner.stale_build_remedy().startswith("curl -fsSL")
     with patch("superforecasting_agent.runtime.config.detect_install_method", return_value="git"):
         with patch.object(banner, "_resolve_repo_dir", return_value=banner.Path("/repo")):
-            assert banner.stale_build_remedy() == "scripts/build-release.sh && pipx install --force dist/*.whl"
+            assert banner.stale_build_remedy() == "scripts/build-release.sh && pipx install --force dist/superforecasting_agent-*.whl && pipx inject --force superforecasting-agent dist/superforecasting_agent_tui-*.whl"
 
 
 def test_remedy_defers_to_the_package_manager_when_managed(banner):

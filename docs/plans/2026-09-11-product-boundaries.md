@@ -898,3 +898,21 @@ VPS upgrade artifact ownership:
   commands, so they do not establish a real Linux permission/deployment exercise.
 - Hetzner first-install and fresh-box scripts still require split-artifact
   migration; standalone provisioning cannot assume a checkout sibling exists.
+
+Provisioning and fresh-box product wiring:
+
+- Hetzner provisioning accepts a separately checksummed local terminal wheel and
+  installs it only after all selected artifact checks succeed. Downloaded products
+  reuse the standalone installer staging owner. Checkout runs use the sibling
+  script; standalone runs checksum-verify the release installer before executing
+  its staging mode. Older one-wheel releases retain a non-executing fallback when
+  their installer lacks staging. Ambiguous release selections fail closed.
+- The fresh-box verifier builds one current backend/terminal artifact set, checks
+  both wheels, and passes both to provisioning. It no longer picks an arbitrary
+  stale backend wheel from dist. Downloaded staging directories are handed to the
+  installation user before pipx reads them.
+- Updated the stale-build remedy to install the backend and inject the terminal;
+  `pipx install dist/*.whl` is not valid for a multiple-product release.
+- Docker is installed locally but its configured daemon is unavailable. The
+  actual fresh-container/system/SSH exercise is therefore still unverified for
+  the split distribution. Controlled installer tests do not replace that gate.

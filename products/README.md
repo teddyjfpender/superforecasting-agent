@@ -90,5 +90,6 @@ Use `INSTALL_TUI=0 bash install.sh` for a backend-only environment. All selected
 artifacts are verified before installation begins. The PowerShell installer supports the same selection with `-BackendOnly`.
 The VPS upgrader now reuses POSIX verification and supports `INSTALL_TUI=0`
 and `FORECAST_TUI_WHEEL` for local companion upgrades. Keep `install-release.sh`
-beside `upgrade.sh` and its migration guard. Hetzner first-install wiring and
-native Windows execution of the new fixture checks remain pending.
+beside `upgrade.sh` and its migration guard. Hetzner first installation uses the same verified staging owner and accepts
+a local `FORECAST_TUI_WHEEL` companion. The fresh-container deployment exercise
+and native Windows execution of the new fixture checks remain pending.

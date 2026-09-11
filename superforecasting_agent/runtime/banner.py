@@ -172,7 +172,7 @@ _ONE_LINE_INSTALLER = (
 # A git checkout must REBUILD the bundle and reinstall it: a plain `git pull`
 # leaves the pipx-installed binary — and the TUI it froze into its own venv at
 # superforecasting_agent/runtime/tui_dist/entry.js — completely untouched.
-_REBUILD_AND_REINSTALL = "scripts/build-release.sh && pipx install --force dist/*.whl"
+_REBUILD_AND_REINSTALL = "scripts/build-release.sh && pipx install --force dist/superforecasting_agent-*.whl && pipx inject --force superforecasting-agent dist/superforecasting_agent_tui-*.whl"
 
 
 def _check_via_rev(local_rev: str) -> Optional[int]:

@@ -36,6 +36,7 @@
 #   FORECAST_HOME=/home/<user>/.superforecasting-agent   persistent volume
 #   LANE=auto|docker|pipx               force a lane (default: auto)
 #   TAG=latest|vX.Y.Z                   release to install (pipx lane)
+#   FORECAST_TUI_WHEEL=/path/to.whl     optional local terminal companion
 #   FORECAST_WHEEL=/path/to.whl         install a LOCAL wheel (skips download)
 #   FORECAST_CHECKSUMS=/path/SHA256SUMS verify FORECAST_WHEEL against this
 #   ALLOW_UNVERIFIED=1                  permit installing from a release that
@@ -223,7 +224,7 @@ install_pipx_lane() {
   fi
   command -v pipx >/dev/null 2>&1 || die "pipx unavailable and could not be installed"
 
-  local wheel="" tmp=""
+  local wheel="" tmp="" terminal=""
   # TRUST RULE (do not "helpfully" tighten this — scripts/test-fresh-box.sh
   # depends on it): an artifact this script DOWNLOADS must be checksum-verified,
   # fatally (see resolve_and_verify_wheel). A LOCAL wheel the operator passed in
@@ -243,7 +244,24 @@ install_pipx_lane() {
   else
     tmp="$(mktemp -d)"
     resolve_and_verify_wheel "$tmp" || die "could not resolve/verify a release wheel"
-    wheel="$(ls -1 "$tmp"/*.whl | head -n1)"
+    if [ -f "$tmp/verified/wheels.txt" ]; then
+      wheel="$tmp/verified/$(sed -n 1p "$tmp/verified/wheels.txt")"
+      local terminal_name; terminal_name="$(sed -n 2p "$tmp/verified/wheels.txt")"
+      if [ -n "$terminal_name" ]; then terminal="$tmp/verified/$terminal_name"; fi
+    else
+      wheel="$(ls -1 "$tmp"/*.whl | head -n1)"
+    fi
+  fi
+  if [ -n "${FORECAST_TUI_WHEEL:-}" ]; then
+    [ -n "${FORECAST_WHEEL:-}" ] || die "FORECAST_TUI_WHEEL requires a local FORECAST_WHEEL."
+    terminal="$FORECAST_TUI_WHEEL"
+    [ -f "$terminal" ] || die "FORECAST_TUI_WHEEL not found: $terminal"
+    if [ -n "${FORECAST_CHECKSUMS:-}" ]; then
+      verify_checksum "$terminal" "$FORECAST_CHECKSUMS" || die "Local terminal wheel failed verification."
+    fi
+  fi
+  if [ -n "$tmp" ]; then
+    chown -R "$FORECAST_USER:$FORECAST_USER" "$tmp" || die "Could not hand off verified artifacts."
   fi
   # The wheel filename carries the version (superforecasting_agent-X.Y.Z-...whl):
   # the most reliable source for the upgrade-guard stamp.
@@ -252,6 +270,10 @@ install_pipx_lane() {
   # pipx into the forecast user's home so the launcher/venv are user-owned.
   sudo -u "$FORECAST_USER" env HOME="$USER_HOME" PIPX_HOME="$USER_HOME/.local/pipx" \
     PIPX_BIN_DIR="$USER_HOME/.local/bin" pipx install --force "$wheel" >/dev/null
+  if [ -n "$terminal" ]; then
+    sudo -u "$FORECAST_USER" env HOME="$USER_HOME" PIPX_HOME="$USER_HOME/.local/pipx" \
+      PIPX_BIN_DIR="$USER_HOME/.local/bin" pipx inject --force superforecasting-agent "$terminal" >/dev/null
+  fi
   [ -n "$tmp" ] && rm -rf "$tmp"
   # Symlink the launcher onto a system PATH dir so ForceCommand/systemd find it.
   local launcher="$USER_HOME/.local/bin/superforecasting-agent"
@@ -272,6 +294,11 @@ install_pipx_lane() {
 # genuinely ships no SHA256SUMS (pre-P0), never a FAILED check.
 resolve_and_verify_wheel() {
   local dest="$1" api
+  if [ -f "$SCRIPT_DIR/install-release.sh" ]; then
+    RELEASE_DOWNLOAD_DIR="$dest/verified" TAG="$TAG" REPO="$REPO" \
+      ALLOW_UNVERIFIED="$ALLOW_UNVERIFIED" bash "$SCRIPT_DIR/install-release.sh"
+    return $?
+  fi
   if [ "$TAG" = "latest" ]; then
     api="https://api.github.com/repos/$REPO/releases/latest"
   else
@@ -279,9 +306,46 @@ resolve_and_verify_wheel() {
   fi
   say "Resolving release ($TAG) from $REPO"
   local meta; meta="$(curl -fsSL "$api" 2>/dev/null || true)"
-  local wheel_url sums_url
-  wheel_url="$(printf '%s' "$meta" | grep -o 'https://[^"]*\.whl' | head -n1 || true)"
-  sums_url="$(printf '%s' "$meta" | grep -o 'https://[^"]*SHA256SUMS' | head -n1 || true)"
+  local wheel_url sums_url installer_url
+  printf '%s' "$meta" > "$dest/release.json"
+  # No checkout sibling: use the release's integrity-checked installer. Old
+  # single-wheel releases retain the legacy verifier below.
+  local assets
+  assets="$(python3 -c '
+import json, re, sys
+from urllib.parse import urlsplit
+urls = [a["browser_download_url"] for a in json.load(open(sys.argv[1]))["assets"]]
+def select(name):
+    found = [u for u in urls if urlsplit(u).path.rsplit("/", 1)[-1] == name]
+    if len(found) > 1: raise ValueError("Duplicate release asset")
+    if found and urlsplit(found[0]).scheme != "https": raise ValueError("Non-HTTPS release asset")
+    return found[0] if found else ""
+installer = select("install.sh")
+print(select("SHA256SUMS")); print(installer)
+wheels = [u for u in urls if urlsplit(u).path.endswith(".whl")]
+if not installer and len(wheels) != 1: raise ValueError("Split release requires its installer")
+if len(wheels) == 1:
+    name = urlsplit(wheels[0]).path.rsplit("/", 1)[-1]
+    if not re.fullmatch(r"[A-Za-z0-9_.+-]+\.whl", name): raise ValueError("Invalid wheel name")
+    print(select(name))
+' "$dest/release.json")" || die "Invalid or ambiguous release artifacts."
+  sums_url="$(printf '%s\n' "$assets" | sed -n 1p)"
+  installer_url="$(printf '%s\n' "$assets" | sed -n 2p)"
+  wheel_url="$(printf '%s\n' "$assets" | sed -n 3p)"
+  if [ -n "$installer_url" ]; then
+    [ -n "$sums_url" ] || die "Downloaded installer requires SHA256SUMS."
+    curl -fsSL -o "$dest/SHA256SUMS" "$sums_url" || die "SHA256SUMS download failed."
+    curl -fsSL -o "$dest/install.sh" "$installer_url" || die "Release installer download failed."
+    verify_checksum "$dest/install.sh" "$dest/SHA256SUMS" || die "Installer sha256 MISMATCH; nothing installed."
+    if grep -q 'RELEASE_DOWNLOAD_DIR' "$dest/install.sh"; then
+      RELEASE_DOWNLOAD_DIR="$dest/verified" TAG="$TAG" REPO="$REPO" \
+        ALLOW_UNVERIFIED="$ALLOW_UNVERIFIED" bash "$dest/install.sh"
+      return $?
+    fi
+    [ -n "$wheel_url" ] || die "Split release installer lacks artifact staging."
+    # An older verified installer may not support staging. Do not execute it;
+    # the one bundled wheel remains eligible for the legacy verifier below.
+  fi
   [ -n "$wheel_url" ] || return 1
   curl -fsSL -o "$dest/$(basename "$wheel_url")" "$wheel_url" \
     || die "wheel download failed (network error?) — aborting, nothing installed."
@@ -315,7 +379,7 @@ sha256_of() {  # <file> -> hex digest on stdout
 verify_checksum() {
   local file="$1" sums="$2" name want got
   name="$(basename "$file")"
-  want="$(grep -E "  ${name}\$| ${name}\$" "$sums" 2>/dev/null | awk '{print $1}' | head -n1)"
+  want="$(awk -v name="$name" '$2 == name {digest=$1; count++} END {if (count == 1) print digest}' "$sums")"
   [ -n "$want" ] || { warn "SHA256SUMS has no entry for $name"; return 1; }
   got="$(sha256_of "$file")"
   if [ "$want" != "$got" ]; then
