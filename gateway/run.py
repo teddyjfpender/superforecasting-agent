@@ -1395,12 +1395,8 @@ def _resolve_gateway_model(config: dict | None = None) -> str:
     openai-codex.
     """
     cfg = config if config is not None else _load_gateway_config()
-    model_cfg = cfg.get("model", {})
-    if isinstance(model_cfg, str):
-        return model_cfg
-    elif isinstance(model_cfg, dict):
-        return model_cfg.get("default") or model_cfg.get("model") or ""
-    return ""
+    from superforecasting_agent.runtime.model_configuration import model_section
+    return model_section(cfg).get('default') or ''
 
 
 def _resolve_hermes_bin() -> Optional[list[str]]:
@@ -7976,60 +7972,11 @@ class GatewayRunner:
             if _denied is not None:
                 return _denied
 
-        # Fire the ``command:<canonical>`` hook for any recognized slash
-        # command — built-in OR plugin-registered. Handlers can return a
-        # dict with ``{"decision": "deny" | "handled" | "rewrite", ...}``
-        # to intercept dispatch before core handling runs. This replaces
-        # the previous fire-and-forget emit(): return values are now
-        # honored, but handlers that return nothing behave exactly as
-        # before (telemetry-style hooks keep working).
-        if command and is_gateway_known_command(canonical):
-            raw_args = event.get_command_args().strip()
-            hook_ctx = {
-                "platform": source.platform.value if source.platform else "",
-                "user_id": source.user_id,
-                "command": canonical,
-                "raw_command": command,
-                "args": raw_args,
-                "raw_args": raw_args,
-            }
-            try:
-                hook_results = await self.hooks.emit_collect(
-                    f"command:{canonical}", hook_ctx
-                )
-            except Exception as _hook_err:
-                logger.debug(
-                    "command:%s hook dispatch failed (non-fatal): %s",
-                    canonical, _hook_err,
-                )
-                hook_results = []
-
-            for hook_result in hook_results:
-                if not isinstance(hook_result, dict):
-                    continue
-                decision = str(hook_result.get("decision", "")).strip().lower()
-                if not decision or decision == "allow":
-                    continue
-                if decision == "deny":
-                    message = hook_result.get("message")
-                    if isinstance(message, str) and message:
-                        return message
-                    return f"Command `/{command}` was blocked by a hook."
-                if decision == "handled":
-                    message = hook_result.get("message")
-                    return message if isinstance(message, str) and message else None
-                if decision == "rewrite":
-                    new_command = str(
-                        hook_result.get("command_name", "")
-                    ).strip().lstrip("/")
-                    if not new_command:
-                        continue
-                    new_args = str(hook_result.get("raw_args", "")).strip()
-                    event.text = f"/{new_command} {new_args}".strip()
-                    command = event.get_command()
-                    _cmd_def = _resolve_cmd(command) if command else None
-                    canonical = _cmd_def.name if _cmd_def else command
-                    break
+        from gateway.command_dispatch import dispatch_command_hooks
+        dispatch = await dispatch_command_hooks(self, event, command, canonical)
+        if dispatch.intercepted:
+            return dispatch.response
+        command, canonical = dispatch.command, dispatch.canonical
 
         if canonical == "new":
             if self._is_telegram_topic_root_lobby(source):
@@ -11160,20 +11107,12 @@ class GatewayRunner:
         self._evict_cached_agent(session_key)
 
         # Persist to config if --global
+        persisted = False
         if persist_global:
             try:
-                if config_path.exists():
-                    with open(config_path, encoding="utf-8") as f:
-                        cfg = yaml.safe_load(f) or {}
-                else:
-                    cfg = {}
-                model_cfg = cfg.setdefault("model", {})
-                model_cfg["default"] = result.new_model
-                model_cfg["provider"] = result.target_provider
-                if result.base_url:
-                    model_cfg["base_url"] = result.base_url
-                from superforecasting_agent.runtime.config import save_config
-                save_config(cfg)
+                from superforecasting_agent.runtime.model_configuration import persist_model_selection
+                persisted = persist_model_selection(config_path, model=result.new_model, provider=result.target_provider,
+                    base_url=result.base_url, api_mode=result.api_mode)
             except Exception as e:
                 logger.warning("Failed to persist model switch: %s", e)
 
@@ -11226,7 +11165,8 @@ class GatewayRunner:
             lines.append(t("gateway.model.warning_prefix", warning=result.warning_message))
 
         if persist_global:
-            lines.append(t("gateway.model.saved_global"))
+            lines.append(t("gateway.model.saved_global") if persisted else
+                "Session switched, but config.yaml could not be saved. Check the configuration and retry --global.")
         else:
             lines.append(t("gateway.model.session_only_hint"))
 
