@@ -1315,7 +1315,7 @@ def _set_session_context(session_key: str):
     value. Returns an opaque token bundle for _clear_session_context."""
     session_tokens: list = []
     try:
-        from gateway.session_context import set_session_vars
+        from superforecasting_agent.session_context import set_session_vars
 
         session_tokens = set_session_vars(session_key=session_key)
     except Exception:
@@ -1345,7 +1345,7 @@ def _clear_session_context(tokens) -> None:
             pass
     if session_tokens:
         try:
-            from gateway.session_context import clear_session_vars
+            from superforecasting_agent.session_context import clear_session_vars
 
             clear_session_vars(session_tokens)
         except Exception:

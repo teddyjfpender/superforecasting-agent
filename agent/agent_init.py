@@ -958,7 +958,7 @@ def init_agent(
     # sessions in one process).  Also writes os.environ as fallback for
     # CLI mode where ContextVars aren't used.
     try:
-        from gateway.session_context import set_process_session_env
+        from superforecasting_agent.session_context import set_process_session_env
         set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID", agent.session_id)
     except Exception:
         os.environ["SUPERFORECASTING_AGENT_SESSION_ID"] = agent.session_id

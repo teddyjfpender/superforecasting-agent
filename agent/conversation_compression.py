@@ -383,7 +383,7 @@ def compress_context(
             old_session_id = agent.session_id
             agent.session_id = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:6]}"
             try:
-                from gateway.session_context import set_process_session_env
+                from superforecasting_agent.session_context import set_process_session_env
                 set_process_session_env("SUPERFORECASTING_AGENT_SESSION_ID", agent.session_id)
             except Exception:
                 os.environ["SUPERFORECASTING_AGENT_SESSION_ID"] = agent.session_id

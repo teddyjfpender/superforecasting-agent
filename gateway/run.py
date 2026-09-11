@@ -15072,7 +15072,7 @@ class GatewayRunner:
         Returns a list of reset tokens; pass them to ``_clear_session_env``
         in a ``finally`` block.
         """
-        from gateway.session_context import set_session_vars
+        from superforecasting_agent.session_context import set_session_vars
         return set_session_vars(
             platform=context.source.platform.value,
             chat_id=context.source.chat_id,
@@ -15086,7 +15086,7 @@ class GatewayRunner:
 
     def _clear_session_env(self, tokens: list) -> None:
         """Restore session context variables to their pre-handler values."""
-        from gateway.session_context import clear_session_vars
+        from superforecasting_agent.session_context import clear_session_vars
         clear_session_vars(tokens)
 
     async def _run_in_executor_with_context(self, func, *args):

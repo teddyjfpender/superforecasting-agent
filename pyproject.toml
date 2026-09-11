@@ -513,3 +513,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.tooling.selection", "tui_gateway.tools_rpc", "gateway.session"]
 forbidden_modules = ["superforecasting_agent.runtime.tools_config", "superforecasting_agent.runtime.setup", "cli"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "shared session context is independent of runtime hosting and presentation"
+type = "forbidden"
+source_modules = ["superforecasting_agent.session_context"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli", "agent", "tools"]
+allow_indirect_imports = false

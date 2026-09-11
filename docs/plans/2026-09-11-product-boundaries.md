@@ -600,3 +600,21 @@ Shared aggregate summaries:
   notification/status and scoped resource-lock helpers still have gateway owners.
   Those need ownership correction, alongside independent host lifetime and remote
   installed-product qualification; the overall architecture goal remains open.
+
+Shared session context ownership:
+
+- `superforecasting_agent.session_context` now owns task-local routing state for
+  agents, tools, cron, ACP, gateway and TUI. Production readers/writers import it
+  directly; the legacy gateway module aliases the same module object, preserving
+  ContextVar identity, private reset seams and compatibility monkeypatches.
+- Retained the explicit-clear behavior that suppresses stale environment fallback.
+  Corrected guidance: executor calls require explicit context propagation, while
+  `asyncio.to_thread` propagates context; clearing does not restore outer scopes.
+- 213 routing/approval/tool tests and 365 shared-context/cron/TUI/import tests passed.
+  New tests prove alias identity, pure import without gateway initialization and
+  cancellation isolation between tasks and executor work. Test isolation resets
+  the canonical owner rather than depending on an imported gateway facade.
+- Shared Python quality and nineteen import contracts pass. The context module is
+  in strict lint/format/type scope and has a transitive no-host/no-presentation
+  contract. Remaining application-to-gateway edges involve platform registration,
+  scoped locks/status and MCP progress callbacks; independent hosting remains open.

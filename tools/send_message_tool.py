@@ -324,7 +324,7 @@ def _handle_send(args):
         if isinstance(result, dict) and result.get("success") and mirror_text:
             try:
                 from gateway.mirror import mirror_to_session
-                from gateway.session_context import get_session_env
+                from superforecasting_agent.session_context import get_session_env
                 source_label = get_session_env("HERMES_SESSION_PLATFORM", "cli")
                 user_id = get_session_env("HERMES_SESSION_USER_ID", "") or None
                 if mirror_to_session(
@@ -428,7 +428,7 @@ def _describe_media_for_mirror(media_files):
 
 def _get_cron_auto_delivery_target():
     """Return the cron scheduler's auto-delivery target for the current run, if any."""
-    from gateway.session_context import get_session_env
+    from superforecasting_agent.session_context import get_session_env
     platform = get_session_env("HERMES_CRON_AUTO_DELIVER_PLATFORM", "").strip().lower()
     chat_id = get_session_env("HERMES_CRON_AUTO_DELIVER_CHAT_ID", "").strip()
     if not platform or not chat_id:
@@ -1905,7 +1905,7 @@ def _check_send_message():
     """
     if os.environ.get("HERMES_KANBAN_TASK"):
         return True
-    from gateway.session_context import get_session_env
+    from superforecasting_agent.session_context import get_session_env
     platform = get_session_env("HERMES_SESSION_PLATFORM", "")
     if platform and platform != "local":
         return True

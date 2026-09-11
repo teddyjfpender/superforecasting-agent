@@ -723,11 +723,11 @@ def _reset_module_state():
     except Exception:
         pass
 
-    # --- gateway.session_context — ContextVars that represent
+    # --- superforecasting_agent.session_context — ContextVars that represent
     #     the active gateway session. If set in one test and not reset,
     #     the next test's get_session_env() reads stale values.
     try:
-        from gateway import session_context as _sc_mod
+        from superforecasting_agent import session_context as _sc_mod
         for _cv in (
             _sc_mod._SESSION_PLATFORM,
             _sc_mod._SESSION_CHAT_ID,

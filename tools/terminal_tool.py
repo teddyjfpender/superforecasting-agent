@@ -272,7 +272,7 @@ def set_approval_callback(cb):
 def _get_sudo_password_cache_scope() -> str:
     """Return the cache scope for interactive sudo passwords."""
     try:
-        from gateway.session_context import get_session_env
+        from superforecasting_agent.session_context import get_session_env
 
         session_key = get_session_env("HERMES_SESSION_KEY", "")
     except Exception:
@@ -2050,7 +2050,7 @@ def terminal_tool(
                 # watch-pattern and completion notifications can be
                 # routed back to the correct chat/thread.
                 if background and (notify_on_complete or watch_patterns):
-                    from gateway.session_context import get_session_env as _gse
+                    from superforecasting_agent.session_context import get_session_env as _gse
                     _gw_platform = _gse("HERMES_SESSION_PLATFORM", "")
                     if _gw_platform:
                         _gw_chat_id = _gse("HERMES_SESSION_CHAT_ID", "")

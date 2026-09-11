@@ -3397,7 +3397,7 @@ class APIServerAdapter(BasePlatformAdapter):
                         pass
 
                 def _run_sync():
-                    from gateway.session_context import clear_session_vars, set_session_vars
+                    from superforecasting_agent.session_context import clear_session_vars, set_session_vars
                     from tools.approval import (
                         register_gateway_notify,
                         reset_current_session_key,
