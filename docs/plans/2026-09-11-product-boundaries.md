@@ -1021,3 +1021,26 @@ Retryable resource disposal (isolated follow-up):
   The current AIAgent resource implementation still contains internally swallowed
   cleanup failures; this host layer can only retain failures propagated by owned
   resources. That lower-level ownership/diagnostic audit remains unfinished.
+
+Installed qualification after registry/disposal integration:
+
+- Built independent wheels from isolated commit `0e4a7033f`, whose tracked source
+  matches primary `2794b8659`, into `/tmp/forecast-profiles-owned-host`. Backend
+  SHA256: `83c89bbfc646eecb66f42fce9025708df7dcccbf11828980e82ef4d128c273d8`;
+  terminal SHA256: `6d7f9dd272781c2170fe340046d96648b2b6358172bbf04091aa43a55b00e4f9`.
+- Clean-environment verification passed: backend create/update/resolve/score with
+  Node absent; independent terminal prerequisite checks; real installed Ink score
+  and clean exit against local and authenticated remote hosts; incompatible/auth
+  admission, credential-free host logs, dependency consistency and clean shutdown.
+  Log: `/tmp/forecast-owned-host-installed.log`. These are local fixture outcomes,
+  not provider-backed forecasts or a claim of native cross-platform qualification.
+- The fresh-container exercise is now running after recovering a stale Colima
+  disk attachment through Lima's disk-unlock command. The owning instance was
+  confirmed stopped without a VM host process before recovery. No disk contents
+  were deleted. Primary full regression continues independently.
+- Lower-level agent cleanup audit: `agent/session_lifecycle.py` clears child
+  references before best-effort closes and claims `_resources_closed` before
+  callbacks; `agent/openai_clients.py` swallows SDK close failures. Blindly
+  retrying task-ID cleanup could reclaim a replacement agent's resources. Further
+  work must retain concrete owned handles/generations for retry and diagnostics,
+  while preserving the existing repeated-close replacement-resource tests.
