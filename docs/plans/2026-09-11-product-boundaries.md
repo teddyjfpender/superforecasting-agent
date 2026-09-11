@@ -1326,3 +1326,18 @@ Configured command admission and TUI execution routing:
 - 38 hook loader, DSL, configuration and blocking tests passed. Regressions prove
   inline edits, same-size/preserved-timestamp file replacement and profile switches
   affect rule evaluation. All 32 architecture contracts passed.
+
+
+### Hook configuration and rule mutation ownership
+
+- Hook setting edits now use shared atomic field mutations against current raw
+  configuration, preserving unrelated settings instead of saving merged defaults.
+  Removed the store's direct runtime-configuration import exception and enabled
+  strict lint/format/types for this owner.
+- Rule add/edit/remove holds the shared file lock across read, validation and
+  atomic replacement. Failed atomic writes propagate; the fixed-name temporary
+  fallback is removed. Malformed rule files/configuration blocks cannot be
+  silently replaced, and the enabled setter requires a real boolean.
+- 341 hook/TUI-gateway tests passed. The final store/promotion/v2 set reports
+  53 passed and eight existing skips. New regressions cover overlapping edits,
+  failed writes, malformed data preservation and unrelated configuration retention.

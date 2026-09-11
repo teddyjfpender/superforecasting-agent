@@ -7,11 +7,20 @@ and CLI share one validated, atomic write path. Reads stay in engine/loader.
 from __future__ import annotations
 
 import os
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from pathlib import Path
 from typing import Any
 
 from forecasting.hooks.builtins import BUILTIN_RULE_IDS
 from forecasting.hooks.dsl import RuleSpec, validate_rule
 from forecasting.hooks.profiles import HOOK_PROFILES
+from superforecasting_agent.constants import get_agent_home
+from superforecasting_agent.storage.files import (
+    atomic_roundtrip_yaml_mutate,
+    atomic_yaml_write,
+    yaml_update_lock,
+)
 
 _SEVERITIES = ("off", "warn", "error")
 _DEFAULT_RULES_FILE = "hooks/rules.yaml"
@@ -27,8 +36,17 @@ class HookWriteError(ValueError):
 
 
 # ── config (profile / severities / enabled) ───────────────────────────────────
+def _mapping(parent: dict, key: str) -> dict:
+    value = parent.setdefault(key, {})
+    if not isinstance(value, dict):
+        raise HookWriteError(
+            f"{key} configuration must be a mapping; repair it before editing"
+        )
+    return value
+
+
 def _hooks_block(config: dict) -> dict:
-    return config.setdefault("forecasting", {}).setdefault("hooks", {})
+    return _mapping(_mapping(config, "forecasting"), "hooks")
 
 
 def _known_rule_ids() -> set[str]:
@@ -43,34 +61,31 @@ def _known_rule_ids() -> set[str]:
     return ids
 
 
-def _save(config: dict) -> None:
-    from superforecasting_agent.runtime.config import save_config
-
-    save_config(config)
-
-
-def _load() -> dict:
-    from superforecasting_agent.runtime.config import load_config
-
-    return load_config()
+def _update(change: Callable[[dict], None]) -> None:
+    atomic_roundtrip_yaml_mutate(get_agent_home() / "config.yaml", change)
 
 
 def set_severity(rule_id: str, severity: str) -> dict[str, Any]:
     severity = (severity or "").strip().lower()
     if severity not in _SEVERITIES:
-        raise HookWriteError(f"severity must be one of {', '.join(_SEVERITIES)} (got {severity!r})")
+        raise HookWriteError(
+            f"severity must be one of {', '.join(_SEVERITIES)} (got {severity!r})"
+        )
     if rule_id not in _known_rule_ids():
         raise HookWriteError(f"unknown rule {rule_id!r} (not a built-in or user rule)")
-    cfg = _load()
-    _hooks_block(cfg).setdefault("overrides", {})[rule_id] = severity
-    _save(cfg)
+
+    def change(cfg):
+        _mapping(_hooks_block(cfg), "overrides")[rule_id] = severity
+
+    _update(change)
     return {"rule_id": rule_id, "severity": severity}
 
 
 def clear_override(rule_id: str) -> dict[str, Any]:
-    cfg = _load()
-    (_hooks_block(cfg).get("overrides") or {}).pop(rule_id, None)
-    _save(cfg)
+    def change(cfg):
+        _mapping(_hooks_block(cfg), "overrides").pop(rule_id, None)
+
+    _update(change)
     return {"rule_id": rule_id, "cleared": True}
 
 
@@ -87,61 +102,62 @@ def disable(rule_id: str) -> dict[str, Any]:
 
 def set_profile(name: str) -> dict[str, Any]:
     if name not in HOOK_PROFILES:
-        raise HookWriteError(f"unknown profile {name!r}; choose from {', '.join(HOOK_PROFILES)}")
-    cfg = _load()
-    _hooks_block(cfg)["profile"] = name
-    _save(cfg)
+        raise HookWriteError(
+            f"unknown profile {name!r}; choose from {', '.join(HOOK_PROFILES)}"
+        )
+
+    def change(cfg):
+        _hooks_block(cfg)["profile"] = name
+
+    _update(change)
     return {"profile": name}
 
 
 def set_enabled(enabled: bool) -> dict[str, Any]:
-    cfg = _load()
-    _hooks_block(cfg)["enabled"] = bool(enabled)
-    _save(cfg)
-    return {"enabled": bool(enabled)}
+    if not isinstance(enabled, bool):
+        raise HookWriteError("enabled must be a boolean")
+
+    def change(cfg):
+        _hooks_block(cfg)["enabled"] = enabled
+
+    _update(change)
+    return {"enabled": enabled}
 
 
 # ── user rules file ────────────────────────────────────────────────────────────
 def _rules_path() -> str:
     from forecasting.hooks.engine import load_hook_config
-    from superforecasting_agent.runtime.config import get_config_path
 
-    rel = (load_hook_config().get("rules_file") or _DEFAULT_RULES_FILE)
-    return os.path.join(str(get_config_path().parent), rel)
+    rel = load_hook_config().get("rules_file") or _DEFAULT_RULES_FILE
+    return os.path.join(str(get_agent_home()), rel)
 
 
-def _read_rules() -> list[dict]:
-    path = _rules_path()
+def _read_rules(path: str) -> list[dict]:
     if not os.path.exists(path):
         return []
     import yaml
 
     with open(path, encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or []
-    return [d for d in data if isinstance(d, dict)] if isinstance(data, list) else []
+        data = yaml.safe_load(fh)
+    if data is None:
+        return []
+    if not isinstance(data, list) or any(not isinstance(row, dict) for row in data):
+        raise HookWriteError(
+            "rules file must contain a list of rule mappings; repair it before editing"
+        )
+    return data
 
 
-def _write_rules(rules: list[dict]) -> None:
+@contextmanager
+def _edit_rules() -> Iterator[list[dict]]:
     path = _rules_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    try:
-        from superforecasting_agent.storage.files import atomic_yaml_write
-
+    with yaml_update_lock(Path(path)):
+        rules = _read_rules(path)
+        yield rules
         atomic_yaml_write(path, rules)
-    except Exception:
-        import yaml
+    from forecasting.hooks.loader import clear_cache
 
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            yaml.safe_dump(rules, fh, sort_keys=False)
-        os.replace(tmp, path)
-    # invalidate the loader cache so the next read sees the change
-    try:
-        from forecasting.hooks.loader import clear_cache
-
-        clear_cache()
-    except Exception:
-        pass
+    clear_cache()
 
 
 def _validate_or_raise(spec_dict: dict, *, known_ids: set[str]) -> RuleSpec:
@@ -149,40 +165,45 @@ def _validate_or_raise(spec_dict: dict, *, known_ids: set[str]) -> RuleSpec:
     issues = validate_rule(spec, known_ids=known_ids)
     errors = [i for i in issues if i.severity == "error"]
     if errors:
-        raise HookWriteError(f"rule {spec.id or '(no id)'} is invalid: {errors[0].message}", issues=issues)
+        raise HookWriteError(
+            f"rule {spec.id or '(no id)'} is invalid: {errors[0].message}",
+            issues=issues,
+        )
     return spec
 
 
 def save_rule(spec_dict: dict) -> dict[str, Any]:
     """Validate + APPEND a new user rule. Rejects an id that already exists
     (built-in or user) or a rule that fails validation."""
-    rules = _read_rules()
-    existing = {str(r.get("id") or "") for r in rules}
-    spec = _validate_or_raise(spec_dict, known_ids=existing)
-    if spec.id in existing or spec.id in BUILTIN_RULE_IDS:
-        raise HookWriteError(f"rule id {spec.id!r} already exists; use edit instead")
-    rules.append(spec_dict)
-    _write_rules(rules)
+    with _edit_rules() as rules:
+        existing = {str(r.get("id") or "") for r in rules}
+        spec = _validate_or_raise(spec_dict, known_ids=existing)
+        if spec.id in existing or spec.id in BUILTIN_RULE_IDS:
+            raise HookWriteError(
+                f"rule id {spec.id!r} already exists; use edit instead"
+            )
+        rules.append(spec_dict)
     return {"id": spec.id, "saved": True}
 
 
 def edit_rule(rule_id: str, spec_dict: dict) -> dict[str, Any]:
     """Validate + REPLACE an existing user rule (matched by id)."""
-    rules = _read_rules()
-    idx = next((i for i, r in enumerate(rules) if str(r.get("id") or "") == rule_id), None)
-    if idx is None:
-        raise HookWriteError(f"user rule {rule_id!r} not found")
-    others = {str(r.get("id") or "") for i, r in enumerate(rules) if i != idx}
-    _validate_or_raise({**spec_dict, "id": rule_id}, known_ids=others)
-    rules[idx] = {**spec_dict, "id": rule_id}
-    _write_rules(rules)
+    with _edit_rules() as rules:
+        idx = next(
+            (i for i, r in enumerate(rules) if str(r.get("id") or "") == rule_id), None
+        )
+        if idx is None:
+            raise HookWriteError(f"user rule {rule_id!r} not found")
+        others = {str(r.get("id") or "") for i, r in enumerate(rules) if i != idx}
+        _validate_or_raise({**spec_dict, "id": rule_id}, known_ids=others)
+        rules[idx] = {**spec_dict, "id": rule_id}
     return {"id": rule_id, "edited": True}
 
 
 def remove_rule(rule_id: str) -> dict[str, Any]:
-    rules = _read_rules()
-    kept = [r for r in rules if str(r.get("id") or "") != rule_id]
-    if len(kept) == len(rules):
-        raise HookWriteError(f"user rule {rule_id!r} not found")
-    _write_rules(kept)
+    with _edit_rules() as rules:
+        kept = [r for r in rules if str(r.get("id") or "") != rule_id]
+        if len(kept) == len(rules):
+            raise HookWriteError(f"user rule {rule_id!r} not found")
+        rules[:] = kept
     return {"id": rule_id, "removed": True}

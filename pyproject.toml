@@ -388,7 +388,6 @@ ignore_imports = [
     "forecasting.cron_runner -> superforecasting_agent.runtime.config",
     "forecasting.estimator_worker -> superforecasting_agent.runtime.config",
     "forecasting.hooks.engine -> superforecasting_agent.runtime.config",
-    "forecasting.hooks.store -> superforecasting_agent.runtime.config",
     "forecasting.jobs.__main__ -> superforecasting_agent.runtime.plugins",
     "forecasting.jobs.types.quorum -> superforecasting_agent.runtime.config",
     "forecasting.learned_error_worker -> superforecasting_agent.runtime.config",
