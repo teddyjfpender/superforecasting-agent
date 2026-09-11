@@ -3758,6 +3758,10 @@ def _notification_poller_loop(
         except Exception:
             continue
 
+        if stop_event.is_set() or session.get("_finalized"):
+            process_registry.completion_queue.put(evt)
+            break
+
         _evt_sid = evt.get("session_id", "")
         if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
             continue
@@ -3767,58 +3771,31 @@ def _notification_poller_loop(
         # the wrong session's chat on a multi-session gateway.
         if _route_async_completion(evt, session.get("session_key")) == "requeue":
             process_registry.completion_queue.put(evt)
-            time.sleep(0.02)  # let the originating session's poller pick it up
+            stop_event.wait(0.02)  # let the originating session pick it up
             continue
 
         text = format_process_notification(evt)
         if not text:
             continue
 
-        _emit("status.update", sid, {"kind": "process", "text": text})
-
         with session["history_lock"]:
-            if session.get("running") or session.get("_closing") or _host.workers.stopping:
-                process_registry.completion_queue.put(evt)
-                continue
-            session["running"] = True
-
-        rid = f"__notif__{int(time.time() * 1000)}"
-        try:
-            _emit("message.start", sid)
-            _run_prompt_submit(rid, sid, session, text)
-        except Exception as exc:
-            print(
-                f"[tui_gateway] notification poller dispatch failed: "
-                f"{type(exc).__name__}: {exc}",
-                file=sys.stderr,
+            stopping = (
+                stop_event.is_set() or session.get("_finalized")
+                or session.get("_closing") or _host.workers.stopping
             )
-            with session["history_lock"]:
-                session["running"] = False
-
-    # Drain any remaining events after stop signal (process all pending
-    # before exiting so nothing is lost on shutdown).
-    while not process_registry.completion_queue.empty():
-        try:
-            evt = process_registry.completion_queue.get_nowait()
-        except Exception:
-            break
-        _evt_sid = evt.get("session_id", "")
-        if evt.get("type") == "completion" and process_registry.is_completion_consumed(_evt_sid):
-            continue
-        text = format_process_notification(evt)
-        if not text:
-            continue
-
-        _emit("status.update", sid, {"kind": "process", "text": text})
-
-        with session["history_lock"]:
-            if session.get("running") or session.get("_closing") or _host.workers.stopping:
-                process_registry.completion_queue.put(evt)
+            busy = session.get("running")
+            if not stopping and not busy:
+                session["running"] = True
+        if stopping or busy:
+            process_registry.completion_queue.put(evt)
+            if stopping:
                 break
-            session["running"] = True
+            stop_event.wait(0.02)
+            continue
 
         rid = f"__notif__{int(time.time() * 1000)}"
         try:
+            _emit("status.update", sid, {"kind": "process", "text": text})
             _emit("message.start", sid)
             _run_prompt_submit(rid, sid, session, text)
         except Exception as exc:
@@ -3829,6 +3806,7 @@ def _notification_poller_loop(
             )
             with session["history_lock"]:
                 session["running"] = False
+
 
 
 def _start_notification_poller(sid: str, session: dict) -> threading.Event:

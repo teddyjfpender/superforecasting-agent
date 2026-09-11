@@ -1483,3 +1483,23 @@ resolved through the shared catalog before plugin lookup, matching classic CLI
 behavior. Plugins cannot intercept built-ins such as `/retry`. An additional
 100 configured-command/protocol tests passed (`/tmp/forecast-command-precedence-tests.log`),
 and Python quality checks passed (`/tmp/forecast-command-precedence-quality.log`).
+
+### Stop notification dispatch when its owner stops
+
+The session poller previously drained the global completion queue after its stop
+signal, potentially launching new model work for a stopped session and bypassing
+async-event routing. Removed that drain. Shutdown during queue acquisition puts
+the event back; closing/finalized/stopping owners cannot admit a turn. Busy owners
+requeue with an interruptible wait instead of repeatedly displaying an event that
+has not been admitted. Status display now follows admission.
+
+Eight deterministic notification tests passed (`/tmp/forecast-notification-final-tests.log`),
+including stopped, finalized, closing, busy and stop-during-acquisition paths,
+normal delivery and consumed events. Python quality and all 32 import contracts
+passed (`/tmp/forecast-notification-quality.log`). This preserves queued work in
+the process; it does not claim queue persistence across process death or complete
+notification ownership extraction from RPC.
+
+The earlier pushed native-dispatch batch at `b55515d6f` completed its full Python
+qualification: 30,832 passed, 148 skipped, 58 warnings in 592.15 seconds
+(`/tmp/forecast-native-dispatch-full.log`). Later changes need their own gate.

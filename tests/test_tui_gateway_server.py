@@ -5784,6 +5784,7 @@ def test_notification_poller_delivers_completion(monkeypatch):
     class _Agent:
         def run_conversation(self, prompt, conversation_history=None, stream_callback=None):
             turns.append(prompt)
+            stop.set()
             return {
                 "final_response": "ok",
                 "messages": [{"role": "assistant", "content": "ok"}],
@@ -5809,8 +5810,7 @@ def test_notification_poller_delivers_completion(monkeypatch):
 
     stop = threading.Event()
 
-    # Put event on queue, then immediately signal stop so the poller
-    # runs exactly one iteration.
+    # Stop after the admitted turn so the poller runs one iteration.
     process_registry.completion_queue.put({
         "type": "completion",
         "session_id": "proc_poller_test",
@@ -5818,7 +5818,6 @@ def test_notification_poller_delivers_completion(monkeypatch):
         "exit_code": 0,
         "output": "hello",
     })
-    stop.set()
 
     try:
         server._notification_poller_loop(stop, "sid_poll", sess)
@@ -5874,7 +5873,11 @@ def test_notification_poller_skips_consumed(monkeypatch):
     })
 
     stop = threading.Event()
-    stop.set()
+    def consumed(process_id):
+        stop.set()
+        return process_id in process_registry._completion_consumed
+
+    monkeypatch.setattr(process_registry, "is_completion_consumed", consumed)
 
     try:
         server._notification_poller_loop(stop, "sid_skip", sess)
@@ -5915,9 +5918,9 @@ def test_notification_poller_requeues_when_busy(monkeypatch):
     try:
         server._notification_poller_loop(stop, "sid_busy", sess)
 
-        # Status update was emitted (user sees it)
+        # Shutdown does not advertise or execute unadmitted work.
         status_calls = [a for a in emitted if a[0] == "status.update"]
-        assert len(status_calls) == 1
+        assert len(status_calls) == 0
 
         # Event was requeued (agent was busy, no turn triggered)
         assert not process_registry.completion_queue.empty()
