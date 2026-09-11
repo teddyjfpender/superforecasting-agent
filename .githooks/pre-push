@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# HEAVIER gate (bounded ~2-3min): targeted pytest for the changed python
-# domains, vitest --changed for the TUI, and the codegen staleness check again.
+# HEAVIER gate: domain pytest, with full-suite fallback for unmapped Python.
+# Also runs TUI vitest --changed and checks codegen staleness.
 # git feeds us "<local ref> <local sha> <remote ref> <remote sha>" on stdin.
 # See CONTRIBUTING.md -> "Commit provenance" and "Local Gates".
 set -o pipefail

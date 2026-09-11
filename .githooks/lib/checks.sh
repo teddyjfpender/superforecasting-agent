@@ -209,6 +209,11 @@ tests/providers" ;;
 tests/cron" ;;
       acp_adapter/*|acp_registry/*)             _raw="$_raw
 tests/acp" ;;
+      *.py)
+        # Root entrypoints and new/shared packages cross existing domain maps.
+        # Never silently omit behavioral tests because a package is unfamiliar.
+        _raw="$_raw
+tests" ;;
     esac
   done <<EOF
 $_changed

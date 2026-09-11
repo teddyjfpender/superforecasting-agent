@@ -1176,3 +1176,14 @@ Shared command catalog and compatibility boundaries:
 - Primary runtime composition batch `374dd2d49` completed full regression with
   30,701 passed, 148 skipped and 58 warnings, then pushed successfully. Remote SHA
   was verified. Log: `/tmp/forecast-host-owner-push.log`.
+
+Push-gate coverage for shared and newly introduced owners:
+
+- The prior changed-file selector silently omitted root CLI changes and new
+  application/hosting packages unless a changed test happened to cover them.
+  Unmapped Python changes now fall back to the full test directory; known domains
+  retain their existing selection. New owners cannot become an untested category.
+- Real temporary-Git-repository regressions cover root CLI, application, hosting
+  and an unfamiliar package. All 12 developer-workflow tests passed, log:
+  `/tmp/forecast-hook-owner-coverage.log`. Full regression for the already
+  integrated auth/catalog batch runs independently in the frozen primary tree.

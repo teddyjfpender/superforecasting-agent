@@ -166,3 +166,27 @@ def test_local_desk_fixture_import_does_not_modify_runtime(monkeypatch):
     assert server._make_agent is make_agent
     assert server._methods["setup.status"] is setup_status
     assert server._get_db is get_db
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Git hooks execute with POSIX bash")
+@pytest.mark.parametrize("changed", ["cli.py", "superforecasting_agent/application/operation.py", "superforecasting_agent/hosting/owner.py", "new_package/worker.py"])
+def test_unmapped_python_owners_require_full_suite(snapshot_repo, changed):
+    root, git, _ = snapshot_repo
+    tests = root / "tests"
+    tests.mkdir()
+    (tests / "test_smoke.py").write_text("def test_smoke(): pass\n", encoding="utf-8")
+    git("add", "tests")
+    git("commit", "-qm", "suite")
+    base = git("rev-parse", "HEAD")
+    target = root / changed
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("value = 1\n", encoding="utf-8")
+    git("add", changed)
+    git("commit", "-qm", "new owner")
+    checks = SOURCE.parents[1] / ".githooks/lib/checks.sh"
+    result = subprocess.run(
+        ["bash", "-c", 'source "$1"; py_test_targets "$2" HEAD', "fixture", str(checks), base],
+        cwd=root, env={**os.environ, "HOOKS_REPO_ROOT": str(root)},
+        capture_output=True, text=True, check=True,
+    )
+    assert result.stdout.splitlines() == ["tests"]
