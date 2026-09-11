@@ -1464,3 +1464,22 @@ Validation: 132 configured-command, protocol and shared bundle-loader tests pass
 (`/tmp/forecast-bundle-final-tests.log`). Python quality checks and all 32 import
 contracts passed (`/tmp/forecast-bundle-quality.log`). Other legacy command
 families remain; this does not finish dispatcher migration.
+
+### Current-profile bundle discovery
+
+Removed the maximum-mtime bundle cache: it missed same-timestamp edits and
+could reuse another profile's bundle mapping when timestamps matched. Discovery
+now reads current bundle metadata; the retained snapshot is used only for reload
+diffs and carries its resolved profile directory. A reload after changing
+profiles never reports the previous profile's bundles as removed.
+
+Validation: 85 bundle/CLI/messaging/native-command tests passed
+(`/tmp/forecast-bundle-freshness-tests.log`), including preserved file timestamps
+and two profiles with identical file/directory timestamps. Python quality and all
+32 import contracts passed (`/tmp/forecast-bundle-freshness-quality.log`).
+
+The same audit corrected native plugin precedence: built-in command names are
+resolved through the shared catalog before plugin lookup, matching classic CLI
+behavior. Plugins cannot intercept built-ins such as `/retry`. An additional
+100 configured-command/protocol tests passed (`/tmp/forecast-command-precedence-tests.log`),
+and Python quality checks passed (`/tmp/forecast-command-precedence-quality.log`).

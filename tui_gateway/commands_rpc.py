@@ -253,7 +253,7 @@ def _(rid, params: dict) -> dict:
         name = resolved
     session = _core._host.sessions.get(params.get("session_id", ""))
 
-    from superforecasting_agent.application.command_catalog import configured_command, expand_quick_alias
+    from superforecasting_agent.application.command_catalog import configured_command, expand_quick_alias, resolve_command
 
     qcmds = _core._load_cfg().get("quick_commands", {})
     try:
@@ -279,7 +279,7 @@ def _(rid, params: dict) -> dict:
             resolve_plugin_command_result,
         )
 
-        handler = get_plugin_command_handler(name)
+        handler = None if resolve_command(name) else get_plugin_command_handler(name)
         if handler:
             try:
                 result = resolve_plugin_command_result(handler(arg))

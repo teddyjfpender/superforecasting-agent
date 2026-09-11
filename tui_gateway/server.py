@@ -6006,7 +6006,7 @@ def _(rid, params: dict) -> dict:
     _cmd_base = (_cmd_parts[0] if _cmd_parts else "").lower()
     _cmd_arg = _cmd_parts[1] if len(_cmd_parts) > 1 else ""
 
-    from superforecasting_agent.application.command_catalog import configured_command
+    from superforecasting_agent.application.command_catalog import configured_command, resolve_command
     try:
         quick = configured_command(_cmd_base, _load_cfg().get("quick_commands", {}))
     except ValueError as exc:
@@ -6054,7 +6054,7 @@ def _(rid, params: dict) -> dict:
 
     plugin_handler = None
     resolve_plugin_command_result = None
-    if _cmd_base:
+    if _cmd_base and resolve_command(_cmd_base) is None:
         try:
             from superforecasting_agent.runtime.plugins import (
                 get_plugin_command_handler,

@@ -312,3 +312,11 @@ def test_bundle_cannot_override_builtin_command(bundle_command, monkeypatch):
     monkeypatch.setattr("agent.skill_bundles.get_skill_bundles", lambda: {"/retry": {"name": "shadow"}})
     assert "no previous" in dispatch("retry")["error"]["message"]
     bundle_command.assert_not_called()
+
+
+def test_native_builtin_cannot_be_overridden_by_plugin(configure, monkeypatch):
+    configure({})
+    plugin = Mock(side_effect=AssertionError("plugin overrode builtin"))
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: plugin)
+    assert "no previous" in dispatch("retry")["error"]["message"]
+    plugin.assert_not_called()
