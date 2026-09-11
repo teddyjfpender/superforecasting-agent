@@ -2720,55 +2720,56 @@ def run_resolution_finalization_tasks(
     results: list[dict[str, Any]] = []
     for task in tasks:
         try:
-            question = ledger.get_question(task["question_id"])
-            resolution = ledger.get_latest_resolution(question.id, confirmed_only=True)
-            if question.status != "resolved" or resolution is None:
-                raise ValidationError("finalization requires a currently resolved question and confirmed outcome")
-            if task["idempotency_key"] != f"finalize-resolution:{resolution.id}":
-                results.append(complete_operational_task(
-                    ledger, task["id"], owner=owner, disposition="superseded_resolution",
-                    result={"current_resolution_id": resolution.id}, now=now,
-                ))
-                continue
-            # A leased worker may outlive an operator's terminal review. Keep
-            # ownership intact and finish through the normal attempt ledger.
-            from forecasting.settlement_reviews import latest_reviews
-            review = latest_reviews(ledger).get(question.id)
-            if review and review['state'] == 'no_historical_forecast' and not ledger.list_snapshots(question.id):
-                results.append(complete_operational_task(
-                    ledger, task['id'], owner=owner, disposition='no_historical_forecast',
-                    result={'settlement_review_id': review['id']}, now=now,
-                ))
-                continue
-            score = ledger.score_question(task["question_id"])
-            postmortem = ledger.create_postmortem(
-                question_id=task["question_id"],
-                summary="Auto-created after confirmed resolution and scoring.",
-                what_happened="The question resolved and its final committed forecast was scored.",
-                what_was_expected="See the linked forecast snapshot and score record.",
-                lesson=ledger._auto_postmortem_lesson(question, score),
-                calibration_adjustment=ledger._auto_postmortem_adjustment(question, score),
-            )
-            completed = complete_operational_task(
-                ledger,
-                task["id"],
-                owner=owner,
-                disposition="resolved_by_resolution",
-                result={"score_id": score.id, "postmortem_id": postmortem["id"]},
-                now=now,
-            )
+            with ledger.transaction(immediate=True):
+                completed = _finalize_resolution_task(ledger, task, owner=owner, now=now)
             results.append(completed)
         except Exception as exc:
-            results.append(
-                fail_operational_task(
-                    ledger,
-                    task["id"],
-                    owner=owner,
-                    error=str(exc),
-                    now=now,
-                )
-            )
+            results.append(fail_operational_task(
+                ledger, task["id"], owner=owner, error=str(exc), now=now,
+            ))
     return results
+
+
+def _finalize_resolution_task(ledger, task, *, owner, now):
+    """Persist finalization and completion together under the caller's write lock."""
+    question = ledger.get_question(task["question_id"])
+    resolution = ledger.get_latest_resolution(question.id, confirmed_only=True)
+    if question.status != "resolved" or resolution is None:
+        raise ValidationError("finalization requires a currently resolved question and confirmed outcome")
+    repair_key = f"repair-resolution:{resolution.id}:lesson"
+    if task["idempotency_key"] not in {f"finalize-resolution:{resolution.id}", repair_key}:
+        return complete_operational_task(
+            ledger, task["id"], owner=owner, disposition="superseded_resolution",
+            result={"current_resolution_id": resolution.id}, now=now,
+        )
+    # A leased worker may outlive an operator's terminal review. Keep
+    # ownership intact and finish through the normal attempt ledger.
+    from forecasting.settlement_reviews import latest_reviews
+    review = latest_reviews(ledger).get(question.id)
+    if review and review['state'] == 'no_historical_forecast' and not ledger.list_snapshots(question.id):
+        return complete_operational_task(
+            ledger, task['id'], owner=owner, disposition='no_historical_forecast',
+            result={'settlement_review_id': review['id']}, now=now,
+        )
+    score = ledger.score_question(task["question_id"])
+    postmortem = ledger.create_postmortem(
+        question_id=task["question_id"],
+        summary="Auto-created after confirmed resolution and scoring.",
+        what_happened="The question resolved and its final committed forecast was scored.",
+        what_was_expected="See the linked forecast snapshot and score record.",
+        lesson=ledger._auto_postmortem_lesson(question, score),
+        calibration_adjustment=ledger._auto_postmortem_adjustment(question, score),
+    )
+    completed = complete_operational_task(
+        ledger,
+        task["id"],
+        owner=owner,
+        disposition=("repaired_lesson_handoff" if task["idempotency_key"] == repair_key
+                     else "resolved_by_resolution"),
+        result={"score_id": score.id, "postmortem_id": postmortem["id"]},
+        now=now,
+    )
+    return completed
 
 
 def reconcile_operational_dead_letters(

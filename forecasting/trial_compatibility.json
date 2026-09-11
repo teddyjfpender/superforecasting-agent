@@ -9,9 +9,14 @@
   },
   "evaluation_reviews": {
     "7cba99836cdc7bff4159d5248351b80116cdcdc064513d692c510b6d793bc1ae": {
-      "compatible_identity": "96b0454abf04efaf4a62a5a99a09d1f090031c2b902079b131833d8f598931cc",
+      "compatible_identity": "deee904457db3ebeb968804aeb567c122c7756cdbcd58e27a10e6cdb2be19263",
       "source_revision": "5741f9f0d5d19bfc78eb58fba863e900d8e267b5",
-      "reason": "Reviewed non-scoring connection cache fix and explicit compatibility lookup. Censoring only adds an opt-in probability_key representation; existing contracts without that key retain identical evaluation. Scoring, model validation, learning adjustments, and frozen trial evaluation are byte-identical. No historical trial packet has the new opt-in key."
+      "reason": "Reviewed non-scoring connection cache fix and explicit compatibility lookup. Censoring only adds an opt-in probability_key representation; existing contracts without that key retain identical evaluation. Scoring, model validation, learning adjustments, and frozen trial evaluation are byte-identical. No historical trial packet has the new opt-in key. Reviewed transaction and connection-lifetime changes; score formulas and learning adjustments are unchanged. Strict JSON additionally rejects overflow literals; previously admitted finite numeric packets retain identical evaluation. Frozen trial records are not rewritten. Forced score replacement now invalidates prior derived learning atomically; paired evaluation formulas remain unchanged."
+    },
+    "96b0454abf04efaf4a62a5a99a09d1f090031c2b902079b131833d8f598931cc": {
+      "compatible_identity": "deee904457db3ebeb968804aeb567c122c7756cdbcd58e27a10e6cdb2be19263",
+      "source_revision": "a4fa190c26a53dbe05baac0c32d921617fdf6fb5",
+      "reason": "Reviewed transaction and connection-lifetime changes; score formulas and learning adjustments are unchanged. Strict JSON additionally rejects overflow literals; previously admitted finite numeric packets retain identical evaluation. Frozen trial records are not rewritten. Forced score replacement now invalidates prior derived learning atomically; paired evaluation formulas remain unchanged."
     }
   }
 }

@@ -371,3 +371,20 @@ def test_callback_failure_retains_diagnostic_without_allowing_query(tmp_path, en
         with pytest.raises(sqlite3.DatabaseError, match='not authorized'):
             conn.execute('SELECT 42')
     assert 'TimeoutError: deadline during authorizer' in caplog.text
+
+
+def test_interrupted_connection_setup_closes_sqlite_handle(tmp_path, monkeypatch):
+    from forecasting import ForecastLedger
+    import forecasting.ledger.core as core
+    ledger = ForecastLedger(tmp_path/'ledger.db')
+    class InterruptedConnection:
+        closed = False
+        def execute(self, sql):
+            raise KeyboardInterrupt('interrupted during SQLite setup')
+        def close(self):
+            self.closed = True
+    connection = InterruptedConnection()
+    monkeypatch.setattr(core.sqlite3, 'connect', lambda *a, **kw: connection)
+    with pytest.raises(KeyboardInterrupt):
+        ledger._new_connection()
+    assert connection.closed

@@ -2386,8 +2386,9 @@ def _read_json_endpoint(
     except OSError as exc:
         raise ValidationError(f"{label} fetch failed: {exc}") from exc
     try:
-        return json.loads(data.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        from forecasting.json_validation import strict_json_loads
+        return strict_json_loads(data.decode("utf-8"), object_name=label)
+    except (UnicodeDecodeError, ValueError) as exc:
         raise ValidationError(f"{label} response is not valid JSON") from exc
 
 

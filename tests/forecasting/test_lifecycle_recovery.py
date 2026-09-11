@@ -63,3 +63,120 @@ def test_cli_does_not_silently_ignore_question_scope(monkeypatch):
     monkeypatch.setattr(doctor_admin, '_ledger', unexpected_ledger)
     with pytest.raises(SystemExit, match='full ledger'):
         doctor_admin._cmd_lifecycle(Namespace(action='run', question_id='fq_only_this_one'))
+
+
+def test_postmortem_lesson_failure_rolls_back_and_retry_preserves_lineage(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path / 'ledger.db')
+    q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
+    ledger.create_snapshot(question_id=q.id, probability_or_distribution=.9, rationale='Before announcement.')
+    ledger.resolve_question(question_id=q.id, outcome='no', auto_score=False)
+    original = ledger.create_calibration_lesson
+    def fail(**kwargs):
+        original(**kwargs)
+        raise RuntimeError('interrupted after lesson write')
+    monkeypatch.setattr(ledger, 'create_calibration_lesson', fail)
+    with pytest.raises(RuntimeError, match='interrupted'):
+        ledger.create_postmortem(question_id=q.id, lesson='Check the release base rate.')
+    assert ledger.list_postmortems(question_id=q.id) == []
+    assert ledger.list_scores() == []
+    assert ledger.list_calibration_lessons() == []
+    monkeypatch.setattr(ledger, 'create_calibration_lesson', original)
+    postmortem = ledger.create_postmortem(question_id=q.id, lesson='Check the release base rate.')
+    assert ledger.create_postmortem(question_id=q.id)['id'] == postmortem['id']
+    lessons = ledger.list_calibration_lessons()
+    assert len(lessons) == 1
+    assert lessons[0]['source_postmortem_refs'] == [postmortem['id']]
+
+
+def test_concurrent_scores_and_postmortems_are_idempotent(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    path = tmp_path / 'ledger.db'
+    ledger = ForecastLedger(path)
+    q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
+    ledger.create_snapshot(question_id=q.id, probability_or_distribution=.7, rationale='Before announcement.')
+    ledger.resolve_question(question_id=q.id, outcome='yes', auto_score=False)
+    peers = [ForecastLedger(path) for _ in range(4)]
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        rows = list(pool.map(lambda peer: peer.create_postmortem(question_id=q.id), peers))
+    assert len({row['id'] for row in rows}) == 1
+    assert len(ledger.list_scores()) == 1
+
+
+def test_historical_missing_lesson_is_visible_and_recoverable(tmp_path):
+    ledger = ForecastLedger(tmp_path/'ledger.db')
+    q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
+    ledger.create_snapshot(question_id=q.id, probability_or_distribution=.9, rationale='Before announcement.')
+    ledger.resolve_question(question_id=q.id, outcome='no', auto_score=False)
+    run_lifecycle(ledger, owner='test')
+    postmortem = ledger.list_postmortems(question_id=q.id)[0]
+    assert postmortem['lesson']
+    with ledger._connect() as conn:
+        conn.execute('DELETE FROM calibration_lessons')
+    assert lifecycle_status(ledger)['unfinished'][0]['reason'] == 'lesson_missing'
+    result = run_lifecycle(ledger, owner='repair')
+    assert result[0]['disposition'] == 'repaired_lesson_handoff'
+    assert lifecycle_status(ledger)['counts']['unfinished'] == 0
+    assert ledger.list_postmortems(question_id=q.id)[0]['id'] == postmortem['id']
+    assert len(ledger.list_calibration_lessons()) == 1
+    assert run_lifecycle(ledger, owner='repair') == []
+
+
+def test_resolution_retry_reuses_identity_and_handoff(tmp_path):
+    ledger = ForecastLedger(tmp_path/'ledger.db')
+    q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
+    first = ledger.resolve_question(question_id=q.id, outcome='yes', auto_score=False)
+    retry = ledger.resolve_question(question_id=q.id, outcome='yes', auto_score=False)
+    assert retry.id == first.id
+    with ledger._connect() as conn:
+        assert conn.execute('SELECT count(*) FROM resolutions').fetchone()[0] == 1
+        assert conn.execute("SELECT count(*) FROM operational_tasks WHERE task_type='finalize_resolution'").fetchone()[0] == 1
+
+
+def test_caught_nested_failure_does_not_commit_partial_postmortem(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path/'ledger.db')
+    q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
+    ledger.create_snapshot(question_id=q.id, probability_or_distribution=.9, rationale='Before announcement.')
+    ledger.resolve_question(question_id=q.id, outcome='no', auto_score=False)
+    def fail(**kwargs):
+        raise RuntimeError('lesson unavailable')
+    monkeypatch.setattr(ledger, 'create_calibration_lesson', fail)
+    with ledger.transaction(immediate=True):
+        with pytest.raises(RuntimeError):
+            ledger.create_postmortem(question_id=q.id, lesson='Check the base rate.')
+        assert ledger.list_scores() == []
+        assert ledger.list_postmortems(question_id=q.id) == []
+    assert ledger.get_latest_resolution(q.id) is not None
+
+
+def test_explicit_rescore_preserves_correction_lineage(tmp_path):
+    ledger = ForecastLedger(tmp_path/'ledger.db')
+    q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
+    ledger.create_snapshot(question_id=q.id, probability_or_distribution=.9, rationale='Before announcement.')
+    ledger.resolve_question(question_id=q.id, outcome='no')
+    prior = ledger.create_postmortem(question_id=q.id, lesson='Check the base rate.')
+    replacement = ledger.score_question(q.id, force=True)
+    old = ledger.get_score(prior['score_record_id'])
+    assert old.invalidated_by_correction_id
+    assert replacement.id != old.id
+    assert [s.id for s in ledger.list_scores()] == [replacement.id]
+    assert ledger.get_postmortem(prior['id'])['invalidated_by_correction_id'] == old.invalidated_by_correction_id
+
+
+def test_historical_lesson_repair_failure_uses_durable_attempt_queue(tmp_path, monkeypatch):
+    ledger = ForecastLedger(tmp_path/'ledger.db')
+    q = ledger.create_question(title='Will the release ship?', resolution_criteria='Resolve yes only on the official release announcement.')
+    ledger.create_snapshot(question_id=q.id, probability_or_distribution=.9, rationale='Before announcement.')
+    ledger.resolve_question(question_id=q.id, outcome='no', auto_score=False)
+    run_lifecycle(ledger, owner='test')
+    with ledger._connect() as conn:
+        conn.execute('DELETE FROM calibration_lessons')
+    def fail(**kwargs):
+        raise RuntimeError('lesson persistence unavailable')
+    monkeypatch.setattr(ledger, 'create_calibration_lesson', fail)
+    result = run_lifecycle(ledger, owner='repair')
+    assert result[0]['error'] == 'lesson persistence unavailable'
+    report = lifecycle_status(ledger)
+    task = next(t for t in report['tasks'] if t['idempotency_key'].endswith(':lesson'))
+    assert task['attempt_count'] == 1
+    assert task['error'] == 'lesson persistence unavailable'
+    assert report['unfinished'][0]['reason'] == 'lesson_missing'

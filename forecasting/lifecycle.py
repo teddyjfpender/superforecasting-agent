@@ -24,6 +24,8 @@ def lifecycle_status(ledger, *, now: str | None = None) -> dict[str, Any]:
                    r.id AS resolution_id,
                    CASE WHEN q.current_forecast_id IS NULL THEN 'forecast_missing'
                         WHEN s.id IS NULL THEN 'score_missing'
+                        WHEN EXISTS (SELECT 1 FROM postmortems p WHERE p.score_record_id=s.id
+                          AND p.invalidated_by_correction_id IS NULL) THEN 'lesson_missing'
                         ELSE 'postmortem_missing' END AS reason
             FROM forecast_questions q
             JOIN resolutions r ON r.id = (
@@ -34,7 +36,12 @@ def lifecycle_status(ledger, *, now: str | None = None) -> dict[str, Any]:
                 AND s.resolution_id = r.id AND s.invalidated_by_correction_id IS NULL
             WHERE q.status = 'resolved' AND (s.id IS NULL OR NOT EXISTS (
                 SELECT 1 FROM postmortems p WHERE p.score_record_id = s.id
-                  AND p.invalidated_by_correction_id IS NULL))
+                  AND p.invalidated_by_correction_id IS NULL) OR EXISTS (
+                SELECT 1 FROM postmortems p WHERE p.score_record_id=s.id
+                  AND p.invalidated_by_correction_id IS NULL
+                  AND p.calibration_eligible=1 AND p.lesson != ''
+                  AND NOT EXISTS (SELECT 1 FROM calibration_lessons cl,
+                    json_each(cl.source_postmortem_refs) ref WHERE ref.value=p.id)))
             ORDER BY q.id
         """)]
         attention = [dict(r) for r in conn.execute("""
@@ -86,7 +93,10 @@ def lifecycle_status(ledger, *, now: str | None = None) -> dict[str, Any]:
         if review.get('revisit_at') and timestamp_to_datetime(review['revisit_at']) > timestamp_to_datetime(stamp):
             row['reason'] = 'waiting:' + review['state']
     for row in unfinished:
-        row["task_missing"] = f"finalize-resolution:{row['resolution_id']}" not in keys
+        row["task_key"] = (f"repair-resolution:{row['resolution_id']}:lesson"
+                           if row["reason"] == "lesson_missing"
+                           else f"finalize-resolution:{row['resolution_id']}")
+        row["task_missing"] = row["task_key"] not in keys
     return {
         "as_of": stamp, "settlement_reviews": list(durable_reviews.values()), "limitations": limitations, "attention": attention, "unfinished": unfinished, "tasks": tasks,
         "counts": {
@@ -122,5 +132,5 @@ def run_lifecycle(ledger, *, owner: str, now: str | None = None, limit: int = 25
                 VALUES (?, 'finalize_resolution', 'deterministic_critical', ?, 'pending',
                         100, ?, ?, ?, ?)
             """, (f"ot_{uuid.uuid4().hex[:12]}", row["question_id"], report["as_of"],
-                  f"finalize-resolution:{row['resolution_id']}", report["as_of"], report["as_of"]))
+                  row["task_key"], report["as_of"], report["as_of"]))
     return ledger.run_resolution_finalization_tasks(owner=owner, now=report["as_of"], limit=limit)

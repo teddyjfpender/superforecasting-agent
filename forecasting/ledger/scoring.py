@@ -199,59 +199,64 @@ def get_current_score(ledger, question_id: str) -> ScoreRecord | None:
 
 
 def score_snapshot(ledger, forecast_id: str, *, force: bool = False) -> ScoreRecord:
-    snapshot = ledger.get_snapshot(forecast_id)
-    question = ledger.get_question(snapshot.question_id)
-    resolution = ledger.get_latest_resolution(snapshot.question_id, confirmed_only=True)
-    if resolution is None:
-        raise ValidationError(
-            "cannot score until resolution is confirmed, criteria-satisfied, and scoreable"
-        )
+    with ledger.transaction(immediate=True):
+        snapshot = ledger.get_snapshot(forecast_id)
+        question = ledger.get_question(snapshot.question_id)
+        resolution = ledger.get_latest_resolution(snapshot.question_id, confirmed_only=True)
+        if resolution is None:
+            raise ValidationError(
+                "cannot score until resolution is confirmed, criteria-satisfied, and scoreable"
+            )
 
-    if not force:
         existing = ledger._existing_score(snapshot.forecast_id, resolution.id)
         if existing is not None:
-            return existing
-
-    scoring = ledger._score_forecast_payload(
-        snapshot.probability_or_distribution,
-        resolution.outcome,
-        question.outcome_space,
-    )
-    score_id = f"sc_{uuid.uuid4().hex[:12]}"
-    with ledger._connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO score_records (
-                id, question_id, forecast_id, resolution_id, scored_at,
-                brier_score, log_score, proper_score, score_rule, calibration_bucket,
-                forecast_horizon_days, domain, forecast_origin,
-                calibration_eligible, calibration_weight, baseline_ref, notes
+            if not force:
+                return existing
+            ledger.create_correction(
+                target_type="score_record", target_id=existing.id, status="applied",
+                reason="Explicit score recomputation; retain prior score and invalidate derived learning.",
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-            """,
-            (
-                score_id,
-                snapshot.question_id,
-                snapshot.forecast_id,
-                resolution.id,
-                utc_now_iso(),
-                scoring["brier_score"],
-                scoring["log_score"],
-                scoring["proper_score"],
-                scoring["score_rule"],
-                scoring["calibration_bucket"],
-                snapshot.forecast_horizon_days,
-                question.domain,
-                snapshot.forecast_origin,
-                1 if snapshot.calibration_eligible and question.outcome_space.censoring is None else 0,
-                snapshot.calibration_weight,
-                scoring["notes"],
-            ),
+
+        scoring = ledger._score_forecast_payload(
+            snapshot.probability_or_distribution,
+            resolution.outcome,
+            question.outcome_space,
         )
-    score = ledger.get_score(score_id)
-    if score.calibration_eligible and score.forecast_origin == "live":
-        ledger.update_domain_error_profile(question)
-    return score
+        score_id = f"sc_{uuid.uuid4().hex[:12]}"
+        with ledger._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO score_records (
+                    id, question_id, forecast_id, resolution_id, scored_at,
+                    brier_score, log_score, proper_score, score_rule, calibration_bucket,
+                    forecast_horizon_days, domain, forecast_origin,
+                    calibration_eligible, calibration_weight, baseline_ref, notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+                """,
+                (
+                    score_id,
+                    snapshot.question_id,
+                    snapshot.forecast_id,
+                    resolution.id,
+                    utc_now_iso(),
+                    scoring["brier_score"],
+                    scoring["log_score"],
+                    scoring["proper_score"],
+                    scoring["score_rule"],
+                    scoring["calibration_bucket"],
+                    snapshot.forecast_horizon_days,
+                    question.domain,
+                    snapshot.forecast_origin,
+                    1 if snapshot.calibration_eligible and question.outcome_space.censoring is None else 0,
+                    snapshot.calibration_weight,
+                    scoring["notes"],
+                ),
+            )
+        score = ledger.get_score(score_id)
+        if score.calibration_eligible and score.forecast_origin == "live":
+            ledger.update_domain_error_profile(question)
+        return score
 
 
 def backfill_crps_scores(ledger, *, dry_run: bool = True) -> dict[str, Any]:

@@ -84,6 +84,60 @@ def _normalize_distribution_outcome(ledger, question, outcome):
     return ledger._numeric_outcome(outcome)
 
 
+def validate_resolution(ledger, question, outcome, *, resolution_source=None,
+                        resolution_source_snapshot_ref=None, resolution_status="confirmed",
+                        criteria_satisfied=True, scoreable=True, confidence=None,
+                        correction_ref=None, trusted_policy_id=None):
+    """Validate outcome meaning before persistence, irrespective of score eligibility."""
+    for name, value in (("criteria_satisfied", criteria_satisfied), ("scoreable", scoreable)):
+        if type(value) is not bool:
+            raise ValidationError(f"{name} must be boolean")
+    question.outcome_space.validate()
+    # Validate and normalize at the shared ledger boundary BEFORE any writes,
+    # including source archival and scheduler teardown. CLI strings are transport
+    # values; the stored outcome must retain the question's actual value type.
+    from forecasting.censoring import is_censored, normalized_outcome
+    if isinstance(outcome, str) and outcome.lstrip().startswith('{'):
+        from forecasting.json_validation import strict_json_loads
+        try:
+            outcome = strict_json_loads(outcome, object_name='resolution outcome')
+        except ValueError as exc:
+            raise ValidationError('resolution outcome must be valid JSON') from exc
+    if is_censored(outcome):
+        outcome = normalized_outcome(outcome, question.outcome_space)
+        from forecasting.models import timestamp_to_datetime
+        if timestamp_to_datetime(outcome['observed_through']) > timestamp_to_datetime(utc_now_iso()):
+            raise ValidationError('censoring observation cutoff cannot be in the future')
+    if resolution_status == "confirmed" and criteria_satisfied:
+        space = question.outcome_space
+        if is_censored(outcome):
+            pass
+        elif space.type == "binary":
+            ledger._probability_for_outcome(0.5, outcome, space)
+        elif space.type == "categorical":
+            ledger._probability_for_outcome({choice: 0.0 for choice in space.choices}, outcome, space)
+        elif space.type == "numeric":
+            outcome = ledger._numeric_outcome(outcome)
+        elif space.type in {"distribution", "thesis"}:
+            outcome = _normalize_distribution_outcome(ledger, question, outcome)
+    if resolution_status == 'confirmed' and criteria_satisfied:
+        from forecasting.settlement_binding import verify_settlement
+        verify_settlement(ledger, question, outcome, resolution_source, resolution_source_snapshot_ref)
+    if resolution_status not in RESOLUTION_STATUSES:
+        raise ValidationError(
+            f"resolution_status must be one of {', '.join(sorted(RESOLUTION_STATUSES))}"
+        )
+    if confidence is not None and (type(confidence) not in (int, float) or not math.isfinite(confidence) or not 0 <= confidence <= 1):
+        raise ValidationError("resolution confidence must be between 0 and 1")
+    if resolution_status == "corrected" and not correction_ref:
+        raise ValidationError("corrected resolutions require correction_ref")
+    if trusted_policy_id:
+        policy = ledger.get_trusted_resolver_policy(trusted_policy_id)
+        if not policy["enabled"]:
+            raise ValidationError("trusted resolver policy is disabled")
+    return outcome
+
+
 def resolve_question(
     ledger,
     *,
@@ -102,173 +156,150 @@ def resolve_question(
     scoreable: bool = True,
     auto_score: bool = True,
 ) -> Resolution:
-    resolved_question = ledger.get_question(question_id)
-    # Validate and normalize at the shared ledger boundary BEFORE any writes,
-    # including source archival and scheduler teardown. CLI strings are transport
-    # values; the stored outcome must retain the question's actual value type.
-    from forecasting.censoring import is_censored, normalized_outcome
-    if isinstance(outcome, str) and outcome.lstrip().startswith('{'):
-        from forecasting.json_validation import strict_json_loads
-        try:
-            outcome = strict_json_loads(outcome, object_name='resolution outcome')
-        except ValueError as exc:
-            raise ValidationError('resolution outcome must be valid JSON') from exc
-    if is_censored(outcome):
-        outcome = normalized_outcome(outcome, resolved_question.outcome_space)
-        from forecasting.models import timestamp_to_datetime
-        if timestamp_to_datetime(outcome['observed_through']) > timestamp_to_datetime(utc_now_iso()):
-            raise ValidationError('censoring observation cutoff cannot be in the future')
-    if resolution_status == "confirmed" and criteria_satisfied and scoreable:
-        space = resolved_question.outcome_space
-        if is_censored(outcome):
-            pass
-        elif space.type == "binary":
-            ledger._probability_for_outcome(0.5, outcome, space)
-        elif space.type == "categorical":
-            ledger._probability_for_outcome({choice: 0.0 for choice in space.choices}, outcome, space)
-        elif space.type == "numeric":
-            outcome = ledger._numeric_outcome(outcome)
-        elif space.type in {"distribution", "thesis"}:
-            outcome = _normalize_distribution_outcome(ledger, resolved_question, outcome)
-    if resolution_status == 'confirmed' and criteria_satisfied and scoreable:
-        from forecasting.settlement_binding import verify_settlement
-        verify_settlement(ledger, resolved_question, outcome, resolution_source, resolution_source_snapshot_ref)
-    if resolution_status not in RESOLUTION_STATUSES:
-        raise ValidationError(
-            f"resolution_status must be one of {', '.join(sorted(RESOLUTION_STATUSES))}"
+    with ledger.transaction(immediate=True):
+        resolved_question = ledger.get_question(question_id)
+        outcome = validate_resolution(
+            ledger, resolved_question, outcome, resolution_source=resolution_source,
+            resolution_source_snapshot_ref=resolution_source_snapshot_ref,
+            resolution_status=resolution_status, criteria_satisfied=criteria_satisfied,
+            scoreable=scoreable, confidence=confidence, correction_ref=correction_ref,
+            trusted_policy_id=trusted_policy_id)
+        previous = ledger.get_latest_resolution(question_id)
+        request_fields = dict(
+            outcome=outcome, resolution_source=resolution_source,
+            resolution_source_snapshot_ref=resolution_source_snapshot_ref,
+            resolver_type=resolver_type, resolution_status=resolution_status,
+            criteria_satisfied=criteria_satisfied, confidence=confidence,
+            confirmed_by=confirmed_by, resolver_notes=resolver_notes,
+            correction_ref=correction_ref, trusted_policy_id=trusted_policy_id,
+            scoreable=scoreable,
         )
-    if confidence is not None and not (0 <= confidence <= 1):
-        raise ValidationError("resolution confidence must be between 0 and 1")
-    if resolution_status == "corrected" and not correction_ref:
-        raise ValidationError("corrected resolutions require correction_ref")
-    if trusted_policy_id:
-        policy = ledger.get_trusted_resolver_policy(trusted_policy_id)
-        if not policy["enabled"]:
-            raise ValidationError("trusted resolver policy is disabled")
-    now = utc_now_iso()
-    resolution_id = f"rs_{uuid.uuid4().hex[:12]}"
-    if resolution_source and resolution_source_snapshot_ref is None:
-        source_path = Path(resolution_source).expanduser()
-        if source_path.is_file():
-            resolution_source_snapshot_ref = ledger._archive_resolution_source_snapshot(
-                question_id=question_id,
-                resolution_id=resolution_id,
-                source_file_path=source_path,
-            )
-    confirmed_at = now if resolution_status == "confirmed" and criteria_satisfied else None
-    disputed_at = now if resolution_status == "disputed" else None
-    from forecasting.ledger.workflow import calculate_task_utility
+        if previous is not None and all(getattr(previous, key) == value for key, value in request_fields.items()):
+            return previous  # The durable finalization task remains the retry owner.
+        now = utc_now_iso()
+        resolution_id = f"rs_{uuid.uuid4().hex[:12]}"
+        if resolution_source and resolution_source_snapshot_ref is None:
+            source_path = Path(resolution_source).expanduser()
+            if source_path.is_file():
+                resolution_source_snapshot_ref = ledger._archive_resolution_source_snapshot(
+                    question_id=question_id,
+                    resolution_id=resolution_id,
+                    source_file_path=source_path,
+                )
+        confirmed_at = now if resolution_status == "confirmed" and criteria_satisfied else None
+        disputed_at = now if resolution_status == "disputed" else None
+        from forecasting.ledger.workflow import calculate_task_utility
 
-    resolution_utility = calculate_task_utility(
-        ledger,
-        question_id=question_id,
-        task_type="finalize_resolution",
-        now=now,
-    )
-    with ledger._connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO resolutions (
-                id, question_id, resolved_at, outcome, resolution_source,
-                resolution_source_snapshot_ref, resolver_type, resolution_status,
-                criteria_satisfied, confidence, confirmed_at, confirmed_by,
-                resolver_notes, disputed_at, correction_ref, scoreable,
-                trusted_policy_id
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                resolution_id,
-                question_id,
-                now,
-                json_dumps(outcome),
-                resolution_source,
-                resolution_source_snapshot_ref,
-                resolver_type,
-                resolution_status,
-                1 if criteria_satisfied else 0,
-                confidence,
-                confirmed_at,
-                confirmed_by,
-                resolver_notes,
-                disputed_at,
-                correction_ref,
-                1 if scoreable else 0,
-                trusted_policy_id,
-            ),
+        resolution_utility = calculate_task_utility(
+            ledger,
+            question_id=question_id,
+            task_type="finalize_resolution",
+            now=now,
         )
-        if resolution_status == "confirmed" and criteria_satisfied:
-            conn.execute(
-                "UPDATE forecast_questions SET status = 'resolved' WHERE id = ?",
-                (question_id,),
-            )
-            # A confirmed resolution is also the transactional stop signal for
-            # every producer attached to this question. Keeping teardown in the
-            # SAME transaction prevents a scheduler/watch worker from observing
-            # `resolved` while still finding executable work for the question.
-            conn.execute(
-                "UPDATE watched_sources SET status = 'inactive' "
-                "WHERE scope_type = 'question' AND scope_ref = ? AND status = 'active'",
-                (question_id,),
-            )
-            conn.execute(
-                "UPDATE scheduled_reviews SET enabled = 0 "
-                "WHERE scope_type = 'question' AND scope_ref = ? AND enabled = 1",
-                (question_id,),
-            )
-            conn.execute(
-                "UPDATE autopilot_policies SET enabled = 0, updated_at = ? "
-                "WHERE question_id = ? AND enabled = 1",
-                (now, question_id),
-            )
-            conn.execute(
-                "UPDATE forecast_update_proposals "
-                "SET status = 'rejected', reviewed_at = ?, "
-                "    reviewed_by = COALESCE(reviewed_by, 'lifecycle:resolved') "
-                "WHERE question_id = ? AND status = 'pending'",
-                (now, question_id),
-            )
-            conn.execute(
-                "UPDATE alert_events "
-                "SET acknowledged_at = ?, "
-                "    ack_note = COALESCE(ack_note, 'auto_close:question_resolved'), "
-                "    disposition = COALESCE(disposition, 'resolved_by_resolution') "
-                "WHERE scope_type = 'question' AND scope_ref = ? "
-                "  AND acknowledged_at IS NULL "
-                "  AND reason NOT IN ('score_due', 'high_impact_score_due', "
-                "                     'postmortem_due', 'high_impact_postmortem_due')",
-                (now, question_id),
-            )
+        with ledger._connect() as conn:
             conn.execute(
                 """
-                INSERT OR IGNORE INTO operational_tasks (
-                    id, task_type, lane, question_id, status, priority,
-                    utility_score, utility_components, available_at,
-                    idempotency_key, created_at, updated_at
-                ) VALUES (?, 'finalize_resolution', 'deterministic_critical', ?,
-                          'pending', 100, ?, ?, ?, ?, ?, ?)
+                INSERT INTO resolutions (
+                    id, question_id, resolved_at, outcome, resolution_source,
+                    resolution_source_snapshot_ref, resolver_type, resolution_status,
+                    criteria_satisfied, confidence, confirmed_at, confirmed_by,
+                    resolver_notes, disputed_at, correction_ref, scoreable,
+                    trusted_policy_id
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
-                    f"ot_{uuid.uuid4().hex[:12]}",
+                    resolution_id,
                     question_id,
-                    resolution_utility["score"],
-                    json_dumps(resolution_utility["components"]),
                     now,
-                    f"finalize-resolution:{resolution_id}",
-                    now,
-                    now,
+                    json_dumps(outcome),
+                    resolution_source,
+                    resolution_source_snapshot_ref,
+                    resolver_type,
+                    resolution_status,
+                    1 if criteria_satisfied else 0,
+                    confidence,
+                    confirmed_at,
+                    confirmed_by,
+                    resolver_notes,
+                    disputed_at,
+                    correction_ref,
+                    1 if scoreable else 0,
+                    trusted_policy_id,
                 ),
             )
-        elif resolution_status == "proposed":
-            conn.execute(
-                "UPDATE forecast_questions SET status = 'closed' WHERE id = ? AND status = 'active'",
-                (question_id,),
-            )
-        if trusted_policy_id and resolution_status == "confirmed":
-            conn.execute(
-                "UPDATE trusted_resolver_policies SET last_used_at = ? WHERE id = ?",
-                (now, trusted_policy_id),
-            )
+            if resolution_status == "confirmed" and criteria_satisfied:
+                conn.execute(
+                    "UPDATE forecast_questions SET status = 'resolved' WHERE id = ?",
+                    (question_id,),
+                )
+                # A confirmed resolution is also the transactional stop signal for
+                # every producer attached to this question. Keeping teardown in the
+                # SAME transaction prevents a scheduler/watch worker from observing
+                # `resolved` while still finding executable work for the question.
+                conn.execute(
+                    "UPDATE watched_sources SET status = 'inactive' "
+                    "WHERE scope_type = 'question' AND scope_ref = ? AND status = 'active'",
+                    (question_id,),
+                )
+                conn.execute(
+                    "UPDATE scheduled_reviews SET enabled = 0 "
+                    "WHERE scope_type = 'question' AND scope_ref = ? AND enabled = 1",
+                    (question_id,),
+                )
+                conn.execute(
+                    "UPDATE autopilot_policies SET enabled = 0, updated_at = ? "
+                    "WHERE question_id = ? AND enabled = 1",
+                    (now, question_id),
+                )
+                conn.execute(
+                    "UPDATE forecast_update_proposals "
+                    "SET status = 'rejected', reviewed_at = ?, "
+                    "    reviewed_by = COALESCE(reviewed_by, 'lifecycle:resolved') "
+                    "WHERE question_id = ? AND status = 'pending'",
+                    (now, question_id),
+                )
+                conn.execute(
+                    "UPDATE alert_events "
+                    "SET acknowledged_at = ?, "
+                    "    ack_note = COALESCE(ack_note, 'auto_close:question_resolved'), "
+                    "    disposition = COALESCE(disposition, 'resolved_by_resolution') "
+                    "WHERE scope_type = 'question' AND scope_ref = ? "
+                    "  AND acknowledged_at IS NULL "
+                    "  AND reason NOT IN ('score_due', 'high_impact_score_due', "
+                    "                     'postmortem_due', 'high_impact_postmortem_due')",
+                    (now, question_id),
+                )
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO operational_tasks (
+                        id, task_type, lane, question_id, status, priority,
+                        utility_score, utility_components, available_at,
+                        idempotency_key, created_at, updated_at
+                    ) VALUES (?, 'finalize_resolution', 'deterministic_critical', ?,
+                              'pending', 100, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        f"ot_{uuid.uuid4().hex[:12]}",
+                        question_id,
+                        resolution_utility["score"],
+                        json_dumps(resolution_utility["components"]),
+                        now,
+                        f"finalize-resolution:{resolution_id}",
+                        now,
+                        now,
+                    ),
+                )
+            elif resolution_status == "proposed":
+                conn.execute(
+                    "UPDATE forecast_questions SET status = 'closed' WHERE id = ? AND status = 'active'",
+                    (question_id,),
+                )
+            if trusted_policy_id and resolution_status == "confirmed":
+                conn.execute(
+                    "UPDATE trusted_resolver_policies SET last_used_at = ? WHERE id = ?",
+                    (now, trusted_policy_id),
+                )
     # Auto-score on a confirmed, criteria-satisfied, scoreable resolution so
     # a forecast cannot resolve without a Brier/log score — closing the
     # feedback loop (calibration, postmortems, lessons) automatically. Only
@@ -994,76 +1025,89 @@ def create_postmortem(
     calibration_adjustment: dict[str, Any] | None = None,
     failure_class: str | None = None,
 ) -> dict[str, Any]:
-    question = ledger.get_question(question_id)
-    if failure_class is not None:
-        failure_class = failure_class.strip().lower() or None
-        if failure_class and failure_class not in FAILURE_CLASSES:
-            raise ValidationError(
-                f"failure_class must be one of {', '.join(sorted(FAILURE_CLASSES))}"
+    with ledger.transaction(immediate=True):
+        question = ledger.get_question(question_id)
+        if failure_class is not None:
+            failure_class = failure_class.strip().lower() or None
+            if failure_class and failure_class not in FAILURE_CLASSES:
+                raise ValidationError(
+                    f"failure_class must be one of {', '.join(sorted(FAILURE_CLASSES))}"
+                )
+        score = ledger.score_question(question_id)
+        snapshot = ledger.get_snapshot(score.forecast_id)
+        resolution = ledger.get_resolution(score.resolution_id)
+        with ledger._connect() as conn:
+            existing = conn.execute(
+                """
+                SELECT id FROM postmortems
+                WHERE score_record_id = ? AND invalidated_by_correction_id IS NULL
+                ORDER BY created_at ASC, id ASC LIMIT 1
+                """,
+                (score.id,),
+            ).fetchone()
+        if existing is not None:
+            postmortem = ledger.get_postmortem(existing["id"])
+            _ensure_postmortem_lesson(ledger, question, postmortem)
+            return postmortem
+        postmortem_id = f"pm_{uuid.uuid4().hex[:12]}"
+        with ledger._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO postmortems (
+                    id, question_id, forecast_id, resolution_id, score_record_id,
+                    forecast_origin, calibration_eligible, created_at, summary,
+                    what_happened, what_was_expected, missed_evidence,
+                    overweighted_evidence, base_rate_error, inside_view_error,
+                    resolution_error, lesson, calibration_adjustment, failure_class
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    postmortem_id,
+                    question_id,
+                    snapshot.forecast_id,
+                    resolution.id,
+                    score.id,
+                    score.forecast_origin,
+                    1 if score.calibration_eligible else 0,
+                    utc_now_iso(),
+                    summary or f"Resolved outcome was {resolution.outcome!r}.",
+                    what_happened or f"Resolution recorded outcome {resolution.outcome!r}.",
+                    what_was_expected or f"Forecast probability was {snapshot.probability_or_distribution!r}.",
+                    missed_evidence,
+                    overweighted_evidence,
+                    base_rate_error,
+                    inside_view_error,
+                    resolution_error,
+                    lesson,
+                    json_dumps(calibration_adjustment or {}),
+                    failure_class,
+                ),
             )
-    score = ledger.score_question(question_id)
-    snapshot = ledger.get_snapshot(score.forecast_id)
-    resolution = ledger.get_resolution(score.resolution_id)
+        postmortem = ledger.get_postmortem(postmortem_id)
+        _ensure_postmortem_lesson(ledger, question, postmortem)
+        ledger.update_domain_error_profile(question)
+        return postmortem
+
+
+def _ensure_postmortem_lesson(ledger, question, postmortem):
+    """Repair a missing handoff; an existing lesson decision is never overwritten."""
+    if not postmortem['lesson'] or not postmortem['calibration_eligible']:
+        return
     with ledger._connect() as conn:
-        existing = conn.execute(
-            """
-            SELECT id FROM postmortems
-            WHERE score_record_id = ? AND invalidated_by_correction_id IS NULL
-            ORDER BY created_at ASC, id ASC LIMIT 1
-            """,
-            (score.id,),
-        ).fetchone()
+        existing = conn.execute("""
+            SELECT 1 FROM calibration_lessons, json_each(source_postmortem_refs) ref
+            WHERE ref.value = ? LIMIT 1
+        """, (postmortem['id'],)).fetchone()
     if existing is not None:
-        return ledger.get_postmortem(existing["id"])
-    postmortem_id = f"pm_{uuid.uuid4().hex[:12]}"
-    with ledger._connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO postmortems (
-                id, question_id, forecast_id, resolution_id, score_record_id,
-                forecast_origin, calibration_eligible, created_at, summary,
-                what_happened, what_was_expected, missed_evidence,
-                overweighted_evidence, base_rate_error, inside_view_error,
-                resolution_error, lesson, calibration_adjustment, failure_class
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                postmortem_id,
-                question_id,
-                snapshot.forecast_id,
-                resolution.id,
-                score.id,
-                score.forecast_origin,
-                1 if score.calibration_eligible else 0,
-                utc_now_iso(),
-                summary or f"Resolved outcome was {resolution.outcome!r}.",
-                what_happened or f"Resolution recorded outcome {resolution.outcome!r}.",
-                what_was_expected or f"Forecast probability was {snapshot.probability_or_distribution!r}.",
-                missed_evidence,
-                overweighted_evidence,
-                base_rate_error,
-                inside_view_error,
-                resolution_error,
-                lesson,
-                json_dumps(calibration_adjustment or {}),
-                failure_class,
-            ),
-        )
-    postmortem = ledger.get_postmortem(postmortem_id)
-    if lesson and score.calibration_eligible:
-        ledger.create_calibration_lesson(
-            scope_type="domain" if question.domain else "global",
-            scope_ref=question.domain,
-            lesson=lesson,
-            confidence=0.5,
-            recommended_adjustment=calibration_adjustment or {},
-            source_postmortem_refs=[postmortem_id],
-            source_score_record_refs=[score.id],
-            status="tentative",
-        )
-    ledger.update_domain_error_profile(question)
-    return postmortem
+        return
+    ledger.create_calibration_lesson(
+        scope_type="domain" if question.domain else "global",
+        scope_ref=question.domain, lesson=postmortem['lesson'], confidence=0.5,
+        recommended_adjustment=postmortem['calibration_adjustment'],
+        source_postmortem_refs=[postmortem['id']],
+        source_score_record_refs=[postmortem['score_record_id']], status="tentative",
+    )
 
 
 def _predictive_central(ledger, payload: Any) -> float | None:
