@@ -153,7 +153,7 @@ class OwidObservation:
     observation_date: str
     value: float | str | None
     value_column: str
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str

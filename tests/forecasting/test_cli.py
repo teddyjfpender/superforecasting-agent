@@ -6639,7 +6639,7 @@ def test_owid_adapter_loads_grapher_rows(monkeypatch):
     assert observations[0].entity == "United States"
     assert observations[0].code == "USA"
     assert observations[0].observation_date == "2025"
-    assert observations[0].published_at == "2025-01-01T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].value == 67000.0
     assert observations[0].value_column == "gdp_per_capita"
 
@@ -8310,7 +8310,7 @@ def test_stooq_adapter_loads_recent_price_observations(monkeypatch):
     assert observations[0].symbol == "AAPL.US"
     assert observations[0].interval == "d"
     assert observations[0].observation_date == "2026-05-22"
-    assert observations[0].published_at == "2026-05-22T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].close_price == 198.4
     assert observations[0].volume == 62000000
 
@@ -8370,7 +8370,7 @@ def test_yahoo_adapter_loads_chart_observations(monkeypatch):
     assert observations[0].symbol == "AAPL"
     assert observations[0].interval == "1d"
     assert observations[0].observation_time == "2026-05-23T00:00:00Z"
-    assert observations[0].published_at == "2026-05-23T00:00:00Z"
+    assert observations[0].published_at is None
     assert observations[0].close_price == 199.1
     assert observations[0].volume == 63000000
     assert observations[0].currency == "USD"

@@ -88,3 +88,69 @@ def test_independent_runtime_loaders_share_snapshot_identity(tmp_path, monkeypat
     atomic_roundtrip_yaml_update(tmp_path / 'config.yaml', 'display.skin', 'forecast')
     with pytest.raises(ValueError, match='changed since'):
         reloaded.save_config(stale)
+
+
+@pytest.mark.parametrize('loader_name', ['read_raw_config', 'load_config', 'load_config_readonly', 'tui'])
+def test_same_timestamp_and_size_edit_is_not_cached(tmp_path, monkeypatch, loader_name):
+    import os
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    if loader_name == 'tui':
+        from tui_gateway import server
+        monkeypatch.setattr(server, '_hermes_home', tmp_path)
+        monkeypatch.setattr(server, '_cfg_cache', None)
+        load = server._load_cfg
+        save = server._save_cfg
+    else:
+        load = getattr(config, loader_name)
+        save = config.save_config
+    path = tmp_path / 'config.yaml'
+    path.write_text('display:\n  skin: mono\n')
+    stamp = path.stat()
+    assert load()['display']['skin'] == 'mono'
+    path.write_text('display:\n  skin: ares\n')
+    os.utime(path, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
+    fresh = load()
+    assert fresh['display']['skin'] == 'ares'
+    if loader_name != 'load_config_readonly':
+        fresh['test_setting'] = True
+        save(fresh)
+        assert yaml.safe_load(path.read_text())['display']['skin'] == 'ares'
+
+
+def test_concurrent_credential_writers_preserve_both_updates(tmp_path, monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    for key in ('TEST_ALPHA_API_KEY', 'TEST_BETA_API_KEY'):
+        monkeypatch.delenv(key, raising=False)
+    first_at_replace = threading.Event()
+    release_first = threading.Event()
+    second_done = threading.Event()
+    real_replace = config.atomic_replace
+
+    def paused_replace(source, target):
+        if not first_at_replace.is_set():
+            first_at_replace.set()
+            assert release_first.wait(5)
+        return real_replace(source, target)
+
+    def second_write():
+        config.save_env_value('TEST_BETA_API_KEY', 'beta')
+        second_done.set()
+
+    monkeypatch.setattr(config, 'atomic_replace', paused_replace)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(config.save_env_value, 'TEST_ALPHA_API_KEY', 'alpha')
+        try:
+            assert first_at_replace.wait(5)
+            second = pool.submit(second_write)
+            # Before the lock fix, the second writer finishes and its change is
+            # subsequently erased by the paused writer's older file snapshot.
+            second_done.wait(0.2)
+        finally:
+            release_first.set()
+        first.result(timeout=5)
+        second.result(timeout=5)
+    text = (tmp_path / '.env').read_text()
+    assert 'TEST_ALPHA_API_KEY=alpha' in text
+    assert 'TEST_BETA_API_KEY=beta' in text

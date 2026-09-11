@@ -121,3 +121,50 @@ on/off aliases share semantics. TUI single-setting edits now use the same locked
 comment-preserving latest-file merge as CLI/gateway. Full snapshot saves retain
 revision checks. Tests preserve unrelated external edits and reject malformed YAML
 without replacing it.
+
+### Upstream comparisons (not incident attribution)
+
+The glibc maintainers [recorded environment-reader/writer improvements for
+2.41](https://sourceware.org/pipermail/glibc-bugs/2025-July/059702.html), including
+retaining old environment arrays rather than freeing arrays a reader might still
+use. This makes environment mutation a concrete native hypothesis; package-level
+backports and a native stack must still be checked before blaming that defect.
+The CPython [macOS certificate-loading shutdown report](https://github.com/python/cpython/issues/114653)
+uses shared contexts and process termination. Its platform and trigger differ
+from this Linux fixture-running incident, so it is not evidence of the same cause.
+
+## Follow-up audit before repeating the full suite
+
+The first completed full qualification run exposed an additional startup ownership
+bug (16 failures, 30,420 passes): early clean/failed/exception returns retained the
+acquired gateway lease until interpreter exit. `start_gateway` now releases its
+own lease in `finally`, unregisters its exit hook, and only removes a PID record
+it actually wrote. A second embedded runner cannot adopt the first runner's
+lease; profile-switch status checks compare the actual held lock path. The
+startup/status regressions now pass, including all verbosity/outcome combinations.
+
+Configuration caches now compare file contents. Timestamp/size-only caching could
+return old settings with a fresh revision hash and permit an unintended overwrite.
+The regression preserves the file's timestamp and length across an external edit,
+then checks raw, expanded, read-only and TUI readers and subsequent saves. The
+credential writer audit also found that atomic replacement alone did not serialize
+read/modify/write: save, remove and sanitization now share the existing file lock,
+and memory setup delegates to that writer instead of replacing `.env` directly.
+A paused-writer regression demonstrates preservation of both concurrent updates.
+This serialization is not a claim that every native environment writer is safe
+against OpenSSL's concurrent environment reads.
+
+The source audit additionally covers Stooq, Yahoo and OWID with independent pure
+parsers. Observation/bar times no longer masquerade as publication times. Yahoo
+rejects missing/wrong symbols and misaligned arrays; Stooq rejects duplicate/ragged
+columns; OWID requires explicit selection when several measurement columns exist.
+Invalid numeric measurements are rejected. These research adapters remain
+unsupported for verified settlement; this change does not revise historical
+ledger evidence or invent first-release/revision provenance.
+
+Focused checks: 291 economic/market/CLI tests, 116 ownership/configuration/native
+experiment control tests, and 116 configuration/credential tests passed. These
+are separate invocations with overlapping tests, not an aggregate unique count.
+The native harness now separates monotonic environment growth from unset/pointer
+shifting, with explicit-CA controls for both, and records completed contexts and
+mutations. Local fake-context tests verify the experiment controls only.

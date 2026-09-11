@@ -999,3 +999,18 @@ def test_failed_lock_record_write_does_not_leak_descriptor(tmp_path, monkeypatch
         status.acquire_gateway_runtime_lock()
     assert opened[0].closed
     assert status.gateway_runtime_lock_owner() is None
+
+
+def test_second_embedded_runner_cannot_adopt_held_lease(tmp_path, monkeypatch):
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    assert status.acquire_gateway_runtime_lock()
+    owner = status.gateway_runtime_lock_owner()
+    try:
+        assert not status.acquire_gateway_runtime_lock()
+        other = tmp_path / 'other-profile'
+        monkeypatch.setenv('HERMES_HOME', str(other))
+        assert not status.is_gateway_runtime_lock_active()
+        assert not status.acquire_gateway_runtime_lock()
+        assert status.gateway_runtime_lock_owner() is owner
+    finally:
+        status.release_gateway_runtime_lock(owner=owner)

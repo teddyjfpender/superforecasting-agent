@@ -183,18 +183,11 @@ def _reject_denylisted_env_var(key: str) -> None:
             "~/.superforecasting-agent/.env directly."
         )
 _LAST_EXPANDED_CONFIG_BY_PATH: Dict[str, Any] = {}
-# (path, mtime_ns, size) -> cached expanded config dict.
-# load_config() returns a deepcopy of the cached value when the file
-# hasn't changed since the last load, skipping yaml.safe_load +
-# _deep_merge + _normalize_* + _expand_env_vars (~13 ms/call).
-# save_config() + migrate_config() write via atomic_yaml_write which
-# produces a fresh inode, so stat() sees a new mtime_ns and the next
-# load repopulates automatically — no explicit invalidation hook.
-_LOAD_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
-# (path, mtime_ns, size) -> cached raw yaml dict. Same pattern as
-# _LOAD_CONFIG_CACHE but for read_raw_config() — used when callers want
-# the user's on-disk values without defaults merged in.
-_RAW_CONFIG_CACHE: Dict[str, Tuple[int, int, Dict[str, Any]]] = {}
+# Cache by exact file bytes, not timestamps: editors may preserve mtime and size.
+# Parsing/merging stays cached, and writable snapshots cannot bless stale values
+# with a newer file revision.
+_LOAD_CONFIG_CACHE: Dict[str, Tuple[bytes, Dict[str, Any]]] = {}
+_RAW_CONFIG_CACHE: Dict[str, Tuple[bytes, Dict[str, Any]]] = {}
 # Serializes all config read/write paths. libyaml's C extension is not
 # thread-safe for concurrent safe_load() on the same file, and multiple
 # tool threads (approval.py, browser_tool.py, setup flows) hit
@@ -4992,11 +4985,12 @@ def cfg_get(cfg: Optional[Dict[str, Any]], *keys: str, default: Any = None) -> A
 
 def read_raw_config() -> Dict[str, Any]:
     """Read a revision-bearing raw snapshot suitable for a checked save."""
-    path = get_config_path()
-    revision = _config_revision(path)
-    result = _ConfigSnapshot(_read_raw_config())
-    result._path, result._revision = path.resolve(), revision
-    return result
+    with _CONFIG_LOCK:
+        path = get_config_path()
+        revision = _config_revision(path)
+        result = _ConfigSnapshot(_read_raw_config())
+        result._path, result._revision = path.resolve(), revision
+        return result
 
 
 def _read_raw_config() -> Dict[str, Any]:
@@ -5007,7 +5001,7 @@ def _read_raw_config() -> Dict[str, Any]:
     single value and don't want the overhead of ``load_config()``'s deep-merge
     + migration pipeline.
 
-    Cached on the config file's (mtime_ns, size) — same strategy as
+    Cached on the config file's contents — same strategy as
     ``load_config()``. Returns a deepcopy on every call since some callers
     mutate the result before passing to ``save_config()``.
     """
@@ -5017,26 +5011,24 @@ def _read_raw_config() -> Dict[str, Any]:
 
         try:
             config_path = get_config_path()
-            st = config_path.stat()
-            cache_key = (st.st_mtime_ns, st.st_size)
+            cache_key = config_path.read_bytes()
         except (FileNotFoundError, OSError):
             return {}
 
         path_key = str(config_path)
         cached = _RAW_CONFIG_CACHE.get(path_key)
-        if cached is not None and cached[:2] == cache_key:
-            return copy.deepcopy(cached[2])
+        if cached is not None and cached[0] == cache_key:
+            return copy.deepcopy(cached[1])
 
         try:
-            with open(config_path, encoding="utf-8") as f:
-                data = yaml.safe_load(f) or {}
+            data = yaml.safe_load(cache_key.decode("utf-8")) or {}
         except Exception as e:
             _warn_config_parse_failure(config_path, e)
             return {}
 
         if not isinstance(data, dict):
             data = {}
-        _RAW_CONFIG_CACHE[path_key] = (cache_key[0], cache_key[1], copy.deepcopy(data))
+        _RAW_CONFIG_CACHE[path_key] = (cache_key, copy.deepcopy(data))
         return data
 
 
@@ -5058,7 +5050,7 @@ yaml.Dumper.add_representer(_ConfigSnapshot, yaml.representer.SafeRepresenter.re
 def load_config() -> Dict[str, Any]:
     """Load configuration from ~/.superforecasting-agent/config.yaml.
 
-    Cached on the config file's (mtime_ns, size). Returns a deepcopy of
+    Cached on the config file's contents. Returns a deepcopy of
     the cached value when unchanged, since most call sites mutate the
     result (e.g. ``cfg["model"]["default"] = ...`` before ``save_config``).
     The cache is keyed on ``str(config_path)`` so profile switches
@@ -5126,8 +5118,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
         ignore_user_config = _ignore_user_config_requested()
 
         try:
-            st = config_path.stat()
-            cache_key: Optional[Tuple[int, int]] = (st.st_mtime_ns, st.st_size)
+            cache_key: Optional[bytes] = config_path.read_bytes()
         except FileNotFoundError:
             cache_key = None
 
@@ -5136,16 +5127,15 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             not ignore_user_config
             and cached is not None
             and cache_key is not None
-            and cached[:2] == cache_key
+            and cached[0] == cache_key
         ):
-            return copy.deepcopy(cached[2]) if want_deepcopy else cached[2]
+            return copy.deepcopy(cached[1]) if want_deepcopy else cached[1]
 
         config = copy.deepcopy(DEFAULT_CONFIG)
 
         if cache_key is not None and not ignore_user_config:
             try:
-                with open(config_path, encoding="utf-8") as f:
-                    user_config = yaml.safe_load(f) or {}
+                user_config = yaml.safe_load(cache_key.decode("utf-8")) or {}
 
                 if "max_turns" in user_config:
                     agent_user_config = dict(user_config.get("agent") or {})
@@ -5171,7 +5161,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> Dict[str, Any]:
             # cached value, and ``load_config_readonly()`` (deepcopy=False)
             # callers all see the same stable cached object.
             cached_copy = copy.deepcopy(expanded)
-            _LOAD_CONFIG_CACHE[path_key] = (cache_key[0], cache_key[1], cached_copy)
+            _LOAD_CONFIG_CACHE[path_key] = (cache_key, cached_copy)
             # On the readonly path return the same cached object subsequent
             # calls will see — keeps "two readonly calls return the same
             # object" invariant that callers may rely on for identity checks.
@@ -5464,40 +5454,42 @@ def sanitize_env_file() -> int:
     if not env_path.exists():
         return 0
 
-    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-    write_kw = {"encoding": "utf-8"}
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with yaml_update_lock(env_path):
+        read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
+        write_kw = {"encoding": "utf-8"}
 
-    with open(env_path, **read_kw) as f:
-        original_lines = f.readlines()
+        with open(env_path, **read_kw) as f:
+            original_lines = f.readlines()
 
-    sanitized = _sanitize_env_lines(original_lines)
+        sanitized = _sanitize_env_lines(original_lines)
 
-    if sanitized == original_lines:
-        return 0
+        if sanitized == original_lines:
+            return 0
 
-    # Count fixes: difference in line count (from splits) + removed lines
-    fixes = abs(len(sanitized) - len(original_lines))
-    if fixes == 0:
-        # Lines changed content (e.g. *** removal) even if count is same
-        fixes = sum(1 for a, b in zip(original_lines, sanitized) if a != b)
-        fixes += abs(len(sanitized) - len(original_lines))
+        # Count fixes: difference in line count (from splits) + removed lines
+        fixes = abs(len(sanitized) - len(original_lines))
+        if fixes == 0:
+            # Lines changed content (e.g. *** removal) even if count is same
+            fixes = sum(1 for a, b in zip(original_lines, sanitized) if a != b)
+            fixes += abs(len(sanitized) - len(original_lines))
 
-    fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix=".tmp", prefix=".env_")
-    try:
-        with os.fdopen(fd, "w", **write_kw) as f:
-            f.writelines(sanitized)
-            f.flush()
-            os.fsync(f.fileno())
-        atomic_replace(tmp_path, env_path)
-    except BaseException:
+        fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix=".tmp", prefix=".env_")
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-    _secure_file(env_path)
-    invalidate_env_cache()
-    return fixes
+            with os.fdopen(fd, "w", **write_kw) as f:
+                f.writelines(sanitized)
+                f.flush()
+                os.fsync(f.fileno())
+            atomic_replace(tmp_path, env_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        _secure_file(env_path)
+        invalidate_env_cache()
+        return fixes
 
 
 def _check_non_ascii_credential(key: str, value: str) -> str:
@@ -5553,63 +5545,65 @@ def save_env_value(key: str, value: str):
     value = _check_non_ascii_credential(key, value)
     ensure_hermes_home()
     env_path = get_env_path()
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with yaml_update_lock(env_path):
 
-    # On Windows, open() defaults to the system locale (cp1252) which can
-    # cause OSError errno 22 on UTF-8 .env files.
-    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-    write_kw = {"encoding": "utf-8"}
+        # On Windows, open() defaults to the system locale (cp1252) which can
+        # cause OSError errno 22 on UTF-8 .env files.
+        read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
+        write_kw = {"encoding": "utf-8"}
 
-    lines = []
-    if env_path.exists():
-        with open(env_path, **read_kw) as f:
-            lines = f.readlines()
-        # Sanitize on every read: split concatenated keys, drop stale placeholders
-        lines = _sanitize_env_lines(lines)
+        lines = []
+        if env_path.exists():
+            with open(env_path, **read_kw) as f:
+                lines = f.readlines()
+            # Sanitize on every read: split concatenated keys, drop stale placeholders
+            lines = _sanitize_env_lines(lines)
 
-    # Find and update or append
-    found = False
-    for i, line in enumerate(lines):
-        if line.strip().startswith(f"{key}="):
-            lines[i] = f"{key}={value}\n"
-            found = True
-            break
+        # Find and update or append
+        found = False
+        for i, line in enumerate(lines):
+            if line.strip().startswith(f"{key}="):
+                lines[i] = f"{key}={value}\n"
+                found = True
+                break
 
-    if not found:
-        # Ensure there's a newline at the end of the file before appending
-        if lines and not lines[-1].endswith("\n"):
-            lines[-1] += "\n"
-        lines.append(f"{key}={value}\n")
+        if not found:
+            # Ensure there's a newline at the end of the file before appending
+            if lines and not lines[-1].endswith("\n"):
+                lines[-1] += "\n"
+            lines.append(f"{key}={value}\n")
     
-    fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
-    # Preserve original permissions so Docker volume mounts aren't clobbered.
-    original_mode = None
-    if env_path.exists():
-        try:
-            original_mode = stat.S_IMODE(env_path.stat().st_mode)
-        except OSError:
-            pass
-    try:
-        with os.fdopen(fd, 'w', **write_kw) as f:
-            f.writelines(lines)
-            f.flush()
-            os.fsync(f.fileno())
-        atomic_replace(tmp_path, env_path)
-        # Restore original permissions before _secure_file may tighten them.
-        if original_mode is not None:
+        fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
+        # Preserve original permissions so Docker volume mounts aren't clobbered.
+        original_mode = None
+        if env_path.exists():
             try:
-                os.chmod(env_path, original_mode)
+                original_mode = stat.S_IMODE(env_path.stat().st_mode)
             except OSError:
                 pass
-    except BaseException:
         try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
-    _secure_file(env_path)
+            with os.fdopen(fd, 'w', **write_kw) as f:
+                f.writelines(lines)
+                f.flush()
+                os.fsync(f.fileno())
+            atomic_replace(tmp_path, env_path)
+            # Restore original permissions before _secure_file may tighten them.
+            if original_mode is not None:
+                try:
+                    os.chmod(env_path, original_mode)
+                except OSError:
+                    pass
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
+        _secure_file(env_path)
 
-    os.environ[key] = value
-    invalidate_env_cache()
+        os.environ[key] = value
+        invalidate_env_cache()
 
 
 def remove_env_value(key: str) -> bool:
@@ -5627,46 +5621,48 @@ def remove_env_value(key: str) -> bool:
         os.environ.pop(key, None)
         return False
 
-    read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
-    write_kw = {"encoding": "utf-8"}
+    from superforecasting_agent.storage.files import yaml_update_lock
+    with yaml_update_lock(env_path):
+        read_kw = {"encoding": "utf-8-sig", "errors": "replace"}
+        write_kw = {"encoding": "utf-8"}
 
-    with open(env_path, **read_kw) as f:
-        lines = f.readlines()
-    lines = _sanitize_env_lines(lines)
+        with open(env_path, **read_kw) as f:
+            lines = f.readlines()
+        lines = _sanitize_env_lines(lines)
 
-    new_lines = [line for line in lines if not line.strip().startswith(f"{key}=")]
-    found = len(new_lines) < len(lines)
+        new_lines = [line for line in lines if not line.strip().startswith(f"{key}=")]
+        found = len(new_lines) < len(lines)
 
-    if found:
-        fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
-        # Preserve original permissions so Docker volume mounts aren't clobbered.
-        original_mode = None
-        try:
-            original_mode = stat.S_IMODE(env_path.stat().st_mode)
-        except OSError:
-            pass
-        try:
-            with os.fdopen(fd, 'w', **write_kw) as f:
-                f.writelines(new_lines)
-                f.flush()
-                os.fsync(f.fileno())
-            atomic_replace(tmp_path, env_path)
-            if original_mode is not None:
-                try:
-                    os.chmod(env_path, original_mode)
-                except OSError:
-                    pass
-        except BaseException:
+        if found:
+            fd, tmp_path = tempfile.mkstemp(dir=str(env_path.parent), suffix='.tmp', prefix='.env_')
+            # Preserve original permissions so Docker volume mounts aren't clobbered.
+            original_mode = None
             try:
-                os.unlink(tmp_path)
+                original_mode = stat.S_IMODE(env_path.stat().st_mode)
             except OSError:
                 pass
-            raise
-        _secure_file(env_path)
+            try:
+                with os.fdopen(fd, 'w', **write_kw) as f:
+                    f.writelines(new_lines)
+                    f.flush()
+                    os.fsync(f.fileno())
+                atomic_replace(tmp_path, env_path)
+                if original_mode is not None:
+                    try:
+                        os.chmod(env_path, original_mode)
+                    except OSError:
+                        pass
+            except BaseException:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+                raise
+            _secure_file(env_path)
 
-    os.environ.pop(key, None)
-    invalidate_env_cache()
-    return found
+        os.environ.pop(key, None)
+        invalidate_env_cache()
+        return found
 
 
 def save_anthropic_oauth_token(value: str, save_fn=None):

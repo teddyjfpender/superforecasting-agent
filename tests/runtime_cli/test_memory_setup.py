@@ -49,3 +49,17 @@ def test_status_missing_plugin_uses_display_home(monkeypatch, capsys):
     assert "Plugin:    NOT installed" in out
     assert "Install the 'mem0' memory plugin to ~/.superforecasting-agent/plugins/" in out
     assert "~/.hermes/plugins" not in out
+
+
+def test_memory_credentials_use_shared_validation_and_preserve_other_keys(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    monkeypatch.delenv('MEMORY_TEST_API_KEY', raising=False)
+    path = tmp_path / '.env'
+    path.write_text('OTHER_API_KEY=keep\n')
+    memory_setup._write_env_vars(path, {'MEMORY_TEST_API_KEY': 'first\nsecond'})
+    assert path.read_text() == 'OTHER_API_KEY=keep\nMEMORY_TEST_API_KEY=firstsecond\n'
+    with pytest.raises(ValueError, match='Invalid environment variable'):
+        memory_setup._write_env_vars(path, {'INVALID KEY': 'bad'})
+    with pytest.raises(ValueError, match='active profile'):
+        memory_setup._write_env_vars(tmp_path / 'elsewhere.env', {'MEMORY_TEST_API_KEY': 'bad'})

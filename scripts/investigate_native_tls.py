@@ -16,9 +16,11 @@ import ssl
 import subprocess
 import sys
 import threading
+import time
 
 
-MODES = ('serial', 'concurrent', 'environment', 'explicit-ca-environment', 'shutdown')
+MODES = ('serial', 'concurrent', 'environment', 'environment-unset',
+         'explicit-ca-environment', 'explicit-ca-environment-unset', 'shutdown')
 
 
 def workload(mode, cafile):
@@ -27,6 +29,14 @@ def workload(mode, cafile):
     barrier = threading.Barrier(5)
     entered = threading.Event()
     stop = threading.Event()
+    counts = {'contexts': 0, 'mutations': 0}
+    count_lock = threading.Lock()
+    unset = mode.endswith('-unset')
+    if unset:
+        # Prepopulate before any TLS initialization: this case isolates removal
+        # and pointer shifting from growth/reallocation of the environ array.
+        for i in range(10000):
+            os.environ[f'FORECAST_TLS_REPRO_{i}'] = 'x' * 64
 
     def contexts():
         if mode == 'concurrent':
@@ -34,18 +44,25 @@ def workload(mode, cafile):
         for _ in range(200):
             entered.set()
             # Explicit CA is a control for OpenSSL's default-path getenv calls.
-            ctx = ssl.create_default_context(cafile=cafile if mode == 'explicit-ca-environment' else None)
+            ctx = ssl.create_default_context(cafile=cafile if mode.startswith('explicit-ca-') else None)
             ctx.cert_store_stats()
+            with count_lock:
+                counts['contexts'] += 1
 
     def mutate():
-        # Addition/removal reallocates environ. Merely replacing one value does
-        # not test the same native getenv lifetime hypothesis.
-        for i in range(50000):
+        if not entered.wait(10):
+            raise RuntimeError('TLS initialization did not overlap mutation')
+        for i in range(10000):
             if stop.is_set():
                 break
-            os.environ[f'FORECAST_TLS_REPRO_{i}'] = 'x' * 64
-            if i > 256:
-                os.environ.pop(f'FORECAST_TLS_REPRO_{i - 256}', None)
+            if unset:
+                os.environ.pop(f'FORECAST_TLS_REPRO_{i}', None)
+            else:
+                # Monotonic growth keeps testing reallocation; a bounded rolling
+                # window only grows before most certificate calls have started.
+                os.environ[f'FORECAST_TLS_REPRO_{i}'] = 'x' * 64
+            counts['mutations'] += 1
+            time.sleep(0)  # Let certificate loading overlap throughout the case.
 
     if mode == 'concurrent':
         workers = [threading.Thread(target=contexts) for _ in range(4)]
@@ -54,7 +71,7 @@ def workload(mode, cafile):
         barrier.wait(timeout=10)
         for worker in workers:
             worker.join()
-    elif mode in ('environment', 'explicit-ca-environment'):
+    elif 'environment' in mode:
         worker = threading.Thread(target=mutate)
         worker.start()
         try:
@@ -69,6 +86,9 @@ def workload(mode, cafile):
         # Normal interpreter finalization with certificate loading in flight.
     else:
         contexts()
+    print('WORKLOAD ' + json.dumps(counts), flush=True)
+    if 'environment' in mode and not counts['mutations']:
+        raise RuntimeError('Mutation case did not perform any mutations')
 
 
 def main():
@@ -126,8 +146,10 @@ def main():
             log = stdout + stderr
             crashed = 'Program received signal' in log or 'received signal SIG' in log
             clean = 'exited normally' in log
+            counts = next((json.loads(line.removeprefix('WORKLOAD '))
+                           for line in log.splitlines() if line.startswith('WORKLOAD ')), None)
             case = {'mode': mode, 'gdb_exit': child.returncode, 'crashed': crashed,
-                    'clean_exit': clean, 'core_captured': core.exists()}
+                    'clean_exit': clean, 'core_captured': core.exists(), 'workload': counts}
         except subprocess.TimeoutExpired as exc:
             log = str(exc.stdout) + str(exc.stderr)
             case = {'mode': mode, 'timeout': True, 'core_captured': core.exists()}

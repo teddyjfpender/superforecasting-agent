@@ -440,7 +440,8 @@ def acquire_gateway_runtime_lock() -> bool:
     global _gateway_lock_handle
     with _gateway_lock_guard:
         if _gateway_lock_handle is not None:
-            return Path(_gateway_lock_handle.name) == _get_gateway_lock_path()
+            # A second embedded runner must not adopt the first runner's lease.
+            return False
         path = _get_gateway_lock_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = open(path, "a+", encoding="utf-8")
@@ -483,8 +484,9 @@ def is_gateway_runtime_lock_active(lock_path: Optional[Path] = None) -> bool:
     """Return True when some process currently owns the gateway runtime lock."""
     global _gateway_lock_handle
     resolved_lock_path = lock_path or _get_gateway_lock_path()
-    if _gateway_lock_handle is not None and resolved_lock_path == _get_gateway_lock_path():
-        return True
+    with _gateway_lock_guard:
+        if _gateway_lock_handle is not None and resolved_lock_path == Path(_gateway_lock_handle.name):
+            return True
 
     if not resolved_lock_path.exists():
         return False

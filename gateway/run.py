@@ -18855,6 +18855,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
     setup_logging(hermes_home=_hermes_home, mode="gateway")
 
     _stderr_handler = None
+    release_owned_runtime = None
     _root_logger = logging.getLogger()
     _previous_root_level = _root_logger.level
 
@@ -19011,20 +19012,23 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
                 "Gateway runtime lock is already held by another instance. Exiting."
             )
             return False
+        from gateway.status import gateway_runtime_lock_owner
+        owner = gateway_runtime_lock_owner()
+        runner._runtime_lock_owner = owner
+        pid_written = False
+
+        def release_owned_runtime():
+            release_gateway_runtime_lock(owner=owner, remove_pid=pid_written)
+
+        atexit.register(release_owned_runtime)
         try:
             write_pid_file()
+            pid_written = True
         except FileExistsError:
-            release_gateway_runtime_lock()
             logger.error(
                 "PID file race lost to another gateway instance. Exiting."
             )
             return False
-        from gateway.status import gateway_runtime_lock_owner
-        runner._runtime_lock_owner = gateway_runtime_lock_owner()
-        def release_owned_runtime():
-            release_gateway_runtime_lock(owner=runner._runtime_lock_owner, remove_pid=True)
-        atexit.register(release_owned_runtime)
-
         # Only the process that owns the gateway runtime lock may reconcile runs.
         # Doing this in GatewayRunner.__init__ would let a losing second process
         # mark the live owner's executions failed before it noticed the lock.
@@ -19148,6 +19152,9 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
 
         return True
     finally:
+        if release_owned_runtime is not None:
+            release_owned_runtime()
+            atexit.unregister(release_owned_runtime)
         if _stderr_handler is not None:
             _root_logger.removeHandler(_stderr_handler)
             _stderr_handler.close()

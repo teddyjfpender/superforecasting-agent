@@ -194,6 +194,9 @@ async def test_start_gateway_verbosity_imports_redacting_formatter(monkeypatch, 
                 handler.close()
         root.setLevel(original_level)
 
+    from gateway.status import gateway_runtime_lock_owner
+    assert gateway_runtime_lock_owner() is None
+    assert not (tmp_path / "gateway.pid").exists()
     assert remaining_handlers == original_handlers
     assert remaining_level == logging.WARNING
 

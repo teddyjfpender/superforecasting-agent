@@ -16,6 +16,12 @@ See [investigation, changes and evidence limits](docs/plans/2026-09-11-runtime-o
 - [x] Remove fabricated publication times from remaining economic ingestion;
   reject wrong identities, ambiguous fields and malformed rows, with pure parsers.
 - [x] Share service-tier/fast-command semantics and TUI atomic setting updates.
+- [x] Release gateway startup leases on early exits; prevent embedded runners from
+  adopting another runner's lease.
+- [x] Bind configuration caches to contents; serialize credential edits and route
+  memory setup through the shared writer.
+- [x] Extend price/OWID ingestion checks for identity, malformed arrays/columns and
+  ambiguous measurements; retain unknown publication times and fail-closed settlement.
 - [ ] Conclusively attribute the historical native TLS crash. Native GDB experiment
   and core-capture workflow are implemented; original OpenSSL/CA hashes were not
   preserved. A clean experiment or synthetic abort is not an SSL root cause.

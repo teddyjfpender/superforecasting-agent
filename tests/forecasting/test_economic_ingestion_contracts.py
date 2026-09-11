@@ -68,3 +68,63 @@ def test_treasury_never_selects_first_of_competing_numeric_fields():
     from forecasting.sources.treasury import _treasury_value
     with pytest.raises(ValidationError, match='ambiguous'):
         _treasury_value({'amount': 30, 'percentage': 3}, date_field='record_date', value_field=None)
+
+
+def yahoo_payload(**meta):
+    return {'chart': {'result': [{'meta': {'symbol': 'AAPL', **meta},
+        'timestamp': [1780000000], 'indicators': {'quote': [{'close': [100]}]}}]}}
+
+
+def parse_yahoo(payload):
+    from forecasting.sources.yahoo import _yahoo_prices_from_payload
+    return _yahoo_prices_from_payload(payload, symbol='AAPL', interval='1d', range_value='1mo', endpoint='https://example.test')
+
+
+@pytest.mark.parametrize('symbol', [None, 'MSFT'])
+def test_yahoo_missing_or_wrong_instrument_is_rejected(symbol):
+    with pytest.raises(ValidationError, match='symbol'):
+        parse_yahoo(yahoo_payload(symbol=symbol))
+
+
+@pytest.mark.parametrize('value', [True, 'NaN', 'Infinity', 'unknown'])
+def test_yahoo_invalid_price_is_not_text_or_boolean(value):
+    payload = yahoo_payload()
+    payload['chart']['result'][0]['indicators']['quote'][0]['close'] = [value]
+    with pytest.raises(ValidationError, match='finite numeric'):
+        parse_yahoo(payload)
+
+
+def test_yahoo_bar_time_is_not_publication_and_arrays_must_align():
+    payload = yahoo_payload()
+    assert parse_yahoo(payload)[0].published_at is None
+    payload['chart']['result'][0]['timestamp'].append(1780000001)
+    with pytest.raises(ValidationError, match='arrays'):
+        parse_yahoo(payload)
+
+
+@pytest.mark.parametrize('text', ['Date,Close,Close\n2026-01-01,10,20\n',
+                                 'Date,Close\n2026-01-01,10,20\n',
+                                 'Date,Close\n2026-01-01,NaN\n'])
+def test_stooq_malformed_prices_are_rejected(text):
+    from forecasting.sources.stooq import _stooq_prices_from_text
+    with pytest.raises(ValidationError):
+        _stooq_prices_from_text(text, symbol='AAPL.US', interval='d', endpoint='https://example.test')
+
+
+def test_owid_multiple_measurements_require_explicit_selection():
+    from forecasting.sources.owid import _owid_observations_from_text
+    text = 'Entity,Code,Year,GDP,GDP per capita\nUnited States,USA,2025,1000,50\n'
+    args = dict(slug='gdp', endpoint='https://example.test')
+    with pytest.raises(ValidationError, match='ambiguous'):
+        _owid_observations_from_text(text, **args)
+    with pytest.raises(ValidationError, match='requested'):
+        _owid_observations_from_text(text, value_column='missing', **args)
+    row = _owid_observations_from_text(text, value_column='GDP', **args)[0]
+    assert row.value == 1000
+    assert row.published_at is None
+
+
+@pytest.mark.parametrize('adapter', ['yahoo', 'stooq', 'owid'])
+def test_market_and_grapher_adapters_remain_unverified_for_settlement(adapter):
+    with pytest.raises(ValidationError, match='unsupported'):
+        source_contract(adapter=adapter, entity='USA', window_start='2025-01-01', window_end='2026-01-01')
