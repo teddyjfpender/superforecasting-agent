@@ -68,3 +68,23 @@ def test_yaml_strings_keep_their_types_across_readers(tmp_path, value, compound)
     saved = yaml.safe_load(path.read_text())
     assert saved == {'enabled': False, 'active': True, 'mode': value}
     assert '# retain comment' in path.read_text()
+
+
+def test_independent_runtime_loaders_share_snapshot_identity(tmp_path, monkeypatch):
+    import importlib.util
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+    original = config.load_config()
+    spec = importlib.util.spec_from_file_location('isolated_config_loader', config.__file__)
+    reloaded = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(reloaded)
+    changed = reloaded.load_config()
+    changed['model'] = 'new-model'
+    reloaded.save_config(changed)
+    reloaded.reload_config_in_place(original)
+    original['display']['skin'] = 'mono'
+    config.save_config(original)
+    assert config.load_config()['model'] == 'new-model'
+    stale = config.load_config()
+    atomic_roundtrip_yaml_update(tmp_path / 'config.yaml', 'display.skin', 'forecast')
+    with pytest.raises(ValueError, match='changed since'):
+        reloaded.save_config(stale)

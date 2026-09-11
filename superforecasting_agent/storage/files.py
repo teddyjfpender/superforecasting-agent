@@ -15,6 +15,10 @@ import yaml
 logger = logging.getLogger(__name__)
 
 
+class ConfigSnapshot(dict):
+    """Revision-bearing mapping shared by all runtime configuration loaders."""
+
+
 # ponytail: serialize YAML writes globally; use per-path locks if contention warrants it.
 _YAML_LOCK = threading.RLock()
 _YAML_LOCK_HOLDERS = threading.local()

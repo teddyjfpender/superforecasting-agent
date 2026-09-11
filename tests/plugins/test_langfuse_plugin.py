@@ -159,7 +159,7 @@ class TestRuntimeGate:
             monkeypatch.delenv(k, raising=False)
 
         # Drop any cached import of superforecasting_agent.runtime.config.
-        sys.modules.pop("superforecasting_agent.runtime.config", None)
+        monkeypatch.delitem(sys.modules, "superforecasting_agent.runtime.config", raising=False)
 
         langfuse_plugin = self._fresh_plugin()
         for _ in range(20):

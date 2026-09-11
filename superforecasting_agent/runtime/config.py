@@ -5040,8 +5040,9 @@ def _read_raw_config() -> Dict[str, Any]:
         return data
 
 
-class _ConfigSnapshot(dict):
-    """A mutable load result carrying the disk revision it may replace."""
+# Stable across runtime module reloads and compatibility import paths. Keeping
+# this type in storage prevents an old snapshot from losing revision validation.
+from superforecasting_agent.storage.files import ConfigSnapshot as _ConfigSnapshot
 
 
 def _config_revision(path):
