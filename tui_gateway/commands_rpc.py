@@ -455,4 +455,8 @@ def _(rid, params: dict) -> dict:
                 },
             )
 
+    from superforecasting_agent.application.command_catalog import resolve_command
+
+    if resolve_command(name) is None:
+        return _err(rid, 4011, f"unknown command: {name}")
     return _core._command_handoff(rid, f"not a quick/plugin/skill command: {name}", dispatch="slash.exec")

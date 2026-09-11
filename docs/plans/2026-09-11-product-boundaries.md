@@ -1403,3 +1403,16 @@ Configured command admission and TUI execution routing:
 - Rebuilt real desk plus native routing verification: 32 passed, including all
   seven Ink/dashboard/local-provider/SQLite lifecycle cases; seven existing
   forkpty warnings. Native-first source was bundled before this run.
+
+### Reject unknown commands before compatibility runtime admission
+
+Both `command.dispatch` and `slash.exec` now consult the shared command catalog
+before admitting a legacy command. Unknown names return the same 4011 error
+without handoff metadata, agent initialization or classic worker construction.
+Configured commands, skills and plugins retain their existing routes; known
+built-ins can still use the explicitly marked compatibility handoff. This does
+not remove the remaining legacy dispatcher.
+
+Validation: 90 configured-command/protocol tests passed via `scripts/run_tests.sh`
+(`/tmp/forecast-unknown-command-tests.log`). Python quality checks passed,
+including all 32 import contracts (`/tmp/forecast-unknown-command-quality.log`).

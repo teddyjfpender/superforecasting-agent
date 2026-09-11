@@ -6061,6 +6061,11 @@ def _(rid, params: dict) -> dict:
         except Exception as e:
             return _ok(rid, {"output": f"Plugin command error: {e}"})
 
+    from superforecasting_agent.application.command_catalog import resolve_command
+
+    if resolve_command(_cmd_base) is None:
+        return _err(rid, 4011, f"unknown command: {_cmd_base}")
+
     session, err = _sess(params, rid)
     if err:
         return err

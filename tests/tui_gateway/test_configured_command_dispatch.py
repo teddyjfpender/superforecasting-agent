@@ -169,11 +169,11 @@ def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeyp
     server._SlashWorker.assert_not_called()
 
 
-def test_native_unknown_command_hands_off_without_execution(configure, monkeypatch):
+def test_native_known_legacy_command_hands_off_without_execution(configure, monkeypatch):
     configure({})
     monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
     monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
-    response = dispatch("fixture-legacy")
+    response = dispatch("help")
     assert response["error"]["data"] == {"dispatch": "slash.exec", "execution_started": False}
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
@@ -204,3 +204,16 @@ def test_owned_skill_failure_does_not_fall_back_to_legacy(configure, monkeypatch
     assert "data" not in response["error"]
     build.assert_called_once()
     server._start_agent_build.assert_not_called()
+
+
+@pytest.mark.parametrize("invoke", [dispatch, slash])
+@pytest.mark.parametrize("command", ["fixture-unknown", "/fixture-unknown"])
+def test_unknown_command_rejected_before_runtime_construction(configure, monkeypatch, invoke, command):
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
+    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
+    monkeypatch.setattr("agent.skill_commands.get_skill_commands", lambda: {})
+    response = invoke(command)
+    assert response["error"] == {"code": 4011, "message": "unknown command: fixture-unknown"}
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
