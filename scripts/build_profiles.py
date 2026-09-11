@@ -17,15 +17,23 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", choices=("backend", "tui", "all"), default="all")
     parser.add_argument("--out", type=Path, default=ROOT / "dist" / "profiles")
+    parser.add_argument(
+        "--skip-tui-build",
+        action="store_true",
+        help="Reuse an existing compiled Ink bundle",
+    )
     args = parser.parse_args()
     output = args.out.resolve()
     output.mkdir(parents=True, exist_ok=True)
     if args.profile in ("tui", "all"):
-        subprocess.run(
-            [shutil.which("npm") or "npm", "run", "build"],
-            cwd=ROOT / "ui-tui",
-            check=True,
-        )
+        if not args.skip_tui_build:
+            subprocess.run(
+                [shutil.which("npm") or "npm", "run", "build"],
+                cwd=ROOT / "ui-tui",
+                check=True,
+            )
+        if not (ROOT / "ui-tui/dist/entry.js").is_file():
+            raise RuntimeError("Build ui-tui before using --skip-tui-build")
         bundle = ROOT / "products/tui/superforecasting_agent_tui/dist"
         bundle.mkdir(parents=True, exist_ok=True)
         shutil.copy2(ROOT / "ui-tui/dist/entry.js", bundle / "entry.js")
@@ -38,6 +46,7 @@ def main() -> None:
                 check=True,
             )
             (source_archive,) = Path(temporary).glob("*.tar.gz")
+            shutil.copy2(source_archive, output / source_archive.name)
             subprocess.run(
                 [
                     "uv",

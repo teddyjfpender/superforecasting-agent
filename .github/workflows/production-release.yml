@@ -1,7 +1,7 @@
 name: Production Release (formal artifact set)
 
 # Cuts the FORMAL ARTIFACT SET for one release on a SemVer tag push (vX.Y.Z):
-#   1. Python wheel (bundled TUI, node auto-provision)  2. sdist
+#   1. Independent backend and terminal wheels  2. sdist
 #   3. install.sh (macOS/Linux)  4. install.ps1 (Windows)  5. SHA256SUMS
 #   6. release-manifest.json (names, versions, image digest, min-migration)
 #   7. multi-arch image → ghcr.io (linux/amd64 + linux/arm64), tags vX.Y.Z + latest
@@ -219,7 +219,7 @@ jobs:
 
   # -------------------------------------------------------------------------
   # TUI-green: type-check + full vitest suite + lint for ui-tui. The release
-  # job below builds and SHIPS ui-tui inside the wheel, so a red TUI suite
+  # job below builds and ships the independent terminal wheel, so a red TUI suite
   # blocks the release exactly like a red Python suite. Mirrors tests.yml's
   # tui job.
   # -------------------------------------------------------------------------
@@ -338,22 +338,13 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Build TUI bundle + web dashboard
-        run: |
-          cd ui-tui && npm ci && npm run build && cd ..
-          cd web && npm ci && npm run build && cd ..
+      - name: Build independent release products
+        env:
+          RELEASE_WITH_WEB: '1'
+        run: scripts/build-release.sh
 
-      - name: Bundle TUI + install scripts into superforecasting_agent.runtime
-        run: |
-          mkdir -p superforecasting_agent/runtime/tui_dist superforecasting_agent/runtime/scripts
-          cp ui-tui/dist/entry.js superforecasting_agent/runtime/tui_dist/entry.js
-          cp scripts/install.sh superforecasting_agent/runtime/scripts/install.sh
-          cp scripts/install.ps1 superforecasting_agent/runtime/scripts/install.ps1
-          test -f superforecasting_agent/runtime/tui_dist/entry.js
-          test -f superforecasting_agent/runtime/web_dist/index.html
-
-      - name: Build wheel + sdist
-        run: uv build --sdist --wheel
+      - name: Verify installed local and remote product profiles
+        run: python3 scripts/verify_profiles.py dist --python "$(command -v python3)"
 
       - name: Sign wheel + sdist with Sigstore
         uses: sigstore/gh-action-sigstore-python@04cffa1d795717b140764e8b640de88853c92acc  # v3.3.0
@@ -417,14 +408,18 @@ jobs:
           cp scripts/install-release.sh dist/install.sh
           cp scripts/install-release.ps1 dist/install.ps1
           WHEEL="$(find dist -maxdepth 1 -type f -name 'superforecasting_agent-*.whl' -print -quit)"
+          TUI_WHEEL="$(find dist -maxdepth 1 -type f -name 'superforecasting_agent_tui-*.whl' -print -quit)"
           SDIST="$(find dist -maxdepth 1 -type f -name 'superforecasting_agent-*.tar.gz' -print -quit)"
-          test -n "$WHEEL" && test -n "$SDIST"
+          test -n "$WHEEL" && test -n "$TUI_WHEEL" && test -n "$SDIST"
+          test -f dist/dashboard-assets.tar.gz
           ( cd dist && sha256sum \
-              "$(basename "$WHEEL")" "$(basename "$SDIST")" install.sh install.ps1 > SHA256SUMS )
+              "$(basename "$WHEEL")" "$(basename "$TUI_WHEEL")" "$(basename "$SDIST")" dashboard-assets.tar.gz install.sh install.ps1 > SHA256SUMS )
           python -m scripts.release_manifest build \
             --version "$VERSION" --tag "$TAG" \
             --min-migration "${RELEASE_MIN_MIGRATION:-0.17.0}" \
             --artifact "wheel=$WHEEL" \
+            --artifact "terminal_wheel=$TUI_WHEEL" \
+            --artifact "dashboard_assets=dist/dashboard-assets.tar.gz" \
             --artifact "sdist=$SDIST" \
             --artifact "installer=dist/install.sh" \
             --artifact "windows_installer=dist/install.ps1" \
@@ -456,21 +451,21 @@ jobs:
             test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = true
             gh release edit "$TAG" --title "$TAG" --notes-file dist/RELEASE_NOTES.md
             gh release upload "$TAG" \
-              dist/superforecasting_agent-*.whl \
-              dist/superforecasting_agent-*.tar.gz \
+              dist/superforecasting_agent-*.whl dist/superforecasting_agent_tui-*.whl \
+              dist/superforecasting_agent-*.tar.gz dist/dashboard-assets.tar.gz \
               dist/*.sigstore.json \
               dist/install.sh dist/install.ps1 dist/SHA256SUMS dist/release-manifest.json --clobber
           else
             gh release create "$TAG" \
-              dist/superforecasting_agent-*.whl \
-              dist/superforecasting_agent-*.tar.gz \
+              dist/superforecasting_agent-*.whl dist/superforecasting_agent_tui-*.whl \
+              dist/superforecasting_agent-*.tar.gz dist/dashboard-assets.tar.gz \
               dist/*.sigstore.json \
               dist/install.sh dist/install.ps1 dist/SHA256SUMS dist/release-manifest.json \
               --title "$TAG" --notes-file dist/RELEASE_NOTES.md --verify-tag --draft
           fi
           find dist -maxdepth 1 -type f \( \
-            -name 'superforecasting_agent-*.whl' -o \
-            -name 'superforecasting_agent-*.tar.gz' -o \
+            -name 'superforecasting_agent-*.whl' -o -name 'superforecasting_agent_tui-*.whl' -o \
+            -name 'superforecasting_agent-*.tar.gz' -o -name 'dashboard-assets.tar.gz' -o \
             -name '*.sigstore.json' -o \
             -name 'install.sh' -o -name 'install.ps1' -o \
             -name 'SHA256SUMS' -o -name 'release-manifest.json' \

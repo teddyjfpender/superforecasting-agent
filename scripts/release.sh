@@ -3,7 +3,7 @@
 # scripts/release.sh — cut the formal artifact set for one release (vX.Y.Z).
 # ============================================================================
 # Produces, into the output dir (default dist/), the full formal set:
-#   1. the Python wheel  (bundled tui_dist; pipx-installable, node auto-provision)
+#   1. the backend/CLI wheel and independent terminal wheel
 #   2. the sdist
 #   3. install.sh        (the one-line installer, staged from install-release.sh)
 #   4. install.ps1       (native Windows release-wheel installer)
@@ -84,7 +84,7 @@ if [ -n "$WANT_VERSION" ] && [ "$WANT_VERSION" != "$VERSION" ]; then
   die "requested --version $WANT_VERSION != pyproject $VERSION"
 fi
 
-# 2. Build the wheel + sdist (bundled TUI). Reuse the prebuilt bundle offline
+# 2. Build independent product wheels + backend sdist. Reuse the prebuilt bundle offline
 #    unless --build-npm is passed.
 say "Building wheel + sdist"
 if [ "$BUILD_NPM" = "1" ]; then
@@ -98,7 +98,9 @@ else
 fi
 
 WHEEL="$(ls -1 dist/superforecasting_agent-*.whl 2>/dev/null | head -n1 || true)"
+TUI_WHEEL="$(ls -1 dist/superforecasting_agent_tui-*.whl 2>/dev/null | head -n1 || true)"
 SDIST="$(ls -1 dist/superforecasting_agent-*.tar.gz 2>/dev/null | head -n1 || true)"
+[ -n "$TUI_WHEEL" ] || die "no terminal wheel produced in dist/"
 [ -n "$WHEEL" ] || die "no wheel produced in dist/"
 [ -n "$SDIST" ] || die "no sdist produced in dist/"
 
@@ -115,20 +117,30 @@ mkdir -p "$OUT_DIR"
 if [ "$(cd "$(dirname "$WHEEL")" && pwd)" != "$(cd "$OUT_DIR" && pwd)" ]; then
   cp -f "$WHEEL" "$OUT_DIR/"
   cp -f "$SDIST" "$OUT_DIR/"
+  cp -f "$TUI_WHEEL" "$OUT_DIR/"
+  if [ -f dist/dashboard-assets.tar.gz ]; then cp -f dist/dashboard-assets.tar.gz "$OUT_DIR/"; fi
 fi
 cp -f scripts/install-release.sh "$OUT_DIR/install.sh"
 cp -f scripts/install-release.ps1 "$OUT_DIR/install.ps1"
+TUI_WHEEL_NAME="$(basename "$TUI_WHEEL")"
 WHEEL_NAME="$(basename "$WHEEL")"
 SDIST_NAME="$(basename "$SDIST")"
 
-# 4. SHA256SUMS over the four shippable artifacts.
+OPTIONAL_FILES=()
+OPTIONAL_ROLES=()
+if [ -f dist/dashboard-assets.tar.gz ]; then
+  OPTIONAL_FILES+=(dashboard-assets.tar.gz)
+  OPTIONAL_ROLES+=(--artifact "dashboard_assets=$OUT_DIR/dashboard-assets.tar.gz")
+fi
+
+# 4. SHA256SUMS over all shippable artifacts.
 say "Computing SHA256SUMS"
 (
   cd "$OUT_DIR"
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 > SHA256SUMS
+    sha256sum "$WHEEL_NAME" "$TUI_WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 ${OPTIONAL_FILES[@]+"${OPTIONAL_FILES[@]}"} > SHA256SUMS
   else
-    shasum -a 256 "$WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 > SHA256SUMS
+    shasum -a 256 "$WHEEL_NAME" "$TUI_WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 ${OPTIONAL_FILES[@]+"${OPTIONAL_FILES[@]}"} > SHA256SUMS
   fi
 )
 ok "wrote $OUT_DIR/SHA256SUMS"
@@ -146,6 +158,8 @@ plat_b="${IMAGE_PLATFORMS#*,}"
   --tag "$TAG" \
   --min-migration "$MIN_MIGRATION" \
   --artifact "wheel=$OUT_DIR/$WHEEL_NAME" \
+  --artifact "terminal_wheel=$OUT_DIR/$TUI_WHEEL_NAME" \
+  ${OPTIONAL_ROLES[@]+"${OPTIONAL_ROLES[@]}"} \
   --artifact "sdist=$OUT_DIR/$SDIST_NAME" \
   --artifact "installer=$OUT_DIR/install.sh" \
   --artifact "windows_installer=$OUT_DIR/install.ps1" \
@@ -177,7 +191,7 @@ ok "wrote $NOTES"
 # --- Summary ---------------------------------------------------------------
 echo
 printf '\033[1mArtifact set (%s):\033[0m\n' "$OUT_DIR"
-for f in "$WHEEL_NAME" "$SDIST_NAME" install.sh install.ps1 SHA256SUMS release-manifest.json RELEASE_NOTES.md; do
+for f in "$WHEEL_NAME" "$TUI_WHEEL_NAME" "$SDIST_NAME" ${OPTIONAL_FILES[@]+"${OPTIONAL_FILES[@]}"} install.sh install.ps1 SHA256SUMS release-manifest.json RELEASE_NOTES.md; do
   [ -f "$OUT_DIR/$f" ] && printf '    %s\n' "$f"
 done
 echo

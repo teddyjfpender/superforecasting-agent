@@ -47,9 +47,14 @@ wheel-bundled installations remain compatible launcher inputs. Backend and TUI
 versions that cannot satisfy the required protocol/capabilities fail before Ink
 session bootstrap.
 
-Legacy release assembly and installer automation still assume a bundled terminal;
-that wiring must be reconciled before publishing these separate distributions.
-The new build/verification commands do not publish packages.
+Release assembly uses the same independent product builder and records the
+terminal wheel separately in the manifest and checksums. With `RELEASE_WITH_WEB=1`,
+it also produces `dashboard-assets.tar.gz`; extract that archive and set
+`SUPERFORECASTING_AGENT_WEB_DIST` to its directory for the optional dashboard.
+
+Installer selection and upgrade automation still need reconciliation for releases
+containing multiple wheels before publication. Build/verification commands do not
+publish packages.
 
 ## Headless protocol host
 

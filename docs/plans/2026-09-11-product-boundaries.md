@@ -828,3 +828,22 @@ Installed remote product consumption (isolated verifier follow-up):
   recovery, native Windows/Android PTY support or publication of these artifacts.
 - The primary full suite remains running on the frozen source commit; this
   verifier-only follow-up is isolated until that qualification completes.
+
+Independent release artifact assembly (isolated follow-up):
+
+- The local release builder delegates to `build_profiles.py`, which now retains
+  its backend source archive and supports reuse of a prebuilt Ink bundle. The
+  terminal is a separate wheel, not copied into the runtime package. Optional
+  dashboard output is a separate archive usable via the existing web-dist setting.
+- Local dry-run and production workflow assembly name, checksum, sign and upload
+  the independent artifacts. The workflow uses the shared installed local/remote
+  profile verifier before signing. No release or registry was published here.
+- Twenty-eight release/manifest tests and six workflow-contract tests pass, plus
+  shared Python quality. The dry-run test checks the terminal manifest/checksum
+  entry and verifies that the backend contains no TUI/dashboard asset directories.
+  A macOS Bash 3.2 empty-array expansion failure was fixed in the optional-artifact
+  path; both the empty path and actual dashboard archive path now complete.
+- An actual optional-dashboard dry-run completed. Every manifest hash and byte
+  size matched its output artifact; the archive contains its index and workflow
+  YAML parses. Installer selection/upgrade support for multiple wheels remains
+  incomplete and must be finished before publishing this artifact layout.
