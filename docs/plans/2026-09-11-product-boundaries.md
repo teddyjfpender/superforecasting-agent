@@ -1207,3 +1207,25 @@ Configured command admission and TUI execution routing:
 - Shell execution environment, output/error policy and process cleanup still need
   consolidation across synchronous CLI/TUI and asynchronous messaging adapters.
   Other legacy slash commands remain outside the shared execution boundary.
+
+
+### On-demand compatibility worker ownership
+
+- Normal session creation and model changes no longer construct the classic CLI
+  worker. Only a legacy slash command admits that compatibility subprocess.
+- The host helper serializes command use and invalidation. Cleanup failures retain
+  the retiring handle; no subsequent command can reuse or replace it until cleanup
+  succeeds. Interruptions retain their original exception and cleanup diagnostics.
+- The command metadata regression now checks the shared catalog's values instead
+  of depending on the location or formatting of constructor source text.
+- Focused gateway, metadata and negative boundary checks initially reported 714
+  passed, one skipped and one stale formatting assertion; the assertion now reads
+  the actual command registry. The shared Python quality gate passes all 30 import
+  contracts. Final metadata and real desk verification is recorded below.
+- This does not remove the legacy dispatcher itself or finish failed-agent-build
+  ownership. Those remain application/hosting migration work.
+
+- Final metadata and real Ink/dashboard/local-provider/SQLite run: 168 passed,
+  one skipped (platform-specific metadata), seven existing forkpty warnings.
+  All seven real desk cases ran, covering provider failures, reconnect, cancellation,
+  gateway death, unavailable history and the shared forecast workflow.

@@ -591,3 +591,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.application.command_catalog"]
 forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "legacy command ownership never imports presentation or runtime"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.legacy_commands"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false

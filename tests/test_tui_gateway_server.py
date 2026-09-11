@@ -4124,16 +4124,18 @@ def test_mirror_slash_compress_does_not_prelock_history(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
+def test_session_create_close_race_preserves_agent_without_starting_worker(monkeypatch):
     """Busy close preserves initialization ownership; retry releases its resources."""
     import threading
 
+    created_workers: list[str] = []
     closed_workers: list[str] = []
     unregistered_keys: list[str] = []
     agent_closed = threading.Event()
 
     class _FakeWorker:
         def __init__(self, key, model):
+            created_workers.append(key)
             self.key = key
             self._closed = False
 
@@ -4227,19 +4229,20 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
     })
     assert close_resp["result"]["closed"] is True
     assert agent_closed.wait(timeout=2.0)
-    assert closed_workers == [session["session_key"]]
+    assert created_workers == []
+    assert closed_workers == []
     assert unregistered_keys == [session["session_key"]]
 
 
-def test_session_create_no_race_keeps_worker_alive(monkeypatch):
-    """Regression guard: when session.close does NOT race, the build
-    thread must install the worker + notify normally and leave them
-    alone (no over-eager cleanup)."""
+def test_session_create_keeps_agent_without_starting_worker(monkeypatch):
+    """Agent initialization registers notifications without starting the CLI."""
+    created_workers: list[str] = []
     closed_workers: list[str] = []
     unregistered_keys: list[str] = []
 
     class _FakeWorker:
         def __init__(self, key, model):
+            created_workers.append(key)
             self.key = key
 
         def close(self):
@@ -4285,7 +4288,7 @@ def test_session_create_no_race_keeps_worker_alive(monkeypatch):
 
     # Wait for the build to finish (ready event inside session dict).
     session = server._host.sessions[sid]
-    session["agent_ready"].wait(timeout=2.0)
+    assert session["agent_ready"].wait(timeout=2.0)
 
     # Build finished without a close race — nothing should have been
     # cleaned up by the orphan check.
@@ -4296,11 +4299,16 @@ def test_session_create_no_race_keeps_worker_alive(monkeypatch):
         unregistered_keys == []
     ), f"build thread unregistered its own notify despite no race: {unregistered_keys}"
 
-    # Session should have the live worker installed.
-    assert session.get("slash_worker") is not None
+    assert created_workers == []
+    assert session.get("slash_worker") is None
+    assert isinstance(session["agent"], _FakeAgent)
 
-    # Cleanup
-    server._host.sessions.pop(sid, None)
+    response = server.handle_request({
+        "id": "close", "method": "session.close", "params": {"session_id": sid},
+    })
+    assert response["result"]["closed"] is True
+    assert unregistered_keys == [session["session_key"]]
+    assert closed_workers == []
 
 
 def test_get_db_degrades_cleanly_when_sessiondb_init_fails(monkeypatch):

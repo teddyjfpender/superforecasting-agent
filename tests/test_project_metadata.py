@@ -1378,7 +1378,10 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     conversation_loop = (root / "agent" / "conversation_loop.py").read_text(
         encoding="utf-8"
     )
-    commands = (root / 'superforecasting_agent/runtime' / "commands.py").read_text(encoding="utf-8")
+    from superforecasting_agent.application.command_catalog import COMMAND_REGISTRY
+    commands = "\n".join(command.description for command in COMMAND_REGISTRY)
+    style = next(command for command in COMMAND_REGISTRY if command.name == "style")
+    assert style.aliases == ("personality",)
     discord = (root / "gateway" / "platforms" / "discord.py").read_text(
         encoding="utf-8"
     )
@@ -1422,8 +1425,6 @@ def test_runtime_docstrings_and_markers_are_forecast_native():
     assert "could not enumerate active sessions" not in tui_gateway
     assert "cannot delete an active session" not in tui_gateway
     assert "no active session to retry" not in tui_commands
-    assert 'CommandDef("style"' in commands
-    assert 'aliases=("personality",)' in commands
     assert "Switch forecast style overlay" in commands
     assert "Start a new forecast session (fresh session ID + history)" in commands
     assert "Retry the last forecast note" in commands

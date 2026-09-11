@@ -1125,7 +1125,6 @@ def _start_agent_build(sid: str, session: dict) -> None:
             return
 
         agent = None
-        worker = None
         notify_registered = False
         try:
             tokens = _set_session_context(key)
@@ -1141,12 +1140,6 @@ def _start_agent_build(sid: str, session: dict) -> None:
             # Session DB row deferred to first run_conversation() call.
             # pending_title applied post-first-message (see cli.exec handler).
             current["agent"] = agent
-
-            try:
-                worker = _SlashWorker(key, getattr(agent, "model", _resolve_model()))
-                current["slash_worker"] = worker
-            except Exception:
-                pass
 
             try:
                 from tools.approval import (
@@ -1189,11 +1182,6 @@ def _start_agent_build(sid: str, session: dict) -> None:
                         agent.close()
                     except Exception:
                         logger.exception("failed to close abandoned agent for %s", sid)
-                if worker is not None:
-                    try:
-                        worker.close()
-                    except Exception:
-                        pass
                 if notify_registered:
                     try:
                         from tools.approval import unregister_gateway_notify
@@ -1608,19 +1596,15 @@ def _tool_progress_enabled(sid: str) -> bool:
 
 
 def _restart_slash_worker(session: dict):
-    worker = session.get("slash_worker")
-    if worker:
-        try:
-            worker.close()
-        except Exception:
-            pass
+    # Compatibility name: invalidate now; recreate only if a legacy command runs.
+    from superforecasting_agent.hosting.legacy_commands import invalidate_worker
+
     try:
-        session["slash_worker"] = _SlashWorker(
-            session["session_key"],
-            getattr(session.get("agent"), "model", _resolve_model()),
-        )
+        invalidate_worker(session)
     except Exception:
-        session["slash_worker"] = None
+        # Model/config changes already succeeded. Retain the retiring worker and
+        # let the next legacy command retry cleanup, without misreporting them.
+        logger.exception("legacy command worker cleanup pending")
 
 
 def _persist_model_switch(result) -> None:
@@ -2691,13 +2675,6 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, p
         # session (stdio for Ink, JSON-RPC WS for the dashboard sidebar).
         "transport": current_transport() or _stdio_transport,
     })
-    try:
-        _host.sessions[sid]["slash_worker"] = _SlashWorker(
-            key, getattr(agent, "model", _resolve_model())
-        )
-    except Exception:
-        # Defer hard-failure to slash.exec; chat still works without slash worker.
-        _host.sessions[sid]["slash_worker"] = None
     try:
         from tools.approval import register_gateway_notify, load_permanent_allowlist
 
@@ -6091,30 +6068,20 @@ def _(rid, params: dict) -> dict:
         except Exception as e:
             return _ok(rid, {"output": f"Plugin command error: {e}"})
 
-    worker = session.get("slash_worker")
-    if not worker:
-        try:
-            worker = _SlashWorker(
-                session["session_key"],
-                getattr(session.get("agent"), "model", _resolve_model()),
-            )
-            session["slash_worker"] = worker
-        except Exception as e:
-            return _err(rid, 5030, f"slash worker start failed: {e}")
+    from superforecasting_agent.hosting.legacy_commands import use_worker
 
     try:
-        output = worker.run(cmd)
-        warning = _mirror_slash_side_effects(params.get("session_id", ""), session, cmd)
+        with use_worker(session, lambda: _SlashWorker(
+            session["session_key"],
+            getattr(session.get("agent"), "model", _resolve_model()),
+        )) as worker:
+            output = worker.run(cmd)
+            warning = _mirror_slash_side_effects(params.get("session_id", ""), session, cmd)
         payload = {"output": output or "(no output)"}
         if warning:
             payload["warning"] = warning
         return _ok(rid, payload)
     except Exception as e:
-        try:
-            worker.close()
-        except Exception:
-            pass
-        session["slash_worker"] = None
         return _err(rid, 5030, str(e))
 
 

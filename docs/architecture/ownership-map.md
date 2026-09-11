@@ -23,6 +23,7 @@ The formality layer of the modularization program
 | `superforecasting_agent/application/sessions.py` | application services | Resumable-session selection and atomic branch-copy admission | No presentation or transport imports |
 | `superforecasting_agent/hosting/runtime.py` | serving lifetime | `RuntimeHost` owns workers, session registry, store, configuration, device sign-in, shutdown ordering and restart admission | No presentation or runtime configuration imports; adapters supply protocol-specific interruption and turn-finalization callbacks |
 | `superforecasting_agent/hosting/{workers,sessions,registry}.py` | host resource ownership | Worker admission/drain; live runtime registration; session use, finalization, retryable disposal and replacement admission | No transport, CLI, agent or tool imports; enforced transitively |
+| `superforecasting_agent/hosting/legacy_commands.py` | compatibility worker lifetime | Lazy command acquisition, serialized use and retryable invalidation | No presentation, runtime, agent or tool imports; adapter supplies the worker factory |
 | `superforecasting_agent/hosting/storage.py` | database serving lifetime | `SessionStore` serializes acquisition, close and explicit restart | No presentation or runtime configuration imports; failed close retains the owned handle |
 | `superforecasting_agent/hosting/configuration.py` | host profile configuration | `ProfileConfiguration` owns raw snapshots and revision-checked saves | No presentation or runtime imports; explicit profile paths, shared atomic storage writes |
 | `superforecasting_agent/hosting/device_auth.py` | device sign-in lifetime | `DeviceSignIn` owns attempt identity, cancellation, deadlines, save admission and once-only terminal consumption | No presentation, runtime or credential storage imports; adapter supplies provider exchange/persistence callbacks |
@@ -58,7 +59,9 @@ compatibility executable/module alias; no application package may import it.
 The entrypoint import contract has no exceptions and includes cron and ACP.
 `cli.py` remains a presentation entrypoint; the TUI host cannot import it.
 The isolated legacy slash worker still uses classic CLI dispatch for commands
-that have not yet migrated to application services.
+that have not yet migrated to application services. Session creation and model
+changes do not start it. The host ownership helper serializes its use and retains
+a failed-cleanup handle before allowing replacement.
 
 `runtime.interactive_config.read_cli_config` reads shared settings without
 modifying the process. `load_cli_config` explicitly applies environment bridges
