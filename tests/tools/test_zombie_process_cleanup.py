@@ -240,6 +240,7 @@ class TestGatewayCleanupWiring:
         loop = asyncio.new_event_loop()
         try:
             with patch("gateway.status.remove_pid_file"), \
+                 patch("gateway.status.release_gateway_runtime_lock"), \
                  patch("gateway.status.write_runtime_status"), \
                  patch("tools.terminal_tool.cleanup_all_environments"), \
                  patch("tools.browser_tool.cleanup_all_browsers"), \

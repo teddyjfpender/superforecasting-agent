@@ -80,8 +80,10 @@ def test_persistence_failure_is_never_announced_as_durably_saved(tmp_path, monke
     frames=[]; monkeypatch.setattr(server,'write_json',frames.append)
     def fail(*args,**kwargs):
         raise OSError('injected disk failure')
-    monkeypatch.setattr(turn_journal,'transition',fail)
-    server._emit('message.complete','runtime',{'text':'visible answer','status':'complete','usage':{}})
+    # Inject at the actual store boundary, independent of module reloads.
+    with monkeypatch.context() as fault:
+        fault.setattr(db, '_execute_write', fail)
+        server._emit('message.complete','runtime',{'text':'visible answer','status':'complete','usage':{}})
     assert frames[-1]['params']['payload']['durable_status']=='unavailable'
     assert frames[-1]['params']['payload']['warning']
     assert turn_journal.latest(db,'s')['status']=='starting'
