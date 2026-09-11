@@ -78,7 +78,12 @@ from typing import Optional
 
 from tui_gateway import server
 from tui_gateway.event_log import _EID_KEY, EventLog
-from tui_gateway.transport import TeeTransport, Transport
+from tui_gateway.transport import TransportBindings
+
+_default_bindings = TransportBindings(
+    lambda: server._stdio_transport,
+    lambda sink: setattr(server, "_stdio_transport", sink),
+)
 
 logger = logging.getLogger(__name__)
 
@@ -536,22 +541,27 @@ class GatewayHTTPServer(ThreadingHTTPServer):
         hub: BroadcastHub,
         token: Optional[str],
         rpc_timeout: float,
-        prev_stdio: Optional[Transport],
         health_public: bool = False,
     ) -> None:
-        super().__init__(server_address, _GatewayHandler)
         self.hub = hub
+        self._binding_token = None
+        super().__init__(server_address, _GatewayHandler)
         self.token = token
         self.rpc_timeout = rpc_timeout
         self.start_time = time.monotonic()
         self.health_public = health_public
-        self._prev_stdio = prev_stdio
 
     def restore_transport(self) -> None:
-        """Put back whatever ``_stdio_transport`` was before we installed the hub."""
-        if self._prev_stdio is not None:
-            server._stdio_transport = self._prev_stdio
+        """Release this host's sink without disturbing newer host registrations."""
+        if self._binding_token is not None:
+            _default_bindings.detach(self._binding_token)
         self.hub.shutdown()
+
+    def server_close(self) -> None:
+        try:
+            super().server_close()
+        finally:
+            self.restore_transport()
 
     def handle_error(self, request, client_address) -> None:
         """Swallow the routine peer-gone resets a browser/keep-alive client
@@ -850,26 +860,21 @@ def make_server(
     if _event_log_enabled():
         hub.attach_log(EventLog())
     hub_transport = _HubTransport(hub)
-    prev = server._stdio_transport
-    if alongside_stdio:
-        server._stdio_transport = TeeTransport(prev, hub_transport)
-    else:
-        server._stdio_transport = hub_transport
-
     try:
         httpd = GatewayHTTPServer(
             (host, port),
             hub=hub,
             token=resolved_token,
             rpc_timeout=rpc_timeout,
-            prev_stdio=prev,
             health_public=health_public,
         )
     except Exception:
-        # Bind failed — undo the transport swap so we don't strand the gateway.
-        server._stdio_transport = prev
+        # A failed bind never publishes a default transport.
         hub.shutdown()
         raise
+    httpd._binding_token = _default_bindings.attach(
+        hub_transport, alongside=alongside_stdio,
+    )
     return httpd
 
 

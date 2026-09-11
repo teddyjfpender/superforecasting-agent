@@ -311,3 +311,21 @@ Installed terminal qualification and output ownership:
 - Native Windows PTY execution remains explicitly skipped by this verifier;
   remote-network lifecycle qualification, release/installer assembly and full
   regression qualification remain open. No live model/provider was needed.
+
+Headless transport ownership:
+
+- Default event-sink registration now has one shared owner. Registrations can
+  detach in any order, retaining every surviving tee/replacement sink and the
+  original fallback. Stale cleanup cannot overwrite an externally replaced sink.
+- HTTP hosts bind their socket before publishing the sink. `server_close()`
+  releases their registration and event hub automatically; the legacy explicit
+  restore call remains idempotent. Closing a host does not close its predecessor.
+- Focused HTTP/event-log/ownership verification passed 45 tests. Additional
+  concurrent registration coverage verifies that all eight live sinks receive
+  an event and concurrent detach restores the baseline without closing it.
+- This centralizes event-sink lifetime, not all runtime resources. Session-store
+  lifetime, active-turn draining, agent/session construction ownership and the
+  remaining presentation adapters still require consolidation.
+
+Full `tests/tui_gateway/` qualification after that change: 183 tests passed,
+including concurrent transport registration. Shared Python quality gates pass.
