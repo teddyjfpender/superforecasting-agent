@@ -658,3 +658,14 @@ Complete transitive presentation exclusion for forecast application services:
   in strict lint/format/types. A full regression run is next before publishing
   this batch. Host resource lifetime, remote serving, release/installer assembly
   and cross-platform product qualification still require completion.
+
+Regression qualification follow-up:
+
+- The first full run at `3248b277c` completed with 30,608 passed, 148 skipped
+  and five failures. All five referenced former owners in test mocks or source
+  assertions: tool selection, session context and PID liveness. Production
+  consumers already used their extracted owners.
+- Updated those seams, including additional PID tests whose obsolete mocks had
+  allowed false-positive passes. Retained the original behavioral assertions.
+  The five affected test files now pass 436 tests with one skip. A new full run
+  is still required before this batch can be pushed.

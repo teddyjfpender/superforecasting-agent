@@ -1074,11 +1074,11 @@ class TestNewEndpoints:
 
     def test_toolsets_list_matches_cli_enabled_state(self, monkeypatch):
         import superforecasting_agent.runtime.tools_config as tools_config
-        from superforecasting_agent.tooling import toolsets as toolsets_module
+        from superforecasting_agent.tooling import selection, toolsets as toolsets_module
         import superforecasting_agent.runtime.web_server as web_server
 
         monkeypatch.setattr(
-            tools_config,
+            selection,
             "_get_effective_configurable_toolsets",
             lambda: [
                 ("web", "🔍 Web Search & Scraping", "web_search, web_extract"),
@@ -1087,7 +1087,7 @@ class TestNewEndpoints:
             ],
         )
         monkeypatch.setattr(
-            tools_config,
+            selection,
             "_get_platform_tools",
             lambda config, platform, include_default_mcp_servers=False: {"web", "skills"},
         )

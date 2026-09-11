@@ -535,8 +535,8 @@ def test_oneshot_wires_session_db_for_recall(monkeypatch):
     )
     monkeypatch.setitem(
         sys.modules,
-        "superforecasting_agent.runtime.tools_config",
-        mod("superforecasting_agent.runtime.tools_config", _get_platform_tools=lambda *_args, **_kwargs: {"session_search"}),
+        "superforecasting_agent.tooling.selection",
+        mod("superforecasting_agent.tooling.selection", _get_platform_tools=lambda *_args, **_kwargs: {"session_search"}),
     )
 
     assert _run_agent("recall this") == "ok"

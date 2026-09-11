@@ -5048,7 +5048,7 @@ def test_prompt_guidance_env_aliases_are_forecast_native():
 
 def test_session_env_aliases_are_forecast_native():
     root = Path(__file__).resolve().parents[1]
-    session_context = (root / "gateway" / "session_context.py").read_text(
+    session_context = (root / "superforecasting_agent" / "session_context.py").read_text(
         encoding="utf-8"
     )
     agent_init = (root / "agent" / "agent_init.py").read_text(encoding="utf-8")
