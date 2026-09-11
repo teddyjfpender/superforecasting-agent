@@ -3,7 +3,8 @@ param(
     [string]$Tag = "",
     [string]$Manifest = "",
     [switch]$AllowUnverified,
-    [switch]$VerifyOnly
+    [switch]$VerifyOnly,
+    [switch]$BackendOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -27,7 +28,16 @@ function Read-ReleaseManifest([string]$Path) {
         ([string]$wheel.sha256) -notmatch '^[0-9a-fA-F]{64}$') {
         Fail "Release manifest is missing its version, tag, wheel name, or wheel sha256."
     }
+    $terminal = $data.artifacts.terminal_wheel
+    if ($null -ne $terminal -and (
+        [string]$terminal.name -notmatch '^[A-Za-z0-9_.+-]+\.whl$' -or
+        [string]$terminal.sha256 -notmatch '^[0-9a-fA-F]{64}$' -or
+        [string]$terminal.name -eq [string]$wheel.name)) {
+        Fail "Release manifest has an invalid terminal wheel."
+    }
     return [pscustomobject]@{
+        TerminalName = [string]$terminal.name
+        TerminalSha256 = ([string]$terminal.sha256).ToLowerInvariant()
         Version = [string]$data.version
         Tag = [string]$data.tag
         WheelName = [string]$wheel.name
@@ -103,61 +113,70 @@ try {
         "https://api.github.com/repos/$Repo/releases/tags/$([uri]::EscapeDataString($Tag))"
     }
     $release = Invoke-RestMethod -UseBasicParsing -Uri $api
-    $wheels = @($release.assets | Where-Object { $_.name -like "*.whl" })
-    if ($wheels.Count -ne 1) {
-        Fail "Expected exactly one wheel asset; found $($wheels.Count)."
-    }
     $sumsAssets = @($release.assets | Where-Object { $_.name -eq "SHA256SUMS" })
     $manifestAssets = @($release.assets | Where-Object { $_.name -eq "release-manifest.json" })
-    $wheelAsset = $wheels[0]
-    if ([string]$wheelAsset.name -notmatch '^[A-Za-z0-9_.+-]+\.whl$') {
-        Fail "Release wheel asset has an invalid filename."
-    }
-
+    if ($manifestAssets.Count -gt 1) { Fail "Duplicate release manifests." }
     if (-not $manifestPin -and $manifestAssets.Count -eq 1) {
         $downloadedManifest = Join-Path $tempDir "release-manifest.json"
         Download $manifestAssets[0].browser_download_url $downloadedManifest
         $manifestPin = Read-ReleaseManifest $downloadedManifest
     }
+    $selected = @()
     if ($manifestPin) {
-        if ($wheelAsset.name -ne $manifestPin.WheelName) {
-            Fail "Release wheel '$($wheelAsset.name)' does not match manifest wheel '$($manifestPin.WheelName)'."
-        }
         if ([string]$release.tag_name -ne $manifestPin.Tag) {
             Fail "Release tag '$($release.tag_name)' does not match manifest tag '$($manifestPin.Tag)'."
         }
+        $selected += [pscustomobject]@{ Name = $manifestPin.WheelName; Sha = $manifestPin.WheelSha256 }
+        if (-not $BackendOnly -and $manifestPin.TerminalName) {
+            $selected += [pscustomobject]@{ Name = $manifestPin.TerminalName; Sha = $manifestPin.TerminalSha256 }
+        }
+    } else {
+        $wheels = @($release.assets | Where-Object { $_.name -like "*.whl" })
+        if ($wheels.Count -ne 1) { Fail "Release requires a manifest identifying its backend wheel." }
+        $selected += [pscustomobject]@{ Name = [string]$wheels[0].name; Sha = "" }
     }
 
-    $wheelPath = Join-Path $tempDir $wheelAsset.name
-    Download $wheelAsset.browser_download_url $wheelPath
-
+    $sumsPath = $null
     if ($sumsAssets.Count -eq 0) {
-        if (-not $allowUnverifiedRelease) {
+        if (-not $allowUnverifiedRelease -or $selected.Count -gt 1) {
             Fail "Release $Tag has no SHA256SUMS; refusing an unverified install."
         }
-        Write-Warning "Installing without verification because ALLOW_UNVERIFIED=1 was set."
+        Write-Warning "SHA256SUMS verification skipped because ALLOW_UNVERIFIED=1 was set."
     } elseif ($sumsAssets.Count -ne 1) {
         Fail "Expected exactly one SHA256SUMS asset; found $($sumsAssets.Count)."
     } else {
         $sumsPath = Join-Path $tempDir "SHA256SUMS"
         Download $sumsAssets[0].browser_download_url $sumsPath
-        $escapedName = [regex]::Escape([string]$wheelAsset.name)
-        $sumLine = Get-Content -LiteralPath $sumsPath | Where-Object {
-            $_ -match "^([0-9a-fA-F]{64})\s+\*?$escapedName$"
-        } | Select-Object -First 1
-        if (-not $sumLine) {
-            Fail "SHA256SUMS has no entry for $($wheelAsset.name)."
+    }
+
+    # Verify every selected product before any Python/pipx installation starts.
+    $wheelPaths = @()
+    foreach ($item in $selected) {
+        if ($item.Name -notmatch '^[A-Za-z0-9_.+-]+\.whl$') { Fail "Invalid wheel filename." }
+        $assets = @($release.assets | Where-Object { $_.name -ceq $item.Name })
+        if ($assets.Count -ne 1) { Fail "Missing or duplicate wheel asset '$($item.Name)'." }
+        $uri = [uri]$assets[0].browser_download_url
+        if ($uri.Scheme -ne "https" -or $uri.Segments[-1] -cne $item.Name) {
+            Fail "Wheel asset URL does not match its name."
         }
-        $expectedSha = ($sumLine -split '\s+')[0].ToLowerInvariant()
-        $actualSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $wheelPath).Hash.ToLowerInvariant()
-        if ($actualSha -ne $expectedSha) {
-            Fail "Wheel sha256 mismatch against SHA256SUMS; nothing was installed."
+        $path = Join-Path $tempDir $item.Name
+        Download $uri.AbsoluteUri $path
+        $actualSha = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash.ToLowerInvariant()
+        if ($sumsPath) {
+            $escapedName = [regex]::Escape($item.Name)
+            $sumLines = @(Get-Content -LiteralPath $sumsPath | Where-Object {
+                $_ -cmatch "^([0-9a-fA-F]{64})\s+\*?$escapedName$"
+            })
+            if ($sumLines.Count -ne 1) { Fail "Missing or duplicate checksum for $($item.Name)." }
+            $expectedSha = ($sumLines[0] -split '\s+')[0].ToLowerInvariant()
+            if ($actualSha -ne $expectedSha) { Fail "Wheel sha256 mismatch against SHA256SUMS; nothing was installed." }
         }
-        if ($manifestPin -and $actualSha -ne $manifestPin.WheelSha256) {
+        if ($item.Sha -and $actualSha -ne $item.Sha) {
             Fail "Wheel sha256 mismatch against release-manifest.json; nothing was installed."
         }
-        Write-Host "OK  Wheel sha256 verified."
+        $wheelPaths += $path
     }
+    $wheelPath = $wheelPaths[0]
 
     if ($VerifyOnly) {
         Write-Host "OK  Release assets verified; installation skipped."
@@ -186,6 +205,11 @@ try {
         Fail "pipx could not install the release wheel."
     }
 
+    if ($wheelPaths.Count -gt 1) {
+        & $pythonExe @pythonArgs -m pipx inject --force $Binary $wheelPaths[1]
+        if ($LASTEXITCODE -ne 0) { Fail "pipx could not install the terminal companion." }
+    }
+
     $agentHome = ([string]$env:SUPERFORECASTING_AGENT_HOME).Trim()
     if (-not $agentHome) { $agentHome = ([string]$env:FORECAST_HOME).Trim() }
     if (-not $agentHome) { $agentHome = ([string]$env:HERMES_HOME).Trim() }
@@ -203,7 +227,8 @@ try {
     if ($binDir) {
         Write-Host "    Binary directory: $([string]$binDir)"
     }
-    Write-Host "    Start the desk: $Binary --tui"
+    if ($BackendOnly) { Write-Host "    Get started: $Binary --help" }
+    else { Write-Host "    Start the desk: $Binary --tui" }
 } catch {
     Write-Error $_.Exception.Message
     exit 1

@@ -862,3 +862,21 @@ POSIX companion installation follow-up:
   corrupt/missing/duplicate companions, manifest disagreement and backend-only
   selection. Windows companion installation and other upgrade entrypoints remain
   unfinished; this change does not qualify cross-platform distribution as complete.
+
+Windows companion installer parity:
+
+- PowerShell selects the backend and optional terminal by manifest role, verifies
+  every selected artifact before installation, rejects duplicate assets/checksums,
+  and installs the companion into the backend pipx environment. `-BackendOnly`
+  supports the minimal profile; legacy single-wheel releases stay supported.
+- Added a hermetic PowerShell verifier with ten scenarios, including actual
+  installer control flow with a fake Python/pipx executable, independent wheel
+  versions, reversed release ordering, backend-only selection and integrity
+  failures. The release workflow runs it on native Windows before its existing
+  published-artifact verification step.
+- Ten scenarios passed locally under a temporary PowerShell 7.6.6 macOS ARM64
+  runtime whose archive matched GitHub's published SHA256 digest. This proves
+  script behavior, not native Windows installation or PowerShell 5.1 execution.
+  The 33 focused Python release/installer tests and shared Python quality pass.
+- VPS upgrade/installation scripts still select the first release wheel and need
+  migration. Runtime release updating also needs review for companion ownership.

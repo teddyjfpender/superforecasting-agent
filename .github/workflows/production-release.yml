@@ -295,6 +295,9 @@ jobs:
             $errors | ForEach-Object { Write-Error $_.Message }
             exit 1
           }
+      - name: Verify split-package installer with controlled artifacts
+        shell: powershell
+        run: scripts/verify_windows_installer.ps1
       - name: Verify a published release asset set without installing
         shell: powershell
         run: scripts/install-release.ps1 -Tag v0.19.0 -VerifyOnly

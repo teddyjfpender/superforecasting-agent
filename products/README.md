@@ -87,5 +87,6 @@ establish those guarantees.
 
 The POSIX release installer installs both manifest-selected wheels by default.
 Use `INSTALL_TUI=0 bash install.sh` for a backend-only environment. All selected
-artifacts are verified before installation begins. Windows installation and the
-other upgrade entrypoints still need equivalent split-package handling.
+artifacts are verified before installation begins. The PowerShell installer supports the same selection with `-BackendOnly`.
+The VPS installation/upgrade entrypoints still need equivalent split-package
+handling; native Windows execution of the new fixture checks is pending.
