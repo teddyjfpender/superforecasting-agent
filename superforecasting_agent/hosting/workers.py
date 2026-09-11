@@ -81,8 +81,8 @@ class RuntimeWorkers:
 
         with self._condition:
             self._admit()
-            thread = threading.Thread(target=run, name=name, daemon=True)
             try:
+                thread = threading.Thread(target=run, name=name, daemon=True)
                 thread.start()
             except BaseException:
                 self._done()

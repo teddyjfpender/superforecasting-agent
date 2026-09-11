@@ -125,3 +125,14 @@ def test_shutdown_preserves_last_worker_write_and_resumable_session(tmp_path, mo
         assert durable['partial_text'] == 'partial evidence'
     finally:
         reopened.close()
+
+
+def test_thread_construction_failure_does_not_leak_admission(monkeypatch):
+    workers = RuntimeWorkers()
+    def failed_thread(**kwargs):
+        raise RuntimeError('thread construction failed')
+    monkeypatch.setattr(threading, 'Thread', failed_thread)
+    with pytest.raises(RuntimeError, match='construction failed'):
+        workers.start(lambda: None, name='cannot-start')
+    workers.stop()
+    assert workers.drain(0)

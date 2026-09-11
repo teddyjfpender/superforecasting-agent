@@ -13,37 +13,24 @@ from tui_gateway import server
 
 
 @pytest.fixture(autouse=True)
-def _stop_leaked_notification_pollers():
-    """Kill any notification-poller daemon a test in this file leaked.
-
-    ``_init_session`` (reached via ``session.create``/``session.new``) starts
-    ``_start_notification_poller`` — a daemon thread looping on the
-    process-global ``process_registry.completion_queue``. A test that creates a
-    real session without neutralising the poller leaves it running; on the same
-    xdist worker it then STEALS async-delegation completion events from later
-    ``tests/tools/test_async_delegation.py`` tests (they see an empty queue →
-    "assert None is not None"), passing in isolation but red in the full suite.
-
-    We reach the poller's stop Event and session dict via the thread's own
-    ``_args`` (``(stop_event, sid, session)``), so this also stops pollers whose
-    session a test already popped from ``server._sessions``. Runs in teardown of
-    every test here, so no poller outlives the file on the worker.
-    """
+def _stop_leaked_notification_pollers(monkeypatch):
+    """Own test workers and poller stops explicitly, without Thread internals."""
+    from superforecasting_agent.hosting.workers import RuntimeWorkers
+    workers = RuntimeWorkers()
+    monkeypatch.setattr(server, "_pool", workers)
+    original = server._start_notification_poller
+    pollers = []
+    def start(sid, session):
+        stop = original(sid, session)
+        pollers.append((stop, session))
+        return stop
+    monkeypatch.setattr(server, "_start_notification_poller", start)
     yield
-    for th in threading.enumerate():
-        target = getattr(th, "_target", None)
-        if getattr(target, "__name__", "") != "_notification_poller_loop":
-            continue
-        args = getattr(th, "_args", None) or ()
-        if len(args) >= 3:
-            stop_evt, _sid, sess = args[0], args[1], args[2]
-            try:
-                stop_evt.set()
-            except Exception:
-                pass
-            if isinstance(sess, dict):
-                sess["_finalized"] = True
-        th.join(timeout=1.0)
+    for stop, session in pollers:
+        stop.set()
+        session["_finalized"] = True
+    workers.stop()
+    assert workers.drain(3), "test left runtime workers active"
 
 
 class _ChunkyStdout:
@@ -2945,7 +2932,7 @@ def test_prompt_submit_sets_approval_session_key(monkeypatch):
             }
 
     class _ImmediateThread:
-        def __init__(self, target=None, daemon=None):
+        def __init__(self, target=None, daemon=None, name=None):
             self._target = target
 
         def start(self):
@@ -2987,7 +2974,7 @@ def test_prompt_submit_expands_context_refs(monkeypatch):
             }
 
     class _ImmediateThread:
-        def __init__(self, target=None, daemon=None):
+        def __init__(self, target=None, daemon=None, name=None):
             self._target = target
 
         def start(self):
@@ -3593,7 +3580,7 @@ def test_prompt_submit_history_version_mismatch_surfaces_warning(monkeypatch):
             }
 
     class _ImmediateThread:
-        def __init__(self, target=None, daemon=None):
+        def __init__(self, target=None, daemon=None, name=None):
             self._target = target
 
         def start(self):
@@ -3651,7 +3638,7 @@ def test_prompt_submit_history_version_match_persists_normally(monkeypatch):
             }
 
     class _ImmediateThread:
-        def __init__(self, target=None, daemon=None):
+        def __init__(self, target=None, daemon=None, name=None):
             self._target = target
 
         def start(self):
@@ -4137,7 +4124,7 @@ def test_mirror_slash_compress_does_not_prelock_history(monkeypatch):
 
 
 def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
-    """A build abandoned by close releases its agent and publishes no worker."""
+    """Busy close preserves initialization ownership; retry releases its resources."""
     import threading
 
     closed_workers: list[str] = []
@@ -4223,30 +4210,24 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
     # never exercise the orphan-cleanup path.
     assert build_started.wait(timeout=2.0), "build thread never entered _make_agent"
 
-    # Build thread is blocked in _slow_make_agent.  Close the session
-    # NOW — this pops _sessions[sid] before _build can install the
-    # worker/notify.
-    close_resp = server.handle_request(
-        {
-            "id": "2",
-            "method": "session.close",
-            "params": {"session_id": sid},
-        }
-    )
-    assert close_resp.get("result", {}).get("closed") is True
-
-    # The abandoned build must dispose its agent and stop before allocating
-    # a slash worker or publishing callbacks. Waiting on an event proves that
-    # cleanup ran, rather than treating a short sleep as thread completion.
-    release_build.set()
-    assert agent_closed.wait(timeout=2.0)
+    # Busy close must preserve the builder's ownership, then succeed on retry.
+    try:
+        close_resp = server.handle_request({
+            "id": "2", "method": "session.close", "params": {"session_id": sid},
+        })
+        assert close_resp["error"]["code"] == 4009
+        assert server._sessions[sid] is session
+        assert not agent_closed.is_set()
+    finally:
+        release_build.set()
     assert session["agent_ready"].wait(timeout=2.0)
-    assert "closed" in server._wait_agent(session, "waiter")["error"]["message"]
-    assert closed_workers == []
-    assert len(unregistered_keys) >= 1, (
-        f"orphan notify registration was not unregistered — "
-        f"unregistered_keys={unregistered_keys}"
-    )
+    close_resp = server.handle_request({
+        "id": "3", "method": "session.close", "params": {"session_id": sid},
+    })
+    assert close_resp["result"]["closed"] is True
+    assert agent_closed.wait(timeout=2.0)
+    assert closed_workers == [session["session_key"]]
+    assert unregistered_keys == [session["session_key"]]
 
 
 def test_session_create_no_race_keeps_worker_alive(monkeypatch):
@@ -4464,7 +4445,7 @@ def test_session_delete_fails_closed_when_active_snapshot_raises(monkeypatch):
         def delete_session(self, *a, **kw):
             raise AssertionError("delete must not run when active snapshot fails")
 
-    class _ExplodingDict:
+    class _ExplodingDict(dict):
         def values(self):
             raise RuntimeError("dictionary changed size during iteration")
 
@@ -4624,7 +4605,7 @@ def test_model_options_propagates_list_exception(monkeypatch):
 class _ImmediateThread:
     """Runs the target callable synchronously so assertions can follow."""
 
-    def __init__(self, target=None, daemon=None):
+    def __init__(self, target=None, daemon=None, name=None):
         self._target = target
 
     def start(self):
@@ -5800,7 +5781,7 @@ def test_notification_poller_delivers_completion(monkeypatch):
             }
 
     class _ImmediateThread:
-        def __init__(self, target=None, daemon=None):
+        def __init__(self, target=None, daemon=None, name=None):
             self._target = target
         def start(self):
             self._target()
@@ -5859,7 +5840,7 @@ def test_notification_poller_skips_consumed(monkeypatch):
             return {"final_response": "ok", "messages": []}
 
     class _ImmediateThread:
-        def __init__(self, target=None, daemon=None):
+        def __init__(self, target=None, daemon=None, name=None):
             self._target = target
         def start(self):
             self._target()
