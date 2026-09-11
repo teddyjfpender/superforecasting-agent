@@ -233,3 +233,18 @@ curl -X POST -H "Content-Type: application/json" -H "X-Superforecasting-Agent-Se
 ```
 
 The session token is injected into the dashboard HTML at startup and rotates on every server restart. Grab it from the browser devtools (`window.__SUPERFORECASTING_AGENT_SESSION_TOKEN__`) if you're scripting against a running dashboard. Legacy `X-Hermes-Session-Token` and `window.__HERMES_SESSION_TOKEN__` remain accepted for compatibility.
+
+## Saving a session model selection
+
+The classic CLI and messaging gateway share model-configuration normalization and
+persistence. Legacy scalar `model` values and `model.model` aliases remain readable;
+new saves use `model.default`. Switching providers clears the previous provider's
+stored endpoint, API mode and inline credential before writing the new selection.
+Other configuration and literal `${ENVIRONMENT_VARIABLE}` references are retained.
+A failed save is reported separately from a successful session-only switch.
+
+Prospective evaluations use a separately frozen model and response budget. Run
+`superforecasting-agent forecast trial preflight --spec-file provider.json` before
+starting a live trial. A ready receipt expires after 30 minutes and must match the
+trial's provider, model and token budget. Failed or interrupted trial arms remain
+in the denominator and cannot be rerolled by resuming the trial.

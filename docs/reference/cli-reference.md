@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **93 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **94 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -38,6 +38,7 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 | [`forecast curate`](#forecast-curate) | Propose short-horizon contested binary questions from live markets (calibration fuel) |
 | [`forecast cycle`](#forecast-cycle) | Run the closed-loop forecast cycle |
 | [`forecast doctor`](#forecast-doctor) | Run operational, pilot, and readiness checks |
+| [`forecast domain`](#forecast-domain) | Correct semantic domain with preserved history |
 | [`forecast drill`](#forecast-drill) | Practice on already-RESOLVED binary questions and get scored instantly |
 | [`forecast edge`](#forecast-edge) | UPGRADE 2 — the deviation ledger: did the desk's named-edge deviations from the market beat it? n, win-rate vs market, mean Brier delta, paired-bootstrap CI, and a threshold RECOMMENDATION (never auto-applied). |
 | [`forecast errors`](#forecast-errors) | Show domain error profile summary |
@@ -570,6 +571,15 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 | `--require-readiness` | Exit nonzero if benchmark/live evidence-readiness gaps remain |
 | `--json` | Emit machine-readable doctor JSON |
 
+## `forecast domain`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--domain` |  |
+| `--expected-domain` | Current domain, or empty string for unknown |
+| `--reason` |  |
+
 ## `forecast drill`
 
 | argument | help |
@@ -699,6 +709,7 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 ## `forecast facts`
 
 - **`forecast facts bind`** — 
+- **`forecast facts bind-source`** — Bind a verified NWS or USGS measurement contract
 - **`forecast facts show`** — 
 
 ### `forecast facts bind`
@@ -711,6 +722,19 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 | `--value-pointer` |  |
 | `--observed-at-pointer` |  |
 | `--value-type` |  |
+| `--max-age-seconds` |  |
+
+### `forecast facts bind-source`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--key` |  |
+| `--adapter` |  |
+| `--entity` |  |
+| `--window-start` |  |
+| `--window-end` |  |
+| `--magnitude-type` |  |
 | `--max-age-seconds` |  |
 
 ### `forecast facts show`
@@ -2395,6 +2419,7 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 | `--resolution-source` |  |
 | `--outcome-type` |  |
 | `--choice` |  |
+| `--censor-at` | Declare an inclusive right-censoring threshold; scores its event probability |
 | `--unit` |  |
 | `--bound` |  |
 | `--close-time` |  |
@@ -3408,6 +3433,7 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 - **`forecast trial create`** — Freeze a cohort, evidence, lessons, model and evaluation policy
 - **`forecast trial export`** — 
 - **`forecast trial list`** — 
+- **`forecast trial preflight`** — Check provider and response budget before enrolling live arms
 - **`forecast trial recover`** — 
 - **`forecast trial report`** — 
 - **`forecast trial run`** — 
@@ -3427,6 +3453,12 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 
 ### `forecast trial list`
 
+### `forecast trial preflight`
+
+| argument | help |
+| --- | --- |
+| `--spec-file` |  |
+
 ### `forecast trial recover`
 
 | argument | help |
@@ -3444,6 +3476,7 @@ The full `forecast` command tree — **93 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `id` |  |
+| `--preflight-id` | Fresh readiness receipt for the same frozen model and budget |
 | `--limit` | Maximum model calls; each question has two arms |
 
 ## `forecast triggers`

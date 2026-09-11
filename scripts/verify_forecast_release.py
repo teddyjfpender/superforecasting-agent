@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import threading
 
 
@@ -94,7 +95,11 @@ def main():
         home.mkdir(parents=True)
         agent_home = home / ".superforecasting-agent"
         agent_home.mkdir()
-        return {"PATH": f"{venv / 'bin'}:{Path(uv).parent}:/usr/bin:/bin", "HOME": str(home),
+        # Keep only OS plumbing, never inherit provider credentials or profile paths.
+        platform_env = {key: os.environ[key] for key in ("SYSTEMROOT", "WINDIR", "COMSPEC", "TEMP", "TMP") if key in os.environ}
+        scripts = venv / ("Scripts" if sys.platform == "win32" else "bin")
+        return {**platform_env, "PATH": os.pathsep.join((str(scripts), str(Path(uv).parent), os.defpath)),
+                "HOME": str(home), "USERPROFILE": str(home), "PYTHONUTF8": "1",
                 "SUPERFORECASTING_AGENT_HOME": str(agent_home), "FORECAST_HOME": str(agent_home),
                 "HERMES_HOME": str(agent_home), "PYTHONNOUSERSITE": "1", "AWS_EC2_METADATA_DISABLED": "true"}
 
@@ -177,8 +182,9 @@ print(json.dumps({"question_id":q.id,"status":q.status,"evidence_count":len(item
                 venv = args.output / f"{mode}-venv"
                 env = environment(args.output / f"{mode}-home", venv)
                 run([uv, "venv", venv], env)
-                python = venv / "bin/python"
-                exe = venv / "bin/superforecasting-agent"
+                scripts = venv / ("Scripts" if sys.platform == "win32" else "bin")
+                python = scripts / ("python.exe" if sys.platform == "win32" else "python")
+                exe = scripts / ("superforecasting-agent.exe" if sys.platform == "win32" else "superforecasting-agent")
                 initial = args.previous_wheel if mode == "upgrade" else args.wheel
                 run([uv, "pip", "install", "--python", python, initial], env)
                 if mode == "upgrade":
