@@ -39,6 +39,44 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
   candidate needs an explicit release-identity decision before publication.
 - [ ] Supply Android/Termux access and missing live-service credentials.
 
+## Current hardening pass (September 11)
+
+See [implementation, live operations and limits](docs/plans/2026-09-11-learning-settlement-runtime.md).
+
+- [x] Close the cached-statement ledger authorization bypass; retain callback
+  exceptions that SQLite otherwise reports only as "not authorized".
+- [x] Share stricter trial input admission and exclude known settlement outcomes
+  even when their nominal closing date is in the future.
+- [x] Repair applicability-evidence prompt rendering and verify that the new
+  lesson and provenance reach the real update prompt.
+- [x] Correct categorical review thresholds and stop historical binary-cutoff
+  labels from contaminating recomputed error profiles.
+- [x] Add exact source-specific settlement binding and audited historical
+  censoring conversion. SpaceX is resolved, scored and postmortemed with its
+  original explicit tail probability; no calibration/skill claim is made.
+- [x] Contain optional update-probe native failures in a bounded child process.
+- [x] Verify Linux cancellation/resume, gateway recovery and dashboard reconnects
+  locally, independently of CI; retain macOS verification.
+- [x] Reuse atomic profile writes and the configuration lock for model persistence;
+  reject ignored question scope on global lifecycle recovery.
+- [ ] Broaden beyond the existing two independent prospective outcome clusters.
+  Six non-AI questions received researched primary-source evidence; one already
+  has public outcome information and is excluded from prospective enrollment.
+  The new categorical scoring-process lesson is not evidence of improved skill.
+  Current audit: 195 questions lack applicable lessons, 93 lack admissible
+  pre-cutoff evidence, and 52 are ready only for manual cluster review.
+- [ ] Obtain Android/Termux access and missing live-service credentials. Linux
+  containers do not establish Android or native Windows PTY recovery behavior.
+- [ ] Reproduce the historical native TLS crash and SELECT authorization failure
+  on their original runtime. Containment and a reproduced callback mechanism
+  are verified; the exact historical causes remain unproven.
+- [ ] Review the Japan-earthquake settlement's substitution of USGS for its linked
+  Manifold oracle, and the court decision's exact linked-market identity.
+- [x] Distinguish missing provider authentication, rate limits and payment errors
+  in auxiliary-provider cooldown diagnostics.
+- [ ] Continue source-specific bindings beyond NWS/USGS and reconcile older guides.
+  Remaining release publication work is explicitly deferred by the operator.
+
 ## Before a production release
 
 - [ ] Verify the pushed commit's CI results, including platform jobs and release
@@ -83,8 +121,8 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
 - [ ] Extend the verified macOS cancellation/resume/resize/dashboard recovery
   cases to other supported platforms and longer-running sessions. The macOS
   60-turn Unicode exercise across five process lifetimes passed locally and in
-  macOS CI. Linux passed the input/soak checks but its orphan assertion needs
-  verification after distinguishing zombies from live workers. Android/Termux
+  macOS CI. Linux cancellation/resume, input/soak, gateway and reconnect tests now pass
+  locally, including the live-worker orphan assertion. Android/Termux
   still requires device access.
 - [ ] Keep scheduled monitoring limited to evidence, alerts, scores, and learning
   records; probability changes must remain explicit forecast updates.

@@ -53,6 +53,11 @@ def register(sub):
     bind.add_argument('--value-type', choices=['string', 'number', 'boolean'], default='string')
     bind.add_argument('--max-age-seconds', type=int, default=3600)
     bind.set_defaults(_forecast_handler=handle_facts)
+    settlement = commands.add_parser('bind-settlement', help='Require an exact verified measurement at resolution')
+    settlement.add_argument('id')
+    for option in ('fact-key', 'entity', 'units', 'measurement', 'window-start', 'window-end', 'reason'):
+        settlement.add_argument('--' + option, required=True)
+    settlement.set_defaults(_forecast_handler=handle_facts)
     source = commands.add_parser('bind-source', help='Bind a verified NWS or USGS measurement contract')
     source.add_argument('id')
     source.add_argument('--key', required=True)
@@ -136,7 +141,11 @@ def _handle_facts(args):
     from forecasting.applicability_facts import bind_fact, evidence_facts
     ledger = _core._ledger(args)
     q = ledger.get_question(_core._resolve_question_id(ledger, args.id))
-    if args.facts_action == 'bind-source':
+    if args.facts_action == 'bind-settlement':
+        from forecasting.settlement_binding import bind_settlement
+        report = bind_settlement(ledger, q.id, **{key: getattr(args, key) for key in
+            ('fact_key', 'entity', 'units', 'measurement', 'window_start', 'window_end', 'reason')})
+    elif args.facts_action == 'bind-source':
         from forecasting.source_bindings import source_contract, binding_spec
         contract = source_contract(adapter=args.adapter, entity=args.entity, window_start=args.window_start,
             window_end=args.window_end, magnitude_type=args.magnitude_type)

@@ -21,3 +21,10 @@ def score_support_problem(score, cutoff, excluded_questions=()):
     if timestamp_to_datetime(score.scored_at) > timestamp_to_datetime(cutoff):
         return 'post_cutoff_source_score'
     return None
+
+
+def settlement_ready(ledger, question_id):
+    """A future close date does not make an already-known outcome prospective."""
+    with ledger._connect() as conn:
+        row = conn.execute('SELECT state FROM settlement_reviews WHERE question_id=? ORDER BY rowid DESC LIMIT 1', (question_id,)).fetchone()
+    return row is not None and row[0] in ('ready', 'no_historical_forecast')

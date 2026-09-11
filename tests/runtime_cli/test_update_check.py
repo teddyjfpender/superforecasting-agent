@@ -1,5 +1,6 @@
 """Tests for the update check mechanism in superforecasting_agent.runtime.banner."""
 
+from types import SimpleNamespace
 import json
 import os
 import threading
@@ -134,7 +135,7 @@ def test_prefetch_non_blocking():
     banner._update_result = None
     banner._update_check_done = threading.Event()
 
-    with patch.object(banner, "check_for_updates", return_value=5):
+    with patch.object(banner, "_isolated_update_check", return_value=5):
         start = time.monotonic()
         banner.prefetch_update_check()
         elapsed = time.monotonic() - start
@@ -199,7 +200,7 @@ def test_prefetch_shares_in_flight_check_and_completes_on_failure(monkeypatch):
         release.wait(5)
         raise RuntimeError("offline")
 
-    monkeypatch.setattr(banner, "check_for_updates", blocked_check)
+    monkeypatch.setattr(banner, "_isolated_update_check", blocked_check)
     try:
         banner.prefetch_update_check()
         assert entered.wait(2)
@@ -224,3 +225,17 @@ def test_pending_refresh_does_not_report_previous_result(monkeypatch):
     assert banner.get_update_result(0) is None
     done.set()
     assert banner.get_update_result(0) == 5
+
+
+@pytest.mark.parametrize('returncode,output', [(-11, ''), (1, ''), (0, 'not-json'), (0, '{"behind":true}')])
+def test_update_probe_failure_is_nonfatal(monkeypatch, returncode, output):
+    import superforecasting_agent.runtime.banner as banner
+    monkeypatch.setattr(banner.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=returncode, stdout=output))
+    assert banner._isolated_update_check() is None
+
+
+def test_update_probe_transfers_only_valid_result(monkeypatch):
+    import superforecasting_agent.runtime.banner as banner
+    monkeypatch.setattr(banner.subprocess, 'run', lambda *a, **kw: SimpleNamespace(returncode=0, stdout='{"behind":2,"latest_version":"0.23.0"}'))
+    assert banner._isolated_update_check() == 2
+    assert banner._latest_version == '0.23.0'

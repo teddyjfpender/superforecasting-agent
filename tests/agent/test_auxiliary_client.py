@@ -3023,3 +3023,17 @@ class TestAuxUnhealthyCache:
             )
             # After the 402, OpenRouter is in the unhealthy cache.
             assert _is_provider_unhealthy("openrouter") is True
+
+
+def test_missing_openrouter_auth_is_not_reported_as_a_credit_failure(monkeypatch, caplog):
+    from agent import auxiliary_client as aux
+    monkeypatch.setattr(aux, '_select_pool_entry', lambda provider:(False, None))
+    monkeypatch.delenv('OPENROUTER_API_KEY', raising=False)
+    aux._reset_aux_unhealthy_cache()
+    try:
+        assert aux._try_openrouter() == (None, None)
+        assert 'missing authentication' in caplog.text
+        assert 'payment / credit error' not in caplog.text
+        assert aux._is_provider_unhealthy('openrouter')
+    finally:
+        aux._reset_aux_unhealthy_cache()

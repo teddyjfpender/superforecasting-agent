@@ -52,13 +52,13 @@ The main architectural change from upstream Hermes is persistence. A general ass
 ```text
 superforecasting-agent/
 ├── forecasting/                  # Forecast desk domain package
-│   ├── cli.py                    # `forecast ...` lifecycle commands
-│   ├── ledger.py                 # durable forecast ledger and review state
+│   ├── cli/                      # command registration and domain handlers
+│   ├── ledger/                   # durable domain stores behind ForecastLedger
 │   ├── models.py                 # forecast/question/evidence/scoring models
-│   ├── scoring.py                # Brier/log/proper-score helpers
-│   ├── calibration.py            # calibration reports and buckets
+│   ├── ledger/scoring.py         # Brier/log/proper-score helpers
+│   ├── hierarchical_calibration.py # regularized calibration models
 │   ├── learning.py               # active lessons and update adjustments
-│   ├── dashboard.py              # shared CLI/TUI/web forecast summaries
+│   ├── dashboard/                # shared CLI/TUI/web forecast summaries
 │   ├── protocol.py               # forecast-scoped agent prompt protocol
 │   ├── source_adapters.py        # market/news/economic/fiscal/research adapters
 │   ├── benchmarks.py             # replay datasets and baseline comparison
@@ -158,7 +158,7 @@ forecast → observe → update → resolve → score → diagnose → recalibra
 
 ### Forecast Ledger
 
-`forecasting/ledger.py` is the durable source of truth. It stores questions, evidence, assumptions, reference classes, forecast snapshots, model runs, watched sources, schedules, alerts, resolutions, scores, postmortems, calibration lessons, and domain/topic error profiles.
+`forecasting/ledger/` is the durable source of truth. It stores questions, evidence, assumptions, reference classes, forecast snapshots, model runs, watched sources, schedules, alerts, resolutions, scores, postmortems, calibration lessons, and domain/topic error profiles.
 
 Important properties:
 
@@ -170,7 +170,7 @@ Important properties:
 
 ### Forecast CLI
 
-`forecasting/cli.py` is the primary product surface. The top-level `forecast` command opens the shared forecast dashboard by default, then exposes lifecycle commands such as:
+`forecasting/cli/` is the primary product surface. The top-level `forecast` command opens the shared forecast dashboard by default, then exposes lifecycle commands such as:
 
 ```text
 forecast new
@@ -216,6 +216,25 @@ This is the main bridge between the inherited tool-calling runtime and the forec
 
 Adapters should timestamp what they saw, preserve source provenance, and distinguish imported baselines from the agent's own forecasts.
 
+Source-specific parsers live under `forecasting/sources/`; fetching and watch
+orchestration remain in `source_adapters.py`. `source_bindings.py` owns verified
+measurement interpretation, `applicability_facts.py` verifies archived source
+facts, and `settlement_binding.py` checks exact source/value/measurement agreement
+before a bound question can resolve. An NWS instantaneous reading is not a daily
+maximum, and a USGS event's occurrence time is distinct from its revision time.
+
+`censoring_policy.py` owns audited historical policy conversion. It retains the
+original criteria and snapshots and requires a matching review digest. Explicit
+tail probabilities are selected by typed policy, never silently replaced by a
+Gaussian approximation. Retrospective censoring scores are excluded from
+calibration claims.
+
+`trial_inputs.py` shares admission checks between readiness and trial enrollment;
+`score_review.py` supplies outcome-space-aware Brier review baselines. A categorical
+summed Brier score cannot be judged against a scalar binary cutoff. Frozen trial
+packets and evaluation identities remain unchanged when live profiles are rebuilt.
+
+
 ### Scoring, Calibration, and Learning
 
 Scoring and calibration are the fork's feedback engine:
@@ -253,8 +272,8 @@ If you are new to the fork:
 
 1. `docs/plans/2026-05-20-superforecasting-agent-fork-prd.md`
 2. `docs/plans/2026-05-20-superforecasting-agent-fork-context.md`
-3. `forecasting/ledger.py`
-4. `forecasting/cli.py`
+3. `forecasting/ledger/`
+4. `forecasting/cli/`
 5. `tools/forecasting_tool.py`
 6. `forecasting/protocol.py`
 7. `forecasting/dashboard.py`
@@ -301,3 +320,19 @@ run_agent.py, cli.py, tui_gateway/server.py, gateway/, superforecasting_agent/tr
 Tool registration still happens at import time, before any agent instance is created. Adding a new forecast-facing tool action normally means editing `tools/forecasting_tool.py`, the ledger or adapter it calls, and focused tests under `tests/forecasting/`.
 
 For most new forecast behavior, prefer a ledger method, CLI command, source adapter, or plugin extension before changing the inherited general assistant runtime.
+
+
+### Configuration and runtime ownership
+
+`superforecasting_agent/runtime/config.py` owns configuration loading and the
+shared in-process write lock. `runtime/model_configuration.py` normalizes legacy
+model sections and persists selections under that lock. Atomic writes belong to
+`superforecasting_agent/storage/files.py`, including profile metadata. Existing
+`hermes_cli` imports remain compatibility facades; new code should use the native
+runtime package.
+
+The background update probe runs in a bounded disposable process so an optional
+TLS failure cannot terminate a forecasting session. Python still owns durable
+sessions and cancellation; Ink owns the transcript and composer, including the
+same terminal embedded in the dashboard. Linux/macOS PTY verification is distinct
+from Android/Termux and native Windows support.

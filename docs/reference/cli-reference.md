@@ -1,15 +1,15 @@
 # CLI Reference
 
 <!-- GENERATED FILE - DO NOT EDIT BY HAND. -->
-<!-- Source of truth: forecasting/cli.py (register_cli argparse tree) -->
+<!-- Source of truth: forecasting/cli/core.py (register_cli argparse tree) -->
 <!-- Regenerate:      python -m scripts.docgen -->
 <!-- Staleness gate:  python -m scripts.docgen --check -->
 
 > This page is generated from code. Do not edit it by hand — your change would be overwritten on the next regeneration and the staleness gate would fail. Edit the source instead, then run `python -m scripts.docgen`.
 
-> **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
+> **Source of truth:** `forecasting/cli/core.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **94 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **95 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -30,6 +30,7 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 | [`forecast bayes`](#forecast-bayes) | Bayesian scratchpad: LR updates, log-odds pooling, polls→prob, de-vig, sensitivity, forecast-diff |
 | [`forecast bench`](#forecast-bench) | Show the read-only ForecastBench backtest scoreboard (agent vs market Brier) |
 | [`forecast calibration`](#forecast-calibration) | Show calibration summary (add `status` for the readiness cockpit) |
+| [`forecast censoring-policy`](#forecast-censoring-policy) | Audit and convert historical prose censoring without rewriting forecasts |
 | [`forecast complementarity`](#forecast-complementarity) | AIA P1.3 — fitted convex market+LLM Brier-minimizing blend + LOO additive value (read-only) |
 | [`forecast config`](#forecast-config) | Inspect the layered runtime configuration (typed loader + config doctor). |
 | [`forecast connect`](#forecast-connect) | Wire the desk to a chat surface (telegram / slack) in one guided flow |
@@ -392,6 +393,14 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 | `--split-by-venue` | Hierarchical view: refine cohorts to <origin>:<venue> where the data exists. |
 | `--json` | Emit the raw report as JSON. |
 
+## `forecast censoring-policy`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--spec-file` |  |
+| `--apply` | Apply the reviewed spec with its expected_sha256 |
+
 ## `forecast complementarity`
 
 | argument | help |
@@ -599,6 +608,7 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 
 | argument | help |
 | --- | --- |
+| `--recompute-question` | Recompute the domain and topic profiles for this question using current review rules |
 | `--domain` |  |
 | `--topic` |  |
 | `--limit` | Maximum active learned-error review rows to print |
@@ -709,6 +719,7 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 ## `forecast facts`
 
 - **`forecast facts bind`** — 
+- **`forecast facts bind-settlement`** — Require an exact verified measurement at resolution
 - **`forecast facts bind-source`** — Bind a verified NWS or USGS measurement contract
 - **`forecast facts show`** — 
 
@@ -723,6 +734,19 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 | `--observed-at-pointer` |  |
 | `--value-type` |  |
 | `--max-age-seconds` |  |
+
+### `forecast facts bind-settlement`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--fact-key` |  |
+| `--entity` |  |
+| `--units` |  |
+| `--measurement` |  |
+| `--window-start` |  |
+| `--window-end` |  |
+| `--reason` |  |
 
 ### `forecast facts bind-source`
 
@@ -2263,7 +2287,7 @@ The full `forecast` command tree — **94 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `action` | Inspect by default; run recovers confirmed score/postmortem handoffs |
-| `question_id` |  |
+| `question_id` | Question to review; status and run operate on the full ledger |
 | `--state` |  |
 | `--next-action` |  |
 | `--owner` |  |

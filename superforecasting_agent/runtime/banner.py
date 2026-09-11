@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from pathlib import Path
@@ -498,6 +499,28 @@ _update_check_lock = threading.Lock()
 _update_check_thread: Optional[threading.Thread] = None
 
 
+def _isolated_update_check():
+    """Contain native SSL crashes and enforce an outer wall-clock deadline."""
+    try:
+        result = subprocess.run(
+            [sys.executable, '-m', 'superforecasting_agent.runtime.update_probe'],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        if result.returncode != 0:
+            logger.debug('Update probe exited with status %s', result.returncode)
+            return None
+        receipt = json.loads(result.stdout)
+        behind = receipt['behind']
+        if behind is not None and type(behind) is not int:
+            return None
+        latest = receipt.get('latest_version')
+        if isinstance(latest, str):
+            _record_latest_version(latest)
+        return behind
+    except (OSError, subprocess.TimeoutExpired, ValueError, KeyError, TypeError):
+        return None
+
+
 def prefetch_update_check():
     """Share one in-flight update check across callers without blocking them."""
     global _update_check_thread
@@ -509,7 +532,7 @@ def prefetch_update_check():
         def _run():
             global _update_result
             try:
-                _update_result = check_for_updates()
+                _update_result = _isolated_update_check()
             except Exception:
                 _update_result = None
             finally:

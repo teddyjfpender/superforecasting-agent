@@ -1253,3 +1253,19 @@ class TestEdgeCases:
             delete_profile("coder", yes=True)
 
         assert get_active_profile() == "default"
+
+
+def test_profile_metadata_interrupted_write_preserves_existing_file(tmp_path, monkeypatch):
+    from superforecasting_agent.runtime.profiles import write_profile_meta
+    from superforecasting_agent.storage import files
+    path = tmp_path/'profile.yaml'
+    original = 'description: original\ndescription_auto: false\n'
+    path.write_text(original)
+    def interrupted(data, stream, **kwargs):
+        stream.write('partial:')
+        raise OSError('disk write interrupted')
+    monkeypatch.setattr(files.yaml, 'dump', interrupted)
+    with pytest.raises(OSError, match='interrupted'):
+        write_profile_meta(tmp_path, description='replacement')
+    assert path.read_text() == original
+    assert not list(tmp_path.glob('*.tmp'))

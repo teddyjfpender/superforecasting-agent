@@ -1,7 +1,6 @@
 """Audited conversion of pre-existing prose censoring, never forecast rewrites."""
 import hashlib
 import json
-from dataclasses import asdict
 
 from forecasting.censoring import threshold_probability, validate_contract
 from forecasting.models import OutcomeSpace, ValidationError, json_dumps, utc_now_iso

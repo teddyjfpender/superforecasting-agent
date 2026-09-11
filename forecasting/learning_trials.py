@@ -89,7 +89,8 @@ def create_trial(ledger, *, assignments, model, provider, max_tokens=8192, min_c
             q = ledger.get_question(qid)
             if q.status != 'active' or not q.close_time or timestamp_to_datetime(q.close_time) <= at:
                 raise ValidationError('prospective trials require active questions with future close times')
-            if ledger.get_latest_resolution(qid) is not None:
+            from forecasting.trial_inputs import settlement_ready
+            if ledger.get_latest_resolution(qid) is not None or settlement_ready(ledger, qid):
                 raise ValidationError('trial question already has resolution information')
             if q.outcome_space.type not in ('binary', 'categorical', 'numeric', 'distribution'):
                 raise ValidationError('unsupported trial outcome type')

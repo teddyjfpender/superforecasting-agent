@@ -1821,6 +1821,7 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     track_record_parser.set_defaults(_forecast_handler=_cmd_track_record)
 
     errors_parser = forecast_sub.add_parser("errors", help="Show domain error profile summary")
+    errors_parser.add_argument("--recompute-question", help="Recompute the domain and topic profiles for this question using current review rules")
     errors_parser.add_argument("--domain")
     errors_parser.add_argument("--topic")
     errors_parser.add_argument(
@@ -8671,6 +8672,8 @@ def _print_cohort_scoreboard(board: dict[str, Any]) -> None:
 
 def _cmd_errors(args: argparse.Namespace) -> None:
     ledger = _ledger(args)
+    if getattr(args, "recompute_question", None):
+        ledger.update_domain_error_profile(ledger.get_question(_resolve_question_id(ledger, args.recompute_question)))
     profiles = ledger.list_domain_error_profiles(domain=args.domain, topic=args.topic)
     summary = ledger.calibration_summary(domain=args.domain)
     active_reviews = _active_learned_error_review_rows(

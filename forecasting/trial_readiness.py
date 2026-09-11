@@ -2,7 +2,7 @@
 from collections import Counter
 
 from forecasting.learning import active_lessons_for_question, _in_scope_lessons, lesson_applicability
-from forecasting.trial_inputs import admissible_evidence, score_support_problem
+from forecasting.trial_inputs import admissible_evidence, score_support_problem, settlement_ready
 from forecasting.models import timestamp_to_datetime, utc_now_iso
 
 
@@ -14,7 +14,7 @@ def candidate_report(ledger):
         if not q.close_time or timestamp_to_datetime(q.close_time) <= now:
             continue
         reasons = []
-        if ledger.get_latest_resolution(q.id):
+        if ledger.get_latest_resolution(q.id) or settlement_ready(ledger, q.id):
             reasons.append('resolution_already_known')
         if q.outcome_space.type not in ('binary', 'categorical', 'numeric', 'distribution') or (q.outcome_space.type == 'distribution' and q.outcome_space.choices):
             reasons.append('no_comparable_proper_trial_loss')

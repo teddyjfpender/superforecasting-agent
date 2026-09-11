@@ -588,8 +588,8 @@ def write_profile_meta(
         existing["description"] = description.strip()
     if description_auto is not None:
         existing["description_auto"] = bool(description_auto)
-    with open(path, "w", encoding="utf-8") as f:
-        yaml.safe_dump(existing, f, sort_keys=False, default_flow_style=False)
+    from superforecasting_agent.storage.files import atomic_yaml_write
+    atomic_yaml_write(path, existing)
 
 
 # ---------------------------------------------------------------------------

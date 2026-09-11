@@ -1,4 +1,5 @@
 """Real-ledger recovery, with unresolved outcomes and forecast values conserved."""
+import pytest
 from forecasting import ForecastLedger
 from forecasting.lifecycle import lifecycle_status, run_lifecycle
 
@@ -52,3 +53,13 @@ def test_superseded_resolution_task_cannot_finalize_another_outcome(tmp_path, mo
     assert ledger.get_current_score(q.id).resolution_id == latest.id
     assert all(s.resolution_id != old.id for s in ledger.list_scores())
     assert len(ledger.list_postmortems(question_id=q.id)) == 1
+
+
+def test_cli_does_not_silently_ignore_question_scope(monkeypatch):
+    from argparse import Namespace
+    from forecasting.cli import doctor_admin
+    def unexpected_ledger(*args):
+        raise AssertionError('must not open or mutate the global ledger')
+    monkeypatch.setattr(doctor_admin, '_ledger', unexpected_ledger)
+    with pytest.raises(SystemExit, match='full ledger'):
+        doctor_admin._cmd_lifecycle(Namespace(action='run', question_id='fq_only_this_one'))

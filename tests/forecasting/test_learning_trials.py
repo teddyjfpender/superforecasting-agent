@@ -341,3 +341,16 @@ def test_synthetic_score_cannot_support_new_trial_learning(trial_setup):
     source.calibration_eligible = True
     assert score_support_problem(source, '2026-09-01T00:00:00Z') is None
     assert score_support_problem(source, '2026-09-01T00:00:00Z', ['historical']) == 'overlapping_source_outcome'
+
+
+def test_settlement_ready_question_is_not_prospective_despite_future_close(trial_setup):
+    from forecasting.settlement_reviews import record_review
+    from forecasting.trial_readiness import candidate_report
+    ledger, questions, _, _, _ = trial_setup
+    q = questions[0]
+    record_review(ledger, question_id=q.id, state='ready', reason='Official outcome already published.',
+        source='https://example.org/official-result', next_action='Settle after source review.', owner='operator')
+    candidate = next(c for c in candidate_report(ledger)['candidates'] if c['question_id'] == q.id)
+    assert 'resolution_already_known' in candidate['readiness_gaps']
+    with pytest.raises(ValidationError, match='resolution information'):
+        create_trial(ledger, assignments={q.id:'new-event'}, model='fixture', provider='fixture')

@@ -130,6 +130,9 @@ def resolve_question(
             outcome = ledger._numeric_outcome(outcome)
         elif space.type in {"distribution", "thesis"}:
             outcome = _normalize_distribution_outcome(ledger, resolved_question, outcome)
+    if resolution_status == 'confirmed' and criteria_satisfied and scoreable:
+        from forecasting.settlement_binding import verify_settlement
+        verify_settlement(ledger, resolved_question, outcome, resolution_source, resolution_source_snapshot_ref)
     if resolution_status not in RESOLUTION_STATUSES:
         raise ValidationError(
             f"resolution_status must be one of {', '.join(sorted(RESOLUTION_STATUSES))}"
@@ -1216,7 +1219,7 @@ def list_postmortems(
 def _auto_postmortem_lesson(ledger, question: ForecastQuestion, score: ScoreRecord) -> str:
     if not score.calibration_eligible or score.forecast_origin not in {"live", "backtest"}:
         return ""
-    if score.brier_score is None or score.brier_score < 0.25:
+    if not ledger._auto_postmortem_error_tags(score):
         return ""
     scope = question.domain or "global"
     origin_prefix = (
@@ -1257,7 +1260,9 @@ def _auto_postmortem_adjustment(ledger, question: ForecastQuestion, score: Score
 
 
 def _auto_postmortem_error_tags(ledger, score: ScoreRecord) -> list[str]:
-    if score.brier_score is None or score.brier_score < 0.25:
+    from forecasting.score_review import uninformative_brier
+    baseline = uninformative_brier(ledger, score)
+    if baseline is None or score.brier_score is None or score.brier_score <= baseline:
         return []
     tags = ["high_brier_miss"]
     try:

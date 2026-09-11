@@ -34,6 +34,12 @@ def persist_model_selection(path, *, model, provider, base_url=None, api_mode=No
     if is_managed():
         managed_error('save configuration')
         return False
+    from superforecasting_agent.runtime.config import _CONFIG_LOCK
+    with _CONFIG_LOCK:
+        return _persist_model_selection(path, model=model, provider=provider, base_url=base_url, api_mode=api_mode)
+
+
+def _persist_model_selection(path, *, model, provider, base_url, api_mode):
     from superforecasting_agent.storage.files import _atomic_text_writer
     import yaml
     try:
@@ -50,7 +56,7 @@ def persist_model_selection(path, *, model, provider, base_url=None, api_mode=No
     selected = model_section({'model': {'default': model, 'provider': provider, 'base_url': base_url or '', 'api_mode': api_mode}})
     if not selected['default'] or not selected['provider']:
         raise ValueError('persisted model selection requires a model and provider')
-    if current.get('provider') != provider or (current.get('base_url') or '').rstrip('/') != (base_url or '').rstrip('/'):
+    if current.get('provider') != selected['provider'] or (current.get('base_url') or '').rstrip('/') != (base_url or '').rstrip('/'):
         for key in ('api_key', 'api_mode', 'base_url'):
             current.pop(key, None)
     current.update({k: v for k, v in selected.items() if v is not None})
