@@ -224,6 +224,7 @@ py-modules = ["run_agent", "cli"]
 "superforecasting_agent.runtime" = ["web_dist/**/*", "tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
 gateway = ["assets/**/*"]
 forecasting = [
+  "trial_compatibility.json",
   "data/*.csv",
   "data/*.md",
   "change_control/schemas/*.json",

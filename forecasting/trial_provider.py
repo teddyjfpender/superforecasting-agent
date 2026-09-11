@@ -5,7 +5,7 @@ import math
 import uuid
 from urllib.parse import urlsplit, urlunsplit
 
-from forecasting.json_validation import strict_json_loads
+from forecasting.trial_contracts import response_json
 from forecasting.models import ValidationError, timestamp_to_datetime, utc_now_iso
 
 
@@ -37,24 +37,9 @@ def provider_runner(config):
     return run
 
 
-def response_json(response):
-    if not isinstance(response, dict) or not isinstance(response.get('model'), str) or not response['model'] or not isinstance(response.get('endpoint'), str) or not response['endpoint']:
-        raise ValidationError('trial requires model and endpoint receipts')
-    reason = response.get('finish_reason')
-    if reason is not None and reason != 'stop':
-        raise ValidationError('incomplete provider response: finish_reason=' + str(reason))
-    content = response['content']
-    if isinstance(content, str):
-        lines = content.strip().splitlines()
-        if len(lines) >= 3 and lines[0].lower() in ('```json', '```') and lines[-1] == '```':
-            content = '\n'.join(lines[1:-1])
-    parsed = content if isinstance(content, dict) else strict_json_loads(content)
-    if not isinstance(parsed, dict):
-        raise ValidationError('trial response must be a JSON object')
-    return parsed
-
-
 def initialize_schema(conn):
+    conn.execute("CREATE TABLE IF NOT EXISTS learning_provider_reservations (provider TEXT NOT NULL, reserved_at REAL NOT NULL, input_tokens INTEGER NOT NULL)")
+    conn.execute("CREATE INDEX IF NOT EXISTS learning_provider_reservations_window ON learning_provider_reservations(provider,reserved_at)")
     conn.execute('''CREATE TABLE IF NOT EXISTS learning_provider_preflights (
         id TEXT PRIMARY KEY, created_at TEXT NOT NULL, settings_key TEXT NOT NULL,
         status TEXT NOT NULL, receipt TEXT, error TEXT)''')
@@ -97,3 +82,40 @@ def require_preflight(ledger, config):
     if not 0 <= age <= 1800:
         raise ValidationError('provider preflight expired; run a new probe and pass --preflight-id to resume pending arms')
     return json.loads(row['receipt'])
+
+
+def validate_quota(requests_per_minute, input_tokens_per_minute):
+    if type(requests_per_minute) is not int or not 1 <= requests_per_minute <= 60:
+        raise ValidationError('requests_per_minute must be an integer from 1 to 60')
+    if type(input_tokens_per_minute) is not int or input_tokens_per_minute < 1024:
+        raise ValidationError('input_tokens_per_minute must be an integer of at least 1024')
+
+
+def reserve_quota(conn, config, messages, stamp):
+    """Reserve inside the arm-claim transaction; no sleeping or arm consumption.
+
+    UTF-8 bytes plus framing allowance deliberately overestimate text tokens.
+    This ledger-wide provider budget cannot account for callers outside this desk.
+    """
+    rpm, tpm = config.get('requests_per_minute', 6), config.get('input_tokens_per_minute', 60000)
+    validate_quota(rpm, tpm)
+    estimate = len(json.dumps(messages, ensure_ascii=False).encode('utf-8')) + 2048
+    if estimate > tpm:
+        return {'reason': 'request_exceeds_input_budget', 'estimated_input_tokens': estimate,
+                'input_tokens_per_minute': tpm, 'retry_after_seconds': None}
+    now = timestamp_to_datetime(stamp).timestamp()
+    rows = conn.execute('SELECT reserved_at,input_tokens FROM learning_provider_reservations WHERE provider=? AND reserved_at>? ORDER BY reserved_at',
+                        (config['provider'], now - 60)).fetchall()
+    wait = max(0, rows[-1][0] + 60 / rpm - now) if rows else 0
+    used = sum(r[1] for r in rows)
+    for reserved_at, tokens in rows:
+        if used + estimate <= tpm:
+            break
+        wait = max(wait, reserved_at + 60 - now)
+        used -= tokens
+    if wait > 0:
+        return {'reason': 'provider_quota_pacing', 'retry_after_seconds': math.ceil(wait),
+                'estimated_input_tokens': estimate}
+    conn.execute('INSERT INTO learning_provider_reservations(provider,reserved_at,input_tokens) VALUES (?,?,?)',
+                 (config['provider'], now, estimate))
+    return None
