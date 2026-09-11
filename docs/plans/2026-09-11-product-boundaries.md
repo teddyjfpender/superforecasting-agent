@@ -1073,3 +1073,21 @@ Deployment checks now fail closed:
 - Primary `2794b8659` completed full Python regression: 30,687 passed, 148 skipped,
   58 warnings. JUnit: `.test-results/pytest-20260911T215817Z-92992.xml`.
   These results do not establish native Windows coverage or a version upgrade.
+
+Live credential application boundary:
+
+- `hosting/credentials.py` owns applying a fresh credential generation to the
+  matching live agent. RPC retains session admission, failed-build retry,
+  presentation-worker restart and event delivery; it delegates the credential
+  operation to the host. Provider resolution/storage are supplied dependencies.
+- The shared operation passes the selected model into provider resolution,
+  rejects unrelated provider sign-ins before resolution, and updates the recovery
+  pool only after the client switch succeeds. Resolution/switch failures remain
+  observable to the adapter, which reports whether credentials were applied.
+- Added a transitive import contract and forbidden-edge regression. Quality gates
+  pass with 26 contracts. Gateway/auth/boundary selection passed 499 tests,
+  including current-provider aliases and failed-resolution/client-switch cases.
+  Log: `/tmp/forecast-credentials-gateway-tests.log`.
+- This does not complete credential orchestration: device-flow lifetime and
+  failed-build retry are still RPC-owned; remaining command adapters and agent
+  tool-resource cleanup need further ownership work.

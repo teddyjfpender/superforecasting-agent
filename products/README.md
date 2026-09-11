@@ -52,9 +52,9 @@ terminal wheel separately in the manifest and checksums. With `RELEASE_WITH_WEB=
 it also produces `dashboard-assets.tar.gz`; extract that archive and set
 `SUPERFORECASTING_AGENT_WEB_DIST` to its directory for the optional dashboard.
 
-Installer selection and upgrade automation still need reconciliation for releases
-containing multiple wheels before publication. Build/verification commands do not
-publish packages.
+Installer selection and upgrade automation support the manifest-selected backend
+and terminal wheels. Actual cross-version upgrade qualification remains open.
+Build/verification commands do not publish packages.
 
 ## Headless protocol host
 

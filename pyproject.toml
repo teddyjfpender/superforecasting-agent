@@ -563,3 +563,10 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.hosting.registry"]
 forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "host credential application never imports presentation or provider storage"
+type = "forbidden"
+source_modules = ["superforecasting_agent.hosting.credentials"]
+forbidden_modules = ["gateway", "tui_gateway", "cli", "superforecasting_agent.runtime", "agent", "tools"]
+allow_indirect_imports = false

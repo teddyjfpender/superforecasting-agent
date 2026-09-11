@@ -20,7 +20,10 @@ The formality layer of the modularization program
 |---|---|---|---|
 | `superforecasting_agent/` | product entry and runtime foundations | Lazy public domain exports; `bootstrap`, `constants`, `clock`, `logging` | Bootstrap and profile-path imports must remain usable before application setup |
 | `superforecasting_agent/application/sessions.py` | application services | Resumable-session selection and atomic branch-copy admission | No presentation or transport imports |
-| `superforecasting_agent/hosting/{workers,sessions}.py` | host resource ownership | Worker admission/drain and session use/close/replacement admission | No transport, CLI, agent or tool imports; enforced transitively |
+| `superforecasting_agent/hosting/{workers,sessions,registry}.py` | host resource ownership | Worker admission/drain; live runtime registration; session use, finalization, retryable disposal and replacement admission | No transport, CLI, agent or tool imports; enforced transitively |
+| `superforecasting_agent/hosting/storage.py` | database serving lifetime | `SessionStore` serializes acquisition, close and explicit restart | No presentation or runtime configuration imports; failed close retains the owned handle |
+| `superforecasting_agent/hosting/configuration.py` | host profile configuration | `ProfileConfiguration` owns raw snapshots and revision-checked saves | No presentation or runtime imports; explicit profile paths, shared atomic storage writes |
+| `superforecasting_agent/hosting/credentials.py` | live credential application | `refresh_credentials` preserves model selection and updates the matching agent's client and pool | No presentation, runtime, agent or tool imports; caller supplies provider resolver and reserves the session |
 | `superforecasting_agent/hosting/websocket.py` | headless transport entrypoint | Authenticated host application and explicit serving lifetime | Uses shared RPC operations; no dashboard construction |
 | `superforecasting_agent/storage/` | session persistence | `superforecasting_agent.storage.session.SessionDB` binds operations from focused storage modules | Storage leaves do not import the SessionDB facade |
 | `protocol/` | kernel (wire contracts) | pydantic models under `protocol/rpc`, `protocol/events`; `generated.ts` is generated from it | **anything app-side** — `forecasting`, `tools`, `agent`, `gateway`, `tui_gateway`, `superforecasting_agent.runtime`, `run_agent`, `cli` (Tier-1 contract, enforced) |
@@ -35,7 +38,7 @@ The formality layer of the modularization program
 | `forecasting/domains.py` | semantic classification | Explicit source categories and audited active-question corrections | No title-based inference or probability-history rewriting |
 | `forecasting/source_bindings.py` | measurement contracts | NWS temperature and USGS magnitude extraction | No network calls or inferred settlement decisions |
 | `forecasting/sources/bls_parsing.py` | BLS parsing | Finite measurements, exact series identity, periods and duplicate/revision checks | No network, CLI or ledger writes; periods are not publication times |
-| `superforecasting_agent/storage/files.py`, `storage/locking.py` | configuration mutation and locking | Dotted mapping/list updates, atomic YAML replacement and reentrant process locks | No runtime imports; full-config stale-write checks remain in `runtime.config` |
+| `superforecasting_agent/storage/files.py`, `storage/locking.py` | configuration mutation and locking | Dotted mapping/list updates, atomic YAML replacement and reentrant process locks | No runtime imports; snapshot admission belongs to `runtime.config` and the raw host configuration owner |
 | `forecasting/censoring.py` | coarsened observations | Typed right-censoring contracts and threshold-event probabilities | No fabricated exact outcomes or full-distribution score claims |
 | `superforecasting_agent/runtime/model_configuration.py` | model configuration ownership | `model_section`, `persist_model_selection` | No UI imports; preserve raw environment references |
 | `gateway/command_dispatch.py` | gateway command hooks | `dispatch_command_hooks` | No gateway runner import; reauthorize rewritten commands |
@@ -373,5 +376,5 @@ to storage. The host configuration owner cannot import presentation modules.
 Live runtime membership and retirement belong to
 `superforecasting_agent/hosting/registry.py`. Registration cannot silently replace
 an existing runtime ID. Enumeration snapshots membership, and retirement preserves
-an entry until finalization succeeds. Session content remains protected by each
+an entry until finalization and resource disposal succeed. Session content remains protected by each
 session's history/admission lock. The registry imports no transport or product.

@@ -5873,27 +5873,12 @@ def _refresh_session_credentials_after_auth(sid: str, provider: str) -> bool:
             session["agent_build_started"] = False
         _start_agent_build(sid, session)
         return True
-    current_provider = (getattr(agent, "provider", "") or "").strip()
-    # Only refresh when the agent is actually on the provider we re-authed
-    # (or an alias of it) — otherwise leave the agent's current creds alone.
-    codex_aliases = {"openai-codex", "openai", "codex"}
-    if provider == "openai-codex" and current_provider not in codex_aliases:
-        return False
     try:
+        from superforecasting_agent.hosting.credentials import refresh_credentials
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
 
-        runtime = resolve_runtime_provider(requested=current_provider or provider)
-        agent.switch_model(
-            new_model=getattr(agent, "model", "") or "",
-            new_provider=runtime.get("provider", current_provider) or current_provider,
-            api_key=runtime.get("api_key", ""),
-            base_url=runtime.get("base_url", "") or "",
-            api_mode=runtime.get("api_mode", "") or "",
-        )
-        # switch_model replaces the client and scalar credential fields, but
-        # recovery also consults the pool captured when the agent was built.
-        # Replace that stale pre-auth pool with the freshly resolved one.
-        agent._credential_pool = runtime.get("credential_pool")
+        if not refresh_credentials(agent, provider, resolve=resolve_runtime_provider):
+            return False
         _restart_slash_worker(session)
         _emit("session.info", sid, _session_info(agent))
         return True

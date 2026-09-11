@@ -78,8 +78,11 @@ that the diff is moves plus delegates only.
 **Import directions are declared once and enforced.** `pyproject.toml
 [tool.importlinter]` names the allowed edges — `protocol/` imports nothing
 app-side, `forecasting.ledger` never imports `forecasting.cli`, `forecasting`
-never imports `tui_gateway`, and three ratchets (`* → run_agent`, `forecasting →
-superforecasting_agent.runtime`, `forecasting → tools`) whose frozen violation lists may only shrink.
+never imports `tui_gateway`, and application packages cannot import the
+`run_agent` entrypoint. Two remaining ratchets (`forecasting →
+superforecasting_agent.runtime`, `forecasting → tools`) have frozen violation
+lists that may only shrink. Host ownership modules and application services also
+have strict transitive presentation boundaries.
 `lint-imports` is exit-code gated in CI (`lint-architecture` in
 `.github/workflows/lint.yml`). Adding a feature? The **ownership map + per-
 extension-point checklists** in `docs/architecture/ownership-map.md` name the one
