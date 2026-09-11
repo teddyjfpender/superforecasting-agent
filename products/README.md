@@ -91,5 +91,6 @@ artifacts are verified before installation begins. The PowerShell installer supp
 The VPS upgrader now reuses POSIX verification and supports `INSTALL_TUI=0`
 and `FORECAST_TUI_WHEEL` for local companion upgrades. Keep `install-release.sh`
 beside `upgrade.sh` and its migration guard. Hetzner first installation uses the same verified staging owner and accepts
-a local `FORECAST_TUI_WHEEL` companion. The fresh-container deployment exercise
-and native Windows execution of the new fixture checks remain pending.
+a local `FORECAST_TUI_WHEEL` companion. Fresh Ubuntu ARM64 container provisioning, SSH/TUI launch and tmux reconnect
+have passed with the separate wheels. Native Windows execution of the new
+fixture checks remains pending.

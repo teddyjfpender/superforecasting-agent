@@ -1044,3 +1044,21 @@ Installed qualification after registry/disposal integration:
   retrying task-ID cleanup could reclaim a replacement agent's resources. Further
   work must retain concrete owned handles/generations for retry and diagnostics,
   while preserving the existing repeated-close replacement-resource tests.
+
+Split-product fresh-container deployment qualification:
+
+- `scripts/test-fresh-box.sh` completed successfully against a fresh Ubuntu 24.04
+  ARM64 container on the local Colima Linux VM. It built and checksum-verified
+  separate backend/terminal wheels, installed them through real pipx provisioning,
+  started the gateway/cron service, passed config doctor/version-stamp checks,
+  and verified SSH shell/one-off escape hatches plus the default TUI landing.
+- The terminal rendered its first screen, and the tmux desk survived an SSH link
+  drop/reconnect. This reconnect check establishes the persistent terminal desk;
+  it does not replace the separate durable turn-recovery/provider-failure tests.
+- Log: `/tmp/forecast-split-fresh-box.log`; all stages completed with exit zero.
+  Source was isolated commit `447c41ff2` (documentation-only successor to the
+  source-qualified `0e4a7033f`). The harness removed its own disposable container.
+  The VM remains running; unrelated auto-started containers were left untouched.
+- This establishes fresh Linux container installation/provisioning of the split
+  products. Native Windows/Android qualification, an actual split-package upgrade
+  exercise, and longer installed remote provider-stream recovery remain open.
