@@ -936,3 +936,24 @@ Host session-store ownership:
 - Session registry, configuration and full resource-finalization orchestration
   still need extraction from the RPC server. This is storage-lifetime ownership,
   not a claim that complete hosting has become presentation-independent.
+
+Host profile-configuration ownership:
+
+- `hosting.configuration.ProfileConfiguration` owns raw host configuration
+  snapshots, content-based caching and profile-aware revision admission. The RPC
+  server delegates loading, saving and atomic key updates; its four configuration
+  cache globals and runtime-config import for snapshot persistence are removed.
+- The shared storage layer owns `ConfigSnapshot` metadata and the revision hash;
+  runtime CLI configuration retains its compatibility alias to that same owner.
+  Existing atomic YAML locking, comment-preserving updates, and CLI expansion/
+  normalization semantics are preserved. No new parallel persistence mechanism
+  is introduced.
+- Tests prove detached snapshots, profile-switch isolation, cross-profile save
+  rejection, content changes with unchanged size/timestamps, malformed-file
+  diagnostics without overwrite, and independent owners preserving atomic edits.
+  506 host/gateway/parity tests and 115 configuration/storage tests pass. Shared
+  quality passes with twenty-four import contracts, including a negative test
+  injecting an indirect presentation dependency into host configuration.
+- Session registry/finalization, broader credential orchestration and remaining
+  classic command adapters still need ownership work. This does not move CLI
+  presentation or environment-expansion policy into the raw host snapshot layer.

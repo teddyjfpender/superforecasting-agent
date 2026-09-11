@@ -362,3 +362,10 @@ before closing it; transports acquire it through the host adapter. Initializatio
 failures preserve diagnostics, failed close retains ownership for retry, and a
 stopped owner cannot reopen until explicit host startup. Presentation imports are
 forbidden by the storage-owner import contract.
+
+Raw host profile snapshots and their content cache belong to
+`superforecasting_agent/hosting/configuration.py`. Paths are explicit; snapshots
+carry resolved profile identity and revision. Atomic writes, update locking and
+revision metadata belong to `superforecasting_agent/storage/files.py`. Runtime
+CLI loaders retain their expansion/default policy and delegate revision identity
+to storage. The host configuration owner cannot import presentation modules.

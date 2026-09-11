@@ -1,5 +1,6 @@
 """Atomic JSON/YAML writes that preserve symlinks and file permissions."""
 
+import hashlib
 import json
 import logging
 import os
@@ -17,6 +18,17 @@ logger = logging.getLogger(__name__)
 
 class ConfigSnapshot(dict):
     """Revision-bearing mapping shared by all runtime configuration loaders."""
+
+    _path: Path | None = None
+    _revision: str | None = None
+
+
+def config_revision(path: Path) -> str | None:
+    try:
+        contents = path.read_bytes()
+    except FileNotFoundError:
+        return None
+    return hashlib.sha256(contents).hexdigest()
 
 
 # ponytail: serialize YAML writes globally; use per-path locks if contention warrants it.

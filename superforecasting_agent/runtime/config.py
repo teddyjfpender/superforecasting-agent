@@ -5037,9 +5037,7 @@ def _read_raw_config() -> Dict[str, Any]:
 from superforecasting_agent.storage.files import ConfigSnapshot as _ConfigSnapshot
 
 
-def _config_revision(path):
-    import hashlib
-    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+from superforecasting_agent.storage.files import config_revision as _config_revision
 
 
 # Preserve compatibility for callers that serialize a loaded mapping directly.

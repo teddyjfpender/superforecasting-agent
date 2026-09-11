@@ -23,7 +23,7 @@ def test_shared_service_tier(raw, expected):
 def test_tui_setting_merges_latest_config_and_preserves_comments(tmp_path, monkeypatch):
     from tui_gateway import server
     monkeypatch.setattr(server, '_hermes_home', tmp_path)
-    monkeypatch.setattr(server, '_cfg_cache', None)
+    monkeypatch.setattr(server._configuration, '_snapshot', None)
     path = tmp_path / 'config.yaml'
     path.write_text('# personal settings\nagent:\n  service_tier: normal\n')
     server._load_cfg()  # Cache predates an independent editor's update.

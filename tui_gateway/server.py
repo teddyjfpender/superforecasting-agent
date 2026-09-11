@@ -235,10 +235,9 @@ from superforecasting_agent.hosting.storage import SessionStore
 
 _session_store = SessionStore()
 _stdout_lock = threading.Lock()
-_cfg_lock = threading.Lock()
-_cfg_cache: dict | None = None
-_cfg_revision: str | None = None
-_cfg_path = None
+from superforecasting_agent.hosting.configuration import ProfileConfiguration
+
+_configuration = ProfileConfiguration()
 try:
     _slash_timeout = float(_tui_env("SLASH_TIMEOUT_S") or "45")
 except (ValueError, TypeError):
@@ -1321,53 +1320,11 @@ def _normalize_indicator_style(value: object) -> str:
 
 
 def _load_cfg() -> dict:
-    global _cfg_cache, _cfg_revision, _cfg_path
-    try:
-        import yaml
-
-        p = _hermes_home / "config.yaml"
-        from superforecasting_agent.runtime.config import _ConfigSnapshot
-        import hashlib
-        contents = p.read_bytes() if p.exists() else None
-        revision = hashlib.sha256(contents).hexdigest() if contents is not None else None
-        with _cfg_lock:
-            if _cfg_cache is not None and _cfg_revision == revision and _cfg_path == p:
-                return copy.deepcopy(_cfg_cache)
-        data = yaml.safe_load(contents.decode("utf-8")) if contents is not None else {}
-        if data is None:
-            data = {}
-        if not isinstance(data, dict):
-            raise ValueError("Configuration root must be a mapping")
-        data = _ConfigSnapshot(data)
-        data._path, data._revision = p.resolve(), revision
-        with _cfg_lock:
-            _cfg_cache = copy.deepcopy(data)
-            _cfg_revision = revision
-            _cfg_path = p
-        return data
-    except Exception:
-        pass
-    return {}
+    return _configuration.load(_hermes_home / "config.yaml")
 
 
 def _save_cfg(cfg: dict):
-    global _cfg_cache, _cfg_revision, _cfg_path
-    from superforecasting_agent.runtime.config import _ConfigSnapshot, _config_revision
-    from superforecasting_agent.storage.files import atomic_yaml_write, yaml_update_lock
-
-    path = _hermes_home / "config.yaml"
-    with yaml_update_lock(path):
-        if not isinstance(cfg, _ConfigSnapshot) or cfg._path != path.resolve() or cfg._revision != _config_revision(path):
-            raise ValueError("Configuration changed; reload before saving")
-        atomic_yaml_write(path, dict(cfg))
-        cfg._revision = _config_revision(path)
-    with _cfg_lock:
-        _cfg_cache = copy.deepcopy(cfg)
-        _cfg_path = path
-        try:
-            _cfg_revision = cfg._revision
-        except Exception:
-            _cfg_revision = None
+    _configuration.save(_hermes_home / "config.yaml", cfg)
 
 
 def _set_session_context(session_key: str):
@@ -1525,12 +1482,7 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
 
 def _write_config_key(key_path: str, value):
     """Merge a single setting into the latest profile, preserving user comments."""
-    global _cfg_cache, _cfg_revision, _cfg_path
-    from superforecasting_agent.storage.files import atomic_roundtrip_yaml_update
-
-    atomic_roundtrip_yaml_update(_hermes_home / "config.yaml", key_path, value)
-    with _cfg_lock:
-        _cfg_cache = _cfg_revision = _cfg_path = None
+    _configuration.update(_hermes_home / "config.yaml", key_path, value)
 
 
 _STATUSBAR_MODES = frozenset({"off", "top", "bottom"})
