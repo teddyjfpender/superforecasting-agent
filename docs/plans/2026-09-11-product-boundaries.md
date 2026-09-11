@@ -1062,3 +1062,14 @@ Split-product fresh-container deployment qualification:
 - This establishes fresh Linux container installation/provisioning of the split
   products. Native Windows/Android qualification, an actual split-package upgrade
   exercise, and longer installed remote provider-stream recovery remain open.
+
+Deployment checks now fail closed:
+
+- Removed warning-only success for a missing scheduler banner, an unknown TUI
+  frame, and a blank terminal pane in `scripts/test-fresh-box.sh`.
+- Re-ran the complete Ubuntu 24.04 split-product exercise with those hard gates:
+  every stage passed, including the recognized 927-character first frame and
+  desk survival across SSH link loss. Log: `/tmp/forecast-strict-fresh-box.log`.
+- Primary `2794b8659` completed full Python regression: 30,687 passed, 148 skipped,
+  58 warnings. JUnit: `.test-results/pytest-20260911T215817Z-92992.xml`.
+  These results do not establish native Windows coverage or a version upgrade.

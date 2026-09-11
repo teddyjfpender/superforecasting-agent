@@ -145,8 +145,8 @@ fi
 if inx "grep -qiE 'cron|scheduler|messaging' /home/forecast/.superforecasting-agent/logs/gateway.out 2>/dev/null"; then
   stage PASS "3b-cron-scheduler-banner"
 else
-  warn "cron/scheduler banner not found in gateway.out (non-fatal; gateway may log elsewhere)"
-  stage PASS "3b-cron-scheduler-banner (skipped)"
+  warn "cron/scheduler banner not found in gateway.out"
+  stage FAIL "3b-cron-scheduler-banner"
 fi
 DOCTOR_JSON="$(inx "sudo -u forecast env HOME=/home/forecast SUPERFORECASTING_AGENT_HOME=/home/forecast/.superforecasting-agent \
   /usr/local/bin/superforecasting-agent forecast config doctor --json 2>/dev/null" || true)"
@@ -220,13 +220,8 @@ fi
 #     escape-code parsing here), which is the cheapest possible proof that the
 #     first frame actually landed on a real box.
 #
-#     Deliberately WARN-only: this stage was added without a docker daemon
-#     available to run the proof even once, so it must not be able to turn a
-#     green fresh-box run red. Promote it to a hard gate — replace the warn
-#     branch with `stage FAIL "4e-tui-first-paint"` — after one observed pass.
-#
-#     The Python-side equivalent (which IS a hard gate) is tests/tui_pty/:
-#     same idea, own pty, asserts against a reconstructed screen.
+#     This is a hard gate following the observed split-product Ubuntu pass.
+#     A live process or arbitrary error text is not evidence that Ink painted.
 if [ "$LANDED" = PASS ]; then
   PANE="$(inx "sudo -u forecast tmux capture-pane -p -t desk 2>/dev/null" || true)"
   PANE_CHARS="$(printf '%s' "$PANE" | tr -d '[:space:]' | wc -c | tr -d '[:space:]')"
@@ -239,12 +234,12 @@ if [ "$LANDED" = PASS ]; then
   elif [ "$PANE_CHARS" -ge 100 ]; then
     warn "pane has ${PANE_CHARS} chars but no known TUI anchor — first frame may have changed"
     printf '%s\n' "$PANE" | head -n 20
-    stage PASS "4e-tui-first-paint (unrecognised frame; see dump above)"
+    stage FAIL "4e-tui-first-paint (unrecognised frame; see dump above)"
   else
     warn "tmux pane is effectively BLANK (${PANE_CHARS} printable chars) — the TUI"
     warn "process is alive but nothing was painted. This is the failure 4d cannot see."
     inx "tail -n 15 /tmp/desk.out 2>/dev/null" || true
-    stage PASS "4e-tui-first-paint (BLANK — warn-only, see comment)"
+    stage FAIL "4e-tui-first-paint (blank pane)"
   fi
 fi
 
