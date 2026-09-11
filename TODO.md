@@ -21,6 +21,20 @@ See [verification and reproduction](docs/plans/2026-09-10-forecast-reliability.m
   historical cutoffs, stale evidence and resolution outcome validation, including
   captured public USGS/NWS records.
 
+## September 11 implementation and operational follow-up
+
+See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
+
+- [x] Separate semantic domains from acquisition labels with audited corrections.
+- [x] Validate provider readiness, preserve response budgets and reject truncation.
+- [x] Add NWS/USGS identity, units, measurement-window and revision contracts.
+- [x] Carry declared right-censoring through resolution, scoring, exports and TUI.
+- [x] Share model configuration/persistence and isolate gateway command hooks.
+- [x] Verify 18 Unicode turns across three TUI lifetimes with durable history.
+- [ ] Finish the running eight-question paired cohort and retain final receipts.
+- [ ] Verify the desktop platform CI matrix and formal release artifact set.
+- [ ] Supply Android/Termux access and missing live-service credentials.
+
 ## Before a production release
 
 - [ ] Verify the pushed commit's CI results, including platform jobs and release
@@ -92,7 +106,7 @@ See [runtime changes and verification](docs/plans/2026-09-10-lifecycle-learning.
 - [x] Correct the five newly settled BLS scores and 15 existing legacy CRPS
   scores with preserved correction lineage and replacement postmortems; a fresh
   preview reports zero remaining migrations for current resolved snapshots.
-- [ ] Add explicit right-censored outcome representation and scoring before
+- [x] Add explicit right-censored outcome representation and scoring before
   settling censored continuous questions. Do not substitute a boundary point.
 - [ ] Evaluate prospective lesson benefit using independent outcomes and matched
   pre-adjustment forecasts; application coverage alone does not prove benefit.
@@ -111,13 +125,13 @@ See [commands, invariants and limits](docs/plans/2026-09-10-controlled-learning-
   reminders; distinguish missing historical forecasts from recoverable handoffs.
 - [x] Prevent binary calibration adjustments from corrupting physical quantities.
 - [ ] Accumulate independent prospective outcomes before claiming learning benefit.
-- [ ] Add source-specific bindings only after verifying their actual schema and
+- [x] Add source-specific bindings only after verifying their actual schema and
   measurement meaning; do not infer completed weather periods from local time.
 - [x] Preserve quarantine reasons in typed score records and JSON exports, and
   reject quarantined lesson provenance during trial enrollment and comparison.
 - [x] Accept one complete JSON code fence without retrying the model; retain the
   original response and reject ambiguous duplicate fields or surrounding prose.
-- [ ] Reconcile acquisition labels such as `market_nightly` with semantic domains:
+- [x] Reconcile acquisition labels such as `market_nightly` with semantic domains:
   the live pilot exposed politics questions that cannot retrieve politics lessons.
   Keep acquisition provenance separate; do not silently broaden lesson scope.
 - [ ] Run a new prospective cohort once the provider is available, with a
