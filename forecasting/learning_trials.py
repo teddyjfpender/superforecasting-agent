@@ -210,6 +210,11 @@ def run_trial(ledger, trial_id, *, runner=None, limit=20, preflight_id=None):
                     (status, utc_now_iso(), receipt, encoded(output), error, trial_id, q.id, arm, owner))
             if status == 'interrupted':
                 raise KeyboardInterrupt(error)
+            if status == 'failed' and response is None:
+                # A transport outage or quota failure is not evidence against
+                # every remaining case. Keep unattempted arms pending; the
+                # attempted arm remains failed and cannot be rerolled.
+                return trial_report(ledger, trial_id)
     return trial_report(ledger, trial_id)
 
 
