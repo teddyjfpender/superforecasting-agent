@@ -1,9 +1,14 @@
 """Memory session boundaries, client eviction, and full task shutdown."""
 
+import threading
 from typing import Any
 
 from tools.terminal_tool import cleanup_vm
 from tools.browser_tool import cleanup_browser
+
+
+# Only partially constructed agents lack their own lock.
+_partial_agent_close_lock = threading.RLock()
 
 
 def shutdown_memory_provider(self, messages: list = None) -> None:
@@ -131,6 +136,13 @@ def release_clients(self) -> None:
         hard teardown for actual session boundaries (/new, /reset, session
         expiry).
         """
+    with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
+        if getattr(self, "_resources_closed", False):
+            return
+        _release_clients(self)
+
+
+def _release_clients(self) -> None:
     # Close active child agents (per-turn; no cross-turn persistence).
     try:
         with self._active_children_lock:
@@ -171,6 +183,16 @@ def close(self) -> None:
         Safe to call multiple times (idempotent).  Each cleanup step is
         independently guarded so a failure in one does not prevent the rest.
         """
+    with getattr(self, "_resource_close_lock", _partial_agent_close_lock):
+        if getattr(self, "_resources_closed", False):
+            return
+        # Claim once before callbacks: teardown may re-enter close(). A later
+        # agent can reuse this session ID, so repeated cleanup is destructive.
+        self._resources_closed = True
+        _close_resources(self)
+
+
+def _close_resources(self) -> None:
     task_id = getattr(self, "session_id", None) or ""
 
     # 1. Kill background processes for this task

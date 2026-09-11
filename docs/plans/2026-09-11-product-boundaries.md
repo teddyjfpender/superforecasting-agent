@@ -235,3 +235,17 @@ Recovery transparency follow-up:
 Full host resource/lifecycle ownership, remaining application command migration,
 installed-product/cross-platform qualification and release assembly integration
 remain open; these recovery fixes do not complete the overall architecture goal.
+
+Agent resource ownership follow-up:
+
+- The shared agent lifecycle now serializes client eviction and full shutdown
+  with a per-agent reentrant lock. Full teardown claims ownership once before
+  invoking callbacks; repeated close cannot clean a replacement agent's resources
+  merely because it reuses the durable session ID.
+- New regressions failed before the fix: repeated close removed a replacement
+  terminal environment, and concurrent close invoked task cleanup twice. Tests
+  also cover eviction overlapping shutdown and a reentrant cleanup callback.
+- Verification: 18 resource ownership, zombie cleanup and OpenAI client lifecycle
+  tests passed; the shared Python quality gate passed. These checks establish
+  teardown idempotence, not host-wide draining or session handover safety before
+  the first close. Those broader runtime responsibilities remain open.

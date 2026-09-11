@@ -187,6 +187,9 @@ def init_agent(
             identity even when skip_context_files=True. Project context files from the cwd
             remain skipped.
     """
+    agent._resource_close_lock = threading.RLock()
+    agent._resources_closed = False
+
     _install_safe_stdio()
 
     agent.model = model
