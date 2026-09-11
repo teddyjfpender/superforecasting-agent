@@ -734,11 +734,13 @@ export interface ForecastDashboardFactor {
 
 export interface ForecastDashboardLearning {
   active_lessons?: number
+  effectiveness?: ForecastLearningEffectiveness
   invalidated_lessons?: number
   recent_lessons?: ForecastDashboardLesson[]
   tentative_lessons?: number
   top_error_profiles?: ForecastDashboardErrorProfile[]
   total_lessons?: number
+  trials?: Record<string, number>
 }
 
 export interface ForecastDashboardLesson {
@@ -872,6 +874,7 @@ export interface ForecastDashboardSummary {
   factor_count?: number
   factors?: ForecastDashboardFactor[]
   learning?: ForecastDashboardLearning
+  lifecycle?: ForecastLifecycleSummary
   live_performance?: ForecastDashboardLivePerformance
   open_alert_count?: number
   open_assumption_count?: number
@@ -1068,6 +1071,16 @@ export interface ForecastHooksSetResponse {
   profile?: string
 }
 
+export interface ForecastLearningEffectiveness {
+  counts?: Record<string, number>
+  interpretation?: string
+  status?: string
+}
+
+export interface ForecastLifecycleSummary {
+  counts?: Record<string, number>
+}
+
 export interface ForecastLivePerformanceAgent {
   mean_brier?: null | number
   mean_log_score?: null | number
@@ -1124,6 +1137,7 @@ export interface ForecastQuarantineSummary {
 export interface ForecastQuestionPacket {
   analyst_note?: null | ForecastAnalystNote
   analyst_notes?: ForecastAnalystNote[]
+  applicability_facts?: Record<string, unknown>
   assumptions?: ForecastQuestionPacketAssumption[]
   baseline_comparisons?: Record<string, unknown>[]
   calibration_lessons?: ForecastDashboardLesson[]
@@ -1142,6 +1156,7 @@ export interface ForecastQuestionPacket {
   resolution?: null | Record<string, unknown>
   retrospective?: null | ForecastAnalystNote
   scores?: Record<string, unknown>[]
+  settlement_review?: null | Record<string, unknown>
   watched_sources?: Record<string, unknown>[]
 }
 

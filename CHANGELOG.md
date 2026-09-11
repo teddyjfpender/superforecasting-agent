@@ -13,6 +13,39 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 
 ## [Unreleased]
 
+## [0.21.2] - 2026-09-10
+
+### Fixed
+- Report interrupted, failed and incomplete learning-trial arms explicitly without
+  changing the frozen trial policy or claiming an accuracy benefit.
+
+## [0.21.1] - 2026-09-10
+
+### Fixed
+- Preserve score quarantine reasons and reject quarantined lesson provenance.
+- Accept a single complete JSON response fence while rejecting duplicate fields,
+  ambiguous prose and untrusted source-capture metadata.
+
+## [0.21.0] - 2026-09-10
+
+### Added
+- Prospective paired learning trials with frozen inputs, budgets and call receipts.
+- Source-backed typed applicability facts and durable settlement review reminders.
+- Forecast-desk reports for learning evidence, missingness and settlement actions.
+
+### Fixed
+- Restrict binary calibration adjustments to binary forecasts so continuous
+  physical quantities retain their units and values.
+
+## [0.20.1] - 2026-09-10
+
+### Fixed
+- Preserve typed resolution outcomes, validate vote-share vectors, and integrate
+  continuous scores over physical distances with correction lineage.
+- Recover missing score/postmortem handoffs and expose settlement review and
+  outcome-backed learning evidence in the forecast desk.
+- Keep long reports readable when the terminal is resized.
+
 ## [0.20.0] - 2026-07-28
 
 This release makes the terminal desk's own delivery path trustworthy: the TUI

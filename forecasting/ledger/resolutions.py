@@ -51,6 +51,39 @@ import uuid
 logger = logging.getLogger(__name__)
 
 
+def _normalize_distribution_outcome(ledger, question, outcome):
+    import json
+    from forecasting.ledger.scoring import _validated_shares
+
+    from forecasting.json_validation import strict_json_loads
+
+    if isinstance(outcome, str) and outcome.lstrip().startswith("{"):
+        try:
+            outcome = strict_json_loads(outcome, object_name="resolution outcome")
+        except json.JSONDecodeError as exc:
+            raise ValidationError("resolution outcome must be valid JSON") from exc
+    if isinstance(outcome, dict):
+        shares = _validated_shares(outcome)
+        if any(value > 100 for value in shares.values()):
+            raise ValidationError("resolved shares must be percentages between 0 and 100")
+        if not math.isclose(sum(shares.values()), 100.0, abs_tol=0.5):
+            raise ValidationError("resolved percentage shares must sum to 100 (within 0.5 rounding tolerance)")
+        # Explicit choices are exhaustive. Older scalar spaces inherited yes/no
+        # defaults; the current vector supplies their labels where available.
+        snapshot = ledger.get_current_snapshot(question.id)
+        if snapshot is not None:
+            ledger._vote_share_vector_score(snapshot.probability_or_distribution, outcome)
+        choices = {str(c).strip().lower() for c in question.outcome_space.choices}
+        if choices and choices != {"yes", "no"} and choices != set(shares):
+            raise ValidationError("resolved share labels must match the outcome choices exactly")
+        return outcome
+    if isinstance(outcome, str) and outcome.strip().lower() in {
+        str(c).strip().lower() for c in question.outcome_space.choices
+    }:
+        return outcome  # a declared discrete label, not a scalar observation
+    return ledger._numeric_outcome(outcome)
+
+
 def resolve_question(
     ledger,
     *,
@@ -70,15 +103,19 @@ def resolve_question(
     auto_score: bool = True,
 ) -> Resolution:
     resolved_question = ledger.get_question(question_id)
-    # Validate before changing question/scheduler state. Auto-scoring is best
-    # effort, so relying on it to reject an invalid outcome closes an unscoreable
-    # question and silently skips the feedback loop.
+    # Validate and normalize at the shared ledger boundary BEFORE any writes,
+    # including source archival and scheduler teardown. CLI strings are transport
+    # values; the stored outcome must retain the question's actual value type.
     if resolution_status == "confirmed" and criteria_satisfied and scoreable:
         space = resolved_question.outcome_space
         if space.type == "binary":
             ledger._probability_for_outcome(0.5, outcome, space)
         elif space.type == "categorical":
             ledger._probability_for_outcome({choice: 0.0 for choice in space.choices}, outcome, space)
+        elif space.type == "numeric":
+            outcome = ledger._numeric_outcome(outcome)
+        elif space.type in {"distribution", "thesis"}:
+            outcome = _normalize_distribution_outcome(ledger, resolved_question, outcome)
     if resolution_status not in RESOLUTION_STATUSES:
         raise ValidationError(
             f"resolution_status must be one of {', '.join(sorted(RESOLUTION_STATUSES))}"

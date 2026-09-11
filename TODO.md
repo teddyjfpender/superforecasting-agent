@@ -79,9 +79,48 @@ See [runtime changes and verification](docs/plans/2026-09-10-lifecycle-learning.
 - [x] Record actual lesson decisions and rule verdicts, apply explicit in-scope
   supersession, and distinguish historical unverified application counts.
 - [x] Share exact market-study evaluation records between CLI reports and scripts.
-- [ ] Review the live instance's settlement backlog and the two resolved questions
-  without forecasts. This change verified recovery on an isolated backup only.
-- [ ] Review conditional weather guidance and explicitly supersede or re-scope it
-  where warranted. Prose conflicts are not automatically converted into rules.
+- [x] Back up and recover the live instance: 96 handoffs completed. Review the
+  two missing-forecast outcomes separately without fabricating scoreable history.
+- [x] Review 12 important settlement questions: six settled, six explicitly
+  deferred with evidence needs or future outcome horizons recorded in the ledger.
+- [x] Reconcile conditional weather guidance: ten lessons explicitly superseded,
+  applicability enforced and lesson provenance frozen on subsequent snapshots.
+- [x] Add an outcome-backed learning audit; report that causal benefit remains
+  unestablished, rather than presenting reference counts as improved accuracy.
+- [ ] Revisit the six reviewed/deferred questions when their recorded conditions
+  are met. The remaining settlement book was deliberately outside this pass.
+- [x] Correct the five newly settled BLS scores and 15 existing legacy CRPS
+  scores with preserved correction lineage and replacement postmortems; a fresh
+  preview reports zero remaining migrations for current resolved snapshots.
+- [ ] Add explicit right-censored outcome representation and scoring before
+  settling censored continuous questions. Do not substitute a boundary point.
 - [ ] Evaluate prospective lesson benefit using independent outcomes and matched
   pre-adjustment forecasts; application coverage alone does not prove benefit.
+
+See [live recovery, ledger hardening and measurement methodology](docs/plans/2026-09-10-live-lifecycle-learning.md).
+
+## Controlled learning and durable settlement
+
+See [commands, invariants and limits](docs/plans/2026-09-10-controlled-learning-lifecycle.md).
+
+- [x] Add prospective paired learning trials with frozen evidence, policy, model,
+  budgets, cluster assignments, durable call receipts and explicit missingness.
+- [x] Add source-backed, typed lesson conditions with archive hashes, observation
+  times, freshness limits and cutoff-bound provenance; expose unknowns in the desk.
+- [x] Add append-only settlement states, ownership, next actions and durable
+  reminders; distinguish missing historical forecasts from recoverable handoffs.
+- [x] Prevent binary calibration adjustments from corrupting physical quantities.
+- [ ] Accumulate independent prospective outcomes before claiming learning benefit.
+- [ ] Add source-specific bindings only after verifying their actual schema and
+  measurement meaning; do not infer completed weather periods from local time.
+- [x] Preserve quarantine reasons in typed score records and JSON exports, and
+  reject quarantined lesson provenance during trial enrollment and comparison.
+- [x] Accept one complete JSON code fence without retrying the model; retain the
+  original response and reject ambiguous duplicate fields or surrounding prose.
+- [ ] Reconcile acquisition labels such as `market_nightly` with semantic domains:
+  the live pilot exposed politics questions that cannot retrieve politics lessons.
+  Keep acquisition provenance separate; do not silently broaden lesson scope.
+- [ ] Run a new prospective cohort once the provider is available, with a
+  predeclared response budget sufficient for complete JSON. The retained live
+  pilots encountered 503 errors, truncated output and a timeout; they have no
+  usable comparison pairs. Waiting for their outcomes alone cannot establish benefit.

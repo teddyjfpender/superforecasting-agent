@@ -72,11 +72,15 @@ def export_question(ledger, question_id: str, *, fmt: str = "markdown") -> str:
     )
     related_forecasts, related_shared_sources = ledger.related_forecast_views(question_id)
     if fmt == "json":
+        from forecasting.applicability_facts import evidence_facts
+        from forecasting.settlement_reviews import latest_reviews
         return json_dumps(
             {
                 "product": _core._export_metadata(),
                 "generated_at": utc_now_iso(),
                 "question": ledger._question_to_dict(question),
+                "applicability_facts": evidence_facts(ledger, question),
+                "settlement_review": latest_reviews(ledger).get(question.id),
                 "forecast_history": [ledger._snapshot_to_dict(snapshot) for snapshot in snapshots],
                 "evidence": [ledger._evidence_to_dict(item) for item in evidence],
                 "assumptions": assumptions,
@@ -565,6 +569,12 @@ def _insert_packet_row(
     values: list[Any] = []
     for column in columns:
         value = row[column]
+        if table == "evidence_items" and column == "metadata" and isinstance(value, dict):
+            value = dict(value)
+            if "source_capture" in value:
+                # Imported metadata is historical provenance, not a receipt
+                # produced by this instance's URL fetch boundary.
+                value["imported_source_capture"] = value.pop("source_capture")
         if column in json_fields:
             value = json_dumps(value)
         elif column in bool_fields:

@@ -1,0 +1,100 @@
+{
+  "source_commit": "73ec7b77cf3c6ef7d09d8fe954964cebc3f2aafe",
+  "merged_prs": [
+    30,
+    31
+  ],
+  "followup_pr": 32,
+  "runtime": {
+    "version": "0.20.1",
+    "python": "3.13.12",
+    "gateway_running": true,
+    "gateway_uses_installed_native_cli": true,
+    "artifact_retained_under_active_home": true,
+    "wheel_sha256": "5d2688dd9e1b96f3a72bc8953bc48b01e72d796a50e10e2302efbe00f84128da",
+    "tui_bundle_sha256": "e0db79b54e0d18cff373a833d540ff90595a8f9a28e6b850b7155009563a5453"
+  },
+  "live": {
+    "backup_integrity": "ok (both SQLite databases)",
+    "handoffs_recovered": 96,
+    "settlement_questions_reviewed": 12,
+    "settlement_questions_resolved": 6,
+    "settlement_questions_deferred": 6,
+    "missing_forecasts_reviewed_separately": 2,
+    "weather_lessons_explicitly_superseded": 10,
+    "new_bls_scores_corrected": 5,
+    "additional_legacy_crps_scores_migrated": 15,
+    "current_snapshot_crps_migrations_remaining": 0,
+    "lifecycle_counts": {
+      "settlement_review": 108,
+      "review_overdue": 58,
+      "unfinished": 2,
+      "ready_tasks": 0,
+      "missing_tasks": 0,
+      "failed_tasks": 0
+    },
+    "idempotent_recovery_results": 0,
+    "integrity": "ok",
+    "original_snapshots": 7403,
+    "current_snapshots": 7403,
+    "original_snapshots_changed": 0,
+    "new_snapshots": 0,
+    "new_resolutions": 7,
+    "newly_resolved_questions": 6
+  },
+  "learning": {
+    "status": "benefit_not_established",
+    "counts": {
+      "eligible_live_snapshots": 1559,
+      "historical_unverified_snapshots": 1559,
+      "scores_recomputed_read_only": 37,
+      "scored_distinct_questions": 43,
+      "lineage_unknown": 43
+    },
+    "numeric_replay": {
+      "pairs": 0,
+      "mean_brier_gain": null,
+      "provenance": "self-reported pre-adjustment probability; diagnostic only"
+    },
+    "interpretation": "Rule compliance and lesson references are process evidence, not causal forecasting improvement. Cohorts differ in difficulty and horizon. Numeric replay measures only the reported mechanical change, not the effect of advice on reasoning. Weather post-maximum observations require separate cohorts."
+  },
+  "validation": {
+    "forecasting_suite": {
+      "passed": 3426,
+      "skipped": 3
+    },
+    "final_python_protocol_regression": {
+      "passed": 100
+    },
+    "tui_suite": {
+      "passed": 2014,
+      "skipped": 1
+    },
+    "tui_typecheck": "passed",
+    "tui_build": "passed",
+    "ruff_scoped": "passed",
+    "installed_cli_outcome_lifecycle": [
+      "Installed public CLI rejects string-valued vector without closing question",
+      "Valid JSON vector round-trips as object",
+      "Resolve to score to postmortem completes",
+      "Repeated lifecycle run creates no duplicate work"
+    ],
+    "installed_tui": [
+      "/ledger review renders expected evidence/action",
+      "/ledger learning renders expected evidence/action",
+      "/forecast lessons effectiveness renders expected evidence/action",
+      "Narrow report preserves visible controls and g/G navigation to both ends",
+      "All three views survive 150 to 80 to 150 column resize",
+      {
+        "clean_exit": 0
+      }
+    ],
+    "ci_gate": "not used per operator instruction"
+  },
+  "limits": [
+    "No causal learning benefit established; prospective matched outcome comparison remains necessary.",
+    "Six reviewed settlements remain deferred for recorded horizon, source, identity or censoring requirements.",
+    "No historical forecasts invented for two missing-forecast outcomes.",
+    "macOS verification; no cross-platform or published release claim."
+  ]
+}

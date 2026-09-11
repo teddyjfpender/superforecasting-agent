@@ -14,6 +14,7 @@ from forecasting.ledger import ForecastLedger
 from forecasting.ledger.scoring import (
     _crps_cdf_points,
     _crps_discrete,
+    _crps_integral,
     _crps_normal,
     _crps_pmf_points,
     _crps_score,
@@ -47,14 +48,13 @@ def test_discrete_cdf_crps_pin():
     # F(0)=0.1, F(1)=0.5, F(2)=0.9; outcome 1.5 → steps 0,0,1.
     points = [(0.0, 0.1), (1.0, 0.5), (2.0, 0.9)]
     crps = _crps_discrete(points, 1.5)
-    assert crps == pytest.approx(0.1**2 + 0.5**2 + (0.9 - 1.0) ** 2)
-    assert crps == pytest.approx(0.27)
+    assert crps == pytest.approx(0.01 + 0.5 * 0.25 + 0.5 * 0.25)
 
 
 def test_discrete_cdf_crps_perfect_step():
     # A degenerate CDF that jumps exactly at the outcome scores ~0.
     points = [(0.0, 0.0), (1.0, 0.0), (2.0, 1.0)]
-    assert _crps_discrete(points, 1.5) == pytest.approx(0.0)
+    assert _crps_discrete(points, 2.0) == pytest.approx(0.0)
 
 
 # ── point extraction from real snapshot shapes ───────────────────────────────
@@ -111,9 +111,9 @@ def test_crps_score_prefers_cdf_thresholds(tmp_path):
     ledger = _ledger(tmp_path)
     payload = {"mean": 3.9, "sd": 0.35, "p_below_3_0": 0.0051, "p_below_3_5": 0.1265, "p_below_4_0": 0.6125, "p_below_4_5": 0.9568}
     result = ledger._crps_score(payload, "4.24", OutcomeSpace(type="distribution"))
-    assert result["score_rule"] == "crps_discrete_cdf"
+    assert result["score_rule"] == "crps_piecewise_linear_cdf_v2"
     assert result["brier_score"] is None
-    assert result["proper_score"] == pytest.approx(_crps_discrete(_crps_cdf_points(payload), 4.24))
+    assert result["proper_score"] == pytest.approx(_crps_integral(_crps_cdf_points(payload), 4.24, linear=True))
     # Gaussian mean+sd present → log score stays populated.
     assert result["log_score"] is not None
 
@@ -157,7 +157,7 @@ def test_score_snapshot_uses_crps_for_distribution(tmp_path):
     ledger.resolve_question(question_id=question.id, outcome="4.24")
     score = ledger.get_current_score(question.id)
     assert score is not None
-    assert score.score_rule == "crps_discrete_cdf"
+    assert score.score_rule == "crps_piecewise_linear_cdf_v2"
     assert score.brier_score is None
     assert score.proper_score is not None and score.proper_score >= 0.0
 
@@ -220,4 +220,59 @@ def test_backfill_crps_dry_run_is_read_only(tmp_path):
     real = ledger.backfill_crps_scores(dry_run=False)
     assert real["counts"]["crps_scored"] >= 1
     scored = ledger.get_current_score(question.id)
-    assert scored is not None and scored.score_rule == "crps_discrete_cdf"
+    assert scored is not None and scored.score_rule == "crps_piecewise_linear_cdf_v2"
+
+
+def test_integral_crps_uniform_has_known_value_and_scales():
+    # Uniform(0, 1) at its median: integral x^2 on each half = 1/12.
+    assert _crps_integral([(0, 0), (1, 1)], .5, linear=True) == pytest.approx(1/12)
+    assert _crps_integral([(0, 0), (100, 1)], 50, linear=True) == pytest.approx(100/12)
+    # Outcome beyond support must keep getting worse, not saturate.
+    assert _crps_integral([(0, 0), (1, 1)], 3, linear=True) == pytest.approx(2+1/3)
+
+
+def test_pmf_crps_matches_independent_expectation_identity():
+    # CRPS = E|X-y| - .5 E|X-X'|, independent finite sum reference.
+    atoms = [(0, .2), (3, .5), (10, .3)]
+    points = [(0, .2), (3, .7), (10, 1)]
+    for y in [-5, 0, 1.5, 8, 20]:
+        reference = sum(p*abs(x-y) for x,p in atoms) - .5*sum(p*q*abs(x-z) for x,p in atoms for z,q in atoms)
+        assert _crps_discrete(points, y) == pytest.approx(reference)
+
+
+def test_crossed_cdf_is_rejected():
+    from forecasting.models import ValidationError
+    with pytest.raises(ValidationError, match='monotone'):
+        _crps_integral([(0, .9), (1, .1)], .5, linear=True)
+
+
+def test_standard_deviation_alias_is_scored(tmp_path):
+    ledger = _ledger(tmp_path)
+    result = ledger._crps_score({'mean': 1250, 'standard_deviation': 22}, 1250, OutcomeSpace(type='numeric'))
+    assert result['score_rule'] == 'crps_gaussian'
+    assert result['proper_score'] == pytest.approx(22*.23369497725510913)
+
+
+def test_negative_cdf_threshold_retains_sign():
+    assert _crps_cdf_points({'p_below_-5': .2, 'p_below_-1_5': .6}) == [(-5, .2), (-1.5, .6)]
+
+
+def test_version_migration_preserves_score_and_invalidates_derived_learning(tmp_path):
+    ledger = _ledger(tmp_path)
+    question = ledger.create_question(title='What value will the official report publish?', resolution_criteria='Resolved to the numeric value published in the official report at the resolution time.', outcome_space=OutcomeSpace(type='distribution', units='percent'))
+    ledger.create_snapshot(question_id=question.id, probability_or_distribution={'mean': 3.9, 'sd': .35, 'cdf_3': .1, 'cdf_5': .9}, rationale='Frozen predictive CDF')
+    ledger.resolve_question(question_id=question.id, outcome=4.2)
+    old = ledger.get_current_score(question.id)
+    with ledger._connect() as conn:
+        conn.execute("UPDATE score_records SET score_rule='crps_discrete_cdf',proper_score=.38 WHERE id=?", (old.id,))
+    old_pm = ledger.create_postmortem(question_id=question.id, summary='Based on old scoring convention')
+    report = ledger.backfill_crps_scores(dry_run=False)
+    detail = next(d for d in report['details'] if d['question_id'] == question.id)
+    assert detail['action'] == 'rescored'
+    assert ledger.get_score(old.id).invalidated_by_correction_id == detail['correction_id']
+    assert ledger.get_current_score(question.id).id != old.id
+    assert detail['postmortem_id'] != old_pm['id']
+    with ledger._connect() as conn:
+        row = conn.execute('SELECT * FROM postmortems WHERE id=?', (old_pm['id'],)).fetchone()
+        assert row['invalidated_by_correction_id'] == detail['correction_id']
+    assert ledger.backfill_crps_scores(dry_run=False)['counts']['rescored'] == 0

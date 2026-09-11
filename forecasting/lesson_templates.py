@@ -119,4 +119,6 @@ def build_lesson_rule(lesson: dict[str, Any], *, severity: str = "warn") -> dict
     pattern = resolve_enforcement_pattern(lesson.get("recommended_adjustment"))
     if pattern is None:
         return None
+    if pattern == "tail_cap" and (lesson.get("scope_ref") or "").split(":")[0] == "weather":
+        return None  # Candidate viability is not a temperature-tail measurement.
     return LESSON_ENFORCEMENT_PATTERNS[pattern](lesson, severity)

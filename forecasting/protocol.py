@@ -408,9 +408,11 @@ def build_context_packet(
     # retrieval compile_lesson_rules uses at commit. So what the agent reads in the
     # context equals what enforces at commit (no global/domain-only blind spot that
     # silently dropped the precisely-scoped NY-primary lessons).
-    from forecasting.learning import active_lessons_for_question
+    from forecasting.learning import active_lessons_for_question, _in_scope_lessons, lesson_applicability
 
     lessons = active_lessons_for_question(ledger, question)
+    conditional_lessons = [item for item in _in_scope_lessons(ledger, question)
+                           if not lesson_applicability(item, question, ledger=ledger)[0]]
     error_profiles = ledger.list_domain_error_profiles(domain=question.domain) if question.domain else []
 
     readiness_issues = ledger.decision_readiness_issues(question)
@@ -640,6 +642,17 @@ def build_context_packet(
     else:
         lines.append("- none")
 
+    if conditional_lessons:
+        lines.append("Conditional guidance (unknown facts never authorize enforcement; evidence conditions require archived sources):")
+        for item in conditional_lessons:
+            lines.append(f"- {item['id']}: {item['lesson']} conditions={item['recommended_adjustment'].get('applicability')} "
+                         f"decision={lesson_applicability(item, question, ledger=ledger)[1]}")
+
+    from forecasting.applicability_facts import evidence_facts
+    fact_report = evidence_facts(ledger, question)
+    if fact_report or conditional_lessons:
+        lines.extend(['', '## Applicability evidence', json.dumps(fact_report, sort_keys=True),
+            f'Missing/stale source facts: inspect `forecast facts show {question.id}`; bind an explicit source and refresh its evidence.'])
     lines.extend(["", "## Domain Error Profiles"])
     if error_profiles:
         for item in error_profiles:

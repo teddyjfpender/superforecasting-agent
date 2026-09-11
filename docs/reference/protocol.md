@@ -1013,11 +1013,13 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `active_lessons` | `number?` |
+| `effectiveness` | `ForecastLearningEffectiveness?` |
 | `invalidated_lessons` | `number?` |
 | `recent_lessons` | `ForecastDashboardLesson[]?` |
 | `tentative_lessons` | `number?` |
 | `top_error_profiles` | `ForecastDashboardErrorProfile[]?` |
 | `total_lessons` | `number?` |
+| `trials` | `Record<string, number>?` |
 
 ### ForecastDashboardLesson
 
@@ -1171,6 +1173,7 @@ _(no fields)_
 | `factor_count` | `number?` |
 | `factors` | `ForecastDashboardFactor[]?` |
 | `learning` | `ForecastDashboardLearning?` |
+| `lifecycle` | `ForecastLifecycleSummary?` |
 | `live_performance` | `ForecastDashboardLivePerformance?` |
 | `open_alert_count` | `number?` |
 | `open_assumption_count` | `number?` |
@@ -1408,6 +1411,20 @@ _(no fields)_
 | `enabled` | `boolean?` |
 | `profile` | `string?` |
 
+### ForecastLearningEffectiveness
+
+| field | type |
+| --- | --- |
+| `counts` | `Record<string, number>?` |
+| `interpretation` | `string?` |
+| `status` | `string?` |
+
+### ForecastLifecycleSummary
+
+| field | type |
+| --- | --- |
+| `counts` | `Record<string, number>?` |
+
 ### ForecastLivePerformanceAgent
 
 | field | type |
@@ -1485,6 +1502,7 @@ _(no fields)_
 | --- | --- |
 | `analyst_note` | `ForecastAnalystNote? | null` |
 | `analyst_notes` | `ForecastAnalystNote[]?` |
+| `applicability_facts` | `Record<string, unknown>?` |
 | `assumptions` | `ForecastQuestionPacketAssumption[]?` |
 | `baseline_comparisons` | `Record<string, unknown>[]?` |
 | `calibration_lessons` | `ForecastDashboardLesson[]?` |
@@ -1503,6 +1521,7 @@ _(no fields)_
 | `resolution` | `Record<string, unknown>? | null` |
 | `retrospective` | `ForecastAnalystNote? | null` |
 | `scores` | `Record<string, unknown>[]?` |
+| `settlement_review` | `Record<string, unknown>? | null` |
 | `watched_sources` | `Record<string, unknown>[]?` |
 
 ### ForecastQuestionPacketAssumption

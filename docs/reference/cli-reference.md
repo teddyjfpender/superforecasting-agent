@@ -9,7 +9,7 @@
 
 > **Source of truth:** `forecasting/cli.py (register_cli argparse tree)`
 
-The full `forecast` command tree — **91 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
+The full `forecast` command tree — **93 top-level commands** (also reachable as `superforecasting-agent <command>`). This is the exhaustive reference; for task-oriented walkthroughs see [cli.md](../cli.md).
 
 
 ## Commands
@@ -45,6 +45,7 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | [`forecast evidence-map`](#forecast-evidence-map) | Show the crux evidence map for a forecast |
 | [`forecast export`](#forecast-export) | Export an auditable forecast packet |
 | [`forecast factor`](#forecast-factor) | Build a weighted basket of constituent return distributions and aggregate it |
+| [`forecast facts`](#forecast-facts) | Inspect or bind timestamped facts from archived source JSON |
 | [`forecast freshen`](#forecast-freshen) | Put a forecast on a refresh cadence + ensure the nightly self-check cron (one verb) |
 | [`forecast hooks`](#forecast-hooks) | Inspect / tune / author the saturation + style hook rules |
 | [`forecast import`](#forecast-import) | Run an optional source adapter without making it the core workflow |
@@ -103,6 +104,7 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | [`forecast tournament`](#forecast-tournament) | Import a resolved tournament export as a replay benchmark |
 | [`forecast track-record`](#forecast-track-record) | Measured Brier edge of each ensemble component / panel perspective over the committed aggregate, with advisory weights |
 | [`forecast triage`](#forecast-triage) | Three-way relevance labeling on candidate readings (keep/skim/skip) before they become evidence |
+| [`forecast trial`](#forecast-trial) | Prospective paired learning evaluations; never changes live probabilities |
 | [`forecast triggers`](#forecast-triggers) | Evaluate a question's executable update_triggers against imported values |
 | [`forecast unlink`](#forecast-unlink) | Remove the link(s) between two forecasts |
 | [`forecast update`](#forecast-update) | Append a forecast snapshot |
@@ -693,6 +695,30 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | --- | --- |
 | `factor` | row number, id, or search words for the factor |
 | `--rho` |  |
+
+## `forecast facts`
+
+- **`forecast facts bind`** — 
+- **`forecast facts show`** — 
+
+### `forecast facts bind`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--key` |  |
+| `--source-url` |  |
+| `--value-pointer` |  |
+| `--observed-at-pointer` |  |
+| `--value-type` |  |
+| `--max-age-seconds` |  |
+
+### `forecast facts show`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--cutoff` |  |
 
 ## `forecast freshen`
 
@@ -2129,9 +2155,16 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 
 ## `forecast lesson`
 
+- **`forecast lesson create`** — Create a reviewed lesson from a JSON specification
 - **`forecast lesson list`** — List calibration lessons
 - **`forecast lesson status`** — Update calibration lesson status
 - **`forecast lesson synthesize`** — Derive signed over/under-confidence lessons from resolved forecasts (FDR-gated; advisory by default)
+
+### `forecast lesson create`
+
+| argument | help |
+| --- | --- |
+| `--spec-file` |  |
 
 ### `forecast lesson list`
 
@@ -2150,6 +2183,7 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | `--confidence` |  |
 | `--recommended-adjustment-json` |  |
 | `--supersedes` |  |
+| `--metadata-json` |  |
 
 ### `forecast lesson synthesize`
 
@@ -2172,6 +2206,7 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 
 - **`forecast lessons apply`** — Compile a lesson into an enforceable hook rule (auto-detects the enforcement pattern)
 - **`forecast lessons audit`** — Per-lesson coverage: is each learning actually being used? (in-scope / applied / dormant)
+- **`forecast lessons effectiveness`** — Measure outcome evidence for learning; distinguish compliance from skill
 - **`forecast lessons explain`** — Show in-scope lessons and recorded decisions for a forecast
 
 ### `forecast lessons apply`
@@ -2182,6 +2217,12 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | `--severity` | WARN (observe, default) or ERROR (blocks at commit) |
 
 ### `forecast lessons audit`
+
+| argument | help |
+| --- | --- |
+| `--json` |  |
+
+### `forecast lessons effectiveness`
 
 | argument | help |
 | --- | --- |
@@ -2198,6 +2239,13 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `action` | Inspect by default; run recovers confirmed score/postmortem handoffs |
+| `question_id` |  |
+| `--state` |  |
+| `--next-action` |  |
+| `--owner` |  |
+| `--reason` | Review finding; does not resolve or change probability |
+| `--source` | Source inspected for this review |
+| `--revisit-at` | Next check, ISO timestamp; with --state creates a durable reminder |
 | `--now` | UTC inspection/recovery time (defaults to now) |
 | `--limit` | Maximum tasks to execute or rows to display (default 25) |
 | `--json` | Emit full structured status and execution results |
@@ -3354,6 +3402,49 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | --- | --- |
 | `--threshold` |  |
 | `--min-sample` |  |
+
+## `forecast trial`
+
+- **`forecast trial create`** — Freeze a cohort, evidence, lessons, model and evaluation policy
+- **`forecast trial export`** — 
+- **`forecast trial list`** — 
+- **`forecast trial recover`** — 
+- **`forecast trial report`** — 
+- **`forecast trial run`** — 
+
+### `forecast trial create`
+
+| argument | help |
+| --- | --- |
+| `--spec-file` | JSON: assignments {question: cluster}, model, provider, optional budget/effect thresholds |
+
+### `forecast trial export`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--output` |  |
+
+### `forecast trial list`
+
+### `forecast trial recover`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+
+### `forecast trial report`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+
+### `forecast trial run`
+
+| argument | help |
+| --- | --- |
+| `id` |  |
+| `--limit` | Maximum model calls; each question has two arms |
 
 ## `forecast triggers`
 

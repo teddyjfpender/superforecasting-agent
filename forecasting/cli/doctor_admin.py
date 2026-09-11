@@ -51,7 +51,15 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     """Register the ``doctor`` + ``backup`` command groups (contiguous block)."""
 
     lifecycle = forecast_sub.add_parser("lifecycle", help="Inspect or recover forecast lifecycle handoffs")
-    lifecycle.add_argument("action", choices=["status", "run"], nargs="?", default="status", help="Inspect by default; run recovers confirmed score/postmortem handoffs")
+    lifecycle.add_argument("action", choices=["status", "run", "review"], nargs="?", default="status", help="Inspect by default; run recovers confirmed score/postmortem handoffs")
+    lifecycle.add_argument("question_id", nargs="?")
+    from forecasting.settlement_reviews import STATES
+    lifecycle.add_argument("--state", choices=STATES)
+    lifecycle.add_argument("--next-action")
+    lifecycle.add_argument("--owner")
+    lifecycle.add_argument("--reason", help="Review finding; does not resolve or change probability")
+    lifecycle.add_argument("--source", help="Source inspected for this review")
+    lifecycle.add_argument("--revisit-at", help="Next check, ISO timestamp; with --state creates a durable reminder")
     lifecycle.add_argument("--now", help="UTC inspection/recovery time (defaults to now)")
     lifecycle.add_argument("--limit", type=int, default=25, help="Maximum tasks to execute or rows to display (default 25)")
     lifecycle.add_argument("--json", action="store_true", help="Emit full structured status and execution results")
@@ -808,6 +816,26 @@ def _cmd_lifecycle(args: argparse.Namespace) -> None:
     if args.limit < 1:
         raise SystemExit("--limit must be positive")
     results = []
+    if args.action == "review":
+        if not args.question_id or not args.reason or not args.source:
+            raise SystemExit("review requires a question ID, --reason, and --source")
+        if getattr(args, "state", None):
+            from forecasting.settlement_reviews import record_review
+            review = record_review(ledger, question_id=args.question_id, state=args.state,
+                reason=args.reason, source=args.source, next_action=args.next_action,
+                owner=args.owner, revisit_at=args.revisit_at, now=args.now)
+            print(json.dumps(review, indent=2))
+            return
+        from forecasting.models import parse_timestamp
+        revisit = parse_timestamp(args.revisit_at, field_name="revisit_at")
+        question = ledger.get_question(args.question_id)
+        note = ledger.add_analyst_note(
+            question_id=question.id, body=args.reason, headline="Settlement review",
+            generator="operator", forecast_id=question.current_forecast_id,
+            metadata={"lifecycle_review": True, "source": args.source, "revisit_at": revisit},
+        )
+        print(json.dumps(note, indent=2) if args.json else f"Recorded review {note['id']}: {args.reason}")
+        return
     if args.action == "run":
         import uuid
         results = run_lifecycle(ledger, owner=f"cli-lifecycle:{uuid.uuid4().hex[:12]}", now=args.now, limit=args.limit)
@@ -818,8 +846,14 @@ def _cmd_lifecycle(args: argparse.Namespace) -> None:
     else:
         print("Forecast lifecycle")
         print("; ".join(f"{k.replace('_', ' ')}: {v}" for k, v in report["counts"].items()))
-        for row in (report["unfinished"] + report["attention"])[:args.limit]:
+        for row in (report["unfinished"] + report["attention"] + report["limitations"])[:args.limit]:
             print(f"  {row['question_id']} {row['reason']}: {row['title']}")
+            if row.get("review"):
+                print(f"    last review: {row['review']['body']}")
+                print(f"    source: {row['review']['source']}; revisit: {row['review']['revisit_at'] or 'not set'}")
+        for review in report['settlement_reviews'][:args.limit]:
+            print(f"  {review['question_id']} [{review['state']}] owner={review['owner']} next={review['revisit_at'] or 'no retry'}")
+            print(f"    {review['next_action']}")
         for row in report["tasks"][:args.limit]:
             print(f"  task {row['id']} {row['status']} ({row['attempt_count']}/{row['max_attempts']}): {row.get('error') or 'awaiting worker'}")
         print("Review settlement evidence with `forecast protocol <id> --stage resolve`; confirm outcomes explicitly.")

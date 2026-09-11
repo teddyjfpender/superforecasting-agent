@@ -459,8 +459,21 @@ class ForecastDashboardLesson(WireModel):
     updated_at: str | None = wire_optional(nullable=True)
 
 
+class ForecastLearningEffectiveness(WireModel):
+    status: str | None = wire_optional()
+    counts: dict[str, int] | None = wire_optional()
+    interpretation: str | None = wire_optional()
+
+
+class ForecastLifecycleSummary(WireModel):
+    counts: dict[str, int] | None = wire_optional()
+
+
 class ForecastDashboardLearning(WireModel):
     TS_NAME = "ForecastDashboardLearning"
+
+    effectiveness: ForecastLearningEffectiveness | None = wire_optional()
+    trials: dict[str, int] | None = wire_optional()
 
     active_lessons: int | None = wire_optional()
     invalidated_lessons: int | None = wire_optional()
@@ -520,6 +533,8 @@ class ForecastDashboardReview(WireModel):
 
 class ForecastDashboardSummary(WireModel):
     TS_NAME = "ForecastDashboardSummary"
+
+    lifecycle: ForecastLifecycleSummary | None = wire_optional()
 
     active_count: int | None = wire_optional()
     alerts: list[ForecastDashboardAlert] | None = wire_optional()
@@ -1639,6 +1654,9 @@ class ForecastQuestionPacketReferenceClass(WireModel):
 
 class ForecastQuestionPacket(WireModel):
     TS_NAME = "ForecastQuestionPacket"
+
+    applicability_facts: dict[str, Any] | None = wire_optional()
+    settlement_review: dict[str, Any] | None = wire_optional(nullable=True)
 
     analyst_note: ForecastAnalystNote | None = wire_optional(nullable=True)
     analyst_notes: list[ForecastAnalystNote] | None = wire_optional()

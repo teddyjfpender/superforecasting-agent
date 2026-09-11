@@ -2730,6 +2730,16 @@ def run_resolution_finalization_tasks(
                     result={"current_resolution_id": resolution.id}, now=now,
                 ))
                 continue
+            # A leased worker may outlive an operator's terminal review. Keep
+            # ownership intact and finish through the normal attempt ledger.
+            from forecasting.settlement_reviews import latest_reviews
+            review = latest_reviews(ledger).get(question.id)
+            if review and review['state'] == 'no_historical_forecast' and not ledger.list_snapshots(question.id):
+                results.append(complete_operational_task(
+                    ledger, task['id'], owner=owner, disposition='no_historical_forecast',
+                    result={'settlement_review_id': review['id']}, now=now,
+                ))
+                continue
             score = ledger.score_question(task["question_id"])
             postmortem = ledger.create_postmortem(
                 question_id=task["question_id"],
