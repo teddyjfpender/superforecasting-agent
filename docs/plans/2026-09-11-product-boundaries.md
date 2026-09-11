@@ -406,3 +406,28 @@ Shared forecast production workflow:
 - Scheduled warning-runner construction still resides in the CLI. The ledger's
   dashboard-helper dependency and indirect runtime/presentation paths remain
   open, as do full runtime hosting and remote installed-terminal qualification.
+
+Shared warning execution:
+
+- `forecasting.application.warning_runners` owns bounded candidate execution,
+  prerequisite bootstrap, material/marginal/proposal result classification,
+  scheduled runner construction and explicit operator runner composition. CLI
+  functions now adapt options and preserve existing private execution injection.
+  The scheduled entrypoint imports the application owner directly.
+- The runtime adapter owns triage-runner construction. Warning operations retain
+  the existing durable evidence-row and postmortem/autopilot acknowledgment gates.
+  Invalid iteration/count limits, non-boolean force and unsupported cycle commit
+  policies fail before storage access or model execution.
+- Fixed an uncovered scheduled-policy inconsistency: reforecast work already
+  requested `proposal_only`, but scheduled evidence research had omitted the
+  policy. Both scheduled paths now pass it to the shared stage agent. Explicit
+  operator research retains its existing policy behavior.
+- Sixty-three tests passed across cycle/commit policy, scheduled/operator warnings,
+  evidence collection and material-change drains. New cases verify a pending
+  proposal with unchanged current snapshot, acknowledgment only after new evidence,
+  rejection of success-without-new-evidence, and malformed option admission.
+  Shared Python quality passes; all ten import contracts pass, with the execution
+  contract extended to prohibit scheduled entrypoint imports of CLI orchestration.
+- Full forecast-service transitive isolation is still incomplete: ledger
+  distribution interpretation still reaches dashboard helpers, and indirect
+  runtime startup/setup dependencies remain to extract.

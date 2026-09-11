@@ -8427,267 +8427,60 @@ from forecasting.application.reviews import (
 def _build_cycle_reforecast_runner(
     args: argparse.Namespace, *, commit_policy: str = "commit_material"
 ):
-    """The CLI-layer callable the cron cycle invokes to autonomously re-forecast the
-    questions a sweep flagged. It validates each candidate is a LIVE question, honors
-    the pipeline update gate (skip + report blockers unless --force), caps the count
-    (--max-questions), runs the LLM update stage, and returns per-question result
-    dicts. Lives here so run_agent is never imported by cron_runner/ledger.
+    """Adapt CLI options to the shared bounded reforecast operation."""
+    from forecasting.application.warning_runners import build_cycle_reforecast_runner
 
-    ``commit_policy="proposal_only"`` is used by cron: the agent tool is forced through
-    the normal gates but cannot write a snapshot. The default remains the explicit
-    operator-run material-commit behavior."""
-    from forecasting.warnings import is_material_move
-
-    ledger = _ledger(args)
-    model, provider = args.model, args.provider
-    _mi = getattr(args, "max_iterations", None)
-    max_iter = 12 if _mi is None else _mi
-    max_q = getattr(args, "max_questions", None)
-    force = getattr(args, "force", False)
-
-    def _runner(question_ids: list[str]) -> list[dict[str, Any]]:
-        results: list[dict[str, Any]] = []
-        processed = 0  # questions an LLM run was actually started for (the expensive bit)
-        for qid in question_ids:
-            if max_q is not None and processed >= max_q:
-                results.append({"question_id": qid, "status": "skipped", "detail": f"--max-questions {max_q} reached"})
-                continue
-            try:
-                question = ledger.get_question(qid)
-            except Exception:
-                question = None
-            if question is None or getattr(question, "status", None) != "active":
-                results.append({"question_id": qid, "status": "skipped", "detail": "not an active question"})
-                continue
-            counted = False  # whether this question already consumed one of the max_q session budgets
-            if not force:
-                pstatus = build_pipeline_status(ledger, qid)
-                if not pstatus.get("update_ready", True):
-                    # BOOTSTRAP instead of skip: drive the missing prerequisite
-                    # stages (research, then base_rate) through the SAME gated agent
-                    # chain, then re-check the gate. This is what lets the cron sweep
-                    # re-forecast a FRESH question an operator just dropped in — not
-                    # only ones hand-researched already. Skip stays the honest
-                    # fallback when bootstrap fails to satisfy the gate.
-                    blockers = pstatus.get("update_blockers") or []
-                    prereq_stages = [s for s in ("research", "base_rate") if s in blockers]
-                    errored: list[str] = []
-                    if prereq_stages:
-                        # A bootstrap runs up to 2 real, multi-minute LLM stages, so it
-                        # must COUNT against --max-questions the moment it starts —
-                        # otherwise a batch of never-ready questions burns 2N uncounted
-                        # sessions (each hits `continue` below without incrementing).
-                        # Counting here (not after) bounds the expensive work honestly;
-                        # `counted` then suppresses the pre-update increment so a
-                        # question that bootstraps AND proceeds to update is charged once.
-                        processed += 1
-                        counted = True
-                        # run_forecast_chain captures a raising stage per-stage (it
-                        # never re-raises), so the sweep is not aborted by a flaky
-                        # bootstrap; a still-closed gate below is the honest fallback.
-                        boot = run_forecast_chain(
-                            ledger, qid, model=model, provider=provider,
-                            max_iterations=max_iter, stages=prereq_stages,
-                            commit_policy=commit_policy,
-                        )
-                        errored = [s["stage"] for s in boot["stages"] if s.get("status") == "error"]
-                        pstatus = build_pipeline_status(ledger, qid)
-                    if not pstatus.get("update_ready", True):
-                        still = ", ".join(pstatus.get("update_blockers") or []) or "prerequisites missing"
-                        detail = f"update gated after bootstrap: {still}"
-                        if errored:
-                            detail += f" (bootstrap stage error: {', '.join(errored)})"
-                        results.append({"question_id": qid, "status": "skipped", "detail": detail})
-                        continue
-            prior = ledger.get_current_snapshot(qid)
-            prior_proposals = (
-                {
-                    proposal["id"]
-                    for proposal in ledger.list_forecast_update_proposals(
-                        question_id=qid, status="pending", limit=100
-                    )
-                }
-                if commit_policy == "proposal_only"
-                else set()
-            )
-            # Count BEFORE the agent runs: the cap bounds expensive multi-minute LLM
-            # sessions, so a question that ran but declined to commit still counts.
-            # A question that already paid for its budget in the bootstrap above
-            # (counted=True) is not charged twice.
-            if not counted:
-                processed += 1
-            try:
-                _run_update_agent(
-                    ledger, qid, model=model, provider=provider,
-                    max_iterations=max_iter, commit_policy=commit_policy,
-                )
-            except Exception as exc:  # one failure must not abort the sweep
-                results.append({"question_id": qid, "status": "error", "detail": str(exc)[:160]})
-                continue
-            post = ledger.get_current_snapshot(qid)
-            if commit_policy == "proposal_only":
-                proposal = next(
-                    (
-                        item
-                        for item in ledger.list_forecast_update_proposals(
-                            question_id=qid, status="pending", limit=100
-                        )
-                        if item["id"] not in prior_proposals
-                    ),
-                    None,
-                )
-                if proposal is not None:
-                    results.append(
-                        {
-                            "question_id": qid,
-                            "status": "proposed",
-                            "detail": f"pending proposal {proposal['id']}; no snapshot committed",
-                        }
-                    )
-                else:
-                    results.append(
-                        {
-                            "question_id": qid,
-                            "status": "skipped",
-                            "detail": "agent created no material proposal; no snapshot committed",
-                        }
-                    )
-                continue
-            new_commit = post is not None and (prior is None or post.forecast_id != prior.forecast_id)
-            if new_commit:
-                # Classify the commit by MATERIALITY (the same is_material_move
-                # primitive the prompt instructs the agent to apply): a MATERIAL
-                # move is the success the auto-reforecast wants; a MARGINAL-delta
-                # commit that slipped through the prompt-level policy is reported
-                # HONESTLY as "marginal" — it is NOT tallied as a material-move
-                # success, so the sweep's status counts and the result detail stay
-                # truthful (and surface the Δp that justifies the classification).
-                prior_p = prior.probability_or_distribution if prior is not None else None
-                material = is_material_move(prior_p, post.probability_or_distribution)
-                delta = None
-                if isinstance(prior_p, (int, float)) and not isinstance(prior_p, bool) and isinstance(
-                    post.probability_or_distribution, (int, float)
-                ) and not isinstance(post.probability_or_distribution, bool):
-                    delta = float(post.probability_or_distribution) - float(prior_p)
-                if material:
-                    detail = f"new snapshot {post.forecast_id}"
-                    if delta is not None:
-                        detail += f" (Δp {delta:+.3f})"
-                    results.append({"question_id": qid, "status": "committed", "detail": detail})
-                else:
-                    detail = f"new snapshot {post.forecast_id} committed at a MARGINAL move"
-                    if delta is not None:
-                        detail += f" (Δp {delta:+.3f}, under the |Δp|>=0.03 material-move threshold)"
-                    results.append({"question_id": qid, "status": "marginal", "detail": detail})
-            else:
-                results.append({"question_id": qid, "status": "skipped", "detail": "agent committed no new snapshot"})
-        return results
-
-    return _runner
-
+    limit = getattr(args, "max_iterations", None)
+    return build_cycle_reforecast_runner(
+        _ledger(args),
+        model=args.model,
+        provider=args.provider,
+        max_iterations=12 if limit is None else limit,
+        max_questions=getattr(args, "max_questions", None),
+        force=getattr(args, "force", False),
+        commit_policy=commit_policy,
+        stage_runner=_run_update_agent,
+    )
 
 # ---------------------------------------------------------------------------
 # Warning resolution (the open alert_events backlog)
 # ---------------------------------------------------------------------------
 
 def _build_warning_runners(args: argparse.Namespace, ledger: ForecastLedger):
-    """Wire the slice-1 dispatcher's injected runners to the REAL gated paths.
+    """Adapt command options to the shared warning-runner composition."""
+    from forecasting.application.warning_runners import build_operator_warning_runners
 
-    Each runner performs genuine gated work and signals success by returning a
-    truthy result (a committed snapshot / a non-failed autopilot run / a written
-    postmortem). The dispatcher acks ONLY on that truthy result, so the
-    load-bearing rule holds: no bare ack to make the number drop.
-    """
-    from forecasting.cron_runner import build_warning_runners
-
-    # REFORECAST runner: only wired when --agent is set, because the real gated
-    # work is an LLM update-stage run. Without --agent we leave REFORECAST alerts
-    # OPEN (the dispatcher reports them "skipped") rather than bare-acking them.
-    reforecast_runner = None
-    evidence_search = None
-    triage_runner = None
-    triage_model = None
-    if getattr(args, "agent", False):
-        _inner = _build_cycle_reforecast_runner(args)
-
-        def reforecast_runner(_led, warning):  # noqa: ARG001 — uses the closed-over runner
-            if not warning.scope_ref:
-                return None
-            results = _inner([warning.scope_ref])
-            # A landed snapshot is real gated work regardless of materiality, so the
-            # alert resolves on either a "committed" (material) OR a "marginal" commit
-            # — the material/marginal split is the cycle TALLY's honesty concern, not
-            # the alert-ack decision. A gated/declined/errored run lands no snapshot
-            # ("skipped"/"error") → falsy → the alert stays open (never bare-acked).
-            landed = [r for r in results if r.get("status") in {"committed", "marginal"}]
-            return landed[0] if landed else None
-
-        # EVIDENCE_COLLECTION search: the LLM/web research-stage pass that
-        # bootstraps a question with NO evidence yet (it searches + imports through
-        # the gated import_source_evidence path). cron_runner wraps this in the
-        # >= 1-new-row gate, so the alert acks ONLY when real evidence landed.
-        evidence_search = _build_evidence_search(args)
-
-        # PAID evidence-autopilot (S6.1): the CHEAP auto-labeler for the
-        # MATERIAL_CHANGE path. Wired only under --agent so the free continuous tick
-        # never spends; bounded to one small labeler call per material change.
-        triage_runner, triage_model = build_triage_runner(model=getattr(args, "model", None))
-
-    # The autopilot (MATERIAL_CHANGE) + score (POSTMORTEM) runners are the shared,
-    # non-LLM gated paths — factored into cron_runner so the CLI, the cron phase,
-    # the gateway, and the agent tool all wire identical "real work" semantics.
-    return build_warning_runners(
+    limit = getattr(args, "max_iterations", None)
+    return build_operator_warning_runners(
         ledger,
+        agent=getattr(args, "agent", False),
+        model=getattr(args, "model", None),
+        provider=getattr(args, "provider", None),
+        max_iterations=12 if limit is None else limit,
+        max_questions=getattr(args, "max_questions", None),
+        force=getattr(args, "force", False),
         now=getattr(args, "now", None),
-        reforecast_runner=reforecast_runner,
-        evidence_search=evidence_search,
-        triage_runner=triage_runner,
-        triage_model=triage_model,
+        stage_runner=_run_update_agent,
     )
 
 
 def build_triage_runner(*, model: str | None = None):
-    """Construct the CHEAP triage auto-labeler runner + resolved model id.
+    """Compatibility facade for the runtime-owned triage adapter."""
+    from agent.forecast_stage import build_triage_runner as build
 
-    Returns ``(runner, model)`` where ``runner`` has the injected labeler shape
-    ``(model, system, user) -> str``. The SAME construction the ``triage_label``
-    tool action uses (``forecasting.quorum.make_aiagent_runner``), so the CLI, the
-    tool, and the evidence-autopilot all label with identical wiring. Accessed via
-    the ``quorum`` module (not a ``from`` import) so tests can monkeypatch
-    ``forecasting.quorum.make_aiagent_runner`` like ``tests/forecasting/test_triage.py``.
-    """
-    from forecasting import appconfig, quorum
-
-    configured = appconfig.get_str("FORECAST_TRIAGE_MODEL")
-    if model or configured:
-        resolved = model or configured
-    else:
-        from superforecasting_agent.runtime.config import load_config
-
-        resolved = _resolve_active_model_id(load_config().get("model")) or quorum.DEFAULT_JUDGE_MODEL
-    runner = quorum.make_aiagent_runner(toolsets=(), max_iterations=2, quiet=True, timeout=180)
-    return runner, resolved
-
+    return build(model=model)
 
 def _build_evidence_search(args: argparse.Namespace):
-    """The AGENT-tier callable the EVIDENCE_COLLECTION runner invokes to research +
-    import evidence for a no-evidence question. Runs the LLM `research`-stage agent
-    (web + forecasting toolsets), which imports readings through the gated
-    `import_source_evidence` path. Lives here so run_agent is never imported by
-    cron_runner/ledger; cron_runner owns the >= 1-new-row ack gate."""
-    model, provider = args.model, args.provider
-    _mi = getattr(args, "max_iterations", None)
-    max_iter = 12 if _mi is None else _mi
+    """Adapt CLI research options; durable evidence admission remains shared."""
+    from forecasting.application.warning_runners import build_evidence_search
 
-    def _search(led, warning):  # noqa: ARG001 — uses the question id off the warning
-        if warning.scope_type != "question" or not warning.scope_ref:
-            return None
-        return _run_update_agent(
-            led, warning.scope_ref,
-            model=model, provider=provider, max_iterations=max_iter, stage="research",
-        )
-
-    return _search
+    limit = getattr(args, "max_iterations", None)
+    return build_evidence_search(
+        model=args.model,
+        provider=args.provider,
+        max_iterations=12 if limit is None else limit,
+        stage_runner=_run_update_agent,
+    )
 
 
 def build_cron_warning_agent_runners(
@@ -8698,37 +8491,19 @@ def build_cron_warning_agent_runners(
     max_iterations: int | None = None,
     now: str | None = None,
 ):
-    """Build the paid-tier (LLM) warning-automode runners for the no-agent cron
-    entrypoint: returns ``(reforecast_runner, evidence_search)``.
+    """Compatibility facade for the shared scheduled warning operation."""
+    from forecasting.application.warning_runners import (
+        build_cron_warning_agent_runners as build,
+    )
 
-    Lives in the CLI layer so ``run_agent`` is NEVER imported by
-    ``forecasting.cron_runner`` (layer purity). ``cron_runner.main_warning_automode``
-    imports this lazily only when ``--agent`` is set. The reforecast closure is
-    truthy only when the agent created a fresh pending proposal; the evidence
-    search is the research-stage import pass cron_runner wraps in its >=1-new-row
-    ack gate."""
-    args = argparse.Namespace(
-        db=db_path,
+    return build(
+        db_path=db_path,
         model=model,
         provider=provider,
         max_iterations=max_iterations,
         now=now,
-        agent=True,
-        force=False,
-        max_questions=None,
+        stage_runner=_run_update_agent,
     )
-    _inner = _build_cycle_reforecast_runner(args, commit_policy="proposal_only")
-
-    def reforecast_runner(_led, warning):  # noqa: ARG001 — uses the closed-over runner
-        if not warning.scope_ref:
-            return None
-        results = _inner([warning.scope_ref])
-        proposed = [r for r in results if r.get("status") == "proposed"]
-        return proposed[0] if proposed else None
-
-    evidence_search = _build_evidence_search(args)
-    return reforecast_runner, evidence_search
-
 
 def _warning_plan_entry(warning, runners) -> dict[str, Any]:
     """Pure (no-write) preview of what ``resolve_alert`` WOULD do for ``warning``.

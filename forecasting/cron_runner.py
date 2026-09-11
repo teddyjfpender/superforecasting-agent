@@ -2233,7 +2233,7 @@ def main_warning_automode(argv: list[str] | None = None) -> int:
     agent_enabled = args.agent or _env_flag("FORECAST_WARNINGS_AUTOMODE_AGENT")
     if agent_enabled:
         try:
-            from forecasting.cli import build_cron_warning_agent_runners
+            from forecasting.application.warning_runners import build_cron_warning_agent_runners
 
             reforecast_runner, evidence_search = build_cron_warning_agent_runners(
                 db_path=db_path,

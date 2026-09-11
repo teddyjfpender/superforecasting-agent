@@ -94,3 +94,32 @@ def research_audit_round_limit() -> int:
     except Exception:
         value = 2
     return max(0, value)
+
+
+def build_triage_runner(*, model: str | None = None):
+    """Construct the CHEAP triage auto-labeler runner + resolved model id.
+
+    Returns ``(runner, model)`` where ``runner`` has the injected labeler shape
+    ``(model, system, user) -> str``. The SAME construction the ``triage_label``
+    tool action uses (``forecasting.quorum.make_aiagent_runner``), so the CLI, the
+    tool, and the evidence-autopilot all label with identical wiring. Accessed via
+    the ``quorum`` module (not a ``from`` import) so tests can monkeypatch
+    ``forecasting.quorum.make_aiagent_runner`` like ``tests/forecasting/test_triage.py``.
+    """
+    from forecasting import appconfig, quorum
+
+    configured = appconfig.get_str("FORECAST_TRIAGE_MODEL")
+    if model or configured:
+        resolved = model or configured
+    else:
+        from forecasting.quorum_autorun import resolve_active_model_id
+        from superforecasting_agent.runtime.config import load_config
+
+        resolved = (
+            resolve_active_model_id(load_config().get("model"))
+            or quorum.DEFAULT_JUDGE_MODEL
+        )
+    runner = quorum.make_aiagent_runner(
+        toolsets=(), max_iterations=2, quiet=True, timeout=180
+    )
+    return runner, resolved

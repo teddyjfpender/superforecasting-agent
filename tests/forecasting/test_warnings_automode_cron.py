@@ -208,11 +208,11 @@ def test_main_keeps_learned_reviews_but_leaves_estimation_to_dedicated_worker(
     tmp_path, monkeypatch
 ):
     from forecasting import estimator_worker, learned_error_worker
-    from forecasting import cli as forecast_cli
+    from forecasting.application import warning_runners
 
     calls: list[tuple[str, int]] = []
     monkeypatch.setattr(
-        forecast_cli,
+        warning_runners,
         "build_cron_warning_agent_runners",
         lambda **_kwargs: (lambda *_args: True, lambda *_args: True),
     )
@@ -266,13 +266,13 @@ def test_main_keeps_learned_reviews_but_leaves_estimation_to_dedicated_worker(
 def test_warning_automode_uses_explicit_cron_environment_pin(
     tmp_path, monkeypatch
 ):
-    from forecasting import cli as forecast_cli
+    from forecasting.application import warning_runners
 
     captured = {}
     monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_MODEL", "gpt-4.1")
     monkeypatch.setenv("SUPERFORECASTING_AGENT_INFERENCE_PROVIDER", "copilot")
     monkeypatch.setattr(
-        forecast_cli,
+        warning_runners,
         "build_cron_warning_agent_runners",
         lambda **kwargs: captured.update(kwargs)
         or (lambda *_args: True, lambda *_args: True),
