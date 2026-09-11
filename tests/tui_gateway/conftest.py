@@ -10,7 +10,6 @@ from superforecasting_agent.hosting.runtime import RuntimeHost
 def isolated_runtime_host(monkeypatch):
     from tui_gateway import server
     monkeypatch.setattr(server, '_host', RuntimeHost())
-    monkeypatch.setattr(server, '_auth_flow', {})
     monkeypatch.setattr(server, '_cron_ticker_stop', threading.Event())
     monkeypatch.setattr(server, '_cron_ticker_thread', None)
     yield

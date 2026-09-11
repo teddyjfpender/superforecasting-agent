@@ -13,8 +13,9 @@ one bootstrap/check workflow and installed hooks, independent runtime hosting wi
 version/capability negotiation, and separately verified distribution profiles.
 Review/resolution now reach shared services from the real Ink desk and CLI.
 RuntimeHost now owns serving lifetime, workers, live sessions, storage and raw
-profile configuration. Remaining architecture work includes device-auth and
-legacy command orchestration, lower-level resource cleanup, and cross-version
+profile configuration and device sign-in attempts. Remaining architecture work
+includes failed-build recovery and legacy command orchestration, lower-level
+resource cleanup, and cross-version
 distribution qualification. See the plan for precise acceptance evidence.
 
 ## Runtime ownership and real desk follow-up (September 11)

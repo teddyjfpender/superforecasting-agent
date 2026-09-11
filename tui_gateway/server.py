@@ -767,8 +767,6 @@ def start_runtime() -> None:
 
 def _stop_runtime_services() -> None:
     _stop_cron_ticker()
-    with _auth_flow_lock:
-        _auth_flow["cancelled"] = True
 
 
 def _release_runtime_prompts(sid: str, session: dict) -> None:
@@ -5701,51 +5699,24 @@ def _(rid, params: dict) -> dict:
 # which makes it fully drivable from the TUI: auth.start returns the
 # verification URL + user code immediately and polls in a background
 # thread; auth.poll reports pending/success/failure.
-_auth_flow_lock = threading.Lock()
-_auth_flow: dict = {}
+def _run_codex_device_poll(owner, attempt, grant) -> None:
+    from superforecasting_agent.runtime import codex_device_flow as flow
+    from superforecasting_agent.runtime.auth import _save_codex_tokens
 
-
-def _auth_flow_snapshot() -> dict:
-    with _auth_flow_lock:
-        return dict(_auth_flow)
-
-
-def _auth_flow_update(**fields) -> None:
-    with _auth_flow_lock:
-        _auth_flow.update(fields)
-
-
-def _run_codex_device_poll(grant, interval: int) -> None:
-    """Background poller: wait for the user to finish signing in, then
-    exchange + persist tokens. All terminal states land in _auth_flow."""
-    import time as _time
-
-    from superforecasting_agent.runtime import codex_device_flow as _flow
-
-    deadline = _time.monotonic() + _flow.DEVICE_FLOW_MAX_WAIT_SECONDS
-    try:
-        while _time.monotonic() < deadline:
-            snapshot = _auth_flow_snapshot()
-            if snapshot.get("cancelled"):
-                _auth_flow_update(status="cancelled", message="sign-in cancelled")
-                return
-            _time.sleep(interval)
-            result = _flow.poll_device_token_once(grant)
-            if result is None:
-                continue
-            creds = _flow.exchange_device_code(
-                result["authorization_code"], result["code_verifier"]
-            )
-            from superforecasting_agent.runtime.auth import _save_codex_tokens
-
-            _save_codex_tokens(creds["tokens"], creds.get("last_refresh"))
-            _auth_flow_update(status="success", message="signed in to OpenAI Codex")
-            return
-        _auth_flow_update(
-            status="failed", message="sign-in timed out after 15 minutes — run /auth again"
-        )
-    except Exception as e:  # AuthError or network failure — surface, don't crash
-        _auth_flow_update(status="failed", message=str(e))
+    owner.run(
+        attempt,
+        interval=grant.interval,
+        max_wait=flow.DEVICE_FLOW_MAX_WAIT_SECONDS,
+        poll=lambda: flow.poll_device_token_once(grant),
+        exchange=lambda result: flow.exchange_device_code(
+            result["authorization_code"], result["code_verifier"]
+        ),
+        persist=lambda credentials: _save_codex_tokens(
+            credentials["tokens"], credentials.get("last_refresh")
+        ),
+        success_message="signed in to OpenAI Codex",
+        timeout_message="sign-in timed out after 15 minutes — run /auth again",
+    )
 
 
 def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
@@ -5851,20 +5822,20 @@ def _(rid, params: dict) -> dict:
     except Exception as e:
         return _err(rid, 5035, str(e))
 
-    with _auth_flow_lock:
-        _auth_flow.clear()
-        _auth_flow.update(
-            {
-                "provider": provider,
-                "status": "pending",
-                "user_code": grant.user_code,
-                "url": grant.verification_url,
-                "cancelled": False,
-                "session_id": (params.get("session_id") or "").strip(),
-                "consumed": False,
-            }
+    owner = _host.sign_in
+    attempt = owner.begin(
+        provider=provider,
+        session_id=(params.get("session_id") or "").strip(),
+        user_code=grant.user_code,
+        url=grant.verification_url,
+    )
+    try:
+        _host.workers.start(
+            lambda: _run_codex_device_poll(owner, attempt, grant), name="codex-device-poll"
         )
-    _host.workers.start(lambda: _run_codex_device_poll(grant, grant.interval), name="codex-device-poll")
+    except Exception as exc:
+        owner.fail(attempt, str(exc))
+        return _err(rid, 5035, str(exc))
     return _ok(
         rid,
         {
@@ -5886,9 +5857,7 @@ def _(rid, params: dict) -> dict:
     marks the flow consumed — a terminal status is reported exactly once, so
     a lingering second poll loop can't double-report "signed in".
     """
-    if params.get("cancel"):
-        _auth_flow_update(cancelled=True)
-    snapshot = _auth_flow_snapshot()
+    snapshot = _host.sign_in.poll(cancel=bool(params.get("cancel")))
     if not snapshot:
         return _ok(rid, {"status": "none"})
 
@@ -5896,15 +5865,13 @@ def _(rid, params: dict) -> dict:
 
     # Terminal states are reported once, then the flow is cleared so repeat
     # polls (and any stale concurrent watcher) see "none".
-    if status in {"success", "failed", "cancelled"} and not snapshot.get("consumed"):
+    if status in {"success", "failed", "cancelled"}:
         applied = False
         if status == "success":
             session_id = snapshot.get("session_id") or params.get("session_id") or ""
             applied = _refresh_agent_credentials_after_auth(
                 session_id, snapshot.get("provider") or "openai-codex"
             )
-        with _auth_flow_lock:
-            _auth_flow["consumed"] = True
         return _ok(
             rid,
             {
@@ -5916,9 +5883,6 @@ def _(rid, params: dict) -> dict:
                 "credentials_applied": applied,
             },
         )
-
-    if snapshot.get("consumed"):
-        return _ok(rid, {"status": "none"})
 
     return _ok(
         rid,

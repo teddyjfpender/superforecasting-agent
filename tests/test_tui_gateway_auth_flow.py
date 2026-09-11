@@ -58,8 +58,8 @@ def test_auth_start_returns_code_and_url(monkeypatch):
     assert result["provider"] == "openai-codex"
 
     assert _poll()["result"]["status"] == "pending"
-    _poll({"cancel": True})
-    _wait_status("cancelled")
+    assert _poll({"cancel": True})["result"]["status"] == "cancelled"
+    assert _poll()["result"]["status"] == "none"
 
 
 def test_auth_flow_success_persists_tokens(monkeypatch):
@@ -235,8 +235,8 @@ def test_auth_start_rejects_unsupported_provider():
     assert "/api-key" in resp["error"]["message"]
 
 
-def test_auth_poll_with_no_flow():
+def test_auth_poll_with_no_flow(monkeypatch):
     # Fresh-state behavior: clear any flow left by earlier tests.
-    with server._auth_flow_lock:
-        server._auth_flow.clear()
+    from superforecasting_agent.hosting.device_auth import DeviceSignIn
+    monkeypatch.setattr(server._host, "sign_in", DeviceSignIn())
     assert _poll()["result"]["status"] == "none"

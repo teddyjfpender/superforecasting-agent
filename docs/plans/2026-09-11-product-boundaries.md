@@ -1119,3 +1119,36 @@ Runtime composition and serving lifetime:
   text startup errors directly instead of obscuring them with a missing-byte key.
 - Remaining boundaries include device-auth workflow state, legacy command worker
   behavior, and concrete tool-resource ownership for safely retryable agent cleanup.
+
+Installed runtime composition qualification:
+
+- Built from isolated `9b6e98c8a` (source-equivalent to primary `374dd2d49`), then
+  verified in clean environments outside the checkout. Backend wheel SHA256:
+  `79f3d334e7b96b3e14ed80258c7ff15cd29e6942ac2a564620268bd4305470ed`;
+  terminal: `03c9d82691c80a95a0e64f3adce24b5676aae8e440861244d857d4256b17e7b2`.
+- Backend lifecycle without Node, independent terminal installation, real Ink
+  scoring against separate local and authenticated remote hosts, compatibility
+  admission, clean termination and credential-free logs passed.
+  Log: `/tmp/forecast-runtime-owner-installed.log`. This qualifies the runtime
+  composition changes before the following device-auth change.
+
+Device sign-in ownership and stale-result protection:
+
+- `hosting/device_auth.py::DeviceSignIn` owns attempts independently of RPC and
+  provider storage. New attempts cancel previous ones. The same lock serializes
+  replacement/cancellation with the final credential save; an obsolete exchange
+  cannot persist tokens or overwrite the current attempt's status.
+- Terminal status is consumed atomically, so concurrent polls cannot apply one
+  success twice. Cancellation wakes long poll intervals immediately. Results that
+  arrive after the deadline fail without being saved. Host shutdown cancels the
+  attempt before draining its owned worker; restart creates a fresh auth owner.
+- RPC still selects the supported provider and supplies its network/token-storage
+  adapters. It reports cancellation directly in the cancelling poll response;
+  subsequent polls return none, preserving once-only terminal consumption.
+- Gateway/auth/boundary selection: 514 passed. Final focused owner/auth selection,
+  including host shutdown/restart: 22 passed. Logs:
+  `/tmp/forecast-device-auth-qualified-tests.log` and
+  `/tmp/forecast-auth-owner-final-tests.log`. All 28 import contracts pass.
+- Remaining application boundaries include failed-agent-build retry and legacy
+  command behavior. Lower-level agent tool-resource retry ownership, cross-version
+  product upgrades and broader platform qualification remain open.

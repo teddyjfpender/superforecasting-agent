@@ -8,6 +8,7 @@ from collections.abc import Callable
 from typing import Any
 
 from superforecasting_agent.hosting.configuration import ProfileConfiguration
+from superforecasting_agent.hosting.device_auth import DeviceSignIn
 from superforecasting_agent.hosting.registry import SessionRegistry
 from superforecasting_agent.hosting.storage import SessionStore
 from superforecasting_agent.hosting.workers import RuntimeWorkers
@@ -30,6 +31,7 @@ class RuntimeHost:
         self.sessions = SessionRegistry()
         self.store = SessionStore()
         self.configuration = ProfileConfiguration()
+        self.sign_in = DeviceSignIn()
 
     def start(self, *, reset_services: Callable[[], None]) -> None:
         with self._lock:
@@ -43,6 +45,7 @@ class RuntimeHost:
             ):
                 raise RuntimeError("previous runtime shutdown is incomplete")
             reset_services()
+            self.sign_in = DeviceSignIn()
             self.store.start()
             self.workers = RuntimeWorkers(max_workers=self._max_workers)
             self._shutdown_complete = False
@@ -61,6 +64,7 @@ class RuntimeHost:
             if self._shutdown_complete:
                 return True
             self.workers.stop()
+            self.sign_in.cancel()
             interruption_failed = False
             try:
                 stop_services()
