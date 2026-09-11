@@ -6696,11 +6696,10 @@ class GatewayRunner:
                 _phase_elapsed(),
             )
 
-            from gateway.status import remove_pid_file, release_gateway_runtime_lock, gateway_runtime_lock_owner
+            from gateway.status import release_gateway_runtime_lock
             owner = getattr(self, "_runtime_lock_owner", None)
-            if owner is not None and gateway_runtime_lock_owner() is owner:
-                remove_pid_file()
-                release_gateway_runtime_lock(owner=owner)
+            if owner is not None:
+                release_gateway_runtime_lock(owner=owner, remove_pid=True)
 
             # Write a clean-shutdown marker so the next startup knows this
             # wasn't a crash.  suspend_recently_active() only needs to run
@@ -19023,9 +19022,7 @@ async def start_gateway(config: Optional[GatewayConfig] = None, replace: bool = 
         from gateway.status import gateway_runtime_lock_owner
         runner._runtime_lock_owner = gateway_runtime_lock_owner()
         def release_owned_runtime():
-            if gateway_runtime_lock_owner() is runner._runtime_lock_owner:
-                remove_pid_file()
-                release_gateway_runtime_lock(owner=runner._runtime_lock_owner)
+            release_gateway_runtime_lock(owner=runner._runtime_lock_owner, remove_pid=True)
         atexit.register(release_owned_runtime)
 
         # Only the process that owns the gateway runtime lock may reconcile runs.

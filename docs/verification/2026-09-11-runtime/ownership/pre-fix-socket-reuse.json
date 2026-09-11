@@ -1,0 +1,11 @@
+{
+  "source_revision": "89e9fc324^",
+  "mechanism": "worker closes pipe; socketpair reuses descriptor; handle cleanup closes unrelated socket; socket.close raises EBADF",
+  "errors": [
+    {
+      "errno": 9,
+      "message": "[Errno 9] Bad file descriptor"
+    }
+  ],
+  "historical_incident_attribution": "not established"
+}

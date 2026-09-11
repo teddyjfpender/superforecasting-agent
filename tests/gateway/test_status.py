@@ -976,12 +976,15 @@ def test_stale_shutdown_cannot_release_a_new_runtime(tmp_path, monkeypatch):
     status.release_gateway_runtime_lock(owner=old)
     assert status.acquire_gateway_runtime_lock()
     current = status.gateway_runtime_lock_owner()
+    status.write_pid_file()
     try:
-        status.release_gateway_runtime_lock(owner=old)
+        status.release_gateway_runtime_lock(owner=old, remove_pid=True)
+        assert (tmp_path / "gateway.pid").exists()
         assert status.gateway_runtime_lock_owner() is current
         assert status.is_gateway_runtime_lock_active()
     finally:
-        status.release_gateway_runtime_lock(owner=current)
+        status.release_gateway_runtime_lock(owner=current, remove_pid=True)
+    assert not (tmp_path / "gateway.pid").exists()
 
 
 def test_failed_lock_record_write_does_not_leak_descriptor(tmp_path, monkeypatch):

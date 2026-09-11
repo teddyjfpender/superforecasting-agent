@@ -462,13 +462,15 @@ def gateway_runtime_lock_owner():
         return _gateway_lock_handle
 
 
-def release_gateway_runtime_lock(*, owner=_UNSET) -> None:
+def release_gateway_runtime_lock(*, owner=_UNSET, remove_pid: bool = False) -> None:
     """Release an owned lease; stale cleanup cannot release a newer lease."""
     global _gateway_lock_handle
     with _gateway_lock_guard:
         handle = _gateway_lock_handle
         if handle is None or (owner is not _UNSET and owner is not handle):
             return
+        if remove_pid:
+            remove_pid_file()
         _gateway_lock_handle = None
         _release_file_lock(handle)
         try:
