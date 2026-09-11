@@ -186,3 +186,18 @@ def test_real_desk_shared_forecast_operations(local_desk):
         until(ws, lambda out: b'auto_score:' in out)
         assert ledger.get_latest_resolution(question.id).id == resolution.id
         ws.close(code=1000)
+
+
+def test_real_desk_unavailable_history_does_not_start_replacement(local_desk, monkeypatch):
+    client, home, _ = local_desk
+    monkeypatch.setenv('FORECAST_TEST_STORE_FAILURE', '1')
+    (home / 'config.yaml').write_text('model: local-fixture\ndisplay:\n  skin: forecast\n  tui_auto_resume_recent: true\n', encoding='utf-8')
+    with client.websocket_connect('/api/pty?token=local-engineering&channel=history-unavailable') as ws:
+        ws.send_text('\x1b[RESIZE:160;45]')
+        until(ws, lambda out: b'session startup unavailable' in out)
+        assert receipt(home) is None
+        state = home / 'state.db'
+        if state.exists():
+            with closing(sqlite3.connect(state)) as db:
+                assert db.execute('SELECT COUNT(*) FROM sessions').fetchone()[0] == 0
+        ws.close(code=1000)

@@ -4877,11 +4877,7 @@ def test_session_most_recent_returns_null_when_only_tool_rows(monkeypatch):
     assert resp["result"]["session_id"] is None
 
 
-def test_session_most_recent_folds_db_exception_into_null_result(monkeypatch):
-    """Per contract, errors are folded into the null-result shape so
-    callers don't have to special-case JSON-RPC error envelopes for
-    'no answer' (Copilot review on #17130)."""
-
+def test_session_most_recent_preserves_storage_failure(monkeypatch):
     class _BrokenDB:
         def list_sessions_rich(self, *, source=None, limit=200, offset=0, exclude_sources=None):
             raise RuntimeError("db locked")
@@ -4892,8 +4888,8 @@ def test_session_most_recent_folds_db_exception_into_null_result(monkeypatch):
         {"id": "1", "method": "session.most_recent", "params": {}}
     )
 
-    assert "error" not in resp
-    assert resp["result"]["session_id"] is None
+    assert resp["error"]["code"] == 5006
+    assert "db locked" in resp["error"]["message"]
 
 
 def test_session_most_recent_handles_db_unavailable(monkeypatch):
@@ -4903,7 +4899,8 @@ def test_session_most_recent_handles_db_unavailable(monkeypatch):
         {"id": "1", "method": "session.most_recent", "params": {}}
     )
 
-    assert resp["result"]["session_id"] is None
+    assert resp["error"]["code"] == 5006
+    assert "state.db unavailable" in resp["error"]["message"]
 
 
 # ── browser.manage ───────────────────────────────────────────────────

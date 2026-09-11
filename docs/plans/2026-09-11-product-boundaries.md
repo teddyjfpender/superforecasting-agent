@@ -212,3 +212,26 @@ Shared session selection:
   construction/finalization, worker draining, database lifetime and legacy
   command adapters still need consolidation. Most-recent RPC's legacy error-to-
   empty-result behavior also remains a recovery transparency follow-up.
+
+
+Recovery transparency follow-up:
+
+- `session.most_recent` returns an error for storage failure; only a successful
+  empty query returns a null session ID. Startup config/history failures no longer
+  create replacement sessions automatically. The terminal gives explicit retry
+  (`/resume`) and new-session (`/new`) actions.
+- Compiled testing exposed a second layer of ambiguity: the common TUI RPC
+  wrapper converts exceptions into null responses. Startup now validates those
+  responses separately from a valid empty-history result. Unit cases cover both
+  rejection and null, and late responses from older startup generations are ignored.
+- Serialized lazy database construction so concurrent RPC startup cannot open
+  multiple session-store handles. Six concurrent callers share one handle in the
+  regression test. Complete database lifetime/drain ownership remains separate.
+- Verification: 227 backend/concurrency tests, 64 UI event tests, and all seven
+  compiled-desk lifecycle tests passed. The injected database-unavailable case
+  proves a visible failure and zero replacement session rows. Shared quality gates
+  pass. The original compiled test failed before the null-response fix.
+
+Full host resource/lifecycle ownership, remaining application command migration,
+installed-product/cross-platform qualification and release assembly integration
+remain open; these recovery fixes do not complete the overall architecture goal.

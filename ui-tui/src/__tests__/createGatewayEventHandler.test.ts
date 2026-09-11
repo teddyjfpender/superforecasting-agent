@@ -1039,7 +1039,7 @@ describe('createGatewayEventHandler', () => {
     expect(resumeById).not.toHaveBeenCalled()
   })
 
-  it('on gateway.ready when config.get rejects, falls back to new session', async () => {
+  it.each(['reject', 'null'])('config.get %s preserves startup failure without creating a replacement', async mode => {
     const appended: Msg[] = []
     const newSession = vi.fn()
     const resumeById = vi.fn()
@@ -1050,6 +1050,10 @@ describe('createGatewayEventHandler', () => {
     ctx.session.STARTUP_RESUME_ID = ''
     ctx.gateway.rpc = vi.fn(async (method: string) => {
       if (method === 'config.get') {
+        if (mode === 'null') {
+          return null
+        }
+
         throw new Error('gateway timeout')
       }
 
@@ -1058,11 +1062,12 @@ describe('createGatewayEventHandler', () => {
 
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
-    await vi.waitFor(() => expect(newSession).toHaveBeenCalled())
+    await vi.waitFor(() => expect(getUiState().status).toBe('session startup unavailable'))
+    expect(newSession).not.toHaveBeenCalled()
     expect(resumeById).not.toHaveBeenCalled()
   })
 
-  it('on gateway.ready when session.most_recent rejects, falls back to new session', async () => {
+  it.each(['reject', 'null'])('session.most_recent %s preserves startup failure without creating a replacement', async mode => {
     const appended: Msg[] = []
     const newSession = vi.fn()
     const resumeById = vi.fn()
@@ -1077,6 +1082,10 @@ describe('createGatewayEventHandler', () => {
       }
 
       if (method === 'session.most_recent') {
+        if (mode === 'null') {
+          return null
+        }
+
         throw new Error('db locked')
       }
 
@@ -1085,8 +1094,35 @@ describe('createGatewayEventHandler', () => {
 
     createGatewayEventHandler(ctx)({ payload: {}, type: 'gateway.ready' } as any)
 
-    await vi.waitFor(() => expect(newSession).toHaveBeenCalled())
+    await vi.waitFor(() => expect(getUiState().status).toBe('session startup unavailable'))
+    expect(newSession).not.toHaveBeenCalled()
     expect(resumeById).not.toHaveBeenCalled()
+  })
+
+  it('ignores a stale startup failure after a newer ready starts a session', async () => {
+    const ctx = buildCtx([])
+    const newSession = vi.fn()
+    ctx.session.newSession = newSession
+    ctx.session.STARTUP_RESUME_ID = ''
+    let rejectOld!: (reason: Error) => void
+    const oldLookup = new Promise((_, reject) => { rejectOld = reject })
+    let reads = 0
+    ctx.gateway.rpc = vi.fn(async (method: string) => {
+      if (method === 'config.get') {
+        return ++reads === 1 ? oldLookup : { config: { display: { tui_auto_resume_recent: false } } }
+      }
+
+      return null
+    })
+    const onEvent = createGatewayEventHandler(ctx)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+    onEvent({ payload: {}, type: 'gateway.ready' } as any)
+    await vi.waitFor(() => expect(newSession).toHaveBeenCalledTimes(1))
+    rejectOld(new Error('old connection closed'))
+    await oldLookup.catch(() => {})
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(getUiState().status).not.toBe('session startup unavailable')
+    expect(newSession).toHaveBeenCalledTimes(1)
   })
 
   it('on gateway.ready with STARTUP_RESUME_ID set, the env wins over config auto_resume', async () => {
@@ -1111,8 +1147,12 @@ describe('createGatewayEventHandler', () => {
   it('keeps gateway noise informational and approval out of Activity', async () => {
     const appended: Msg[] = []
     const ctx = buildCtx(appended)
-    ctx.gateway.rpc = vi.fn(async () => {
-      throw new Error('cold start')
+    ctx.gateway.rpc = vi.fn(async (method: string) => {
+      if (method === 'commands.catalog') {
+        throw new Error('cold start')
+      }
+
+      return { config: { display: { tui_auto_resume_recent: false } } }
     })
 
     const onEvent = createGatewayEventHandler(ctx)

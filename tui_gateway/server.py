@@ -233,6 +233,7 @@ _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
 _answers: dict[str, str] = {}
 _db = None
+_db_lock = threading.Lock()
 _db_error: str | None = None
 _stdout_lock = threading.Lock()
 _cfg_lock = threading.Lock()
@@ -818,20 +819,22 @@ atexit.register(_shutdown_sessions)
 
 def _get_db():
     global _db, _db_error
-    if _db is None:
-        from superforecasting_agent.storage.session import SessionDB
+    # Single ownership: concurrent RPC startup must not open orphan databases.
+    with _db_lock:
+        if _db is None:
+            from superforecasting_agent.storage.session import SessionDB
 
-        try:
-            _db = SessionDB()
-            _db_error = None
-        except Exception as exc:
-            _db_error = str(exc)
-            logger.warning(
-                "TUI session store unavailable — continuing without state.db features: %s",
-                exc,
-            )
-            return None
-    return _db
+            try:
+                _db = SessionDB()
+                _db_error = None
+            except Exception as exc:
+                _db_error = str(exc)
+                logger.warning(
+                    "TUI session store unavailable — continuing without state.db features: %s",
+                    exc,
+                )
+                return None
+        return _db
 
 
 def _db_unavailable_error(rid, *, code: int):
@@ -2998,14 +3001,13 @@ def _(rid, params: dict) -> dict:
     for any CLI tooling that wants "latest session" without paginating
     the full list.
 
-    Contract: a ``{"session_id": null}`` result means "no eligible
-    session found right now".  Errors are also folded into that
-    null-result shape (and logged) so callers don't have to special-
-    case JSON-RPC error envelopes for what is a normal "no answer".
+    A null session_id means the durable query found no eligible conversation.
+    Storage failures remain errors so clients cannot mistake them for empty
+    history and silently start a replacement session.
     """
     db = _get_db()
     if db is None:
-        return _ok(rid, {"session_id": None})
+        return _db_unavailable_error(rid, code=5006)
     try:
         from superforecasting_agent.application.sessions import list_resumable_sessions
 
@@ -3025,9 +3027,9 @@ def _(rid, params: dict) -> dict:
                 },
             )
         return _ok(rid, {"session_id": None})
-    except Exception:
+    except Exception as exc:
         logger.exception("session.most_recent failed")
-        return _ok(rid, {"session_id": None})
+        return _err(rid, 5006, f"session history unavailable: {exc}")
 
 
 @rpc_validated("session.resume")

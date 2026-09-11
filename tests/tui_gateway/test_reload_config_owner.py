@@ -27,3 +27,29 @@ def test_reload_always_preserves_profile_settings_without_cli(tmp_path, monkeypa
     assert yaml.safe_load(path.read_text(encoding='utf-8')) == {
         'model': 'fixture', 'approvals': {'other_setting': True, 'mcp_reload_confirm': False},
     }
+
+
+def test_concurrent_session_store_initialization_has_one_owner(monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    import threading
+    import time
+    from superforecasting_agent.storage import session
+    from tui_gateway import server
+
+    created = []
+    start = threading.Barrier(6)
+    def factory():
+        db = object()
+        created.append(db)
+        time.sleep(0.01)  # Allow racing callers to reach the lazy initialization.
+        return db
+    monkeypatch.setattr(session, 'SessionDB', factory)
+    monkeypatch.setattr(server, '_db', None)
+    monkeypatch.setattr(server, '_db_error', None)
+    def get():
+        start.wait(timeout=5)
+        return server._get_db()
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        results = list(pool.map(lambda _: get(), range(6)))
+    assert len(created) == 1
+    assert all(value is created[0] for value in results)

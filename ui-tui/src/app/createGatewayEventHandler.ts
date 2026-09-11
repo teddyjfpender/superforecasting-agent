@@ -23,7 +23,7 @@ import type { Msg, SubagentProgress, SubagentStatus } from '../types.js'
 import { agentsActiveFromResult, setAgentsActive } from './agentsActiveStore.js'
 import { applyDelegationStatus, getDelegationState } from './delegationStore.js'
 import { forecastDeskRailSections, forecastDeskStatusLabel } from './forecastPanel.js'
-import { markLinkLive, takeResumeSid } from './gatewayLinkStore.js'
+import { getGatewayLink, markLinkLive, takeResumeSid } from './gatewayLinkStore.js'
 import type { GatewayEventHandlerContext } from './interfaces.js'
 import { raisePrompt } from './overlayStore.js'
 import { turnController } from './turnController.js'
@@ -348,7 +348,12 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     }
   }
 
+  let startupGeneration = 0
+
   const handleReady = (skin?: GatewaySkin) => {
+    const generation = ++startupGeneration
+    const currentStartup = () => generation === startupGeneration && getGatewayLink().phase === 'live'
+
     if (skin) {
       applySkin(skin)
     }
@@ -427,7 +432,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
     // users aren't surprised.
     rpc<ConfigFullResponse>('config.get', { key: 'full' })
       .then(cfg => {
-        if (!cfg?.config?.display?.tui_auto_resume_recent) {
+        if (!currentStartup()) {
+          return
+        }
+
+        if (!cfg?.config) {
+          throw new Error('configuration unavailable')
+        }
+
+        if (!cfg.config.display?.tui_auto_resume_recent) {
           patchUiState({ status: 'starting forecast session…' })
           startNewSession()
 
@@ -435,7 +448,15 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
         }
 
         return rpc<SessionMostRecentResponse>('session.most_recent', {}).then(r => {
-          const target = r?.session_id
+          if (!currentStartup()) {
+            return
+          }
+
+          if (!r || !('session_id' in r)) {
+            throw new Error('saved session lookup unavailable')
+          }
+
+          const target = r.session_id
 
           if (target) {
             patchUiState({ status: 'resuming most recent…' })
@@ -448,9 +469,13 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
           startNewSession()
         })
       })
-      .catch(() => {
-        patchUiState({ status: 'starting forecast session…' })
-        startNewSession()
+      .catch((error: unknown) => {
+        if (!currentStartup()) {
+          return
+        }
+
+        patchUiState({ status: 'session startup unavailable' })
+        turnController.pushActivity(`Could not check saved session state: ${rpcErrorMessage(error)}. Use /resume to retry, or /new to explicitly start a session.`, 'error')
       })
   }
 
