@@ -30,7 +30,7 @@ export const asCommandDispatch = (value: unknown): CommandDispatchResponse | nul
     return {
       type: 'send',
       message: o.message,
-      notice: typeof o.notice === 'string' ? o.notice : undefined,
+      notice: typeof o.notice === 'string' ? o.notice : undefined
     }
   }
 
@@ -39,3 +39,40 @@ export const asCommandDispatch = (value: unknown): CommandDispatchResponse | nul
 
 export const rpcErrorMessage = (err: unknown) =>
   err instanceof Error && err.message ? err.message : typeof err === 'string' && err.trim() ? err : 'request failed'
+
+export class GatewayRpcError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | null,
+    readonly data?: unknown
+  ) {
+    super(message)
+    this.name = 'GatewayRpcError'
+  }
+}
+
+export function isCommandHandoff(error: unknown): boolean {
+  if (!(error instanceof GatewayRpcError)) {
+    return false
+  }
+
+  // A host without the legacy method has not executed the command.
+  if (error.code === -32601) {
+    return true
+  }
+
+  if (error.code !== 4018) {
+    return false
+  }
+
+  const data = asRpcResult(error.data)
+
+  if (error.data !== undefined) {
+    return data?.dispatch === 'command.dispatch' && data.execution_started === false
+  }
+
+  // Older hosts use the same pre-execution handoffs without structured data.
+  return /^(configured command:|pending-input command:|skill command:|snapshot restore mutates live config\/state;).*use command\.dispatch/.test(
+    error.message
+  )
+}

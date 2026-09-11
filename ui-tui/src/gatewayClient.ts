@@ -7,10 +7,19 @@ import { createInterface } from 'node:readline'
 import type { GatewayEvent } from './gatewayTypes.js'
 import { CircularBuffer } from './lib/circularBuffer.js'
 import { tuiEnvValue } from './lib/envAlias.js'
+import { GatewayRpcError } from './lib/rpc.js'
 import { runtimeEnvValue } from './lib/runtimeEnv.js'
 import { PROTOCOL_VERSION, WireEvent } from './protocol/generated.js'
 
-export const REQUIRED_HOST_CAPABILITIES = ['forecast.operation', 'session.create', 'session.resume', 'session.branch_replace', 'session.status', 'session.interrupt', 'prompt.submit'] as const
+export const REQUIRED_HOST_CAPABILITIES = [
+  'forecast.operation',
+  'session.create',
+  'session.resume',
+  'session.branch_replace',
+  'session.status',
+  'session.interrupt',
+  'prompt.submit'
+] as const
 
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096
@@ -505,7 +514,9 @@ export class GatewayClient extends EventEmitter {
     const ownedProc = this.proc
     this.stdoutRl = createInterface({ input: this.proc.stdout! })
     this.stdoutRl.on('line', raw => {
-      if (this.proc !== ownedProc || this.stopped) {return}
+      if (this.proc !== ownedProc || this.stopped) {
+        return
+      }
 
       try {
         this.dispatch(JSON.parse(raw))
@@ -519,7 +530,10 @@ export class GatewayClient extends EventEmitter {
 
     this.stderrRl = createInterface({ input: this.proc.stderr! })
     this.stderrRl.on('line', raw => {
-      if (this.proc !== ownedProc || this.stopped) {return}
+      if (this.proc !== ownedProc || this.stopped) {
+        return
+      }
+
       const line = truncateLine(raw.trim())
 
       if (!line) {
@@ -590,7 +604,9 @@ export class GatewayClient extends EventEmitter {
               resolve()
             }
 
-            if (this.ws === ws && !this.stopped) {this.connectSidecarMirror()}
+            if (this.ws === ws && !this.stopped) {
+              this.connectSidecarMirror()
+            }
           },
           { once: true }
         )
@@ -628,7 +644,9 @@ export class GatewayClient extends EventEmitter {
       this.wsConnectPromise = connectPromise
 
       ws.addEventListener('message', ev => {
-        if (this.ws === ws && !this.stopped) {this.handleWebSocketFrame(ev.data)}
+        if (this.ws === ws && !this.stopped) {
+          this.handleWebSocketFrame(ev.data)
+        }
       })
       ws.addEventListener('close', ev => {
         // Skip close events from sockets that have already been
@@ -645,7 +663,10 @@ export class GatewayClient extends EventEmitter {
         this.handleTransportExit(ev.code, `gateway websocket closed${ev.code ? ` (${ev.code})` : ''}`)
       })
       ws.addEventListener('error', () => {
-        if (this.ws !== ws || this.stopped) {return}
+        if (this.ws !== ws || this.stopped) {
+          return
+        }
+
         const line = '[gateway] websocket transport error'
 
         this.pushLog(line)
@@ -722,9 +743,13 @@ export class GatewayClient extends EventEmitter {
   }
 
   private toError(raw: unknown): Error {
-    const err = raw as { message?: unknown } | null | undefined
+    const err = raw as { message?: unknown; code?: unknown; data?: unknown } | null | undefined
 
-    return new Error(typeof err?.message === 'string' ? err.message : 'request failed')
+    return new GatewayRpcError(
+      typeof err?.message === 'string' ? err.message : 'request failed',
+      typeof err?.code === 'number' ? err.code : null,
+      err?.data
+    )
   }
 
   private settle(p: Pending, err: Error | null, result: unknown) {
@@ -744,7 +769,11 @@ export class GatewayClient extends EventEmitter {
 
   private compatibilityError: Error | null = null
 
-  private checkHostCompatibility(payload: { protocol_version?: number | null; min_protocol_version?: number | null; capabilities?: string[] | null } | undefined) {
+  private checkHostCompatibility(
+    payload:
+      | { protocol_version?: number | null; min_protocol_version?: number | null; capabilities?: string[] | null }
+      | undefined
+  ) {
     if (this.compatibilityError) {
       return false
     }
@@ -754,10 +783,17 @@ export class GatewayClient extends EventEmitter {
     const capabilities = payload?.capabilities
     let reason = ''
 
-    if (!Number.isInteger(version) || !Number.isInteger(minimum) || minimum! > PROTOCOL_VERSION || version! < PROTOCOL_VERSION) {
+    if (
+      !Number.isInteger(version) ||
+      !Number.isInteger(minimum) ||
+      minimum! > PROTOCOL_VERSION ||
+      version! < PROTOCOL_VERSION
+    ) {
       reason = `gateway wire version ${String(minimum)}..${String(version)} is incompatible with TUI ${PROTOCOL_VERSION}`
     } else {
-      const missing = REQUIRED_HOST_CAPABILITIES.filter(name => !Array.isArray(capabilities) || !capabilities.includes(name))
+      const missing = REQUIRED_HOST_CAPABILITIES.filter(
+        name => !Array.isArray(capabilities) || !capabilities.includes(name)
+      )
 
       if (missing.length) {
         reason = `backend is missing required capabilities: ${missing.join(', ')}`

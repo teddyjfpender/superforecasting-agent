@@ -4,6 +4,7 @@ import { createSlashHandler } from '../app/createSlashHandler.js'
 import { getOverlayState, resetOverlayState } from '../app/overlayStore.js'
 import { getUiState, patchUiState, resetUiState } from '../app/uiStore.js'
 import { TUI_SESSION_MODEL_FLAG } from '../domain/slash.js'
+import { GatewayRpcError } from '../lib/rpc.js'
 
 describe('createSlashHandler', () => {
   beforeEach(() => {
@@ -136,9 +137,7 @@ describe('createSlashHandler', () => {
     await vi.waitFor(
       () => {
         expect(rpc).toHaveBeenCalledWith('auth.poll', {})
-        expect(ctx.transcript.sys).toHaveBeenCalledWith(
-          'signed in to OpenAI Codex — this session is ready, keep going'
-        )
+        expect(ctx.transcript.sys).toHaveBeenCalledWith('signed in to OpenAI Codex — this session is ready, keep going')
       },
       { timeout: 5000 }
     )
@@ -245,11 +244,7 @@ describe('createSlashHandler', () => {
         expect.arrayContaining([
           expect.objectContaining({
             rows: expect.arrayContaining([
-              [
-                '1. 61% ↑8pt',
-                expect.stringContaining('Will the CPI release exceed consensus?'),
-                '/questions 1'
-              ]
+              ['1. 61% ↑8pt', expect.stringContaining('Will the CPI release exceed consensus?'), '/questions 1']
             ]),
             title: 'Forecast Questions'
           }),
@@ -349,9 +344,7 @@ describe('createSlashHandler', () => {
         expect.arrayContaining([
           expect.objectContaining({ title: 'Forecast Search' }),
           expect.objectContaining({
-            rows: expect.arrayContaining([
-              expect.arrayContaining(['/questions fq_cpi'])
-            ]),
+            rows: expect.arrayContaining([expect.arrayContaining(['/questions fq_cpi'])]),
             title: 'Matches'
           })
         ])
@@ -428,7 +421,9 @@ describe('createSlashHandler', () => {
     })
 
     expect(
-      handler("/update inflation -- --probability 0.66 --rationale May CPI (all-items) and BLS's release shifted higher")
+      handler(
+        "/update inflation -- --probability 0.66 --rationale May CPI (all-items) and BLS's release shifted higher"
+      )
     ).toBe(true)
     await vi.waitFor(() => {
       expect(rpc).toHaveBeenCalledWith('forecast.command', {
@@ -585,7 +580,9 @@ describe('createSlashHandler', () => {
 
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
-    expect(createSlashHandler(ctx)('/forecast new "Will X happen?" --resolution-criteria "Resolved by source"')).toBe(true)
+    expect(createSlashHandler(ctx)('/forecast new "Will X happen?" --resolution-criteria "Resolved by source"')).toBe(
+      true
+    )
     expect(rpc).toHaveBeenCalledWith('forecast.command', {
       arg: 'new "Will X happen?" --resolution-criteria "Resolved by source"'
     })
@@ -653,9 +650,7 @@ describe('createSlashHandler', () => {
 
     expect(createSlashHandler(ctx)('/forecast new')).toBe(true)
     expect(ctx.transcript.send).not.toHaveBeenCalled()
-    expect(ctx.transcript.sys).toHaveBeenCalledWith(
-      expect.stringContaining('usage: /forecast new')
-    )
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(expect.stringContaining('usage: /forecast new'))
   })
 
   it('routes /api-key (bare, list, set, unset) to the api-key CLI subcommand', () => {
@@ -720,7 +715,7 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type bayesian_update' })
     expect(handler('/forecast-model fq_123 --type time_series')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'model fq_123 --type time_series' })
-    expect(handler('/trend-model fq_123 --series-json \'[[0,10],[1,12]]\' --target-x 2')).toBe(true)
+    expect(handler("/trend-model fq_123 --series-json '[[0,10],[1,12]]' --target-x 2")).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', {
       arg: "model fq_123 --series-json '[[0,10],[1,12]]' --target-x 2 --type trend_projection"
     })
@@ -729,7 +724,10 @@ describe('createSlashHandler', () => {
       arg: 'update fq_123 --probability 0.62 --rationale "new evidence"'
     })
     expect(handler('/resolve fq_123 --outcome yes --confirmed')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'resolve', arg: 'fq_123 --outcome yes --confirmed' })
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', {
+      operation: 'resolve',
+      arg: 'fq_123 --outcome yes --confirmed'
+    })
     expect(handler('/score fq_123')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'score', arg: 'fq_123' })
     expect(handler('/postmortem fq_123 --lesson "discount noisy signals"')).toBe(true)
@@ -1163,7 +1161,9 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/browser connect')).toBe(true)
-    expect(ctx.transcript.sys).toHaveBeenCalledWith('checking Chromium-family browser remote debugging at http://127.0.0.1:9222...')
+    expect(ctx.transcript.sys).toHaveBeenCalledWith(
+      'checking Chromium-family browser remote debugging at http://127.0.0.1:9222...'
+    )
 
     await vi.waitFor(() => {
       expect(ctx.transcript.sys).toHaveBeenCalledWith(
@@ -1252,6 +1252,37 @@ describe('createSlashHandler', () => {
     expect(ctx.transcript.sys).not.toHaveBeenCalledWith('too late')
   })
 
+  it.each([
+    new Error('timeout: slash.exec'),
+    new GatewayRpcError('worker failed after execution', 5030),
+    new GatewayRpcError('invalid configured command', 4018)
+  ])('does not retry an execution failure through another dispatcher: %s', async error => {
+    const ctx = buildCtx()
+    ctx.gateway.gw.request.mockRejectedValue(error)
+    createSlashHandler(ctx)('/fixture-command')
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith(`error: ${error.message}`))
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not dispatch an old handoff after switching sessions', async () => {
+    patchUiState({ sid: 'old-session' })
+    const ctx = buildCtx()
+    let reject!: (error: Error) => void
+    ctx.gateway.gw.request.mockReturnValue(
+      new Promise((_resolve, fail) => {
+        reject = fail
+      })
+    )
+    createSlashHandler(ctx)('/fixture-command')
+    patchUiState({ sid: 'new-session' })
+    reject(new GatewayRpcError('handoff', 4018, { dispatch: 'command.dispatch', execution_started: false }))
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(ctx.gateway.gw.request).toHaveBeenCalledTimes(1)
+    expect(ctx.transcript.sys).not.toHaveBeenCalled()
+  })
+
   it('dispatches command.dispatch with typed alias', async () => {
     const ctx = buildCtx({
       gateway: {
@@ -1259,7 +1290,7 @@ describe('createSlashHandler', () => {
           getLogTail: vi.fn(() => ''),
           request: vi.fn((method: string) => {
             if (method === 'slash.exec') {
-              return Promise.reject(new Error('no'))
+              return Promise.reject(new GatewayRpcError('configured command: use command.dispatch', 4018))
             }
 
             if (method === 'command.dispatch') {
@@ -1344,7 +1375,7 @@ describe('createSlashHandler', () => {
           getLogTail: vi.fn(() => ''),
           request: vi.fn((method: string) => {
             if (method === 'slash.exec') {
-              return Promise.reject(new Error('skill command: use command.dispatch'))
+              return Promise.reject(new GatewayRpcError('skill command: use command.dispatch', 4018))
             }
 
             if (method === 'command.dispatch') {
@@ -1425,7 +1456,9 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('session.save', { session_id: 'sid-abc' })
 
     await vi.waitFor(() => {
-      expect(ctx.transcript.sys).toHaveBeenCalledWith('forecast transcript saved to: /tmp/forecast_transcript_test.json')
+      expect(ctx.transcript.sys).toHaveBeenCalledWith(
+        'forecast transcript saved to: /tmp/forecast_transcript_test.json'
+      )
     })
   })
 

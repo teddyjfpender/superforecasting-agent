@@ -5981,6 +5981,12 @@ def _mirror_slash_side_effects(sid: str, session: dict, command: str) -> str:
     return ""
 
 
+def _command_handoff(rid, message: str) -> dict:
+    response = _err(rid, 4018, message)
+    response["error"]["data"] = {"dispatch": "command.dispatch", "execution_started": False}
+    return response
+
+
 @rpc_validated("slash.exec")
 def _(rid, params: dict) -> dict:
     session, err = _sess_nowait(params, rid)
@@ -6008,19 +6014,18 @@ def _(rid, params: dict) -> dict:
     if quick is not None:
         # Execute only in command.dispatch: executing here and then returning an
         # error would make the client's fallback repeat a failed shell command.
-        return _err(rid, 4018, "configured command: use command.dispatch")
+        return _command_handoff(rid, "configured command: use command.dispatch")
 
     if _cmd_base in _PENDING_INPUT_COMMANDS:
-        return _err(
-            rid, 4018, f"pending-input command: use command.dispatch for /{_cmd_base}"
+        return _command_handoff(
+            rid, f"pending-input command: use command.dispatch for /{_cmd_base}"
         )
 
     if _cmd_base in _WORKER_BLOCKED_COMMANDS:
         subcommand = _cmd_arg.split(maxsplit=1)[0].lower() if _cmd_arg else ""
         if subcommand in {"restore", "rewind"}:
-            return _err(
+            return _command_handoff(
                 rid,
-                4018,
                 "snapshot restore mutates live config/state; use command.dispatch for /snapshot restore",
             )
 
@@ -6029,8 +6034,8 @@ def _(rid, params: dict) -> dict:
 
         _cmd_key = f"/{_cmd_base}"
         if _cmd_key in get_skill_commands():
-            return _err(
-                rid, 4018, f"skill command: use command.dispatch for {_cmd_key}"
+            return _command_handoff(
+                rid, f"skill command: use command.dispatch for {_cmd_key}"
             )
     except Exception:
         pass

@@ -389,3 +389,13 @@ Live runtime membership and retirement belong to
 an existing runtime ID. Enumeration snapshots membership, and retirement preserves
 an entry until finalization and resource disposal succeed. Session content remains protected by each
 session's history/admission lock. The registry imports no transport or product.
+
+
+### Command handoff transport semantics
+
+A `slash.exec` pre-execution handoff returns error code 4018 with
+`data: {dispatch: "command.dispatch", execution_started: false}`.
+Ink preserves RPC error code/data and only falls through on this handoff or an
+absent legacy method (-32601). Established older-host handoff messages remain
+recognized when structured data is absent. Timeout, disconnect, worker failure,
+validation failure and stale-session responses cannot trigger another execution.

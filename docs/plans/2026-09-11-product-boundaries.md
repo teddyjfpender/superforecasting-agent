@@ -1369,3 +1369,21 @@ Configured command admission and TUI execution routing:
 - The preceding integrated batch `41d551d7c` passed 30,766 tests, with 148 skips
   and 58 warnings, and was verified pushed to the working branch. Subsequent hook
   fixes are separately tested follow-ups awaiting integrated full qualification.
+
+
+### Explicit native/legacy command handoff
+
+- Ink no longer retries every slash-worker failure through another dispatcher.
+  The host marks pre-execution handoffs explicitly; the client preserves RPC
+  error code/data and checks session/command identity before following one.
+- Timeouts, disconnects and execution failures retain their original diagnostics.
+  Established legacy handoff messages remain supported, and a host without
+  `slash.exec` can route directly through its native dispatcher.
+- 121 focused TypeScript tests passed, including wire metadata, stale-session
+  fencing and rejected retry cases. 246 backend routing/gateway tests passed.
+  Type checking, lint, Python quality and production bundle compilation passed.
+
+- Real desk plus backend handoff run: 28 passed, including all seven actual
+  Ink/dashboard/local-provider/SQLite lifecycle cases; seven existing forkpty
+  warnings. The later absent-method compatibility branch is covered by the
+  focused TypeScript test rather than a legacy-free installed host.

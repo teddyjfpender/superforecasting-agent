@@ -1,6 +1,6 @@
 import { parseSlashCommand } from '../domain/slash.js'
 import type { SlashExecResponse } from '../gatewayTypes.js'
-import { asCommandDispatch, rpcErrorMessage } from '../lib/rpc.js'
+import { asCommandDispatch, isCommandHandoff, rpcErrorMessage } from '../lib/rpc.js'
 
 import type { SlashHandlerContext } from './interfaces.js'
 import { findSlashCommand } from './slash/registry.js'
@@ -86,7 +86,17 @@ export function createSlashHandler(ctx: SlashHandlerContext): (cmd: string) => b
 
         long ? page(text, parsed.name[0]!.toUpperCase() + parsed.name.slice(1)) : sys(text)
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        if (stale()) {
+          return
+        }
+
+        if (!isCommandHandoff(error)) {
+          guardedErr(error)
+
+          return
+        }
+
         gw.request('command.dispatch', { arg: parsed.arg, name: parsed.name, session_id: sid })
           .then((raw: unknown) => {
             if (stale()) {

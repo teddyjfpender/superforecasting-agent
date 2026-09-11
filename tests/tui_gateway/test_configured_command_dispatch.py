@@ -137,6 +137,9 @@ def test_native_handoff_does_not_need_provider_initialization(configure, command
     response = slash(command)
     assert response["error"]["code"] == 4018
     assert "command.dispatch" in response["error"]["message"]
+    assert response["error"]["data"] == {
+        "dispatch": "command.dispatch", "execution_started": False,
+    }
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
 
