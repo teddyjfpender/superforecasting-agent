@@ -734,6 +734,7 @@ export interface ForecastDashboardFactor {
 
 export interface ForecastDashboardLearning {
   active_lessons?: number
+  effectiveness?: ForecastLearningEffectiveness
   invalidated_lessons?: number
   recent_lessons?: ForecastDashboardLesson[]
   tentative_lessons?: number
@@ -872,6 +873,7 @@ export interface ForecastDashboardSummary {
   factor_count?: number
   factors?: ForecastDashboardFactor[]
   learning?: ForecastDashboardLearning
+  lifecycle?: ForecastLifecycleSummary
   live_performance?: ForecastDashboardLivePerformance
   open_alert_count?: number
   open_assumption_count?: number
@@ -1066,6 +1068,16 @@ export interface ForecastHooksSetRequest {
 export interface ForecastHooksSetResponse {
   enabled?: boolean
   profile?: string
+}
+
+export interface ForecastLearningEffectiveness {
+  counts?: Record<string, number>
+  interpretation?: string
+  status?: string
+}
+
+export interface ForecastLifecycleSummary {
+  counts?: Record<string, number>
 }
 
 export interface ForecastLivePerformanceAgent {

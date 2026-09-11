@@ -222,7 +222,7 @@ def test_backfill_crps_idempotent(tmp_path):
         payload=_dist_payload(median=79.5, lo50=73.0, hi50=86.0, lo90=60.0, hi90=112.0),
         outcome="69.5",
     )
-    assert score.score_rule == "crps_discrete_cdf"
+    assert score.score_rule == "crps_piecewise_linear_cdf_v2"
     crps_before = score.proper_score
 
     report = ledger.backfill_crps_scores(dry_run=True)

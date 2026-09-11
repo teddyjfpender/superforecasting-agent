@@ -1095,3 +1095,35 @@ describe('forecast desk unearned-tail heuristics', () => {
     expect(tailRow?.[1]).toContain('Conway')
   })
 })
+
+it('routes lifecycle recovery and outcome-backed learning to the shared CLI', () => {
+  const response: ForecastDashboardResponse = {summary: {
+    lifecycle: {counts: {settlement_review: 12, unfinished: 2, missing_tasks: 3, failed_tasks: 1}},
+    learning: {effectiveness: {status: 'benefit_not_established', counts: {
+      verified_decision_snapshots: 2, historical_unverified_snapshots: 1500, scored_distinct_questions: 40
+    }}}
+  }}
+  const sections = forecastDashboardSections(response)
+  const lifecycle = sections.find(section => section.title === 'Lifecycle')
+  expect(lifecycle?.rows?.some(row => row[2] === '/forecast lifecycle run')).toBe(true)
+  expect(lifecycle?.rows?.some(row => row[0] === 'recovery errors')).toBe(true)
+  const learning = sections.find(section => section.title === 'Learning Memory')
+  expect(learning?.rows?.some(row => row[2] === '/forecast lessons effectiveness')).toBe(true)
+  expect(learning?.rows?.find(row => row[0] === 'scored questions')?.[1]).toContain('40 questions')
+  expect(learning?.rows?.find(row => row[0] === 'decisions')?.[1]).toContain('1500 historical unverified')
+})
+
+it('keeps review and learning decision views bounded without losing full-report actions', () => {
+  const response: ForecastDashboardResponse = {summary: {
+    lifecycle: {counts: {settlement_review: 12, unfinished: 2, missing_tasks: 3}},
+    learning: {active_lessons: 10, effectiveness: {status: 'benefit_not_established', counts: {}}}
+  }}
+  const review = forecastLedgerViewSections(response, 'review')
+  expect(review.map(section => section.title)).toEqual(['Lifecycle'])
+  expect(review[0]?.rows?.some(row => row[2] === '/forecast lifecycle status')).toBe(true)
+  expect(review[0]?.rows?.some(row => row[2] === '/review --stale')).toBe(true)
+  const learning = forecastLedgerViewSections(response, 'learning')
+  expect(learning.map(section => section.title)).toEqual(['Learning Memory'])
+  expect(learning[0]?.rows).toHaveLength(5)
+  expect(learning[0]?.rows?.some(row => row[2] === '/forecast lessons effectiveness')).toBe(true)
+})

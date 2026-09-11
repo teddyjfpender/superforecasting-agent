@@ -43,6 +43,9 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
 
     lesson_parser = forecast_sub.add_parser("lesson", help="Review and promote calibration lessons")
     lesson_sub = lesson_parser.add_subparsers(dest="lesson_command")
+    lesson_create = lesson_sub.add_parser("create", help="Create a reviewed lesson from a JSON specification")
+    lesson_create.add_argument("--spec-file", required=True)
+    lesson_create.set_defaults(_forecast_handler=_cmd_lesson_create)
     lesson_list = lesson_sub.add_parser("list", help="List calibration lessons")
     lesson_list.add_argument("--scope-type")
     lesson_list.add_argument("--scope-ref")
@@ -54,6 +57,7 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     lesson_status.add_argument("--confidence", type=float)
     lesson_status.add_argument("--recommended-adjustment-json")
     lesson_status.add_argument("--supersedes")
+    lesson_status.add_argument("--metadata-json")
     lesson_status.set_defaults(_forecast_handler=_cmd_lesson_status)
     lesson_synth = lesson_sub.add_parser(
         "synthesize",
@@ -80,6 +84,9 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     lessons_audit = lessons_sub.add_parser("audit", help="Per-lesson coverage: is each learning actually being used? (in-scope / applied / dormant)")
     lessons_audit.add_argument("--json", action="store_true")
     lessons_audit.set_defaults(_forecast_handler=_cmd_lessons_audit)
+    effectiveness = lessons_sub.add_parser("effectiveness", help="Measure outcome evidence for learning; distinguish compliance from skill")
+    effectiveness.add_argument("--json", action="store_true")
+    effectiveness.set_defaults(_forecast_handler=_cmd_lessons_effectiveness)
     explain = lessons_sub.add_parser("explain", help="Show in-scope lessons and recorded decisions for a forecast")
     explain.add_argument("id")
     explain.set_defaults(_forecast_handler=_cmd_lessons_explain)
@@ -366,6 +373,7 @@ def _cmd_lesson_status(args: argparse.Namespace) -> None:
         confidence=args.confidence,
         recommended_adjustment=adjustment,
         supersedes_lesson_id=args.supersedes,
+        metadata=_json_arg(args.metadata_json, "metadata-json") if getattr(args, "metadata_json", None) is not None else None,
     )
     print(f"calibration_lesson: {row['id']}")
     print(f"status: {row['status']}")
@@ -713,7 +721,7 @@ def _print_calibration_summary(summary: dict[str, Any], *, label: str | None = N
 
 
 def _cmd_lessons_explain(args: argparse.Namespace) -> None:
-    from forecasting.learning import active_lessons_for_question
+    from forecasting.learning import active_lessons_for_question, _in_scope_lessons, lesson_applicability
 
     ledger = _ledger(args)
     question = ledger.get_question(_core._resolve_question_id(ledger, args.id))
@@ -721,7 +729,33 @@ def _cmd_lessons_explain(args: argparse.Namespace) -> None:
     print(json.dumps({
         "question_id": question.id,
         "active_lessons": active_lessons_for_question(ledger, question),
+        "conditional_lessons": [{"lesson_id": l["id"], "conditions": l["recommended_adjustment"].get("applicability"),
+            "reason": lesson_applicability(l, question)[1]} for l in _in_scope_lessons(ledger, question)
+            if not lesson_applicability(l, question)[0]],
         "forecast_id": snapshot.forecast_id if snapshot else None,
         "recorded_decisions": (snapshot.metadata or {}).get("lesson_decisions", []) if snapshot else [],
         "interpretation": "Recorded application is process evidence, not evidence of improved accuracy. Historical snapshots without decisions are unverified.",
     }, indent=2))
+
+
+def _cmd_lessons_effectiveness(args):
+    from forecasting.learning_evaluation import learning_effectiveness
+    report = learning_effectiveness(_ledger(args))
+    if args.json:
+        print(json.dumps(report, indent=2))
+        return
+    counts = report["counts"]
+    print("Learning benefit: not established")
+    print(f"Scored distinct questions: {counts.get('scored_distinct_questions', 0)}")
+    print(f"Verified decision snapshots: {counts.get('verified_decision_snapshots', 0)}; historical unverified: {counts.get('historical_unverified_snapshots', 0)}")
+    print(f"Numeric replay pairs: {report['numeric_replay']['pairs']} (self-reported inputs; diagnostic only)")
+    for row in report["observational_cohorts"]:
+        print(f"{row['domain']} | {row['score_rule']} [{row['units']}] | lesson refs={row['lesson_refs_recorded']} | n={row['questions']} | mean={row['mean_score']:.6f}")
+    print(report["interpretation"])
+    print("Next: " + report["next_action"])
+
+
+def _cmd_lesson_create(args):
+    from pathlib import Path
+    spec = json.loads(Path(args.spec_file).read_text(encoding="utf-8"))
+    print(json.dumps(_ledger(args).create_calibration_lesson(**spec), indent=2))

@@ -24,6 +24,7 @@ import { getInputSelection } from './inputSelectionStore.js'
 import type { InputHandlerContext, InputHandlerResult } from './interfaces.js'
 import { activeNavKey, canOpenGlobalOverlay, selectNavView } from './navRoutes.js'
 import { $isBlocked, $overlayState, patchOverlayState } from './overlayStore.js'
+import { pagerWindow } from './pager.js'
 import { turnController } from './turnController.js'
 import { patchTurnState } from './turnStore.js'
 import { getUiState } from './uiStore.js'
@@ -124,7 +125,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
 
   const overlay = useStore($overlayState)
   const isBlocked = useStore($isBlocked)
-  const pagerPageSize = Math.max(5, (terminal.stdout?.rows ?? 24) - 6)
+  const pagerPageSize = Math.max(1, (terminal.stdout?.rows ?? 24) - 12)
   const scrollIdleTimer = useRef<null | ReturnType<typeof setTimeout>>(null)
 
   // Wheel accel ported from claude-code: inter-event timing drives step size,
@@ -410,7 +411,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
               return prev
             }
 
-            const { lines, offset } = prev.pager
+            const { lines, offset } = pagerWindow(prev.pager, terminal.stdout?.columns ?? 80, pagerPageSize)
             const max = Math.max(0, lines.length - pagerPageSize)
             const step = delta === 'top' ? -lines.length : delta === 'bottom' ? lines.length : delta
             const next = Math.max(0, Math.min(offset + step, max))
@@ -444,7 +445,7 @@ export function useInputHandlers(ctx: InputHandlerContext): InputHandlerResult {
               return prev
             }
 
-            const { lines, offset } = prev.pager
+            const { lines, offset } = pagerWindow(prev.pager, terminal.stdout?.columns ?? 80, pagerPageSize)
             const max = Math.max(0, lines.length - pagerPageSize)
 
             // Auto-close only when already at the last page — otherwise clamp

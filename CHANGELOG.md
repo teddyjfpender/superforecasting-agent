@@ -13,6 +13,15 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 
 ## [Unreleased]
 
+## [0.20.1] - 2026-09-10
+
+### Fixed
+- Preserve typed resolution outcomes, validate vote-share vectors, and integrate
+  continuous scores over physical distances with correction lineage.
+- Recover missing score/postmortem handoffs and expose settlement review and
+  outcome-backed learning evidence in the forecast desk.
+- Keep long reports readable when the terminal is resized.
+
 ## [0.20.0] - 2026-07-28
 
 This release makes the terminal desk's own delivery path trustworthy: the TUI

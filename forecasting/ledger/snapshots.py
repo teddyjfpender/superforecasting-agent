@@ -1090,7 +1090,7 @@ def create_snapshot(
             try:
                 from forecasting.learning import compile_lesson_rules as _compile_lessons
 
-                _lesson_rules = _compile_lessons(ledger, question)
+                _lesson_rules = _compile_lessons(ledger, question, context=snapshot_metadata)
             except Exception:
                 _lesson_rules = []
             if _user_rules or _lesson_rules:
@@ -1434,6 +1434,7 @@ def create_snapshot(
             snapshot_metadata["lesson_decisions"] = lesson_application_decisions(
                 ledger, question, probability_or_distribution, calibration_adjustment,
                 calibration_lesson_refs or [], snapshot_metadata.get("lesson_rule_report") or {},
+                context=snapshot_metadata,
             )
         except Exception as exc:
             snapshot_metadata["lesson_decisions_error"] = str(exc)

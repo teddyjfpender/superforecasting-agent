@@ -4,6 +4,7 @@ import { Box, Text } from '@superforecasting/ink'
 import { useGateway } from '../app/gatewayContext.js'
 import type { AppOverlaysProps } from '../app/interfaces.js'
 import { $overlayState, patchOverlayState } from '../app/overlayStore.js'
+import { pagerWindow } from '../app/pager.js'
 import { $uiSessionId, $uiTheme } from '../app/uiStore.js'
 
 import { FloatBox } from './appChrome.js'
@@ -130,6 +131,8 @@ export function FloatingOverlays({
   const sid = useStore($uiSessionId)
   const theme = useStore($uiTheme)
 
+  const pager = overlay.pager ? pagerWindow(overlay.pager, cols, pagerPageSize) : null
+
   const hasAny =
     overlay.modelPicker ||
     overlay.themePicker ||
@@ -198,7 +201,7 @@ export function FloatingOverlays({
               </Box>
             )}
 
-            {overlay.pager.lines.slice(overlay.pager.offset, overlay.pager.offset + pagerPageSize).map((line, i) => (
+            {pager!.lines.slice(pager!.offset, pager!.offset + pagerPageSize).map((line, i) => (
               <Text color={pagerLineColor(line, theme)} key={i}>
                 {line}
               </Text>
@@ -206,9 +209,9 @@ export function FloatingOverlays({
 
             <Box marginTop={1}>
               <OverlayHint t={theme}>
-                {overlay.pager.offset + pagerPageSize < overlay.pager.lines.length
-                  ? `↑↓/jk line · Enter/Space/PgDn page · b/PgUp back · g/G top/bottom · Esc/q close (${Math.min(overlay.pager.offset + pagerPageSize, overlay.pager.lines.length)}/${overlay.pager.lines.length})`
-                  : `end · ↑↓/jk · b/PgUp back · g top · Esc/q close (${overlay.pager.lines.length} lines)`}
+                {pager!.offset + pagerPageSize < pager!.lines.length
+                  ? `↑↓ line · PgUp/PgDn page · g/G ends · Esc close (${Math.min(pager!.offset + pagerPageSize, pager!.lines.length)}/${pager!.lines.length})`
+                  : `end · ↑↓ line · PgUp back · g top · Esc close (${pager!.lines.length} lines)`}
               </OverlayHint>
             </Box>
           </Box>

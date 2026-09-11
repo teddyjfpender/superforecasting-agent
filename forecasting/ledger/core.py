@@ -5885,8 +5885,8 @@ class ForecastLedger:
             raise ValidationError("numeric outcome must be numeric, not boolean")
         try:
             value = float(outcome)
-        except (TypeError, ValueError) as exc:
-            raise ValidationError(f"numeric outcome is not recognized: {outcome!r}") from exc
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValidationError("numeric outcome must be a finite number") from exc
         if not math.isfinite(value):
             raise ValidationError("numeric outcome must be finite")
         return value

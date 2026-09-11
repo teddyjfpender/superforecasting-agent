@@ -1013,6 +1013,7 @@ _(no fields)_
 | field | type |
 | --- | --- |
 | `active_lessons` | `number?` |
+| `effectiveness` | `ForecastLearningEffectiveness?` |
 | `invalidated_lessons` | `number?` |
 | `recent_lessons` | `ForecastDashboardLesson[]?` |
 | `tentative_lessons` | `number?` |
@@ -1171,6 +1172,7 @@ _(no fields)_
 | `factor_count` | `number?` |
 | `factors` | `ForecastDashboardFactor[]?` |
 | `learning` | `ForecastDashboardLearning?` |
+| `lifecycle` | `ForecastLifecycleSummary?` |
 | `live_performance` | `ForecastDashboardLivePerformance?` |
 | `open_alert_count` | `number?` |
 | `open_assumption_count` | `number?` |
@@ -1407,6 +1409,20 @@ _(no fields)_
 | --- | --- |
 | `enabled` | `boolean?` |
 | `profile` | `string?` |
+
+### ForecastLearningEffectiveness
+
+| field | type |
+| --- | --- |
+| `counts` | `Record<string, number>?` |
+| `interpretation` | `string?` |
+| `status` | `string?` |
+
+### ForecastLifecycleSummary
+
+| field | type |
+| --- | --- |
+| `counts` | `Record<string, number>?` |
 
 ### ForecastLivePerformanceAgent
 

@@ -8,6 +8,7 @@ their existing explicit commands and gates.
 from __future__ import annotations
 
 import uuid
+import json
 from typing import Any
 
 from forecasting.models import parse_timestamp, utc_now_iso
@@ -37,11 +38,11 @@ def lifecycle_status(ledger, *, now: str | None = None) -> dict[str, Any]:
             ORDER BY q.id
         """)]
         attention = [dict(r) for r in conn.execute("""
-            SELECT id AS question_id, title, close_time, next_review_at,
-                   CASE WHEN julianday(close_time) <= julianday(?)
+            SELECT id AS question_id, title, close_time, resolution_time, next_review_at,
+                   CASE WHEN julianday(COALESCE(resolution_time, close_time)) <= julianday(?)
                         THEN 'settlement_review' ELSE 'review_overdue' END AS reason
             FROM forecast_questions WHERE status = 'active'
-              AND (julianday(close_time) <= julianday(?)
+              AND (julianday(COALESCE(resolution_time, close_time)) <= julianday(?)
                    OR julianday(next_review_at) <= julianday(?)) ORDER BY id
         """, (stamp, stamp, stamp))]
         tasks = [dict(r) for r in conn.execute("""
@@ -59,6 +60,16 @@ def lifecycle_status(ledger, *, now: str | None = None) -> dict[str, Any]:
         keys = {r[0] for r in conn.execute(
             "SELECT idempotency_key FROM operational_tasks WHERE task_type = 'finalize_resolution'"
         )}
+    with ledger._connect() as conn:
+        reviews = {}
+        for note in conn.execute("SELECT question_id, body, metadata, created_at FROM analyst_notes ORDER BY created_at, rowid"):
+            meta = json.loads(note["metadata"] or "{}")
+            if meta.get("lifecycle_review"):
+                reviews[note["question_id"]] = {"body": note["body"], "source": meta.get("source"),
+                    "revisit_at": meta.get("revisit_at"), "created_at": note["created_at"]}
+    for row in unfinished + attention:
+        if row["question_id"] in reviews:
+            row["review"] = reviews[row["question_id"]]
     for row in unfinished:
         row["task_missing"] = f"finalize-resolution:{row['resolution_id']}" not in keys
     return {

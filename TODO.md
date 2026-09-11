@@ -79,9 +79,22 @@ See [runtime changes and verification](docs/plans/2026-09-10-lifecycle-learning.
 - [x] Record actual lesson decisions and rule verdicts, apply explicit in-scope
   supersession, and distinguish historical unverified application counts.
 - [x] Share exact market-study evaluation records between CLI reports and scripts.
-- [ ] Review the live instance's settlement backlog and the two resolved questions
-  without forecasts. This change verified recovery on an isolated backup only.
-- [ ] Review conditional weather guidance and explicitly supersede or re-scope it
-  where warranted. Prose conflicts are not automatically converted into rules.
+- [x] Back up and recover the live instance: 96 handoffs completed. Review the
+  two missing-forecast outcomes separately without fabricating scoreable history.
+- [x] Review 12 important settlement questions: six settled, six explicitly
+  deferred with evidence needs or future outcome horizons recorded in the ledger.
+- [x] Reconcile conditional weather guidance: ten lessons explicitly superseded,
+  applicability enforced and lesson provenance frozen on subsequent snapshots.
+- [x] Add an outcome-backed learning audit; report that causal benefit remains
+  unestablished, rather than presenting reference counts as improved accuracy.
+- [ ] Revisit the six reviewed/deferred questions when their recorded conditions
+  are met. The remaining settlement book was deliberately outside this pass.
+- [x] Correct the five newly settled BLS scores and 15 existing legacy CRPS
+  scores with preserved correction lineage and replacement postmortems; a fresh
+  preview reports zero remaining migrations for current resolved snapshots.
+- [ ] Add explicit right-censored outcome representation and scoring before
+  settling censored continuous questions. Do not substitute a boundary point.
 - [ ] Evaluate prospective lesson benefit using independent outcomes and matched
   pre-adjustment forecasts; application coverage alone does not prove benefit.
+
+See [live recovery, ledger hardening and measurement methodology](docs/plans/2026-09-10-live-lifecycle-learning.md).

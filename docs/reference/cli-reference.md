@@ -2129,9 +2129,16 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 
 ## `forecast lesson`
 
+- **`forecast lesson create`** — Create a reviewed lesson from a JSON specification
 - **`forecast lesson list`** — List calibration lessons
 - **`forecast lesson status`** — Update calibration lesson status
 - **`forecast lesson synthesize`** — Derive signed over/under-confidence lessons from resolved forecasts (FDR-gated; advisory by default)
+
+### `forecast lesson create`
+
+| argument | help |
+| --- | --- |
+| `--spec-file` |  |
 
 ### `forecast lesson list`
 
@@ -2150,6 +2157,7 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | `--confidence` |  |
 | `--recommended-adjustment-json` |  |
 | `--supersedes` |  |
+| `--metadata-json` |  |
 
 ### `forecast lesson synthesize`
 
@@ -2172,6 +2180,7 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 
 - **`forecast lessons apply`** — Compile a lesson into an enforceable hook rule (auto-detects the enforcement pattern)
 - **`forecast lessons audit`** — Per-lesson coverage: is each learning actually being used? (in-scope / applied / dormant)
+- **`forecast lessons effectiveness`** — Measure outcome evidence for learning; distinguish compliance from skill
 - **`forecast lessons explain`** — Show in-scope lessons and recorded decisions for a forecast
 
 ### `forecast lessons apply`
@@ -2182,6 +2191,12 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | `--severity` | WARN (observe, default) or ERROR (blocks at commit) |
 
 ### `forecast lessons audit`
+
+| argument | help |
+| --- | --- |
+| `--json` |  |
+
+### `forecast lessons effectiveness`
 
 | argument | help |
 | --- | --- |
@@ -2198,6 +2213,10 @@ The full `forecast` command tree — **91 top-level commands** (also reachable a
 | argument | help |
 | --- | --- |
 | `action` | Inspect by default; run recovers confirmed score/postmortem handoffs |
+| `question_id` |  |
+| `--reason` | Review finding; does not resolve or change probability |
+| `--source` | Source inspected for this review |
+| `--revisit-at` | Suggested next check, ISO timestamp (does not schedule a job) |
 | `--now` | UTC inspection/recovery time (defaults to now) |
 | `--limit` | Maximum tasks to execute or rows to display (default 25) |
 | `--json` | Emit full structured status and execution results |

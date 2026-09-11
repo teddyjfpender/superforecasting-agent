@@ -81,7 +81,7 @@ def create_calibration_lesson(
     # An explicit `rule` always wins; no recognized pattern leaves it advisory.
     if isinstance(recommended_adjustment, dict) and "rule" not in recommended_adjustment:
         from forecasting.lesson_templates import build_lesson_rule
-        _auto_rule = build_lesson_rule({"recommended_adjustment": recommended_adjustment}, severity="warn")
+        _auto_rule = build_lesson_rule({"recommended_adjustment": recommended_adjustment, "scope_type": scope_type, "scope_ref": scope_ref}, severity="warn")
         if _auto_rule is not None:
             recommended_adjustment = {**recommended_adjustment, "rule": _auto_rule}
     # Authoring gate: a lesson that carries an enforceable `rule` must compile.
@@ -94,6 +94,8 @@ def create_calibration_lesson(
         _rule_errs = [issue for issue in validate_rule(_spec) if issue.severity == "error"]
         if _rule_errs:
             raise ValidationError(f"calibration lesson rule is invalid: {_rule_errs[0].message}")
+    from forecasting.learning import validate_lesson_applicability
+    validate_lesson_applicability(recommended_adjustment)
     _validate_supersession(ledger, None, supersedes_lesson_id)
     now = utc_now_iso()
     lesson_id = f"cl_{uuid.uuid4().hex[:12]}"
@@ -148,6 +150,8 @@ def update_calibration_lesson(
     supersedes_lesson_id: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    from forecasting.learning import validate_lesson_applicability
+    validate_lesson_applicability(recommended_adjustment)
     current = ledger.get_calibration_lesson(lesson_id)
     new_status = status or current["status"]
     if new_status not in CALIBRATION_LESSON_STATUSES:

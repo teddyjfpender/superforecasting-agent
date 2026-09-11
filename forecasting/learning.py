@@ -214,13 +214,64 @@ def _in_scope_lessons(ledger: ForecastLedger, question: Any) -> list[dict[str, A
     return lessons
 
 
-def active_lessons_for_question(ledger: ForecastLedger, question: Any) -> list[dict[str, Any]]:
+def validate_lesson_applicability(adjustment):
+    from forecasting.models import ValidationError
+    conditions = (adjustment or {}).get("applicability")
+    if conditions is None:
+        return
+    if not isinstance(conditions, dict) or set(conditions) - {"outcome_types", "topics_any", "metadata_equals"}:
+        raise ValidationError("invalid lesson applicability fields")
+    for key in ("outcome_types", "topics_any"):
+        if key in conditions and (not isinstance(conditions[key], list) or not conditions[key]
+                                  or not all(isinstance(v, str) and v for v in conditions[key])):
+            raise ValidationError(f"lesson applicability {key} must be a nonempty list of strings")
+    if "metadata_equals" in conditions:
+        values = conditions["metadata_equals"]
+        if not isinstance(values, dict) or any(not isinstance(k, str) or not k or v is None
+                                               or isinstance(v, (dict, list)) for k, v in values.items()):
+            raise ValidationError("lesson applicability metadata_equals must map paths to scalar values")
+
+
+def lesson_applicability(lesson, question, context=None):
+    """Explicit conditions only. Missing facts never authorize enforcement.
+
+    Conditions narrow the stored scope; no expression evaluation or inferred
+    weather phase. Snapshot metadata may supply time-varying observations.
+    """
+    conditions = (lesson.get("recommended_adjustment") or {}).get("applicability")
+    if conditions is None:
+        return True, "in_scope"
+    from forecasting.models import ValidationError
+    try:
+        validate_lesson_applicability(lesson.get("recommended_adjustment"))
+    except ValidationError:
+        return False, "invalid_applicability"
+    if not isinstance(conditions, dict) or set(conditions) - {"outcome_types", "topics_any", "metadata_equals"}:
+        return False, "invalid_applicability"
+    if "outcome_types" in conditions and question.outcome_space.type not in conditions["outcome_types"]:
+        return False, "outcome_type_mismatch"
+    if "topics_any" in conditions and not set(question.topics).intersection(conditions["topics_any"]):
+        return False, "topic_mismatch"
+    facts = {**(question.metadata or {}), **(context or {})}
+    for key, expected in conditions.get("metadata_equals", {}).items():
+        actual = facts
+        for part in key.split("."):
+            actual = actual.get(part) if isinstance(actual, dict) else None
+        if actual is None:
+            return False, f"condition_unknown:{key}"
+        if actual != expected:
+            return False, f"condition_mismatch:{key}"
+    return True, "conditions_met"
+
+
+def active_lessons_for_question(ledger: ForecastLedger, question: Any, *, context=None) -> list[dict[str, Any]]:
     """Use explicit in-scope supersession, never guess precedence from prose.
 
     A narrower replacement only supersedes the old lesson where both match;
     invalidated/inactive replacements cannot suppress an otherwise active lesson.
     """
-    lessons = _in_scope_lessons(ledger, question)
+    lessons = [item for item in _in_scope_lessons(ledger, question)
+               if lesson_applicability(item, question, context)[0]]
     superseded = {item.get("supersedes_lesson_id") for item in lessons}
     return [item for item in lessons if item["id"] not in superseded]
 
@@ -249,7 +300,7 @@ def lesson_scope_to_applies_to(lesson: dict[str, Any]) -> dict[str, Any]:
     return {}
 
 
-def compile_lesson_rules(ledger: ForecastLedger, question: Any) -> list[Any]:
+def compile_lesson_rules(ledger: ForecastLedger, question: Any, *, context=None) -> list[Any]:
     """Compile active in-scope calibration lessons that carry a ``rule`` (a RuleSpec
     fragment under ``recommended_adjustment['rule']``) into enforceable SimpleRules.
 
@@ -265,7 +316,7 @@ def compile_lesson_rules(ledger: ForecastLedger, question: Any) -> list[Any]:
         return []
     compiled: list[Any] = []
     known: set[str] = set()
-    for lesson in active_lessons_for_question(ledger, question):
+    for lesson in active_lessons_for_question(ledger, question, context=context):
         recommended = lesson.get("recommended_adjustment") or {}
         rule = recommended.get("rule")
         if not isinstance(rule, dict) or not isinstance(rule.get("check"), dict):
@@ -296,7 +347,7 @@ def _optional_float(value: Any) -> float | None:
     return number if math.isfinite(number) else None
 
 
-def lesson_application_decisions(ledger, question, payload, adjustment, refs, rule_report):
+def lesson_application_decisions(ledger, question, payload, adjustment, refs, rule_report, context=None):
     """Explain actual commit behavior; a successful commit is not rule compliance.
 
     Keep the verdict and source IDs on the immutable snapshot so later lesson
@@ -310,7 +361,8 @@ def lesson_application_decisions(ledger, question, payload, adjustment, refs, ru
     value = _optional_float(payload)
     decisions = []
     candidates = _in_scope_lessons(ledger, question)
-    superseded = {item.get("supersedes_lesson_id"): item["id"] for item in candidates}
+    superseded = {item.get("supersedes_lesson_id"): item["id"] for item in candidates
+                  if lesson_applicability(item, question, context)[0]}
     for lesson in candidates:
         lid = lesson["id"]
         recommended = lesson.get("recommended_adjustment") or {}
@@ -328,12 +380,17 @@ def lesson_application_decisions(ledger, question, payload, adjustment, refs, ru
         else:
             kind, applied = "advisory", False
             reason = "consulted_advisory" if lid in refs else "not_recorded_as_consulted"
+        applicable, applicability_reason = lesson_applicability(lesson, question, context)
+        if not applicable:
+            applied, reason = False, applicability_reason
         if lid in superseded:
             applied, reason = False, f"superseded_by:{superseded[lid]}"
         decisions.append({
             "lesson_id": lid, "kind": kind, "applied": applied, "reason": reason,
             "consulted": lid in refs, "scope_type": lesson.get("scope_type"),
             "scope_ref": lesson.get("scope_ref"), "lesson_updated_at": lesson.get("updated_at"),
+            "applicable": applicable, "applicability_reason": applicability_reason,
+            "lesson_text": lesson.get("lesson"), "recommended_adjustment": recommended,
             "source_score_record_refs": list(lesson.get("source_score_record_refs") or []),
             "source_postmortem_refs": list(lesson.get("source_postmortem_refs") or []),
         })

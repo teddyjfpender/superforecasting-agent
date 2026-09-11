@@ -262,7 +262,7 @@ def backfill_crps_scores(ledger, *, dry_run: bool = True) -> dict[str, Any]:
 
     * ``crps_scored`` — the snapshot is a representable predictive distribution;
       CRPS is computed. When ``dry_run`` is False and the existing recorded score
-      is not already a CRPS rule, the old non-invalidated score row is replaced.
+      is not already the current rule version, the old score is retained and invalidated.
     * ``refused_not_representable`` — a candidate-share vote dict or a bare point
       (scored by the vector / squared-error rule, not CRPS) — never fabricated.
     * ``active_no_resolution`` — no confirmed resolution yet: cannot be scored
@@ -306,7 +306,7 @@ def backfill_crps_scores(ledger, *, dry_run: bool = True) -> dict[str, Any]:
             continue
         counts["crps_scored"] += 1
         existing = ledger._existing_score(snapshot.forecast_id, resolution.id)
-        is_rescore = existing is not None and not str(existing.score_rule or "").startswith("crps")
+        is_rescore = existing is not None and existing.score_rule != rule
         if is_rescore:
             counts["rescored"] += 1
         detail = {
@@ -318,15 +318,20 @@ def backfill_crps_scores(ledger, *, dry_run: bool = True) -> dict[str, Any]:
             "action": "would_rescore" if is_rescore else ("would_score" if existing is None else "unchanged"),
         }
         if not dry_run and (existing is None or is_rescore):
-            with ledger._connect() as conn:
-                conn.execute(
-                    "DELETE FROM score_records WHERE forecast_id = ? AND resolution_id = ? "
-                    "AND invalidated_by_correction_id IS NULL",
-                    (snapshot.forecast_id, resolution.id),
+            if existing is not None:
+                correction = ledger.create_correction(
+                    target_type="score_record", target_id=existing.id,
+                    reason=f"Recompute proper score: {existing.score_rule} -> {rule}; retain old score and invalidate derived lessons.",
+                    status="applied",
                 )
+                detail["correction_id"] = correction["id"]
             rescored = ledger.score_snapshot(snapshot.forecast_id, force=False)
             detail["action"] = "rescored" if is_rescore else "scored"
             detail["score_id"] = rescored.id
+            if is_rescore:
+                postmortem = ledger.create_postmortem(question_id=question.id,
+                    summary=f"Score recomputed with {rule}; prior score and derived learning invalidated by correction.")
+                detail["postmortem_id"] = postmortem["id"]
         details.append(detail)
     return {"dry_run": dry_run, "counts": counts, "details": details}
 
@@ -1697,28 +1702,47 @@ def _numeric_bucket(ledger, value: float, outcome_space: OutcomeSpace) -> str:
     return "numeric"
 
 
+def _validated_shares(raw):
+    """Reject ambiguous or non-finite vector values, never silently drop them."""
+    if not isinstance(raw, dict) or not raw:
+        raise ValidationError("share vector must be a nonempty object")
+    values = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValidationError("share labels must be nonempty strings")
+        label = key.strip().lower()
+        if label in values:
+            raise ValidationError("share labels must be unique ignoring case and whitespace")
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValidationError("share values must be finite nonnegative numbers, not strings or booleans")
+        values[label] = float(value)
+    return values
+
+
 def _vote_share_vector_score(ledger, forecast: dict[str, Any], outcome: dict[str, Any]) -> dict[str, Any] | None:
     """Vector MAE/RMSE (percentage points) for a candidate-SHARE forecast scored
     against a candidate-SHARE outcome. Forecast values may be probabilities (0-1,
-    auto-scaled to pp) or already pp; outcome values are pp (0-100). Returns None
-    when there are no shared numeric candidate keys, so the caller falls through
-    to the existing scorer. This is an ACCURACY metric (100 - MAE), not a strictly
+    auto-scaled to pp) or already pp; outcome values are pp (0-100). Requires matching, complete, finite numeric candidate vectors. This is an ACCURACY metric (100 - MAE), not a strictly
     proper score — labeled as such; it makes vote-share forecasts machine-scoreable
     instead of mis-read as categorical labels (lesson cl_ec9059c809ba)."""
-    def _numeric_shares(raw: dict[str, Any]) -> dict[str, float]:
-        out: dict[str, float] = {}
-        for key, value in raw.items():
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                out[str(key).strip().lower()] = float(value)
-        return out
-
-    f_shares = _numeric_shares(forecast)
-    o_shares = _numeric_shares(outcome)
-    shared = sorted(set(f_shares) & set(o_shares))
-    if not shared:
-        return None
-    # Forecast in [0,1] -> scale to pp; if it already looks like pp, leave it.
-    scale = 100.0 if max(f_shares[k] for k in shared) <= 1.5 else 1.0
+    f_shares = _validated_shares(forecast)
+    o_shares = _validated_shares(outcome)
+    if set(f_shares) != set(o_shares):
+        raise ValidationError("forecast and resolved share labels must match exactly; partial-vector scoring is not allowed")
+    shared = sorted(f_shares)
+    if any(value > 100 for value in o_shares.values()):
+        raise ValidationError("resolved shares must be percentages between 0 and 100")
+    # Infer the legacy forecast representation from its total, not its largest
+    # candidate (many tiny percentage shares must never be multiplied by 100).
+    total = sum(f_shares.values())
+    if math.isclose(total, 1.0, abs_tol=0.005):
+        scale = 100.0
+    elif math.isclose(total, 100.0, abs_tol=0.5):
+        scale = 1.0
+    else:
+        raise ValidationError("forecast shares must sum to 1 (fractions) or 100 (percentages)")
+    if not math.isclose(sum(o_shares.values()), 100.0, abs_tol=0.5):
+        raise ValidationError("resolved percentage shares must sum to 100 (within 0.5 rounding tolerance)")
     diffs = [abs(f_shares[k] * scale - o_shares[k]) for k in shared]
     mae = sum(diffs) / len(diffs)
     rmse = math.sqrt(sum(d * d for d in diffs) / len(diffs))
@@ -1768,14 +1792,13 @@ def _normal_distribution_score(
 # fabricated number) anything not representable as an ordered predictive
 # distribution over a scalar outcome. Precedence, richest-faithful-first:
 #
-#   crps_discrete_cdf  — explicit CDF-threshold keys (``p_below_X`` /
+#   crps_piecewise_linear_cdf_v2 — explicit CDF-threshold keys (``p_below_X`` /
 #       ``bucket_le_X`` / ``cdf_X``), quantile keys (``qNN`` / ``quantile_NN`` /
 #       ``percentile_NN``), or central-interval keys (``interval_W_low/high``)
-#       + ``median``: build the (threshold, F) constraint points and sum the
-#       squared CDF differences vs the outcome step, Σ_k (F_k − 1{y ≤ t_k})² —
-#       the ordered/RPS form of CRPS the fix names, proper for ordered outcomes.
-#   crps_discrete_pmf  — a genuine PMF over ordered NUMERIC bucket labels
-#       (mass ≈ 1): cumulate to a CDF and score the same way.
+#       + ``median``: integrate squared CDF error over outcome distance, with
+#       linear interpolation and remaining tail mass at endpoint thresholds.
+#   crps_discrete_pmf_v2 — a genuine PMF over ordered NUMERIC bucket labels
+#       (mass ≈ 1): integrate its step CDF exactly.
 #   crps_gaussian      — only ``mean`` + ``sd`` (finite, sd>0): the exact
 #       closed-form normal CRPS.
 #
@@ -1783,7 +1806,7 @@ def _normal_distribution_score(
 _CRPS_INV_SQRT_PI = 1.0 / math.sqrt(math.pi)
 
 _CRPS_MEAN_KEYS = ("mean", "expected", "value", "point")
-_CRPS_SD_KEYS = ("sd", "std", "sigma", "stdev")
+_CRPS_SD_KEYS = ("sd", "std", "sigma", "stdev", "standard_deviation")
 
 
 def _crps_num_from_suffix(raw: Any) -> float | None:
@@ -1794,7 +1817,9 @@ def _crps_num_from_suffix(raw: Any) -> float | None:
     # An underscore/dash is the decimal point in these keys (``4_18`` → 4.18).
     # Try that reading FIRST — bare ``float("3_0")`` treats the underscore as a
     # digit separator and yields 30.0, which is wrong here.
-    for candidate in (s.replace("_", ".").replace("-", "."), s):
+    sign = "-" if s.startswith("-") else ""
+    magnitude = s[1:] if sign else s
+    for candidate in (sign + magnitude.replace("_", ".").replace("-", "."), s):
         try:
             value = float(candidate)
         except ValueError:
@@ -1904,9 +1929,32 @@ def _crps_gaussian_params(payload: dict[str, Any]) -> tuple[float | None, float 
 
 
 def _crps_discrete(points: list[tuple[float, float]], outcome: float) -> float:
-    """Σ_k (F_k − 1{outcome ≤ t_k})² over the (threshold, CDF) points — the
-    ordered / ranked form of CRPS ("sum of squared CDF differences")."""
-    return sum((cdf - (1.0 if outcome <= threshold else 0.0)) ** 2 for threshold, cdf in points)
+    """Exact integral CRPS for a finite-support PMF (CDF constant between atoms).
+
+    Gneiting and Raftery (2007), equation 20, loss orientation. Distances carry
+    the outcome's units; an unweighted sum over arbitrary thresholds is not CRPS.
+    """
+    return _crps_integral(points, outcome, linear=False)
+
+
+def _crps_integral(points, outcome, *, linear):
+    if not points or any(not math.isfinite(x) or not 0 <= f <= 1 for x, f in points):
+        raise ValidationError("CRPS requires finite ordered CDF points")
+    if any(x1 >= x2 or f1 > f2 for (x1, f1), (x2, f2) in zip(points, points[1:])):
+        raise ValidationError("CRPS requires a monotone CDF")
+    # Complete sparse CDFs on finite support: missing lower/upper probability
+    # mass sits at the extreme supplied thresholds. This interpolation convention
+    # is explicit in the rule version; it is not an inferred Gaussian tail.
+    score = max(points[0][0] - outcome, 0.0) + max(outcome - points[-1][0], 0.0)
+    for (left, fleft), (right, fright) in zip(points, points[1:]):
+        cuts = [left] + ([outcome] if left < outcome < right else []) + [right]
+        for a, b in zip(cuts, cuts[1:]):
+            observed = float(a >= outcome)
+            fa = fleft + (fright-fleft)*(a-left)/(right-left) if linear else fleft
+            fb = fleft + (fright-fleft)*(b-left)/(right-left) if linear else fleft
+            u, v = fa-observed, fb-observed
+            score += (b-a)*(u*u+u*v+v*v)/3.0
+    return score
 
 
 def _crps_normal(mean: float, sd: float, outcome: float) -> float:
@@ -1939,13 +1987,13 @@ def _crps_score(
     rule: str | None = None
     crps: float | None = None
     if len(points) >= 2:
-        crps = _crps_discrete(points, y)
-        rule = "crps_discrete_cdf"
+        crps = _crps_integral(points, y, linear=True)
+        rule = "crps_piecewise_linear_cdf_v2"
     else:
         pmf_points = _crps_pmf_points(probability_or_distribution)
         if pmf_points and len(pmf_points) >= 2:
             crps = _crps_discrete(pmf_points, y)
-            rule = "crps_discrete_pmf"
+            rule = "crps_discrete_pmf_v2"
 
     mean, sd = _crps_gaussian_params(probability_or_distribution)
     if rule is None:
@@ -1976,7 +2024,10 @@ def _crps_score(
         "proper_score": crps,
         "score_rule": rule,
         "calibration_bucket": calibration_bucket,
-        "notes": f"CRPS ({rule}) against confirmed resolution; lower is better.",
+        "notes": f"CRPS ({rule}) against confirmed resolution; lower is better. " + (
+            "Sparse CDF: linear interpolation with remaining tail mass at endpoint thresholds."
+            if rule == "crps_piecewise_linear_cdf_v2" else ""
+        ),
     }
 
 

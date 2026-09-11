@@ -747,6 +747,7 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
       ],
       [`/sources --question ${question.id}`, 'plan source coverage and watched streams'],
       [`/forecast research ${question.id}`, 'review evidence freshness and new items since current forecast'],
+      [`/forecast lessons explain ${question.id}`, 'inspect lesson conditions, sources and decisions'],
       [`/forecast resolve ${question.id} --outcome <value> --resolution-source <url>`, 'record the outcome when criteria are met']
     ],
     title: 'Actions'
@@ -758,11 +759,11 @@ export const forecastQuestionDetailSections = (response: ForecastQuestionPacketR
 const sectionTitlesByLedgerView: Record<string, string[]> = {
   alerts: ['Desk', 'Open Alerts', 'Triage', 'Focused Actions'],
   backtests: ['Evidence Status', 'Recent Backtests', 'Live Performance', 'Triage', 'Next Commands'],
-  book: ['Desk', 'Active Forecasts', 'Review Queue', 'Triage', 'Focused Actions'],
+  book: ['Desk', 'Lifecycle', 'Active Forecasts', 'Review Queue', 'Triage', 'Focused Actions'],
   calibration: ['Calibration', 'Live Performance', 'Evidence Status', 'Learning Memory', 'Next Commands'],
   evidence: ['Evidence Status', 'Focused Actions', 'Evidence Imports', 'Triage'],
   learning: ['Learning Memory', 'Calibration', 'Triage', 'Next Commands'],
-  review: ['Review Queue', 'Triage', 'Focused Actions', 'Active Forecasts'],
+  review: ['Lifecycle', 'Review Queue', 'Triage', 'Focused Actions', 'Active Forecasts'],
   schedules: ['Scheduled Self-Checks', 'Triage', 'Focused Actions', 'Next Commands'],
   sources: ['Evidence Status', 'Focused Actions', 'Evidence Imports', 'Triage']
 }
@@ -820,6 +821,20 @@ export const forecastLedgerViewSections = (
   }
 
   const dashboardSections = forecastDashboardSections(response)
+  // These are decision views, not a second dump of the whole book. A tall
+  // inline transcript panel hides its beginning behind the virtualizer. Keep
+  // findings and executable actions in view; full reports remain one command away.
+  if (alias === 'review' && response.summary.lifecycle) {
+    const lifecycle = dashboardSections.find(section => section.title === 'Lifecycle')
+    return lifecycle ? [{ ...lifecycle, rows: [
+      ...(lifecycle.rows ?? []),
+      rowWithTarget('review forecasts', 'Inspect forecasts needing an explicit update', '/review --stale')
+    ] }] : []
+  }
+  if (alias === 'learning' && response.summary.learning?.effectiveness) {
+    const learning = dashboardSections.find(section => section.title === 'Learning Memory')
+    return learning ? [{ ...learning, rows: (learning.rows ?? []).slice(0, 5) }] : []
+  }
   const selected = dashboardSections.filter(section => section.title && titles.includes(section.title))
 
   return [ledgerViewShortcuts(alias), ...(selected.length ? selected : forecastDashboardSections(response))]
@@ -1125,13 +1140,42 @@ export const forecastDashboardSections = (response: ForecastDashboardResponse): 
     })
   }
 
+  if (summary.lifecycle?.counts) {
+    const counts = summary.lifecycle.counts
+    const rows: ForecastPanelRow[] = [
+      rowWithTarget('review outcomes', `${formatCount(counts.settlement_review)} due; verify the source before resolving`, '/forecast lifecycle status'),
+      ['forecast updates', `${formatCount(counts.review_overdue)} overdue; update probabilities explicitly`]
+    ]
+    const recoverable = (counts.ready_tasks ?? 0) + (counts.missing_tasks ?? 0)
+    if (recoverable > 0) {
+      rows.push(rowWithTarget('finish handoffs', `${recoverable} score/postmortem handoffs ready`, '/forecast lifecycle run'))
+    }
+    if ((counts.unfinished ?? 0) > 0) {
+      rows.push(rowWithTarget('unfinished', `${counts.unfinished} need completion or missing-forecast review`, '/forecast lifecycle status'))
+    }
+    if ((counts.failed_tasks ?? 0) > 0) {
+      rows.push(rowWithTarget('recovery errors', `${counts.failed_tasks} failed tasks; inspect the recorded error`, '/forecast lifecycle status'))
+    }
+    sections.push({title: 'Lifecycle', rows})
+  }
+
   if (learning) {
-    const learningRows: [string, string][] = [
+    const learningRows: ForecastPanelRow[] = [
       [
         'lessons',
         `active ${formatCount(learning.active_lessons)}  tentative ${formatCount(learning.tentative_lessons)}  invalidated ${formatCount(learning.invalidated_lessons)}`
       ]
     ]
+
+    if (learning.effectiveness) {
+      const counts = learning.effectiveness.counts ?? {}
+      learningRows.push(
+        rowWithTarget('learning benefit', 'Not established · inspect scored evidence', '/forecast lessons effectiveness'),
+        ['decisions', `${formatCount(counts.verified_decision_snapshots)} verified · ${formatCount(counts.historical_unverified_snapshots)} historical unverified`],
+        ['scored questions', `${formatCount(counts.scored_distinct_questions)} questions · earliest pre-close forecast`],
+        ['interpretation', 'Lesson use alone does not establish accuracy.']
+      )
+    }
 
     for (const row of (learning.top_error_profiles ?? []).slice(0, 4)) {
       const errors = (row.recurring_errors ?? []).slice(0, 2).join(', ') || 'no recurring label'

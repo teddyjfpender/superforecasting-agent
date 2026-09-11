@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from forecasting.lifecycle import lifecycle_status
+
 import json
 import re
 from datetime import datetime, timezone
@@ -373,6 +375,7 @@ def build_dashboard_summary(
         "evidence_status": evidence_status,
         "live_performance": live_performance,
         "learning": build_learning_summary(ledger=ledger),
+        "lifecycle": lifecycle_status(ledger, now=now),
         "operations": ledger.operational_cockpit(now=now),
         "scheduled_review_run_count": ledger.count_scheduled_review_runs(),
         "scheduled_review_runs": scheduled_review_runs,
@@ -1475,6 +1478,10 @@ def build_doctor_gate_summary(
 
 
 def build_learning_summary(*, ledger: ForecastLedger, limit: int = 5) -> dict[str, Any]:
+    from forecasting.learning_evaluation import learning_effectiveness
+
+    effectiveness = learning_effectiveness(ledger)
+    effectiveness.pop("records", None)
     lessons = ledger.list_calibration_lessons(active_only=False)
     active_lessons = [
         row
@@ -1497,6 +1504,7 @@ def build_learning_summary(*, ledger: ForecastLedger, limit: int = 5) -> dict[st
         reverse=True,
     )
     return {
+        "effectiveness": effectiveness,
         "total_lessons": len(lessons),
         "active_lessons": len(active_lessons),
         "tentative_lessons": len(tentative_lessons),
