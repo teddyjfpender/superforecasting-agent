@@ -495,7 +495,8 @@ export class GatewayClient extends EventEmitter {
     const ownedProc = this.proc
     this.stdoutRl = createInterface({ input: this.proc.stdout! })
     this.stdoutRl.on('line', raw => {
-      if (this.proc !== ownedProc || this.stopped) return
+      if (this.proc !== ownedProc || this.stopped) {return}
+
       try {
         this.dispatch(JSON.parse(raw))
       } catch {
@@ -508,7 +509,7 @@ export class GatewayClient extends EventEmitter {
 
     this.stderrRl = createInterface({ input: this.proc.stderr! })
     this.stderrRl.on('line', raw => {
-      if (this.proc !== ownedProc || this.stopped) return
+      if (this.proc !== ownedProc || this.stopped) {return}
       const line = truncateLine(raw.trim())
 
       if (!line) {
@@ -579,7 +580,7 @@ export class GatewayClient extends EventEmitter {
               resolve()
             }
 
-            if (this.ws === ws && !this.stopped) this.connectSidecarMirror()
+            if (this.ws === ws && !this.stopped) {this.connectSidecarMirror()}
           },
           { once: true }
         )
@@ -617,7 +618,7 @@ export class GatewayClient extends EventEmitter {
       this.wsConnectPromise = connectPromise
 
       ws.addEventListener('message', ev => {
-        if (this.ws === ws && !this.stopped) this.handleWebSocketFrame(ev.data)
+        if (this.ws === ws && !this.stopped) {this.handleWebSocketFrame(ev.data)}
       })
       ws.addEventListener('close', ev => {
         // Skip close events from sockets that have already been
@@ -634,7 +635,7 @@ export class GatewayClient extends EventEmitter {
         this.handleTransportExit(ev.code, `gateway websocket closed${ev.code ? ` (${ev.code})` : ''}`)
       })
       ws.addEventListener('error', () => {
-        if (this.ws !== ws || this.stopped) return
+        if (this.ws !== ws || this.stopped) {return}
         const line = '[gateway] websocket transport error'
 
         this.pushLog(line)

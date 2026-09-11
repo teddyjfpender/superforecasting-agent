@@ -9,45 +9,21 @@ _DIR="$(cd "$(dirname "$0")" && pwd)"
 if hook_honor_global_skip "pre-commit"; then exit 0; fi
 
 rc=0
-
-# 1. ruff on changed python files only (fast, respects pyproject select rules)
-PY=""
-while IFS= read -r f; do [ -n "$f" ] && PY="$PY $f"; done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.py')
-if [ -n "$PY" ]; then
-  hook_note "pre-commit: ruff on changed .py file(s)..."
-  # shellcheck disable=SC2086
-  if ! check_ruff $PY; then
-    hook_fail "Lint (ruff) failed" "Code Style" "Fix the findings above (pyproject [tool.ruff.lint], e.g. PLW1514 unspecified-encoding)."
-    rc=1
-  fi
-fi
-
-# 2. protocol codegen staleness (generated.ts must match the pydantic models)
-hook_note "pre-commit: protocol codegen staleness gate..."
-if ! check_protocol_stale; then
-  hook_fail "Generated wire types are stale" "The Laws -> Protocol-first" \
-    "Regenerate and re-stage:  python -m protocol.codegen  &&  git add ui-tui/src/protocol/generated.ts"
-  rc=1
-fi
-
-# 3. wire-drift: generated.ts / ui-tui/dist edited without a protocol/ change
-if ! check_drift cached; then rc=1; fi
-
-# 4. tsc --noEmit only when ui-tui is staged (skippable for WIP, loudly)
+quality_args=(--python-only)
 if git diff --cached --name-only | grep -Eq '^ui-tui/'; then
   if [ -n "${HERMES_HOOKS_SKIP_TSC:-}" ]; then
-    hook_warn "!! tsc type-check SKIPPED (HERMES_HOOKS_SKIP_TSC set) -- this WIP TypeScript is NOT type-checked."
-    hook_log_skip "pre-commit" "tsc" "${HERMES_HOOKS_SKIP_TSC}"
+    hook_warn "TypeScript checks SKIPPED (HERMES_HOOKS_SKIP_TSC set)."
+    hook_log_skip "pre-commit" "typescript" "${HERMES_HOOKS_SKIP_TSC}"
   else
-    hook_note "pre-commit: tsc --noEmit (ui-tui staged)..."
-    if ! check_tsc; then
-      hook_fail "TypeScript type-check failed" "Local Gates: Git Hooks" \
-        "Fix the type errors, or for a genuine WIP commit:  HERMES_HOOKS_SKIP_TSC=1 git commit ..."
-      rc=1
-    fi
+    quality_args=()
   fi
 fi
-
+hook_note "pre-commit: shared quality gates..."
+if ! check_quality "${quality_args[@]}"; then
+  hook_fail "Quality checks failed" "Local Gates" "Run: python3 scripts/dev.py check"
+  rc=1
+fi
+if ! check_drift cached; then rc=1; fi
 if [ "$rc" -ne 0 ]; then
   hook_warn "pre-commit blocked the commit. The hook staged/unstaged nothing."
 fi

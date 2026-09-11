@@ -2,8 +2,26 @@
 
 Thank you for contributing to Superforecasting Agent. This guide covers the local development workflow, the inherited runtime architecture, and the extra bar for forecast-first changes.
 
-**New to the repo? Install the local gates once:** `scripts/install-hooks.sh` (git
-hooks cannot self-install). They enforce the laws below on every commit and push.
+**Fresh checkout:** install Python 3.11–3.13, uv and Node 22, then run:
+
+```sh
+python3 scripts/dev.py bootstrap
+```
+
+This consumes `uv.lock` and the TUI npm lockfile, builds the TUI, installs the
+tracked Git hooks, and runs the shared blocking quality gates. Existing checkouts
+run `python3 scripts/dev.py check`; the explicit `--python-only` option runs the
+Python and contract gates without Node. CI calls the same bootstrap/check code.
+
+The check includes repository-wide encoding lint, stricter Ruff rules/formatting
+and `ty` for the extracted application layer and gate runner, import contracts,
+protocol generation checks, and TUI ESLint/type checking. The strict Python scope
+is listed in `scripts/dev.py` and grows with ownership migrations. It is not a
+claim that all inherited Python code is type checked or formatted. Run behavioral
+tests through `scripts/run_tests.sh`; quality checks do not replace that suite.
+
+If dependencies are already installed, `scripts/install-hooks.sh` installs just
+the hooks. Hooks never stage or rewrite your files.
 
 ---
 

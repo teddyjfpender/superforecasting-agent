@@ -182,11 +182,15 @@ py_test_targets() {
       tests/*)                                  _raw="$_raw
 $_f" ;;
       forecasting/*|tools/forecast_actions/*)   _raw="$_raw
-tests/forecasting" ;;
+tests/forecasting
+tests/application" ;;
       protocol/*)                               _raw="$_raw
 tests/test_protocol_codegen.py" ;;
-      gateway/*|tui_gateway/*)                  _raw="$_raw
+      gateway/*)                               _raw="$_raw
 tests/gateway" ;;
+      tui_gateway/*)                           _raw="$_raw
+tests/tui_gateway
+tests/application" ;;
       agent/*)                                  _raw="$_raw
 tests/agent" ;;
       superforecasting_agent/runtime/*)                             _raw="$_raw
@@ -204,4 +208,10 @@ EOF
   printf '%s\n' "$_raw" | sed -e '/^[[:space:]]*$/d' | sort -u | while IFS= read -r _t; do
     [ -e "$HOOKS_REPO_ROOT/$_t" ] && printf '%s\n' "$_t"
   done
+}
+
+# Shared blocking implementation used by hooks and product-quality CI.
+check_quality() {
+  _py="$(hook_python)" || return 1
+  ( cd "$HOOKS_REPO_ROOT" && "$_py" scripts/dev.py check "$@" )
 }

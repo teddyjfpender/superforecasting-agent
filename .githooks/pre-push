@@ -32,11 +32,13 @@ fi
 
 rc=0
 
-# codegen staleness (cheap; catches a drift introduced mid-branch)
-hook_note "pre-push: protocol codegen staleness gate..."
-if ! check_protocol_stale; then
-  hook_fail "Generated wire types are stale" "The Laws -> Protocol-first" \
-    "Run: python -m protocol.codegen  &&  git add ui-tui/src/protocol/generated.ts"
+# Same blocking quality implementation as pre-commit and CI.
+quality_args=(--python-only)
+if git diff --name-only "$base" "$head" | grep -Eq '^ui-tui/'; then
+  quality_args=()
+fi
+if ! check_quality "${quality_args[@]}"; then
+  hook_fail "Quality checks failed" "Local Gates" "Run: python3 scripts/dev.py check"
   rc=1
 fi
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install the Hermes repository git hooks.
+# Install the Superforecasting Agent repository git hooks.
 #
 # Git hooks cannot install themselves (a fresh clone has no way to know the repo
 # ships hooks), so every contributor runs this ONCE after cloning. It points
@@ -29,11 +29,11 @@ chmod +x .githooks/pre-commit .githooks/commit-msg .githooks/pre-push 2>/dev/nul
 git config blame.ignoreRevsFile .git-blame-ignore-revs
 
 cat <<'EOF'
-Hermes git hooks installed  (core.hooksPath = .githooks)
+Superforecasting Agent git hooks installed  (core.hooksPath = .githooks)
 
-  pre-commit  ruff (changed .py) | codegen staleness | wire-drift | tsc (if ui-tui)
+  pre-commit  shared Python quality/contracts | wire-drift | ESLint + tsc (if ui-tui)
   commit-msg  type(scope): subject shape | WHY-body for feat/refactor | MOVES-ONLY gate
-  pre-push    targeted pytest for changed domains | vitest --changed | codegen staleness
+  pre-push    shared quality gates | targeted pytest | vitest --changed
 
   Escape hatch (logged to .githooks/skips.log, never silent):
     HERMES_HOOKS_SKIP="why this once" git <cmd>
