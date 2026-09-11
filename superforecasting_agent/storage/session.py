@@ -233,6 +233,7 @@ class SessionDB:
     # =========================================================================
     _insert_session_row = _sessions._insert_session_row
     create_session = _sessions.create_session
+    create_branch = _sessions.create_branch
     end_session = _sessions.end_session
     reopen_session = _sessions.reopen_session
     update_system_prompt = _sessions.update_system_prompt

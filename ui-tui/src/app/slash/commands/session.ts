@@ -225,21 +225,18 @@ export const sessionCommands: SlashCommand[] = [
     help: 'branch the forecast session',
     name: 'branch',
     run: (arg, ctx) => {
-      const prevSid = ctx.sid
-
-      ctx.gateway.rpc<SessionBranchResponse>('session.branch', { name: arg, session_id: ctx.sid }).then(
+      ctx.gateway.rpc<SessionBranchResponse>('session.branch_replace', { name: arg, session_id: ctx.sid }).then(
         ctx.guarded<SessionBranchResponse>(r => {
           if (!r.session_id) {
             return
           }
 
-          void ctx.session.closeSession(prevSid)
           patchUiState({ sid: r.session_id })
           ctx.session.setSessionStartedAt(Date.now())
           ctx.transcript.setHistoryItems([])
           ctx.transcript.sys(`branched → ${r.title ?? ''}`)
         })
-      )
+      ).catch(ctx.guardedErr)
     }
   },
 

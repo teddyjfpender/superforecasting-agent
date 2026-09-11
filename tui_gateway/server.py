@@ -279,6 +279,7 @@ _LONG_HANDLERS = frozenset(
         "pm.stream.start",
         "pm.stream.stop",
         "session.branch",
+        "session.branch_replace",
         "session.compress",
         "session.resume",
         "shell.exec",
@@ -294,7 +295,7 @@ try:
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
 from superforecasting_agent.hosting.workers import HostStopping, RuntimeWorkers
-from superforecasting_agent.hosting.sessions import SessionBusy, in_use, reserve_close, use_session
+from superforecasting_agent.hosting.sessions import SessionBusy, in_use, replacement, reserve_close, use_session
 
 _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
 _host_lifecycle_lock = threading.Lock()
@@ -1115,7 +1116,7 @@ def handle_request(req: dict) -> dict | None:
         return _err(rid, -32601, f"unknown method: {method}")
     session = _sessions.get(params.get("session_id")) if isinstance(params.get("session_id"), str) else None
     try:
-        if session is not None and method not in {"session.close", "session.resume"}:
+        if session is not None and method not in {"session.close", "session.resume", "session.branch_replace"}:
             with use_session(session):
                 return fn(rid, params)
         return fn(rid, params)
@@ -2805,14 +2806,15 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
     )
 
 
-def _init_session(sid: str, key: str, agent, history: list, cols: int = 80):
+def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
     _sessions[sid] = {
         "agent": agent,
         "session_key": key,
         "history": history,
         "history_lock": threading.Lock(),
         "history_version": 0,
-        "running": False,
+        "running": pending_handoff,
+        "_replacing": pending_handoff,
         "attached_images": [],
         "image_counter": 0,
         "cols": cols,
@@ -3635,6 +3637,19 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("session.branch")
 def _(rid, params: dict) -> dict:
+    return _branch_session(rid, params, replace_current=False)
+
+
+@rpc_validated("session.branch_replace")
+def _(rid, params: dict) -> dict:
+    session, err = _sess_nowait(params, rid)
+    if err:
+        return err
+    with replacement(session):
+        return _branch_session(rid, params, replace_current=True)
+
+
+def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
     session, err = _sess(params, rid)
     if err:
         return err
@@ -3647,41 +3662,40 @@ def _(rid, params: dict) -> dict:
     if not history:
         return _err(rid, 4008, "nothing to branch — send a forecast note first")
     new_key = _new_session_key()
-    branch_name = params.get("name", "")
-    try:
-        if branch_name:
-            title = branch_name
-        else:
-            current = db.get_session_title(old_key) or "branch"
-            title = (
-                db.get_next_title_in_lineage(current)
-                if hasattr(db, "get_next_title_in_lineage")
-                else f"{current} (branch)"
-            )
-        db.create_session(
-            new_key, source="tui", model=_resolve_model(), parent_session_id=old_key
-        )
-        for msg in history:
-            db.append_message(
-                session_id=new_key,
-                role=msg.get("role", "user"),
-                content=msg.get("content"),
-            )
-        db.set_session_title(new_key, title)
-    except Exception as e:
-        return _err(rid, 5008, f"branch failed: {e}")
     new_sid = uuid.uuid4().hex[:8]
+    created = False
+    agent = None
     try:
+        from superforecasting_agent.application.sessions import branch_session
+        title = branch_session(
+            db, session_id=new_key, parent_session_id=old_key, history=history,
+            name=params.get("name", ""), source="tui", model=_resolve_model(),
+        )
+        created = True
         tokens = _set_session_context(new_key)
         try:
             agent = _make_agent(new_sid, new_key, session_id=new_key)
         finally:
             _clear_session_context(tokens)
-        _init_session(
-            new_sid, new_key, agent, list(history), cols=session.get("cols", 80)
-        )
-    except Exception as e:
-        return _err(rid, 5000, f"agent init failed on branch: {e}")
+        _init_session(new_sid, new_key, agent, list(history), cols=session.get("cols", 80), pending_handoff=replace_current)
+    except Exception as exc:
+        cleanup_error = ""
+        try:
+            if new_sid in _sessions:
+                _close_runtime_session(new_sid, mark_ended=False, reserved=replace_current)
+            elif agent is not None:
+                agent.close()
+            if created:
+                db.delete_session(new_key)
+        except Exception as cleanup_exc:
+            logger.exception("failed to roll back branch %s", new_key)
+            cleanup_error = f"; branch cleanup failed: {cleanup_exc}"
+        return _err(rid, 5008, f"branch failed: {exc}{cleanup_error}")
+    if replace_current:
+        _close_runtime_session(params["session_id"], reserved=True)
+        with _sessions[new_sid]["history_lock"]:
+            _sessions[new_sid]["_replacing"] = False
+            _sessions[new_sid]["running"] = False
     return _ok(rid, {"session_id": new_sid, "title": title, "parent": old_key})
 
 

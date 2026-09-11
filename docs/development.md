@@ -9,11 +9,15 @@ release it, and the gates that must stay green.
 ## Environment
 
 ```bash
-uv venv .venv --python 3.11
-source .venv/bin/activate
-uv pip install -e ".[all,dev]"
-python3 scripts/forecast_smoke_test.py     # local tester-readiness smoke test
+python3 scripts/dev.py bootstrap
+python3 scripts/dev.py check
 ```
+
+Bootstrap uses the frozen Python lockfile, installs the development and web
+extras needed by host tests, builds Ink, installs Git hooks, and runs the same
+quality checks as CI. These contributor dependencies do not change the minimal
+backend distribution. Use `check --python-only` for the Python and contract gates.
+Run behavior tests through `scripts/run_tests.sh`.
 
 ## The map
 

@@ -321,6 +321,7 @@ class SessionBranchRequest(WireModel):
     TS_NAME = "SessionBranchRequest"
 
     session_id: str | None = None
+    name: str = ""
 
 
 class SessionBranchResponse(WireModel):
@@ -328,6 +329,7 @@ class SessionBranchResponse(WireModel):
 
     session_id: str | None = wire_optional()
     title: str | None = wire_optional()
+    parent: str | None = wire_optional()
 
 
 # ── session.close ──────────────────────────────────────────────────────────────

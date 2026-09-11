@@ -4493,62 +4493,21 @@ class ForecastCLI:
         short_uuid = uuid.uuid4().hex[:6]
         new_session_id = f"{timestamp_str}_{short_uuid}"
 
-        # Determine branch title
-        if branch_name:
-            branch_title = branch_name
-        else:
-            # Auto-generate from the current session title
-            current_title = None
-            if self._session_db:
-                current_title = self._session_db.get_session_title(self.session_id)
-            base = current_title or "branch"
-            branch_title = self._session_db.get_next_title_in_lineage(base)
-
-        # Save the current session's state before branching
         parent_session_id = self.session_id
-
-        # End the old session
         try:
-            self._session_db.end_session(self.session_id, "branched")
-        except Exception:
-            pass
-
-        # Create the new session with parent link
-        try:
-            self._session_db.create_session(
-                session_id=new_session_id,
-                source=env_var_alias_value(SESSION_SOURCE_ENV_NAMES, "cli"),
-                model=self.model,
-                model_config={
+            from superforecasting_agent.application.sessions import branch_session
+            branch_title = branch_session(
+                self._session_db, session_id=new_session_id,
+                parent_session_id=parent_session_id, history=self.conversation_history,
+                name=branch_name, source=env_var_alias_value(SESSION_SOURCE_ENV_NAMES, "cli"),
+                model=self.model, model_config={
                     "max_iterations": self.max_turns,
                     "reasoning_config": self.reasoning_config,
-                },
-                parent_session_id=parent_session_id,
+                }, end_parent=True,
             )
         except Exception as e:
             _cprint(f"  Failed to create branch session: {e}")
             return
-
-        # Copy conversation history to the new session
-        for msg in self.conversation_history:
-            try:
-                self._session_db.append_message(
-                    session_id=new_session_id,
-                    role=msg.get("role", "user"),
-                    content=msg.get("content"),
-                    tool_name=msg.get("tool_name") or msg.get("name"),
-                    tool_calls=msg.get("tool_calls"),
-                    tool_call_id=msg.get("tool_call_id"),
-                    reasoning=msg.get("reasoning"),
-                )
-            except Exception:
-                pass  # Best-effort copy
-
-        # Set title on the branch
-        try:
-            self._session_db.set_session_title(new_session_id, branch_title)
-        except Exception:
-            pass
 
         # Switch to the new session
         self.session_id = new_session_id

@@ -135,68 +135,71 @@ def replace_messages(self, session_id: str, messages: List[Dict[str, Any]]) -> N
         The delete + reinsert sequence must commit as one transaction so a
         mid-rewrite failure does not leave SQLite with a partial transcript.
         """
-    def _do(conn):
-        conn.execute(
-            "DELETE FROM messages WHERE session_id = ?", (session_id,)
+    self._execute_write(lambda conn: _replace_messages(self, conn, session_id, messages))
+
+
+def _replace_messages(self, conn, session_id: str, messages: List[Dict[str, Any]]) -> None:
+    """Write a transcript inside an already-owned transaction."""
+    conn.execute(
+        "DELETE FROM messages WHERE session_id = ?", (session_id,)
+    )
+    conn.execute(
+        "UPDATE sessions SET message_count = 0, tool_call_count = 0 WHERE id = ?",
+        (session_id,),
+    )
+    now_ts = time.time()
+    total_messages = 0
+    total_tool_calls = 0
+    for msg in messages:
+        role = msg.get("role", "unknown")
+        tool_calls = msg.get("tool_calls")
+        reasoning_details = msg.get("reasoning_details") if role == "assistant" else None
+        codex_reasoning_items = (
+            msg.get("codex_reasoning_items") if role == "assistant" else None
         )
-        conn.execute(
-            "UPDATE sessions SET message_count = 0, tool_call_count = 0 WHERE id = ?",
-            (session_id,),
+        codex_message_items = (
+            msg.get("codex_message_items") if role == "assistant" else None
         )
-        now_ts = time.time()
-        total_messages = 0
-        total_tool_calls = 0
-        for msg in messages:
-            role = msg.get("role", "unknown")
-            tool_calls = msg.get("tool_calls")
-            reasoning_details = msg.get("reasoning_details") if role == "assistant" else None
-            codex_reasoning_items = (
-                msg.get("codex_reasoning_items") if role == "assistant" else None
-            )
-            codex_message_items = (
-                msg.get("codex_message_items") if role == "assistant" else None
-            )
-            reasoning_details_json = (
-                json.dumps(reasoning_details) if reasoning_details else None
-            )
-            codex_items_json = (
-                json.dumps(codex_reasoning_items) if codex_reasoning_items else None
-            )
-            codex_message_items_json = (
-                json.dumps(codex_message_items) if codex_message_items else None
-            )
-            tool_calls_json = json.dumps(tool_calls) if tool_calls else None
-            conn.execute(
-                """INSERT INTO messages (session_id, role, content, tool_call_id,
-                       tool_calls, tool_name, timestamp, token_count, finish_reason,
-                       reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
-                       codex_message_items)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    session_id,
-                    role,
-                    self._encode_content(msg.get("content")),
-                    msg.get("tool_call_id"),
-                    tool_calls_json,
-                    msg.get("tool_name"),
-                    now_ts,
-                    msg.get("token_count"),
-                    msg.get("finish_reason"),
-                    msg.get("reasoning") if role == "assistant" else None,
-                    msg.get("reasoning_content") if role == "assistant" else None,
-                    reasoning_details_json,
-                    codex_items_json,
-                    codex_message_items_json,
-                ),
-            )
-            total_messages += 1
-            if tool_calls is not None:
-                total_tool_calls += (
-                    len(tool_calls) if isinstance(tool_calls, list) else 1
-                )
-            now_ts += 1e-6
-        conn.execute(
-            "UPDATE sessions SET message_count = ?, tool_call_count = ? WHERE id = ?",
-            (total_messages, total_tool_calls, session_id),
+        reasoning_details_json = (
+            json.dumps(reasoning_details) if reasoning_details else None
         )
-    self._execute_write(_do)
+        codex_items_json = (
+            json.dumps(codex_reasoning_items) if codex_reasoning_items else None
+        )
+        codex_message_items_json = (
+            json.dumps(codex_message_items) if codex_message_items else None
+        )
+        tool_calls_json = json.dumps(tool_calls) if tool_calls else None
+        conn.execute(
+            """INSERT INTO messages (session_id, role, content, tool_call_id,
+                   tool_calls, tool_name, timestamp, token_count, finish_reason,
+                   reasoning, reasoning_content, reasoning_details, codex_reasoning_items,
+                   codex_message_items)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                session_id,
+                role,
+                self._encode_content(msg.get("content")),
+                msg.get("tool_call_id"),
+                tool_calls_json,
+                msg.get("tool_name"),
+                now_ts,
+                msg.get("token_count"),
+                msg.get("finish_reason"),
+                msg.get("reasoning") if role == "assistant" else None,
+                msg.get("reasoning_content") if role == "assistant" else None,
+                reasoning_details_json,
+                codex_items_json,
+                codex_message_items_json,
+            ),
+        )
+        total_messages += 1
+        if tool_calls is not None:
+            total_tool_calls += (
+                len(tool_calls) if isinstance(tool_calls, list) else 1
+            )
+        now_ts += 1e-6
+    conn.execute(
+        "UPDATE sessions SET message_count = ?, tool_call_count = ? WHERE id = ?",
+        (total_messages, total_tool_calls, session_id),
+    )

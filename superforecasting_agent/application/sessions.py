@@ -52,3 +52,44 @@ def list_resumable_sessions(
             break
         offset += page_size
     return result
+
+
+def branch_session(
+    db: SessionDB,
+    *,
+    session_id: str,
+    parent_session_id: str,
+    history: list[dict[str, Any]],
+    name: str = "",
+    source: str,
+    model: str | None = None,
+    model_config: dict[str, Any] | None = None,
+    end_parent: bool = False,
+) -> str:
+    """Copy a complete transcript atomically and return its validated title."""
+    if not history:
+        raise ValueError("nothing to branch — send a forecast note first")
+    if not isinstance(name, str):
+        raise ValueError("branch name must be text")
+    if not session_id or not parent_session_id or session_id == parent_session_id:
+        raise ValueError("branch requires distinct nonempty session identifiers")
+    messages = [dict(message) for message in history]
+    for message in messages:
+        message["tool_name"] = message.get("tool_name") or message.get("name")
+    title = name.strip() or db.get_next_title_in_lineage(
+        db.get_session_title(parent_session_id) or "branch"
+    )
+    title = db.sanitize_title(title)
+    if not title:
+        raise ValueError("branch title must be nonempty")
+    db.create_branch(
+        session_id,
+        parent_session_id,
+        messages,
+        title=title,
+        source=source,
+        model=model,
+        model_config=model_config,
+        end_parent=end_parent,
+    )
+    return title

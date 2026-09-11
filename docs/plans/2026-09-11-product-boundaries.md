@@ -765,3 +765,27 @@ Session close admission:
   Further session/configuration host extraction, external-resource ownership and
   installed remote Ink qualification remain unfinished. Full regression is next
   for the accumulated batch before pushing.
+
+Coordinated branch handoff and complete transcript copying (isolated follow-up):
+
+- CLI, messaging and TUI now share `application.sessions.branch_session` and a
+  single storage transaction for branch identity, title, full transcript/counters
+  and optional parent ending. Failed message copies roll back instead of being
+  silently skipped. Tool-call identities and provider reasoning metadata survive
+  the TUI path, which previously copied only role and content.
+- Ink uses the new `session.branch_replace` capability. The host reserves the old
+  idle session, prepares its replacement, rolls back failed construction, and
+  closes the old runtime before releasing the new one for use. Newer clients
+  reject hosts missing this capability instead of assuming compatible semantics.
+  Client failures preserve the visible session/transcript and surface the error.
+- The isolated worktree now has its own frozen Python environment. Reusing the
+  primary environment exposed editable-install leakage in a subprocess test.
+  Fresh setup also exposed missing web dependencies for the newly added host
+  checks: bootstrap now installs the web extra for contributors and CI. Minimal
+  backend installs retain optional web dependencies. Reconciled the older setup
+  guide and added session/host ownership entries to the architecture map.
+- Verification: 258 CLI/TUI/lifecycle tests, 223 storage/gateway tests and eighteen
+  client handoff/transport tests pass. The exact documented bootstrap command,
+  including hooks and Python/TypeScript quality checks, passes in this isolated
+  environment. Primary full regression continues separately on `4f1532e81`;
+  these changes have not yet been included in that full run or pushed.

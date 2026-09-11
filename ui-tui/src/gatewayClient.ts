@@ -10,7 +10,7 @@ import { tuiEnvValue } from './lib/envAlias.js'
 import { runtimeEnvValue } from './lib/runtimeEnv.js'
 import { PROTOCOL_VERSION, WireEvent } from './protocol/generated.js'
 
-export const REQUIRED_HOST_CAPABILITIES = ['forecast.operation', 'session.create', 'session.resume', 'session.status', 'session.interrupt', 'prompt.submit'] as const
+export const REQUIRED_HOST_CAPABILITIES = ['forecast.operation', 'session.create', 'session.resume', 'session.branch_replace', 'session.status', 'session.interrupt', 'prompt.submit'] as const
 
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096

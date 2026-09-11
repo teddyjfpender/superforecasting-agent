@@ -31,8 +31,8 @@ def in_use(session: MutableMapping[str, Any], *, reserved: bool = False) -> bool
 def use_session(session: MutableMapping[str, Any]) -> Iterator[None]:
     lock = session.setdefault("history_lock", threading.Lock())
     with lock:
-        if session.get("_closing"):
-            raise SessionBusy("session is closing")
+        if session.get("_closing") or session.get("_replacing"):
+            raise SessionBusy("session is closing or being replaced")
         session["_active_calls"] = session.get("_active_calls", 0) + 1
     try:
         yield
@@ -57,3 +57,22 @@ def reserve_close(
                 "session is busy; cancel or finish active work before closing"
             )
         session["_closing"] = True
+
+
+@contextmanager
+def replacement(session: MutableMapping[str, Any]) -> Iterator[None]:
+    """Reserve an idle session until its replacement is ready or fails."""
+    lock = session.setdefault("history_lock", threading.Lock())
+    with lock:
+        if session.get("_closing") or session.get("_replacing") or in_use(session):
+            raise SessionBusy(
+                "session is busy; cancel or finish active work before replacing"
+            )
+        session["_replacing"] = True
+        session["running"] = True
+    try:
+        yield
+    finally:
+        with lock:
+            session["_replacing"] = False
+            session["running"] = False

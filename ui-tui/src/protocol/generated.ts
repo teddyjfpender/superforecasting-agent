@@ -2709,10 +2709,12 @@ export interface SecretRespondResponse {
 }
 
 export interface SessionBranchRequest {
+  name: string
   session_id: null | string
 }
 
 export interface SessionBranchResponse {
+  parent?: string
   session_id?: string
   title?: string
 }

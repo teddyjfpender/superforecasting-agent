@@ -157,6 +157,7 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("session.status", _rpc_session.SessionStatusRequest, _rpc_session.SessionStatusResponse),
     RpcSpec("session.compress", _rpc_session.SessionCompressRequest, _rpc_session.SessionCompressResponse),
     RpcSpec("session.branch", _rpc_session.SessionBranchRequest, _rpc_session.SessionBranchResponse),
+    RpcSpec("session.branch_replace", _rpc_session.SessionBranchRequest, _rpc_session.SessionBranchResponse),
     RpcSpec("session.close", _rpc_session.SessionCloseRequest, _rpc_session.SessionCloseResponse),
     RpcSpec("session.interrupt", _rpc_session.SessionInterruptRequest, _rpc_session.SessionInterruptResponse),
     RpcSpec("session.steer", _rpc_session.SessionSteerRequest, _rpc_session.SessionSteerResponse),

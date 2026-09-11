@@ -375,3 +375,25 @@ def get_compression_tip(self, session_id: str) -> Optional[str]:
             return current
         current = row["id"]
     return current
+
+
+def create_branch(self, session_id, parent_session_id, messages, *, title, source, model=None, model_config=None, end_parent=False):
+    """Commit the branch identity, full transcript and optional parent end together."""
+    from superforecasting_agent.storage.messages import _replace_messages
+
+    title = self.sanitize_title(title)
+    encoded_config = json.dumps(model_config) if model_config else None
+    def write(conn):
+        if conn.execute("SELECT 1 FROM sessions WHERE id = ?", (parent_session_id,)).fetchone() is None:
+            raise ValueError("parent session not found")
+        if title and conn.execute("SELECT 1 FROM sessions WHERE title = ?", (title,)).fetchone():
+            raise ValueError(f"Title '{title}' is already in use")
+        conn.execute(
+            "INSERT INTO sessions (id, source, model, model_config, parent_session_id, started_at, title) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (session_id, source, model, encoded_config, parent_session_id, time.time(), title),
+        )
+        _replace_messages(self, conn, session_id, messages)
+        if end_parent:
+            conn.execute("UPDATE sessions SET ended_at = ?, end_reason = 'branched' WHERE id = ? AND ended_at IS NULL", (time.time(), parent_session_id))
+    self._execute_write(write)
+    return session_id

@@ -19,6 +19,9 @@ The formality layer of the modularization program
 | Package | Layer | Public façade | Must NOT import (contract) |
 |---|---|---|---|
 | `superforecasting_agent/` | product entry and runtime foundations | Lazy public domain exports; `bootstrap`, `constants`, `clock`, `logging` | Bootstrap and profile-path imports must remain usable before application setup |
+| `superforecasting_agent/application/sessions.py` | application services | Resumable-session selection and atomic branch-copy admission | No presentation or transport imports |
+| `superforecasting_agent/hosting/{workers,sessions}.py` | host resource ownership | Worker admission/drain and session use/close/replacement admission | No transport, CLI, agent or tool imports; enforced transitively |
+| `superforecasting_agent/hosting/websocket.py` | headless transport entrypoint | Authenticated host application and explicit serving lifetime | Uses shared RPC operations; no dashboard construction |
 | `superforecasting_agent/storage/` | session persistence | `superforecasting_agent.storage.session.SessionDB` binds operations from focused storage modules | Storage leaves do not import the SessionDB facade |
 | `protocol/` | kernel (wire contracts) | pydantic models under `protocol/rpc`, `protocol/events`; `generated.ts` is generated from it | **anything app-side** — `forecasting`, `tools`, `agent`, `gateway`, `tui_gateway`, `superforecasting_agent.runtime`, `run_agent`, `cli` (Tier-1 contract, enforced) |
 | `forecasting/` | domain (ledger, scoring, quorum, CLI) | `forecasting.ledger`, `forecasting.cli` (façade packages), `forecasting.models` | `tui_gateway` (Tier-1); `superforecasting_agent.runtime` + `tools` are **ratcheted** (frozen lists in pyproject — may only shrink) |
