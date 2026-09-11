@@ -19,6 +19,8 @@
 #   FORECAST_HOME=/home/<user>/.superforecasting-agent
 #   TAG=latest|vX.Y.Z            target release
 #   MANIFEST=/path/release-manifest.json   local manifest (skips download)
+#   INSTALL_TUI=0             upgrade backend only (default: 1)
+#   FORECAST_TUI_WHEEL=/path.whl  optional local terminal companion
 #   FORECAST_WHEEL=/path.whl     local wheel (pipx lane; skips download)
 #   FORECAST_CHECKSUMS=/path/SHA256SUMS  verify a local FORECAST_WHEEL against this
 #   ALLOW_UNVERIFIED=1           permit a release that ships no SHA256SUMS
@@ -35,6 +37,8 @@ ALLOW_UNVERIFIED="${SUPERFORECASTING_AGENT_ALLOW_UNVERIFIED:-${ALLOW_UNVERIFIED:
 REPO="${REPO:-teddyjfpender/superforecasting-agent}"
 SERVICE="superforecasting-agent-gateway"
 COMPOSE_DIR="/opt/superforecasting"
+INSTALL_TUI="${INSTALL_TUI:-1}"
+case "$INSTALL_TUI" in 0|1) ;; *) echo "INSTALL_TUI must be 0 or 1" >&2; exit 1;; esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
@@ -64,7 +68,7 @@ sha256_of() {  # <file> -> hex digest on stdout
 verify_checksum() {
   local file="$1" sums="$2" name want got
   name="$(basename "$file")"
-  want="$(grep -E "  ${name}\$| ${name}\$" "$sums" 2>/dev/null | awk '{print $1}' | head -n1)"
+  want="$(awk -v name="$name" '$2 == name {digest=$1; count++} END {if (count == 1) print digest}' "$sums")"
   [ -n "$want" ] || { warn "SHA256SUMS has no entry for $name"; return 1; }
   got="$(sha256_of "$file")"
   if [ "$want" != "$got" ]; then
@@ -77,6 +81,7 @@ verify_checksum() {
 # ── 1. resolve manifest (local or from the GitHub release) ─────────────────
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 WHEEL=""
+TUI_WHEEL=""
 if [ -n "${MANIFEST:-}" ]; then
   cp "$MANIFEST" "$TMP/release-manifest.json"
   say "Using local manifest: $MANIFEST"
@@ -90,8 +95,8 @@ else
   curl -fsSL -o "$TMP/release-manifest.json" "$man_url" || die "manifest download failed"
 fi
 MANIFEST_FILE="$TMP/release-manifest.json"
-NEW_VERSION="$(python3 -c "import json;print(json.load(open('$MANIFEST_FILE'))['version'])")"
-MIN_MIG="$(python3 -c "import json;print(json.load(open('$MANIFEST_FILE'))['min_migration_version'])")"
+NEW_VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$MANIFEST_FILE")"
+MIN_MIG="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["min_migration_version"])' "$MANIFEST_FILE")"
 ok "target v$NEW_VERSION (min_migration v$MIN_MIG)"
 
 # ── 2. MIGRATION GUARD — before we touch anything ──────────────────────────
@@ -149,32 +154,37 @@ else
       ok "wheel checksum verified against $(basename "$FORECAST_CHECKSUMS")"
     fi
   else
-    if [ "$TAG" = "latest" ]; then api="https://api.github.com/repos/$REPO/releases/latest"
-    else api="https://api.github.com/repos/$REPO/releases/tags/$TAG"; fi
-    meta="$(curl -fsSL "$api" 2>/dev/null || true)"
-    wheel_url="$(printf '%s' "$meta" | grep -o 'https://[^"]*\.whl' | head -n1 || true)"
-    sums_url="$(printf '%s' "$meta" | grep -o 'https://[^"]*SHA256SUMS' | head -n1 || true)"
-    [ -n "$wheel_url" ] || die "no wheel on release $TAG"
-    curl -fsSL -o "$TMP/$(basename "$wheel_url")" "$wheel_url" || die "wheel download failed"
-    WHEEL="$TMP/$(basename "$wheel_url")"
-    if [ -z "$sums_url" ]; then
-      if [ "$ALLOW_UNVERIFIED" = "1" ]; then
-        warn "release $TAG ships no SHA256SUMS (pre-P0 release?) — ALLOW_UNVERIFIED=1 set, proceeding WITHOUT integrity verification. You own the risk."
-      else
-        die "release $TAG ships no SHA256SUMS (pre-P0 release?) — cannot verify the downloaded wheel. Pin a v0.18.0+ release, or re-run with ALLOW_UNVERIFIED=1 to accept an unverified upgrade. Nothing changed."
-      fi
-    else
-      curl -fsSL -o "$TMP/SHA256SUMS" "$sums_url" \
-        || die "SHA256SUMS download failed (network error?) — refusing to install an unverified wheel. Nothing changed."
-      verify_checksum "$WHEEL" "$TMP/SHA256SUMS" \
-        || die "wheel sha256 MISMATCH against the release's SHA256SUMS — the download is corrupt or tampered with. Aborting: nothing changed."
-      ok "wheel sha256 verified (SHA256SUMS)"
+    # Reuse the standalone installer's artifact selection and integrity owner.
+    # The already admitted manifest freezes the release even if latest changes.
+    [ -f "$SCRIPT_DIR/install-release.sh" ] || die "install-release.sh is required beside upgrade.sh."
+    MANIFEST="$MANIFEST_FILE" RELEASE_DOWNLOAD_DIR="$TMP/verified" REPO="$REPO" \
+      TAG="$TAG" INSTALL_TUI="${INSTALL_TUI:-1}" ALLOW_UNVERIFIED="$ALLOW_UNVERIFIED" \
+      bash "$SCRIPT_DIR/install-release.sh" || die "Release artifact verification failed; nothing installed."
+    WHEEL="$TMP/verified/$(sed -n 1p "$TMP/verified/wheels.txt")"
+    terminal_name="$(sed -n 2p "$TMP/verified/wheels.txt")"
+    if [ -n "$terminal_name" ]; then TUI_WHEEL="$TMP/verified/$terminal_name"; fi
+  fi
+  if [ -n "${FORECAST_TUI_WHEEL:-}" ]; then
+    [ -n "${FORECAST_WHEEL:-}" ] || die "FORECAST_TUI_WHEEL requires a local FORECAST_WHEEL."
+    [ "${INSTALL_TUI:-1}" = 1 ] || die "FORECAST_TUI_WHEEL conflicts with INSTALL_TUI=0."
+    TUI_WHEEL="$FORECAST_TUI_WHEEL"
+    [ -f "$TUI_WHEEL" ] || die "FORECAST_TUI_WHEEL not found: $TUI_WHEEL"
+    if [ -n "${FORECAST_CHECKSUMS:-}" ]; then
+      verify_checksum "$TUI_WHEEL" "$FORECAST_CHECKSUMS" || die "Local terminal wheel failed verification."
     fi
   fi
+  # mktemp creates a root-only directory; pipx runs as the forecast user.
+  # Only this invocation's private staging tree changes ownership.
+  chown -R "$FORECAST_USER:$FORECAST_USER" "$TMP" || die "Could not hand off verified artifacts to $FORECAST_USER."
   say "Installing wheel via pipx --force"
   sudo -u "$FORECAST_USER" env HOME="$USER_HOME" PIPX_HOME="$USER_HOME/.local/pipx" \
     PIPX_BIN_DIR="$USER_HOME/.local/bin" pipx install --force "$WHEEL" >/dev/null \
     || die "pipx install failed"
+  if [ -n "$TUI_WHEEL" ]; then
+    sudo -u "$FORECAST_USER" env HOME="$USER_HOME" PIPX_HOME="$USER_HOME/.local/pipx" \
+      PIPX_BIN_DIR="$USER_HOME/.local/bin" pipx inject --force superforecasting-agent "$TUI_WHEEL" >/dev/null \
+      || die "pipx terminal companion installation failed"
+  fi
 fi
 
 # ── 5. restart the supervised gateway ──────────────────────────────────────

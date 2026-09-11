@@ -880,3 +880,21 @@ Windows companion installer parity:
   The 33 focused Python release/installer tests and shared Python quality pass.
 - VPS upgrade/installation scripts still select the first release wheel and need
   migration. Runtime release updating also needs review for companion ownership.
+
+VPS upgrade artifact ownership:
+
+- Added a verification-only staging mode to the standalone POSIX installer.
+  `RELEASE_DOWNLOAD_DIR` must name a new directory; a wheel inventory is written
+  only after selected artifacts pass verification and are copied successfully.
+  This mode does not install pipx, install packages or stamp a user profile.
+- `upgrade.sh` reuses that selection/verification owner with its already admitted
+  manifest, preserving the migration guard and backup sequence and avoiding a
+  second unpinned latest-release selection. It supports terminal injection,
+  backend-only upgrades and an explicit local terminal companion. All supplied
+  local checksums must pass before backend installation.
+- The upgrade staging tree now transfers ownership to the forecast user before
+  pipx runs as that user; the former root-only mktemp directory was inaccessible
+  to a real unprivileged installation. The controlled tests use fake privilege
+  commands, so they do not establish a real Linux permission/deployment exercise.
+- Hetzner first-install and fresh-box scripts still require split-artifact
+  migration; standalone provisioning cannot assume a checkout sibling exists.

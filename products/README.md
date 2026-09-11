@@ -88,5 +88,7 @@ establish those guarantees.
 The POSIX release installer installs both manifest-selected wheels by default.
 Use `INSTALL_TUI=0 bash install.sh` for a backend-only environment. All selected
 artifacts are verified before installation begins. The PowerShell installer supports the same selection with `-BackendOnly`.
-The VPS installation/upgrade entrypoints still need equivalent split-package
-handling; native Windows execution of the new fixture checks is pending.
+The VPS upgrader now reuses POSIX verification and supports `INSTALL_TUI=0`
+and `FORECAST_TUI_WHEEL` for local companion upgrades. Keep `install-release.sh`
+beside `upgrade.sh` and its migration guard. Hetzner first-install wiring and
+native Windows execution of the new fixture checks remain pending.

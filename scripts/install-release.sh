@@ -23,6 +23,8 @@
 #
 # Config:
 #   TAG=vX.Y.Z | latest    release to install (alias: SUPERFORECASTING_AGENT_RELEASE_TAG)
+#   RELEASE_DOWNLOAD_DIR=/new/directory
+#                          verify and stage selected wheels without installing.
 #   INSTALL_TUI=0         install only the backend/CLI (default: 1).
 #   MANIFEST=/path/release-manifest.json
 #                          pin the EXACT release a local manifest names: the
@@ -40,7 +42,7 @@
 # ============================================================================
 set -euo pipefail
 
-REPO="teddyjfpender/superforecasting-agent"
+REPO="${REPO:-teddyjfpender/superforecasting-agent}"
 # Pin with TAG=v0.19.0 (or SUPERFORECASTING_AGENT_RELEASE_TAG); default latest.
 # TAG_SET remembers whether the user pinned explicitly, so a conflicting
 # MANIFEST= pin can be refused instead of silently winning.
@@ -261,6 +263,18 @@ fi
 if [ -n "$MAN_WHEEL_SHA" ]; then
   [ "$(sha256_of "$WHEEL")" = "$MAN_WHEEL_SHA" ] \
     || die "Wheel manifest sha256 MISMATCH; nothing installed."
+fi
+
+# Provisioning/upgrades reuse this owner without running user installation steps.
+# A new directory prevents an old receipt from admitting partially copied output.
+if [ -n "${RELEASE_DOWNLOAD_DIR:-}" ]; then
+  mkdir "$RELEASE_DOWNLOAD_DIR" || die "Download destination must be a new directory."
+  cp "$WHEEL" "$RELEASE_DOWNLOAD_DIR/$WHEEL_NAME"
+  if [ -n "$TUI_WHEEL" ]; then cp "$TUI_WHEEL" "$RELEASE_DOWNLOAD_DIR/$MAN_TUI_NAME"; fi
+  printf '%s\n' "$WHEEL_NAME" > "$RELEASE_DOWNLOAD_DIR/wheels.txt"
+  if [ -n "$TUI_WHEEL" ]; then printf '%s\n' "$MAN_TUI_NAME" >> "$RELEASE_DOWNLOAD_DIR/wheels.txt"; fi
+  ok "Selected release wheels verified and staged."
+  exit 0
 fi
 
 # 5. Ensure pipx (isolated venv + clean, repeatable upgrades).

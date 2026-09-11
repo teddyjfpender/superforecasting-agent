@@ -359,3 +359,27 @@ def test_duplicate_checksum_entry_prevents_install(tmp_path):
     result = _run(tmp_path, fixdir)
     assert result.returncode != 0
     assert _pipx_log(fixdir) is None
+
+
+def test_download_mode_stages_verified_wheels_without_install(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    destination = tmp_path / "verified"
+    result = _run(tmp_path, fixdir, {"RELEASE_DOWNLOAD_DIR": str(destination)})
+    assert result.returncode == 0, result.stderr
+    assert (destination / WHEEL_NAME).read_bytes() == WHEEL_BYTES
+    assert (destination / TUI_NAME).read_bytes() == TUI_BYTES
+    assert (destination / "wheels.txt").read_text().splitlines() == [WHEEL_NAME, TUI_NAME]
+    assert _pipx_log(fixdir) is None
+    assert not (tmp_path / "home" / ".superforecasting-agent" / ".install_method").exists()
+
+
+def test_download_mode_rejects_corruption_without_receipt(tmp_path):
+    fixdir = tmp_path / "fix"
+    _split_release(fixdir)
+    (fixdir / "terminal.whl").write_bytes(b"corrupt")
+    destination = tmp_path / "verified"
+    result = _run(tmp_path, fixdir, {"RELEASE_DOWNLOAD_DIR": str(destination)})
+    assert result.returncode != 0
+    assert not destination.exists()
+    assert _pipx_log(fixdir) is None
