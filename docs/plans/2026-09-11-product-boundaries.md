@@ -669,3 +669,14 @@ Regression qualification follow-up:
   allowed false-positive passes. Retained the original behavioral assertions.
   The five affected test files now pass 436 tests with one skip. A new full run
   is still required before this batch can be pushed.
+Host stream ownership (isolated follow-up):
+
+- Importing the RPC server no longer redirects process-wide stdout. The stdio
+  entrypoint reserves stdout for protocol frames only while it is serving the
+  command pipe and restores the prior streams on return or failure. HTTP-only
+  serving leaves the embedding process's streams unchanged; explicit HTTP/stdio
+  tee mode retains protocol stream ownership.
+- Thirty-four focused stream-ownership and HTTP host tests passed, including a
+  fresh server import and injected entrypoint failures. Real installed-terminal
+  qualification for this follow-up is still required. This change was developed
+  in an isolated worktree while the prior frozen commit's full suite ran.

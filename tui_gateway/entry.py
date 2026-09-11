@@ -351,10 +351,27 @@ def _run_http(cfg: dict) -> None:
 
 def main():
     http_cfg = _parse_http_args(sys.argv[1:])
-    if http_cfg is not None:
+    if http_cfg is not None and not http_cfg.get("alongside_stdio"):
         _run_http(http_cfg)
         return
 
+    # Only the command-pipe host reserves stdout for protocol frames. Embedded
+    # HTTP/WebSocket consumers must not change their parent process's streams.
+    previous_stdout = sys.stdout
+    previous_protocol_stdout = server._real_stdout
+    server._real_stdout = previous_stdout
+    sys.stdout = sys.stderr
+    try:
+        if http_cfg is not None:
+            _run_http(http_cfg)
+        else:
+            _run_stdio()
+    finally:
+        sys.stdout = previous_stdout
+        server._real_stdout = previous_protocol_stdout
+
+
+def _run_stdio():
     server.start_build_check()
 
     _install_sidecar_publisher()
