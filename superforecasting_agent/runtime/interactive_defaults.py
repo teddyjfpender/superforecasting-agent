@@ -2,6 +2,10 @@
 
 
 def default_cli_config():
+    from copy import deepcopy
+
+    from superforecasting_agent.runtime.config import DEFAULT_CONFIG
+
     return {
         "model": {
             "default": "",
@@ -82,13 +86,7 @@ def default_cli_config():
                 "api_key": "",
             },
         },
-        "delegation": {
-            "max_iterations": 45,  # Max tool-calling turns per child agent
-            "model": "",       # Subagent model override (empty = inherit parent model)
-            "provider": "",    # Subagent provider override (empty = inherit parent provider)
-            "base_url": "",    # Direct OpenAI-compatible endpoint for subagents
-            "api_key": "",     # API key for delegation.base_url (falls back to OPENAI_API_KEY)
-        },
+        "delegation": deepcopy(DEFAULT_CONFIG["delegation"]),
         "onboarding": {
             # First-touch hint flags (see agent/onboarding.py).  Each hint is
             # shown once per install then latched here.

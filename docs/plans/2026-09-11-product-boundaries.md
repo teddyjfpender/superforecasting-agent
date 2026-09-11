@@ -482,3 +482,20 @@ Full qualification and hook isolation:
   desk cases, passed 309 tests. Shared Python quality and shell syntax pass. The
   first push's 558 changed-TUI tests also passed; the rejected push did not update
   the remote branch. Push qualification must be retried with the corrected hook.
+
+Shared delegation configuration and gateway persistence:
+
+- Verified remote branch `codex/learning-settlement-runtime` at `571414d23` after
+  the corrected hooks passed 19,435 Python tests (74 skipped) and 558 TUI tests.
+- Delegation reads detached current settings from the runtime configuration owner
+  instead of importing cached classic-CLI settings. Interactive defaults now copy
+  the canonical delegation defaults; explicitly configured limits remain intact.
+- Gateway confirmation preferences use the existing profile-aware atomic updater
+  directly. Failed persistence no longer produces a success note claiming that
+  subsequent confirmations are disabled; the currently authorized action still runs.
+- 160 focused delegation/configuration/confirmation tests passed, including real
+  profile writes preserving unrelated settings and injected failures for both
+  destructive-command and MCP-reload preferences. Shared Python quality and all
+  twelve import contracts pass; delegation now joins the no-CLI consumer contract.
+- Complete runtime hosting, transitive application isolation, broader command
+  migration and remote installed-product qualification remain open.

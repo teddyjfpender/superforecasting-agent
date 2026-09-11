@@ -2817,26 +2817,14 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
 
 
 def _load_config() -> dict:
-    """Load delegation config from CLI_CONFIG or persistent config.
+    """Read detached delegation settings from the shared runtime owner."""
+    from copy import deepcopy
 
-    Checks the runtime config (cli.py CLI_CONFIG) first, then falls back
-    to the persistent config (superforecasting_agent/runtime/config.py load_config()) so that
-    ``delegation.model`` / ``delegation.provider`` are picked up regardless
-    of the entry point (CLI, gateway, cron).
-    """
     try:
-        from cli import CLI_CONFIG
+        from superforecasting_agent.runtime.config import load_config_readonly
 
-        cfg = CLI_CONFIG.get("delegation") or {}
-        if cfg:
-            return cfg
-    except Exception:
-        pass
-    try:
-        from superforecasting_agent.runtime.config import load_config
-
-        full = load_config()
-        return full.get("delegation") or {}
+        cfg = load_config_readonly().get("delegation")
+        return deepcopy(cfg) if isinstance(cfg, dict) else {}
     except Exception:
         return {}
 

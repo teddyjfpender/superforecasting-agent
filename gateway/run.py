@@ -13861,11 +13861,14 @@ class GatewayRunner:
         async def _on_confirm(choice: str) -> Optional[str]:
             if choice == "cancel":
                 return t("gateway.reload_mcp.cancelled")
+            preference_saved = False
             if choice == "always":
                 # Persist the opt-out and run the reload.
                 try:
-                    from cli import save_config_value
-                    save_config_value("approvals.mcp_reload_confirm", False)
+                    atomic_roundtrip_yaml_update(
+                        _hermes_home / "config.yaml", "approvals.mcp_reload_confirm", False,
+                    )
+                    preference_saved = True
                     logger.info(
                         "User opted out of /reload-mcp confirmation (session=%s)",
                         session_key,
@@ -13875,7 +13878,11 @@ class GatewayRunner:
             # once / always → run the reload
             result = await self._execute_mcp_reload(event)
             if choice == "always":
-                return f"{result}\n\n" + t("gateway.reload_mcp.always_followup")
+                note = (
+                    t("gateway.reload_mcp.always_followup") if preference_saved else
+                    "Could not save the preference; confirmation remains enabled."
+                )
+                return f"{result}\n\n{note}"
             return result
 
         prompt_message = t("gateway.reload_mcp.confirm_prompt")
@@ -14153,10 +14160,13 @@ class GatewayRunner:
         async def _on_confirm(choice: str):
             if choice == "cancel":
                 return f"🟡 /{command} cancelled. Conversation unchanged."
+            preference_saved = False
             if choice == "always":
                 try:
-                    from cli import save_config_value
-                    save_config_value("approvals.destructive_slash_confirm", False)
+                    atomic_roundtrip_yaml_update(
+                        _hermes_home / "config.yaml", "approvals.destructive_slash_confirm", False,
+                    )
+                    preference_saved = True
                     logger.info(
                         "User opted out of destructive slash confirm (session=%s)",
                         session_key,
@@ -14172,11 +14182,13 @@ class GatewayRunner:
                     "without confirmation. Re-enable via "
                     "`approvals.destructive_slash_confirm: true` in config.yaml."
                 )
+                if not preference_saved:
+                    note = "\n\nCould not save the preference; confirmation remains enabled."
                 if isinstance(result, str):
                     return result + note
                 # EphemeralReply or other — leave untouched; the opt-out note
                 # would otherwise mangle structured replies.  The persist itself
-                # already happened above; user gets the same UX next time.
+                # is reported through logging when the reply cannot carry text.
                 return result
             return result
 

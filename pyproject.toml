@@ -454,7 +454,7 @@ allow_indirect_imports = false
 [[tool.importlinter.contracts]]
 name = "forecast execution consumers do not import CLI orchestration"
 type = "forbidden"
-source_modules = ["forecasting.jobs.types.reforecast", "tools.forecast_actions.forecast_update", "agent.forecast_stage", "forecasting.cron_runner"]
+source_modules = ["forecasting.jobs.types.reforecast", "tools.forecast_actions.forecast_update", "agent.forecast_stage", "forecasting.cron_runner", "tools.delegate_tool"]
 forbidden_modules = ["forecasting.cli", "cli"]
 allow_indirect_imports = true
 
