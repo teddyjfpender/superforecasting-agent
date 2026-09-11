@@ -94,3 +94,45 @@ and clean up test sandboxes. No unavailable credentials were fabricated.
 
 Primary launch archive: https://content.spacex.com/api/spacex-website/missions/starship-flight-13
 (the mission narrative, not image upload timestamps, establishes the launch).
+
+## Lifecycle atomicity and release-test deadlines
+
+Question insertion and its initial review schedule now commit in one transaction.
+An interrupted schedule write rolls back the question instead of leaving an
+active question without its intended review. The injected scheduling failure
+regression passed, along with the trial integrity tests.
+
+The first v0.22.0 release attempt reached 30,211 passing tests but failed five
+runtime deadlines. A duplicate SIGALRM fixture ignored the release workflow's
+`--timeout=60`; pytest-timeout is now the sole deadline owner. The heavy offline
+benchmark smoke subprocess has its own bounded 300-second allowance, within a
+600-second lifecycle subprocess and a 660-second test cap. Ordinary tests retain
+their 30-second default. All seven targeted smoke/calibration regressions passed.
+
+The subsequent forecasting suite passed 3,470 tests with three skips and exposed
+two watch gate tests accidentally doing DNS lookups on fictitious `.test` URLs.
+Those dispatch tests now stub the network signature boundary; their four cases
+and the atomicity regression pass. Source-fetch behavior remains independently
+tested. These follow-up fixes do not change the immutable v0.22.0 tag.
+
+The expanded Linux/macOS recovery matrix exposed coalesced text/Enter handling
+and a shutdown path without a deadline. The terminal tokenizer now preserves
+control keys within a single read and keeps bracketed paste literal. Stdin EOF
+uses the same bounded shutdown fallback as termination signals. The soak test
+waits for the desk's completed-turn status: a visible final token can precede
+`message.complete`, so Ctrl+C at that point correctly interrupts instead of
+exiting. The PTY verification harness now decodes UTF-8 incrementally, avoiding
+corrupted screen assertions when one character spans multiple output reads.
+
+The sustained test additionally exposed an old React handler's delayed thinking
+status overwriting `ready` after `message.complete`. Delayed status updates now
+check that the turn is still busy. A regression simulates handler replacement;
+removing the guard makes it fail. This repairs the visible lifecycle state,
+not the underlying forecast record. The 2,020-test TypeScript suite passed before
+this final timer fix, followed by all 59 gateway-handler tests with the fix.
+
+With the status correction, all eight real-terminal recovery/shutdown tests
+passed in 83 seconds, including 60 Unicode turns across five process lifetimes,
+stalled-stream cancellation, durable resume, gateway respawn and hard client
+termination. The harness/EOF unit checks passed 15 tests; terminal parser checks
+passed 57. Linux/macOS CI must rerun these fixes before claiming platform parity.

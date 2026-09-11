@@ -204,6 +204,14 @@ export function createGatewayEventHandler(ctx: GatewayEventHandlerContext): (ev:
 
     thinkingStatusTimer = setTimeout(() => {
       thinkingStatusTimer = null
+
+      // React can replace this handler while its timer is pending. Completion
+      // then clears the new handler's timer, so this old callback must not
+      // overwrite the completed desk with a stale "running" label.
+      if (!getUiState().busy) {
+        return
+      }
+
       patchUiState({ status: pendingThinkingStatus || statusFromBusy() })
     }, STREAM_BATCH_MS)
   }

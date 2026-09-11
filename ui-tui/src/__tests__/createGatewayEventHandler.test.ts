@@ -53,6 +53,25 @@ const buildCtx = (appended: Msg[]) =>
   }) as any
 
 describe('createGatewayEventHandler', () => {
+  it('does not restore running status from a replaced handler after completion', () => {
+    vi.useFakeTimers()
+
+    try {
+      resetUiState()
+      turnController.fullReset()
+      const oldHandler = createGatewayEventHandler(buildCtx([]))
+      oldHandler({ payload: {}, type: 'message.start' } as any)
+      oldHandler({ payload: { text: 'running…' }, type: 'thinking.delta' } as any)
+      const currentHandler = createGatewayEventHandler(buildCtx([]))
+      currentHandler({ payload: { text: 'Done.' }, type: 'message.complete' } as any)
+      vi.runAllTimers()
+      expect(getUiState().busy).toBe(false)
+      expect(getUiState().status).toBe('ready')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   beforeEach(() => {
     resetOverlayState()
     resetUiState()

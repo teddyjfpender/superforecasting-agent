@@ -80,7 +80,9 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
   response, durable prompt/reply and clean exit. Keep this in future release checks.
 - [ ] Extend the verified macOS cancellation/resume/resize/dashboard recovery
   cases to other supported platforms and longer-running sessions. The macOS
-  18-turn Unicode exercise across three process lifetimes is complete.
+  60-turn Unicode exercise across five process lifetimes passed locally; the
+  expanded Linux/macOS matrix exposed follow-up input/shutdown fixes requiring
+  cross-platform verification. Android/Termux still requires device access.
 - [ ] Keep scheduled monitoring limited to evidence, alerts, scores, and learning
   records; probability changes must remain explicit forecast updates.
 - [ ] Evaluate forecasting accuracy and calibration with scored resolved questions;

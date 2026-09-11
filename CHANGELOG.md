@@ -20,9 +20,12 @@ artifact set described in `docs/plans/2026-07-09-hetzner-productionization.md`
 - Share legacy provider interpretation in profile listings and diagnostic reports.
 - Prefer valid parsed openFDA submission dates over malformed date strings.
 - Require explicit service-scoped credentials for live integration tests.
+- Commit new questions and their initial review schedules atomically.
+- Preserve Enter/control keys in coalesced terminal reads and bound gateway shutdown after stdin closes.
 
 ### Tests
 - Exercise 60 Unicode turns across five TUI lifetimes in the Linux/macOS lifecycle matrix.
+- Respect configured pytest deadlines and isolate watch dispatch tests from DNS.
 
 ## [0.22.0] - 2026-09-11
 

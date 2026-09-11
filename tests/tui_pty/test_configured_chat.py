@@ -108,7 +108,7 @@ def test_configured_prompt_streams_through_local_provider(tui_bundle, tui_env, t
             time.sleep(0.01)  # Separate key event, before the 50ms paste debounce.
         else:
             session.wait_for(lambda screen: PROMPT in screen.text(), timeout=5, what="composer input")
-            # Enter must be a separate event; a single text+Enter write is a paste.
+            # These modes wait for echo; rapid-submit exercises a coalesced read.
             session.settle(quiet=0.1, max_wait=0.5)
         session.send(b"\r")
         session.wait_for(lambda screen: REPLY in screen.text(), timeout=40, what="streamed provider reply")
@@ -118,6 +118,7 @@ def test_configured_prompt_streams_through_local_provider(tui_bundle, tui_env, t
                     for message in body.get("messages", []))
             for path, body in requests
         ), "The rendered reply must come from a streamed request carrying the typed prompt"
+        session.wait_for(lambda s: "─ ready" in s.text(), timeout=20, what="completed turn")
         session.send(b"\x03")
         assert session.wait_exit(timeout=15, sweep=False) == 0
 
@@ -150,6 +151,7 @@ def test_cancel_stalled_stream_then_resume_saved_session(tui_bundle, tui_env, tu
         session.settle()
         submit(session, PROMPT)
         session.wait_for(lambda s: REPLY in s.text(), timeout=30, what="successful turn after cancellation")
+        session.wait_for(lambda s: "─ ready" in s.text(), timeout=20, what="completed follow-up")
         session.send(b"\x03")
         assert session.wait_exit(timeout=15, sweep=False) == 0
     with closing(sqlite3.connect(home / "state.db")) as conn:
@@ -198,6 +200,9 @@ def test_repeated_unicode_turns_resize_and_restart(tui_bundle, tui_env, tui_home
                 session.send(b"\r")
                 session.wait_for(lambda s: any(marker in line and "verified." in line for line in s.text().splitlines()),
                                  timeout=30, what="unique streamed reply")
+            # A streamed final token can precede message.complete. Wait for
+            # the desk's idle status so Ctrl+C requests exit, not cancellation.
+            session.wait_for(lambda s: "─ ready" in s.text(), timeout=20, what="completed turn")
             session.send(b"\x03")
             assert session.wait_exit(timeout=15, sweep=False) == 0
         with closing(sqlite3.connect(home / "state.db")) as conn:
