@@ -107,15 +107,21 @@ const renderForecastCommandOutput = (response: ForecastCommandResponse, ctx: Sla
 }
 
 const runForecastCommand = (ctx: SlashRunCtx, arg: string) => {
+  const operation = /^(review|resolve)(?:\s+([\s\S]*))?$/.exec(arg.trim())
+
   ctx.gateway
-    .rpc<ForecastCommandResponse>('forecast.command', { arg })
+    .rpc<ForecastCommandResponse>(operation ? 'forecast.operation' : 'forecast.command',
+      operation ? { operation: operation[1], arg: operation[2] ?? '' } : { arg })
     .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
     .catch(ctx.guardedErr)
 }
 
 const runForecastCommandArgv = (ctx: SlashRunCtx, argv: string[]) => {
+  const operation = argv[0] === 'review' || argv[0] === 'resolve'
+
   ctx.gateway
-    .rpc<ForecastCommandResponse>('forecast.command', { argv })
+    .rpc<ForecastCommandResponse>(operation ? 'forecast.operation' : 'forecast.command',
+      operation ? { operation: argv[0], argv: argv.slice(1) } : { argv })
     .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
     .catch(ctx.guardedErr)
 }
@@ -713,10 +719,7 @@ export const coreCommands: SlashCommand[] = [
           return
         }
 
-        ctx.gateway
-          .rpc<ForecastCommandResponse>('forecast.command', { arg: trimmed })
-          .then(ctx.guarded<ForecastCommandResponse>(r => renderForecastCommandOutput(r, ctx)))
-          .catch(ctx.guardedErr)
+        runForecastCommand(ctx, trimmed)
 
         return
       }

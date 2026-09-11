@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as InputError
 
 from forecasting.learning import (
@@ -19,7 +19,7 @@ class ReviewForecastRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     stale: bool = False
-    last_days: int = 7
+    last_days: int = Field(default=7, ge=0)
     domain: str | None = None
     topic: str | None = None
     horizon: str | None = None

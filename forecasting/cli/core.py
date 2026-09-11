@@ -1505,45 +1505,8 @@ def register_cli(subparsers: argparse._SubParsersAction) -> argparse.ArgumentPar
     evidence_list.set_defaults(_forecast_handler=_cmd_evidence_list)
 
     resolve_parser = forecast_sub.add_parser("resolve", help="Record a forecast resolution")
-    resolve_parser.add_argument("id")
-    resolve_parser.add_argument("--outcome", required=True)
-    resolve_parser.add_argument("--source", "--resolution-source", dest="resolution_source")
-    resolve_parser.add_argument("--source-snapshot-ref", dest="resolution_source_snapshot_ref")
-    resolve_parser.add_argument(
-        "--resolver-type",
-        choices=["manual", "source_adapter", "scheduled_check"],
-        default="manual",
-    )
-    resolve_parser.add_argument(
-        "--status",
-        dest="resolution_status",
-        choices=["proposed", "confirmed", "disputed", "corrected"],
-        default="confirmed",
-    )
-    resolve_parser.add_argument(
-        "--confirmed",
-        dest="resolution_status",
-        action="store_const",
-        const="confirmed",
-        help="Alias for --status confirmed",
-    )
-    resolve_parser.add_argument(
-        "--criteria-satisfied",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-    )
-    resolve_parser.add_argument("--confidence", type=float)
-    resolve_parser.add_argument("--confirmed-by")
-    resolve_parser.add_argument("--notes", dest="resolver_notes")
-    resolve_parser.add_argument("--correction-ref")
-    resolve_parser.add_argument("--trusted-policy")
-    resolve_parser.add_argument("--not-scoreable", action="store_true")
-    resolve_parser.add_argument(
-        "--auto-score",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Automatically score the current live snapshot on a confirmed, criteria-satisfied resolution (default on; --no-auto-score to defer).",
-    )
+    from forecasting.interfaces.commands import add_resolution_arguments
+    add_resolution_arguments(resolve_parser)
     resolve_parser.set_defaults(_forecast_handler=_cmd_resolve)
 
     score_parser = forecast_sub.add_parser("score", help="Score the current forecast snapshot")
@@ -7660,29 +7623,8 @@ def _cmd_resolve(args: argparse.Namespace) -> None:
         scoreable=not args.not_scoreable,
         auto_score=args.auto_score,
     ))
-    resolution = result.resolution
-    print(f"recorded resolution {resolution.id}")
-    print(f"status: {resolution.resolution_status}")
-    print(f"criteria_satisfied: {resolution.criteria_satisfied}")
-    score = None
-    if (
-        args.auto_score
-        and resolution.resolution_status == "confirmed"
-        and resolution.criteria_satisfied
-        and not args.not_scoreable
-    ):
-        score = result.score
-        if score is not None:
-            print(
-                "auto_score: "
-                f"brier={_format_metric(score.brier_score)} "
-                f"log={_format_metric(score.log_score)} "
-                f"origin={score.forecast_origin}"
-            )
-    if result.retrospective:
-        headline = result.retrospective.get("headline") or result.retrospective.get("body", "")
-        if headline:
-            print(f"retrospective: {headline[:80]}")
+    from forecasting.interfaces.commands import format_resolution
+    print(format_resolution(result))
 
 
 def _cmd_score(args: argparse.Namespace) -> None:
@@ -10738,14 +10680,7 @@ def _json_value_arg(raw: str, name: str) -> Any:
         raise SystemExit(f"--{name} must be valid JSON") from exc
 
 
-def _format_probability(value: Any) -> str:
-    if isinstance(value, float):
-        return f"{value:.3f}"
-    if isinstance(value, int):
-        return f"{float(value):.3f}"
-    if isinstance(value, dict):
-        return json.dumps(value, sort_keys=True)
-    return str(value)
+from forecasting.interfaces.commands import _format_probability
 
 
 def _new_evidence_count(evidence: list[Any], current_snapshot: Any) -> int:
@@ -10784,26 +10719,7 @@ def _research_change_summary(evidence: list[Any], current_snapshot: Any) -> str:
     )
 
 
-def _review_next_action(question_id: str, reasons: list[str]) -> str:
-    if any(reason.startswith("new_evidence:") for reason in reasons):
-        return f"forecast research {question_id}; forecast update {question_id} --preview ..."
-    if any(is_learned_error_review_reason(reason) for reason in reasons):
-        return f"forecast show {question_id}; forecast update {question_id} --preview ..."
-    if "no_forecast_snapshot" in reasons:
-        return f"forecast update {question_id} --preview ..."
-    if any(
-        reason in {"resolution_check_due", "close_time_passed"}
-        or reason.startswith("close_time_within_")
-        for reason in reasons
-    ):
-        return f"forecast resolve {question_id} --outcome <value>"
-    if "no_evidence" in reasons or any(reason.startswith("evidence_stale_") for reason in reasons):
-        return f"forecast research {question_id}"
-    if any(reason.startswith(("assumption_", "reference_class_")) for reason in reasons):
-        return f"forecast protocol {question_id} --stage self_check"
-    if "review_due" in reasons or any(reason.startswith("last_update_") for reason in reasons):
-        return f"forecast research {question_id}; forecast update {question_id} --preview ..."
-    return f"forecast show {question_id}"
+from forecasting.interfaces.commands import _review_next_action
 
 
 def _toolsets_for_stage(stage: str) -> list[str]:
@@ -10855,8 +10771,7 @@ def _format_score_breakdown(items: dict[str, dict[str, Any]]) -> str:
     )
 
 
-def _format_metric(value: float | None) -> str:
-    return "-" if value is None else f"{value:.6f}"
+from forecasting.interfaces.commands import _format_metric
 
 
 def _format_optional_float(value: float | None) -> str:
@@ -10906,14 +10821,7 @@ def _parse_stance(value: str) -> str:
     raise argparse.ArgumentTypeError("stance must be increases/decreases/mixed/context or supports/opposes")
 
 
-def _parse_day_count(value: str) -> int:
-    raw = str(value).strip().lower()
-    if raw.endswith("d"):
-        raw = raw[:-1]
-    days = int(raw)
-    if days < 0:
-        raise argparse.ArgumentTypeError("day count must be non-negative")
-    return days
+from forecasting.interfaces.commands import _parse_day_count
 
 
 def _watch_scope(args: argparse.Namespace, *, required: bool) -> tuple[str | None, str | None]:

@@ -597,6 +597,21 @@ describe('createSlashHandler', () => {
     })
   })
 
+  it.each([
+    ['/review', 'review', '--stale'],
+    ['/review --domain politics', 'review', '--domain politics'],
+    ['/resolve fq_example --outcome true', 'resolve', 'fq_example --outcome true'],
+    ['/forecast resolve fq_example --outcome false', 'resolve', 'fq_example --outcome false']
+  ])('routes %s through the shared application operation', async (command, operation, arg) => {
+    const rpc = vi.fn(() => Promise.resolve({ code: 0, output: 'operation complete' }))
+    const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
+
+    expect(createSlashHandler(ctx)(command)).toBe(true)
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', { arg, operation })
+    expect(rpc).not.toHaveBeenCalledWith('forecast.command', expect.anything())
+    await vi.waitFor(() => expect(ctx.transcript.sys).toHaveBeenCalledWith('operation complete'))
+  })
+
   it('routes a natural-language /forecast new to the agent instead of the argparse CLI', () => {
     const rpc = vi.fn(() => Promise.resolve({}))
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
@@ -659,9 +674,9 @@ describe('createSlashHandler', () => {
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'api-key list' })
   })
 
-  it('routes forecast-native review shortcuts to the forecast command RPC', async () => {
+  it('routes forecast-native review shortcuts to the shared operation RPC', async () => {
     const rpc = vi.fn((method: string) => {
-      if (method === 'forecast.command') {
+      if (method === 'forecast.operation') {
         return Promise.resolve({ code: 0, output: 'No forecasts need review.' })
       }
 
@@ -671,7 +686,7 @@ describe('createSlashHandler', () => {
     const ctx = buildCtx({ gateway: { ...buildGateway(), rpc } })
 
     expect(createSlashHandler(ctx)('/review')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'review --stale' })
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'review', arg: '--stale' })
     expect(ctx.gateway.gw.request).not.toHaveBeenCalled()
     await vi.waitFor(() => {
       expect(ctx.transcript.sys).toHaveBeenCalledWith('No forecasts need review.')
@@ -712,7 +727,7 @@ describe('createSlashHandler', () => {
       arg: 'update fq_123 --probability 0.62 --rationale "new evidence"'
     })
     expect(handler('/resolve fq_123 --outcome yes --confirmed')).toBe(true)
-    expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'resolve fq_123 --outcome yes --confirmed' })
+    expect(rpc).toHaveBeenCalledWith('forecast.operation', { operation: 'resolve', arg: 'fq_123 --outcome yes --confirmed' })
     expect(handler('/score fq_123')).toBe(true)
     expect(rpc).toHaveBeenCalledWith('forecast.command', { arg: 'score fq_123' })
     expect(handler('/postmortem fq_123 --lesson "discount noisy signals"')).toBe(true)

@@ -2134,3 +2134,17 @@ class ForecastResolveResponse(WireModel):
     resolution: dict[str, Any]
     score: dict[str, Any] | None
     retrospective: dict[str, Any] | None
+
+
+class ForecastOperationRequest(WireModel):
+    TS_NAME = "ForecastOperationRequest"
+    operation: str
+    arg: str | None = None
+    argv: list[str] | None = None
+
+
+class ForecastOperationResponse(WireModel):
+    TS_NAME = "ForecastOperationResponse"
+    code: int
+    output: str
+    data: dict[str, Any] | None

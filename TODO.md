@@ -11,7 +11,8 @@ All five requested deliverables and their acceptance evidence are tracked in the
 shared application services consumed first by Ink, enforced ownership boundaries,
 one bootstrap/check workflow and installed hooks, independent runtime hosting with
 version/capability negotiation, and separately verified distribution profiles.
-The first service/RPC extraction is in progress; the workstream is not complete.
+Review/resolution now reach shared services from the real Ink desk and CLI.
+Shared runtime ownership and independent distributions remain incomplete.
 
 ## Runtime ownership and real desk follow-up (September 11)
 

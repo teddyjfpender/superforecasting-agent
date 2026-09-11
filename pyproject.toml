@@ -449,5 +449,5 @@ ignore_imports = [
 name = "forecast application operations do not import product entrypoints"
 type = "forbidden"
 source_modules = ["forecasting.application"]
-forbidden_modules = ["forecasting.cli", "forecasting.dashboard", "tui_gateway", "gateway", "cli", "superforecasting_agent.runtime.main"]
+forbidden_modules = ["forecasting.cli", "forecasting.interfaces", "forecasting.dashboard", "tui_gateway", "gateway", "cli", "superforecasting_agent.runtime.main"]
 allow_indirect_imports = true

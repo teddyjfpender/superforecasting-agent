@@ -68,7 +68,7 @@ def test_invalid_resolution_has_same_error_and_no_write(desk):
 
 def test_review_rejects_unknown_parameters_and_wrong_boolean_types(desk):
     ledger, _ = desk
-    for values in ({"stale": "false"}, {"confidence_abov": 0.5}):
+    for values in ({"stale": "false"}, {"confidence_abov": 0.5}, {"last_days": -1}):
         with pytest.raises(ValidationError) as failure:
             review_forecasts(ledger, **values)
         assert rpc("forecast.review", values)["error"]["message"] == str(failure.value)
@@ -83,3 +83,36 @@ def test_cli_and_rpc_resolution_share_retry_identity(desk, capsys):
     response = rpc("forecast.resolve", {"question_id": question.id, "outcome": True,
                                         "resolution_source": "Fixture completion"})
     assert response["result"]["resolution"]["id"] == resolution.id
+
+
+def test_terminal_operation_uses_shared_flags_without_cli_or_stdout(desk, monkeypatch, capsys):
+    ledger, question = desk
+    from tui_gateway import server  # noqa: F401
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name == "cli" or name == "forecasting.cli" or name.startswith("forecasting.cli."):
+            raise AssertionError(f"Command operation imported CLI: {name}")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    review = rpc("forecast.operation", {"operation": "review", "arg": "--last 7d"})["result"]
+    assert question.title in review["output"]
+    result = rpc("forecast.operation", {"operation": "resolve", "argv": [question.id, "--outcome", "true",
+                               "--source", "Fixture completion"]})["result"]
+    assert result["code"] == 0
+    assert result["data"]["resolution"]["id"] == ledger.get_latest_resolution(question.id).id
+    assert "auto_score:" in result["output"]
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize('operation', ['review', 'resolve'])
+def test_terminal_operation_help_and_parse_failure_do_not_write(desk, operation, capsys):
+    ledger, question = desk
+    help_result = rpc("forecast.operation", {"operation": operation, "arg": "--help"})["result"]
+    assert help_result["code"] == 0
+    assert f"forecast {operation}" in help_result["output"]
+    rejected = rpc("forecast.operation", {"operation": operation, "arg": "--unknown"})["result"]
+    assert rejected["code"] == 2
+    assert ledger.get_latest_resolution(question.id) is None
+    assert capsys.readouterr().out == ""

@@ -39,15 +39,8 @@ def register(forecast_sub: argparse._SubParsersAction) -> None:
     """Register the ``review`` + ``schedule`` command groups (contiguous block)."""
 
     review_parser = forecast_sub.add_parser("review", help="Review stale or active forecasts")
-    review_parser.add_argument("--stale", action="store_true")
-    review_parser.add_argument("--last", dest="last_days", type=_parse_day_count, default=7)
-    review_parser.add_argument("--domain")
-    review_parser.add_argument("--topic")
-    review_parser.add_argument("--horizon", help="Filter by forecast horizon in days, e.g. 30 or 30-90")
-    review_parser.add_argument("--confidence-below", type=float)
-    review_parser.add_argument("--confidence-above", type=float)
-    review_parser.add_argument("--large-delta-threshold", type=float)
-    review_parser.add_argument("--now")
+    from forecasting.interfaces.commands import add_review_arguments
+    add_review_arguments(review_parser)
     review_parser.set_defaults(_forecast_handler=_cmd_review)
 
     schedule_parser = forecast_sub.add_parser("schedule", help="Manage scheduled self-checks")
@@ -199,22 +192,8 @@ def _cmd_review(args: argparse.Namespace) -> None:
         large_delta_threshold=args.large_delta_threshold,
         now=args.now,
     )
-    if not rows:
-        print("No forecasts need review.")
-        return
-    print("ID             P(now)    As of                 Close                Priority  Reasons              Title")
-    for row in rows:
-        question = row["question"]
-        snapshot = row["current_snapshot"]
-        probability = _format_probability(snapshot.probability_or_distribution) if snapshot else "-"
-        as_of = snapshot.as_of if snapshot else "-"
-        close = question.close_time or "-"
-        reasons = ",".join(row["reasons"]) or "active"
-        print(
-            f"{question.id:<14} {probability:<9} {as_of:<20} {close:<20} "
-            f"{row.get('priority', 9):<9} {reasons:<20} {question.title}"
-        )
-        print(f"  next: {_review_next_action(question.id, row['reasons'])}")
+    from forecasting.interfaces.commands import format_review
+    print(format_review(rows))
 
 
 # Compatibility names for callers; these helpers have one application owner.

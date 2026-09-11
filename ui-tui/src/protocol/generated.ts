@@ -1120,6 +1120,18 @@ export interface ForecastOnboardProposeResponse {
   spec?: Record<string, unknown>
 }
 
+export interface ForecastOperationRequest {
+  arg: null | string
+  argv: null | string[]
+  operation: string
+}
+
+export interface ForecastOperationResponse {
+  code: number
+  data: null | Record<string, unknown>
+  output: string
+}
+
 export interface ForecastOutcomeSpace {
   choices?: unknown[]
   type?: string

@@ -96,3 +96,28 @@ construction ownership, fuller dependency-boundary cleanup, host/capability
 negotiation, minimal independent package profiles, and full final qualification.
 The two implementation commits are local pending the required full-suite push
 qualification; this does not mark any of the five deliverables complete.
+
+
+Ink workflow migration:
+
+- `/review`, `/resolve` and their `/forecast` forms now call `forecast.operation`.
+  Shared argument definitions and output formatting live in
+  `forecasting/interfaces/commands.py`; business behavior remains in application
+  services. These paths do not invoke the classic CLI or redirect stdout.
+- The application request rejects negative review windows, including structured
+  RPC callers that bypass argparse. CLI/RPC resolution retries preserve identity.
+- A compiled Ink test runs review, resolution, scoring and retry through the real
+  dashboard WebSocket, PTY and gateway against an isolated ledger. It passes; the
+  test explicitly dismisses result pagers before submitting the next command.
+- Verification: 264 focused Python tests passed; all 87 slash-handler tests
+  passed; eight application/admission/config-owner tests passed; the real-desk
+  workflow passed. The shared quality command passed, including TypeScript types,
+  lint, generated contracts, Python scoped checks and import boundaries.
+- MCP reload persistence uses the gateway's atomic profile writer directly,
+  preserving unrelated settings and avoiding the classic CLI import.
+
+Shared configuration/session and agent construction ownership, full hosting and
+capability negotiation, distribution separation and broad qualification remain
+open. The personality lookup still imports classic CLI configuration; its loader
+also bridges environment settings, so removing that edge requires preserving
+configuration semantics rather than merely changing the import target.

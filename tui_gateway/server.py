@@ -5214,9 +5214,7 @@ def _(rid, params: dict) -> dict:
         # Honor `always=true` by persisting the opt-out to config.
         if bool(params.get("always", False)):
             try:
-                from cli import save_config_value as _save_cfg
-
-                _save_cfg("approvals.mcp_reload_confirm", False)
+                _write_config_key("approvals.mcp_reload_confirm", False)
             except Exception as _exc:
                 logger.warning("Failed to persist mcp_reload_confirm=false: %s", _exc)
 

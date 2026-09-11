@@ -114,6 +114,7 @@ RPC_SPECS: list[RpcSpec] = [
     RpcSpec("forecast.schedule.status", _rpc_forecast.ForecastScheduleStatusRequest, _rpc_forecast.ForecastScheduleStatusResponse),
     RpcSpec("forecast.reviews.next", _rpc_forecast.ForecastReviewsNextRequest, _rpc_forecast.ForecastReviewsNextResponse),
     RpcSpec("forecast.calibration", _rpc_forecast.ForecastCalibrationRequest, _rpc_forecast.ForecastCalibrationResponse),
+    RpcSpec("forecast.operation", _rpc_forecast.ForecastOperationRequest, _rpc_forecast.ForecastOperationResponse),
     RpcSpec("forecast.review", _rpc_forecast.ForecastReviewRequest, _rpc_forecast.ForecastReviewResponse),
     RpcSpec("forecast.resolve", _rpc_forecast.ForecastResolveRequest, _rpc_forecast.ForecastResolveResponse),
     RpcSpec("forecast.command", _rpc_forecast.ForecastCommandRequest, _rpc_forecast.ForecastCommandResponse),

@@ -29,3 +29,22 @@ def register(server) -> None:
             return server._ok(rid, asdict(result))
         except ForecastingError as exc:
             return server._err(rid, 4003, str(exc))
+
+
+    @server.rpc_validated("forecast.operation")
+    def operation(rid, params):
+        from forecasting.interfaces.commands import execute_operation
+
+        name = params.get("operation")
+        if set(params) - {"operation", "arg", "argv"}:
+            return server._err(rid, 4003, "unknown operation parameters")
+        arg = params.get("argv") if params.get("argv") is not None else params.get("arg", "")
+        if arg is None:
+            arg = ""
+        if not isinstance(name, str) or name not in {"review", "resolve"}:
+            return server._err(rid, 4003, "operation must be review or resolve")
+        if not isinstance(arg, str) and not (isinstance(arg, list) and all(isinstance(v, str) for v in arg)):
+            return server._err(rid, 4003, "arg must be text or argv must be a list of strings")
+        if params.get("argv") is not None and params.get("arg"):
+            return server._err(rid, 4003, "provide arg or argv, not both")
+        return server._ok(rid, execute_operation(ForecastLedger(), name, arg))
