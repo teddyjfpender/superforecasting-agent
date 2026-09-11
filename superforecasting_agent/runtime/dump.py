@@ -132,17 +132,14 @@ def _memory_provider(config: dict) -> str:
 
 def _get_model_and_provider(config: dict) -> tuple[str, str]:
     """Extract model and provider from config."""
-    model_cfg = config.get("model", "")
-    if isinstance(model_cfg, dict):
-        model = model_cfg.get("default") or model_cfg.get("model") or model_cfg.get("name") or "(not set)"
-        provider = model_cfg.get("provider") or "(auto)"
-    elif isinstance(model_cfg, str):
-        model = model_cfg or "(not set)"
-        provider = "(auto)"
-    else:
-        model = "(not set)"
-        provider = "(auto)"
-    return model, provider
+    from superforecasting_agent.runtime.model_configuration import model_section
+    try:
+        model_cfg = model_section(config)
+    except ValueError:
+        return "(not set)", "(auto)"
+    # Retain the diagnostic-only legacy name fallback.
+    model = model_cfg.get("default") or model_cfg.get("name") or "(not set)"
+    return model, model_cfg.get("provider") or "(auto)"
 
 
 def _config_overrides(config: dict) -> dict[str, str]:

@@ -141,7 +141,10 @@ See [commands, invariants and limits](docs/plans/2026-09-10-controlled-learning-
   predeclared response budget sufficient for complete JSON. Earlier failed pilots
   had no usable pairs; September 11 cohorts retained five and three complete pairs
   across two conservative clusters. Outcomes remain pending.
-- [ ] Make numeric trial response schemas explicit and account for provider input
+- [x] Make numeric trial response schemas explicit and account for provider input
   quotas when pacing cohorts; preserve failed arms without rerolling.
-- [ ] Separate trial execution identity from evaluation compatibility so later
+- [x] Separate trial execution identity from evaluation compatibility so later
   prompt changes do not strand frozen comparisons; preserve historical integrity.
+
+See [trial follow-up evidence](docs/plans/2026-09-11-trial-followup.md) for quota pauses,
+legacy evaluation compatibility, cohort readiness gaps and settlement rechecks.

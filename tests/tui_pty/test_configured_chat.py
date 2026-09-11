@@ -169,8 +169,12 @@ def test_cancel_stalled_stream_then_resume_saved_session(tui_bundle, tui_env, tu
 def test_repeated_unicode_turns_resize_and_restart(tui_bundle, tui_env, tui_home, local_provider):
     """Sustained real transport exercise: exact-once Unicode history across restarts."""
     import sqlite3
+    import os
     from contextlib import closing
 
+    cycles = int(os.environ.get("FORECAST_TUI_SOAK_CYCLES", "3"))
+    turns = int(os.environ.get("FORECAST_TUI_SOAK_TURNS", "6"))
+    assert 1 <= cycles <= 20 and 1 <= turns <= 20
     endpoint, _ = local_provider
     home = tui_home / ".superforecasting-agent"
     (home / "config.yaml").write_text(json.dumps({"model": {"default": "fixture-local", "provider": "custom", "base_url": endpoint}}))
@@ -178,12 +182,12 @@ def test_repeated_unicode_turns_resize_and_restart(tui_bundle, tui_env, tui_home
                SUPERFORECASTING_AGENT_TUI_TOOLSETS="forecasting")
     prompts = []
     sid = None
-    for cycle in range(3):
+    for cycle in range(cycles):
         current_env = dict(env, **({"SUPERFORECASTING_AGENT_TUI_RESUME": sid} if sid else {}))
         with PtySession(["node", str(tui_bundle)], cwd=str(REPO_ROOT), env=current_env, rows=44, cols=120) as session:
             session.wait_for(lambda s: (REPLY if sid else "fixture-local") in s.text(), timeout=25, what="ready or resumed desk")
             session.settle()
-            for turn in range(6):
+            for turn in range(turns):
                 marker = f"CYCLE{cycle}TURN{turn}"
                 prompt = f"{marker} café 東京 — probability 50%"
                 prompts.append(prompt)
