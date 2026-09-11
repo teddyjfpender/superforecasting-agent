@@ -1447,3 +1447,20 @@ The new owner is included in blocking lint/format/type checks. Validation:
 94 configured-command/protocol tests passed (`/tmp/forecast-plugin-command-final-tests.log`)
 and Python quality with all 32 import contracts passed
 (`/tmp/forecast-plugin-command-quality.log`). Other legacy slash commands remain.
+
+### Native skill-bundle commands and discovery
+
+The unknown-command admission audit exposed an omitted dynamic command family:
+skill bundles previously existed only in classic CLI dispatch. Native TUI
+commands now use the same `agent.skill_bundles.build_bundle_invocation_message`
+as the classic CLI. The returned message is submitted by the existing TUI send
+flow; building it starts no agent or classic worker. Missing skills remain visible
+in the notice. A failed bundle load cannot fall through to an individual skill or
+legacy execution. Built-ins retain precedence, and bundles precede same-named
+individual skills. Bundle entries now appear once in command discovery, including
+a dedicated category and canonical completion names.
+
+Validation: 132 configured-command, protocol and shared bundle-loader tests passed
+(`/tmp/forecast-bundle-final-tests.log`). Python quality checks and all 32 import
+contracts passed (`/tmp/forecast-bundle-quality.log`). Other legacy command
+families remain; this does not finish dispatcher migration.

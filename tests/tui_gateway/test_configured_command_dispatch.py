@@ -254,3 +254,61 @@ def test_plugin_inspection_failure_preserves_native_error(configure, monkeypatch
     assert dispatch("plugins")["error"] == {"code": 5030, "message": "Plugin system error: inspection failed"}
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()
+
+
+@pytest.fixture
+def bundle_command(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
+    monkeypatch.setattr("agent.skill_bundles.get_skill_bundles", lambda: {"/fixture-bundle": {"name": "Review pack"}})
+    skill = Mock(side_effect=AssertionError("bundle must precede individual skill"))
+    monkeypatch.setattr("agent.skill_commands.build_skill_invocation_message", skill)
+    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {"/fixture-bundle": {"name": "shadowed"}})
+    build = Mock(return_value=("shared payload", ["review"], ["missing"]))
+    monkeypatch.setattr("agent.skill_bundles.build_bundle_invocation_message", build)
+    return build
+
+
+def test_bundle_dispatch_uses_shared_loader_without_agent(bundle_command):
+    assert slash("fixture-bundle CaseSensitive")["error"]["data"] == {
+        "dispatch": "command.dispatch", "execution_started": False,
+    }
+    bundle_command.assert_not_called()
+    result = dispatch("fixture-bundle", "CaseSensitive")["result"]
+    assert result == {
+        "type": "send", "message": "shared payload",
+        "notice": "Loading bundle: Review pack (1 skills)\nSkipped missing skills: missing",
+    }
+    bundle_command.assert_called_once_with("/fixture-bundle", "CaseSensitive", task_id="durable")
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", [None, RuntimeError("bundle failed")])
+def test_bundle_failure_never_hands_off_or_tries_individual_skill(bundle_command, failure):
+    if isinstance(failure, Exception):
+        bundle_command.side_effect = failure
+    else:
+        bundle_command.return_value = failure
+    error = dispatch("fixture-bundle")["error"]
+    assert error["code"] == (5030 if isinstance(failure, Exception) else 4018)
+    assert "data" not in error
+    bundle_command.assert_called_once()
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+def test_bundle_catalog_exposes_one_entry_with_bundle_precedence(bundle_command):
+    result = server.handle_request({"id": 3, "method": "commands.catalog", "params": {}})["result"]
+    assert result["canon"]["/fixture-bundle"] == "/fixture-bundle"
+    assert [pair for pair in result["pairs"] if pair[0] == "/fixture-bundle"] == [
+        ["/fixture-bundle", "Load a skill bundle"],
+    ]
+    assert {"name": "Skill bundles", "pairs": [["/fixture-bundle", "Load a skill bundle"]]} in result["categories"]
+    bundle_command.assert_not_called()
+
+
+def test_bundle_cannot_override_builtin_command(bundle_command, monkeypatch):
+    monkeypatch.setattr("agent.skill_bundles.get_skill_bundles", lambda: {"/retry": {"name": "shadow"}})
+    assert "no previous" in dispatch("retry")["error"]["message"]
+    bundle_command.assert_not_called()

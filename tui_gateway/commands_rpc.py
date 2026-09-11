@@ -119,11 +119,32 @@ def _(rid, params: dict) -> dict:
             if not warning:
                 warning = f"quick_commands discovery unavailable: {e}"
 
+        bundle_keys = set()
+        try:
+            from agent.skill_bundles import get_skill_bundles
+
+            for key, info in sorted(get_skill_bundles().items()):
+                if key.lower() in canon:
+                    continue
+                description = str(info.get("description") or "Load a skill bundle")
+                pair = [key, description[:120] + ("…" if len(description) > 120 else "")]
+                all_pairs.append(pair)
+                canon[key.lower()] = key
+                bundle_keys.add(key)
+                if "Skill bundles" not in cat_map:
+                    cat_map["Skill bundles"] = []
+                    cat_order.append("Skill bundles")
+                cat_map["Skill bundles"].append(pair)
+        except Exception as exc:
+            warning = warning or f"bundle discovery unavailable: {exc}"
+
         skill_count = 0
         try:
             from agent.skill_commands import scan_skill_commands
 
             for k, info in sorted(scan_skill_commands().items()):
+                if k in bundle_keys:
+                    continue
                 d = str(info.get("description", "Skill"))
                 all_pairs.append([k, d[:120] + ("…" if len(d) > 120 else "")])
                 skill_count += 1
@@ -267,6 +288,30 @@ def _(rid, params: dict) -> dict:
             return _ok(rid, {"type": "plugin", "output": str(result or "")})
     except Exception:
         pass
+
+    try:
+        from agent.skill_bundles import get_skill_bundles
+        from superforecasting_agent.application.command_catalog import resolve_command
+
+        bundle = None if resolve_command(name) else get_skill_bundles().get(f"/{name}")
+    except Exception:
+        bundle = None
+    if bundle is not None:
+        from agent.skill_bundles import build_bundle_invocation_message
+
+        try:
+            result = build_bundle_invocation_message(
+                f"/{name}", arg, task_id=session.get("session_key", "") if session else ""
+            )
+            if result is None:
+                return _err(rid, 4018, f"Failed to load bundle for /{name}")
+            message, loaded, missing = result
+            notice = f"Loading bundle: {bundle['name']} ({len(loaded)} skills)"
+            if missing:
+                notice += f"\nSkipped missing skills: {', '.join(missing)}"
+            return _ok(rid, {"type": "send", "notice": notice, "message": message})
+        except Exception as exc:
+            return _err(rid, 5030, f"Bundle command error: {exc}")
 
     try:
         from agent.skill_commands import (

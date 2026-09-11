@@ -6033,6 +6033,15 @@ def _(rid, params: dict) -> dict:
             )
 
     try:
+        from agent.skill_bundles import get_skill_bundles
+        from superforecasting_agent.application.command_catalog import resolve_command
+
+        if resolve_command(_cmd_base) is None and f"/{_cmd_base}" in get_skill_bundles():
+            return _command_handoff(rid, "bundle command: use command.dispatch")
+    except Exception:
+        pass
+
+    try:
         from agent.skill_commands import get_skill_commands
 
         _cmd_key = f"/{_cmd_base}"
