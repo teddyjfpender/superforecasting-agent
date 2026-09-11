@@ -1299,3 +1299,16 @@ Configured command admission and TUI execution routing:
 - Seven verifier regression cases reject missing/retyped/changed history while
   allowing additive fields. The terminal package remains version 0.1.0; this does
   not claim an upgrade between different terminal versions.
+
+
+### Native command handoff before provider initialization
+
+- Slash routing now identifies native pending-input/snapshot handlers, skill
+  invocations and plugin handlers before constructing an agent. Local command
+  admission no longer depends on provider credentials or the classic CLI worker.
+- 246 command-routing/gateway tests passed, including negative assertions for
+  both agent and classic-worker construction.
+- The prior integrated batch `dcb0585aa` passed the full Python suite:
+  30,744 passed, 148 skipped, 58 warnings. Remote branch identity was verified at
+  `dcb0585aaa63c6456eeefca87eba308bf909e92a`. Build-recovery and upgrade-verifier
+  follow-ups are not covered by that full run.

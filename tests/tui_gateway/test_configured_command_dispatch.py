@@ -129,3 +129,38 @@ def test_classic_cli_and_tui_report_identical_definition_errors(configure, entry
     )
     assert ForecastCLI.process_command(classic, "/custom") is True
     output.assert_called_once_with(dispatch("custom")["error"]["message"])
+
+
+@pytest.mark.parametrize("command", ["queue note", "q note", "goal status", "retry", "steer note", "snapshot restore"])
+def test_native_handoff_does_not_need_provider_initialization(configure, command):
+    configure({})
+    response = slash(command)
+    assert response["error"]["code"] == 4018
+    assert "command.dispatch" in response["error"]["message"]
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+def test_skill_handoff_does_not_need_provider_initialization(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr(
+        "agent.skill_commands.get_skill_commands",
+        lambda: {"/fixture-skill": {"name": "fixture-skill"}},
+    )
+    assert "skill command" in slash("fixture-skill note")["error"]["message"]
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+def test_plugin_command_does_not_construct_an_unrelated_agent(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr("agent.skill_commands.get_skill_commands", lambda: {})
+    plugin = Mock(return_value="fixture output")
+    monkeypatch.setattr(
+        "superforecasting_agent.runtime.plugins.get_plugin_command_handler",
+        lambda name: plugin if name == "fixture-plugin" else None,
+    )
+    assert slash("fixture-plugin CaseSensitive")["result"] == {"output": "fixture output"}
+    plugin.assert_called_once_with("CaseSensitive")
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()

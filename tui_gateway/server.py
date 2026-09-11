@@ -6010,10 +6010,6 @@ def _(rid, params: dict) -> dict:
         # error would make the client's fallback repeat a failed shell command.
         return _err(rid, 4018, "configured command: use command.dispatch")
 
-    session, err = _sess(params, rid)
-    if err:
-        return err
-
     if _cmd_base in _PENDING_INPUT_COMMANDS:
         return _err(
             rid, 4018, f"pending-input command: use command.dispatch for /{_cmd_base}"
@@ -6059,6 +6055,10 @@ def _(rid, params: dict) -> dict:
             return _ok(rid, {"output": str(result or "(no output)")})
         except Exception as e:
             return _ok(rid, {"output": f"Plugin command error: {e}"})
+
+    session, err = _sess(params, rid)
+    if err:
+        return err
 
     from superforecasting_agent.hosting.legacy_commands import use_worker
 
