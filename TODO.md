@@ -33,7 +33,8 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
 - [x] Verify 18 Unicode turns across three TUI lifetimes with durable history.
 - [x] Finish prospective cohorts and retain failed arms: five and three complete
   pairs respectively, across two conservative clusters; outcomes still pending.
-- [ ] Verify the desktop platform CI matrix and formal release artifact set.
+- [x] Verify fresh installation and upgrade on Windows, Linux and macOS in CI.
+- [ ] Publish and verify the formal release artifact set.
 - [ ] Supply Android/Termux access and missing live-service credentials.
 
 ## Before a production release
@@ -43,8 +44,8 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
 - [ ] Run the integration and end-to-end suites excluded by the default Python
   runner with their required services and credentials. Record skips explicitly.
 - [ ] Exercise the documented installation and upgrade paths on native Windows,
-  Linux/container, and Android/Termux. This pass verified macOS and a wheel
-  installed outside the checkout; it did not establish cross-platform readiness.
+  Linux/container, and Android/Termux. Desktop installation and upgrade passed
+  the CI matrix; Android/Termux and published-artifact verification remain.
 - [ ] Exercise paid-provider authentication and service-failure behavior under an
   approved budget. Public-source capture, local-model streaming and the installed
   lifecycle are verified; paid-service availability is a separate release gate.
@@ -78,7 +79,8 @@ See [current evidence and limits](docs/plans/2026-09-11-forecast-quality.md).
 - [x] Verify the installed public TUI outside the checkout: streamed local-model
   response, durable prompt/reply and clean exit. Keep this in future release checks.
 - [ ] Extend the verified macOS cancellation/resume/resize/dashboard recovery
-  cases to supported platforms and longer-running sessions, including Unicode.
+  cases to other supported platforms and longer-running sessions. The macOS
+  18-turn Unicode exercise across three process lifetimes is complete.
 - [ ] Keep scheduled monitoring limited to evidence, alerts, scores, and learning
   records; probability changes must remain explicit forecast updates.
 - [ ] Evaluate forecasting accuracy and calibration with scored resolved questions;
@@ -136,6 +138,10 @@ See [commands, invariants and limits](docs/plans/2026-09-10-controlled-learning-
   the live pilot exposed politics questions that cannot retrieve politics lessons.
   Keep acquisition provenance separate; do not silently broaden lesson scope.
 - [x] Run a new prospective cohort once the provider is available, with a
-  predeclared response budget sufficient for complete JSON. The retained live
-  pilots encountered 503 errors, truncated output and a timeout; they have no
-  usable comparison pairs. Waiting for their outcomes alone cannot establish benefit.
+  predeclared response budget sufficient for complete JSON. Earlier failed pilots
+  had no usable pairs; September 11 cohorts retained five and three complete pairs
+  across two conservative clusters. Outcomes remain pending.
+- [ ] Make numeric trial response schemas explicit and account for provider input
+  quotas when pacing cohorts; preserve failed arms without rerolling.
+- [ ] Separate trial execution identity from evaluation compatibility so later
+  prompt changes do not strand frozen comparisons; preserve historical integrity.

@@ -3,6 +3,8 @@ that only manifest at runtime (not in mocked unit tests)."""
 
 import os
 import sys
+
+import pytest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -529,8 +531,9 @@ class TestRootLevelProviderOverride:
 
         assert cfg["model"]["provider"] == "openrouter"
 
-    def test_root_provider_ignored_when_default_model_provider_exists(self, tmp_path, monkeypatch):
-        """Even when model.provider is the default 'auto', root-level provider is ignored."""
+    @pytest.mark.parametrize("explicit_provider, expected", [(None, "opencode-go"), ("auto", "auto")])
+    def test_root_provider_fallback_precedes_defaults(self, tmp_path, monkeypatch, explicit_provider, expected):
+        """User fallback beats built-in defaults; explicit canonical auto still wins."""
         import yaml
 
         hermes_home = tmp_path / ".hermes"
@@ -542,7 +545,7 @@ class TestRootLevelProviderOverride:
             "provider": "opencode-go",  # stale root key
             "model": {
                 "default": "google/gemini-3-flash-preview",
-                # no explicit model.provider — defaults provide "auto"
+                **({"provider": explicit_provider} if explicit_provider is not None else {}),
             },
         }))
 
@@ -550,8 +553,8 @@ class TestRootLevelProviderOverride:
         monkeypatch.setattr(cli, "_hermes_home", hermes_home)
         cfg = cli.load_cli_config()
 
-        # Root-level "opencode-go" must NOT leak through
-        assert cfg["model"]["provider"] != "opencode-go"
+        # Normalize user aliases before merging built-in defaults.
+        assert cfg["model"]["provider"] == expected
 
     def test_terminal_vercel_runtime_bridged_to_env(self, tmp_path, monkeypatch):
         """Classic CLI must expose terminal.vercel_runtime to terminal_tool.py."""
