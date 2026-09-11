@@ -1,0 +1,48 @@
+# Product distributions
+
+The monorepo builds separate Python wheels. Product versions are independent;
+compatibility is determined by the host's wire version and operation capabilities.
+
+| Product | Installation | Runtime requirements |
+| --- | --- | --- |
+| Backend and CLI | `pip install superforecasting_agent-*.whl` | Python 3.11–3.13; no Node or bundled TUI/web assets |
+| Terminal | `pip install superforecasting_agent_tui-*.whl` | Python 3.11–3.13 and Node 20+; local backend or remote WebSocket host |
+| Optional web integration | `pip install 'superforecasting_agent-<version>-py3-none-any.whl[web]'` | Backend plus FastAPI/Uvicorn; presentation assets are separate |
+
+Build both products after the contributor bootstrap:
+
+```sh
+python3 scripts/build_profiles.py
+python3 scripts/verify_profiles.py dist/profiles --python .venv/bin/python
+```
+
+`build_profiles.py --profile backend` does not invoke npm or Node. The backend
+wheel is built from a source archive in a clean build environment; the builder
+rejects UI assets in the resulting backend wheel. `--profile tui` builds only the
+terminal wheel. Building the terminal directly without compiling Ink fails rather
+than producing an incomplete installation.
+
+The verifier creates fresh environments outside the checkout, checks dependency
+consistency, runs create/update/resolve/score with Node absent from PATH, checks a
+terminal-only installation without backend imports, verifies companion discovery,
+and checks the optional web integration. Remote `--check` validates local
+prerequisites only; host compatibility is checked when connecting.
+
+Install both wheels into one environment to use `superforecasting-agent tui`.
+Alternatively, run the terminal distribution directly:
+
+```sh
+superforecasting-agent-tui --python /path/to/backend/venv/bin/python
+superforecasting-agent-tui --gateway-url 'wss://your-host/api/ws?token=...'
+superforecasting-agent-tui --check --gateway-url 'wss://your-host/api/ws?token=...'
+```
+
+The remote URL must identify the existing authenticated WebSocket gateway, not
+its HTTP/SSE endpoint. Explicit `SUPERFORECASTING_AGENT_TUI_DIR` bundles and older
+wheel-bundled installations remain compatible launcher inputs. Backend and TUI
+versions that cannot satisfy the required protocol/capabilities fail before Ink
+session bootstrap.
+
+Legacy release assembly and installer automation still assume a bundled terminal;
+that wiring must be reconciled before publishing these separate distributions.
+The new build/verification commands do not publish packages.

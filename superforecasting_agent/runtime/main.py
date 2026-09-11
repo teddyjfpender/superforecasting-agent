@@ -1090,6 +1090,20 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
             node = _node_bin("node")
             return [node, str(bundled)], bundled.parent
 
+    # Independently installed terminal product; source checkouts retain their
+    # normal build path, and explicit TUI_DIR still takes precedence above.
+    if not tui_dev and not (tui_dir / "src").is_dir():
+        try:
+            from superforecasting_agent_tui import bundle_path
+        except ImportError:
+            print("TUI is a separate product. Install superforecasting-agent-tui in this environment, or set SUPERFORECASTING_AGENT_TUI_DIR.", file=sys.stderr)
+            sys.exit(1)
+        bundle = bundle_path()
+        if not bundle.is_file():
+            print("Installed TUI bundle is missing; reinstall superforecasting-agent-tui.", file=sys.stderr)
+            sys.exit(1)
+        return [_node_bin("node"), str(bundle)], bundle.parent
+
     # 2. Normal flow: npm install if needed, always esbuild, then node dist/entry.js.
     #    --dev flow: npm install if needed, then tsx src/entry.tsx.
     if _tui_need_npm_install(tui_dir):

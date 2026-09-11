@@ -20,3 +20,7 @@ jobs:
           node-version: '22'
       - name: Bootstrap and enforce the contributor quality gates
         run: python3 scripts/dev.py bootstrap
+      - name: Build independent product profiles
+        run: python3 scripts/build_profiles.py
+      - name: Verify fresh backend and terminal installations
+        run: python3 scripts/verify_profiles.py dist/profiles --python .venv/bin/python

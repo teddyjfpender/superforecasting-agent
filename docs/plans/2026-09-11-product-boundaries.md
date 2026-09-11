@@ -168,3 +168,29 @@ Host compatibility admission:
 Explicit host resource ownership, remaining shared session/command services and
 independent distribution/install qualification remain required. These acceptance
 items are not closed by implementing the host compatibility contract.
+
+
+Independent distribution implementation:
+
+- The backend wheel excludes TUI/web package data and namespace discovery.
+  Building from an sdist avoids contamination from stale checkout build trees;
+  artifact checks caught old compatibility UI files in the first direct build.
+- `products/tui` owns a separate terminal wheel with its compiled Ink bundle and
+  a small launcher. It has no backend dependencies. The backend launcher discovers
+  that companion in installed environments; source checkout and explicit bundle
+  overrides retain their existing behavior.
+- Build and clean-environment verification commands are documented in
+  `products/README.md` and wired into the product-quality workflow. New product
+  and verification code participates in strict lint, formatting and type gates.
+- Verified locally on Python 3.13: backend create/update/resolve/score with Node
+  absent from PATH; terminal-only remote prerequisites; combined companion
+  discovery. Thirty-four launcher/workflow regression tests passed.
+
+Not complete: cross-platform execution of these new profile checks, actual
+installed-terminal transport/lifecycle qualification, legacy release/installer
+wiring, and final full-suite qualification. Shared host/session ownership and
+remaining command migration also remain open.
+
+Additional distribution evidence: the backend-only build succeeded with only uv
+on PATH (no Node/npm). Optional web dependencies passed `uv pip check`, and the
+installed HTTP host constructed and released its local socket successfully.

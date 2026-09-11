@@ -221,7 +221,7 @@ hermes-acp = "acp_adapter.entry:main"
 py-modules = ["run_agent", "cli"]
 
 [tool.setuptools.package-data]
-"superforecasting_agent.runtime" = ["web_dist/**/*", "tui_dist/**/*", "scripts/install.sh", "scripts/install.ps1"]
+"superforecasting_agent.runtime" = ["scripts/install.sh", "scripts/install.ps1"]
 gateway = ["assets/**/*"]
 forecasting = [
   "trial_compatibility.json",
@@ -240,7 +240,11 @@ plugins = [
   "*/dashboard/dist/**/*",
 ]
 
+[tool.setuptools.exclude-package-data]
+"superforecasting_agent.runtime" = ["web_dist/*", "web_dist/**/*", "tui_dist/*", "tui_dist/**/*"]
+
 [tool.setuptools.packages.find]
+exclude = ["*.tui_dist", "*.tui_dist.*", "*.web_dist", "*.web_dist.*"]
 include = ["protocol", "protocol.*", "agent", "agent.*", "tools", "tools.*", "gateway", "gateway.*", "tui_gateway", "tui_gateway.*", "cron", "acp_adapter", "plugins", "plugins.*", "providers", "providers.*", "forecasting", "forecasting.*", "superforecasting_agent", "superforecasting_agent.*"]
 
 [tool.pytest.ini_options]

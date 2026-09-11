@@ -507,7 +507,7 @@ def test_oneshot_wires_session_db_for_recall(monkeypatch):
             setattr(module, key, value)
         return module
 
-    monkeypatch.setitem(sys.modules, "run_agent", mod("run_agent", AIAgent=FakeAgent))
+    monkeypatch.setattr("agent.agent_factory._aiagent_cls", lambda: FakeAgent)
     monkeypatch.setitem(sys.modules, "superforecasting_agent.storage.session", mod("superforecasting_agent.storage.session", SessionDB=FakeSessionDB))
     monkeypatch.setitem(
         sys.modules,
@@ -767,7 +767,7 @@ def test_make_tui_argv_forecast_quiet_alias_suppresses_install_message(
     monkeypatch, main_mod, tmp_path, capsys
 ):
     tui_dir = tmp_path / "ui-tui"
-    tui_dir.mkdir()
+    (tui_dir / "src").mkdir(parents=True)
 
     monkeypatch.setattr(main_mod, "_ensure_tui_node", lambda: None)
     monkeypatch.setattr(main_mod, "_tui_need_npm_install", lambda _tui_dir: True)
@@ -880,3 +880,20 @@ def test_print_tui_exit_summary_prefers_actual_active_session_file(
     assert seen == ["actual_session"]
     assert "superforecasting-agent --tui --resume actual_session" in out
     assert "startup_resume" not in out
+
+
+def test_packaged_backend_discovers_independent_terminal(monkeypatch, main_mod, tmp_path):
+    bundle = tmp_path / 'terminal' / 'dist' / 'entry.js'
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text('// fixture', encoding='utf-8')
+    companion = types.ModuleType('superforecasting_agent_tui')
+    companion.bundle_path = lambda: bundle
+    monkeypatch.setitem(sys.modules, 'superforecasting_agent_tui', companion)
+    monkeypatch.setattr(main_mod, '_ensure_tui_node', lambda: None)
+    monkeypatch.setattr(main_mod, '_find_bundled_tui', lambda: None)
+    monkeypatch.setattr(main_mod.shutil, 'which', lambda _: '/usr/bin/node')
+    for key in ('SUPERFORECASTING_AGENT_TUI_DIR', 'FORECAST_TUI_DIR', 'HERMES_TUI_DIR'):
+        monkeypatch.delenv(key, raising=False)
+    argv, cwd = main_mod._make_tui_argv(tmp_path / 'absent-checkout', False)
+    assert argv == ['/usr/bin/node', str(bundle)]
+    assert cwd == bundle.parent

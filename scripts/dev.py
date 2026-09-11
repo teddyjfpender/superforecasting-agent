@@ -18,7 +18,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
-STRICT_PYTHON = ("forecasting/application", "forecasting/interfaces", "scripts/dev.py")
+STRICT_PYTHON = (
+    "forecasting/application",
+    "forecasting/interfaces",
+    "scripts/dev.py",
+    "scripts/build_profiles.py",
+    "scripts/verify_profiles.py",
+    "products/tui/superforecasting_agent_tui",
+)
 
 
 def run(*command: str, cwd: Path = ROOT) -> None:
