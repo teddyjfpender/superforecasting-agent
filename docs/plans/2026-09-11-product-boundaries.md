@@ -1312,3 +1312,17 @@ Configured command admission and TUI execution routing:
   30,744 passed, 148 skipped, 58 warnings. Remote branch identity was verified at
   `dcb0585aaa63c6456eeefca87eba308bf909e92a`. Build-recovery and upgrade-verifier
   follow-ups are not covered by that full run.
+
+
+### Validation rule loading boundary and stale policy correction
+
+- Removed the hook loader's dependency on runtime configuration for its profile
+  directory; the shared profile identity owner supplies that path. Deleted the
+  corresponding frozen import exception and added strict lint/format/type coverage.
+- Removed compiled-rule caching keyed by list identity and file timestamps. Those
+  values do not identify a validation policy: in-place edits, object-ID reuse and
+  same-size timestamp-preserving replacement could apply stale rules to new forecasts.
+  Rules now compile from current specifications without retaining old policies.
+- 38 hook loader, DSL, configuration and blocking tests passed. Regressions prove
+  inline edits, same-size/preserved-timestamp file replacement and profile switches
+  affect rule evaluation. All 32 architecture contracts passed.

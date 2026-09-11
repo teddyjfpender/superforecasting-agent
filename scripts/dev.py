@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 # The stricter scope grows with ownership extractions. Legacy code still runs
 # the repository-wide encoding gate; no silent baseline hides new-layer errors.
 STRICT_PYTHON = (
+    "forecasting/hooks/loader.py",
     "superforecasting_agent/runtime/quick_commands.py",
     "agent/forecast_stage.py",
     "superforecasting_agent/profile_paths.py",
