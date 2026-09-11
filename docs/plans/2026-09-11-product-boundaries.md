@@ -343,3 +343,26 @@ WebSocket send ownership:
   failed/cancelled handshakes, repeated cleanup and wrong-loop admission.
   Shared Python quality gates pass. This does not establish remote installed-TUI
   lifecycle behavior; that remains a separate distribution verification item.
+
+Frozen-commit regression qualification (`386f83ced`):
+
+- Full Python runner completed: 30,456 passed, 60 failed, 148 skipped. The
+  complete Ink suite passed 2,039 tests, with one skipped. These are scoped
+  results, not a successful full Python qualification.
+- Most Python failures replaced the old `run_agent` module and therefore missed
+  construction through `agent.runtime`. Updated those fake-runtime boundaries;
+  no production entrypoint dependency was restored. ACP/cron/gateway behavior
+  assertions remain intact.
+- Updated distribution ownership assertions for the independent terminal wheel,
+  checked runtime guidance at its library owner, and replaced obsolete session
+  over-fetch assertions with returned-limit/order checks across multiple pages.
+  Interactive config tests now explicitly cover CLI and gateway process contexts;
+  importing the messaging gateway sets a process marker and exposed test-order
+  dependence in the prior fixture.
+- All affected test files passed together: 340 passed, one skipped. A fresh full
+  Python qualification is still required after the remaining architecture work.
+- Read-only strict import audit: protocol and session application contracts pass
+  with indirect imports forbidden. Forecast application operations still reach
+  presentation through research model lookup, scheduled/reforecast runner
+  construction, ledger distribution rendering and runtime setup dependencies.
+  These paths need owner corrections rather than additional ignore lists.

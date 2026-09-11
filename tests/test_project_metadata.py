@@ -2024,7 +2024,7 @@ def test_model_picker_guidance_is_forecast_native():
 def test_runtime_operator_guidance_uses_forecast_native_commands():
     root = Path(__file__).resolve().parents[1]
     checked_paths = [
-        "run_agent.py",
+        "agent/runtime.py",
         "agent/conversation_loop.py",
         "agent/auxiliary_client.py",
         "agent/azure_identity_adapter.py",

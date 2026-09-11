@@ -412,4 +412,7 @@ def test_bundled_tui_declares_itself_an_es_module():
 
     pyproject = tomllib.loads((root / "pyproject.toml").read_text())
     globs = pyproject["tool"]["setuptools"]["package-data"]["superforecasting_agent.runtime"]
-    assert any(g.startswith("tui_dist/") for g in globs), "the marker would not ship in the wheel"
+    assert not any(g.startswith("tui_dist/") for g in globs), "the backend must not bundle terminal assets"
+    terminal = tomllib.loads((root / "products/tui/pyproject.toml").read_text(encoding="utf-8"))
+    assets = terminal["tool"]["setuptools"]["package-data"]["superforecasting_agent_tui"]
+    assert "dist/package.json" in assets, "the terminal wheel must ship its ES module marker"

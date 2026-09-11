@@ -2,10 +2,14 @@
 import builtins
 import os
 
+import pytest
+
 from superforecasting_agent.runtime.interactive_config import load_cli_config, read_cli_config
 
 
-def test_read_shares_defaults_but_only_load_bridges_environment(tmp_path, monkeypatch):
+@pytest.mark.parametrize("gateway", [False, True])
+def test_read_shares_defaults_but_only_load_bridges_environment(tmp_path, monkeypatch, gateway):
+    monkeypatch.setenv("_HERMES_GATEWAY", "1" if gateway else "0")
     path = tmp_path / 'config.yaml'
     path.write_text('terminal:\n  backend: ssh\n  cwd: /remote/desk\nagent:\n  personalities:\n    analyst: careful\n', encoding='utf-8')
     monkeypatch.setenv('TERMINAL_CWD', '/host/desk')
@@ -14,7 +18,7 @@ def test_read_shares_defaults_but_only_load_bridges_environment(tmp_path, monkey
     assert dict(os.environ) == before
     loaded = load_cli_config(tmp_path, tmp_path / 'missing.yaml', False, lambda _: None)
     assert loaded['agent'] == read['agent']
-    assert os.environ['TERMINAL_CWD'] == '/remote/desk'
+    assert os.environ['TERMINAL_CWD'] == ('/host/desk' if gateway else '/remote/desk')
     assert loaded['agent']['personalities']['analyst'] == 'careful'
 
 

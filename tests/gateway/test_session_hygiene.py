@@ -322,7 +322,7 @@ async def test_session_hygiene_messages_stay_in_originating_topic(monkeypatch, t
 
     fake_run_agent = types.ModuleType("run_agent")
     fake_run_agent.AIAgent = FakeCompressAgent
-    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+    monkeypatch.setitem(sys.modules, "agent.runtime", fake_run_agent)
 
     gateway_run = importlib.import_module("gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
@@ -431,7 +431,7 @@ async def test_session_hygiene_warns_user_when_compression_aborts(monkeypatch, t
 
     fake_run_agent = types.ModuleType("run_agent")
     fake_run_agent.AIAgent = FakeCompressAgentWithSummaryFailure
-    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+    monkeypatch.setitem(sys.modules, "agent.runtime", fake_run_agent)
 
     gateway_run = importlib.import_module("gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
@@ -551,7 +551,7 @@ async def test_session_hygiene_informs_user_when_aux_model_fails_but_recovers(mo
 
     fake_run_agent = types.ModuleType("run_agent")
     fake_run_agent.AIAgent = FakeCompressAgentWithAuxRecovery
-    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+    monkeypatch.setitem(sys.modules, "agent.runtime", fake_run_agent)
 
     gateway_run = importlib.import_module("gateway.run")
     GatewayRunner = gateway_run.GatewayRunner
@@ -670,7 +670,7 @@ async def test_session_hygiene_honors_configurable_hard_message_limit(
 
     fake_run_agent = types.ModuleType("run_agent")
     fake_run_agent.AIAgent = FakeCompressAgent
-    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+    monkeypatch.setitem(sys.modules, "agent.runtime", fake_run_agent)
 
     # Write config.yaml with lowered hard-limit
     cfg_path = tmp_path / "config.yaml"
@@ -782,7 +782,7 @@ async def test_session_hygiene_default_hard_message_limit_does_not_fire_at_12_me
 
     fake_run_agent = types.ModuleType("run_agent")
     fake_run_agent.AIAgent = FakeCompressAgent
-    monkeypatch.setitem(sys.modules, "run_agent", fake_run_agent)
+    monkeypatch.setitem(sys.modules, "agent.runtime", fake_run_agent)
 
     # No config.yaml — use defaults (hard_limit=400)
     gateway_run = importlib.import_module("gateway.run")

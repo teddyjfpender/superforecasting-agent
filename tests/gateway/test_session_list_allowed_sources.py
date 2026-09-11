@@ -25,7 +25,7 @@ class _StubDB:
 
     def list_sessions_rich(self, **kwargs):
         self.calls.append(kwargs)
-        return list(self.rows)
+        return list(self.rows)[kwargs.get("offset", 0):kwargs.get("offset", 0) + kwargs["limit"]]
 
 
 def _call(limit: int | None = None):
@@ -71,21 +71,15 @@ def test_session_list_surfaces_all_user_facing_sources(monkeypatch):
 
 def test_session_list_default_limit_is_200(monkeypatch):
     """Default limit should be wide enough for long-running users."""
-    db = _StubDB([{"id": "x", "source": "cli", "started_at": 1}])
-    monkeypatch.setattr(server, "_get_db", lambda: db)
-
-    _call()  # no explicit limit
-    # fetch_limit = max(limit * 2, 200); limit defaults to 200, so 400.
-    assert db.calls[0].get("limit") == 400, db.calls[0]
+    rows = [{"id": str(i), "source": "cli", "started_at": 300-i} for i in range(250)]
+    monkeypatch.setattr(server, "_get_db", lambda: _StubDB(rows))
+    assert [s["id"] for s in _call()["result"]["sessions"]] == [str(i) for i in range(200)]
 
 
 def test_session_list_respects_explicit_limit(monkeypatch):
-    db = _StubDB([{"id": "x", "source": "cli", "started_at": 1}])
-    monkeypatch.setattr(server, "_get_db", lambda: db)
-
-    _call(limit=10)
-    # fetch_limit = max(limit * 2, 200) = 200 when limit is small.
-    assert db.calls[0].get("limit") == 200, db.calls[0]
+    rows = [{"id": str(i), "source": "cli", "started_at": 300-i} for i in range(250)]
+    monkeypatch.setattr(server, "_get_db", lambda: _StubDB(rows))
+    assert [s["id"] for s in _call(limit=210)["result"]["sessions"]] == [str(i) for i in range(210)]
 
 
 def test_session_list_preserves_ordering_after_filter(monkeypatch):
