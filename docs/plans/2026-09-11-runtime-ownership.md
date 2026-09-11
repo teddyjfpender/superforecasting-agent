@@ -168,3 +168,10 @@ are separate invocations with overlapping tests, not an aggregate unique count.
 The native harness now separates monotonic environment growth from unset/pointer
 shifting, with explicit-CA controls for both, and records completed contexts and
 mutations. Local fake-context tests verify the experiment controls only.
+
+Final local qualification at `7133a5530`: **30,461 passed, 148 skipped,
+56 warnings**, 545.55 seconds, through `scripts/run_tests.sh` (four hermetic
+workers). JUnit: `.test-results/pytest-20260911T164412Z-56069.xml`.
+The 16 startup-ownership failures from the previous run are resolved. This
+qualifies the local code changes, not historical native SSL attribution or
+unavailable external platforms/services.
