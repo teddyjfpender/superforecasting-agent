@@ -485,3 +485,17 @@ type = "forbidden"
 source_modules = ["superforecasting_agent.constants"]
 forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
 allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "profile admission is independent of runtime administration"
+type = "forbidden"
+source_modules = ["superforecasting_agent.profile_paths"]
+forbidden_modules = ["superforecasting_agent.runtime", "gateway", "tui_gateway", "cli"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "cron profile selection does not import profile administration"
+type = "forbidden"
+source_modules = ["cron.jobs", "cron.scheduler"]
+forbidden_modules = ["superforecasting_agent.runtime.profiles"]
+allow_indirect_imports = true

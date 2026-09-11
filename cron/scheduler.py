@@ -181,7 +181,7 @@ def _job_profile_context(job_id: str, profile: Optional[str]):
     prior_override = _hermes_home
     env_snapshot = os.environ.copy()
 
-    from superforecasting_agent.runtime.profiles import normalize_profile_name, resolve_profile_env
+    from superforecasting_agent.profile_paths import normalize_profile_name, resolve_profile_env
     from superforecasting_agent.constants import reset_agent_home_override, set_agent_home_override
 
     normalized_profile = normalize_profile_name(raw_profile)

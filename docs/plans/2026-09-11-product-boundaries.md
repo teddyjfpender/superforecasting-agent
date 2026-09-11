@@ -539,3 +539,22 @@ Shared benchmark execution:
   session tool selection through interactive tools configuration, and diagnostic
   thesis summaries through dashboard code. These are incomplete boundaries, not
   additional allowed exceptions. Independent host lifecycle work remains open.
+
+Shared profile admission:
+
+- `superforecasting_agent.profile_paths` now owns profile normalization, validation,
+  path selection and existing-profile admission. Cron jobs/scheduler and early CLI
+  profile selection call it directly. Administrative commands retain compatibility
+  exports and remain responsible for creation, deletion, cloning and service cleanup.
+- Direct path selection now validates identifiers before constructing paths, closing
+  the traversal/reserved-name bypass. Strict validation uses full matching and
+  rejects a trailing newline; user-facing normalization still accepts surrounding
+  whitespace and mixed-case display names before applying the shared validator.
+- 145 profile/export/dashboard/cron tests, 383 cron tests, thirteen admission/import
+  boundary tests and five isolated CLI startup tests passed. Shared Python quality
+  passes; the new owner is in strict lint/format/type scope. Sixteen import contracts
+  pass, including transitive administration exclusion for profile admission and a
+  direct no-profile-administration contract for cron selection.
+- The strict application audit no longer finds cron profile admission as a path to
+  presentation. Session tool selection and diagnostic summary ownership still lead
+  to presentation, and full independent runtime hosting remains unfinished.

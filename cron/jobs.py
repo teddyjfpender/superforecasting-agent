@@ -496,7 +496,7 @@ def _normalize_profile(profile: Optional[str]) -> Optional[str]:
     if not raw:
         return None
 
-    from superforecasting_agent.runtime.profiles import normalize_profile_name, resolve_profile_env
+    from superforecasting_agent.profile_paths import normalize_profile_name, resolve_profile_env
 
     normalized = normalize_profile_name(raw)
     # resolve_profile_env validates the canonical name and checks that named

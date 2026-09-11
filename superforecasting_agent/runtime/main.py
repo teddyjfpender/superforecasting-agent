@@ -266,7 +266,7 @@ def _apply_profile_override() -> None:
     # 3. If we found a profile, resolve and set HERMES_HOME
     if profile_name is not None:
         try:
-            from superforecasting_agent.runtime.profiles import resolve_profile_env
+            from superforecasting_agent.profile_paths import resolve_profile_env
 
             hermes_home = resolve_profile_env(profile_name)
         except (ValueError, FileNotFoundError) as exc:
@@ -8393,7 +8393,7 @@ def cmd_profile(args):
             read_manifest,
             DistributionError,
         )
-        from superforecasting_agent.runtime.profiles import get_profile_dir, normalize_profile_name
+        from superforecasting_agent.profile_paths import get_profile_dir, normalize_profile_name
 
         name = args.profile_name
         try:
