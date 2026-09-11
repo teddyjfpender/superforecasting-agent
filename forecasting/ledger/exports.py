@@ -74,12 +74,14 @@ def export_question(ledger, question_id: str, *, fmt: str = "markdown") -> str:
     if fmt == "json":
         from forecasting.applicability_facts import evidence_facts
         from forecasting.settlement_reviews import latest_reviews
+        from forecasting.source_transfer import export_sources
         return json_dumps(
             {
                 "product": _core._export_metadata(),
                 "generated_at": utc_now_iso(),
                 "question": ledger._question_to_dict(question),
                 "applicability_facts": evidence_facts(ledger, question),
+                "source_transfer": export_sources(ledger, question.id, evidence),
                 "settlement_review": latest_reviews(ledger).get(question.id),
                 "forecast_history": [ledger._snapshot_to_dict(snapshot) for snapshot in snapshots],
                 "evidence": [ledger._evidence_to_dict(item) for item in evidence],
@@ -488,7 +490,28 @@ def _import_question_packet(
         ("thesis_members", "thesis_members"),
         ("thesis_entities", "thesis_entities"),
     ):
-        ledger._import_packet_rows(conn, table, packet.get(key), conflict=conflict, summary=summary, seen=seen)
+        if table == "resolutions" and packet.get("source_transfer") is not None:
+            from forecasting.source_transfer import import_sources
+            import_sources(ledger, conn, packet, conflict=conflict)
+        rows = packet.get(key)
+        if table == "resolutions" and rows and packet.get("source_transfer"):
+            # Archive paths belong to the exporter. Preserve the original in
+            # transfer history and use the stable evidence identity locally.
+            refs = {e.get("snapshot_path"): e["id"] for e in packet.get("evidence", []) if e.get("snapshot_path")}
+            def portable_resolution(row):
+                ref = row.get("resolution_source_snapshot_ref")
+                return {**row, "resolution_source_snapshot_ref": refs.get(ref, ref)}
+            rows = portable_resolution(rows) if isinstance(rows, dict) else [portable_resolution(r) for r in rows]
+        if packet.get("source_transfer") and packet.get("question", {}).get("metadata", {}).get("settlement_binding"):
+            # Original learning records remain intact in transfer history. They
+            # must not silently become locally supported calibration evidence.
+            if table in ("forecast_snapshots", "score_records") and rows:
+                rows = [{**row, "forecast_origin": "imported", "calibration_eligible": False, "calibration_weight": 0.0} for row in rows]
+            elif table == "calibration_lessons" and rows:
+                rows = [{**row, "status": "tentative" if row.get("status") == "active" else row.get("status")} for row in rows]
+            elif table == "domain_error_profiles":
+                rows = None
+        ledger._import_packet_rows(conn, table, rows, conflict=conflict, summary=summary, seen=seen)
 
 
 def _import_packet_rows(
@@ -601,6 +624,8 @@ def _insert_packet_row(
             criteria_satisfied=bool(row.get("criteria_satisfied", True)),
             scoreable=bool(row.get("scoreable", True)), confidence=row.get("confidence"),
             correction_ref=row.get("correction_ref"),
+            historical_source_import=conn.execute('SELECT 1 FROM source_transfer_history WHERE question_id=?', (question.id,)).fetchone() is not None,
+            source_cutoff=row.get("resolved_at"),
         )
         if "outcome" in columns:
             values[columns.index("outcome")] = json_dumps(normalized)

@@ -208,6 +208,13 @@ def score_snapshot(ledger, forecast_id: str, *, force: bool = False) -> ScoreRec
                 "cannot score until resolution is confirmed, criteria-satisfied, and scoreable"
             )
 
+        # Imported provenance is historical data, not local settlement authority.
+        # Checking here also covers packets with a resolution but no score rows.
+        if question.metadata.get('settlement_binding'):
+            with ledger._connect() as conn:
+                pending_source = conn.execute("SELECT 1 FROM transferred_source_archives WHERE verification_status='imported' AND evidence_id IN (SELECT id FROM evidence_items WHERE question_id=?) LIMIT 1", (question.id,)).fetchone()
+            if pending_source:
+                raise ValidationError('transferred settlement requires local source verification before scoring')
         existing = ledger._existing_score(snapshot.forecast_id, resolution.id)
         if existing is not None:
             if not force:

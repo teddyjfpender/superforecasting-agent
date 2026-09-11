@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import csv
+import math
 import re
 from urllib.parse import quote, urlencode
 from forecasting.models import ValidationError
 from .economic_records import FredObservation
-from .dates import _fred_date, _fred_date_to_iso
+from .dates import _fred_date
 from .values import _optional_float
 
 def _load_fred_from_api(
@@ -40,7 +41,7 @@ def _load_fred_from_api(
             continue
         if since_date is not None and observation_date < since_date:
             continue
-        raw_value = str(row.get("value") or "").strip()
+        raw_value = str(row["value"]).strip() if row.get("value") is not None else ""
         if raw_value in {"", "."}:
             continue
         observations.append(_fred_make_observation(series_id, observation_date, raw_value, raw=dict(row)))
@@ -70,7 +71,7 @@ def _load_fred_from_csv(
             continue
         if since_date is not None and observation_date < since_date:
             continue
-        raw_value = str(row.get(value_key) or "").strip()
+        raw_value = str(row[value_key]).strip() if row.get(value_key) is not None else ""
         if raw_value in {"", "."}:
             continue
         observations.append(
@@ -91,13 +92,14 @@ def _load_fred_from_series_page(
 def _fred_make_observation(
     series_id: str, observation_date, value, *, raw: dict
 ) -> FredObservation:
-    observation_iso = _fred_date_to_iso(observation_date)
     numeric = _optional_float(str(value)) if value is not None else None
+    if numeric is None or not math.isfinite(numeric):
+        raise ValidationError("fred observation must be a finite number")
     return FredObservation(
         series_id=series_id,
         observation_date=observation_date.isoformat(),
         value=numeric if numeric is not None else value,
-        published_at=observation_iso,
+        published_at=None,
         source_url=f"https://fred.stlouisfed.org/series/{quote(series_id)}",
         source_name="FRED",
         entry_id=f"{series_id}:{observation_date.isoformat()}",
@@ -148,7 +150,4 @@ def _fred_value_column(fieldnames: list[str], series_id: str, date_key: str) -> 
     for field in fieldnames:
         if field != date_key and field.strip().lower() == lowered_series:
             return field
-    for field in fieldnames:
-        if field != date_key:
-            return field
-    raise ValidationError("fred observations CSV has no value column")
+    raise ValidationError("fred observations CSV does not contain the requested series column")

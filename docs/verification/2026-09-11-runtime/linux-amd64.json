@@ -1,0 +1,164 @@
+{
+  "python": "3.11.15 (main, Aug  5 2026, 01:11:44) [GCC 12.2.0]",
+  "platform": "Linux-6.8.0-90-generic-x86_64-with-glibc2.36",
+  "openssl": "OpenSSL 3.0.20 7 Apr 2026",
+  "sqlite": "3.40.1",
+  "certificates": {
+    "cafile": "/usr/lib/ssl/cert.pem",
+    "capath": "/usr/lib/ssl/certs",
+    "openssl_cafile_env": "SSL_CERT_FILE",
+    "openssl_cafile": "/usr/lib/ssl/cert.pem",
+    "openssl_capath_env": "SSL_CERT_DIR",
+    "openssl_capath": "/usr/lib/ssl/certs"
+  },
+  "runs": [
+    {
+      "mode": "tls",
+      "index": 0,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "tls",
+      "index": 1,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "tls",
+      "index": 2,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "tls",
+      "index": 3,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "tls",
+      "index": 4,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "tls",
+      "index": 5,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "tls",
+      "index": 6,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "tls",
+      "index": 7,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 0,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 1,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 2,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 3,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 4,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 5,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 6,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "shutdown",
+      "index": 7,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 0,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 1,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 2,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 3,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 4,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 5,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 6,
+      "exit": 0,
+      "stderr": ""
+    },
+    {
+      "mode": "environment",
+      "index": 7,
+      "exit": 0,
+      "stderr": ""
+    }
+  ],
+  "sqlite_signal_failure": {
+    "type": "DatabaseError",
+    "message": "not authorized"
+  }
+}

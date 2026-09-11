@@ -37,7 +37,7 @@ class FredObservation:
     series_id: str
     observation_date: str
     value: float | str
-    published_at: str
+    published_at: str | None
     source_url: str | None
     source_name: str
     entry_id: str

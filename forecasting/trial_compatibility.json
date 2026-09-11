@@ -9,14 +9,19 @@
   },
   "evaluation_reviews": {
     "7cba99836cdc7bff4159d5248351b80116cdcdc064513d692c510b6d793bc1ae": {
-      "compatible_identity": "78ae1edf844343b6839a48c39c0382b005f82adbf70670050a8318d443751e78",
+      "compatible_identity": "59b0b3e52d4ca62085d295d06bfe089f22e7270b429d875e6116be09fd1b2403",
       "source_revision": "5741f9f0d5d19bfc78eb58fba863e900d8e267b5",
-      "reason": "Reviewed non-scoring connection cache fix and explicit compatibility lookup. Censoring only adds an opt-in probability_key representation; existing contracts without that key retain identical evaluation. Scoring, model validation, learning adjustments, and frozen trial evaluation are byte-identical. No historical trial packet has the new opt-in key. Reviewed transaction and connection-lifetime changes; score formulas and learning adjustments are unchanged. Strict JSON additionally rejects overflow literals; previously admitted finite numeric packets retain identical evaluation. Frozen trial records are not rewritten. Forced score replacement now invalidates prior derived learning atomically; paired evaluation formulas remain unchanged."
+      "reason": "Reviewed non-scoring connection cache fix and explicit compatibility lookup. Censoring only adds an opt-in probability_key representation; existing contracts without that key retain identical evaluation. Scoring, model validation, learning adjustments, and frozen trial evaluation are byte-identical. No historical trial packet has the new opt-in key. Reviewed transaction and connection-lifetime changes; score formulas and learning adjustments are unchanged. Strict JSON additionally rejects overflow literals; previously admitted finite numeric packets retain identical evaluation. Frozen trial records are not rewritten. Forced score replacement now invalidates prior derived learning atomically; paired evaluation formulas remain unchanged. Reviewed source-transfer quarantine and authorizer exception preservation; paired scoring formulas, frozen adjustment application and numeric validation are unchanged. Imported settlement guards do not participate in frozen paired evaluation."
     },
     "96b0454abf04efaf4a62a5a99a09d1f090031c2b902079b131833d8f598931cc": {
-      "compatible_identity": "78ae1edf844343b6839a48c39c0382b005f82adbf70670050a8318d443751e78",
+      "compatible_identity": "59b0b3e52d4ca62085d295d06bfe089f22e7270b429d875e6116be09fd1b2403",
       "source_revision": "a4fa190c26a53dbe05baac0c32d921617fdf6fb5",
-      "reason": "Reviewed transaction and connection-lifetime changes; score formulas and learning adjustments are unchanged. Strict JSON additionally rejects overflow literals; previously admitted finite numeric packets retain identical evaluation. Frozen trial records are not rewritten. Forced score replacement now invalidates prior derived learning atomically; paired evaluation formulas remain unchanged."
+      "reason": "Reviewed transaction and connection-lifetime changes; score formulas and learning adjustments are unchanged. Strict JSON additionally rejects overflow literals; previously admitted finite numeric packets retain identical evaluation. Frozen trial records are not rewritten. Forced score replacement now invalidates prior derived learning atomically; paired evaluation formulas remain unchanged. Reviewed source-transfer quarantine and authorizer exception preservation; paired scoring formulas, frozen adjustment application and numeric validation are unchanged. Imported settlement guards do not participate in frozen paired evaluation."
+    },
+    "78ae1edf844343b6839a48c39c0382b005f82adbf70670050a8318d443751e78": {
+      "compatible_identity": "59b0b3e52d4ca62085d295d06bfe089f22e7270b429d875e6116be09fd1b2403",
+      "source_revision": "60033a0ff55386ff3dbf79d11459bcbaeb0853a5",
+      "reason": "Reviewed source-transfer quarantine and authorizer exception preservation; paired scoring formulas, frozen adjustment application and numeric validation are unchanged. Imported settlement guards do not participate in frozen paired evaluation."
     }
   }
 }

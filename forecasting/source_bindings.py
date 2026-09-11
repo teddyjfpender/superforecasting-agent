@@ -12,8 +12,9 @@ import math
 from forecasting.models import ValidationError, parse_timestamp, timestamp_to_datetime
 
 
-def source_contract(*, adapter, entity, window_start, window_end, magnitude_type=None):
-    if adapter not in ('nws_temperature_v1', 'usgs_magnitude_v1'):
+def source_contract(*, adapter, entity, window_start, window_end, magnitude_type=None, **options):
+    from forecasting.economic_bindings import ADAPTERS, validate_options
+    if adapter not in ('nws_temperature_v1', 'usgs_magnitude_v1', *ADAPTERS):
         raise ValidationError('unsupported source binding adapter')
     if not isinstance(entity, str) or not re.fullmatch(r'[A-Za-z0-9_-]{2,40}', entity):
         raise ValidationError('invalid source entity identifier')
@@ -23,11 +24,17 @@ def source_contract(*, adapter, entity, window_start, window_end, magnitude_type
         raise ValidationError('measurement window must have an ordered start and end')
     if adapter == 'usgs_magnitude_v1' and magnitude_type not in ('mb', 'md', 'mh', 'ml', 'ms', 'mw', 'mwb', 'mwc', 'mwr', 'mww'):
         raise ValidationError('an explicit supported USGS magnitude type is required')
-    return dict(adapter=adapter, entity=entity, window_start=start, window_end=end, magnitude_type=magnitude_type)
+    if adapter in ADAPTERS:
+        if magnitude_type is not None:
+            raise ValidationError('magnitude_type is not an economic contract field')
+        options = validate_options(adapter, entity, options)
+    elif options:
+        raise ValidationError('unexpected source contract fields')
+    return dict(adapter=adapter, entity=entity, window_start=start, window_end=end, magnitude_type=magnitude_type, **options)
 
 
 def _validated_contract(contract):
-    if not isinstance(contract, dict) or set(contract) - {'adapter', 'entity', 'window_start', 'window_end', 'magnitude_type'}:
+    if not isinstance(contract, dict):
         raise ValidationError('invalid source contract fields')
     if not {'adapter', 'entity', 'window_start', 'window_end'} <= set(contract):
         raise ValidationError('missing source contract fields')
@@ -36,6 +43,9 @@ def _validated_contract(contract):
 
 def binding_spec(contract):
     contract = _validated_contract(contract)
+    from forecasting.economic_bindings import ADAPTERS, binding_spec as economic_spec
+    if contract['adapter'] in ADAPTERS:
+        return economic_spec(contract)
     if contract['adapter'] == 'nws_temperature_v1':
         return dict(source_url=f"https://api.weather.gov/stations/{contract['entity']}/observations/latest",
             value_pointer='/properties/temperature/value', observed_at_pointer='/properties/timestamp')
@@ -52,12 +62,15 @@ def _epoch_ms(value):
         raise ValidationError('USGS timestamp out of range') from exc
 
 
-def extract_measurement(document, contract, *, captured_at):
+def extract_measurement(document, contract, *, captured_at, metadata_document=None):
     """Return value, revision/observation time, and explicit measurement meaning."""
     contract = _validated_contract(contract)
     captured_at = parse_timestamp(captured_at, field_name='source capture time')
     if not captured_at:
         raise ValidationError('source_capture_time_missing')
+    from forecasting.economic_bindings import ADAPTERS, extract
+    if contract['adapter'] in ADAPTERS:
+        return extract(document, contract, captured_at, metadata_document=metadata_document)
     if not isinstance(document, dict) or document.get('type') != 'Feature' or not isinstance(document.get('properties'), dict):
         raise ValidationError('source_schema_mismatch')
     p = document['properties']

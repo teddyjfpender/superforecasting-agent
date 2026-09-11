@@ -22,6 +22,7 @@ def bind_settlement(ledger, question_id, *, fact_key, entity, units, measurement
                         window_start=window_start, window_end=window_end)
         _check_measurement(fact, expected)
         binding = {**expected, 'fact_key':fact_key, 'binding_id':fact['binding_id'],
+                   'revision_policy':fact.get('revision_policy'), 'published_at':fact.get('published_at'),
                    'source_url':fact['source_url'], 'reason':reason.strip(), 'bound_at':utc_now_iso()}
         metadata = dict(q.metadata)
         history = list(metadata.get('settlement_binding_history', []))
@@ -33,24 +34,26 @@ def bind_settlement(ledger, question_id, *, fact_key, entity, units, measurement
     return binding
 
 
-def _check_measurement(fact, expected):
-    if fact.get('status') != 'verified' or fact.get('adapter') not in ('nws_temperature_v1', 'usgs_magnitude_v1'):
+def _check_measurement(fact, expected, *, historical_import=False):
+    if fact.get('status') not in (('verified', 'imported') if historical_import else ('verified',)) or fact.get('adapter') not in ('nws_temperature_v1', 'usgs_magnitude_v1', 'bls_observation_v1', 'fred_observation_v1'):
         raise ValidationError('settlement requires a verified source-specific measurement')
     for key in ('entity', 'units', 'measurement', 'window_start', 'window_end'):
         if fact.get(key) != expected[key]:
             raise ValidationError('settlement measurement mismatch: ' + key)
+    if 'revision_policy' in expected and fact.get('revision_policy') != expected['revision_policy']:
+        raise ValidationError('settlement revision policy changed')
     if fact.get('adapter') == 'usgs_magnitude_v1' and fact.get('review_status') != 'reviewed':
         raise ValidationError('automatic earthquake estimates are not reviewed settlement evidence')
 
 
-def verify_settlement(ledger, question, outcome, source, snapshot_ref):
+def verify_settlement(ledger, question, outcome, source, snapshot_ref, *, historical_import=False, cutoff=None):
     binding = question.metadata.get('settlement_binding')
     if not binding:
         return
     if question.outcome_space.units != binding['units']:
         raise ValidationError('question units changed since settlement binding review')
-    fact = evidence_facts(ledger, question).get(binding['fact_key'], {})
-    _check_measurement(fact, binding)
+    fact = evidence_facts(ledger, question, cutoff=cutoff).get(binding['fact_key'], {})
+    _check_measurement(fact, binding, historical_import=historical_import)
     if fact.get('binding_id') != binding['binding_id']:
         raise ValidationError('source fact binding changed; review settlement binding again')
     if source != binding['source_url'] or fact['source_url'] != source:

@@ -15,7 +15,7 @@ from pathlib import Path
 import uuid
 from urllib.parse import urlsplit
 
-from forecasting.models import ValidationError, parse_timestamp, timestamp_to_datetime, utc_now_iso
+from forecasting.models import LedgerNotFoundError, ValidationError, parse_timestamp, timestamp_to_datetime, utc_now_iso
 
 
 def initialize_schema(conn):
@@ -45,12 +45,11 @@ def pointer_value(document, pointer):
     return document
 
 
-def bind_fact(ledger, *, question_id, key, source_url, value_pointer, observed_at_pointer,
-              value_type='string', max_age_seconds=3600, source_contract=None):
-    ledger.get_question(question_id)
+def validate_fact_binding(*, key, source_url, value_pointer, observed_at_pointer,
+                          value_type, max_age_seconds, source_contract=None):
     if not isinstance(key, str) or not key.strip() or value_type not in ('string', 'number', 'boolean'):
         raise ValidationError('fact requires a key and a scalar value type')
-    if urlsplit(source_url).scheme != 'https' or not urlsplit(source_url).netloc:
+    if not isinstance(source_url, str) or urlsplit(source_url).scheme != 'https' or not urlsplit(source_url).netloc:
         raise ValidationError('fact source must be an explicit HTTPS URL')
     if isinstance(max_age_seconds, bool) or not isinstance(max_age_seconds, int) or not 1 <= max_age_seconds <= 31536000:
         raise ValidationError('max_age_seconds must be an integer between 1 and 31536000')
@@ -58,12 +57,21 @@ def bind_fact(ledger, *, question_id, key, source_url, value_pointer, observed_a
         if not isinstance(pointer, str) or not pointer.startswith('/'):
             raise ValidationError('both JSON pointers must start with /')
     if source_contract is not None:
-        from forecasting.source_bindings import source_contract as validate_contract, binding_spec
-        source_contract = validate_contract(**source_contract)
+        from forecasting.source_bindings import _validated_contract, binding_spec
+        source_contract = _validated_contract(source_contract)
         expected = binding_spec(source_contract)
         if value_type != 'number' or any(expected[k] != v for k, v in (
             ('source_url', source_url), ('value_pointer', value_pointer), ('observed_at_pointer', observed_at_pointer))):
             raise ValidationError('binding does not match its source measurement contract')
+    return source_contract
+
+
+def bind_fact(ledger, *, question_id, key, source_url, value_pointer, observed_at_pointer,
+              value_type='string', max_age_seconds=3600, source_contract=None):
+    ledger.get_question(question_id)
+    source_contract = validate_fact_binding(key=key, source_url=source_url, value_pointer=value_pointer,
+        observed_at_pointer=observed_at_pointer, value_type=value_type,
+        max_age_seconds=max_age_seconds, source_contract=source_contract)
     bid = 'fb_'  + uuid.uuid4().hex[:12]
     with ledger._connect() as conn:
         conn.execute('INSERT INTO applicability_bindings (id,question_id,fact_key,source_url,value_pointer,observed_at_pointer,value_type,max_age_seconds,created_at,source_contract) VALUES (?,?,?,?,?,?,?,?,?,?)',
@@ -92,26 +100,23 @@ def evidence_facts(ledger, question, *, cutoff=None):
             try:
                 if e.metadata.get('blocked') or e.metadata.get('invalidated') or e.metadata.get('superseded_by'):
                     raise ValidationError('source_unusable')
-                if not e.snapshot_path:
-                    raise ValidationError('archive_missing')
-                path = Path(e.snapshot_path)
-                if path.stat().st_size > 2_000_000:
-                    raise ValidationError('archive_too_large')
-                raw = path.read_bytes()
-                digest = hashlib.sha256(raw).hexdigest()
-                capture = e.metadata.get('source_capture') or {}
-                if capture.get('url') != binding['source_url'] or capture.get('method') != 'https_fetch':
-                    raise ValidationError('source_capture_unverified')
-                expected = capture.get('sha256')
-                if not expected:
-                    raise ValidationError('archive_integrity_unverified')
-                if digest != expected:
-                    raise ValidationError('archive_hash_mismatch')
+                raw, digest, verification = source_archive(ledger, e, binding['source_url'], cutoff=stamp)
                 document = strict_json_loads(raw)
                 meaning = {}
                 if binding.get('source_contract'):
                     from forecasting.source_bindings import extract_measurement
-                    value, observed_at, meaning = extract_measurement(document, json.loads(binding['source_contract']), captured_at=e.captured_at)
+                    contract = json.loads(binding['source_contract'])
+                    metadata_document = None
+                    if contract.get('metadata_evidence_id'):
+                        from forecasting.economic_bindings import fred_metadata_url
+                        meta = ledger.get_evidence(contract['metadata_evidence_id'])
+                        if meta.question_id != question.id or any(not t or timestamp_to_datetime(t) > at for t in (meta.available_at, meta.captured_at)):
+                            raise ValidationError('series_metadata_not_admissible')
+                        metadata_raw, _, metadata_verification = source_archive(ledger, meta, fred_metadata_url(contract), cutoff=stamp)
+                        if metadata_verification != 'verified':
+                            verification = metadata_verification
+                        metadata_document = strict_json_loads(metadata_raw)
+                    value, observed_at, meaning = extract_measurement(document, contract, captured_at=e.captured_at, metadata_document=metadata_document)
                 else:
                     value = pointer_value(document, binding['value_pointer'])
                     observed_at = parse_timestamp(pointer_value(document, binding['observed_at_pointer']), field_name='observation timestamp')
@@ -127,10 +132,47 @@ def evidence_facts(ledger, question, *, cutoff=None):
                 if not valid:
                     raise ValidationError('observation_type_mismatch')
                 result.update(meaning)
-                result.update(status='verified', reason='archived_source_value', value=value,
+                result.update(status=verification, reason='archived_source_value', value=value,
                     observed_at=observed_at, captured_at=e.captured_at, available_at=e.available_at,
                     sha256=digest, value_pointer=binding['value_pointer'], max_age_seconds=binding['max_age_seconds'])
-            except (OSError, ValueError, TypeError, KeyError, IndexError, OverflowError, ValidationError) as exc:
+            except (OSError, ValueError, TypeError, KeyError, IndexError, OverflowError, ValidationError, LedgerNotFoundError) as exc:
                 result['reason'] = str(exc)
         facts[key] = result
     return facts
+
+
+def verified_archive(evidence, source_url):
+    """The shared archive trust boundary; metadata assertions alone never suffice."""
+    if evidence.source_url != source_url or any(evidence.metadata.get(k) for k in ('blocked', 'invalidated', 'superseded_by')):
+        raise ValidationError('source_unusable')
+    if not evidence.snapshot_path:
+        raise ValidationError('archive_missing')
+    path = Path(evidence.snapshot_path)
+    if path.stat().st_size > 2_000_000:
+        raise ValidationError('archive_too_large')
+    raw = path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    capture = evidence.metadata.get('source_capture') or {}
+    if capture.get('url') != source_url or capture.get('method') != 'https_fetch':
+        raise ValidationError('source_capture_unverified')
+    if not capture.get('sha256'):
+        raise ValidationError('archive_integrity_unverified')
+    if digest != capture['sha256']:
+        raise ValidationError('archive_hash_mismatch')
+    return raw, digest
+
+
+def source_archive(ledger, evidence, source_url, *, cutoff):
+    with ledger._connect() as conn:
+        transferred = conn.execute('SELECT * FROM transferred_source_archives WHERE evidence_id=?', (evidence.id,)).fetchone()
+    if transferred is None:
+        raw, digest = verified_archive(evidence, source_url)
+        return raw, digest, 'verified'
+    if evidence.source_url != source_url or transferred['source_url'] != source_url or any(evidence.metadata.get(k) for k in ('blocked', 'invalidated', 'superseded_by')):
+        raise ValidationError('source_unusable')
+    raw = bytes(transferred['content'])
+    digest = hashlib.sha256(raw).hexdigest()
+    if digest != transferred['sha256'] or len(raw) > 2_000_000:
+        raise ValidationError('archive_hash_mismatch')
+    local = transferred['verification_status'] == 'locally_reverified' and transferred['verified_at'] and timestamp_to_datetime(transferred['verified_at']) <= timestamp_to_datetime(cutoff)
+    return raw, digest, 'verified' if local else 'imported'

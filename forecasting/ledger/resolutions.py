@@ -87,7 +87,7 @@ def _normalize_distribution_outcome(ledger, question, outcome):
 def validate_resolution(ledger, question, outcome, *, resolution_source=None,
                         resolution_source_snapshot_ref=None, resolution_status="confirmed",
                         criteria_satisfied=True, scoreable=True, confidence=None,
-                        correction_ref=None, trusted_policy_id=None):
+                        correction_ref=None, trusted_policy_id=None, historical_source_import=False, source_cutoff=None):
     """Validate outcome meaning before persistence, irrespective of score eligibility."""
     for name, value in (("criteria_satisfied", criteria_satisfied), ("scoreable", scoreable)):
         if type(value) is not bool:
@@ -122,7 +122,8 @@ def validate_resolution(ledger, question, outcome, *, resolution_source=None,
             outcome = _normalize_distribution_outcome(ledger, question, outcome)
     if resolution_status == 'confirmed' and criteria_satisfied:
         from forecasting.settlement_binding import verify_settlement
-        verify_settlement(ledger, question, outcome, resolution_source, resolution_source_snapshot_ref)
+        verify_settlement(ledger, question, outcome, resolution_source, resolution_source_snapshot_ref,
+                          historical_import=historical_source_import, cutoff=source_cutoff)
     if resolution_status not in RESOLUTION_STATUSES:
         raise ValidationError(
             f"resolution_status must be one of {', '.join(sorted(RESOLUTION_STATUSES))}"

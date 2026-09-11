@@ -368,7 +368,7 @@ def test_callback_failure_retains_diagnostic_without_allowing_query(tmp_path, en
         raise TimeoutError('deadline during authorizer')
     with ledger._connect() as conn:
         monkeypatch.setattr(gate, '_authorize_ledger_write', interrupted)
-        with pytest.raises(sqlite3.DatabaseError, match='not authorized'):
+        with pytest.raises(TimeoutError, match="deadline during authorizer"):
             conn.execute('SELECT 42')
     assert 'TimeoutError: deadline during authorizer' in caplog.text
 

@@ -507,7 +507,7 @@ def _isolated_update_check():
             capture_output=True, text=True, timeout=20, check=False,
         )
         if result.returncode != 0:
-            logger.warning('Update probe failed: returncode=%s interpreter=%s; forecast session retained', result.returncode, sys.executable)
+            logger.warning('Update probe failed: returncode=%s interpreter=%s; forecast session retained; diagnostic=%s', result.returncode, sys.executable, (getattr(result, 'stderr', '') or '')[-16000:])
             return None
         receipt = json.loads(result.stdout)
         behind = receipt['behind']

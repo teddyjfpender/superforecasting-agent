@@ -168,7 +168,7 @@ def add_evidence(
         if archived_url_snapshot is not None:
             snapshot_path = archived_url_snapshot["snapshot_path"]
             evidence_metadata["source_snapshot"] = archived_url_snapshot
-            if not archived_url_snapshot.get('blocked') and archived_url_snapshot.get('status') == 200:
+            if not archived_url_snapshot.get('blocked') and not archived_url_snapshot.get('redirected') and archived_url_snapshot.get('status') == 200:
                 evidence_metadata['source_capture'] = {
                     'url': inferred_url, 'sha256': archived_url_snapshot.get('sha256'),
                     'captured_at': now, 'method': 'https_fetch',
