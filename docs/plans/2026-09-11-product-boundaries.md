@@ -194,3 +194,21 @@ remaining command migration also remain open.
 Additional distribution evidence: the backend-only build succeeded with only uv
 on PATH (no Node/npm). Optional web dependencies passed `uv pip check`, and the
 installed HTTP host constructed and released its local socket successfully.
+
+
+Shared session selection:
+
+- Moved resumable-session policy into `superforecasting_agent.application` and
+  routed Ink list/auto-resume, classic CLI history and CLI list/browse through it.
+  Human-facing sources are accepted across interfaces; explicit source filters
+  still allow administrative access to internal sessions.
+- Fixed fixed-window lookup: a user conversation behind more than 200 internal
+  sessions is still discoverable, and filtering the active conversation does not
+  consume the requested result limit. Limits are validated before storage access.
+- Verification: 332 focused session/gateway/CLI tests passed, then 99 adapter
+  tests passed after CLI error handling was aligned. New application code is
+  included in strict lint/format/type gates and an enforced import boundary.
+- This is selection ownership, not complete host/session ownership. Session
+  construction/finalization, worker draining, database lifetime and legacy
+  command adapters still need consolidation. Most-recent RPC's legacy error-to-
+  empty-result behavior also remains a recovery transparency follow-up.

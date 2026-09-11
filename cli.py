@@ -4063,10 +4063,10 @@ class ForecastCLI:
         if not self._session_db:
             return []
         try:
-            sessions = self._session_db.list_sessions_rich(
-                source="cli",
-                exclude_sources=["tool"],
-                limit=limit,
+            from superforecasting_agent.application.sessions import list_resumable_sessions
+
+            sessions = list_resumable_sessions(
+                self._session_db, limit=limit, exclude_ids={self.session_id},
             )
         except Exception:
             return []

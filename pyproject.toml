@@ -443,3 +443,10 @@ type = "forbidden"
 source_modules = ["tui_gateway.server"]
 forbidden_modules = ["cli"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "session application services do not import presentation or transport"
+type = "forbidden"
+source_modules = ["superforecasting_agent.application"]
+forbidden_modules = ["cli", "run_agent", "tui_gateway", "gateway", "superforecasting_agent.runtime.main", "superforecasting_agent.runtime.session_browser"]
+allow_indirect_imports = true

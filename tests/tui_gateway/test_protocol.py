@@ -487,7 +487,7 @@ def test_session_resume_refuses_already_active_durable_session(server, monkeypat
 
 def test_session_list_omits_active_durable_sessions(server, monkeypatch):
     class _DB:
-        def list_sessions_rich(self, source=None, limit=200):
+        def list_sessions_rich(self, source=None, limit=200, offset=0, exclude_sources=None):
             return [
                 {"id": "active", "title": "Active", "source": "tui"},
                 {"id": "saved", "title": "Saved", "source": "cli"},

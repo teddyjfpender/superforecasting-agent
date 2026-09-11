@@ -2955,32 +2955,17 @@ def _(rid, params: dict) -> dict:
     if db is None:
         return _db_unavailable_error(rid, code=5006)
     try:
-        # Resume picker should surface human forecast sessions from every
-        # user-facing surface — CLI, TUI, all gateway platforms (including new
-        # ones not enumerated here), ACP adapter clients, webhook sessions,
-        # custom `HERMES_SESSION_SOURCE` values, and older installs with
-        # different source labels. We deny-list only the noisy internal
-        # sources (``tool`` sub-agent runs) rather than allow-listing a
-        # fixed set of platform names that goes stale whenever a new
-        # platform is added or a user names their own source.
-        deny = frozenset({"tool"})
+        from superforecasting_agent.application.sessions import list_resumable_sessions
 
-        limit = int(params.get("limit", 200) or 200)
-        # Over-fetch modestly so per-source filtering doesn't leave us
-        # short; the compression-tip projection in ``list_sessions_rich``
-        # can also merge rows.
-        fetch_limit = max(limit * 2, 200)
+        limit = params.get("limit", 200)
+        if limit is None:
+            limit = 200
         active_keys = {
             session.get("session_key")
             for session in list(_sessions.values())
             if session.get("session_key")
         }
-        rows = [
-            s
-            for s in db.list_sessions_rich(source=None, limit=fetch_limit)
-            if (s.get("source") or "").strip().lower() not in deny
-            and s.get("id") not in active_keys
-        ][:limit]
+        rows = list_resumable_sessions(db, limit=limit, exclude_ids=active_keys)
         return _ok(
             rid,
             {
@@ -2997,6 +2982,8 @@ def _(rid, params: dict) -> dict:
                 ]
             },
         )
+    except ValueError as e:
+        return _err(rid, 4003, str(e))
     except Exception as e:
         return _err(rid, 5006, str(e))
 
@@ -3020,23 +3007,14 @@ def _(rid, params: dict) -> dict:
     if db is None:
         return _ok(rid, {"session_id": None})
     try:
-        deny = frozenset({"tool"})
-        # Over-fetch by a generous bounded amount so heavy sub-agent
-        # users (lots of recent ``tool`` rows) don't get a false
-        # "no eligible session" answer.  ``session.list`` uses a
-        # similar over-fetch strategy.
-        rows = db.list_sessions_rich(source=None, limit=200)
+        from superforecasting_agent.application.sessions import list_resumable_sessions
+
         active_keys = {
             session.get("session_key")
             for session in list(_sessions.values())
             if session.get("session_key")
         }
-        for row in rows:
-            src = (row.get("source") or "").strip().lower()
-            if src in deny:
-                continue
-            if row.get("id") in active_keys:
-                continue
+        for row in list_resumable_sessions(db, limit=1, exclude_ids=active_keys):
             return _ok(
                 rid,
                 {

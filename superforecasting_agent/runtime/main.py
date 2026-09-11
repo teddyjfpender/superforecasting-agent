@@ -10782,14 +10782,21 @@ Examples:
 
         action = args.sessions_action
 
-        # Hide third-party tool sessions by default, but honour explicit --source
-        _source = getattr(args, "source", None)
-        _exclude = None if _source else ["tool"]
+        if action in {"list", "browse"}:
+            from superforecasting_agent.application.sessions import list_resumable_sessions
+            default_limit = 500 if action == "browse" else 20
+            limit = getattr(args, "limit", default_limit)
+            try:
+                sessions = list_resumable_sessions(
+                    db, source=getattr(args, "source", None),
+                    limit=default_limit if limit is None else limit,
+                )
+            except ValueError as exc:
+                db.close()
+                print(f"Error: {exc}", file=sys.stderr)
+                raise SystemExit(2) from exc
 
         if action == "list":
-            sessions = db.list_sessions_rich(
-                source=args.source, exclude_sources=_exclude, limit=args.limit
-            )
             if not sessions:
                 print("No sessions found.")
                 return
@@ -10892,12 +10899,6 @@ Examples:
                 print(f"Error: {e}")
 
         elif action == "browse":
-            limit = getattr(args, "limit", 500) or 500
-            source = getattr(args, "source", None)
-            _browse_exclude = None if source else ["tool"]
-            sessions = db.list_sessions_rich(
-                source=source, exclude_sources=_browse_exclude, limit=limit
-            )
             db.close()
             if not sessions:
                 print("No sessions found.")

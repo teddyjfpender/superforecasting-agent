@@ -341,3 +341,14 @@ restart can retry after changing the backend. Capabilities indicate implemented
 operations; they do not claim external providers have credentials or are healthy.
 Legacy clients may still use existing RPCs; negotiation is not an authentication
 mechanism or a replacement for per-operation input validation.
+
+
+### Session application selection
+
+`superforecasting_agent/application/sessions.py` owns resumable-session selection:
+input validation, internal-source exclusion, explicit administrative source
+selection, active-session exclusion after compression projection, and pagination.
+Ink list/auto-resume, classic CLI recent history, and CLI list/browse consume it.
+Storage owns SQL and compression lineage; products own rendering and the set of
+currently active session IDs. Import checks forbid presentation and transport
+imports from this application package.

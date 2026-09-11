@@ -5,8 +5,8 @@ from typing import Any, Dict, List, Optional
 
 def list_sessions_rich(
     self,
-    source: str = None,
-    exclude_sources: List[str] = None,
+    source: str | None = None,
+    exclude_sources: List[str] | None = None,
     limit: int = 20,
     offset: int = 0,
     include_children: bool = False,
