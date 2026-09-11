@@ -21,12 +21,21 @@ def load_openfda_drug_applications(
     normalized_source = source.split(":", 1)[1].strip() if source.startswith("openfda:") else source.strip()
     if not normalized_source:
         raise ValidationError("openfda import query, application number, or API URL is required")
-    if limit <= 0:
+    if type(limit) is not int or limit <= 0:
+        raise ValidationError("openfda import --limit must be positive")
+    endpoint = _openfda_endpoint(normalized_source, limit=limit, api_base_url=api_base_url)
+    # Validate the cutoff before any network work.
+    since_iso = parse_timestamp(since, field_name="since") if since else None
+    payload = _read_json_endpoint(endpoint, "openFDA Drugs@FDA applications")
+    return parse_openfda_drug_applications(payload, limit=limit, since=since_iso)
+
+
+def parse_openfda_drug_applications(payload: object, *, limit: int = 10, since: str | None = None) -> list[OpenFdaDrugApplication]:
+    """Parse a retained source payload without transport or live configuration."""
+    if type(limit) is not int or limit <= 0:
         raise ValidationError("openfda import --limit must be positive")
     since_iso = parse_timestamp(since, field_name="since") if since else None
     since_dt = timestamp_to_datetime(since_iso) if since_iso else None
-    endpoint = _openfda_endpoint(normalized_source, limit=limit, api_base_url=api_base_url)
-    payload = _read_json_endpoint(endpoint, "openFDA Drugs@FDA applications")
     rows = _openfda_application_rows(payload)
 
     applications: list[OpenFdaDrugApplication] = []
@@ -160,8 +169,7 @@ def _openfda_latest_submission(value: object) -> dict:
     for row in value:
         if not isinstance(row, dict):
             continue
-        date_text = _optional_str(_first_present(row.get("submission_status_date"), row.get("submission_date"))) or ""
-        normalized_date = "".join(date_text.split())
+        normalized_date = _openfda_date_to_iso(_first_present(row.get("submission_status_date"), row.get("submission_date"))) or ""
         if normalized_date >= latest_date:
             latest = row
             latest_date = normalized_date

@@ -41,6 +41,10 @@ Profile listings and diagnostic dumps now use the same model/provider normalizat
 as execution; legacy root-level provider configuration no longer disappears from
 those displays. The diagnostic-only `model.name` fallback remains supported.
 
+openFDA fetching now delegates to a pure retained-payload parser. Latest-submission
+selection uses parsed dates, so malformed date strings cannot outrank valid dates;
+unknown dates remain unknown and cannot pass a `since` filter.
+
 ## Live evidence and limits
 
 The September 11 readiness audit found 252 future-closing questions, 50 ready for
@@ -56,6 +60,9 @@ historical question also needs an audited typed binding of its prose censoring
 policy. The Manifold identity remains unconfirmed in the ledger. Two basket
 questions concern an interval ending in June 2027. Reviews and reminders remain
 append-only; no retrospective outcomes or probabilities were invented.
+
+A live Gemini known-answer numeric response check passed with exactly `mean` and
+`sd`; it is transport evidence, not forecasting accuracy evidence.
 
 A 60-turn Unicode exercise across five process lifetimes, resizing and resuming,
 passed locally with the cancellation, gateway respawn and PTY bridge checks.
