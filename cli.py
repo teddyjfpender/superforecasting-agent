@@ -3960,7 +3960,7 @@ class ForecastCLI:
         _run_capture(Namespace(tools_action=subcommand, names=names, platform="cli"))
 
         # Reset session so the new tool config is picked up from a clean state
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         from superforecasting_agent.runtime.config import load_config
         self.enabled_toolsets = _get_platform_tools(load_config(), "cli")
         self.new_session()
@@ -11549,7 +11549,7 @@ def main(
                     toolsets_list.append(str(t))
     else:
         # Use the shared resolver so MCP servers are included at runtime
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         toolsets_list = sorted(_get_platform_tools(CLI_CONFIG, "cli"))
     
     parsed_skills = _parse_skills_argument(skills)

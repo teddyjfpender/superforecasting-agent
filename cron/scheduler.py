@@ -87,7 +87,7 @@ def _resolve_cron_enabled_toolsets(job: dict, cfg: dict) -> list[str] | None:
     if per_job:
         return per_job
     try:
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools  # lazy: avoid heavy import at cron module load
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         return sorted(_get_platform_tools(cfg or {}, "cron"))
     except Exception as exc:
         logger.warning(

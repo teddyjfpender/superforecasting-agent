@@ -3156,11 +3156,8 @@ async def toggle_skill(body: SkillToggle):
 
 @app.get("/api/tools/toolsets")
 async def get_toolsets():
-    from superforecasting_agent.runtime.tools_config import (
-        _get_effective_configurable_toolsets,
-        _get_platform_tools,
-        _toolset_has_keys,
-    )
+    from superforecasting_agent.tooling.selection import _get_effective_configurable_toolsets, _get_platform_tools
+    from superforecasting_agent.runtime.tools_config import _toolset_has_keys
     from superforecasting_agent.tooling.toolsets import resolve_toolset
 
     config = load_config()

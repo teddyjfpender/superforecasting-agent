@@ -153,7 +153,7 @@ def test_get_platform_tools_x_search_auto_enabled_when_xai_oauth_present(monkeyp
     """
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.tools_config._xai_credentials_present", lambda: True
+        "superforecasting_agent.tooling.selection._xai_credentials_present", lambda: True
     )
 
     for plat in ("cli", "cron", "telegram"):
@@ -175,7 +175,7 @@ def test_get_platform_tools_x_search_off_when_no_xai_credentials(monkeypatch):
     "don't ship the schema to users who can't use it" default."""
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.tools_config._xai_credentials_present", lambda: False
+        "superforecasting_agent.tooling.selection._xai_credentials_present", lambda: False
     )
 
     cli_enabled = _get_platform_tools({}, "cli")
@@ -188,7 +188,7 @@ def test_get_platform_tools_x_search_respects_explicit_config(monkeypatch):
     when xAI creds exist. The saved list represents deliberate choices."""
     monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.setattr(
-        "superforecasting_agent.runtime.tools_config._xai_credentials_present", lambda: True
+        "superforecasting_agent.tooling.selection._xai_credentials_present", lambda: True
     )
 
     # User explicitly opted into homeassistant but not x_search via `hermes tools`.
@@ -937,7 +937,7 @@ def test_get_platform_tools_recovers_non_configurable_toolsets_from_composite():
         "_test_platform": {"label": "Test", "default_toolset": "hermes-_test_platform"},
     }
 
-    with mock_patch("superforecasting_agent.runtime.tools_config.PLATFORMS", {**PLATFORMS, **test_platforms}):
+    with mock_patch("superforecasting_agent.tooling.selection.PLATFORMS", {**PLATFORMS, **test_platforms}):
         with mock_patch("superforecasting_agent.tooling.toolsets.TOOLSETS", fake_toolsets):
             enabled = _get_platform_tools({}, "_test_platform")
 

@@ -128,13 +128,8 @@ def _(rid, params: dict) -> dict:
 
     try:
         from superforecasting_agent.runtime.config import load_config, save_config
-        from superforecasting_agent.runtime.tools_config import (
-            CONFIGURABLE_TOOLSETS,
-            _apply_mcp_change,
-            _apply_toolset_change,
-            _get_platform_tools,
-            _get_plugin_toolset_keys,
-        )
+        from superforecasting_agent.tooling.selection import CONFIGURABLE_TOOLSETS, _get_platform_tools, _get_plugin_toolset_keys
+        from superforecasting_agent.tooling.selection import apply_mcp_change as _apply_mcp_change, apply_toolset_change as _apply_toolset_change
 
         cfg = load_config()
         valid_toolsets = {

@@ -1176,7 +1176,7 @@ class APIServerAdapter(BasePlatformAdapter):
             _resolve_runtime_agent_kwargs,
             GatewayRunner,
         )
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
 
         runtime_kwargs = _resolve_runtime_agent_kwargs()
         reasoning_config = GatewayRunner._load_reasoning_config()

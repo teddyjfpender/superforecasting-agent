@@ -100,7 +100,7 @@ def _validate_explicit_toolsets(toolsets: object = None) -> tuple[list[str] | No
     if unresolved:
         try:
             from superforecasting_agent.runtime.config import read_raw_config
-            from superforecasting_agent.runtime.tools_config import _parse_enabled_flag
+            from superforecasting_agent.tooling.selection import _parse_enabled_flag
 
             cfg = read_raw_config()
             mcp_servers = cfg.get("mcp_servers") if isinstance(cfg.get("mcp_servers"), dict) else {}
@@ -244,7 +244,7 @@ def _run_agent(
     from superforecasting_agent.runtime.config import load_config
     from superforecasting_agent.runtime.models import detect_provider_for_model
     from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
-    from superforecasting_agent.runtime.tools_config import _get_platform_tools
+    from superforecasting_agent.tooling.selection import _get_platform_tools
 
     cfg = load_config()
 

@@ -9,7 +9,7 @@ import tomllib
 import pytest
 
 
-@pytest.mark.parametrize("source", ["protocol", "superforecasting_agent.application", "forecasting.distribution_summary", "superforecasting_agent.constants", "superforecasting_agent.profile_paths"])
+@pytest.mark.parametrize("source", ["protocol", "superforecasting_agent.application", "forecasting.distribution_summary", "superforecasting_agent.constants", "superforecasting_agent.profile_paths", "forecasting.application"])
 def test_indirect_presentation_dependency_is_rejected(tmp_path, source):
     root = Path(__file__).resolve().parents[2]
     settings = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))

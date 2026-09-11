@@ -1062,7 +1062,7 @@ class TestRunJobSessionPersistence:
         with patches[0], patches[1], patches[2], patches[3], patches[4], \
              patch("run_agent.AIAgent") as mock_agent_cls, \
              patch(
-                 "superforecasting_agent.runtime.tools_config._get_platform_tools",
+                 "superforecasting_agent.tooling.selection._get_platform_tools",
                  return_value={"web", "file"},
              ):
             mock_agent = MagicMock()

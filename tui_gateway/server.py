@@ -1577,7 +1577,7 @@ def _load_enabled_toolsets() -> list[str] | None:
         mcp_disabled: set[str] = set()
         try:
             from superforecasting_agent.runtime.config import read_raw_config
-            from superforecasting_agent.runtime.tools_config import _parse_enabled_flag
+            from superforecasting_agent.tooling.selection import _parse_enabled_flag
 
             raw_cfg = read_raw_config()
             mcp_servers = (
@@ -1629,7 +1629,7 @@ def _load_enabled_toolsets() -> list[str] | None:
 
     try:
         from superforecasting_agent.runtime.config import load_config
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
 
         cfg = cfg if cfg is not None else load_config()
 

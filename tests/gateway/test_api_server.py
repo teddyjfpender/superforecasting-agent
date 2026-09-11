@@ -307,7 +307,7 @@ class TestAdapterInit:
             staticmethod(lambda: {"enabled": True, "effort": "xhigh"}),
         )
         monkeypatch.setattr("gateway.run.GatewayRunner._load_fallback_model", staticmethod(lambda: None))
-        monkeypatch.setattr("superforecasting_agent.runtime.tools_config._get_platform_tools", lambda *_: set())
+        monkeypatch.setattr("superforecasting_agent.tooling.selection._get_platform_tools", lambda *_: set())
 
         adapter = APIServerAdapter(PlatformConfig(enabled=True))
         monkeypatch.setattr(adapter, "_ensure_session_db", lambda: None)

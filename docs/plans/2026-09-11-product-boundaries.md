@@ -558,3 +558,27 @@ Shared profile admission:
 - The strict application audit no longer finds cron profile admission as a path to
   presentation. Session tool selection and diagnostic summary ownership still lead
   to presentation, and full independent runtime hosting remains unfinished.
+
+Shared tool selection and combined configuration updates:
+
+- `superforecasting_agent.tooling.selection` owns platform selection, configurable
+  catalog metadata, plugin/default/MCP policy and tool-setting mutations. Runtime
+  consumers, including the TUI, sessions, API and cron, no longer import the
+  interactive configuration wizard for selection. The wizard retains prompting,
+  installation and compatibility exports.
+- Combined TUI and CLI tool/MCP updates now apply both changes before saving once.
+  Previously toolset changes persisted before MCP mutation, allowing partial writes
+  on failure. Shared mutation operations reject unknown actions instead of treating
+  them as enable. Existing atomic configuration persistence remains authoritative.
+- 679 selection/CLI/cron/API/gateway tests passed; ninety focused configuration and
+  combined-write tests passed after the CLI single-save correction. Tests verify
+  one save containing both changes, zero writes on MCP mutation failure, retained
+  unrelated settings and no interactive configuration imports from the desk RPC.
+- Shared Python quality passes with eighteen import contracts. Selection is in the
+  blocking lint/format/type scope. A fresh strict audit finds no application paths
+  to CLI, runtime main, command interfaces or TUI gateway; their application contract
+  now rejects indirect imports, with an injected-edge regression proving enforcement.
+  Six shipped strict-contract negative probes pass.
+- Dashboard summaries and gateway dependencies still fail the broader transitive
+  audit and retain their existing direct exclusions. Complete host/session lifetime
+  ownership and remote installed-product qualification remain unfinished.

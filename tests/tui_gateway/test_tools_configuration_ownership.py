@@ -1,0 +1,85 @@
+"""The desk applies combined tool changes before one durable configuration save."""
+from copy import deepcopy
+import builtins
+
+import pytest
+
+
+@pytest.mark.parametrize('broken_mcp', [False, True])
+def test_combined_configuration_saves_once_without_wizard_imports(monkeypatch, broken_mcp):
+    from superforecasting_agent.runtime import config
+    from superforecasting_agent.tooling import selection
+    from tui_gateway import server
+
+    durable = {
+        'model': 'retained', 'platform_toolsets': {'cli': ['web', 'memory']},
+        'mcp_servers': {'fixture': None if broken_mcp else {'tools': {'exclude': []}}},
+    }
+    original = deepcopy(durable)
+    writes = []
+    monkeypatch.setattr(config, 'load_config', lambda: deepcopy(durable))
+    monkeypatch.setattr(selection, '_get_plugin_toolset_keys', lambda: set())
+    def save(value):
+        writes.append(deepcopy(value))
+        durable.clear()
+        durable.update(deepcopy(value))
+    monkeypatch.setattr(config, 'save_config', save)
+    original_import = builtins.__import__
+    attempted = []
+    def guarded(name, *args, **kwargs):
+        if name in ('superforecasting_agent.runtime.tools_config', 'superforecasting_agent.runtime.setup', 'cli'):
+            attempted.append(name)
+            raise AssertionError('tool operation imported interactive setup')
+        return original_import(name, *args, **kwargs)
+    monkeypatch.setattr(builtins, '__import__', guarded)
+    response = server.handle_request({
+        'jsonrpc': '2.0', 'id': 'tools', 'method': 'tools.configure',
+        'params': {'action': 'disable', 'names': ['memory', 'fixture:search']},
+    })
+    assert attempted == []
+    if broken_mcp:
+        assert 'error' in response
+        assert writes == []
+        assert durable == original
+    else:
+        assert 'result' in response, response
+        assert len(writes) == 1
+        assert 'memory' not in durable['platform_toolsets']['cli']
+        assert durable['mcp_servers']['fixture']['tools']['exclude'] == ['search']
+        assert durable['model'] == 'retained'
+
+
+def test_invalid_action_does_not_mutate_configuration():
+    from superforecasting_agent.tooling.selection import apply_mcp_change, apply_toolset_change
+    for operation, args in [(apply_mcp_change, (['fixture:search'],)), (apply_toolset_change, ('cli', ['memory']))]:
+        cfg = {'platform_toolsets': {'cli': ['memory']}}
+        before = deepcopy(cfg)
+        with pytest.raises(ValueError, match='Unknown tools action'):
+            operation(cfg, *args, 'typo')
+        assert cfg == before
+
+
+@pytest.mark.parametrize('broken_mcp', [False, True])
+def test_cli_combined_configuration_also_saves_once(monkeypatch, broken_mcp):
+    from argparse import Namespace
+    from superforecasting_agent.runtime import tools_config
+    from superforecasting_agent.tooling import selection
+
+    durable = {'platform_toolsets': {'cli': ['web', 'memory']},
+               'mcp_servers': {'fixture': None if broken_mcp else {}}}
+    original = deepcopy(durable)
+    writes = []
+    monkeypatch.setattr(tools_config, 'load_config', lambda: deepcopy(durable))
+    monkeypatch.setattr(selection, '_get_plugin_toolset_keys', lambda: set())
+    monkeypatch.setattr(tools_config, 'save_config', lambda cfg: writes.append(deepcopy(cfg)))
+    args = Namespace(tools_action='disable', platform='cli', names=['memory', 'fixture:search'])
+    if broken_mcp:
+        with pytest.raises(AttributeError):
+            tools_config.tools_disable_enable_command(args)
+        assert writes == []
+    else:
+        tools_config.tools_disable_enable_command(args)
+        assert len(writes) == 1
+        assert 'memory' not in writes[0]['platform_toolsets']['cli']
+        assert writes[0]['mcp_servers']['fixture']['tools']['exclude'] == ['search']
+    assert durable == original

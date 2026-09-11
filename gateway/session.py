@@ -221,7 +221,7 @@ def _discord_tools_loaded() -> bool:
         return False
     try:
         from superforecasting_agent.runtime.config import load_config
-        from superforecasting_agent.runtime.tools_config import _get_platform_tools
+        from superforecasting_agent.tooling.selection import _get_platform_tools
         cfg = load_config()
         enabled = _get_platform_tools(cfg, "discord", include_default_mcp_servers=False)
         return "discord" in enabled or "discord_admin" in enabled
