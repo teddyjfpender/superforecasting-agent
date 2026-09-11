@@ -1129,9 +1129,11 @@ def _start_agent_build(sid: str, session: dict) -> None:
     def _build() -> None:
         current = _sessions.get(sid)
         if current is None:
+            session["agent_error"] = "session closed during agent initialization"
             ready.set()
             return
 
+        agent = None
         worker = None
         notify_registered = False
         try:
@@ -1140,6 +1142,10 @@ def _start_agent_build(sid: str, session: dict) -> None:
                 agent = _make_agent(sid, key)
             finally:
                 _clear_session_context(tokens)
+
+            if _sessions.get(sid) is not current:
+                current["agent_error"] = "session closed during agent initialization"
+                return
 
             # Session DB row deferred to first run_conversation() call.
             # pending_title applied post-first-message (see cli.exec handler).
@@ -1183,6 +1189,15 @@ def _start_agent_build(sid: str, session: dict) -> None:
             _emit("error", sid, {"message": f"agent init failed: {e}"})
         finally:
             if _sessions.get(sid) is not current:
+                current["agent_error"] = "session closed during agent initialization"
+                stop = current.get("_notif_stop")
+                if stop is not None:
+                    stop.set()
+                if agent is not None and hasattr(agent, "close"):
+                    try:
+                        agent.close()
+                    except Exception:
+                        logger.exception("failed to close abandoned agent for %s", sid)
                 if worker is not None:
                     try:
                         worker.close()

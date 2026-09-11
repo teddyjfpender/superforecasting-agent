@@ -4137,16 +4137,12 @@ def test_mirror_slash_compress_does_not_prelock_history(monkeypatch):
 
 
 def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
-    """Regression guard: if session.close runs while session.create's
-    _build thread is still constructing the agent, the build thread
-    must detect the orphan and clean up the slash_worker + notify
-    registration it's about to install.  Without the cleanup those
-    resources leak — the subprocess stays alive until atexit and the
-    notify callback lingers in the global registry."""
+    """A build abandoned by close releases its agent and publishes no worker."""
     import threading
 
     closed_workers: list[str] = []
     unregistered_keys: list[str] = []
+    agent_closed = threading.Event()
 
     class _FakeWorker:
         def __init__(self, key, model):
@@ -4163,6 +4159,9 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
             self.provider = "openrouter"
             self.base_url = ""
             self.api_key = ""
+
+        def close(self):
+            agent_closed.set()
 
     # Make _build block until we release it — simulates slow agent init.
     # Also signal when _build actually reaches _make_agent so the test
@@ -4215,6 +4214,7 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
     )
     assert resp.get("result"), f"got error: {resp.get('error')}"
     sid = resp["result"]["session_id"]
+    session = server._sessions[sid]
     assert build_entered.wait(timeout=1.0), "deferred build did not start"
 
     # Wait until the (deferred) build thread has actually entered
@@ -4235,27 +4235,14 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
     )
     assert close_resp.get("result", {}).get("closed") is True
 
-    # At this point session.close saw slash_worker=None (not yet
-    # installed) so it didn't close anything.  Release the build thread
-    # and let it finish — it should detect the orphan and clean up the
-    # worker it just allocated + unregister the notify.
+    # The abandoned build must dispose its agent and stop before allocating
+    # a slash worker or publishing callbacks. Waiting on an event proves that
+    # cleanup ran, rather than treating a short sleep as thread completion.
     release_build.set()
-
-    # Give the build thread a moment to run through its finally.
-    for _ in range(100):
-        if closed_workers:
-            break
-        import time
-
-        time.sleep(0.02)
-
-    assert (
-        len(closed_workers) == 1
-    ), f"orphan worker was not cleaned up — closed_workers={closed_workers}"
-    # Notify may be unregistered by both session.close (unconditional)
-    # and the orphan-cleanup path; the key guarantee is that the build
-    # thread does at least one unregister call (any prior close
-    # already popped the callback; the duplicate is a no-op).
+    assert agent_closed.wait(timeout=2.0)
+    assert session["agent_ready"].wait(timeout=2.0)
+    assert "closed" in server._wait_agent(session, "waiter")["error"]["message"]
+    assert closed_workers == []
     assert len(unregistered_keys) >= 1, (
         f"orphan notify registration was not unregistered — "
         f"unregistered_keys={unregistered_keys}"

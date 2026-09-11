@@ -249,3 +249,14 @@ Agent resource ownership follow-up:
   tests passed; the shared Python quality gate passed. These checks establish
   teardown idempotence, not host-wide draining or session handover safety before
   the first close. Those broader runtime responsibilities remain open.
+
+Abandoned startup ownership:
+
+- Lazy agent construction now disposes a completed agent if its session was
+  closed during construction, skips worker allocation when already detached,
+  stops any orphan notification poller, and releases waiters with an explicit
+  initialization error. Previously orphan cleanup covered the slash subprocess
+  and approval registration but left the constructed agent's clients open.
+- The deterministic close-during-build regression waits for agent disposal and
+  verifies that initialization waiters receive the closed-session error. This
+  is startup cleanup; active-turn draining and complete host ownership remain open.
