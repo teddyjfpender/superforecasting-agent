@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 STRICT_PYTHON = (
     "agent/forecast_stage.py",
     "forecasting/application",
+    "forecasting/distribution_summary.py",
+    "forecasting/__init__.py",
     "superforecasting_agent/application",
     "forecasting/interfaces",
     "scripts/dev.py",

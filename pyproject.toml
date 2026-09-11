@@ -457,3 +457,17 @@ type = "forbidden"
 source_modules = ["forecasting.jobs.types.reforecast", "tools.forecast_actions.forecast_update", "agent.forecast_stage", "forecasting.cron_runner"]
 forbidden_modules = ["forecasting.cli", "cli"]
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "distribution interpretation is independent of storage and presentation"
+type = "forbidden"
+source_modules = ["forecasting.distribution_summary"]
+forbidden_modules = ["forecasting.ledger", "forecasting.dashboard", "forecasting.cli", "agent", "tools", "gateway", "tui_gateway", "superforecasting_agent", "cli", "run_agent"]
+allow_indirect_imports = false
+
+[[tool.importlinter.contracts]]
+name = "ledger and distribution checks never import the dashboard"
+type = "forbidden"
+source_modules = ["forecasting.ledger", "forecasting.distribution", "forecasting.hooks.distribution"]
+forbidden_modules = ["forecasting.dashboard"]
+allow_indirect_imports = true

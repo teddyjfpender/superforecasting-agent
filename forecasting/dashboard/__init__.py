@@ -23,8 +23,8 @@ Carve map (see the plan's Wave-4 section):
 * ``scoreboard`` — the benchmark scoreboard + its Brier/baseline helpers.
 * ``thesis``     — thesis/factor summaries, workspace thesis/factor sections,
   candidate intervals, event-sensitivity.
-* ``headline``   — the distribution-headline / distribution-view formatters and
-  their moment/PMF key tables.
+* ``headline``   — compact display strings and compatibility summary aliases.
+  Distribution interpretation is owned by ``forecasting.distribution_summary``.
 * ``panel``      — the workspace panel-detail + belief-trajectory section.
 """
 

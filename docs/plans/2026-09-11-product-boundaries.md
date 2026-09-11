@@ -431,3 +431,27 @@ Shared warning execution:
 - Full forecast-service transitive isolation is still incomplete: ledger
   distribution interpretation still reaches dashboard helpers, and indirect
   runtime startup/setup dependencies remain to extract.
+
+Distribution interpretation ownership:
+
+- `forecasting.distribution_summary` now owns the pure moment/quantile/PMF
+  interpreter previously hosted in the dashboard. Ledger thesis/factor math,
+  distribution assessment and explicit recentering import it directly. Headline
+  formatting stays in the dashboard with compatibility aliases for old callers.
+  A missing core interpreter no longer silently disables distribution checks.
+- The forecast package lazily exposes its public ledger/model classes. Importing
+  a pure submodule no longer initializes the whole ledger graph; type-checking
+  imports and runtime class identities remain compatible. A fresh subprocess
+  blocks storage/models/presentation/agent imports and successfully evaluates
+  a distribution summary.
+- Finite-number admission now rejects integers too large for a float instead of
+  raising OverflowError. Headline numeric conversion uses that same admission.
+  Existing explicit intervals, quantile and normal-equivalent calculations are
+  preserved; descriptive summaries do not replace authoritative scoring or
+  explicit tail probabilities.
+- 222 interpretation/ledger/thesis/factor/dashboard tests passed; 12 ownership
+  and negative-import probes passed; 32 censoring and ownership tests passed.
+  The new interpreter and lazy public facade are in the blocking lint/format/type
+  scope. All twelve import contracts pass, including strict transitive isolation
+  for the interpreter and direct dashboard exclusion for ledger/distribution
+  checks. Broader indirect application/runtime dependencies remain open.
