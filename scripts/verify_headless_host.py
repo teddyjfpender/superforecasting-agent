@@ -1,5 +1,6 @@
 """Exercise an installed headless host outside the checkout, including its logs."""
 
+import argparse
 import json
 import os
 import queue
@@ -18,6 +19,13 @@ from websockets.typing import Origin
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--terminal-python", type=Path)
+    parser.add_argument("--profile", type=Path)
+    parser.add_argument("--question")
+    args = parser.parse_args()
+    if args.terminal_python and (not args.profile or not args.question):
+        parser.error("--terminal-python requires --profile and --question")
     with tempfile.TemporaryDirectory(prefix="forecast-remote-host-") as directory:
         root = Path(directory)
         token = root / "host.token"
@@ -25,7 +33,8 @@ def main() -> None:
         token.chmod(0o600)
         env = {
             **os.environ,
-            "SUPERFORECASTING_AGENT_HOME": str(root / "profile"),
+            "SUPERFORECASTING_AGENT_HOME": str(args.profile or root / "profile"),
+            "HERMES_HOME": str(args.profile or root / "profile"),
             "SUPERFORECASTING_AGENT_TUI_CRON_TICKER": "0",
         }
         child = subprocess.Popen(
@@ -103,8 +112,20 @@ def main() -> None:
                 reply = json.loads(ws.recv(timeout=10))
                 assert "forecast.operation" in reply["result"]["capabilities"], reply
             print(
-                "Installed headless host: actual localhost WebSocket negotiation passed"
+                "Installed headless host: actual localhost WebSocket negotiation passed",
+                flush=True,
             )
+            if args.terminal_python:
+                from verify_profiles import verify_installed_terminal
+
+                verify_installed_terminal(
+                    args.terminal_python,
+                    Path(sys.executable),
+                    root,
+                    env,
+                    args.question,
+                    gateway_url=f"ws://127.0.0.1:{port}/api/ws?token=isolated-host-verification",
+                )
         finally:
             if child.poll() is None:
                 if os.name == "nt":

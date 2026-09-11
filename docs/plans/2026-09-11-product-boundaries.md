@@ -808,3 +808,23 @@ Integrated qualification follow-up:
 - Combined focused qualification after integration passes 688 lifecycle, storage,
   CLI and gateway tests. Branch rollback now asserts the specific SQLite integrity
   error caused by an invalid transcript row rather than accepting any exception.
+
+Installed remote product consumption (isolated verifier follow-up):
+
+- Built independent backend and terminal wheels from `d77522b25`. Their fresh
+  installation checks pass: backend create/update/resolve/score with Node absent,
+  terminal-only environment without the forecasting package, companion discovery,
+  and actual installed Ink scoring against a separate local backend.
+- Extended the existing installed-terminal PTY probe to accept a remote host URL,
+  then wired it into the headless-host verifier. The same independently installed
+  Ink wheel now negotiates authenticated WebSocket hosting, scores the durable
+  forecast and exits cleanly. Host authorization/origin rejection, query-log
+  redaction and completed shutdown checks pass afterward. No checkout application
+  imports or live provider credentials are used by the installed products.
+- Artifact SHA256: backend `07fca6fa782f58eb8537408a88af76b2ecc0057d88a3f04318410243e60177a8`;
+  terminal `58f2943d24d74a7f16cdd570fabd23d95949c62f4f0ef0ae07ae955be5661b03`.
+  Shared Python quality passes for the extended verifier. This establishes basic
+  installed local/remote product operation on macOS, not interrupted model-stream
+  recovery, native Windows/Android PTY support or publication of these artifacts.
+- The primary full suite remains running on the frozen source commit; this
+  verifier-only follow-up is isolated until that qualification completes.

@@ -20,8 +20,10 @@ def verify_installed_terminal(
     root: Path,
     env: dict[str, str],
     question: str,
+    *,
+    gateway_url: str | None = None,
 ) -> None:
-    """Exercise the packaged Ink client and packaged local backend over a PTY."""
+    """Exercise packaged Ink against a separate local or remote backend."""
     if os.name == "nt":
         print(
             "Installed terminal PTY exercise: skipped on native Windows (requires ConPTY)."
@@ -41,8 +43,11 @@ def verify_installed_terminal(
                 str(terminal_python),
                 "-c",
                 "from superforecasting_agent_tui import main; raise SystemExit(main())",
-                "--python",
-                str(backend_python),
+                *(
+                    ["--gateway-url", gateway_url]
+                    if gateway_url
+                    else ["--python", str(backend_python)]
+                ),
             ],
             stdin=slave,
             stdout=slave,
@@ -108,7 +113,7 @@ def verify_installed_terminal(
         if process.wait(timeout=3) != 0:
             raise RuntimeError("Installed terminal exited unsuccessfully")
         print(
-            "Installed terminal: negotiated local host, scored durable forecast and exited cleanly."
+            f"Installed terminal: negotiated {'remote' if gateway_url else 'local'} host, scored durable forecast and exited cleanly."
         )
     finally:
         if slave >= 0:
@@ -283,11 +288,17 @@ def main() -> None:
             [
                 str(backend_python),
                 str(Path(__file__).with_name("verify_headless_host.py").resolve()),
+                "--terminal-python",
+                str(terminal_python),
+                "--profile",
+                str(profile),
+                "--question",
+                question,
             ],
             cwd=root,
             env=terminal_env,
             check=True,
-            timeout=90,
+            timeout=180,
         )
         print("Optional web profile: installed authenticated hosting passed.")
 
