@@ -44,7 +44,7 @@ def test_failed_transcript_copy_rolls_back_branch_and_parent_end(db):
     assert db.get_session('parent')['ended_at'] is None
 
 
-@pytest.mark.parametrize('fail', [False, True])
+@pytest.mark.parametrize('fail', [False, 'build', 'end'])
 def test_branch_handoff_admits_only_ready_replacement(db, monkeypatch, fail):
     from tui_gateway import server
     closed = []
@@ -53,13 +53,17 @@ def test_branch_handoff_admits_only_ready_replacement(db, monkeypatch, fail):
     server._sessions['old'] = old
     monkeypatch.setattr(server, '_resolve_model', lambda: 'fixture')
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
+    if fail == 'end':
+        def failed_end(*args):
+            raise OSError('injected parent end failure')
+        monkeypatch.setattr(db, 'end_session', failed_end)
     def make_agent(sid, key, **kwargs):
         assert not closed
         busy = server.handle_request({'id': 2, 'method': 'session.close', 'params': {'session_id': 'old'}})
         assert busy['error']['code'] == 4009
         busy = server.handle_request({'id': 3, 'method': 'prompt.submit', 'params': {'session_id': 'old', 'text': 'racing'}})
         assert busy['error']['code'] == 4009
-        if fail:
+        if fail == 'build':
             raise RuntimeError('injected agent construction failure')
         return SimpleNamespace(close=lambda: closed.append('new'))
     def init(sid, key, agent, history, cols, pending_handoff):
@@ -75,7 +79,8 @@ def test_branch_handoff_admits_only_ready_replacement(db, monkeypatch, fail):
         assert not old['running'] and not old['_replacing']
         assert db.get_session_by_title('Alternative') is None
         assert db.get_session('parent')['ended_at'] is None
-        assert not closed
+        assert closed == (['new'] if fail == 'end' else [])
+        assert list(server._sessions) == ['old']
     else:
         sid = response['result']['session_id']
         assert 'old' not in server._sessions

@@ -294,7 +294,7 @@ try:
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
 from superforecasting_agent.hosting.workers import HostStopping, RuntimeWorkers
-from superforecasting_agent.hosting.sessions import SessionBusy, in_use, replacement, reserve_close, use_session
+from superforecasting_agent.hosting.sessions import SessionBusy, finalize_session, in_use, replacement, reserve_close, use_session
 
 _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
 _host_lifecycle_lock = threading.Lock()
@@ -418,57 +418,19 @@ def _finalize_session(
     *,
     mark_ended: bool = True,
 ) -> None:
-    """Best-effort finalize hook + memory commit for a session.
-
-    ``mark_ended`` controls whether the durable ``state.db`` row is marked
-    ended. A user-initiated close/branch is a real conversation boundary and
-    SHOULD end the row (``mark_ended=True``, the default). A gateway-PROCESS
-    restart/shutdown is NOT a conversation boundary: ending the row there
-    conflates an involuntary restart with a deliberate end, so the shutdown
-    path passes ``mark_ended=False`` to preserve the session across restarts
-    (port of upstream 86e64900b's ``_end_session_on_close = False`` guard).
-    The transcript already lives in ``state.db``; leaving the row un-ended lets
-    ``session.resume``/``session.most_recent`` restore it intact on the next
-    launch.
-    """
-    if not session or session.get("_finalized"):
+    if not session:
         return
-    session["_finalized"] = True
-    stop_event = session.get("_notif_stop")
-    if stop_event is not None:
-        stop_event.set()
 
-    agent = session.get("agent")
-    lock = session.get("history_lock")
-    if lock is not None:
-        with lock:
-            history = list(session.get("history", []))
-    else:
-        history = list(session.get("history", []))
-    if agent is not None and history and hasattr(agent, "commit_memory_session"):
-        try:
-            agent.commit_memory_session(history)
-        except Exception:
-            pass
+    def end_session(session_id: str, reason: str) -> None:
+        db = _get_db()
+        if db is None:
+            raise RuntimeError("Session store unavailable; session close can be retried")
+        db.end_session(session_id, reason)
 
-    session_key = session.get("session_key")
-    session_id = getattr(agent, "session_id", None) or session_key
-    _notify_session_boundary("on_session_finalize", session_id)
-
-    # Mark session ended in DB so it doesn't linger as a ghost row in /resume.
-    # Use session_id (from agent.session_id) not session_key — after compression,
-    # session_key may be stale (the ended parent) while session_id is the live
-    # continuation. Fix for #20001.
-    #
-    # Skipped on process restart/shutdown (``mark_ended=False``): the row stays
-    # live so the conversation is restored across restarts instead of being lost.
-    if session_id and mark_ended:
-        try:
-            db = _get_db()
-            if db is not None:
-                db.end_session(session_id, end_reason)
-        except Exception:
-            pass
+    finalize_session(
+        session, end_session=end_session, notify=_notify_session_boundary,
+        end_reason=end_reason, mark_ended=mark_ended,
+    )
 
 
 # ── Cron ticker ───────────────────────────────────────────────────────
@@ -3126,11 +3088,13 @@ def _(rid, params: dict) -> dict:
                 agent = _make_agent(sid, target, session_id=target)
             finally:
                 _clear_session_context(tokens)
-            _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)))
+            _init_session(sid, target, agent, history, cols=int(params.get("cols", 80)), pending_handoff=True)
             db.reopen_session(target)
+            if replace_sid and replace_sid != sid:
+                _close_runtime_session(replace_sid, reserved=True)
         except Exception as e:
             try:
-                _close_runtime_session(sid, mark_ended=False)
+                _close_runtime_session(sid, mark_ended=False, reserved=True)
             except Exception:
                 logger.exception("failed to roll back partial resumed session %s", sid)
             if replace_session and _sessions.get(replace_sid) is replace_session:
@@ -3140,11 +3104,9 @@ def _(rid, params: dict) -> dict:
                 with replace_lock:
                     replace_session["running"] = False
             return _err(rid, 5000, f"resume failed: {e}")
-        if replace_sid and replace_sid != sid:
-            try:
-                _close_runtime_session(replace_sid, reserved=True)
-            except Exception:
-                logger.exception("failed to close replaced session %s", replace_sid)
+        with _sessions[sid]["history_lock"]:
+            _sessions[sid]["_replacing"] = False
+            _sessions[sid]["running"] = False
         return _ok(
             rid,
             {
@@ -3537,12 +3499,15 @@ def _close_runtime_session(sid: str, *, mark_ended: bool = True, reserved: bool 
         if not session:
             return False
         reserve_close(session, reserved=reserved, drained=drained)
-        _sessions.pop(sid)
-    _session_toggles.pop(session.get("session_key", ""), None)
     try:
         _finalize_session(session, mark_ended=mark_ended)
     except Exception:
-        logger.exception("failed to finalize runtime session %s", sid)
+        with session["history_lock"]:
+            session["_closing"] = False
+        raise
+    with _session_resume_lock:
+        _sessions.pop(sid)
+    _session_toggles.pop(session.get("session_key", ""), None)
     try:
         from tools.approval import unregister_gateway_notify
 
@@ -3566,7 +3531,13 @@ def _close_runtime_session(sid: str, *, mark_ended: bool = True, reserved: bool 
 
 @rpc_validated("session.close")
 def _(rid, params: dict) -> dict:
-    return _ok(rid, {"closed": _close_runtime_session(params.get("session_id", ""))})
+    try:
+        return _ok(rid, {"closed": _close_runtime_session(params.get("session_id", ""))})
+    except SessionBusy:
+        raise
+    except Exception as exc:
+        logger.exception("session close failed; retained for retry")
+        return _err(rid, 5000, f"session close failed; retry: {exc}")
 
 
 @rpc_validated("session.branch")
@@ -3612,6 +3583,8 @@ def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
         finally:
             _clear_session_context(tokens)
         _init_session(new_sid, new_key, agent, list(history), cols=session.get("cols", 80), pending_handoff=replace_current)
+        if replace_current:
+            _close_runtime_session(params["session_id"], reserved=True)
     except Exception as exc:
         cleanup_error = ""
         try:
@@ -3626,7 +3599,6 @@ def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
             cleanup_error = f"; branch cleanup failed: {cleanup_exc}"
         return _err(rid, 5008, f"branch failed: {exc}{cleanup_error}")
     if replace_current:
-        _close_runtime_session(params["session_id"], reserved=True)
         with _sessions[new_sid]["history_lock"]:
             _sessions[new_sid]["_replacing"] = False
             _sessions[new_sid]["running"] = False

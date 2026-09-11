@@ -1277,7 +1277,7 @@ def test_session_resume_uses_parent_lineage_for_display(monkeypatch):
         lambda agent: {"model": "test", "tools": {}, "skills": {}},
     )
     monkeypatch.setattr(
-        server, "_init_session", lambda sid, key, agent, history, cols=80: None
+        server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False: server._sessions.update({sid: {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff}})
     )
 
     resp = server.handle_request(
@@ -4173,7 +4173,7 @@ def test_session_create_close_race_does_not_orphan_worker(monkeypatch):
     monkeypatch.setattr(
         server,
         "_get_db",
-        lambda: types.SimpleNamespace(create_session=lambda *a, **kw: None),
+        lambda: types.SimpleNamespace(create_session=lambda *a, **kw: None, end_session=lambda *a: None),
     )
     monkeypatch.setattr(server, "_session_info", lambda _a: {"model": "x"})
     monkeypatch.setattr(server, "_probe_credentials", lambda _a: None)
@@ -4256,7 +4256,7 @@ def test_session_create_no_race_keeps_worker_alive(monkeypatch):
     monkeypatch.setattr(
         server,
         "_get_db",
-        lambda: types.SimpleNamespace(create_session=lambda *a, **kw: None),
+        lambda: types.SimpleNamespace(create_session=lambda *a, **kw: None, end_session=lambda *a: None),
     )
     monkeypatch.setattr(server, "_session_info", lambda _a: {"model": "x"})
     monkeypatch.setattr(server, "_probe_credentials", lambda _a: None)

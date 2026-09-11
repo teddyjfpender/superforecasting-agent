@@ -957,3 +957,24 @@ Host profile-configuration ownership:
 - Session registry/finalization, broader credential orchestration and remaining
   classic command adapters still need ownership work. This does not move CLI
   presentation or environment-expansion policy into the raw host snapshot layer.
+
+Session finalization ownership and failed handoffs:
+
+- `hosting.sessions.finalize_session` owns boundary finalization independently of
+  transports, with explicit durable-end and notification adapters. The database
+  end happens before optional memory/hooks and before finalization is marked
+  complete. A failed durable write propagates and can be retried; successful
+  finalization is idempotent. Shutdown still leaves durable sessions resumable.
+- Explicit close retains registry membership and resource ownership on failure,
+  resets close admission, and returns an actionable RPC error. An unavailable
+  store cannot silently turn an explicit close into a successful durable end.
+- The change exposed that resume previously swallowed failed prior-session
+  cleanup. Resume and branch replacement now roll back their prepared runtime on
+  prior-session finalization failure. Resume reserves its new runtime until the
+  handoff succeeds, preventing notification turns during preparation.
+- 478 gateway/session tests pass; 72 focused protocol/close/branch tests then pass
+  with added durable-write failure cases for both handoff paths. Tests assert
+  prior-session retention, released admission, absent replacement leaks, correct
+  compressed-session identity, and exactly-once hooks after a successful retry.
+  Optional memory/hook failures are logged; full external resource disposal and
+  registry ownership remain separate unfinished host responsibilities.

@@ -18,7 +18,7 @@ def register_session(server, monkeypatch, **fields):
     }
     server._sessions['runtime'] = session
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
-    monkeypatch.setattr(server, '_get_db', lambda: None)
+    monkeypatch.setattr(server, '_get_db', lambda: SimpleNamespace(end_session=lambda *args: None))
     return session, closed
 
 
@@ -70,3 +70,40 @@ def test_close_preserves_busy_session_for_retry(monkeypatch, fields):
         session['agent_ready'].set()
     assert request(server, 'session.close')['result']['closed'] is True
     assert closed == ['agent']
+
+
+def test_failed_durable_close_retains_session_and_resources(monkeypatch):
+    from tui_gateway import server
+    session, closed = register_session(server, monkeypatch)
+    attempts = []
+    def end(*args):
+        attempts.append(args)
+        if len(attempts) == 1:
+            raise OSError('injected durable write failure')
+    monkeypatch.setattr(server, '_get_db', lambda: SimpleNamespace(end_session=end))
+    first = request(server, 'session.close')
+    assert 'error' in first
+    assert server._sessions['runtime'] is session
+    assert not session.get('_finalized') and not session.get('_closing')
+    assert closed == []
+    assert request(server, 'session.close')['result']['closed'] is True
+    assert len(attempts) == 2 and closed == ['agent']
+
+
+def test_finalizer_retries_durable_failure_without_early_hooks():
+    from superforecasting_agent.hosting.sessions import finalize_session
+    events = []
+    session = {'session_key': 'old-key', 'history': [{'role': 'user', 'content': 'note'}],
+        'agent': SimpleNamespace(session_id='continuation', commit_memory_session=lambda history: events.append('memory'))}
+    def fail(*args):
+        raise OSError('durable failure')
+    with pytest.raises(OSError):
+        finalize_session(session, end_session=fail, notify=lambda *args: events.append('hook'), end_reason='close', mark_ended=True)
+    assert not session.get('_finalized') and not session.get('_durable_ended')
+    assert events == []
+    def end(session_id, reason):
+        assert session_id == 'continuation'
+        events.append('ended')
+    for _ in range(2):
+        finalize_session(session, end_session=end, notify=lambda *args: events.append('hook'), end_reason='close', mark_ended=True)
+    assert events == ['ended', 'memory', 'hook']

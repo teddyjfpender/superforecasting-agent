@@ -313,7 +313,7 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
 
     monkeypatch.setattr(server, "_get_db", lambda: _DB())
     monkeypatch.setattr(server, "_make_agent", lambda sid, key, session_id=None: object())
-    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80: None)
+    monkeypatch.setattr(server, "_init_session", lambda sid, key, agent, history, cols=80, pending_handoff=False: server._sessions.update({sid: {"session_key": key, "history_lock": threading.Lock(), "running": pending_handoff, "_replacing": pending_handoff}}))
     monkeypatch.setattr(server, "_session_info", lambda _agent: {"model": "test/model"})
 
     resp = server.handle_request(
@@ -333,8 +333,13 @@ def test_session_resume_returns_hydrated_messages(server, monkeypatch):
     ]
 
 
-def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypatch):
+@pytest.mark.parametrize("fail_end", [False, True])
+def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypatch, fail_end):
     class _DB:
+        def end_session(self, _sid, _reason):
+            if fail_end:
+                raise OSError("injected prior session end failure")
+
         def get_session(self, _sid):
             return {"id": "saved"}
 
@@ -360,9 +365,15 @@ def test_session_resume_replaces_old_runtime_only_after_success(server, monkeypa
         }
     )
 
-    assert "error" not in resp
-    assert "old-runtime" not in server._sessions
-    assert resp["result"]["session_id"] in server._sessions
+    if fail_end:
+        assert "injected prior session end failure" in resp["error"]["message"]
+        assert list(server._sessions) == ["old-runtime"]
+        assert not server._sessions["old-runtime"]["running"]
+        assert not server._sessions["old-runtime"].get("_closing")
+    else:
+        assert "error" not in resp
+        assert "old-runtime" not in server._sessions
+        assert resp["result"]["session_id"] in server._sessions
 
 
 def test_session_resume_failure_preserves_old_runtime(server, monkeypatch):
