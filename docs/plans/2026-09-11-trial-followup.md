@@ -72,3 +72,21 @@ Daytona/Modal/web-search/Home Assistant credentials remain external requirements
 
 The formal v0.22.0 release targets merged PR #34 at b98f8a85d. This follow-up is a
 separate change and is not represented as part of that release artifact.
+
+
+## Credentialed test invocation
+
+Ordinary tests erase provider credentials by design. Live Daytona/Modal tests now
+require explicit service selection and restore only that service's environment
+keys after hermetic isolation. With credentials already supplied in the process
+environment, use:
+
+```bash
+.venv/bin/python -m pytest -o addopts="" --live-service=daytona tests/integration/test_daytona_terminal.py -v
+.venv/bin/python -m pytest -o addopts="" --live-service=modal tests/integration/test_modal_terminal.py -v
+```
+
+The canonical `scripts/run_tests.sh` deliberately strips credentials and is for
+hermetic verification, not this opt-in live path. Missing credentials or absent
+opt-in are explicit skips, never successful service checks. These tests create
+and clean up test sandboxes. No unavailable credentials were fabricated.
