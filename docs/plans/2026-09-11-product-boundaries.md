@@ -1341,3 +1341,16 @@ Configured command admission and TUI execution routing:
 - 341 hook/TUI-gateway tests passed. The final store/promotion/v2 set reports
   53 passed and eight existing skips. New regressions cover overlapping edits,
   failed writes, malformed data preservation and unrelated configuration retention.
+
+
+### Hook policy transport validation parity
+
+- Removed RPC bool/string coercions before shared hook setters. In particular,
+  the string `"false"` previously enabled hooks because Python truthiness ran
+  before validation. Only actual booleans now reach persistence.
+- Shared profile/severity/rule-ID setters reject invalid input types with
+  user-facing validation errors. CLI disable now reports those errors consistently
+  with CLI enable/profile/severity rather than exposing an uncaught exception.
+- 34 RPC/store tests passed, including invalid booleans leaving configuration
+  untouched, true/false round trips and CLI/service error parity. Strict Python
+  quality and all 32 architecture contracts passed.

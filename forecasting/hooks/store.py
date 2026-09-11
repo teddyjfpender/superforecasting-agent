@@ -66,7 +66,11 @@ def _update(change: Callable[[dict], None]) -> None:
 
 
 def set_severity(rule_id: str, severity: str) -> dict[str, Any]:
-    severity = (severity or "").strip().lower()
+    if not isinstance(rule_id, str) or not rule_id.strip():
+        raise HookWriteError("rule_id must be a nonempty string")
+    if not isinstance(severity, str):
+        raise HookWriteError("severity must be a string")
+    severity = severity.strip().lower()
     if severity not in _SEVERITIES:
         raise HookWriteError(
             f"severity must be one of {', '.join(_SEVERITIES)} (got {severity!r})"
@@ -82,6 +86,9 @@ def set_severity(rule_id: str, severity: str) -> dict[str, Any]:
 
 
 def clear_override(rule_id: str) -> dict[str, Any]:
+    if not isinstance(rule_id, str) or not rule_id.strip():
+        raise HookWriteError("rule_id must be a nonempty string")
+
     def change(cfg):
         _mapping(_hooks_block(cfg), "overrides").pop(rule_id, None)
 
@@ -91,6 +98,8 @@ def clear_override(rule_id: str) -> dict[str, Any]:
 
 def enable(rule_id: str) -> dict[str, Any]:
     """Enable = revert to the profile's severity for this rule (drop the override)."""
+    if not isinstance(rule_id, str) or not rule_id.strip():
+        raise HookWriteError("rule_id must be a nonempty string")
     if rule_id not in _known_rule_ids():
         raise HookWriteError(f"unknown rule {rule_id!r}")
     return clear_override(rule_id)
@@ -101,6 +110,8 @@ def disable(rule_id: str) -> dict[str, Any]:
 
 
 def set_profile(name: str) -> dict[str, Any]:
+    if not isinstance(name, str):
+        raise HookWriteError("profile must be a string")
     if name not in HOOK_PROFILES:
         raise HookWriteError(
             f"unknown profile {name!r}; choose from {', '.join(HOOK_PROFILES)}"

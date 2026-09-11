@@ -833,15 +833,15 @@ def _(rid, params: dict) -> dict:
 
         target = (params.get("target") or "").strip()
         if target == "profile":
-            return _ok(rid, store.set_profile(str(params.get("value"))))
+            return _ok(rid, store.set_profile(params.get("value")))
         if target == "enabled":
-            return _ok(rid, store.set_enabled(bool(params.get("value"))))
+            return _ok(rid, store.set_enabled(params.get("value")))
         if target == "severity":
-            return _ok(rid, store.set_severity(str(params.get("rule_id")), str(params.get("value"))))
+            return _ok(rid, store.set_severity(params.get("rule_id"), params.get("value")))
         if target == "enable":
-            return _ok(rid, store.enable(str(params.get("rule_id"))))
+            return _ok(rid, store.enable(params.get("rule_id")))
         if target == "disable":
-            return _ok(rid, store.disable(str(params.get("rule_id"))))
+            return _ok(rid, store.disable(params.get("rule_id")))
         return _err(rid, 4004, f"unknown target {target!r}")
     except Exception as e:
         return _err(rid, 4004, str(e))

@@ -2798,8 +2798,11 @@ def _cmd_hooks_enable(args: argparse.Namespace) -> None:
 
 def _cmd_hooks_disable(args: argparse.Namespace) -> None:
     from forecasting.hooks import store
-    store.disable(args.rule_id)
-    print(f"{args.rule_id} disabled (off)")
+    try:
+        store.disable(args.rule_id)
+        print(f"{args.rule_id} disabled (off)")
+    except store.HookWriteError as e:
+        raise SystemExit(str(e))
 
 
 def _cmd_hooks_add(args: argparse.Namespace) -> None:
