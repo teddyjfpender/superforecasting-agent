@@ -131,7 +131,7 @@ def test_classic_cli_and_tui_report_identical_definition_errors(configure, entry
     output.assert_called_once_with(dispatch("custom")["error"]["message"])
 
 
-@pytest.mark.parametrize("command", ["queue note", "q note", "goal status", "retry", "steer note", "snapshot restore"])
+@pytest.mark.parametrize("command", ["queue note", "q note", "goal status", "retry", "steer note", "snapshot restore", "plugins"])
 def test_native_handoff_does_not_need_provider_initialization(configure, command):
     configure({})
     response = slash(command)
@@ -215,5 +215,42 @@ def test_unknown_command_rejected_before_runtime_construction(configure, monkeyp
     monkeypatch.setattr("agent.skill_commands.get_skill_commands", lambda: {})
     response = invoke(command)
     assert response["error"] == {"code": 4011, "message": "unknown command: fixture-unknown"}
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+@pytest.mark.parametrize("plugins", [[], [
+    {"name": "fixture", "enabled": False, "version": "1.2", "tools": 2,
+     "hooks": 0, "commands": 1, "error": "fixture disabled"},
+]])
+def test_plugin_inspection_matches_classic_without_agent(configure, monkeypatch, capsys, plugins):
+    from types import SimpleNamespace
+    from cli import ForecastCLI
+
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
+    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
+    manager = Mock()
+    manager.list_plugins.return_value = plugins
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_manager", lambda: manager)
+    response = dispatch("plugins")
+    assert response["result"]["type"] == "exec"
+    classic = SimpleNamespace(config={"quick_commands": {}})
+    assert ForecastCLI.process_command(classic, "/plugins") is True
+    assert capsys.readouterr().out.rstrip() == response["result"]["output"]
+    if plugins:
+        assert "✗ fixture v1.2 (2 tools, 1 commands) — fixture disabled" in response["result"]["output"]
+    else:
+        assert "No plugins installed." in response["result"]["output"]
+    server._start_agent_build.assert_not_called()
+    server._SlashWorker.assert_not_called()
+
+
+def test_plugin_inspection_failure_preserves_native_error(configure, monkeypatch):
+    configure({})
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_command_handler", lambda name: None)
+    monkeypatch.setattr("agent.skill_commands.scan_skill_commands", lambda: {})
+    monkeypatch.setattr("superforecasting_agent.runtime.plugins.get_plugin_manager", Mock(side_effect=RuntimeError("inspection failed")))
+    assert dispatch("plugins")["error"] == {"code": 5030, "message": "Plugin system error: inspection failed"}
     server._start_agent_build.assert_not_called()
     server._SlashWorker.assert_not_called()

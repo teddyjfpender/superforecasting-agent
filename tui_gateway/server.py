@@ -6016,6 +6016,9 @@ def _(rid, params: dict) -> dict:
         # error would make the client's fallback repeat a failed shell command.
         return _command_handoff(rid, "configured command: use command.dispatch")
 
+    if _cmd_base == "plugins":
+        return _command_handoff(rid, "plugin inspection: use command.dispatch")
+
     if _cmd_base in _PENDING_INPUT_COMMANDS:
         return _command_handoff(
             rid, f"pending-input command: use command.dispatch for /{_cmd_base}"

@@ -5824,24 +5824,9 @@ class ForecastCLI:
             self._handle_browser_command(cmd_original)
         elif canonical == "plugins":
             try:
-                from superforecasting_agent.runtime.plugins import get_plugin_manager
-                mgr = get_plugin_manager()
-                plugins = mgr.list_plugins()
-                if not plugins:
-                    print("No plugins installed.")
-                    print(f"Drop plugin directories into {display_agent_home()}/plugins/ to get started.")
-                else:
-                    print(f"Plugins ({len(plugins)}):")
-                    for p in plugins:
-                        status = "✓" if p["enabled"] else "✗"
-                        version = f" v{p['version']}" if p["version"] else ""
-                        tools = f"{p['tools']} tools" if p["tools"] else ""
-                        hooks = f"{p['hooks']} hooks" if p["hooks"] else ""
-                        commands = f"{p['commands']} commands" if p.get("commands") else ""
-                        parts = [x for x in [tools, hooks, commands] if x]
-                        detail = f" ({', '.join(parts)})" if parts else ""
-                        error = f" — {p['error']}" if p["error"] else ""
-                        print(f"  {status} {p['name']}{version}{detail}{error}")
+                from superforecasting_agent.runtime.plugin_commands import describe_plugins
+
+                print(describe_plugins())
             except Exception as e:
                 print(f"Plugin system error: {e}")
         elif canonical == "rollback":

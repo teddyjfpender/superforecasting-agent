@@ -1433,3 +1433,17 @@ contributor guide. Hook execution tests cover mapped-source and documentation
 changes, verify the actual wrapper receives zero arguments, and prove suite
 failure rejects the push. All 11 workflow tests passed via the repository wrapper
 (`/tmp/forecast-full-push-gate-tests.log`). This change is not yet pushed.
+
+### Shared plugin inspection without classic runtime construction
+
+`runtime/plugin_commands.py` now owns the plugin inspection operation and its
+plain-text result. Classic CLI and native TUI dispatch consume it; direct legacy
+RPC invocation hands off before agent admission. The operation queries the
+existing plugin manager, preserving disabled/error/count/version details and
+profile-aware installation guidance. Inspection failures remain explicit native
+errors and cannot trigger compatibility execution.
+
+The new owner is included in blocking lint/format/type checks. Validation:
+94 configured-command/protocol tests passed (`/tmp/forecast-plugin-command-final-tests.log`)
+and Python quality with all 32 import contracts passed
+(`/tmp/forecast-plugin-command-quality.log`). Other legacy slash commands remain.

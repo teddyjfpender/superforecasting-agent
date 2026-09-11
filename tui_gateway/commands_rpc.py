@@ -297,6 +297,14 @@ def _(rid, params: dict) -> dict:
     except Exception:
         pass
 
+    if name == "plugins":
+        from superforecasting_agent.runtime.plugin_commands import describe_plugins
+
+        try:
+            return _ok(rid, {"type": "exec", "output": describe_plugins()})
+        except Exception as exc:
+            return _err(rid, 5030, f"Plugin system error: {exc}")
+
     # ── Commands that queue messages onto _pending_input in the CLI ───
     # In the TUI the slash worker subprocess has no reader for that queue,
     # so we handle them here and return a structured payload.
