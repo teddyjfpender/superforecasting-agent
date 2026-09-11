@@ -148,3 +148,23 @@ independent distributions still need implementation/qualification.
 Gateway qualification after the runtime move: 184 tests passed, including all
 local real-desk lifecycle cases and legacy/factory shared-state compatibility.
 The six warnings report Python forkpty use from the dashboard test host.
+
+
+Host compatibility admission:
+
+- Shared descriptors advertise the supported wire-version range and actual RPC
+  operations across stdio, WebSocket and HTTP. `host.negotiate` validates required
+  capabilities and rejects malformed inputs or incompatible versions without
+  opening a session, ledger or provider connection.
+- Ink checks the descriptor before delivering gateway.ready to session bootstrap.
+  Missing required methods or unsupported versions terminate that connection with
+  an actionable reason. Explicit restart can admit a newly compatible backend.
+- Verification: 102 Python protocol/real HTTP tests passed, 39 client/recovery
+  tests passed, six compiled-desk lifecycle tests passed. Shared quality checks
+  pass. Remote negotiation uses the existing authenticated HTTP endpoint.
+- This is an operation compatibility contract, not a provider-health claim.
+  Existing legacy clients can continue calling their supported RPCs directly.
+
+Explicit host resource ownership, remaining shared session/command services and
+independent distribution/install qualification remain required. These acceptance
+items are not closed by implementing the host compatibility contract.

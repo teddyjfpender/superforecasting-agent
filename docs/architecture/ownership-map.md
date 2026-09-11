@@ -323,3 +323,21 @@ SQLite session queries and the Ink TUI session picker retain their own ownership
 
 Execution identity and evaluation identity are separate. Compatibility mappings
 require source review; never update historical trial rows to make a hash match.
+
+
+### Host compatibility contract
+
+`protocol/rpc/host.py` owns compatibility request/response types.
+`tui_gateway/host_rpc.py` advertises the supported wire-version range and actual
+registered RPC method names. Stdio, WebSocket and HTTP use that same descriptor.
+Authenticated clients can call `host.negotiate` with `protocol_version` and
+`required_capabilities`; incompatibility returns RPC error 4004, invalid input
+returns -32602, and negotiation starts no session or model call.
+
+Ink checks the hello descriptor before publishing gateway readiness. It requires
+forecast operations and session/prompt operations, rejects incompatible hosts,
+and closes its transport without entering automatic restart loops. An explicit
+restart can retry after changing the backend. Capabilities indicate implemented
+operations; they do not claim external providers have credentials or are healthy.
+Legacy clients may still use existing RPCs; negotiation is not an authentication
+mechanism or a replacement for per-operation input validation.

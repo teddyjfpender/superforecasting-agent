@@ -6439,3 +6439,6 @@ _cron_skills_rpc.register(sys.modules[__name__])
 # Façade re-bind: tests call `server._cli_exec_blocked(argv)` directly (read-form),
 # so keep the moved helper importable at its original path.
 _cli_exec_blocked = _commands_rpc._cli_exec_blocked
+
+from tui_gateway import host_rpc as _host_rpc
+_host_rpc.register(sys.modules[__name__])

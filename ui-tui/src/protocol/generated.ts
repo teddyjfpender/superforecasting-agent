@@ -2090,6 +2090,8 @@ export interface GatewayProtocolErrorPayload {
 
 export interface GatewayReadyPayload {
   build?: BuildInfoPayload
+  capabilities?: string[]
+  min_protocol_version?: number
   protocol_version?: number
   skin?: SkinPayload
 }
@@ -2119,6 +2121,17 @@ export interface GatewayTranscriptMessage {
   name?: string
   role: 'assistant' | 'system' | 'tool' | 'user'
   text?: string
+}
+
+export interface HostNegotiateRequest {
+  protocol_version: number
+  required_capabilities: string[]
+}
+
+export interface HostNegotiateResponse {
+  capabilities: string[]
+  min_protocol_version: number
+  protocol_version: number
 }
 
 export interface ImageAttachRequest {

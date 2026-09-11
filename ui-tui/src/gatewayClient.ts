@@ -10,6 +10,8 @@ import { tuiEnvValue } from './lib/envAlias.js'
 import { runtimeEnvValue } from './lib/runtimeEnv.js'
 import { PROTOCOL_VERSION, WireEvent } from './protocol/generated.js'
 
+export const REQUIRED_HOST_CAPABILITIES = ['forecast.operation', 'session.create', 'session.resume', 'session.status', 'session.interrupt', 'prompt.submit'] as const
+
 const MAX_GATEWAY_LOG_LINES = 200
 const MAX_LOG_LINE_BYTES = 4096
 const MAX_BUFFERED_EVENTS = 2000
@@ -237,11 +239,14 @@ export class GatewayClient extends EventEmitter {
 
   private publish(ev: GatewayEvent) {
     if (ev.type === WireEvent.GATEWAY_READY) {
+      if (!this.checkHostCompatibility(ev.payload)) {
+        return
+      }
+
       this.ready = true
       // Start the stability clock: uptime measured from READY (not from spawn)
       // is what tells a healthy gateway apart from one that boots and dies.
       this.readyAt = Date.now()
-      this.checkProtocolVersion(ev.payload?.protocol_version)
 
       if (this.readyTimer) {
         clearTimeout(this.readyTimer)
@@ -298,6 +303,7 @@ export class GatewayClient extends EventEmitter {
     // handlers (now identity-gated to ignore unrelated transports)
     // never fire `rejectPending`, leaving callers hanging on promises
     // attached to a discarded child / socket.
+    this.compatibilityError = null
     this.rejectPending(new Error('gateway restarting'))
     this.ready = false
     this.bufferedEvents.clear()
@@ -354,6 +360,10 @@ export class GatewayClient extends EventEmitter {
     const message = reason || `gateway exited${code === null ? '' : ` (${code})`}`
 
     this.rejectPending(new Error(message))
+
+    if (this.compatibilityError) {
+      return
+    }
 
     const wasReady = this.ready
     const uptimeMs = this.readyAt ? Date.now() - this.readyAt : 0
@@ -732,24 +742,42 @@ export class GatewayClient extends EventEmitter {
     this.logs.push(truncateLine(line))
   }
 
-  // A4 version handshake — the gateway advertises its wire PROTOCOL_VERSION on
-  // gateway.ready. We WARN (once, never hard-fail) when it disagrees with the
-  // version baked into our generated protocol. A missing field (an older gateway
-  // that predates the handshake) is silently tolerated. The warning surfaces via
-  // the same startup-log channel the status line drains, so a mismatched build
-  // pair is diagnosable instead of a silent shape-drift mystery.
-  private versionWarned = false
+  private compatibilityError: Error | null = null
 
-  private checkProtocolVersion(advertised?: number) {
-    if (this.versionWarned || advertised == null || advertised === PROTOCOL_VERSION) {
-      return
+  private checkHostCompatibility(payload: { protocol_version?: number | null; min_protocol_version?: number | null; capabilities?: string[] | null } | undefined) {
+    if (this.compatibilityError) {
+      return false
     }
 
-    this.versionWarned = true
-    this.pushLog(
-      `[protocol] gateway wire version ${advertised} != TUI ${PROTOCOL_VERSION} — ` +
-        'RPC/event shapes may have drifted; rebuild the TUI (npm run build) to match the gateway.',
-    )
+    const version = payload?.protocol_version
+    const minimum = payload?.min_protocol_version ?? version
+    const capabilities = payload?.capabilities
+    let reason = ''
+
+    if (!Number.isInteger(version) || !Number.isInteger(minimum) || minimum! > PROTOCOL_VERSION || version! < PROTOCOL_VERSION) {
+      reason = `gateway wire version ${String(minimum)}..${String(version)} is incompatible with TUI ${PROTOCOL_VERSION}`
+    } else {
+      const missing = REQUIRED_HOST_CAPABILITIES.filter(name => !Array.isArray(capabilities) || !capabilities.includes(name))
+
+      if (missing.length) {
+        reason = `backend is missing required capabilities: ${missing.join(', ')}`
+      }
+    }
+
+    if (!reason) {
+      return true
+    }
+
+    const message = `[protocol] ${reason}. Install compatible TUI and backend versions.`
+
+    this.compatibilityError = new Error(message)
+    this.ready = false
+    this.pushLog(message)
+    this.rejectPending(this.compatibilityError)
+    void this.kill()
+    this.emitExit(1, { attempts: 0, reason: message, stderrTail: this.getLogTail(20), unexpected: true })
+
+    return false
   }
 
   private rejectPending(err: Error) {
@@ -860,6 +888,10 @@ export class GatewayClient extends EventEmitter {
   }
 
   request<T = unknown>(method: string, params: Record<string, unknown> = {}): Promise<T> {
+    if (this.compatibilityError) {
+      return Promise.reject(this.compatibilityError)
+    }
+
     const attachUrl = resolveGatewayAttachUrl()
 
     if (attachUrl) {

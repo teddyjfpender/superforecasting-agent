@@ -66,16 +66,18 @@ class BuildInfo(WireModel):
 
 
 class GatewayReady(WireModel):
-    """``gateway.ready`` — first frame after connect; carries the initial skin, the
-    running ``build`` identity, and the wire ``protocol_version`` (the A4 version
-    handshake — the TUI compares it against its generated ``PROTOCOL_VERSION`` and
-    warns, never hard-fails, on a mismatch). Optional so an older gateway that
-    omits them is tolerated."""
+    """First host frame: identity, supported version range and RPC capabilities.
+
+    Optional fields describe old senders faithfully; current Ink requires a
+    compatible range and its required capabilities before session bootstrap.
+    """
 
     TS_NAME = "GatewayReadyPayload"
 
     skin: Skin | None = wire_optional()
     protocol_version: int | None = wire_optional()
+    min_protocol_version: int | None = wire_optional()
+    capabilities: list[str] | None = wire_optional()
     build: BuildInfo | None = wire_optional()
 
 

@@ -389,15 +389,14 @@ def main():
         except Exception:
             pass
 
-    # A4 version handshake: advertise the wire PROTOCOL_VERSION on the hello frame.
-    # The TUI compares it against its generated const and WARNS (never hard-fails)
-    # on a mismatch — see ui-tui/src/gatewayClient.ts.
+    # Advertise actual operations and the supported wire-version range. Ink
+    # admits this host before session bootstrap; incompatible pairs fail clearly.
     #
     # ``build`` rides the same frame so the TUI knows which APPLICATION build it is
     # from its very first paint. server.build_info(0.0) never makes a network call
     # of its own — it harvests the already-scheduled, 6-hour-cached update check —
     # so this adds no latency here and degrades to just the version when offline.
-    from protocol.version import PROTOCOL_VERSION
+    from tui_gateway.host_rpc import descriptor
 
     if not write_json({
         "jsonrpc": "2.0",
@@ -406,7 +405,7 @@ def main():
             "type": "gateway.ready",
             "payload": {
                 "skin": resolve_skin(),
-                "protocol_version": PROTOCOL_VERSION,
+                **descriptor(server),
                 "build": server.build_info(),
             },
         },

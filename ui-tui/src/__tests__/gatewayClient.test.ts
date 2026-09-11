@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { GatewayClient } from '../gatewayClient.js'
+import { GatewayClient, REQUIRED_HOST_CAPABILITIES } from '../gatewayClient.js'
 import { PROTOCOL_VERSION } from '../protocol/generated.js'
 
 interface ListenerEntry {
@@ -181,39 +181,43 @@ describe('GatewayClient websocket attach mode', () => {
   const ready = (payload: unknown): string =>
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { type: 'gateway.ready', payload } })
 
-  it('warns (once, never throws) when gateway.ready advertises a mismatched protocol_version', () => {
+  it.each([
+    { protocol_version: 999, min_protocol_version: 999, capabilities: REQUIRED_HOST_CAPABILITIES },
+    { protocol_version: PROTOCOL_VERSION, capabilities: [] },
+    {},
+  ])('rejects incompatible hosts before session creation: %j', async payload => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
-
     gw.start()
     const sock = FakeWebSocket.instances[0]!
     sock.open()
+    sock.message(ready(payload))
+    await expect(gw.request('session.create')).rejects.toThrow('Install compatible TUI and backend versions')
+    expect(sock.sent).toEqual([])
+    expect(sock.readyState).toBe(FakeWebSocket.CLOSED)
 
-    sock.message(ready({ protocol_version: 999 }))
-    sock.message(ready({ protocol_version: 999 })) // second frame must NOT re-warn
-
-    const tail = gw.getLogTail(50)
-    expect(tail).toContain('[protocol]')
-    expect(tail).toContain('gateway wire version 999')
-    // warn-once: exactly one occurrence
-    expect(tail.split('gateway wire version 999').length - 1).toBe(1)
-
-    gw.kill()
+    // An explicit restart after installing a compatible backend clears admission failure.
+    gw.start()
+    const replacement = FakeWebSocket.instances.at(-1)!
+    replacement.open()
+    replacement.message(ready({ protocol_version: PROTOCOL_VERSION, capabilities: REQUIRED_HOST_CAPABILITIES }))
+    const request = gw.request('session.create')
+    await vi.waitFor(() => expect(replacement.sent).toHaveLength(1))
+    const frame = JSON.parse(replacement.sent[0]!)
+    replacement.message(JSON.stringify({ jsonrpc: '2.0', id: frame.id, result: { session_id: 'recovered' } }))
+    await expect(request).resolves.toEqual({ session_id: 'recovered' })
+    await gw.kill()
   })
 
-  it('does not warn when the advertised protocol_version matches or is absent', () => {
+  it('accepts a host with a compatible version range and required operations', () => {
     process.env.HERMES_TUI_GATEWAY_URL = 'ws://gateway.test/api/ws?token=abc'
     const gw = new GatewayClient()
-
     gw.start()
     const sock = FakeWebSocket.instances[0]!
     sock.open()
-
-    sock.message(ready({})) // older gateway: no protocol_version → tolerated
-    sock.message(ready({ protocol_version: PROTOCOL_VERSION })) // matching → silent
-
-    expect(gw.getLogTail(50)).not.toContain('gateway wire version')
-
+    sock.message(ready({ protocol_version: PROTOCOL_VERSION + 1, min_protocol_version: PROTOCOL_VERSION, capabilities: REQUIRED_HOST_CAPABILITIES }))
+    expect(gw.getLogTail(50)).not.toContain('[protocol]')
+    expect(sock.readyState).toBe(FakeWebSocket.OPEN)
     gw.kill()
   })
 
@@ -380,13 +384,13 @@ describe('GatewayClient websocket attach mode', () => {
     current.open()
     await vi.waitFor(() => expect(current.sent.length).toBeGreaterThan(0))
     const { id } = JSON.parse(current.sent[0]!)
-    old.message(JSON.stringify({ method: 'event', params: { type: 'gateway.ready', payload: {} } }))
+    old.message(JSON.stringify({ method: 'event', params: { type: 'gateway.ready', payload: { protocol_version: PROTOCOL_VERSION, capabilities: REQUIRED_HOST_CAPABILITIES } } }))
     old.message(JSON.stringify({ id, result: { session_id: 'wrong' } }))
     current.message(JSON.stringify({ id, result: { session_id: 'saved' } }))
     await expect(pending).resolves.toEqual({ session_id: 'saved' })
     expect(events).toEqual([])
     gw.kill()
-    current.message(JSON.stringify({ method: 'event', params: { type: 'gateway.ready', payload: {} } }))
+    current.message(JSON.stringify({ method: 'event', params: { type: 'gateway.ready', payload: { protocol_version: PROTOCOL_VERSION, capabilities: REQUIRED_HOST_CAPABILITIES } } }))
     expect(events).toEqual([])
   })
 

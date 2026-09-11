@@ -120,7 +120,7 @@ async def handle_ws(ws: Any) -> None:
 
     transport = WSTransport(ws, asyncio.get_running_loop())
 
-    from protocol.version import PROTOCOL_VERSION
+    from tui_gateway.host_rpc import descriptor
 
     await transport.write_async(
         {
@@ -130,7 +130,7 @@ async def handle_ws(ws: Any) -> None:
                 "type": "gateway.ready",
                 "payload": {
                     "skin": server.resolve_skin(),
-                    "protocol_version": PROTOCOL_VERSION,
+                    **descriptor(server),
                     # Same non-blocking build identity the stdio entry advertises,
                     # so a websocket-attached TUI shows the same version banner.
                     "build": server.build_info(),

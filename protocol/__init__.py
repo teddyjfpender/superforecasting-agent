@@ -27,6 +27,7 @@ from protocol.rpc import commands as _rpc_commands
 from protocol.rpc import config as _rpc_config
 from protocol.rpc import forecast as _rpc_forecast
 from protocol.rpc import interact as _rpc_interact
+from protocol.rpc import host as _rpc_host
 from protocol.rpc import jobs as _rpc_jobs
 from protocol.rpc import markets as _rpc_markets
 from protocol.rpc import model as _rpc_model
@@ -67,6 +68,7 @@ class EventSpec:
 
 
 RPC_SPECS: list[RpcSpec] = [
+    RpcSpec("host.negotiate", _rpc_host.HostNegotiateRequest, _rpc_host.HostNegotiateResponse),
     RpcSpec("pm.list", _rpc_pm.PmListRequest, _rpc_pm.PmListResponse),
     RpcSpec("pm.detail", _rpc_pm.PmDetailRequest, _rpc_pm.PmDetailResponse),
     RpcSpec("pm.book", _rpc_pm.PmBookRequest, _rpc_pm.PmBookResponse),

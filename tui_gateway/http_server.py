@@ -491,12 +491,12 @@ def _spend_snapshot() -> dict:
 def observability_snapshot(server_obj: "GatewayHTTPServer") -> dict:
     """The full enriched status payload (/status and authed /health). Every field
     is best-effort — one subsystem hiccup never breaks the endpoint."""
-    from protocol.version import PROTOCOL_VERSION
+    from tui_gateway.host_rpc import descriptor
 
     uptime = time.monotonic() - server_obj.start_time
     return {
         "status": "ok",
-        "protocol_version": PROTOCOL_VERSION,
+        **descriptor(server),
         "version": _agent_version(),
         "uptime": round(uptime, 3),
         "subscribers": server_obj.hub.subscriber_count,
@@ -509,12 +509,12 @@ def observability_snapshot(server_obj: "GatewayHTTPServer") -> dict:
 
 def _liveness_payload(server_obj: "GatewayHTTPServer") -> dict:
     """The minimal, non-sensitive subset served on a PUBLIC (auth-exempt) /health."""
-    from protocol.version import PROTOCOL_VERSION
+    from tui_gateway.host_rpc import descriptor
 
     uptime = time.monotonic() - server_obj.start_time
     return {
         "status": "ok",
-        "protocol_version": PROTOCOL_VERSION,
+        **descriptor(server),
         "version": _agent_version(),
         "uptime": round(uptime, 3),
         "subscribers": server_obj.hub.subscriber_count,
