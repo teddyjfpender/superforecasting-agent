@@ -16,7 +16,7 @@ def register_session(server, monkeypatch, **fields):
         'agent': SimpleNamespace(close=lambda: closed.append('agent')),
         **fields,
     }
-    server._sessions['runtime'] = session
+    server._host.sessions['runtime'] = session
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
     monkeypatch.setattr(server, '_get_db', lambda: SimpleNamespace(end_session=lambda *args: None))
     return session, closed
@@ -41,7 +41,7 @@ def test_close_rejects_inflight_rpc_then_closes_once(monkeypatch):
     assert entered.wait(1)
     try:
         assert request(server, 'session.close')['error']['code'] == 4009
-        assert server._sessions['runtime'] is session
+        assert server._host.sessions['runtime'] is session
         assert not closed
     finally:
         release.set()
@@ -62,7 +62,7 @@ def test_close_preserves_busy_session_for_retry(monkeypatch, fields):
     from tui_gateway import server
     session, closed = register_session(server, monkeypatch, **fields)
     assert request(server, 'session.close')['error']['code'] == 4009
-    assert server._sessions['runtime'] is session
+    assert server._host.sessions['runtime'] is session
     assert not closed
     session['running'] = False
     session['_background_jobs'] = 0
@@ -83,7 +83,7 @@ def test_failed_durable_close_retains_session_and_resources(monkeypatch):
     monkeypatch.setattr(server, '_get_db', lambda: SimpleNamespace(end_session=end))
     first = request(server, 'session.close')
     assert 'error' in first
-    assert server._sessions['runtime'] is session
+    assert server._host.sessions['runtime'] is session
     assert not session.get('_finalized') and not session.get('_closing')
     assert closed == []
     assert request(server, 'session.close')['result']['closed'] is True
@@ -121,7 +121,7 @@ def test_partial_disposal_blocks_use_and_retries_only_failed_resource(monkeypatc
         slash_worker=SimpleNamespace(close=lambda: calls.append('worker')))
     result = request(server, 'session.close')
     assert 'client close failure' in result['error']['message']
-    assert server._sessions['runtime'] is session
+    assert server._host.sessions['runtime'] is session
     assert session['_cleanup_pending'] and session['_finalized']
     with pytest.raises(SessionBusy, match='cleanup is pending'), use_session(session):
         pytest.fail('partially disposed session accepted work')

@@ -57,9 +57,9 @@ def test_host_timeout_preserves_resources_until_worker_finishes(monkeypatch):
     session = {'session_key': 'durable', 'agent': SimpleNamespace(
         interrupt=lambda: calls.append('interrupt'),
         close=lambda: calls.append('agent.close'))}
-    monkeypatch.setattr(server, '_pool', workers)
-    server._sessions['runtime'] = session
-    monkeypatch.setattr(server._session_store, '_connection', SimpleNamespace(close=lambda: calls.append('db.close')))
+    monkeypatch.setattr(server._host, 'workers', workers)
+    server._host.sessions['runtime'] = session
+    monkeypatch.setattr(server._host.store, '_connection', SimpleNamespace(close=lambda: calls.append('db.close')))
     monkeypatch.setattr(server, '_clear_pending', lambda sid: None)
     monkeypatch.setattr(server, '_stop_cron_ticker', lambda: None)
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
@@ -72,7 +72,7 @@ def test_host_timeout_preserves_resources_until_worker_finishes(monkeypatch):
     try:
         assert not server.shutdown_runtime(0)
         assert 'agent.close' not in calls and 'db.close' not in calls
-        assert server._sessions['runtime'] is session
+        assert server._host.sessions['runtime'] is session
         response = server.dispatch({'id': 1, 'method': 'session.list', 'params': {}})
         assert response['error']['code'] == 5030
         with pytest.raises(RuntimeError, match='incomplete'):
@@ -82,12 +82,12 @@ def test_host_timeout_preserves_resources_until_worker_finishes(monkeypatch):
         thread.join(2)
     assert server.shutdown_runtime(1)
     assert calls.index('worker.finished') < calls.index('agent.close') < calls.index('db.close')
-    assert server._sessions == {}
-    assert server._session_store._connection is None
+    assert server._host.sessions == {}
+    assert server._host.store._connection is None
     assert server.shutdown_runtime(0)
     assert calls.count('agent.close') == calls.count('db.close') == 1
     server.start_runtime()
-    assert not server._pool.stopping
+    assert not server._host.workers.stopping
 
 
 def test_shutdown_preserves_last_worker_write_and_resumable_session(tmp_path, monkeypatch):
@@ -98,9 +98,9 @@ def test_shutdown_preserves_last_worker_write_and_resumable_session(tmp_path, mo
     db.create_session(session_id='durable', source='tui', model='fixture')
     receipt = turn_journal.start(db, 'durable', 'preserve my work')
     release, entered = threading.Event(), threading.Event()
-    monkeypatch.setattr(server._session_store, '_connection', db)
+    monkeypatch.setattr(server._host.store, '_connection', db)
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
-    server._sessions['runtime'] = {
+    server._host.sessions['runtime'] = {
         'session_key': 'durable', 'turn_id': receipt, 'history': [],
         'agent': SimpleNamespace(session_id='durable', interrupt=release.set, close=lambda: None),
     }
@@ -109,7 +109,7 @@ def test_shutdown_preserves_last_worker_write_and_resumable_session(tmp_path, mo
         assert release.wait(3)
         db.append_message('durable', role='assistant', content='saved during shutdown')
         turn_journal.transition(db, receipt, 'running', delta='partial evidence')
-    thread = server._pool.start(finish_write, name='durable-writer')
+    thread = server._host.workers.start(finish_write, name='durable-writer')
     assert entered.wait(1)
     try:
         assert server.shutdown_runtime(2)
@@ -145,17 +145,17 @@ def test_shutdown_disposal_failure_retains_registry_and_database_for_retry(monke
         calls.append('agent')
         if calls.count('agent') == 1:
             raise OSError('injected close failure')
-    server._sessions['runtime'] = {
+    server._host.sessions['runtime'] = {
         'session_key': 'durable', 'agent': SimpleNamespace(close=close_agent),
         'slash_worker': SimpleNamespace(close=lambda: calls.append('worker')),
     }
-    monkeypatch.setattr(server._session_store, '_connection', SimpleNamespace(close=lambda: calls.append('db')))
+    monkeypatch.setattr(server._host.store, '_connection', SimpleNamespace(close=lambda: calls.append('db')))
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
     assert not server.shutdown_runtime(1)
-    assert 'runtime' in server._sessions
+    assert 'runtime' in server._host.sessions
     assert calls == ['agent', 'worker']
     with pytest.raises(RuntimeError, match='incomplete'):
         server.start_runtime()
     assert server.shutdown_runtime(1)
     assert calls == ['agent', 'worker', 'agent', 'db']
-    assert not server._sessions
+    assert not server._host.sessions

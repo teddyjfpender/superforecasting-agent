@@ -12,7 +12,7 @@ def test_provider_failure_is_durable_before_notification(tmp_path, monkeypatch, 
     sid='runtime-session'; key='durable-session'
     tid=turn_journal.start(db,key,'Forecast with the saved evidence')
     monkeypatch.setattr(server,'_get_db',lambda:db)
-    monkeypatch.setattr(server,'_sessions',{sid:{'session_key':key,'turn_id':tid}})
+    monkeypatch.setattr(server._host, 'sessions',{sid:{'session_key':key,'turn_id':tid}})
     observed=[]
     def notify(frame):
         payload=frame['params']['payload']
@@ -76,7 +76,7 @@ def test_persistence_failure_is_never_announced_as_durably_saved(tmp_path, monke
     db=SessionDB(tmp_path/'state.db')
     tid=turn_journal.start(db,'s','request')
     monkeypatch.setattr(server,'_get_db',lambda:db)
-    monkeypatch.setattr(server,'_sessions',{'runtime':{'session_key':'s','turn_id':tid}})
+    monkeypatch.setattr(server._host, 'sessions',{'runtime':{'session_key':'s','turn_id':tid}})
     frames=[]; monkeypatch.setattr(server,'write_json',frames.append)
     def fail(*args,**kwargs):
         raise OSError('injected disk failure')
@@ -111,7 +111,7 @@ def test_worker_failure_preserves_partial_output(tmp_path, monkeypatch, failure)
     session = dict(session_key=sid, history_lock=threading.RLock(), history=[],
                    running=True, agent=SimpleNamespace(run_conversation=run_conversation))
     monkeypatch.setattr(server, '_get_db', lambda: db)
-    monkeypatch.setattr(server, '_sessions', {sid: session})
+    monkeypatch.setattr(server._host, 'sessions', {sid: session})
     monkeypatch.setattr(server, '_CRASH_LOG', str(tmp_path / 'crash.log'))
     monkeypatch.setattr(server, '_set_session_context', lambda key: [])
     frames = []

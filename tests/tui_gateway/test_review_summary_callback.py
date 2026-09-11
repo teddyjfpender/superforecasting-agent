@@ -42,7 +42,7 @@ def server():
         # the real function.
         mod._start_notification_poller = lambda _sid, _session: threading.Event()
         yield mod
-        mod._sessions.clear()
+        mod._host.sessions.clear()
         mod._pending.clear()
         mod._answers.clear()
         mod._methods.clear()

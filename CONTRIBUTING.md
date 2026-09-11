@@ -8,7 +8,8 @@ Thank you for contributing to Superforecasting Agent. This guide covers the loca
 python3 scripts/dev.py bootstrap
 ```
 
-This consumes `uv.lock` and the TUI npm lockfile, builds the TUI, installs the
+This consumes `uv.lock` (including development, web and POSIX PTY extras) and
+the TUI npm lockfile, builds the TUI, installs the
 tracked Git hooks, and runs the shared blocking quality gates. Existing checkouts
 run `python3 scripts/dev.py check`; the explicit `--python-only` option runs the
 Python and contract gates without Node. CI calls the same bootstrap/check code.

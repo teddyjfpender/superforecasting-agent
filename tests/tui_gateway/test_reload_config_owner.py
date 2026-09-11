@@ -44,8 +44,8 @@ def test_concurrent_session_store_initialization_has_one_owner(monkeypatch):
         time.sleep(0.01)  # Allow racing callers to reach the lazy initialization.
         return db
     monkeypatch.setattr(session, 'SessionDB', factory)
-    monkeypatch.setattr(server._session_store, '_connection', None)
-    monkeypatch.setattr(server._session_store, 'last_error', None)
+    monkeypatch.setattr(server._host.store, '_connection', None)
+    monkeypatch.setattr(server._host.store, 'last_error', None)
     def get():
         start.wait(timeout=5)
         return server._get_db()

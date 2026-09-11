@@ -49,7 +49,7 @@ def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
 
-        session = _core._sessions.get(params.get("session_id", ""))
+        session = _core._host.sessions.get(params.get("session_id", ""))
         enabled = (
             set(getattr(session["agent"], "enabled_toolsets", []) or [])
             if session
@@ -80,7 +80,7 @@ def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.tooling.runtime import get_toolset_for_tool, get_tool_definitions
 
-        session = _core._sessions.get(params.get("session_id", ""))
+        session = _core._host.sessions.get(params.get("session_id", ""))
         enabled = (
             getattr(session["agent"], "enabled_toolsets", None)
             if session
@@ -148,7 +148,7 @@ def _(rid, params: dict) -> dict:
         )
         save_config(cfg)
 
-        session = _core._sessions.get(params.get("session_id", ""))
+        session = _core._host.sessions.get(params.get("session_id", ""))
         info = (
             _reset_session_agent(params.get("session_id", ""), session)
             if session
@@ -184,7 +184,7 @@ def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.tooling.toolsets import get_all_toolsets, get_toolset_info
 
-        session = _core._sessions.get(params.get("session_id", ""))
+        session = _core._host.sessions.get(params.get("session_id", ""))
         enabled = (
             set(getattr(session["agent"], "enabled_toolsets", []) or [])
             if session

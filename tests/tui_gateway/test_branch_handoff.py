@@ -16,7 +16,7 @@ def db(tmp_path, monkeypatch):
     from tui_gateway import server
     store = SessionDB(db_path=tmp_path / 'sessions.db')
     store.create_session('parent', source='tui')
-    monkeypatch.setattr(server._session_store, '_connection', store)
+    monkeypatch.setattr(server._host.store, '_connection', store)
     return store
 
 
@@ -50,7 +50,7 @@ def test_branch_handoff_admits_only_ready_replacement(db, monkeypatch, fail):
     closed = []
     old = {'session_key': 'parent', 'history': [{'role': 'user', 'content': 'forecast note'}],
            'history_lock': threading.Lock(), 'agent': SimpleNamespace(close=lambda: closed.append('old'))}
-    server._sessions['old'] = old
+    server._host.sessions['old'] = old
     monkeypatch.setattr(server, '_resolve_model', lambda: 'fixture')
     monkeypatch.setattr(server, '_notify_session_boundary', lambda *args: None)
     if fail == 'end':
@@ -68,26 +68,26 @@ def test_branch_handoff_admits_only_ready_replacement(db, monkeypatch, fail):
         return SimpleNamespace(close=lambda: closed.append('new'))
     def init(sid, key, agent, history, cols, pending_handoff):
         assert pending_handoff
-        server._sessions[sid] = {'session_key': key, 'agent': agent, 'history': history,
+        server._host.sessions[sid] = {'session_key': key, 'agent': agent, 'history': history,
             'history_lock': threading.Lock(), 'running': True, '_replacing': True}
     monkeypatch.setattr(server, '_make_agent', make_agent)
     monkeypatch.setattr(server, '_init_session', init)
     response = server.handle_request({'id': 1, 'method': 'session.branch_replace', 'params': {'session_id': 'old', 'name': 'Alternative'}})
     if fail:
         assert 'injected' in response['error']['message']
-        assert server._sessions['old'] is old
+        assert server._host.sessions['old'] is old
         assert not old['running'] and not old['_replacing']
         assert db.get_session_by_title('Alternative') is None
         assert db.get_session('parent')['ended_at'] is None
         assert closed == (['new'] if fail == 'end' else [])
-        assert list(server._sessions) == ['old']
+        assert list(server._host.sessions) == ['old']
     else:
         sid = response['result']['session_id']
-        assert 'old' not in server._sessions
+        assert 'old' not in server._host.sessions
         assert closed == ['old']
-        assert not server._sessions[sid]['running']
-        assert not server._sessions[sid]['_replacing']
-        assert db.get_messages(server._sessions[sid]['session_key'])[0]['content'] == 'forecast note'
+        assert not server._host.sessions[sid]['running']
+        assert not server._host.sessions[sid]['_replacing']
+        assert db.get_messages(server._host.sessions[sid]['session_key'])[0]['content'] == 'forecast note'
 
 
 def test_branch_registration_collision_does_not_dispose_existing_runtime(db, monkeypatch):
@@ -96,16 +96,16 @@ def test_branch_registration_collision_does_not_dispose_existing_runtime(db, mon
     old = {'session_key': 'parent', 'history': [{'role': 'user', 'content': 'note'}],
         'history_lock': threading.Lock(), 'agent': SimpleNamespace(close=lambda: closed.append('old'))}
     occupant = {'session_key': 'unrelated', 'agent': SimpleNamespace(close=lambda: closed.append('occupant'))}
-    server._sessions['old'] = old
-    server._sessions['occupied'] = occupant
+    server._host.sessions['old'] = old
+    server._host.sessions['occupied'] = occupant
     monkeypatch.setattr(server.uuid, 'uuid4', lambda: SimpleNamespace(hex='occupied'))
     monkeypatch.setattr(server, '_new_session_key', lambda: 'new-child')
     monkeypatch.setattr(server, '_resolve_model', lambda: 'fixture')
     monkeypatch.setattr(server, '_make_agent', lambda *args, **kwargs: SimpleNamespace(close=lambda: closed.append('new')))
     response = server.handle_request({'id': 1, 'method': 'session.branch_replace', 'params': {'session_id': 'old'}})
     assert 'already registered' in response['error']['message']
-    assert server._sessions['old'] is old
-    assert server._sessions['occupied'] is occupant
+    assert server._host.sessions['old'] is old
+    assert server._host.sessions['occupied'] is occupant
     assert closed == ['new']
     assert db.get_session('new-child') is None
     assert db.get_session('parent')['ended_at'] is None

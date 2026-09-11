@@ -29,7 +29,7 @@ def _make_session_db(tmp_path):
 
 
 def _tui_session(agent=None, session_key="session-key-old", **extra):
-    """Minimal TUI gateway session dict matching server._sessions values."""
+    """Minimal TUI gateway session dict matching server._host.sessions values."""
     return {
         "agent": agent if agent is not None else types.SimpleNamespace(session_id=session_key),
         "session_key": session_key,
@@ -131,7 +131,7 @@ class TestSessionsPreservedAcrossRestart:
     restarts": a gateway PROCESS restart/shutdown must NOT end the durable
     session row, so the conversation is restored intact on the next launch.
 
-    Our fork's routing index (``server._sessions``) is in-memory and ephemeral
+    Our fork's routing index (``server._host.sessions``) is in-memory and ephemeral
     — it is always empty after a restart — while the transcript lives durably
     in ``state.db``. The regression: ``_shutdown_sessions()`` used to call
     ``db.end_session(..., "tui_shutdown")``, conflating an involuntary restart
@@ -144,6 +144,9 @@ class TestSessionsPreservedAcrossRestart:
         """After a simulated gateway restart, the live session row stays
         un-ended so it can be restored, and its transcript is intact."""
         from tui_gateway import server
+        from superforecasting_agent.hosting.runtime import RuntimeHost
+
+        monkeypatch.setattr(server, "_host", RuntimeHost())
 
         db = _make_session_db(tmp_path)
         db.create_session(session_id="live-session", source="tui", model="test")
@@ -160,33 +163,26 @@ class TestSessionsPreservedAcrossRestart:
             history=[{"role": "user", "content": "before restart"}],
         )
 
-        monkeypatch.setattr(server, "_get_db", lambda: db)
+        server._host.store._connection = db
         monkeypatch.setattr(server, "_notify_session_boundary", lambda *a, **kw: None)
         monkeypatch.setattr(server, "_stop_cron_ticker", lambda: None)
 
         # Drive the real process-shutdown path with our session registered.
-        server._sessions["restart-sid"] = session
+        server._host.sessions["restart-sid"] = session
+        assert server.shutdown_runtime(2)
+        assert not server._host.sessions
+        assert server._host.store.current is None
+
+        # Read through a new handle: the real host closed its old database.
+        reopened = _make_session_db(tmp_path)
         try:
-            server._shutdown_sessions()
+            row = reopened.get_session("live-session")
+            assert row["ended_at"] is None, "process restart must not end the conversation"
+            assert row["end_reason"] is None
+            restored = reopened.get_messages_as_conversation("live-session")
+            assert [m["content"] for m in restored] == ["before restart", "ack"]
         finally:
-            server._sessions.pop("restart-sid", None)
-
-        # The durable row must NOT be marked ended by a process restart —
-        # this is what lets session.resume / session.most_recent restore it.
-        row = db.get_session("live-session")
-        assert row["ended_at"] is None, (
-            "gateway restart must NOT end the session row; otherwise the "
-            "conversation is treated as a deliberate boundary and lost"
-        )
-        assert row["end_reason"] is None
-
-        # And the transcript survives the simulated restart intact: a fresh
-        # SessionDB (new process) can still read the conversation back.
-        from superforecasting_agent.storage.session import SessionDB
-
-        reopened = SessionDB(db_path=tmp_path / "test_state.db")
-        restored = reopened.get_messages_as_conversation("live-session")
-        assert [m["content"] for m in restored] == ["before restart", "ack"]
+            reopened.close()
 
     def test_explicit_close_still_ends_session_row(self, tmp_path, monkeypatch):
         """Regression guard: a user-initiated close (mark_ended default True)
@@ -269,7 +265,7 @@ class TestSyncSessionKeyAfterAutoCompress:
             def start(self):
                 self._target()
 
-        server._sessions["test-sid"] = session
+        server._host.sessions["test-sid"] = session
         monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
 
         try:
@@ -290,7 +286,7 @@ class TestSyncSessionKeyAfterAutoCompress:
                 "session_key must be updated to match agent.session_id after compression"
             )
         finally:
-            server._sessions.pop("test-sid", None)
+            server._host.sessions.pop("test-sid", None)
 
 
 # ===========================================================================
@@ -337,7 +333,7 @@ class TestPendingTitleValueError:
             def start(self):
                 self._target()
 
-        server._sessions["sid"] = session
+        server._host.sessions["sid"] = session
         monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
 
         try:
@@ -353,7 +349,7 @@ class TestPendingTitleValueError:
                 "so auto-title can take over"
             )
         finally:
-            server._sessions.pop("sid", None)
+            server._host.sessions.pop("sid", None)
 
     def test_other_exception_keeps_pending_title_for_retry(self, monkeypatch):
         """Non-ValueError exceptions should keep pending_title for retry."""
@@ -391,7 +387,7 @@ class TestPendingTitleValueError:
             def start(self):
                 self._target()
 
-        server._sessions["sid"] = session
+        server._host.sessions["sid"] = session
         monkeypatch.setattr(server.threading, "Thread", _ImmediateThread)
 
         try:
@@ -407,7 +403,7 @@ class TestPendingTitleValueError:
                 "for retry on next turn"
             )
         finally:
-            server._sessions.pop("sid", None)
+            server._host.sessions.pop("sid", None)
 
 
 # ===========================================================================

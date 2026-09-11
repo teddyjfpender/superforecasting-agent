@@ -20,6 +20,7 @@ The formality layer of the modularization program
 |---|---|---|---|
 | `superforecasting_agent/` | product entry and runtime foundations | Lazy public domain exports; `bootstrap`, `constants`, `clock`, `logging` | Bootstrap and profile-path imports must remain usable before application setup |
 | `superforecasting_agent/application/sessions.py` | application services | Resumable-session selection and atomic branch-copy admission | No presentation or transport imports |
+| `superforecasting_agent/hosting/runtime.py` | serving lifetime | `RuntimeHost` owns workers, session registry, store, configuration, shutdown ordering and restart admission | No presentation or runtime configuration imports; adapters supply protocol-specific interruption and turn-finalization callbacks |
 | `superforecasting_agent/hosting/{workers,sessions,registry}.py` | host resource ownership | Worker admission/drain; live runtime registration; session use, finalization, retryable disposal and replacement admission | No transport, CLI, agent or tool imports; enforced transitively |
 | `superforecasting_agent/hosting/storage.py` | database serving lifetime | `SessionStore` serializes acquisition, close and explicit restart | No presentation or runtime configuration imports; failed close retains the owned handle |
 | `superforecasting_agent/hosting/configuration.py` | host profile configuration | `ProfileConfiguration` owns raw snapshots and revision-checked saves | No presentation or runtime imports; explicit profile paths, shared atomic storage writes |

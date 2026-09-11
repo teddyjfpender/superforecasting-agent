@@ -160,16 +160,16 @@ def test_auth_success_refreshes_live_agent_credentials(monkeypatch):
     monkeypatch.setattr(server, "_restart_slash_worker", lambda session: None)
     monkeypatch.setattr(server, "_emit", lambda *a, **k: None)
     monkeypatch.setattr(server, "_session_info", lambda agent: {})
-    server._sessions["sid_auth"] = {"agent": _FakeAgent(), "running": False}
+    server._host.sessions["sid_auth"] = {"agent": _FakeAgent(), "running": False}
     try:
         assert "result" in _start({"provider": "openai-codex", "session_id": "sid_auth"})
         result = _wait_status("success")
         assert result["credentials_applied"] is True
         assert switched["api_key"] == "fresh_at"
         assert switched["new_provider"] == "openai-codex"
-        assert server._sessions["sid_auth"]["agent"]._credential_pool is fresh_pool
+        assert server._host.sessions["sid_auth"]["agent"]._credential_pool is fresh_pool
     finally:
-        server._sessions.pop("sid_auth", None)
+        server._host.sessions.pop("sid_auth", None)
 
 
 def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch):
@@ -190,7 +190,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
         started["session"] = current
 
     monkeypatch.setattr(server, "_start_agent_build", _fake_start)
-    server._sessions["sid_failed_auth"] = session
+    server._host.sessions["sid_failed_auth"] = session
     try:
         assert server._refresh_agent_credentials_after_auth(
             "sid_failed_auth", "openai-codex"
@@ -201,7 +201,7 @@ def test_auth_success_retries_agent_build_that_failed_before_sign_in(monkeypatch
         assert session["agent_build_started"] is False
         assert started == {"sid": "sid_failed_auth", "session": session}
     finally:
-        server._sessions.pop("sid_failed_auth", None)
+        server._host.sessions.pop("sid_failed_auth", None)
 
 
 def test_auth_poll_reports_terminal_status_once(monkeypatch):

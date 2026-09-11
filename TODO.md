@@ -12,7 +12,10 @@ shared application services consumed first by Ink, enforced ownership boundaries
 one bootstrap/check workflow and installed hooks, independent runtime hosting with
 version/capability negotiation, and separately verified distribution profiles.
 Review/resolution now reach shared services from the real Ink desk and CLI.
-Shared runtime ownership and independent distributions remain incomplete.
+RuntimeHost now owns serving lifetime, workers, live sessions, storage and raw
+profile configuration. Remaining architecture work includes device-auth and
+legacy command orchestration, lower-level resource cleanup, and cross-version
+distribution qualification. See the plan for precise acceptance evidence.
 
 ## Runtime ownership and real desk follow-up (September 11)
 

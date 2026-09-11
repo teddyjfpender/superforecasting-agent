@@ -226,20 +226,10 @@ def start_build_check() -> None:
 
 from tui_gateway.render import make_stream_renderer, render_diff, render_message
 
-from superforecasting_agent.hosting.registry import SessionRegistry
-
-_sessions = SessionRegistry()
-_session_resume_lock = _sessions.lock
 _methods: dict[str, callable] = {}
 _pending: dict[str, tuple[str, threading.Event]] = {}
 _answers: dict[str, str] = {}
-from superforecasting_agent.hosting.storage import SessionStore
-
-_session_store = SessionStore()
 _stdout_lock = threading.Lock()
-from superforecasting_agent.hosting.configuration import ProfileConfiguration
-
-_configuration = ProfileConfiguration()
 try:
     _slash_timeout = float(_tui_env("SLASH_TIMEOUT_S") or "45")
 except (ValueError, TypeError):
@@ -295,11 +285,11 @@ try:
     )
 except (ValueError, TypeError):
     _rpc_pool_workers = 4
-from superforecasting_agent.hosting.workers import HostStopping, RuntimeWorkers
+from superforecasting_agent.hosting.workers import HostStopping
+from superforecasting_agent.hosting.runtime import RuntimeHost
 from superforecasting_agent.hosting.sessions import SessionBusy, dispose_session, finalize_session, in_use, replacement, use_session
 
-_pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
-_host_lifecycle_lock = threading.Lock()
+_host = RuntimeHost(max_workers=_rpc_pool_workers)
 
 
 # Embedded hosts retain their process streams. The stdio entrypoint explicitly
@@ -528,7 +518,7 @@ def start_cron_ticker() -> None:
     global _cron_ticker_thread
     if _cron_ticker_thread is not None or _cron_ticker_disabled():
         return
-    _cron_ticker_thread = _pool.start(
+    _cron_ticker_thread = _host.workers.start(
         lambda: _cron_ticker_loop(_cron_ticker_stop, _cron_ticker_interval()),
         name="forecast-cron-ticker",
     )
@@ -765,101 +755,49 @@ def _maybe_run_review_sweep() -> dict | None:
     return _run_review_sweep(now=now_iso)
 
 
-def _shutdown_sessions() -> None:
-    # Stop the cron ticker first so no new tick starts mid-shutdown.
-    _stop_cron_ticker()
-    # Interrupt dangling background subagents so they don't keep running with
-    # no one to deliver their result to.
-    try:
-        from tools.async_delegation import interrupt_all as _interrupt_async
-
-        _interrupt_async(reason="tui_shutdown")
-    except Exception:
-        pass
-    for session in list(_sessions.values()):
-        # Process restart/shutdown is NOT a conversation boundary: finalize
-        # (commit memory, stop pollers) but DO NOT end the durable session row,
-        # so the conversation is preserved and restored on the next launch.
-        _finalize_session(
-            session, end_reason="tui_shutdown", mark_ended=False
-        )
-        try:
-            worker = session.get("slash_worker")
-            if worker:
-                worker.close()
-        except Exception:
-            pass
+def _reset_runtime_services() -> None:
+    global _cron_ticker_stop, _cron_ticker_thread
+    _cron_ticker_stop = threading.Event()
+    _cron_ticker_thread = None
 
 
 def start_runtime() -> None:
-    """Admit a new serving lifetime only after the previous owner finished."""
-    global _pool, _cron_ticker_stop, _cron_ticker_thread
-    with _host_lifecycle_lock:
-        if not _pool.stopping:
-            return
-        if not _pool.drain(0) or _sessions or _session_store.current is not None:
-            raise RuntimeError("previous runtime shutdown is incomplete")
-        _session_store.start()
-        _pool = RuntimeWorkers(max_workers=_rpc_pool_workers)
-        _cron_ticker_stop = threading.Event()
-        _cron_ticker_thread = None
+    _host.start(reset_services=_reset_runtime_services)
+
+
+def _stop_runtime_services() -> None:
+    _stop_cron_ticker()
+    with _auth_flow_lock:
+        _auth_flow["cancelled"] = True
+
+
+def _release_runtime_prompts(sid: str, session: dict) -> None:
+    _clear_pending(sid)
+    from tools.approval import resolve_gateway_approval
+    resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
+
+
+def _interrupt_runtime_delegations() -> None:
+    from tools.async_delegation import interrupt_all
+    interrupt_all(reason="runtime_shutdown")
+
+
+def _close_drained_session(sid: str, session: dict, db) -> None:
+    if session.get("turn_id") and db is not None:
+        from tui_gateway import turn_journal
+        # Drained workers have relinquished the unfinished receipt.
+        turn_journal.transition(db, session["turn_id"], "interrupted")
+    _close_runtime_session(sid, mark_ended=False, drained=True)
 
 
 def shutdown_runtime(timeout: float = 5.0) -> bool:
-    """Interrupt and drain before closing resources; preserve durable sessions."""
-    with _host_lifecycle_lock:
-        _pool.stop()
-        _stop_cron_ticker()
-        with _auth_flow_lock:
-            _auth_flow["cancelled"] = True
-        for sid, session in list(_sessions.items()):
-            session["cancel_requested"] = True
-            stop = session.get("_notif_stop")
-            if stop is not None:
-                stop.set()
-            _clear_pending(sid)
-            agents = [session.get("agent")]
-            with session.setdefault("history_lock", threading.Lock()):
-                agents.extend(session.get("_background_agents", {}).values())
-            for agent in agents:
-                if agent is not None and hasattr(agent, "interrupt"):
-                    try:
-                        agent.interrupt()
-                    except Exception:
-                        logger.exception("failed to interrupt runtime session %s", sid)
-            try:
-                from tools.approval import resolve_gateway_approval
-                resolve_gateway_approval(session["session_key"], "deny", resolve_all=True)
-            except Exception:
-                logger.exception("failed to release approvals for runtime session %s", sid)
-        try:
-            from tools.async_delegation import interrupt_all
-            interrupt_all(reason="runtime_shutdown")
-        except Exception:
-            logger.exception("failed to interrupt runtime delegations")
-        if not _pool.drain(timeout):
-            logger.error("runtime shutdown incomplete: workers still own resources")
-            return False
-        db = _session_store.current
-        cleanup_failed = False
-        for sid, session in list(_sessions.items()):
-            try:
-                if session.get("turn_id") and db is not None:
-                    from tui_gateway import turn_journal
-                    # Drained workers have relinquished the unfinished receipt.
-                    turn_journal.transition(db, session["turn_id"], "interrupted")
-                _close_runtime_session(sid, mark_ended=False, drained=True)
-            except Exception:
-                cleanup_failed = True
-                logger.exception("runtime session cleanup incomplete: %s", sid)
-        if cleanup_failed:
-            return False
-        try:
-            _session_store.close()
-        except Exception:
-            logger.exception("runtime session store cleanup incomplete")
-            return False
-        return True
+    return _host.shutdown(
+        timeout,
+        stop_services=_stop_runtime_services,
+        release_prompts=_release_runtime_prompts,
+        interrupt_delegations=_interrupt_runtime_delegations,
+        close_session=_close_drained_session,
+    )
 
 
 atexit.register(shutdown_runtime, 0)
@@ -869,11 +807,11 @@ atexit.register(shutdown_runtime, 0)
 
 
 def _get_db():
-    return _session_store.get()
+    return _host.store.get()
 
 
 def _db_unavailable_error(rid, *, code: int):
-    detail = _session_store.last_error or "state.db unavailable"
+    detail = _host.store.last_error or "state.db unavailable"
     return _err(rid, code, f"state.db unavailable: {detail}")
 
 
@@ -892,7 +830,7 @@ def write_json(obj: dict) -> bool:
     """
     if obj.get("method") == "event":
         sid = ((obj.get("params") or {}).get("session_id")) or ""
-        if sid and (t := (_sessions.get(sid) or {}).get("transport")) is not None:
+        if sid and (t := (_host.sessions.get(sid) or {}).get("transport")) is not None:
             return t.write(obj)
 
     return (current_transport() or _stdio_transport).write(obj)
@@ -907,7 +845,7 @@ def _turn_recovery(db, session_key, *, recover=False):
 
 
 def _emit(event: str, sid: str, payload: dict | None = None):
-    session = _sessions.get(sid, {})
+    session = _host.sessions.get(sid, {})
     turn_id = session.get("turn_id")
     if turn_id and event in ("message.start", "message.delta", "message.complete", "error"):
         payload = dict(payload or {})
@@ -1089,7 +1027,7 @@ def handle_request(req: dict) -> dict | None:
     fn = _methods.get(method)
     if not fn:
         return _err(rid, -32601, f"unknown method: {method}")
-    session = _sessions.get(params.get("session_id")) if isinstance(params.get("session_id"), str) else None
+    session = _host.sessions.get(params.get("session_id")) if isinstance(params.get("session_id"), str) else None
     try:
         if session is not None and method not in {"session.close", "session.resume", "session.branch_replace"}:
             with use_session(session):
@@ -1101,7 +1039,7 @@ def handle_request(req: dict) -> dict | None:
 
 def dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
     try:
-        with _pool.operation():
+        with _host.workers.operation():
             return _dispatch(req, transport)
     except HostStopping:
         return _err(req.get("id") if isinstance(req, dict) else None, 5030, "runtime host is stopping")
@@ -1141,7 +1079,7 @@ def _dispatch(req: dict, transport: Optional[Transport] = None) -> dict | None:
             if resp is not None:
                 t.write(resp)
 
-        _pool.submit(lambda: ctx.run(run))
+        _host.workers.submit(lambda: ctx.run(run))
 
         return None
     finally:
@@ -1182,7 +1120,7 @@ def _start_agent_build(sid: str, session: dict) -> None:
     key = session["session_key"]
 
     def _build() -> None:
-        current = _sessions.get(sid)
+        current = _host.sessions.get(sid)
         if current is None:
             session["agent_error"] = "session closed during agent initialization"
             ready.set()
@@ -1198,7 +1136,7 @@ def _start_agent_build(sid: str, session: dict) -> None:
             finally:
                 _clear_session_context(tokens)
 
-            if _sessions.get(sid) is not current:
+            if _host.sessions.get(sid) is not current:
                 current["agent_error"] = "session closed during agent initialization"
                 return
 
@@ -1227,7 +1165,7 @@ def _start_agent_build(sid: str, session: dict) -> None:
                 pass
 
             _wire_callbacks(sid)
-            _sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _sessions[sid])
+            _host.sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _host.sessions[sid])
             _notify_session_boundary("on_session_reset", key)
 
             info = _session_info(agent)
@@ -1243,7 +1181,7 @@ def _start_agent_build(sid: str, session: dict) -> None:
             current["agent_error"] = str(e)
             _emit("error", sid, {"message": f"agent init failed: {e}"})
         finally:
-            if _sessions.get(sid) is not current:
+            if _host.sessions.get(sid) is not current:
                 current["agent_error"] = "session closed during agent initialization"
                 stop = current.get("_notif_stop")
                 if stop is not None:
@@ -1267,11 +1205,11 @@ def _start_agent_build(sid: str, session: dict) -> None:
                         pass
             ready.set()
 
-    _pool.start(_build, name="forecast-agent-build")
+    _host.workers.start(_build, name="forecast-agent-build")
 
 
 def _sess_nowait(params, rid):
-    s = _sessions.get(params.get("session_id") or "")
+    s = _host.sessions.get(params.get("session_id") or "")
     return (s, None) if s else (None, _err(rid, 4001, "session not found"))
 
 
@@ -1314,11 +1252,11 @@ def _normalize_indicator_style(value: object) -> str:
 
 
 def _load_cfg() -> dict:
-    return _configuration.load(_hermes_home / "config.yaml")
+    return _host.configuration.load(_hermes_home / "config.yaml")
 
 
 def _save_cfg(cfg: dict):
-    _configuration.save(_hermes_home / "config.yaml", cfg)
+    _host.configuration.save(_hermes_home / "config.yaml", cfg)
 
 
 def _set_session_context(session_key: str):
@@ -1476,7 +1414,7 @@ def _resolve_startup_runtime() -> tuple[str, str | None]:
 
 def _write_config_key(key_path: str, value):
     """Merge a single setting into the latest profile, preserving user comments."""
-    _configuration.update(_hermes_home / "config.yaml", key_path, value)
+    _host.configuration.update(_hermes_home / "config.yaml", key_path, value)
 
 
 _STATUSBAR_MODES = frozenset({"off", "top", "bottom"})
@@ -1664,7 +1602,7 @@ def _load_enabled_toolsets() -> list[str] | None:
 
 
 def _session_tool_progress_mode(sid: str) -> str:
-    return str(_sessions.get(sid, {}).get("tool_progress_mode", "all") or "all")
+    return str(_host.sessions.get(sid, {}).get("tool_progress_mode", "all") or "all")
 
 
 def _tool_progress_enabled(sid: str) -> bool:
@@ -2249,7 +2187,7 @@ def _tool_summary(name: str, result: str, duration_s: float | None) -> str | Non
 
 
 def _on_tool_start(sid: str, tool_call_id: str, name: str, args: dict):
-    session = _sessions.get(sid)
+    session = _host.sessions.get(sid)
     if session is not None:
         try:
             from agent.display import capture_local_edit_snapshot
@@ -2272,7 +2210,7 @@ def _on_tool_start(sid: str, tool_call_id: str, name: str, args: dict):
 
 def _on_tool_complete(sid: str, tool_call_id: str, name: str, args: dict, result: str):
     payload = {"tool_id": tool_call_id, "name": name}
-    session = _sessions.get(sid)
+    session = _host.sessions.get(sid)
     snapshot = None
     started_at = None
     if session is not None:
@@ -2643,7 +2581,7 @@ def _session_runtime(sid: str) -> dict:
     land on a different/unconfigured provider and get an HTML auth page. Uses the
     same resolve_runtime_provider path as _make_agent (carries OAuth credential
     pools, not just API keys), seeded by the session's CURRENT provider/model."""
-    sess = _sessions.get(sid) or {}
+    sess = _host.sessions.get(sid) or {}
     agent = sess.get("agent")
     try:
         from superforecasting_agent.runtime.runtime_provider import resolve_runtime_provider
@@ -2735,7 +2673,7 @@ def _make_agent(sid: str, key: str, session_id: str | None = None):
 
 
 def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, pending_handoff: bool = False):
-    _sessions.register(sid, {
+    _host.sessions.register(sid, {
         "agent": agent,
         "session_key": key,
         "history": history,
@@ -2756,12 +2694,12 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, p
         "transport": current_transport() or _stdio_transport,
     })
     try:
-        _sessions[sid]["slash_worker"] = _SlashWorker(
+        _host.sessions[sid]["slash_worker"] = _SlashWorker(
             key, getattr(agent, "model", _resolve_model())
         )
     except Exception:
         # Defer hard-failure to slash.exec; chat still works without slash worker.
-        _sessions[sid]["slash_worker"] = None
+        _host.sessions[sid]["slash_worker"] = None
     try:
         from tools.approval import register_gateway_notify, load_permanent_allowlist
 
@@ -2783,7 +2721,7 @@ def _init_session(sid: str, key: str, agent, history: list, cols: int = 80, *, p
         # session startup resilient).
         pass
     _wire_callbacks(sid)
-    _sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _sessions[sid])
+    _host.sessions[sid]["_notif_stop"] = _start_notification_poller(sid, _host.sessions[sid])
     _notify_session_boundary("on_session_reset", key)
     _emit("session.info", sid, _session_info(agent))
 
@@ -2925,7 +2863,7 @@ def _(rid, params: dict) -> dict:
 
     ready = threading.Event()
 
-    _sessions.register(sid, {
+    _host.sessions.register(sid, {
         "agent": None,
         "agent_error": None,
         "agent_ready": ready,
@@ -2951,15 +2889,15 @@ def _(rid, params: dict) -> dict:
     # flushed.  This keeps startup responsive while still hydrating tools/skills
     # without requiring the user to submit a first prompt.
     def _deferred_build() -> None:
-        session = _sessions.get(sid)
+        session = _host.sessions.get(sid)
         if session is not None:
             _start_agent_build(sid, session)
 
     def delayed_build() -> None:
         time.sleep(0.05)
-        if not _pool.stopping:
+        if not _host.workers.stopping:
             _deferred_build()
-    _pool.start(delayed_build, name="forecast-deferred-build")
+    _host.workers.start(delayed_build, name="forecast-deferred-build")
 
     return _ok(
         rid,
@@ -2991,7 +2929,7 @@ def _(rid, params: dict) -> dict:
             limit = 200
         active_keys = {
             session.get("session_key")
-            for session in list(_sessions.values())
+            for session in list(_host.sessions.values())
             if session.get("session_key")
         }
         rows = list_resumable_sessions(db, limit=limit, exclude_ids=active_keys)
@@ -3039,7 +2977,7 @@ def _(rid, params: dict) -> dict:
 
         active_keys = {
             session.get("session_key")
-            for session in list(_sessions.values())
+            for session in list(_host.sessions.values())
             if session.get("session_key")
         }
         for row in list_resumable_sessions(db, limit=1, exclude_ids=active_keys):
@@ -3073,11 +3011,11 @@ def _(rid, params: dict) -> dict:
             target = found["id"]
         else:
             return _err(rid, 4007, "session not found")
-    with _session_resume_lock:
+    with _host.sessions.lock:
         replace_sid = str(params.get("replace_session_id") or "").strip()
-        replace_session = _sessions.get(replace_sid) if replace_sid else None
+        replace_session = _host.sessions.get(replace_sid) if replace_sid else None
         try:
-            live_sessions = list(_sessions.items())
+            live_sessions = list(_host.sessions.items())
         except RuntimeError:
             return _err(rid, 5000, "session registry changed during resume; retry")
         active_sid = next(
@@ -3094,7 +3032,7 @@ def _(rid, params: dict) -> dict:
         if recovery and recovery.get("owner_active"):
             return _err(rid, 4010, "session turn is still owned by a running gateway")
         sid = uuid.uuid4().hex[:8]
-        if sid in _sessions:
+        if sid in _host.sessions:
             return _err(rid, 5000, "runtime session identifier collision; retry")
         if replace_session:
             replace_lock = replace_session.get("history_lock")
@@ -3131,16 +3069,16 @@ def _(rid, params: dict) -> dict:
                 _close_runtime_session(sid, mark_ended=False, reserved=True)
             except Exception:
                 logger.exception("failed to roll back partial resumed session %s", sid)
-            if replace_session and _sessions.get(replace_sid) is replace_session:
+            if replace_session and _host.sessions.get(replace_sid) is replace_session:
                 replace_lock = replace_session.get("history_lock")
                 if replace_lock is None:
                     replace_lock = contextlib.nullcontext()
                 with replace_lock:
                     replace_session["running"] = False
             return _err(rid, 5000, f"resume failed: {e}")
-        with _sessions[sid]["history_lock"]:
-            _sessions[sid]["_replacing"] = False
-            _sessions[sid]["running"] = False
+        with _host.sessions[sid]["history_lock"]:
+            _host.sessions[sid]["_replacing"] = False
+            _host.sessions[sid]["running"] = False
         return _ok(
             rid,
             {
@@ -3174,12 +3112,12 @@ def _(rid, params: dict) -> dict:
     # Block deletion of any session currently bound to a live TUI session
     # in this process.  The picker hides the active session anyway, but a
     # racing caller could still target it.  Snapshot via ``list(...)``
-    # because ``_sessions`` is mutated by concurrent RPCs on the thread
+    # because ``_host.sessions`` is mutated by concurrent RPCs on the thread
     # pool — iterating the dict directly can raise ``RuntimeError:
     # dictionary changed size during iteration``.  If even the snapshot
     # raises, fail closed (refuse the delete) rather than fail open.
     try:
-        snapshot = list(_sessions.values())
+        snapshot = list(_host.sessions.values())
     except Exception as e:
         return _err(rid, 5036, f"could not enumerate active forecast sessions: {e}")
     active = {s.get("session_key") for s in snapshot if s.get("session_key")}
@@ -3538,7 +3476,7 @@ def _close_runtime_session(sid: str, *, mark_ended: bool = True, reserved: bool 
 
         dispose_session(session, release_notifications=release_notifications)
 
-    session = _sessions.retire(sid, finish, reserved=reserved, drained=drained)
+    session = _host.sessions.retire(sid, finish, reserved=reserved, drained=drained)
     if session is None:
         return False
     _session_toggles.pop(session.get("session_key", ""), None)
@@ -3604,7 +3542,7 @@ def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
     except Exception as exc:
         cleanup_error = ""
         try:
-            if (_sessions.get(new_sid) or {}).get("session_key") == new_key:
+            if (_host.sessions.get(new_sid) or {}).get("session_key") == new_key:
                 _close_runtime_session(new_sid, mark_ended=False, reserved=replace_current)
             elif agent is not None:
                 agent.close()
@@ -3615,9 +3553,9 @@ def _branch_session(rid, params: dict, *, replace_current: bool) -> dict:
             cleanup_error = f"; branch cleanup failed: {cleanup_exc}"
         return _err(rid, 5008, f"branch failed: {exc}{cleanup_error}")
     if replace_current:
-        with _sessions[new_sid]["history_lock"]:
-            _sessions[new_sid]["_replacing"] = False
-            _sessions[new_sid]["running"] = False
+        with _host.sessions[new_sid]["history_lock"]:
+            _host.sessions[new_sid]["_replacing"] = False
+            _host.sessions[new_sid]["running"] = False
     return _ok(rid, {"session_id": new_sid, "title": title, "parent": old_key})
 
 
@@ -3796,7 +3734,7 @@ def _(rid, params: dict) -> dict:
             return
         _run_prompt_submit(rid, sid, session, text)
 
-    _pool.start(run_after_agent_ready, name="forecast-agent-ready")
+    _host.workers.start(run_after_agent_ready, name="forecast-agent-ready")
     return _ok(rid, {"status": "streaming"})
 
 
@@ -3866,7 +3804,7 @@ def _notification_poller_loop(
         _emit("status.update", sid, {"kind": "process", "text": text})
 
         with session["history_lock"]:
-            if session.get("running") or session.get("_closing") or _pool.stopping:
+            if session.get("running") or session.get("_closing") or _host.workers.stopping:
                 process_registry.completion_queue.put(evt)
                 continue
             session["running"] = True
@@ -3901,7 +3839,7 @@ def _notification_poller_loop(
         _emit("status.update", sid, {"kind": "process", "text": text})
 
         with session["history_lock"]:
-            if session.get("running") or session.get("_closing") or _pool.stopping:
+            if session.get("running") or session.get("_closing") or _host.workers.stopping:
                 process_registry.completion_queue.put(evt)
                 break
             session["running"] = True
@@ -3923,7 +3861,7 @@ def _notification_poller_loop(
 def _start_notification_poller(sid: str, session: dict) -> threading.Event:
     """Start the background notification poller for a TUI session."""
     stop = threading.Event()
-    _pool.start(lambda: _notification_poller_loop(stop, sid, session), name="forecast-notifications")
+    _host.workers.start(lambda: _notification_poller_loop(stop, sid, session), name="forecast-notifications")
     return stop
 
 
@@ -4233,7 +4171,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                     from superforecasting_agent.runtime.voice import speak_text  # noqa: F401 — availability check
 
                     spoken = raw
-                    _pool.start(lambda: _speak_with_status(spoken, sid), name="forecast-speech")
+                    _host.workers.start(lambda: _speak_with_status(spoken, sid), name="forecast-speech")
                 except ImportError:
                     logger.warning("voice TTS skipped: superforecasting_agent.runtime.voice unavailable")
                 except Exception as e:
@@ -4321,7 +4259,7 @@ def _run_prompt_submit(rid, sid: str, session: dict, text: Any) -> None:
                 file=sys.stderr,
             )
 
-    _pool.start(run, name="forecast-turn")
+    _host.workers.start(run, name="forecast-turn")
 
 
 @rpc_validated("clipboard.paste")
@@ -4482,7 +4420,7 @@ def _(rid, params: dict) -> dict:
             )
             with session["history_lock"]:
                 session.setdefault("_background_agents", {})[task_id] = background_agent
-            if _pool.stopping:
+            if _host.workers.stopping:
                 return
             result = background_agent.run_conversation(
                 user_message=text,
@@ -4517,7 +4455,7 @@ def _(rid, params: dict) -> dict:
                 _clear_session_context(session_tokens)
 
     try:
-        _pool.start(run, name="forecast-background")
+        _host.workers.start(run, name="forecast-background")
     except BaseException:
         with session["history_lock"]:
             session["_background_jobs"] -= 1
@@ -4627,7 +4565,7 @@ def _(rid, params: dict) -> dict:
         return _err(rid, 4030, "llm.oneshot requires a template or instructions/input")
 
     # Optional: inherit the live session's model (no error if absent).
-    session = _sessions.get(params.get("session_id") or "")
+    session = _host.sessions.get(params.get("session_id") or "")
     main_runtime = _main_runtime_from_agent(session.get("agent")) if session else None
 
     try:
@@ -4660,7 +4598,7 @@ def _(rid, params: dict) -> dict:
 @rpc_validated("config.set")
 def _(rid, params: dict) -> dict:
     key, value = params.get("key", ""), params.get("value", "")
-    session = _sessions.get(params.get("session_id", ""))
+    session = _host.sessions.get(params.get("session_id", ""))
 
     if key == "model":
         try:
@@ -5106,7 +5044,7 @@ def _(rid, params: dict) -> dict:
             {
                 "value": (
                     "fast"
-                    if (session := _sessions.get(params.get("session_id", "")))
+                    if (session := _host.sessions.get(params.get("session_id", "")))
                     and getattr(session.get("agent"), "service_tier", None)
                     == "priority"
                     else ("fast" if _load_service_tier() == "priority" else "normal")
@@ -5197,7 +5135,7 @@ def _(rid, params: dict) -> dict:
 
 @rpc_validated("reload.mcp")
 def _(rid, params: dict) -> dict:
-    session = _sessions.get(params.get("session_id", ""))
+    session = _host.sessions.get(params.get("session_id", ""))
     try:
         # Gate: /reload-mcp invalidates the prompt cache for this session.
         # Respect the ``approvals.mcp_reload_confirm`` config toggle — if
@@ -5627,7 +5565,7 @@ def _(rid, params: dict) -> dict:
     try:
         from superforecasting_agent.runtime.inventory import build_models_payload, load_picker_context
 
-        session = _sessions.get(params.get("session_id", ""))
+        session = _host.sessions.get(params.get("session_id", ""))
         agent = session.get("agent") if session else None
         # Layer agent-session state on top of disk config — once an agent
         # is spawned, IT owns the live provider/model/base_url. Empty
@@ -5723,7 +5661,7 @@ def _(rid, params: dict) -> dict:
         # surface stays in lock-step with model.options + dashboard
         # /api/model/options. picker_hints=True ensures the returned row
         # carries `authenticated` for the TUI frontend.
-        session = _sessions.get(params.get("session_id", ""))
+        session = _host.sessions.get(params.get("session_id", ""))
         agent = session.get("agent") if session else None
         ctx = load_picker_context().with_overrides(
             current_provider=getattr(agent, "provider", "") if agent else "",
@@ -5811,7 +5749,7 @@ def _run_codex_device_poll(grant, interval: int) -> None:
 
 
 def _refresh_agent_credentials_after_auth(sid: str, provider: str) -> bool:
-    session = _sessions.get(sid or "")
+    session = _host.sessions.get(sid or "")
     if session is None:
         return False
     try:
@@ -5831,7 +5769,7 @@ def _refresh_session_credentials_after_auth(sid: str, provider: str) -> bool:
     the process restarts. If the pre-auth agent build failed, it is reset and
     retried. Returns True when credentials were applied or a rebuild started.
     """
-    session = _sessions.get(sid or "")
+    session = _host.sessions.get(sid or "")
     if not session:
         return False
     # Don't mutate the agent mid-turn; the user just signed in interactively,
@@ -5926,7 +5864,7 @@ def _(rid, params: dict) -> dict:
                 "consumed": False,
             }
         )
-    _pool.start(lambda: _run_codex_device_poll(grant, grant.interval), name="codex-device-poll")
+    _host.workers.start(lambda: _run_codex_device_poll(grant, grant.interval), name="codex-device-poll")
     return _ok(
         rid,
         {
@@ -6251,7 +6189,7 @@ def _voice_session_key(params: dict | None) -> str | None:
     back to the process-global os.environ flag, i.e. today's behaviour)."""
     with _voice_sid_lock:
         sid = (params or {}).get("session_id") or _voice_event_sid
-    return (_sessions.get(sid) or {}).get("session_key") if sid else None
+    return (_host.sessions.get(sid) or {}).get("session_key") if sid else None
 
 
 def _voice_flag(session_key: str | None, name: str) -> bool:

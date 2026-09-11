@@ -78,7 +78,17 @@ def check(*, python_only: bool = False) -> None:
 def bootstrap() -> None:
     # --frozen consumes the checked-in dependency resolution; it cannot silently
     # update the lockfile while setting up a contributor or CI worker.
-    run(executable("uv"), "sync", "--frozen", "--extra", "dev", "--extra", "web")
+    run(
+        executable("uv"),
+        "sync",
+        "--frozen",
+        "--extra",
+        "dev",
+        "--extra",
+        "web",
+        "--extra",
+        "pty",
+    )
     npm = executable("npm")
     run(npm, "ci", cwd=ROOT / "ui-tui")
     run(npm, "run", "build", cwd=ROOT / "ui-tui")

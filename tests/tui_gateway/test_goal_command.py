@@ -44,7 +44,7 @@ def server(hermes_home):
     ):
         mod = importlib.import_module("tui_gateway.server")
         yield mod
-        mod._sessions.clear()
+        mod._host.sessions.clear()
         mod._pending.clear()
         mod._answers.clear()
         mod._methods.clear()
@@ -64,7 +64,7 @@ def session(server):
         "attached_images": [],
         "cols": 120,
     }
-    server._sessions[sid] = s
+    server._host.sessions[sid] = s
     return sid, session_key, s
 
 

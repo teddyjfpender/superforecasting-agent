@@ -1091,3 +1091,31 @@ Live credential application boundary:
 - This does not complete credential orchestration: device-flow lifetime and
   failed-build retry are still RPC-owned; remaining command adapters and agent
   tool-resource cleanup need further ownership work.
+
+Runtime composition and serving lifetime:
+
+- `hosting/runtime.py::RuntimeHost` now composes workers, live sessions, session
+  storage and profile configuration. It owns serialized start/shutdown, agent
+  interruption, worker drain, session-disposal ordering and final database close.
+  RPC consumers use that owner instead of independent module-global resources.
+- A failed service stop or prompt release retains shutdown state even when no
+  session/database is open; restart is denied until shutdown completes. Repeated
+  successful shutdown does not run disposal callbacks again. Callback-driven
+  cleanup cannot close the store while live registry entries remain.
+- Removed the unused `_shutdown_sessions` alternate implementation. Its durable
+  restart regression now drives actual host shutdown and reads the transcript
+  through a newly opened database, rather than testing an inactive code path.
+- Direct owner tests cover failed service stop, prompt release, retained session
+  membership and failed restart. The gateway/application/bootstrap selection
+  passed 610 tests (`/tmp/forecast-runtime-owner-qualified-tests.log`). All 27
+  import contracts pass, including the host lifecycle's transitive boundary.
+- The real Ink/dashboard/provider/SQLite lifecycle selection passed all seven
+  cases (`/tmp/forecast-runtime-owner-real-desk-fixed.log`): cancellation, gateway
+  death, provider failure/disconnect/quota, unavailable history and shared forecast
+  operations. This is local provider-fixture evidence, not native Windows proof.
+- Fresh contributor bootstrap had omitted the existing `pty` extra. The same
+  bootstrap command now installs it alongside dev/web extras and passed through
+  TUI build, lint, type and Python quality checks. Transport tests now report
+  text startup errors directly instead of obscuring them with a missing-byte key.
+- Remaining boundaries include device-auth workflow state, legacy command worker
+  behavior, and concrete tool-resource ownership for safely retryable agent cleanup.

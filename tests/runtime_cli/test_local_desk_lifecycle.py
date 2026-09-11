@@ -106,7 +106,9 @@ def until(ws, predicate):
     output = b''
     try:
         for _ in range(300):
-            output += ws.receive_bytes()
+            frame = ws.receive()
+            assert "bytes" in frame, f"Forecast Desk transport failed before expected output: {frame}"
+            output += frame["bytes"]
             plain = re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', output)
             if predicate(plain):
                 return output

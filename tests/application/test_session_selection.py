@@ -18,7 +18,7 @@ def test_cli_and_tui_resume_find_human_history_beyond_internal_backlog(tmp_path,
 
     from tui_gateway import server
     monkeypatch.setattr(server, '_get_db', lambda: db)
-    monkeypatch.setattr(server, '_sessions', {'live': {'session_key': 'active'}})
+    monkeypatch.setattr(server._host, 'sessions', {'live': {'session_key': 'active'}})
     for method in ('session.list', 'session.most_recent'):
         response = server.handle_request({'id': 'test', 'method': method, 'params': {'limit': 1}})['result']
         assert (response['sessions'][0]['id'] if method == 'session.list' else response['session_id']) == 'human'

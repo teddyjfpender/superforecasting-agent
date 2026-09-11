@@ -19,7 +19,7 @@ def main():
     server.start_build_check = lambda: None
     if os.environ.get('FORECAST_TEST_STORE_FAILURE') == '1':
         server._get_db = lambda: None
-        server._session_store.last_error = 'fixture store unavailable'
+        server._host.store.last_error = 'fixture store unavailable'
     server._methods['setup.status'] = lambda rid, params: server._ok(rid, {'provider_configured': True})
 
 

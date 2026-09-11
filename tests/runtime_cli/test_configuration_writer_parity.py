@@ -39,7 +39,7 @@ def test_dashboard_stale_form_and_yaml_edits_fail_without_losing_values(tmp_path
 def test_tui_stale_configuration_cannot_replace_a_new_setting(tmp_path, monkeypatch):
     from tui_gateway import server
     monkeypatch.setattr(server,'_hermes_home',tmp_path)
-    monkeypatch.setattr(server._configuration,'_snapshot',None)
+    monkeypatch.setattr(server._host.configuration,'_snapshot',None)
     path=tmp_path/'config.yaml'; path.write_text('model: first\n',encoding='utf-8')
     loaded=server._load_cfg(); loaded['model']='stale'
     atomic_roundtrip_yaml_update(path,'display.skin','forecast')
@@ -97,7 +97,7 @@ def test_same_timestamp_and_size_edit_is_not_cached(tmp_path, monkeypatch, loade
     if loader_name == 'tui':
         from tui_gateway import server
         monkeypatch.setattr(server, '_hermes_home', tmp_path)
-        monkeypatch.setattr(server._configuration, '_snapshot', None)
+        monkeypatch.setattr(server._host.configuration, '_snapshot', None)
         load = server._load_cfg
         save = server._save_cfg
     else:

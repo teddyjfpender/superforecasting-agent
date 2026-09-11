@@ -637,7 +637,7 @@ def _close_session_databases(_hermetic_environment, monkeypatch):
         database.close()
     # The runtime singleton must not retain a handle this fixture just closed.
     server = sys.modules.get("tui_gateway.server")
-    owner = getattr(server, "_session_store", None)
+    owner = getattr(getattr(server, "_host", None), "store", None)
     if owner is not None and any(owner.current is db for db in databases):
         owner._connection = None
 
@@ -694,7 +694,7 @@ def _reset_module_state():
     # from one test module into another on the same worker.
     try:
         from tui_gateway import server as _tui_server
-        _tui_server._sessions.clear()
+        _tui_server._host.sessions.clear()
         _tui_server._pending.clear()
         _tui_server._answers.clear()
     except Exception:

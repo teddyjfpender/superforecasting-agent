@@ -230,7 +230,7 @@ def _(rid, params: dict) -> dict:
     resolved = _resolve_name(name)
     if resolved != name:
         name = resolved
-    session = _core._sessions.get(params.get("session_id", ""))
+    session = _core._host.sessions.get(params.get("session_id", ""))
 
     qcmds = _core._load_cfg().get("quick_commands", {})
     if name in qcmds:
